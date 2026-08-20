@@ -1,8 +1,16 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { BarChart3, Bot, PencilLine, GitBranch, CheckCircle2 } from 'lucide-react';
+import {
+  BarChart3,
+  Bot,
+  PencilLine,
+  GitBranch,
+  CheckCircle2,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import {
@@ -72,7 +80,7 @@ export function AiUsageCard() {
       const res = await fetch(`/api/ai/usage?days=${windowDays}`, {
         cache: 'no-store',
       });
-      const json = await res.json().catch(() => null);
+      const json = await readResponseJson(res).catch(() => null);
       if (!res.ok) {
         toast.error(json?.error ?? 'Failed to load usage');
         setData(null);
@@ -99,8 +107,10 @@ export function AiUsageCard() {
   if (profileLoading || !canView) return null;
 
   const chartData =
-    data?.daily.map((d) => ({ day: format(parseISO(d.date), 'MMM d'), Tokens: d.tokens })) ??
-    [];
+    data?.daily.map((d) => ({
+      day: format(parseISO(d.date), 'MMM d'),
+      Tokens: d.tokens,
+    })) ?? [];
   const hasSpend = (data?.totals.total_tokens ?? 0) > 0;
 
   return (
@@ -109,18 +119,21 @@ export function AiUsageCard() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <CardTitle className="flex items-center gap-2 text-base">
-              <BarChart3 className="h-4 w-4 text-primary" /> Token usage &amp; results
+              <BarChart3 className="text-primary h-4 w-4" /> Token usage &amp;
+              results
             </CardTitle>
             <CardDescription>
               Tokens spent on your provider key by drafts and the auto-reply
-              bot, plus what the bot actually did with them. Counts only —
-              no message content is stored here.
+              bot, plus what the bot actually did with them. Counts only — no
+              message content is stored here.
             </CardDescription>
           </div>
           <Select
             value={String(days)}
             onValueChange={(v) => v && setDays(Number(v))}
-            items={Object.fromEntries(WINDOWS.map((w) => [String(w), `Last ${w} days`]))}
+            items={Object.fromEntries(
+              WINDOWS.map((w) => [String(w), `Last ${w} days`])
+            )}
           >
             <SelectTrigger className="w-32 flex-shrink-0">
               <SelectValue />
@@ -139,7 +152,7 @@ export function AiUsageCard() {
         {loading || !data ? (
           <Skeleton className="h-[220px] w-full" />
         ) : !hasSpend ? (
-          <div className="flex flex-col items-center justify-center gap-2 py-10 text-center text-sm text-muted-foreground">
+          <div className="text-muted-foreground flex flex-col items-center justify-center gap-2 py-10 text-center text-sm">
             <BarChart3 className="h-8 w-8 opacity-40" />
             <p>No AI usage in the last {data.window_days} days yet.</p>
             <p className="text-xs">
@@ -149,7 +162,10 @@ export function AiUsageCard() {
         ) : (
           <>
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <Stat label="Total tokens" value={formatCompactNumber(data.totals.total_tokens)} />
+              <Stat
+                label="Total tokens"
+                value={formatCompactNumber(data.totals.total_tokens)}
+              />
               <Stat label="LLM calls" value={String(data.totals.calls)} />
               <Stat
                 label="Auto-reply"
@@ -174,7 +190,7 @@ export function AiUsageCard() {
             </div>
 
             <div>
-              <p className="mb-2 text-xs font-medium text-muted-foreground">
+              <p className="text-muted-foreground mb-2 text-xs font-medium">
                 Tokens per day
               </p>
               <BarChart
@@ -191,10 +207,10 @@ export function AiUsageCard() {
 
             {data.by_model.length > 0 && (
               <div>
-                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                <p className="text-muted-foreground mb-2 text-xs font-medium">
                   By model
                 </p>
-                <ul className="divide-y divide-border rounded-md border border-border">
+                <ul className="divide-border border-border divide-y rounded-md border">
                   {data.by_model.map((m) => (
                     <li
                       key={`${m.provider}:${m.model}`}
@@ -202,11 +218,11 @@ export function AiUsageCard() {
                     >
                       <span className="min-w-0 truncate">
                         <span className="text-foreground">{m.model}</span>{' '}
-                        <span className="text-xs text-muted-foreground">
+                        <span className="text-muted-foreground text-xs">
                           ({m.provider})
                         </span>
                       </span>
-                      <span className="flex-shrink-0 tabular-nums text-muted-foreground">
+                      <span className="text-muted-foreground flex-shrink-0 tabular-nums">
                         {formatCompactNumber(m.tokens)} tok · {m.calls}{' '}
                         {m.calls === 1 ? 'call' : 'calls'}
                       </span>
@@ -217,7 +233,7 @@ export function AiUsageCard() {
             )}
 
             {data.truncated && (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 Showing a partial window — usage is high enough that only the
                 most recent records are summarized here.
               </p>
@@ -239,12 +255,12 @@ function Stat({
   icon?: typeof Bot;
 }) {
   return (
-    <div className="rounded-md border border-border p-3">
-      <p className="flex items-center gap-1 text-xs text-muted-foreground">
+    <div className="border-border rounded-md border p-3">
+      <p className="text-muted-foreground flex items-center gap-1 text-xs">
         {Icon && <Icon className="h-3 w-3" />}
         {label}
       </p>
-      <p className="mt-1 text-lg font-semibold tabular-nums text-foreground">
+      <p className="text-foreground mt-1 text-lg font-semibold tabular-nums">
         {value}
       </p>
     </div>

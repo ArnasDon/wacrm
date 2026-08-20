@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import {
@@ -414,7 +416,7 @@ export function TemplateManager() {
       const res = await fetch(`/api/whatsapp/templates/${target.id}`, {
         method: 'DELETE',
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
         throw new Error(data?.error || `Delete failed (HTTP ${res.status})`);
       }

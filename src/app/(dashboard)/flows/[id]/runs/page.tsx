@@ -1,7 +1,9 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { readResponseJson } from '@/lib/http/response-json';
+
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import {
   ArrowLeft,
   Loader2,
@@ -13,14 +15,14 @@ import {
   PauseCircle,
   ChevronDown,
   ChevronRight,
-} from "lucide-react";
-import { toast } from "sonner";
-import { format, formatDistanceToNow } from "date-fns";
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { format, formatDistanceToNow } from 'date-fns';
 
-import { useTranslations } from "next-intl";
+import { useTranslations } from 'next-intl';
 
-import { Badge } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
 
 /**
  * Run history viewer.
@@ -35,12 +37,12 @@ import { cn } from "@/lib/utils";
 interface RunRow {
   id: string;
   status:
-    | "active"
-    | "completed"
-    | "handed_off"
-    | "timed_out"
-    | "paused_by_agent"
-    | "failed";
+    | 'active'
+    | 'completed'
+    | 'handed_off'
+    | 'timed_out'
+    | 'paused_by_agent'
+    | 'failed';
   current_node_key: string | null;
   started_at: string;
   last_advanced_at: string;
@@ -60,37 +62,37 @@ interface EventRow {
 }
 
 const STATUS_META: Record<
-  RunRow["status"],
+  RunRow['status'],
   { label: string; classes: string; icon: typeof Clock }
 > = {
   active: {
-    label: "Active",
-    classes: "border-emerald-600/40 bg-emerald-500/10 text-emerald-300",
+    label: 'Active',
+    classes: 'border-emerald-600/40 bg-emerald-500/10 text-emerald-300',
     icon: PlayCircle,
   },
   completed: {
-    label: "Completed",
-    classes: "border-border bg-muted text-muted-foreground",
+    label: 'Completed',
+    classes: 'border-border bg-muted text-muted-foreground',
     icon: CircleCheck,
   },
   handed_off: {
-    label: "Handed off",
-    classes: "border-amber-600/40 bg-amber-500/10 text-amber-300",
+    label: 'Handed off',
+    classes: 'border-amber-600/40 bg-amber-500/10 text-amber-300',
     icon: UserPlus,
   },
   timed_out: {
-    label: "Timed out",
-    classes: "border-border bg-muted/60 text-muted-foreground",
+    label: 'Timed out',
+    classes: 'border-border bg-muted/60 text-muted-foreground',
     icon: Clock,
   },
   paused_by_agent: {
-    label: "Paused by agent",
-    classes: "border-border bg-muted text-muted-foreground",
+    label: 'Paused by agent',
+    classes: 'border-border bg-muted text-muted-foreground',
     icon: PauseCircle,
   },
   failed: {
-    label: "Failed",
-    classes: "border-red-600/40 bg-red-500/10 text-red-300",
+    label: 'Failed',
+    classes: 'border-red-600/40 bg-red-500/10 text-red-300',
     icon: CircleAlert,
   },
 };
@@ -98,8 +100,8 @@ const STATUS_META: Record<
 export default function FlowRunsPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const t = useTranslations("Flows.logs");
-  const tEdit = useTranslations("Flows.edit");
+  const t = useTranslations('Flows.logs');
+  const tEdit = useTranslations('Flows.edit');
 
   const [flow, setFlow] = useState<{ id: string; name: string } | null>(null);
   const [runs, setRuns] = useState<RunRow[]>([]);
@@ -119,11 +121,11 @@ export default function FlowRunsPage() {
           return;
         }
         if (!res.ok) throw new Error(`Failed: ${res.status}`);
-        const json = (await res.json()) as {
+        const json = await readResponseJson<{
           flow: { id: string; name: string };
           runs: RunRow[];
           events: EventRow[];
-        };
+        }>(res);
         if (!cancelled) {
           setFlow(json.flow);
           setRuns(json.runs ?? []);
@@ -132,7 +134,7 @@ export default function FlowRunsPage() {
       } catch (err) {
         if (!cancelled) {
           console.error(err);
-          toast.error(t("loadError"));
+          toast.error(t('loadError'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -141,7 +143,7 @@ export default function FlowRunsPage() {
     return () => {
       cancelled = true;
     };
-  }, [params.id]);
+  }, [params.id, t]);
 
   function toggle(runId: string) {
     setExpanded((prev) => {
@@ -155,20 +157,20 @@ export default function FlowRunsPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
       </div>
     );
   }
   if (notFound || !flow) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">{tEdit("notFound")}</p>
+        <p className="text-muted-foreground text-sm">{tEdit('notFound')}</p>
         <button
           type="button"
-          onClick={() => router.push("/flows")}
-          className="text-sm text-primary hover:opacity-80"
+          onClick={() => router.push('/flows')}
+          className="text-primary text-sm hover:opacity-80"
         >
-          {tEdit("backToFlows")}
+          {tEdit('backToFlows')}
         </button>
       </div>
     );
@@ -179,19 +181,17 @@ export default function FlowRunsPage() {
       <button
         type="button"
         onClick={() => router.push(`/flows/${flow.id}`)}
-        className="mb-2 inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        className="text-muted-foreground hover:text-foreground mb-2 inline-flex items-center gap-1 text-xs"
       >
         <ArrowLeft className="h-3 w-3" />
         {flow.name}
       </button>
-      <h1 className="text-xl font-semibold text-foreground">{t("title")}</h1>
-      <p className="mt-1 text-sm text-muted-foreground">
-        {t("description")}
-      </p>
+      <h1 className="text-foreground text-xl font-semibold">{t('title')}</h1>
+      <p className="text-muted-foreground mt-1 text-sm">{t('description')}</p>
 
       {runs.length === 0 ? (
-        <div className="mt-6 rounded-lg border border-dashed border-border bg-card/50 px-6 py-12 text-center text-sm text-muted-foreground">
-          {t("emptyState")}
+        <div className="border-border bg-card/50 text-muted-foreground mt-6 rounded-lg border border-dashed px-6 py-12 text-center text-sm">
+          {t('emptyState')}
         </div>
       ) : (
         <div className="mt-6 flex flex-col gap-2">
@@ -227,77 +227,77 @@ function RunCard({
   const meta = STATUS_META[run.status];
   const StatusIcon = meta.icon;
   const contactLabel =
-    run.contact?.name?.trim() || run.contact?.phone || t("unknownContact");
+    run.contact?.name?.trim() || run.contact?.phone || t('unknownContact');
   const duration = run.ended_at
     ? formatDistanceToNow(new Date(run.ended_at), {
         addSuffix: false,
       })
     : null;
   return (
-    <div className="rounded-lg border border-border bg-card">
+    <div className="border-border bg-card rounded-lg border">
       <button
         type="button"
         onClick={onToggle}
         className="flex w-full items-center gap-3 px-4 py-3 text-left"
       >
         {expanded ? (
-          <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronDown className="text-muted-foreground h-4 w-4 shrink-0" />
         ) : (
-          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <ChevronRight className="text-muted-foreground h-4 w-4 shrink-0" />
         )}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate text-sm font-medium text-foreground">
+            <span className="text-foreground truncate text-sm font-medium">
               {contactLabel}
             </span>
-            <Badge variant="outline" className={cn("gap-1", meta.classes)}>
+            <Badge variant="outline" className={cn('gap-1', meta.classes)}>
               <StatusIcon className="h-3 w-3" />
               {t(
-                run.status === "active"
-                  ? "statusActive"
-                  : run.status === "completed"
-                  ? "statusCompleted"
-                  : run.status === "handed_off"
-                  ? "statusHandedOff"
-                  : run.status === "timed_out"
-                  ? "statusTimedOut"
-                  : run.status === "paused_by_agent"
-                  ? "statusPaused"
-                  : "statusFailed"
+                run.status === 'active'
+                  ? 'statusActive'
+                  : run.status === 'completed'
+                    ? 'statusCompleted'
+                    : run.status === 'handed_off'
+                      ? 'statusHandedOff'
+                      : run.status === 'timed_out'
+                        ? 'statusTimedOut'
+                        : run.status === 'paused_by_agent'
+                          ? 'statusPaused'
+                          : 'statusFailed'
               )}
             </Badge>
-            {run.status === "active" && run.current_node_key && (
-              <code className="rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                {t("atNode", { node: run.current_node_key })}
+            {run.status === 'active' && run.current_node_key && (
+              <code className="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">
+                {t('atNode', { node: run.current_node_key })}
               </code>
             )}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-[11px] text-muted-foreground">
-            <span>{t("started", { time: format(new Date(run.started_at), "PP p") })}</span>
+          <div className="text-muted-foreground mt-0.5 flex flex-wrap items-center gap-2 text-[11px]">
+            <span>
+              {t('started', { time: format(new Date(run.started_at), 'PP p') })}
+            </span>
             {run.reprompt_count > 0 && (
-              <span>· {t("reprompts", { count: run.reprompt_count })}</span>
+              <span>· {t('reprompts', { count: run.reprompt_count })}</span>
             )}
-            {duration && <span>· {t("ranFor", { duration })}</span>}
+            {duration && <span>· {t('ranFor', { duration })}</span>}
           </div>
         </div>
       </button>
       {expanded && (
-        <div className="border-t border-border px-4 py-3">
+        <div className="border-border border-t px-4 py-3">
           {Object.keys(run.vars).length > 0 && (
             <details className="mb-3">
-              <summary className="cursor-pointer text-xs text-muted-foreground">
-                {t("capturedVars", { count: Object.keys(run.vars).length })}
+              <summary className="text-muted-foreground cursor-pointer text-xs">
+                {t('capturedVars', { count: Object.keys(run.vars).length })}
               </summary>
-              <pre className="mt-2 overflow-x-auto rounded-md bg-background p-2 text-[11px] text-muted-foreground">
+              <pre className="bg-background text-muted-foreground mt-2 overflow-x-auto rounded-md p-2 text-[11px]">
                 {JSON.stringify(run.vars, null, 2)}
               </pre>
             </details>
           )}
           <div className="flex flex-col gap-1">
             {events.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
-                {t("noEvents")}
-              </p>
+              <p className="text-muted-foreground text-xs">{t('noEvents')}</p>
             ) : (
               events.map((ev, ix) => <EventLine key={ix} ev={ev} />)
             )}
@@ -309,34 +309,34 @@ function RunCard({
 }
 
 const EVENT_COLOR: Record<string, string> = {
-  started: "text-emerald-300",
-  node_entered: "text-muted-foreground",
-  message_sent: "text-sky-300",
-  reply_received: "text-primary",
-  fallback_fired: "text-amber-300",
-  handoff: "text-amber-300",
-  timeout: "text-muted-foreground",
-  error: "text-red-300",
-  completed: "text-emerald-300",
+  started: 'text-emerald-300',
+  node_entered: 'text-muted-foreground',
+  message_sent: 'text-sky-300',
+  reply_received: 'text-primary',
+  fallback_fired: 'text-amber-300',
+  handoff: 'text-amber-300',
+  timeout: 'text-muted-foreground',
+  error: 'text-red-300',
+  completed: 'text-emerald-300',
 };
 
 function EventLine({ ev }: { ev: EventRow }) {
-  const cls = EVENT_COLOR[ev.event_type] ?? "text-muted-foreground";
+  const cls = EVENT_COLOR[ev.event_type] ?? 'text-muted-foreground';
   return (
     <div className="flex items-start gap-2 rounded-md px-2 py-1 text-xs">
-      <span className="w-32 shrink-0 text-[10px] text-muted-foreground">
-        {format(new Date(ev.created_at), "HH:mm:ss")}
+      <span className="text-muted-foreground w-32 shrink-0 text-[10px]">
+        {format(new Date(ev.created_at), 'HH:mm:ss')}
       </span>
-      <span className={cn("w-32 shrink-0 font-mono text-[10px]", cls)}>
+      <span className={cn('w-32 shrink-0 font-mono text-[10px]', cls)}>
         {ev.event_type}
       </span>
       {ev.node_key && (
-        <code className="shrink-0 rounded bg-muted px-1 py-0.5 text-[10px] text-muted-foreground">
+        <code className="bg-muted text-muted-foreground shrink-0 rounded px-1 py-0.5 text-[10px]">
           {ev.node_key}
         </code>
       )}
       {Object.keys(ev.payload).length > 0 && (
-        <span className="min-w-0 truncate text-[10px] text-muted-foreground">
+        <span className="text-muted-foreground min-w-0 truncate text-[10px]">
           {summarizePayload(ev.payload)}
         </span>
       )}
@@ -347,11 +347,11 @@ function EventLine({ ev }: { ev: EventRow }) {
 function summarizePayload(payload: Record<string, unknown>): string {
   // Show the keys that matter most to a human debugger; full JSON is
   // available via the "Captured vars" details panel for the run.
-  const keys = ["reply_id", "captured_key", "reason", "advancing_to"];
+  const keys = ['reply_id', 'captured_key', 'reason', 'advancing_to'];
   for (const k of keys) {
     if (k in payload && payload[k] !== null && payload[k] !== undefined) {
       return `${k}=${String(payload[k]).slice(0, 80)}`;
     }
   }
-  return "";
+  return '';
 }

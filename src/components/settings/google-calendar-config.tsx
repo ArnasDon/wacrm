@@ -14,9 +14,16 @@ import {
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
+import { readResponseJson } from '@/lib/http/response-json';
 
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 
@@ -49,7 +56,11 @@ export function GoogleCalendarConfig() {
     setLoading(true);
     try {
       const res = await fetch('/api/google-calendar/config');
-      const payload = await res.json();
+      const payload = await readResponseJson<{
+        connected?: boolean;
+        calendar_email?: string | null;
+        message?: string;
+      }>(res);
       if (payload.connected) {
         setStatus('connected');
         setCalendarEmail(payload.calendar_email ?? null);
@@ -77,7 +88,7 @@ export function GoogleCalendarConfig() {
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     fetchStatus();
-  }, [authLoading, profileLoading, user?.id, accountId, fetchStatus]);
+  }, [authLoading, profileLoading, user, accountId, fetchStatus]);
 
   // Reflect the OAuth callback's redirect result once, then clean the
   // URL so refreshing this tab doesn't replay the same toast.
@@ -101,9 +112,13 @@ export function GoogleCalendarConfig() {
     if (!confirm(t('disconnectConfirm'))) return;
     try {
       setDisconnecting(true);
-      const res = await fetch('/api/google-calendar/config', { method: 'DELETE' });
+      const res = await fetch('/api/google-calendar/config', {
+        method: 'DELETE',
+      });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson<{ error?: string }>(res).catch(
+          (): { error?: string } => ({})
+        );
         toast.error(data.error || t('toastDisconnectFailed'));
         return;
       }
@@ -123,7 +138,7 @@ export function GoogleCalendarConfig() {
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead title={t('title')} description={t('description')} />
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="text-primary size-6 animate-spin" />
         </div>
       </section>
     );
@@ -135,12 +150,14 @@ export function GoogleCalendarConfig() {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           {status === 'disconnected' && statusMessage && (
-            <Alert className="bg-amber-950/40 border-amber-600/40">
+            <Alert className="border-amber-600/40 bg-amber-950/40">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-400" />
                 <div className="flex-1">
-                  <AlertTitle className="text-amber-200 mb-1">{t('connectionIssue')}</AlertTitle>
-                  <AlertDescription className="text-amber-100/80 text-sm">
+                  <AlertTitle className="mb-1 text-amber-200">
+                    {t('connectionIssue')}
+                  </AlertTitle>
+                  <AlertDescription className="text-sm text-amber-100/80">
                     {statusMessage}
                   </AlertDescription>
                 </div>
@@ -150,18 +167,20 @@ export function GoogleCalendarConfig() {
 
           <Card className="border-border bg-card">
             <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-foreground">
-                <CalendarDays className="size-4 text-primary" />
+              <CardTitle className="text-foreground flex items-center gap-2">
+                <CalendarDays className="text-primary size-4" />
                 {t('cardTitle')}
               </CardTitle>
               <CardDescription>
                 {status === 'connected' ? (
                   <span className="flex items-center gap-1.5 text-emerald-400">
                     <CheckCircle2 className="size-3.5" />
-                    {calendarEmail ? t('connectedAs', { email: calendarEmail }) : t('connected')}
+                    {calendarEmail
+                      ? t('connectedAs', { email: calendarEmail })
+                      : t('connected')}
                   </span>
                 ) : (
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="text-muted-foreground flex items-center gap-1.5">
                     <XCircle className="size-3.5" />
                     {t('notConnected')}
                   </span>
@@ -198,15 +217,17 @@ export function GoogleCalendarConfig() {
 
         <Card className="border-border bg-card h-fit">
           <CardHeader>
-            <CardTitle className="text-sm text-foreground">{t('aboutTitle')}</CardTitle>
+            <CardTitle className="text-foreground text-sm">
+              {t('aboutTitle')}
+            </CardTitle>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm text-muted-foreground">
+          <CardContent className="text-muted-foreground space-y-3 text-sm">
             <p>{t('aboutBody')}</p>
             <a
               href="https://calendar.google.com"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 text-primary hover:underline"
+              className="text-primary inline-flex items-center gap-1 hover:underline"
             >
               {t('aboutLink')}
               <ExternalLink className="size-3" />

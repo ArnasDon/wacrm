@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 import { useEffect, useState } from 'react';
 import { Bot, Sparkles, Settings2, BarChart3, ShieldCheck } from 'lucide-react';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
@@ -29,7 +31,7 @@ export default function AgentsPage() {
     (async () => {
       try {
         const res = await fetch('/api/ai/config');
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson(res).catch(() => ({}));
         if (!cancelled) setTab(data?.configured ? 'playground' : 'setup');
       } catch {
         if (!cancelled) setTab('setup');
@@ -45,12 +47,12 @@ export default function AgentsPage() {
   return (
     <div>
       <div className="flex items-center gap-2">
-        <Bot className="h-6 w-6 text-primary" />
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">
+        <Bot className="text-primary h-6 w-6" />
+        <h1 className="text-foreground text-2xl font-bold tracking-tight">
           AI Agents
         </h1>
       </div>
-      <p className="mt-1 text-sm text-muted-foreground">
+      <p className="text-muted-foreground mt-1 text-sm">
         Your bring-your-own-key AI agent — set it up, then test it in the
         playground before it replies to customers in the inbox.
       </p>

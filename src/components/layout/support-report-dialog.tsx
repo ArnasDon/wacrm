@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // SupportReportDialog
 //
@@ -34,7 +36,11 @@ interface SupportReportDialogProps {
   defaultName: string;
 }
 
-export function SupportReportDialog({ open, onOpenChange, defaultName }: SupportReportDialogProps) {
+export function SupportReportDialog({
+  open,
+  onOpenChange,
+  defaultName,
+}: SupportReportDialogProps) {
   const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -82,8 +88,13 @@ export function SupportReportDialog({ open, onOpenChange, defaultName }: Support
       form.set('error_description', description.trim());
       for (const file of files) form.append('screenshots', file);
 
-      const res = await fetch('/api/support/report', { method: 'POST', body: form });
-      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      const res = await fetch('/api/support/report', {
+        method: 'POST',
+        body: form,
+      });
+      const payload = await readResponseJson<{ error?: string }>(res).catch(
+        (): { error?: string } => ({})
+      );
       if (!res.ok) {
         toast.error(payload.error || 'No se pudo enviar el reporte');
         setSubmitting(false);
@@ -110,7 +121,9 @@ export function SupportReportDialog({ open, onOpenChange, defaultName }: Support
     >
       <DialogContent className="bg-popover border-border sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">Reportar un problema</DialogTitle>
+          <DialogTitle className="text-popover-foreground">
+            Reportar un problema
+          </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             Cuéntanos qué pasó — si puedes, agrega capturas de pantalla.
           </DialogDescription>
@@ -143,7 +156,7 @@ export function SupportReportDialog({ open, onOpenChange, defaultName }: Support
                 {files.map((file, index) => (
                   <li
                     key={`${file.name}-${index}`}
-                    className="flex items-center justify-between rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground"
+                    className="border-border bg-muted text-foreground flex items-center justify-between rounded-md border px-2 py-1 text-xs"
                   >
                     <span className="truncate">{file.name}</span>
                     <button
@@ -164,7 +177,7 @@ export function SupportReportDialog({ open, onOpenChange, defaultName }: Support
                 variant="outline"
                 size="sm"
                 onClick={() => fileInputRef.current?.click()}
-                className="gap-2 border-border text-foreground hover:bg-muted"
+                className="border-border text-foreground hover:bg-muted gap-2"
               >
                 <Paperclip className="size-3.5" />
                 Agregar captura

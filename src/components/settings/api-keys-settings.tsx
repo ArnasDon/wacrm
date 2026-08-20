@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // ApiKeysSettings — Settings → API keys
 //
@@ -82,11 +84,11 @@ export function ApiKeysSettings() {
     try {
       const res = await fetch('/api/account/api-keys', { cache: 'no-store' });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('loadFailed'));
         return;
       }
-      const data = (await res.json()) as { keys: ApiKey[] };
+      const data = await readResponseJson<{ keys: ApiKey[] }>(res);
       setKeys(data.keys);
     } catch (err) {
       console.error('[ApiKeysSettings] load error:', err);
@@ -94,7 +96,7 @@ export function ApiKeysSettings() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -107,7 +109,7 @@ export function ApiKeysSettings() {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('revokeFailed'));
         return;
       }
@@ -138,12 +140,14 @@ export function ApiKeysSettings() {
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
         title={t('title')}
-        description={
-          t.rich('description', {
-            apiCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>,
-            headerCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>
-          })
-        }
+        description={t.rich('description', {
+          apiCode: (chunks: React.ReactNode) => (
+            <code className="text-xs">{chunks}</code>
+          ),
+          headerCode: (chunks: React.ReactNode) => (
+            <code className="text-xs">{chunks}</code>
+          ),
+        })}
         action={
           <RequireRole min="admin">
             <Button onClick={() => setCreateOpen(true)}>
@@ -322,7 +326,7 @@ function CreateKeyDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: trimmed, scopes }),
       });
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
         toast.error(payload.error || t('createError'));
         return;
@@ -368,7 +372,9 @@ function CreateKeyDialog({
             </DialogHeader>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('apiKeyLabel')}</Label>
+              <Label className="text-muted-foreground">
+                {t('apiKeyLabel')}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -420,7 +426,9 @@ function CreateKeyDialog({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('scopesLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('scopesLabel')}
+                </Label>
                 <div className="border-border space-y-2 rounded-md border p-3">
                   {API_SCOPES.map((scope) => (
                     <label

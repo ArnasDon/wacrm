@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // WebhooksSettings — Settings → Webhooks
 //
@@ -14,7 +16,14 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy, Loader2, Plus, RefreshCw, Trash2, Webhook as WebhookIcon } from 'lucide-react';
+import {
+  Copy,
+  Loader2,
+  Plus,
+  RefreshCw,
+  Trash2,
+  Webhook as WebhookIcon,
+} from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -32,7 +41,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
-import { WEBHOOK_EVENTS, WEBHOOK_EVENT_DESCRIPTIONS, type WebhookEvent } from '@/lib/webhooks/events';
+import {
+  WEBHOOK_EVENTS,
+  WEBHOOK_EVENT_DESCRIPTIONS,
+  type WebhookEvent,
+} from '@/lib/webhooks/events';
 import { useTranslations } from 'next-intl';
 import { SettingsPanelHead } from './settings-panel-head';
 
@@ -60,7 +73,11 @@ interface Delivery {
 
 function fmtDate(iso: string): string {
   return new Date(iso).toLocaleString(undefined, {
-    year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   });
 }
 
@@ -78,11 +95,11 @@ export function WebhooksSettings() {
     try {
       const res = await fetch('/api/account/webhooks', { cache: 'no-store' });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('loadFailed'));
         return;
       }
-      const data = (await res.json()) as { webhooks: WebhookEndpoint[] };
+      const data = await readResponseJson<{ webhooks: WebhookEndpoint[] }>(res);
       setEndpoints(data.webhooks);
     } catch (err) {
       console.error('[WebhooksSettings] load error:', err);
@@ -105,11 +122,13 @@ export function WebhooksSettings() {
         body: JSON.stringify({ is_active: !endpoint.is_active }),
       });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('updateFailed'));
         return;
       }
-      toast.success(endpoint.is_active ? t('disabledSuccess') : t('enabledSuccess'));
+      toast.success(
+        endpoint.is_active ? t('disabledSuccess') : t('enabledSuccess')
+      );
       await load();
     } finally {
       setBusyId(null);
@@ -119,9 +138,11 @@ export function WebhooksSettings() {
   async function handleDelete(endpoint: WebhookEndpoint) {
     setBusyId(endpoint.id);
     try {
-      const res = await fetch(`/api/account/webhooks/${endpoint.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/account/webhooks/${endpoint.id}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('deleteFailed'));
         return;
       }
@@ -159,9 +180,13 @@ export function WebhooksSettings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <WebhookIcon className="text-muted-foreground size-6" />
-            <p className="text-muted-foreground mt-2 text-sm">{t('noWebhooks')}</p>
+            <p className="text-muted-foreground mt-2 text-sm">
+              {t('noWebhooks')}
+            </p>
             {!canEditSettings && (
-              <p className="text-muted-foreground mt-1 text-xs">{t('askAdminHint')}</p>
+              <p className="text-muted-foreground mt-1 text-xs">
+                {t('askAdminHint')}
+              </p>
             )}
           </CardContent>
         </Card>
@@ -176,7 +201,9 @@ export function WebhooksSettings() {
                       <div className="flex items-center gap-2">
                         <span
                           className={`truncate text-sm font-medium ${
-                            e.is_active ? 'text-foreground' : 'text-muted-foreground line-through'
+                            e.is_active
+                              ? 'text-foreground'
+                              : 'text-muted-foreground line-through'
                           }`}
                         >
                           {e.url}
@@ -187,21 +214,26 @@ export function WebhooksSettings() {
                           </Badge>
                         )}
                         {e.is_active && e.failure_count > 0 && (
-                          <Badge className="border-amber-600/40 bg-amber-950/40 text-amber-300 text-[10px] tracking-wide uppercase">
+                          <Badge className="border-amber-600/40 bg-amber-950/40 text-[10px] tracking-wide text-amber-300 uppercase">
                             {t('failuresBadge', { count: e.failure_count })}
                           </Badge>
                         )}
                       </div>
                       <div className="mt-1.5 flex flex-wrap gap-1">
                         {e.events.map((ev) => (
-                          <Badge key={ev} className="border-border bg-muted text-muted-foreground text-[10px]">
+                          <Badge
+                            key={ev}
+                            className="border-border bg-muted text-muted-foreground text-[10px]"
+                          >
                             {ev}
                           </Badge>
                         ))}
                       </div>
                       <p className="text-muted-foreground mt-1.5 text-xs">
                         {t('created', { date: fmtDate(e.created_at) })}
-                        {e.last_delivery_at ? ` · ${t('lastDelivery', { date: fmtDate(e.last_delivery_at) })}` : ''}
+                        {e.last_delivery_at
+                          ? ` · ${t('lastDelivery', { date: fmtDate(e.last_delivery_at) })}`
+                          : ''}
                       </p>
                     </div>
 
@@ -209,10 +241,14 @@ export function WebhooksSettings() {
                       <Button
                         variant="outline"
                         size="sm"
-                        onClick={() => setExpandedId(expandedId === e.id ? null : e.id)}
+                        onClick={() =>
+                          setExpandedId(expandedId === e.id ? null : e.id)
+                        }
                         className="border-border text-muted-foreground hover:bg-muted"
                       >
-                        {expandedId === e.id ? t('hideDeliveries') : t('viewDeliveries')}
+                        {expandedId === e.id
+                          ? t('hideDeliveries')
+                          : t('viewDeliveries')}
                       </Button>
                       <RequireRole min="admin">
                         <Button
@@ -222,7 +258,9 @@ export function WebhooksSettings() {
                           disabled={busyId === e.id}
                           className="border-border text-muted-foreground hover:bg-muted"
                         >
-                          {busyId === e.id ? <Loader2 className="size-4 animate-spin" /> : null}
+                          {busyId === e.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : null}
                           {e.is_active ? t('disable') : t('enable')}
                         </Button>
                         <Button
@@ -247,7 +285,11 @@ export function WebhooksSettings() {
         </Card>
       )}
 
-      <CreateWebhookDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
+      <CreateWebhookDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={load}
+      />
     </section>
   );
 }
@@ -263,12 +305,14 @@ function DeliveryLog({ endpointId }: { endpointId: string }) {
   const [retryingId, setRetryingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const res = await fetch(`/api/account/webhooks/${endpointId}/deliveries`, { cache: 'no-store' });
+    const res = await fetch(`/api/account/webhooks/${endpointId}/deliveries`, {
+      cache: 'no-store',
+    });
     if (!res.ok) {
       setDeliveries([]);
       return;
     }
-    const data = (await res.json()) as { deliveries: Delivery[] };
+    const data = await readResponseJson<{ deliveries: Delivery[] }>(res);
     setDeliveries(data.deliveries);
   }, [endpointId]);
 
@@ -284,7 +328,7 @@ function DeliveryLog({ endpointId }: { endpointId: string }) {
         { method: 'POST' }
       );
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || t('retryFailed'));
         return;
       }
@@ -304,14 +348,19 @@ function DeliveryLog({ endpointId }: { endpointId: string }) {
   }
 
   if (deliveries.length === 0) {
-    return <p className="text-muted-foreground py-3 text-xs">{t('noDeliveries')}</p>;
+    return (
+      <p className="text-muted-foreground py-3 text-xs">{t('noDeliveries')}</p>
+    );
   }
 
   return (
     <div className="border-border bg-card/50 rounded-md border">
       <ul className="divide-border divide-y">
         {deliveries.map((d) => (
-          <li key={d.id} className="flex items-center justify-between gap-3 px-3 py-2 text-xs">
+          <li
+            key={d.id}
+            className="flex items-center justify-between gap-3 px-3 py-2 text-xs"
+          >
             <div className="min-w-0">
               <span className="text-foreground font-medium">{d.event}</span>
               <span
@@ -384,7 +433,9 @@ function CreateWebhookDialog({
   }
 
   function toggleEvent(event: WebhookEvent, checked: boolean) {
-    setEvents((prev) => (checked ? [...prev, event] : prev.filter((e) => e !== event)));
+    setEvents((prev) =>
+      checked ? [...prev, event] : prev.filter((e) => e !== event)
+    );
   }
 
   async function handleCreate() {
@@ -404,7 +455,7 @@ function CreateWebhookDialog({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url: trimmed, events }),
       });
-      const payload = await res.json().catch(() => ({}));
+      const payload = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
         toast.error(payload.error || t('createError'));
         return;
@@ -441,12 +492,18 @@ function CreateWebhookDialog({
         {createdSecret ? (
           <>
             <DialogHeader>
-              <DialogTitle className="text-popover-foreground">{t('copyTitle')}</DialogTitle>
-              <DialogDescription className="text-muted-foreground">{t('copyDesc')}</DialogDescription>
+              <DialogTitle className="text-popover-foreground">
+                {t('copyTitle')}
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                {t('copyDesc')}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('secretLabel')}</Label>
+              <Label className="text-muted-foreground">
+                {t('secretLabel')}
+              </Label>
               <div className="flex gap-2">
                 <Input
                   readOnly
@@ -475,8 +532,12 @@ function CreateWebhookDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle className="text-popover-foreground">{t('newWebhookTitle')}</DialogTitle>
-              <DialogDescription className="text-muted-foreground">{t('newWebhookDesc')}</DialogDescription>
+              <DialogTitle className="text-popover-foreground">
+                {t('newWebhookTitle')}
+              </DialogTitle>
+              <DialogDescription className="text-muted-foreground">
+                {t('newWebhookDesc')}
+              </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4">
@@ -493,17 +554,26 @@ function CreateWebhookDialog({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('eventsLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('eventsLabel')}
+                </Label>
                 <div className="border-border max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
                   {WEBHOOK_EVENTS.map((event) => (
-                    <label key={event} className="flex cursor-pointer items-start gap-2.5">
+                    <label
+                      key={event}
+                      className="flex cursor-pointer items-start gap-2.5"
+                    >
                       <Checkbox
                         checked={events.includes(event)}
-                        onCheckedChange={(checked) => toggleEvent(event, checked === true)}
+                        onCheckedChange={(checked) =>
+                          toggleEvent(event, checked === true)
+                        }
                         className="mt-0.5"
                       />
                       <span className="min-w-0">
-                        <span className="text-foreground block font-mono text-xs">{event}</span>
+                        <span className="text-foreground block font-mono text-xs">
+                          {event}
+                        </span>
                         <span className="text-muted-foreground block text-xs">
                           {WEBHOOK_EVENT_DESCRIPTIONS[event]}
                         </span>

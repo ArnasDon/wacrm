@@ -1,8 +1,19 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Bot, RotateCcw, Send, Loader2, UserCircle2, ShieldCheck, X, Check } from 'lucide-react';
+import {
+  Bot,
+  RotateCcw,
+  Send,
+  Loader2,
+  UserCircle2,
+  ShieldCheck,
+  X,
+  Check,
+} from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 
@@ -37,7 +48,8 @@ function detailEntries(input: Record<string, unknown>): [string, string][] {
   return Object.entries(input)
     .filter(([, v]) => v !== undefined && v !== null && v !== '')
     .map(([k, v]): [string, string] => {
-      if (Array.isArray(v)) return [k, `${v.length} item${v.length === 1 ? '' : 's'}`];
+      if (Array.isArray(v))
+        return [k, `${v.length} item${v.length === 1 ? '' : 's'}`];
       if (typeof v === 'object') return [k, JSON.stringify(v)];
       return [k, String(v)];
     });
@@ -70,7 +82,7 @@ export function AiAssistant() {
           messages: next.map((t) => ({ role: t.role, content: t.content })),
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
         if (data.code === 'ai_not_configured') {
           toast.error('No agent configured yet — finish Setup first.');
@@ -108,7 +120,9 @@ export function AiAssistant() {
   };
 
   const discardAction = (index: number) => {
-    setTurns((prev) => prev.map((t, i) => (i === index ? { ...t, pendingAction: undefined } : t)));
+    setTurns((prev) =>
+      prev.map((t, i) => (i === index ? { ...t, pendingAction: undefined } : t))
+    );
   };
 
   const confirmAction = async (index: number) => {
@@ -131,12 +145,14 @@ export function AiAssistant() {
             source: 'ai_assistant',
           }),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson(res).catch(() => ({}));
         if (!res.ok) {
           toast.error(data.error ?? 'Could not create the rule.');
           return;
         }
-        toast.success('Rule saved as a draft in Automations — review and activate it there.');
+        toast.success(
+          'Rule saved as a draft in Automations — review and activate it there.'
+        );
       } else {
         const payload = { action, ...actionInput };
         const first = await fetch('/api/ai/actions', {
@@ -144,7 +160,7 @@ export function AiAssistant() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const firstData = await first.json().catch(() => ({}));
+        const firstData = await readResponseJson(first).catch(() => ({}));
         if (first.status !== 409 || !firstData.confirmation) {
           toast.error(firstData.error ?? 'Could not confirm this action.');
           return;
@@ -152,9 +168,12 @@ export function AiAssistant() {
         const second = await fetch('/api/ai/actions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...payload, confirmation: firstData.confirmation }),
+          body: JSON.stringify({
+            ...payload,
+            confirmation: firstData.confirmation,
+          }),
         });
-        const secondData = await second.json().catch(() => ({}));
+        const secondData = await readResponseJson(second).catch(() => ({}));
         if (!second.ok) {
           toast.error(secondData.error ?? 'Could not complete this action.');
           return;
@@ -170,12 +189,12 @@ export function AiAssistant() {
   };
 
   return (
-    <div className="flex h-[65vh] min-h-[460px] flex-col rounded-xl border border-border bg-card">
-      <div className="flex items-center justify-between border-b border-border px-4 py-3">
+    <div className="border-border bg-card flex h-[65vh] min-h-[460px] flex-col rounded-xl border">
+      <div className="border-border flex items-center justify-between border-b px-4 py-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-4 w-4 text-primary" />
-          <span className="text-sm font-medium text-foreground">Assistant</span>
-          <span className="text-xs text-muted-foreground">
+          <ShieldCheck className="text-primary h-4 w-4" />
+          <span className="text-foreground text-sm font-medium">Assistant</span>
+          <span className="text-muted-foreground text-xs">
             — owner-only, can propose real changes to this account
           </span>
         </div>
@@ -192,9 +211,11 @@ export function AiAssistant() {
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto p-4">
         {turns.length === 0 && (
-          <div className="flex h-full flex-col items-center justify-center text-center text-sm text-muted-foreground">
-            <Bot className="mb-2 h-8 w-8 text-muted-foreground/60" />
-            <p>Ask about your sales, get a suggestion, or ask it to do something.</p>
+          <div className="text-muted-foreground flex h-full flex-col items-center justify-center text-center text-sm">
+            <Bot className="text-muted-foreground/60 mb-2 h-8 w-8" />
+            <p>
+              Ask about your sales, get a suggestion, or ask it to do something.
+            </p>
             <p className="mt-1 text-xs">
               e.g. &quot;How many deals did we win/lose this month?&quot; or
               &quot;Move Juan&apos;s deal to Won&quot;. Any change is proposed
@@ -206,17 +227,22 @@ export function AiAssistant() {
         {turns.map((t, i) => (
           <div
             key={i}
-            className={cn('flex gap-2', t.role === 'user' ? 'justify-end' : 'justify-start')}
+            className={cn(
+              'flex gap-2',
+              t.role === 'user' ? 'justify-end' : 'justify-start'
+            )}
           >
-            {t.role === 'assistant' && <Bot className="mt-1 h-5 w-5 shrink-0 text-primary" />}
+            {t.role === 'assistant' && (
+              <Bot className="text-primary mt-1 h-5 w-5 shrink-0" />
+            )}
             <div className="flex max-w-[85%] flex-col gap-2">
               {t.content && (
                 <div
                   className={cn(
                     'rounded-2xl px-3.5 py-2 text-sm',
                     t.role === 'user'
-                      ? 'self-end rounded-br-sm bg-primary text-primary-foreground'
-                      : 'rounded-bl-sm bg-muted text-foreground',
+                      ? 'bg-primary text-primary-foreground self-end rounded-br-sm'
+                      : 'bg-muted text-foreground rounded-bl-sm'
                   )}
                 >
                   <p className="whitespace-pre-wrap">{t.content}</p>
@@ -228,7 +254,7 @@ export function AiAssistant() {
                   <p className="text-xs font-medium text-amber-600 dark:text-amber-400">
                     Proposed: {actionLabel(t.pendingAction.action)}
                   </p>
-                  <dl className="mt-1.5 space-y-0.5 text-xs text-muted-foreground">
+                  <dl className="text-muted-foreground mt-1.5 space-y-0.5 text-xs">
                     {detailEntries(t.pendingAction.input).map(([k, v]) => (
                       <div key={k} className="flex gap-1.5">
                         <dt className="shrink-0 font-medium">{k}:</dt>
@@ -253,7 +279,7 @@ export function AiAssistant() {
                     <Button
                       size="sm"
                       variant="ghost"
-                      className="h-7 px-2.5 text-xs text-muted-foreground"
+                      className="text-muted-foreground h-7 px-2.5 text-xs"
                       onClick={() => discardAction(i)}
                       disabled={confirmingIndex !== null}
                     >
@@ -264,27 +290,27 @@ export function AiAssistant() {
               )}
             </div>
             {t.role === 'user' && (
-              <UserCircle2 className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
+              <UserCircle2 className="text-muted-foreground mt-1 h-5 w-5 shrink-0" />
             )}
           </div>
         ))}
 
         {sending && (
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Bot className="h-5 w-5 text-primary" />
+          <div className="text-muted-foreground flex items-center gap-2 text-sm">
+            <Bot className="text-primary h-5 w-5" />
             <Loader2 className="h-4 w-4 animate-spin" /> Thinking…
           </div>
         )}
       </div>
 
-      <div className="flex items-end gap-2 border-t border-border p-3">
+      <div className="border-border flex items-end gap-2 border-t p-3">
         <textarea
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder="Ask about your business, or ask it to do something…"
           rows={1}
-          className="flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+          className="border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm outline-none"
         />
         <Button
           size="sm"
@@ -292,7 +318,11 @@ export function AiAssistant() {
           disabled={!input.trim() || sending}
           className="h-9 w-9 shrink-0 p-0"
         >
-          {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+          {sending ? (
+            <Loader2 className="h-4 w-4 animate-spin" />
+          ) : (
+            <Send className="h-4 w-4" />
+          )}
         </Button>
       </div>
     </div>

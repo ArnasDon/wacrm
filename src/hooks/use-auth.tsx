@@ -1,4 +1,4 @@
-"use client";
+'use client';
 
 import {
   createContext,
@@ -9,18 +9,21 @@ import {
   useMemo,
   useRef,
   type ReactNode,
-} from "react";
-import { createClient } from "@/lib/supabase/client";
-import type { User } from "@supabase/supabase-js";
-import { DEFAULT_CURRENCY } from "@/lib/currency";
+} from 'react';
+import { createClient } from '@/lib/supabase/client';
+import type { User } from '@supabase/supabase-js';
+import { DEFAULT_CURRENCY } from '@/lib/currency';
 import {
   canEditSettings as canEditSettingsFor,
   canManageMembers as canManageMembersFor,
   canSendMessages as canSendMessagesFor,
   isAccountRole,
   type AccountRole,
-} from "@/lib/auth/roles";
-import { sessionChannelName, KICKED_EVENT } from "@/lib/auth/session-exclusivity";
+} from '@/lib/auth/roles';
+import {
+  sessionChannelName,
+  KICKED_EVENT,
+} from '@/lib/auth/session-exclusivity';
 
 interface Profile {
   id: string;
@@ -64,15 +67,15 @@ interface AccountSummary {
  */
 export type AccountStatus =
   /** Profile row still in flight. */
-  | "loading"
+  | 'loading'
   /** Account + role resolved; normal operation. */
-  | "ready"
+  | 'ready'
   /** Company subscription is paused; business-data RLS is disabled. */
-  | "suspended"
+  | 'suspended'
   /** Signed in, but no profile row / no account / no role on it. */
-  | "unlinked"
+  | 'unlinked'
   /** The profile lookup itself failed after retrying. */
-  | "error";
+  | 'error';
 
 interface AuthContextValue {
   user: User | null;
@@ -203,11 +206,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       let data: ProfileRow | null = null;
       for (let attempt = 1; ; attempt++) {
         const result = await supabase
-          .from("profiles")
+          .from('profiles')
           .select(
-            "id, full_name, email, avatar_url, role, beta_features, account_id, account_role, is_platform_admin",
+            'id, full_name, email, avatar_url, role, beta_features, account_id, account_role, is_platform_admin'
           )
-          .eq("user_id", userId)
+          .eq('user_id', userId)
           .maybeSingle();
 
         if (!result.error) {
@@ -216,7 +219,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const error = result.error;
-        console.error("[AuthProvider] fetchProfile error:", {
+        console.error('[AuthProvider] fetchProfile error:', {
           message: error.message,
           details: error.details,
           hint: error.hint,
@@ -249,15 +252,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         let accountRow: AccountSummary | null = null;
         if (data.account_id) {
           const { data: account, error: accountErr } = await supabase
-            .from("accounts")
+            .from('accounts')
             // default_currency added in migration 021 (narrowed to the
             // USD fallback below for older schemas where it reads null);
             // enforce_single_session added in migration 067.
-            .select("id, name, default_currency, suspended_at, suspended_reason, enforce_single_session")
-            .eq("id", data.account_id)
+            .select(
+              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session'
+            )
+            .eq('id', data.account_id)
             .maybeSingle();
           if (accountErr) {
-            console.error("[AuthProvider] fetchAccount error:", {
+            console.error('[AuthProvider] fetchAccount error:', {
               message: accountErr.message,
               details: accountErr.details,
               hint: accountErr.hint,
@@ -307,17 +312,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           // failure as a WARNING) or one predating that migration.
           // Every insert and update they attempt will be denied by RLS.
           setStatusDetail(
-            `profile ${data.id} has no ${!data.account_id ? "account_id" : "account_role"}`,
+            `profile ${data.id} has no ${!data.account_id ? 'account_id' : 'account_role'}`
           );
         }
       } else {
         lastFetchedUserIdRef.current = null;
-        setStatusDetail("no profiles row for the signed-in user");
+        setStatusDetail('no profiles row for the signed-in user');
       }
     } catch (err) {
-      console.error("[AuthProvider] fetchProfile threw:", err);
+      console.error('[AuthProvider] fetchProfile threw:', err);
       lastFetchedUserIdRef.current = null;
-      setStatusDetail(err instanceof Error ? err.message : "profile fetch failed");
+      setStatusDetail(
+        err instanceof Error ? err.message : 'profile fetch failed'
+      );
     } finally {
       setProfileLoading(false);
     }
@@ -329,7 +336,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const safetyTimer = setTimeout(() => {
       if (mounted) {
-        console.warn("[AuthProvider] getSession() timed out after 3s");
+        console.warn('[AuthProvider] getSession() timed out after 3s');
         setLoading(false);
         setProfileLoading(false);
       }
@@ -342,7 +349,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           error,
         } = await supabase.auth.getSession();
 
-        if (error) console.error("[AuthProvider] getSession error:", error.message);
+        if (error)
+          console.error('[AuthProvider] getSession error:', error.message);
 
         if (!mounted) return;
         const currentUser = session?.user ?? null;
@@ -361,7 +369,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setProfileLoading(false);
         }
       } catch (err) {
-        console.error("[AuthProvider] init threw:", err);
+        console.error('[AuthProvider] init threw:', err);
       } finally {
         if (mounted) setLoading(false);
         clearTimeout(safetyTimer);
@@ -414,9 +422,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const supabase = createClient();
     const channel = supabase.channel(sessionChannelName(user.id));
     channel
-      .on("broadcast", { event: KICKED_EVENT }, () => {
-        supabase.auth.signOut({ scope: "local" }).finally(() => {
-          window.location.href = "/login?reason=other_device";
+      .on('broadcast', { event: KICKED_EVENT }, () => {
+        supabase.auth.signOut({ scope: 'local' }).finally(() => {
+          window.location.href = '/login?reason=other_device';
         });
       })
       .subscribe();
@@ -432,7 +440,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
-    window.location.href = "/login";
+    window.location.href = '/login';
   }, []);
 
   const refreshProfile = useCallback(async () => {
@@ -449,30 +457,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {
       accountRole: role,
       accountId: profile?.account_id ?? null,
-      isOwner: role === "owner",
-      isAdmin: role === "admin",
-      isAgent: role === "agent",
-      isViewer: role === "viewer",
+      isOwner: role === 'owner',
+      isAdmin: role === 'admin',
+      isAgent: role === 'agent',
+      isViewer: role === 'viewer',
       canManageMembers: role ? canManageMembersFor(role) : false,
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
       isPlatformAdmin: profile?.is_platform_admin === true,
     };
-  }, [profile?.account_role, profile?.account_id]);
+  }, [profile?.account_role, profile?.account_id, profile?.is_platform_admin]);
 
   // Signed out is not a broken account — the shell redirects to /login
   // before anything reads this.
   const accountStatus: AccountStatus = !user
-    ? "loading"
+    ? 'loading'
     : profileLoading
-      ? "loading"
+      ? 'loading'
       : !profile
-        ? "error"
+        ? 'error'
         : derived.accountId && derived.accountRole
           ? account?.suspended_at
-            ? "suspended"
-            : "ready"
-          : "unlinked";
+            ? 'suspended'
+            : 'ready'
+          : 'unlinked';
 
   return (
     <AuthContext.Provider
@@ -512,14 +520,14 @@ export function useAuth(): AuthContextValue {
       loading: false,
       profileLoading: false,
       signOut: async () => {
-        window.location.href = "/login";
+        window.location.href = '/login';
       },
       refreshProfile: async () => {},
       account: null,
       defaultCurrency: DEFAULT_CURRENCY,
       // Outside the provider there is nothing to resolve yet — 'loading'
       // keeps the access alert from firing on, say, the login page.
-      accountStatus: "loading",
+      accountStatus: 'loading',
       accountStatusDetail: null,
       accountId: null,
       accountRole: null,

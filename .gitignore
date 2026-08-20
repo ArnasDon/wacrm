@@ -30,6 +30,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Supabase CLI local state
+/supabase/.temp/
+
 # env files (can opt-in for committing if needed)
 .env*
 # keep example files so forkers have a template to copy

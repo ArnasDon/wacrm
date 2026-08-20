@@ -1,25 +1,27 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Coins, Loader2, Clock, Building2 } from "lucide-react";
+import { readResponseJson } from '@/lib/http/response-json';
 
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
-import { COMMON_TIMEZONES } from "@/lib/timezone";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Coins, Loader2, Clock, Building2 } from 'lucide-react';
+
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { CURRENCIES } from '@/lib/currency';
+import { COMMON_TIMEZONES } from '@/lib/timezone';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from "@/components/ui/card";
-import { useTranslations } from "next-intl";
-import { SettingsPanelHead } from "./settings-panel-head";
+} from '@/components/ui/card';
+import { useTranslations } from 'next-intl';
+import { SettingsPanelHead } from './settings-panel-head';
 
 /**
  * Deals settings — account-wide default currency.
@@ -43,40 +45,42 @@ export function DealsSettings() {
 
   const [selected, setSelected] = useState(defaultCurrency);
   const [saving, setSaving] = useState(false);
-  const t = useTranslations("Settings.deals");
+  const t = useTranslations('Settings.deals');
 
   // Company name — goes through PATCH /api/account (not a direct
   // Supabase update like currency/timezone below) because it's free
   // text: that route already validates length/emptiness and rate-limits
   // renames, and duplicating that here would just be a second place for
   // those rules to drift out of sync.
-  const [companyName, setCompanyName] = useState(account?.name ?? "");
+  const [companyName, setCompanyName] = useState(account?.name ?? '');
   const [companyNameSaving, setCompanyNameSaving] = useState(false);
 
   useEffect(() => {
-    setCompanyName(account?.name ?? "");
+    setCompanyName(account?.name ?? '');
   }, [account?.name]);
 
-  const companyNameDirty = companyName.trim() !== (account?.name ?? "") && companyName.trim().length > 0;
+  const companyNameDirty =
+    companyName.trim() !== (account?.name ?? '') &&
+    companyName.trim().length > 0;
 
   async function handleSaveCompanyName() {
     if (!companyNameDirty) return;
     setCompanyNameSaving(true);
     try {
-      const res = await fetch("/api/account", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/account', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: companyName.trim() }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data?.error || t("companyNameSaveFailed"));
+        toast.error(data?.error || t('companyNameSaveFailed'));
         return;
       }
       await refreshProfile();
-      toast.success(t("companyNameSaveSuccess"));
+      toast.success(t('companyNameSaveSuccess'));
     } catch {
-      toast.error(t("companyNameSaveFailed"));
+      toast.error(t('companyNameSaveFailed'));
     } finally {
       setCompanyNameSaving(false);
     }
@@ -94,11 +98,11 @@ export function DealsSettings() {
     if (!accountId || !dirty) return;
     setSaving(true);
     const { error } = await supabase
-      .from("accounts")
+      .from('accounts')
       .update({ default_currency: selected })
-      .eq("id", accountId);
+      .eq('id', accountId);
     if (error) {
-      toast.error(t("saveFailed"));
+      toast.error(t('saveFailed'));
       setSaving(false);
       return;
     }
@@ -106,7 +110,7 @@ export function DealsSettings() {
     // and every total pick it up without a full reload.
     await refreshProfile();
     setSaving(false);
-    toast.success(t("saveSuccess"));
+    toast.success(t('saveSuccess'));
   }
 
   // Timezone isn't threaded through the global auth context (unlike
@@ -125,12 +129,12 @@ export function DealsSettings() {
     (async () => {
       try {
         const { data } = await supabase
-          .from("accounts")
-          .select("timezone")
-          .eq("id", accountId)
+          .from('accounts')
+          .select('timezone')
+          .eq('id', accountId)
           .maybeSingle();
         if (cancelled) return;
-        setTimezone(data?.timezone ?? "America/Guatemala");
+        setTimezone(data?.timezone ?? 'America/Guatemala');
       } finally {
         if (!cancelled) setTimezoneLoading(false);
       }
@@ -144,36 +148,35 @@ export function DealsSettings() {
     if (!accountId || !timezone) return;
     setTimezoneSaving(true);
     const { error } = await supabase
-      .from("accounts")
+      .from('accounts')
       .update({ timezone })
-      .eq("id", accountId);
+      .eq('id', accountId);
     setTimezoneSaving(false);
     if (error) {
-      toast.error(t("saveFailed"));
+      toast.error(t('saveFailed'));
       return;
     }
-    toast.success(t("saveSuccess"));
+    toast.success(t('saveSuccess'));
   }
 
   return (
-    <section className="max-w-2xl animate-in fade-in-50 duration-200">
-      <SettingsPanelHead
-        title={t("title")}
-        description={t("description")}
-      />
+    <section className="animate-in fade-in-50 max-w-2xl duration-200">
+      <SettingsPanelHead title={t('title')} description={t('description')} />
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <Building2 className="size-4 text-primary" />
-            {t("companyNameTitle")}
+          <CardTitle className="text-foreground flex items-center gap-2">
+            <Building2 className="text-primary size-4" />
+            {t('companyNameTitle')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            {t("companyNameDesc")}
+            {t('companyNameDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:max-w-xs">
-            <Label className="text-muted-foreground">{t("companyNameLabel")}</Label>
+            <Label className="text-muted-foreground">
+              {t('companyNameLabel')}
+            </Label>
             <Input
               value={companyName}
               onChange={(e) => setCompanyName(e.target.value)}
@@ -182,7 +185,9 @@ export function DealsSettings() {
               className="bg-muted border-border text-foreground"
             />
             {!canEditSettings && (
-              <p className="text-xs text-muted-foreground">{t("adminOnlyHint")}</p>
+              <p className="text-muted-foreground text-xs">
+                {t('adminOnlyHint')}
+              </p>
             )}
           </div>
 
@@ -195,10 +200,10 @@ export function DealsSettings() {
               {companyNameSaving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t("saving")}
+                  {t('saving')}
                 </>
               ) : (
-                t("save")
+                t('save')
               )}
             </Button>
           )}
@@ -207,22 +212,24 @@ export function DealsSettings() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <Coins className="size-4 text-primary" />
-            {t("defaultCurrency")}
+          <CardTitle className="text-foreground flex items-center gap-2">
+            <Coins className="text-primary size-4" />
+            {t('defaultCurrency')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            {t("defaultCurrencyDesc")}
+            {t('defaultCurrencyDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:max-w-xs">
-            <Label className="text-muted-foreground">{t("currencyLabel")}</Label>
+            <Label className="text-muted-foreground">
+              {t('currencyLabel')}
+            </Label>
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
               disabled={!canEditSettings || profileLoading}
-              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="border-border bg-muted text-foreground focus:border-primary focus:ring-primary h-9 w-full rounded-lg border px-2.5 text-sm outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {CURRENCIES.map((c) => (
                 <option key={c.code} value={c.code}>
@@ -231,8 +238,8 @@ export function DealsSettings() {
               ))}
             </select>
             {!canEditSettings && (
-              <p className="text-xs text-muted-foreground">
-                {t("adminOnlyHint")}
+              <p className="text-muted-foreground text-xs">
+                {t('adminOnlyHint')}
               </p>
             )}
           </div>
@@ -246,10 +253,10 @@ export function DealsSettings() {
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t("saving")}
+                  {t('saving')}
                 </>
               ) : (
-                t("save")
+                t('save')
               )}
             </Button>
           )}
@@ -258,22 +265,24 @@ export function DealsSettings() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <Clock className="size-4 text-primary" />
-            {t("timezoneTitle")}
+          <CardTitle className="text-foreground flex items-center gap-2">
+            <Clock className="text-primary size-4" />
+            {t('timezoneTitle')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            {t("timezoneDesc")}
+            {t('timezoneDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:max-w-xs">
-            <Label className="text-muted-foreground">{t("timezoneLabel")}</Label>
+            <Label className="text-muted-foreground">
+              {t('timezoneLabel')}
+            </Label>
             <select
-              value={timezone ?? ""}
+              value={timezone ?? ''}
               onChange={(e) => setTimezone(e.target.value)}
               disabled={!canEditSettings || timezoneLoading}
-              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="border-border bg-muted text-foreground focus:border-primary focus:ring-primary h-9 w-full rounded-lg border px-2.5 text-sm outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {COMMON_TIMEZONES.map((tz) => (
                 <option key={tz.value} value={tz.value}>
@@ -282,8 +291,8 @@ export function DealsSettings() {
               ))}
             </select>
             {!canEditSettings && (
-              <p className="text-xs text-muted-foreground">
-                {t("adminOnlyHint")}
+              <p className="text-muted-foreground text-xs">
+                {t('adminOnlyHint')}
               </p>
             )}
           </div>
@@ -297,10 +306,10 @@ export function DealsSettings() {
               {timezoneSaving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t("saving")}
+                  {t('saving')}
                 </>
               ) : (
-                t("save")
+                t('save')
               )}
             </Button>
           )}

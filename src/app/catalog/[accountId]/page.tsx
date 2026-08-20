@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // /catalog/[accountId] — public, dynamic product catalog.
 //
@@ -26,7 +28,17 @@
 import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
-import { Loader2, Minus, Plus, PackageX, MessageCircle, ShoppingCart } from 'lucide-react';
+import {
+  Loader2,
+  Minus,
+  Plus,
+  PackageX,
+  MessageCircle,
+  ShoppingCart,
+  Search,
+  ArrowRight,
+  Leaf,
+} from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -84,7 +96,10 @@ function PublicCatalogPageInner() {
   const [data, setData] = useState<CatalogData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
-  const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(null);
+  const [selectedProduct, setSelectedProduct] = useState<CatalogProduct | null>(
+    null
+  );
+  const [search, setSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -93,23 +108,27 @@ function PublicCatalogPageInner() {
   const [email, setEmail] = useState('');
   const [address, setAddress] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<{ delivered: boolean; whatsappUrl: string | null } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{
+    delivered: boolean;
+    whatsappUrl: string | null;
+  } | null>(null);
 
   useEffect(() => {
     if (!accountId) return;
     let cancelled = false;
     (async () => {
       try {
-        const res = await fetch(`/api/public/catalog/${encodeURIComponent(accountId)}`, {
-          cache: 'no-store',
-        });
+        const res = await fetch(
+          `/api/public/catalog/${encodeURIComponent(accountId)}`,
+          {
+            cache: 'no-store',
+          }
+        );
         if (!res.ok) {
           if (!cancelled) setLoadError(true);
           return;
         }
-        const body = (await res.json()) as CatalogData;
+        const body = await readResponseJson<CatalogData>(res);
         if (!cancelled) setData(body);
       } catch (err) {
         console.error('[catalog] load error:', err);
@@ -141,15 +160,28 @@ function PublicCatalogPageInner() {
           const product = data?.products.find((p) => p.id === productId);
           return product ? { product, quantity: qty } : null;
         })
-        .filter((x): x is { product: CatalogProduct; quantity: number } => x !== null),
-    [quantities, data],
+        .filter(
+          (x): x is { product: CatalogProduct; quantity: number } => x !== null
+        ),
+    [quantities, data]
   );
 
   const total = useMemo(
-    () => selectedItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
-    [selectedItems],
+    () =>
+      selectedItems.reduce((sum, i) => sum + i.product.price * i.quantity, 0),
+    [selectedItems]
   );
   const totalCount = selectedItems.reduce((sum, i) => sum + i.quantity, 0);
+  const featuredProduct = data?.products.find((product) => product.image_url);
+  const visibleProducts = useMemo(() => {
+    const query = search.trim().toLocaleLowerCase('es');
+    if (!query) return data?.products ?? [];
+    return (data?.products ?? []).filter((product) =>
+      `${product.name} ${product.description ?? ''}`
+        .toLocaleLowerCase('es')
+        .includes(query)
+    );
+  }, [data, search]);
 
   async function handleSubmit() {
     if (!accountId) return;
@@ -159,30 +191,45 @@ function PublicCatalogPageInner() {
     }
     setSubmitting(true);
     try {
-      const res = await fetch(`/api/public/catalog/${encodeURIComponent(accountId)}/quote-request`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          phone: phone.trim(),
-          nit: nit.trim() || undefined,
-          email: email.trim() || undefined,
-          address: address.trim() || undefined,
-          items: selectedItems.map((i) => ({ product_id: i.product.id, quantity: i.quantity })),
-          conversation_id: conversationId || undefined,
-        }),
-      });
-      const payload = (await res.json().catch(() => ({}))) as {
+      const res = await fetch(
+        `/api/public/catalog/${encodeURIComponent(accountId)}/quote-request`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: name.trim(),
+            phone: phone.trim(),
+            nit: nit.trim() || undefined,
+            email: email.trim() || undefined,
+            address: address.trim() || undefined,
+            items: selectedItems.map((i) => ({
+              product_id: i.product.id,
+              quantity: i.quantity,
+            })),
+            conversation_id: conversationId || undefined,
+          }),
+        }
+      );
+      const payload = await readResponseJson<{
         error?: string;
         delivered?: boolean;
         whatsapp_url?: string | null;
-      };
+      }>(res).catch(
+        (): {
+          error?: string;
+          delivered?: boolean;
+          whatsapp_url?: string | null;
+        } => ({})
+      );
       if (!res.ok) {
         toast.error(payload.error || 'No se pudo enviar la solicitud');
         setSubmitting(false);
         return;
       }
-      setResult({ delivered: !!payload.delivered, whatsappUrl: payload.whatsapp_url ?? null });
+      setResult({
+        delivered: !!payload.delivered,
+        whatsappUrl: payload.whatsapp_url ?? null,
+      });
     } catch (err) {
       console.error('[catalog] quote-request error:', err);
       toast.error('No se pudo conectar con el servidor');
@@ -209,9 +256,12 @@ function PublicCatalogPageInner() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 px-4 text-center">
         <PackageX className="size-10 text-gray-400" />
-        <p className="text-lg font-medium text-gray-900">Catálogo no disponible</p>
+        <p className="text-lg font-medium text-gray-900">
+          Catálogo no disponible
+        </p>
         <p className="max-w-sm text-sm text-gray-500">
-          Este enlace no es válido o la empresa aún no tiene un catálogo público.
+          Este enlace no es válido o la empresa aún no tiene un catálogo
+          público.
         </p>
       </div>
     );
@@ -226,29 +276,156 @@ function PublicCatalogPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="border-b border-gray-200 bg-white">
-        <div className="mx-auto max-w-6xl px-4 py-6 text-center">
-          <h1 className="text-2xl font-semibold text-gray-900">{data.account_name}</h1>
-          <p className="mt-1 text-sm text-gray-500">Catálogo de productos</p>
+    <div className="min-h-screen bg-[#f7f6f1] text-[#082f38]">
+      <div className="bg-[#062f38] px-4 py-2.5 text-center text-[10px] font-semibold tracking-[0.2em] text-white uppercase sm:text-xs">
+        Descubre nuestra selección · Solicita tu cotización en minutos
+      </div>
+
+      <header className="sticky top-0 z-20 border-b border-[#082f38]/10 bg-[#fffefa]/95 backdrop-blur-md">
+        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-4 sm:px-8">
+          <label className="relative hidden max-w-64 sm:block">
+            <span className="sr-only">Buscar productos</span>
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#082f38]/65" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar"
+              className="h-10 w-full rounded-full bg-[#eef0ed] pr-4 pl-10 text-sm text-[#082f38] ring-[#1e7774] transition outline-none focus:ring-2"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+            className="col-start-2 text-center"
+          >
+            <span className="block font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+              {data.account_name}
+            </span>
+            <span className="mt-0.5 block text-[9px] font-bold tracking-[0.28em] uppercase opacity-60">
+              Catálogo
+            </span>
+          </button>
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={() => totalCount > 0 && setDialogOpen(true)}
+              className="relative flex size-10 items-center justify-center rounded-full transition hover:bg-[#eef0ed]"
+              aria-label="Ver selección"
+            >
+              <ShoppingCart className="size-5" />
+              {totalCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex size-5 items-center justify-center rounded-full bg-[#d48b55] text-[10px] font-bold text-white">
+                  {totalCount}
+                </span>
+              )}
+            </button>
+          </div>
+        </div>
+        <nav className="mx-auto flex max-w-7xl items-center justify-center gap-8 overflow-x-auto px-4 pb-3 text-[11px] font-bold tracking-[0.16em] whitespace-nowrap uppercase sm:pb-4">
+          <a href="#productos" className="transition hover:text-[#1e7774]">
+            Productos
+          </a>
+          <a href="#seleccion" className="transition hover:text-[#1e7774]">
+            Tu selección
+          </a>
+          {data.whatsapp_number && (
+            <a
+              href={`https://wa.me/${data.whatsapp_number.replace(/\D/g, '')}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="transition hover:text-[#1e7774]"
+            >
+              Contacto
+            </a>
+          )}
+        </nav>
+        <div className="border-t border-[#082f38]/8 px-4 py-3 sm:hidden">
+          <label className="relative mx-auto block max-w-lg">
+            <span className="sr-only">Buscar productos</span>
+            <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#082f38]/65" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Buscar productos"
+              className="h-10 w-full rounded-full bg-[#eef0ed] pr-4 pl-10 text-sm ring-[#1e7774] outline-none focus:ring-2"
+            />
+          </label>
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 pb-32 pt-6">
+      {featuredProduct && (
+        <section className="relative isolate min-h-[520px] overflow-hidden bg-[#d8ddd8] sm:min-h-[640px]">
+          {/* eslint-disable-next-line @next/next/no-img-element -- product URLs come from account-configured Supabase storage. */}
+          <img
+            src={featuredProduct.image_url!}
+            alt={featuredProduct.name}
+            className="absolute inset-0 h-full w-full object-cover"
+          />
+          <div className="absolute inset-0 bg-linear-to-r from-black/35 via-black/5 to-transparent" />
+          <div className="relative mx-auto flex min-h-[520px] max-w-7xl items-end px-4 py-8 sm:min-h-[640px] sm:items-center sm:justify-end sm:px-8">
+            <div className="w-full max-w-lg bg-[#fffefa]/95 p-7 shadow-2xl backdrop-blur-sm sm:p-12">
+              <p className="mb-4 flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] text-[#1e7774] uppercase">
+                <Leaf className="size-4" /> Selección destacada
+              </p>
+              <h2 className="font-serif text-4xl leading-[0.98] font-medium tracking-tight text-[#062f38] sm:text-6xl">
+                {featuredProduct.name}
+              </h2>
+              {featuredProduct.description && (
+                <p className="mt-5 line-clamp-3 text-sm leading-6 text-[#284d53]/80 sm:text-base">
+                  {featuredProduct.description}
+                </p>
+              )}
+              <p className="mt-6 font-serif text-3xl text-[#062f38]">
+                {formatCurrency(featuredProduct.price, data.currency)}
+              </p>
+              <button
+                type="button"
+                onClick={() => setSelectedProduct(featuredProduct)}
+                className="mt-6 inline-flex h-12 items-center gap-3 bg-[#062f38] px-7 text-xs font-bold tracking-[0.12em] text-white uppercase transition hover:bg-[#1e7774]"
+              >
+                Ver producto <ArrowRight className="size-4" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <main
+        id="productos"
+        className="mx-auto max-w-7xl px-4 pt-14 pb-36 sm:px-8 sm:pt-20"
+      >
+        <div className="mb-10 text-center sm:mb-14">
+          <p className="text-[11px] font-bold tracking-[0.22em] text-[#1e7774] uppercase">
+            Nuestra colección
+          </p>
+          <h2 className="mt-3 font-serif text-4xl tracking-tight sm:text-5xl">
+            Productos que te encantarán
+          </h2>
+          <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-[#284d53]/65">
+            Elige tus favoritos, ajusta las cantidades y solicita una cotización
+            personalizada.
+          </p>
+        </div>
         {data.products.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <PackageX className="size-10 text-gray-400" />
-            <p className="text-sm text-gray-500">Todavía no hay productos publicados.</p>
+            <p className="text-sm text-gray-500">
+              Todavía no hay productos publicados.
+            </p>
+          </div>
+        ) : visibleProducts.length === 0 ? (
+          <div className="py-16 text-center">
+            <Search className="mx-auto size-8 text-[#082f38]/30" />
+            <p className="mt-3 text-sm text-[#284d53]/65">
+              No encontramos productos para “{search}”.
+            </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4">
-            {data.products.map((product) => {
+          <div className="grid grid-cols-2 gap-x-3 gap-y-10 sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-4 lg:gap-x-8">
+            {visibleProducts.map((product) => {
               const qty = quantities[product.id] ?? 0;
               return (
-                <div
-                  key={product.id}
-                  className="overflow-hidden rounded-xl border border-gray-200 bg-white transition-shadow hover:shadow-md"
-                >
+                <div key={product.id} className="group min-w-0">
                   {/* Opens the detail dialog — the quantity stepper below
                       is a sibling, not nested inside this button, so its
                       own clicks never bubble into "open detail". */}
@@ -257,13 +434,13 @@ function PublicCatalogPageInner() {
                     onClick={() => setSelectedProduct(product)}
                     className="block w-full text-left"
                   >
-                    <div className="relative aspect-square w-full bg-gray-50 p-4">
+                    <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#e9ebe6]">
                       {product.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
                         <img
                           src={product.image_url}
                           alt={product.name}
-                          className="h-full w-full object-contain"
+                          className="h-full w-full object-cover transition duration-500 group-hover:scale-[1.025]"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">
@@ -271,38 +448,42 @@ function PublicCatalogPageInner() {
                         </div>
                       )}
                     </div>
-                    <div className="flex flex-col gap-1.5 border-t border-gray-100 p-4 pb-0">
-                      <h3 className="line-clamp-2 text-sm font-semibold text-gray-900">
+                    <div className="flex flex-col gap-1.5 pt-4">
+                      <h3 className="line-clamp-2 font-serif text-lg leading-tight text-[#062f38] sm:text-xl">
                         {product.name}
                       </h3>
                       {product.description && (
-                        <p className="line-clamp-2 text-xs text-gray-500">{product.description}</p>
+                        <p className="line-clamp-2 text-xs leading-5 text-[#284d53]/60 sm:text-sm">
+                          {product.description}
+                        </p>
                       )}
-                      <p className="mt-0.5 text-base font-bold text-emerald-700">
+                      <p className="mt-1 text-sm font-semibold text-[#062f38] sm:text-base">
                         {formatCurrency(product.price, data.currency)}
                       </p>
                     </div>
                   </button>
-                  <div className="p-4">
-                    <div className="flex items-center justify-between">
+                  <div className="pt-3">
+                    <div className="flex h-10 items-center justify-between border border-[#082f38]/20 bg-[#fffefa]">
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-8 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-                        onClick={() => setQuantity(product.id, Math.max(0, qty - 1))}
+                        className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
+                        onClick={() =>
+                          setQuantity(product.id, Math.max(0, qty - 1))
+                        }
                         disabled={qty === 0}
                       >
                         <Minus className="size-3.5" />
                       </Button>
-                      <span className="w-8 text-center text-sm font-medium text-gray-900">
+                      <span className="w-8 text-center text-sm font-semibold text-[#082f38]">
                         {qty}
                       </span>
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-8 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
+                        className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
                         onClick={() => setQuantity(product.id, qty + 1)}
                       >
                         <Plus className="size-3.5" />
@@ -314,78 +495,135 @@ function PublicCatalogPageInner() {
             })}
           </div>
         )}
-      </div>
+      </main>
 
-      <Dialog open={selectedProduct !== null} onOpenChange={(open) => !open && setSelectedProduct(null)}>
-        <DialogContent className="border-gray-200 bg-white sm:max-w-md">
+      <Dialog
+        open={selectedProduct !== null}
+        onOpenChange={(open) => !open && setSelectedProduct(null)}
+      >
+        <DialogContent className="max-h-[94vh] overflow-y-auto border-0 bg-[#fffefa] p-0 text-[#082f38] sm:max-w-6xl">
           {selectedProduct && (
-            <>
-              <DialogHeader>
-                <DialogTitle className="text-gray-900">{selectedProduct.name}</DialogTitle>
-              </DialogHeader>
-              <div className="relative aspect-square w-full rounded-lg bg-gray-50 p-6">
-                {selectedProduct.image_url ? (
-                  // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
-                  <img
-                    src={selectedProduct.image_url}
-                    alt={selectedProduct.name}
-                    className="h-full w-full object-contain"
-                  />
-                ) : (
-                  <div className="flex h-full items-center justify-center">
-                    <ShoppingCart className="size-12 text-gray-300" />
+            <div className="grid min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
+              <div className="flex min-h-[380px] items-center justify-center bg-[#e8e9e5] p-6 sm:p-10 lg:min-h-[620px]">
+                <div className="relative aspect-square w-full max-w-xl overflow-hidden bg-[#f1f1ee]">
+                  {selectedProduct.image_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
+                    <img
+                      src={selectedProduct.image_url}
+                      alt={selectedProduct.name}
+                      className="h-full w-full object-contain transition duration-500 hover:scale-[1.03]"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center">
+                      <ShoppingCart className="size-14 text-[#082f38]/20" />
+                    </div>
+                  )}
+                  <span className="absolute top-4 left-4 bg-[#1e7774] px-4 py-2 text-[10px] font-bold tracking-[0.16em] text-white uppercase">
+                    Catálogo
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex flex-col p-7 sm:p-10 lg:p-14">
+                <p className="text-[10px] font-bold tracking-[0.2em] text-[#1e7774] uppercase">
+                  {data.account_name} · Colección
+                </p>
+                <DialogHeader className="mt-4 text-left">
+                  <DialogTitle className="font-serif text-4xl leading-none font-medium tracking-tight text-[#062f38] sm:text-5xl">
+                    {selectedProduct.name}
+                  </DialogTitle>
+                  <DialogDescription className="sr-only">
+                    Detalle de {selectedProduct.name}
+                  </DialogDescription>
+                </DialogHeader>
+
+                <p className="mt-6 font-serif text-3xl text-[#062f38]">
+                  {formatCurrency(selectedProduct.price, data.currency)}
+                </p>
+                <div className="my-7 h-px bg-[#082f38]/12" />
+
+                <p className="text-sm leading-7 whitespace-pre-wrap text-[#284d53]/75 sm:text-base">
+                  {selectedProduct.description || 'Sin descripción disponible.'}
+                </p>
+
+                <div className="mt-8">
+                  <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
+                    Cantidad
+                  </p>
+                  <div className="flex h-12 w-36 items-center justify-between border border-[#082f38]/25">
+                    <button
+                      type="button"
+                      className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5] disabled:opacity-30"
+                      onClick={() =>
+                        setQuantity(
+                          selectedProduct.id,
+                          Math.max(0, (quantities[selectedProduct.id] ?? 0) - 1)
+                        )
+                      }
+                      disabled={(quantities[selectedProduct.id] ?? 0) === 0}
+                      aria-label="Reducir cantidad"
+                    >
+                      <Minus className="size-4" />
+                    </button>
+                    <span className="w-10 text-center text-sm font-semibold">
+                      {quantities[selectedProduct.id] ?? 0}
+                    </span>
+                    <button
+                      type="button"
+                      className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5]"
+                      onClick={() =>
+                        setQuantity(
+                          selectedProduct.id,
+                          (quantities[selectedProduct.id] ?? 0) + 1
+                        )
+                      }
+                      aria-label="Aumentar cantidad"
+                    >
+                      <Plus className="size-4" />
+                    </button>
                   </div>
-                )}
-              </div>
-              <p className="text-lg font-bold text-emerald-700">
-                {formatCurrency(selectedProduct.price, data.currency)}
-              </p>
-              <p className="whitespace-pre-wrap text-sm text-gray-600">
-                {selectedProduct.description || 'Sin descripción.'}
-              </p>
-              <div className="flex items-center justify-center gap-4 border-t border-gray-100 pt-4">
-                <Button
+                </div>
+
+                <button
                   type="button"
-                  variant="outline"
-                  size="icon"
-                  className="size-9 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-                  onClick={() =>
-                    setQuantity(selectedProduct.id, Math.max(0, (quantities[selectedProduct.id] ?? 0) - 1))
-                  }
-                  disabled={(quantities[selectedProduct.id] ?? 0) === 0}
+                  onClick={() => {
+                    setQuantity(
+                      selectedProduct.id,
+                      Math.max(1, (quantities[selectedProduct.id] ?? 0) + 1)
+                    );
+                    setSelectedProduct(null);
+                  }}
+                  className="mt-8 flex h-14 w-full items-center justify-center gap-3 bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition hover:bg-[#1e7774]"
                 >
-                  <Minus className="size-4" />
-                </Button>
-                <span className="w-10 text-center text-base font-medium text-gray-900">
-                  {quantities[selectedProduct.id] ?? 0}
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  className="size-9 border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-                  onClick={() => setQuantity(selectedProduct.id, (quantities[selectedProduct.id] ?? 0) + 1)}
-                >
-                  <Plus className="size-4" />
-                </Button>
+                  Agregar a mi selección <ShoppingCart className="size-4" />
+                </button>
+
+                <div className="mt-8 grid grid-cols-2 gap-3 border-t border-[#082f38]/12 pt-6 text-[10px] font-bold tracking-[0.12em] uppercase">
+                  <span>✓ Cotización personalizada</span>
+                  <span>✓ Atención por WhatsApp</span>
+                </div>
+
+                <div className="mt-auto pt-10">
+                  <h3 className="border-b border-[#082f38]/15 pb-3 font-serif text-xl">
+                    Descripción
+                  </h3>
+                  <p className="pt-4 text-sm leading-6 text-[#284d53]/70">
+                    Consulta disponibilidad, acabados y opciones adicionales al
+                    solicitar tu cotización.
+                  </p>
+                </div>
               </div>
-              <DialogFooter className="bg-white">
-                <Button
-                  variant="outline"
-                  onClick={() => setSelectedProduct(null)}
-                  className="border-gray-300 bg-white text-gray-700 hover:bg-gray-100"
-                >
-                  Cerrar
-                </Button>
-              </DialogFooter>
-            </>
+            </div>
           )}
         </DialogContent>
       </Dialog>
 
       {totalCount > 0 && (
-        <div className="fixed inset-x-0 bottom-0 z-10 border-t border-gray-200 bg-white/95 backdrop-blur">
-          <div className="mx-auto flex max-w-6xl items-center justify-between gap-4 px-4 py-3">
+        <div
+          id="seleccion"
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-[#082f38]/15 bg-[#fffefa]/95 shadow-[0_-8px_30px_rgba(8,47,56,0.08)] backdrop-blur"
+        >
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-8">
             <div>
               <p className="text-xs text-gray-500">
                 {totalCount} {totalCount === 1 ? 'producto' : 'productos'}
@@ -396,7 +634,7 @@ function PublicCatalogPageInner() {
             </div>
             <Button
               onClick={() => setDialogOpen(true)}
-              className="bg-emerald-600 text-white hover:bg-emerald-700"
+              className="h-11 rounded-none bg-[#062f38] px-7 text-xs font-bold tracking-[0.1em] text-white uppercase hover:bg-[#1e7774]"
             >
               Me lo llevo
             </Button>
@@ -404,15 +642,21 @@ function PublicCatalogPageInner() {
         </div>
       )}
 
-      <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}>
+      <Dialog
+        open={dialogOpen}
+        onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}
+      >
         <DialogContent className="border-gray-200 bg-white sm:max-w-md">
           {result === null ? (
             <>
               <DialogHeader>
                 <DialogTitle className="text-gray-900">Me lo llevo</DialogTitle>
                 <DialogDescription className="text-gray-500">
-                  {totalCount} {totalCount === 1 ? 'producto seleccionado' : 'productos seleccionados'} —{' '}
-                  {formatCurrency(total, data.currency)}
+                  {totalCount}{' '}
+                  {totalCount === 1
+                    ? 'producto seleccionado'
+                    : 'productos seleccionados'}{' '}
+                  — {formatCurrency(total, data.currency)}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-3 py-2">
@@ -506,7 +750,11 @@ function PublicCatalogPageInner() {
                   Cerrar
                 </Button>
                 {!result.delivered && result.whatsappUrl && (
-                  <a href={result.whatsappUrl} target="_blank" rel="noopener noreferrer">
+                  <a
+                    href={result.whatsappUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <Button className="gap-2 bg-[#25D366] text-white hover:bg-[#1ebe5a]">
                       <MessageCircle className="size-4" />
                       Continuar por WhatsApp

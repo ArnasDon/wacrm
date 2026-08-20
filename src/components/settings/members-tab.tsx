@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // MembersTab — Settings → Members
 //
@@ -115,7 +117,10 @@ function fmtDate(iso: string): string {
   });
 }
 
-function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, string | number>) => string): string {
+function fmtExpiresIn(
+  iso: string,
+  t: (key: string, values?: Record<string, string | number>) => string
+): string {
   const ms = new Date(iso).getTime() - Date.now();
   if (ms <= 0) return t('expired');
   const days = Math.floor(ms / (24 * 60 * 60 * 1000));
@@ -137,7 +142,7 @@ export function MembersTab() {
   const [inviteOpen, setInviteOpen] = useState(false);
   const [removingMember, setRemovingMember] = useState<Member | null>(null);
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
-    null,
+    null
   );
 
   const loadEverything = useCallback(async () => {
@@ -150,20 +155,22 @@ export function MembersTab() {
       ]);
 
       if (!mres.ok) {
-        const payload = await mres.json().catch(() => ({}));
+        const payload = await readResponseJson(mres).catch(() => ({}));
         toast.error(payload.error || 'Failed to load members');
         return;
       }
-      const mdata = (await mres.json()) as { members: Member[] };
+      const mdata = await readResponseJson<{ members: Member[] }>(mres);
       setMembers(mdata.members);
 
       if (ires) {
         if (!ires.ok) {
-          const payload = await ires.json().catch(() => ({}));
+          const payload = await readResponseJson(ires).catch(() => ({}));
           toast.error(payload.error || 'Failed to load invitations');
           return;
         }
-        const idata = (await ires.json()) as { invitations: Invitation[] };
+        const idata = await readResponseJson<{ invitations: Invitation[] }>(
+          ires
+        );
         setInvitations(idata.invitations);
       } else {
         setInvitations([]);
@@ -189,8 +196,8 @@ export function MembersTab() {
     setPendingMemberAction(member.user_id);
     setMembers((prev) =>
       prev.map((m) =>
-        m.user_id === member.user_id ? { ...m, role: nextRole } : m,
-      ),
+        m.user_id === member.user_id ? { ...m, role: nextRole } : m
+      )
     );
     try {
       const res = await fetch(`/api/account/members/${member.user_id}`, {
@@ -206,20 +213,25 @@ export function MembersTab() {
         // `member.role === nextRole` guard at the top).
         setMembers((prev) =>
           prev.map((m) =>
-            m.user_id === member.user_id ? { ...m, role: previousRole } : m,
-          ),
+            m.user_id === member.user_id ? { ...m, role: previousRole } : m
+          )
         );
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || 'Failed to update role');
         return;
       }
-      toast.success(t('updatedToast', { name: member.full_name || t('unnamed'), role: tRoles(nextRole) }));
+      toast.success(
+        t('updatedToast', {
+          name: member.full_name || t('unnamed'),
+          role: tRoles(nextRole),
+        })
+      );
     } catch (err) {
       // Same revert on network failure.
       setMembers((prev) =>
         prev.map((m) =>
-          m.user_id === member.user_id ? { ...m, role: previousRole } : m,
-        ),
+          m.user_id === member.user_id ? { ...m, role: previousRole } : m
+        )
       );
       console.error('[MembersTab] role change error:', err);
       toast.error('Could not reach the server');
@@ -234,16 +246,18 @@ export function MembersTab() {
     try {
       const res = await fetch(
         `/api/account/members/${removingMember.user_id}`,
-        { method: 'DELETE' },
+        { method: 'DELETE' }
       );
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || 'Failed to remove member');
         return;
       }
-      toast.success(t('removedToast', { name: removingMember.full_name || t('unnamed') }));
+      toast.success(
+        t('removedToast', { name: removingMember.full_name || t('unnamed') })
+      );
       setMembers((prev) =>
-        prev.filter((m) => m.user_id !== removingMember.user_id),
+        prev.filter((m) => m.user_id !== removingMember.user_id)
       );
       setRemovingMember(null);
     } catch (err) {
@@ -260,7 +274,7 @@ export function MembersTab() {
         method: 'DELETE',
       });
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || 'Failed to revoke invitation');
         return;
       }
@@ -275,7 +289,7 @@ export function MembersTab() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="text-primary size-6 animate-spin" />
       </div>
     );
   }
@@ -301,7 +315,7 @@ export function MembersTab() {
         (() => {
           const counts = summarize(members.map((m) => getPresence(m.user_id)));
           return (
-            <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <div className="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
               <span className="inline-flex items-center gap-1.5">
                 <PresenceDot status="online" />
                 {counts.online} {t('online')}
@@ -324,7 +338,7 @@ export function MembersTab() {
       {/* Roster */}
       <Card>
         <CardContent className="p-0">
-          <ul className="divide-y divide-border">
+          <ul className="divide-border divide-y">
             {members.map((member) => {
               const roleMeta = ROLE_META[member.role];
               const RoleIcon = roleMeta.icon;
@@ -336,7 +350,7 @@ export function MembersTab() {
               const presenceText = presenceLabel(
                 presence,
                 presenceRow?.last_seen_at ?? null,
-                now,
+                now
               );
 
               return (
@@ -360,7 +374,7 @@ export function MembersTab() {
                                 alt={member.full_name || 'Member'}
                               />
                             ) : null}
-                            <AvatarFallback className="bg-primary/10 text-sm font-medium text-primary">
+                            <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
                               {(member.full_name || member.email || 'U')
                                 .charAt(0)
                                 .toUpperCase()}
@@ -382,17 +396,17 @@ export function MembersTab() {
 
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium text-foreground">
+                        <span className="text-foreground truncate text-sm font-medium">
                           {member.full_name || t('unnamed')}
                         </span>
                         {isSelf && (
-                          <Badge className="bg-muted text-muted-foreground border-border text-[10px] uppercase tracking-wide">
+                          <Badge className="bg-muted text-muted-foreground border-border text-[10px] tracking-wide uppercase">
                             {t('you')}
                           </Badge>
                         )}
                       </div>
                       {member.email && (
-                        <p className="truncate text-xs text-muted-foreground">
+                        <p className="text-muted-foreground truncate text-xs">
                           {member.email}
                         </p>
                       )}
@@ -401,7 +415,7 @@ export function MembersTab() {
 
                   {/* Joined date stays desktop-only. The mobile row's
                       vertical density makes the joined date noise. */}
-                  <div className="hidden sm:block text-right text-xs text-muted-foreground">
+                  <div className="text-muted-foreground hidden text-right text-xs sm:block">
                     {t('joined', { date: fmtDate(member.joined_at) })}
                   </div>
 
@@ -425,7 +439,7 @@ export function MembersTab() {
                         }
                       >
                         <SelectTrigger
-                          className="w-32 bg-muted border-border text-foreground"
+                          className="bg-muted border-border text-foreground w-32"
                           disabled={isBusy}
                         >
                           <SelectValue>{tRoles(member.role)}</SelectValue>
@@ -460,7 +474,7 @@ export function MembersTab() {
                         size="sm"
                         onClick={() => setRemovingMember(member)}
                         disabled={isBusy}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
                       >
                         <Trash2 className="size-4" />
                       </Button>
@@ -477,8 +491,8 @@ export function MembersTab() {
       <RequireRole min="admin">
         <div>
           <div className="mb-2 flex items-center gap-2">
-            <UsersRound className="size-4 text-muted-foreground" />
-            <h3 className="text-sm font-semibold text-foreground">
+            <UsersRound className="text-muted-foreground size-4" />
+            <h3 className="text-foreground text-sm font-semibold">
               {t('pendingInvitations')}
             </h3>
             <Badge className="bg-muted text-muted-foreground border-border">
@@ -491,7 +505,7 @@ export function MembersTab() {
               front (rather than letting the user discover it by
               looking for a button) keeps it from feeling like a bug. */}
           {invitations.length > 0 ? (
-            <p className="mb-3 text-xs text-muted-foreground">
+            <p className="text-muted-foreground mb-3 text-xs">
               {t('inviteHint')}
             </p>
           ) : null}
@@ -499,58 +513,61 @@ export function MembersTab() {
           {invitations.length === 0 ? (
             <Card>
               <CardContent className="flex flex-col items-center justify-center py-8 text-center">
-                <Mail className="size-6 text-muted-foreground" />
-                <p className="mt-2 text-sm text-muted-foreground">
+                <Mail className="text-muted-foreground size-6" />
+                <p className="text-muted-foreground mt-2 text-sm">
                   {t('noPendingTitle')}
                 </p>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t.rich('noPendingDesc', { bold: (chunks) => <strong>{chunks}</strong> })}
+                <p className="text-muted-foreground mt-1 text-xs">
+                  {t.rich('noPendingDesc', {
+                    bold: (chunks) => <strong>{chunks}</strong>,
+                  })}
                 </p>
               </CardContent>
             </Card>
           ) : (
             <Card>
               <CardContent className="p-0">
-                <ul className="divide-y divide-border">
+                <ul className="divide-border divide-y">
                   {invitations.map((inv) => {
                     const inviteRoleMeta = ROLE_META[inv.role];
                     const InviteRoleIcon = inviteRoleMeta.icon;
                     return (
-                    <li
-                      key={inv.id}
-                      className="flex items-center gap-4 px-4 py-3"
-                    >
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {inv.label || t('untitledInvite')}
-                          </span>
-                          <span
-                            className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
-                          >
-                            <InviteRoleIcon className="size-3" />
-                            {tRoles(inv.role)}
-                          </span>
+                      <li
+                        key={inv.id}
+                        className="flex items-center gap-4 px-4 py-3"
+                      >
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-foreground text-sm font-medium">
+                              {inv.label || t('untitledInvite')}
+                            </span>
+                            <span
+                              className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium ${inviteRoleMeta.className}`}
+                            >
+                              <InviteRoleIcon className="size-3" />
+                              {tRoles(inv.role)}
+                            </span>
+                          </div>
+                          <p className="text-muted-foreground mt-0.5 text-xs">
+                            {t('created', { date: fmtDate(inv.created_at) })} ·{' '}
+                            {fmtExpiresIn(inv.expires_at, t)}
+                          </p>
                         </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {t('created', { date: fmtDate(inv.created_at) })} · {fmtExpiresIn(inv.expires_at, t)}
-                        </p>
-                      </div>
 
-                      {/* Revoke: red default state, mirrors the
+                        {/* Revoke: red default state, mirrors the
                           members-tab Remove button. Pre-polish version
                           read as a neutral secondary button until
                           hover. */}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => handleRevoke(inv)}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
-                      >
-                        <MailX className="size-4" />
-                        {t('revoke')}
-                      </Button>
-                    </li>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleRevoke(inv)}
+                          className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
+                        >
+                          <MailX className="size-4" />
+                          {t('revoke')}
+                        </Button>
+                      </li>
                     );
                   })}
                 </ul>
@@ -574,14 +591,14 @@ export function MembersTab() {
       >
         <DialogContent className="bg-popover border-border sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+            <DialogTitle className="text-popover-foreground flex items-center gap-2">
               <AlertTriangle className="size-4 text-amber-400" />
               {t('removeDialogTitle')}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {t.rich('removeDialogDesc', { 
+              {t.rich('removeDialogDesc', {
                 name: removingMember?.full_name || t('unnamed'),
-                bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
               })}
             </DialogDescription>
           </DialogHeader>
@@ -596,7 +613,7 @@ export function MembersTab() {
             <Button
               onClick={handleRemove}
               disabled={!!pendingMemberAction}
-              className="bg-red-600 hover:bg-red-700 text-white"
+              className="bg-red-600 text-white hover:bg-red-700"
             >
               {pendingMemberAction ? (
                 <>

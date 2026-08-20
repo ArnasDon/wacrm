@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // Settings → Facturación
 //
@@ -17,7 +19,13 @@ import { Banknote, Loader2, Send } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 
 interface PlatformSettings {
   bank_name: string | null;
@@ -45,12 +53,19 @@ export function BillingSettings() {
           .select('bank_name, account_number, account_type, account_holder')
           .eq('id', 1)
           .maybeSingle(),
-        supabase.from('accounts').select('next_payment_due_at').eq('id', accountId).maybeSingle(),
+        supabase
+          .from('accounts')
+          .select('next_payment_due_at')
+          .eq('id', accountId)
+          .maybeSingle(),
       ]);
       if (cancelled) return;
-      if (settingsRes.status === 'fulfilled') setSettings(settingsRes.value.data ?? null);
+      if (settingsRes.status === 'fulfilled')
+        setSettings(settingsRes.value.data ?? null);
       if (accountRes.status === 'fulfilled') {
-        setNextDue((accountRes.value.data?.next_payment_due_at as string | null) ?? null);
+        setNextDue(
+          (accountRes.value.data?.next_payment_due_at as string | null) ?? null
+        );
       }
       setLoading(false);
     })();
@@ -62,13 +77,19 @@ export function BillingSettings() {
   async function handleReport() {
     setReporting(true);
     try {
-      const res = await fetch('/api/billing/report-payment', { method: 'POST' });
-      const payload = (await res.json().catch(() => ({}))) as { error?: string };
+      const res = await fetch('/api/billing/report-payment', {
+        method: 'POST',
+      });
+      const payload = await readResponseJson<{ error?: string }>(res).catch(
+        (): { error?: string } => ({})
+      );
       if (!res.ok) {
         toast.error(payload.error || 'No se pudo enviar el reporte');
         return;
       }
-      toast.success('Pago reportado — te confirmaremos cuando quede registrado');
+      toast.success(
+        'Pago reportado — te confirmaremos cuando quede registrado'
+      );
     } catch (err) {
       console.error('[billing] report-payment error:', err);
       toast.error('No se pudo conectar con el servidor');
@@ -80,7 +101,7 @@ export function BillingSettings() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-12">
-        <Loader2 className="size-6 animate-spin text-primary" />
+        <Loader2 className="text-primary size-6 animate-spin" />
       </div>
     );
   }
@@ -90,7 +111,7 @@ export function BillingSettings() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <Banknote className="size-4 text-primary" />
+            <Banknote className="text-primary size-4" />
             Facturación
           </CardTitle>
           <CardDescription>
@@ -101,13 +122,15 @@ export function BillingSettings() {
         </CardHeader>
         <CardContent className="space-y-4">
           {settings ? (
-            <div className="space-y-1 rounded-lg border border-border bg-muted/50 p-4 text-sm">
+            <div className="border-border bg-muted/50 space-y-1 rounded-lg border p-4 text-sm">
               <p className="text-foreground">
                 <span className="text-muted-foreground">Banco: </span>
                 {settings.bank_name || '—'}
               </p>
               <p className="text-foreground">
-                <span className="text-muted-foreground">Número de cuenta: </span>
+                <span className="text-muted-foreground">
+                  Número de cuenta:{' '}
+                </span>
                 {settings.account_number || '—'}
               </p>
               <p className="text-foreground">
@@ -120,7 +143,7 @@ export function BillingSettings() {
               </p>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground">
+            <p className="text-muted-foreground text-sm">
               Los datos bancarios todavía no están configurados.
             </p>
           )}
@@ -129,7 +152,7 @@ export function BillingSettings() {
             <Button
               onClick={handleReport}
               disabled={reporting}
-              className="gap-2 bg-primary text-primary-foreground hover:bg-primary/90"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 gap-2"
             >
               {reporting ? (
                 <Loader2 className="size-4 animate-spin" />
@@ -139,7 +162,7 @@ export function BillingSettings() {
               Reportar pago
             </Button>
           ) : (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-muted-foreground text-xs">
               Solo un administrador de la cuenta puede reportar un pago.
             </p>
           )}

@@ -1,13 +1,15 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useRef } from "react";
-import { toast } from "sonner";
-import { useTranslations } from "next-intl";
-import type { Product } from "@/types";
+import { readResponseJson } from '@/lib/http/response-json';
+
+import { useState, useEffect, useRef } from 'react';
+import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
+import type { Product } from '@/types';
 import {
   uploadAccountMedia,
   MEDIA_MAX_BYTES_BY_KIND,
-} from "@/lib/storage/upload-media";
+} from '@/lib/storage/upload-media';
 import {
   Dialog,
   DialogContent,
@@ -15,13 +17,13 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Switch } from "@/components/ui/switch";
-import { Loader2, Upload } from "lucide-react";
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Switch } from '@/components/ui/switch';
+import { Loader2, Upload } from 'lucide-react';
 
 interface ProductFormProps {
   open: boolean;
@@ -30,43 +32,48 @@ interface ProductFormProps {
   onSaved: () => void;
 }
 
-export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFormProps) {
-  const t = useTranslations("Products.form");
+export function ProductForm({
+  open,
+  onOpenChange,
+  product,
+  onSaved,
+}: ProductFormProps) {
+  const t = useTranslations('Products.form');
   const isEdit = !!product;
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const [name, setName] = useState("");
-  const [description, setDescription] = useState("");
-  const [price, setPrice] = useState("");
-  const [imageUrl, setImageUrl] = useState("");
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [price, setPrice] = useState('');
+  const [imageUrl, setImageUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
-    setName(product?.name ?? "");
-    setDescription(product?.description ?? "");
-    setPrice(product ? String(product.price) : "");
-    setImageUrl(product?.image_url ?? "");
+    setName(product?.name ?? '');
+    setDescription(product?.description ?? '');
+    setPrice(product ? String(product.price) : '');
+    setImageUrl(product?.image_url ?? '');
     setIsActive(product?.is_active ?? true);
   }, [open, product]);
 
   async function handleImageFile(file: File) {
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      toast.error(t("toastInvalidImage"));
+    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
+      toast.error(t('toastInvalidImage'));
       return;
     }
     if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
-      toast.error(t("toastImageTooLarge"));
+      toast.error(t('toastImageTooLarge'));
       return;
     }
     setUploading(true);
     try {
-      const { publicUrl } = await uploadAccountMedia("product-media", file);
+      const { publicUrl } = await uploadAccountMedia('product-media', file);
       setImageUrl(publicUrl);
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("toastUploadFailed"));
+      toast.error(err instanceof Error ? err.message : t('toastUploadFailed'));
     } finally {
       setUploading(false);
     }
@@ -75,12 +82,12 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
   async function handleSave() {
     const trimmedName = name.trim();
     if (!trimmedName) {
-      toast.error(t("toastNameRequired"));
+      toast.error(t('toastNameRequired'));
       return;
     }
     const priceValue = Number(price);
     if (!Number.isFinite(priceValue) || priceValue < 0) {
-      toast.error(t("toastPriceInvalid"));
+      toast.error(t('toastPriceInvalid'));
       return;
     }
 
@@ -93,17 +100,20 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
         image_url: imageUrl || null,
         is_active: isActive,
       };
-      const res = await fetch(isEdit ? `/api/products/${product.id}` : "/api/products", {
-        method: isEdit ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const data = await res.json().catch(() => ({}));
+      const res = await fetch(
+        isEdit ? `/api/products/${product.id}` : '/api/products',
+        {
+          method: isEdit ? 'PATCH' : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        }
+      );
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error ?? t("toastSaveFailed"));
+        toast.error(data.error ?? t('toastSaveFailed'));
         return;
       }
-      toast.success(isEdit ? t("toastSuccessEdit") : t("toastSuccessAdd"));
+      toast.success(isEdit ? t('toastSuccessEdit') : t('toastSuccessAdd'));
       onOpenChange(false);
       onSaved();
     } finally {
@@ -116,37 +126,39 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
       <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">
-            {isEdit ? t("editTitle") : t("addTitle")}
+            {isEdit ? t('editTitle') : t('addTitle')}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            {isEdit ? t("editDesc") : t("addDesc")}
+            {isEdit ? t('editDesc') : t('addDesc')}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t("nameLabel")}</Label>
+            <Label className="text-muted-foreground">{t('nameLabel')}</Label>
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={t("namePlaceholder")}
+              placeholder={t('namePlaceholder')}
               className="bg-muted border-border text-foreground"
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t("descriptionLabel")}</Label>
+            <Label className="text-muted-foreground">
+              {t('descriptionLabel')}
+            </Label>
             <Textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder={t("descriptionPlaceholder")}
+              placeholder={t('descriptionPlaceholder')}
               className="bg-muted border-border text-foreground"
               rows={3}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t("priceLabel")}</Label>
+            <Label className="text-muted-foreground">{t('priceLabel')}</Label>
             <Input
               type="number"
               min={0}
@@ -159,7 +171,7 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t("imageLabel")}</Label>
+            <Label className="text-muted-foreground">{t('imageLabel')}</Label>
             <input
               ref={fileInputRef}
               type="file"
@@ -168,7 +180,7 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
               onChange={(e) => {
                 const f = e.target.files?.[0];
                 if (f) void handleImageFile(f);
-                e.target.value = "";
+                e.target.value = '';
               }}
             />
             <div className="flex items-center gap-2">
@@ -185,26 +197,30 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
                 ) : (
                   <Upload className="h-3.5 w-3.5" />
                 )}
-                {t("uploadImageBtn")}
+                {t('uploadImageBtn')}
               </Button>
               {imageUrl && (
-                <span className="text-xs text-muted-foreground truncate">{t("imageUploaded")}</span>
+                <span className="text-muted-foreground truncate text-xs">
+                  {t('imageUploaded')}
+                </span>
               )}
             </div>
             {imageUrl && (
               // eslint-disable-next-line @next/next/no-img-element
               <img
                 src={imageUrl}
-                alt={t("imagePreviewAlt")}
-                className="mt-2 h-20 w-20 rounded-md border border-border object-cover"
+                alt={t('imagePreviewAlt')}
+                className="border-border mt-2 h-20 w-20 rounded-md border object-cover"
               />
             )}
           </div>
 
-          <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+          <div className="border-border flex items-center justify-between gap-4 rounded-md border p-3">
             <div>
-              <p className="text-sm font-medium text-foreground">{t("activeLabel")}</p>
-              <p className="text-xs text-muted-foreground">{t("activeDesc")}</p>
+              <p className="text-foreground text-sm font-medium">
+                {t('activeLabel')}
+              </p>
+              <p className="text-muted-foreground text-xs">{t('activeDesc')}</p>
             </div>
             <Switch checked={isActive} onCheckedChange={setIsActive} />
           </div>
@@ -216,7 +232,7 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
             onClick={() => onOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            {t("cancel")}
+            {t('cancel')}
           </Button>
           <Button
             onClick={handleSave}
@@ -224,7 +240,7 @@ export function ProductForm({ open, onOpenChange, product, onSaved }: ProductFor
             className="bg-primary hover:bg-primary/90 text-primary-foreground"
           >
             {saving && <Loader2 className="size-4 animate-spin" />}
-            {isEdit ? t("update") : t("create")}
+            {isEdit ? t('update') : t('create')}
           </Button>
         </DialogFooter>
       </DialogContent>

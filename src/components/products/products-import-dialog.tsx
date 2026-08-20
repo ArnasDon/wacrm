@@ -1,13 +1,19 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { toast } from "sonner";
-import { useTranslations } from "next-intl";
-import { Loader2, Upload, AlertTriangle } from "lucide-react";
+import { readResponseJson } from '@/lib/http/response-json';
 
-import { formatCurrency } from "@/lib/currency";
-import { useAuth } from "@/hooks/use-auth";
-import { parseProductsWorkbook, type ParsedProductRow, type ProductRowError } from "@/lib/products/parse-products-excel";
+import { useState } from 'react';
+import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
+import { Loader2, Upload, AlertTriangle } from 'lucide-react';
+
+import { formatCurrency } from '@/lib/currency';
+import { useAuth } from '@/hooks/use-auth';
+import {
+  parseProductsWorkbook,
+  type ParsedProductRow,
+  type ProductRowError,
+} from '@/lib/products/parse-products-excel';
 import {
   Dialog,
   DialogContent,
@@ -15,8 +21,8 @@ import {
   DialogTitle,
   DialogDescription,
   DialogFooter,
-} from "@/components/ui/dialog";
-import { Button } from "@/components/ui/button";
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
 
 interface ProductsImportDialogProps {
   open: boolean;
@@ -24,8 +30,12 @@ interface ProductsImportDialogProps {
   onImported: () => void;
 }
 
-export function ProductsImportDialog({ open, onOpenChange, onImported }: ProductsImportDialogProps) {
-  const t = useTranslations("Products.import");
+export function ProductsImportDialog({
+  open,
+  onOpenChange,
+  onImported,
+}: ProductsImportDialogProps) {
+  const t = useTranslations('Products.import');
   const { defaultCurrency } = useAuth();
 
   const [rows, setRows] = useState<ParsedProductRow[]>([]);
@@ -45,13 +55,13 @@ export function ProductsImportDialog({ open, onOpenChange, onImported }: Product
       const buffer = await file.arrayBuffer();
       const result = await parseProductsWorkbook(buffer);
       if (result.rows.length === 0 && result.errors.length === 0) {
-        toast.error(t("noValidRows"));
+        toast.error(t('noValidRows'));
         return;
       }
       setRows(result.rows);
       setErrors(result.errors);
     } catch {
-      toast.error(t("parseFailed"));
+      toast.error(t('parseFailed'));
     } finally {
       setParsing(false);
     }
@@ -61,22 +71,22 @@ export function ProductsImportDialog({ open, onOpenChange, onImported }: Product
     if (rows.length === 0) return;
     setImporting(true);
     try {
-      const res = await fetch("/api/products/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/products/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ rows }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data?.error ?? t("importFailed"));
+        toast.error(data?.error ?? t('importFailed'));
         return;
       }
-      toast.success(t("importSuccess", { count: data.created ?? rows.length }));
+      toast.success(t('importSuccess', { count: data.created ?? rows.length }));
       reset();
       onOpenChange(false);
       onImported();
     } catch {
-      toast.error(t("importFailed"));
+      toast.error(t('importFailed'));
     } finally {
       setImporting(false);
     }
@@ -92,8 +102,12 @@ export function ProductsImportDialog({ open, onOpenChange, onImported }: Product
     >
       <DialogContent className="border-border bg-popover sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">{t("title")}</DialogTitle>
-          <DialogDescription className="text-muted-foreground">{t("description")}</DialogDescription>
+          <DialogTitle className="text-popover-foreground">
+            {t('title')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            {t('description')}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
@@ -106,41 +120,58 @@ export function ProductsImportDialog({ open, onOpenChange, onImported }: Product
               onChange={(e) => {
                 const file = e.target.files?.[0];
                 if (file) void handleFile(file);
-                e.target.value = "";
+                e.target.value = '';
               }}
             />
             <Button
               type="button"
               variant="outline"
               disabled={parsing || importing}
-              onClick={(e) => (e.currentTarget.previousElementSibling as HTMLInputElement)?.click()}
+              onClick={(e) =>
+                (
+                  e.currentTarget.previousElementSibling as HTMLInputElement
+                )?.click()
+              }
             >
-              {parsing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-              {t("chooseFile")}
+              {parsing ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Upload className="size-4" />
+              )}
+              {t('chooseFile')}
             </Button>
           </label>
 
           {(rows.length > 0 || errors.length > 0) && (
             <div className="space-y-2">
-              <p className="text-sm font-medium text-popover-foreground">{t("previewTitle")}</p>
+              <p className="text-popover-foreground text-sm font-medium">
+                {t('previewTitle')}
+              </p>
               <div className="flex flex-wrap gap-3 text-xs">
-                <span className="text-emerald-500">{t("validRows", { count: rows.length })}</span>
+                <span className="text-emerald-500">
+                  {t('validRows', { count: rows.length })}
+                </span>
                 {errors.length > 0 && (
                   <span className="flex items-center gap-1 text-amber-500">
                     <AlertTriangle className="size-3.5" />
-                    {t("errorRows", { count: errors.length })}
+                    {t('errorRows', { count: errors.length })}
                   </span>
                 )}
               </div>
 
               {rows.length > 0 && (
-                <div className="max-h-52 overflow-y-auto rounded-md border border-border">
+                <div className="border-border max-h-52 overflow-y-auto rounded-md border">
                   <table className="w-full text-xs">
                     <tbody>
                       {rows.map((row, i) => (
-                        <tr key={i} className="border-b border-border last:border-0">
-                          <td className="px-2 py-1.5 text-popover-foreground">{row.name}</td>
-                          <td className="px-2 py-1.5 text-right text-muted-foreground">
+                        <tr
+                          key={i}
+                          className="border-border border-b last:border-0"
+                        >
+                          <td className="text-popover-foreground px-2 py-1.5">
+                            {row.name}
+                          </td>
+                          <td className="text-muted-foreground px-2 py-1.5 text-right">
                             {formatCurrency(row.price, defaultCurrency)}
                           </td>
                         </tr>
@@ -169,16 +200,19 @@ export function ProductsImportDialog({ open, onOpenChange, onImported }: Product
             onClick={() => onOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            {t("cancel")}
+            {t('cancel')}
           </Button>
-          <Button onClick={handleConfirm} disabled={rows.length === 0 || importing}>
+          <Button
+            onClick={handleConfirm}
+            disabled={rows.length === 0 || importing}
+          >
             {importing ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                {t("importing")}
+                {t('importing')}
               </>
             ) : (
-              t("confirmBtn", { count: rows.length })
+              t('confirmBtn', { count: rows.length })
             )}
           </Button>
         </DialogFooter>

@@ -24,9 +24,16 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
+import { readResponseJson } from '@/lib/http/response-json';
 import {
   Accordion,
   AccordionItem,
@@ -38,7 +45,22 @@ const MASKED_TOKEN = '••••••••••••••••';
 
 type Provider = 'meta' | 'zernio';
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
-type ResetReason = 'token_corrupted' | 'meta_api_error' | 'zernio_api_error' | null;
+type ResetReason =
+  'token_corrupted' | 'meta_api_error' | 'zernio_api_error' | null;
+
+interface WhatsAppApiPayload {
+  error?: string;
+  connected?: boolean;
+  needs_reset?: boolean;
+  reason?: string;
+  message?: string;
+  registered?: boolean;
+  registration_error?: string;
+  registration_skipped?: boolean;
+  phone_info?: { verified_name?: string };
+  id?: string;
+  webhook_secret?: string;
+}
 
 interface ConfigSummary {
   id: string;
@@ -76,7 +98,7 @@ export function WhatsAppConfig() {
     setLoadingList(true);
     try {
       const res = await fetch('/api/whatsapp/config');
-      const data = await res.json();
+      const data = await readResponseJson<{ configs?: ConfigSummary[] }>(res);
       setConfigs(Array.isArray(data?.configs) ? data.configs : []);
     } catch (err) {
       console.error('Failed to load WhatsApp connections:', err);
@@ -97,7 +119,7 @@ export function WhatsAppConfig() {
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     fetchConfigs();
-  }, [authLoading, profileLoading, user?.id, accountId, fetchConfigs]);
+  }, [authLoading, profileLoading, user, accountId, fetchConfigs]);
 
   async function handleSetDefault(id: string) {
     try {
@@ -107,7 +129,9 @@ export function WhatsAppConfig() {
         body: JSON.stringify({ is_default: true }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson<{ error?: string }>(res).catch(
+          (): { error?: string } => ({})
+        );
         toast.error(data.error || t('setDefaultFailed'));
         return;
       }
@@ -122,9 +146,13 @@ export function WhatsAppConfig() {
   async function handleDelete(id: string) {
     if (!confirm(t('deleteConfirm'))) return;
     try {
-      const res = await fetch(`/api/whatsapp/config/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/whatsapp/config/${id}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson<{ error?: string }>(res).catch(
+          (): { error?: string } => ({})
+        );
         toast.error(data.error || t('deleteFailed'));
         return;
       }
@@ -137,7 +165,10 @@ export function WhatsAppConfig() {
   }
 
   if (view !== 'list') {
-    const editing = view !== 'new' ? (configs ?? []).find((c) => c.id === view) ?? null : null;
+    const editing =
+      view !== 'new'
+        ? ((configs ?? []).find((c) => c.id === view) ?? null)
+        : null;
     return (
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead title={t('title')} description={t('description')} />
@@ -145,7 +176,7 @@ export function WhatsAppConfig() {
           variant="outline"
           size="sm"
           onClick={() => setView('list')}
-          className="mb-4 border-border text-muted-foreground hover:bg-muted"
+          className="border-border text-muted-foreground hover:bg-muted mb-4"
         >
           <ArrowLeft className="size-4" />
           {t('backToList')}
@@ -171,8 +202,10 @@ export function WhatsAppConfig() {
     <section className="animate-in fade-in-50 duration-200">
       <SettingsPanelHead title={t('title')} description={t('description')} />
 
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-medium text-foreground">{t('listTitle')}</h3>
+      <div className="mb-4 flex items-center justify-between">
+        <h3 className="text-foreground text-sm font-medium">
+          {t('listTitle')}
+        </h3>
         <Button
           size="sm"
           onClick={() => setView('new')}
@@ -185,11 +218,11 @@ export function WhatsAppConfig() {
 
       {loadingList ? (
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="text-primary size-6 animate-spin" />
         </div>
       ) : !configs || configs.length === 0 ? (
         <Card>
-          <CardContent className="py-8 text-center text-sm text-muted-foreground">
+          <CardContent className="text-muted-foreground py-8 text-center text-sm">
             {t('noConnections')}
           </CardContent>
         </Card>
@@ -198,31 +231,36 @@ export function WhatsAppConfig() {
           {configs.map((c) => (
             <Card key={c.id}>
               <CardContent className="flex flex-wrap items-center justify-between gap-3 py-4">
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex min-w-0 items-center gap-3">
                   {c.status === 'connected' ? (
-                    <CheckCircle2 className="size-4 text-primary shrink-0" />
+                    <CheckCircle2 className="text-primary size-4 shrink-0" />
                   ) : (
-                    <XCircle className="size-4 text-red-500 shrink-0" />
+                    <XCircle className="size-4 shrink-0 text-red-500" />
                   )}
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-foreground truncate">
-                        {c.display_name || c.phone_number_id || c.zernio_account_id || c.id}
+                      <span className="text-foreground truncate font-medium">
+                        {c.display_name ||
+                          c.phone_number_id ||
+                          c.zernio_account_id ||
+                          c.id}
                       </span>
                       {c.is_default && (
-                        <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-medium text-primary">
+                        <span className="bg-primary/10 text-primary inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium">
                           <Star className="size-2.5" />
                           {t('defaultBadge')}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-muted-foreground truncate">
-                      {c.provider === 'zernio' ? t('providerZernio') : t('providerMeta')}
+                    <p className="text-muted-foreground truncate text-xs">
+                      {c.provider === 'zernio'
+                        ? t('providerZernio')
+                        : t('providerMeta')}
                       {c.phone_number_id ? ` · ${c.phone_number_id}` : ''}
                     </p>
                   </div>
                 </div>
-                <div className="flex items-center gap-2 shrink-0">
+                <div className="flex shrink-0 items-center gap-2">
                   {!c.is_default && (
                     <Button
                       variant="outline"
@@ -247,7 +285,7 @@ export function WhatsAppConfig() {
                     variant="outline"
                     size="sm"
                     onClick={() => handleDelete(c.id)}
-                    className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+                    className="border-red-900 text-red-400 hover:bg-red-950/40 hover:text-red-300"
                   >
                     <Trash2 className="size-3.5" />
                     {t('delete')}
@@ -282,24 +320,39 @@ function ConnectionForm({
   const [testing, setTesting] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [showToken, setShowToken] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
 
-  const [provider, setProvider] = useState<Provider>(initialData?.provider ?? 'meta');
-  const [displayName, setDisplayName] = useState(initialData?.display_name ?? '');
-  const [publicPhoneNumber, setPublicPhoneNumber] = useState(initialData?.public_phone_number ?? '');
-  const [makeDefault, setMakeDefault] = useState(isFirstConnection || initialData?.is_default || false);
+  const [provider, setProvider] = useState<Provider>(
+    initialData?.provider ?? 'meta'
+  );
+  const [displayName, setDisplayName] = useState(
+    initialData?.display_name ?? ''
+  );
+  const [publicPhoneNumber, setPublicPhoneNumber] = useState(
+    initialData?.public_phone_number ?? ''
+  );
+  const [makeDefault, setMakeDefault] = useState(
+    isFirstConnection || initialData?.is_default || false
+  );
 
-  const [phoneNumberId, setPhoneNumberId] = useState(initialData?.phone_number_id ?? '');
+  const [phoneNumberId, setPhoneNumberId] = useState(
+    initialData?.phone_number_id ?? ''
+  );
   const [wabaId, setWabaId] = useState(initialData?.waba_id ?? '');
   const [accessToken, setAccessToken] = useState(isEditing ? MASKED_TOKEN : '');
   const [verifyToken, setVerifyToken] = useState('');
   const [pin, setPin] = useState('');
   const [tokenEdited, setTokenEdited] = useState(false);
 
-  const [zernioAccountId, setZernioAccountId] = useState(initialData?.zernio_account_id ?? '');
-  const [zernioApiKey, setZernioApiKey] = useState(isEditing ? MASKED_TOKEN : '');
+  const [zernioAccountId, setZernioAccountId] = useState(
+    initialData?.zernio_account_id ?? ''
+  );
+  const [zernioApiKey, setZernioApiKey] = useState(
+    isEditing ? MASKED_TOKEN : ''
+  );
   const [zernioApiKeyEdited, setZernioApiKeyEdited] = useState(false);
   const [showZernioApiKey, setShowZernioApiKey] = useState(false);
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
@@ -313,7 +366,8 @@ function ConnectionForm({
     checks: Record<string, boolean | null>;
     errors?: string[];
   };
-  const [registrationProbe, setRegistrationProbe] = useState<RegistrationProbe | null>(null);
+  const [registrationProbe, setRegistrationProbe] =
+    useState<RegistrationProbe | null>(null);
 
   const webhookUrl =
     typeof window !== 'undefined'
@@ -323,7 +377,7 @@ function ConnectionForm({
   const runHealthCheck = useCallback(async (id: string) => {
     try {
       const res = await fetch(`/api/whatsapp/config/${id}`, { method: 'GET' });
-      const payload = await res.json();
+      const payload = await readResponseJson<WhatsAppApiPayload>(res);
       if (payload.connected) {
         setConnectionStatus('connected');
         setResetReason(null);
@@ -337,7 +391,7 @@ function ConnectionForm({
               ? 'meta_api_error'
               : payload.reason === 'zernio_api_error'
                 ? 'zernio_api_error'
-                : null,
+                : null
         );
         setStatusMessage(payload.message || '');
       }
@@ -399,10 +453,10 @@ function ConnectionForm({
           method: isEditing ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
-        },
+        }
       );
 
-      const data = await res.json();
+      const data = await readResponseJson<WhatsAppApiPayload>(res);
 
       if (!res.ok) {
         toast.error(data.error || t('saveFailed'));
@@ -411,9 +465,12 @@ function ConnectionForm({
       }
 
       if (data.registered === false && data.registration_error) {
-        toast.error(t('savedRegistrationFailed', { error: data.registration_error }), {
-          duration: 12000,
-        });
+        toast.error(
+          t('savedRegistrationFailed', { error: data.registration_error }),
+          {
+            duration: 12000,
+          }
+        );
       } else if (data.registration_skipped) {
         toast.success(t('savedRegistrationSkipped'), { duration: 10000 });
         setPin('');
@@ -421,7 +478,7 @@ function ConnectionForm({
         toast.success(
           data.phone_info?.verified_name
             ? t('savedLive', { name: data.phone_info.verified_name })
-            : t('savedConnected'),
+            : t('savedConnected')
         );
         setPin('');
       }
@@ -456,7 +513,11 @@ function ConnectionForm({
         zernio_account_id: zernioAccountId.trim(),
       };
 
-      if (zernioApiKeyEdited && zernioApiKey !== MASKED_TOKEN && zernioApiKey.trim()) {
+      if (
+        zernioApiKeyEdited &&
+        zernioApiKey !== MASKED_TOKEN &&
+        zernioApiKey.trim()
+      ) {
         payload.zernio_api_key = zernioApiKey.trim();
       } else if (isEditing) {
         toast.error(t('zernioApiKeyRequired'));
@@ -470,10 +531,10 @@ function ConnectionForm({
           method: isEditing ? 'PATCH' : 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
-        },
+        }
       );
 
-      const data = await res.json();
+      const data = await readResponseJson<WhatsAppApiPayload>(res);
 
       if (!res.ok) {
         toast.error(data.error || t('saveFailed'));
@@ -488,7 +549,7 @@ function ConnectionForm({
       toast.success(
         data.phone_info?.verified_name
           ? t('zernioSavedConnected', { name: data.phone_info.verified_name })
-          : t('zernioSavedGeneric'),
+          : t('zernioSavedGeneric')
       );
 
       onSaved(data.id ?? configId ?? '');
@@ -516,10 +577,13 @@ function ConnectionForm({
     setVerifyingRegistration(true);
     setRegistrationProbe(null);
     try {
-      const res = await fetch(`/api/whatsapp/config/${configId}/verify-registration`, {
-        method: 'GET',
-      });
-      const data = (await res.json()) as RegistrationProbe;
+      const res = await fetch(
+        `/api/whatsapp/config/${configId}/verify-registration`,
+        {
+          method: 'GET',
+        }
+      );
+      const data = await readResponseJson<RegistrationProbe>(res);
       setRegistrationProbe(data);
       if (data.live) {
         toast.success(t('verifyLive'));
@@ -539,8 +603,10 @@ function ConnectionForm({
     if (!confirm(t('deleteConfirm'))) return;
     try {
       setDeleting(true);
-      const res = await fetch(`/api/whatsapp/config/${configId}`, { method: 'DELETE' });
-      const data = await res.json();
+      const res = await fetch(`/api/whatsapp/config/${configId}`, {
+        method: 'DELETE',
+      });
+      const data = await readResponseJson<WhatsAppApiPayload>(res);
       if (!res.ok) {
         toast.error(data.error || t('deleteFailed'));
         return;
@@ -579,12 +645,16 @@ function ConnectionForm({
     <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
       <div className="space-y-6">
         {showResetBanner && (
-          <Alert className="bg-amber-950/40 border-amber-600/40">
+          <Alert className="border-amber-600/40 bg-amber-950/40">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
+              <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-400" />
               <div className="flex-1">
-                <AlertTitle className="text-amber-200 mb-1">{t('tokenCorruptedTitle')}</AlertTitle>
-                <AlertDescription className="text-amber-100/80 text-sm">{statusMessage}</AlertDescription>
+                <AlertTitle className="mb-1 text-amber-200">
+                  {t('tokenCorruptedTitle')}
+                </AlertTitle>
+                <AlertDescription className="text-sm text-amber-100/80">
+                  {statusMessage}
+                </AlertDescription>
               </div>
             </div>
           </Alert>
@@ -594,17 +664,21 @@ function ConnectionForm({
           <Alert className="bg-card border-border">
             <div className="flex items-center gap-2">
               {connectionStatus === 'connected' ? (
-                <CheckCircle2 className="size-4 text-primary" />
+                <CheckCircle2 className="text-primary size-4" />
               ) : (
                 <XCircle className="size-4 text-red-500" />
               )}
               <AlertTitle className="text-foreground mb-0">
-                {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
+                {connectionStatus === 'connected'
+                  ? t('credentialsValid')
+                  : t('notConnected')}
               </AlertTitle>
             </div>
             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
-                ? provider === 'zernio' ? t('zernioConnectedDesc') : t('connectedDesc')
+                ? provider === 'zernio'
+                  ? t('zernioConnectedDesc')
+                  : t('connectedDesc')
                 : statusMessage || t('notConnectedDesc')}
             </AlertDescription>
           </Alert>
@@ -612,37 +686,47 @@ function ConnectionForm({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">{t('connectionDetailsTitle')}</CardTitle>
+            <CardTitle className="text-foreground">
+              {t('connectionDetailsTitle')}
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('displayName')}</Label>
+              <Label className="text-muted-foreground">
+                {t('displayName')}
+              </Label>
               <Input
                 placeholder={t('displayNamePlaceholder')}
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
-              <p className="text-xs text-muted-foreground">{t('displayNameHint')}</p>
+              <p className="text-muted-foreground text-xs">
+                {t('displayNameHint')}
+              </p>
             </div>
             <div className="space-y-2">
-              <Label className="text-muted-foreground">{t('publicPhoneNumber')}</Label>
+              <Label className="text-muted-foreground">
+                {t('publicPhoneNumber')}
+              </Label>
               <Input
                 placeholder={t('publicPhoneNumberPlaceholder')}
                 value={publicPhoneNumber}
                 onChange={(e) => setPublicPhoneNumber(e.target.value)}
                 className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
-              <p className="text-xs text-muted-foreground">{t('publicPhoneNumberHint')}</p>
+              <p className="text-muted-foreground text-xs">
+                {t('publicPhoneNumberHint')}
+              </p>
             </div>
             {!(isFirstConnection && !isEditing) && (
-              <label className="flex items-center gap-2 text-sm text-foreground">
+              <label className="text-foreground flex items-center gap-2 text-sm">
                 <input
                   type="checkbox"
                   checked={makeDefault}
                   onChange={(e) => setMakeDefault(e.target.checked)}
                   disabled={isEditing && Boolean(initialData?.is_default)}
-                  className="size-4 rounded border-border"
+                  className="border-border size-4 rounded"
                 />
                 {t('makeDefaultConnection')}
               </label>
@@ -654,18 +738,23 @@ function ConnectionForm({
           <Alert
             className={
               isRegistered
-                ? 'bg-emerald-950/30 border-emerald-700/50'
-                : 'bg-amber-950/30 border-amber-700/50'
+                ? 'border-emerald-700/50 bg-emerald-950/30'
+                : 'border-amber-700/50 bg-amber-950/30'
             }
           >
-            <div className="flex items-center justify-between gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 {isRegistered ? (
                   <CheckCircle2 className="size-4 text-emerald-400" />
                 ) : (
                   <AlertTriangle className="size-4 text-amber-400" />
                 )}
-                <AlertTitle className={'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')}>
+                <AlertTitle
+                  className={
+                    'mb-0 ' +
+                    (isRegistered ? 'text-emerald-200' : 'text-amber-200')
+                  }
+                >
                   {isRegistered ? t('registered') : t('notRegistered')}
                 </AlertTitle>
               </div>
@@ -674,7 +763,7 @@ function ConnectionForm({
                 size="sm"
                 onClick={handleVerifyRegistration}
                 disabled={verifyingRegistration}
-                className="border-border bg-transparent text-foreground hover:bg-muted h-7"
+                className="border-border text-foreground hover:bg-muted h-7 bg-transparent"
               >
                 {verifyingRegistration ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -698,7 +787,10 @@ function ConnectionForm({
               ) : lastRegistrationError ? (
                 <>
                   {t('lastAttemptFailed')}
-                  <span className="text-red-300">&quot;{lastRegistrationError}&quot;</span>. {t('retryHint')}
+                  <span className="text-red-300">
+                    &quot;{lastRegistrationError}&quot;
+                  </span>
+                  . {t('retryHint')}
                 </>
               ) : (
                 <>{t('noRegistrationHint')}</>
@@ -706,29 +798,35 @@ function ConnectionForm({
             </AlertDescription>
 
             {registrationProbe && (
-              <div className="mt-3 rounded border border-border bg-card/60 px-3 py-2 space-y-1.5 text-[11px]">
-                <p className="font-medium text-foreground">
+              <div className="border-border bg-card/60 mt-3 space-y-1.5 rounded border px-3 py-2 text-[11px]">
+                <p className="text-foreground font-medium">
                   {t('diagnosticLastRun')}
-                  <span className={registrationProbe.live ? 'text-emerald-400' : 'text-amber-400'}>
+                  <span
+                    className={
+                      registrationProbe.live
+                        ? 'text-emerald-400'
+                        : 'text-amber-400'
+                    }
+                  >
                     {registrationProbe.live ? t('live') : t('notLive')}
                   </span>
                 </p>
-                <ul className="space-y-0.5 text-muted-foreground">
+                <ul className="text-muted-foreground space-y-0.5">
                   {Object.entries(registrationProbe.checks).map(([k, v]) => (
                     <li key={k} className="flex items-center gap-1.5">
                       {v === true ? (
-                        <CheckCircle2 className="size-3 text-emerald-400 shrink-0" />
+                        <CheckCircle2 className="size-3 shrink-0 text-emerald-400" />
                       ) : v === false ? (
-                        <XCircle className="size-3 text-red-400 shrink-0" />
+                        <XCircle className="size-3 shrink-0 text-red-400" />
                       ) : (
-                        <span className="size-3 rounded-full border border-border shrink-0" />
+                        <span className="border-border size-3 shrink-0 rounded-full border" />
                       )}
                       <code className="text-muted-foreground">{k}</code>
                     </li>
                   ))}
                 </ul>
                 {(registrationProbe.errors ?? []).length > 0 && (
-                  <ul className="pt-1 space-y-0.5 text-red-300">
+                  <ul className="space-y-0.5 pt-1 text-red-300">
                     {registrationProbe.errors?.map((e, i) => (
                       <li key={i}>• {e}</li>
                     ))}
@@ -741,8 +839,12 @@ function ConnectionForm({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">{t('providerSectionTitle')}</CardTitle>
-            <CardDescription className="text-muted-foreground">{t('providerSectionDesc')}</CardDescription>
+            <CardTitle className="text-foreground">
+              {t('providerSectionTitle')}
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t('providerSectionDesc')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 sm:grid-cols-2">
@@ -750,23 +852,35 @@ function ConnectionForm({
                 type="button"
                 onClick={() => handleProviderChange('meta')}
                 disabled={isEditing}
-                className={`text-left rounded-lg border p-3 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                  provider === 'meta' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
+                className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  provider === 'meta'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-muted'
                 }`}
               >
-                <div className="font-medium text-foreground">{t('providerMeta')}</div>
-                <div className="text-xs text-muted-foreground mt-1">{t('providerMetaDesc')}</div>
+                <div className="text-foreground font-medium">
+                  {t('providerMeta')}
+                </div>
+                <div className="text-muted-foreground mt-1 text-xs">
+                  {t('providerMetaDesc')}
+                </div>
               </button>
               <button
                 type="button"
                 onClick={() => handleProviderChange('zernio')}
                 disabled={isEditing}
-                className={`text-left rounded-lg border p-3 transition-colors disabled:opacity-60 disabled:cursor-not-allowed ${
-                  provider === 'zernio' ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted'
+                className={`rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  provider === 'zernio'
+                    ? 'border-primary bg-primary/5'
+                    : 'border-border hover:bg-muted'
                 }`}
               >
-                <div className="font-medium text-foreground">{t('providerZernio')}</div>
-                <div className="text-xs text-muted-foreground mt-1">{t('providerZernioDesc')}</div>
+                <div className="text-foreground font-medium">
+                  {t('providerZernio')}
+                </div>
+                <div className="text-muted-foreground mt-1 text-xs">
+                  {t('providerZernioDesc')}
+                </div>
               </button>
             </div>
           </CardContent>
@@ -774,16 +888,22 @@ function ConnectionForm({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
+            <CardTitle className="text-foreground">
+              {t('apiCredentialsTitle')}
+            </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {provider === 'zernio' ? t('zernioApiCredentialsDesc') : t('apiCredentialsDesc')}
+              {provider === 'zernio'
+                ? t('zernioApiCredentialsDesc')
+                : t('apiCredentialsDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
             {provider === 'meta' ? (
               <>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">{t('phoneNumberId')}</Label>
+                  <Label className="text-muted-foreground">
+                    {t('phoneNumberId')}
+                  </Label>
                   <Input
                     placeholder="e.g. 100234567890123"
                     value={phoneNumberId}
@@ -803,7 +923,9 @@ function ConnectionForm({
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">{t('accessToken')}</Label>
+                  <Label className="text-muted-foreground">
+                    {t('accessToken')}
+                  </Label>
                   <div className="relative">
                     <Input
                       type={showToken ? 'text' : 'password'}
@@ -824,31 +946,43 @@ function ConnectionForm({
                     <button
                       type="button"
                       onClick={() => setShowToken(!showToken)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 transition-colors"
                     >
-                      {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showToken ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
                     </button>
                   </div>
                   {isEditing && !tokenEdited && (
-                    <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {t('tokenHidden')}
+                    </p>
                   )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">{t('webhookVerifyToken')}</Label>
+                  <Label className="text-muted-foreground">
+                    {t('webhookVerifyToken')}
+                  </Label>
                   <Input
                     placeholder={t('webhookVerifyTokenPlaceholder')}
                     value={verifyToken}
                     onChange={(e) => setVerifyToken(e.target.value)}
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   />
-                  <p className="text-xs text-muted-foreground">{t('webhookVerifyTokenHint')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('webhookVerifyTokenHint')}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
                   <Label className="text-muted-foreground">
                     {t('twoStepPin')}
-                    <span className="ml-1 text-muted-foreground">{t('optional')}</span>
+                    <span className="text-muted-foreground ml-1">
+                      {t('optional')}
+                    </span>
                   </Label>
                   <Input
                     type="text"
@@ -856,10 +990,12 @@ function ConnectionForm({
                     maxLength={6}
                     placeholder={t('pinPlaceholder')}
                     value={pin}
-                    onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                    onChange={(e) =>
+                      setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
+                    }
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground tracking-widest"
                   />
-                  <p className="text-xs text-muted-foreground leading-relaxed">
+                  <p className="text-muted-foreground text-xs leading-relaxed">
                     <span dangerouslySetInnerHTML={{ __html: t('pinHint') }} />
                   </p>
                 </div>
@@ -867,18 +1003,24 @@ function ConnectionForm({
             ) : (
               <>
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">{t('zernioAccountId')}</Label>
+                  <Label className="text-muted-foreground">
+                    {t('zernioAccountId')}
+                  </Label>
                   <Input
                     placeholder={t('zernioAccountIdPlaceholder')}
                     value={zernioAccountId}
                     onChange={(e) => setZernioAccountId(e.target.value)}
                     className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                   />
-                  <p className="text-xs text-muted-foreground">{t('zernioAccountIdHint')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('zernioAccountIdHint')}
+                  </p>
                 </div>
 
                 <div className="space-y-2">
-                  <Label className="text-muted-foreground">{t('zernioApiKey')}</Label>
+                  <Label className="text-muted-foreground">
+                    {t('zernioApiKey')}
+                  </Label>
                   <div className="relative">
                     <Input
                       type={showZernioApiKey ? 'text' : 'password'}
@@ -899,15 +1041,23 @@ function ConnectionForm({
                     <button
                       type="button"
                       onClick={() => setShowZernioApiKey(!showZernioApiKey)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                      className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 transition-colors"
                     >
-                      {showZernioApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      {showZernioApiKey ? (
+                        <EyeOff className="size-4" />
+                      ) : (
+                        <Eye className="size-4" />
+                      )}
                     </button>
                   </div>
                   {isEditing && !zernioApiKeyEdited && (
-                    <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+                    <p className="text-muted-foreground text-xs">
+                      {t('tokenHidden')}
+                    </p>
                   )}
-                  <p className="text-xs text-muted-foreground">{t('zernioApiKeyHint')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('zernioApiKeyHint')}
+                  </p>
                 </div>
               </>
             )}
@@ -916,9 +1066,13 @@ function ConnectionForm({
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground">{t('webhookTitle')}</CardTitle>
+            <CardTitle className="text-foreground">
+              {t('webhookTitle')}
+            </CardTitle>
             <CardDescription className="text-muted-foreground">
-              {provider === 'zernio' ? t('zernioWebhookDesc') : t('webhookDesc')}
+              {provider === 'zernio'
+                ? t('zernioWebhookDesc')
+                : t('webhookDesc')}
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -934,7 +1088,7 @@ function ConnectionForm({
                   variant="outline"
                   size="icon"
                   onClick={handleCopyWebhookUrl}
-                  className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                  className="border-border text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                 >
                   <Copy className="size-4" />
                 </Button>
@@ -943,7 +1097,9 @@ function ConnectionForm({
 
             {provider === 'zernio' && (
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('webhookSecretLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('webhookSecretLabel')}
+                </Label>
                 {webhookSecret ? (
                   <>
                     <div className="flex gap-2">
@@ -956,15 +1112,21 @@ function ConnectionForm({
                         variant="outline"
                         size="icon"
                         onClick={handleCopyWebhookSecret}
-                        className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                        className="border-border text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                       >
                         <Copy className="size-4" />
                       </Button>
                     </div>
-                    <p className="text-xs text-amber-400">{t('webhookSecretGenerated')}</p>
+                    <p className="text-xs text-amber-400">
+                      {t('webhookSecretGenerated')}
+                    </p>
                   </>
                 ) : (
-                  isEditing && <p className="text-xs text-muted-foreground">{t('webhookSecretAlreadySet')}</p>
+                  isEditing && (
+                    <p className="text-muted-foreground text-xs">
+                      {t('webhookSecretAlreadySet')}
+                    </p>
+                  )
                 )}
               </div>
             )}
@@ -1011,7 +1173,7 @@ function ConnectionForm({
               variant="outline"
               onClick={handleDelete}
               disabled={deleting}
-              className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+              className="border-red-900 text-red-400 hover:bg-red-950/40 hover:text-red-300"
             >
               {deleting ? (
                 <>
@@ -1032,8 +1194,12 @@ function ConnectionForm({
       <div>
         <Card>
           <CardHeader>
-            <CardTitle className="text-foreground text-base">{t('setupInstructions')}</CardTitle>
-            <CardDescription className="text-muted-foreground">{t('setupInstructionsDesc')}</CardDescription>
+            <CardTitle className="text-foreground text-base">
+              {t('setupInstructions')}
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t('setupInstructionsDesc')}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {provider === 'meta' ? (
@@ -1041,12 +1207,14 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        1
+                      </span>
                       {t('step1')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li dangerouslySetInnerHTML={{ __html: t('step1_1') }} />
                       <li>{t('step1_2')}</li>
                       <li>{t('step1_3')}</li>
@@ -1058,12 +1226,14 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        2
+                      </span>
                       {t('step2')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li>{t('step2_1')}</li>
                       <li>{t('step2_2')}</li>
                       <li>{t('step2_3')}</li>
@@ -1074,16 +1244,24 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        3
+                      </span>
                       {t('step3')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li>{t('step3_1')}</li>
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_3') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_4') }} />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step3_3') }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step3_4') }}
+                      />
                     </ol>
                   </AccordionContent>
                 </AccordionItem>
@@ -1091,16 +1269,22 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">4</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        4
+                      </span>
                       {t('step4')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li>{t('step4_1')}</li>
                       <li>{t('step4_2')}</li>
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step4_3') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step4_4') }} />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step4_3') }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step4_4') }}
+                      />
                       <li>{t('step4_5')}</li>
                     </ol>
                   </AccordionContent>
@@ -1111,12 +1295,14 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        1
+                      </span>
                       {t('zernioStep1')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li>{t('zernioStep1_1')}</li>
                       <li>{t('zernioStep1_2')}</li>
                     </ol>
@@ -1126,14 +1312,24 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        2
+                      </span>
                       {t('zernioStep2')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep2_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep2_2') }} />
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
+                      <li
+                        dangerouslySetInnerHTML={{
+                          __html: t.raw('zernioStep2_1'),
+                        }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{
+                          __html: t.raw('zernioStep2_2'),
+                        }}
+                      />
                     </ol>
                   </AccordionContent>
                 </AccordionItem>
@@ -1141,14 +1337,24 @@ function ConnectionForm({
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        3
+                      </span>
                       {t('zernioStep3')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep3_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('zernioStep3_2') }} />
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
+                      <li
+                        dangerouslySetInnerHTML={{
+                          __html: t.raw('zernioStep3_1'),
+                        }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{
+                          __html: t.raw('zernioStep3_2'),
+                        }}
+                      />
                       <li>{t('zernioStep3_3')}</li>
                     </ol>
                   </AccordionContent>
@@ -1156,12 +1362,16 @@ function ConnectionForm({
               </Accordion>
             )}
 
-            <div className="mt-4 pt-4 border-t border-border">
+            <div className="border-border mt-4 border-t pt-4">
               <a
-                href={provider === 'zernio' ? 'https://docs.zernio.com' : 'https://developers.facebook.com/docs/whatsapp/cloud-api/get-started'}
+                href={
+                  provider === 'zernio'
+                    ? 'https://docs.zernio.com'
+                    : 'https://developers.facebook.com/docs/whatsapp/cloud-api/get-started'
+                }
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+                className="text-primary hover:text-primary/80 inline-flex items-center gap-1.5 text-sm transition-colors"
               >
                 <ExternalLink className="size-3.5" />
                 {provider === 'zernio' ? t('zernioDocs') : t('metaDocs')}

@@ -1,12 +1,22 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useCallback } from "react";
-import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { useCan } from "@/hooks/use-can";
-import { formatCurrency, CURRENCIES } from "@/lib/currency";
-import type { Contact, Deal, ContactNote, Tag, PipelineStage, LeadTemperature, Quote } from "@/types";
+import { readResponseJson } from '@/lib/http/response-json';
+
+import { useState, useEffect, useCallback } from 'react';
+import { cn } from '@/lib/utils';
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
+import { formatCurrency, CURRENCIES } from '@/lib/currency';
+import type {
+  Contact,
+  Deal,
+  ContactNote,
+  Tag,
+  PipelineStage,
+  LeadTemperature,
+  Quote,
+} from '@/types';
 import {
   Phone,
   Mail,
@@ -25,17 +35,17 @@ import {
   Pencil,
   X,
   Trash2,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { ScrollArea } from "@/components/ui/scroll-area";
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
+} from '@/components/ui/select';
 import {
   Dialog,
   DialogContent,
@@ -43,13 +53,13 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { LeadTemperatureBadge } from "@/components/contacts/lead-temperature-badge";
-import { QuoteBuilder } from "@/components/products/quote-builder";
-import { addContactTag, deleteContactTag } from "@/lib/contacts/tag-api";
-import { toast } from "sonner";
-import { format } from "date-fns";
-import { useTranslations } from "next-intl";
+} from '@/components/ui/dialog';
+import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
+import { QuoteBuilder } from '@/components/products/quote-builder';
+import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { toast } from 'sonner';
+import { format } from 'date-fns';
+import { useTranslations } from 'next-intl';
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -63,13 +73,17 @@ interface ContactSidebarProps {
   className?: string;
 }
 
-export function ContactSidebar({ contact, conversationId = null, className }: ContactSidebarProps) {
-  const tSidebar = useTranslations("Inbox.sidebar");
-  const tThread = useTranslations("Inbox.messageThread");
-  const tTemp = useTranslations("Contacts.detailView");
+export function ContactSidebar({
+  contact,
+  conversationId = null,
+  className,
+}: ContactSidebarProps) {
+  const tSidebar = useTranslations('Inbox.sidebar');
+  const tThread = useTranslations('Inbox.messageThread');
+  const tTemp = useTranslations('Contacts.detailView');
 
   const { accountId, defaultCurrency } = useAuth();
-  const canManageProducts = useCan("manage-products");
+  const canManageProducts = useCan('manage-products');
   const [copied, setCopied] = useState(false);
   const [deals, setDeals] = useState<Deal[]>([]);
   const [notes, setNotes] = useState<ContactNote[]>([]);
@@ -81,7 +95,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   // removes ones that exist.
   const [allTags, setAllTags] = useState<Tag[]>([]);
   const [savingTagId, setSavingTagId] = useState<string | null>(null);
-  const [newNote, setNewNote] = useState("");
+  const [newNote, setNewNote] = useState('');
   const [addingNote, setAddingNote] = useState(false);
   const [quotes, setQuotes] = useState<Quote[]>([]);
   const [quoteBuilderOpen, setQuoteBuilderOpen] = useState(false);
@@ -91,28 +105,36 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   // and to know which stage is "Venta cerrada"), a busy flag per deal
   // so two buttons on the same card don't fight, and the deal pending
   // the "mark won" confirm dialog.
-  const [stagesByPipeline, setStagesByPipeline] = useState<Record<string, PipelineStage[]>>({});
+  const [stagesByPipeline, setStagesByPipeline] = useState<
+    Record<string, PipelineStage[]>
+  >({});
   const [busyDealId, setBusyDealId] = useState<string | null>(null);
   const [confirmWinDeal, setConfirmWinDeal] = useState<Deal | null>(null);
   const [confirmDeleteDeal, setConfirmDeleteDeal] = useState<Deal | null>(null);
   const [deletingDeal, setDeletingDeal] = useState(false);
-  const [confirmDeleteQuote, setConfirmDeleteQuote] = useState<Quote | null>(null);
+  const [confirmDeleteQuote, setConfirmDeleteQuote] = useState<Quote | null>(
+    null
+  );
   const [deletingQuote, setDeletingQuote] = useState(false);
 
   // All of the account's pipelines (with their stages), independent of
   // whether this contact has any deals yet — powers the "New deal"
   // quick-create below, which needs a pipeline+stage picker even when
   // `stagesByPipeline` (derived from existing deals) is empty.
-  const [pipelines, setPipelines] = useState<{ id: string; name: string; stages: PipelineStage[] }[]>([]);
+  const [pipelines, setPipelines] = useState<
+    { id: string; name: string; stages: PipelineStage[] }[]
+  >([]);
   const [newDealOpen, setNewDealOpen] = useState(false);
-  const [newDealTitle, setNewDealTitle] = useState("");
-  const [newDealPipelineId, setNewDealPipelineId] = useState("");
-  const [newDealStageId, setNewDealStageId] = useState("");
-  const [newDealValue, setNewDealValue] = useState("");
+  const [newDealTitle, setNewDealTitle] = useState('');
+  const [newDealPipelineId, setNewDealPipelineId] = useState('');
+  const [newDealStageId, setNewDealStageId] = useState('');
+  const [newDealValue, setNewDealValue] = useState('');
   const [newDealCurrency, setNewDealCurrency] = useState(defaultCurrency);
   const [creatingDeal, setCreatingDeal] = useState(false);
 
-  const [temperature, setTemperature] = useState<LeadTemperature | "unclassified">("unclassified");
+  const [temperature, setTemperature] = useState<
+    LeadTemperature | 'unclassified'
+  >('unclassified');
   const [savingTemperature, setSavingTemperature] = useState(false);
 
   // Phone is editable in place — an Instagram/Facebook contact has no
@@ -124,7 +146,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   // contact changes via fetchContactData below.
   const [phone, setPhone] = useState<string | null>(null);
   const [phoneEditing, setPhoneEditing] = useState(false);
-  const [phoneDraft, setPhoneDraft] = useState("");
+  const [phoneDraft, setPhoneDraft] = useState('');
   const [savingPhone, setSavingPhone] = useState(false);
 
   const fetchContactData = useCallback(async () => {
@@ -135,24 +157,24 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     // Fetch deals, notes, tags, and quotes in parallel
     const [dealsRes, notesRes, tagsRes, quotesRes] = await Promise.all([
       supabase
-        .from("deals")
-        .select("*, stage:pipeline_stages(*)")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
+        .from('deals')
+        .select('*, stage:pipeline_stages(*)')
+        .eq('contact_id', contact.id)
+        .order('created_at', { ascending: false }),
       supabase
-        .from("contact_notes")
-        .select("*")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
+        .from('contact_notes')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .order('created_at', { ascending: false }),
       supabase
-        .from("contact_tags")
-        .select("id, tag_id, tags(*)")
-        .eq("contact_id", contact.id),
+        .from('contact_tags')
+        .select('id, tag_id, tags(*)')
+        .eq('contact_id', contact.id),
       supabase
-        .from("quotes")
-        .select("*")
-        .eq("contact_id", contact.id)
-        .order("created_at", { ascending: false }),
+        .from('quotes')
+        .select('*')
+        .eq('contact_id', contact.id)
+        .order('created_at', { ascending: false }),
     ]);
     if (quotesRes.data) setQuotes(quotesRes.data);
 
@@ -164,10 +186,10 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
       const pipelineIds = [...new Set(dealsRes.data.map((d) => d.pipeline_id))];
       if (pipelineIds.length > 0) {
         const { data: stages } = await supabase
-          .from("pipeline_stages")
-          .select("*")
-          .in("pipeline_id", pipelineIds)
-          .order("position");
+          .from('pipeline_stages')
+          .select('*')
+          .in('pipeline_id', pipelineIds)
+          .order('position');
         const grouped: Record<string, PipelineStage[]> = {};
         for (const stage of stages ?? []) {
           (grouped[stage.pipeline_id] ??= []).push(stage);
@@ -187,7 +209,9 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
         .map((ct: Record<string, unknown>) => ct.tags as Tag);
       setTags(mapped);
     }
-    setTemperature((contact.lead_temperature as LeadTemperature | null) ?? "unclassified");
+    setTemperature(
+      (contact.lead_temperature as LeadTemperature | null) ?? 'unclassified'
+    );
     setPhone(contact.phone ?? null);
     setPhoneEditing(false);
   }, [contact]);
@@ -205,8 +229,8 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     (async () => {
       const supabase = createClient();
       const [pipelinesRes, stagesRes] = await Promise.all([
-        supabase.from("pipelines").select("id, name").order("created_at"),
-        supabase.from("pipeline_stages").select("*").order("position"),
+        supabase.from('pipelines').select('id, name').order('created_at'),
+        supabase.from('pipeline_stages').select('*').order('position'),
       ]);
       if (cancelled) return;
       const stagesByPipelineId: Record<string, PipelineStage[]> = {};
@@ -218,7 +242,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
           id: p.id as string,
           name: p.name as string,
           stages: stagesByPipelineId[p.id as string] ?? [],
-        })),
+        }))
       );
     })();
     return () => {
@@ -234,7 +258,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     let cancelled = false;
     (async () => {
       const supabase = createClient();
-      const { data } = await supabase.from("tags").select("*").order("name");
+      const { data } = await supabase.from('tags').select('*').order('name');
       if (!cancelled) setAllTags(data ?? []);
     })();
     return () => {
@@ -263,7 +287,9 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
         if (tag) setTags((prev) => [...prev, tag]);
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : tSidebar("tagUpdateFailed"));
+      toast.error(
+        err instanceof Error ? err.message : tSidebar('tagUpdateFailed')
+      );
     } finally {
       setSavingTagId(null);
     }
@@ -281,7 +307,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     const user = session?.user;
 
     const { data, error } = await supabase
-      .from("contact_notes")
+      .from('contact_notes')
       .insert({
         contact_id: contact.id,
         account_id: accountId,
@@ -293,7 +319,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
 
     if (!error && data) {
       setNotes((prev) => [data, ...prev]);
-      setNewNote("");
+      setNewNote('');
     }
     setAddingNote(false);
   }, [contact, newNote, accountId]);
@@ -303,23 +329,23 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
       const stage = (stagesByPipeline[pipelineId] ?? []).find((s) => s.is_won);
       return stage?.id ?? null;
     },
-    [stagesByPipeline],
+    [stagesByPipeline]
   );
 
   async function moveDealStage(deal: Deal, stageId: string) {
     setBusyDealId(deal.id);
     try {
       const res = await fetch(`/api/deals/${deal.id}/stage`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage_id: stageId }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || tSidebar("dealMoveFailed"));
+        const data = await readResponseJson(res).catch(() => ({}));
+        toast.error(data.error || tSidebar('dealMoveFailed'));
         return;
       }
-      toast.success(tSidebar("dealMoveSuccess"));
+      toast.success(tSidebar('dealMoveSuccess'));
       await fetchContactData();
     } finally {
       setBusyDealId(null);
@@ -328,10 +354,12 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
 
   function openNewDeal() {
     const defaultPipeline = pipelines[0];
-    setNewDealTitle(contact?.name || contact?.instagram_username || contact?.phone || "");
-    setNewDealPipelineId(defaultPipeline?.id ?? "");
-    setNewDealStageId(defaultPipeline?.stages[0]?.id ?? "");
-    setNewDealValue("");
+    setNewDealTitle(
+      contact?.name || contact?.instagram_username || contact?.phone || ''
+    );
+    setNewDealPipelineId(defaultPipeline?.id ?? '');
+    setNewDealStageId(defaultPipeline?.stages[0]?.id ?? '');
+    setNewDealValue('');
     setNewDealCurrency(defaultCurrency);
     setNewDealOpen(true);
   }
@@ -339,11 +367,18 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   function handleNewDealPipelineChange(pipelineId: string) {
     setNewDealPipelineId(pipelineId);
     const pipeline = pipelines.find((p) => p.id === pipelineId);
-    setNewDealStageId(pipeline?.stages[0]?.id ?? "");
+    setNewDealStageId(pipeline?.stages[0]?.id ?? '');
   }
 
   async function handleCreateDeal() {
-    if (!contact || !accountId || !newDealTitle.trim() || !newDealPipelineId || !newDealStageId) return;
+    if (
+      !contact ||
+      !accountId ||
+      !newDealTitle.trim() ||
+      !newDealPipelineId ||
+      !newDealStageId
+    )
+      return;
     setCreatingDeal(true);
     const supabase = createClient();
     const {
@@ -351,11 +386,11 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     } = await supabase.auth.getSession();
     const user = session?.user;
     if (!user) {
-      toast.error(tSidebar("dealCreateFailed"));
+      toast.error(tSidebar('dealCreateFailed'));
       setCreatingDeal(false);
       return;
     }
-    const { error } = await supabase.from("deals").insert({
+    const { error } = await supabase.from('deals').insert({
       title: newDealTitle.trim(),
       value: parseFloat(newDealValue) || 0,
       currency: newDealCurrency,
@@ -364,14 +399,14 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
       stage_id: newDealStageId,
       user_id: user.id,
       account_id: accountId,
-      status: "open",
+      status: 'open',
     });
     setCreatingDeal(false);
     if (error) {
-      toast.error(tSidebar("dealCreateFailed"));
+      toast.error(tSidebar('dealCreateFailed'));
       return;
     }
-    toast.success(tSidebar("dealCreateSuccess"));
+    toast.success(tSidebar('dealCreateSuccess'));
     setNewDealOpen(false);
     await fetchContactData();
   }
@@ -392,12 +427,15 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     if (!confirmDeleteDeal) return;
     setDeletingDeal(true);
     try {
-      const { error } = await createClient().from("deals").delete().eq("id", confirmDeleteDeal.id);
+      const { error } = await createClient()
+        .from('deals')
+        .delete()
+        .eq('id', confirmDeleteDeal.id);
       if (error) {
-        toast.error(tSidebar("dealDeleteFailed"));
+        toast.error(tSidebar('dealDeleteFailed'));
         return;
       }
-      toast.success(tSidebar("dealDeleteSuccess"));
+      toast.success(tSidebar('dealDeleteSuccess'));
       setConfirmDeleteDeal(null);
       await fetchContactData();
     } finally {
@@ -409,13 +447,15 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     if (!confirmDeleteQuote) return;
     setDeletingQuote(true);
     try {
-      const res = await fetch(`/api/quotes/${confirmDeleteQuote.id}`, { method: "DELETE" });
+      const res = await fetch(`/api/quotes/${confirmDeleteQuote.id}`, {
+        method: 'DELETE',
+      });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || tSidebar("quoteDeleteFailed"));
+        const data = await readResponseJson(res).catch(() => ({}));
+        toast.error(data.error || tSidebar('quoteDeleteFailed'));
         return;
       }
-      toast.success(tSidebar("quoteDeleteSuccess"));
+      toast.success(tSidebar('quoteDeleteSuccess'));
       setConfirmDeleteQuote(null);
       await fetchContactData();
     } finally {
@@ -423,19 +463,23 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     }
   }
 
-  async function handleTemperatureChange(value: LeadTemperature | "unclassified") {
+  async function handleTemperatureChange(
+    value: LeadTemperature | 'unclassified'
+  ) {
     if (!contact) return;
     setTemperature(value);
     setSavingTemperature(true);
     try {
       const res = await fetch(`/api/contacts/${contact.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ lead_temperature: value === "unclassified" ? null : value }),
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_temperature: value === 'unclassified' ? null : value,
+        }),
       });
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        toast.error(data.error || tSidebar("temperatureSaveFailed"));
+        const data = await readResponseJson(res).catch(() => ({}));
+        toast.error(data.error || tSidebar('temperatureSaveFailed'));
         return;
       }
     } finally {
@@ -444,7 +488,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   }
 
   function startEditingPhone() {
-    setPhoneDraft(phone ?? "");
+    setPhoneDraft(phone ?? '');
     setPhoneEditing(true);
   }
 
@@ -453,18 +497,18 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
     setSavingPhone(true);
     try {
       const res = await fetch(`/api/contacts/${contact.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ phone: phoneDraft.trim() }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || tSidebar("phoneSaveFailed"));
+        toast.error(data.error || tSidebar('phoneSaveFailed'));
         return;
       }
       setPhone((data.phone as string | undefined) ?? phoneDraft.trim());
       setPhoneEditing(false);
-      toast.success(tSidebar("phoneSaveSuccess"));
+      toast.success(tSidebar('phoneSaveSuccess'));
     } finally {
       setSavingPhone(false);
     }
@@ -473,32 +517,36 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
   async function handleViewQuotePdf(quote: Quote) {
     let url = quote.pdf_url;
     if (!url) {
-      const res = await fetch(`/api/quotes/${quote.id}/pdf`, { method: "POST" });
-      const data = await res.json().catch(() => ({}));
+      const res = await fetch(`/api/quotes/${quote.id}/pdf`, {
+        method: 'POST',
+      });
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || tSidebar("quotePdfFailed"));
+        toast.error(data.error || tSidebar('quotePdfFailed'));
         return;
       }
       url = data.pdf_url;
       await fetchContactData();
     }
-    if (url) window.open(url, "_blank", "noopener,noreferrer");
+    if (url) window.open(url, '_blank', 'noopener,noreferrer');
   }
 
   async function handleResendQuote(quote: Quote) {
     setSendingQuoteId(quote.id);
     try {
       const res = await fetch(`/api/quotes/${quote.id}/send`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(conversationId ? { conversation_id: conversationId } : {}),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(
+          conversationId ? { conversation_id: conversationId } : {}
+        ),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || tSidebar("quoteSendFailed"));
+        toast.error(data.error || tSidebar('quoteSendFailed'));
         return;
       }
-      toast.success(tSidebar("quoteSendSuccess"));
+      toast.success(tSidebar('quoteSendSuccess'));
       await fetchContactData();
     } finally {
       setSendingQuoteId(null);
@@ -507,22 +555,35 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
 
   if (!contact) {
     return (
-      <div className={cn("flex h-full w-70 items-center justify-center border-l border-border bg-card", className)}>
-        <p className="text-sm text-muted-foreground">{tThread("selectConversation")}</p>
+      <div
+        className={cn(
+          'border-border bg-card flex h-full w-70 items-center justify-center border-l',
+          className
+        )}
+      >
+        <p className="text-muted-foreground text-sm">
+          {tThread('selectConversation')}
+        </p>
       </div>
     );
   }
 
-  const displayName = contact.name || contact.instagram_username || contact.phone || "";
+  const displayName =
+    contact.name || contact.instagram_username || contact.phone || '';
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
-    <div className={cn("flex h-full w-70 flex-col border-l border-border bg-card", className)}>
+    <div
+      className={cn(
+        'border-border bg-card flex h-full w-70 flex-col border-l',
+        className
+      )}
+    >
       <ScrollArea className="min-h-0 flex-1">
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
+            <div className="bg-muted text-foreground flex h-16 w-16 items-center justify-center rounded-full text-lg font-semibold">
               {contact.avatar_url ? (
                 <img
                   src={contact.avatar_url}
@@ -533,11 +594,11 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
+            <h3 className="text-foreground mt-3 text-sm font-semibold">
               {displayName}
             </h3>
             {contact.company && (
-              <p className="text-xs text-muted-foreground">{contact.company}</p>
+              <p className="text-muted-foreground text-xs">{contact.company}</p>
             )}
           </div>
 
@@ -554,15 +615,15 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                   value={phoneDraft}
                   onChange={(e) => setPhoneDraft(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter") handleSavePhone();
-                    if (e.key === "Escape") setPhoneEditing(false);
+                    if (e.key === 'Enter') handleSavePhone();
+                    if (e.key === 'Escape') setPhoneEditing(false);
                   }}
                   placeholder="+502 5555 5555"
-                  className="h-8 flex-1 border-border bg-muted text-sm"
+                  className="border-border bg-muted h-8 flex-1 text-sm"
                 />
                 <Button
                   size="sm"
-                  className="h-8 w-8 bg-primary p-0 hover:bg-primary/90"
+                  className="bg-primary hover:bg-primary/90 h-8 w-8 p-0"
                   disabled={!phoneDraft.trim() || savingPhone}
                   onClick={handleSavePhone}
                 >
@@ -575,7 +636,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-8 w-8 p-0 text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground h-8 w-8 p-0"
                   disabled={savingPhone}
                   onClick={() => setPhoneEditing(false)}
                 >
@@ -583,119 +644,136 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                 </Button>
               </div>
             ) : phone ? (
-              <div className="group flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted">
-                <Phone className="h-4 w-4 text-muted-foreground" />
+              <div className="group text-muted-foreground hover:bg-muted flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors">
+                <Phone className="text-muted-foreground h-4 w-4" />
                 <button onClick={handleCopyPhone} className="flex-1 text-left">
                   {phone}
                 </button>
                 <button
                   onClick={handleCopyPhone}
-                  aria-label={tSidebar("copyPhone")}
+                  aria-label={tSidebar('copyPhone')}
                   className="shrink-0"
                 >
                   {copied ? (
-                    <Check className="h-3 w-3 text-primary" />
+                    <Check className="text-primary h-3 w-3" />
                   ) : (
-                    <Copy className="h-3 w-3 text-muted-foreground" />
+                    <Copy className="text-muted-foreground h-3 w-3" />
                   )}
                 </button>
                 <button
                   onClick={startEditingPhone}
-                  aria-label={tSidebar("editPhone")}
+                  aria-label={tSidebar('editPhone')}
                   className="shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
                 >
-                  <Pencil className="h-3 w-3 text-muted-foreground" />
+                  <Pencil className="text-muted-foreground h-3 w-3" />
                 </button>
               </div>
             ) : (
               <button
                 onClick={startEditingPhone}
-                className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+                className="text-muted-foreground hover:bg-muted flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors"
               >
-                <Phone className="h-4 w-4 text-muted-foreground" />
-                <span className="flex-1 text-left">{tSidebar("addPhone")}</span>
-                <Plus className="h-3 w-3 text-muted-foreground" />
+                <Phone className="text-muted-foreground h-4 w-4" />
+                <span className="flex-1 text-left">{tSidebar('addPhone')}</span>
+                <Plus className="text-muted-foreground h-3 w-3" />
               </button>
             )}
 
             {contact.instagram_username && (
-              <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-                <Camera className="h-4 w-4 text-muted-foreground" />
-                <span className="flex-1 text-left">@{contact.instagram_username}</span>
+              <div className="text-muted-foreground flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                <Camera className="text-muted-foreground h-4 w-4" />
+                <span className="flex-1 text-left">
+                  @{contact.instagram_username}
+                </span>
               </div>
             )}
 
             {contact.facebook_username && (
-              <div className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-                <Camera className="h-4 w-4 text-muted-foreground" />
-                <span className="flex-1 text-left">{contact.facebook_username}</span>
+              <div className="text-muted-foreground flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                <Camera className="text-muted-foreground h-4 w-4" />
+                <span className="flex-1 text-left">
+                  {contact.facebook_username}
+                </span>
               </div>
             )}
 
             {contact.email && (
-              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-                <Mail className="h-4 w-4 text-muted-foreground" />
+              <div className="text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-2 text-sm">
+                <Mail className="text-muted-foreground h-4 w-4" />
                 <span className="truncate">{contact.email}</span>
               </div>
             )}
           </div>
 
           {/* Divider */}
-          <div className="my-4 border-t border-border" />
+          <div className="border-border my-4 border-t" />
 
           {/* Temperature */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
               <Thermometer className="h-3 w-3" />
-              {tSidebar("temperature")}
+              {tSidebar('temperature')}
             </div>
             <div className="mt-2 flex items-center gap-2 px-1">
               <LeadTemperatureBadge
-                value={temperature === "unclassified" ? null : temperature}
+                value={temperature === 'unclassified' ? null : temperature}
                 labels={{
-                  cold: tTemp("temperatureCold"),
-                  warm: tTemp("temperatureWarm"),
-                  hot: tTemp("temperatureHot"),
+                  cold: tTemp('temperatureCold'),
+                  warm: tTemp('temperatureWarm'),
+                  hot: tTemp('temperatureHot'),
                 }}
               />
               <Select
                 value={temperature}
-                onValueChange={(value) => value && handleTemperatureChange(value as LeadTemperature | "unclassified")}
+                onValueChange={(value) =>
+                  value &&
+                  handleTemperatureChange(
+                    value as LeadTemperature | 'unclassified'
+                  )
+                }
                 disabled={savingTemperature}
                 items={{
-                  unclassified: tTemp("temperatureUnclassified"),
-                  cold: tTemp("temperatureCold"),
-                  warm: tTemp("temperatureWarm"),
-                  hot: tTemp("temperatureHot"),
+                  unclassified: tTemp('temperatureUnclassified'),
+                  cold: tTemp('temperatureCold'),
+                  warm: tTemp('temperatureWarm'),
+                  hot: tTemp('temperatureHot'),
                 }}
               >
-                <SelectTrigger className="h-7 flex-1 bg-muted border-border text-xs">
+                <SelectTrigger className="bg-muted border-border h-7 flex-1 text-xs">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="unclassified">{tTemp("temperatureUnclassified")}</SelectItem>
-                  <SelectItem value="cold">{tTemp("temperatureCold")}</SelectItem>
-                  <SelectItem value="warm">{tTemp("temperatureWarm")}</SelectItem>
-                  <SelectItem value="hot">{tTemp("temperatureHot")}</SelectItem>
+                  <SelectItem value="unclassified">
+                    {tTemp('temperatureUnclassified')}
+                  </SelectItem>
+                  <SelectItem value="cold">
+                    {tTemp('temperatureCold')}
+                  </SelectItem>
+                  <SelectItem value="warm">
+                    {tTemp('temperatureWarm')}
+                  </SelectItem>
+                  <SelectItem value="hot">{tTemp('temperatureHot')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
           </div>
 
           {/* Divider */}
-          <div className="my-4 border-t border-border" />
+          <div className="border-border my-4 border-t" />
 
           {/* Tags — click any tag to apply/remove it from this contact.
               Creating a brand-new tag stays Settings-only (Fields &
               tags); this list only toggles ones that already exist. */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
               <TagIcon className="h-3 w-3" />
-              {tSidebar("tags")}
+              {tSidebar('tags')}
             </div>
             <div className="mt-2 flex flex-wrap gap-1">
               {allTags.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTagsInAccount")}</p>
+                <p className="text-muted-foreground px-1 text-xs">
+                  {tSidebar('noTagsInAccount')}
+                </p>
               ) : (
                 allTags.map((tag) => {
                   const applied = tags.some((t) => t.id === tag.id);
@@ -706,12 +784,14 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                       onClick={() => toggleTag(tag.id)}
                       disabled={saving}
                       className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium transition-opacity ${
-                        applied ? "" : "opacity-50 hover:opacity-80"
+                        applied ? '' : 'opacity-50 hover:opacity-80'
                       }`}
                       style={{
                         backgroundColor: `${tag.color}20`,
                         color: tag.color,
-                        ...(applied ? { boxShadow: `inset 0 0 0 1px ${tag.color}` } : {}),
+                        ...(applied
+                          ? { boxShadow: `inset 0 0 0 1px ${tag.color}` }
+                          : {}),
                       }}
                     >
                       {saving ? (
@@ -728,45 +808,47 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
           </div>
 
           {/* Divider */}
-          <div className="my-4 border-t border-border" />
+          <div className="border-border my-4 border-t" />
 
           {/* Active Deals */}
           <div>
             <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
                 <DollarSign className="h-3 w-3" />
-                {tSidebar("deals")}
+                {tSidebar('deals')}
               </div>
               {!newDealOpen && (
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  className="text-muted-foreground hover:text-foreground h-6 px-1.5 text-xs"
                   disabled={pipelines.length === 0}
                   onClick={openNewDeal}
                 >
                   <Plus className="h-3 w-3" />
-                  {tSidebar("newDeal")}
+                  {tSidebar('newDeal')}
                 </Button>
               )}
             </div>
             <div className="mt-2 space-y-2">
               {newDealOpen && (
-                <div className="space-y-1.5 rounded-lg border border-border bg-muted px-3 py-2">
+                <div className="border-border bg-muted space-y-1.5 rounded-lg border px-3 py-2">
                   <Input
                     autoFocus
                     value={newDealTitle}
                     onChange={(e) => setNewDealTitle(e.target.value)}
-                    placeholder={tSidebar("dealTitlePlaceholder")}
-                    className="h-7 border-border bg-card text-xs"
+                    placeholder={tSidebar('dealTitlePlaceholder')}
+                    className="border-border bg-card h-7 text-xs"
                   />
                   {pipelines.length > 1 && (
                     <Select
                       value={newDealPipelineId}
                       onValueChange={(v) => v && handleNewDealPipelineChange(v)}
-                      items={Object.fromEntries(pipelines.map((p) => [p.id, p.name]))}
+                      items={Object.fromEntries(
+                        pipelines.map((p) => [p.id, p.name])
+                      )}
                     >
-                      <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
+                      <SelectTrigger className="bg-card border-border h-7 w-full text-xs">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
@@ -782,17 +864,22 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                     value={newDealStageId}
                     onValueChange={(v) => v && setNewDealStageId(v)}
                     items={Object.fromEntries(
-                      (pipelines.find((p) => p.id === newDealPipelineId)?.stages ?? []).map((s) => [
-                        s.id,
-                        s.name,
-                      ]),
+                      (
+                        pipelines.find((p) => p.id === newDealPipelineId)
+                          ?.stages ?? []
+                      ).map((s) => [s.id, s.name])
                     )}
                   >
-                    <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
-                      <SelectValue placeholder={tSidebar("dealStagePlaceholder")} />
+                    <SelectTrigger className="bg-card border-border h-7 w-full text-xs">
+                      <SelectValue
+                        placeholder={tSidebar('dealStagePlaceholder')}
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {(pipelines.find((p) => p.id === newDealPipelineId)?.stages ?? []).map((s) => (
+                      {(
+                        pipelines.find((p) => p.id === newDealPipelineId)
+                          ?.stages ?? []
+                      ).map((s) => (
                         <SelectItem key={s.id} value={s.id}>
                           {s.name}
                         </SelectItem>
@@ -801,19 +888,19 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                   </Select>
                   <div className="flex gap-1.5">
                     <div className="relative flex-1">
-                      <DollarSign className="absolute left-2 top-1/2 h-3 w-3 -translate-y-1/2 text-muted-foreground" />
+                      <DollarSign className="text-muted-foreground absolute top-1/2 left-2 h-3 w-3 -translate-y-1/2" />
                       <Input
                         type="number"
                         value={newDealValue}
                         onChange={(e) => setNewDealValue(e.target.value)}
                         placeholder="0"
-                        className="h-7 border-border bg-card pl-6 text-xs"
+                        className="border-border bg-card h-7 pl-6 text-xs"
                       />
                     </div>
                     <select
                       value={newDealCurrency}
                       onChange={(e) => setNewDealCurrency(e.target.value)}
-                      className="h-7 w-[4.5rem] rounded-lg border border-border bg-card px-1.5 text-xs text-foreground outline-none focus:border-primary"
+                      className="border-border bg-card text-foreground focus:border-primary h-7 w-[4.5rem] rounded-lg border px-1.5 text-xs outline-none"
                     >
                       {CURRENCIES.map((c) => (
                         <option key={c.code} value={c.code}>
@@ -826,55 +913,60 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                     <Button
                       size="sm"
                       variant="outline"
-                      className="h-7 flex-1 border-border text-muted-foreground hover:bg-muted text-xs"
+                      className="border-border text-muted-foreground hover:bg-muted h-7 flex-1 text-xs"
                       disabled={creatingDeal}
                       onClick={() => setNewDealOpen(false)}
                     >
-                      {tSidebar("cancel")}
+                      {tSidebar('cancel')}
                     </Button>
                     <Button
                       size="sm"
-                      className="h-7 flex-1 bg-primary text-primary-foreground hover:bg-primary/90 text-xs"
-                      disabled={creatingDeal || !newDealTitle.trim() || !newDealStageId}
+                      className="bg-primary text-primary-foreground hover:bg-primary/90 h-7 flex-1 text-xs"
+                      disabled={
+                        creatingDeal || !newDealTitle.trim() || !newDealStageId
+                      }
                       onClick={handleCreateDeal}
                     >
                       {creatingDeal ? (
                         <Loader2 className="size-3 animate-spin" />
                       ) : (
-                        tSidebar("createDeal")
+                        tSidebar('createDeal')
                       )}
                     </Button>
                   </div>
                 </div>
               )}
               {deals.length === 0 && !newDealOpen ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
+                <p className="text-muted-foreground px-1 text-xs">
+                  {tSidebar('noDeals')}
+                </p>
               ) : (
                 deals.map((deal) => {
                   const stages = stagesByPipeline[deal.pipeline_id] ?? [];
                   const wonStageId = wonStageIdFor(deal.pipeline_id);
-                  const isWon = deal.status === "won" || deal.stage_id === wonStageId;
+                  const isWon =
+                    deal.status === 'won' || deal.stage_id === wonStageId;
                   const busy = busyDealId === deal.id;
                   return (
                     <div
                       key={deal.id}
-                      className="group rounded-lg bg-muted px-3 py-2"
+                      className="group bg-muted rounded-lg px-3 py-2"
                     >
                       <div className="flex items-center justify-between gap-2">
-                        <p className="text-sm font-medium text-foreground">
+                        <p className="text-foreground text-sm font-medium">
                           {deal.title}
                         </p>
                         <button
                           onClick={() => setConfirmDeleteDeal(deal)}
-                          aria-label={tSidebar("deleteDeal")}
-                          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+                          aria-label={tSidebar('deleteDeal')}
+                          className="text-muted-foreground hover:text-destructive shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
                         >
                           <Trash2 className="size-3.5" />
                         </button>
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
+                      <div className="text-muted-foreground mt-1 flex items-center justify-between text-xs">
                         <span>
-                          {deal.currency ?? "$"}
+                          {deal.currency ?? '$'}
                           {deal.value.toLocaleString()}
                         </span>
                         {deal.stage && (
@@ -895,12 +987,15 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                           <Select
                             value={deal.stage_id}
                             onValueChange={(stageId) => {
-                              if (stageId && stageId !== deal.stage_id) moveDealStage(deal, stageId);
+                              if (stageId && stageId !== deal.stage_id)
+                                moveDealStage(deal, stageId);
                             }}
                             disabled={busy}
-                            items={Object.fromEntries(stages.map((s) => [s.id, s.name]))}
+                            items={Object.fromEntries(
+                              stages.map((s) => [s.id, s.name])
+                            )}
                           >
-                            <SelectTrigger className="h-7 w-full bg-card border-border text-xs">
+                            <SelectTrigger className="bg-card border-border h-7 w-full text-xs">
                               <SelectValue />
                             </SelectTrigger>
                             <SelectContent>
@@ -915,7 +1010,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                             <Button
                               size="sm"
                               variant="outline"
-                              className="h-7 w-full border-emerald-700/50 bg-emerald-950/20 text-emerald-300 hover:bg-emerald-950/40 text-xs"
+                              className="h-7 w-full border-emerald-700/50 bg-emerald-950/20 text-xs text-emerald-300 hover:bg-emerald-950/40"
                               disabled={busy}
                               onClick={() => setConfirmWinDeal(deal)}
                             >
@@ -924,7 +1019,7 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                               ) : (
                                 <Trophy className="size-3" />
                               )}
-                              {tSidebar("markWon")}
+                              {tSidebar('markWon')}
                             </Button>
                           )}
                         </div>
@@ -937,53 +1032,59 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
           </div>
 
           {/* Divider */}
-          <div className="my-4 border-t border-border" />
+          <div className="border-border my-4 border-t" />
 
           {/* Quotes */}
           <div>
             <div className="flex items-center justify-between px-1">
-              <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+              <div className="text-muted-foreground flex items-center gap-2 text-xs font-medium tracking-wider uppercase">
                 <FileText className="h-3 w-3" />
-                {tSidebar("quotes")}
+                {tSidebar('quotes')}
               </div>
               <Button
                 size="sm"
                 variant="ghost"
-                className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+                className="text-muted-foreground hover:text-foreground h-6 px-1.5 text-xs"
                 disabled={!canManageProducts}
                 onClick={() => setQuoteBuilderOpen(true)}
               >
                 <Plus className="h-3 w-3" />
-                {tSidebar("newQuote")}
+                {tSidebar('newQuote')}
               </Button>
             </div>
             <div className="mt-2 space-y-2">
               {quotes.length === 0 ? (
-                <p className="px-1 text-xs text-muted-foreground">{tSidebar("noQuotes")}</p>
+                <p className="text-muted-foreground px-1 text-xs">
+                  {tSidebar('noQuotes')}
+                </p>
               ) : (
                 quotes.map((quote) => (
-                  <div key={quote.id} className="rounded-lg bg-muted px-3 py-2">
+                  <div key={quote.id} className="bg-muted rounded-lg px-3 py-2">
                     <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium text-foreground">
+                      <p className="text-foreground text-sm font-medium">
                         {formatCurrency(quote.total, quote.currency)}
                       </p>
-                      <span className="text-[10px] uppercase text-muted-foreground">{quote.status}</span>
+                      <span className="text-muted-foreground text-[10px] uppercase">
+                        {quote.status}
+                      </span>
                     </div>
                     <div className="mt-1.5 flex gap-1.5">
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 flex-1 border-border text-[11px]"
+                        className="border-border h-6 flex-1 text-[11px]"
                         onClick={() => handleViewQuotePdf(quote)}
                       >
                         <FileText className="size-3" />
-                        {tSidebar("viewPdf")}
+                        {tSidebar('viewPdf')}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 flex-1 border-border text-[11px]"
-                        disabled={!canManageProducts || sendingQuoteId === quote.id}
+                        className="border-border h-6 flex-1 text-[11px]"
+                        disabled={
+                          !canManageProducts || sendingQuoteId === quote.id
+                        }
                         onClick={() => handleResendQuote(quote)}
                       >
                         {sendingQuoteId === quote.id ? (
@@ -991,15 +1092,15 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
                         ) : (
                           <Send className="size-3" />
                         )}
-                        {tSidebar("resend")}
+                        {tSidebar('resend')}
                       </Button>
                       <Button
                         size="sm"
                         variant="outline"
-                        className="h-6 w-6 shrink-0 border-border p-0 text-muted-foreground hover:border-destructive/50 hover:text-destructive"
+                        className="border-border text-muted-foreground hover:border-destructive/50 hover:text-destructive h-6 w-6 shrink-0 p-0"
                         disabled={!canManageProducts}
                         onClick={() => setConfirmDeleteQuote(quote)}
-                        aria-label={tSidebar("deleteQuote")}
+                        aria-label={tSidebar('deleteQuote')}
                       >
                         <Trash2 className="size-3" />
                       </Button>
@@ -1011,26 +1112,26 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
           </div>
 
           {/* Divider */}
-          <div className="my-4 border-t border-border" />
+          <div className="border-border my-4 border-t" />
 
           {/* Notes */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            <div className="text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase">
               <StickyNote className="h-3 w-3" />
-              {tSidebar("notes")}
+              {tSidebar('notes')}
             </div>
             <div className="mt-2">
               <div className="flex gap-2">
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
-                  placeholder={tSidebar("addNotePlaceholder")}
+                  placeholder={tSidebar('addNotePlaceholder')}
                   rows={2}
-                  className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+                  className="border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-lg border px-3 py-2 text-xs outline-none"
                 />
                 <Button
                   size="sm"
-                  className="h-auto bg-primary px-2 hover:bg-primary/90"
+                  className="bg-primary hover:bg-primary/90 h-auto px-2"
                   onClick={handleAddNote}
                   disabled={!newNote.trim() || addingNote}
                 >
@@ -1040,15 +1141,12 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
 
               <div className="mt-2 space-y-2">
                 {notes.map((note) => (
-                  <div
-                    key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
-                  >
-                    <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                  <div key={note.id} className="bg-muted rounded-lg px-3 py-2">
+                    <p className="text-muted-foreground text-xs whitespace-pre-wrap">
                       {note.note_text}
                     </p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
-                      {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
+                    <p className="text-muted-foreground mt-1 text-[10px]">
+                      {format(new Date(note.created_at), 'MMM d, yyyy HH:mm')}
                     </p>
                   </div>
                 ))}
@@ -1058,12 +1156,19 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
         </div>
       </ScrollArea>
 
-      <Dialog open={confirmWinDeal != null} onOpenChange={(open) => !open && setConfirmWinDeal(null)}>
+      <Dialog
+        open={confirmWinDeal != null}
+        onOpenChange={(open) => !open && setConfirmWinDeal(null)}
+      >
         <DialogContent className="border-border bg-popover sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-popover-foreground">{tSidebar("confirmWonTitle")}</DialogTitle>
+            <DialogTitle className="text-popover-foreground">
+              {tSidebar('confirmWonTitle')}
+            </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {tSidebar("confirmWonDesc", { title: confirmWinDeal?.title ?? "" })}
+              {tSidebar('confirmWonDesc', {
+                title: confirmWinDeal?.title ?? '',
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1072,25 +1177,32 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
               onClick={() => setConfirmWinDeal(null)}
               className="border-border text-muted-foreground hover:bg-muted"
             >
-              {tSidebar("cancel")}
+              {tSidebar('cancel')}
             </Button>
             <Button
               onClick={handleConfirmWon}
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               <Trophy className="size-4" />
-              {tSidebar("confirmWonBtn")}
+              {tSidebar('confirmWonBtn')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmDeleteDeal != null} onOpenChange={(open) => !open && setConfirmDeleteDeal(null)}>
+      <Dialog
+        open={confirmDeleteDeal != null}
+        onOpenChange={(open) => !open && setConfirmDeleteDeal(null)}
+      >
         <DialogContent className="border-border bg-popover sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-popover-foreground">{tSidebar("deleteDealTitle")}</DialogTitle>
+            <DialogTitle className="text-popover-foreground">
+              {tSidebar('deleteDealTitle')}
+            </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {tSidebar("deleteDealDesc", { title: confirmDeleteDeal?.title ?? "" })}
+              {tSidebar('deleteDealDesc', {
+                title: confirmDeleteDeal?.title ?? '',
+              })}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1100,26 +1212,35 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
               className="border-border text-muted-foreground hover:bg-muted"
               disabled={deletingDeal}
             >
-              {tSidebar("cancel")}
+              {tSidebar('cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteDeal}
               disabled={deletingDeal}
             >
-              {deletingDeal ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              {tSidebar("deleteDealBtn")}
+              {deletingDeal ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              {tSidebar('deleteDealBtn')}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmDeleteQuote != null} onOpenChange={(open) => !open && setConfirmDeleteQuote(null)}>
+      <Dialog
+        open={confirmDeleteQuote != null}
+        onOpenChange={(open) => !open && setConfirmDeleteQuote(null)}
+      >
         <DialogContent className="border-border bg-popover sm:max-w-sm">
           <DialogHeader>
-            <DialogTitle className="text-popover-foreground">{tSidebar("deleteQuoteTitle")}</DialogTitle>
+            <DialogTitle className="text-popover-foreground">
+              {tSidebar('deleteQuoteTitle')}
+            </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {tSidebar("deleteQuoteDesc")}
+              {tSidebar('deleteQuoteDesc')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -1129,15 +1250,19 @@ export function ContactSidebar({ contact, conversationId = null, className }: Co
               className="border-border text-muted-foreground hover:bg-muted"
               disabled={deletingQuote}
             >
-              {tSidebar("cancel")}
+              {tSidebar('cancel')}
             </Button>
             <Button
               variant="destructive"
               onClick={handleDeleteQuote}
               disabled={deletingQuote}
             >
-              {deletingQuote ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              {tSidebar("deleteQuoteBtn")}
+              {deletingQuote ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Trash2 className="size-4" />
+              )}
+              {tSidebar('deleteQuoteBtn')}
             </Button>
           </DialogFooter>
         </DialogContent>

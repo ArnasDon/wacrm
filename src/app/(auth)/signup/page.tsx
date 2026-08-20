@@ -1,20 +1,22 @@
-"use client";
+'use client';
 
-import { Suspense, useState } from "react";
-import Link from "next/link";
-import { useSearchParams } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { readResponseJson } from '@/lib/http/response-json';
+
+import { Suspense, useState } from 'react';
+import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardDescription,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound, Send } from "lucide-react";
+} from '@/components/ui/card';
+import { MessageSquare, CheckCircle, UsersRound, Send } from 'lucide-react';
 
 const MIN_PASSWORD_LENGTH = 8;
 
@@ -41,7 +43,7 @@ function SignupPageInner() {
   // approval. That's now an account-request form instead (see
   // AccountRequestForm below); real signup only happens for someone
   // who already has an invitation link.
-  const inviteToken = searchParams.get("invite");
+  const inviteToken = searchParams.get('invite');
 
   if (!inviteToken) {
     return <AccountRequestForm />;
@@ -58,10 +60,10 @@ function SignupPageInner() {
  * without a token attached.
  */
 function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
-  const [fullName, setFullName] = useState("");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [fullName, setFullName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -72,7 +74,7 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
     setError(null);
 
     if (password !== confirmPassword) {
-      setError("Passwords do not match");
+      setError('Passwords do not match');
       return;
     }
 
@@ -108,26 +110,26 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="bg-background flex min-h-screen items-center justify-center px-4">
+        <Card className="border-border bg-card w-full max-w-md">
           <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
+            <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+              <CheckCircle className="text-primary h-6 w-6" />
             </div>
-            <CardTitle className="text-xl text-foreground">
+            <CardTitle className="text-foreground text-xl">
               Check your email
             </CardTitle>
             <CardDescription className="text-muted-foreground">
-              We&apos;ve sent a confirmation link to{" "}
-              <span className="text-foreground">{email}</span>. Please check your
-              inbox and click the link to verify your account.
+              We&apos;ve sent a confirmation link to{' '}
+              <span className="text-foreground">{email}</span>. Please check
+              your inbox and click the link to verify your account.
             </CardDescription>
           </CardHeader>
           <CardContent>
             <Link href={`/login?invite=${encodeURIComponent(inviteToken)}`}>
               <Button
                 variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground w-full"
               >
                 Back to sign in
               </Button>
@@ -139,13 +141,13 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="bg-background flex min-h-screen items-center justify-center px-4">
+      <Card className="border-border bg-card w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <UsersRound className="h-6 w-6 text-primary" />
+          <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+            <UsersRound className="text-primary h-6 w-6" />
           </div>
-          <CardTitle className="text-xl text-foreground">
+          <CardTitle className="text-foreground text-xl">
             Create account & join
           </CardTitle>
           <CardDescription className="text-muted-foreground">
@@ -207,7 +209,10 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
             </div>
 
             <div className="flex flex-col gap-2">
-              <Label htmlFor="confirmPassword" className="text-muted-foreground">
+              <Label
+                htmlFor="confirmPassword"
+                className="text-muted-foreground"
+              >
                 Confirm password
               </Label>
               <Input
@@ -225,14 +230,14 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-10 w-full disabled:opacity-50"
             >
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? 'Creating account...' : 'Create account'}
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            Already have an account?{" "}
+          <p className="text-muted-foreground mt-6 text-center text-sm">
+            Already have an account?{' '}
             <Link
               href={`/login?invite=${encodeURIComponent(inviteToken)}`}
               className="text-primary hover:text-primary/80"
@@ -255,11 +260,11 @@ function InviteSignupForm({ inviteToken }: { inviteToken: string }) {
  * real invitation from /admin the same way he already does today.
  */
 function AccountRequestForm() {
-  const [companyName, setCompanyName] = useState("");
-  const [requesterName, setRequesterName] = useState("");
-  const [dailyInquiries, setDailyInquiries] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
+  const [companyName, setCompanyName] = useState('');
+  const [requesterName, setRequesterName] = useState('');
+  const [dailyInquiries, setDailyInquiries] = useState('');
+  const [phone, setPhone] = useState('');
+  const [email, setEmail] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -270,9 +275,9 @@ function AccountRequestForm() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/public/account-request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await fetch('/api/public/account-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           company_name: companyName.trim(),
           requester_name: requesterName.trim(),
@@ -281,15 +286,15 @@ function AccountRequestForm() {
           email: email.trim(),
         }),
       });
-      const data = await res.json().catch(() => ({}));
+      const data = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
-        setError(data.error || "No se pudo enviar la solicitud");
+        setError(data.error || 'No se pudo enviar la solicitud');
         setLoading(false);
         return;
       }
       setSuccess(true);
     } catch {
-      setError("No se pudo conectar con el servidor");
+      setError('No se pudo conectar con el servidor');
     } finally {
       setLoading(false);
     }
@@ -297,13 +302,13 @@ function AccountRequestForm() {
 
   if (success) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background px-4">
-        <Card className="w-full max-w-md border-border bg-card">
+      <div className="bg-background flex min-h-screen items-center justify-center px-4">
+        <Card className="border-border bg-card w-full max-w-md">
           <CardHeader className="items-center text-center">
-            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-              <CheckCircle className="h-6 w-6 text-primary" />
+            <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+              <CheckCircle className="text-primary h-6 w-6" />
             </div>
-            <CardTitle className="text-xl text-foreground">
+            <CardTitle className="text-foreground text-xl">
               ¡Solicitud enviada!
             </CardTitle>
             <CardDescription className="text-muted-foreground">
@@ -314,7 +319,7 @@ function AccountRequestForm() {
             <Link href="/login">
               <Button
                 variant="outline"
-                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                className="border-border text-muted-foreground hover:bg-muted hover:text-foreground w-full"
               >
                 Volver al inicio de sesión
               </Button>
@@ -326,13 +331,13 @@ function AccountRequestForm() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
-      <Card className="w-full max-w-md border-border bg-card">
+    <div className="bg-background flex min-h-screen items-center justify-center px-4">
+      <Card className="border-border bg-card w-full max-w-md">
         <CardHeader className="items-center text-center">
-          <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-            <MessageSquare className="h-6 w-6 text-primary" />
+          <div className="bg-primary/10 mb-2 flex h-12 w-12 items-center justify-center rounded-xl">
+            <MessageSquare className="text-primary h-6 w-6" />
           </div>
-          <CardTitle className="text-xl text-foreground">
+          <CardTitle className="text-foreground text-xl">
             Solicita tu cuenta
           </CardTitle>
           <CardDescription className="text-muted-foreground">
@@ -426,10 +431,10 @@ function AccountRequestForm() {
             <Button
               type="submit"
               disabled={loading}
-              className="mt-2 h-10 w-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+              className="bg-primary text-primary-foreground hover:bg-primary/90 mt-2 h-10 w-full disabled:opacity-50"
             >
               {loading ? (
-                "Enviando..."
+                'Enviando...'
               ) : (
                 <>
                   <Send className="h-4 w-4" />
@@ -439,8 +444,8 @@ function AccountRequestForm() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            ¿Ya tienes una cuenta?{" "}
+          <p className="text-muted-foreground mt-6 text-center text-sm">
+            ¿Ya tienes una cuenta?{' '}
             <Link href="/login" className="text-primary hover:text-primary/80">
               Iniciar sesión
             </Link>

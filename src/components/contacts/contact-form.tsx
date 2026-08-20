@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { readResponseJson } from '@/lib/http/response-json';
+
+import { useState, useEffect, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
@@ -14,7 +16,10 @@ import {
 
 /** Thrown when /api/contacts[/:id] responds non-2xx; carries the HTTP status. */
 class ApiConflictError extends Error {
-  constructor(readonly status: number, message?: string) {
+  constructor(
+    readonly status: number,
+    message?: string
+  ) {
     super(message || 'Request failed');
   }
 }
@@ -60,7 +65,7 @@ export function ContactForm({
   onViewExisting,
 }: ContactFormProps) {
   const t = useTranslations('Contacts.form');
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const { accountId } = useAuth();
   const isEdit = !!contact;
 
@@ -68,16 +73,19 @@ export function ContactForm({
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [company, setCompany] = useState('');
-  const [leadTemperature, setLeadTemperature] = useState<LeadTemperature | 'unclassified'>('unclassified');
+  const [leadTemperature, setLeadTemperature] = useState<
+    LeadTemperature | 'unclassified'
+  >('unclassified');
   const [saving, setSaving] = useState(false);
 
   // Duplicate-phone detection for NEW contacts. `exact` (same digits)
   // hard-blocks the save; a fuzzy trunk-variant match only warns. The
   // DB unique index (migration 022) is the real backstop — this is the
   // friendly heads-up before we get there.
-  const [dupMatch, setDupMatch] = useState<
-    { contact: ExistingContact; exact: boolean } | null
-  >(null);
+  const [dupMatch, setDupMatch] = useState<{
+    contact: ExistingContact;
+    exact: boolean;
+  } | null>(null);
   const [checkingDup, setCheckingDup] = useState(false);
 
   const [tags, setTags] = useState<Tag[]>([]);
@@ -85,6 +93,8 @@ export function ContactForm({
   const [loadingTags, setLoadingTags] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (open) {
       setName(contact?.name ?? '');
       setPhone(contact?.phone ?? '');
@@ -93,9 +103,22 @@ export function ContactForm({
       setLeadTemperature(contact?.lead_temperature ?? 'unclassified');
       setSelectedTagIds(contactTags.map((ct) => ct.tag_id));
       setDupMatch(null);
-      fetchTags();
+      setLoadingTags(true);
+      void supabase
+        .from('tags')
+        .select('*')
+        .order('name')
+        .then(({ data }) => {
+          if (cancelled) return;
+          if (data) setTags(data);
+          setLoadingTags(false);
+        });
     }
-  }, [open, contact]);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [open, contact, contactTags, supabase]);
 
   // Look up an existing contact with this number (new contacts only).
   // Runs on blur so we don't query on every keystroke.
@@ -112,21 +135,11 @@ export function ContactForm({
       setDupMatch(
         existing
           ? { contact: existing, exact: isExactMatch(existing, value) }
-          : null,
+          : null
       );
     } finally {
       setCheckingDup(false);
     }
-  }
-
-  async function fetchTags() {
-    setLoadingTags(true);
-    const { data } = await supabase
-      .from('tags')
-      .select('*')
-      .order('name');
-    if (data) setTags(data);
-    setLoadingTags(false);
   }
 
   function toggleTag(tagId: string) {
@@ -160,7 +173,8 @@ export function ContactForm({
       } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) throw new Error('Not authenticated');
-      if (!accountId) throw new Error('Your profile is not linked to an account.');
+      if (!accountId)
+        throw new Error('Your profile is not linked to an account.');
 
       let contactId = contact?.id;
 
@@ -169,7 +183,8 @@ export function ContactForm({
         phone: phone.trim(),
         email: email.trim() || null,
         company: company.trim() || null,
-        lead_temperature: leadTemperature === 'unclassified' ? null : leadTemperature,
+        lead_temperature:
+          leadTemperature === 'unclassified' ? null : leadTemperature,
       };
 
       if (isEdit && contactId) {
@@ -179,7 +194,7 @@ export function ContactForm({
           body: JSON.stringify(payload),
         });
         if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
+          const data = await readResponseJson(res).catch(() => ({}));
           throw new ApiConflictError(res.status, data.error);
         }
       } else {
@@ -188,7 +203,7 @@ export function ContactForm({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
-        const data = await res.json().catch(() => ({}));
+        const data = await readResponseJson(res).catch(() => ({}));
         if (!res.ok) throw new ApiConflictError(res.status, data.error);
         contactId = data.contact.id;
       }
@@ -197,8 +212,12 @@ export function ContactForm({
       if (contactId) {
         const existingTagIds = new Set(contactTags.map((tag) => tag.tag_id));
         const desiredTagIds = new Set(selectedTagIds);
-        const toRemove = [...existingTagIds].filter((id) => !desiredTagIds.has(id));
-        const toAdd = [...desiredTagIds].filter((id) => !existingTagIds.has(id));
+        const toRemove = [...existingTagIds].filter(
+          (id) => !desiredTagIds.has(id)
+        );
+        const toAdd = [...desiredTagIds].filter(
+          (id) => !existingTagIds.has(id)
+        );
 
         for (const tagId of toRemove) {
           await deleteContactTag(contactId, tagId);
@@ -223,7 +242,7 @@ export function ContactForm({
           const existing = await findExistingContact(
             supabase,
             accountId,
-            phone.trim(),
+            phone.trim()
           );
           if (existing) setDupMatch({ contact: existing, exact: true });
         }
@@ -244,9 +263,7 @@ export function ContactForm({
             {isEdit ? t('editTitle') : t('addTitle')}
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            {isEdit
-              ? t('editDesc')
-              : t('addDesc')}
+            {isEdit ? t('editDesc') : t('addDesc')}
           </DialogDescription>
         </DialogHeader>
 
@@ -289,26 +306,22 @@ export function ContactForm({
               >
                 <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
                 <div className="space-y-1">
-                  <p>
-                    {dupMatch.exact
-                      ? t('dupExact')
-                      : t('dupSimilar')}
-                  </p>
+                  <p>{dupMatch.exact ? t('dupExact') : t('dupSimilar')}</p>
                   {onViewExisting && (
                     <button
                       type="button"
                       onClick={() => onViewExisting(dupMatch.contact.id)}
                       className="font-medium underline underline-offset-2 hover:no-underline"
                     >
-                      {t('viewExisting', { name: dupMatch.contact.name || dupMatch.contact.phone })}
+                      {t('viewExisting', {
+                        name: dupMatch.contact.name || dupMatch.contact.phone,
+                      })}
                     </button>
                   )}
                 </div>
               </div>
             ) : (
-              <p className="text-xs text-muted-foreground">
-                {t('phoneHint')}
-              </p>
+              <p className="text-muted-foreground text-xs">{t('phoneHint')}</p>
             )}
           </div>
 
@@ -340,10 +353,15 @@ export function ContactForm({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-muted-foreground">{t('temperatureLabel')}</Label>
+            <Label className="text-muted-foreground">
+              {t('temperatureLabel')}
+            </Label>
             <Select
               value={leadTemperature}
-              onValueChange={(value) => value && setLeadTemperature(value as LeadTemperature | 'unclassified')}
+              onValueChange={(value) =>
+                value &&
+                setLeadTemperature(value as LeadTemperature | 'unclassified')
+              }
               items={{
                 unclassified: t('temperatureUnclassified'),
                 cold: t('temperatureCold'),
@@ -351,28 +369,32 @@ export function ContactForm({
                 hot: t('temperatureHot'),
               }}
             >
-              <SelectTrigger className="w-full bg-muted border-border">
+              <SelectTrigger className="bg-muted border-border w-full">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="unclassified">{t('temperatureUnclassified')}</SelectItem>
+                <SelectItem value="unclassified">
+                  {t('temperatureUnclassified')}
+                </SelectItem>
                 <SelectItem value="cold">{t('temperatureCold')}</SelectItem>
                 <SelectItem value="warm">{t('temperatureWarm')}</SelectItem>
                 <SelectItem value="hot">{t('temperatureHot')}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground">{t('temperatureHint')}</p>
+            <p className="text-muted-foreground text-xs">
+              {t('temperatureHint')}
+            </p>
           </div>
 
           <div className="space-y-2">
             <Label className="text-muted-foreground">{t('tagsLabel')}</Label>
             {loadingTags ? (
-              <div className="flex items-center gap-2 text-muted-foreground text-sm">
+              <div className="text-muted-foreground flex items-center gap-2 text-sm">
                 <Loader2 className="size-3 animate-spin" />
                 {t('loadingTags')}
               </div>
             ) : tags.length === 0 ? (
-              <p className="text-xs text-muted-foreground">
+              <p className="text-muted-foreground text-xs">
                 {t('noTagsAvailable')}
               </p>
             ) : (
@@ -384,9 +406,9 @@ export function ContactForm({
                       key={tag.id}
                       type="button"
                       onClick={() => toggleTag(tag.id)}
-                      className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors cursor-pointer ${
+                      className={`inline-flex cursor-pointer items-center rounded-full px-2.5 py-0.5 text-xs font-medium transition-colors ${
                         selected
-                          ? 'ring-2 ring-primary ring-offset-1 ring-offset-border'
+                          ? 'ring-primary ring-offset-border ring-2 ring-offset-1'
                           : 'opacity-60 hover:opacity-100'
                       }`}
                       style={{

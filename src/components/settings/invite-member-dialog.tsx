@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 // ============================================================
 // InviteMemberDialog
 //
@@ -116,15 +118,15 @@ export function InviteMemberDialog({
       });
 
       if (!res.ok) {
-        const payload = await res.json().catch(() => ({}));
+        const payload = await readResponseJson(res).catch(() => ({}));
         toast.error(payload.error || 'Failed to create invitation');
         return;
       }
 
-      const data = (await res.json()) as {
+      const data = await readResponseJson<{
         url: string;
         expiresInDays: number;
-      };
+      }>(res);
 
       setResult({
         url: data.url,
@@ -165,7 +167,11 @@ export function InviteMemberDialog({
     // for users in multi-team contexts where "our wacrm account"
     // wouldn't be enough to disambiguate.
     const accountName = result?.accountName ?? 'our Chat Sandía account';
-    const message = t('whatsappMessage', { accountName, expiresInDays: result?.expiresInDays ?? 0, url });
+    const message = t('whatsappMessage', {
+      accountName,
+      expiresInDays: result?.expiresInDays ?? 0,
+      url,
+    });
     return `https://wa.me/?text=${encodeURIComponent(message)}`;
   }
 
@@ -184,15 +190,15 @@ export function InviteMemberDialog({
         {result ? (
           <>
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2 text-popover-foreground">
-                <Sparkles className="size-4 text-primary" />
+              <DialogTitle className="text-popover-foreground flex items-center gap-2">
+                <Sparkles className="text-primary size-4" />
                 {t('inviteCreated')}
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
                 {t.rich('inviteCreatedDesc', {
                   role: tRoles(result.role),
                   days: result.expiresInDays,
-                  bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                  bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
                 })}
               </DialogDescription>
             </DialogHeader>
@@ -240,7 +246,7 @@ export function InviteMemberDialog({
                 className={buttonVariants({
                   variant: 'outline',
                   className:
-                    'w-full border-border text-muted-foreground hover:bg-muted',
+                    'border-border text-muted-foreground hover:bg-muted w-full',
                 })}
               >
                 <MessageCircle className="size-4" />
@@ -260,7 +266,9 @@ export function InviteMemberDialog({
         ) : (
           <>
             <DialogHeader>
-              <DialogTitle className="text-popover-foreground">{t('dialogTitle')}</DialogTitle>
+              <DialogTitle className="text-popover-foreground">
+                {t('dialogTitle')}
+              </DialogTitle>
               <DialogDescription className="text-muted-foreground">
                 {t('dialogDesc')}
               </DialogDescription>
@@ -268,12 +276,14 @@ export function InviteMemberDialog({
 
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('roleLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('roleLabel')}
+                </Label>
                 <Select
                   value={role}
                   onValueChange={(v) => v && setRole(v as InviteRole)}
                 >
-                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                  <SelectTrigger className="bg-muted border-border text-foreground w-full">
                     <SelectValue>{tRoles(role)}</SelectValue>
                   </SelectTrigger>
                   <SelectContent>
@@ -282,21 +292,28 @@ export function InviteMemberDialog({
                     <SelectItem value="viewer">{tRoles('viewer')}</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  {tRoles(`${role}Hint` as 'adminHint' | 'agentHint' | 'viewerHint')}
+                <p className="text-muted-foreground text-xs">
+                  {tRoles(
+                    `${role}Hint` as 'adminHint' | 'agentHint' | 'viewerHint'
+                  )}
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('validForLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('validForLabel')}
+                </Label>
                 <Select
                   value={expiry}
                   onValueChange={(v) => v && setExpiry(v)}
                   items={Object.fromEntries(
-                    EXPIRY_OPTIONS.map((opt) => [opt.value, t(opt.labelKey as Parameters<typeof t>[0])]),
+                    EXPIRY_OPTIONS.map((opt) => [
+                      opt.value,
+                      t(opt.labelKey as Parameters<typeof t>[0]),
+                    ])
                   )}
                 >
-                  <SelectTrigger className="w-full bg-muted border-border text-foreground">
+                  <SelectTrigger className="bg-muted border-border text-foreground w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -312,7 +329,9 @@ export function InviteMemberDialog({
               <div className="space-y-2">
                 <Label className="text-muted-foreground">
                   {t('labelTitle')}{' '}
-                  <span className="text-xs text-muted-foreground">{t('optional')}</span>
+                  <span className="text-muted-foreground text-xs">
+                    {t('optional')}
+                  </span>
                 </Label>
                 <Input
                   placeholder={t('labelPlaceholder')}
@@ -321,7 +340,7 @@ export function InviteMemberDialog({
                   maxLength={MAX_LABEL_LEN}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
-                <p className="text-xs text-muted-foreground">
+                <p className="text-muted-foreground text-xs">
                   {t('labelHint')}
                 </p>
               </div>

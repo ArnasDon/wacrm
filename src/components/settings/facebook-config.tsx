@@ -1,5 +1,7 @@
 'use client';
 
+import { readResponseJson } from '@/lib/http/response-json';
+
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { toast } from 'sonner';
 import {
@@ -20,7 +22,13 @@ import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { SettingsPanelHead } from './settings-panel-head';
 import {
@@ -51,7 +59,8 @@ export function FacebookConfig() {
   const [testing, setTesting] = useState(false);
   const [resetting, setResetting] = useState(false);
   const [config, setConfig] = useState<FacebookConfigType | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('unknown');
+  const [connectionStatus, setConnectionStatus] =
+    useState<ConnectionStatus>('unknown');
   const [resetReason, setResetReason] = useState<ResetReason>(null);
   const [statusMessage, setStatusMessage] = useState<string>('');
   const loadedAccountIdRef = useRef<string | null>(null);
@@ -63,69 +72,74 @@ export function FacebookConfig() {
   const [webhookSecret, setWebhookSecret] = useState<string | null>(null);
 
   const webhookUrl =
-    typeof window !== 'undefined' ? `${window.location.origin}/api/facebook/webhook/zernio` : '';
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/api/facebook/webhook/zernio`
+      : '';
 
-  const fetchConfig = useCallback(async (acctId: string) => {
-    setLoading(true);
-    try {
-      const { data, error } = await supabase
-        .from('facebook_config')
-        .select('*')
-        .eq('account_id', acctId)
-        .maybeSingle();
+  const fetchConfig = useCallback(
+    async (acctId: string) => {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('facebook_config')
+          .select('*')
+          .eq('account_id', acctId)
+          .maybeSingle();
 
-      if (error) {
-        console.error('Failed to load Facebook config row:', error);
-      }
-
-      if (data) {
-        setConfig(data);
-        setZernioAccountId(data.zernio_account_id || '');
-        setZernioApiKey(data.zernio_api_key ? MASKED_TOKEN : '');
-        setZernioApiKeyEdited(false);
-      } else {
-        setConfig(null);
-        setZernioAccountId('');
-        setZernioApiKey('');
-        setZernioApiKeyEdited(false);
-      }
-
-      if (data) {
-        try {
-          const res = await fetch('/api/facebook/config', { method: 'GET' });
-          const payload = await res.json();
-
-          if (payload.connected) {
-            setConnectionStatus('connected');
-            setResetReason(null);
-            setStatusMessage('');
-          } else {
-            setConnectionStatus('disconnected');
-            setResetReason(
-              payload.needs_reset
-                ? 'token_corrupted'
-                : payload.reason === 'zernio_api_error'
-                  ? 'zernio_api_error'
-                  : null
-            );
-            setStatusMessage(payload.message || '');
-          }
-        } catch (err) {
-          console.error('Health check failed:', err);
-          setConnectionStatus('disconnected');
+        if (error) {
+          console.error('Failed to load Facebook config row:', error);
         }
-      } else {
-        setConnectionStatus('disconnected');
-        setResetReason(null);
-        setStatusMessage('');
+
+        if (data) {
+          setConfig(data);
+          setZernioAccountId(data.zernio_account_id || '');
+          setZernioApiKey(data.zernio_api_key ? MASKED_TOKEN : '');
+          setZernioApiKeyEdited(false);
+        } else {
+          setConfig(null);
+          setZernioAccountId('');
+          setZernioApiKey('');
+          setZernioApiKeyEdited(false);
+        }
+
+        if (data) {
+          try {
+            const res = await fetch('/api/facebook/config', { method: 'GET' });
+            const payload = await readResponseJson(res);
+
+            if (payload.connected) {
+              setConnectionStatus('connected');
+              setResetReason(null);
+              setStatusMessage('');
+            } else {
+              setConnectionStatus('disconnected');
+              setResetReason(
+                payload.needs_reset
+                  ? 'token_corrupted'
+                  : payload.reason === 'zernio_api_error'
+                    ? 'zernio_api_error'
+                    : null
+              );
+              setStatusMessage(payload.message || '');
+            }
+          } catch (err) {
+            console.error('Health check failed:', err);
+            setConnectionStatus('disconnected');
+          }
+        } else {
+          setConnectionStatus('disconnected');
+          setResetReason(null);
+          setStatusMessage('');
+        }
+      } catch (err) {
+        console.error('fetchConfig error:', err);
+        toast.error('Failed to load Facebook configuration');
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      console.error('fetchConfig error:', err);
-      toast.error('Failed to load Facebook configuration');
-    } finally {
-      setLoading(false);
-    }
-  }, [supabase]);
+    },
+    [supabase]
+  );
 
   useEffect(() => {
     if (authLoading || profileLoading) return;
@@ -137,7 +151,7 @@ export function FacebookConfig() {
     if (loadedAccountIdRef.current === accountId) return;
     loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
-  }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+  }, [authLoading, profileLoading, user, accountId, fetchConfig]);
 
   async function handleSave() {
     if (!zernioAccountId.trim()) {
@@ -156,7 +170,11 @@ export function FacebookConfig() {
         zernio_account_id: zernioAccountId.trim(),
       };
 
-      if (zernioApiKeyEdited && zernioApiKey !== MASKED_TOKEN && zernioApiKey.trim()) {
+      if (
+        zernioApiKeyEdited &&
+        zernioApiKey !== MASKED_TOKEN &&
+        zernioApiKey.trim()
+      ) {
         payload.zernio_api_key = zernioApiKey.trim();
       } else if (config) {
         toast.error('Please re-enter the Zernio API Key to save changes');
@@ -170,7 +188,7 @@ export function FacebookConfig() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await readResponseJson(res);
 
       if (!res.ok) {
         toast.error(data.error || 'Failed to save configuration');
@@ -185,7 +203,7 @@ export function FacebookConfig() {
       toast.success(
         data.account_info?.username
           ? `Connected — ${data.account_info.username} can now send and receive DMs via Zernio.`
-          : 'Zernio connected. Add the webhook in your Zernio dashboard to start receiving events.',
+          : 'Zernio connected. Add the webhook in your Zernio dashboard to start receiving events.'
       );
 
       if (accountId) await fetchConfig(accountId);
@@ -201,7 +219,7 @@ export function FacebookConfig() {
     try {
       setTesting(true);
       const res = await fetch('/api/facebook/config', { method: 'GET' });
-      const payload = await res.json();
+      const payload = await readResponseJson(res);
 
       if (payload.connected) {
         setConnectionStatus('connected');
@@ -234,21 +252,27 @@ export function FacebookConfig() {
   }
 
   async function handleReset() {
-    if (!confirm('This will delete the current Facebook config so you can re-enter it. Continue?')) {
+    if (
+      !confirm(
+        'This will delete the current Facebook config so you can re-enter it. Continue?'
+      )
+    ) {
       return;
     }
 
     try {
       setResetting(true);
       const res = await fetch('/api/facebook/config', { method: 'DELETE' });
-      const data = await res.json();
+      const data = await readResponseJson(res);
 
       if (!res.ok) {
         toast.error(data.error || 'Failed to reset configuration');
         return;
       }
 
-      toast.success('Configuration cleared. You can now re-enter your credentials.');
+      toast.success(
+        'Configuration cleared. You can now re-enter your credentials.'
+      );
       setConfig(null);
       setZernioAccountId('');
       setZernioApiKey('');
@@ -281,7 +305,7 @@ export function FacebookConfig() {
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead title={t('title')} description={t('description')} />
         <div className="flex items-center justify-center py-12">
-          <Loader2 className="size-6 animate-spin text-primary" />
+          <Loader2 className="text-primary size-6 animate-spin" />
         </div>
       </section>
     );
@@ -295,21 +319,21 @@ export function FacebookConfig() {
       <div className="grid gap-6 lg:grid-cols-[1fr_380px]">
         <div className="space-y-6">
           {showResetBanner && (
-            <Alert className="bg-amber-950/40 border-amber-600/40">
+            <Alert className="border-amber-600/40 bg-amber-950/40">
               <div className="flex items-start gap-3">
-                <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
+                <AlertTriangle className="mt-0.5 size-5 shrink-0 text-amber-400" />
                 <div className="flex-1">
-                  <AlertTitle className="text-amber-200 mb-1">
+                  <AlertTitle className="mb-1 text-amber-200">
                     Stored key can&apos;t be decrypted
                   </AlertTitle>
-                  <AlertDescription className="text-amber-100/80 text-sm">
+                  <AlertDescription className="text-sm text-amber-100/80">
                     {statusMessage}
                   </AlertDescription>
                   <Button
                     onClick={handleReset}
                     disabled={resetting}
                     size="sm"
-                    className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
+                    className="mt-3 bg-amber-600 text-white hover:bg-amber-700"
                   >
                     {resetting ? (
                       <>
@@ -331,12 +355,14 @@ export function FacebookConfig() {
           <Alert className="bg-card border-border">
             <div className="flex items-center gap-2">
               {connectionStatus === 'connected' ? (
-                <CheckCircle2 className="size-4 text-primary" />
+                <CheckCircle2 className="text-primary size-4" />
               ) : (
                 <XCircle className="size-4 text-red-500" />
               )}
               <AlertTitle className="text-foreground mb-0">
-                {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
+                {connectionStatus === 'connected'
+                  ? t('credentialsValid')
+                  : t('notConnected')}
               </AlertTitle>
             </div>
             <AlertDescription className="text-muted-foreground">
@@ -348,23 +374,33 @@ export function FacebookConfig() {
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-foreground">{t('apiCredentialsTitle')}</CardTitle>
-              <CardDescription className="text-muted-foreground">{t('apiCredentialsDesc')}</CardDescription>
+              <CardTitle className="text-foreground">
+                {t('apiCredentialsTitle')}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('apiCredentialsDesc')}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('zernioAccountId')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('zernioAccountId')}
+                </Label>
                 <Input
                   placeholder={t('zernioAccountIdPlaceholder')}
                   value={zernioAccountId}
                   onChange={(e) => setZernioAccountId(e.target.value)}
                   className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
                 />
-                <p className="text-xs text-muted-foreground">{t('zernioAccountIdHint')}</p>
+                <p className="text-muted-foreground text-xs">
+                  {t('zernioAccountIdHint')}
+                </p>
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('zernioApiKey')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('zernioApiKey')}
+                </Label>
                 <div className="relative">
                   <Input
                     type={showZernioApiKey ? 'text' : 'password'}
@@ -385,27 +421,41 @@ export function FacebookConfig() {
                   <button
                     type="button"
                     onClick={() => setShowZernioApiKey(!showZernioApiKey)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="text-muted-foreground hover:text-foreground absolute top-1/2 right-2 -translate-y-1/2 transition-colors"
                   >
-                    {showZernioApiKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                    {showZernioApiKey ? (
+                      <EyeOff className="size-4" />
+                    ) : (
+                      <Eye className="size-4" />
+                    )}
                   </button>
                 </div>
                 {config && !zernioApiKeyEdited && (
-                  <p className="text-xs text-muted-foreground">{t('tokenHidden')}</p>
+                  <p className="text-muted-foreground text-xs">
+                    {t('tokenHidden')}
+                  </p>
                 )}
-                <p className="text-xs text-muted-foreground">{t('zernioApiKeyHint')}</p>
+                <p className="text-muted-foreground text-xs">
+                  {t('zernioApiKeyHint')}
+                </p>
               </div>
             </CardContent>
           </Card>
 
           <Card>
             <CardHeader>
-              <CardTitle className="text-foreground">{t('webhookTitle')}</CardTitle>
-              <CardDescription className="text-muted-foreground">{t('webhookDesc')}</CardDescription>
+              <CardTitle className="text-foreground">
+                {t('webhookTitle')}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('webhookDesc')}
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('webhookUrl')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('webhookUrl')}
+                </Label>
                 <div className="flex gap-2">
                   <Input
                     readOnly
@@ -416,7 +466,7 @@ export function FacebookConfig() {
                     variant="outline"
                     size="icon"
                     onClick={handleCopyWebhookUrl}
-                    className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                    className="border-border text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                   >
                     <Copy className="size-4" />
                   </Button>
@@ -424,7 +474,9 @@ export function FacebookConfig() {
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('webhookSecretLabel')}</Label>
+                <Label className="text-muted-foreground">
+                  {t('webhookSecretLabel')}
+                </Label>
                 {webhookSecret ? (
                   <>
                     <div className="flex gap-2">
@@ -437,15 +489,21 @@ export function FacebookConfig() {
                         variant="outline"
                         size="icon"
                         onClick={handleCopyWebhookSecret}
-                        className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                        className="border-border text-muted-foreground hover:text-foreground hover:bg-muted shrink-0"
                       >
                         <Copy className="size-4" />
                       </Button>
                     </div>
-                    <p className="text-xs text-amber-400">{t('webhookSecretGenerated')}</p>
+                    <p className="text-xs text-amber-400">
+                      {t('webhookSecretGenerated')}
+                    </p>
                   </>
                 ) : (
-                  config && <p className="text-xs text-muted-foreground">{t('webhookSecretAlreadySet')}</p>
+                  config && (
+                    <p className="text-muted-foreground text-xs">
+                      {t('webhookSecretAlreadySet')}
+                    </p>
+                  )
                 )}
               </div>
             </CardContent>
@@ -489,7 +547,7 @@ export function FacebookConfig() {
                 variant="outline"
                 onClick={handleReset}
                 disabled={resetting}
-                className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
+                className="border-red-900 text-red-400 hover:bg-red-950/40 hover:text-red-300"
               >
                 {resetting ? (
                   <>
@@ -510,20 +568,26 @@ export function FacebookConfig() {
         <div>
           <Card>
             <CardHeader>
-              <CardTitle className="text-foreground text-base">{t('setupInstructions')}</CardTitle>
-              <CardDescription className="text-muted-foreground">{t('setupInstructionsDesc')}</CardDescription>
+              <CardTitle className="text-foreground text-base">
+                {t('setupInstructions')}
+              </CardTitle>
+              <CardDescription className="text-muted-foreground">
+                {t('setupInstructionsDesc')}
+              </CardDescription>
             </CardHeader>
             <CardContent>
               <Accordion>
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">1</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        1
+                      </span>
                       {t('step1')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
                       <li>{t('step1_1')}</li>
                       <li>{t('step1_2')}</li>
                     </ol>
@@ -533,14 +597,20 @@ export function FacebookConfig() {
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">2</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        2
+                      </span>
                       {t('step2')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step2_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step2_2') }} />
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step2_1') }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step2_2') }}
+                      />
                     </ol>
                   </AccordionContent>
                 </AccordionItem>
@@ -548,26 +618,32 @@ export function FacebookConfig() {
                 <AccordionItem className="border-border">
                   <AccordionTrigger className="text-muted-foreground hover:text-foreground hover:no-underline">
                     <span className="flex items-center gap-2">
-                      <span className="flex size-5 items-center justify-center rounded-full bg-primary text-xs font-bold text-primary-foreground">3</span>
+                      <span className="bg-primary text-primary-foreground flex size-5 items-center justify-center rounded-full text-xs font-bold">
+                        3
+                      </span>
                       {t('step3')}
                     </span>
                   </AccordionTrigger>
                   <AccordionContent className="text-muted-foreground">
-                    <ol className="list-decimal list-inside space-y-1 text-sm">
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_1') }} />
-                      <li dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }} />
+                    <ol className="list-inside list-decimal space-y-1 text-sm">
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step3_1') }}
+                      />
+                      <li
+                        dangerouslySetInnerHTML={{ __html: t.raw('step3_2') }}
+                      />
                       <li>{t('step3_3')}</li>
                     </ol>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>
 
-              <div className="mt-4 pt-4 border-t border-border">
+              <div className="border-border mt-4 border-t pt-4">
                 <a
                   href="https://docs.zernio.com"
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm text-primary hover:text-primary/80 transition-colors"
+                  className="text-primary hover:text-primary/80 inline-flex items-center gap-1.5 text-sm transition-colors"
                 >
                   <ExternalLink className="size-3.5" />
                   {t('zernioDocs')}

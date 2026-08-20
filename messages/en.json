@@ -541,7 +541,10 @@
       "finalUrl": "Final URL: {url}",
       "back": "Back",
       "cancel": "Cancel",
-      "send": "Send template"
+      "send": "Send template",
+      "generateWithAi": "Generate with AI",
+      "generatingWithAi": "Generating…",
+      "aiFillFailed": "Couldn't generate values with AI. Try again."
     },
     "sidebar": {
       "contactInfo": "Contact info",

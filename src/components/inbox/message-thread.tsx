@@ -1449,6 +1449,7 @@ export function MessageThread({
         }}
         onSelect={handleSendTemplate}
         initialSelection={followupTemplateSelection}
+        conversationId={conversation?.id ?? null}
       />
     </div>
   );

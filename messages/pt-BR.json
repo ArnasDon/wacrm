@@ -541,7 +541,10 @@
       "finalUrl": "URL final: {url}",
       "back": "Voltar",
       "cancel": "Cancelar",
-      "send": "Enviar template"
+      "send": "Enviar template",
+      "generateWithAi": "Gerar com IA",
+      "generatingWithAi": "Gerando…",
+      "aiFillFailed": "Não foi possível gerar os valores com IA. Tente novamente."
     },
     "sidebar": {
       "contactInfo": "Informações do contato",

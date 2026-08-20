@@ -167,6 +167,14 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** AI template-variable fill ("Gerar com IA" in the template-send
+   *  modal), per user. Same budget as aiDraft — a comparable one-shot
+   *  generation an agent might click a few times while reviewing a
+   *  template. */
+  aiTemplateFill: { limit: 20, windowMs: 60_000 },
+  /** AI template-variable fill, per account — bounds the whole team's
+   *  draws on the shared BYO key, same rationale as aiDraftAccount. */
+  aiTemplateFillAccount: { limit: 60, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

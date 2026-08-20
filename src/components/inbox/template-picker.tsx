@@ -20,9 +20,11 @@ import {
   ChevronRight,
   LayoutTemplate,
   Loader2,
+  Sparkles,
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 
 export interface TemplateSendValues {
   body: string[];
@@ -42,6 +44,10 @@ interface TemplatePickerProps {
    * afterwards starts from the list as usual.
    */
   initialSelection?: { template: MessageTemplate; values: TemplateSendValues } | null;
+  /** Active conversation, for "Gerar com IA" — it asks the backend to
+   *  fill the body variables from this conversation's own context. Null
+   *  hides the button (nothing to draw context from). */
+  conversationId?: string | null;
 }
 
 function renderBodyPreview(body: string, params: string[]): string {
@@ -87,6 +93,7 @@ export function TemplatePicker({
   onOpenChange,
   onSelect,
   initialSelection,
+  conversationId,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
 
@@ -96,6 +103,9 @@ export function TemplatePicker({
   const [params, setParams] = useState<string[]>([]);
   const [headerText, setHeaderText] = useState<string>("");
   const [buttonParams, setButtonParams] = useState<Record<number, string>>({});
+  // "Gerar com IA" — guards against a double-click firing two requests
+  // (disabled while true) and never blocks anything else in the modal.
+  const [aiFilling, setAiFilling] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -159,6 +169,7 @@ export function TemplatePicker({
     setParams([]);
     setHeaderText("");
     setButtonParams({});
+    setAiFilling(false);
   }
 
   function handleOpenChange(next: boolean) {
@@ -194,6 +205,51 @@ export function TemplatePicker({
     }
     onSelect(selected, values);
     handleOpenChange(false);
+  }
+
+  // "Gerar com IA": asks the backend to fill the body variables from
+  // this conversation's own context, then merges the result into the
+  // existing `params` — never sends anything, never touches header/
+  // button values (only body variables are in scope), never closes the
+  // modal. A variable the model couldn't determine comes back as "" and
+  // is treated as "no suggestion" here, so a value the agent already
+  // typed by hand survives instead of being blanked out; the agent can
+  // still edit any field afterward either way.
+  async function generateWithAi() {
+    if (!selected || !conversationId || aiFilling) return;
+    const currentSlots = collectVariableSlots(selected);
+    if (currentSlots.bodyVars.length === 0) return;
+
+    setAiFilling(true);
+    try {
+      const res = await fetch("/api/ai/template-fill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          conversation_id: conversationId,
+          template_id: selected.id,
+        }),
+      });
+      const payload = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        toast.error(payload?.error || t("aiFillFailed"));
+        return;
+      }
+
+      const values = (payload?.values ?? {}) as Record<string, string>;
+      setParams((prev) =>
+        currentSlots.bodyVars.map((varNumber, i) => {
+          const suggestion = values[String(varNumber)];
+          return suggestion && suggestion.trim() ? suggestion : (prev[i] ?? "");
+        }),
+      );
+    } catch (err) {
+      console.error("Failed to generate template values with AI:", err);
+      toast.error(t("aiFillFailed"));
+    } finally {
+      setAiFilling(false);
+    }
   }
 
   const slots = useMemo(
@@ -346,6 +402,26 @@ export function TemplatePicker({
                 <ArrowLeft className="h-4 w-4" />
                 {t("back")}
               </Button>
+              {/* Only when there's a conversation to draw context from
+                  and at least one body variable to fill — a template
+                  with no variables never reaches this screen at all
+                  (see pickTemplate). */}
+              {conversationId && slots && slots.bodyVars.length > 0 && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={aiFilling}
+                  onClick={generateWithAi}
+                  className="border-primary/40 text-primary hover:bg-primary/10 disabled:opacity-50"
+                >
+                  {aiFilling ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-4 w-4" />
+                  )}
+                  {aiFilling ? t("generatingWithAi") : t("generateWithAi")}
+                </Button>
+              )}
               <Button
                 disabled={!canConfirm}
                 onClick={confirm}

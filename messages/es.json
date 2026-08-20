@@ -1294,6 +1294,9 @@
       "createPipelineBtn": "Crear Pipeline",
       "toastFailedLoadPipelines": "No se pudieron cargar los pipelines",
       "toastFailedMoveDeal": "No se pudo mover el negocio",
+      "noContactForChat": "Esta negociación no tiene un contacto vinculado.",
+      "chatLookupFailed": "No se pudo buscar la conversación.",
+      "noConversationYet": "Este contacto todavía no tiene una conversación.",
       "toastFailedCreatePipeline": "No se pudo crear el pipeline",
       "toastPipelineCreated": "Pipeline creado",
       "toastNotLinkedToAccount": "Tu perfil no está vinculado a ninguna cuenta.",
@@ -1318,6 +1321,7 @@
     },
     "card": {
       "noContact": "Sin contacto",
+      "openChat": "Ir al chat",
       "won": "Ganado",
       "lost": "Perdido"
     },

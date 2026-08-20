@@ -685,6 +685,9 @@
       "createPipelineBtn": "파이프라인 만들기",
       "toastFailedLoadPipelines": "파이프라인을 불러오지 못했습니다",
       "toastFailedMoveDeal": "딜을 이동하지 못했습니다",
+      "noContactForChat": "이 거래에는 연결된 연락처가 없습니다.",
+      "chatLookupFailed": "대화를 찾을 수 없습니다.",
+      "noConversationYet": "이 연락처는 아직 대화가 없습니다.",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
       "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
@@ -709,6 +712,7 @@
     },
     "card": {
       "noContact": "연락처 없음",
+      "openChat": "채팅으로 이동",
       "won": "성사",
       "lost": "실패"
     },

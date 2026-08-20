@@ -1,7 +1,7 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, MessageCircle, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
@@ -9,6 +9,7 @@ interface DealCardProps {
   deal: Deal;
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
+  onOpenChat?: (deal: Deal) => void;
   isOverlay?: boolean;
 }
 
@@ -26,14 +27,26 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({
+  deal,
+  stage,
+  onEdit,
+  onOpenChat,
+  isOverlay,
+}: DealCardProps) {
   const t = useTranslations("Pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
 
   return (
-    <button
-      type="button"
+    // Root is a plain div (not a <button>) because the contact row below
+    // nests a real <button> for "go to chat" — a button can't contain
+    // another interactive button per HTML semantics. Card-level click
+    // keeps the same edit-on-click behavior via role="button" + keyboard
+    // handling.
+    <div
+      role="button"
+      tabIndex={isOverlay ? -1 : 0}
       onClick={(e) => {
         // `onClick` still fires after a non-drag tap because the PointerSensor
         // requires 5px movement before it counts as a drag.
@@ -41,10 +54,17 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         e.stopPropagation();
         onEdit(deal);
       }}
-      className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm transition-all ${
+      onKeyDown={(e) => {
+        if (isOverlay) return;
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onEdit(deal);
+        }
+      }}
+      className={`group relative w-full cursor-pointer rounded-xl border border-border/50 bg-muted/70 pl-4 pr-3 py-3 text-left shadow-sm outline-none transition-all ${
         isOverlay
           ? "shadow-xl"
-          : "hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg"
+          : "hover:-translate-y-0.5 hover:border-border hover:bg-muted hover:shadow-lg focus-visible:ring-2 focus-visible:ring-primary"
       }`}
     >
       {/* 4px left accent bar using stage color */}
@@ -74,10 +94,26 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
       {/* Contact row */}
       <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
           {initials(deal.contact?.name, deal.contact?.phone ?? undefined)}
         </span>
-        <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {contactLabel}
+        </span>
+        {onOpenChat && deal.contact_id && !isOverlay && (
+          <button
+            type="button"
+            title={t("openChat")}
+            aria-label={t("openChat")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChat(deal);
+            }}
+            className="text-muted-foreground hover:bg-primary/15 hover:text-primary shrink-0 rounded-full p-1 transition-colors"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
 
       <div className="mt-2 flex items-center justify-between">
@@ -102,6 +138,6 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           </span>
         </div>
       )}
-    </button>
+    </div>
   );
 }

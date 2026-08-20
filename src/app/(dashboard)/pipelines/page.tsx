@@ -3,6 +3,7 @@
 import { readResponseJson } from '@/lib/http/response-json';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import type {
   Pipeline,
@@ -62,6 +63,7 @@ export default function PipelinesPage() {
   const t = useTranslations('Pipelines.page');
   const tTemp = useTranslations('Pipelines.temperature');
   const supabase = createClient();
+  const router = useRouter();
   const canEditSettings = useCan('edit-settings');
   const canCreateDeals = useCan('send-messages');
   const { accountId } = useAuth();
@@ -367,6 +369,44 @@ export default function PipelinesPage() {
     setDealFormOpen(true);
   }, []);
 
+  // "Ir al chat" — jumps from a deal card straight to that contact's
+  // conversation in /inbox. Deals created manually (deal-form.tsx)
+  // never carry a conversation_id, only ones tied to an actual inbound
+  // thread do, so we can't just trust deal.conversation_id — look up
+  // the contact's most recent conversation instead, same lookup an
+  // admin would do by hand from the inbox search.
+  const handleOpenChat = useCallback(
+    async (deal: Deal) => {
+      if (deal.conversation_id) {
+        router.push(`/inbox?c=${deal.conversation_id}`);
+        return;
+      }
+      if (!deal.contact_id) {
+        toast.error(t('noContactForChat'));
+        return;
+      }
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('contact_id', deal.contact_id)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error('Failed to resolve conversation for chat link:', error.message);
+        toast.error(t('chatLookupFailed'));
+        return;
+      }
+      if (!data) {
+        toast.error(t('noConversationYet'));
+        return;
+      }
+      router.push(`/inbox?c=${data.id}`);
+    },
+    [router, supabase, t]
+  );
+
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
     if (!name) return;
@@ -583,6 +623,7 @@ export default function PipelinesPage() {
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}
+            onOpenChat={handleOpenChat}
           />
         </>
       )}

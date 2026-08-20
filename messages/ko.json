@@ -25,6 +25,7 @@
     "campaigns": "캠페인",
     "products": "제품",
     "leads": "리드",
+    "reports": "리포트",
     "broadcasts": "브로드캐스트",
     "automations": "자동화",
     "flows": "플로우",
@@ -54,6 +55,7 @@
     "campaigns": "캠페인",
     "products": "제품",
     "leads": "리드",
+    "reports": "리포트",
     "broadcasts": "브로드캐스트",
     "automations": "자동화",
     "settings": "설정",
@@ -139,6 +141,25 @@
       "lastWeek": "지난 주:",
       "noReplies": "아직 기록된 응답이 없습니다",
       "noRepliesHint": "고객 메시지에 답변하면 이 차트가 채워집니다."
+    },
+    "funnelChart": {
+      "title": "커뮤니티 성장 퍼널",
+      "description": "실제 참여 및 커머셜 이벤트로 계산된 도달부터 전환까지 (§13)",
+      "noData": "아직 퍼널 활동이 없습니다",
+      "noDataHint": "공지가 발송되고 멤버가 참여, 체험 요청, 전환을 하면 이 숫자가 채워집니다.",
+      "unavailableStages": "사용 불가: {stages}",
+      "unavailableReason": "현재 WhatsApp 연동 또는 스키마로는 확인할 수 없습니다",
+      "stages": {
+        "reach": "도달",
+        "join": "가입",
+        "engage": "참여",
+        "productInterest": "제품 관심",
+        "lead": "리드",
+        "baContact": "BA 연락",
+        "trial": "체험",
+        "purchase": "구매",
+        "repeat": "재구매"
+      }
     },
     "emptyState": {
       "title": "아직 데이터가 충분하지 않습니다"
@@ -395,6 +416,7 @@
         "notes": "메모",
         "custom": "커스텀 필드",
         "deals": "딜",
+        "engagement": "참여",
         "tags": "태그",
         "noTags": "태그 없음",
         "noDeals": "딜 없음",
@@ -429,6 +451,18 @@
       },
       "dealsTab": {
         "noDeals": "아직 딜이 없습니다"
+      },
+      "engagementTab": {
+        "engagementHeading": "참여",
+        "postsRead": "읽은 게시물",
+        "reactions": "리액션",
+        "replies": "답장",
+        "campaignsEngaged": "참여한 캠페인",
+        "commercialHeading": "커머셜",
+        "productInterests": "제품 관심",
+        "trialRequests": "체험 요청",
+        "leads": "리드",
+        "conversions": "전환"
       },
       "tagsTab": {
         "clickTagDesc": "태그를 클릭해 이 연락처에 추가하거나 제거하세요.",

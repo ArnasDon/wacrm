@@ -25,6 +25,7 @@
     "campaigns": "Campaigns",
     "products": "Products",
     "leads": "Leads",
+    "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "flows": "Flows",
@@ -54,6 +55,7 @@
     "campaigns": "Campaigns",
     "products": "Products",
     "leads": "Leads",
+    "reports": "Reports",
     "broadcasts": "Broadcasts",
     "automations": "Automations",
     "settings": "Settings",
@@ -139,6 +141,25 @@
       "lastWeek": "Last week:",
       "noReplies": "No replies recorded yet",
       "noRepliesHint": "This chart fills in as you reply to customer messages."
+    },
+    "funnelChart": {
+      "title": "Community Growth Funnel",
+      "description": "Reach through conversion, computed from real engagement and commercial events (§13)",
+      "noData": "No funnel activity yet",
+      "noDataHint": "Numbers here fill in as announcements go out and members engage, request trials, and convert.",
+      "unavailableStages": "Unavailable: {stages}",
+      "unavailableReason": "not obtainable from the current WhatsApp integration or schema",
+      "stages": {
+        "reach": "Reach",
+        "join": "Join",
+        "engage": "Engage",
+        "productInterest": "Product Interest",
+        "lead": "Lead",
+        "baContact": "BA Contact",
+        "trial": "Trial",
+        "purchase": "Purchase",
+        "repeat": "Repeat"
+      }
     },
     "emptyState": {
       "title": "Not enough data yet"
@@ -395,6 +416,7 @@
         "notes": "Notes",
         "custom": "Custom Fields",
         "deals": "Deals",
+        "engagement": "Engagement",
         "tags": "Tags",
         "noTags": "No tags",
         "noDeals": "No deals",
@@ -429,6 +451,18 @@
       },
       "dealsTab": {
         "noDeals": "No deals yet"
+      },
+      "engagementTab": {
+        "engagementHeading": "Engagement",
+        "postsRead": "Posts read",
+        "reactions": "Reactions",
+        "replies": "Replies",
+        "campaignsEngaged": "Campaigns engaged",
+        "commercialHeading": "Commercial",
+        "productInterests": "Product interests",
+        "trialRequests": "Trial requests",
+        "leads": "Leads",
+        "conversions": "Conversions"
       },
       "tagsTab": {
         "clickTagDesc": "Click a tag to add or remove it from this contact.",

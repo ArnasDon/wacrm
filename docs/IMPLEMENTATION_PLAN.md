@@ -14,8 +14,8 @@ retroactively at the start of Phase 6 — Phases 1–5 are summarized from
 | 3 | Content → media → localization → approval → scheduling | Done |
 | 4 | Demo WhatsApp end-to-end + engagement events | Done |
 | 5 | Products → claims → vehicles → compatibility → campaigns | Done |
-| 6 | Requests → leads → BA routing → trials → conversions | **Done (this doc)** |
-| 7 | Dashboard → analytics → attribution → reports | Not started |
+| 6 | Requests → leads → BA routing → trials → conversions | Done |
+| 7 | Dashboard → analytics → attribution → reports | **Done (this doc)** |
 | 8 | Meta hardening → catalogue sync → TTS/AI/translation providers | Not started (architected: `TranslationService`/`TextToSpeechService` interfaces exist as manual/no-op P0 implementations per §10) |
 
 Other §22 docs (`ARCHITECTURE.md`, `WHATSAPP_FEASIBILITY.md`, `API.md`,
@@ -179,3 +179,107 @@ Full §21 suite green at the end of this phase: typecheck, lint (0
 errors, unchanged 37 pre-existing warnings), test (986/986), build.
 `format:check` reports the same pre-existing baseline as before this
 phase (two files already failing it before Phase 6 touched them).
+
+## Phase 7 — Dashboard → analytics → attribution → reports
+
+No schema changes. Every number in this phase reads tables Phases
+1–6 already populate — `engagement_events`, `product_interactions`,
+`customer_requests`, `deals`, `trials` — so this phase is pure
+application layer: one new aggregation module, four new UI surfaces,
+one new nav entry.
+
+**On the Phase 6 gaps this phase inherits** (no seed data for the
+funnel stages, no Markets/Regions management UI): decided to proceed
+rather than block on either. Every query and every widget here is
+written to degrade to real zeros/empty states, never an error or a
+fabricated number, on an account with no funnel data yet — verified
+with a dedicated "fully empty account" test on `loadFunnelMetrics`.
+Markets/Regions specifically don't matter to this phase at all —
+funnel/campaign/product analytics never key on them. Seeding the
+funnel is tracked as a Phase 6 follow-up, not duplicated here.
+
+### Reused as-is
+
+- `queries.ts`, `types.ts`, and every existing dashboard widget
+  (`MetricCard`, `SkeletonCard`, `EmptyState`, `Skeleton`,
+  `ConversationsChart`, `PipelineDonut`, `ResponseTimeChart`,
+  `ActivityFeed`) — this phase adds one more widget to the same page,
+  it doesn't touch the originals.
+- The vendored Tremor `BarChart` (`src/components/tremor/bar-chart.tsx`,
+  wraps `recharts`) — already used by `ResponseTimeChart`; the funnel
+  widget is its second consumer, in `layout="vertical"` (horizontal
+  bars) rather than the default.
+- `formatCurrency` (`src/lib/currency.ts`) for every cost figure —
+  `accounts.default_currency`, never a hardcoded currency (§13).
+- The campaign/product detail pages' own plain-English-copy convention
+  (Phase 5) and the contact detail view's `next-intl` convention
+  (pre-existing wacrm) — each new section matches the file it lands
+  in rather than picking one global i18n policy (§7/§10 keep i18n
+  scoped to UI chrome; page-level copy on Phase 5+-era pages was never
+  translated, and this phase doesn't change that split).
+
+### Net-new
+
+- **`src/lib/dashboard/rimula-analytics.ts`** — `loadFunnelMetrics`,
+  `loadCampaignAnalytics`/`loadAllCampaignsAnalytics`,
+  `loadProductAnalytics`/`loadAllProductsAnalytics`. The batch
+  variants fetch every relevant row once (scoped by `.in('campaign_id'
+  , ids)` / `.in('product_id', ids)`) and aggregate client-side,
+  rather than querying per campaign/product — same
+  fetch-broad-then-aggregate posture `queries.ts`'s
+  `loadPipelineDonut`/`loadActivity` already use.
+- **`FunnelChart`** (`src/components/dashboard/funnel-chart.tsx`) —
+  wired into `/dashboard`. A `null`-valued stage (REPEAT) is never
+  plotted as a zero bar; it's listed separately with the reason,
+  keeping §2's "never fabricate" rule visually honest, not just
+  numerically.
+- **`CampaignAnalytics`** (`src/components/campaigns/campaign-analytics.tsx`)
+  — wired into `/campaigns/[id]`.
+- **`ProductAnalytics`** (`src/components/products/product-analytics.tsx`)
+  — wired into `/products/[id]`. Deliberately shows no product-level
+  lead count (see the CHANGELOG 0.16.0 entry for why).
+- **Contact detail view's "Engagement" tab** — §13's lightweight
+  Customer profile, reusing the `deals` array `fetchDeals` already
+  loads for the Leads/Conversions tiles instead of a redundant query.
+- **`/reports`** (new nav entry, §7) — campaign and product
+  performance comparison tables across the whole account.
+
+### Known gaps / deferred
+
+- **REPEAT is permanently `null`** — no order/purchase-history table
+  exists in this schema to detect a second conversion by the same
+  customer. Not a "seed data" gap like Phase 6's; building the
+  underlying tracking is out of scope here and would need its own
+  design pass (e.g. does a second Trial for the same contact count?
+  A second Lead? Neither is quite "repeat purchase").
+  Product-level lead counts are also permanently omitted (not
+  deferred) — see the CHANGELOG 0.16.0 entry.
+- Trials-per-campaign and trials-per-product both rely on the
+  `deal_id`/`customer_request_id` link a Trial is created with (Phase
+  6). A Trial created without either link (a walk-in trial with no
+  prior CustomerRequest or Lead) is invisible to campaign attribution
+  by design — it never touched that campaign, so it shouldn't count.
+- No BA-level analytics yet (e.g. "conversion rate by BA") — §12's BA
+  dashboard is still the "My queue only" filter from Phase 6, not a
+  performance breakdown. Tracked as a follow-up alongside Phase 6's
+  deferred Feedback entity.
+
+### Testing
+
+9 new tests in `src/lib/dashboard/rimula-analytics.test.ts` (a
+generic fake Supabase query builder honoring `.eq`/`.in`/`.or`/count-
+head queries, since the aggregation logic — not the wiring — is what
+can silently produce a wrong number): every funnel stage on real rows
+plus the fully-empty-account case, campaign scoping (including the
+trial-via-deal-or-customer_request join and the no-cost-data null
+cascade), and product scoping (interaction-type breakdown, trial/
+conversion counts). No route/component tests this phase — every new
+surface is a read-only client-side aggregation view with no
+mutation/authorization logic to verify beyond what `loadX` already
+covers.
+
+Full §21 suite green: typecheck, lint (0 errors, unchanged 37
+pre-existing warnings), test (995/995), build. `format:check` reports
+the same pre-existing baseline as before this phase (four already-
+failing files touched, zero newly introduced — see the CHANGELOG
+0.16.0 entry for the exact list and how each was verified).

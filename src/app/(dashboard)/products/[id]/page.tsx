@@ -26,6 +26,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { TagListEditor } from '@/components/products/tag-list-editor';
+import { ProductAnalytics } from '@/components/products/product-analytics';
+import { createClient } from '@/lib/supabase/client';
+import { loadProductAnalytics } from '@/lib/dashboard/rimula-analytics';
+import type { ProductAnalytics as ProductAnalyticsData } from '@/lib/dashboard/types';
 import {
   uploadAccountMedia,
   MEDIA_MAX_BYTES_BY_KIND,
@@ -140,6 +144,9 @@ export default function ProductDetailPage() {
   const [engineTypes, setEngineTypes] = useState<string[]>([]);
   const [savingBasics, setSavingBasics] = useState(false);
 
+  const [analytics, setAnalytics] = useState<ProductAnalyticsData | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+
   // Sub-resource forms
   const [uploading, setUploading] = useState(false);
   const [applicationDraft, setApplicationDraft] = useState('');
@@ -180,6 +187,16 @@ export default function ProductDetailPage() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // §11/§13 analytics — direct Supabase-client aggregation, same
+  // pattern as the dashboard and campaign detail page.
+  useEffect(() => {
+    setAnalyticsLoading(true);
+    loadProductAnalytics(createClient(), params.id)
+      .then((a) => setAnalytics(a))
+      .catch((err) => console.error('[product analytics] failed:', err))
+      .finally(() => setAnalyticsLoading(false));
+  }, [params.id]);
 
   useEffect(() => {
     fetch('/api/product-categories')
@@ -493,6 +510,8 @@ export default function ProductDetailPage() {
           </div>
         )}
       </div>
+
+      <ProductAnalytics analytics={analytics} loading={analyticsLoading} />
 
       <Card>
         <CardHeader>

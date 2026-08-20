@@ -26,6 +26,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { formatCurrency } from '@/lib/currency';
+import { createClient } from '@/lib/supabase/client';
+import { loadCampaignAnalytics } from '@/lib/dashboard/rimula-analytics';
+import type { CampaignAnalytics as CampaignAnalyticsData } from '@/lib/dashboard/types';
+import { CampaignAnalytics } from '@/components/campaigns/campaign-analytics';
 
 const STATUSES = [
   'draft',
@@ -105,6 +109,9 @@ export default function CampaignDetailPage() {
   const [cost, setCost] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const [analytics, setAnalytics] = useState<CampaignAnalyticsData | null>(null);
+  const [analyticsLoading, setAnalyticsLoading] = useState(true);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -138,6 +145,17 @@ export default function CampaignDetailPage() {
       .then((data) => setProducts(data.products ?? []))
       .catch(() => {});
   }, []);
+
+  // §13 analytics — a direct Supabase-client aggregation, same
+  // pattern as `src/lib/dashboard/queries.ts` (the dashboard bypasses
+  // the API layer for read-heavy aggregations; RLS still scopes it).
+  useEffect(() => {
+    setAnalyticsLoading(true);
+    loadCampaignAnalytics(createClient(), params.id)
+      .then((a) => setAnalytics(a))
+      .catch((err) => console.error('[campaign analytics] failed:', err))
+      .finally(() => setAnalyticsLoading(false));
+  }, [params.id]);
 
   async function patchCampaign(
     body: Record<string, unknown>,
@@ -268,6 +286,12 @@ export default function CampaignDetailPage() {
           </div>
         )}
       </div>
+
+      <CampaignAnalytics
+        analytics={analytics}
+        loading={analyticsLoading}
+        currency={defaultCurrency}
+      />
 
       <Card>
         <CardHeader>

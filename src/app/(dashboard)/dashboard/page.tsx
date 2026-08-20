@@ -18,9 +18,11 @@ import {
   loadPipelineDonut,
   loadResponseTime,
 } from '@/lib/dashboard/queries'
+import { loadFunnelMetrics } from '@/lib/dashboard/rimula-analytics'
 import type {
   ActivityItem,
   ConversationsSeriesPoint,
+  FunnelMetrics,
   MetricsBundle,
   PipelineDonutData,
   ResponseTimeSummary,
@@ -32,6 +34,7 @@ import { QuickActions } from '@/components/dashboard/quick-actions'
 import { ConversationsChart } from '@/components/dashboard/conversations-chart'
 import { PipelineDonut } from '@/components/dashboard/pipeline-donut'
 import { ResponseTimeChart } from '@/components/dashboard/response-time-chart'
+import { FunnelChart } from '@/components/dashboard/funnel-chart'
 import { ActivityFeed } from '@/components/dashboard/activity-feed'
 
 import { useTranslations } from 'next-intl'
@@ -63,6 +66,9 @@ export default function DashboardPage() {
 
   const [activity, setActivity] = useState<ActivityItem[] | null>(null)
   const [activityLoading, setActivityLoading] = useState(true)
+
+  const [funnel, setFunnel] = useState<FunnelMetrics | null>(null)
+  const [funnelLoading, setFunnelLoading] = useState(true)
 
   const loadAll = useCallback(() => {
     const db = createClient()
@@ -97,6 +103,11 @@ export default function DashboardPage() {
       .then((a) => setActivity(a))
       .catch((err) => console.error('[dashboard] activity failed:', err))
       .finally(() => setActivityLoading(false))
+
+    void loadFunnelMetrics(db)
+      .then((f) => setFunnel(f))
+      .catch((err) => console.error('[dashboard] funnel failed:', err))
+      .finally(() => setFunnelLoading(false))
   }, [])
 
   useEffect(() => {
@@ -215,6 +226,9 @@ export default function DashboardPage() {
           />
         </div>
       </div>
+
+      {/* Rimula funnel (§13) */}
+      <FunnelChart data={funnel} loading={funnelLoading} />
 
       {/* Response time */}
       <ResponseTimeChart data={responseTime} loading={responseTimeLoading} />

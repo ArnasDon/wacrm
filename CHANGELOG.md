@@ -9,6 +9,86 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.16.0] — 2026-08-20
+
+Completes Phase 7 (§23): Dashboard → analytics → attribution → reports.
+No schema changes — every number here reads `engagement_events`,
+`product_interactions`, `customer_requests`, `deals`, and `trials`,
+which Phases 1–6 already populate (the `LEAD`/`TRIAL`/`CONVERSION`
+event types added in Phase 4 and finally written in Phase 6 are what
+make this phase possible at all).
+
+### Added
+
+- **`src/lib/dashboard/rimula-analytics.ts`** — the Rimula-specific
+  aggregation module (sits alongside the original wacrm
+  `queries.ts`, same split Phases 5/6 used for their own domains):
+  - `loadFunnelMetrics` — §13's REACH → JOIN → ENGAGE → PRODUCT
+    INTEREST → LEAD → BA CONTACT → TRIAL → PURCHASE → REPEAT, one
+    query per stage source (`engagement_events` for
+    reach/engage, `contacts` for join, `product_interactions` for
+    product interest, `deals`/`trials` for lead/BA-contact/trial/
+    purchase). REPEAT is always `null` ("Unavailable") — no order/
+    purchase-history table exists to detect a second conversion, and
+    §2/§13 forbid guessing it.
+  - `loadCampaignAnalytics` / `loadAllCampaignsAnalytics` — reach,
+    engagement, leads, trials, conversions, and (only when
+    `campaigns.cost` is set) cost/cost-per-lead/trial/conversion.
+    Trials carry no `campaign_id` of their own — attributed via the
+    `deal_id`/`customer_request_id` they originated from. The batch
+    variant fetches once and aggregates client-side rather than
+    querying per campaign.
+  - `loadProductAnalytics` / `loadAllProductsAnalytics` —
+    `product_interactions` broken down by type, plus linked customer
+    requests/trials/conversions. Deliberately doesn't show a
+    product-level lead count: `deals` (Lead) carries no direct
+    `product_id` (§9.0 — product is reached via
+    `campaign_id → campaigns.product_id`), so a naive per-product
+    lead count would either double-count or silently omit leads
+    that never touched a campaign.
+- **Dashboard**: new funnel widget (`FunnelChart`,
+  `src/components/dashboard/funnel-chart.tsx`) using the vendored
+  Tremor `BarChart` (recharts, §4) in horizontal-bar layout —
+  "Unavailable" stages are never plotted as a misleading zero-height
+  bar; they're listed separately with the reason.
+- **Campaign detail page** (`/campaigns/[id]`): new Analytics card
+  (`CampaignAnalytics` component).
+- **Product detail page** (`/products/[id]`): new Analytics card
+  (`ProductAnalytics` component).
+- **Contact detail view**: new "Engagement" tab — §13's lightweight
+  Customer profile (posts read, reactions, replies, campaigns
+  engaged; product interests, trial requests, leads, conversions).
+- **`/reports`** (new nav entry, §7) — account-wide campaign and
+  product performance comparison tables, so attribution can be
+  compared across campaigns/products rather than one at a time.
+
+### Known gaps (flagged per this phase's brief, not silently absorbed)
+
+- **No seed data** for the Phase 6 funnel stages still applies
+  (documented in the 0.15.0 entry above) — every new widget here
+  degrades gracefully to real zeros/empty states on a freshly-seeded
+  account rather than erroring or fabricating numbers, but there is
+  nothing interesting to look at until that seed data exists.
+  Verified explicitly: `loadFunnelMetrics` has a dedicated test for
+  the fully-empty case.
+- **No Markets/Regions management UI** gap (also from 0.15.0) doesn't
+  block this phase — funnel/campaign/product analytics don't depend
+  on markets or regions being configured.
+- **REPEAT is permanently `null`/Unavailable**, not a temporary gap —
+  there is no order/purchase-history table in this schema to detect a
+  second purchase by the same customer. Building one is out of scope
+  for this phase; flagged here rather than approximated with a vague
+  timestamp-based proxy.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (995/995 — 986 existing + 9 new), and build all pass.
+format:check reports the same pre-existing baseline as before this
+change (four already-failing files — `campaigns/[id]/page.tsx`,
+`dashboard/page.tsx`, `contact-detail-view.tsx`,
+`src/lib/dashboard/types.ts` — were already failing it before this
+phase touched them, confirmed against their pre-phase `HEAD` content;
+every wholly new file this phase added is Prettier-clean).
+
 ## [0.15.0] — 2026-08-20
 
 Completes Phase 6 (§23): `CustomerRequest → Lead → BA routing → Trial →

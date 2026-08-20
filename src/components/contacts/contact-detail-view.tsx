@@ -48,6 +48,14 @@ import {
   X,
   DollarSign,
   LayoutTemplate,
+  Eye,
+  Heart,
+  MessageCircle,
+  Megaphone,
+  Package,
+  FlaskConical,
+  GitBranch,
+  type LucideIcon,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
@@ -105,6 +113,21 @@ export function ContactDetailView({
   // Deals tab
   const [deals, setDeals] = useState<Deal[]>([]);
   const [loadingDeals, setLoadingDeals] = useState(false);
+
+  // Rimula §13 lightweight Customer profile: engagement + commercial.
+  // Both are read off the real event log / linked rows — never a
+  // fabricated estimate (§2).
+  const [engagement, setEngagement] = useState<{
+    postsRead: number;
+    reactions: number;
+    replies: number;
+    campaignsEngaged: number;
+  } | null>(null);
+  const [commercial, setCommercial] = useState<{
+    productInterests: number;
+    trialRequests: number;
+  } | null>(null);
+  const [loadingEngagement, setLoadingEngagement] = useState(false);
 
   const fetchContact = useCallback(async () => {
     if (!contactId) return;
@@ -192,6 +215,54 @@ export function ContactDetailView({
     setLoadingDeals(false);
   }, [contactId, supabase]);
 
+  // §13's "engagement" (posts read, reactions, questions, campaign
+  // interactions) reads off `engagement_events`; "commercial" (product
+  // interests, trial requests, conversions — leads reuse `deals` from
+  // fetchDeals above, no separate query needed) off
+  // `product_interactions` + `trials`. Both tables have no client
+  // write policy (migration 047/§16 — service-role only) but DO allow
+  // any account member to SELECT, so this is a plain RLS-scoped read
+  // like every other tab here.
+  const fetchEngagement = useCallback(async () => {
+    if (!contactId) return;
+    setLoadingEngagement(true);
+
+    const [eventsRes, interactionsRes, trialsRes] = await Promise.all([
+      supabase
+        .from('engagement_events')
+        .select('event_type, campaign_id')
+        .eq('member_id', contactId),
+      supabase
+        .from('product_interactions')
+        .select('id', { count: 'exact', head: true })
+        .eq('contact_id', contactId),
+      supabase
+        .from('trials')
+        .select('id', { count: 'exact', head: true })
+        .eq('contact_id', contactId),
+    ]);
+
+    const events = (eventsRes.data ?? []) as {
+      event_type: string;
+      campaign_id: string | null;
+    }[];
+    const campaignIds = new Set(
+      events.filter((e) => e.campaign_id).map((e) => e.campaign_id as string)
+    );
+    setEngagement({
+      postsRead: events.filter((e) => e.event_type === 'READ').length,
+      reactions: events.filter((e) => e.event_type === 'REACTION').length,
+      replies: events.filter((e) => e.event_type === 'REPLY').length,
+      campaignsEngaged: campaignIds.size,
+    });
+
+    setCommercial({
+      productInterests: interactionsRes.count ?? 0,
+      trialRequests: trialsRes.count ?? 0,
+    });
+    setLoadingEngagement(false);
+  }, [contactId, supabase]);
+
   useEffect(() => {
     if (open && contactId) {
       fetchContact();
@@ -199,6 +270,7 @@ export function ContactDetailView({
       fetchNotes();
       fetchCustomFields();
       fetchDeals();
+      fetchEngagement();
     }
   }, [
     open,
@@ -208,6 +280,7 @@ export function ContactDetailView({
     fetchNotes,
     fetchCustomFields,
     fetchDeals,
+    fetchEngagement,
   ]);
 
   async function copyPhone() {
@@ -507,6 +580,12 @@ export function ContactDetailView({
                   >
                     {t('tabs.deals')}
                   </TabsTrigger>
+                  <TabsTrigger
+                    value="engagement"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.engagement')}
+                  </TabsTrigger>
                 </TabsList>
 
                 {/* Details Tab */}
@@ -799,6 +878,78 @@ export function ContactDetailView({
                     </div>
                   )}
                 </TabsContent>
+
+                {/* Engagement Tab — §13 lightweight Customer profile */}
+                <TabsContent
+                  value="engagement"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  {loadingEngagement ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="text-primary size-5 animate-spin" />
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div>
+                        <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                          {t('engagementTab.engagementHeading')}
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <StatTile
+                            icon={Eye}
+                            label={t('engagementTab.postsRead')}
+                            value={engagement?.postsRead ?? 0}
+                          />
+                          <StatTile
+                            icon={Heart}
+                            label={t('engagementTab.reactions')}
+                            value={engagement?.reactions ?? 0}
+                          />
+                          <StatTile
+                            icon={MessageCircle}
+                            label={t('engagementTab.replies')}
+                            value={engagement?.replies ?? 0}
+                          />
+                          <StatTile
+                            icon={Megaphone}
+                            label={t('engagementTab.campaignsEngaged')}
+                            value={engagement?.campaignsEngaged ?? 0}
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground text-xs font-medium uppercase tracking-wider">
+                          {t('engagementTab.commercialHeading')}
+                        </p>
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          <StatTile
+                            icon={Package}
+                            label={t('engagementTab.productInterests')}
+                            value={commercial?.productInterests ?? 0}
+                          />
+                          <StatTile
+                            icon={FlaskConical}
+                            label={t('engagementTab.trialRequests')}
+                            value={commercial?.trialRequests ?? 0}
+                          />
+                          <StatTile
+                            icon={GitBranch}
+                            label={t('engagementTab.leads')}
+                            value={deals.length}
+                          />
+                          <StatTile
+                            icon={Check}
+                            label={t('engagementTab.conversions')}
+                            value={
+                              deals.filter((d) => d.status === 'CONVERTED')
+                                .length
+                            }
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </TabsContent>
               </Tabs>
             </div>
           )}
@@ -810,5 +961,27 @@ export function ContactDetailView({
         onSelect={handleSendTemplate}
       />
     </>
+  );
+}
+
+function StatTile({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: LucideIcon;
+  label: string;
+  value: number;
+}) {
+  return (
+    <div className="border-border bg-muted/50 flex items-center gap-2.5 rounded-lg border p-2.5">
+      <Icon className="text-primary size-4 shrink-0" />
+      <div className="min-w-0">
+        <p className="text-foreground text-sm font-semibold tabular-nums">
+          {value}
+        </p>
+        <p className="text-muted-foreground truncate text-[11px]">{label}</p>
+      </div>
+    </div>
   );
 }

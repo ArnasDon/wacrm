@@ -32,7 +32,11 @@ export function LinkPreviewCard({ data, isAgent, overlay }: LinkPreviewCardProps
       target="_blank"
       rel="noopener noreferrer"
       className={cn(
-        "block overflow-hidden transition-colors",
+        // max-w-72 caps this the same way MediaImage/video already cap
+        // themselves (max-w-60) — without it the card stretched to the
+        // row's full 75%-of-thread width, much wider than WhatsApp's own
+        // compact card.
+        "block max-w-72 overflow-hidden transition-colors",
         overlay
           ? "relative" // edge-to-edge — the caller's 2px frame already provides rounding/border
           : cn(

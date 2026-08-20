@@ -37,15 +37,26 @@ async function resolvePreview(url: string): Promise<LinkPreviewState> {
 
   const promise = (async (): Promise<LinkPreviewState> => {
     try {
-      const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`);
-      if (!res.ok) return { status: "error" };
+      // Explicit same-origin credentials — this is a same-origin request
+      // either way (fetch already defaults to sending cookies for those),
+      // but spelling it out removes any ambiguity for a standalone iOS
+      // PWA's fetch context, which is the one environment reported to
+      // behave differently from a regular browser tab here.
+      const res = await fetch(`/api/link-preview?url=${encodeURIComponent(url)}`, {
+        credentials: "same-origin",
+      });
+      if (!res.ok) {
+        console.error(`[link-preview] ${res.status} fetching preview for`, url);
+        return { status: "error" };
+      }
       const data = await res.json();
       if (data?.unavailable) return { status: "unavailable" };
       if (!data?.title && !data?.description && !data?.image) {
         return { status: "unavailable" };
       }
       return { status: "success", data };
-    } catch {
+    } catch (err) {
+      console.error("[link-preview] fetch failed for", url, err);
       return { status: "error" };
     }
   })();

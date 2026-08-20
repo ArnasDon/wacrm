@@ -8,10 +8,11 @@ interface DbMessage {
 }
 
 /**
- * Fetch the last N text messages of a conversation and map them to the
+ * Fetch the last N conversational messages and map them to the
  * provider-neutral chat shape. Customer messages become `user`; agent
- * and bot messages become `assistant`. Non-text messages (media,
- * templates, interactive) are excluded — they carry no text to model.
+ * and bot messages become `assistant`. Plain text and rendered templates
+ * are included; media and interactive payloads remain excluded because
+ * they do not have a reliable conversational text representation.
  *
  * Ordered oldest-first (chronological) so the transcript reads
  * naturally and the most recent customer message lands last.
@@ -25,7 +26,10 @@ export async function buildConversationContext(
     .from('messages')
     .select('sender_type, content_text')
     .eq('conversation_id', conversationId)
-    .eq('content_type', 'text')
+    // Automation templates persist the rendered/substituted body in
+    // content_text. Treat them as assistant turns just like bot text so
+    // the AI continues from what the customer actually received.
+    .in('content_type', ['text', 'template'])
     .order('created_at', { ascending: false })
     .limit(limit)
 

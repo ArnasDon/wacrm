@@ -4,11 +4,15 @@ import { buildConversationContext } from './context'
 
 /** Minimal fake matching the query chain in buildConversationContext:
  *  from().select().eq().eq().order().limit() → { data, error }. */
-function fakeDb(rows: unknown[]): SupabaseClient {
+function fakeDb(rows: unknown[], filters?: { includedTypes?: string[] }): SupabaseClient {
   const chain = {
     from: () => chain,
     select: () => chain,
     eq: () => chain,
+    in: (_column: string, values: string[]) => {
+      if (filters) filters.includedTypes = values
+      return chain
+    },
     order: () => chain,
     limit: () => Promise.resolve({ data: rows, error: null }),
   }
@@ -37,6 +41,25 @@ describe('buildConversationContext', () => {
       'conv-1',
     )
     expect(out).toEqual([{ role: 'assistant', content: 'auto reply' }])
+  })
+
+  it('includes rendered templates so the AI remembers automation sends', async () => {
+    const filters: { includedTypes?: string[] } = {}
+    const out = await buildConversationContext(
+      fakeDb(
+        [{ sender_type: 'bot', content_text: 'Hello Ana, your appointment is tomorrow.' }],
+        filters,
+      ),
+      'conv-1',
+    )
+
+    expect(filters.includedTypes).toEqual(['text', 'template'])
+    expect(out).toEqual([
+      {
+        role: 'assistant',
+        content: 'Hello Ana, your appointment is tomorrow.',
+      },
+    ])
   })
 
   it('drops empty / whitespace-only messages', async () => {

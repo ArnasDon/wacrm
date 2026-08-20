@@ -3808,3 +3808,70 @@ tocados, `next build` completo, `vitest run` en verde (1111 tests),
 sin diff en `package-lock.json`. Commit `24cb46d`, pusheado a `main`
 con confirmación de Angel — EasyPanel despliega automáticamente por
 webhook.
+
+---
+
+**2026-08-20 — Claude Code — Diagnóstico y primer paso hacia dejar
+"Conectar Google Calendar" utilizable por cualquier cliente, no solo
+Angel.**
+
+Angel reportó que la opción de Google Calendar en Configuración
+"aparece como si fuera una app certificada y no es así". Diagnóstico:
+la app de Google Cloud (`chat-sandia`) sigue en estado **Testing** con
+un solo test user registrado (la cuenta de Angel) — confirmado en vivo
+en `console.cloud.google.com/auth/audience?project=chat-sandia`
+("1 user (1 test, 0 other) / 100 user cap"). Mientras siga en Testing,
+**cualquier cliente de Chat Sandía que no sea Angel se topa con el
+bloqueo "esta app no está verificada" de Google al intentar conectar
+su propio Google Calendar** — el flujo OAuth en sí
+(`src/lib/google-calendar/oauth.ts`, `/api/google-calendar/oauth/*`)
+funciona correctamente, el problema es enteramente de estado de
+publicación en Google Cloud, no de código.
+
+Para pasar a producción (verificación de Google), hacían falta dos
+URLs públicas que no existían: página de inicio y política de
+privacidad. Se resolvió la parte preparable sin necesitar el paso
+final (que debe iniciarlo Angel):
+
+- **`src/app/legal/privacidad/page.tsx`** (nueva, pública, fuera de
+  `protectedPaths` en `src/proxy.ts`) — política de privacidad con la
+  cláusula de "Limited Use" que Google exige textualmente para
+  cualquier app que use datos de sus APIs, más el detalle de qué
+  scopes de Calendar se piden y para qué (`calendar.events`,
+  `calendar.freebusy`, `userinfo.email`).
+- **`src/app/(auth)/login/page.tsx`** — se agregó un pie de página con
+  una frase que describe qué es Chat Sandía y un enlace a
+  `/legal/privacidad`, para que `/login` (única página pública real
+  del proyecto) sirva como "Application home page" ante Google.
+- En la consola de Google Cloud (`chat-sandia`, página Branding) se
+  cargaron y guardaron **Application home page** →
+  `https://sandia-sandia-crm.kmencc.easypanel.host/login` y
+  **Application privacy policy link** →
+  `https://sandia-sandia-crm.kmencc.easypanel.host/legal/privacidad`,
+  verificado que persistieron tras recargar. El dominio
+  `kmencc.easypanel.host` ya estaba en "Authorised domains" (heredado
+  de la configuración del cliente OAuth existente).
+- **Deliberadamente NO se tocó**: no se hizo clic en "Publish app", no
+  se aceptó ningún checkbox de términos/políticas de Google. Ese paso
+  es un proceso externo que Angel debe iniciar él mismo desde
+  `console.cloud.google.com/auth/audience?project=chat-sandia` — puede
+  tardar varios días, y Google puede pedir justificación de scopes o
+  un video de demostración del flujo (`calendar.events` cae en el tier
+  "sensitive" de Google, confirmado en vivo en la página de Data
+  access del proyecto; `calendar.freebusy` y `userinfo.email` son
+  "non-sensitive").
+
+Verificado en producción: `https://sandia-sandia-crm.kmencc.easypanel.host/legal/privacidad`
+responde 200 con el contenido esperado tras el deploy automático de
+EasyPanel (tardó ~10 minutos en reflejarse esta vez — no fue una falla
+de build, solo lento). `tsc --noEmit`, `eslint`, `next build` y
+`vitest run` (1111 tests) en verde antes de pushear, sin diff en
+`package-lock.json`. Commits `05c5742` y el de esta entrada, pusheados
+a `main` con confirmación de Angel.
+
+**Pendiente, a decisión de Angel:** cuándo iniciar "Publish app" →
+revisión de Google. Alternativa más rápida si necesita desbloquear a
+clientes puntuales antes de eso: agregar sus cuentas de Google
+manualmente como test users (hasta 100) desde la misma página
+Audience — no requiere revisión de Google, pero no escala a "cualquier
+cliente se conecta solo".

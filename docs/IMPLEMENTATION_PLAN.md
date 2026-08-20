@@ -120,11 +120,25 @@ fires the same event/interaction pair on its own.
 
 ### Known gaps / deferred
 
-- **No seed data** for `customer_requests`/Lead-shaped `deals`/
-  `trials` yet. §19's seed script still only covers Phases 1–5; the
-  funnel is exercisable end-to-end via the UI/API but starts empty on
-  a fresh seed run. Follow-up: extend the seed script to generate a
-  request → lead → trial → conversion chain per the §19 volumes.
+- **Correction (added during Phase 8's DoD review — the claim below
+  was wrong when first written and went unverified):** `scripts/seed.ts`
+  already seeds `customer_requests`, `trials` (including one
+  `CONVERTED` row), `engagement_events`, `product_interactions`, and
+  `whatsapp_sync_log` — that seeding was done in the Phase 1/2
+  groundwork, before this phase, and this doc originally claimed
+  "no seed data" without checking. The real, narrower gap: **`deals`
+  (Lead) rows are not seeded at all** — no `seedDeals` function exists
+  in `scripts/seed.ts`. Since Phase 7's funnel/campaign analytics use
+  `deals.status = 'CONVERTED'` as the authoritative LEAD/BA-CONTACT/
+  PURCHASE signal (not `trials.status`), a fresh seed shows real
+  numbers for Reach/Join/Engage/Product Interest/Trial but **0 for
+  Lead, BA Contact, and Purchase**, and every campaign's
+  leads/conversions/cost-per-lead columns are 0 — even though the one
+  seeded `CONVERTED` trial exists. Follow-up: add a `seedDeals`
+  function creating Lead rows (with `source`/`campaign_id`/
+  `market_id`/`region_id`) for at least the contacts that already have
+  a `customer_requests`/`trials` row, so the funnel's later stages
+  aren't structurally empty on a fresh seed.
   Also skipped: `Feedback` (§12's category/member/market/message/
   status/admin-escalation type) — no schema or UI yet, tracked as a
   Phase 6 follow-up rather than folded into `CustomerRequest`.
@@ -188,15 +202,18 @@ No schema changes. Every number in this phase reads tables Phases
 application layer: one new aggregation module, four new UI surfaces,
 one new nav entry.
 
-**On the Phase 6 gaps this phase inherits** (no seed data for the
-funnel stages, no Markets/Regions management UI): decided to proceed
-rather than block on either. Every query and every widget here is
-written to degrade to real zeros/empty states, never an error or a
-fabricated number, on an account with no funnel data yet — verified
-with a dedicated "fully empty account" test on `loadFunnelMetrics`.
-Markets/Regions specifically don't matter to this phase at all —
-funnel/campaign/product analytics never key on them. Seeding the
-funnel is tracked as a Phase 6 follow-up, not duplicated here.
+**On the Phase 6 gaps this phase inherits** (originally believed to be
+"no seed data for the funnel stages" — corrected during Phase 8's DoD
+review to the narrower real gap: `deals`/Lead rows specifically aren't
+seeded, see that correction in the Phase 6 section above; and no
+Markets/Regions management UI): decided to proceed rather than block
+on either. Every query and every widget here is written to degrade to
+real zeros/empty states, never an error or a fabricated number, on an
+account with no funnel data yet — verified with a dedicated
+"fully empty account" test on `loadFunnelMetrics`. Markets/Regions
+specifically don't matter to this phase at all — funnel/campaign/
+product analytics never key on them. Seeding `deals` is tracked as a
+Phase 6 follow-up, not duplicated here.
 
 ### Reused as-is
 

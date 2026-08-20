@@ -485,7 +485,10 @@
       "interactiveReply": "[Resposta interativa]",
       "unsupported": "[Tipo de mensagem não suportado]",
       "aiBadge": "IA",
-      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA"
+      "aiBadgeTitle": "Enviado automaticamente pelo assistente de IA",
+      "documentView": "Ver",
+      "documentDownload": "Baixar",
+      "documentPages": "{count} páginas"
     },
     "actions": {
       "openMenu": "Mais opções",

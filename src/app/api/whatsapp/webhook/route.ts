@@ -17,6 +17,7 @@ import {
   isTemplateWebhookField,
 } from '@/lib/whatsapp/template-webhook'
 import { captureCtwaReferral, type CtwaReferral } from '@/lib/whatsapp/ctwa-referral'
+import { generateDocumentPreview, looksLikePdf } from '@/lib/documents/generate-document-preview'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -664,25 +665,58 @@ async function processMessage(
     .eq('sender_type', 'customer')
   const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
 
-  const { error: msgError } = await supabaseAdmin().from('messages').insert({
-    conversation_id: conversation.id,
-    sender_type: 'customer',
-    content_type: contentType,
-    content_text: contentText,
-    media_url: mediaUrl,
-    message_id: message.id,
-    status: 'delivered',
-    created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-    reply_to_message_id: replyToInternalId,
-    // Only populated for content_type='interactive'. Migration 010 added
-    // the column; null for every other content_type so existing inserts
-    // behave identically.
-    interactive_reply_id: interactiveReplyId,
-  })
+  const { data: insertedMessage, error: msgError } = await supabaseAdmin()
+    .from('messages')
+    .insert({
+      conversation_id: conversation.id,
+      sender_type: 'customer',
+      content_type: contentType,
+      content_text: contentText,
+      media_url: mediaUrl,
+      message_id: message.id,
+      status: 'delivered',
+      created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      interactive_reply_id: interactiveReplyId,
+    })
+    .select('id')
+    .single()
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
     return
+  }
+
+  // WhatsApp-style PDF preview (thumbnail + page count + size) —
+  // best-effort, fire-and-forget: never awaited, never blocks the
+  // webhook. `message.document` is still in scope from the switch above
+  // (parseMessageContent only forwarded the derived mediaUrl/mediaType,
+  // not the raw payload), and downloading + rendering a page can take a
+  // few seconds — exactly the kind of side effect this codebase already
+  // keeps off the critical path (see `maybeActivateCtwaFep`). A message
+  // whose preview never lands just keeps the plain document pill the
+  // bubble already renders as a fallback.
+  if (
+    contentType === 'document' &&
+    message.document?.id &&
+    looksLikePdf(message.document.mime_type ?? null, message.document.filename ?? null)
+  ) {
+    void (async () => {
+      try {
+        const mediaInfo = await getMediaUrl({ mediaId: message.document!.id, accessToken })
+        const { buffer } = await downloadMedia({ downloadUrl: mediaInfo.url, accessToken })
+        await generateDocumentPreview({
+          messageId: insertedMessage.id,
+          accountId,
+          pdfBuffer: buffer,
+        })
+      } catch (err) {
+        console.error('[webhook] document preview generation failed:', err)
+      }
+    })()
   }
 
   // Update conversation

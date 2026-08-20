@@ -69,6 +69,15 @@ const nextConfig: NextConfig = {
   // Harmless outside Docker: `next start` keeps working as before.
   output: "standalone",
 
+  // pdf-to-img's PDF-preview generation (src/lib/documents/pdf-preview.ts)
+  // pulls in @napi-rs/canvas, a native-binding package. Letting Turbopack
+  // bundle it broke `next build`'s page-data collection for every route
+  // that transitively imports send-message.ts (even ones that never
+  // touch documents) with "the 'path' argument must be of type string" —
+  // a native .node loader path getting mangled by the bundler. Excluding
+  // it from bundling (plain require() at runtime instead) fixes that.
+  serverExternalPackages: ["pdf-to-img", "pdfjs-dist", "@napi-rs/canvas"],
+
   /**
    * Cross-origin dev access (Next.js 16).
    *

@@ -485,7 +485,10 @@
       "interactiveReply": "[인터랙티브 응답]",
       "unsupported": "[지원되지 않는 메시지 형식]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함"
+      "aiBadgeTitle": "AI 어시스턴트가 자동으로 전송함",
+      "documentView": "보기",
+      "documentDownload": "다운로드",
+      "documentPages": "{count}페이지"
     },
     "actions": {
       "openMenu": "더 보기",

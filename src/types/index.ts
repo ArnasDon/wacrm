@@ -505,6 +505,16 @@ export interface Message {
    * badge in the inbox. Migration 033.
    */
   ai_generated?: boolean;
+  /**
+   * WhatsApp-style PDF preview fields — only ever populated for
+   * `content_type === 'document'` messages whose file is a PDF, and
+   * only once the best-effort server-side generation (inbound webhook
+   * or outbound send) has completed. Migration 074. All three land
+   * together; a message with a thumbnail always has the other two.
+   */
+  document_page_count?: number | null;
+  document_file_size?: number | null;
+  document_thumbnail_url?: string | null;
 }
 
 export type ReactionActor = 'customer' | 'agent';

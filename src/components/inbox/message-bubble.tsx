@@ -24,6 +24,7 @@ import { useResolvedMediaSrc } from "@/lib/inbox/use-resolved-media-src";
 import { useLinkPreview } from "@/hooks/use-link-preview";
 import { extractUrls, linkifyText } from "@/lib/inbox/linkify";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import { DocumentPreviewCard } from "./document-preview-card";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -178,7 +179,19 @@ function MediaImage({
   );
 }
 
-function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof useTranslations> }) {
+function MessageContent({
+  message,
+  t,
+  isAgent,
+  time,
+  status,
+}: {
+  message: Message;
+  t: ReturnType<typeof useTranslations>;
+  isAgent: boolean;
+  time: string;
+  status: ReactNode;
+}) {
   switch (message.content_type) {
     case "text":
       return (
@@ -237,6 +250,33 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
     case "document":
       if (!message.media_url) {
         return <MediaUnavailable label={message.content_text || t("document")} t={t} />;
+      }
+      // WhatsApp-style card once the server-side PDF preview has landed
+      // (see generate-document-preview.ts) — first-page thumbnail, page
+      // count + size, Ver/Baixar actions, own embedded timestamp (the
+      // bubble suppresses its usual footer row for this case, see
+      // MessageBubble's `hasDocumentPreview`). Any non-PDF document, or
+      // a PDF whose preview hasn't generated yet / failed, falls back to
+      // the plain filename pill unchanged.
+      if (message.document_thumbnail_url) {
+        return (
+          <DocumentPreviewCard
+            url={message.media_url}
+            filename={message.content_text || t("document")}
+            isAgent={isAgent}
+            thumbnailUrl={message.document_thumbnail_url}
+            fileSize={message.document_file_size ?? null}
+            time={time}
+            status={status}
+            verLabel={t("documentView")}
+            baixarLabel={t("documentDownload")}
+            pagesLabel={
+              message.document_page_count
+                ? t("documentPages", { count: message.document_page_count })
+                : null
+            }
+          />
+        );
       }
       return (
         <a
@@ -365,6 +405,16 @@ export function MessageBubble({
     message.content_type === "image" && !!message.media_url && !message.content_text;
   const isFramedMedia = isFramedPhoto || isFramedLink;
 
+  // A document message with a generated PDF preview renders its own
+  // self-contained card (thumbnail + footer with an embedded timestamp,
+  // see DocumentPreviewCard) — the bubble's own timestamp/status row
+  // below would just duplicate it, so it's suppressed for this case only.
+  // Not treated as "framed" media (no edge-to-edge 2px frame): the card
+  // already draws its own border and sits fine inside the bubble's
+  // normal padding.
+  const hasDocumentPreview =
+    message.content_type === "document" && !!message.document_thumbnail_url;
+
   const timestamp = (
     <span
       className={cn(
@@ -434,29 +484,37 @@ export function MessageBubble({
                 when there's other text beyond the bare link, or the
                 preview hasn't resolved yet/failed — see isFramedLink. */}
             {previewData && <LinkPreviewCard data={previewData} isAgent={isAgent} />}
-            <MessageContent message={message} t={t} />
-            <div
-              className={cn(
-                "mt-1 flex items-center gap-1",
-                isAgent ? "justify-end" : "justify-start",
-              )}
-            >
-              {/* AI badge — only on replies the auto-reply bot generated
-                  (always outbound, so it sits on the primary fill). Lets
-                  agents tell an AI reply from their own / a Flow's at a
-                  glance. */}
-              {message.ai_generated && (
-                <span
-                  className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
-                  title={t("aiBadgeTitle")}
-                >
-                  <Sparkles className="h-2.5 w-2.5" />
-                  {t("aiBadge")}
-                </span>
-              )}
-              {timestamp}
-              {isAgent && <StatusIcon status={message.status} />}
-            </div>
+            <MessageContent
+              message={message}
+              t={t}
+              isAgent={isAgent}
+              time={time}
+              status={isAgent ? <StatusIcon status={message.status} /> : null}
+            />
+            {!hasDocumentPreview && (
+              <div
+                className={cn(
+                  "mt-1 flex items-center gap-1",
+                  isAgent ? "justify-end" : "justify-start",
+                )}
+              >
+                {/* AI badge — only on replies the auto-reply bot generated
+                    (always outbound, so it sits on the primary fill). Lets
+                    agents tell an AI reply from their own / a Flow's at a
+                    glance. */}
+                {message.ai_generated && (
+                  <span
+                    className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+                    title={t("aiBadgeTitle")}
+                  >
+                    <Sparkles className="h-2.5 w-2.5" />
+                    {t("aiBadge")}
+                  </span>
+                )}
+                {timestamp}
+                {isAgent && <StatusIcon status={message.status} />}
+              </div>
+            )}
           </>
         )}
       </div>

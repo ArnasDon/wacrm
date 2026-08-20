@@ -47,6 +47,7 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { generateDocumentPreviewFromUrl, looksLikePdf } from '@/lib/documents/generate-document-preview';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -511,6 +512,20 @@ export async function sendMessageToConversation(
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
       500
     );
+  }
+
+  // WhatsApp-style PDF preview (thumbnail + page count + size) for an
+  // outbound document — same best-effort, fire-and-forget treatment as
+  // the inbound webhook side (see generate-document-preview.ts): never
+  // awaited, never throws, so a slow/failed render can't affect this
+  // send's response. Every caller of sendMessageToConversation (composer,
+  // public v1 API, Flows send_media) gets it from this one place.
+  if (messageType === 'document' && mediaUrl && looksLikePdf(null, filename ?? null)) {
+    void generateDocumentPreviewFromUrl({
+      messageId: messageRecord.id,
+      accountId,
+      url: mediaUrl,
+    });
   }
 
   // Fire "first_agent_message" — awaited (not fire-and-forget): this

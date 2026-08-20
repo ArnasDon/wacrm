@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import type { Message, MessageReaction } from "@/types";
 import {
@@ -19,7 +19,9 @@ import { format } from "date-fns";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import { MediaLightbox } from "./media-lightbox";
+import { LinkPreviewCard } from "./link-preview-card";
 import { useResolvedMediaSrc } from "@/lib/inbox/use-resolved-media-src";
+import { extractUrls, linkifyText } from "@/lib/inbox/linkify";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
 
@@ -111,7 +113,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
     case "text":
       return (
         <p className="select-text whitespace-pre-wrap break-words text-sm">
-          {message.content_text}
+          {linkifyText(message.content_text)}
         </p>
       );
 
@@ -125,7 +127,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
           )}
           {message.content_text && (
             <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              {linkifyText(message.content_text)}
             </p>
           )}
         </div>
@@ -145,7 +147,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
           )}
           {message.content_text && (
             <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              {linkifyText(message.content_text)}
             </p>
           )}
         </div>
@@ -189,7 +191,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
           </span>
           {message.content_text && (
             <p className="mt-1 select-text whitespace-pre-wrap break-words text-sm">
-              {message.content_text}
+              {linkifyText(message.content_text)}
             </p>
           )}
         </div>
@@ -199,7 +201,9 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
       return (
         <div className="flex items-center gap-2 text-sm">
           <MapPin className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <span className="select-text">{message.content_text || t("locationShared")}</span>
+          <span className="select-text">
+            {linkifyText(message.content_text || t("locationShared"))}
+          </span>
         </div>
       );
 
@@ -224,14 +228,14 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
               {t("buttonReply")}
             </span>
             <p className="select-text whitespace-pre-wrap break-words text-sm">
-              {message.content_text || t("interactiveReply")}
+              {linkifyText(message.content_text || t("interactiveReply"))}
             </p>
           </div>
         );
       }
       return (
         <p className="select-text whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("interactiveReply")}
+          {linkifyText(message.content_text || t("interactiveReply"))}
         </p>
       );
     }
@@ -239,7 +243,7 @@ function MessageContent({ message, t }: { message: Message, t: ReturnType<typeof
     default:
       return (
         <p className="select-text whitespace-pre-wrap break-words text-sm">
-          {message.content_text || t("unsupported")}
+          {linkifyText(message.content_text || t("unsupported"))}
         </p>
       );
   }
@@ -256,6 +260,16 @@ export function MessageBubble({
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");
+
+  // One preview per message, for the first http(s) URL in its text —
+  // any others stay plain clickable links (linkifyText above). Computed
+  // here (not inside MessageContent) so every content_type with a
+  // content_text caption gets the same single card, from one place,
+  // instead of a copy of this per switch-case.
+  const previewUrl = useMemo(
+    () => extractUrls(message.content_text)[0] ?? null,
+    [message.content_text],
+  );
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -282,6 +296,7 @@ export function MessageBubble({
           />
         )}
         <MessageContent message={message} t={t} />
+        {previewUrl && <LinkPreviewCard url={previewUrl} isAgent={isAgent} />}
         <div
           className={cn(
             "mt-1 flex items-center gap-1",

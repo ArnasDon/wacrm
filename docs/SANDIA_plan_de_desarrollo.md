@@ -4020,5 +4020,69 @@ limpio, `eslint` limpio en los archivos tocados, `next build` completo
 (1113 tests), sin diff en `package-lock.json`. Recomendado que Angel
 pruebe el botón contra una negociación real después del deploy.
 
-Commit `cad04a5` — pendiente de confirmación de Angel para pushear a
+Pusheado a `main` (commit `0564867`, con confirmación de Angel).
+**Confirmado funcionando por Angel en producción** contra una
+negociación real ("sí funcionó").
+
+---
+
+**2026-08-20 — Claude Code — Número de ticket + bitácora de tickets en `/admin` para "Reportar un problema".**
+
+Angel pidió que al enviar un reporte desde "Reportar un problema" se
+genere un número de ticket por correo, y que en su panel de
+administrador haya una bitácora de tickets para irlos marcando como
+"solucionado".
+
+Esto cambia el diseño previo de esa función: hasta ahora
+`POST /api/support/report` era **solo correo** (el correo era el único
+registro, sin persistencia — mismo patrón que "Reportar pago" y las
+solicitudes de cupo/número). Para tener una bitácora consultable y
+marcable como resuelta, hacía falta una tabla real.
+
+- **`supabase/migrations/074_support_tickets.sql`** — tabla
+  `support_tickets` nueva: `ticket_number` (BIGINT `GENERATED ALWAYS AS
+  IDENTITY`, secuencial y único — es el número que ve el usuario y
+  Angel), `account_id`/`account_name` (nombre desnormalizado para que
+  el ticket sobreviva si la cuenta se borra), `reported_by_user_id`,
+  `reporter_name`, `reporter_email`, `description`, `status`
+  (`open`/`resolved`), `resolved_at`, `resolved_by`. RLS: cualquier
+  usuario autenticado puede INSERTAR su propio ticket
+  (`reported_by_user_id = auth.uid()`) y verlo; solo
+  `is_platform_admin()` puede ver todos y actualizar el estado.
+  **Deliberadamente no guarda las capturas de pantalla** — esas siguen
+  siendo solo adjuntos de correo, igual que antes, preservando la
+  decisión original de no acumular en el proyecto un historial
+  permanente de capturas potencialmente sensibles de clientes.
+- **`POST /api/support/report`** — ahora inserta el ticket primero
+  (para obtener `ticket_number`), y ese número queda en el asunto y
+  cuerpo del correo (`Reporte de error #<n> — ...`). Cambio de
+  comportamiento importante: **el ticket en base de datos es ahora el
+  registro durable, no el correo** — si el envío del correo falla
+  después de crear el ticket, la función igual responde éxito con el
+  número de ticket (el reporte ya quedó capturado y visible en
+  `/admin`), en vez de obligar al usuario a reintentar por un problema
+  de SMTP.
+- **`support-report-dialog.tsx`** — el toast de éxito ahora muestra
+  "Reporte enviado — ticket #N".
+- **Nuevo `GET /api/admin/tickets`** (lista todos, más reciente
+  primero) y **`PATCH /api/admin/tickets/[id]`** (cambia `status`,
+  setea/limpia `resolved_at`/`resolved_by`) — ambos
+  `requirePlatformAdmin()` + `platformAdminClient()` (service role),
+  mismo patrón que `/api/admin/companies`.
+- **Panel de Angel (`/admin`)** — nueva sección "Tickets de soporte":
+  tabla con ticket #, empresa, quién reportó, descripción (truncada
+  con tooltip del texto completo), estado (Abierto/Solucionado) y
+  fecha, con botón **"Marcar solucionado" / "Reabrir"** por fila.
+
+Verificado en Supabase: inserté y borré un ticket de prueba manualmente
+por SQL para confirmar el esquema y el default `status = 'open'`
+(ticket #1, luego eliminado — el próximo ticket real será #2, gap
+cosmético sin importancia). `tsc --noEmit` limpio, `eslint` limpio en
+los archivos tocados, `next build` completo, `vitest run` en verde
+(1113 tests — no había tests previos en las rutas hermanas de
+correo/facturación, así que no se agregaron aquí tampoco, por
+consistencia), sin diff en `package-lock.json`. Advisors de seguridad
+de Supabase revisados sin hallazgos nuevos.
+
+Commit `68723cb` — pendiente de confirmación de Angel para pushear a
 `main`.

@@ -3932,3 +3932,49 @@ nuevas de `Settings.members`/`Settings.requestSeat`), sin diff en
 `package-lock.json`. Migración aplicada en Supabase, advisors de
 seguridad revisados sin hallazgos nuevos. Commit `3f192f5` — pendiente
 de confirmación de Angel para pushear a `main`.
+
+---
+
+**2026-08-20 — Claude Code — Misma lógica de cupos pagados, ahora para
+"agregar número de WhatsApp" (Q200/número).**
+
+A pedido de Angel, se replicó exactamente el patrón de `seat_limit`
+(entrada anterior) para los números de WhatsApp de cada empresa —
+mismo mecanismo, tabla distinta. Precio confirmado con Angel: **Q200
+por número adicional** (distinto del Q100 de usuarios).
+
+- **`supabase/migrations/073_whatsapp_number_limits.sql`** —
+  `accounts.whatsapp_number_limit` (INTEGER, default 1). Aplicada en
+  vivo. Backfill verificado: ambas empresas quedaron en 1/1 (su cantidad
+  real de números `whatsapp_config` hoy) — nadie pierde un número ya
+  conectado, el límite solo frena agregar números nuevos más allá del
+  primero.
+- **`POST /api/whatsapp/config`** (agregar conexión) ahora cuenta las
+  conexiones existentes contra `whatsapp_number_limit` antes de crear
+  una nueva — 403 si ya está al tope. A diferencia de las invitaciones
+  de miembros, aquí no hay estado "pendiente" que reservar: agregar un
+  número es síncrono (se verifica con Meta/Zernio en el momento), así
+  que basta contar `whatsapp_config` existentes.
+- **"Agregar conexión" (Settings → WhatsApp)** se deshabilita (con
+  tooltip) cuando la empresa está al tope de números.
+- **Nuevo botón "Solicitud de número adicional"** (mismo lugar,
+  siempre visible): notas opcionales + foto del comprobante de pago
+  obligatoria. `POST /api/billing/request-whatsapp-number` envía el
+  correo a `asistentedechat@gmail.com` con empresa, quién solicita,
+  cupo actual y la foto adjunta — mismo "el correo ES el registro" que
+  la solicitud de accesos.
+- **Panel de Angel (`/admin`)** — nueva columna "Números WhatsApp" con
+  `usados/límite` y botón **"+1 número"** (`PATCH
+  /api/admin/companies/[id]` con `add_whatsapp_numbers: 1`).
+- **Test actualizado**:
+  `src/app/api/whatsapp/config/route.test.ts` — el mock de `accounts`
+  ahora incluye `whatsapp_number_limit` (generoso por defecto en los
+  tests que no lo ejercitan) y se agregaron dos casos nuevos que cubren
+  el gate directamente (rechaza al tope, permite bajo el tope).
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1113 tests — los
+2 nuevos son los del gate de WhatsApp), sin diff en `package-lock.json`.
+Migración aplicada en Supabase, backfill confirmado por consulta directa.
+Commit `d36a32c` — pendiente de confirmación de Angel para pushear a
+`main` junto con el commit anterior de cupos de miembros.

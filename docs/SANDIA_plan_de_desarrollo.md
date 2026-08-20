@@ -3976,5 +3976,10 @@ Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
 tocados, `next build` completo, `vitest run` en verde (1113 tests — los
 2 nuevos son los del gate de WhatsApp), sin diff en `package-lock.json`.
 Migración aplicada en Supabase, backfill confirmado por consulta directa.
-Commit `d36a32c` — pendiente de confirmación de Angel para pushear a
-`main` junto con el commit anterior de cupos de miembros.
+
+Pusheado a `main` (con confirmación de Angel) junto con el commit
+anterior de cupos de miembros: `8463e25..8126f50`. Verificado en vivo
+tras el deploy automático de EasyPanel (~4-5 min esta vez): `POST
+/api/billing/request-seat` y `POST /api/billing/request-whatsapp-number`
+responden `401` (antes `404`) sin sesión — ambas rutas nuevas están
+desplegadas y exigen autenticación correctamente.

@@ -92,15 +92,20 @@ export function SupportReportDialog({
         method: 'POST',
         body: form,
       });
-      const payload = await readResponseJson<{ error?: string }>(res).catch(
-        (): { error?: string } => ({})
-      );
+      const payload = await readResponseJson<{
+        error?: string;
+        ticket_number?: number;
+      }>(res).catch((): { error?: string; ticket_number?: number } => ({}));
       if (!res.ok) {
         toast.error(payload.error || 'No se pudo enviar el reporte');
         setSubmitting(false);
         return;
       }
-      toast.success('Reporte enviado — gracias por avisarnos');
+      toast.success(
+        payload.ticket_number
+          ? `Reporte enviado — ticket #${payload.ticket_number}`
+          : 'Reporte enviado — gracias por avisarnos'
+      );
       reset();
       onOpenChange(false);
     } catch (err) {

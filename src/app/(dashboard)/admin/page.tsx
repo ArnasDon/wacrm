@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { Banknote, Building2, Plus, RefreshCw } from 'lucide-react';
+import { Banknote, Building2, LifeBuoy, Plus, RefreshCw } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -74,6 +74,18 @@ interface Invitation {
   expires_at: string;
 }
 
+interface Ticket {
+  id: string;
+  ticket_number: number;
+  account_name: string;
+  reporter_name: string;
+  reporter_email: string | null;
+  description: string;
+  status: 'open' | 'resolved';
+  created_at: string;
+  resolved_at: string | null;
+}
+
 export default function PlatformAdminPage() {
   const { isPlatformAdmin, profileLoading } = useAuth();
   const [companies, setCompanies] = useState<Company[]>([]);
@@ -89,6 +101,12 @@ export default function PlatformAdminPage() {
   const [savingDueDateId, setSavingDueDateId] = useState<string | null>(null);
   const [addingSeatId, setAddingSeatId] = useState<string | null>(null);
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
+
+  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [loadingTickets, setLoadingTickets] = useState(true);
+  const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(
+    null
+  );
 
   const [bankForm, setBankForm] = useState<PlatformBankSettings>({
     bank_name: '',
@@ -146,6 +164,57 @@ export default function PlatformAdminPage() {
       cancelled = true;
     };
   }, [isPlatformAdmin]);
+
+  const loadTickets = useCallback(async () => {
+    setLoadingTickets(true);
+    try {
+      const response = await fetch('/api/admin/tickets', { cache: 'no-store' });
+      const body = await readResponseJson<{ error?: string; tickets: Ticket[] }>(
+        response
+      );
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudieron cargar los tickets');
+      setTickets(body.tickets);
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudieron cargar los tickets'
+      );
+    } finally {
+      setLoadingTickets(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isPlatformAdmin) void loadTickets();
+    else if (!profileLoading) setLoadingTickets(false);
+  }, [isPlatformAdmin, profileLoading, loadTickets]);
+
+  const toggleTicketStatus = async (ticket: Ticket) => {
+    const nextStatus = ticket.status === 'open' ? 'resolved' : 'open';
+    setUpdatingTicketId(ticket.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/tickets/${ticket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo actualizar el ticket');
+      await loadTickets();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudo actualizar el ticket'
+      );
+    } finally {
+      setUpdatingTicketId(null);
+    }
+  };
 
   const invite = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -748,6 +817,110 @@ export default function PlatformAdminPage() {
               </Button>
             </div>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <LifeBuoy className="text-primary size-5" />
+                Tickets de soporte
+              </CardTitle>
+              <CardDescription>
+                Reportes enviados desde &quot;Reportar un problema&quot; en cada
+                cuenta.
+              </CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => void loadTickets()}
+              disabled={loadingTickets}
+            >
+              <RefreshCw className={loadingTickets ? 'animate-spin' : ''} />
+              Actualizar
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Ticket</TableHead>
+                <TableHead>Empresa</TableHead>
+                <TableHead>Reportado por</TableHead>
+                <TableHead>Descripción</TableHead>
+                <TableHead>Estado</TableHead>
+                <TableHead>Fecha</TableHead>
+                <TableHead className="text-right">Acción</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {tickets.map((ticket) => (
+                <TableRow key={ticket.id}>
+                  <TableCell className="font-medium">
+                    #{ticket.ticket_number}
+                  </TableCell>
+                  <TableCell>{ticket.account_name}</TableCell>
+                  <TableCell>
+                    <div>{ticket.reporter_name}</div>
+                    <div className="text-muted-foreground text-xs">
+                      {ticket.reporter_email || 'Sin correo'}
+                    </div>
+                  </TableCell>
+                  <TableCell
+                    className="max-w-72 truncate"
+                    title={ticket.description}
+                  >
+                    {ticket.description}
+                  </TableCell>
+                  <TableCell>
+                    <span
+                      className={
+                        ticket.status === 'resolved'
+                          ? 'text-emerald-500'
+                          : 'text-amber-500'
+                      }
+                    >
+                      {ticket.status === 'resolved'
+                        ? 'Solucionado'
+                        : 'Abierto'}
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    {new Date(ticket.created_at).toLocaleDateString('es-GT')}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant={
+                        ticket.status === 'resolved' ? 'outline' : 'default'
+                      }
+                      disabled={updatingTicketId === ticket.id}
+                      onClick={() => void toggleTicketStatus(ticket)}
+                    >
+                      {updatingTicketId === ticket.id
+                        ? 'Guardando…'
+                        : ticket.status === 'resolved'
+                          ? 'Reabrir'
+                          : 'Marcar solucionado'}
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {!loadingTickets && tickets.length === 0 ? (
+                <TableRow>
+                  <TableCell
+                    colSpan={7}
+                    className="text-muted-foreground py-8 text-center"
+                  >
+                    No hay tickets reportados.
+                  </TableCell>
+                </TableRow>
+              ) : null}
+            </TableBody>
+          </Table>
         </CardContent>
       </Card>
     </div>

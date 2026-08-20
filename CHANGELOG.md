@@ -9,6 +9,63 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.14.2] — 2026-08-20
+
+Investigates `GET /api/content/cron` reporting `{"sent":0}` for a
+broadcast that, by every field a human can eyeball
+(`status='scheduled'`, `content_id` set, `scheduled_at` minutes in the
+past), looked due.
+
+**Finding: no bug in the route's scan query, the claim mutex, or the
+delivery function.** Verified with a new test
+(`src/app/api/content/cron/route.test.ts`) whose `broadcasts` fake
+actually evaluates the accumulated `.not()`/`.eq()`/`.lte()`/`.or()`
+predicates against an in-memory row — a fake that just echoes back
+whatever the test hands it couldn't have caught a real predicate bug,
+so this one doesn't. `claimBroadcastDelivery`/`releaseBroadcastDelivery`
+(`broadcast-resume.ts`) are exercised for real against that same fake
+row, not mocked. A row matching the exact reported facts drains
+correctly and reports `sent: 1`. Also independently re-verified: the
+`broadcasts.status` CHECK constraint (migration 001) was never altered
+and still allows `'scheduled'`; the literal string in the route is
+byte-exact (`od -c`), no stray character; the query has no `account_id`
+or `is_demo` filter to be an unwanted narrower-than-intended
+restriction (correctly absent — this is a cross-tenant system scan).
+
+Given the code checks out, the two remaining explanations are both
+**silent no-ops with zero logging** — the same class of gap the 054
+investigation found in the schedule route. Fixed:
+
+- `src/app/api/content/cron/route.ts` now logs the scan result
+  unconditionally (`scan: N due broadcast(s) at <timestamp>`), so "0
+  due" is now distinguishable in the log from "found some, couldn't
+  claim any" — previously both looked identical from the outside
+  (`{sent: 0}`, nothing logged).
+- A failed claim (`!claimed`) now logs which broadcast was skipped and
+  why (already claimed by a concurrent run, or a stale lock that
+  hasn't crossed the staleness window yet) — previously a silent
+  `continue`.
+
+The next occurrence of this exact symptom will show in the log
+whether the row never matched the scan (a data issue on the row
+itself — most likely `content_id` actually `NULL`, e.g. if it was
+created through the general Broadcasts flow rather than Content
+Studio's schedule endpoint) or matched but couldn't be claimed (a
+lock left over from an earlier run that didn't reach its `finally`).
+
+Test: `src/app/api/content/cron/route.test.ts` (new, 7 cases) — a due
+post drains and reports `sent: 1`; a `content_id IS NULL` broadcast,
+a not-yet-due broadcast, a non-`'scheduled'`-status broadcast (all
+four other values), and a broadcast already locked by a concurrent
+run are each correctly left undrained; a delivery failure still
+releases the lock rather than leaving it stuck; a wrong cron secret
+401s before touching the database. Two of these also assert the new
+diagnostic log lines actually fire.
+
+Verified: typecheck, lint (0 errors, unchanged 37 pre-existing
+warnings), test (904/904 — 897 existing + 7 new), and build all pass.
+format:check reports the same 361-file pre-existing baseline.
+
 ## [0.14.1] — 2026-08-20
 
 **Migration required:** `supabase/migrations/054_fix_ambiguous_contact_id_column_reference.sql`

@@ -61,6 +61,20 @@ export async function GET(request: Request) {
     console.error('[content-cron] due-broadcast scan failed:', error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+
+  // Log the scan result unconditionally — this is the one line that
+  // tells the two "matched but silently did nothing" failure modes
+  // below apart from "nothing was actually due": a broadcast that
+  // looks due by every field a human can eyeball (status/content_id/
+  // scheduled_at) but doesn't get sent is either never reaching this
+  // scan at all (a data issue on the row itself — e.g. content_id
+  // actually NULL, or scheduled_at not what it appears once cast to
+  // timestamptz) or reaching it and then failing to claim (below).
+  // Before this, both looked identical from the outside: `{sent: 0}`
+  // with nothing in the log to tell them apart.
+  console.log(
+    `[content-cron] scan: ${due?.length ?? 0} due broadcast(s) at ${now.toISOString()}`
+  );
   if (!due?.length) return NextResponse.json({ sent: 0 });
 
   let sent = 0;
@@ -76,7 +90,18 @@ export async function GET(request: Request) {
       broadcast.id,
       now
     );
-    if (!claimed) continue; // another run has it, or it's not due after all
+    if (!claimed) {
+      // Either a concurrent run holds a fresh (non-stale) lock, or a
+      // previous run crashed hard enough to skip the `finally` below
+      // and leave delivery_locked_at stuck inside the staleness
+      // window — the two look identical from here. Either way this
+      // broadcast was due and did NOT send this tick, which is worth
+      // a line even though it isn't an error.
+      console.log(
+        `[content-cron] skipped broadcast ${broadcast.id}: could not claim delivery lock (already claimed, or a stale lock hasn't expired yet)`
+      );
+      continue;
+    }
 
     try {
       await deliverContentBroadcast(admin, broadcast);

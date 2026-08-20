@@ -21,6 +21,7 @@ import { MessageReactions } from "./message-reactions";
 import { MediaLightbox } from "./media-lightbox";
 import { LinkPreviewCard } from "./link-preview-card";
 import { useResolvedMediaSrc } from "@/lib/inbox/use-resolved-media-src";
+import { useLinkPreview } from "@/hooks/use-link-preview";
 import { extractUrls, linkifyText } from "@/lib/inbox/linkify";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
@@ -339,16 +340,30 @@ export function MessageBubble({
     () => extractUrls(message.content_text)[0] ?? null,
     [message.content_text],
   );
+  // Lifted up from LinkPreviewCard (which is now a pure presentational
+  // component) so this component can see the fetch's success/failure
+  // before deciding layout below — specifically, whether it's safe to
+  // drop the plain-text link line in favor of the card alone.
+  const previewState = useLinkPreview(previewUrl);
+  const previewData = previewState.status === "success" ? previewState.data : null;
+  // A message that's nothing but the URL itself (WhatsApp doesn't show a
+  // separate "https://…" line in that case — the card's own domain row
+  // already carries that). Only drops the text once the card actually has
+  // something to show; a still-loading or failed preview always leaves the
+  // plain link visible, never nothing.
+  const isLinkOnlyMessage =
+    !!previewUrl && (message.content_text ?? "").trim() === previewUrl;
+  const isFramedLink = isLinkOnlyMessage && !!previewData;
 
-  // WhatsApp-iOS-style framed photo: a caption-less image message drops
-  // the bubble's usual text padding entirely (down to a 2px frame) and
-  // overlays the timestamp/status on the photo itself instead of giving
-  // them their own row below it. A caption (content_text) keeps the
-  // existing layout — image, caption text, timestamp row — unchanged;
-  // this repositioning is only for the pure-photo case the task's mockup
-  // shows.
+  // WhatsApp-iOS-style framed media: a caption-less image message, or a
+  // link-only message once its preview has loaded, drops the bubble's
+  // usual text padding entirely (down to a 2px frame) and overlays the
+  // timestamp/status on the media itself instead of giving them their own
+  // row below it. A caption/extra text keeps the existing layout —
+  // content, then a normal timestamp row — unchanged.
   const isFramedPhoto =
     message.content_type === "image" && !!message.media_url && !message.content_text;
+  const isFramedMedia = isFramedPhoto || isFramedLink;
 
   const timestamp = (
     <span
@@ -377,14 +392,14 @@ export function MessageBubble({
       <div
         className={cn(
           "relative rounded-2xl",
-          isFramedPhoto ? "overflow-hidden p-[2px]" : "px-3 py-2",
+          isFramedMedia ? "overflow-hidden p-[2px]" : "px-3 py-2",
           isAgent
             ? "rounded-br-md bg-primary text-primary-foreground"
             : "rounded-bl-md bg-muted text-foreground",
         )}
       >
         {reply && (
-          <div className={isFramedPhoto ? "px-2 pt-2" : undefined}>
+          <div className={isFramedMedia ? "px-2 pt-2" : undefined}>
             <ReplyQuote
               authorLabel={reply.authorLabel}
               preview={reply.preview}
@@ -403,10 +418,23 @@ export function MessageBubble({
               status: isAgent ? <StatusIcon status={message.status} overlay /> : null,
             }}
           />
+        ) : isFramedLink && previewData ? (
+          <LinkPreviewCard
+            data={previewData}
+            isAgent={isAgent}
+            overlay={{
+              time,
+              status: isAgent ? <StatusIcon status={message.status} overlay /> : null,
+            }}
+          />
         ) : (
           <>
+            {/* Card first, caption text after — matches WhatsApp's own
+                order (previously had this reversed). Only reachable here
+                when there's other text beyond the bare link, or the
+                preview hasn't resolved yet/failed — see isFramedLink. */}
+            {previewData && <LinkPreviewCard data={previewData} isAgent={isAgent} />}
             <MessageContent message={message} t={t} />
-            {previewUrl && <LinkPreviewCard url={previewUrl} isAgent={isAgent} />}
             <div
               className={cn(
                 "mt-1 flex items-center gap-1",

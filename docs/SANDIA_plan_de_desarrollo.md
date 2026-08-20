@@ -3983,3 +3983,42 @@ tras el deploy automático de EasyPanel (~4-5 min esta vez): `POST
 /api/billing/request-seat` y `POST /api/billing/request-whatsapp-number`
 responden `401` (antes `404`) sin sesión — ambas rutas nuevas están
 desplegadas y exigen autenticación correctamente.
+
+---
+
+**2026-08-20 — Claude Code — Botón "ir al chat" en las tarjetas de negociación del pipeline.**
+
+Angel pidió poder ir directo al chat de un contacto desde su tarjeta en
+el pipeline (ejemplo dado: "Ricardo" en la etapa "Demostración") sin
+tener que buscarlo manualmente en Bandeja.
+
+- **`src/components/pipelines/deal-card.tsx`** — nuevo ícono de chat
+  junto al nombre del contacto. La tarjeta raíz pasó de `<button>` a
+  `<div role="button">` con manejo de teclado propio (Enter/Espacio),
+  porque un `<button>` no puede contener otro `<button>` interactivo
+  válido y el ícono nuevo sí es uno real (con `stopPropagation` para no
+  disparar el editor de la negociación al hacer clic).
+- **`src/app/(dashboard)/pipelines/page.tsx`** — nuevo
+  `handleOpenChat(deal)`: si `deal.conversation_id` existe, navega
+  directo a `/inbox?c=<id>` (mismo patrón de deep-link que ya usan
+  notifications y el dashboard). Si no existe —el caso normal para
+  negociaciones creadas a mano desde `deal-form.tsx`, que nunca setea
+  `conversation_id`— busca la conversación más reciente de
+  `deal.contact_id` en `conversations` y navega ahí; si el contacto
+  todavía no tiene ninguna conversación, muestra un toast en vez de
+  fallar en silencio.
+- **`src/components/pipelines/pipeline-board.tsx`** — prop
+  `onOpenChat` enhebrada por `StageColumn` → `DraggableDealCard` →
+  `DealCard`.
+
+No se pudo probar visualmente en navegador esta vez: el Chrome
+automatizado del sandbox no alcanza `localhost:3000` (sitios externos
+sí cargan — confirmado con `example.com` — así que es aislamiento de
+red del sandbox, no un bug de la app). Se compensó con: `tsc --noEmit`
+limpio, `eslint` limpio en los archivos tocados, `next build` completo
+(que renderiza/type-checks todas las páginas), `vitest run` en verde
+(1113 tests), sin diff en `package-lock.json`. Recomendado que Angel
+pruebe el botón contra una negociación real después del deploy.
+
+Commit `cad04a5` — pendiente de confirmación de Angel para pushear a
+`main`.

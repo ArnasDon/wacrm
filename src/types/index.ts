@@ -207,10 +207,10 @@ export interface Conversation {
 }
 
 // ============================================================
-// Notifications (migration 027)
+// Notifications (migration 027, 'ai_key_invalid' added in 079)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned';
+export type NotificationType = 'conversation_assigned' | 'ai_key_invalid';
 
 export interface Notification {
   id: string;

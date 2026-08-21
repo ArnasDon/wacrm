@@ -7,7 +7,7 @@ import { loadCatalogContext } from './catalog-context'
 import { loadQuickReplyContext } from './quick-reply-context'
 import { generateReply } from './generate'
 import { buildSystemPrompt, type AutoReplyCalendarContext } from './defaults'
-import type { AiConfig } from './types'
+import { AiError, type AiConfig } from './types'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
@@ -389,8 +389,61 @@ export async function dispatchInboundToAiReply(
       }
     }
   } catch (err) {
-    console.error('[ai auto-reply] dispatch failed:', err)
+    if (err instanceof AiError && err.code === 'invalid_key') {
+      // A broken BYO key used to fail exactly like any other AI error —
+      // logged to the server console only, customer gets no reply, and
+      // nothing in the product itself ever surfaced it (confirmed live
+      // 2026-08-21: an account's bot went silently dead for hours,
+      // discovered only because a customer complained). Distinct from
+      // transient errors (timeout/rate_limited/network/provider_error)
+      // below, which are expected to self-heal and don't warrant
+      // waking anyone up.
+      console.error('[ai auto-reply] AI provider rejected the API key:', err.message)
+      await notifyAiKeyInvalid(supabaseAdmin(), accountId).catch((notifyErr) => {
+        console.error('[ai auto-reply] failed to send invalid-key notification:', notifyErr)
+      })
+    } else {
+      console.error('[ai auto-reply] dispatch failed:', err)
+    }
   }
+}
+
+/**
+ * Alerts the account's admins/owners (the roles allowed to edit AI
+ * settings — see `requireRole('admin')` in
+ * src/app/api/ai/config/route.ts) that the configured AI provider key
+ * is being rejected. Throttled to at most one alert per account per 6h
+ * so a sustained outage sends one notification, not one per inbound
+ * message.
+ */
+async function notifyAiKeyInvalid(db: SupabaseClient, accountId: string): Promise<void> {
+  const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+  const { data: recent } = await db
+    .from('notifications')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('type', 'ai_key_invalid')
+    .gte('created_at', sixHoursAgo)
+    .limit(1)
+    .maybeSingle()
+  if (recent) return
+
+  const { data: recipients } = await db
+    .from('profiles')
+    .select('user_id')
+    .eq('account_id', accountId)
+    .in('account_role', ['owner', 'admin'])
+  if (!recipients || recipients.length === 0) return
+
+  await db.from('notifications').insert(
+    recipients.map((r) => ({
+      account_id: accountId,
+      user_id: r.user_id as string,
+      type: 'ai_key_invalid',
+      title: 'AI auto-reply is down',
+      body: 'The AI provider rejected the configured API key, so customers are not getting automatic replies. Check Settings → AI.',
+    })),
+  )
 }
 
 /**

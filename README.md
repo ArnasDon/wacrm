@@ -1,94 +1,92 @@
-# wacrm — CRM Template for WhatsApp
+# Rimula Community Growth Platform
 
-> Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
-> sales pipelines, broadcasts, and no-code automations. Fork it, brand
-> it, host it.
-
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="900">
-  </a>
-</p>
+> Internal platform for the Rimula community — WhatsApp announcements,
+> content localization, products & compatibility, and the commercial
+> funnel from customer request through lead, trial, and conversion.
+> Forked from [wacrm](https://github.com/ArnasDon/wacrm), a
+> self-hostable WhatsApp CRM template — see [Origin](#origin) below.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](./LICENSE)
-[![CI](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml)
+[![CI](https://github.com/Shehryar92/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/Shehryar92/wacrm/actions/workflows/ci.yml)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
-[![Stars](https://img.shields.io/github/stars/ArnasDon/wacrm?style=social)](https://github.com/ArnasDon/wacrm/stargazers)
 
-The marketing site and self-host docs live in a separate repo:
-[ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)
-([wacrm.tech](https://wacrm.tech)). This repo is the product —
-clone or fork it to run your own CRM.
+## The funnel
 
-## What you get out of the box
+```
+CONTENT → LOCALIZATION → APPROVAL → DISTRIBUTION → ENGAGEMENT →
+CUSTOMER REQUEST → LEAD → BA ASSIGNMENT → TRIAL → CONVERSION → ANALYTICS
+```
 
-- **Shared inbox** on the official WhatsApp Business API — multiple
-  agents working one number, per-conversation assignment, status, and
-  notes.
-- **Contacts + tags + custom fields**, CSV import, deduplication.
-- **Sales pipelines** (Kanban) with deals linked to conversations.
-- **Broadcasts** with Meta-approved templates, delivery + read
-  tracking, per-recipient variable substitution.
-- **No-code automations** — triggers on inbound messages, new
-  contacts, keywords, or schedule; conditional branches, waits,
-  tags, webhooks. Visual builder.
+Community members, WhatsApp announcements, content creation with
+manual bilingual localization (Urdu/Pashto/Punjabi/Roman Urdu),
+products and verified vehicle compatibility, customer requests routed
+to Business Advisors, trials, conversions, and funnel analytics — see
+[`docs/RIMULA_BUILD_SPEC.md`](./docs/RIMULA_BUILD_SPEC.md) for the
+full product spec and
+[`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) for
+what's built, phase by phase.
+
+## What's built
+
+- **Shared inbox** on the official WhatsApp Business Cloud API, plus a
+  **Demo Mode** (`DemoWhatsAppService`) that simulates the entire send
+  → deliver → read → reply → convert pipeline with **zero Meta
+  credentials** — the whole funnel is exercisable end to end without a
+  live WhatsApp Business account.
+- **Members** (contacts extended with role/region/market/vehicle/
+  opt-in status) and **Business Advisors** (region/market/capacity/
+  languages) — see `docs/DATA_MODEL.md`.
+- **Content Studio** — create → upload media → write copy → manual
+  bilingual localization (RTL-aware for Urdu/Pashto/Punjabi) →
+  BA-recorded voice notes → review → approve → schedule/publish, with
+  a cron-drain scheduler (see [Scheduled jobs](#scheduled-jobs-cron)).
+- **Products & compatibility** — catalogue, approved claims,
+  admin-verified vehicle compatibility, and an architected (stubbed
+  pending real Meta Commerce credentials) WhatsApp catalogue sync —
+  see `docs/WHATSAPP_FEASIBILITY.md`.
+- **Requests → Leads → BA routing → Trials → Conversions** —
+  `LeadRoutingService` (Market BA → Regional BA → Unassigned,
+  configurable strategy), campaigns with cost/cost-per-lead
+  attribution, and a funnel dashboard computed entirely from real
+  seeded/live rows — never a fabricated number.
+- **Reports** — campaign and product performance, side by side.
+- **No-code automations** and a visual **Flows** builder — triggers,
+  conditions, waits, tags, webhooks.
 - **AI reply assistant** — bring your own OpenAI or Anthropic key
-  (stored encrypted; no per-seat AI fee, your data stays yours).
-  One-click AI-drafted replies in the inbox, plus an optional
-  auto-reply bot with a per-conversation cap and clean human handoff.
-  Add a **knowledge base** (FAQs, policies, product docs) and it
-  answers from your own content — hybrid retrieval (Postgres full-text,
-  or semantic pgvector when an embeddings key is set).
-- **Real-time dashboard** — response times, daily volume, pipeline
-  value, cross-module activity feed.
-- **Team accounts** — invite teammates by link, role-based access
-  (owner / admin / agent / viewer), ownership transfer. Every install
-  is account-scoped, so one shared inbox can be staffed by a whole
-  team. Solo use stays single-user with zero setup.
-- **Account management** — email, password, avatar, global sign-out.
+  (stored encrypted). AI-drafted replies, an optional auto-reply bot
+  with a per-conversation cap, and a knowledge-base-grounded product
+  Q&A that hands off to a human rather than guessing.
+- **Team accounts** — role-based access (owner/admin/agent/viewer),
+  every table account-scoped with RLS via `is_account_member(...)`.
 - **Public REST API** (`/api/v1`) with scoped, revocable API keys —
-  build your own automations on top of your CRM. See
-  [docs/public-api.md](./docs/public-api.md).
-- **MCP server** — drive your CRM from Claude, Cursor, and other AI
-  assistants over the [Model Context Protocol](https://modelcontextprotocol.io).
-  Read-only by default, opt-in writes. See [docs/mcp.md](./docs/mcp.md)
-  (server in [`mcp-server/`](./mcp-server)).
-
-## Why fork this?
-
-This is a **template**, not a product. Forking means you get:
-
-- **Full ownership** — your code, your Supabase project, your domain,
-  your data. No SaaS lock-in, no seat pricing, no trust dance.
-- **Full customisation** — add the fields your team needs, remove the
-  modules you don't, redesign anything. The stack is boring on
-  purpose (Next.js + Supabase + Tailwind) so the learning curve is
-  short.
-- **Zero ops to start** — [Hostinger](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST)
-  Managed Node.js deploys a fork in a few clicks. No Docker, no
-  Kubernetes, no infra team needed.
-  ([See below ↓](#-deploy-on-hostinger-recommended))
-- **Real security primitives** — token encryption (AES-256-GCM), RLS
-  on every table, HMAC-verified webhooks, CSP, rate limiting, CI
-  typecheck/build on every PR.
-
-Not a framework. Not an SDK. A concrete, working CRM you can stand up
-in an afternoon and make yours.
+  see [docs/public-api.md](./docs/public-api.md).
+- **MCP server** — drive the platform from Claude, Cursor, and other
+  AI assistants over the
+  [Model Context Protocol](https://modelcontextprotocol.io). See
+  [docs/mcp.md](./docs/mcp.md).
 
 ## Quick start
 
 ```bash
-# Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
-git clone https://github.com/<your-username>/wacrm.git
+git clone https://github.com/Shehryar92/wacrm.git
 cd wacrm
 npm install
-cp .env.local.example .env.local   # fill in Supabase + Meta creds
+cp .env.local.example .env.local   # fill in Supabase creds; Meta creds optional (Demo Mode needs none)
 npm run dev
 ```
 
 Open <http://localhost:3000>. You'll be redirected to `/login` (or
 `/dashboard` if already signed in).
+
+Apply `supabase/migrations/*.sql` (in order) against your Supabase
+project, then seed a full demo dataset — 844 Members across 20
+markets, products, campaigns, requests, leads, trials, and
+conversions:
+
+```bash
+npm run db:seed
+```
 
 Prefer containers? See [docs/docker.md](./docs/docker.md) for the
 Dockerfile + Docker Compose setup.
@@ -127,96 +125,54 @@ or just paste the value in directly.)
 **Production:** point a real scheduler at all three URLs, on whatever
 interval fits (every 1–5 minutes is plenty — a "scheduled for now"
 Content Studio post is picked up on the next tick, not instantly).
-Pick whichever fits your host, since none of this repo's cron
-mechanism is platform-specific:
+None of this repo's cron mechanism is platform-specific:
 
 - **Vercel** — a [Vercel Cron Job](https://vercel.com/docs/cron-jobs)
   per endpoint (`vercel.json`'s `crons` array), each configured to
   send the `x-cron-secret` header.
-- **Hostinger** (or any host with real cron/SSH access) — a crontab
-  entry running the same `curl` command above against your production
-  domain.
+- Any host with real cron/SSH access — a crontab entry running the
+  same `curl` command above against your production domain.
 - **Anywhere** — an external scheduled pinger (GitHub Actions
   `on: schedule`, a cron-as-a-service like cron-job.org, etc.) hitting
   the same URLs with the header set.
 
-## 🚀 Deploy on Hostinger (recommended)
-
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="1000">
-  </a>
-</p>
-<p align="center">
-  <a href="https://wacrm.tech/docs/deployment-hostinger">
-    <img src="https://img.shields.io/badge/Step--by--step_guide-wacrm.tech%2Fdocs-111?style=for-the-badge" alt="Step-by-step guide" height="44">
-  </a>
-</p>
-
-**wacrm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST).**
-It's the path we test, document, and recommend — and the fastest way
-to get a production-grade CRM live without owning a VPS or a
-Kubernetes cluster.
-
-### Why Hostinger?
-
-| | |
-|---|---|
-| **One-click Git deploy** | Connect your fork, push to `main`, Hostinger builds and ships it. No SSH, no Docker, no CI to wire up — this repo's own `main` deploys this way. |
-| **Managed Node.js** | Next.js 16 (App Router, server actions, ISR) runs out of the box on [Premium, Business, and Cloud](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST) shared plans. You don't manage Node versions, processes, or reverse proxies. |
-| **Free SSL + free domain** | Automatic Let's Encrypt on your custom domain (or a free one included with annual plans). HTTPS is on by default — required for the WhatsApp Business webhook. |
-| **Global CDN + LiteSpeed** | Static assets cached at the edge, dynamic routes served from LiteSpeed. Snappy dashboards out of the box, no Cloudflare setup required. |
-| **Env vars + logs in hPanel** | Set `SUPABASE_*`, `WHATSAPP_*`, and `ENCRYPTION_KEY` from the panel — no `.env` on the server. Live application logs in the same UI. |
-| **DDoS protection + daily backups** | Built-in, no add-ons. The webhook endpoint is a public target — having protection at the edge matters. |
-| **Cheaper than a VPS** | Plans start at a few dollars a month — order-of-magnitude less than a comparable managed Node.js host, and you don't pay extra for the database (that's Supabase). |
-| **24/7 human support** | Live chat support in 20+ languages — useful when your CRM is the thing your team relies on to talk to customers. |
-
-### The 60-second version
-
-1. **Fork** this repo on GitHub.
-2. In **hPanel → Websites → Create**, pick **Node.js** and connect
-   your fork.
-3. Paste your Supabase + Meta env vars into hPanel.
-4. Push to `main`. Hostinger builds and serves it. Done.
-
-Full walkthrough with screenshots:
-**[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
-
-> _Note: wacrm is MIT-licensed and runs anywhere Node.js does
-> (Vercel, Railway, your own VPS). Hostinger is recommended, not
-> required._
-
 ## Documentation
 
-Full self-host documentation — Supabase migrations, WhatsApp Business
-API config, and production deploy — lives at
-**[wacrm.tech/docs](https://wacrm.tech/docs)**
-(source: [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)).
-
-Key pages:
-- [Getting started](https://wacrm.tech/docs/getting-started)
-- [Supabase setup](https://wacrm.tech/docs/supabase-setup)
-- [WhatsApp setup](https://wacrm.tech/docs/whatsapp-setup)
-- [Environment variables](https://wacrm.tech/docs/environment-variables)
-- [Deploy on Hostinger](https://wacrm.tech/docs/deployment-hostinger)
-- [Architecture](https://wacrm.tech/docs/architecture)
-- [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
+- [`docs/RIMULA_BUILD_SPEC.md`](./docs/RIMULA_BUILD_SPEC.md) — the
+  product spec this platform is built against.
+- [`docs/IMPLEMENTATION_PLAN.md`](./docs/IMPLEMENTATION_PLAN.md) —
+  what's reused as-is, extended, and net-new, phase by phase.
+- [`docs/DATA_MODEL.md`](./docs/DATA_MODEL.md) — the full schema map.
+- [`docs/ARCHITECTURE.md`](./docs/ARCHITECTURE.md) — system
+  architecture.
+- [`docs/WHATSAPP_FEASIBILITY.md`](./docs/WHATSAPP_FEASIBILITY.md) —
+  verified current Meta WhatsApp Business Platform capabilities.
+- [`docs/API.md`](./docs/API.md) — internal + public API surface.
+- [`docs/public-api.md`](./docs/public-api.md) — the public `/api/v1`
+  REST API reference.
+- [`docs/mcp.md`](./docs/mcp.md) — the MCP server.
+- [`docs/docker.md`](./docs/docker.md) — container deployment.
 
 ## Stack
 
 - **App** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4.
 - **Data** — Supabase (Postgres + Auth + Storage + RLS).
-- **WhatsApp** — Meta Cloud API (official WhatsApp Business API).
+- **WhatsApp** — Meta Cloud API (official WhatsApp Business Platform)
+  in production; a fully simulated `DemoWhatsAppService` behind the
+  same interface for zero-credential development and demos.
 
-## Contributing
+## Origin
 
-This is a template, not a collaborative product — the expected flow is
-fork → customise → deploy, **not** upstream contribution. Bug reports
-and security issues are welcome; feature PRs often belong in your fork
-rather than here. Details in
-[`CONTRIBUTING.md`](./CONTRIBUTING.md) and
-[`.github/SECURITY.md`](./.github/SECURITY.md).
+This platform is a fork of [`ArnasDon/wacrm`](https://github.com/ArnasDon/wacrm)
+(MIT-licensed) — a self-hostable WhatsApp CRM template that already
+provided the shared inbox, contacts, pipelines, broadcasts,
+automations, Flows builder, AI assistant, multi-tenant accounts,
+public API, and MCP server this platform builds the Rimula-specific
+funnel on top of. See its
+[`CONTRIBUTING.md`](https://github.com/ArnasDon/wacrm/blob/main/CONTRIBUTING.md)
+for the upstream project's own contribution model if you're looking
+to fork *this* fork.
 
 ## License
 
-[MIT](./LICENSE). Fork it, brand it, host it.
+[MIT](./LICENSE).

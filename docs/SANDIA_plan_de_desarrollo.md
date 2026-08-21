@@ -4452,3 +4452,52 @@ espaciados) tras el deploy automático de EasyPanel.
 oficial de WhatsApp Business (no desde wacrm) un chat del número nuevo
 conectado por Zernio Coexistencia, y confirmar que el mensaje aparece
 en la bandeja de wacrm como mensaje del agente.
+
+### 2026-08-21 — Claude Code (filtro por número de WhatsApp en la bandeja)
+
+**Pedido de Angel:** "podrias hacer una division de numero en la
+bandeja de entrada porfavor para que no se confundan los chats?" —
+tras conectar el número nuevo (arriba), Chat Sandía ya tiene 2 números
+de WhatsApp activos y todas las conversaciones se mezclaban en una
+sola lista sin forma de saber cuál número recibió cada chat.
+
+**Hecho:** nuevo filtro "Número" en la bandeja (`ConversationList`),
+junto a los filtros ya existentes de Etiquetas/Empresa/Canal — mismo
+patrón de dropdown, mismo estilo de chip activo. Solo se muestra
+cuando la cuenta tiene más de un número conectado (igual criterio que
+el filtro de Canal, que solo aparece si hay conversaciones de
+Instagram). Detalle:
+- `src/types/index.ts` — el tipo `Conversation` no exponía
+  `whatsapp_config_id` (la columna sí existía en la tabla desde la
+  migración 050, pero el tipo de TypeScript nunca se actualizó).
+- `src/lib/inbox/conversations.ts` — `matchesContactFilters` gana un
+  cuarto criterio, `whatsappConfigId`, con test nuevo.
+- `src/components/inbox/conversation-list.tsx` — carga
+  `whatsapp_config` (RLS ya permite lectura a cualquier miembro de la
+  cuenta) y arma las etiquetas del dropdown con
+  `display_name || public_phone_number || "Número N"` — **nunca** el
+  id interno de Meta (`phone_number_id`) ni el UUID de la fila, que no
+  significan nada para Angel. Se verificó en vivo (sesión autenticada
+  de Angel) que sin eso el dropdown mostraba literalmente un UUID
+  crudo porque ninguno de los dos números de Chat Sandía tiene todavía
+  `display_name` configurado — corregido antes de reportar terminado.
+- `messages/en.json`, `messages/es.json`, `messages/ko.json` — claves
+  `number`/`allNumbers` en los tres idiomas.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio (solo advertencias
+preexistentes no relacionadas), `vitest run` en verde (1153 tests),
+`next build` completo sin reintentos esta vez. Sin diff en
+`package-lock.json`. Sin cambios de base de datos.
+
+**Desplegado y verificado en vivo:** dos commits, `b8a0269` (filtro) y
+`afaa984` (arreglo de las etiquetas), ambos con confirmación de Angel
+antes de subir. Verificación completa en la sesión real de Angel en
+`/inbox`: el dropdown "Número" aparece, y tras el segundo commit
+muestra "Todos los números / Número 1 / Número 2" en vez de los ids
+internos.
+
+**Pendiente / sugerencia para Angel:** para que el filtro muestre
+nombres reales en vez de "Número 1"/"Número 2", puede ponerle un
+nombre a cada conexión en Configuración → WhatsApp → editar conexión
+→ "Nombre para mostrar" (campo `display_name`, ya existía, no es
+código nuevo).

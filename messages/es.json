@@ -1508,6 +1508,7 @@
       "descriptionLabel": "Descripción",
       "descriptionPlaceholder": "Descripción breve que se muestra en tu página de catálogo",
       "priceLabel": "Precio",
+      "optional": "(opcional)",
       "priceOptionsTitle": "Precios adicionales",
       "priceOptionsDesc": "Hasta 2 precios extra para tallas, colores u otras variantes — opcional.",
       "priceOptionLabelLabel": "Nombre de la opción",

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { parsePriceOptions } from '@/lib/products/price-options'
+import { parsePriceOptions, parseInstallationCost } from '@/lib/products/price-options'
 
 // Product catalog — account-shared, no inventory tracking. GET lists;
 // POST creates. Mirrors the quick-replies route: RLS-scoped read via
@@ -63,6 +63,11 @@ export async function POST(request: Request) {
   const imageUrl = typeof body.image_url === 'string' ? body.image_url.trim() || null : null
   const isActive = body.is_active !== false
 
+  const installationCost = parseInstallationCost(body.installation_cost)
+  if (!installationCost.ok) {
+    return NextResponse.json({ error: installationCost.error }, { status: 400 })
+  }
+
   const parsedOptions = parsePriceOptions(body.price_options)
   if (!parsedOptions.ok) {
     return NextResponse.json({ error: parsedOptions.error }, { status: 400 })
@@ -77,6 +82,7 @@ export async function POST(request: Request) {
       name,
       description,
       price,
+      installation_cost: installationCost.value,
       image_url: imageUrl,
       is_active: isActive,
     })

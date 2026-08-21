@@ -48,7 +48,7 @@ export async function GET(
       db.from('accounts').select('name, default_currency').eq('id', accountId).maybeSingle(),
       db
         .from('products')
-        .select('id, name, description, price, image_url')
+        .select('id, name, description, price, installation_cost, image_url')
         .eq('account_id', accountId)
         .eq('is_active', true)
         .order('name'),

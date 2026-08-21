@@ -18,6 +18,26 @@ export type ParsePriceOptionsResult =
   | { ok: true; options: ParsedPriceOption[] }
   | { ok: false; error: string }
 
+export type ParseInstallationCostResult =
+  | { ok: true; value: number | null }
+  | { ok: false; error: string }
+
+/**
+ * Validates a single optional installation-cost field — shared by the
+ * product's own base price (migration 076) and each price option
+ * (migration 075). Absent/null/empty-string all mean "not set."
+ */
+export function parseInstallationCost(raw: unknown, fieldName = 'installation_cost'): ParseInstallationCostResult {
+  if (raw === undefined || raw === null || raw === '') {
+    return { ok: true, value: null }
+  }
+  const parsed = Number(raw)
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    return { ok: false, error: `${fieldName} must be a non-negative number` }
+  }
+  return { ok: true, value: parsed }
+}
+
 /**
  * Validates the raw `price_options` array from a request body. Every
  * field beyond `label`/`price` is optional per product decision — a
@@ -50,20 +70,16 @@ export function parsePriceOptions(raw: unknown): ParsePriceOptionsResult {
       return { ok: false, error: `price_options[${index}].price must be a non-negative number` }
     }
 
-    let installationCost: number | null = null
-    if (row.installation_cost !== undefined && row.installation_cost !== null && row.installation_cost !== '') {
-      const parsed = Number(row.installation_cost)
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        return { ok: false, error: `price_options[${index}].installation_cost must be a non-negative number` }
-      }
-      installationCost = parsed
+    const installationCost = parseInstallationCost(row.installation_cost, `price_options[${index}].installation_cost`)
+    if (!installationCost.ok) {
+      return { ok: false, error: installationCost.error }
     }
 
     const imageUrls = Array.isArray(row.image_urls)
       ? row.image_urls.filter((url): url is string => typeof url === 'string' && url.trim().length > 0)
       : []
 
-    options.push({ label, price, installation_cost: installationCost, image_urls: imageUrls })
+    options.push({ label, price, installation_cost: installationCost.value, image_urls: imageUrls })
   }
 
   return { ok: true, options }

@@ -899,6 +899,7 @@
       "descriptionLabel": "Description",
       "descriptionPlaceholder": "Short description shown on your catalog page",
       "priceLabel": "Price",
+      "optional": "(optional)",
       "priceOptionsTitle": "Additional prices",
       "priceOptionsDesc": "Up to 2 extra prices for sizes, colors, or other variants — optional.",
       "priceOptionLabelLabel": "Option name",

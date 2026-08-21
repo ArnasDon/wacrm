@@ -76,6 +76,7 @@ interface CatalogProduct {
   name: string;
   description: string | null;
   price: number;
+  installation_cost: number | null;
   image_url: string | null;
   price_options: CatalogPriceOption[];
 }
@@ -221,8 +222,12 @@ function PublicCatalogPageInner() {
     () =>
       selectedItems.reduce((sum, i) => {
         // Installation is a flat fee per selected line, not multiplied
-        // by quantity — mirrors createQuote's server-side pricing.
-        const installation = i.option?.installation_cost ?? 0;
+        // by quantity — mirrors createQuote's server-side pricing. Comes
+        // from the selected option when there is one, or the product's
+        // own base installation_cost otherwise.
+        const installation =
+          (i.option ? i.option.installation_cost : i.product.installation_cost) ??
+          0;
         return sum + i.unitPrice * i.quantity + installation;
       }, 0),
     [selectedItems]
@@ -244,6 +249,9 @@ function PublicCatalogPageInner() {
       null)
     : null;
   const detailPrice = selectedOption ? selectedOption.price : selectedProduct?.price;
+  const detailInstallationCost = selectedOption
+    ? selectedOption.installation_cost
+    : (selectedProduct?.installation_cost ?? null);
   const detailImages =
     selectedOption && selectedOption.image_urls.length > 0
       ? selectedOption.image_urls
@@ -640,11 +648,11 @@ function PublicCatalogPageInner() {
                 <p className="mt-6 font-serif text-3xl text-[#062f38]">
                   {formatCurrency(detailPrice ?? 0, data.currency)}
                 </p>
-                {selectedOption?.installation_cost ? (
+                {detailInstallationCost ? (
                   <p className="mt-1 flex items-center gap-1.5 text-xs text-[#284d53]/70">
                     <Wrench className="size-3.5" />
-                    + {formatCurrency(selectedOption.installation_cost, data.currency)}{' '}
-                    de instalación
+                    + {formatCurrency(detailInstallationCost, data.currency)} de
+                    instalación
                   </p>
                 ) : null}
                 <div className="my-7 h-px bg-[#082f38]/12" />

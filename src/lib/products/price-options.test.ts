@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parsePriceOptions, MAX_PRICE_OPTIONS } from './price-options'
+import { parsePriceOptions, parseInstallationCost, MAX_PRICE_OPTIONS } from './price-options'
 
 describe('parsePriceOptions', () => {
   it('defaults to an empty list when the field is absent', () => {
@@ -61,5 +61,29 @@ describe('parsePriceOptions', () => {
   it('filters out non-string image_urls entries', () => {
     const result = parsePriceOptions([{ label: 'A', price: 10, image_urls: ['ok', 42, null, '  '] }])
     expect(result).toMatchObject({ ok: true, options: [{ image_urls: ['ok'] }] })
+  })
+})
+
+describe('parseInstallationCost', () => {
+  it('treats undefined, null, and empty string as absent', () => {
+    expect(parseInstallationCost(undefined)).toEqual({ ok: true, value: null })
+    expect(parseInstallationCost(null)).toEqual({ ok: true, value: null })
+    expect(parseInstallationCost('')).toEqual({ ok: true, value: null })
+  })
+
+  it('accepts a valid non-negative number (including 0)', () => {
+    expect(parseInstallationCost(25)).toEqual({ ok: true, value: 25 })
+    expect(parseInstallationCost(0)).toEqual({ ok: true, value: 0 })
+    expect(parseInstallationCost('25.5')).toEqual({ ok: true, value: 25.5 })
+  })
+
+  it('rejects a negative number', () => {
+    const result = parseInstallationCost(-1)
+    expect(result.ok).toBe(false)
+  })
+
+  it('rejects a non-numeric value', () => {
+    const result = parseInstallationCost('not a number')
+    expect(result.ok).toBe(false)
   })
 })

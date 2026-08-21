@@ -6,6 +6,7 @@ interface ProductRow {
   id: string
   name: string
   price: number
+  installation_cost?: number | null
   is_active: boolean
 }
 
@@ -264,6 +265,38 @@ describe('createQuote — price options (migration 075)', () => {
     })
     expect(items).toHaveLength(1)
     expect(inserted.quote_items).toHaveLength(1)
+  })
+
+  it('adds an installation line from the product\'s own base installation_cost when no price option is selected (migration 076)', async () => {
+    const { db } = makeDb({
+      products: [{ id: 'p1', name: 'Silla', price: 100, installation_cost: 15, is_active: true }],
+      pipeline: null,
+    })
+    const { items, quote } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', quantity: 2 }],
+      allowFreeItems: false,
+    })
+    expect(items).toHaveLength(2)
+    expect(items[1]).toMatchObject({ description: 'Instalación — Silla', unit_price: 15, quantity: 1 })
+    // 2 * 100 (product) + 15 (flat installation, not multiplied by qty)
+    expect(quote.subtotal).toBe(215)
+  })
+
+  it('a selected price option\'s installation_cost overrides the product\'s own base installation_cost', async () => {
+    const { db, inserted } = makeDb({
+      products: [{ id: 'p1', name: 'Silla', price: 100, installation_cost: 15, is_active: true }],
+      priceOptions: [{ id: 'opt1', product_id: 'p1', label: 'Talla XL', price: 150, installation_cost: 25 }],
+      pipeline: null,
+    })
+    const { items } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', price_option_id: 'opt1', quantity: 1 }],
+      allowFreeItems: false,
+    })
+    expect(items).toHaveLength(2)
+    expect(items[1]).toMatchObject({ unit_price: 25 })
+    expect(inserted.quote_items).toHaveLength(2)
   })
 
   it('rejects a price_option_id that belongs to a different product', async () => {

@@ -57,6 +57,7 @@ export function ProductForm({
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [baseInstallationCost, setBaseInstallationCost] = useState('');
   const [imageUrl, setImageUrl] = useState('');
   const [isActive, setIsActive] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -77,6 +78,9 @@ export function ProductForm({
     setName(product?.name ?? '');
     setDescription(product?.description ?? '');
     setPrice(product ? String(product.price) : '');
+    setBaseInstallationCost(
+      product?.installation_cost != null ? String(product.installation_cost) : ''
+    );
     setImageUrl(product?.image_url ?? '');
     setIsActive(product?.is_active ?? true);
     setPriceOptions(
@@ -167,6 +171,15 @@ export function ProductForm({
       toast.error(t('toastPriceInvalid'));
       return;
     }
+    let resolvedBaseInstallationCost: number | null = null;
+    if (baseInstallationCost.trim() !== '') {
+      const parsed = Number(baseInstallationCost);
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        toast.error(t('toastPriceOptionInstallationInvalid'));
+        return;
+      }
+      resolvedBaseInstallationCost = parsed;
+    }
 
     const resolvedPriceOptions: {
       label: string;
@@ -208,6 +221,7 @@ export function ProductForm({
         name: trimmedName,
         description: description.trim() || null,
         price: priceValue,
+        installation_cost: resolvedBaseInstallationCost,
         image_url: imageUrl || null,
         is_active: isActive,
         price_options: resolvedPriceOptions,
@@ -269,17 +283,36 @@ export function ProductForm({
             />
           </div>
 
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t('priceLabel')}</Label>
-            <Input
-              type="number"
-              min={0}
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              placeholder="0.00"
-              className="bg-muted border-border text-foreground"
-            />
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">{t('priceLabel')}</Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={price}
+                onChange={(e) => setPrice(e.target.value)}
+                placeholder="0.00"
+                className="bg-muted border-border text-foreground"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">
+                {t('priceOptionInstallationLabel')}{' '}
+                <span className="text-muted-foreground text-xs">
+                  {t('optional')}
+                </span>
+              </Label>
+              <Input
+                type="number"
+                min={0}
+                step="0.01"
+                value={baseInstallationCost}
+                onChange={(e) => setBaseInstallationCost(e.target.value)}
+                placeholder={t('priceOptionInstallationPlaceholder')}
+                className="bg-muted border-border text-foreground"
+              />
+            </div>
           </div>
 
           <div className="space-y-1.5">

@@ -445,6 +445,8 @@ export interface Product {
   name: string;
   description?: string | null;
   price: number;
+  /** Optional flat installation fee for the base price (migration 076). */
+  installation_cost?: number | null;
   image_url?: string | null;
   is_active: boolean;
   created_at: string;

@@ -72,15 +72,15 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
   }
 
   const productIds = [...new Set(items.filter((i) => i.product_id).map((i) => i.product_id as string))]
-  const productsById = new Map<string, { id: string; name: string; price: number; is_active: boolean }>()
+  const productsById = new Map<string, { id: string; name: string; price: number; installation_cost: number | null; is_active: boolean }>()
   if (productIds.length > 0) {
     const { data: products, error: productsError } = await db
       .from('products')
-      .select('id, name, price, is_active')
+      .select('id, name, price, installation_cost, is_active')
       .eq('account_id', accountId)
       .in('id', productIds)
     if (productsError) throw new CreateQuoteError(productsError.message, 500)
-    for (const p of products ?? []) productsById.set(p.id as string, p as { id: string; name: string; price: number; is_active: boolean })
+    for (const p of products ?? []) productsById.set(p.id as string, p as { id: string; name: string; price: number; installation_cost: number | null; is_active: boolean })
   }
 
   const priceOptionIds = [...new Set(items.filter((i) => i.price_option_id).map((i) => i.price_option_id as string))]
@@ -124,21 +124,23 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
 
       resolvedItems.push({ description, unit_price: unitPrice, quantity, product_id: product.id, product_price_option_id: optionId })
 
-      // Installation is a flat fee for the option, not multiplied by
-      // quantity — a separate, clearly-labeled line rather than folded
-      // silently into unit_price, so the customer sees exactly what
-      // they're paying for.
-      if (optionId) {
-        const option = priceOptionsById.get(optionId)!
-        if (option.installation_cost != null && option.installation_cost > 0) {
-          resolvedItems.push({
-            description: `Instalación — ${description}`,
-            unit_price: option.installation_cost,
-            quantity: 1,
-            product_id: null,
-            product_price_option_id: optionId,
-          })
-        }
+      // Installation is a flat fee, not multiplied by quantity — a
+      // separate, clearly-labeled line rather than folded silently into
+      // unit_price, so the customer sees exactly what they're paying
+      // for. Comes from the selected option when there is one, or from
+      // the product's own base installation_cost (migration 076)
+      // otherwise.
+      const installationCost = optionId
+        ? priceOptionsById.get(optionId)!.installation_cost
+        : product.installation_cost
+      if (installationCost != null && installationCost > 0) {
+        resolvedItems.push({
+          description: `Instalación — ${description}`,
+          unit_price: installationCost,
+          quantity: 1,
+          product_id: null,
+          product_price_option_id: optionId,
+        })
       }
     } else {
       if (!allowFreeItems) {

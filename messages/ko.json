@@ -899,6 +899,7 @@
       "descriptionLabel": "설명",
       "descriptionPlaceholder": "카탈로그 페이지에 표시되는 짧은 설명",
       "priceLabel": "가격",
+      "optional": "(선택 사항)",
       "priceOptionsTitle": "추가 가격",
       "priceOptionsDesc": "사이즈, 색상 등 다른 옵션을 위한 추가 가격 최대 2개 — 선택 사항입니다.",
       "priceOptionLabelLabel": "옵션 이름",

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { parsePriceOptions } from '@/lib/products/price-options'
+import { parsePriceOptions, parseInstallationCost } from '@/lib/products/price-options'
 
 // Update / delete a single product. Products are account-shared, so
 // every mutation is scoped by `account_id` (the service-role client
@@ -38,6 +38,13 @@ export async function PATCH(
       return NextResponse.json({ error: 'price must be a non-negative number' }, { status: 400 })
     }
     update.price = price
+  }
+  if ('installation_cost' in body) {
+    const installationCost = parseInstallationCost(body.installation_cost)
+    if (!installationCost.ok) {
+      return NextResponse.json({ error: installationCost.error }, { status: 400 })
+    }
+    update.installation_cost = installationCost.value
   }
   if ('image_url' in body) {
     update.image_url = typeof body.image_url === 'string' ? body.image_url.trim() || null : null

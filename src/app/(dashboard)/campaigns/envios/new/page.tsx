@@ -21,11 +21,8 @@ import { splitIntoLotes } from '@/lib/envios/lote-engine';
 
 const CHAT_MEDIA_BUCKET = 'chat-media';
 
-// Not translated on purpose — this is a JSON syntax example, not
-// language-dependent copy. Kept as a plain constant (rather than an
-// i18n message) so its literal `{`/`}` never risk being parsed as ICU
-// interpolation syntax by next-intl.
-const LEADS_JSON_EXAMPLE = '[{ "nome": "Maria", "telefone": "5511999999999" }]';
+/** Generous cap on the leads JSON file — a few thousand leads is still tiny as text. */
+const CAMPAIGN_FILE_MAX_BYTES = 5 * 1024 * 1024;
 
 interface ParsedLead {
   nome: string | null;
@@ -60,6 +57,8 @@ export default function NewEnvioPage() {
   const [imagePath, setImagePath] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
   const [leadsRaw, setLeadsRaw] = useState('');
+  const [campaignFileName, setCampaignFileName] = useState<string | null>(null);
+  const [readingCampaignFile, setReadingCampaignFile] = useState(false);
   const [lote1SizeOverride, setLote1SizeOverride] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -106,6 +105,39 @@ export default function NewEnvioPage() {
     if (imagePath) void deleteAccountMedia(CHAT_MEDIA_BUCKET, imagePath).catch(() => {});
     setImageUrl('');
     setImagePath(null);
+  }
+
+  /**
+   * Reads the uploaded leads file client-side and hands its raw text to
+   * `leadsRaw` — `parseLeadsJson` (unchanged) still does the actual
+   * format validation via the `leads`/`leadsError` memo below. Only the
+   * *source* of that text changed (file instead of a pasted textarea).
+   */
+  async function handleCampaignFile(file: File) {
+    const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+    if (!isJson) {
+      toast.error(t('invalidFileType'));
+      return;
+    }
+    if (file.size > CAMPAIGN_FILE_MAX_BYTES) {
+      toast.error(t('fileTooLarge'));
+      return;
+    }
+    setReadingCampaignFile(true);
+    try {
+      const text = await file.text();
+      setLeadsRaw(text);
+      setCampaignFileName(file.name);
+    } catch {
+      toast.error(t('fileReadFailed'));
+    } finally {
+      setReadingCampaignFile(false);
+    }
+  }
+
+  function removeCampaignFile() {
+    setLeadsRaw('');
+    setCampaignFileName(null);
   }
 
   const canSubmit =
@@ -212,15 +244,40 @@ export default function NewEnvioPage() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="envio-leads">{t('fieldLeads')}</Label>
-            <Textarea
-              id="envio-leads"
-              rows={8}
-              placeholder={LEADS_JSON_EXAMPLE}
-              value={leadsRaw}
-              onChange={(e) => setLeadsRaw(e.target.value)}
-              className="font-mono text-xs"
-            />
+            <Label>{t('fieldLeads')}</Label>
+            {campaignFileName ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2.5">
+                <span className="truncate text-sm text-foreground">{campaignFileName}</span>
+                <button
+                  onClick={removeCampaignFile}
+                  className="shrink-0 text-muted-foreground hover:text-foreground"
+                  aria-label={t('removeFile')}
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            ) : (
+              <label className="flex h-24 cursor-pointer items-center justify-center gap-2 rounded-lg border border-dashed border-border text-sm text-muted-foreground hover:bg-muted/40">
+                {readingCampaignFile ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" /> {t('uploadCampaignFile')}
+                  </>
+                )}
+                <input
+                  type="file"
+                  accept=".json,application/json"
+                  className="hidden"
+                  disabled={readingCampaignFile}
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void handleCampaignFile(file);
+                    e.target.value = '';
+                  }}
+                />
+              </label>
+            )}
             {leadsError && <p className="text-xs text-red-400">{leadsError}</p>}
           </div>
 

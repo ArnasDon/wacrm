@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "Rimula",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -1359,7 +1359,7 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on Rimula using this link (valid for {expiresInDays} days): {url}"
     },
     "tagsAndFields": {
       "title": "Fields & tags",
@@ -1479,8 +1479,8 @@
       "submitApproval": "Submit for Approval",
 
       "deleteDialogTitle": "Delete template?",
-      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
-      "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
+      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from Rimula. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "deleteLocalDesc": "\"{name}\" will be deleted from Rimula. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
 
@@ -1532,7 +1532,7 @@
       "notConnectedDesc": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
       "messagingTierLabel": "Messaging limit tier (§8):",
       "messagingTierUnknown": "Unknown",
-      "registered": "Registered — Meta will deliver events to wacrm",
+      "registered": "Registered — Meta will deliver events to Rimula",
       "notRegistered": "Not registered — Meta will not deliver events",
       "verifyWithMeta": "Verify with Meta",
       "subscribedSince": "Subscribed since {date}. Click Verify with Meta if events stop arriving.",
@@ -1556,7 +1556,7 @@
       "twoStepPin": "Two-step verification PIN",
       "optional": "(optional)",
       "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
-      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so wacrm can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
+      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so Rimula can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
@@ -1729,7 +1729,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. wacrm calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own OpenAI or Anthropic key. Rimula calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",

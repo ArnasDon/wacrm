@@ -43,6 +43,7 @@ export const CURRENCIES: CurrencyOption[] = [
   { code: "SGD", label: "Singapore Dollar", symbol: "S$" },
   { code: "MXN", label: "Mexican Peso", symbol: "$" },
   { code: "COP", label: "Colombian Peso", symbol: "$" },
+  { code: "PKR", label: "Pakistani Rupee", symbol: "₨" },
 ];
 
 /**

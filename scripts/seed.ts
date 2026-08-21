@@ -149,12 +149,25 @@ function requireEnv(name: string): string {
   return value;
 }
 
-function pick<T>(items: T[]): T {
+function pick<T>(items: readonly T[]): T {
   return items[Math.floor(Math.random() * items.length)];
 }
 
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
+}
+
+// Distinct (no-repeat) random sample — used for reach/engagement seeding,
+// where the analytics layer counts *distinct* member_id per event_type
+// (src/lib/dashboard/rimula-analytics.ts), so duplicate picks would
+// silently undercount reach relative to the row count.
+function sampleDistinct<T>(pool: T[], n: number): T[] {
+  const copy = [...pool];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(n, copy.length));
 }
 
 function hoursAgo(n: number): string {
@@ -250,6 +263,47 @@ async function getAccountId(userId: string): Promise<string> {
     );
   }
   return data.account_id as string;
+}
+
+// Rimula is a Pakistan-market app — every currency-denominated seed
+// value (account default, and each deal's own `deals.currency`, which
+// carries its own DB default of 'USD' and is read directly by the
+// Leads list rather than falling back to the account default) should
+// read in PKR, not the upstream template's USD.
+const SEED_CURRENCY = 'PKR';
+
+// The DB default (migration 021) is 'USD' for any newly-created
+// account; `accounts.default_currency` is the single source every
+// account-level currency formatter falls back to (src/lib/currency.ts)
+// — setting it here, not per-row, is enough for those.
+async function setAccountCurrency(
+  accountId: string,
+  currency: string
+): Promise<void> {
+  const { error } = await admin
+    .from('accounts')
+    .update({ default_currency: currency })
+    .eq('id', accountId);
+  if (error) {
+    throw new Error(`Failed to set account currency: ${error.message}`);
+  }
+}
+
+// deals.assigned_to -> profiles.id (migration 002), not profiles.user_id
+// (the auth user id everything else in this script keys off of) —
+// resolve it once so seedDeals can populate real BA assignment.
+async function getProfileId(userId: string): Promise<string> {
+  const { data, error } = await admin
+    .from('profiles')
+    .select('id')
+    .eq('user_id', userId)
+    .single();
+  if (error || !data) {
+    throw new Error(
+      `No profile found for demo user ${userId}: ${error?.message ?? 'no rows'}`
+    );
+  }
+  return data.id as string;
 }
 
 // ============================================================
@@ -818,6 +872,18 @@ interface CampaignSeed {
   audience: Row;
   status: 'draft' | 'active' | 'paused' | 'completed' | 'archived';
   cost: number | null;
+  /** Target distinct-member DELIVERED count (§13 Reach) — sampled from
+   *  WhatsApp-confirmed members only, since delivery requires opt-in.
+   *  0 for a still-`draft` campaign: nothing has been broadcast yet. */
+  reach: number;
+  /** Target distinct-member READ/REACTION/REPLY/CLICK count (§13
+   *  Engagement) — always a subset of the reach set (§13 §19: this is
+   *  a WhatsApp funnel, engagement without delivery isn't possible). */
+  engaged: number;
+  /** Restrict the reach/engaged sample to one role's confirmed pool
+   *  (must match `audience.roles` for a single-role campaign) instead
+   *  of the whole community. Omit for a campaign targeting everyone. */
+  reachPoolRole?: string;
 }
 
 const CAMPAIGN_SEEDS: CampaignSeed[] = [
@@ -835,6 +901,11 @@ const CAMPAIGN_SEEDS: CampaignSeed[] = [
     },
     status: 'active',
     cost: 150000,
+    // ~68% of the 619 WhatsApp-confirmed community reached two weeks
+    // into an active campaign targeting all three roles; ~30% of those
+    // reached go on to read/react/reply/click.
+    reach: 420,
+    engaged: 125,
   },
   {
     key: 'passenger-car-push',
@@ -843,9 +914,18 @@ const CAMPAIGN_SEEDS: CampaignSeed[] = [
     startDate: daysFromNow(-60),
     endDate: daysFromNow(-15),
     objective: 'Seasonal reminder campaign for passenger car oil changes.',
-    audience: { roles: ['Other'], markets: ['all'] },
+    // Was `roles: ['Other']` — no seeded member holds that role (§19's
+    // 844 are all Mechanic/Truck Owner/Truck Driver), so this campaign
+    // could never have reached anyone. Mechanics are the community
+    // segment that actually services/recommends passenger-car oil.
+    audience: { roles: ['Mechanic'], markets: ['all'] },
     status: 'completed',
     cost: 60000,
+    // ~71% of the 154 WhatsApp-confirmed Mechanics reached over the
+    // campaign's completed run.
+    reach: 110,
+    engaged: 32,
+    reachPoolRole: 'Mechanic',
   },
   {
     key: 'winter-coolant',
@@ -857,6 +937,11 @@ const CAMPAIGN_SEEDS: CampaignSeed[] = [
     audience: { roles: ['Mechanic', 'Truck Owner'], markets: ['all'] },
     status: 'draft',
     cost: null,
+    // Still draft — never sent, so no delivery/engagement yet. Its one
+    // seeded Lead (Ehsan Ali) originates from a direct BA contact, not
+    // this campaign's (nonexistent) broadcast — see DEAL_SEEDS.
+    reach: 0,
+    engaged: 0,
   },
 ];
 
@@ -979,7 +1064,7 @@ async function seedDemoUserBaFields(
       region_id: regionIds.get('punjab'),
       market_id: marketIds.get('lahore'),
       ba_status: 'active',
-      open_leads: 0,
+      open_leads: DEMO_BA_OPEN_LEADS,
       capacity: 25,
       languages: ['ur', 'ps', 'pa'],
     })
@@ -1267,18 +1352,31 @@ async function seedDemoContacts(
   userId: string,
   regionIds: Map<string, string>,
   marketIds: Map<string, string>
-): Promise<{ allContactIds: string[]; namedContactIds: Map<string, string> }> {
+): Promise<{
+  allContactIds: string[];
+  confirmedContactIds: string[];
+  confirmedContactIdsByRole: Map<string, string[]>;
+  namedContactIds: Map<string, string>;
+}> {
   const memberRows = buildMemberRows();
   const marketKeys = MARKETS_SEEDS.map((m) => m.key);
   const marketRegionKey = new Map(MARKETS_SEEDS.map((m) => [m.key, m.region]));
 
   const ids = memberRows.map(() => randomUUID());
   const namedContactIds = new Map<string, string>();
+  const confirmedContactIds: string[] = [];
+  const confirmedContactIdsByRole = new Map<string, string[]>();
 
   const rows: Row[] = memberRows.map((m, i) => {
     const marketKey = marketKeys[i % marketKeys.length];
     const regionKey = marketRegionKey.get(marketKey)!;
     if (m.key) namedContactIds.set(m.key, ids[i]);
+    if (m.whatsappStatus === 'confirmed') {
+      confirmedContactIds.push(ids[i]);
+      const byRole = confirmedContactIdsByRole.get(m.role) ?? [];
+      byRole.push(ids[i]);
+      confirmedContactIdsByRole.set(m.role, byRole);
+    }
 
     return {
       id: ids[i],
@@ -1300,7 +1398,12 @@ async function seedDemoContacts(
   });
 
   await insert('contacts', rows);
-  return { allContactIds: ids, namedContactIds };
+  return {
+    allContactIds: ids,
+    confirmedContactIds,
+    confirmedContactIdsByRole,
+    namedContactIds,
+  };
 }
 
 // ============================================================
@@ -1720,6 +1823,11 @@ interface DealSeed {
 // `passenger-car-push` (both have real `cost` — §13's cost-per-lead
 // metrics need at least one campaign with both cost and leads to
 // show anything other than "no cost data").
+// Deals with `assign: true` are the ones a BA has actually picked up
+// (statuses past NEW); the open (non-terminal) subset among those is
+// what `profiles.open_leads` should reflect for the demo BA, so the
+// BA-routing capacity story (open_leads/capacity) is coherent instead
+// of a hardcoded 0 alongside 8 assigned deals.
 const DEAL_SEEDS: DealSeed[] = [
   {
     key: 'deal-ahmed',
@@ -1853,9 +1961,21 @@ const DEAL_SEEDS: DealSeed[] = [
   },
 ];
 
+const OPEN_LEAD_STATUSES: ReadonlyArray<DealSeed['status']> = [
+  'ASSIGNED',
+  'CONTACTED',
+  'INTERESTED',
+  'TRIAL_REQUESTED',
+  'TRIAL_COMPLETED',
+];
+const DEMO_BA_OPEN_LEADS = DEAL_SEEDS.filter(
+  (d) => d.assign && (OPEN_LEAD_STATUSES as string[]).includes(d.status)
+).length;
+
 async function seedDeals(
   accountId: string,
   userId: string,
+  profileId: string,
   namedContactIds: Map<string, string>,
   campaignIds: Map<string, string>,
   marketIds: Map<string, string>,
@@ -1901,12 +2021,13 @@ async function seedDeals(
         contact_id: namedContactIds.get(d.memberKey),
         title: d.title,
         value: d.value,
+        currency: SEED_CURRENCY,
         status: d.status,
         source: d.source,
         campaign_id: d.campaignKey ? campaignIds.get(d.campaignKey) : null,
         market_id: d.marketKey ? marketIds.get(d.marketKey) : null,
         region_id: regionKey ? regionIds.get(regionKey) : null,
-        assigned_to: null, // deals.assigned_to -> profiles.id, not profiles.user_id (migration 002) — left unassigned in seed data rather than resolving the demo profile's row id here.
+        assigned_to: d.assign ? profileId : null,
         outcome: d.outcome,
         notes: d.notes,
       };
@@ -2069,38 +2190,70 @@ async function seedTrials(
   );
 }
 
-const ENGAGEMENT_EVENT_TYPES = [
-  'DELIVERED',
+// LEAD/TRIAL/CONVERSION are valid `engagement_events.event_type` values
+// too, but the funnel/campaign analytics (rimula-analytics.ts) compute
+// those stages from `deals`/`trials` directly, not from this table —
+// seeding them here would just be an unread, easily-stale duplicate of
+// the real source of truth, so this seed only emits the WhatsApp-
+// delivery types the analytics actually read (§13 ENGAGED_TYPES).
+//
+// Reads dominate a real WhatsApp engagement mix, with reactions/replies/
+// clicks each a smaller slice — weights this pick rather than an even
+// 1-in-4 split across the four engaged types.
+const ENGAGED_EVENT_TYPE_WEIGHTS = [
   'READ',
+  'READ',
+  'READ',
+  'READ',
+  'REACTION',
   'REACTION',
   'REPLY',
   'CLICK',
-  'LEAD',
-  'TRIAL',
-  'CONVERSION',
 ] as const;
 
 async function seedEngagementEvents(
   accountId: string,
   campaignIds: Map<string, string>,
-  contactIds: string[]
+  confirmedContactIds: string[],
+  confirmedContactIdsByRole: Map<string, string[]>
 ): Promise<void> {
-  const campaigns = [...campaignIds.values()];
   const rows: Row[] = [];
-  let hour = campaigns.length * ENGAGEMENT_EVENT_TYPES.length;
+  let hour = 1000;
 
-  for (const campaignId of campaigns) {
-    for (const eventType of ENGAGEMENT_EVENT_TYPES) {
+  for (const c of CAMPAIGN_SEEDS) {
+    if (c.reach === 0) continue; // still draft — nothing broadcast yet
+
+    const campaignId = campaignIds.get(c.key)!;
+    const pool = c.reachPoolRole
+      ? (confirmedContactIdsByRole.get(c.reachPoolRole) ?? [])
+      : confirmedContactIds;
+
+    const reached = sampleDistinct(pool, c.reach);
+    for (const memberId of reached) {
       rows.push({
         account_id: accountId,
-        member_id: pick(contactIds),
+        member_id: memberId,
         campaign_id: campaignId,
-        event_type: eventType,
-        event_value: eventType === 'CONVERSION' ? 45000 : null,
+        event_type: 'DELIVERED',
+        event_value: null,
         source: 'demo_seed',
-        occurred_at: hoursAgo(hour),
+        occurred_at: hoursAgo(hour--),
       });
-      hour -= 1;
+    }
+
+    // Engagement is always a subset of who was reached — can't
+    // read/react/reply/click a message that was never delivered.
+    const engaged = sampleDistinct(reached, c.engaged);
+    for (const memberId of engaged) {
+      rows.push({
+        account_id: accountId,
+        member_id: memberId,
+        campaign_id: campaignId,
+        event_type: pick(ENGAGED_EVENT_TYPE_WEIGHTS),
+        event_value: null,
+        source: 'demo_seed',
+        occurred_at: hoursAgo(hour--),
+      });
     }
   }
 
@@ -2116,30 +2269,69 @@ const PRODUCT_INTERACTION_TYPES = [
   'lead',
 ] as const;
 
+// Counts per interaction type for each featured product — a realistic
+// funnel taper (viewed > clicked > enquiry/interest > trial_request >
+// lead), scaled off each product's linked campaign reach rather than
+// the flat "1 of everything" the seed used before. Not every product
+// gets a row — this table is attribution-trail data (§13), not a full
+// product catalog dump.
+const PRODUCT_INTERACTION_TARGETS: Record<
+  string,
+  Record<(typeof PRODUCT_INTERACTION_TYPES)[number], number>
+> = {
+  // Flagship product on the active, all-roles fleet-checkup campaign.
+  'RIM-HDD-15W40': {
+    viewed: 175,
+    clicked: 58,
+    enquiry: 22,
+    interest: 34,
+    trial_request: 8,
+    lead: 5,
+  },
+  // Linked to the completed, Mechanic-only passenger-car-push campaign.
+  'RIM-PCM-5W30': {
+    viewed: 85,
+    clicked: 26,
+    enquiry: 10,
+    interest: 15,
+    trial_request: 3,
+    lead: 2,
+  },
+  // Linked to winter-coolant, still draft — organic product-page
+  // interest only, no campaign broadcast behind it yet.
+  'RIM-COOL-OAT': {
+    viewed: 18,
+    clicked: 5,
+    enquiry: 2,
+    interest: 3,
+    trial_request: 1,
+    lead: 1,
+  },
+};
+
 async function seedProductInteractions(
   accountId: string,
   productIds: Map<string, string>,
   campaignIds: Map<string, string>,
   contactIds: string[]
 ): Promise<void> {
-  // A representative subset, not every product — this table is
-  // attribution-trail data (§13), not a full product catalog dump.
-  const featuredProducts = ['RIM-HDD-15W40', 'RIM-PCM-5W30', 'RIM-COOL-OAT'];
   const campaigns = [...campaignIds.values()];
   const rows: Row[] = [];
-  let hour = featuredProducts.length * PRODUCT_INTERACTION_TYPES.length;
+  let hour = 2000;
 
-  for (const code of featuredProducts) {
+  for (const [code, targets] of Object.entries(PRODUCT_INTERACTION_TARGETS)) {
     for (const interactionType of PRODUCT_INTERACTION_TYPES) {
-      rows.push({
-        account_id: accountId,
-        contact_id: pick(contactIds),
-        product_id: productIds.get(code),
-        campaign_id: pick(campaigns),
-        interaction_type: interactionType,
-        created_at: hoursAgo(hour),
-      });
-      hour -= 1;
+      const count = targets[interactionType];
+      for (let i = 0; i < count; i++) {
+        rows.push({
+          account_id: accountId,
+          contact_id: pick(contactIds),
+          product_id: productIds.get(code),
+          campaign_id: pick(campaigns),
+          interaction_type: interactionType,
+          created_at: hoursAgo(hour--),
+        });
+      }
     }
   }
 
@@ -2189,7 +2381,11 @@ async function main(): Promise<void> {
 
   const userId = await getOrCreateDemoUser();
   const accountId = await getAccountId(userId);
+  const profileId = await getProfileId(userId);
   console.log(`Seeding account ${accountId} (demo user ${userId})`);
+
+  console.log('Setting account currency to PKR...');
+  await setAccountCurrency(accountId, SEED_CURRENCY);
 
   console.log('Cleaning up previous seed data...');
   await cleanup(accountId);
@@ -2225,12 +2421,12 @@ async function main(): Promise<void> {
   await seedDemoUserBaFields(userId, regionIds, marketIds);
 
   console.log('Seeding demo Members (full §19 volumes: 844 contacts)...');
-  const { allContactIds, namedContactIds } = await seedDemoContacts(
-    accountId,
-    userId,
-    regionIds,
-    marketIds
-  );
+  const {
+    allContactIds,
+    confirmedContactIds,
+    confirmedContactIdsByRole,
+    namedContactIds,
+  } = await seedDemoContacts(accountId, userId, regionIds, marketIds);
 
   console.log('Seeding content...');
   const contentIds = await seedContent(
@@ -2263,6 +2459,7 @@ async function main(): Promise<void> {
   const dealIds = await seedDeals(
     accountId,
     userId,
+    profileId,
     namedContactIds,
     campaignIds,
     marketIds,
@@ -2281,14 +2478,19 @@ async function main(): Promise<void> {
   );
 
   console.log('Seeding engagement events...');
-  await seedEngagementEvents(accountId, campaignIds, allContactIds);
+  await seedEngagementEvents(
+    accountId,
+    campaignIds,
+    confirmedContactIds,
+    confirmedContactIdsByRole
+  );
 
   console.log('Seeding product interactions...');
   await seedProductInteractions(
     accountId,
     productIds,
     campaignIds,
-    allContactIds
+    confirmedContactIds
   );
 
   console.log('Seeding WhatsApp sync log...');

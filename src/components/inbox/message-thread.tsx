@@ -653,7 +653,12 @@ export function MessageThread({
           onUpdateMessage(tempId, { status: "failed" });
           // The upload never reached the recipient — GC the orphaned
           // object rather than leaving it in the public bucket forever.
-          void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+          // Logged (not silently swallowed): if this delete itself fails,
+          // that's a real orphaned-storage-object nit worth seeing in the
+          // console, distinct from the send failure already toasted above.
+          void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch((err) =>
+            console.error("Failed to GC orphaned media after send failure:", err),
+          );
           return;
         }
 
@@ -663,7 +668,9 @@ export function MessageThread({
         const reason = err instanceof Error ? err.message : "network error";
         toast.error(`Failed to send: ${reason}`);
         onUpdateMessage(tempId, { status: "failed" });
-        void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch(() => {});
+        void deleteAccountMedia(CHAT_MEDIA_BUCKET, payload.path).catch((err) =>
+          console.error("Failed to GC orphaned media after send failure:", err),
+        );
       }
     },
     [conversation, onNewMessage, onUpdateMessage, user?.id],

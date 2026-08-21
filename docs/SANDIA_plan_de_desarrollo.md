@@ -4174,5 +4174,8 @@ selector de opción de precio en su UI — `createQuote()` ya lo soporta
 a nivel de datos si se quisiera agregar después, pero no se pidió y no
 se tocó para mantener el alcance de este cambio contenido.
 
-Commit `a18b1ec` — pendiente de confirmación de Angel para pushear a
-`main`.
+Pusheado a `main` (con confirmación de Angel): `ca77894..9942670`.
+Verificado en vivo tras el deploy automático de EasyPanel: `GET
+/api/public/catalog/02377d99-6819-484a-8add-def5a718b2c5` (Estilo y
+Confort) ya devuelve `price_options: []` en cada producto, y
+`/catalog/02377d99-6819-484a-8add-def5a718b2c5` responde `200`.

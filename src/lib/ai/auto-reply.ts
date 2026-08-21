@@ -4,6 +4,7 @@ import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { loadCatalogContext } from './catalog-context'
+import { loadQuickReplyContext } from './quick-reply-context'
 import { generateReply } from './generate'
 import { buildSystemPrompt, type AutoReplyCalendarContext } from './defaults'
 import type { AiConfig } from './types'
@@ -141,6 +142,11 @@ export async function dispatchInboundToAiReply(
     // guessing or staying silent about what the business sells.
     const catalog = await loadCatalogContext(db, accountId)
 
+    // The account's saved 'text' quick replies, if any — lets the model
+    // answer a routine question with the exact human-approved wording
+    // instead of writing its own paraphrase every time.
+    const quickReplies = await loadQuickReplyContext(db, accountId)
+
     // How the catalog actually gets delivered (migration 068) — also
     // gates whether the model is taught CREATE_QUOTE_SENTINEL_PREFIX
     // (see buildSystemPrompt below): the digital page already has its
@@ -168,10 +174,11 @@ export async function dispatchInboundToAiReply(
       catalog,
       calendar: calendarContext,
       catalogDeliveryMode,
+      quickReplies,
     })
 
     const {
-      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, quoteProposal, usage,
+      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, quoteProposal, quickReplyId, usage,
     } = await generateReply({
       config,
       systemPrompt,
@@ -192,7 +199,31 @@ export async function dispatchInboundToAiReply(
       usage,
     })
 
-    if (!text && !handoff) {
+    // Resolve the quick reply the model picked (if any) against the
+    // account's real rows — never trust the id blindly (a stray
+    // hallucination or a customer-message injection attempt must never
+    // put arbitrary text on the wire). Only a 'text'-kind row counts;
+    // an unmatched id, an 'interactive' row, or no marker at all all
+    // resolve to null and the model's own `text` is used instead. When
+    // it does resolve, that row's own `content_text` — never the
+    // model's paraphrase — is what actually gets sent, so this
+    // conversation's persisted history (and therefore the model's own
+    // context on a later turn) reflects exactly what the customer was
+    // told, word for word.
+    let quickReplyText: { id: string; text: string } | null = null
+    if (quickReplyId) {
+      const { data: qr } = await db
+        .from('quick_replies')
+        .select('id, content_text')
+        .eq('id', quickReplyId)
+        .eq('account_id', accountId)
+        .eq('kind', 'text')
+        .maybeSingle()
+      if (qr?.content_text) quickReplyText = { id: qr.id as string, text: qr.content_text as string }
+    }
+    const outboundText = quickReplyText?.text ?? text
+
+    if (!outboundText && !handoff) {
       // The model produced no usable reply text but didn't ask for a
       // human either — most likely it emitted only a marker (e.g. the
       // temperature sentinel) with no actual customer-facing message,
@@ -261,9 +292,24 @@ export async function dispatchInboundToAiReply(
       userId: configOwnerUserId,
       conversationId,
       contactId,
-      text,
+      text: outboundText,
       aiGenerated: true,
     })
+
+    if (quickReplyText) {
+      try {
+        await db.from('ai_action_log').insert({
+          account_id: accountId,
+          actor_user_id: configOwnerUserId,
+          action: 'send_quick_reply',
+          target_id: quickReplyText.id,
+          input: { quick_reply_id: quickReplyText.id, source: 'auto_reply_autonomous' },
+          result: { conversation_id: conversationId },
+        })
+      } catch (err) {
+        console.error('[ai auto-reply] send_quick_reply audit log failed:', err)
+      }
+    }
 
     // Autonomous business actions — explicit product decision, no human
     // confirmation gate for any of these (unlike every other business

@@ -17,6 +17,8 @@ import {
   SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX,
   CREATE_QUOTE_SENTINEL_PREFIX,
   CREATE_QUOTE_SENTINEL_SUFFIX,
+  QUICK_REPLY_SENTINEL_PREFIX,
+  QUICK_REPLY_SENTINEL_SUFFIX,
   aiRequestTimeoutMs,
 } from './defaults'
 import type { LeadTemperature } from '@/types'
@@ -138,6 +140,13 @@ export function parseGeneration(
     }
   }
 
+  const quickReplyMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(QUICK_REPLY_SENTINEL_PREFIX)}(.+?)${escapeRegExp(QUICK_REPLY_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  const quickReplyId = quickReplyMatch ? quickReplyMatch[1].trim() : null
+
   const text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -149,6 +158,7 @@ export function parseGeneration(
     .replace(temperatureMatch ? temperatureMatch[0] : '', '')
     .replace(appointmentMatch ? appointmentMatch[0] : '', '')
     .replace(quoteMatch ? quoteMatch[0] : '', '')
+    .replace(quickReplyMatch ? quickReplyMatch[0] : '', '')
     .trim()
 
   return {
@@ -160,6 +170,7 @@ export function parseGeneration(
     leadTemperature,
     appointmentProposal,
     quoteProposal,
+    quickReplyId,
     usage,
   }
 }

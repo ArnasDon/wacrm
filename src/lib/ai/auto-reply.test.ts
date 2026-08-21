@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
   loadCatalogContext: vi.fn(),
+  loadQuickReplyContext: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
   moveDeal: vi.fn(),
@@ -30,6 +31,8 @@ const h = vi.hoisted(() => ({
     contactUpdates: [] as Record<string, unknown>[],
     /** `google_calendar_config.status` — null means no row (not connected). */
     gcalStatus: null as string | null,
+    /** `quick_replies` row the mocked resolution lookup returns, or null. */
+    quickReplyRow: null as { id: string; content_text: string } | null,
   },
 }))
 
@@ -43,6 +46,7 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./catalog-context', () => ({ loadCatalogContext: h.loadCatalogContext }))
+vi.mock('./quick-reply-context', () => ({ loadQuickReplyContext: h.loadQuickReplyContext }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
@@ -180,6 +184,15 @@ vi.mock('./admin-client', () => ({
           }),
         }
       }
+      if (table === 'quick_replies') {
+        // .select('id, content_text').eq('id', ...).eq('account_id', ...).eq('kind', 'text').maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: h.state.quickReplyRow, error: null }),
+        }
+        return chain
+      }
       // conversations
       return {
         select: () => ({
@@ -246,12 +259,14 @@ beforeEach(() => {
   h.state.createdDeal = { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
   h.state.contactUpdates = []
   h.state.gcalStatus = null
+  h.state.quickReplyRow = null
   h.checkFreeBusy.mockReset().mockResolvedValue([])
   h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
   h.loadCatalogContext.mockResolvedValue(null)
+  h.loadQuickReplyContext.mockResolvedValue(null)
   h.generateReply.mockResolvedValue({
     text: 'Hello!',
     handoff: false,
@@ -1004,5 +1019,77 @@ describe('dispatchInboundToAiReply — autonomous send_catalog', () => {
 
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).toHaveBeenCalled()
+  })
+})
+
+describe('dispatchInboundToAiReply — quick replies in the prompt', () => {
+  it('includes quick-reply lines in the system prompt when the account has some', async () => {
+    h.loadQuickReplyContext.mockResolvedValue([{ id: 'qr-1', title: 'Horario', preview: 'Abrimos 8am-6pm.' }])
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('qr-1')
+    expect(systemPrompt).toContain('Horario')
+    expect(systemPrompt).toContain('Abrimos 8am-6pm.')
+  })
+
+  it('says nothing about quick replies when the account has none', async () => {
+    h.loadQuickReplyContext.mockResolvedValue(null)
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).not.toContain('QUICK_REPLY')
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous send_quick_reply', () => {
+  it('sends the quick reply\'s own stored text, not the model\'s own text, and logs it', async () => {
+    h.state.quickReplyRow = { id: 'qr-1', content_text: 'Abrimos de lunes a sábado, 8am a 6pm.' }
+    h.generateReply.mockResolvedValue({
+      text: 'this should never be sent',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      quickReplyId: 'qr-1',
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Abrimos de lunes a sábado, 8am a 6pm.' }),
+    )
+    expect(h.state.aiActionLogInserts).toEqual([
+      expect.objectContaining({
+        account_id: 'acct-1',
+        actor_user_id: 'user-1',
+        action: 'send_quick_reply',
+        target_id: 'qr-1',
+        input: { quick_reply_id: 'qr-1', source: 'auto_reply_autonomous' },
+      }),
+    ])
+  })
+
+  it('falls back to the model\'s own text when the id does not resolve to a real quick reply (hallucinated / stale id)', async () => {
+    h.state.quickReplyRow = null
+    h.generateReply.mockResolvedValue({
+      text: 'Written by the model itself.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      quickReplyId: 'ghost-id',
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Written by the model itself.' }),
+    )
+    expect(h.state.aiActionLogInserts).toEqual([])
+  })
+
+  it('does not send or log anything quick-reply related when the model does not use the marker', async () => {
+    await dispatchInboundToAiReply(ARGS) // default mock: no quickReplyId
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+    expect(h.state.aiActionLogInserts).toEqual([])
   })
 })

@@ -50,6 +50,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -64,6 +65,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -75,6 +77,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -89,6 +92,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -110,6 +114,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -139,6 +144,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -162,6 +168,7 @@ describe('parseGeneration', () => {
       leadTemperature: 'hot',
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: null,
     })
   })
@@ -197,6 +204,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage,
     })
   })
@@ -271,6 +279,23 @@ describe('parseGeneration', () => {
     const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf||CF|a@b.com|Dir]]')
     expect(res.quoteProposal).toBeNull()
   })
+
+  it('detects + strips the quick-reply sentinel, capturing the id', () => {
+    const res = parseGeneration('[[QUICK_REPLY:qr-123]]')
+    expect(res.quickReplyId).toBe('qr-123')
+    expect(res.text).toBe('')
+  })
+
+  it('allows the quick-reply marker to appear alongside an independent marker like set-temperature', () => {
+    const res = parseGeneration('[[QUICK_REPLY:qr-123]] [[ACTION:set_temperature:warm]]')
+    expect(res.quickReplyId).toBe('qr-123')
+    expect(res.leadTemperature).toBe('warm')
+    expect(res.text).toBe('')
+  })
+
+  it('returns null quickReplyId when the marker is absent', () => {
+    expect(parseGeneration('Just a normal reply.').quickReplyId).toBeNull()
+  })
 })
 
 describe('generateReply — OpenAI', () => {
@@ -298,6 +323,7 @@ describe('generateReply — OpenAI', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -363,6 +389,7 @@ describe('generateReply — Anthropic', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      quickReplyId: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

@@ -103,6 +103,15 @@ export interface GenerateResult {
     customerEmail: string
     customerAddress: string
   } | null
+  /** The id of a saved quick reply the model picked to answer with
+   *  verbatim (auto-reply mode only), or null — see
+   *  `QUICK_REPLY_SENTINEL_PREFIX`. Unlike every other marker here, this
+   *  one REPLACES `text` rather than trailing it: when it resolves to a
+   *  real 'text'-kind quick reply, `dispatchInboundToAiReply` sends that
+   *  row's own `content_text` — never the model's paraphrase — so the
+   *  conversation's persisted history (and therefore the model's own
+   *  context on the next turn) reflects exactly what was actually sent. */
+  quickReplyId: string | null
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

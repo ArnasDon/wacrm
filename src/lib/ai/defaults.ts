@@ -111,6 +111,24 @@ export const SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX = ']]'
 export const CREATE_QUOTE_SENTINEL_PREFIX = '[[ACTION:create_quote_chat:'
 export const CREATE_QUOTE_SENTINEL_SUFFIX = ']]'
 
+/**
+ * Sentinel prefix/suffix the model is instructed to wrap a quick
+ * reply's `id` in (auto-reply mode only, when the account has at least
+ * one 'text'-kind quick reply — see `loadQuickReplyContext`). Unlike
+ * every other marker above, this one REPLACES the model's own reply
+ * text rather than trailing it: the model is told to output ONLY this
+ * marker (no other customer-facing text) when one of the account's
+ * pre-written, human-approved snippets already answers the customer
+ * exactly as written — so it's the snippet's real `content_text` that
+ * gets sent, never a paraphrase, and that's what lands in `messages`
+ * for the next turn's own context to follow. Real quick replies only:
+ * `dispatchInboundToAiReply` resolves the id against the account's
+ * actual `quick_replies` (never trusts the model's text) and falls
+ * back to whatever the model wrote otherwise.
+ */
+export const QUICK_REPLY_SENTINEL_PREFIX = '[[QUICK_REPLY:'
+export const QUICK_REPLY_SENTINEL_SUFFIX = ']]'
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -191,8 +209,13 @@ export function buildSystemPrompt(args: {
    *  connected calendar. `null`/omitted means the model is never told
    *  it can use `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` at all. */
   calendar?: AutoReplyCalendarContext | null
+  /** The account's saved 'text'-kind quick replies (see
+   *  `loadQuickReplyContext`), auto-reply mode only — null/omitted
+   *  means the model is never taught `QUICK_REPLY_SENTINEL_PREFIX` at
+   *  all, since there'd be nothing real for it to pick from. */
+  quickReplies?: { id: string; title: string; preview: string }[] | null
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -262,6 +285,15 @@ export function buildSystemPrompt(args: {
         `This business's catalog is ${catalogDeliveryMode === 'pdf' ? 'a PDF' : 'photos'}, not a digital page with its own shopping cart — so when the customer asks for the price or a quote on one or more SPECIFIC products from the catalog list below (never something outside that list), you handle the quote yourself, in two steps across turns: ` +
           `(1) First, in plain text with no marker, ask whether they'd like the quote as a PDF or as a text message in the chat — ask this only once per conversation, don't repeat it if you already asked earlier in this same conversation. ` +
           `(2) Once they've told you the format AND you know their NIT (or "CF"/consumidor final if they have none), email, and address — read these from earlier in the conversation if already given, otherwise ask for whichever of the three you're still missing before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|<NIT>|<email>|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message. Use the EXACT product name as it appears in the catalog list below (the text before the price in parentheses) for every item — never a product not in that list, never an invented quantity or price; the price always comes from the real catalog, you never write one yourself. Never mention this marker to the customer, and never claim the quote is sent until you actually have everything needed to use this marker.`,
+      )
+    }
+
+    if (quickReplies && quickReplies.length > 0) {
+      const list = quickReplies
+        .map((qr) => `- id: ${qr.id} — "${qr.title}": ${qr.preview}`)
+        .join('\n')
+      parts.push(
+        `The business has pre-written, human-approved quick reply snippets below. If — and only if — one of them already answers the customer's message exactly as written (a routine question it fully covers, e.g. business hours, address, a fixed policy or price), reply with ONLY ${QUICK_REPLY_SENTINEL_PREFIX}<id>${QUICK_REPLY_SENTINEL_SUFFIX} — no other customer-facing text before or after it, since the snippet's own exact wording is what gets sent, not your own words (other independent markers elsewhere in these instructions, like the buying-interest one, may still follow it as usual). Use the exact id as written below, never one that isn't listed. Do not paraphrase, summarize, or rewrite a snippet yourself and do not use this marker if no snippet is a genuinely close match — write your own natural reply instead, same as always. Never mention this marker to the customer.\n\nQuick replies:\n${list}`,
       )
     }
   }

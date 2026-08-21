@@ -12,18 +12,28 @@
 const NOME_PLACEHOLDER = /\{\{\s*nome\s*\}\}/gi;
 
 /**
+ * Matches `{{nome}}` plus any whitespace immediately before it, so
+ * dropping the placeholder for a nameless contact doesn't leave a
+ * stray space/comma dangling in front of the following punctuation
+ * (e.g. "Oi {{nome}}!" -> "Oi!", not "Oi !").
+ */
+const NOME_PLACEHOLDER_WITH_LEADING_SPACE = /\s*\{\{\s*nome\s*\}\}/gi;
+
+/**
  * Compute a recipient's default message: `{{nome}}` replaced by the
- * contact's name (falling back to phone — findOrCreateContact already
- * seeds `name` with the phone when none was given, so this is mostly
- * a defensive fallback for a contact edited to have a blank name).
- * This is the value shown in the preview/review step before any
- * manual per-recipient edit (broadcast_recipients.message_text)
- * overrides it.
+ * contact's name. A contact with no name (after trim) never falls back
+ * to the phone number — the placeholder (and its leading whitespace)
+ * is simply removed instead. This is the value shown in the
+ * preview/review step before any manual per-recipient edit
+ * (broadcast_recipients.message_text) overrides it.
  */
 export function resolveExternalMessage(
   template: string,
   contact: { name?: string | null; phone?: string | null },
 ): string {
-  const name = contact.name?.trim() || contact.phone?.trim() || '';
+  const name = contact.name?.trim() ?? '';
+  if (!name) {
+    return template.replace(NOME_PLACEHOLDER_WITH_LEADING_SPACE, '');
+  }
   return template.replace(NOME_PLACEHOLDER, name);
 }

@@ -1,19 +1,34 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Input } from '@/components/ui/input';
-import { Loader2, FileText, ArrowRight, Rocket, Smartphone } from 'lucide-react';
+import {
+  uploadAccountMedia,
+  deleteAccountMedia,
+  MEDIA_MAX_BYTES_BY_KIND,
+  ALLOWED_MIME_TYPES_BY_KIND,
+} from '@/lib/storage/upload-media';
+import {
+  Loader2,
+  FileText,
+  ArrowRight,
+  Rocket,
+  Smartphone,
+  Plus,
+  RefreshCw,
+  ImagePlus,
+} from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { TemplatePickerModal } from './template-picker-modal';
+import { categoryColors } from './template-category-colors';
 
-const categoryColors: Record<string, string> = {
-  Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
-  Utility: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
-  Authentication: 'bg-orange-500/10 text-orange-400 border-orange-500/20',
-};
+/** Same bucket message-composer.tsx / template-manager.tsx upload chat/template media to. */
+const CHAT_MEDIA_BUCKET = 'chat-media';
 
 type SendChannel = 'api' | 'external';
 
@@ -54,6 +69,14 @@ export function Step1ChooseTemplate({
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+
+  // Upload state for the external-channel image (Tarefa A1). `imagePath`
+  // tracks the last object WE uploaded (not one pasted as a raw URL) so a
+  // replacement upload can best-effort GC the previous object.
+  const [uploading, setUploading] = useState(false);
+  const [imagePath, setImagePath] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     async function fetchTemplates() {
@@ -80,6 +103,33 @@ export function Step1ChooseTemplate({
     fetchTemplates();
   }, []);
 
+  async function handleImageFile(file: File) {
+    const allowed = ALLOWED_MIME_TYPES_BY_KIND.image as readonly string[];
+    if (!allowed.includes(file.type)) {
+      toast.error(t('chooseTemplate.invalidImageType'));
+      return;
+    }
+    if (file.size > MEDIA_MAX_BYTES_BY_KIND.image) {
+      toast.error(t('chooseTemplate.imageTooLarge'));
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+      const previousPath = imagePath;
+      setImagePath(path);
+      onImageUrlChange(publicUrl);
+      if (previousPath) {
+        void deleteAccountMedia(CHAT_MEDIA_BUCKET, previousPath).catch(() => {});
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t('chooseTemplate.uploadFailed'));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   const isValid =
     sendChannel === 'api' ? Boolean(selectedTemplate) : messageText.trim().length > 0;
 
@@ -92,7 +142,7 @@ export function Step1ChooseTemplate({
         </p>
       </div>
 
-      {/* Path selector — spec section 1: WACRM (official API template) vs Externo (WhatsApp Web, free text). */}
+      {/* Path selector — spec section 1: "Enviar pelo CRM" (official API template) vs "Envio externo" (WhatsApp Web, free text). */}
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <button
           onClick={() => onSendChannelChange('api')}
@@ -137,56 +187,50 @@ export function Step1ChooseTemplate({
       </div>
 
       {sendChannel === 'api' ? (
-        loading ? (
-          <div className="flex h-64 items-center justify-center">
-            <Loader2 className="h-6 w-6 animate-spin text-primary" />
-          </div>
-        ) : error ? (
-          <div className="flex h-64 flex-col items-center justify-center gap-2">
-            <p className="text-sm text-red-400">{error}</p>
-          </div>
-        ) : templates.length === 0 ? (
-          <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-border bg-card/50">
-            <FileText className="mb-2 h-8 w-8 text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">{t('chooseTemplate.noTemplates')}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t('chooseTemplate.createFirst')}</p>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {templates.map((template) => {
-              const isSelected = selectedTemplate?.id === template.id;
-              const catColor = categoryColors[template.category] ?? categoryColors.Utility;
-
-              return (
-                <button
-                  key={template.id}
-                  onClick={() => onSelectTemplate(template)}
-                  className={`flex flex-col gap-3 rounded-xl border p-4 text-left transition-all ${
-                    isSelected
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
-                      : 'border-border bg-card/50 hover:border-border hover:bg-card'
+        <div className="rounded-xl border border-border bg-card/50 p-4">
+          {selectedTemplate ? (
+            <div className="flex flex-col gap-3">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="text-sm font-medium text-foreground">{selectedTemplate.name}</h3>
+                <span
+                  className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${
+                    categoryColors[selectedTemplate.category] ?? categoryColors.Utility
                   }`}
                 >
-                  <div className="flex items-start justify-between">
-                    <h3 className="text-sm font-medium text-foreground">{template.name}</h3>
-                    <span
-                      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium ${catColor}`}
-                    >
-                      {template.category}
-                    </span>
-                  </div>
-                  <p className="line-clamp-3 text-xs text-muted-foreground">{template.body_text}</p>
-                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                    <span>{template.language ?? 'en_US'}</span>
-                    {/* Status is omitted on purpose — every template
-                        shown here is already filtered to APPROVED,
-                        so the chip carried no information. */}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        )
+                  {selectedTemplate.category}
+                </span>
+              </div>
+              <p className="line-clamp-3 text-xs text-muted-foreground">
+                {selectedTemplate.body_text}
+              </p>
+              <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                <span>{selectedTemplate.language ?? 'en_US'}</span>
+              </div>
+              <div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setTemplateModalOpen(true)}
+                  className="border-border text-foreground"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  {t('chooseTemplate.changeTemplateButton')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setTemplateModalOpen(true)}
+              className="w-full border-dashed border-border text-foreground"
+            >
+              <Plus className="h-4 w-4" />
+              {t('chooseTemplate.selectTemplateButton')}
+            </Button>
+          )}
+        </div>
       ) : (
         <div className="space-y-4">
           <div className="rounded-xl border border-border bg-card/50 p-4">
@@ -205,12 +249,41 @@ export function Step1ChooseTemplate({
             <label className="mb-1.5 block text-sm font-medium text-foreground">
               {t('chooseTemplate.imageLabel')}
             </label>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                if (file) void handleImageFile(file);
+                e.target.value = '';
+              }}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={uploading}
+              onClick={() => fileInputRef.current?.click()}
+              className="border-border text-foreground"
+            >
+              {uploading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ImagePlus className="h-3.5 w-3.5" />
+              )}
+              {uploading ? t('chooseTemplate.uploading') : t('chooseTemplate.addImageButton')}
+            </Button>
+            <p className="mt-2.5 text-xs text-muted-foreground">
+              {t('chooseTemplate.imageUrlSecondaryLabel')}
+            </p>
             <Input
               type="url"
               value={imageUrl}
               onChange={(e) => onImageUrlChange(e.target.value)}
               placeholder={t('chooseTemplate.imagePlaceholder')}
-              className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
+              className="mt-1.5 border-border bg-muted text-foreground placeholder:text-muted-foreground"
             />
             {imageUrl.trim() && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -237,6 +310,16 @@ export function Step1ChooseTemplate({
           <ArrowRight className="h-4 w-4" />
         </Button>
       </div>
+
+      <TemplatePickerModal
+        open={templateModalOpen}
+        onOpenChange={setTemplateModalOpen}
+        templates={templates}
+        loading={loading}
+        error={error}
+        selectedTemplate={selectedTemplate}
+        onConfirm={onSelectTemplate}
+      />
     </div>
   );
 }

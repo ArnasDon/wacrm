@@ -19,14 +19,14 @@ describe('resolveExternalMessage', () => {
     );
   });
 
-  it('falls back to phone when name is missing', () => {
+  it('removes the placeholder without using the phone when name is missing', () => {
     expect(resolveExternalMessage('Oi {{nome}}!', { name: null, phone: '+5511999999999' })).toBe(
-      'Oi +5511999999999!',
+      'Oi!',
     );
   });
 
-  it('falls back to empty string when neither name nor phone is available', () => {
-    expect(resolveExternalMessage('Oi {{nome}}!', {})).toBe('Oi !');
+  it('removes the placeholder and its leading space when there is no name and no phone', () => {
+    expect(resolveExternalMessage('Oi {{nome}}!', {})).toBe('Oi!');
   });
 
   it('leaves a template with no placeholder untouched', () => {
@@ -35,9 +35,13 @@ describe('resolveExternalMessage', () => {
     );
   });
 
-  it('trims whitespace-only names before falling back', () => {
+  it('treats a whitespace-only name as missing and never falls back to phone', () => {
     expect(resolveExternalMessage('Oi {{nome}}!', { name: '   ', phone: '5511999999999' })).toBe(
-      'Oi 5511999999999!',
+      'Oi!',
     );
+  });
+
+  it('removes the placeholder without a stray space/comma before the following punctuation', () => {
+    expect(resolveExternalMessage('Olá {{nome}}, tudo bem?', {})).toBe('Olá, tudo bem?');
   });
 });

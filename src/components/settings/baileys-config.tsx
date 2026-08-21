@@ -94,6 +94,15 @@ export function BaileysConfig() {
           <CardTitle className="flex items-center gap-2 text-base">
             {status === 'conectado' ? (
               <CheckCircle2 className="h-4 w-4 text-primary" />
+            ) : status === 'pareando' ? (
+              // Same pulsing-dot idiom used for "in progress" states
+              // elsewhere (envio-status.ts, broadcast-status.ts) —
+              // pairing is an active, time-limited state, not a flat
+              // disconnected one.
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-primary" />
+              </span>
             ) : (
               <XCircle className="h-4 w-4 text-muted-foreground" />
             )}
@@ -109,7 +118,13 @@ export function BaileysConfig() {
           ) : (
             <>
               {data?.qrDataUrl && status === 'pareando' && (
-                <div className="flex justify-center rounded-lg border border-border bg-white p-4">
+                <div className="flex justify-center rounded-2xl bg-white p-6 ring-1 ring-primary/25 shadow-lg shadow-primary/20">
+                  {/* Card gets rounded corners + a primary-tinted ring/glow
+                      (matches the account's accent color — violet by
+                      default, but themeable) to sit intentionally on the
+                      dark panel instead of floating as a stark white box.
+                      The QR image itself stays plain black-on-white
+                      (untouched) for scan reliability. */}
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img src={data.qrDataUrl} alt="QR pairing" className="h-56 w-56" />
                 </div>

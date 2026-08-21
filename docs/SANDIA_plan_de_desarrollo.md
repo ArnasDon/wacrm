@@ -4219,5 +4219,9 @@ nuevos: `parseInstallationCost` con tests propios + 2 casos nuevos en
 en `package-lock.json`. Columna confirmada en Supabase, advisors de
 seguridad sin hallazgos nuevos.
 
-Commit `a656e39` — pendiente de confirmación de Angel para pushear a
-`main`.
+Pusheado a `main` (con confirmación de Angel): `af4af38..5fadee9`.
+**Verificado en vivo directamente en la cuenta real de Angel** (sesión
+ya autenticada en su Chrome, EasyPanel ya había desplegado): al abrir
+"Nuevo producto" en `/products`, el campo "Costo de instalación
+(opcional)" aparece junto a "Precio" — confirmado visualmente, no solo
+por API.

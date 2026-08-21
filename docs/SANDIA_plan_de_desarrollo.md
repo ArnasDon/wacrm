@@ -4569,3 +4569,57 @@ cambios de base de datos.
 **Desplegado y confirmado en vivo por Angel:** commit `e77bdd7`,
 pusheado a `main` con confirmación previa. Angel probó de nuevo desde
 la app oficial y confirmó: **"ya funciona"**.
+
+### 2026-08-21 (sesión posterior) — Claude Code (bot sin responder en el número nuevo → clave de IA rota, sin ninguna alerta)
+
+Angel reportó que al segundo número de WhatsApp (recién agregado en la
+cuenta de Ricardo, `whatsapp_config` provider `zernio`) le llegaban
+mensajes pero el bot no contestaba.
+
+**Diagnóstico (Supabase + logs en vivo de EasyPanel, sin tocar
+código):** el número en sí estaba bien — mensajes entrando,
+conversaciones creándose, `whatsapp_config_id` correcto. El problema
+era de toda la cuenta, no del número: la clave de Anthropic (BYO,
+`ai_configs.provider = 'anthropic'`) empezó a devolver `401
+invalid_key` en algún momento después de las 05:14 UTC de hoy (se
+había guardado/actualizado a las 00:23 UTC y funcionó las primeras
+veces). En el número 1 no se notó porque la única conversación con
+mensajes nuevos hoy ya tenía un agente humano asignado — el bot se
+queda callado por diseño cuando hay un agente asignado, así que nunca
+llegó a intentar responder ahí y exponer el mismo error. Angel
+regeneró la clave y confirmó: **"ya funciona"**.
+
+**El bug real que quedaba (y es lo que se corrigió con código):** un
+`AiError` con `code: 'invalid_key'` se tragaba en silencio dentro de
+`dispatchInboundToAiReply` (`src/lib/ai/auto-reply.ts`) — solo
+quedaba un `console.error` en el log del contenedor. El cliente no
+recibía respuesta y nada en el producto lo mostraba; si Angel no
+hubiera preguntado, habría quedado sin descubrirse hasta que un
+cliente se quejara.
+
+**Hecho:**
+- Migración `079_ai_key_invalid_notification.sql` — amplía el
+  `CHECK` de `notifications.type` (migración 027) para aceptar
+  `'ai_key_invalid'` además de `'conversation_assigned'`.
+- `src/lib/ai/auto-reply.ts` — el `catch` de
+  `dispatchInboundToAiReply` ahora distingue `AiError` con
+  `code === 'invalid_key'` de los demás errores (timeout,
+  rate_limited, network_error, provider_error — esos siguen
+  tragándose igual que antes porque se espera que se autorecuperen).
+  Cuando la clave es inválida, llama a `notifyAiKeyInvalid`, que
+  inserta una notificación in-app para cada `profiles` con
+  `account_role` `owner`/`admin` de la cuenta (los mismos roles que
+  `requireRole('admin')` exige para editar Settings → IA), con
+  throttle de máximo 1 alerta por cuenta cada 6h para no spamear una
+  notificación por cada mensaje entrante mientras la clave siga rota.
+- `src/types/index.ts` — `NotificationType` ahora incluye
+  `'ai_key_invalid'`.
+- `src/app/(dashboard)/notifications/page.tsx` — ícono (`KeyRound`)
+  y copy del estado vacío/encabezado actualizados para el nuevo tipo.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1153 tests —
+no se agregó test nuevo para este flujo). Sin diff en
+`package-lock.json`.
+
+**Pendiente:** desplegar (push a `main`) — confirmar con Angel antes.

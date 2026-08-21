@@ -4313,3 +4313,78 @@ crear/tener una respuesta rápida de tipo texto en Configuración y
 mandarle al número del negocio un mensaje que la cubra (p. ej. una
 pregunta de horario si esa es la respuesta rápida), y confirmar que
 la IA contesta con el texto exacto guardado.
+
+---
+
+**2026-08-20 — Claude Code — El CRM ya no pierde los mensajes que un
+agente responde desde la app oficial de Instagram/Facebook (en vez de
+desde el CRM).**
+
+Angel reportó que "hay muchos chats que el crm no detecta ya que
+fueron enviados desde la app oficial de la red social". Investigación
+primero (agente en background, sin tocar código): el diagnóstico fue
+distinto por canal.
+
+- **Instagram/Facebook — bug real, arreglado ahora.** Cuando un agente
+  responde desde la app nativa de Instagram/Facebook (o el inbox
+  propio de Meta) en vez de desde el CRM, Meta (y Zernio) sí le avisan
+  al webhook — pero el código descartaba ese aviso sin condición,
+  asumiendo siempre que era un "eco" de un envío que el propio CRM ya
+  había hecho y guardado. Cierto solo cuando el envío realmente salió
+  del CRM; falso cada vez que un agente usaba la app oficial
+  directamente — lo que borraba la conversación completa: sin fila en
+  `messages`, sin abrir/actualizar la conversación, nada.
+- **WhatsApp — pausado, no es (necesariamente) un bug de código.** La
+  Cloud API (que usa el CRM) y la app oficial de WhatsApp Business son
+  mutuamente excluyentes en un mismo número bajo la configuración
+  normal de Meta — hace falta el modo "Coexistencia" de Meta (no
+  implementado) para que ambas convivan. Angel confirmó que lo notó en
+  Instagram y no está seguro de WhatsApp, así que se dejó fuera de
+  alcance de este cambio, pendiente de una conversación aparte.
+
+Angel confirmó pedirlo solo para Instagram; se aprovechó para arreglar
+también el mismo bug en Facebook (mismo código compartido) y en la
+ruta directa de Meta para Instagram (no usada hoy en producción — la
+única cuenta real usa el proveedor Zernio para Instagram, confirmado
+por consulta directa a `instagram_config` — pero se corrigió por
+completitud/consistencia).
+
+- **`src/lib/messaging/dm-inbound.ts`** (con tests) — dos funciones
+  nuevas: `handleOutboundEchoMessage` (ruta directa de Meta, trae un id
+  real del cliente en el evento de eco) y
+  `handleOutboundEchoMessageForZernioConversation` (Zernio direcciona
+  por su propio id de conversación, no por un id de plataforma crudo —
+  documentado en el propio `src/lib/zernio/api.ts` — así que esta
+  resuelve el contacto a través de la conversación ya existente en vez
+  de necesitar un id de cliente). Ambas guardan el mensaje con
+  `sender_type: 'agent'` y **deliberadamente NO** reabren una
+  conversación cerrada ni disparan flujos, automatizaciones o
+  respuesta automática de IA — esas reaccionan al CLIENTE, no a la
+  respuesta de un agente. El mismo upsert idempotente por
+  `(conversation_id, message_id)` que ya existía es lo que evita
+  duplicar cuando el mensaje sí fue enviado por el propio CRM — no hizo
+  falta distinguir los dos casos de antemano.
+- **`instagram/webhook/route.ts`** (ruta directa de Meta) — se
+  encontró un bug adicional al investigar: en un eco real, Meta
+  invierte los roles (nosotros somos `sender.id`, el cliente es
+  `recipient.id`), pero el código buscaba la cuenta siempre por
+  `recipient.id` — así que un eco ni siquiera llegaba a la revisión de
+  `is_echo`, fallaba antes en la búsqueda de la cuenta.
+- **`instagram/webhook/zernio/route.ts`,
+  `facebook/webhook/zernio/route.ts`** — un evento `message.received`
+  con `direction: 'outgoing'` ahora se enruta al nuevo manejador en vez
+  de descartarse. Esta es la ruta que realmente afecta a Angel hoy.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo (el primer intento chocó con el mismo
+artefacto transitorio del otro servidor de desarrollo corriendo en
+paralelo documentado antes en esta sesión — un reintento limpio
+confirmó que no era un error real), `vitest run` en verde (1151 tests
+— se reescribió el test de "echo filtering" de la ruta directa de
+Instagram para reflejar el comportamiento correcto en vez del
+descarte, y se agregaron tests nuevos directos sobre
+`dm-inbound.ts`), sin diff en `package-lock.json`. Sin cambios de base
+de datos — este arreglo es 100% código de aplicación.
+
+Commit `be839df` — pendiente de confirmación de Angel para pushear a
+`main`.

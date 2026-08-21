@@ -5,14 +5,7 @@ import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Broadcast } from '@/types';
 import { Button } from '@/components/ui/button';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Megaphone, Plus, Loader2, Play } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
@@ -41,11 +34,13 @@ function percent(numerator: number, denominator: number): number {
   return Math.round((numerator / denominator) * 100);
 }
 
-function RateCell({
+function RateStat({
+  label,
   value,
   total,
   color,
 }: {
+  label: string;
   value: number;
   total: number;
   /** Tailwind bg class for the fill, e.g. "bg-primary" */
@@ -53,11 +48,16 @@ function RateCell({
 }) {
   const pct = percent(value, total);
   return (
-    <div className="flex items-center gap-2">
-      <span className="w-10 text-right text-xs tabular-nums text-muted-foreground">
-        {pct}%
-      </span>
-      <div className="h-1.5 w-20 overflow-hidden rounded-full bg-muted">
+    <div className="rounded-lg bg-muted/30 p-2">
+      <div className="flex items-center justify-between gap-1">
+        <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground">
+          {pct}%
+        </span>
+      </div>
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-muted">
         <div
           className={`h-1.5 rounded-full ${color}`}
           style={{ width: `${pct}%` }}
@@ -242,114 +242,116 @@ export default function CampaignsPage() {
           </GatedButton>
         </div>
       ) : (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-          <Table>
-            <TableHeader>
-              <TableRow className="border-border hover:bg-transparent">
-                <TableHead className="text-muted-foreground">{t('table.name')}</TableHead>
-                <TableHead className="hidden text-muted-foreground md:table-cell">{t('table.template')}</TableHead>
-                <TableHead className="hidden text-right text-muted-foreground sm:table-cell">
-                  {t('table.recipients')}
-                </TableHead>
-                <TableHead className="hidden text-muted-foreground lg:table-cell">{t('table.delivery')}</TableHead>
-                <TableHead className="hidden text-muted-foreground lg:table-cell">{t('table.read')}</TableHead>
-                <TableHead className="text-muted-foreground">{t('table.status')}</TableHead>
-                <TableHead className="hidden text-muted-foreground sm:table-cell">{t('table.date')}</TableHead>
-                <TableHead />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {campaigns.map((campaign) => {
-                const status = getBroadcastStatus(campaign.status);
-                const isExternal = campaign.send_channel === 'external';
-                // 'external' campaigns are never dispatched from WACRM
-                // (spec section 4/7) — no Start/Resume action for them.
-                const canResume =
-                  !isExternal && (campaign.status === 'ready' || campaign.status === 'sending');
-                return (
-                  <TableRow
-                    key={campaign.id}
-                    className="cursor-pointer border-border hover:bg-muted/50"
-                    onClick={() => router.push(`/campaigns/${campaign.id}`)}
-                  >
-                    <TableCell className="font-medium text-foreground">
-                      {campaign.name}
-                      {campaign.description && (
-                        <p className="mt-0.5 max-w-xs truncate text-xs font-normal text-muted-foreground">
-                          {campaign.description}
-                        </p>
-                      )}
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground md:table-cell">
-                      <span
-                        className={`mr-2 inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
-                          isExternal
-                            ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
-                            : 'border-primary/20 bg-primary/10 text-primary'
-                        }`}
-                      >
-                        {isExternal ? t('channelExternal') : t('channelApi')}
-                      </span>
-                      {isExternal ? campaign.message_text : campaign.template_name}
-                    </TableCell>
-                    <TableCell className="hidden text-right text-muted-foreground tabular-nums sm:table-cell">
-                      {campaign.total_recipients}
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={campaign.delivered_count}
-                        total={campaign.total_recipients}
-                        color="bg-primary"
-                      />
-                    </TableCell>
-                    <TableCell className="hidden lg:table-cell">
-                      <RateCell
-                        value={campaign.read_count}
-                        total={campaign.total_recipients}
-                        color="bg-blue-500"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <span
-                        className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
-                      >
-                        {status.pulse && (
-                          <span className="relative flex h-1.5 w-1.5">
-                            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
-                            <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
-                          </span>
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {campaigns.map((campaign) => {
+            const status = getBroadcastStatus(campaign.status);
+            const isExternal = campaign.send_channel === 'external';
+            // 'external' campaigns are never dispatched from WACRM
+            // (spec section 4/7) — no Start/Resume action for them.
+            const canResume =
+              !isExternal && (campaign.status === 'ready' || campaign.status === 'sending');
+            const preview = isExternal ? campaign.message_text : campaign.template_name;
+            return (
+              <Card
+                key={campaign.id}
+                onClick={() => router.push(`/campaigns/${campaign.id}`)}
+                className="cursor-pointer border border-border ring-0 transition-colors hover:border-primary/30"
+              >
+                <CardContent className="flex flex-col gap-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+                        <Megaphone className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="truncate font-medium text-foreground">{campaign.name}</p>
+                        {campaign.description && (
+                          <p className="truncate text-xs text-muted-foreground">
+                            {campaign.description}
+                          </p>
                         )}
-                        {tStatus(status.label)}
-                      </span>
-                    </TableCell>
-                    <TableCell className="hidden text-muted-foreground sm:table-cell">
-                      {new Date(campaign.created_at).toLocaleDateString()}
-                    </TableCell>
-                    <TableCell onClick={(e) => e.stopPropagation()}>
-                      {canResume && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={resumingId === campaign.id}
-                          onClick={(e) => handleResume(e, campaign.id)}
-                          className="border-border text-muted-foreground hover:bg-muted"
-                        >
-                          {resumingId === campaign.id ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Play className="h-3.5 w-3.5" />
-                          )}
-                          {campaign.status === 'sending'
-                            ? t('resumeSending')
-                            : t('startSending')}
-                        </Button>
+                      </div>
+                    </div>
+                    <span
+                      className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                        isExternal
+                          ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                          : 'border-primary/20 bg-primary/10 text-primary'
+                      }`}
+                    >
+                      {isExternal ? t('channelExternal') : t('channelApi')}
+                    </span>
+                  </div>
+
+                  {preview && (
+                    <div className="rounded-lg bg-muted/40 p-2.5 text-xs text-muted-foreground">
+                      <p className="line-clamp-2">{preview}</p>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-lg bg-muted/30 p-2">
+                      <p className="truncate text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t('table.recipients')}
+                      </p>
+                      <p className="mt-1 text-sm font-medium tabular-nums text-foreground">
+                        {campaign.total_recipients}
+                      </p>
+                    </div>
+                    <RateStat
+                      label={t('table.delivery')}
+                      value={campaign.delivered_count}
+                      total={campaign.total_recipients}
+                      color="bg-primary"
+                    />
+                    <RateStat
+                      label={t('table.read')}
+                      value={campaign.read_count}
+                      total={campaign.total_recipients}
+                      color="bg-blue-500"
+                    />
+                  </div>
+                </CardContent>
+
+                <CardFooter className="flex items-center justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span
+                      className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}
+                    >
+                      {status.pulse && (
+                        <span className="relative flex h-1.5 w-1.5">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-yellow-400 opacity-75" />
+                          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-yellow-400" />
+                        </span>
                       )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
+                      {tStatus(status.label)}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {new Date(campaign.created_at).toLocaleDateString()}
+                    </span>
+                  </div>
+                  {canResume && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={resumingId === campaign.id}
+                      onClick={(e) => handleResume(e, campaign.id)}
+                      className="shrink-0 border-border text-muted-foreground hover:bg-muted"
+                    >
+                      {resumingId === campaign.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Play className="h-3.5 w-3.5" />
+                      )}
+                      {campaign.status === 'sending'
+                        ? t('resumeSending')
+                        : t('startSending')}
+                    </Button>
+                  )}
+                </CardFooter>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

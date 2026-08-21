@@ -4304,5 +4304,12 @@ vuelta al texto del modelo sin registrar nada), sin diff en
 `package-lock.json`. Advisors de seguridad de Supabase revisados sin
 hallazgos nuevos.
 
-Commit `6b66c4d` — pendiente de confirmación de Angel para pushear a
-`main`.
+Pusheado a `main` (con confirmación de Angel): `bab33ea..e58265c`.
+App confirmada arriba tras el deploy automático de EasyPanel (`/login`
+respondiendo `200` de forma sostenida). Esta funcionalidad no tiene una
+ruta pública nueva que verificar por curl — es lógica interna del
+webhook de WhatsApp — así que la prueba real pendiente es de Angel:
+crear/tener una respuesta rápida de tipo texto en Configuración y
+mandarle al número del negocio un mensaje que la cubra (p. ej. una
+pregunta de horario si esa es la respuesta rápida), y confirmar que
+la IA contesta con el texto exacto guardado.

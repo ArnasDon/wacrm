@@ -4392,3 +4392,63 @@ respondiendo `200` de forma sostenida). **Pendiente de Angel**: probar
 en real — pedirle a un agente que responda un chat de Instagram desde
 la app oficial (no desde el CRM) y confirmar que el mensaje aparece en
 la bandeja de wacrm.
+
+### 2026-08-20 — Claude Code (mismo bug, ahora confirmado en WhatsApp vía Zernio Coexistence)
+
+**Contexto:** en la misma sesión, Angel primero reportó que los botones
+"+1 asiento"/"+1 número" del panel `/admin` no le aparecían. Verificado
+en vivo en su propia sesión de Chrome autenticada: los botones **sí**
+existen y funcionan (`Cupos` y `Números WhatsApp` en la tabla de
+Empresas, con datos reales de las dos solicitudes de esa mañana) — no
+había bug, probablemente una captura de pantalla tomada antes de que
+la carga de datos terminara. Angel usó el botón, agregó un número
+nuevo, y lo conectó vía Zernio con **Coexistencia** activada — y ahí
+apareció el mismo problema que ya se había arreglado para
+Instagram/Facebook: los mensajes que un agente responde desde la app
+oficial de WhatsApp Business (en vez de desde el CRM) no aparecían en
+wacrm.
+
+**Causa raíz confirmada:** `src/app/api/whatsapp/webhook/zernio/route.ts`
+nunca se tocó en el arreglo anterior (se dejó pausado a propósito,
+documentado arriba, porque Cloud API + app oficial son normalmente
+excluyentes por número). Con Coexistencia activa ese supuesto ya no
+aplica para este número — y el código seguía con el mismo descarte
+incondicional: `if (message.direction !== 'incoming') return` tiraba
+cualquier evento `message.received` con `direction: 'outgoing'` (un
+agente respondiendo desde la app oficial) sin guardar nada.
+
+**Hecho:**
+- `src/lib/messaging/dm-inbound.ts` — el tipo `DmChannel` (usado por
+  `handleOutboundEchoMessage`/`handleOutboundEchoMessageForZernioConversation`)
+  solo cubría `'instagram' | 'facebook'`. Se agregó `EchoChannel =
+  DmChannel | 'whatsapp'`, usado únicamente por las dos funciones de
+  eco (no por `CONTACT_COLUMNS`/`findExistingContact`, que WhatsApp no
+  necesita porque la ruta de Zernio para WhatsApp nunca crea contactos
+  nuevos a partir de un eco, igual que Instagram/Facebook por Zernio).
+- `src/app/api/whatsapp/webhook/zernio/route.ts` — antes de la
+  comprobación `direction !== 'incoming'`, un nuevo branch
+  `direction === 'outgoing'` arma `contentText`/`mediaUrl`/`contentType`
+  igual que `processInboundMessage` (mismo `toContentType` local, mismo
+  patrón `mediaId ? /api/whatsapp/media/{mediaId} : null`) y llama a
+  `handleOutboundEchoMessageForZernioConversation` con
+  `channel: 'whatsapp'` — mismo helper compartido que ya usan
+  Instagram/Facebook, sin duplicar lógica de persistencia.
+- `src/lib/messaging/dm-inbound.test.ts` — nuevo test que ejercita
+  `channel: 'whatsapp'` en `handleOutboundEchoMessageForZernioConversation`.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio en los tres
+archivos tocados, `vitest run` en verde (1152 tests — el nuevo test de
+WhatsApp), `next build` completo (61→mismas rutas, el primer intento
+chocó otra vez con el artefacto transitorio ya documentado del
+`npm run dev` paralelo — el reintento limpio confirmó que no era un
+error real), sin diff en `package-lock.json`. Sin cambios de base de
+datos.
+
+**Desplegado:** commit `ee879da`, pusheado a `main` con confirmación de
+Angel. `/login` respondió `200` de forma sostenida (3 chequeos
+espaciados) tras el deploy automático de EasyPanel.
+
+**Pendiente de Angel:** probar en real — responder desde la app
+oficial de WhatsApp Business (no desde wacrm) un chat del número nuevo
+conectado por Zernio Coexistencia, y confirmar que el mensaje aparece
+en la bandeja de wacrm como mensaje del agente.

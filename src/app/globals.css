@@ -147,7 +147,25 @@ html[data-mode="light"] {
 
 /* ---- ACCENT: primary color ---- */
 
+/* Rimula — Shell Red primary, Rimula Gold as the chart-2 secondary
+ * accent (§7). The default theme, so it carries the :root fallback
+ * that paints before the boot script (layout.tsx) replays the saved
+ * choice — same role `violet` held before this fork. */
 :root,
+html[data-theme="rimula"] {
+  --primary: oklch(0.55 0.22 27);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.62 0.2 27);
+  --primary-soft: oklch(0.55 0.22 27 / 0.12);
+  --primary-soft-2: oklch(0.55 0.22 27 / 0.22);
+  --ring: oklch(0.55 0.22 27);
+  --chart-1: oklch(0.55 0.22 27);
+  --chart-2: oklch(0.78 0.16 88);
+  --sidebar-primary: oklch(0.55 0.22 27);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.55 0.22 27);
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);

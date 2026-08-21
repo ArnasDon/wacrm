@@ -202,6 +202,8 @@ export interface Conversation {
   ai_handoff_summary?: string | null;
   /** Messaging channel this conversation is on (migration 039, widened to include 'facebook' in migration 041). Defaults to 'whatsapp' for every pre-existing row. */
   channel?: 'whatsapp' | 'instagram' | 'facebook';
+  /** Which WhatsApp connection owns this thread (migration 050). Null for non-WhatsApp channels. */
+  whatsapp_config_id?: string | null;
 }
 
 // ============================================================

@@ -86,6 +86,19 @@ describe("matchesContactFilters", () => {
     ).toBe(false);
   });
 
+  it("matches whatsapp_config_id exactly", () => {
+    const conv = { ...makeConversation(null), whatsapp_config_id: "wc-1" };
+    expect(
+      matchesContactFilters(conv, { tagIds: [], company: null, whatsappConfigId: "wc-1" }),
+    ).toBe(true);
+    expect(
+      matchesContactFilters(conv, { tagIds: [], company: null, whatsappConfigId: "wc-2" }),
+    ).toBe(false);
+    expect(
+      matchesContactFilters(conv, { tagIds: [], company: null, whatsappConfigId: null }),
+    ).toBe(true);
+  });
+
   it("requires both tag and company to match when both are set (AND across facets)", () => {
     const conv = makeConversation({ company: "Acme", tags: [tag("t1")] });
     expect(

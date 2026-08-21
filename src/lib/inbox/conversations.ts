@@ -50,6 +50,8 @@ export interface ContactFilters {
   company: string | null;
   /** Exact channel match, or null for no channel filter. */
   channel?: MessagingChannel | null;
+  /** Exact `whatsapp_config_id` match (which number owns the thread), or null for no filter. */
+  whatsappConfigId?: string | null;
 }
 
 /**
@@ -59,7 +61,7 @@ export interface ContactFilters {
  */
 export function matchesContactFilters(
   conversation: Conversation,
-  { tagIds, company, channel }: ContactFilters,
+  { tagIds, company, channel, whatsappConfigId }: ContactFilters,
 ): boolean {
   if (tagIds.length > 0) {
     const contactTagIds = conversation.contact?.tags ?? [];
@@ -71,6 +73,10 @@ export function matchesContactFilters(
   }
 
   if (channel && (conversation.channel ?? "whatsapp") !== channel) {
+    return false;
+  }
+
+  if (whatsappConfigId && conversation.whatsapp_config_id !== whatsappConfigId) {
     return false;
   }
 

@@ -225,6 +225,8 @@
       "allChannels": "All channels",
       "channelWhatsapp": "WhatsApp",
       "channelInstagram": "Instagram",
+      "number": "Number",
+      "allNumbers": "All numbers",
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",

@@ -974,6 +974,8 @@
       "allChannels": "Todos los canales",
       "channelWhatsapp": "WhatsApp",
       "channelInstagram": "Instagram",
+      "number": "Número",
+      "allNumbers": "Todos los números",
       "clearAll": "Borrar todo",
       "noConversations": "No se encontraron conversaciones",
       "noMessagesYet": "Aún no hay mensajes",

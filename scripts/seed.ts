@@ -78,11 +78,29 @@ const CLEANUP_TABLES = [
   'product_interactions',
   'engagement_events',
   'whatsapp_sync_log',
+  // Must precede `content`: a `broadcasts` row can have `content_id`
+  // set with `template_name` null (a Content Studio scheduled post,
+  // migration 053). `content_id` is `ON DELETE SET NULL`, but the
+  // `broadcasts_send_source_check` CHECK constraint (added in the
+  // same migration) requires template_name OR content_id — deleting
+  // `content` while such a broadcast still references it trips that
+  // CHECK via the SET NULL cascade. Deleting `broadcasts` first (its
+  // own `account_id`, migration 017) avoids the conflict entirely.
+  // `broadcast_recipients` isn't listed separately — it cascades from
+  // `broadcasts` (`ON DELETE CASCADE`, migration 001).
+  'broadcasts',
   'voice_notes',
   'content_translations',
   'content',
   'trials',
   'customer_requests',
+  'deals',
+  // `pipeline_stages` has no `account_id` column of its own (RLS
+  // joins through `pipelines.account_id` — migration 017) so it can't
+  // go through this generic per-table `.eq('account_id', ...)` loop;
+  // it cascades away when `pipelines` below is deleted
+  // (`pipeline_stages.pipeline_id ... ON DELETE CASCADE`, migration 001).
+  'pipelines',
   'campaigns',
   'product_vehicles',
   'vehicles',
@@ -1497,6 +1515,11 @@ interface CustomerRequestSeed {
   status: 'NEW' | 'ASSIGNED' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
   assign: boolean;
   notes: string | null;
+  /** Key into DEAL_SEEDS — this request was qualified into a Lead
+   *  (§12: "once it's qualified it becomes ... a Lead"), backfilled
+   *  onto customer_requests.deal_id after seedDeals runs. Not every
+   *  request converts — most are left null, matching real usage. */
+  dealKey?: string;
 }
 
 const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
@@ -1510,6 +1533,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
     status: 'ASSIGNED',
     assign: true,
     notes: 'Wants a trial for his own truck.',
+    dealKey: 'deal-ahmed',
   },
   {
     key: 'cr-2',
@@ -1554,6 +1578,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
     status: 'IN_PROGRESS',
     assign: true,
     notes: 'Wants coolant service pricing.',
+    dealKey: 'deal-ehsan',
   },
   {
     key: 'cr-6',
@@ -1598,6 +1623,7 @@ const CUSTOMER_REQUEST_SEEDS: CustomerRequestSeed[] = [
     status: 'IN_PROGRESS',
     assign: true,
     notes: 'Ready to place a bulk order pending BA confirmation.',
+    dealKey: 'deal-imran',
   },
   {
     key: 'cr-10',
@@ -1640,10 +1666,279 @@ async function seedCustomerRequests(
   return requestIds;
 }
 
+// ============================================================
+// Deals (Lead, migration 055 — §9.0/§23 Phase 6)
+// ============================================================
+//
+// `deals` is still a Kanban deal underneath (`pipeline_id`/`stage_id`
+// NOT NULL, `contact_id` NOT NULL — migrations 001/002), so this
+// seeds a "Sales Pipeline" + the same five spec-default stages the
+// Pipelines page itself seeds on first open
+// (`src/app/(dashboard)/pipelines/page.tsx`'s SPEC_DEFAULT_STAGES),
+// rather than relying on the app to lazily create one — this script
+// runs standalone, nothing lazily creates anything here.
+//
+// Added retroactively during Phase 8's §24 DoD review: this table was
+// never seeded before, so Phase 7's funnel/campaign analytics showed
+// 0 for Lead/BA Contact/Purchase on a fresh seed despite Trial-stage
+// data being real. See docs/IMPLEMENTATION_PLAN.md's Phase 6 section
+// for the correction.
+
+const SPEC_DEFAULT_STAGES = [
+  { name: 'New Lead', color: '#3b82f6', position: 0 },
+  { name: 'Qualified', color: '#eab308', position: 1 },
+  { name: 'Proposal Sent', color: '#f97316', position: 2 },
+  { name: 'Negotiation', color: '#8b5cf6', position: 3 },
+  { name: 'Won', color: '#22c55e', position: 4 },
+];
+
+interface DealSeed {
+  key: string;
+  memberKey: string;
+  title: string;
+  campaignKey: string | null;
+  marketKey: string | null;
+  status:
+    | 'NEW'
+    | 'ASSIGNED'
+    | 'CONTACTED'
+    | 'INTERESTED'
+    | 'TRIAL_REQUESTED'
+    | 'TRIAL_COMPLETED'
+    | 'CONVERTED'
+    | 'LOST';
+  source: string;
+  value: number;
+  outcome: string | null;
+  notes: string | null;
+  assign: boolean;
+}
+
+// Every status in the funnel enum appears at least once so the
+// Dashboard's funnel widget and the Leads board both render a real
+// spread, not just NEW rows. Two land on `fleet-checkup` and two on
+// `passenger-car-push` (both have real `cost` — §13's cost-per-lead
+// metrics need at least one campaign with both cost and leads to
+// show anything other than "no cost data").
+const DEAL_SEEDS: DealSeed[] = [
+  {
+    key: 'deal-ahmed',
+    memberKey: 'ahmed-raza',
+    title: 'Ahmed Raza — fleet oil trial',
+    campaignKey: 'fleet-checkup',
+    marketKey: 'lahore',
+    status: 'TRIAL_REQUESTED',
+    source: 'customer_request',
+    value: 0,
+    outcome: null,
+    notes: 'Trial scheduled for his own heavy-truck fleet.',
+    assign: true,
+  },
+  {
+    key: 'deal-bilal',
+    memberKey: 'bilal-hussain',
+    title: 'Bilal Hussain — workshop demo',
+    campaignKey: 'passenger-car-push',
+    marketKey: 'karachi',
+    status: 'ASSIGNED',
+    source: 'customer_request',
+    value: 0,
+    outcome: null,
+    notes: 'Wants a demo trial for workshop customers.',
+    assign: true,
+  },
+  {
+    key: 'deal-bilal-2',
+    memberKey: 'bilal-hussain',
+    title: 'Bilal Hussain — reorder follow-up',
+    campaignKey: null,
+    marketKey: 'karachi',
+    status: 'TRIAL_COMPLETED',
+    source: 'manual',
+    value: 12000,
+    outcome: null,
+    notes: 'Completed an earlier engine-oil trial; following up for a reorder.',
+    assign: true,
+  },
+  {
+    key: 'deal-chaudhry',
+    memberKey: 'chaudhry-farooq',
+    title: 'Chaudhry Farooq — fleet conversion',
+    campaignKey: 'fleet-checkup',
+    marketKey: 'multan',
+    status: 'CONVERTED',
+    source: 'campaign',
+    value: 45000,
+    outcome: 'Purchased a 20L drum after a successful fleet trial.',
+    notes: null,
+    assign: true,
+  },
+  {
+    key: 'deal-danish',
+    memberKey: 'danish-iqbal',
+    title: 'Danish Iqbal — community event follow-up',
+    campaignKey: null,
+    marketKey: null,
+    status: 'LOST',
+    source: 'manual',
+    value: 0,
+    outcome: 'Went with a competitor after follow-up stalled.',
+    notes: null,
+    assign: true,
+  },
+  {
+    key: 'deal-ehsan',
+    memberKey: 'ehsan-ali',
+    title: 'Ehsan Ali — coolant trial',
+    campaignKey: 'winter-coolant',
+    marketKey: 'faisalabad',
+    status: 'TRIAL_REQUESTED',
+    source: 'campaign',
+    value: 0,
+    outcome: null,
+    notes: 'Coolant trial pending scheduling.',
+    assign: true,
+  },
+  {
+    key: 'deal-faisal',
+    memberKey: 'faisal-mehmood',
+    title: 'Faisal Mehmood — BA call',
+    campaignKey: null,
+    marketKey: null,
+    status: 'CONTACTED',
+    source: 'customer_request',
+    value: 0,
+    outcome: null,
+    notes: 'BA returned the call; awaiting next steps.',
+    assign: true,
+  },
+  {
+    key: 'deal-ghulam',
+    memberKey: 'ghulam-abbas',
+    title: 'Ghulam Abbas — purchase interest',
+    campaignKey: null,
+    marketKey: null,
+    status: 'INTERESTED',
+    source: 'flow',
+    value: 0,
+    outcome: null,
+    notes: 'Captured via a Flows collect_input node.',
+    assign: false,
+  },
+  {
+    key: 'deal-imran',
+    memberKey: 'imran-sheikh',
+    title: 'Imran Sheikh — ATF bulk order',
+    campaignKey: null,
+    marketKey: 'islamabad',
+    status: 'LOST',
+    source: 'customer_request',
+    value: 0,
+    outcome: 'Trial cancelled — chose a competitor product.',
+    notes: null,
+    assign: true,
+  },
+  {
+    key: 'deal-junaid',
+    memberKey: 'junaid-aslam',
+    title: 'Junaid Aslam — passenger car oil',
+    campaignKey: 'passenger-car-push',
+    marketKey: null,
+    status: 'NEW',
+    source: 'product_page',
+    value: 0,
+    outcome: null,
+    notes: null,
+    assign: false,
+  },
+];
+
+async function seedDeals(
+  accountId: string,
+  userId: string,
+  namedContactIds: Map<string, string>,
+  campaignIds: Map<string, string>,
+  marketIds: Map<string, string>,
+  regionIds: Map<string, string>,
+  requestIds: Map<string, string>
+): Promise<Map<string, string>> {
+  const pipelineId = randomUUID();
+  await insert('pipelines', [
+    { id: pipelineId, user_id: userId, account_id: accountId, name: 'Sales Pipeline' },
+  ]);
+  const stageIds = SPEC_DEFAULT_STAGES.map(() => randomUUID());
+  await insert(
+    'pipeline_stages',
+    SPEC_DEFAULT_STAGES.map((s, i) => ({
+      id: stageIds[i],
+      pipeline_id: pipelineId,
+      name: s.name,
+      color: s.color,
+      position: s.position,
+    }))
+  );
+  // New Leads land in the first stage regardless of Lead status —
+  // `stage_id` (Kanban column) and `status` (Lead funnel state) are
+  // two independent axes on this table, same distinction the Phase 6
+  // Leads API draws (see src/lib/routing/create-lead.ts).
+  const defaultStageId = stageIds[0];
+
+  const marketKeyToRegionKey = new Map(
+    MARKETS_SEEDS.map((m) => [m.key, m.region])
+  );
+
+  const dealIds = new Map(DEAL_SEEDS.map((d) => [d.key, randomUUID()]));
+  await insert(
+    'deals',
+    DEAL_SEEDS.map((d) => {
+      const regionKey = d.marketKey ? marketKeyToRegionKey.get(d.marketKey) : undefined;
+      return {
+        id: dealIds.get(d.key),
+        user_id: userId,
+        account_id: accountId,
+        pipeline_id: pipelineId,
+        stage_id: defaultStageId,
+        contact_id: namedContactIds.get(d.memberKey),
+        title: d.title,
+        value: d.value,
+        status: d.status,
+        source: d.source,
+        campaign_id: d.campaignKey ? campaignIds.get(d.campaignKey) : null,
+        market_id: d.marketKey ? marketIds.get(d.marketKey) : null,
+        region_id: regionKey ? regionIds.get(regionKey) : null,
+        assigned_to: null, // deals.assigned_to -> profiles.id, not profiles.user_id (migration 002) — left unassigned in seed data rather than resolving the demo profile's row id here.
+        outcome: d.outcome,
+        notes: d.notes,
+      };
+    })
+  );
+
+  // Backfill customer_requests.deal_id for the requests that qualified
+  // into one of these Leads (§12).
+  for (const r of CUSTOMER_REQUEST_SEEDS) {
+    if (!r.dealKey) continue;
+    const { error } = await admin
+      .from('customer_requests')
+      .update({ deal_id: dealIds.get(r.dealKey) })
+      .eq('id', requestIds.get(r.key));
+    if (error) {
+      throw new Error(
+        `Failed to backfill customer_requests.deal_id for "${r.key}": ${error.message}`
+      );
+    }
+  }
+
+  return dealIds;
+}
+
 interface TrialSeed {
   memberKey: string | null;
   productCode: string;
   requestKey: string | null;
+  /** Key into DEAL_SEEDS — §9.1: "a trial converts into (or
+   *  originates from) a Lead." Not every trial has a matching Lead
+   *  yet (e.g. a walk-in with no CRM record at all). */
+  dealKey?: string;
   name: string;
   phone: string;
   role: string;
@@ -1666,6 +1961,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     memberKey: 'ahmed-raza',
     productCode: 'RIM-HDD-15W40',
     requestKey: 'cr-1',
+    dealKey: 'deal-ahmed',
     name: 'Ahmed Raza',
     phone: '+923000000001',
     role: 'Mechanic',
@@ -1692,6 +1988,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     memberKey: 'chaudhry-farooq',
     productCode: 'RIM-HDD-15W40',
     requestKey: null,
+    dealKey: 'deal-chaudhry',
     name: 'Chaudhry Farooq',
     phone: '+923000000003',
     role: 'Truck Owner',
@@ -1705,6 +2002,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     memberKey: 'ehsan-ali',
     productCode: 'RIM-COOL-OAT',
     requestKey: 'cr-5',
+    dealKey: 'deal-ehsan',
     name: 'Ehsan Ali',
     phone: '+923000000005',
     role: 'Truck Owner',
@@ -1731,6 +2029,7 @@ const TRIAL_SEEDS: TrialSeed[] = [
     memberKey: 'imran-sheikh',
     productCode: 'RIM-ATF-III',
     requestKey: null,
+    dealKey: 'deal-imran',
     name: 'Imran Sheikh',
     phone: '+923000000009',
     role: 'Other',
@@ -1747,7 +2046,8 @@ async function seedTrials(
   userId: string,
   namedContactIds: Map<string, string>,
   productIds: Map<string, string>,
-  requestIds: Map<string, string>
+  requestIds: Map<string, string>,
+  dealIds: Map<string, string>
 ): Promise<void> {
   await insert(
     'trials',
@@ -1756,6 +2056,7 @@ async function seedTrials(
       contact_id: t.memberKey ? namedContactIds.get(t.memberKey) : null,
       product_id: productIds.get(t.productCode),
       customer_request_id: t.requestKey ? requestIds.get(t.requestKey) : null,
+      deal_id: t.dealKey ? dealIds.get(t.dealKey) : null,
       name: t.name,
       phone: t.phone,
       role: t.role,
@@ -1958,8 +2259,26 @@ async function main(): Promise<void> {
     campaignIds
   );
 
+  console.log('Seeding deals (Lead)...');
+  const dealIds = await seedDeals(
+    accountId,
+    userId,
+    namedContactIds,
+    campaignIds,
+    marketIds,
+    regionIds,
+    requestIds
+  );
+
   console.log('Seeding trials...');
-  await seedTrials(accountId, userId, namedContactIds, productIds, requestIds);
+  await seedTrials(
+    accountId,
+    userId,
+    namedContactIds,
+    productIds,
+    requestIds,
+    dealIds
+  );
 
   console.log('Seeding engagement events...');
   await seedEngagementEvents(accountId, campaignIds, allContactIds);

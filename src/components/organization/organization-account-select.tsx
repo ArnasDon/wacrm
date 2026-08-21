@@ -53,6 +53,18 @@ export function OrganizationAccountSelect({
 
   if (accounts.length < 2) return null;
 
+  // Base UI's <Select.Value> (unlike Radix's) doesn't infer its label
+  // from the matching <SelectItem>'s children — without an explicit
+  // children function it just prints the raw stored value, which here
+  // is an account UUID. This formatter is what turns that into the
+  // account name.
+  const formatSelected = (v: string) => {
+    if (v === ALL_ACCOUNTS) return t('allAccounts');
+    const acc = accounts.find((a) => a.id === v);
+    if (!acc) return v;
+    return `${acc.name}${acc.isOwnerAccount ? t('storeSuffix') : ''}`;
+  };
+
   return (
     <Select
       value={value ?? ALL_ACCOUNTS}
@@ -60,7 +72,7 @@ export function OrganizationAccountSelect({
     >
       <SelectTrigger className="w-[180px] gap-1.5" aria-label={t('filterByAccount')}>
         <Building2 className="size-4 text-muted-foreground" />
-        <SelectValue />
+        <SelectValue>{(v: string) => formatSelected(v)}</SelectValue>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value={ALL_ACCOUNTS}>{t('allAccounts')}</SelectItem>

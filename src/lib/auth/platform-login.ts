@@ -1,5 +1,5 @@
 // ============================================================
-// Client-side login logic for /painel-plataforma/login — extracted
+// Client-side login logic for /painel-a17c94fe2b6d/login — extracted
 // out of the page component so it's unit-testable without rendering
 // React (this repo has no component-test harness; every other piece
 // of business logic already lives in a plain lib/ function for the
@@ -10,7 +10,7 @@
 // is what happens right after a successful sign-in: a platform-admin
 // check, with an immediate sign-out on failure so a non-admin can
 // never end up sitting on an authenticated-but-not-admin session on
-// what's supposed to be an admin-only entry point. (/painel-plataforma
+// what's supposed to be an admin-only entry point. (/painel-a17c94fe2b6d
 // itself still independently 404s a non-admin server-side via
 // requirePlatformAdmin() — this is defense in depth, not the only
 // guard.)

@@ -25,7 +25,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * GET /api/platform/organizations
  *
  * Platform-admin only (see requirePlatformAdmin — 403 for anyone
- * else, and the /painel-plataforma page itself 404s instead of
+ * else, and the /painel-a17c94fe2b6d page itself 404s instead of
  * rendering a "no permission" screen). Lists EVERY organization on
  * the deployment, across completely unrelated stores — this is the
  * one screen in the app that deliberately ignores per-account/

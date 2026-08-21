@@ -87,7 +87,7 @@ export type OrganizationStatus = 'active' | 'suspended';
  */
 export type BillingStatus = 'trial' | 'active' | 'past_due' | 'canceled';
 
-/** One row in the platform admin panel's organization list (/painel-plataforma). */
+/** One row in the platform admin panel's organization list (/painel-a17c94fe2b6d). */
 export interface PlatformOrganization {
   id: string;
   name: string;
@@ -100,7 +100,7 @@ export interface PlatformOrganization {
   sellerCount: number;
 }
 
-/** One account (owner or seller) as shown on the store-detail page (/painel-plataforma/lojas/[id]). */
+/** One account (owner or seller) as shown on the store-detail page (/painel-a17c94fe2b6d/lojas/[id]). */
 export interface PlatformAccountDetail {
   accountId: string;
   userId: string;

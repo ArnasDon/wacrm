@@ -14,7 +14,7 @@ import {
 } from "@/lib/auth/platform-login";
 
 /**
- * /painel-plataforma/login — dedicated entry point for the platform
+ * /painel-a17c94fe2b6d/login — dedicated entry point for the platform
  * admin panel. Same Supabase Auth user base as the normal CRM
  * /login, just a separate door with its own identity so this never
  * gets confused with a store's own login. No "create account" link
@@ -43,7 +43,7 @@ export default function PlatformLoginPage() {
 
       const result = await verifyPlatformAdminOrSignOut(supabase);
       if (!cancelled && result.ok) {
-        router.replace("/painel-plataforma");
+        router.replace("/painel-a17c94fe2b6d");
       }
     })();
     return () => {
@@ -65,7 +65,7 @@ export default function PlatformLoginPage() {
       return;
     }
 
-    router.push("/painel-plataforma");
+    router.push("/painel-a17c94fe2b6d");
   };
 
   return (

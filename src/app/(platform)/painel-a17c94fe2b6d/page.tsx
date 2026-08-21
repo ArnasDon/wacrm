@@ -5,7 +5,7 @@ import { AuthProvider } from '@/hooks/use-auth';
 import { PlatformPanel } from '@/components/platform/platform-panel';
 
 /**
- * /painel-plataforma — platform admin only. Deliberately not named
+ * /painel-a17c94fe2b6d — platform admin only. Deliberately not named
  * /admin (see migration 042's own comment on why). Anyone who isn't
  * in `platform_admins` gets a plain 404 here — never a "you don't
  * have permission" screen that would confirm the route exists.

@@ -5,8 +5,8 @@ import { AuthProvider } from '@/hooks/use-auth';
 import { StoreDetailPanel } from '@/components/platform/store-detail-panel';
 
 /**
- * /painel-plataforma/lojas/[id] — platform admin only, same gate as
- * /painel-plataforma itself (requirePlatformAdmin() + notFound() for
+ * /painel-a17c94fe2b6d/lojas/[id] — platform admin only, same gate as
+ * /painel-a17c94fe2b6d itself (requirePlatformAdmin() + notFound() for
  * anyone else). Full read+write detail for one store: rename it,
  * edit the owner/sellers' data, reset passwords, remove sellers,
  * suspend/reactivate, or delete the whole store.

@@ -7,7 +7,7 @@ import {
 } from "./platform-login";
 
 // ---------------------------------------------------------------------------
-// /painel-plataforma/login's core logic — the property under test that
+// /painel-a17c94fe2b6d/login's core logic — the property under test that
 // matters most: a successful Supabase sign-in for a NON platform-admin
 // account must never leave the caller signed in. Either the credentials are
 // wrong (sign-in itself fails) or the account isn't a platform admin (we

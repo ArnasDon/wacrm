@@ -108,7 +108,7 @@ const EDITABLE_ROLES: { value: AccountRole }[] = [
 function fmtDate(iso: string): string {
   // Match the rest of the dashboard's locale-light formatting.
   const d = new Date(iso);
-  return d.toLocaleDateString(undefined, {
+  return d.toLocaleDateString('pt-BR', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -428,7 +428,13 @@ export function MembersTab() {
                           className="w-32 bg-muted border-border text-foreground"
                           disabled={isBusy}
                         >
-                          <SelectValue />
+                          {/* Base UI's <Select.Value> (unlike Radix's)
+                              doesn't infer its label from the matching
+                              <SelectItem>'s children — without this it
+                              just prints the raw role value ("admin",
+                              "member", ...) instead of the translated
+                              label. */}
+                          <SelectValue>{(v: AccountRole) => tRoles(v)}</SelectValue>
                         </SelectTrigger>
                         <SelectContent>
                           {EDITABLE_ROLES.map((r) => (

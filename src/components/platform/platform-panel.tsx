@@ -39,7 +39,7 @@ import { useAuth } from '@/hooks/use-auth';
 import type { PlatformOrganization } from '@/types';
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString('pt-BR', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -61,7 +61,7 @@ const DEFAULT_COLUMNS: ColumnVisibility = {
 };
 
 /**
- * The platform admin panel (/painel-plataforma). This component
+ * The platform admin panel (/painel-a17c94fe2b6d). This component
  * assumes the page has already verified the caller is a platform
  * admin server-side (requirePlatformAdmin() + notFound() otherwise) —
  * it still calls admin-gated APIs itself, which independently 403 for
@@ -316,7 +316,7 @@ export function PlatformPanel() {
                   />
                   <button
                     type="button"
-                    onClick={() => router.push(`/painel-plataforma/lojas/${org.id}`)}
+                    onClick={() => router.push(`/painel-a17c94fe2b6d/lojas/${org.id}`)}
                     className="flex w-full min-w-0 flex-col gap-3 py-2 text-left transition-colors hover:bg-card-2 sm:flex-row sm:items-center sm:gap-4"
                   >
                     <div className="flex min-w-0 flex-1 items-center gap-3">

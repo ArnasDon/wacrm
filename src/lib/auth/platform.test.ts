@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // requirePlatformAdmin() — the gate every /api/platform/* route and
-// the /painel-plataforma page itself must pass. platform_admins has
+// the /painel-a17c94fe2b6d page itself must pass. platform_admins has
 // exactly one RLS policy (self-row-only SELECT — see migration 042),
 // so this mock only ever needs to simulate "is there a row for THIS
 // caller", never the full admin roster.

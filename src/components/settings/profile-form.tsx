@@ -199,7 +199,7 @@ export function ProfileForm() {
       removeAvatar);
 
   const joined = user?.created_at
-    ? new Date(user.created_at).toLocaleDateString(undefined, {
+    ? new Date(user.created_at).toLocaleDateString('pt-BR', {
         year: 'numeric',
         month: 'long',
         day: 'numeric',

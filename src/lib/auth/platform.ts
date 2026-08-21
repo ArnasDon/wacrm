@@ -27,7 +27,7 @@ export interface PlatformAdminContext {
  *
  * Throws `UnauthorizedError` if there's no Supabase session, or
  * `ForbiddenError` if the caller isn't in `platform_admins`. Every
- * route under /api/platform/* and the /painel-plataforma page itself
+ * route under /api/platform/* and the /painel-a17c94fe2b6d page itself
  * must call this before doing anything else — callers should treat
  * a caught error here as "act like this route doesn't exist" (404),
  * not a permission-denied screen that confirms the route's existence.

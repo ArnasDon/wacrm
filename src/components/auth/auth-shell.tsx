@@ -10,7 +10,7 @@ export const AUTH_BUTTON_CLASS =
   'h-11 w-full rounded-full bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50';
 
 /**
- * Shared visual shell for /login, /signup, and /painel-plataforma/login
+ * Shared visual shell for /login, /signup, and /painel-a17c94fe2b6d/login
  * — centered, no heavy-bordered card, a subtle glow behind the title.
  * Purely presentational; each page keeps its own form state/handlers
  * and just renders them as `children`.

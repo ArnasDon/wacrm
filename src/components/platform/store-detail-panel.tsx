@@ -33,7 +33,7 @@ import { BILLING_STATUS_LABEL, BILLING_STATUS_VARIANT } from '@/lib/billing/stat
 import type { PlatformAccountDetail, PlatformOrganizationDetail } from '@/types';
 
 function fmtDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, {
+  return new Date(iso).toLocaleDateString('pt-BR', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
@@ -497,7 +497,7 @@ export function StoreDetailPanel({ organizationId }: { organizationId: string })
       return;
     }
     toast.success('Loja excluída permanentemente');
-    router.push('/painel-plataforma');
+    router.push('/painel-a17c94fe2b6d');
   }
 
   if (loading) {
@@ -513,7 +513,7 @@ export function StoreDetailPanel({ organizationId }: { organizationId: string })
     return (
       <div className="p-6 text-sm text-muted-foreground">
         Loja não encontrada.{' '}
-        <button onClick={() => router.push('/painel-plataforma')} className="text-primary underline">
+        <button onClick={() => router.push('/painel-a17c94fe2b6d')} className="text-primary underline">
           Voltar
         </button>
       </div>
@@ -523,7 +523,7 @@ export function StoreDetailPanel({ organizationId }: { organizationId: string })
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-6 p-4 sm:p-6">
       <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => router.push('/painel-plataforma')}>
+        <Button variant="outline" size="sm" onClick={() => router.push('/painel-a17c94fe2b6d')}>
           <ArrowLeft className="size-4" />
           Voltar
         </Button>

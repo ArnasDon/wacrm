@@ -57,7 +57,7 @@ async function hydrateAccount(admin: ReturnType<typeof supabaseAdmin>, account: 
  *
  * Platform-admin only. Full detail for one store: the organization
  * itself, its owner account, and every linked seller account —
- * everything /painel-plataforma/lojas/[id] renders.
+ * everything /painel-a17c94fe2b6d/lojas/[id] renders.
  */
 export async function GET(
   _request: Request,

@@ -16,7 +16,7 @@ redesign.
   static "coming soon, you're still free" message — no form, nothing
   clickable except a support contact link.
 - `billing_status` shown read-only on each store's card in
-  `/painel-plataforma` and on `/painel-plataforma/lojas/[id]`.
+  `/painel-a17c94fe2b6d` and on `/painel-a17c94fe2b6d/lojas/[id]`.
 
 **None of the above is read by any access-control rule.**
 `organizations.status` (`active` / `suspended`, migration 042) is

@@ -70,16 +70,16 @@ export async function middleware(request: NextRequest) {
   }
 
   // Protected pages - redirect to login if not authenticated.
-  // /painel-plataforma/login itself must stay reachable while
+  // /painel-a17c94fe2b6d/login itself must stay reachable while
   // logged out (it's the admin panel's own entry point) — everything
-  // else under /painel-plataforma redirects there instead of the
+  // else under /painel-a17c94fe2b6d redirects there instead of the
   // normal CRM /login, so a visitor never lands on the wrong door.
-  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/painel-plataforma']
-  const isPlatformLoginPage = request.nextUrl.pathname === '/painel-plataforma/login'
+  const protectedPaths = ['/dashboard', '/inbox', '/contacts', '/pipelines', '/broadcasts', '/automations', '/settings', '/painel-a17c94fe2b6d']
+  const isPlatformLoginPage = request.nextUrl.pathname === '/painel-a17c94fe2b6d/login'
   if (!user && !isPlatformLoginPage && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
-    url.pathname = request.nextUrl.pathname.startsWith('/painel-plataforma')
-      ? '/painel-plataforma/login'
+    url.pathname = request.nextUrl.pathname.startsWith('/painel-a17c94fe2b6d')
+      ? '/painel-a17c94fe2b6d/login'
       : '/login'
     return withRefreshedCookies(NextResponse.redirect(url))
   }

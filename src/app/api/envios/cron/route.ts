@@ -50,7 +50,7 @@ export async function GET(request: Request) {
   const envioIds = [...new Set(activeLotes.map((l) => l.envio_id as string))]
   const { data: envios } = await db
     .from('envios')
-    .select('id, account_id, mensagem_texto, mensagem_imagem_url')
+    .select('id, account_id, mensagem_imagem_url')
     .in('id', envioIds)
   const envioById = new Map((envios ?? []).map((e) => [e.id as string, e]))
 
@@ -64,7 +64,7 @@ export async function GET(request: Request) {
     const nowIso = new Date().toISOString()
     const { data: due } = await db
       .from('envio_leads')
-      .select('id, telefone')
+      .select('id, telefone, mensagem')
       .eq('lote_id', lote.id)
       .eq('status', 'na_fila')
       .not('next_attempt_at', 'is', null)
@@ -103,10 +103,10 @@ export async function GET(request: Request) {
           envio.account_id as string,
           lead.telefone as string,
           envio.mensagem_imagem_url as string,
-          envio.mensagem_texto as string,
+          lead.mensagem as string,
         )
       } else {
-        await sendText(envio.account_id as string, lead.telefone as string, envio.mensagem_texto as string)
+        await sendText(envio.account_id as string, lead.telefone as string, lead.mensagem as string)
       }
       await db
         .from('envio_leads')

@@ -146,7 +146,6 @@ export default function EnvioDetailPage() {
         </Button>
         <div>
           <h1 className="text-2xl font-bold text-foreground">{envio.nome}</h1>
-          <p className="mt-1 text-sm text-muted-foreground">{envio.mensagem_texto}</p>
         </div>
       </div>
 
@@ -266,6 +265,7 @@ export default function EnvioDetailPage() {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="text-muted-foreground">{t('table.name')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.phone')}</TableHead>
+                  <TableHead className="text-muted-foreground">{t('table.message')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.status')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.sentAt')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.error')}</TableHead>
@@ -278,6 +278,9 @@ export default function EnvioDetailPage() {
                     <TableRow key={lead.id} className="border-border">
                       <TableCell className="font-medium text-foreground">{lead.nome ?? '-'}</TableCell>
                       <TableCell className="text-muted-foreground">{lead.telefone}</TableCell>
+                      <TableCell className="max-w-xs truncate text-xs text-muted-foreground" title={lead.mensagem}>
+                        {lead.mensagem}
+                      </TableCell>
                       <TableCell>
                         <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-xs font-medium ${status.classes}`}>
                           {tStatus(status.label)}

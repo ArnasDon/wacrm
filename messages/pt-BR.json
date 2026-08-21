@@ -1250,15 +1250,15 @@
     },
     "new": {
       "title": "Criar envio",
-      "subtitle": "Cole a mensagem, a imagem e a lista de leads — a divisão em 2 lotes é automática.",
-      "fieldName": "Nome",
+      "subtitle": "Envie o arquivo da campanha — a divisão em 2 lotes é automática.",
+      "fieldName": "Nome da campanha",
       "fieldMessage": "Mensagem",
       "fieldImage": "Imagem (opcional)",
       "uploadImage": "Enviar imagem",
       "invalidImageType": "Tipo de imagem não suportado",
       "imageTooLarge": "Imagem muito grande",
       "uploadFailed": "Falha no upload",
-      "fieldLeads": "Arquivo de leads",
+      "fieldLeads": "Arquivo da campanha",
       "uploadCampaignFile": "Upload da campanha",
       "removeFile": "Remover arquivo",
       "invalidFileType": "Selecione um arquivo .json",
@@ -1267,6 +1267,7 @@
       "lotesPreview": "{total} leads encontrados — divididos em 2 lotes",
       "lote1Size": "Tamanho do lote 1",
       "lote2Size": "Tamanho do lote 2",
+      "leadsPreview": "Prévia dos leads",
       "create": "Criar envio",
       "createFailed": "Falha ao criar envio",
       "createSuccess": "Envio criado"
@@ -1288,6 +1289,7 @@
       "table": {
         "name": "Nome",
         "phone": "Telefone",
+        "message": "Mensagem",
         "status": "Status",
         "sentAt": "Enviado em",
         "error": "Erro"

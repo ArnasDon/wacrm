@@ -1250,15 +1250,15 @@
     },
     "new": {
       "title": "Create envio",
-      "subtitle": "Paste the message, image, and lead list — leads split automatically into 2 lotes.",
-      "fieldName": "Name",
+      "subtitle": "Upload the campaign file — leads split automatically into 2 lotes.",
+      "fieldName": "Campaign name",
       "fieldMessage": "Message",
       "fieldImage": "Image (optional)",
       "uploadImage": "Upload image",
       "invalidImageType": "Unsupported image type",
       "imageTooLarge": "Image is too large",
       "uploadFailed": "Upload failed",
-      "fieldLeads": "Leads file",
+      "fieldLeads": "Campaign file",
       "uploadCampaignFile": "Upload campaign file",
       "removeFile": "Remove file",
       "invalidFileType": "Please select a .json file",
@@ -1267,6 +1267,7 @@
       "lotesPreview": "{total} leads found — split into 2 lotes",
       "lote1Size": "Lote 1 size",
       "lote2Size": "Lote 2 size",
+      "leadsPreview": "Leads preview",
       "create": "Create envio",
       "createFailed": "Failed to create envio",
       "createSuccess": "Envio created"
@@ -1288,6 +1289,7 @@
       "table": {
         "name": "Name",
         "phone": "Phone",
+        "message": "Message",
         "status": "Status",
         "sentAt": "Sent at",
         "error": "Error"

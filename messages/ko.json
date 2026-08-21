@@ -1250,15 +1250,15 @@
     },
     "new": {
       "title": "Envio 만들기",
-      "subtitle": "메시지, 이미지, 리드 목록을 붙여넣으면 자동으로 2개 로트로 나뉩니다.",
-      "fieldName": "이름",
+      "subtitle": "캠페인 파일을 업로드하면 자동으로 2개 로트로 나뉩니다.",
+      "fieldName": "캠페인 이름",
       "fieldMessage": "메시지",
       "fieldImage": "이미지 (선택)",
       "uploadImage": "이미지 업로드",
       "invalidImageType": "지원하지 않는 이미지 형식입니다",
       "imageTooLarge": "이미지가 너무 큽니다",
       "uploadFailed": "업로드 실패",
-      "fieldLeads": "리드 파일",
+      "fieldLeads": "캠페인 파일",
       "uploadCampaignFile": "캠페인 파일 업로드",
       "removeFile": "파일 제거",
       "invalidFileType": ".json 파일을 선택하세요",
@@ -1267,6 +1267,7 @@
       "lotesPreview": "리드 {total}건 확인됨 — 2개 로트로 분할",
       "lote1Size": "로트 1 크기",
       "lote2Size": "로트 2 크기",
+      "leadsPreview": "리드 미리보기",
       "create": "Envio 만들기",
       "createFailed": "Envio 생성 실패",
       "createSuccess": "Envio가 생성되었습니다"
@@ -1288,6 +1289,7 @@
       "table": {
         "name": "이름",
         "phone": "전화번호",
+        "message": "메시지",
         "status": "상태",
         "sentAt": "발송 시각",
         "error": "오류"

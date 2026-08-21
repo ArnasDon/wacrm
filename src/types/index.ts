@@ -770,7 +770,7 @@ export interface Envio {
   nome: string;
   status: EnvioStatus;
   canal: 'baileys';
-  mensagem_texto: string;
+  /** Shared image for every lead (`creative.url` from the uploaded campaign file). */
   mensagem_imagem_url: string | null;
   created_by: string | null;
   created_at: string;
@@ -791,6 +791,8 @@ export interface EnvioLead {
   lote_id: string;
   nome: string | null;
   telefone: string;
+  /** Final, already-personalized text for this lead (`recipients[i].message` from the uploaded file). */
+  mensagem: string;
   status: EnvioLeadStatus;
   /** When the cron tick (GET /api/envios/cron) should next attempt this lead. */
   next_attempt_at: string | null;

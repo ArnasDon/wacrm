@@ -449,6 +449,22 @@ export default function PlatformAdminPage() {
         <div className="flex gap-2">
           <Button
             variant="outline"
+            onClick={() =>
+              document
+                .getElementById('tickets')
+                ?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+            }
+          >
+            <LifeBuoy />
+            Historial de tickets
+            {tickets.some((t) => t.status === 'open') ? (
+              <span className="bg-primary text-primary-foreground ml-1 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold">
+                {tickets.filter((t) => t.status === 'open').length}
+              </span>
+            ) : null}
+          </Button>
+          <Button
+            variant="outline"
             onClick={() => void load()}
             disabled={loading}
           >
@@ -820,7 +836,7 @@ export default function PlatformAdminPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card id="tickets" className="scroll-mt-6">
         <CardHeader>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>

@@ -151,6 +151,29 @@ describe('handleOutboundEchoMessageForZernioConversation', () => {
     expect(state.upserts).toHaveLength(1)
     expect(state.conversationUpdates).toHaveLength(0)
   })
+
+  it('accepts channel "whatsapp" (Coexistence echoes have no contact-creation path here)', async () => {
+    const { db, state } = makeDb({ conversation: { id: 'conv-1', contact_id: 'contact-1' } })
+
+    await handleOutboundEchoMessageForZernioConversation(db, {
+      channel: 'whatsapp',
+      accountId: 'acct-1',
+      zernioConversationId: 'zconv-1',
+      mid: 'wamid-1',
+      contentText: 'respondido desde la app oficial de whatsapp',
+      mediaUrl: null,
+      contentType: 'text',
+      replyToMid: null,
+    })
+
+    expect(state.upserts).toHaveLength(1)
+    expect(state.upserts[0].row).toMatchObject({
+      conversation_id: 'conv-1',
+      sender_type: 'agent',
+      content_text: 'respondido desde la app oficial de whatsapp',
+      message_id: 'wamid-1',
+    })
+  })
 })
 
 describe('handleOutboundEchoMessage', () => {

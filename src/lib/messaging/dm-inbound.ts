@@ -29,6 +29,16 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 
 export type DmChannel = 'instagram' | 'facebook'
 
+/**
+ * Channels accepted by the outbound-echo helpers below. Wider than
+ * `DmChannel` because WhatsApp (via Zernio Coexistence) has the same
+ * "agent replied from outside wacrm" problem but no contact-creation
+ * path here (`CONTACT_COLUMNS`/`findExistingContact` don't cover it,
+ * nor do they need to — the Zernio-conversation echo path never
+ * creates a contact, only attaches to one that already exists).
+ */
+export type EchoChannel = DmChannel | 'whatsapp'
+
 /** Which `contacts` columns anchor each channel's identity. */
 const CONTACT_COLUMNS: Record<DmChannel, { id: string; username: string }> = {
   instagram: { id: 'instagram_id', username: 'instagram_username' },
@@ -387,7 +397,7 @@ interface OutboundEchoFields {
 
 async function persistOutboundEchoMessage(
   db: SupabaseClient,
-  channel: DmChannel,
+  channel: EchoChannel,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   conversation: any,
   fields: OutboundEchoFields,
@@ -507,7 +517,7 @@ export async function handleOutboundEchoMessage(db: SupabaseClient, msg: Outboun
 export async function handleOutboundEchoMessageForZernioConversation(
   db: SupabaseClient,
   args: OutboundEchoFields & {
-    channel: DmChannel
+    channel: EchoChannel
     accountId: string
     zernioConversationId: string
   },

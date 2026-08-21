@@ -11,6 +11,7 @@ import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { handleStatusUpdate } from '@/app/api/whatsapp/webhook/route'
 import { handleTemplateWebhookChange } from '@/lib/whatsapp/template-webhook'
+import { handleOutboundEchoMessageForZernioConversation } from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as the other Zernio webhook routes: after() can fan
 // out to several DB round-trips per inbound message.
@@ -196,6 +197,27 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
   if (payload.event !== 'message.received' || !payload.message) return
 
   const message = payload.message
+
+  // Same Coexistence problem already fixed for the Instagram/Facebook
+  // Zernio routes: WhatsApp Coexistence lets an agent reply from the
+  // official WhatsApp Business app instead of wacrm, and Zernio still
+  // reports it here as an "outgoing" message.received event. Dropping
+  // it (the old behavior) silently hid that entire reply from the CRM.
+  if (message.direction === 'outgoing') {
+    const attachment = message.attachments?.[0]
+    const mediaId = attachment?.payload?.id
+    await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
+      channel: 'whatsapp',
+      accountId: config.account_id,
+      zernioConversationId: message.conversationId,
+      mid: message.platformMessageId,
+      contentText: attachment ? null : message.text,
+      mediaUrl: mediaId ? `/api/whatsapp/media/${mediaId}` : null,
+      contentType: attachment ? toContentType(attachment.type) : 'text',
+      replyToMid: null,
+    })
+    return
+  }
   if (message.direction !== 'incoming') return
 
   await processInboundMessage(message, config)

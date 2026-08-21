@@ -7,6 +7,7 @@ import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import {
   Card,
   CardContent,
@@ -82,6 +83,7 @@ interface Ticket {
   reporter_email: string | null;
   description: string;
   status: 'open' | 'resolved';
+  admin_note: string | null;
   created_at: string;
   resolved_at: string | null;
 }
@@ -107,6 +109,9 @@ export default function PlatformAdminPage() {
   const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(
     null
   );
+  const [noteTicket, setNoteTicket] = useState<Ticket | null>(null);
+  const [noteDraft, setNoteDraft] = useState('');
+  const [savingNote, setSavingNote] = useState(false);
 
   const [bankForm, setBankForm] = useState<PlatformBankSettings>({
     bank_name: '',
@@ -213,6 +218,35 @@ export default function PlatformAdminPage() {
       );
     } finally {
       setUpdatingTicketId(null);
+    }
+  };
+
+  const openNoteDialog = (ticket: Ticket) => {
+    setNoteTicket(ticket);
+    setNoteDraft(ticket.admin_note ?? '');
+  };
+
+  const saveTicketNote = async () => {
+    if (!noteTicket) return;
+    setSavingNote(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/tickets/${noteTicket.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ admin_note: noteDraft }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo guardar la nota');
+      setNoteTicket(null);
+      await loadTickets();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo guardar la nota'
+      );
+    } finally {
+      setSavingNote(false);
     }
   };
 
@@ -908,20 +942,29 @@ export default function PlatformAdminPage() {
                     {new Date(ticket.created_at).toLocaleDateString('es-GT')}
                   </TableCell>
                   <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant={
-                        ticket.status === 'resolved' ? 'outline' : 'default'
-                      }
-                      disabled={updatingTicketId === ticket.id}
-                      onClick={() => void toggleTicketStatus(ticket)}
-                    >
-                      {updatingTicketId === ticket.id
-                        ? 'Guardando…'
-                        : ticket.status === 'resolved'
-                          ? 'Reabrir'
-                          : 'Marcar solucionado'}
-                    </Button>
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => openNoteDialog(ticket)}
+                      >
+                        {ticket.admin_note ? 'Ver nota' : 'Agregar nota'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={
+                          ticket.status === 'resolved' ? 'outline' : 'default'
+                        }
+                        disabled={updatingTicketId === ticket.id}
+                        onClick={() => void toggleTicketStatus(ticket)}
+                      >
+                        {updatingTicketId === ticket.id
+                          ? 'Guardando…'
+                          : ticket.status === 'resolved'
+                            ? 'Reabrir'
+                            : 'Marcar solucionado'}
+                      </Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -939,6 +982,50 @@ export default function PlatformAdminPage() {
           </Table>
         </CardContent>
       </Card>
+
+      <Dialog
+        open={noteTicket !== null}
+        onOpenChange={(next) => {
+          if (!next) setNoteTicket(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              Nota para el ticket #{noteTicket?.ticket_number}
+            </DialogTitle>
+            <DialogDescription>
+              Visible para {noteTicket?.account_name} en Configuración →
+              Tickets.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="my-4">
+            <Textarea
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              placeholder="Ej. Ya estamos revisando esto, te avisamos apenas quede resuelto…"
+              rows={5}
+              maxLength={2000}
+            />
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setNoteTicket(null)}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void saveTicketNote()}
+              disabled={savingNote}
+            >
+              {savingNote ? 'Guardando…' : 'Guardar nota'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

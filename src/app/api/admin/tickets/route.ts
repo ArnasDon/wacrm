@@ -18,7 +18,7 @@ export async function GET() {
     const { data, error } = await admin
       .from("support_tickets")
       .select(
-        "id, ticket_number, account_name, reporter_name, reporter_email, description, status, created_at, resolved_at",
+        "id, ticket_number, account_name, reporter_name, reporter_email, description, status, admin_note, created_at, resolved_at",
       )
       .order("created_at", { ascending: false });
 

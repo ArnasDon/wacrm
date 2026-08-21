@@ -23,6 +23,7 @@ import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import { WebhooksSettings } from '@/components/settings/webhooks-settings';
 import { BillingSettings } from '@/components/settings/billing';
 import { GoogleCalendarConfig } from '@/components/settings/google-calendar-config';
+import { SupportTicketsPanel } from '@/components/settings/support-tickets-panel';
 import {
   resolveSection,
   type SettingsSection,
@@ -91,6 +92,7 @@ function SettingsPageInner() {
     webhooks: <WebhooksSettings />,
     billing: <BillingSettings />,
     'google-calendar': <GoogleCalendarConfig />,
+    support: <SupportTicketsPanel />,
   };
 
   return (

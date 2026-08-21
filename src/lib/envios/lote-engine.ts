@@ -5,11 +5,29 @@
  */
 
 /**
+ * Smallest a lote is allowed to be when the list is actually split in
+ * two. Below this, splitting would produce a lote too thin to be worth
+ * a separate approval/pause step — and at the extreme (1 or 0 leads),
+ * an empty lote that never completes (the cron tick has nothing to
+ * advance) and permanently blocks lote 2, since lote 2 only unlocks
+ * once lote 1 reaches `concluido` (see `isLote2Blocked`).
+ */
+export const MIN_LOTE_SIZE = 2;
+
+/**
  * Splits a lead count into 2 lotes, rounding the first lote DOWN on an
  * odd count (spec: "arredondar o primeiro lote para baixo"). Returns
  * `[lote1Size, lote2Size]`.
+ *
+ * Only splits when both sides would reach `MIN_LOTE_SIZE` — otherwise
+ * returns `[totalLeads, 0]`, signaling a single lote (the caller must
+ * skip creating lote 2 entirely when its size is 0, not create it
+ * empty).
  */
 export function splitIntoLotes(totalLeads: number): [number, number] {
+  if (totalLeads < MIN_LOTE_SIZE * 2) {
+    return [totalLeads, 0];
+  }
   const lote1 = Math.floor(totalLeads / 2);
   return [lote1, totalLeads - lote1];
 }

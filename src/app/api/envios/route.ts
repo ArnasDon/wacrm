@@ -19,9 +19,10 @@ interface CreateEnvioBody {
 }
 
 /**
- * Creates an Envio + its 2 lotes + their leads from the campaign JSON
+ * Creates an Envio + its lote(s) + their leads from the campaign JSON
  * file the user uploads (same format the Campanhas system exports:
- * `{campaign, creative, recipients}`). Both lotes are created
+ * `{campaign, creative, recipients}`). Small lists get a single lote
+ * (see `splitIntoLotes`); larger ones get 2. Every lote is created
  * `aguardando` — nothing is sent until "Iniciar lote" is called
  * (POST .../lotes/[numero]/iniciar).
  */
@@ -59,34 +60,50 @@ export async function POST(request: Request) {
       throw new Error(envioErr?.message ?? 'failed to create envio')
     }
 
+    const totalLeads = parsed.leads.length
     let lote1Size: number
     let lote2Size: number
     if (typeof body.lote1_size === 'number' && Number.isInteger(body.lote1_size)) {
-      if (body.lote1_size < 0 || body.lote1_size > parsed.leads.length) {
+      if (body.lote1_size < 0 || body.lote1_size > totalLeads) {
         return NextResponse.json({ error: 'lote1_size out of range' }, { status: 400 })
       }
       lote1Size = body.lote1_size
-      lote2Size = parsed.leads.length - lote1Size
+      lote2Size = totalLeads - lote1Size
     } else {
-      ;[lote1Size, lote2Size] = splitIntoLotes(parsed.leads.length)
+      ;[lote1Size, lote2Size] = splitIntoLotes(totalLeads)
     }
+
+    // A lote created with 0 leads never reaches `concluido` — the cron
+    // tick has nothing to advance — which permanently blocks lote 2
+    // (isLote2Blocked waits on lote 1's status). Collapse any split
+    // that would leave a side empty (automatic or manual override)
+    // into a single lote 1 holding every lead, and skip lote 2 outright.
+    if (lote1Size === 0 || lote2Size === 0) {
+      lote1Size = totalLeads
+      lote2Size = 0
+    }
+
+    const loteRows =
+      lote2Size > 0
+        ? [
+            { envio_id: envio.id, numero_lote: 1, quantidade_leads: lote1Size },
+            { envio_id: envio.id, numero_lote: 2, quantidade_leads: lote2Size },
+          ]
+        : [{ envio_id: envio.id, numero_lote: 1, quantidade_leads: lote1Size }]
 
     const { data: lotes, error: lotesErr } = await supabase
       .from('envio_lotes')
-      .insert([
-        { envio_id: envio.id, numero_lote: 1, quantidade_leads: lote1Size },
-        { envio_id: envio.id, numero_lote: 2, quantidade_leads: lote2Size },
-      ])
+      .insert(loteRows)
       .select('id, numero_lote')
     if (lotesErr || !lotes) {
       throw new Error(lotesErr?.message ?? 'failed to create lotes')
     }
 
     const lote1Id = lotes.find((l) => l.numero_lote === 1)!.id
-    const lote2Id = lotes.find((l) => l.numero_lote === 2)!.id
+    const lote2Id = lotes.find((l) => l.numero_lote === 2)?.id ?? null
 
     const leadRows = parsed.leads.map((lead, index) => ({
-      lote_id: index < lote1Size ? lote1Id : lote2Id,
+      lote_id: lote2Id && index >= lote1Size ? lote2Id : lote1Id,
       nome: lead.nome,
       telefone: lead.telefone,
       mensagem: lead.mensagem,

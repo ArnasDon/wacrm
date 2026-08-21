@@ -20,12 +20,30 @@ describe('splitIntoLotes', () => {
     expect(splitIntoLotes(0)).toEqual([0, 0]);
   });
 
-  it('handles a single lead (all goes to lote 2)', () => {
-    expect(splitIntoLotes(1)).toEqual([0, 1]);
+  it('keeps a single lead in one lote instead of splitting (no empty lote 1)', () => {
+    expect(splitIntoLotes(1)).toEqual([1, 0]);
+  });
+
+  it('keeps small lists (2-3 leads) in a single lote rather than an under-min split', () => {
+    expect(splitIntoLotes(2)).toEqual([2, 0]);
+    expect(splitIntoLotes(3)).toEqual([3, 0]);
+  });
+
+  it('splits once both lotes would reach the minimum size', () => {
+    expect(splitIntoLotes(4)).toEqual([2, 2]);
+    expect(splitIntoLotes(5)).toEqual([2, 3]);
+  });
+
+  it('never returns a split where one side is 0 for a total that can split', () => {
+    for (const total of [4, 5, 10, 11, 100, 101, 9999]) {
+      const [a, b] = splitIntoLotes(total);
+      expect(a).toBeGreaterThan(0);
+      expect(b).toBeGreaterThan(0);
+    }
   });
 
   it('always sums back to the total', () => {
-    for (const total of [2, 3, 10, 11, 100, 101, 9999]) {
+    for (const total of [0, 1, 2, 3, 4, 5, 10, 11, 100, 101, 9999]) {
       const [a, b] = splitIntoLotes(total);
       expect(a + b).toBe(total);
     }

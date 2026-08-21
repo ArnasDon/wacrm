@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
-import { ArrowLeft, Loader2, Play, Pause, Check } from 'lucide-react';
+import { ArrowLeft, Loader2, Play, Pause, Check, Trash2 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { Button } from '@/components/ui/button';
@@ -36,6 +36,8 @@ export default function EnvioDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyLote, setBusyLote] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function fetchData() {
@@ -116,6 +118,21 @@ export default function EnvioDetailPage() {
     }
   }
 
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      const supabase = createClient();
+      // envio_lotes/envio_leads cascade on envios.id (migration 078).
+      const { error: delErr } = await supabase.from('envios').delete().eq('id', envioId);
+      if (delErr) throw delErr;
+      toast.success(t('toastDeleted'));
+      router.push('/campaigns');
+    } catch (err) {
+      toast.error(t('toastFailedDelete', { error: err instanceof Error ? err.message : '' }));
+      setDeleting(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex h-64 items-center justify-center">
@@ -140,13 +157,50 @@ export default function EnvioDetailPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center gap-4">
-        <Button variant="outline" size="icon" onClick={() => router.push('/campaigns')} className="border-border">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div>
-          <h1 className="text-2xl font-bold text-foreground">{envio.nome}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" size="icon" onClick={() => router.push('/campaigns')} className="border-border">
+            <ArrowLeft className="h-4 w-4" />
+          </Button>
+          <div>
+            <h1 className="text-2xl font-bold text-foreground">{envio.nome}</h1>
+          </div>
         </div>
+
+        {confirmDelete ? (
+          <div className="flex items-center gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-sm">
+            <span className="text-red-300">{t('deletePrompt')}</span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setConfirmDelete(false)}
+              disabled={deleting}
+              className="h-7 border-border bg-transparent text-muted-foreground hover:bg-muted"
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleDelete}
+              disabled={deleting}
+              className="h-7 bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+            >
+              {deleting ? t('deleting') : t('confirm')}
+            </Button>
+          </div>
+        ) : (
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={anyActive}
+            onClick={() => setConfirmDelete(true)}
+            title={anyActive ? t('cannotDeleteActive') : t('deleteHover')}
+            className="border-red-500/30 bg-transparent text-red-400 hover:bg-red-500/10 disabled:opacity-40"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+            {t('delete')}
+          </Button>
+        )}
       </div>
 
       {envio.mensagem_imagem_url && (

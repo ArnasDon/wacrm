@@ -966,7 +966,15 @@
       "toastSendingResumed": "Sending finished",
       "toastResumeFailed": "Failed to send the campaign",
       "channelApi": "WACRM",
-      "channelExternal": "External"
+      "channelExternal": "External",
+      "deleteCampaign": "Delete campaign",
+      "cannotDeleteSending": "Can't delete while the campaign is sending",
+      "deleteTitle": "Delete campaign?",
+      "deleteDesc": "Delete this campaign? This action can't be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "toastDeleted": "Campaign deleted",
+      "toastFailedDelete": "Failed to delete: {error}"
     },
     "status": {
       "draft": "Draft",
@@ -1246,7 +1254,15 @@
       "summaryDone": "완료됨",
       "cardTotalLeads": "리드 {total}건",
       "cardLotes": "로트 {count}개",
-      "channelBadge": "개인"
+      "channelBadge": "개인",
+      "deleteEnvio": "Envio 삭제",
+      "cannotDeleteActive": "진행 중인 로트가 있으면 삭제할 수 없습니다 — 먼저 로트를 일시정지하세요",
+      "deleteTitle": "Envio를 삭제하시겠습니까?",
+      "deleteDesc": "이 Envio를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+      "cancel": "취소",
+      "delete": "삭제",
+      "toastDeleted": "Envio가 삭제되었습니다",
+      "toastFailedDelete": "삭제 실패: {error}"
     },
     "new": {
       "title": "Envio 만들기",
@@ -1293,7 +1309,16 @@
         "status": "상태",
         "sentAt": "발송 시각",
         "error": "오류"
-      }
+      },
+      "delete": "삭제",
+      "deleteHover": "이 Envio 삭제",
+      "cannotDeleteActive": "진행 중인 로트가 있으면 삭제할 수 없습니다 — 먼저 로트를 일시정지하세요",
+      "deletePrompt": "이 Envio를 삭제하시겠습니까? 이 작업은 되돌릴 수 없습니다.",
+      "cancel": "취소",
+      "confirm": "확인",
+      "deleting": "삭제 중…",
+      "toastDeleted": "Envio가 삭제되었습니다",
+      "toastFailedDelete": "삭제 실패: {error}"
     },
     "status": {
       "aguardando": "대기 중",

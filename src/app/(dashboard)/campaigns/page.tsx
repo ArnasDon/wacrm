@@ -6,9 +6,17 @@ import { createClient } from '@/lib/supabase/client';
 import { Broadcast } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
-import { Megaphone, Plus, Loader2, Play } from 'lucide-react';
+import { Megaphone, Plus, Loader2, Play, Trash2 } from 'lucide-react';
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
 import { EnviosSection } from '@/components/campaigns/envios-section';
@@ -78,6 +86,8 @@ export default function CampaignsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [resumingId, setResumingId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Broadcast | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Used to kick off polling only while something is actively sending.
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -155,6 +165,24 @@ export default function CampaignsPage() {
       toast.error(err instanceof Error ? err.message : t('toastResumeFailed'));
     } finally {
       setResumingId(null);
+    }
+  }
+
+  async function handleDeleteConfirm() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      const supabase = createClient();
+      // broadcast_recipients cascades on broadcasts.id (migration 001).
+      const { error: delErr } = await supabase.from('broadcasts').delete().eq('id', pendingDelete.id);
+      if (delErr) throw delErr;
+      toast.success(t('toastDeleted'));
+      setCampaigns((prev) => prev.filter((c) => c.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (err) {
+      toast.error(t('toastFailedDelete', { error: err instanceof Error ? err.message : '' }));
+    } finally {
+      setDeleting(false);
     }
   }
 
@@ -273,15 +301,31 @@ export default function CampaignsPage() {
                         )}
                       </div>
                     </div>
-                    <span
-                      className={`inline-flex shrink-0 items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
-                        isExternal
-                          ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
-                          : 'border-primary/20 bg-primary/10 text-primary'
-                      }`}
-                    >
-                      {isExternal ? t('channelExternal') : t('channelApi')}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span
+                        className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium ${
+                          isExternal
+                            ? 'border-amber-500/20 bg-amber-500/10 text-amber-300'
+                            : 'border-primary/20 bg-primary/10 text-primary'
+                        }`}
+                      >
+                        {isExternal ? t('channelExternal') : t('channelApi')}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (campaign.status === 'sending') {
+                            toast.error(t('cannotDeleteSending'));
+                            return;
+                          }
+                          setPendingDelete(campaign);
+                        }}
+                        title={campaign.status === 'sending' ? t('cannotDeleteSending') : t('deleteCampaign')}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   {preview && (
@@ -357,6 +401,24 @@ export default function CampaignsPage() {
       )}
 
       <EnviosSection />
+
+      <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteTitle')}</DialogTitle>
+            <DialogDescription>{t('deleteDesc')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

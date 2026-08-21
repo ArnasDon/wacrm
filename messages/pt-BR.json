@@ -966,7 +966,15 @@
       "toastSendingResumed": "Envio concluído",
       "toastResumeFailed": "Falha ao enviar a campanha",
       "channelApi": "WACRM",
-      "channelExternal": "Externo"
+      "channelExternal": "Externo",
+      "deleteCampaign": "Excluir campanha",
+      "cannotDeleteSending": "Não é possível excluir enquanto a campanha está sendo enviada",
+      "deleteTitle": "Excluir campanha?",
+      "deleteDesc": "Excluir esta campanha? Essa ação não pode ser desfeita.",
+      "cancel": "Cancelar",
+      "delete": "Excluir",
+      "toastDeleted": "Campanha excluída",
+      "toastFailedDelete": "Falha ao excluir: {error}"
     },
     "status": {
       "draft": "Rascunho",
@@ -1246,7 +1254,15 @@
       "summaryDone": "Concluído",
       "cardTotalLeads": "{total} leads",
       "cardLotes": "{count} lotes",
-      "channelBadge": "Pessoal"
+      "channelBadge": "Pessoal",
+      "deleteEnvio": "Excluir envio",
+      "cannotDeleteActive": "Não é possível excluir com um lote em andamento — pause o lote primeiro",
+      "deleteTitle": "Excluir envio?",
+      "deleteDesc": "Excluir este envio? Essa ação não pode ser desfeita.",
+      "cancel": "Cancelar",
+      "delete": "Excluir",
+      "toastDeleted": "Envio excluído",
+      "toastFailedDelete": "Falha ao excluir: {error}"
     },
     "new": {
       "title": "Criar envio",
@@ -1293,7 +1309,16 @@
         "status": "Status",
         "sentAt": "Enviado em",
         "error": "Erro"
-      }
+      },
+      "delete": "Excluir",
+      "deleteHover": "Excluir este envio",
+      "cannotDeleteActive": "Não é possível excluir com um lote em andamento — pause o lote primeiro",
+      "deletePrompt": "Excluir este envio? Essa ação não pode ser desfeita.",
+      "cancel": "Cancelar",
+      "confirm": "Confirmar",
+      "deleting": "Excluindo…",
+      "toastDeleted": "Envio excluído",
+      "toastFailedDelete": "Falha ao excluir: {error}"
     },
     "status": {
       "aguardando": "Aguardando",

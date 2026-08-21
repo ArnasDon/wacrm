@@ -3,11 +3,21 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { MessageSquareText, Plus, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { MessageSquareText, Plus, Loader2, Trash2 } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
 import { Card, CardContent } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
 import { GatedButton } from '@/components/ui/gated-button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useCan } from '@/hooks/use-can';
 import type { Envio, EnvioLote, EnvioLead } from '@/types';
 
@@ -34,6 +44,8 @@ export function EnviosSection() {
 
   const [envios, setEnvios] = useState<EnvioWithLotes[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pendingDelete, setPendingDelete] = useState<EnvioWithLotes | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   async function fetchEnvios() {
@@ -72,6 +84,24 @@ export function EnviosSection() {
       }
     };
   }, [anyActive]);
+
+  async function handleDeleteConfirm() {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      const supabase = createClient();
+      // envio_lotes/envio_leads cascade on envios.id (migration 078).
+      const { error } = await supabase.from('envios').delete().eq('id', pendingDelete.id);
+      if (error) throw error;
+      toast.success(t('toastDeleted'));
+      setEnvios((prev) => prev.filter((e) => e.id !== pendingDelete.id));
+      setPendingDelete(null);
+    } catch (err) {
+      toast.error(t('toastFailedDelete', { error: err instanceof Error ? err.message : '' }));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -139,9 +169,25 @@ export function EnviosSection() {
                         </p>
                       </div>
                     </div>
-                    <span className="inline-flex shrink-0 items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
-                      {t('channelBadge')}
-                    </span>
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-300">
+                        {t('channelBadge')}
+                      </span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (active) {
+                            toast.error(t('cannotDeleteActive'));
+                            return;
+                          }
+                          setPendingDelete(envio);
+                        }}
+                        title={active ? t('cannotDeleteActive') : t('deleteEnvio')}
+                        className="rounded-md p-1 text-muted-foreground hover:bg-red-500/10 hover:text-red-400 disabled:opacity-40"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
 
                   <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
@@ -157,6 +203,24 @@ export function EnviosSection() {
           })}
         </div>
       )}
+
+      <Dialog open={!!pendingDelete} onOpenChange={(v) => !v && setPendingDelete(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{t('deleteTitle')}</DialogTitle>
+            <DialogDescription>{t('deleteDesc')}</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setPendingDelete(null)} disabled={deleting}>
+              {t('cancel')}
+            </Button>
+            <Button variant="destructive" onClick={handleDeleteConfirm} disabled={deleting}>
+              {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+              {t('delete')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

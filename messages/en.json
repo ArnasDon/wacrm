@@ -966,7 +966,15 @@
       "toastSendingResumed": "Sending finished",
       "toastResumeFailed": "Failed to send the campaign",
       "channelApi": "WACRM",
-      "channelExternal": "External"
+      "channelExternal": "External",
+      "deleteCampaign": "Delete campaign",
+      "cannotDeleteSending": "Can't delete while the campaign is sending",
+      "deleteTitle": "Delete campaign?",
+      "deleteDesc": "Delete this campaign? This action can't be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "toastDeleted": "Campaign deleted",
+      "toastFailedDelete": "Failed to delete: {error}"
     },
     "status": {
       "draft": "Draft",
@@ -1246,7 +1254,15 @@
       "summaryDone": "Completed",
       "cardTotalLeads": "{total} leads",
       "cardLotes": "{count} lotes",
-      "channelBadge": "Personal"
+      "channelBadge": "Personal",
+      "deleteEnvio": "Delete envio",
+      "cannotDeleteActive": "Can't delete while a lote is in progress — pause it first",
+      "deleteTitle": "Delete envio?",
+      "deleteDesc": "Delete this envio? This action can't be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "toastDeleted": "Envio deleted",
+      "toastFailedDelete": "Failed to delete: {error}"
     },
     "new": {
       "title": "Create envio",
@@ -1293,7 +1309,16 @@
         "status": "Status",
         "sentAt": "Sent at",
         "error": "Error"
-      }
+      },
+      "delete": "Delete",
+      "deleteHover": "Delete this envio",
+      "cannotDeleteActive": "Can't delete while a lote is in progress — pause it first",
+      "deletePrompt": "Delete this envio? This action can't be undone.",
+      "cancel": "Cancel",
+      "confirm": "Confirm",
+      "deleting": "Deleting…",
+      "toastDeleted": "Envio deleted",
+      "toastFailedDelete": "Failed to delete: {error}"
     },
     "status": {
       "aguardando": "Waiting",

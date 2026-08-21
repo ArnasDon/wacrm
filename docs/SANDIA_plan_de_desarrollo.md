@@ -4179,3 +4179,45 @@ Verificado en vivo tras el deploy automático de EasyPanel: `GET
 /api/public/catalog/02377d99-6819-484a-8add-def5a718b2c5` (Estilo y
 Confort) ya devuelve `price_options: []` en cada producto, y
 `/catalog/02377d99-6819-484a-8add-def5a718b2c5` responde `200`.
+
+---
+
+**2026-08-20 — Claude Code — Costo de instalación también para el
+precio base (no solo los adicionales).**
+
+Angel probó la entrega anterior y avisó que el campo de instalación
+solo aparecía en los precios adicionales ("precio 2" y "precio 3"),
+pero no en el precio base ("precio 1"). Diagnóstico primero: se
+verificó **en vivo, en su cuenta real de producción** (sesión ya
+autenticada en su Chrome) que el campo de instalación de los precios
+adicionales sí funcionaba correctamente — el pedido real era agregar
+ese mismo campo al precio base, que nunca lo tuvo.
+
+- **`supabase/migrations/076_product_base_installation_cost.sql`** —
+  `products.installation_cost` (nullable), mismo tratamiento que
+  `product_price_options.installation_cost`.
+- **`src/lib/products/price-options.ts`** — se extrajo
+  `parseInstallationCost()` (antes vivía inline dentro de
+  `parsePriceOptions`) para compartir la misma validación entre el
+  precio base y cada precio adicional; tests unitarios propios.
+- **`product-form.tsx`** — nuevo campo "Costo de instalación" junto al
+  "Precio" base (mismo layout de 2 columnas que ya usan los precios
+  adicionales).
+- **`createQuote()`** — una línea de cotización sin `price_option_id`
+  ahora también revisa el `installation_cost` propio del producto para
+  la línea de instalación aparte; si se eligió una opción de precio,
+  el costo de instalación de esa opción sigue teniendo prioridad sobre
+  el del precio base.
+- **Catálogo público** — el aviso de instalación y el total del
+  carrito ahora también consideran el costo de instalación del precio
+  base cuando no se eligió ninguna opción adicional.
+
+Verificado: `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1133 tests — 6
+nuevos: `parseInstallationCost` con tests propios + 2 casos nuevos en
+`createQuote` para el costo de instalación del precio base), sin diff
+en `package-lock.json`. Columna confirmada en Supabase, advisors de
+seguridad sin hallazgos nuevos.
+
+Commit `a656e39` — pendiente de confirmación de Angel para pushear a
+`main`.

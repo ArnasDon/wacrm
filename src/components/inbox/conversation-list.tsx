@@ -52,6 +52,12 @@ interface WhatsappNumberOption {
   label: string;
 }
 
+interface WhatsappConfigRow {
+  id: string;
+  display_name: string | null;
+  public_phone_number: string | null;
+}
+
 export function ConversationList({
   activeConversationId,
   onSelect,
@@ -79,7 +85,7 @@ export function ConversationList({
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
   const [selectedChannel, setSelectedChannel] = useState<MessagingChannel | null>(null);
-  const [whatsappNumbers, setWhatsappNumbers] = useState<WhatsappNumberOption[]>([]);
+  const [whatsappConfigs, setWhatsappConfigs] = useState<WhatsappConfigRow[]>([]);
   const [selectedWhatsappConfigId, setSelectedWhatsappConfigId] = useState<string | null>(null);
 
   // Keep the latest callback in a ref so the fetch effect below can
@@ -160,19 +166,10 @@ export function ConversationList({
     (async () => {
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("id, display_name, public_phone_number, phone_number_id")
+        .select("id, display_name, public_phone_number")
         .order("is_default", { ascending: false });
       if (cancelled || !data) return;
-      setWhatsappNumbers(
-        data.map((c) => ({
-          id: c.id as string,
-          label:
-            (c.display_name as string | null) ||
-            (c.public_phone_number as string | null) ||
-            (c.phone_number_id as string | null) ||
-            (c.id as string),
-        })),
-      );
+      setWhatsappConfigs(data as WhatsappConfigRow[]);
     })();
     return () => {
       cancelled = true;
@@ -198,6 +195,19 @@ export function ConversationList({
   const hasInstagramConversations = useMemo(
     () => conversations.some((c) => c.channel === "instagram"),
     [conversations],
+  );
+
+  // `id` is an opaque UUID, not anything Angel would recognize — fall
+  // back to a plain "Número N" rather than exposing it when no
+  // display_name or public_phone_number has been set for that
+  // connection yet.
+  const whatsappNumbers = useMemo<WhatsappNumberOption[]>(
+    () =>
+      whatsappConfigs.map((c, index) => ({
+        id: c.id,
+        label: c.display_name || c.public_phone_number || `${t("number")} ${index + 1}`,
+      })),
+    [whatsappConfigs, t],
   );
 
   const tagsById = useMemo(() => {

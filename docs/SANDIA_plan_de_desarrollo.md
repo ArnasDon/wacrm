@@ -4225,3 +4225,84 @@ ya autenticada en su Chrome, EasyPanel ya había desplegado): al abrir
 "Nuevo producto" en `/products`, el campo "Costo de instalación
 (opcional)" aparece junto a "Precio" — confirmado visualmente, no solo
 por API.
+
+---
+
+**2026-08-20 — Claude Code — La IA del auto-reply ya puede enviar
+respuestas rápidas guardadas, palabra por palabra.**
+
+Angel preguntó si la IA podía mandar respuestas rápidas y plantillas
+de WhatsApp. Investigación primero (sin tocar código): esta app no usa
+tool-calling real del modelo — usa un patrón de "marcadores" en el
+texto que el modelo aprende a escribir y que el código luego busca y
+recorta (mismo mecanismo ya usado para mover negociaciones, mandar el
+catálogo o armar cotizaciones desde el chat). Con eso claro, se
+plantearon 4 posibilidades y se acordó con Angel recortar el alcance a
+una sola:
+
+- ✅ **Respuestas rápidas** — implementado ahora.
+- ⏸️ **Plantillas de WhatsApp dentro de una conversación activa** —
+  discutido pero pausado: dentro de una conversación ya abierta, texto
+  libre ya cubre lo mismo sin el costo de Meta que trae una plantilla.
+- ⏸️ **Que la IA reabra conversaciones cerradas con plantillas** — flujo
+  proactivo nuevo, necesita sus propias reglas (frecuencia, criterio de
+  elegibilidad, límites anti-spam) antes de construirse.
+- ⏸️ **Que la IA decida cuándo ceder a una automatización en vez de
+  responder ella misma** — se dejó explícitamente sin tocar: el 19 de
+  agosto se quitó a propósito la lógica que apagaba el bot cuando había
+  automatizaciones activas, después de que eso dejó sin respuesta a un
+  cliente real ("Ricardo"). Reintroducir cualquier variante de esa
+  lógica necesita su propio diseño cuidadoso, no es parte de este
+  cambio.
+
+Angel además pidió explícitamente: "esas respuestas rápidas deben ser
+parte de la IA, tiene que seguir el contexto que ellas dejan" — es
+decir, no basta con que la IA dispare una respuesta rápida como acción
+aparte; el mensaje que realmente se envía debe ser el texto exacto
+guardado (nunca una paráfrasis del modelo), para que la conversación
+guardada — y por lo tanto lo que la IA "recuerda" en el siguiente
+turno — refleje con exactitud lo que en verdad se le dijo al cliente.
+
+Por eso el diseño es distinto a los demás marcadores existentes: en
+vez de ir al final de la respuesta (como "mover negociación" o
+"mandar catálogo"), el marcador de respuesta rápida **reemplaza** el
+texto de la IA — cuando aplica, la IA responde ÚNICAMENTE con el
+marcador, y el código sustituye eso por el `content_text` real de la
+respuesta rápida antes de enviarlo.
+
+- **`src/lib/ai/quick-reply-context.ts`** (con tests) — carga las
+  respuestas rápidas de tipo "texto" de la cuenta (las de tipo
+  "interactivo"/botones se excluyen a propósito: el auto-reply del bot
+  solo sabe mandar texto plano hoy) en líneas compactas id/título/vista
+  previa para el prompt, mismo patrón que `loadCatalogContext` para el
+  catálogo.
+- **`defaults.ts`** — nuevo marcador `[[QUICK_REPLY:<id>]]`, enseñado
+  al modelo solo cuando la cuenta tiene al menos una respuesta rápida
+  utilizable, con instrucciones explícitas de no parafrasear y usar
+  solo un id real de la lista.
+- **`generate.ts`/`types.ts`** — parsea el marcador en `quickReplyId`.
+- **`auto-reply.ts`** — resuelve `quickReplyId` contra la tabla real
+  `quick_replies` de la cuenta (nunca confía en el id a ciegas — un id
+  inventado o una fila de tipo "interactivo" caen de vuelta al texto
+  propio del modelo). Cuando sí resuelve, ese `content_text` real es lo
+  que se envía por `engineSendText` — no el texto del modelo — y se
+  registra en `ai_action_log` como `send_quick_reply` para que quede
+  visible en el panel de resultados de IA igual que las demás acciones
+  autónomas.
+- **`supabase/migrations/077_ai_send_quick_reply.sql`** — agrega
+  `'send_quick_reply'` al CHECK de `ai_action_log.action`.
+
+Verificado: prueba manual por SQL en Supabase (insertar en
+`ai_action_log` con `action = 'send_quick_reply'`, confirmar que el
+CHECK ya lo permite), `tsc --noEmit` limpio, `eslint` limpio en los
+archivos tocados, `next build` completo, `vitest run` en verde (1145
+tests — se agregaron pruebas del nuevo cargador de contexto, del
+parseo del marcador, y de `dispatchInboundToAiReply` cubriendo: se
+envía el texto real de la respuesta rápida y no el del modelo, se
+registra en `ai_action_log`, y un id inventado/no encontrado cae de
+vuelta al texto del modelo sin registrar nada), sin diff en
+`package-lock.json`. Advisors de seguridad de Supabase revisados sin
+hallazgos nuevos.
+
+Commit `6b66c4d` — pendiente de confirmación de Angel para pushear a
+`main`.

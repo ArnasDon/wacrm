@@ -1042,7 +1042,7 @@
       "reviewTitleApproved": "Campanha aprovada",
       "reviewSubtitleApproved": "Aprovada em {date}. As mensagens abaixo estão travadas e representam exatamente o que será exportado.",
       "approveCampaign": "Aprovar campanha",
-      "exportForCloudCode": "Exportar para Cloud Code",
+      "exportForCloudCode": "Exportar para Claude Code",
       "unknownContact": "Contato desconhecido",
       "edited": "Editado",
       "resetToDefault": "Restaurar padrão",

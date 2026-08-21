@@ -1042,7 +1042,7 @@
       "reviewTitleApproved": "Campaign approved",
       "reviewSubtitleApproved": "Approved on {date}. The messages below are locked and represent exactly what will be exported.",
       "approveCampaign": "Approve campaign",
-      "exportForCloudCode": "Export for Cloud Code",
+      "exportForCloudCode": "Export for Claude Code",
       "unknownContact": "Unknown contact",
       "edited": "Edited",
       "resetToDefault": "Reset to default",

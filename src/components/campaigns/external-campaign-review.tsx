@@ -60,7 +60,16 @@ export function ExternalCampaignReview({ campaign, recipients, onRefresh }: Prop
   // the "newest first" order the parent page displays the status
   // table in — a review/export list reads naturally top-to-bottom as
   // "who goes first".
-  const ordered = [...recipients].sort((a, b) => a.created_at.localeCompare(b.created_at));
+  //
+  // `created_at` is frequently identical across a whole campaign (bulk
+  // insert = one NOW() for every row), so it alone can't break ties
+  // deterministically. `id` as a secondary key makes the order a pure
+  // function of immutable fields — editing message_text can never move
+  // a row, unlike sorting that (even indirectly) tracks updated state.
+  const ordered = [...recipients].sort((a, b) => {
+    const byCreatedAt = a.created_at.localeCompare(b.created_at);
+    return byCreatedAt !== 0 ? byCreatedAt : a.id.localeCompare(b.id);
+  });
 
   function messageFor(r: BroadcastRecipient): string {
     if (r.message_text != null && r.message_text !== '') return r.message_text;
@@ -175,7 +184,7 @@ export function ExternalCampaignReview({ campaign, recipients, onRefresh }: Prop
           approved_at: campaign.approved_at,
         },
         // The creative is already a hosted URL (the wizard never
-        // uploads a local file for 'external' campaigns) — Cloud Code
+        // uploads a local file for 'external' campaigns) — Claude Code
         // fetches it itself. No binary bundling needed.
         creative: campaign.header_media_url ? { url: campaign.header_media_url } : null,
         recipients: exportRecipients,
@@ -188,7 +197,7 @@ export function ExternalCampaignReview({ campaign, recipients, onRefresh }: Prop
       const a = document.createElement('a');
       a.href = url;
       const safeName = campaign.name.replace(/[^a-z0-9-_]+/gi, '-').toLowerCase();
-      a.download = `campanha-${safeName}-${campaign.id.slice(0, 8)}-cloudcode.json`;
+      a.download = `campanha-${safeName}-${campaign.id.slice(0, 8)}-claudecode.json`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

@@ -189,11 +189,19 @@ export default function CampaignDetailPage() {
       if (bcError) throw bcError;
       setCampaign(bc);
 
+      // Recipients within a campaign are almost always bulk-inserted in
+      // one statement, so many rows share the exact same `created_at`
+      // (Postgres evaluates NOW() once per statement). Ordering by
+      // created_at alone leaves ties in implementation-defined order,
+      // which can visibly shuffle after any UPDATE touches a tied row
+      // (its physical tuple location changes). `id` as a tiebreaker
+      // keeps the order fully deterministic and immune to edits.
       const { data: recs, error: recsError } = await supabase
         .from('broadcast_recipients')
         .select('*, contact:contacts(*)')
         .eq('broadcast_id', campaignId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .order('id', { ascending: false });
 
       if (recsError) throw recsError;
       setRecipients(recs ?? []);

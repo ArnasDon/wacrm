@@ -9,7 +9,7 @@
 --      lets the user edit or remove recipients; after, the list (and
 --      therefore the export) is locked — the file exported represents
 --      exactly what was approved (spec section 4).
---   2. broadcasts.exported_at — last time "Exportar para Cloud Code"
+--   2. broadcasts.exported_at — last time "Exportar para Claude Code"
 --      was used. Informational only (re-exporting is always allowed).
 --   3. broadcast_recipients.message_text — the FINAL per-recipient
 --      message for 'external' campaigns. NULL means "use the

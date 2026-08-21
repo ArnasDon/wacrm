@@ -713,7 +713,7 @@ export interface Broadcast {
   /**
    * Set once the user approves the previewed/edited 'external'
    * recipient list — migration 077. Locks further edits/removals;
-   * "Exportar para Cloud Code" only appears once this is set.
+   * "Exportar para Claude Code" only appears once this is set.
    */
   approved_at?: string | null;
   /** Last time the export file was generated — migration 077, informational only. */

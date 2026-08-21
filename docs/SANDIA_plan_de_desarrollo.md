@@ -4386,5 +4386,9 @@ descarte, y se agregaron tests nuevos directos sobre
 `dm-inbound.ts`), sin diff en `package-lock.json`. Sin cambios de base
 de datos — este arreglo es 100% código de aplicación.
 
-Commit `be839df` — pendiente de confirmación de Angel para pushear a
-`main`.
+Pusheado a `main` (con confirmación de Angel): `6c7b94e..ae60a16`. App
+confirmada arriba tras el deploy automático de EasyPanel (`/login`
+respondiendo `200` de forma sostenida). **Pendiente de Angel**: probar
+en real — pedirle a un agente que responda un chat de Instagram desde
+la app oficial (no desde el CRM) y confirmar que el mensaje aparece en
+la bandeja de wacrm.

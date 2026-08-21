@@ -2154,7 +2154,8 @@
       "api": "API 키",
       "webhooks": "웹훅",
       "billing": "청구",
-      "google-calendar": "Google Calendar"
+      "google-calendar": "Google Calendar",
+      "support": "티켓"
     },
     "groups": {
       "account": "계정",

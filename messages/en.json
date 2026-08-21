@@ -2154,7 +2154,8 @@
       "api": "API keys",
       "webhooks": "Webhooks",
       "billing": "Billing",
-      "google-calendar": "Google Calendar"
+      "google-calendar": "Google Calendar",
+      "support": "Tickets"
     },
     "groups": {
       "account": "Account",

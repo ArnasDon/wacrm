@@ -69,6 +69,19 @@ interface ZernioWebhookMessage {
   text: string | null
   attachments: ZernioWebhookAttachment[]
   sender: ZernioWebhookSender
+  /**
+   * `message.sent` only — set to `'whatsapp_business_app'` for a
+   * Coexistence echo (an agent replying from the official WhatsApp
+   * Business app instead of wacrm). Per Zernio support (2026-08-21):
+   * `message.received` never carries WhatsApp echoes at all (it's
+   * inbound-from-customer only, unlike Instagram/Facebook's
+   * `message.received` which does carry `direction: 'outgoing'`
+   * echoes) — those are reported on the separate `message.sent` event
+   * instead, which also fires for wacrm's own API-driven sends
+   * (presumably under a different `source`), so this field is what
+   * actually distinguishes the two, not `direction`.
+   */
+  source?: string
 }
 
 interface ZernioWebhookAccount {
@@ -93,6 +106,8 @@ interface ZernioWebhookPayload {
   template?: ZernioWebhookTemplate
   statusAt?: string
   error?: { code?: string; title?: string; message?: string } | null
+  /** `message.sent` fallback — some Zernio events carry `source` on the envelope rather than nested under `message`. */
+  source?: string
 }
 
 export async function POST(request: Request) {
@@ -194,16 +209,34 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
     return
   }
 
-  if (payload.event !== 'message.received' || !payload.message) return
-
-  const message = payload.message
-
-  // Same Coexistence problem already fixed for the Instagram/Facebook
-  // Zernio routes: WhatsApp Coexistence lets an agent reply from the
-  // official WhatsApp Business app instead of wacrm, and Zernio still
-  // reports it here as an "outgoing" message.received event. Dropping
-  // it (the old behavior) silently hid that entire reply from the CRM.
-  if (message.direction === 'outgoing') {
+  // Coexistence echo: an agent replied from the official WhatsApp
+  // Business app instead of wacrm. Confirmed with Zernio support
+  // (2026-08-21) that this is its own event — WhatsApp's
+  // `message.received` is inbound-from-customer only and never
+  // carries these (unlike Instagram/Facebook, where the same kind of
+  // echo *does* arrive as `message.received` with `direction:
+  // 'outgoing'` — see the sibling Zernio routes for that shape).
+  // `message.sent` also fires for wacrm's own API-driven sends, which
+  // must NOT be persisted here: send-message.ts already inserted that
+  // row under Zernio's own internal send-response id, not
+  // `platformMessageId`, so the idempotent upsert in
+  // persistOutboundEchoMessage would not catch it as a duplicate —
+  // gating strictly on `source === 'whatsapp_business_app'` is what
+  // keeps this to true Coexistence echoes only.
+  if (payload.event === 'message.sent' && payload.message) {
+    const message = payload.message
+    const source = message.source ?? payload.source
+    if (source !== 'whatsapp_business_app') {
+      console.info(
+        '[whatsapp zernio webhook] ignoring message.sent with source:',
+        source,
+        '— message fields:',
+        Object.keys(message).join(','),
+        '— payload fields:',
+        Object.keys(payload).join(','),
+      )
+      return
+    }
     const attachment = message.attachments?.[0]
     const mediaId = attachment?.payload?.id
     await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
@@ -218,6 +251,10 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
     })
     return
   }
+
+  if (payload.event !== 'message.received' || !payload.message) return
+
+  const message = payload.message
   if (message.direction !== 'incoming') return
 
   await processInboundMessage(message, config)

@@ -1235,6 +1235,70 @@
       }
     }
   },
+  "Envios": {
+    "section": {
+      "title": "Envios",
+      "subtitle": "Disparo pelo WhatsApp pessoal via Baileys — um segundo canal, ao lado das Campanhas.",
+      "newEnvio": "Criar envio",
+      "noEnviosYet": "Nenhum envio ainda",
+      "summaryDraft": "Rascunho — não iniciado",
+      "summaryActive": "Lote {lote} em andamento — {sent}/{total}",
+      "summaryDone": "Concluído",
+      "cardTotalLeads": "{total} leads",
+      "cardLotes": "{count} lotes",
+      "channelBadge": "Pessoal"
+    },
+    "new": {
+      "title": "Criar envio",
+      "subtitle": "Cole a mensagem, a imagem e a lista de leads — a divisão em 2 lotes é automática.",
+      "fieldName": "Nome",
+      "fieldMessage": "Mensagem",
+      "fieldImage": "Imagem (opcional)",
+      "uploadImage": "Enviar imagem",
+      "invalidImageType": "Tipo de imagem não suportado",
+      "imageTooLarge": "Imagem muito grande",
+      "uploadFailed": "Falha no upload",
+      "fieldLeads": "Leads (JSON)",
+      "lotesPreview": "{total} leads encontrados — divididos em 2 lotes",
+      "lote1Size": "Tamanho do lote 1",
+      "lote2Size": "Tamanho do lote 2",
+      "create": "Criar envio",
+      "createFailed": "Falha ao criar envio",
+      "createSuccess": "Envio criado"
+    },
+    "detail": {
+      "notFound": "Envio não encontrado",
+      "back": "Voltar para Campanhas",
+      "actionFailed": "Ação falhou",
+      "lote": "Lote {numero}",
+      "leadsCount": "{count} leads",
+      "startedAt": "iniciado {date}",
+      "done": "Concluído",
+      "pauseLote": "Pausar lote",
+      "startLote": "Iniciar lote",
+      "resumeLote": "Retomar lote",
+      "blockedReason": "Libera ao concluir o lote 1",
+      "leadsHeader": "Leads do lote {numero} ({count})",
+      "noLeads": "Nenhum lead neste lote.",
+      "table": {
+        "name": "Nome",
+        "phone": "Telefone",
+        "status": "Status",
+        "sentAt": "Enviado em",
+        "error": "Erro"
+      }
+    },
+    "status": {
+      "aguardando": "Aguardando",
+      "em_andamento": "Em andamento",
+      "pausado": "Pausado",
+      "concluido": "Concluído",
+      "na_fila": "Na fila",
+      "enviando": "Enviando",
+      "enviado": "Enviado",
+      "falhou": "Falhou"
+    }
+  },
   "Automations": {
     "list": {
       "title": "Automações",
@@ -2005,6 +2069,22 @@
       "step4_5": "Inscreva-se no campo de webhook \"messages\"",
       "metaDocs": "Documentação da API do WhatsApp da Meta"
     },
+    "envios": {
+      "title": "Envios (WhatsApp pessoal)",
+      "description": "Pareie o número de WhatsApp usado nos Envios — um canal de disparo pelo número pessoal, coexistindo com a API oficial, rodando com Baileys dentro do próprio wacrm.",
+      "status": {
+        "desconectado": "Desconectado",
+        "pareando": "Pareando — escaneie o QR code",
+        "conectado": "Conectado"
+      },
+      "disconnectedHint": "Escaneie o QR code com o WhatsApp do seu celular para conectar. Sem reconexão automática nesta versão — se a sessão cair, pareie novamente aqui.",
+      "pairingHint": "Abra o WhatsApp no celular → Aparelhos conectados → Conectar um aparelho, e escaneie este código.",
+      "connectedHint": "Este número está pronto para enviar pelos Envios.",
+      "pair": "Parear",
+      "reconnect": "Reparear",
+      "pairFailed": "Falha ao iniciar o pareamento",
+      "licenseNotice": "Os Envios usam Baileys (open-source, licença MIT) para conectar ao WhatsApp — sem serviço externo, tudo roda dentro do wacrm."
+    },
     "sections": {
       "overview": "Visão geral",
       "profile": "Seu perfil",
@@ -2017,7 +2097,8 @@
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
       "api": "Chaves de API",
-      "ai-agents": "Agentes de IA"
+      "ai-agents": "Agentes de IA",
+      "envios": "Envios (WhatsApp pessoal)"
     },
     "groups": {
       "account": "Conta",

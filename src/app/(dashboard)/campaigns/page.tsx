@@ -11,6 +11,7 @@ import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { getBroadcastStatus } from '@/lib/broadcast-status';
 import { useBroadcastSending } from '@/hooks/use-broadcast-sending';
+import { EnviosSection } from '@/components/campaigns/envios-section';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
 
@@ -354,6 +355,8 @@ export default function CampaignsPage() {
           })}
         </div>
       )}
+
+      <EnviosSection />
     </div>
   );
 }

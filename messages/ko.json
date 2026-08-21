@@ -1235,6 +1235,70 @@
       }
     }
   },
+  "Envios": {
+    "section": {
+      "title": "Envios",
+      "subtitle": "Baileys를 통한 개인 WhatsApp 발송 — 캠페인과 나란히 동작하는 두 번째 채널입니다.",
+      "newEnvio": "Envio 만들기",
+      "noEnviosYet": "아직 Envio가 없습니다",
+      "summaryDraft": "초안 — 시작 전",
+      "summaryActive": "로트 {lote} 진행 중 — {sent}/{total}",
+      "summaryDone": "완료됨",
+      "cardTotalLeads": "리드 {total}건",
+      "cardLotes": "로트 {count}개",
+      "channelBadge": "개인"
+    },
+    "new": {
+      "title": "Envio 만들기",
+      "subtitle": "메시지, 이미지, 리드 목록을 붙여넣으면 자동으로 2개 로트로 나뉩니다.",
+      "fieldName": "이름",
+      "fieldMessage": "메시지",
+      "fieldImage": "이미지 (선택)",
+      "uploadImage": "이미지 업로드",
+      "invalidImageType": "지원하지 않는 이미지 형식입니다",
+      "imageTooLarge": "이미지가 너무 큽니다",
+      "uploadFailed": "업로드 실패",
+      "fieldLeads": "리드 (JSON)",
+      "lotesPreview": "리드 {total}건 확인됨 — 2개 로트로 분할",
+      "lote1Size": "로트 1 크기",
+      "lote2Size": "로트 2 크기",
+      "create": "Envio 만들기",
+      "createFailed": "Envio 생성 실패",
+      "createSuccess": "Envio가 생성되었습니다"
+    },
+    "detail": {
+      "notFound": "Envio를 찾을 수 없습니다",
+      "back": "캠페인으로 돌아가기",
+      "actionFailed": "작업에 실패했습니다",
+      "lote": "로트 {numero}",
+      "leadsCount": "리드 {count}건",
+      "startedAt": "{date} 시작",
+      "done": "완료",
+      "pauseLote": "로트 일시정지",
+      "startLote": "로트 시작",
+      "resumeLote": "로트 재개",
+      "blockedReason": "로트 1이 완료되면 잠금 해제됩니다",
+      "leadsHeader": "로트 {numero} 리드 ({count})",
+      "noLeads": "이 로트에는 리드가 없습니다.",
+      "table": {
+        "name": "이름",
+        "phone": "전화번호",
+        "status": "상태",
+        "sentAt": "발송 시각",
+        "error": "오류"
+      }
+    },
+    "status": {
+      "aguardando": "대기 중",
+      "em_andamento": "진행 중",
+      "pausado": "일시정지됨",
+      "concluido": "완료됨",
+      "na_fila": "대기열",
+      "enviando": "발송 중",
+      "enviado": "발송됨",
+      "falhou": "실패"
+    }
+  },
   "Automations": {
     "list": {
       "title": "자동화",
@@ -2005,6 +2069,22 @@
       "step4_5": "\"messages\" 웹훅 필드를 구독",
       "metaDocs": "Meta WhatsApp API 문서"
     },
+    "envios": {
+      "title": "Envios (개인 WhatsApp)",
+      "description": "Envios에서 사용할 WhatsApp 번호를 연결하세요 — wacrm 안에서 실행되는 Baileys 기반의 개인 번호 발송 채널로, 공식 API와 나란히 동작합니다.",
+      "status": {
+        "desconectado": "연결 끊김",
+        "pareando": "페어링 중 — QR 코드를 스캔하세요",
+        "conectado": "연결됨"
+      },
+      "disconnectedHint": "휴대폰의 WhatsApp으로 QR 코드를 스캔해 연결하세요. 이 버전은 자동 재연결이 없습니다 — 세션이 끊기면 여기서 다시 페어링하세요.",
+      "pairingHint": "휴대폰에서 WhatsApp 열기 → 연결된 기기 → 기기 연결을 선택하고 이 코드를 스캔하세요.",
+      "connectedHint": "이 번호는 Envios로 발송할 준비가 되었습니다.",
+      "pair": "페어링",
+      "reconnect": "다시 연결",
+      "pairFailed": "페어링을 시작하지 못했습니다",
+      "licenseNotice": "Envios는 WhatsApp 연결을 위해 Baileys(오픈소스, MIT 라이선스)를 사용합니다 — 외부 서비스 없이 모두 wacrm 내부에서 실행됩니다."
+    },
     "sections": {
       "overview": "개요",
       "profile": "내 프로필",
@@ -2017,7 +2097,8 @@
       "deals": "딜 & 통화",
       "members": "팀원",
       "api": "API 키",
-      "ai-agents": "AI 에이전트"
+      "ai-agents": "AI 에이전트",
+      "envios": "Envios (개인 WhatsApp)"
     },
     "groups": {
       "account": "계정",

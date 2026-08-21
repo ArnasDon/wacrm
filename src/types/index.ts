@@ -754,6 +754,62 @@ export interface BroadcastRecipient {
 }
 
 // ============================================================
+// Envios — WhatsApp pessoal via Baileys embutido (migration 078)
+// ============================================================
+
+export type EnvioStatus = 'rascunho' | 'em_andamento' | 'concluido';
+export type EnvioLoteStatus = 'aguardando' | 'em_andamento' | 'pausado' | 'concluido';
+export type EnvioLeadStatus = 'na_fila' | 'enviando' | 'enviado' | 'falhou';
+export type BaileysStatusConexao = 'desconectado' | 'pareando' | 'conectado';
+
+export interface Envio {
+  id: string;
+  account_id: string;
+  /** Optional, purely informational link to an existing Campaign. */
+  campanha_id: string | null;
+  nome: string;
+  status: EnvioStatus;
+  canal: 'baileys';
+  mensagem_texto: string;
+  mensagem_imagem_url: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface EnvioLote {
+  id: string;
+  envio_id: string;
+  numero_lote: 1 | 2;
+  quantidade_leads: number;
+  status: EnvioLoteStatus;
+  iniciado_em: string | null;
+  concluido_em: string | null;
+}
+
+export interface EnvioLead {
+  id: string;
+  lote_id: string;
+  nome: string | null;
+  telefone: string;
+  status: EnvioLeadStatus;
+  /** When the cron tick (GET /api/envios/cron) should next attempt this lead. */
+  next_attempt_at: string | null;
+  enviado_em: string | null;
+  erro: string | null;
+  created_at: string;
+}
+
+/** Client-facing subset of `baileys_sessao` — never the encrypted creds column. */
+export interface BaileysSessao {
+  id: string;
+  account_id: string;
+  identificador: string;
+  status_conexao: BaileysStatusConexao;
+  updated_at: string;
+  created_at: string;
+}
+
+// ============================================================
 // Automations (migration 006)
 // ============================================================
 

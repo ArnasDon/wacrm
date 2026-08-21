@@ -76,7 +76,13 @@ const nextConfig: NextConfig = {
   // touch documents) with "the 'path' argument must be of type string" —
   // a native .node loader path getting mangled by the bundler. Excluding
   // it from bundling (plain require() at runtime instead) fixes that.
-  serverExternalPackages: ["pdf-to-img", "pdfjs-dist", "@napi-rs/canvas"],
+  // "baileys" (src/lib/baileys/) is a plain-Node library never meant to
+  // be bundled — pino uses dynamic file-based transport loading and ws
+  // does native-ish binary framing, both of which break under
+  // Turbopack's static bundling the same way @napi-rs/canvas did above.
+  // Keeping it external (plain require() at runtime) avoids that class
+  // of bug entirely.
+  serverExternalPackages: ["pdf-to-img", "pdfjs-dist", "@napi-rs/canvas", "baileys"],
 
   /**
    * Cross-origin dev access (Next.js 16).

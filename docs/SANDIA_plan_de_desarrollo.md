@@ -4501,3 +4501,71 @@ nombres reales en vez de "Número 1"/"Número 2", puede ponerle un
 nombre a cada conexión en Configuración → WhatsApp → editar conexión
 → "Nombre para mostrar" (campo `display_name`, ya existía, no es
 código nuevo).
+
+### 2026-08-21 — Claude Code (WhatsApp Coexistence: causa raíz real y arreglo final)
+
+**Contexto:** el arreglo del 2026-08-20 para IG/FB (ver arriba) se
+había extendido "por analogía" a WhatsApp asumiendo que Coexistencia
+funcionaba igual (eco vía `message.received` con `direction:
+outgoing`). Angel probó con el número nuevo y seguía sin aparecer.
+
+**Diagnóstico en vivo** (sin cambiar código todavía):
+1. Verifiqué en `/admin` que los botones `+1 asiento`/`+1 número` sí
+   funcionan — falso positivo de un screenshot tomado antes de que
+   cargaran los datos.
+2. Revisé los logs de producción en vivo (EasyPanel → sandia_crm →
+   Registros) justo después de pedirle a Angel que mandara un mensaje
+   de prueba: **cero solicitudes nuevas llegaron al webhook** — ni
+   siquiera un error. El id raro (`6a839dae...`) de una entrada previa
+   en los logs resultó ser ruido sin relación.
+3. Con permiso explícito de Angel, confirmé en el propio inbox de
+   Zernio (`zernio.com/dashboard/inbox-messages`) que los mensajes
+   **sí** estaban ahí, marcados "You" — Zernio los recibe, pero no nos
+   los reenvía.
+4. Revisé el panel de conexión de Zernio (Info/Number/Notifications) —
+   sin ningún interruptor visible de "Coexistencia" ni webhooks por
+   número. De paso encontré (no relacionado, informativo para Angel):
+   la cuenta de WhatsApp de Zernio tiene una alerta activa —
+   **método de pago con error + negocio sin verificar por Meta** —
+   que bloquea iniciar conversaciones nuevas (no las respuestas dentro
+   de una ya abierta, que es lo que estábamos probando). Pendiente
+   que Angel lo resuelva desde el panel de Zernio cuando pueda.
+
+**Causa raíz real (confirmada por soporte de Zernio, no adivinada):**
+los ecos de Coexistencia en WhatsApp **no** llegan por
+`message.received` — Zernio confirmó que ese evento es *solo*
+mensajes entrantes del cliente para WhatsApp (a diferencia de
+Instagram/Facebook, donde el mismo patrón de eco sí llega por ahí).
+Los mensajes enviados desde la app oficial llegan por un evento
+**separado**, `message.sent`, identificados con
+`source: "whatsapp_business_app"` en el payload — y ese evento
+también se dispara para los envíos que hace el propio wacrm vía API
+(con otro `source`), así que hay que filtrar estrictamente por ese
+campo. Angel ya suscribió `message.sent` en el panel de Zernio.
+
+**Hecho:**
+- `src/app/api/whatsapp/webhook/zernio/route.ts` — quité la rama
+  `direction === 'outgoing'` bajo `message.received` (confirmada
+  inalcanzable para WhatsApp) y agregué el manejo de
+  `message.sent`: si `source !== 'whatsapp_business_app'` lo ignora
+  (con un log de diagnóstico que imprime los nombres de campo
+  presentes, no el contenido, por si el nombre exacto del campo
+  resultara distinto en la práctica); si coincide, arma
+  contentText/mediaUrl/contentType igual que el resto de la ruta y
+  llama al mismo `handleOutboundEchoMessageForZernioConversation`
+  compartido con Instagram/Facebook. El filtro estricto por `source`
+  es necesario porque `message.sent` también se dispara para los
+  envíos propios de wacrm, cuyo `message_id` guardado es el id interno
+  de respuesta de Zernio (no `platformMessageId`) — sin el filtro,
+  cada mensaje que wacrm manda se duplicaría en el inbox en vez de
+  des-duplicarse por el upsert idempotente.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio, `vitest run` en
+verde (1153 tests — no se agregó archivo de test nuevo para esta ruta,
+igual que las rutas hermanas de Zernio para IG/FB, que tampoco lo
+tienen), `next build` completo. Sin diff en `package-lock.json`. Sin
+cambios de base de datos.
+
+**Desplegado y confirmado en vivo por Angel:** commit `e77bdd7`,
+pusheado a `main` con confirmación previa. Angel probó de nuevo desde
+la app oficial y confirmó: **"ya funciona"**.

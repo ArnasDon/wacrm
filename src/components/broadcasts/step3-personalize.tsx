@@ -413,7 +413,7 @@ export function Step3Personalize({
         </div>
         <div className="rounded-lg bg-[#0e1a12] p-3">
           <div className="ml-auto max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-primary">
+            <p className="whitespace-pre-wrap text-sm text-white">
               {previewText}
             </p>
           </div>

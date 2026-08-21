@@ -371,7 +371,7 @@ export function ExternalCampaignReview({ campaign, recipients, onRefresh }: Prop
                 ) : (
                   <div className="rounded-lg bg-[#0e1a12] p-3">
                     <div className="max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-                      <p className="whitespace-pre-wrap text-sm text-primary">{displayText}</p>
+                      <p className="whitespace-pre-wrap text-sm text-white">{displayText}</p>
                     </div>
                   </div>
                 )}

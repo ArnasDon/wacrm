@@ -25,6 +25,19 @@ import { supabaseAdmin } from './admin-client'
  * screen) calls `getOrCreateConnection` again, which reconnects from
  * the saved creds without a new QR (that's normal Baileys behaviour —
  * only `DisconnectReason.loggedOut` invalidates the saved session).
+ *
+ * One deliberate exception to "no auto-reconnect": `DisconnectReason
+ * .restartRequired` (515, "Stream Errored (restart required)"). This
+ * isn't a dropped session — it's WhatsApp's own mandatory last step of
+ * the device-pairing handshake: after accepting a new linked device it
+ * always closes with 515 expecting an immediate reconnect using the
+ * now-saved creds to finish registration. Confirmed 2026-08-21 (real
+ * pairing attempt, first-ever link on a fresh number, raw
+ * lastDisconnect logged): without this, pairing never completes on
+ * ANY attempt — the phone times out on "não foi possível conectar"
+ * because the finishing reconnect never happens. Every other
+ * disconnect reason (network blip, timeout, etc.) still requires a
+ * manual re-pair, per the original decision.
  */
 
 interface ConnectionEntry {
@@ -152,11 +165,24 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
         JSON.stringify(describeDisconnectError(lastDisconnect?.error)),
       )
       connections.delete(accountId)
+
+      if (statusCode === DisconnectReason.restartRequired) {
+        // Mandatory finishing step of the pairing handshake — see
+        // module doc comment. Reconnects once, immediately, with the
+        // creds `creds.update` already saved; no new QR is issued.
+        console.log(
+          '[baileys/connection] 515 restart required — reconnecting to finish pairing for account',
+          accountId,
+        )
+        await getOrCreateConnection(accountId)
+        return
+      }
+
       await setStatusConexao(accountId, 'desconectado')
       if (statusCode === DisconnectReason.loggedOut) {
         await resetSessao(accountId)
       }
-      // Anything else (network blip, restart, etc.): deliberately no
+      // Anything else (network blip, timeout, etc.): deliberately no
       // auto-reconnect here — see module doc comment above.
     }
   })

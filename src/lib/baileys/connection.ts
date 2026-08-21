@@ -35,6 +35,30 @@ interface ConnectionEntry {
 
 const connections = new Map<string, ConnectionEntry>()
 
+/**
+ * Pulls every field worth knowing out of a Baileys disconnect error for
+ * diagnostics. `lastDisconnect.error` is a duck-typed Boom error — the
+ * interesting bits are `.output.statusCode`/`.output.payload` (the HTTP-
+ * like code WhatsApp closed with) and `.data` (WhatsApp sometimes attaches
+ * the raw stanza/reason here). Logged as plain fields (not JSON.stringify
+ * on the Error itself, which drops message/stack silently).
+ */
+function describeDisconnectError(error: unknown): Record<string, unknown> {
+  if (!error || typeof error !== 'object') return { raw: error }
+  const err = error as {
+    message?: string
+    output?: { statusCode?: number; payload?: unknown }
+    data?: unknown
+    stack?: string
+  }
+  return {
+    message: err.message,
+    statusCode: err.output?.statusCode,
+    payload: err.output?.payload,
+    data: err.data,
+  }
+}
+
 async function setStatusConexao(
   accountId: string,
   status: 'desconectado' | 'pareando' | 'conectado',
@@ -79,7 +103,11 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
   connections.set(accountId, entry)
 
   const { state, saveCreds } = await getSupabaseAuthState(accountId)
-  const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }))
+  const { version, isLatest } = await fetchLatestBaileysVersion().catch((err) => {
+    console.error('[baileys/connection] fetchLatestBaileysVersion failed, falling back to package default:', err)
+    return { version: undefined, isLatest: undefined }
+  })
+  console.log('[baileys/connection] resolved WA protocol version:', JSON.stringify({ version, isLatest }))
 
   const sock = makeWASocket({
     auth: {
@@ -99,11 +127,13 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
     if (qr) {
       entry.qrDataUrl = await QRCode.toDataURL(qr)
       await setStatusConexao(accountId, 'pareando')
+      console.log('[baileys/connection] new QR issued for account', accountId)
     }
 
     if (connection === 'open') {
       entry.qrDataUrl = null
       await setStatusConexao(accountId, 'conectado')
+      console.log('[baileys/connection] connection OPEN for account', accountId)
     }
 
     if (connection === 'close') {
@@ -112,6 +142,15 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
       // 1:1 onto DisconnectReason.
       const statusCode = (lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)
         ?.output?.statusCode
+      // Temporary diagnostic logging (2026-08-21, pairing-rejected
+      // investigation) — full raw disconnect detail, not just the
+      // status code, so a real WhatsApp-side rejection reason (if one
+      // is present in .data/.payload) is visible instead of guessed at.
+      console.error(
+        '[baileys/connection] CLOSE for account',
+        accountId,
+        JSON.stringify(describeDisconnectError(lastDisconnect?.error)),
+      )
       connections.delete(accountId)
       await setStatusConexao(accountId, 'desconectado')
       if (statusCode === DisconnectReason.loggedOut) {

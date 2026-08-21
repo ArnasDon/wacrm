@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
     upsertCalls: [] as { row: Record<string, unknown>; options: unknown }[],
     rpcCalls: [] as { name: string; args: Record<string, unknown> }[],
     readReceiptUpdates: [] as string[],
+    conversationUpdates: [] as Record<string, unknown>[],
     afterCallbacks: [] as (() => Promise<void> | void)[],
   },
 }))
@@ -66,6 +67,12 @@ vi.mock('@supabase/supabase-js', () => ({
                 }),
               }),
             }),
+            // persistOutboundEchoMessage's last-message bump for an
+            // outbound-echo send — plain update, no RPC involved.
+            update: (row: Record<string, unknown>) => {
+              h.state.conversationUpdates.push(row)
+              return { eq: () => Promise.resolve({ error: null }) }
+            },
           }
         case 'messages':
           return {
@@ -179,6 +186,7 @@ beforeEach(() => {
   h.state.upsertCalls = []
   h.state.rpcCalls = []
   h.state.readReceiptUpdates = []
+  h.state.conversationUpdates = []
   h.state.afterCallbacks = []
   h.findExistingInstagramContact.mockResolvedValue({ id: 'contact-1', instagram_id: 'igsid-1' })
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
@@ -226,17 +234,51 @@ describe('Instagram inbound webhook: idempotent insert', () => {
   })
 })
 
-describe('Instagram inbound webhook: echo filtering', () => {
-  it('skips events that mirror our own outbound sends (is_echo)', async () => {
-    await runWebhook({
-      sender: { id: 'igsid-1' },
-      recipient: { id: 'ig-acct-1' },
-      timestamp: 1700000000,
-      message: { mid: 'ig-mid.echo', text: 'agent reply', is_echo: true },
-    })
+describe('Instagram inbound webhook: agent replies sent from outside wacrm (is_echo)', () => {
+  // On a real echo event Meta swaps the usual roles: `sender` is OUR ig
+  // account (we're the one who sent it) and `recipient` is the
+  // customer — the opposite of a genuine inbound event's shape.
+  const ECHO_EVENT = {
+    sender: { id: 'ig-acct-1' },
+    recipient: { id: 'igsid-1' },
+    timestamp: 1700000000,
+    message: { mid: 'ig-mid.echo', text: 'agent reply', is_echo: true },
+  }
 
-    expect(h.state.upsertCalls).toHaveLength(0);
-    expect(h.dispatchWebhookEvent).not.toHaveBeenCalled();
+  it('records an agent reply sent from the native Instagram app instead of dropping it', async () => {
+    await runWebhook(ECHO_EVENT)
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.upsertCalls[0].row).toMatchObject({
+      sender_type: 'agent',
+      content_type: 'text',
+      content_text: 'agent reply',
+      message_id: 'ig-mid.echo',
+      status: 'sent',
+    })
+    expect(h.state.conversationUpdates).toHaveLength(1)
+    expect(h.state.conversationUpdates[0]).toMatchObject({ last_message_text: 'agent reply' })
+  })
+
+  it('never fires flows/automations/AI auto-reply for an echo — those react to the customer, not to our own agent', async () => {
+    await runWebhook(ECHO_EVENT)
+
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
+    expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
+    expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
+  })
+
+  it('no-ops instead of duplicating when the echo mirrors a message wacrm itself already sent', async () => {
+    // send-message.ts already inserted this exact (conversation_id,
+    // message_id) row when it made the send — the echo arriving after
+    // is the same idempotent-upsert-returns-nothing case as a genuine
+    // retried customer message.
+    h.state.messageUpsertResult = []
+
+    await runWebhook(ECHO_EVENT)
+
+    expect(h.state.upsertCalls).toHaveLength(1)
+    expect(h.state.conversationUpdates).toHaveLength(0)
   })
 })
 

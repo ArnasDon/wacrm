@@ -355,3 +355,182 @@ export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmM
     channel,
   })
 }
+
+// ============================================================
+// Outbound-from-outside-wacrm messages ("echoes") — an agent replying
+// to a customer from the native Instagram/Facebook app or Meta's own
+// inbox, instead of wacrm's own compose box. Meta's webhook (and
+// Zernio's) still tells us about these; every DM route used to drop
+// them unconditionally on the theory that they always mirror a send
+// wacrm itself just made (already persisted by send-message.ts) — true
+// only when the send actually went through wacrm. When it didn't, that
+// dropped the ENTIRE message: no row, no conversation bump, nothing —
+// which is exactly what silently hid these chats from the CRM.
+//
+// Both entry points below persist the message as `sender_type: 'agent'`
+// and deliberately skip reopening a closed conversation, flows,
+// automations, and AI auto-reply — those all exist to react to the
+// CUSTOMER's own messages, not to an agent's own reply back to one.
+// The idempotent (conversation_id, message_id) upsert makes it safe to
+// call even when wacrm DID send the message itself: that echo's mid
+// already matches the row send-message.ts inserted, so this simply
+// no-ops instead of creating a duplicate.
+// ============================================================
+
+interface OutboundEchoFields {
+  mid: string
+  contentText: string | null
+  mediaUrl: string | null
+  contentType: string
+  replyToMid: string | null
+}
+
+async function persistOutboundEchoMessage(
+  db: SupabaseClient,
+  channel: DmChannel,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  conversation: any,
+  fields: OutboundEchoFields,
+): Promise<void> {
+  let replyToInternalId: string | null = null
+  if (fields.replyToMid) {
+    const { data: parent } = await db
+      .from('messages')
+      .select('id')
+      .eq('message_id', fields.replyToMid)
+      .eq('conversation_id', conversation.id)
+      .maybeSingle()
+    replyToInternalId = parent?.id ?? null
+  }
+
+  const { data: insertedRows, error: msgError } = await db
+    .from('messages')
+    .upsert(
+      {
+        conversation_id: conversation.id,
+        sender_type: 'agent',
+        content_type: fields.contentType,
+        content_text: fields.contentText,
+        media_url: fields.mediaUrl,
+        message_id: fields.mid,
+        status: 'sent',
+        reply_to_message_id: replyToInternalId,
+      },
+      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true },
+    )
+    .select('id')
+
+  if (msgError) {
+    console.error(`[${channel} outbound-echo] error inserting message:`, msgError)
+    return
+  }
+  if (!insertedRows || insertedRows.length === 0) {
+    // Either a genuine retry of an echo already recorded, or — just as
+    // likely — wacrm's own send-message.ts already inserted this exact
+    // (conversation_id, message_id) because it made the send itself.
+    // Either way, correctly a no-op.
+    return
+  }
+
+  await db
+    .from('conversations')
+    .update({
+      last_message_text: fields.contentText || `[${fields.contentType}]`,
+      last_message_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', conversation.id)
+
+  // No outbound webhook event here — `dispatchWebhookEvent`'s type
+  // covers `message.received` (customer-originated) and
+  // `message.status_updated` (delivery receipts) only; neither fits an
+  // agent's own external-app send, and adding a new event type is a
+  // separate product decision (would need every existing webhook
+  // subscriber to consider whether they even want it) outside this
+  // fix's scope of "make the message show up in the CRM at all."
+  console.info(`[${channel} outbound-echo] recorded agent message from outside wacrm:`, fields.mid)
+}
+
+export interface OutboundEchoByCustomerId extends OutboundEchoFields {
+  channel: DmChannel
+  accountId: string
+  configOwnerUserId: string
+  /** The customer's platform-scoped id — Meta's `recipient.id` on an
+   *  echo event (swapped from the usual `sender.id` position, since
+   *  for an echo WE are the sender). */
+  customerId: string
+  resolveProfile: () => Promise<{ name?: string; username?: string } | null>
+}
+
+/**
+ * Meta-direct entry point (Instagram's own `is_echo` events carry a
+ * real customer id, unlike Zernio's — see
+ * `handleOutboundEchoMessageForZernioConversation` below). Resolves/
+ * creates the contact + conversation exactly like a genuine inbound
+ * message would, so a brand-new contact who's only ever been messaged
+ * by an agent from the native app still shows up.
+ */
+export async function handleOutboundEchoMessage(db: SupabaseClient, msg: OutboundEchoByCustomerId): Promise<void> {
+  const { channel, accountId, configOwnerUserId } = msg
+
+  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, msg.customerId, msg.resolveProfile)
+  if (!contactOutcome) return
+  const contactRecord = contactOutcome.contact
+
+  const convResult = await findOrCreateConversation(db, channel, accountId, configOwnerUserId, contactRecord.id)
+  if (!convResult) return
+  const conversation = convResult.conversation
+
+  if (convResult.created) {
+    await dispatchWebhookEvent(db, accountId, 'conversation.created', {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+      channel,
+    })
+  }
+
+  await persistOutboundEchoMessage(db, channel, conversation, msg)
+}
+
+/**
+ * Zernio entry point. Unlike Meta's Send API, Zernio addresses an
+ * existing *conversation* by its own opaque id rather than a raw
+ * platform recipient id (see `src/lib/zernio/api.ts`'s own doc
+ * comment) — so an outgoing-direction `message.received` event carries
+ * no customer identifier to create a brand-new contact from. Only
+ * works when a conversation already exists for `zernioConversationId`
+ * (the common case: an ongoing chat the customer already started, that
+ * an agent is now also replying to from outside wacrm). When none
+ * exists yet, this can't know who the message was even sent to, so it
+ * logs and does nothing rather than guess or fabricate a contact.
+ */
+export async function handleOutboundEchoMessageForZernioConversation(
+  db: SupabaseClient,
+  args: OutboundEchoFields & {
+    channel: DmChannel
+    accountId: string
+    zernioConversationId: string
+  },
+): Promise<void> {
+  const { channel, accountId, zernioConversationId } = args
+
+  const { data: conversation, error } = await db
+    .from('conversations')
+    .select('*')
+    .eq('account_id', accountId)
+    .eq('zernio_conversation_id', zernioConversationId)
+    .maybeSingle()
+
+  if (error) {
+    console.error(`[${channel} outbound-echo] error looking up conversation for zernio_conversation_id:`, zernioConversationId, error)
+    return
+  }
+  if (!conversation) {
+    console.warn(
+      `[${channel} outbound-echo] no existing conversation for zernio_conversation_id ${zernioConversationId} — an agent's own external-app message to a brand-new contact can't be attributed without a customer id, skipping.`,
+    )
+    return
+  }
+
+  await persistOutboundEchoMessage(db, channel, conversation, args)
+}

@@ -2,7 +2,12 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
-import { handleInboundDmMessage, markMessageRead, toContentType } from '@/lib/messaging/dm-inbound'
+import {
+  handleInboundDmMessage,
+  handleOutboundEchoMessageForZernioConversation,
+  markMessageRead,
+  toContentType,
+} from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as src/app/api/instagram/webhook/route.ts (the
 // Meta-direct route this mirrors): after() can fan out to several DB
@@ -144,15 +149,30 @@ async function processZernioEvent(
   if (payload.event !== 'message.received' || !payload.message) return
 
   const message = payload.message
-  // Echoes: an outgoing message somehow arriving on message.received
-  // rather than message.sent. Defensive only — Zernio's docs describe
-  // message.received as customer-originated, but skipping non-incoming
-  // directions here mirrors the is_echo guard on the Meta route so an
-  // agent's own send can never be re-ingested as a second "customer"
-  // message.
-  if (message.direction !== 'incoming') return
-
   const attachment = message.attachments?.[0]
+
+  // An "outgoing" direction on message.received means an agent replied
+  // from the native Instagram app (or Zernio's own inbox UI) instead
+  // of through wacrm — not a delivery-status echo of wacrm's own send,
+  // which never round-trips back through this event at all. Recording
+  // it (rather than the old unconditional drop) is what makes those
+  // chats show up in the CRM; see handleOutboundEchoMessageForZernioConversation's
+  // own doc comment for why it can only attribute this to an existing
+  // conversation, never create a brand-new contact from it.
+  if (message.direction === 'outgoing') {
+    await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
+      channel: 'instagram',
+      accountId: config.account_id,
+      zernioConversationId: message.conversationId,
+      mid: message.platformMessageId,
+      contentText: attachment ? null : message.text,
+      mediaUrl: attachment?.url ?? null,
+      contentType: attachment ? toContentType(attachment.type) : 'text',
+      replyToMid: null,
+    })
+    return
+  }
+  if (message.direction !== 'incoming') return
 
   await handleInboundDmMessage(supabaseAdmin(), {
     channel: 'instagram',

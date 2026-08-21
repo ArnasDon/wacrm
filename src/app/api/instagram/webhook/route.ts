@@ -3,7 +3,12 @@ import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { getIgUserProfile } from '@/lib/instagram/api'
-import { handleInboundDmMessage, markMessageRead, toContentType } from '@/lib/messaging/dm-inbound'
+import {
+  handleInboundDmMessage,
+  handleOutboundEchoMessage,
+  markMessageRead,
+  toContentType,
+} from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as src/app/api/whatsapp/webhook/route.ts: the after()
 // callback can fan out to a profile-lookup call per new contact, so
@@ -47,12 +52,17 @@ interface InstagramMessage {
    */
   reply_to?: { mid: string }
   /**
-   * True when this event mirrors a message OUR page/app sent (via the
-   * API, or manually from Meta's own inbox) rather than one from the
-   * customer. Without filtering these out, every agent send would be
-   * re-ingested here as a second, duplicate delivery on top of the
-   * one send-message.ts already persisted — see the is_echo check in
-   * processMessagingEvent below.
+   * True when this event mirrors a message OUR page/app sent — via
+   * wacrm's own API call, OR an agent replying from the native
+   * Instagram app / Meta's own inbox. On an echo, Meta swaps the usual
+   * sender/recipient roles: `sender.id` is OUR ig account and
+   * `recipient.id` is the customer (see `processWebhook`, which
+   * resolves the account-routing id and the customer id accordingly
+   * for both cases). Routed to `handleOutboundEchoMessage` rather than
+   * dropped — that function's own idempotent upsert is what safely
+   * no-ops when this really was wacrm's own send being echoed back,
+   * without silently losing an agent's external-app reply the rest of
+   * the time.
    */
   is_echo?: boolean
 }
@@ -160,11 +170,14 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
     if (!entry.messaging) continue
 
     for (const event of entry.messaging) {
-      // The recipient of an inbound customer message is OUR connected
-      // IG account — route by that id, mirroring the WhatsApp route's
-      // phone_number_id lookup. `.single()`-avoidance for the same
-      // reason: distinguish "no config" from "ambiguous config" in logs.
-      const igAccountId = event.recipient.id
+      // For a genuine customer message, WE are the recipient. For an
+      // echo (see InstagramMessage.is_echo's own doc comment), Meta
+      // flips the roles: WE are the sender and the customer is the
+      // recipient — so which field is "our account" to route by
+      // depends on which kind of event this is.
+      const isEcho = Boolean(event.message?.is_echo)
+      const igAccountId = isEcho ? event.sender.id : event.recipient.id
+      const customerIgsid = isEcho ? event.recipient.id : event.sender.id
 
       const { data: configRows, error: configError } = await supabaseAdmin()
         .from('instagram_config')
@@ -198,7 +211,8 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
       if (event.message) {
         await processMessagingEvent(
           event.message,
-          event.sender.id,
+          customerIgsid,
+          isEcho,
           config.account_id,
           config.user_id,
           decrypt(config.access_token)
@@ -210,25 +224,40 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
 
 async function processMessagingEvent(
   message: InstagramMessage,
-  senderIgsid: string,
+  customerIgsid: string,
+  isEcho: boolean,
   accountId: string,
   configOwnerUserId: string,
   accessToken: string
 ) {
-  // Echoes mirror OUR OWN sends (agent replies, automation/flow sends)
-  // back through the webhook. Skip them — send-message.ts already
-  // persisted the row when it made the call; re-ingesting here would
-  // duplicate every outbound message as a second, wrongly-attributed
-  // "customer" message.
-  if (message.is_echo) return
-
   const { contentText, mediaUrl, contentType } = parseMessageContent(message)
+
+  if (isEcho) {
+    // An agent replied from the native Instagram app / Meta's own
+    // inbox instead of through wacrm — record it rather than the old
+    // unconditional drop; handleOutboundEchoMessage's own idempotent
+    // upsert safely no-ops on the OTHER case this event also covers
+    // (wacrm's own send-message.ts already persisted the row itself).
+    await handleOutboundEchoMessage(supabaseAdmin(), {
+      channel: 'instagram',
+      accountId,
+      configOwnerUserId,
+      customerId: customerIgsid,
+      mid: message.mid,
+      contentText,
+      mediaUrl,
+      contentType,
+      replyToMid: message.reply_to?.mid ?? null,
+      resolveProfile: () => getIgUserProfile({ igsid: customerIgsid, accessToken }),
+    })
+    return
+  }
 
   await handleInboundDmMessage(supabaseAdmin(), {
     channel: 'instagram',
     accountId,
     configOwnerUserId,
-    senderId: senderIgsid,
+    senderId: customerIgsid,
     mid: message.mid,
     contentText,
     mediaUrl,
@@ -238,7 +267,7 @@ async function processMessagingEvent(
     // Instagram gives no profile name inline on the message event —
     // resolved lazily here (Graph API call, best-effort, never throws)
     // only when findOrCreateContact determines the contact is new.
-    resolveProfile: () => getIgUserProfile({ igsid: senderIgsid, accessToken }),
+    resolveProfile: () => getIgUserProfile({ igsid: customerIgsid, accessToken }),
   })
 }
 

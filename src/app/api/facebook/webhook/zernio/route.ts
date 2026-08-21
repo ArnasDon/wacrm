@@ -2,7 +2,12 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
-import { handleInboundDmMessage, markMessageRead, toContentType } from '@/lib/messaging/dm-inbound'
+import {
+  handleInboundDmMessage,
+  handleOutboundEchoMessageForZernioConversation,
+  markMessageRead,
+  toContentType,
+} from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as src/app/api/instagram/webhook/zernio/route.ts,
 // which this mirrors exactly apart from the config table: Facebook
@@ -138,10 +143,25 @@ async function processZernioEvent(
   if (payload.event !== 'message.received' || !payload.message) return
 
   const message = payload.message
-  // Echoes: defensive guard, same reasoning as the Instagram Zernio route.
-  if (message.direction !== 'incoming') return
-
   const attachment = message.attachments?.[0]
+
+  // Same reasoning as the Instagram Zernio route: "outgoing" here means
+  // an agent replied from the native Messenger app instead of through
+  // wacrm, not a delivery-status echo of wacrm's own send.
+  if (message.direction === 'outgoing') {
+    await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
+      channel: 'facebook',
+      accountId: config.account_id,
+      zernioConversationId: message.conversationId,
+      mid: message.platformMessageId,
+      contentText: attachment ? null : message.text,
+      mediaUrl: attachment?.url ?? null,
+      contentType: attachment ? toContentType(attachment.type) : 'text',
+      replyToMid: null,
+    })
+    return
+  }
+  if (message.direction !== 'incoming') return
 
   await handleInboundDmMessage(supabaseAdmin(), {
     channel: 'facebook',

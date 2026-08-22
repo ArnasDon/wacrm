@@ -94,7 +94,10 @@ function lineKey(productId: string, optionId: string | null): string {
   return `${productId}::${optionId ?? ''}`;
 }
 
-function parseLineKey(key: string): { productId: string; optionId: string | null } {
+function parseLineKey(key: string): {
+  productId: string;
+  optionId: string | null;
+} {
   const [productId, optionId] = key.split('::');
   return { productId, optionId: optionId || null };
 }
@@ -130,6 +133,7 @@ function PublicCatalogPageInner() {
     null
   );
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
+  const [detailImageIndex, setDetailImageIndex] = useState(0);
   const [search, setSearch] = useState('');
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -226,8 +230,9 @@ function PublicCatalogPageInner() {
         // from the selected option when there is one, or the product's
         // own base installation_cost otherwise.
         const installation =
-          (i.option ? i.option.installation_cost : i.product.installation_cost) ??
-          0;
+          (i.option
+            ? i.option.installation_cost
+            : i.product.installation_cost) ?? 0;
         return sum + i.unitPrice * i.quantity + installation;
       }, 0),
     [selectedItems]
@@ -248,7 +253,9 @@ function PublicCatalogPageInner() {
     ? (selectedProduct.price_options.find((o) => o.id === selectedOptionId) ??
       null)
     : null;
-  const detailPrice = selectedOption ? selectedOption.price : selectedProduct?.price;
+  const detailPrice = selectedOption
+    ? selectedOption.price
+    : selectedProduct?.price;
   const detailInstallationCost = selectedOption
     ? selectedOption.installation_cost
     : (selectedProduct?.installation_cost ?? null);
@@ -357,13 +364,13 @@ function PublicCatalogPageInner() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f7f6f1] text-[#082f38]">
-      <div className="bg-[#062f38] px-4 py-2.5 text-center text-[10px] font-semibold tracking-[0.2em] text-white uppercase sm:text-xs">
+    <div className="min-h-full bg-[#f7f6f1] text-[#082f38]">
+      <div className="bg-[#062f38] px-4 py-2 text-center text-[9px] font-semibold tracking-[0.14em] text-white uppercase sm:py-2.5 sm:text-xs sm:tracking-[0.2em]">
         Descubre nuestra selección · Solicita tu cotización en minutos
       </div>
 
       <header className="sticky top-0 z-20 border-b border-[#082f38]/10 bg-[#fffefa]/95 backdrop-blur-md">
-        <div className="mx-auto grid max-w-7xl grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-4 sm:px-8">
+        <div className="mx-auto grid max-w-7xl grid-cols-[2.5rem_minmax(0,1fr)_2.5rem] items-center gap-2 px-3 py-3 sm:grid-cols-[1fr_auto_1fr] sm:gap-3 sm:px-8 sm:py-4">
           <label className="relative hidden max-w-64 sm:block">
             <span className="sr-only">Buscar productos</span>
             <Search className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-[#082f38]/65" />
@@ -377,9 +384,9 @@ function PublicCatalogPageInner() {
           <button
             type="button"
             onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-            className="col-start-2 text-center"
+            className="col-start-2 min-w-0 text-center"
           >
-            <span className="block font-serif text-2xl font-semibold tracking-tight sm:text-3xl">
+            <span className="block truncate font-serif text-xl font-semibold tracking-tight sm:text-3xl">
               {data.account_name}
             </span>
             <span className="mt-0.5 block text-[9px] font-bold tracking-[0.28em] uppercase opacity-60">
@@ -402,7 +409,7 @@ function PublicCatalogPageInner() {
             </button>
           </div>
         </div>
-        <nav className="mx-auto flex max-w-7xl items-center justify-center gap-8 overflow-x-auto px-4 pb-3 text-[11px] font-bold tracking-[0.16em] whitespace-nowrap uppercase sm:pb-4">
+        <nav className="app-scroll mx-auto flex max-w-7xl items-center justify-start gap-7 overflow-x-auto px-4 pb-3 text-[10px] font-bold tracking-[0.14em] whitespace-nowrap uppercase sm:justify-center sm:gap-8 sm:pb-4 sm:text-[11px] sm:tracking-[0.16em]">
           <a href="#productos" className="transition hover:text-[#1e7774]">
             Productos
           </a>
@@ -435,7 +442,7 @@ function PublicCatalogPageInner() {
       </header>
 
       {featuredProduct && (
-        <section className="relative isolate min-h-[520px] overflow-hidden bg-[#d8ddd8] sm:min-h-[640px]">
+        <section className="relative isolate min-h-[440px] overflow-hidden bg-[#d8ddd8] sm:min-h-[640px]">
           {/* eslint-disable-next-line @next/next/no-img-element -- product URLs come from account-configured Supabase storage. */}
           <img
             src={featuredProduct.image_url!}
@@ -443,12 +450,12 @@ function PublicCatalogPageInner() {
             className="absolute inset-0 h-full w-full object-cover"
           />
           <div className="absolute inset-0 bg-linear-to-r from-black/35 via-black/5 to-transparent" />
-          <div className="relative mx-auto flex min-h-[520px] max-w-7xl items-end px-4 py-8 sm:min-h-[640px] sm:items-center sm:justify-end sm:px-8">
-            <div className="w-full max-w-lg bg-[#fffefa]/95 p-7 shadow-2xl backdrop-blur-sm sm:p-12">
+          <div className="relative mx-auto flex min-h-[440px] max-w-7xl items-end px-3 py-4 sm:min-h-[640px] sm:items-center sm:justify-end sm:px-8 sm:py-8">
+            <div className="w-full max-w-lg rounded-2xl bg-[#fffefa]/95 p-5 shadow-2xl backdrop-blur-sm sm:rounded-none sm:p-12">
               <p className="mb-4 flex items-center gap-2 text-[11px] font-bold tracking-[0.2em] text-[#1e7774] uppercase">
                 <Leaf className="size-4" /> Selección destacada
               </p>
-              <h2 className="font-serif text-4xl leading-[0.98] font-medium tracking-tight text-[#062f38] sm:text-6xl">
+              <h2 className="font-serif text-3xl leading-[0.98] font-medium tracking-tight text-[#062f38] sm:text-6xl">
                 {featuredProduct.name}
               </h2>
               {featuredProduct.description && (
@@ -463,9 +470,10 @@ function PublicCatalogPageInner() {
                 type="button"
                 onClick={() => {
                   setSelectedOptionId(null);
+                  setDetailImageIndex(0);
                   setSelectedProduct(featuredProduct);
                 }}
-                className="mt-6 inline-flex h-12 items-center gap-3 bg-[#062f38] px-7 text-xs font-bold tracking-[0.12em] text-white uppercase transition hover:bg-[#1e7774]"
+                className="mt-5 inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.12em] text-white uppercase transition active:scale-[0.98] sm:mt-6 sm:w-auto sm:rounded-none sm:px-7 sm:hover:bg-[#1e7774]"
               >
                 Ver producto <ArrowRight className="size-4" />
               </button>
@@ -476,7 +484,7 @@ function PublicCatalogPageInner() {
 
       <main
         id="productos"
-        className="mx-auto max-w-7xl px-4 pt-14 pb-36 sm:px-8 sm:pt-20"
+        className="mx-auto max-w-7xl px-3 pt-10 pb-36 sm:px-8 sm:pt-20"
       >
         <div className="mb-10 text-center sm:mb-14">
           <p className="text-[11px] font-bold tracking-[0.22em] text-[#1e7774] uppercase">
@@ -505,7 +513,7 @@ function PublicCatalogPageInner() {
             </p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-x-3 gap-y-10 sm:grid-cols-3 sm:gap-x-6 lg:grid-cols-4 lg:gap-x-8">
+          <div className="grid grid-cols-1 gap-x-3 gap-y-8 min-[390px]:grid-cols-2 sm:grid-cols-3 sm:gap-x-6 sm:gap-y-10 lg:grid-cols-4 lg:gap-x-8">
             {visibleProducts.map((product) => {
               const baseKey = lineKey(product.id, null);
               const qty = quantities[baseKey] ?? 0;
@@ -518,11 +526,12 @@ function PublicCatalogPageInner() {
                     type="button"
                     onClick={() => {
                       setSelectedOptionId(null);
+                      setDetailImageIndex(0);
                       setSelectedProduct(product);
                     }}
-                    className="block w-full text-left"
+                    className="block w-full rounded-2xl text-left focus-visible:ring-2 focus-visible:ring-[#1e7774] focus-visible:outline-none sm:rounded-none"
                   >
-                    <div className="relative aspect-[4/5] w-full overflow-hidden bg-[#e9ebe6]">
+                    <div className="relative aspect-[4/5] w-full overflow-hidden rounded-2xl bg-[#e9ebe6] sm:rounded-none">
                       {product.image_url ? (
                         // eslint-disable-next-line @next/next/no-img-element -- matches the app's existing product-image convention (product-form.tsx), which also skips next/image to avoid a remote-domain allowlist for Supabase Storage URLs.
                         <img
@@ -553,12 +562,12 @@ function PublicCatalogPageInner() {
                     </div>
                   </button>
                   <div className="pt-3">
-                    <div className="flex h-10 items-center justify-between border border-[#082f38]/20 bg-[#fffefa]">
+                    <div className="flex h-12 items-center justify-between rounded-xl border border-[#082f38]/20 bg-[#fffefa] sm:h-10 sm:rounded-none">
                       <Button
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
+                        className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
                         onClick={() =>
                           setQuantity(product.id, null, Math.max(0, qty - 1))
                         }
@@ -573,7 +582,7 @@ function PublicCatalogPageInner() {
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-9 rounded-none border-0 bg-transparent text-[#082f38] shadow-none hover:bg-[#e7ebe5]"
+                        className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
                         onClick={() => setQuantity(product.id, null, qty + 1)}
                       >
                         <Plus className="size-3.5" />
@@ -593,18 +602,19 @@ function PublicCatalogPageInner() {
           if (!open) {
             setSelectedProduct(null);
             setSelectedOptionId(null);
+            setDetailImageIndex(0);
           }
         }}
       >
-        <DialogContent className="max-h-[94vh] overflow-y-auto border-0 bg-[#fffefa] p-0 text-[#082f38] sm:max-w-6xl">
+        <DialogContent className="inset-0 top-0 left-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none border-0 bg-[#fffefa] p-0 text-[#082f38] sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[94vh] sm:w-full sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
           {selectedProduct && (
-            <div className="grid min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
-              <div className="flex flex-col items-center justify-center gap-4 bg-[#e8e9e5] p-6 sm:p-10 lg:min-h-[620px]">
-                <div className="relative aspect-square w-full max-w-xl overflow-hidden bg-[#f1f1ee]">
-                  {detailImages[0] ? (
+            <div className="grid lg:min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
+              <div className="flex flex-col items-center justify-center gap-3 bg-[#e8e9e5] p-3 pt-12 sm:gap-4 sm:p-10 lg:min-h-[620px] lg:pt-10">
+                <div className="relative aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl bg-[#f1f1ee] sm:aspect-square sm:rounded-none">
+                  {detailImages[detailImageIndex] ? (
                     // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
                     <img
-                      src={detailImages[0]}
+                      src={detailImages[detailImageIndex]}
                       alt={selectedProduct.name}
                       className="h-full w-full object-contain transition duration-500 hover:scale-[1.03]"
                     />
@@ -618,26 +628,33 @@ function PublicCatalogPageInner() {
                   </span>
                 </div>
                 {detailImages.length > 1 && (
-                  <div className="flex w-full max-w-xl flex-wrap gap-2">
+                  <div className="app-scroll flex w-full max-w-xl gap-2 overflow-x-auto pb-1">
                     {detailImages.map((url, i) => (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <button
                         key={url + i}
-                        src={url}
-                        alt=""
-                        className="h-14 w-14 border border-[#082f38]/15 object-cover"
-                      />
+                        type="button"
+                        onClick={() => setDetailImageIndex(i)}
+                        className={`size-16 shrink-0 overflow-hidden rounded-xl border-2 ${detailImageIndex === i ? 'border-[#1e7774]' : 'border-transparent'}`}
+                        aria-label={`Ver imagen ${i + 1}`}
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt=""
+                          className="h-full w-full object-cover"
+                        />
+                      </button>
                     ))}
                   </div>
                 )}
               </div>
 
-              <div className="flex flex-col p-7 sm:p-10 lg:p-14">
+              <div className="flex flex-col p-5 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-10 lg:p-14">
                 <p className="text-[10px] font-bold tracking-[0.2em] text-[#1e7774] uppercase">
                   {data.account_name} · Colección
                 </p>
                 <DialogHeader className="mt-4 text-left">
-                  <DialogTitle className="font-serif text-4xl leading-none font-medium tracking-tight text-[#062f38] sm:text-5xl">
+                  <DialogTitle className="font-serif text-3xl leading-none font-medium tracking-tight text-[#062f38] sm:text-5xl">
                     {selectedProduct.name}
                   </DialogTitle>
                   <DialogDescription className="sr-only">
@@ -650,8 +667,8 @@ function PublicCatalogPageInner() {
                 </p>
                 {detailInstallationCost ? (
                   <p className="mt-1 flex items-center gap-1.5 text-xs text-[#284d53]/70">
-                    <Wrench className="size-3.5" />
-                    + {formatCurrency(detailInstallationCost, data.currency)} de
+                    <Wrench className="size-3.5" />+{' '}
+                    {formatCurrency(detailInstallationCost, data.currency)} de
                     instalación
                   </p>
                 ) : null}
@@ -669,8 +686,11 @@ function PublicCatalogPageInner() {
                     <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
-                        onClick={() => setSelectedOptionId(null)}
-                        className={`border px-4 py-2 text-xs font-semibold transition ${
+                        onClick={() => {
+                          setSelectedOptionId(null);
+                          setDetailImageIndex(0);
+                        }}
+                        className={`min-h-11 rounded-xl border px-4 py-2 text-xs font-semibold transition sm:min-h-0 sm:rounded-none ${
                           selectedOptionId === null
                             ? 'border-[#062f38] bg-[#062f38] text-white'
                             : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
@@ -683,14 +703,18 @@ function PublicCatalogPageInner() {
                         <button
                           key={option.id}
                           type="button"
-                          onClick={() => setSelectedOptionId(option.id)}
-                          className={`border px-4 py-2 text-xs font-semibold transition ${
+                          onClick={() => {
+                            setSelectedOptionId(option.id);
+                            setDetailImageIndex(0);
+                          }}
+                          className={`min-h-11 rounded-xl border px-4 py-2 text-xs font-semibold transition sm:min-h-0 sm:rounded-none ${
                             selectedOptionId === option.id
                               ? 'border-[#062f38] bg-[#062f38] text-white'
                               : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
                           }`}
                         >
-                          {option.label} · {formatCurrency(option.price, data.currency)}
+                          {option.label} ·{' '}
+                          {formatCurrency(option.price, data.currency)}
                         </button>
                       ))}
                     </div>
@@ -724,7 +748,11 @@ function PublicCatalogPageInner() {
                       type="button"
                       className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5]"
                       onClick={() =>
-                        setQuantity(selectedProduct.id, selectedOptionId, detailQty + 1)
+                        setQuantity(
+                          selectedProduct.id,
+                          selectedOptionId,
+                          detailQty + 1
+                        )
                       }
                       aria-label="Aumentar cantidad"
                     >
@@ -744,7 +772,7 @@ function PublicCatalogPageInner() {
                     setSelectedProduct(null);
                     setSelectedOptionId(null);
                   }}
-                  className="mt-8 flex h-14 w-full items-center justify-center gap-3 bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition hover:bg-[#1e7774]"
+                  className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition active:scale-[0.98] sm:rounded-none sm:hover:bg-[#1e7774]"
                 >
                   Agregar a mi selección <ShoppingCart className="size-4" />
                 </button>
@@ -772,7 +800,7 @@ function PublicCatalogPageInner() {
       {totalCount > 0 && (
         <div
           id="seleccion"
-          className="fixed inset-x-0 bottom-0 z-30 border-t border-[#082f38]/15 bg-[#fffefa]/95 shadow-[0_-8px_30px_rgba(8,47,56,0.08)] backdrop-blur"
+          className="fixed inset-x-0 bottom-0 z-30 border-t border-[#082f38]/15 bg-[#fffefa]/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_30px_rgba(8,47,56,0.08)] backdrop-blur"
         >
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-8">
             <div>
@@ -785,7 +813,7 @@ function PublicCatalogPageInner() {
             </div>
             <Button
               onClick={() => setDialogOpen(true)}
-              className="h-11 rounded-none bg-[#062f38] px-7 text-xs font-bold tracking-[0.1em] text-white uppercase hover:bg-[#1e7774]"
+              className="h-12 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.1em] text-white uppercase active:scale-[0.98] sm:h-11 sm:rounded-none sm:px-7 sm:hover:bg-[#1e7774]"
             >
               Me lo llevo
             </Button>
@@ -800,7 +828,7 @@ function PublicCatalogPageInner() {
         open={dialogOpen}
         onOpenChange={(open) => (open ? setDialogOpen(true) : resetDialog())}
       >
-        <DialogContent className="border-0 bg-[#fffefa] text-[#082f38] sm:max-w-md">
+        <DialogContent className="inset-x-0 top-auto bottom-0 left-0 max-h-[92dvh] w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-t-3xl rounded-b-none border-0 bg-[#fffefa] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] text-[#082f38] sm:top-1/2 sm:bottom-auto sm:left-1/2 sm:w-full sm:max-w-md sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl sm:p-4">
           {result === null ? (
             <>
               <DialogHeader>
@@ -823,6 +851,7 @@ function PublicCatalogPageInner() {
                   <Input
                     value={name}
                     onChange={(e) => setName(e.target.value)}
+                    autoComplete="name"
                     className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
@@ -834,10 +863,13 @@ function PublicCatalogPageInner() {
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
                     placeholder="+502 5555 5555"
+                    type="tel"
+                    inputMode="tel"
+                    autoComplete="tel"
                     className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-bold tracking-[0.14em] text-[#082f38]/70 uppercase">
                       NIT (opcional)
@@ -845,6 +877,7 @@ function PublicCatalogPageInner() {
                     <Input
                       value={nit}
                       onChange={(e) => setNit(e.target.value)}
+                      inputMode="numeric"
                       className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                     />
                   </div>
@@ -855,6 +888,9 @@ function PublicCatalogPageInner() {
                     <Input
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
+                      type="email"
+                      inputMode="email"
+                      autoComplete="email"
                       className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                     />
                   </div>
@@ -867,11 +903,12 @@ function PublicCatalogPageInner() {
                     value={address}
                     onChange={(e) => setAddress(e.target.value)}
                     rows={2}
+                    autoComplete="street-address"
                     className="rounded-none border-[#082f38]/25 bg-[#fffefa] text-[#082f38] focus-visible:ring-[#1e7774]"
                   />
                 </div>
               </div>
-              <DialogFooter className="bg-[#fffefa]">
+              <DialogFooter className="bg-[#fffefa] *:min-h-11">
                 <Button
                   variant="outline"
                   onClick={() => setDialogOpen(false)}

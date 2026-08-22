@@ -24,6 +24,9 @@ interface Fixture {
   defaultCurrency?: string | null
   pipeline?: { id: string } | null
   stage?: { id: string } | null
+  /** The contact's existing open deal, if any — `null`/omitted means
+   *  none, so `createQuote` falls through to creating a new one. */
+  existingOpenDeal?: { id: string } | null
 }
 
 const CUSTOMER = {
@@ -74,6 +77,9 @@ function makeDb(fx: Fixture) {
       }
       if (table === 'pipeline_stages') {
         return { data: fx.stage ?? null, error: null }
+      }
+      if (table === 'deals') {
+        return { data: fx.existingOpenDeal ?? null, error: null }
       }
       return { data: null, error: null }
     }
@@ -335,6 +341,22 @@ describe('createQuote — linked deal', () => {
       account_id: 'acct-1', pipeline_id: 'pipe-1', stage_id: 'stage-1',
       contact_id: 'contact-1', value: 10, status: 'open',
     })
+  })
+
+  it('reuses the contact\'s existing open deal instead of creating a second one', async () => {
+    const { db, inserted } = makeDb({
+      products: [{ id: 'p1', name: 'A', price: 10, is_active: true }],
+      pipeline: { id: 'pipe-1' },
+      stage: { id: 'stage-1' },
+      existingOpenDeal: { id: 'existing-deal-1' },
+    })
+    const { quote } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', quantity: 1 }],
+      allowFreeItems: false,
+    })
+    expect(quote.deal_id).toBe('existing-deal-1')
+    expect(inserted.deals).toBeUndefined()
   })
 
   it('leaves deal_id null when the account has no pipeline yet, without failing the quote', async () => {

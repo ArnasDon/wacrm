@@ -164,46 +164,70 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     .maybeSingle()
   const currency = account?.default_currency ?? 'USD'
 
-  // Land the linked deal in the account's oldest pipeline, first stage —
-  // there's no "default pipeline" concept elsewhere in the app to defer
-  // to, so this mirrors "a brand-new deal starts at the top of the
-  // board." Degrades gracefully (deal_id stays null) if the account has
-  // no pipeline/stage set up yet — that must never block the quote
-  // itself from being created.
+  // Reuse the contact's existing open deal instead of always creating a
+  // new one — real bug hit in production (2026-08-21): every quote used
+  // to create its own deal unconditionally, so a contact who already had
+  // an open deal (e.g. one the AI's autonomous stage progression had
+  // already moved to "Cotización") ended up with a SECOND, disconnected
+  // deal parked in the pipeline's first stage the moment a quote was
+  // generated for them — same contact showing twice in Pipelines and in
+  // the inbox's linked-deal panel. Same resolution `autoMoveDealStage`
+  // (src/lib/ai/auto-reply.ts) and the automations engine's `move_deal`
+  // step already use: the contact's most-recently-updated open deal.
   let dealId: string | null = null
-  const { data: pipeline } = await db
-    .from('pipelines')
+  const { data: existingDeal } = await db
+    .from('deals')
     .select('id')
     .eq('account_id', accountId)
-    .order('created_at', { ascending: true })
+    .eq('contact_id', contactId)
+    .eq('status', 'open')
+    .order('updated_at', { ascending: false })
     .limit(1)
     .maybeSingle()
-  if (pipeline) {
-    const { data: stage } = await db
-      .from('pipeline_stages')
+
+  if (existingDeal) {
+    dealId = existingDeal.id as string
+  } else {
+    // No open deal yet — land a brand-new one in the account's oldest
+    // pipeline, first stage. There's no "default pipeline" concept
+    // elsewhere in the app to defer to, so this mirrors "a brand-new
+    // deal starts at the top of the board." Degrades gracefully
+    // (deal_id stays null) if the account has no pipeline/stage set up
+    // yet — that must never block the quote itself from being created.
+    const { data: pipeline } = await db
+      .from('pipelines')
       .select('id')
-      .eq('pipeline_id', pipeline.id)
-      .order('position', { ascending: true })
+      .eq('account_id', accountId)
+      .order('created_at', { ascending: true })
       .limit(1)
       .maybeSingle()
-    if (stage) {
-      const { data: deal, error: dealError } = await db
-        .from('deals')
-        .insert({
-          account_id: accountId,
-          user_id: userId,
-          pipeline_id: pipeline.id,
-          stage_id: stage.id,
-          contact_id: contactId,
-          title: `Cotización — ${new Date().toISOString().slice(0, 10)}`,
-          value: total,
-          currency,
-          status: 'open',
-        })
+    if (pipeline) {
+      const { data: stage } = await db
+        .from('pipeline_stages')
         .select('id')
-        .single()
-      if (dealError) throw new CreateQuoteError(dealError.message, 500)
-      dealId = deal.id as string
+        .eq('pipeline_id', pipeline.id)
+        .order('position', { ascending: true })
+        .limit(1)
+        .maybeSingle()
+      if (stage) {
+        const { data: deal, error: dealError } = await db
+          .from('deals')
+          .insert({
+            account_id: accountId,
+            user_id: userId,
+            pipeline_id: pipeline.id,
+            stage_id: stage.id,
+            contact_id: contactId,
+            title: `Cotización — ${new Date().toISOString().slice(0, 10)}`,
+            value: total,
+            currency,
+            status: 'open',
+          })
+          .select('id')
+          .single()
+        if (dealError) throw new CreateQuoteError(dealError.message, 500)
+        dealId = deal.id as string
+      }
     }
   }
 

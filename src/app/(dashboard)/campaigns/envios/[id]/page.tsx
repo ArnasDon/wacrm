@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table';
 import type { Envio, EnvioLote, EnvioLead } from '@/types';
 import { getLoteStatus, getEnvioLeadStatus } from '@/lib/envio-status';
-import { isLote2Blocked, estimateRemainingMs } from '@/lib/envios/lote-engine';
+import { isLoteBlocked, estimateRemainingMs } from '@/lib/envios/lote-engine';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -32,7 +32,7 @@ export default function EnvioDetailPage() {
   const [envio, setEnvio] = useState<Envio | null>(null);
   const [lotes, setLotes] = useState<EnvioLote[]>([]);
   const [leads, setLeads] = useState<EnvioLead[]>([]);
-  const [selectedLote, setSelectedLote] = useState<1 | 2>(1);
+  const [selectedLote, setSelectedLote] = useState<number>(1);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [busyLote, setBusyLote] = useState<number | null>(null);
@@ -85,6 +85,7 @@ export default function EnvioDetailPage() {
   }, [envioId, selectedLote]);
 
   const anyActive = useMemo(() => lotes.some((l) => l.status === 'em_andamento'), [lotes]);
+  const hasVariants = !!envio?.variantes_mensagem && envio.variantes_mensagem.length > 0;
 
   useEffect(() => {
     if (anyActive) {
@@ -152,9 +153,6 @@ export default function EnvioDetailPage() {
     );
   }
 
-  const lote1 = lotes.find((l) => l.numero_lote === 1);
-  const lote2Blocked = isLote2Blocked(lote1?.status ?? 'aguardando');
-
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -212,7 +210,7 @@ export default function EnvioDetailPage() {
         />
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {lotes.map((lote) => {
           const status = getLoteStatus(lote.status);
           const sentCount = lote.numero_lote === selectedLote
@@ -222,7 +220,7 @@ export default function EnvioDetailPage() {
             lote.numero_lote === selectedLote && lote.status === 'em_andamento'
               ? estimateRemainingMs(leads)
               : null;
-          const blocked = lote.numero_lote === 2 && lote2Blocked;
+          const blocked = isLoteBlocked(lote.numero_lote, lotes);
           const canStart = (lote.status === 'aguardando' || lote.status === 'pausado') && !blocked;
           const canPause = lote.status === 'em_andamento';
 
@@ -330,6 +328,7 @@ export default function EnvioDetailPage() {
                 <TableRow className="border-border hover:bg-transparent">
                   <TableHead className="text-muted-foreground">{t('table.name')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.phone')}</TableHead>
+                  {hasVariants && <TableHead className="text-muted-foreground">{t('table.variant')}</TableHead>}
                   <TableHead className="text-muted-foreground">{t('table.message')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.status')}</TableHead>
                   <TableHead className="text-muted-foreground">{t('table.sentAt')}</TableHead>
@@ -343,6 +342,11 @@ export default function EnvioDetailPage() {
                     <TableRow key={lead.id} className="border-border">
                       <TableCell className="font-medium text-foreground">{lead.nome ?? '-'}</TableCell>
                       <TableCell className="text-muted-foreground">{lead.telefone}</TableCell>
+                      {hasVariants && (
+                        <TableCell className="text-muted-foreground">
+                          {lead.variante_indice !== null ? String.fromCharCode(65 + lead.variante_indice) : '-'}
+                        </TableCell>
+                      )}
                       <TableCell className="max-w-xs truncate text-xs text-muted-foreground" title={lead.mensagem}>
                         {lead.mensagem}
                       </TableCell>

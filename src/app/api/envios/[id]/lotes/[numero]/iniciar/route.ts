@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { isLote2Blocked } from '@/lib/envios/lote-engine'
+import { isLoteBlocked } from '@/lib/envios/lote-engine'
 
 /**
  * Starts a lote's send queue. Validates server-side (not just a
  * disabled button in the UI — spec section 3):
- *   - lote 2 stays blocked until lote 1 is `concluido`.
+ *   - a lote stays blocked until every lower-numbered lote (of the
+ *     same Envio) is `concluido` — generalized to N lotes, see
+ *     `isLoteBlocked`.
  *   - no other lote is already `em_andamento` in this account (also
  *     enforced at the DB level by the `check_single_active_lote`
  *     trigger — migration 078 — this check just returns a readable
@@ -23,7 +25,7 @@ export async function POST(
     const { supabase } = await requireRole('agent')
     const { id: envioId, numero } = await params
     const numeroLote = Number(numero)
-    if (numeroLote !== 1 && numeroLote !== 2) {
+    if (!Number.isInteger(numeroLote) || numeroLote < 1) {
       return NextResponse.json({ error: 'invalid lote number' }, { status: 400 })
     }
 
@@ -43,14 +45,11 @@ export async function POST(
       )
     }
 
-    if (numeroLote === 2) {
-      const lote1 = lotes?.find((l) => l.numero_lote === 1)
-      if (isLote2Blocked(lote1?.status ?? 'aguardando')) {
-        return NextResponse.json(
-          { error: 'Libera ao concluir o lote 1' },
-          { status: 409 },
-        )
-      }
+    if (isLoteBlocked(numeroLote, lotes ?? [])) {
+      return NextResponse.json(
+        { error: 'Libera ao concluir o lote anterior' },
+        { status: 409 },
+      )
     }
 
     const { data: activeElsewhere } = await supabase

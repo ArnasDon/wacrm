@@ -5,31 +5,52 @@
  */
 
 /**
- * Smallest a lote is allowed to be when the list is actually split in
- * two. Below this, splitting would produce a lote too thin to be worth
- * a separate approval/pause step — and at the extreme (1 or 0 leads),
- * an empty lote that never completes (the cron tick has nothing to
- * advance) and permanently blocks lote 2, since lote 2 only unlocks
- * once lote 1 reaches `concluido` (see `isLote2Blocked`).
+ * Smallest a lote is allowed to be when the list is split across more
+ * than one lote. Below this, splitting would produce a lote too thin to
+ * be worth a separate approval/pause step — and at the extreme (an
+ * empty lote), a lote that never reaches `concluido` (the cron tick has
+ * nothing to advance) and permanently blocks every lote after it, since
+ * a lote only unlocks once every lower-numbered lote is `concluido`
+ * (see `isLoteBlocked`).
  */
 export const MIN_LOTE_SIZE = 2;
 
+/** Upper bound on how many lotes a single Envio can be split into (UI + DB CHECK, migration 080). */
+export const MAX_LOTES = 20;
+
 /**
- * Splits a lead count into 2 lotes, rounding the first lote DOWN on an
- * odd count (spec: "arredondar o primeiro lote para baixo"). Returns
- * `[lote1Size, lote2Size]`.
+ * Splits a lead count into `numLotes` lotes as evenly as possible,
+ * rounding earlier lotes DOWN on an uneven count (spec: "arredondar o
+ * primeiro lote para baixo", generalized — any remainder leads land on
+ * the LAST lotes instead of the first). Returns an array of lote sizes
+ * summing to `totalLeads`.
  *
- * Only splits when both sides would reach `MIN_LOTE_SIZE` — otherwise
- * returns `[totalLeads, 0]`, signaling a single lote (the caller must
- * skip creating lote 2 entirely when its size is 0, not create it
- * empty).
+ * Never returns an empty lote: if `totalLeads` can't support
+ * `numLotes` lotes at `MIN_LOTE_SIZE` each, the requested count is
+ * silently reduced to the largest feasible number (at least 1) — the
+ * returned array's length may be smaller than `numLotes`.
  */
-export function splitIntoLotes(totalLeads: number): [number, number] {
-  if (totalLeads < MIN_LOTE_SIZE * 2) {
-    return [totalLeads, 0];
-  }
-  const lote1 = Math.floor(totalLeads / 2);
-  return [lote1, totalLeads - lote1];
+export function splitIntoLotes(totalLeads: number, numLotes: number = 2): number[] {
+  if (totalLeads <= 0) return [0];
+
+  const requested = Math.max(1, Math.min(Math.trunc(numLotes) || 1, MAX_LOTES));
+  const feasible = Math.max(1, Math.min(requested, Math.floor(totalLeads / MIN_LOTE_SIZE) || 1));
+
+  const base = Math.floor(totalLeads / feasible);
+  const remainder = totalLeads % feasible;
+  return Array.from({ length: feasible }, (_, i) => (i < feasible - remainder ? base : base + 1));
+}
+
+/**
+ * Which message variant (0-based index into the uploaded `messages`
+ * array) a lead at `positionInLote` should get — a simple round-robin
+ * rotation, evaluated separately per lote (spec: "distribuir as
+ * variantes de forma rotativa/igualitária... dentro de cada lote").
+ * `variantCount <= 1` always returns 0 (no rotation needed).
+ */
+export function variantIndexForPosition(positionInLote: number, variantCount: number): number {
+  if (variantCount <= 1) return 0;
+  return positionInLote % variantCount;
 }
 
 export const MIN_ATTEMPT_DELAY_MS = 60_000;
@@ -44,9 +65,20 @@ export function randomAttemptDelayMs(): number {
   return MIN_ATTEMPT_DELAY_MS + Math.random() * (MAX_ATTEMPT_DELAY_MS - MIN_ATTEMPT_DELAY_MS);
 }
 
-/** Lote 2 stays locked until lote 1 has fully finished (spec section 3). */
-export function isLote2Blocked(lote1Status: string): boolean {
-  return lote1Status !== 'concluido';
+/** The minimal shape needed to reason about lote ordering/blocking. */
+export interface LoteForBlocking {
+  numero_lote: number;
+  status: string;
+}
+
+/**
+ * A lote stays locked until every lower-numbered lote in the same
+ * Envio has reached `concluido` (spec section 3, generalized from the
+ * old fixed lote-1/lote-2 rule to N lotes) — dispatch is strictly
+ * sequential, one lote at a time.
+ */
+export function isLoteBlocked(numeroLote: number, lotes: LoteForBlocking[]): boolean {
+  return lotes.some((l) => l.numero_lote < numeroLote && l.status !== 'concluido');
 }
 
 /** A lead still waiting to be sent — the subset `estimateRemainingMs` reasons about. */

@@ -772,6 +772,8 @@ export interface Envio {
   canal: 'baileys';
   /** Shared image for every lead (`creative.url` from the uploaded campaign file). */
   mensagem_imagem_url: string | null;
+  /** A/B/C+ message variant texts from the upload's `messages` field (migration 080) — `null` for a legacy per-recipient-message envio. */
+  variantes_mensagem: string[] | null;
   created_by: string | null;
   created_at: string;
 }
@@ -779,7 +781,8 @@ export interface Envio {
 export interface EnvioLote {
   id: string;
   envio_id: string;
-  numero_lote: 1 | 2;
+  /** 1-based, sequential; up to MAX_LOTES (src/lib/envios/lote-engine.ts) — no longer fixed at 1 or 2 (migration 080). */
+  numero_lote: number;
   quantidade_leads: number;
   status: EnvioLoteStatus;
   iniciado_em: string | null;
@@ -791,8 +794,10 @@ export interface EnvioLead {
   lote_id: string;
   nome: string | null;
   telefone: string;
-  /** Final, already-personalized text for this lead (`recipients[i].message` from the uploaded file). */
+  /** Final text for this lead — either `recipients[i].message` (legacy) or the rotated variant from `envios.variantes_mensagem` (migration 080). */
   mensagem: string;
+  /** 0-based index into `envios.variantes_mensagem` this lead was assigned, or `null` for a legacy per-recipient-message envio (migration 080). */
+  variante_indice: number | null;
   status: EnvioLeadStatus;
   /** When the cron tick (GET /api/envios/cron) should next attempt this lead. */
   next_attempt_at: string | null;

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
-import { splitIntoLotes } from '@/lib/envios/lote-engine'
+import { splitIntoLotes, variantIndexForPosition, MAX_LOTES } from '@/lib/envios/lote-engine'
 import { parseCampaignFile } from '@/lib/envios/parse-campaign-file'
 
 interface CreateEnvioBody {
@@ -11,20 +11,27 @@ interface CreateEnvioBody {
   nome?: string
   campanha_id?: string | null
   /**
-   * Manual override for lote 1's size (spec: "permitir ajuste manual
-   * do tamanho de cada lote antes de confirmar"). Omitted = automatic
-   * split (first lote rounded down). Must be within [0, leads.length].
+   * How many lotes to split the leads into (spec: "N lotes
+   * configuráveis"). Omitted = 2 (legacy default). Leads are
+   * distributed as evenly as possible (`splitIntoLotes`); the actual
+   * number of lotes created may be smaller than requested if the list
+   * is too short to give every lote a minimum size.
    */
-  lote1_size?: number
+  numero_lotes?: number
 }
 
 /**
  * Creates an Envio + its lote(s) + their leads from the campaign JSON
  * file the user uploads (same format the Campanhas system exports:
- * `{campaign, creative, recipients}`). Small lists get a single lote
- * (see `splitIntoLotes`); larger ones get 2. Every lote is created
- * `aguardando` — nothing is sent until "Iniciar lote" is called
- * (POST .../lotes/[numero]/iniciar).
+ * `{campaign, creative, recipients}`, optionally with a `messages`
+ * array of A/B/C+ variants). Leads are split across `numero_lotes`
+ * lotes as evenly as possible (see `splitIntoLotes`). When the file
+ * carries `messages` variants, each lead's final text is the variant
+ * at its round-robin position within its own lote (see
+ * `variantIndexForPosition`); otherwise each lead keeps its own
+ * `recipients[i].message`. Every lote is created `aguardando` —
+ * nothing is sent until "Iniciar lote" is called (POST
+ * .../lotes/[numero]/iniciar).
  */
 export async function POST(request: Request) {
   try {
@@ -43,6 +50,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 400 })
     }
 
+    let numeroLotes = 2
+    if (body.numero_lotes !== undefined) {
+      if (!Number.isInteger(body.numero_lotes) || body.numero_lotes < 1 || body.numero_lotes > MAX_LOTES) {
+        return NextResponse.json({ error: `numero_lotes must be an integer between 1 and ${MAX_LOTES}` }, { status: 400 })
+      }
+      numeroLotes = body.numero_lotes
+    }
+
     const nome = body.nome?.trim() || parsed.nome
 
     const { data: envio, error: envioErr } = await supabase
@@ -52,6 +67,7 @@ export async function POST(request: Request) {
         campanha_id: body.campanha_id ?? null,
         nome,
         mensagem_imagem_url: parsed.imagemUrl,
+        variantes_mensagem: parsed.variants,
         created_by: userId,
       })
       .select('id')
@@ -61,35 +77,13 @@ export async function POST(request: Request) {
     }
 
     const totalLeads = parsed.leads.length
-    let lote1Size: number
-    let lote2Size: number
-    if (typeof body.lote1_size === 'number' && Number.isInteger(body.lote1_size)) {
-      if (body.lote1_size < 0 || body.lote1_size > totalLeads) {
-        return NextResponse.json({ error: 'lote1_size out of range' }, { status: 400 })
-      }
-      lote1Size = body.lote1_size
-      lote2Size = totalLeads - lote1Size
-    } else {
-      ;[lote1Size, lote2Size] = splitIntoLotes(totalLeads)
-    }
+    const loteSizes = splitIntoLotes(totalLeads, numeroLotes)
 
-    // A lote created with 0 leads never reaches `concluido` — the cron
-    // tick has nothing to advance — which permanently blocks lote 2
-    // (isLote2Blocked waits on lote 1's status). Collapse any split
-    // that would leave a side empty (automatic or manual override)
-    // into a single lote 1 holding every lead, and skip lote 2 outright.
-    if (lote1Size === 0 || lote2Size === 0) {
-      lote1Size = totalLeads
-      lote2Size = 0
-    }
-
-    const loteRows =
-      lote2Size > 0
-        ? [
-            { envio_id: envio.id, numero_lote: 1, quantidade_leads: lote1Size },
-            { envio_id: envio.id, numero_lote: 2, quantidade_leads: lote2Size },
-          ]
-        : [{ envio_id: envio.id, numero_lote: 1, quantidade_leads: lote1Size }]
+    const loteRows = loteSizes.map((quantidade_leads, i) => ({
+      envio_id: envio.id,
+      numero_lote: i + 1,
+      quantidade_leads,
+    }))
 
     const { data: lotes, error: lotesErr } = await supabase
       .from('envio_lotes')
@@ -99,15 +93,31 @@ export async function POST(request: Request) {
       throw new Error(lotesErr?.message ?? 'failed to create lotes')
     }
 
-    const lote1Id = lotes.find((l) => l.numero_lote === 1)!.id
-    const lote2Id = lotes.find((l) => l.numero_lote === 2)?.id ?? null
+    const lotesByNumero = new Map(lotes.map((l) => [l.numero_lote as number, l.id as string]))
 
-    const leadRows = parsed.leads.map((lead, index) => ({
-      lote_id: lote2Id && index >= lote1Size ? lote2Id : lote1Id,
-      nome: lead.nome,
-      telefone: lead.telefone,
-      mensagem: lead.mensagem,
-    }))
+    // Cumulative ranges over the sorted leads array — lote i owns
+    // [start, start + loteSizes[i]).
+    let offset = 0
+    const ranges = loteSizes.map((size, i) => {
+      const range = { loteId: lotesByNumero.get(i + 1)!, start: offset, end: offset + size }
+      offset += size
+      return range
+    })
+
+    const variants = parsed.variants
+    const leadRows = parsed.leads.map((lead, index) => {
+      const range = ranges.find((r) => index >= r.start && index < r.end)!
+      const positionInLote = index - range.start
+      const varianteIndice = variants ? variantIndexForPosition(positionInLote, variants.length) : null
+      const mensagem = variants ? variants[varianteIndice!] : lead.mensagem!
+      return {
+        lote_id: range.loteId,
+        nome: lead.nome,
+        telefone: lead.telefone,
+        mensagem,
+        variante_indice: varianteIndice,
+      }
+    })
     const { error: leadsErr } = await supabase.from('envio_leads').insert(leadRows)
     if (leadsErr) {
       throw new Error(leadsErr.message)

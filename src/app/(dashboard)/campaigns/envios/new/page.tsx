@@ -10,11 +10,15 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
-import { splitIntoLotes } from '@/lib/envios/lote-engine';
+import { splitIntoLotes, variantIndexForPosition, MAX_LOTES } from '@/lib/envios/lote-engine';
 import { parseCampaignFile, type ParsedCampaignFile } from '@/lib/envios/parse-campaign-file';
 
 /** Generous cap on the campaign JSON file — a few thousand leads is still tiny as text. */
 const CAMPAIGN_FILE_MAX_BYTES = 5 * 1024 * 1024;
+
+function variantLetter(index: number): string {
+  return String.fromCharCode(65 + index);
+}
 
 export default function NewEnvioPage() {
   const router = useRouter();
@@ -25,7 +29,7 @@ export default function NewEnvioPage() {
   const [campanhaJson, setCampanhaJson] = useState('');
   const [campaignFileName, setCampaignFileName] = useState<string | null>(null);
   const [readingCampaignFile, setReadingCampaignFile] = useState(false);
-  const [lote1SizeOverride, setLote1SizeOverride] = useState<number | null>(null);
+  const [numeroLotes, setNumeroLotes] = useState(2);
   const [submitting, setSubmitting] = useState(false);
 
   // Pure derivation (no setState-in-useMemo) — the parsed file and its
@@ -43,9 +47,18 @@ export default function NewEnvioPage() {
   }, [campanhaJson]);
 
   const leads = parsed?.leads ?? [];
-  const [defaultLote1] = useMemo(() => splitIntoLotes(leads.length), [leads.length]);
-  const lote1Size = lote1SizeOverride ?? defaultLote1;
-  const lote2Size = leads.length - lote1Size;
+  const variants = parsed?.variants ?? null;
+  const loteSizes = useMemo(() => splitIntoLotes(leads.length, numeroLotes), [leads.length, numeroLotes]);
+  // Position of each lead within its OWN lote (not the global leads
+  // index) — variant rotation is per-lote (spec section 2), same
+  // ranges the server computes in POST /api/envios.
+  const positionsInLote = useMemo(() => {
+    const positions: number[] = [];
+    for (const size of loteSizes) {
+      for (let p = 0; p < size; p++) positions.push(p);
+    }
+    return positions;
+  }, [loteSizes]);
 
   async function handleCampaignFile(file: File) {
     const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
@@ -62,7 +75,6 @@ export default function NewEnvioPage() {
       const text = await file.text();
       setCampanhaJson(text);
       setCampaignFileName(file.name);
-      setLote1SizeOverride(null);
       if (!nomeTouched) {
         try {
           setNome(parseCampaignFile(text).nome);
@@ -94,7 +106,7 @@ export default function NewEnvioPage() {
         body: JSON.stringify({
           nome,
           campanha_json: campanhaJson,
-          lote1_size: lote1Size,
+          numero_lotes: numeroLotes,
         }),
       });
       const data = await res.json();
@@ -179,34 +191,53 @@ export default function NewEnvioPage() {
 
           {parsed && leads.length > 0 && (
             <>
+              <div className="space-y-1.5">
+                <Label htmlFor="numero-lotes" className="text-xs">
+                  {t('numeroLotes')}
+                </Label>
+                <Input
+                  id="numero-lotes"
+                  type="number"
+                  min={1}
+                  max={MAX_LOTES}
+                  value={numeroLotes}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isNaN(v)) return;
+                    setNumeroLotes(Math.min(Math.max(Math.trunc(v), 1), MAX_LOTES));
+                  }}
+                />
+              </div>
+
               <div className="rounded-lg bg-muted/30 p-3">
                 <p className="text-xs font-medium text-foreground">
-                  {t('lotesPreview', { total: leads.length })}
+                  {t('lotesPreview', { total: leads.length, lotes: loteSizes.length })}
                 </p>
-                <div className="mt-2 grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <Label htmlFor="lote1-size" className="text-xs">
-                      {t('lote1Size')}
-                    </Label>
-                    <Input
-                      id="lote1-size"
-                      type="number"
-                      min={0}
-                      max={leads.length}
-                      value={lote1Size}
-                      onChange={(e) => {
-                        const v = Number(e.target.value);
-                        if (Number.isNaN(v)) return;
-                        setLote1SizeOverride(Math.min(Math.max(v, 0), leads.length));
-                      }}
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <Label className="text-xs">{t('lote2Size')}</Label>
-                    <Input value={lote2Size} disabled />
-                  </div>
+                <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {loteSizes.map((size, i) => (
+                    <div key={i} className="rounded-md bg-background px-2.5 py-1.5 text-xs">
+                      <span className="text-muted-foreground">{t('loteN', { numero: i + 1 })}: </span>
+                      <span className="font-medium text-foreground">{t('leadsCount', { count: size })}</span>
+                    </div>
+                  ))}
                 </div>
               </div>
+
+              {variants && variants.length > 0 && (
+                <div className="rounded-lg bg-muted/30 p-3">
+                  <p className="text-xs font-medium text-foreground">
+                    {t('variantsDetected', { count: variants.length })}
+                  </p>
+                  <div className="mt-2 space-y-1.5">
+                    {variants.map((v, i) => (
+                      <div key={i} className="rounded-md bg-background px-2.5 py-1.5 text-xs">
+                        <span className="font-medium text-foreground">{t('variantLabel', { letter: variantLetter(i) })}: </span>
+                        <span className="text-muted-foreground">{v}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-1.5">
                 <Label className="text-xs">{t('leadsPreview')}</Label>
@@ -217,7 +248,14 @@ export default function NewEnvioPage() {
                         <span className="font-medium text-foreground">{lead.nome ?? lead.telefone}</span>
                         <span className="shrink-0 text-xs text-muted-foreground">{lead.telefone}</span>
                       </div>
-                      <p className="mt-1 text-xs text-muted-foreground">{lead.mensagem}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {variants && variants.length > 0
+                          ? (() => {
+                              const idx = variantIndexForPosition(positionsInLote[i] ?? 0, variants.length);
+                              return `${t('variantLabel', { letter: variantLetter(idx) })}: ${variants[idx]}`;
+                            })()
+                          : lead.mensagem}
+                      </p>
                     </div>
                   ))}
                 </div>

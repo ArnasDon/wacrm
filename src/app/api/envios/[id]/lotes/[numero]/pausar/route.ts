@@ -16,7 +16,7 @@ export async function POST(
     const { supabase } = await requireRole('agent')
     const { id: envioId, numero } = await params
     const numeroLote = Number(numero)
-    if (numeroLote !== 1 && numeroLote !== 2) {
+    if (!Number.isInteger(numeroLote) || numeroLote < 1) {
       return NextResponse.json({ error: 'invalid lote number' }, { status: 400 })
     }
 

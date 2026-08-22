@@ -15,6 +15,7 @@ const h = vi.hoisted(() => ({
   sendCatalogToConversation: vi.fn(),
   checkFreeBusy: vi.fn(),
   createEvent: vi.fn(),
+  waitForQuietPeriod: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     claim: true as boolean,
@@ -42,6 +43,10 @@ vi.mock('@/lib/google-calendar/api', () => ({
   APPOINTMENT_LOOKAHEAD_MS: 7 * 24 * 60 * 60 * 1000,
 }))
 
+// Resolves instantly and "wins" by default so every existing test below
+// exercises the real eligibility/send logic unchanged — the handful of
+// debounce-specific tests override this per-case.
+vi.mock('./debounce', () => ({ waitForQuietPeriod: h.waitForQuietPeriod }))
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
@@ -262,6 +267,7 @@ beforeEach(() => {
   h.state.quickReplyRow = null
   h.checkFreeBusy.mockReset().mockResolvedValue([])
   h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
+  h.waitForQuietPeriod.mockReset().mockResolvedValue(true)
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -281,6 +287,21 @@ beforeEach(() => {
   })
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
   h.sendCatalogToConversation.mockResolvedValue({ catalogUrl: 'https://example.com/catalog/acct-1' })
+})
+
+describe('dispatchInboundToAiReply — debounce', () => {
+  it('does nothing when superseded by a newer inbound before the quiet period elapses', async () => {
+    h.waitForQuietPeriod.mockResolvedValue(false)
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.loadAiConfig).not.toHaveBeenCalled()
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('waits for its conversation specifically', async () => {
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.waitForQuietPeriod).toHaveBeenCalledWith('conv-1')
+  })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {

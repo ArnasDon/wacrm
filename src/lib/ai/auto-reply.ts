@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabaseAdmin } from './admin-client'
+import { waitForQuietPeriod } from './debounce'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
@@ -43,7 +44,13 @@ interface DispatchArgs {
  * runner's contract: it owns its try/catch and NEVER throws — a failing
  * or slow LLM call must not affect the webhook's 200 to Meta.
  *
+ * Debounced first (see debounce.ts): a burst of rapid-fire inbound
+ * messages on the same conversation collapses into one reply for the
+ * last message in the burst, not one reply per message.
+ *
  * Eligibility gates (any → silent no-op):
+ *   - superseded by a newer inbound before the debounce quiet period
+ *     elapsed
  *   - AI off / auto-reply disabled for the account
  *   - a human agent is assigned (they own the thread)
  *   - auto-reply was disabled for this conversation (prior handoff)
@@ -58,6 +65,15 @@ export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
   const { accountId, conversationId, contactId, configOwnerUserId } = args
+
+  // Debounce: coalesce a burst of rapid-fire inbound messages into one
+  // reply (see debounce.ts) — stand down silently if a newer inbound on
+  // this conversation superseded this call while it waited. Kept
+  // outside the try/catch below on purpose: it does no I/O beyond a
+  // timer, so it has nothing to fail on, and standing down is a normal
+  // outcome, not an error to log.
+  const isLatest = await waitForQuietPeriod(conversationId)
+  if (!isLatest) return
 
   try {
     const db = supabaseAdmin()

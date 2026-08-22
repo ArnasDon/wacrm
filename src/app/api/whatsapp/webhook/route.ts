@@ -128,10 +128,40 @@ export async function GET(request: Request) {
       )
     }
 
-    // Procura se o token vindo da Meta coincide com algum cadastrado
-const matchedConfig = configs.find((c: any) => c.verify_token === verifyToken || verifyToken === 'abc123')
+    // Procura se o verify_token de algum config bate com o que a Meta
+    // mandou. Tokens ficam criptografados no banco — decrypt() aqui,
+    // nunca comparar a string crua.
+    let matchedConfig: { id: string; verify_token: string } | null = null
+    for (const config of configs) {
+      if (!config.verify_token) continue
+      try {
+        if (decrypt(config.verify_token) === verifyToken) {
+          matchedConfig = config
+          break
+        }
+      } catch {
+        // Token malformado / cifrado com outra chave — pula e continua.
+      }
+    }
+
     if (matchedConfig) {
-      return new NextResponse(challenge, { 
+      // Upgrade oportunista pra GCM se o token ainda estava no formato
+      // legado CBC — fire-and-forget, é no-op se já estiver em GCM.
+      if (isLegacyFormat(matchedConfig.verify_token)) {
+        void supabaseAdmin()
+          .from('whatsapp_config')
+          .update({ verify_token: encrypt(verifyToken) })
+          .eq('id', matchedConfig.id)
+          .then(({ error }: { error: unknown }) => {
+            if (error) {
+              console.warn(
+                '[webhook] verify_token GCM upgrade failed:',
+                (error as { message?: string })?.message ?? error,
+              )
+            }
+          })
+      }
+      return new NextResponse(challenge, {
         status: 200,
         headers: { 'Content-Type': 'text/plain' }
       })

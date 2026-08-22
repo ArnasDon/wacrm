@@ -49,12 +49,16 @@ export function TemplatePickerModal({
   const [category, setCategory] = useState<CategoryFilter>('all');
   const [pendingId, setPendingId] = useState<string | null>(null);
 
+  // Reset local filter/selection state every time the modal opens.
+  // Legitimate prop-driven sync, hence the block-level disable.
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!open) return;
     setSearch('');
     setCategory('all');
     setPendingId(selectedTemplate?.id ?? null);
   }, [open, selectedTemplate]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();

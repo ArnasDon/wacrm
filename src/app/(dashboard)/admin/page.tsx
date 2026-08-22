@@ -33,21 +33,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { readResponseJson } from '@/lib/http/response-json';
+import {
+  CompanyMasterDetail,
+  type PlatformCompany,
+} from '@/components/admin/company-master-detail';
 
-interface Company {
-  id: string;
-  name: string;
-  createdAt: string;
-  memberCount: number;
-  seatLimit: number;
-  whatsappNumberCount: number;
-  whatsappNumberLimit: number;
-  suspendedAt: string | null;
-  suspendedReason: string | null;
-  nextPaymentDueAt: string | null;
-  lastMarkedPaidAt: string | null;
-  owner: { name: string | null; email: string } | null;
-  usage30d: { messages: number; conversations: number; aiTokens: number };
+type Company = PlatformCompany;
+
+function toDateInputValue(iso: string | null): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
 interface PlatformBankSettings {
@@ -61,12 +57,6 @@ interface PlatformBankSettings {
 // timezone — avoids the classic UTC-conversion off-by-one where a
 // date picked as "today" renders as "yesterday" for someone west of
 // UTC.
-function toDateInputValue(iso: string | null): string {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 interface Invitation {
   id: string;
   company_name: string;
@@ -103,12 +93,11 @@ export default function PlatformAdminPage() {
   const [savingDueDateId, setSavingDueDateId] = useState<string | null>(null);
   const [addingSeatId, setAddingSeatId] = useState<string | null>(null);
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
+  const [savingBillingId, setSavingBillingId] = useState<string | null>(null);
 
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [loadingTickets, setLoadingTickets] = useState(true);
-  const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(
-    null
-  );
+  const [updatingTicketId, setUpdatingTicketId] = useState<string | null>(null);
   const [noteTicket, setNoteTicket] = useState<Ticket | null>(null);
   const [noteDraft, setNoteDraft] = useState('');
   const [savingNote, setSavingNote] = useState(false);
@@ -174,9 +163,10 @@ export default function PlatformAdminPage() {
     setLoadingTickets(true);
     try {
       const response = await fetch('/api/admin/tickets', { cache: 'no-store' });
-      const body = await readResponseJson<{ error?: string; tickets: Ticket[] }>(
-        response
-      );
+      const body = await readResponseJson<{
+        error?: string;
+        tickets: Ticket[];
+      }>(response);
       if (!response.ok)
         throw new Error(body.error ?? 'No se pudieron cargar los tickets');
       setTickets(body.tickets);
@@ -393,7 +383,9 @@ export default function PlatformAdminPage() {
       await load();
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : 'No se pudo habilitar el número'
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudo habilitar el número'
       );
     } finally {
       setAddingNumberId(null);
@@ -422,6 +414,35 @@ export default function PlatformAdminPage() {
       );
     } finally {
       setSavingDueDateId(null);
+    }
+  };
+
+  const saveCompanyBilling = async (
+    company: Company,
+    amount: number | null,
+    currency: string
+  ) => {
+    setSavingBillingId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subscription_amount: amount,
+          subscription_currency: currency,
+        }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo guardar el monto');
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo guardar el monto'
+      );
+    } finally {
+      setSavingBillingId(null);
     }
   };
 
@@ -565,7 +586,30 @@ export default function PlatformAdminPage() {
         </div>
       ) : null}
 
-      <Card>
+      <CompanyMasterDetail
+        companies={companies}
+        loading={loading}
+        busyIds={{
+          suspension: changingId,
+          paid: markingPaidId,
+          dueDate: savingDueDateId,
+          seat: addingSeatId,
+          number: addingNumberId,
+          billing: savingBillingId,
+        }}
+        onSuspend={(company) => void changeSuspension(company)}
+        onMarkPaid={(company) => void markPaid(company)}
+        onAddSeat={(company) => void addSeat(company)}
+        onAddNumber={(company) => void addWhatsAppNumber(company)}
+        onDueDate={(company, value) => void changeDueDate(company, value)}
+        onBilling={(company, amount, currency) =>
+          void saveCompanyBilling(company, amount, currency)
+        }
+      />
+
+      {/* Legacy company table retained as a rollback reference while the
+          master-detail view above carries every existing action. */}
+      <Card className="hidden">
         <CardHeader>
           <CardTitle>Empresas</CardTitle>
           <CardDescription>
@@ -619,7 +663,9 @@ export default function PlatformAdminPage() {
                         disabled={addingSeatId === company.id}
                         onClick={() => void addSeat(company)}
                       >
-                        {addingSeatId === company.id ? 'Guardando…' : '+1 asiento'}
+                        {addingSeatId === company.id
+                          ? 'Guardando…'
+                          : '+1 asiento'}
                       </Button>
                     </div>
                   </TableCell>
@@ -627,12 +673,14 @@ export default function PlatformAdminPage() {
                     <div className="flex items-center gap-2">
                       <span
                         className={
-                          company.whatsappNumberCount >= company.whatsappNumberLimit
+                          company.whatsappNumberCount >=
+                          company.whatsappNumberLimit
                             ? 'text-amber-500'
                             : 'text-muted-foreground'
                         }
                       >
-                        {company.whatsappNumberCount} / {company.whatsappNumberLimit}
+                        {company.whatsappNumberCount} /{' '}
+                        {company.whatsappNumberLimit}
                       </span>
                       <Button
                         size="sm"
@@ -640,7 +688,9 @@ export default function PlatformAdminPage() {
                         disabled={addingNumberId === company.id}
                         onClick={() => void addWhatsAppNumber(company)}
                       >
-                        {addingNumberId === company.id ? 'Guardando…' : '+1 número'}
+                        {addingNumberId === company.id
+                          ? 'Guardando…'
+                          : '+1 número'}
                       </Button>
                     </div>
                   </TableCell>
@@ -933,9 +983,7 @@ export default function PlatformAdminPage() {
                           : 'text-amber-500'
                       }
                     >
-                      {ticket.status === 'resolved'
-                        ? 'Solucionado'
-                        : 'Abierto'}
+                      {ticket.status === 'resolved' ? 'Solucionado' : 'Abierto'}
                     </span>
                   </TableCell>
                   <TableCell>

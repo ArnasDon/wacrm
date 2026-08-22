@@ -4710,4 +4710,81 @@ tocados, `next build` completo, `vitest run` en verde (1159 tests,
 25s — sin ralentización real por el debounce gracias al mock). Sin
 diff en `package-lock.json`. Sin cambios de base de datos.
 
+**Desplegado:** Angel confirmó "sí, push ahora" — commit `5e9f230`
+empujado a `main`, EasyPanel redesplegó.
+
+### 2026-08-21 (sesión posterior) — Claude Code (fix: negocios duplicados — cotización creaba un segundo deal desconectado)
+
+Angel reportó que la sección de Negocios duplica al generar una
+cotización: queda un negocio en "No mostró interes" y otro se mueve a
+"Cotización", y en el chat aparecen dos negocios para lo que en
+realidad es un solo cliente.
+
+**Diagnóstico (Supabase, sin tocar código):** confirmado con datos
+reales — busqué contactos con más de un deal `open` simultáneo y
+encontré varios casos reales en dos cuentas distintas, no solo la de
+prueba de Angel. El caso que describió es el contacto
+`75bdf0af-3902-4835-8b0a-13c06ac99c45` (cuenta de Ricardo): un deal
+`9b52d506` en etapa "Cotización" (el que la IA fue moviendo con
+`autoMoveDealStage`) y un SEGUNDO deal `c415b3f0`, título "Cotización
+— 2026-08-21", valor Q1000, en etapa "No mostró interes" (la primera
+etapa del pipeline, no un juicio real de la IA sobre el interés del
+cliente — es simplemente donde `createQuote()` aterriza cualquier
+deal nuevo que crea), con 1 cotización real vinculada
+(`quotes.deal_id`).
+
+**Causa raíz:** `createQuote()` (`src/lib/quotes/create-quote.ts`,
+usada por los 4 puntos de entrada de cotización: constructor humano,
+carrito de autoservicio del catálogo público, acción de negocio
+confirmada de la IA, y `autoCreateQuoteFromChat` autónoma) creaba un
+deal nuevo de forma incondicional **sin revisar primero si el
+contacto ya tenía un deal abierto**. A diferencia de
+`autoMoveDealStage` (auto-reply.ts) y del step `move_deal` del motor
+de automatizaciones — que sí resuelven primero "el deal abierto más
+reciente del contacto" antes de tocar nada — `createQuote()` insertaba
+directo, así que cualquier cotización generada para un contacto que
+ya tenía un negocio en curso le creaba uno segundo, disparado a la
+primera etapa del pipeline.
+
+**Hallazgo relacionado (no de esta cotización, ya cubierto por el fix
+de la sesión anterior):** también encontré otro patrón de duplicados
+en la cuenta `02377d99` — pares de deals con el mismo título, mismo
+contacto, creados con menos de 1 segundo de diferencia, sin
+cotización vinculada. Esa cuenta no tiene ninguna automatización
+activa, así que el origen es la propia IA: dos mensajes casi
+simultáneos del cliente cada uno disparando su propio
+`dispatchInboundToAiReply` → `autoMoveDealStage`, y ambos viendo "sin
+deal abierto todavía" al mismo tiempo → cada uno crea el suyo. Es la
+misma clase de carrera que el debounce de la entrada anterior
+(`src/lib/ai/debounce.ts`) ya previene hacia adelante — no hizo falta
+código nuevo para esta parte, ya quedó cubierta.
+
+**Hecho:**
+- `src/lib/quotes/create-quote.ts` — antes de crear el deal, ahora
+  busca primero el deal `open` más reciente del contacto (mismo
+  filtro que `autoMoveDealStage`/`move_deal`: `account_id`,
+  `contact_id`, `status = 'open'`, `order by updated_at desc limit
+  1`). Si existe, la cotización se vincula a ESE deal
+  (`quotes.deal_id`) sin crear nada nuevo; solo cuando el contacto no
+  tiene ningún deal abierto se crea uno, igual que antes (primera
+  etapa del pipeline más antiguo de la cuenta).
+- Test nuevo en `create-quote.test.ts`: "reuses the contact's
+  existing open deal instead of creating a second one" + fixture
+  `existingOpenDeal` en el builder de la tabla `deals` en modo
+  `select`.
+
+**Pendiente, no hecho todavía (decisión de Angel):** los deals
+duplicados que YA existen en base de datos (5 pares/tríos de
+contactos entre las dos cuentas, listados arriba) no se limpiaron
+solos — el fix de código previene los nuevos, pero no fusiona los
+viejos. Requiere decidir, por cada par, cuál deal conservar (valor,
+etapa, cotización vinculada) antes de borrar/fusionar el duplicado —
+se lo planteé a Angel en el chat en vez de hacerlo sin confirmar.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1160 tests).
+Sin diff en `package-lock.json`. Sin cambios de base de datos (el fix
+es puramente de código — la limpieza de duplicados existentes queda
+pendiente, ver arriba).
+
 **Pendiente:** desplegar (push a `main`) — confirmar con Angel antes.

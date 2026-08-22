@@ -1255,6 +1255,7 @@
       "cardTotalLeads": "{total} leads",
       "cardLotes": "{count} lotes",
       "channelBadge": "Pessoal",
+      "etaRemaining": "{minutes} min {minutes, plural, =1 {restante} other {restantes}}",
       "deleteEnvio": "Excluir envio",
       "cannotDeleteActive": "Não é possível excluir com um lote em andamento — pause o lote primeiro",
       "deleteTitle": "Excluir envio?",
@@ -1300,6 +1301,7 @@
       "startLote": "Iniciar lote",
       "resumeLote": "Retomar lote",
       "blockedReason": "Libera ao concluir o lote 1",
+      "etaRemaining": "{minutes} min {minutes, plural, =1 {restante} other {restantes}}",
       "leadsHeader": "Leads do lote {numero} ({count})",
       "noLeads": "Nenhum lead neste lote.",
       "table": {

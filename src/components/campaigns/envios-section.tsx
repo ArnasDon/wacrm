@@ -19,11 +19,12 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { useCan } from '@/hooks/use-can';
+import { estimateRemainingMs } from '@/lib/envios/lote-engine';
 import type { Envio, EnvioLote, EnvioLead } from '@/types';
 
 const POLL_INTERVAL_MS = 5_000;
 
-type LoteWithLeads = EnvioLote & { envio_leads: Pick<EnvioLead, 'status'>[] };
+type LoteWithLeads = EnvioLote & { envio_leads: Pick<EnvioLead, 'status' | 'next_attempt_at'>[] };
 type EnvioWithLotes = Envio & { envio_lotes: LoteWithLeads[] };
 
 function progressFor(envio: EnvioWithLotes) {
@@ -53,7 +54,9 @@ export function EnviosSection() {
       const supabase = createClient();
       const { data, error } = await supabase
         .from('envios')
-        .select('*, envio_lotes(id, numero_lote, status, quantidade_leads, envio_leads(status))')
+        .select(
+          '*, envio_lotes(id, numero_lote, status, quantidade_leads, envio_leads(status, next_attempt_at))',
+        )
         .order('created_at', { ascending: false });
       if (error) throw error;
       setEnvios((data ?? []) as EnvioWithLotes[]);
@@ -139,6 +142,7 @@ export function EnviosSection() {
           {envios.map((envio) => {
             const { total, sent, active } = progressFor(envio);
             const pct = total > 0 ? Math.round((sent / total) * 100) : 0;
+            const etaMs = active ? estimateRemainingMs(active.envio_leads) : null;
             const summary =
               envio.status === 'concluido'
                 ? t('summaryDone')
@@ -190,11 +194,18 @@ export function EnviosSection() {
                     </div>
                   </div>
 
-                  <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                    <div
-                      className="h-1.5 rounded-full bg-primary transition-[width] duration-500"
-                      style={{ width: `${pct}%` }}
-                    />
+                  <div className="flex items-center gap-2">
+                    <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                      <div
+                        className="h-1.5 rounded-full bg-primary transition-[width] duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                    {etaMs !== null && (
+                      <span className="shrink-0 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
+                        {t('etaRemaining', { minutes: Math.max(1, Math.round(etaMs / 60_000)) })}
+                      </span>
+                    )}
                   </div>
                   <p className="text-xs text-muted-foreground">{summary}</p>
                 </CardContent>

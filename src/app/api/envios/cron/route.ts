@@ -18,7 +18,7 @@ import { randomAttemptDelayMs } from '@/lib/envios/lote-engine'
  * caller entirely.
  *
  * Processes at most one due lead per active lote per tick — the
- * random 60-300s delay between sends (spec's anti-detection
+ * random 60-240s delay between sends (spec's anti-detection
  * requirement) lives in when a lead's `next_attempt_at` gets set, not
  * in this tick's cadence.
  */
@@ -119,7 +119,7 @@ export async function GET(request: Request) {
     }
     processed++
 
-    // Chain the next lead (random 60-300s delay) or close out the lote.
+    // Chain the next lead (random 60-240s delay) or close out the lote.
     const { data: nextLead } = await db
       .from('envio_leads')
       .select('id')

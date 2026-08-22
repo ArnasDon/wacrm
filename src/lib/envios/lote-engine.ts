@@ -33,10 +33,10 @@ export function splitIntoLotes(totalLeads: number): [number, number] {
 }
 
 export const MIN_ATTEMPT_DELAY_MS = 60_000;
-export const MAX_ATTEMPT_DELAY_MS = 300_000;
+export const MAX_ATTEMPT_DELAY_MS = 240_000;
 
 /**
- * A real random delay in [60s, 300s] — never a fixed list of values
+ * A real random delay in [60s, 240s] — never a fixed list of values
  * (spec's explicit anti-detection requirement). `Math.random()` is
  * fine here: this is pacing, not a security boundary.
  */
@@ -47,4 +47,38 @@ export function randomAttemptDelayMs(): number {
 /** Lote 2 stays locked until lote 1 has fully finished (spec section 3). */
 export function isLote2Blocked(lote1Status: string): boolean {
   return lote1Status !== 'concluido';
+}
+
+/** A lead still waiting to be sent — the subset `estimateRemainingMs` reasons about. */
+export interface QueuedLeadForEta {
+  status: string;
+  next_attempt_at: string | null;
+}
+
+/**
+ * Estimated time left to finish an active lote's queue, in ms — or
+ * `null` when there's nothing left pending (the lote is about to
+ * transition to `concluido` on the next cron tick).
+ *
+ * The cron tick only ever draws `next_attempt_at` for ONE lead ahead
+ * at a time (the next one in line) — it doesn't pre-roll the whole
+ * queue up front. So at most one pending lead has a known wait; every
+ * lead after that is estimated using the range's mathematical average
+ * (`(MIN_ATTEMPT_DELAY_MS + MAX_ATTEMPT_DELAY_MS) / 2`), and the
+ * estimate self-corrects on every poll as the cron draws each next
+ * interval for real.
+ */
+export function estimateRemainingMs(leads: QueuedLeadForEta[], now: number = Date.now()): number | null {
+  const pending = leads.filter((l) => l.status === 'na_fila');
+  if (pending.length === 0) return null;
+
+  const avgDelayMs = (MIN_ATTEMPT_DELAY_MS + MAX_ATTEMPT_DELAY_MS) / 2;
+  const scheduled = pending.find((l) => l.next_attempt_at !== null);
+  if (!scheduled?.next_attempt_at) {
+    return pending.length * avgDelayMs;
+  }
+
+  const knownWaitMs = Math.max(0, new Date(scheduled.next_attempt_at).getTime() - now);
+  const remainingAfter = pending.length - 1;
+  return knownWaitMs + remainingAfter * avgDelayMs;
 }

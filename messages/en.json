@@ -1255,6 +1255,7 @@
       "cardTotalLeads": "{total} leads",
       "cardLotes": "{count} lotes",
       "channelBadge": "Personal",
+      "etaRemaining": "{minutes} min remaining",
       "deleteEnvio": "Delete envio",
       "cannotDeleteActive": "Can't delete while a lote is in progress — pause it first",
       "deleteTitle": "Delete envio?",
@@ -1300,6 +1301,7 @@
       "startLote": "Start lote",
       "resumeLote": "Resume lote",
       "blockedReason": "Unlocks once lote 1 is completed",
+      "etaRemaining": "{minutes} min remaining",
       "leadsHeader": "Lote {numero} leads ({count})",
       "noLeads": "No leads in this lote.",
       "table": {

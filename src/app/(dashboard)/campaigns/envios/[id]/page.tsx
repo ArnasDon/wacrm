@@ -18,7 +18,7 @@ import {
 } from '@/components/ui/table';
 import type { Envio, EnvioLote, EnvioLead } from '@/types';
 import { getLoteStatus, getEnvioLeadStatus } from '@/lib/envio-status';
-import { isLote2Blocked } from '@/lib/envios/lote-engine';
+import { isLote2Blocked, estimateRemainingMs } from '@/lib/envios/lote-engine';
 
 const POLL_INTERVAL_MS = 5_000;
 
@@ -218,6 +218,10 @@ export default function EnvioDetailPage() {
           const sentCount = lote.numero_lote === selectedLote
             ? leads.filter((l) => l.status === 'enviado').length
             : null;
+          const etaMs =
+            lote.numero_lote === selectedLote && lote.status === 'em_andamento'
+              ? estimateRemainingMs(leads)
+              : null;
           const blocked = lote.numero_lote === 2 && lote2Blocked;
           const canStart = (lote.status === 'aguardando' || lote.status === 'pausado') && !blocked;
           const canPause = lote.status === 'em_andamento';
@@ -251,11 +255,18 @@ export default function EnvioDetailPage() {
               </p>
 
               {sentCount !== null && lote.quantidade_leads > 0 && (
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-muted">
-                  <div
-                    className="h-1.5 rounded-full bg-primary transition-[width] duration-500"
-                    style={{ width: `${Math.round((sentCount / lote.quantidade_leads) * 100)}%` }}
-                  />
+                <div className="mt-2 flex items-center gap-2">
+                  <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-1.5 rounded-full bg-primary transition-[width] duration-500"
+                      style={{ width: `${Math.round((sentCount / lote.quantidade_leads) * 100)}%` }}
+                    />
+                  </div>
+                  {etaMs !== null && (
+                    <span className="shrink-0 whitespace-nowrap text-[10px] tabular-nums text-muted-foreground">
+                      {t('etaRemaining', { minutes: Math.max(1, Math.round(etaMs / 60_000)) })}
+                    </span>
+                  )}
                 </div>
               )}
 

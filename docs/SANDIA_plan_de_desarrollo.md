@@ -4796,3 +4796,43 @@ de duplicados de arriba (data, vía MCP — no migración/schema).
 todavía. La limpieza de datos en Supabase ya está en producción
 (afecta directamente las filas reales), independiente del deploy del
 código.
+
+### 2026-08-22 — Claude Code (fix: Google Calendar OAuth redirige a `0.0.0.0:80` en vez del dominio real)
+
+Angel reportó que al conectar el Google Calendar de
+`durandavidinma1@gmail.com` (agregado como test user en la sesión
+anterior), después de aceptar en Google lo manda a
+`https://0.0.0.0:80/settings?tab=google-calendar&error=invalid_state`
+— una URL inalcanzable.
+
+**Diagnóstico:** el bug de la dirección `0.0.0.0:80` ya estaba
+documentado y arreglado en este mismo repo para otros flujos (invite
+links, `/auth/callback`) — ver el comentario extenso en
+`src/lib/http/base-url.ts`: detrás del proxy reverso de EasyPanel,
+`new URL(request.url).origin` resuelve a la dirección interna del
+contenedor, no al dominio público. `src/app/api/google-calendar/oauth/callback/route.ts`
+nunca se actualizó para usar ese helper compartido (`resolveBaseUrl`)
+— seguía construyendo **todos** sus redirects, incluido el de éxito
+(`&connected=1`), con `url.origin` directo. O sea: aunque el `state`
+hubiera coincidido y todo lo demás saliera bien, la conexión de
+Google Calendar **nunca podía terminar en una página real** — ni para
+Angel mismo en su propia cuenta, si volvía a conectar. El
+`error=invalid_state` que vio es un problema real y separado (la
+cookie CSRF no coincidió), pero quedaba oculto detrás de una URL
+inalcanzable en vez de mostrarse en la página de Settings real.
+
+**Hecho:** `src/app/api/google-calendar/oauth/callback/route.ts` —
+los 6 redirects de la ruta (error, invalid_state, no_refresh_token,
+save_failed, connected, catch genérico) ahora arman la URL con
+`resolveBaseUrl(request)` en vez de `url.origin`.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio, `next build`
+completo, `vitest run` en verde (1160 tests — no se agregó test de
+ruta nuevo, siguiendo el mismo patrón que las rutas hermanas sin
+test propio; la lógica de `resolveBaseUrl` ya tiene su propia
+cobertura en `base-url.test.ts`). Sin diff en `package-lock.json`.
+
+**Pendiente:** falta desplegar y que Angel/durandavidinma1 reintenten
+la conexión — con este fix, si el `invalid_state` persiste, ahora sí
+va a aterrizar en la página de Settings real donde se puede
+diagnosticar en vivo, en vez de una URL rota.

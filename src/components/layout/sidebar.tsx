@@ -185,11 +185,11 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       <aside
         className={cn(
           // Mobile: fixed drawer that slides in from the left.
-          "fixed inset-y-0 left-0 z-40 flex h-full w-64 flex-col border-r border-border bg-card",
+          "app-sidebar fixed inset-y-0 left-0 z-40 flex h-full w-[min(20rem,88vw)] flex-col border-r border-border bg-card shadow-2xl",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.
-          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:transition-none",
+          "lg:static lg:z-0 lg:w-60 lg:translate-x-0 lg:shadow-none lg:transition-none",
         )}
         aria-label="Primary"
       >

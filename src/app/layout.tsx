@@ -33,6 +33,13 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [{ url: '/icon' }],
+    apple: [{ url: '/icon' }],
+  },
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'Chat Sandía',
   },
   formatDetection: {
     email: false,
@@ -44,6 +51,10 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: '#020617',
   colorScheme: 'dark light',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
 };
 
 // Inline boot script — runs before React hydrates so the user's

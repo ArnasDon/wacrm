@@ -60,7 +60,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <header className="grid h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background px-4 lg:px-6">
+    <header className="app-header grid min-h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-xl lg:px-6">
       <div className="flex min-w-0 items-center gap-2 justify-self-start">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button

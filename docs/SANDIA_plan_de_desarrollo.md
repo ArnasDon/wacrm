@@ -4773,18 +4773,26 @@ código nuevo para esta parte, ya quedó cubierta.
   `existingOpenDeal` en el builder de la tabla `deals` en modo
   `select`.
 
-**Pendiente, no hecho todavía (decisión de Angel):** los deals
-duplicados que YA existen en base de datos (5 pares/tríos de
-contactos entre las dos cuentas, listados arriba) no se limpiaron
-solos — el fix de código previene los nuevos, pero no fusiona los
-viejos. Requiere decidir, por cada par, cuál deal conservar (valor,
-etapa, cotización vinculada) antes de borrar/fusionar el duplicado —
-se lo planteé a Angel en el chat en vez de hacerlo sin confirmar.
+**Limpieza de datos ejecutada (con confirmación explícita de Angel,
+directo en Supabase vía MCP, sin migración — es data, no schema):**
+los 5 grupos de deals duplicados que ya existían se fusionaron.
+Regla aplicada en cada grupo: conservar el deal más avanzado en el
+pipeline (o el que tenía una cotización real vinculada), eliminar el
+duplicado vacío. Para el caso de la cuenta de Ricardo (contacto
+`75bdf0af...`), antes de borrar `c415b3f0` se reapuntó
+`quotes.deal_id` (fila `5aed0335...`) hacia el deal que se conservó
+(`9b52d506`, etapa Cotización) para no perder el vínculo real de la
+cotización. Eliminados: `39b04e93`, `1685300f`, `92b1a944`,
+`5c808bb6`, `629250a1`, `c415b3f0`. Verificado después: cero
+contactos con más de un deal `open` simultáneo en toda la base.
 
 **Probado:** `tsc --noEmit` limpio, `eslint` limpio en los archivos
 tocados, `next build` completo, `vitest run` en verde (1160 tests).
-Sin diff en `package-lock.json`. Sin cambios de base de datos (el fix
-es puramente de código — la limpieza de duplicados existentes queda
-pendiente, ver arriba).
+Sin diff en `package-lock.json`. Cambio de base de datos: la limpieza
+de duplicados de arriba (data, vía MCP — no migración/schema).
 
-**Pendiente:** desplegar (push a `main`) — confirmar con Angel antes.
+**Pendiente:** Angel dijo "todavía no" al push — el fix de código
+(commit `7881f26`) queda commiteado en `main` local, sin desplegar
+todavía. La limpieza de datos en Supabase ya está en producción
+(afecta directamente las filas reales), independiente del deploy del
+código.

@@ -4622,4 +4622,92 @@ tocados, `next build` completo, `vitest run` en verde (1153 tests —
 no se agregó test nuevo para este flujo). Sin diff en
 `package-lock.json`.
 
+**Desplegado:** Angel confirmó "sí, push ahora" — commits `101ce7d` y
+`a52c6fd` empujados a `main`, EasyPanel redesplegó. Angel confirmó
+en vivo poco después ("ya funciona") que el problema real (clave de
+Anthropic rechazada) ya estaba resuelto de su lado.
+
+### 2026-08-21 (sesión posterior) — Claude Code (más de una empresa por Google OAuth: opciones y test users agregados)
+
+Angel preguntó cómo agregar más correos de Google de otras empresas
+para que la IA pueda automatizarles el calendario. Repasé
+[[reference-google-cloud-oauth-skill]]: mientras la pantalla de
+consentimiento de `chat-sandia` siga en "Testing", solo las cuentas
+de Google agregadas explícitamente como test users (tope 100) pueden
+completar el flujo — cualquier otra ve el bloqueo "app no verificada"
+sin poder pasar. Le expliqué dos caminos (A: agregar test users a
+mano, rápido pero manual y con tope; B: verificar la app ante Google,
+autoservicio real pero proceso externo que él mismo tiene que llevar).
+Eligió A por ahora.
+
+**Hecho:** agregué dos test users en `console.cloud.google.com/auth/audience?project=chat-sandia`
+(Cloud Console, no `accounts.google.com` — automatizable sin el
+bloqueo de bots que sí aplica al login real): `durandavidinma1@gmail.com`
+y `angelduran.contact@gmail.com`. Quedaron 3 test users en total junto
+con `angelduran.management@gmail.com`. Sin cambios de código.
+
+**Aclaración importante que surgió después:** conectar el calendario
+de una empresa NO activa por sí solo que la IA agende citas — hacen
+falta DOS cosas: (1) `google_calendar_config.status = 'connected'`
+(lo que este paso habilita) Y (2) el interruptor "Agendar citas
+automáticamente" prendido en Settings → Agentes de IA
+(`ai_configs.auto_schedule_appointments_enabled`, apagado por
+defecto, opt-in explícito por cuenta) — ver el gate en
+`src/lib/ai/auto-reply.ts` (`loadCalendarContext`). También until
+ahora: `google_calendar_config` tiene índice único en `account_id` —
+**una sola cuenta de Google por empresa**, conectar una segunda
+reemplaza la anterior en vez de agregarla. Si se necesita soportar
+varios calendarios por empresa a futuro, es un cambio de modelo de
+datos (tabla con varias filas por cuenta), no algo que exista hoy.
+
+### 2026-08-21 (sesión posterior) — Claude Code (fix: IA respondía dos veces seguidas a ráfagas de mensajes)
+
+Angel reportó que la IA a veces responde dos veces seguidas con
+mensajes de estructura muy similar a lo que parecía una sola consulta
+absurda de un cliente.
+
+**Diagnóstico (Supabase, sin tocar código):** confirmé con datos
+reales de una conversación de prueba (número nuevo, contacto
+adversarial) que NO era una sola consulta con doble respuesta — el
+cliente mandaba dos mensajes de WhatsApp separados y reales (cada uno
+con su propio `message_id`), 6-8 segundos aparte (ej. "pa que putas"
+→ "cotizaciones mas mierdas"), y el bot respondía a **cada uno por
+separado** con su propia llamada completa a la IA — como el tema era
+el mismo, las dos respuestas salían pareadas en estructura. Causa
+raíz: WhatsApp entrega cada mensaje como su propio evento de webhook,
+y `dispatchInboundToAiReply` nunca esperaba ni agrupaba ráfagas —
+disparaba una respuesta por mensaje, sin importar qué tan seguido
+llegaran.
+
+**Hecho:**
+- `src/lib/ai/debounce.ts` (nuevo) — `waitForQuietPeriod(conversationId, delayMs = 6000)`:
+  cada llamada reclama un token "más reciente" en un `Map` en memoria
+  por `conversationId`, espera el período de silencio, y solo
+  devuelve `true` si sigue siendo la más reciente al despertar — un
+  mensaje nuevo que llega mientras espera la reemplaza, y esa llamada
+  anterior se retira en silencio sin generar nada. Mismo trade-off ya
+  aceptado para el rate limiter compartido (`src/lib/rate-limit.ts`):
+  en memoria, de un solo proceso — correcto para el despliegue actual
+  de una sola instancia.
+- `src/lib/ai/auto-reply.ts` — `dispatchInboundToAiReply` llama a
+  `waitForQuietPeriod` como primer paso (fuera del try/catch, porque
+  no hace I/O más allá de un timer y "quedar superado" es un
+  resultado normal, no un error). La llamada que sí gana la espera
+  sigue con toda la lógica existente sin cambios — su propia lectura
+  fresca de `buildConversationContext` ya incluye todos los mensajes
+  de la ráfaga completa, así que responde una sola vez cubriendo todo.
+- Tests nuevos: `src/lib/ai/debounce.test.ts` (con `vi.useFakeTimers`,
+  cubre ráfaga de 3 mensajes → solo el último gana, conversaciones
+  independientes no se pisan, y que una misma conversación se puede
+  volver a debouncear después de que una ráfaga se resuelve) +
+  2 tests nuevos en `auto-reply.test.ts`. El mock de `./debounce` en
+  `auto-reply.test.ts` resuelve `true` al instante por defecto para
+  que los ~40 tests existentes no se vuelvan lentos con un debounce
+  real de 6s.
+
+**Probado:** `tsc --noEmit` limpio, `eslint` limpio en los archivos
+tocados, `next build` completo, `vitest run` en verde (1159 tests,
+25s — sin ralentización real por el debounce gracias al mock). Sin
+diff en `package-lock.json`. Sin cambios de base de datos.
+
 **Pendiente:** desplegar (push a `main`) — confirmar con Angel antes.

@@ -2,9 +2,10 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/baileys/admin-client'
-import { getOrCreateConnection, isConnected, getConnectionStatus } from '@/lib/baileys/connection'
+import { getOrCreateConnection, isConnected, getConnectionStatus, waitForOpen } from '@/lib/baileys/connection'
 import { sendText, sendImageWithCaption, BaileysSendError } from '@/lib/baileys/send'
 import { randomAttemptDelayMs } from '@/lib/envios/lote-engine'
+import { sendPushToAccount } from '@/lib/push/send'
 
 /**
  * Envios queue tick — mirrors GET /api/automations/cron (same
@@ -85,6 +86,12 @@ export async function GET(request: Request) {
     if (!claimed) continue
 
     await getOrCreateConnection(envio.account_id as string)
+    if (!isConnected(envio.account_id as string) && getConnectionStatus(envio.account_id as string) === 'connecting') {
+      // A reconnect is already in flight for this lead's exact moment —
+      // wait a bit here instead of giving up immediately, cheaper than
+      // the ~30s until the next tick.
+      await waitForOpen(envio.account_id as string, 12_000)
+    }
     if (!isConnected(envio.account_id as string)) {
       // Give the lead back to the queue either way.
       await db
@@ -103,6 +110,15 @@ export async function GET(request: Request) {
       // session, don't keep retrying.
       await db.from('envio_lotes').update({ status: 'pausado' }).eq('id', lote.id)
       paused++
+      // Fire-and-forget, same pattern as the webhook's push notify —
+      // sendPushToAccount() never throws and no-ops silently without
+      // VAPID configured.
+      void sendPushToAccount(envio.account_id as string, {
+        title: 'Envio pausado',
+        body: 'A conexão do WhatsApp caiu e o lote foi pausado. Reconecte em Configurações para retomar.',
+        url: `/campaigns/envios/${lote.envio_id}`,
+        tag: `wacrm-envio-pausado-${lote.id}`,
+      })
       continue
     }
 

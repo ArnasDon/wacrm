@@ -18,26 +18,29 @@ import { supabaseAdmin } from './admin-client'
  * long-lived, `getOrCreateConnection` still works correctly per-call —
  * it just reconnects (cheap, no QR needed) more often than ideal.
  *
- * v1 is deliberately simple on resilience (user's explicit choice): on
- * any `close` that isn't a real logout, we just mark the session
- * `desconectado` and drop the socket — no reconnect loop, no backoff
- * supervisor. Whoever needs to send next (a cron tick, or the pairing
- * screen) calls `getOrCreateConnection` again, which reconnects from
- * the saved creds without a new QR (that's normal Baileys behaviour —
- * only `DisconnectReason.loggedOut` invalidates the saved session).
+ * On any `close`, we mark the session `desconectado` and drop the
+ * socket. Two cases auto-reconnect on their own; everything else
+ * requires a manual re-pair from Settings:
  *
- * One deliberate exception to "no auto-reconnect": `DisconnectReason
- * .restartRequired` (515, "Stream Errored (restart required)"). This
- * isn't a dropped session — it's WhatsApp's own mandatory last step of
- * the device-pairing handshake: after accepting a new linked device it
- * always closes with 515 expecting an immediate reconnect using the
- * now-saved creds to finish registration. Confirmed 2026-08-21 (real
- * pairing attempt, first-ever link on a fresh number, raw
- * lastDisconnect logged): without this, pairing never completes on
- * ANY attempt — the phone times out on "não foi possível conectar"
- * because the finishing reconnect never happens. Every other
- * disconnect reason (network blip, timeout, etc.) still requires a
- * manual re-pair, per the original decision.
+ * - `DisconnectReason.restartRequired` (515, "Stream Errored (restart
+ *   required)"): not a dropped session — it's WhatsApp's own mandatory
+ *   last step of the device-pairing handshake: after accepting a new
+ *   linked device it always closes with 515 expecting an immediate
+ *   reconnect using the now-saved creds to finish registration.
+ *   Confirmed 2026-08-21 (real pairing attempt, first-ever link on a
+ *   fresh number, raw lastDisconnect logged): without this, pairing
+ *   never completes on ANY attempt — the phone times out on "não foi
+ *   possível conectar" because the finishing reconnect never happens.
+ *   Reconnects once, immediately, no QR.
+ * - Anything else that isn't `loggedOut` (network blip, timeout, etc.):
+ *   auto-reconnects with exponential backoff (`RECONNECT_DELAYS_MS`),
+ *   up to 3 attempts, tracked per-account in `reconnectAttempts` and
+ *   reset on a successful 'open'. After 3 failed attempts it gives up
+ *   and stays `desconectado` — no infinite retry loop.
+ *
+ * `DisconnectReason.loggedOut` never auto-reconnects — the saved
+ * session is invalidated (`resetSessao`) and a fresh QR pairing is
+ * required.
  */
 
 interface ConnectionEntry {
@@ -54,6 +57,14 @@ interface ConnectionEntry {
 }
 
 const connections = new Map<string, ConnectionEntry>()
+
+/**
+ * Auto-reconnect attempt counter per account, for the backoff below.
+ * Lives outside ConnectionEntry since it must survive the entry being
+ * deleted/recreated across reconnect attempts. Reset to 0 on 'open'.
+ */
+const reconnectAttempts = new Map<string, number>()
+const RECONNECT_DELAYS_MS = [5_000, 15_000, 30_000]
 
 /**
  * Pulls every field worth knowing out of a Baileys disconnect error for
@@ -153,6 +164,7 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
     if (connection === 'open') {
       entry.qrDataUrl = null
       entry.status = 'open'
+      reconnectAttempts.delete(accountId)
       await setStatusConexao(accountId, 'conectado')
       console.log('[baileys/connection] connection OPEN for account', accountId)
     }
@@ -189,10 +201,41 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
 
       await setStatusConexao(accountId, 'desconectado')
       if (statusCode === DisconnectReason.loggedOut) {
+        reconnectAttempts.delete(accountId)
         await resetSessao(accountId)
+        return
       }
-      // Anything else (network blip, timeout, etc.): deliberately no
-      // auto-reconnect here — see module doc comment above.
+
+      // Network blip, timeout, etc.: try to reconnect automatically with
+      // exponential backoff before giving up and requiring a manual
+      // reconnect from Settings. Attempt count resets on a successful
+      // 'open' above.
+      const attempt = (reconnectAttempts.get(accountId) ?? 0) + 1
+      if (attempt > RECONNECT_DELAYS_MS.length) {
+        console.log(
+          '[baileys/connection] auto-reconnect exhausted after',
+          attempt - 1,
+          'attempts for account',
+          accountId,
+        )
+        reconnectAttempts.delete(accountId)
+        return
+      }
+      reconnectAttempts.set(accountId, attempt)
+      const delayMs = RECONNECT_DELAYS_MS[attempt - 1]
+      console.log(
+        '[baileys/connection] auto-reconnect attempt',
+        attempt,
+        'in',
+        delayMs,
+        'ms for account',
+        accountId,
+      )
+      setTimeout(() => {
+        getOrCreateConnection(accountId).catch((err) => {
+          console.error('[baileys/connection] auto-reconnect attempt failed for account', accountId, err)
+        })
+      }, delayMs)
     }
   })
 
@@ -219,4 +262,23 @@ export function getConnectionStatus(
   accountId: string,
 ): 'connecting' | 'open' | 'closed' | undefined {
   return connections.get(accountId)?.status
+}
+
+/**
+ * Polls up to `timeoutMs` (checking every ~1.5s) for a connection that's
+ * mid-reconnect to finish its handshake. Used by the envios cron so a
+ * lead due right as a reconnect is wrapping up doesn't have to wait for
+ * the next ~30s tick. Returns as soon as the status stops being
+ * 'connecting' (either 'open' or 'closed'/gone), or on timeout.
+ */
+export async function waitForOpen(accountId: string, timeoutMs: number): Promise<boolean> {
+  const pollMs = 1_500
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const status = getConnectionStatus(accountId)
+    if (status === 'open') return true
+    if (status !== 'connecting') return false
+    await new Promise((resolve) => setTimeout(resolve, pollMs))
+  }
+  return getConnectionStatus(accountId) === 'open'
 }

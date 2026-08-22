@@ -2,7 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/baileys/admin-client'
-import { getOrCreateConnection, isConnected } from '@/lib/baileys/connection'
+import { getOrCreateConnection, isConnected, getConnectionStatus } from '@/lib/baileys/connection'
 import { sendText, sendImageWithCaption, BaileysSendError } from '@/lib/baileys/send'
 import { randomAttemptDelayMs } from '@/lib/envios/lote-engine'
 
@@ -86,12 +86,21 @@ export async function GET(request: Request) {
 
     await getOrCreateConnection(envio.account_id as string)
     if (!isConnected(envio.account_id as string)) {
-      // Give the lead back to the queue and pause — spec: pause
-      // automatically on a disconnected session, don't keep retrying.
+      // Give the lead back to the queue either way.
       await db
         .from('envio_leads')
         .update({ status: 'na_fila', next_attempt_at: null })
         .eq('id', lead.id)
+
+      // Still mid-reconnect (socket exists, handshake not done, no QR
+      // needed) — don't pause, just skip this tick. The socket is
+      // usually ready by the next one (~30s later).
+      if (getConnectionStatus(envio.account_id as string) === 'connecting') {
+        continue
+      }
+
+      // Actually closed — spec: pause automatically on a disconnected
+      // session, don't keep retrying.
       await db.from('envio_lotes').update({ status: 'pausado' }).eq('id', lote.id)
       paused++
       continue

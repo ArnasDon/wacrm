@@ -44,6 +44,13 @@ interface ConnectionEntry {
   sock: WASocket | null
   /** Data-URL of the current pairing QR, or null when not pairing. */
   qrDataUrl: string | null
+  /**
+   * Real handshake state — `sock` is assigned as soon as `makeWASocket()`
+   * runs, well before the `connection.update` 'open' event fires, so
+   * `sock` alone can't tell a caller whether the socket is actually ready
+   * to send. `isConnected()` must check this instead of `sock` presence.
+   */
+  status: 'connecting' | 'open' | 'closed'
 }
 
 const connections = new Map<string, ConnectionEntry>()
@@ -112,7 +119,7 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
   const existing = connections.get(accountId)
   if (existing?.sock) return existing
 
-  const entry: ConnectionEntry = { sock: null, qrDataUrl: null }
+  const entry: ConnectionEntry = { sock: null, qrDataUrl: null, status: 'connecting' }
   connections.set(accountId, entry)
 
   const { state, saveCreds } = await getSupabaseAuthState(accountId)
@@ -145,11 +152,13 @@ export async function getOrCreateConnection(accountId: string): Promise<Connecti
 
     if (connection === 'open') {
       entry.qrDataUrl = null
+      entry.status = 'open'
       await setStatusConexao(accountId, 'conectado')
       console.log('[baileys/connection] connection OPEN for account', accountId)
     }
 
     if (connection === 'close') {
+      entry.status = 'closed'
       // Duck-typed Boom-shaped error (Baileys depends on @hapi/boom
       // internally but doesn't re-export its type) — statusCode maps
       // 1:1 onto DisconnectReason.
@@ -197,5 +206,17 @@ export function getConnectionEntry(accountId: string): ConnectionEntry | undefin
 
 /** Whether this process currently holds a live, authenticated socket for the account. */
 export function isConnected(accountId: string): boolean {
-  return Boolean(connections.get(accountId)?.sock)
+  return connections.get(accountId)?.status === 'open'
+}
+
+/**
+ * Distinguishes "still reconnecting" (no QR needed, socket exists but
+ * hasn't finished the handshake yet) from "actually closed" — callers
+ * like the envios cron need this to avoid pausing a lote on a socket
+ * that's mid-reconnect and will be ready on the next tick.
+ */
+export function getConnectionStatus(
+  accountId: string,
+): 'connecting' | 'open' | 'closed' | undefined {
+  return connections.get(accountId)?.status
 }

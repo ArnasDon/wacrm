@@ -141,14 +141,36 @@ const nextConfig: NextConfig = {
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {
+        // Page HTML: never shared-cached.
+        //
+        // This used to be `public, s-maxage=300, stale-while-
+        // revalidate=86400` to stop Hostinger's CDN serving
+        // year-old HTML after a deploy. A short ceiling fixed the
+        // stale-chunk problem, but it also told every shared cache
+        // that one user's rendered page was reusable for the next
+        // five minutes — and these responses are not
+        // interchangeable:
+        //
+        //   - The UI locale is resolved per request from the
+        //     NEXT_LOCALE cookie and Accept-Language
+        //     (src/i18n/request.ts), so the same URL renders in
+        //     Spanish for one visitor and English for the next.
+        //   - Dashboard HTML is rendered against the signed-in
+        //     user's Supabase session.
+        //
+        // The usual fix — `Vary: Accept-Language, Cookie` — does not
+        // work here: Next.js sets its own Vary (rsc,
+        // next-router-*) on these routes and that overwrites both a
+        // configured header and one appended from middleware.
+        // Verified against a production build.
+        //
+        // `no-store` keeps the original goal (no stale HTML pinning
+        // dead chunk hashes) without the sharing hazard. Every page
+        // route is server-rendered per request anyway, so there was
+        // little edge cache to lose. Hashed assets under
+        // /_next/static are untouched and still cache immutably.
         source: "/:path((?!_next/static|_next/image|api).*)",
-        headers: [
-          {
-            key: "Cache-Control",
-            value:
-              "public, max-age=0, s-maxage=300, stale-while-revalidate=86400",
-          },
-        ],
+        headers: [{ key: "Cache-Control", value: "private, no-store" }],
       },
       {
         // Security headers on every response, including /_next/static

@@ -71,16 +71,58 @@ trigger `handle_new_user` crea la `account` y el `profile` como
 ## Verificar
 
 ```bash
-npm test        # 825 tests
+npm test        # 841 tests
 npm run typecheck
-npm run lint    # 37 warnings preexistentes, 0 errores
+npm run lint    # 36 warnings preexistentes, 0 errores
 ```
+
+## Idioma
+
+Inglés y español. El idioma se resuelve **en cada petición**, en este
+orden:
+
+1. Cookie `NEXT_LOCALE` — lo que el usuario eligió en
+   Configuración → Apariencia → Idioma.
+2. Cabecera `Accept-Language` del navegador (`es-MX`, `es-419`… todas
+   caen en español).
+3. Inglés.
+
+`NEXT_PUBLIC_APP_LOCALE` sigue existiendo, pero ahora solo fija el
+*default del despliegue* para el paso 3; ya no pisa la elección del
+usuario.
+
+| Pieza | Qué hace |
+| --- | --- |
+| `src/lib/locales.ts` | Locales soportados, cookie y la lógica de resolución |
+| `src/i18n/request.ts` | La aplica en cada render del servidor |
+| `src/components/settings/language-panel.tsx` | El selector (Automático / English / Español) |
+| `messages/*.json` | Los catálogos |
+
+`ko.json` sigue en el repo pero **no** se ofrece en el selector: para
+activarlo, añádelo a `SUPPORTED_LOCALES`.
+
+Al añadir una clave a `en.json` hay que añadirla también a `es.json` y
+`ko.json` — no hay fallback por clave, así que una clave ausente se
+renderiza como su propia ruta (`Settings.foo.bar`). El test
+`src/i18n/messages.test.ts` lo vigila.
+
+### Consecuencias
+
+Leer la cookie y la cabecera vuelve **dinámicas** todas las páginas
+(antes `/login`, `/dashboard`, etc. se prerenderizaban estáticas). Y
+como el HTML pasa a depender del idioma, `next.config.ts` ya no lo
+anuncia como cacheable en cachés compartidos: era
+`public, s-maxage=300` y ahora es `private, no-store`. El `Vary` no
+sirve como alternativa — Next escribe el suyo en estas rutas y pisa
+tanto el de `headers()` como el que añada el middleware.
 
 ## Diferencias con el upstream
 
 - Node 20 → 26 en CI, Docker y `package.json`; `.nvmrc` nuevo.
 - Tests de `currency` y `date-utils` ya no dependen de la zona horaria
   ni del locale de la máquina.
+- Español (`messages/es.json`) y selección de idioma por usuario. Ver
+  «Idioma» abajo.
 - Esta sección y `docs/production-checklist.md`.
 
 El remote `upstream` apunta al repo original, solo para traer cambios

@@ -76,7 +76,9 @@ RETURNS TABLE (id uuid, content text, distance real) AS $$
     AND c.embedding IS NOT NULL
   ORDER BY c.embedding <=> p_query_embedding::vector(1536)
   LIMIT GREATEST(p_match_count, 0);
-$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;
+-- `extensions` on the search_path so the `vector` cast and `<=>` resolve
+-- wherever pgvector was installed (see migration 030).
+$$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public, extensions;
 
 -- Re-assert the EXECUTE grants (CREATE OR REPLACE preserves them,
 -- but keep them explicit and re-runnable — mirrors migration 030).

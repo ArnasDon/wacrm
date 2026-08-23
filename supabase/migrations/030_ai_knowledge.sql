@@ -15,11 +15,14 @@
 --     (Anthropic has no embeddings API) keep the lexical path with
 --     zero extra setup.
 --
--- pgvector: `CREATE EXTENSION IF NOT EXISTS vector` works on a stock
--- Postgres. On hosted Supabase the extension usually lives in the
--- `extensions` schema — if your project pins that, run
--- `create extension if not exists vector with schema extensions;`
--- once, then this file is a no-op for the extension.
+-- pgvector: installed into `extensions` on hosted Supabase (where that
+-- schema exists) and into the default schema on a stock Postgres. Either
+-- way the `vector` type, the `<=>` operator and the `vector_cosine_ops`
+-- opclass are only resolvable if the owning schema is on the search_path,
+-- which is why this file sets it explicitly below and why every function
+-- touching a vector declares `SET search_path = public, extensions`.
+-- `supabase db push` connects with a bare `public` search_path, so
+-- leaving this implicit fails with `type "vector" does not exist`.
 --
 -- RLS: settings-class, mirroring `ai_configs` / `whatsapp_config` —
 -- any member may read the knowledge base; only admin+ may change it.
@@ -30,7 +33,21 @@
 -- Idempotent — safe to run multiple times.
 -- ============================================================
 
-CREATE EXTENSION IF NOT EXISTS vector;
+DO $ext$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_namespace WHERE nspname = 'extensions') THEN
+    EXECUTE 'CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA extensions';
+  ELSE
+    EXECUTE 'CREATE EXTENSION IF NOT EXISTS vector';
+  END IF;
+END
+$ext$;
+
+-- Resolve `vector` / `<=>` / `vector_cosine_ops` for the rest of this
+-- file regardless of which of the two schemas above won. Naming a
+-- schema that does not exist is not an error in Postgres, so this is
+-- safe on a stock instance too.
+SET search_path = public, extensions;
 
 -- Optional embeddings key (OpenAI-compatible). When set, the KB is
 -- embedded and semantic search turns on. Stored AES-256-GCM-encrypted,
@@ -190,7 +207,7 @@ RETURNS TABLE (id uuid, content text, distance real) AS $$
     AND c.embedding IS NOT NULL
   ORDER BY c.embedding <=> p_query_embedding::vector(1536)
   LIMIT GREATEST(p_match_count, 0);
-$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public;
+$$ LANGUAGE sql STABLE SECURITY DEFINER SET search_path = public, extensions;
 
 -- Lock down EXECUTE (mirrors migrations 018 / 025). These are
 -- SECURITY DEFINER and would otherwise default to PUBLIC — i.e. the

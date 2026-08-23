@@ -1737,6 +1737,13 @@
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
+    },
+    "language": {
+      "title": "Language",
+      "description": "Choose the language for the interface. Automatic follows your browser settings, falling back to English.",
+      "automatic": "Automatic",
+      "automaticHint": "Match browser",
+      "detected": "Detected"
     }
   }
 }

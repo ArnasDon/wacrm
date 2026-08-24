@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
   Pencil,
+  MoreHorizontal,
   Wrench,
   GripVertical,
   PlayCircle,
@@ -32,6 +33,13 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -303,54 +311,78 @@ export function AiToolsManager({ canEdit = true }: { canEdit?: boolean }) {
       </div>
 
       {items.length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-border py-10 text-center text-sm text-muted-foreground">
-          <Wrench className="mb-2 h-6 w-6 text-muted-foreground/60" />
-          No tools yet. Add one to let the agent call your APIs.
+        // Plain empty state — no dashed box (docs/DESIGN.md §5).
+        <div className="flex flex-col items-center justify-center rounded-lg border border-border bg-card py-12 text-center">
+          <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+          </div>
+          <p className="mt-3 text-[13px] font-medium text-foreground">No tools yet</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Add one to let the agent call your APIs mid-conversation.
+          </p>
         </div>
       ) : (
         <div className="grid gap-2">
           {items.map((item) => (
+            // `min-w-0` on the grid item is load-bearing: tool descriptions
+            // can be long unbroken JSON blobs, and without it the grid
+            // child's implicit min-width:auto forces the card past the
+            // container edge → horizontal page scroll.
             <div
               key={item.id}
-              className="flex items-center gap-3 rounded-xl border border-border bg-card p-3"
+              className="group flex min-w-0 items-start gap-3 rounded-lg border border-border bg-card p-3.5 transition-colors hover:bg-muted/30"
             >
               <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <span className="truncate font-mono text-sm font-medium text-foreground">
+                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                  <span className="truncate font-mono text-[13px] font-medium text-foreground">
                     {item.name}
                   </span>
-                  <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold uppercase text-muted-foreground">
+                  <span className="shrink-0 rounded border border-border bg-muted px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
                     {item.method}
                   </span>
                   {!item.is_active && (
-                    <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                    <span className="shrink-0 rounded-full border border-amber-500/30 bg-amber-500/10 px-1.5 py-px text-[10px] font-medium text-amber-600 dark:text-amber-400">
                       Disabled
                     </span>
                   )}
                 </div>
-                <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                <p className="mt-1 line-clamp-2 break-words text-xs leading-relaxed text-muted-foreground">
                   {item.description}
                 </p>
               </div>
               {canEdit && (
-                <>
-                  <Button variant="ghost" size="sm" onClick={() => openEdit(item)}>
-                    <Pencil className="h-3.5 w-3.5" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => remove(item.id)}
-                    disabled={deletingId === item.id}
-                    className="text-red-500 hover:text-red-600"
+                // Standard 3-dot overflow menu — edit/delete live here
+                // instead of loose icon buttons (docs/DESIGN.md §4).
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    aria-label={`Actions for ${item.name}`}
+                    className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
                   >
                     {deletingId === item.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     ) : (
-                      <Trash2 className="h-3.5 w-3.5" />
+                      <MoreHorizontal className="h-4 w-4" />
                     )}
-                  </Button>
-                </>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="min-w-36 border-border bg-popover">
+                    <DropdownMenuItem
+                      onClick={() => openEdit(item)}
+                      className="text-popover-foreground"
+                    >
+                      <Pencil className="mr-2 h-3.5 w-3.5" />
+                      Edit
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="bg-border" />
+                    <DropdownMenuItem
+                      onClick={() => remove(item.id)}
+                      disabled={deletingId === item.id}
+                      className="text-red-500 focus:bg-red-500/10 focus:text-red-600 dark:text-red-400"
+                    >
+                      <Trash2 className="mr-2 h-3.5 w-3.5" />
+                      Delete
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               )}
             </div>
           ))}
@@ -358,7 +390,7 @@ export function AiToolsManager({ canEdit = true }: { canEdit?: boolean }) {
       )}
 
       <Dialog open={!!draft} onOpenChange={(o) => !o && setDraft(null)}>
-        <DialogContent className="max-h-[85vh] max-w-2xl overflow-y-auto">
+        <DialogContent className="max-h-[88vh] max-w-3xl overflow-y-auto">
           {draft && (
             <ToolForm
               draft={draft}
@@ -439,9 +471,13 @@ function ToolForm({
         <DialogTitle>{draft.id ? "Edit tool" : "Add tool"}</DialogTitle>
       </DialogHeader>
 
-      <div className="grid gap-4 py-2">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="grid gap-1.5">
+      {/* Wider, calmer form: identity row → description → request row →
+          auth row → headers/params. Helper copy stays under its field
+          (docs/DESIGN.md §3). */}
+      <div className="grid gap-5 py-1">
+        {/* Identity: name + active toggle on one baseline. */}
+        <div className="flex items-end gap-4">
+          <div className="grid flex-1 gap-1.5">
             <Label>Name</Label>
             <Input
               value={draft.name}
@@ -453,15 +489,13 @@ function ToolForm({
               lowercase, numbers, underscores — how the agent refers to it
             </p>
           </div>
-          <div className="grid gap-1.5">
-            <Label className="flex items-center justify-between">
-              Active
-              <Switch
-                checked={draft.isActive}
-                onCheckedChange={(v) => patch({ isActive: v })}
-              />
-            </Label>
-          </div>
+          <label className="flex h-9 shrink-0 items-center gap-2 pb-5 text-[13px] font-medium text-foreground">
+            <Switch
+              checked={draft.isActive}
+              onCheckedChange={(v) => patch({ isActive: v })}
+            />
+            Active
+          </label>
         </div>
 
         <div className="grid gap-1.5">
@@ -474,17 +508,17 @@ function ToolForm({
               "or price. Do not use for order history — use get_order_status instead. " +
               "Returns JSON: {in_stock: boolean, quantity: number, price_usd: number}."
             }
-            rows={3}
+            rows={4}
           />
-          <p className="text-[11px] text-muted-foreground">
-            This is the only signal the agent gets — it&apos;s sent on every message, so cover
-            four things briefly: what it does, when to call it, what NOT to use it for (if
-            there&apos;s a similar tool), and what shape the response comes back in. There&apos;s
-            no separate field for the response format — put it here.
+          <p className="max-w-2xl text-[11px] leading-relaxed text-muted-foreground">
+            The only signal the agent gets — sent with every message. Cover briefly:
+            what it does, when to call it, what NOT to use it for, and the response
+            shape (there&apos;s no separate field for the format).
           </p>
         </div>
 
-        <div className="grid grid-cols-[120px_1fr] gap-3">
+        {/* Request line: method + URL share one row. */}
+        <div className="grid grid-cols-[140px_1fr] gap-3">
           <div className="grid gap-1.5">
             <Label>Method</Label>
             <Select
@@ -515,7 +549,7 @@ function ToolForm({
         </div>
 
         {draft.method !== "GET" && (
-          <p className="-mt-2 text-[11px] text-amber-500">
+          <p className="-mt-3 rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-700 dark:text-amber-400">
             {draft.method} tools fire autonomously in auto-reply — the agent decides to call
             this with no human approval step. Write the description defensively and lean on
             your API&apos;s own business logic as the real backstop.
@@ -541,7 +575,12 @@ function ToolForm({
                 placeholder="value"
                 className="font-mono text-xs"
               />
-              <Button variant="ghost" size="sm" onClick={() => removeHeader(h.key)}>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => removeHeader(h.key)}
+                className="h-8 w-8 shrink-0 p-0"
+              >
                 <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
               </Button>
             </div>
@@ -604,50 +643,54 @@ function AuthFields({
   patch: (p: Partial<Draft>) => void;
 }) {
   return (
-    <div className="grid gap-3 rounded-lg border border-border p-3">
-      <div className="grid gap-1.5">
-        <Label>Authentication</Label>
-        <Select
-          value={draft.authType}
-          onValueChange={(v) => patch({ authType: v as AuthType })}
-        >
-          <SelectTrigger>
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="none">None</SelectItem>
-            <SelectItem value="bearer">Bearer token</SelectItem>
-            <SelectItem value="api_key">API key header</SelectItem>
-            <SelectItem value="basic">Basic auth</SelectItem>
-          </SelectContent>
-        </Select>
+    // Inline auth row — select + conditional fields share one baseline
+    // instead of stacking inside a bordered box.
+    <div className="grid gap-3">
+      <div className="grid grid-cols-[220px_1fr] items-start gap-3">
+        <div className="grid gap-1.5">
+          <Label>Authentication</Label>
+          <Select
+            value={draft.authType}
+            onValueChange={(v) => patch({ authType: v as AuthType })}
+          >
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="bearer">Bearer token</SelectItem>
+              <SelectItem value="api_key">API key header</SelectItem>
+              <SelectItem value="basic">Basic auth</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {draft.authType === "api_key" && (
+          <div className="grid gap-1.5">
+            <Label>Header name</Label>
+            <Input
+              value={draft.authHeaderName}
+              onChange={(e) => patch({ authHeaderName: e.target.value })}
+              placeholder="X-API-Key"
+              className="font-mono text-sm"
+            />
+          </div>
+        )}
+
+        {draft.authType !== "none" && (
+          <div className="grid gap-1.5">
+            <Label>
+              {draft.authType === "basic" ? "Credential (user:pass)" : "Credential"}
+            </Label>
+            <Input
+              type="password"
+              value={draft.authSecret}
+              onChange={(e) => patch({ authSecret: e.target.value })}
+              placeholder={draft.hasSecret ? "•••••••••••••••• (saved — leave blank to keep)" : "Enter credential"}
+            />
+          </div>
+        )}
       </div>
-
-      {draft.authType === "api_key" && (
-        <div className="grid gap-1.5">
-          <Label>Header name</Label>
-          <Input
-            value={draft.authHeaderName}
-            onChange={(e) => patch({ authHeaderName: e.target.value })}
-            placeholder="X-API-Key"
-            className="font-mono text-sm"
-          />
-        </div>
-      )}
-
-      {draft.authType !== "none" && (
-        <div className="grid gap-1.5">
-          <Label>
-            {draft.authType === "basic" ? "Credential (user:pass)" : "Credential"}
-          </Label>
-          <Input
-            type="password"
-            value={draft.authSecret}
-            onChange={(e) => patch({ authSecret: e.target.value })}
-            placeholder={draft.hasSecret ? "•••••••••••••••• (saved — leave blank to keep)" : "Enter credential"}
-          />
-        </div>
-      )}
     </div>
   );
 }

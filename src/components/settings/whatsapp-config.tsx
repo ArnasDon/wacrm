@@ -15,6 +15,7 @@ import {
   RotateCcw,
 } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
+import { cn } from '@/lib/utils';
 import { useAuth } from '@/hooks/use-auth';
 import { useTranslations } from 'next-intl';
 import { Button } from '@/components/ui/button';
@@ -442,21 +443,22 @@ export function WhatsAppConfig() {
       <div className="space-y-6">
         {/* Corrupted-token reset banner */}
         {showResetBanner && (
-          <Alert className="bg-amber-950/40 border-amber-600/40">
+          <Alert className="border-amber-500/30 bg-amber-500/10">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="size-5 text-amber-400 mt-0.5 shrink-0" />
+              <AlertTriangle className="size-5 mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
               <div className="flex-1">
-                <AlertTitle className="text-amber-200 mb-1">
+                <AlertTitle className="mb-1 text-amber-800 dark:text-amber-200">
                   Stored token can&apos;t be decrypted
                 </AlertTitle>
-                <AlertDescription className="text-amber-100/80 text-sm">
+                <AlertDescription className="text-sm text-amber-700/90 dark:text-amber-100/80">
                   {statusMessage}
                 </AlertDescription>
                 <Button
                   onClick={handleReset}
                   disabled={resetting}
                   size="sm"
-                  className="mt-3 bg-amber-600 hover:bg-amber-700 text-white"
+                  variant="outline"
+                  className="mt-3 border-amber-500/40 text-amber-700 hover:bg-amber-500/15 dark:text-amber-200"
                 >
                   {resetting ? (
                     <>
@@ -476,18 +478,37 @@ export function WhatsAppConfig() {
         )}
 
         {/* Connection Status */}
-        <Alert className="bg-card border-border">
+        <Alert
+          className={
+            connectionStatus === 'connected'
+              ? 'border-emerald-500/30 bg-emerald-500/10'
+              : 'border-destructive/30 bg-destructive/10'
+          }
+        >
           <div className="flex items-center gap-2">
             {connectionStatus === 'connected' ? (
-              <CheckCircle2 className="size-4 text-primary" />
+              <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
             ) : (
-              <XCircle className="size-4 text-red-500" />
+              <XCircle className="size-4 text-destructive" />
             )}
-            <AlertTitle className="text-foreground mb-0">
+            <AlertTitle
+              className={cn(
+                'mb-0',
+                connectionStatus === 'connected'
+                  ? 'text-emerald-800 dark:text-emerald-200'
+                  : 'text-destructive',
+              )}
+            >
               {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
             </AlertTitle>
           </div>
-          <AlertDescription className="text-muted-foreground">
+          <AlertDescription
+            className={
+              connectionStatus === 'connected'
+                ? 'text-emerald-700/90 dark:text-emerald-100/80'
+                : 'text-destructive/90'
+            }
+          >
             {connectionStatus === 'connected'
               ? t('connectedDesc')
               : statusMessage ||
@@ -504,21 +525,24 @@ export function WhatsAppConfig() {
           <Alert
             className={
               isRegistered
-                ? 'bg-emerald-950/30 border-emerald-700/50'
-                : 'bg-amber-950/30 border-amber-700/50'
+                ? 'border-emerald-500/30 bg-emerald-500/10'
+                : 'border-amber-500/30 bg-amber-500/10'
             }
           >
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div className="flex items-center gap-2">
                 {isRegistered ? (
-                  <CheckCircle2 className="size-4 text-emerald-400" />
+                  <CheckCircle2 className="size-4 text-emerald-600 dark:text-emerald-400" />
                 ) : (
-                  <AlertTriangle className="size-4 text-amber-400" />
+                  <AlertTriangle className="size-4 text-amber-600 dark:text-amber-400" />
                 )}
                 <AlertTitle
-                  className={
-                    'mb-0 ' + (isRegistered ? 'text-emerald-200' : 'text-amber-200')
-                  }
+                  className={cn(
+                    'mb-0',
+                    isRegistered
+                      ? 'text-emerald-800 dark:text-emerald-200'
+                      : 'text-amber-800 dark:text-amber-200',
+                  )}
                 >
                   {isRegistered
                     ? t('registered')
@@ -530,7 +554,7 @@ export function WhatsAppConfig() {
                 size="sm"
                 onClick={handleVerifyRegistration}
                 disabled={verifyingRegistration}
-                className="border-border bg-transparent text-foreground hover:bg-muted h-7"
+                className="h-7"
               >
                 {verifyingRegistration ? (
                   <Loader2 className="size-3.5 animate-spin" />
@@ -540,7 +564,14 @@ export function WhatsAppConfig() {
                 {t('verifyWithMeta')}
               </Button>
             </div>
-            <AlertDescription className="text-muted-foreground mt-2 text-xs leading-relaxed">
+            <AlertDescription
+              className={cn(
+                'mt-2 text-xs leading-relaxed',
+                isRegistered
+                  ? 'text-emerald-700/90 dark:text-emerald-100/80'
+                  : 'text-amber-700/90 dark:text-amber-100/80',
+              )}
+            >
               {isRegistered ? (
                 <span
                   dangerouslySetInnerHTML={{
@@ -554,7 +585,7 @@ export function WhatsAppConfig() {
               ) : lastRegistrationError ? (
                 <>
                   {t('lastAttemptFailed')}
-                  <span className="text-red-300">
+                  <span className="text-destructive">
                     &quot;{lastRegistrationError}&quot;
                   </span>
                   . {t('retryHint')}
@@ -565,10 +596,16 @@ export function WhatsAppConfig() {
             </AlertDescription>
 
             {registrationProbe && (
-              <div className="mt-3 rounded border border-border bg-card/60 px-3 py-2 space-y-1.5 text-[11px]">
+              <div className="mt-3 space-y-1.5 rounded-md border border-border bg-card/60 px-3 py-2 text-[11px]">
                 <p className="font-medium text-foreground">
-                  {t('diagnosticLastRun')}
-                  <span className={registrationProbe.live ? 'text-emerald-400' : 'text-amber-400'}>
+                  {t('diagnosticLastRun')}{' '}
+                  <span
+                    className={
+                      registrationProbe.live
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : 'text-amber-600 dark:text-amber-400'
+                    }
+                  >
                     {registrationProbe.live ? t('live') : t('notLive')}
                   </span>
                 </p>
@@ -576,18 +613,18 @@ export function WhatsAppConfig() {
                   {Object.entries(registrationProbe.checks).map(([k, v]) => (
                     <li key={k} className="flex items-center gap-1.5">
                       {v === true ? (
-                        <CheckCircle2 className="size-3 text-emerald-400 shrink-0" />
+                        <CheckCircle2 className="size-3 shrink-0 text-emerald-600 dark:text-emerald-400" />
                       ) : v === false ? (
-                        <XCircle className="size-3 text-red-400 shrink-0" />
+                        <XCircle className="size-3 shrink-0 text-destructive" />
                       ) : (
-                        <span className="size-3 rounded-full border border-border shrink-0" />
+                        <span className="size-3 shrink-0 rounded-full border border-border" />
                       )}
                       <code className="text-muted-foreground">{k}</code>
                     </li>
                   ))}
                 </ul>
                 {(registrationProbe.errors ?? []).length > 0 && (
-                  <ul className="pt-1 space-y-0.5 text-red-300">
+                  <ul className="space-y-0.5 pt-1 text-destructive">
                     {registrationProbe.errors?.map((e, i) => (
                       <li key={i}>• {e}</li>
                     ))}
@@ -613,7 +650,6 @@ export function WhatsAppConfig() {
                 placeholder="e.g. 100234567890123"
                 value={phoneNumberId}
                 onChange={(e) => setPhoneNumberId(e.target.value)}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
@@ -623,7 +659,6 @@ export function WhatsAppConfig() {
                 placeholder="e.g. 100234567890456"
                 value={wabaId}
                 onChange={(e) => setWabaId(e.target.value)}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
             </div>
 
@@ -644,7 +679,7 @@ export function WhatsAppConfig() {
                       setTokenEdited(true);
                     }
                   }}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground pr-10"
+                  className="pr-10"
                 />
                 <button
                   type="button"
@@ -667,7 +702,6 @@ export function WhatsAppConfig() {
                 placeholder={t('webhookVerifyTokenPlaceholder')}
                 value={verifyToken}
                 onChange={(e) => setVerifyToken(e.target.value)}
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground"
               />
               <p className="text-xs text-muted-foreground">
                 {t('webhookVerifyTokenHint')}
@@ -688,7 +722,7 @@ export function WhatsAppConfig() {
                 onChange={(e) =>
                   setPin(e.target.value.replace(/\D/g, '').slice(0, 6))
                 }
-                className="bg-muted border-border text-foreground placeholder:text-muted-foreground tracking-widest"
+                className="tracking-widest"
               />
               <p className="text-xs text-muted-foreground leading-relaxed">
                 <span dangerouslySetInnerHTML={{ __html: t('pinHint') }} />
@@ -712,13 +746,13 @@ export function WhatsAppConfig() {
                 <Input
                   readOnly
                   value={webhookUrl}
-                  className="bg-muted border-border text-muted-foreground font-mono text-sm"
+                  className="bg-muted font-mono text-sm text-muted-foreground"
                 />
                 <Button
                   variant="outline"
                   size="icon"
                   onClick={handleCopyWebhookUrl}
-                  className="shrink-0 border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                  className="shrink-0"
                 >
                   <Copy className="size-4" />
                 </Button>
@@ -766,11 +800,7 @@ export function WhatsAppConfig() {
 
         {/* Action Buttons */}
         <div className="flex flex-wrap gap-3">
-          <Button
-            onClick={handleSave}
-            disabled={saving}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
+          <Button onClick={handleSave} disabled={saving}>
             {saving ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
@@ -784,7 +814,6 @@ export function WhatsAppConfig() {
             variant="outline"
             onClick={handleTestConnection}
             disabled={testing || !config}
-            className="border-border text-muted-foreground hover:text-foreground hover:bg-muted"
           >
             {testing ? (
               <>
@@ -800,10 +829,9 @@ export function WhatsAppConfig() {
           </Button>
           {config && (
             <Button
-              variant="outline"
+              variant="destructive"
               onClick={handleReset}
               disabled={resetting}
-              className="border-red-900 text-red-400 hover:text-red-300 hover:bg-red-950/40"
             >
               {resetting ? (
                 <>

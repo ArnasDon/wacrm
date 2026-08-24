@@ -2,7 +2,13 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
-@custom-variant dark (&:is(.dark *));
+/* The app's dark/light switch is the `data-mode` attribute on <html>
+ * (see the MODE block below and hooks/use-theme.tsx) — no `.dark`
+ * class is ever applied. Point Tailwind's `dark:` variant at that
+ * attribute so every `dark:`-prefixed utility in the codebase (status
+ * banners, badges, etc.) actually activates instead of silently never
+ * matching. */
+@custom-variant dark (&:is(html[data-mode="dark"] *));
 
 @theme inline {
   --color-background: var(--background);
@@ -88,61 +94,64 @@
 
 :root,
 html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
+  --background: oklch(0.145 0.006 260);
+  --foreground: oklch(0.97 0 0);
+  --card: oklch(0.185 0.006 260);
+  --card-2: oklch(0.215 0.006 260);
+  --card-foreground: oklch(0.97 0 0);
+  --popover: oklch(0.19 0.006 260);
+  --popover-foreground: oklch(0.97 0 0);
+  --secondary: oklch(0.225 0.006 260);
+  --secondary-foreground: oklch(0.97 0 0);
+  --muted: oklch(0.225 0.006 260);
+  --muted-foreground: oklch(0.66 0.008 260);
+  --accent: oklch(0.235 0.006 260);
+  --accent-foreground: oklch(0.97 0 0);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
+  --border: oklch(0.265 0.006 260);
+  --input: oklch(0.265 0.006 260);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.165 0.006 260);
+  --sidebar-foreground: oklch(0.97 0 0);
+  --sidebar-accent: oklch(0.235 0.006 260);
+  --sidebar-accent-foreground: oklch(0.97 0 0);
+  --sidebar-border: oklch(0.265 0.006 260);
 }
 
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
+  /* Warm paper canvas + white cards — the reference "quiet SaaS" look.
+     Hue 80 keeps neutrals slightly warm (Notion/Figma-paper) instead of
+     the blue-cast grays that read as generic dashboard templates. */
+  --background: oklch(0.977 0.002 80);
+  --foreground: oklch(0.235 0.005 80);
   --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
+  --card-2: oklch(0.982 0.002 80);
+  --card-foreground: oklch(0.235 0.005 80);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
+  --popover-foreground: oklch(0.235 0.005 80);
+  --secondary: oklch(0.955 0.003 80);
+  --secondary-foreground: oklch(0.27 0.005 80);
+  --muted: oklch(0.952 0.003 80);
+  --muted-foreground: oklch(0.5 0.01 80);
+  --accent: oklch(0.94 0.004 80);
+  --accent-foreground: oklch(0.27 0.005 80);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
+  --border: oklch(0.908 0.004 80);
+  --input: oklch(0.908 0.004 80);
   --chart-2: oklch(0.6 0.1 260);
   --chart-3: oklch(0.7 0.06 260);
   --chart-4: oklch(0.8 0.04 260);
   --chart-5: oklch(0.87 0.03 260);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.977 0.002 80);
+  --sidebar-foreground: oklch(0.235 0.005 80);
+  --sidebar-accent: oklch(0.94 0.004 80);
+  --sidebar-accent-foreground: oklch(0.27 0.005 80);
+  --sidebar-border: oklch(0.908 0.004 80);
 }
 
 /* ---- ACCENT: primary color ---- */

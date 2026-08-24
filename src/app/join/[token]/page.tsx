@@ -359,7 +359,7 @@ export default function JoinPage() {
             if (!open) setConflictMessage(null);
           }}
         >
-          <DialogContent className="bg-popover border-border sm:max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-popover-foreground">
                 <AlertTriangle className="size-4 text-amber-400" />
@@ -378,7 +378,7 @@ export default function JoinPage() {
                 expired.
               </p>
             </div>
-            <DialogFooter className="bg-popover border-border">
+            <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => setConflictMessage(null)}

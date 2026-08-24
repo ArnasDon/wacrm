@@ -7,6 +7,7 @@ import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
 import { cn } from "@/lib/utils";
+import { getAvatarColor } from "@/lib/avatar-color";
 import type {
   Conversation,
   Message,
@@ -30,7 +31,6 @@ import {
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
-import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -131,23 +131,18 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: { label: string; value: ConversationStatus; dot: string }[] = [
+  { label: "Open", value: "open", dot: "bg-emerald-500" },
+  { label: "Pending", value: "pending", dot: "bg-amber-500" },
+  { label: "Closed", value: "closed", dot: "bg-muted-foreground/50" },
 ];
 
 /**
- * WhatsApp-style doodle background applied to the chat area (both the
- * active thread and the empty state). The SVG tile lives at
- * `/public/inbox-doodle.svg`; the slate-950 colour sits underneath so
- * the doodles read as a subtle pattern rather than a stark grid.
- *
- * Defined once at module scope so the two render paths can't drift —
- * if we ever switch the asset, both spots update together.
+ * Thread canvas — plain paper surface. The old WhatsApp-style doodle
+ * wallpaper was removed: patterned chat backgrounds read as consumer
+ * clone, not professional tooling (docs/DESIGN.md §1).
  */
-const DOODLE_BG_CLASSES =
-  "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
+const THREAD_BG_CLASSES = "bg-background";
 
 export function MessageThread({
   conversation,
@@ -860,19 +855,17 @@ export function MessageThread({
     [conversation, onAssignChange],
   );
 
-  // Empty state — same WhatsApp-style doodle background as the active
-  // thread below, so swapping between empty/selected doesn't change the
-  // pattern under the user's eye.
+  // Empty state — plain paper surface, one line of copy.
   if (!conversation || !contact) {
     return (
-      <div className={cn("flex flex-1 flex-col items-center justify-center", DOODLE_BG_CLASSES)}>
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <MessageSquare className="h-8 w-8 text-muted-foreground" />
+      <div className={cn("flex flex-1 flex-col items-center justify-center", THREAD_BG_CLASSES)}>
+        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+          <MessageSquare className="h-5 w-5 text-muted-foreground" />
         </div>
-        <h3 className="mt-4 text-sm font-medium text-muted-foreground">
+        <h3 className="mt-4 text-sm font-medium text-foreground">
           {t("selectConversation")}
         </h3>
-        <p className="mt-1 text-xs text-muted-foreground">
+        <p className="mt-1 max-w-xs text-center text-xs text-muted-foreground">
           {t("selectConversationHint")}
         </p>
       </div>
@@ -899,11 +892,11 @@ export function MessageThread({
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
-      {/* Header — solid card surface sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
-        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+    <div className={cn("flex min-w-0 flex-1 flex-col", THREAD_BG_CLASSES)}>
+      {/* Header — card surface keeps the controls legible above the
+          paper canvas. */}
+      <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-2.5 sm:px-4">
+        <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
           {onBack && (
@@ -911,33 +904,41 @@ export function MessageThread({
               type="button"
               onClick={onBack}
               aria-label={t("backToConversations")}
-              className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
             >
-              <ArrowLeft className="h-5 w-5" />
+              <ArrowLeft className="h-4 w-4" />
             </button>
           )}
-          <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+          <div
+            className={cn(
+              "flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full text-xs font-medium",
+              getAvatarColor(displayName).bg,
+              getAvatarColor(displayName).text,
+            )}
+          >
             {displayName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
-            <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            <h2 className="truncate text-[13px] font-semibold text-foreground">{displayName}</h2>
+            <p className="truncate text-[11px] text-muted-foreground tabular-nums">{contact.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
+              the name + back arrow keep their room. Expired is a warning
+              (amber); an active countdown is quiet metadata. */}
+          <span
             className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
+              "ml-1 hidden items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium tabular-nums sm:inline-flex sm:ml-2",
+              sessionInfo.expired
+                ? "border-amber-500/30 bg-amber-500/10 text-amber-600 dark:text-amber-400"
+                : "border-border bg-muted text-muted-foreground"
             )}
           >
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
-          </Badge>
+          </span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just
@@ -954,7 +955,7 @@ export function MessageThread({
               aria-pressed={contactPanelOpen}
               className={cn(
                 "hidden h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground lg:inline-flex",
-                contactPanelOpen ? "text-primary" : "text-muted-foreground",
+                contactPanelOpen ? "text-foreground" : "text-muted-foreground",
               )}
             >
               {contactPanelOpen ? (
@@ -987,14 +988,15 @@ export function MessageThread({
             </button>
           )}
 
-          {/* Status dropdown */}
+          {/* Status dropdown — semantic dot + quiet label. */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
+                  "inline-flex items-center justify-center h-7 gap-1.5 rounded-md px-2 text-xs font-medium hover:bg-muted",
+                  "text-foreground"
                 )}>
+                <span className={cn("h-1.5 w-1.5 rounded-full", currentStatus?.dot)} />
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
-                <ChevronDown className="h-3 w-3" />
+                <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
@@ -1004,8 +1006,9 @@ export function MessageThread({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
+                  className="text-sm text-popover-foreground"
                 >
+                  <span className={cn("mr-2 h-1.5 w-1.5 rounded-full", opt.dot)} />
                   {t(`status${opt.label}`)}
                 </DropdownMenuItem>
               ))}
@@ -1016,13 +1019,13 @@ export function MessageThread({
           <DropdownMenu>
             <DropdownMenuTrigger
               className={cn(
-                "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                assignedAgentId ? "text-primary" : "text-muted-foreground"
+                "inline-flex items-center justify-center h-7 gap-1.5 rounded-md px-2 text-xs font-medium hover:bg-muted",
+                assignedAgentId ? "text-foreground" : "text-muted-foreground"
               )}
             >
-              <UserPlus className="h-3 w-3" />
+              <UserPlus className="h-3.5 w-3.5" />
               <span className="hidden sm:inline">{assignLabel}</span>
-              <ChevronDown className="h-3 w-3" />
+              <ChevronDown className="h-3 w-3 text-muted-foreground" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
@@ -1042,7 +1045,7 @@ export function MessageThread({
                       onClick={() => handleAssignChange(p.user_id)}
                       className={cn(
                         "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
+                        isSelected ? "font-medium text-foreground" : "text-popover-foreground"
                       )}
                     >
                       <PresenceDot
@@ -1083,12 +1086,12 @@ export function MessageThread({
       <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
-            <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+            <div className="h-5 w-5 animate-spin rounded-full border-2 border-muted-foreground/30 border-t-muted-foreground" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-12">
-            <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
-            <p className="text-xs text-muted-foreground">
+          <div className="flex flex-col items-center justify-center py-16">
+            <p className="text-[13px] font-medium text-foreground">{t("noMessagesYet")}</p>
+            <p className="mt-1 text-xs text-muted-foreground">
               {t("sendTemplateHint")}
             </p>
           </div>
@@ -1098,7 +1101,7 @@ export function MessageThread({
               <div key={group.date}>
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
-                  <span className="rounded-full bg-muted px-3 py-1 text-[10px] font-medium text-muted-foreground">
+                  <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
                     {formatDateSeparator(group.date, t)}
                   </span>
                 </div>

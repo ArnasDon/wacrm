@@ -3,6 +3,8 @@
 import type { Deal, PipelineStage } from "@/types";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { getAvatarColor } from "@/lib/avatar-color";
+import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -74,7 +76,13 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
       {/* Contact row */}
       <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+        <span
+          className={cn(
+            "flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold",
+            getAvatarColor(deal.contact?.name || deal.contact?.phone || "?").bg,
+            getAvatarColor(deal.contact?.name || deal.contact?.phone || "?").text,
+          )}
+        >
           {initials(deal.contact?.name, deal.contact?.phone)}
         </span>
         <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>

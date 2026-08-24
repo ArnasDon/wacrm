@@ -5,6 +5,7 @@ import { toast } from 'sonner';
 import {
   AlertTriangle,
   Building2,
+  KeyRound,
   Loader2,
   Mail,
   Pencil,
@@ -51,6 +52,148 @@ function fmtDate(iso: string): string {
   });
 }
 
+// ============================================================
+// Reset-password dialog — mirrors the platform-admin panel's own
+// (store-detail-panel.tsx's ResetPasswordDialog), scoped down to
+// "a seller THIS owner's organization actually owns" via
+// POST /api/organization/sellers/[id]/reset-password instead of the
+// platform-wide route. Exists because "Ativo" only means "clicked the
+// invite link at least once" (that's a real Supabase sign-in) — a
+// seller who abandoned the /reset-password page before actually
+// setting a password shows as Ativo but has no working password, and
+// "resend invite" is refused past that point (Supabase's invite email
+// stops applying once the user is no longer purely "invited"). This
+// dialog is the recovery path for exactly that stuck state.
+// ============================================================
+function ResetSellerPasswordDialog({
+  account,
+  onOpenChange,
+}: {
+  account: OrganizationAccount | null;
+  onOpenChange: (open: boolean) => void;
+}) {
+  const [showDirect, setShowDirect] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!account) {
+      setShowDirect(false);
+      setNewPassword('');
+    }
+  }, [account]);
+
+  async function handleSendLink() {
+    if (!account) return;
+    setSending(true);
+    try {
+      const res = await fetch(`/api/organization/sellers/${account.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'link' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao enviar o link');
+        return;
+      }
+      toast.success(`Link de redefinição enviado para ${data.email ?? account.name}`);
+      onOpenChange(false);
+    } catch {
+      toast.error('Não foi possível conectar ao servidor');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function handleSetDirect() {
+    if (!account) return;
+    setSending(true);
+    try {
+      const res = await fetch(`/api/organization/sellers/${account.id}/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'direct', newPassword }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao definir a senha');
+        return;
+      }
+      setNewPassword('');
+      toast.success('Nova senha definida');
+      onOpenChange(false);
+    } catch {
+      toast.error('Não foi possível conectar ao servidor');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <Dialog open={account !== null} onOpenChange={onOpenChange}>
+      <DialogContent className="bg-popover border-border sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+            <KeyRound className="size-4 text-primary" />
+            Redefinir senha — {account?.name}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">{account?.email}</DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="rounded-lg border border-border bg-muted p-3">
+            <p className="text-sm text-foreground">Enviar link de redefinição por e-mail</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              O vendedor recebe um link seguro e define a própria senha. Recomendado.
+            </p>
+            <Button onClick={handleSendLink} disabled={sending} className="mt-3">
+              {sending ? <Loader2 className="size-4 animate-spin" /> : <Mail className="size-4" />}
+              Enviar link
+            </Button>
+          </div>
+
+          {!showDirect ? (
+            <button
+              type="button"
+              onClick={() => setShowDirect(true)}
+              className="text-xs text-muted-foreground underline hover:text-foreground"
+            >
+              Definir uma senha nova diretamente (não recomendado)
+            </button>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
+              <Label className="text-muted-foreground">Nova senha</Label>
+              <Input
+                type="password"
+                value={newPassword}
+                onChange={(e) => setNewPassword(e.target.value)}
+                placeholder="Mínimo 6 caracteres"
+              />
+              <Button
+                variant="outline"
+                onClick={handleSetDirect}
+                disabled={sending || newPassword.length < 6}
+                className="w-full"
+              >
+                {sending ? <Loader2 className="size-4 animate-spin" /> : null}
+                Definir senha
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <DialogFooter className="bg-popover border-border">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Fechar
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 /**
  * Settings → Organization. Owner-only (see settings/page.tsx's
  * hiddenSections gating). Lets a store account:
@@ -58,9 +201,11 @@ function fmtDate(iso: string): string {
  *   2. Invite seller accounts, each one a fully independent account
  *      linked for read-only consolidated visibility (migration 041) —
  *      never a membership on the store's own account.
- *   3. Rename a linked seller's label, or unlink it (remove access) —
- *      both via /api/organization/sellers/[id] (PATCH / DELETE). The
- *      store's own account row is never editable/removable here.
+ *   3. Rename a linked seller's label, resend their invite while
+ *      still pending, reset their password if they're stuck, or
+ *      unlink it (remove access) — all via /api/organization/sellers/[id]
+ *      and its sub-routes. The store's own account row is never
+ *      editable/removable here.
  *
  * The consolidated Inbox/Contacts account picker (see
  * organization-account-select.tsx) reads the same GET /api/organization
@@ -85,6 +230,7 @@ export function OrganizationSettings() {
   const [removing, setRemoving] = useState(false);
 
   const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resettingAccount, setResettingAccount] = useState<OrganizationAccount | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -336,6 +482,15 @@ export function OrganizationSettings() {
                       <Button
                         variant="outline"
                         size="sm"
+                        onClick={() => setResettingAccount(acc)}
+                        className="border-border text-muted-foreground hover:bg-muted"
+                        title="Redefinir senha — use quando o vendedor abriu o convite mas nunca conseguiu definir a senha"
+                      >
+                        <KeyRound className="size-4" />
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
                         onClick={() => openEdit(acc)}
                         className="border-border text-muted-foreground hover:bg-muted"
                       >
@@ -366,6 +521,11 @@ export function OrganizationSettings() {
       />
 
       <InviteSellerDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={load} />
+
+      <ResetSellerPasswordDialog
+        account={resettingAccount}
+        onOpenChange={(open) => !open && setResettingAccount(null)}
+      />
 
       {/* Rename dialog */}
       <Dialog

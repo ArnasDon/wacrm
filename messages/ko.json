@@ -1015,6 +1015,12 @@
       "recipientsHeader": "수신자 (전체 {total}명 중 {filtered}명)",
       "recipientsHeaderAll": "수신자 ({total}명)",
       "allStatuses": "모든 상태",
+      "responded": "응답함",
+      "notReplied": "응답하지 않음",
+      "openChat": "채팅 열기",
+      "chatContactUnavailable": "이 수신자는 더 이상 연락처와 연결되어 있지 않습니다.",
+      "noConversationYet": "이 연락처에는 아직 사용 가능한 대화가 없습니다.",
+      "chatLookupFailed": "대화를 열 수 없습니다.",
       "exportCsv": "CSV 내보내기",
       "noRecipients": "수신자가 없습니다.",
       "noRecipientsFilter": "이 필터와 일치하는 수신자가 없습니다.",
@@ -1025,6 +1031,8 @@
         "sent": "전송됨",
         "delivered": "전달됨",
         "read": "읽음",
+        "replied": "응답함",
+        "actions": "작업",
         "error": "오류"
       },
       "stats": {

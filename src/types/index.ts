@@ -542,6 +542,8 @@ export interface Broadcast {
   read_count: number;
   replied_count: number;
   failed_count: number;
+  /** WhatsApp connection used to send this broadcast (migration 050). */
+  whatsapp_config_id?: string | null;
   /**
    * Set while a server-side delivery pass is fanning out, NULL when
    * idle. Claimed with a conditional UPDATE so two resumes can't both

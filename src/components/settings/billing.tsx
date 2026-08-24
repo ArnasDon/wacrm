@@ -34,6 +34,23 @@ interface PlatformSettings {
   account_holder: string | null;
 }
 
+interface AccountBilling {
+  next_payment_due_at: string | null;
+  subscription_amount: number | string | null;
+  subscription_currency: string | null;
+}
+
+function formatSubscriptionAmount(
+  amount: number | string,
+  currency: string
+): string {
+  return new Intl.NumberFormat('es-GT', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 2,
+  }).format(Number(amount));
+}
+
 const MAX_RECEIPT_BYTES = 5 * 1024 * 1024;
 const ALLOWED_RECEIPT_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 
@@ -41,6 +58,10 @@ export function BillingSettings() {
   const { accountId, canEditSettings } = useAuth();
   const [settings, setSettings] = useState<PlatformSettings | null>(null);
   const [nextDue, setNextDue] = useState<string | null>(null);
+  const [subscriptionAmount, setSubscriptionAmount] = useState<
+    number | string | null
+  >(null);
+  const [subscriptionCurrency, setSubscriptionCurrency] = useState('GTQ');
   const [loading, setLoading] = useState(true);
   const [reporting, setReporting] = useState(false);
   const [receipt, setReceipt] = useState<File | null>(null);
@@ -61,7 +82,9 @@ export function BillingSettings() {
           .maybeSingle(),
         supabase
           .from('accounts')
-          .select('next_payment_due_at')
+          .select(
+            'next_payment_due_at, subscription_amount, subscription_currency'
+          )
           .eq('id', accountId)
           .maybeSingle(),
       ]);
@@ -69,9 +92,10 @@ export function BillingSettings() {
       if (settingsRes.status === 'fulfilled')
         setSettings(settingsRes.value.data ?? null);
       if (accountRes.status === 'fulfilled') {
-        setNextDue(
-          (accountRes.value.data?.next_payment_due_at as string | null) ?? null
-        );
+        const account = accountRes.value.data as AccountBilling | null;
+        setNextDue(account?.next_payment_due_at ?? null);
+        setSubscriptionAmount(account?.subscription_amount ?? null);
+        setSubscriptionCurrency(account?.subscription_currency ?? 'GTQ');
       }
       setLoading(false);
     })();
@@ -162,6 +186,24 @@ export function BillingSettings() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="border-primary/20 bg-primary/5 rounded-lg border p-4">
+            <p className="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+              Monto por pagar
+            </p>
+            {subscriptionAmount !== null ? (
+              <p className="text-foreground mt-1 text-2xl font-semibold tabular-nums">
+                {formatSubscriptionAmount(
+                  subscriptionAmount,
+                  subscriptionCurrency
+                )}
+              </p>
+            ) : (
+              <p className="text-muted-foreground mt-1 text-sm">
+                El monto de tu suscripción aún no ha sido asignado.
+              </p>
+            )}
+          </div>
+
           {settings ? (
             <div className="border-border bg-muted/50 space-y-1 rounded-lg border p-4 text-sm">
               <p className="text-foreground">
@@ -216,7 +258,8 @@ export function BillingSettings() {
                       type="button"
                       onClick={() => {
                         handleReceiptChange(null);
-                        if (fileInputRef.current) fileInputRef.current.value = '';
+                        if (fileInputRef.current)
+                          fileInputRef.current.value = '';
                       }}
                       className="bg-background/80 text-foreground hover:bg-background absolute top-1 right-1 rounded-full p-1"
                       aria-label="Quitar comprobante"

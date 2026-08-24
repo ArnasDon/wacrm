@@ -36,6 +36,7 @@ import {
   Trash2,
   PlayCircle,
   RotateCcw,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { getBroadcastStatus, getRecipientStatus } from '@/lib/broadcast-status';
@@ -126,6 +127,8 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
   'failed',
 ];
 
+type RecipientFilter = RecipientStatus | 'all' | 'responded' | 'not_replied';
+
 /**
  * CSV export helper — RFC 4180 quoting. Quote every field so
  * commas/newlines/quotes round-trip cleanly.
@@ -158,9 +161,8 @@ export default function BroadcastDetailPage() {
   const [recipients, setRecipients] = useState<BroadcastRecipient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<RecipientStatus | 'all'>(
-    'all'
-  );
+  const [statusFilter, setStatusFilter] = useState<RecipientFilter>('all');
+  const [openingChatId, setOpeningChatId] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [resumingScope, setResumingScope] = useState<
@@ -199,13 +201,55 @@ export default function BroadcastDetailPage() {
     fetchData();
   }, [fetchData]);
 
-  const filteredRecipients = useMemo(
-    () =>
-      statusFilter === 'all'
-        ? recipients
-        : recipients.filter((r) => r.status === statusFilter),
-    [recipients, statusFilter]
-  );
+  const filteredRecipients = useMemo(() => {
+    if (statusFilter === 'all') return recipients;
+    if (statusFilter === 'responded') {
+      return recipients.filter((recipient) => recipient.status === 'replied');
+    }
+    if (statusFilter === 'not_replied') {
+      return recipients.filter((recipient) => recipient.status !== 'replied');
+    }
+    return recipients.filter((recipient) => recipient.status === statusFilter);
+  }, [recipients, statusFilter]);
+
+  async function handleOpenChat(recipient: BroadcastRecipient) {
+    if (!recipient.contact_id) {
+      toast.error(t('chatContactUnavailable'));
+      return;
+    }
+
+    setOpeningChatId(recipient.id);
+    try {
+      const supabase = createClient();
+      let query = supabase
+        .from('conversations')
+        .select('id')
+        .eq('contact_id', recipient.contact_id)
+        .eq('channel', 'whatsapp');
+
+      if (broadcast?.whatsapp_config_id) {
+        query = query.eq('whatsapp_config_id', broadcast.whatsapp_config_id);
+      }
+
+      const { data, error: chatError } = await query
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (chatError) throw chatError;
+      if (!data) {
+        toast.error(t('noConversationYet'));
+        return;
+      }
+      router.push(`/inbox?c=${data.id}`);
+    } catch (chatError) {
+      console.error('Failed to resolve broadcast recipient chat:', chatError);
+      toast.error(t('chatLookupFailed'));
+    } finally {
+      setOpeningChatId(null);
+    }
+  }
 
   function handleExport() {
     if (!broadcast) return;
@@ -216,6 +260,7 @@ export default function BroadcastDetailPage() {
       t('table.sent'),
       t('table.delivered'),
       t('table.read'),
+      t('table.replied'),
       t('table.error'),
     ];
     const rows = recipients.map((r) => [
@@ -225,6 +270,7 @@ export default function BroadcastDetailPage() {
       r.sent_at ?? '',
       r.delivered_at ?? '',
       r.read_at ?? '',
+      r.replied_at ?? '',
       r.error_message ?? '',
     ]);
     const csv = toCsv([header, ...rows]);
@@ -556,7 +602,11 @@ export default function BroadcastDetailPage() {
                 <Filter className="h-3.5 w-3.5" />
                 {statusFilter === 'all'
                   ? t('allStatuses')
-                  : tStatus(getRecipientStatus(statusFilter).label)}
+                  : statusFilter === 'responded'
+                    ? t('responded')
+                    : statusFilter === 'not_replied'
+                      ? t('notReplied')
+                      : tStatus(getRecipientStatus(statusFilter).label)}
                 <ChevronDown className="h-3 w-3" />
               </DropdownMenuTrigger>
               <DropdownMenuContent className="border-border bg-popover">
@@ -569,6 +619,27 @@ export default function BroadcastDetailPage() {
                   }
                 >
                   {t('allStatuses')}
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setStatusFilter('responded')}
+                  className={
+                    statusFilter === 'responded'
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
+                  }
+                >
+                  {t('responded')} ({broadcast.replied_count})
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onClick={() => setStatusFilter('not_replied')}
+                  className={
+                    statusFilter === 'not_replied'
+                      ? 'text-primary'
+                      : 'text-popover-foreground'
+                  }
+                >
+                  {t('notReplied')} (
+                  {recipients.length - broadcast.replied_count})
                 </DropdownMenuItem>
                 {RECIPIENT_STATUSES.map((s) => (
                   <DropdownMenuItem
@@ -631,7 +702,13 @@ export default function BroadcastDetailPage() {
                     {t('table.read')}
                   </TableHead>
                   <TableHead className="text-muted-foreground">
+                    {t('table.replied')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground">
                     {t('table.error')}
+                  </TableHead>
+                  <TableHead className="text-muted-foreground text-right">
+                    {t('table.actions')}
                   </TableHead>
                 </TableRow>
               </TableHeader>
@@ -668,8 +745,31 @@ export default function BroadcastDetailPage() {
                           ? new Date(recipient.read_at).toLocaleString()
                           : '-'}
                       </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {recipient.replied_at
+                          ? new Date(recipient.replied_at).toLocaleString()
+                          : '-'}
+                      </TableCell>
                       <TableCell className="max-w-xs truncate text-xs text-red-400">
                         {recipient.error_message ?? '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={
+                            !recipient.contact_id ||
+                            openingChatId === recipient.id
+                          }
+                          onClick={() => void handleOpenChat(recipient)}
+                        >
+                          {openingChatId === recipient.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <ExternalLink className="h-3.5 w-3.5" />
+                          )}
+                          {t('openChat')}
+                        </Button>
                       </TableCell>
                     </TableRow>
                   );

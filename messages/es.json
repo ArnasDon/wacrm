@@ -276,6 +276,12 @@
       "recipientsHeader": "Destinatarios ({filtered} de {total})",
       "recipientsHeaderAll": "Destinatarios ({total})",
       "allStatuses": "Todos los estados",
+      "responded": "Respondieron",
+      "notReplied": "No respondieron",
+      "openChat": "Ir al chat",
+      "chatContactUnavailable": "Este destinatario ya no tiene un contacto asociado.",
+      "noConversationYet": "Este contacto todavía no tiene una conversación disponible.",
+      "chatLookupFailed": "No se pudo abrir la conversación.",
       "exportCsv": "Exportar CSV",
       "noRecipients": "No se encontraron destinatarios.",
       "noRecipientsFilter": "Ningún destinatario coincide con este filtro.",
@@ -286,6 +292,8 @@
         "sent": "Enviado",
         "delivered": "Entregado",
         "read": "Leído",
+        "replied": "Respondió",
+        "actions": "Acciones",
         "error": "Error"
       },
       "stats": {

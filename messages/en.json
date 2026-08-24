@@ -1015,6 +1015,12 @@
       "recipientsHeader": "Recipients ({filtered} of {total})",
       "recipientsHeaderAll": "Recipients ({total})",
       "allStatuses": "All statuses",
+      "responded": "Responded",
+      "notReplied": "Did not respond",
+      "openChat": "Open chat",
+      "chatContactUnavailable": "This recipient is no longer linked to a contact.",
+      "noConversationYet": "This contact does not have an available conversation yet.",
+      "chatLookupFailed": "The conversation could not be opened.",
       "exportCsv": "Export CSV",
       "noRecipients": "No recipients found.",
       "noRecipientsFilter": "No recipients match this filter.",
@@ -1025,6 +1031,8 @@
         "sent": "Sent",
         "delivered": "Delivered",
         "read": "Read",
+        "replied": "Replied",
+        "actions": "Actions",
         "error": "Error"
       },
       "stats": {

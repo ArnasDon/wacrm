@@ -44,15 +44,24 @@ function supabaseAdmin() {
   return _adminClient
 }
 
-// Cached after first resolution so every uazapi-api.ts call doesn't
-// round-trip the DB. Invalidated explicitly after a save (see
-// invalidateUazapiPlatformCredentialsCache) so the very next request
-// picks up the new values — no restart needed.
-let _cached: UazapiPlatformCredentials | null = null
-
+// Previously cached in a module-level variable after first resolution,
+// to save a DB round-trip on every uazapi-api.ts call. Removed: on a
+// serverless deployment (Vercel) each invocation can land on a
+// different warm lambda instance, each with its OWN copy of this
+// module's memory — invalidating the cache in the instance that
+// handled the settings save (see the old
+// invalidateUazapiPlatformCredentialsCache export, kept below as a
+// no-op for callers) did nothing for every OTHER already-warm
+// instance, which kept serving the stale admin token until Vercel
+// happened to recycle it. That surfaced as intermittent "uazapi API
+// error: Unauthorized" — e.g. the account that happened to hit a
+// fresh instance right after a credentials change worked, while
+// another account hitting an older warm instance kept 401ing with
+// the same request, for no reason visible from the request itself.
+// A single extra `platform_settings` read per call is cheap enough
+// (this only runs on instance create/connect/status, never per
+// message) that correctness wins over the saved round-trip.
 export async function resolveUazapiPlatformCredentials(): Promise<UazapiPlatformCredentials> {
-  if (_cached) return _cached
-
   const { data } = await supabaseAdmin()
     .from('platform_settings')
     .select('uazapi_admin_token, uazapi_base_url')
@@ -78,11 +87,12 @@ export async function resolveUazapiPlatformCredentials(): Promise<UazapiPlatform
     )
   }
 
-  _cached = { baseUrl, adminToken }
-  return _cached
+  return { baseUrl, adminToken }
 }
 
-/** Call after saving new platform_settings so the change takes effect immediately. */
-export function invalidateUazapiPlatformCredentialsCache(): void {
-  _cached = null
-}
+/**
+ * No-op — kept so existing callers (uazapi/settings's POST/DELETE)
+ * don't need touching. There's no cache to invalidate anymore; see
+ * resolveUazapiPlatformCredentials's comment for why it was removed.
+ */
+export function invalidateUazapiPlatformCredentialsCache(): void {}

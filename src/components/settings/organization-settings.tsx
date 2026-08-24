@@ -6,6 +6,7 @@ import {
   AlertTriangle,
   Building2,
   Loader2,
+  Mail,
   Pencil,
   Store,
   Trash2,
@@ -82,6 +83,8 @@ export function OrganizationSettings() {
 
   const [removingAccount, setRemovingAccount] = useState<OrganizationAccount | null>(null);
   const [removing, setRemoving] = useState(false);
+
+  const [resendingId, setResendingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -177,6 +180,25 @@ export function OrganizationSettings() {
       toast.error(t('serverUnreachableToast'));
     } finally {
       setRemoving(false);
+    }
+  }
+
+  async function handleResendInvite(acc: OrganizationAccount) {
+    setResendingId(acc.id);
+    try {
+      const res = await fetch(`/api/organization/sellers/${acc.id}/resend-invite`, {
+        method: 'POST',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao reenviar o convite');
+        return;
+      }
+      toast.success(`Convite reenviado para ${data.email ?? acc.name}`);
+    } catch {
+      toast.error(t('serverUnreachableToast'));
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -295,6 +317,22 @@ export function OrganizationSettings() {
                       the members-tab's owner-row exclusion. */}
                   {!acc.isOwnerAccount && (
                     <div className="flex items-center gap-2">
+                      {acc.inviteStatus === 'pending' && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleResendInvite(acc)}
+                          disabled={resendingId === acc.id}
+                          className="border-border text-muted-foreground hover:bg-muted"
+                        >
+                          {resendingId === acc.id ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Mail className="size-4" />
+                          )}
+                          Reenviar convite
+                        </Button>
+                      )}
                       <Button
                         variant="outline"
                         size="sm"

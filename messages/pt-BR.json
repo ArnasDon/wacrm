@@ -20,7 +20,7 @@
     "signOut": "Sair"
   },
   "Sidebar": {
-    "title": "Propulse CRM",
+    "title": "WGA",
     "dashboard": "Painel",
     "inbox": "Caixa de entrada",
     "notifications": "Notificações",
@@ -1412,7 +1412,7 @@
       "labelTooLong": "O rótulo deve ter no máximo {max} caracteres",
       "copied": "Link de convite copiado",
       "clipboardBlocked": "Área de transferência bloqueada — copie o link manualmente",
-      "whatsappMessage": "Entre para a conta {accountName} no Propulse CRM usando este link (válido por {expiresInDays} dias): {url}"
+      "whatsappMessage": "Entre para a conta {accountName} no WGA usando este link (válido por {expiresInDays} dias): {url}"
     },
     "tagsAndFields": {
       "title": "Campos e etiquetas",
@@ -1532,8 +1532,8 @@
       "submitApproval": "Enviar para aprovação",
 
       "deleteDialogTitle": "Excluir modelo?",
-      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do Propulse CRM. Transmissões ativas que usam este modelo começarão a falhar no próximo envio. Isso não pode ser desfeito.",
-      "deleteLocalDesc": "\"{name}\" será excluído do Propulse CRM. Ele nunca foi enviado à Meta, então nenhuma limpeza remota é necessária.",
+      "deleteMetaDesc": "\"{name}\" será excluído da Meta e do WGA. Transmissões ativas que usam este modelo começarão a falhar no próximo envio. Isso não pode ser desfeito.",
+      "deleteLocalDesc": "\"{name}\" será excluído do WGA. Ele nunca foi enviado à Meta, então nenhuma limpeza remota é necessária.",
       "deleting": "Excluindo…",
       "delete": "Excluir",
 
@@ -1575,7 +1575,7 @@
       "notConnected": "Não conectado",
       "connectedDesc": "Seu token de acesso autentica com a Meta. Veja o status de registro abaixo para saber se os webhooks estão realmente conectados.",
       "notConnectedDesc": "Configure suas credenciais da API da Meta abaixo para conectar sua conta do WhatsApp Business.",
-      "registered": "Registrado — a Meta entregará eventos ao Propulse CRM",
+      "registered": "Registrado — a Meta entregará eventos ao WGA",
       "notRegistered": "Não registrado — a Meta não entregará eventos",
       "verifyWithMeta": "Verificar com a Meta",
       "subscribedSince": "Inscrito desde {date}. Clique em Verificar com a Meta se os eventos pararem de chegar.",
@@ -1599,7 +1599,7 @@
       "twoStepPin": "PIN de verificação em duas etapas",
       "optional": "(opcional)",
       "pinPlaceholder": "PIN de 6 dígitos do Meta WhatsApp Manager",
-      "pinHint": "Necessário apenas para conectar mensagens recebidas de um número de produção. Defina-o no Meta Business Manager → Contas do WhatsApp → Números de telefone → Verificação em duas etapas, depois cole aqui para que o Propulse CRM possa inscrever o número — caso contrário, a Meta roteia eventos recebidos para o último app que os reivindicou (o sintoma que afeta números secundários sob uma WABA compartilhada). Números de teste da Meta não têm PIN e já vêm pré-registrados — deixe em branco para eles. Deixar em branco também mantém um registro existente inalterado.",
+      "pinHint": "Necessário apenas para conectar mensagens recebidas de um número de produção. Defina-o no Meta Business Manager → Contas do WhatsApp → Números de telefone → Verificação em duas etapas, depois cole aqui para que o WGA possa inscrever o número — caso contrário, a Meta roteia eventos recebidos para o último app que os reivindicou (o sintoma que afeta números secundários sob uma WABA compartilhada). Números de teste da Meta não têm PIN e já vêm pré-registrados — deixe em branco para eles. Deixar em branco também mantém um registro existente inalterado.",
       "webhookTitle": "Configuração do webhook",
       "webhookDesc": "Use esta URL como retorno de chamada do seu webhook no painel do app da Meta.",
       "webhookUrl": "URL de retorno de chamada do webhook",
@@ -1873,7 +1873,7 @@
     },
     "aiConfig": {
       "title": "Configuração do agente",
-      "description": "Use sua própria chave da OpenAI ou Anthropic. O Propulse CRM chama o provedor diretamente com sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas redigidas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
+      "description": "Use sua própria chave da OpenAI ou Anthropic. O WGA chama o provedor diretamente com sua chave — sem taxas de IA por usuário, e seus dados continuam seus. Isso alimenta as respostas redigidas por IA na caixa de entrada, o bot de resposta automática e o Playground.",
       "adminOnlyConfig": "Somente administradores e proprietários podem alterar a configuração de IA.",
       "loadFailed": "Falha ao carregar a configuração de IA",
       "providerAndKey": "Provedor e chave",

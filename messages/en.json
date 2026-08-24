@@ -20,7 +20,7 @@
     "signOut": "Sign out"
   },
   "Sidebar": {
-    "title": "Propulse CRM",
+    "title": "WGA",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -1412,7 +1412,7 @@
       "labelTooLong": "Label must be {max} characters or fewer",
       "copied": "Invite link copied",
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
-      "whatsappMessage": "Join {accountName} on Propulse CRM using this link (valid for {expiresInDays} days): {url}"
+      "whatsappMessage": "Join {accountName} on WGA using this link (valid for {expiresInDays} days): {url}"
     },
     "tagsAndFields": {
       "title": "Fields & tags",
@@ -1532,8 +1532,8 @@
       "submitApproval": "Submit for Approval",
       
       "deleteDialogTitle": "Delete template?",
-      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from Propulse CRM. Active broadcasts using this template will start failing on their next send. This can't be undone.",
-      "deleteLocalDesc": "\"{name}\" will be deleted from Propulse CRM. It was never submitted to Meta, so no remote cleanup is needed.",
+      "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from WGA. Active broadcasts using this template will start failing on their next send. This can't be undone.",
+      "deleteLocalDesc": "\"{name}\" will be deleted from WGA. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
       
@@ -1575,7 +1575,7 @@
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
       "notConnectedDesc": "Configure your Meta API credentials below to connect your WhatsApp Business account.",
-      "registered": "Registered — Meta will deliver events to Propulse CRM",
+      "registered": "Registered — Meta will deliver events to WGA",
       "notRegistered": "Not registered — Meta will not deliver events",
       "verifyWithMeta": "Verify with Meta",
       "subscribedSince": "Subscribed since {date}. Click Verify with Meta if events stop arriving.",
@@ -1599,7 +1599,7 @@
       "twoStepPin": "Two-step verification PIN",
       "optional": "(optional)",
       "pinPlaceholder": "6-digit PIN from Meta WhatsApp Manager",
-      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so Propulse CRM can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
+      "pinHint": "Needed only to wire inbound messages for a production number. Set it in Meta Business Manager → WhatsApp Accounts → Phone Numbers → Two-step verification, then paste it here so WGA can subscribe the number — otherwise Meta routes inbound events to whichever app last claimed it (the symptom that hits second numbers under a shared WABA). Meta test numbers have no PIN and are pre-registered — leave this blank for them. Leaving it blank also keeps an existing registration untouched.",
       "webhookTitle": "Webhook Configuration",
       "webhookDesc": "Use this URL as your webhook callback in the Meta App Dashboard.",
       "webhookUrl": "Webhook Callback URL",
@@ -1873,7 +1873,7 @@
     },
     "aiConfig": {
       "title": "Agent setup",
-      "description": "Bring your own OpenAI or Anthropic key. Propulse CRM calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
+      "description": "Bring your own OpenAI or Anthropic key. WGA calls the provider directly with your key — no per-seat AI fees, and your data stays yours. This powers AI-drafted replies in the inbox, the auto-reply bot, and the Playground.",
       "adminOnlyConfig": "Only admins and owners can change the AI configuration.",
       "loadFailed": "Failed to load AI configuration",
       "providerAndKey": "Provider & key",

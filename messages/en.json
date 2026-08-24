@@ -1372,12 +1372,14 @@
       "saveChanges": "Save changes",
       "editedToast": "Seller updated",
       "editFailedToast": "Failed to update the seller",
-      "removeDialogTitle": "Remove access?",
-      "removeDialogDesc": "This unlinks <bold>{name}</bold> from your organization. Their account, login, and data stay intact — you just stop seeing their conversations here, and they stop appearing in this list.",
-      "removing": "Removing…",
-      "removeBtn": "Remove access",
-      "removedToast": "{name} removed from your organization",
-      "removeFailedToast": "Failed to remove the seller"
+      "removeDialogTitle": "Permanently delete this seller?",
+      "removeDialogDesc": "This permanently deletes <bold>{name}</bold>: their account, login, and all their data (contacts, conversations, messages) will be erased and cannot be recovered. Their email becomes free for a new invite afterward. Type the seller's name below to confirm.",
+      "removeConfirmLabel": "Type \"{name}\" to confirm",
+      "removing": "Deleting…",
+      "removeBtn": "Delete permanently",
+      "removedToast": "{name} permanently deleted",
+      "removeFailedToast": "Failed to delete the seller",
+      "removeAuthWarningToast": "{name} was deleted, but their login may have been left behind — if the email stays blocked when re-inviting, contact support."
     },
     "billing": {
       "title": "Billing",

@@ -22,6 +22,7 @@ interface TargetAccount {
   id: string;
   name: string;
   organization_id: string | null;
+  owner_user_id: string;
 }
 
 /**
@@ -67,7 +68,7 @@ async function loadOwnedSeller(
 
   const { data: target, error: targetError } = await supabaseAdmin()
     .from('accounts')
-    .select('id, name, organization_id')
+    .select('id, name, organization_id, owner_user_id')
     .eq('id', targetId)
     .maybeSingle();
 
@@ -178,19 +179,29 @@ export async function PATCH(
 /**
  * DELETE /api/organization/sellers/[id]
  *
- * Owner-only. Removes the organization link (`organization_id = NULL`)
- * — this is an UNLINK, not an account deletion. The seller's account,
- * login, and all of their own data (contacts, conversations, messages)
- * stay completely intact and keep working exactly as before; they just
- * stop appearing in the store owner's consolidated view, and the
- * cross-account read grant (is_organization_owner(), migration 041)
- * stops applying to them. This mirrors "remove access", not "delete
- * their account" — deliberately the same non-destructive shape as
- * remove_account_member() for team members, which also only unlinks
- * rather than deleting the person's login.
+ * Owner-only. PERMANENTLY deletes the seller: their account row and
+ * their entire login (auth.users), which cascades everything that
+ * belongs to them — contacts, conversations, messages, WhatsApp
+ * connection, the works. Mirrors the platform-admin org delete
+ * (platform/organizations/[id]'s DELETE) at seller scope, for the
+ * same reason: an owner who removes a seller expects that email to
+ * be free again, not silently squatted on by an orphaned auth.users
+ * row (accounts.owner_user_id is ON DELETE RESTRICT, so the account
+ * row must go first, then the login — same two-step order as the
+ * platform route).
+ *
+ * Previously this only unlinked (`organization_id = NULL`), leaving
+ * the seller's account and login fully intact. That meant "remove"
+ * didn't actually free the email for re-invites, which is exactly
+ * the trap an owner hits when they delete a seller and then can't
+ * re-invite the same address — Supabase correctly refuses to invite
+ * an email that still has an auth.users row. Real deletion is what
+ * "excluir" means to the owner clicking this button, so that's what
+ * it does now; pass `?unlink=true` to fall back to the old
+ * access-only-removal behavior if that's ever needed again.
  */
 export async function DELETE(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   try {
@@ -203,17 +214,55 @@ export async function DELETE(
     const result = await loadOwnedSeller(supabase, accountId, id);
     if ('error' in result) return result.error;
 
-    const { error: updateError } = await supabaseAdmin()
-      .from('accounts')
-      .update({ organization_id: null })
-      .eq('id', result.target.id);
+    const url = new URL(request.url);
+    const unlinkOnly = url.searchParams.get('unlink') === 'true';
 
-    if (updateError) {
-      console.error('[organization/sellers/:id] unlink failed:', updateError);
-      return NextResponse.json({ error: 'Failed to remove the seller.' }, { status: 500 });
+    if (unlinkOnly) {
+      const { error: updateError } = await supabaseAdmin()
+        .from('accounts')
+        .update({ organization_id: null })
+        .eq('id', result.target.id);
+
+      if (updateError) {
+        console.error('[organization/sellers/:id] unlink failed:', updateError);
+        return NextResponse.json({ error: 'Failed to remove the seller.' }, { status: 500 });
+      }
+      return NextResponse.json({ ok: true, mode: 'unlink' });
     }
 
-    return NextResponse.json({ ok: true });
+    const admin = supabaseAdmin();
+
+    const { error: deleteError } = await admin
+      .from('accounts')
+      .delete()
+      .eq('id', result.target.id);
+
+    if (deleteError) {
+      console.error('[organization/sellers/:id] account delete failed:', deleteError);
+      return NextResponse.json({ error: 'Failed to delete the seller.' }, { status: 500 });
+    }
+
+    let authDeleteFailed = false;
+    try {
+      const { error } = await admin.auth.admin.deleteUser(result.target.owner_user_id);
+      if (error) {
+        console.error('[organization/sellers/:id] deleteUser failed:', error);
+        authDeleteFailed = true;
+      }
+    } catch (err) {
+      console.error('[organization/sellers/:id] deleteUser threw:', err);
+      authDeleteFailed = true;
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mode: 'delete',
+      // The account/data is already gone either way — this only flags
+      // that the login itself may have survived and should be cleaned
+      // up manually (Supabase dashboard → Authentication) if it keeps
+      // blocking a re-invite with the same email.
+      authDeleteFailed,
+    });
   } catch (err) {
     return toErrorResponse(err);
   }

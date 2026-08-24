@@ -1372,12 +1372,14 @@
       "saveChanges": "Salvar alterações",
       "editedToast": "Vendedor atualizado",
       "editFailedToast": "Falha ao atualizar o vendedor",
-      "removeDialogTitle": "Remover acesso?",
-      "removeDialogDesc": "Isso desvincula <bold>{name}</bold> da sua organização. A conta, o login e os dados dele continuam intactos — você só deixa de ver as conversas dele aqui, e ele deixa de aparecer nesta lista.",
-      "removing": "Removendo…",
-      "removeBtn": "Remover acesso",
-      "removedToast": "{name} removido da sua organização",
-      "removeFailedToast": "Falha ao remover o vendedor"
+      "removeDialogTitle": "Excluir vendedor permanentemente?",
+      "removeDialogDesc": "Isso exclui <bold>{name}</bold> definitivamente: a conta, o login e todos os dados dele (contatos, conversas, mensagens) serão apagados e não podem ser recuperados. O e-mail dele fica livre para um novo convite depois. Digite o nome do vendedor abaixo para confirmar.",
+      "removeConfirmLabel": "Digite \"{name}\" para confirmar",
+      "removing": "Excluindo…",
+      "removeBtn": "Excluir permanentemente",
+      "removedToast": "{name} excluído permanentemente",
+      "removeFailedToast": "Falha ao excluir o vendedor",
+      "removeAuthWarningToast": "{name} foi excluído, mas o login pode ter ficado para trás — se o e-mail continuar bloqueado ao tentar convidar de novo, avise o suporte."
     },
     "billing": {
       "title": "Faturamento",

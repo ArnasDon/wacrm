@@ -272,13 +272,18 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
   const [msgs, contacts, deals, broadcasts, autoLogs] = await Promise.all([
     db
       .from('messages')
-      .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone))')
+      .select('id, content_text, sender_type, created_at, conversation_id, conversations(contact_id, contacts(name, phone, kind))')
       .eq('sender_type', 'customer')
       .order('created_at', { ascending: false })
       .limit(10),
     db
       .from('contacts')
-      .select('id, name, phone, created_at')
+      .select('id, name, phone, created_at, kind')
+      // Groups/communities/channels get their own contact row (migration
+      // 047) so their messages still land in the Inbox, but they aren't
+      // a "new contact" the way an actual customer is — exclude them
+      // from this feed the same way the Inbox's default view does.
+      .eq('kind', 'individual')
       .order('created_at', { ascending: false })
       .limit(10),
     db
@@ -308,12 +313,17 @@ export async function loadActivity(db: DB, limit = 20): Promise<ActivityItem[]> 
     created_at: string
     conversation_id: string
     conversations:
-      | { contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }[]
-      | { contact_id: string | null; contacts: { name: string | null; phone: string }[] | { name: string | null; phone: string } | null }
+      | { contact_id: string | null; contacts: { name: string | null; phone: string; kind?: string | null }[] | { name: string | null; phone: string; kind?: string | null } | null }[]
+      | { contact_id: string | null; contacts: { name: string | null; phone: string; kind?: string | null }[] | { name: string | null; phone: string; kind?: string | null } | null }
       | null
   }>) {
     const conv = Array.isArray(m.conversations) ? m.conversations[0] : m.conversations
     const contact = Array.isArray(conv?.contacts) ? conv?.contacts[0] : conv?.contacts
+    // Group/community/channel chats (migration 047) get their own
+    // contact + conversation rows so they still work in the Inbox, but
+    // they shouldn't show up as a customer "message" in this feed —
+    // same reasoning as the exclusion on the contacts query below.
+    if (contact?.kind && contact.kind !== 'individual') continue
     const who = contact?.name || contact?.phone || 'Unknown'
     items.push({
       id: `msg-${m.id}`,

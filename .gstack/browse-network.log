@@ -178,3 +178,5 @@
 [2026-08-24T04:47:57.854Z] POST https://ebqfbgatndyhwevyheot.supabase.co/rest/v1/rpc/touch_presence → 204 (125ms, 480B)
 [2026-08-24T04:48:27.853Z] POST https://ebqfbgatndyhwevyheot.supabase.co/rest/v1/rpc/touch_presence → 204 (467ms, 337B)
 [2026-08-24T04:48:57.852Z] POST https://ebqfbgatndyhwevyheot.supabase.co/rest/v1/rpc/touch_presence → 204 (92ms, 398B)
+[2026-08-24T04:49:27.851Z] POST https://ebqfbgatndyhwevyheot.supabase.co/rest/v1/rpc/touch_presence → 204 (73ms, 408B)
+[2026-08-24T04:49:44.331Z] GET http://localhost:3000/inbox?c=9021e75f-95f0-4b92-aa09-ed5a108ebe81 → pending (?ms, ?B)

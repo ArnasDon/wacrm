@@ -43,13 +43,20 @@ export async function middleware(request: NextRequest) {
   }
 
   // Auth pages - redirect to dashboard if already logged in.
+  // /loginempresa and /loginvendedor are the same sign-in mechanism as
+  // /login under different branding (see login-form.tsx's own
+  // comment) — treated identically here.
   // Exception: when an invite token is in the query string we
   // send the already-signed-in user to /join/<token> instead so
   // they can accept the invitation in one click. Without this,
   // a forwarded invite link to someone who's already signed in
   // would silently drop them on /dashboard.
-  if (user && (
+  const isLoginPage =
     request.nextUrl.pathname === '/login' ||
+    request.nextUrl.pathname === '/loginempresa' ||
+    request.nextUrl.pathname === '/loginvendedor'
+  if (user && (
+    isLoginPage ||
     request.nextUrl.pathname === '/signup' ||
     request.nextUrl.pathname === '/forgot-password'
   )) {
@@ -57,8 +64,7 @@ export async function middleware(request: NextRequest) {
     const inviteToken = request.nextUrl.searchParams.get('invite')
     if (
       inviteToken &&
-      (request.nextUrl.pathname === '/login' ||
-        request.nextUrl.pathname === '/signup')
+      (isLoginPage || request.nextUrl.pathname === '/signup')
     ) {
       url.pathname = `/join/${encodeURIComponent(inviteToken)}`
       url.search = ''

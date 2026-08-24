@@ -16,6 +16,7 @@ function supabaseAdmin() {
 }
 
 const MAX_NAME_LEN = 120;
+const PHONE_DIGITS_RE = /^\d{10,15}$/;
 
 interface TargetAccount {
   id: string;
@@ -86,10 +87,12 @@ async function loadOwnedSeller(
 /**
  * PATCH /api/organization/sellers/[id]
  *
- * Owner-only. Renames a linked seller account. The seller keeps their
- * own login and data untouched — this only changes the label shown in
- * the store owner's "Linked accounts" list (and anywhere else
- * `accounts.name` is surfaced).
+ * Owner-only. Renames a linked seller account, and/or edits their
+ * lead-distribution settings on the owner's behalf (useful before the
+ * seller has ever logged in to set their own WhatsApp number — see
+ * PATCH /api/account/lead-settings for the seller's own self-service
+ * version of the same two fields). The seller keeps their own login
+ * and data untouched otherwise.
  */
 export async function PATCH(
   request: Request,
@@ -106,22 +109,51 @@ export async function PATCH(
     if ('error' in result) return result.error;
 
     const body = await request.json().catch(() => ({}));
-    const name = typeof body?.name === 'string' ? body.name.trim() : '';
-    if (!name) {
-      return NextResponse.json({ error: 'Seller name is required.' }, { status: 400 });
+    const update: Record<string, unknown> = {};
+
+    if (body?.name !== undefined) {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name) {
+        return NextResponse.json({ error: 'Seller name is required.' }, { status: 400 });
+      }
+      if (name.length > MAX_NAME_LEN) {
+        return NextResponse.json(
+          { error: `Name must be ${MAX_NAME_LEN} characters or fewer.` },
+          { status: 400 },
+        );
+      }
+      update.name = name;
     }
-    if (name.length > MAX_NAME_LEN) {
-      return NextResponse.json(
-        { error: `Name must be ${MAX_NAME_LEN} characters or fewer.` },
-        { status: 400 },
-      );
+
+    if ('leadRedirectPhone' in body) {
+      const raw = body.leadRedirectPhone;
+      if (raw === null || raw === '') {
+        update.lead_redirect_phone = null;
+      } else if (typeof raw === 'string') {
+        const digits = raw.replace(/\D/g, '');
+        if (!PHONE_DIGITS_RE.test(digits)) {
+          return NextResponse.json(
+            { error: 'WhatsApp number must have 10 to 15 digits (country + area + number).' },
+            { status: 400 },
+          );
+        }
+        update.lead_redirect_phone = digits;
+      }
+    }
+
+    if (typeof body?.leadRotationEnabled === 'boolean') {
+      update.lead_rotation_enabled = body.leadRotationEnabled;
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
     }
 
     const { data: updated, error: updateError } = await supabaseAdmin()
       .from('accounts')
-      .update({ name })
+      .update(update)
       .eq('id', result.target.id)
-      .select('id, name')
+      .select('id, name, lead_redirect_phone, lead_rotation_enabled, last_lead_assigned_at')
       .single();
 
     if (updateError || !updated) {
@@ -129,7 +161,15 @@ export async function PATCH(
       return NextResponse.json({ error: 'Failed to update the seller.' }, { status: 500 });
     }
 
-    return NextResponse.json({ account: { id: updated.id, name: updated.name } });
+    return NextResponse.json({
+      account: {
+        id: updated.id,
+        name: updated.name,
+        leadRedirectPhone: updated.lead_redirect_phone,
+        leadRotationEnabled: updated.lead_rotation_enabled,
+        lastLeadAssignedAt: updated.last_lead_assigned_at,
+      },
+    });
   } catch (err) {
     return toErrorResponse(err);
   }

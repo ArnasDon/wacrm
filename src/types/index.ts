@@ -74,6 +74,11 @@ export interface Organization {
   owner_account_id: string;
   created_at: string;
   updated_at: string;
+  /** WhatsApp number (digits only) leads redirect to when no seller
+   *  is eligible for rotation — see 048_lead_distribution.sql. */
+  fallback_lead_phone?: string | null;
+  /** Custom wa.me pre-filled text; null falls back to a generic default. */
+  lead_message_template?: string | null;
 }
 
 /** 'suspended' blocks read+write access for every member account (migration 042). */
@@ -136,6 +141,13 @@ export interface OrganizationAccount {
   inviteStatus: 'accepted' | 'pending';
   /** When this account was linked to the organization. */
   joinedAt: string;
+  /** WhatsApp number (digits only) ad leads redirect to for this
+   *  seller — see 048_lead_distribution.sql. Null until set. */
+  leadRedirectPhone: string | null;
+  /** Whether this seller currently takes a turn in the round-robin. */
+  leadRotationEnabled: boolean;
+  /** Last time this seller received a lead — null if never. */
+  lastLeadAssignedAt: string | null;
 }
 
 /**

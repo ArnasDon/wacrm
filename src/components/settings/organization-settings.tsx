@@ -12,6 +12,7 @@ import {
   UserPlus,
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
+import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -33,6 +34,7 @@ import {
 import { SettingsPanelHead } from './settings-panel-head';
 import { SettingsChip } from './settings-chip';
 import { InviteSellerDialog } from './invite-seller-dialog';
+import { LeadDistributionSettings } from './lead-distribution-settings';
 import type { Organization, OrganizationAccount } from '@/types';
 
 interface OrgResponse {
@@ -65,6 +67,7 @@ function fmtDate(iso: string): string {
  */
 export function OrganizationSettings() {
   const t = useTranslations('Settings.organization');
+  const { accountId } = useAuth();
   const [loading, setLoading] = useState(true);
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [accounts, setAccounts] = useState<OrganizationAccount[]>([]);
@@ -316,6 +319,13 @@ export function OrganizationSettings() {
           </ul>
         </CardContent>
       </Card>
+
+      <LeadDistributionSettings
+        organization={organization}
+        accounts={accounts}
+        ownAccountId={accountId ?? null}
+        onChanged={load}
+      />
 
       <InviteSellerDialog open={inviteOpen} onOpenChange={setInviteOpen} onInvited={load} />
 

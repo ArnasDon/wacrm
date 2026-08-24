@@ -167,6 +167,12 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** Public ad-lead redirect (`/api/leads/redirect`), per IP. Real ad
+   *  traffic is one click per person; 30/min per IP is generous for
+   *  shared-IP scenarios (office wifi, carriers doing CGNAT) while
+   *  bounding a script hammering the endpoint to exhaust a store's
+   *  seller rotation or spam ad_leads rows. */
+  leadRedirect: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

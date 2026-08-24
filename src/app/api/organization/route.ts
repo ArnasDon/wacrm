@@ -36,7 +36,7 @@ export async function GET() {
 
     const { data: org, error: orgError } = await supabase
       .from('organizations')
-      .select('id, name, owner_account_id, created_at')
+      .select('id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template')
       .eq('owner_account_id', accountId)
       .maybeSingle();
 
@@ -55,7 +55,9 @@ export async function GET() {
     // is scoped to the caller's own owner_account_id.
     const { data: accounts, error: accountsError } = await supabase
       .from('accounts')
-      .select('id, name, owner_user_id, created_at')
+      .select(
+        'id, name, owner_user_id, created_at, lead_redirect_phone, lead_rotation_enabled, last_lead_assigned_at',
+      )
       .eq('organization_id', org.id)
       .order('name', { ascending: true });
 
@@ -77,6 +79,9 @@ export async function GET() {
       name: string;
       owner_user_id: string;
       created_at: string;
+      lead_redirect_phone: string | null;
+      lead_rotation_enabled: boolean;
+      last_lead_assigned_at: string | null;
     }[];
 
     const enrichedAccounts = await Promise.all(
@@ -100,6 +105,9 @@ export async function GET() {
           email,
           inviteStatus,
           joinedAt: a.created_at,
+          leadRedirectPhone: a.lead_redirect_phone,
+          leadRotationEnabled: a.lead_rotation_enabled,
+          lastLeadAssignedAt: a.last_lead_assigned_at,
         };
       }),
     );
@@ -114,6 +122,79 @@ export async function GET() {
 }
 
 const MAX_NAME_LEN = 120;
+const PHONE_DIGITS_RE = /^\d{10,15}$/;
+
+/**
+ * PATCH /api/organization
+ *
+ * Owner-only. Updates the lead-distribution fallback for the whole
+ * organization: the WhatsApp number used when no seller is eligible
+ * for rotation, and the wa.me pre-filled message text. See
+ * 048_lead_distribution.sql.
+ */
+export async function PATCH(request: Request) {
+  try {
+    const { supabase, accountId } = await requireRole('owner');
+
+    const { data: org, error: orgError } = await supabase
+      .from('organizations')
+      .select('id')
+      .eq('owner_account_id', accountId)
+      .maybeSingle();
+    if (orgError) {
+      console.error('[organization] error loading organization for PATCH:', orgError);
+      return NextResponse.json({ error: 'Failed to load organization' }, { status: 500 });
+    }
+    if (!org) {
+      return NextResponse.json({ error: "You don't own an organization." }, { status: 400 });
+    }
+
+    const body = await request.json().catch(() => ({}));
+    const update: Record<string, unknown> = {};
+
+    if ('fallbackLeadPhone' in body) {
+      const raw = body.fallbackLeadPhone;
+      if (raw === null || raw === '') {
+        update.fallback_lead_phone = null;
+      } else if (typeof raw === 'string') {
+        const digits = raw.replace(/\D/g, '');
+        if (!PHONE_DIGITS_RE.test(digits)) {
+          return NextResponse.json(
+            { error: 'Fallback phone must have 10 to 15 digits (country + area + number).' },
+            { status: 400 },
+          );
+        }
+        update.fallback_lead_phone = digits;
+      }
+    }
+
+    if ('leadMessageTemplate' in body) {
+      const raw = body.leadMessageTemplate;
+      update.lead_message_template =
+        typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 500) : null;
+    }
+
+    if (Object.keys(update).length === 0) {
+      return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
+    }
+
+    const { data: updated, error: updateError } = await supabase
+      .from('organizations')
+      .update(update)
+      .eq('id', org.id)
+      .select('id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template')
+      .single();
+
+    if (updateError || !updated) {
+      console.error('[organization] error updating lead-distribution settings:', updateError);
+      return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
+    }
+
+    return NextResponse.json({ organization: updated });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
 
 /**
  * POST /api/organization

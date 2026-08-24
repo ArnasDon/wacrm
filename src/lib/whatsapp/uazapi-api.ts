@@ -61,11 +61,25 @@ export interface CreateInstanceResult {
   token: string
 }
 
-/** POST /instance/create — provisions a new uazapi instance for one account. */
+/**
+ * POST /instance/init — provisions a new uazapi instance for one
+ * account.
+ *
+ * Was `/instance/create` — uazapi (now "uazapiGO") renamed this
+ * endpoint at some point; the old path apparently still resolves to
+ * *something* on their router, but returns a bare 401 instead of a
+ * 404, which read exactly like an invalid admin token. Confirmed via
+ * uazapi's own docs/community tooling (docs.uazapi.com's
+ * `instance~init` slug, and the n8n uazapi node's "Instance: Create"
+ * operation, which both point at `/instance/init`) and by the account
+ * owner successfully creating an instance by hand from uazapi's own
+ * dashboard with the same Admin Token our server kept rejecting —
+ * proof the token itself was always fine.
+ */
 export async function createInstance(
   args: CreateInstanceArgs,
 ): Promise<CreateInstanceResult> {
-  const response = await fetch(`${args.baseUrl}/instance/create`, {
+  const response = await fetch(`${args.baseUrl}/instance/init`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

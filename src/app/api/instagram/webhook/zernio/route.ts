@@ -5,6 +5,7 @@ import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
 import {
   handleInboundDmMessage,
   handleOutboundEchoMessageForZernioConversation,
+  ensureZernioConversationStarted,
   markMessageRead,
   toContentType,
 } from '@/lib/messaging/dm-inbound'
@@ -62,11 +63,24 @@ interface ZernioWebhookAccount {
   platform: string
 }
 
+/** See the WhatsApp Zernio route's identical interface for what this
+ *  event is and why it's handled — same shape, platform-neutral. */
+interface ZernioWebhookConversation {
+  id: string
+  platform: string
+  platformConversationId: string
+  participantId: string
+  participantName?: string
+  participantUsername?: string
+  status: string
+}
+
 interface ZernioWebhookPayload {
   id: string
   event: string
   message?: ZernioWebhookMessage
   account?: ZernioWebhookAccount
+  conversation?: ZernioWebhookConversation
 }
 
 // POST - Receive events. Same ack-fast-then-process pattern as the
@@ -154,6 +168,27 @@ async function processZernioEvent(
 ) {
   if (payload.event === 'message.read' && payload.message) {
     await markMessageRead(supabaseAdmin(), payload.message.platformMessageId)
+    return
+  }
+
+  // Fires once, the instant a Zernio conversation is created — for
+  // either side's first message — carrying a real customer identifier
+  // even before anything has been received from them. See the
+  // WhatsApp Zernio route's identical branch for the full incident
+  // this fixes: an agent messaging a brand-new contact first from the
+  // native app had nothing for the Coexistence echo below to attach
+  // to, so it silently never showed up in wacrm.
+  if (payload.event === 'conversation.started' && payload.conversation) {
+    const conv = payload.conversation
+    await ensureZernioConversationStarted(supabaseAdmin(), {
+      channel: 'instagram',
+      accountId: config.account_id,
+      configOwnerUserId: config.user_id,
+      participantId: conv.participantId,
+      zernioConversationId: conv.id,
+      resolveProfile: () =>
+        Promise.resolve({ name: conv.participantName, username: conv.participantUsername }),
+    })
     return
   }
 

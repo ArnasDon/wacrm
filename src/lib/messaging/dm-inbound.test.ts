@@ -15,6 +15,7 @@ vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn() }))
 import {
   handleOutboundEchoMessage,
   handleOutboundEchoMessageForZernioConversation,
+  ensureZernioConversationStarted,
 } from './dm-inbound'
 
 /** Minimal fixture-driven fake db covering only what these two
@@ -173,6 +174,56 @@ describe('handleOutboundEchoMessageForZernioConversation', () => {
       content_text: 'respondido desde la app oficial de whatsapp',
       message_id: 'wamid-1',
     })
+  })
+})
+
+describe('ensureZernioConversationStarted', () => {
+  it('creates a brand-new contact + conversation from just the participantId, and sets zernio_conversation_id (2026-08-25 incident)', async () => {
+    const { findExistingInstagramContact } = await import('@/lib/contacts/dedupe')
+    vi.mocked(findExistingInstagramContact).mockResolvedValue(null)
+    const { dispatchWebhookEvent } = await import('@/lib/webhooks/deliver')
+
+    const { db, state } = makeDb({ conversation: null, contact: { id: 'contact-new' } })
+
+    await ensureZernioConversationStarted(db, {
+      channel: 'instagram',
+      accountId: 'acct-1',
+      configOwnerUserId: 'user-1',
+      participantId: 'igsid-new',
+      zernioConversationId: 'zconv-new',
+      resolveProfile: async () => ({ name: 'Carmen', username: 'carmen_ig' }),
+    })
+
+    expect(state.conversationInserts).toHaveLength(1)
+    expect(state.conversationInserts[0]).toMatchObject({ account_id: 'acct-1', contact_id: 'contact-new' })
+    expect(state.conversationUpdates).toContainEqual({ zernio_conversation_id: 'zconv-new' })
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'conversation.created', expect.objectContaining({ contact_id: 'contact-new' }))
+    expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'contact.created', expect.objectContaining({ contact_id: 'contact-new' }))
+  })
+
+  it('reuses an existing contact + conversation without re-dispatching creation webhooks', async () => {
+    const { findExistingInstagramContact } = await import('@/lib/contacts/dedupe')
+    vi.mocked(findExistingInstagramContact).mockResolvedValue({ id: 'contact-1' } as never)
+    const { dispatchWebhookEvent } = await import('@/lib/webhooks/deliver')
+    vi.mocked(dispatchWebhookEvent).mockClear()
+
+    const { db, state } = makeDb({
+      conversation: { id: 'conv-1', contact_id: 'contact-1' },
+    })
+
+    await ensureZernioConversationStarted(db, {
+      channel: 'instagram',
+      accountId: 'acct-1',
+      configOwnerUserId: 'user-1',
+      participantId: 'igsid-1',
+      zernioConversationId: 'zconv-1',
+      resolveProfile: async () => null,
+    })
+
+    expect(state.conversationInserts).toHaveLength(0)
+    expect(dispatchWebhookEvent).not.toHaveBeenCalled()
+    // Still self-heals zernio_conversation_id even on an existing row.
+    expect(state.conversationUpdates).toContainEqual({ zernio_conversation_id: 'zconv-1' })
   })
 })
 

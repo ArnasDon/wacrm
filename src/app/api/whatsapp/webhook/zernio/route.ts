@@ -98,12 +98,30 @@ interface ZernioWebhookTemplate {
   reason: string
 }
 
+/** `conversation.started` payload — fires once, the moment a Zernio
+ *  conversation is created, for either side's first message. Unlike
+ *  `message.sent`'s outgoing-echo shape, this carries a real customer
+ *  identifier (`participantId` — the phone number for WhatsApp) even
+ *  when nothing has been received from them yet, which is exactly
+ *  what's missing when an agent messages a brand-new contact first
+ *  from the official WhatsApp app. */
+interface ZernioWebhookConversation {
+  id: string
+  platform: string
+  platformConversationId: string
+  participantId: string
+  participantName?: string
+  participantUsername?: string
+  status: string
+}
+
 interface ZernioWebhookPayload {
   id: string
   event: string
   message?: ZernioWebhookMessage
   account?: ZernioWebhookAccount
   template?: ZernioWebhookTemplate
+  conversation?: ZernioWebhookConversation
   statusAt?: string
   error?: { code?: string; title?: string; message?: string } | null
   /** `message.sent` fallback — some Zernio events carry `source` on the envelope rather than nested under `message`. */
@@ -205,6 +223,21 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
     return
   }
 
+  // `conversation.started` fires once, the instant a Zernio conversation
+  // is created — for either side's first message. Real incident
+  // (2026-08-25): an agent messaged a brand-new contact first from the
+  // official WhatsApp app, and it never showed up in wacrm at all — the
+  // Coexistence echo (message.sent, below) had no existing conversation
+  // to attach to and, correctly per its own design, refused to guess a
+  // contact from a bare Zernio conversation id. This event is the fix:
+  // it carries a real customer identifier (`participantId`, the phone
+  // number) even before anything has been received from them, so the
+  // contact + conversation can exist *before* that echo arrives.
+  if (payload.event === 'conversation.started' && payload.conversation) {
+    await processConversationStarted(payload.conversation, config)
+    return
+  }
+
   if (
     (payload.event === 'message.delivered' || payload.event === 'message.read' || payload.event === 'message.failed') &&
     payload.message
@@ -281,10 +314,18 @@ type ContactRow = any
 async function findOrCreateContact(accountId: string, configOwnerUserId: string, phone: string, name: string) {
   const existingContact = await findExistingContact(supabaseAdmin(), accountId, phone)
   if (existingContact) {
-    if (name && name !== existingContact.name) {
+    // Same self-heal as the direct Meta webhook: if this only matched
+    // via the fuzzy last-8-digit comparison (e.g. a manually-entered
+    // contact missing its country code), replace the stored phone
+    // with the fully-qualified number Zernio just gave us, instead of
+    // letting the malformed value keep breaking future outbound sends.
+    const updates: Record<string, unknown> = {}
+    if (name && name !== existingContact.name) updates.name = name
+    if (normalizePhone(phone) !== normalizePhone(existingContact.phone)) updates.phone = phone
+    if (Object.keys(updates).length > 0) {
       await supabaseAdmin()
         .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
+        .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
     return { contact: existingContact as ContactRow, wasCreated: false }
@@ -362,6 +403,48 @@ async function findOrCreateConversation(
   }
 
   return { conversation: newConv, created: true }
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function processConversationStarted(conversation: ZernioWebhookConversation, config: any) {
+  const accountId = config.account_id
+  const configOwnerUserId = config.user_id
+  const senderPhone = normalizePhone(conversation.participantId)
+  const contactName = conversation.participantName || conversation.participantUsername || senderPhone
+
+  const contactOutcome = await findOrCreateContact(accountId, configOwnerUserId, senderPhone, contactName)
+  if (!contactOutcome) return
+  const contactRecord = contactOutcome.contact
+
+  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id)
+  if (!convResult) return
+  const conv = convResult.conversation
+
+  // Same self-healing check `processInboundMessage` already does —
+  // needed here too since this is often the FIRST thing to run for a
+  // brand-new conversation, before any inbound message ever arrives.
+  if (conv.zernio_conversation_id !== conversation.id) {
+    await supabaseAdmin()
+      .from('conversations')
+      .update({ zernio_conversation_id: conversation.id })
+      .eq('id', conv.id)
+  }
+
+  if (convResult.created) {
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'conversation.created', {
+      conversation_id: conv.id,
+      contact_id: contactRecord.id,
+      channel: 'whatsapp',
+    })
+  }
+  if (contactOutcome.wasCreated) {
+    await dispatchWebhookEvent(supabaseAdmin(), accountId, 'contact.created', {
+      contact_id: contactRecord.id,
+      phone: contactRecord.phone,
+      name: contactRecord.name,
+      source: 'whatsapp',
+    })
+  }
 }
 
 const ALLOWED_CONTENT_TYPES = new Set(['text', 'image', 'document', 'audio', 'video'])

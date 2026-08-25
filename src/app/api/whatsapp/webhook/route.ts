@@ -1135,11 +1135,19 @@ async function findOrCreateContact(
   )
 
   if (existingContact) {
-    // Update name if it changed
-    if (name && name !== existingContact.name) {
+    // Update name if it changed, and self-heal the phone if this
+    // matched only via the fuzzy last-8-digit comparison (e.g. a
+    // manually-entered contact missing its country code) — Meta
+    // always hands us the fully-qualified number here, so this is
+    // the moment to replace whatever malformed value was stored
+    // before it silently breaks a future outbound send (2026-08-25).
+    const updates: Record<string, unknown> = {}
+    if (name && name !== existingContact.name) updates.name = name
+    if (normalizePhone(phone) !== normalizePhone(existingContact.phone)) updates.phone = phone
+    if (Object.keys(updates).length > 0) {
       await supabaseAdmin()
         .from('contacts')
-        .update({ name, updated_at: new Date().toISOString() })
+        .update({ ...updates, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
     }
     return { contact: existingContact, wasCreated: false }

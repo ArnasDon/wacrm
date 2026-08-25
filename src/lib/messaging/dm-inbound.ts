@@ -366,6 +366,67 @@ export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmM
   })
 }
 
+export interface ConversationStartedArgs {
+  channel: DmChannel
+  accountId: string
+  configOwnerUserId: string
+  /** The customer's platform-scoped id (IGSID/PSID). */
+  participantId: string
+  zernioConversationId: string
+  /** Best-effort profile lookup for contact creation, same contract as
+   *  `InboundDmMessage.resolveProfile` — never throws. */
+  resolveProfile: () => Promise<{ name?: string; username?: string } | null>
+}
+
+/**
+ * Ensures a contact + conversation exist for a Zernio `conversation.started`
+ * event — fires once, the instant a Zernio conversation is created, for
+ * either side's first message, and carries a real customer identifier
+ * even before anything has been received from them. Without this, an
+ * agent messaging a brand-new contact first from the native
+ * Instagram/Facebook app has no conversation yet for the Coexistence
+ * echo (`handleOutboundEchoMessageForZernioConversation`) to attach
+ * to — and that function correctly refuses to guess/fabricate a
+ * contact from a bare Zernio conversation id — so that first outbound
+ * reply silently never showed up in wacrm at all (real incident,
+ * 2026-08-25, first reproduced on WhatsApp but the same gap applies
+ * here identically).
+ */
+export async function ensureZernioConversationStarted(db: SupabaseClient, args: ConversationStartedArgs): Promise<void> {
+  const { channel, accountId, configOwnerUserId, participantId, zernioConversationId, resolveProfile } = args
+
+  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, participantId, resolveProfile)
+  if (!contactOutcome) return
+  const contactRecord = contactOutcome.contact
+
+  const convResult = await findOrCreateConversation(db, channel, accountId, configOwnerUserId, contactRecord.id)
+  if (!convResult) return
+  const conversation = convResult.conversation
+
+  if (conversation.zernio_conversation_id !== zernioConversationId) {
+    await db
+      .from('conversations')
+      .update({ zernio_conversation_id: zernioConversationId })
+      .eq('id', conversation.id)
+  }
+
+  if (convResult.created) {
+    await dispatchWebhookEvent(db, accountId, 'conversation.created', {
+      conversation_id: conversation.id,
+      contact_id: contactRecord.id,
+      channel,
+    })
+  }
+  if (contactOutcome.wasCreated) {
+    await dispatchWebhookEvent(db, accountId, 'contact.created', {
+      contact_id: contactRecord.id,
+      phone: contactRecord.phone,
+      name: contactRecord.name,
+      source: channel,
+    })
+  }
+}
+
 // ============================================================
 // Outbound-from-outside-wacrm messages ("echoes") — an agent replying
 // to a customer from the native Instagram/Facebook app or Meta's own

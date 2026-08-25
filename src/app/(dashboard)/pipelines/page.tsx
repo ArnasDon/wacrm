@@ -407,6 +407,34 @@ export default function PipelinesPage() {
     [router, supabase, t]
   );
 
+  // Same "ir al chat" jump as handleOpenChat above, but from the
+  // temperature board's contact cards, which have no deal/conversation_id
+  // shortcut to try first — always resolve the contact's most recent
+  // conversation.
+  const handleOpenChatForContact = useCallback(
+    async (contactId: string) => {
+      const { data, error } = await supabase
+        .from('conversations')
+        .select('id')
+        .eq('contact_id', contactId)
+        .order('last_message_at', { ascending: false, nullsFirst: false })
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) {
+        console.error('Failed to resolve conversation for chat link:', error.message);
+        toast.error(t('chatLookupFailed'));
+        return;
+      }
+      if (!data) {
+        toast.error(t('noConversationYet'));
+        return;
+      }
+      router.push(`/inbox?c=${data.id}`);
+    },
+    [router, supabase, t]
+  );
+
   async function handleCreatePipeline() {
     const name = newPipelineName.trim();
     if (!name) return;
@@ -594,6 +622,7 @@ export default function PipelinesPage() {
         <TemperatureBoard
           contacts={contacts}
           onContactMoved={handleContactMoved}
+          onOpenChat={handleOpenChatForContact}
         />
       ) : pipelines.length === 0 ? (
         <div className="border-border flex flex-col items-center justify-center rounded-xl border border-dashed py-20">

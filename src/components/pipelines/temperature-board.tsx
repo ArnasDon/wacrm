@@ -28,7 +28,7 @@ import {
 } from "@dnd-kit/core";
 import type { Contact, LeadTemperature } from "@/types";
 import { useTranslations } from "next-intl";
-import { Flame, Snowflake, Sun, HelpCircle } from "lucide-react";
+import { Flame, Snowflake, Sun, HelpCircle, MessageCircle } from "lucide-react";
 
 type ColumnKey = LeadTemperature | "unclassified";
 
@@ -42,9 +42,11 @@ const COLUMNS: { key: ColumnKey; color: string; icon: typeof Flame }[] = [
 interface TemperatureBoardProps {
   contacts: Contact[];
   onContactMoved: (contactId: string, temperature: LeadTemperature) => void;
+  /** "Ir al chat" — same jump as the pipeline board's deal cards. */
+  onOpenChat?: (contactId: string) => void;
 }
 
-export function TemperatureBoard({ contacts, onContactMoved }: TemperatureBoardProps) {
+export function TemperatureBoard({ contacts, onContactMoved, onOpenChat }: TemperatureBoardProps) {
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
 
   const contactsByColumn = useMemo(() => {
@@ -105,6 +107,7 @@ export function TemperatureBoard({ contacts, onContactMoved }: TemperatureBoardP
             color={col.color}
             Icon={col.icon}
             contacts={contactsByColumn.get(col.key) ?? []}
+            onOpenChat={onOpenChat}
           />
         ))}
       </div>
@@ -127,11 +130,13 @@ function TemperatureColumn({
   color,
   Icon,
   contacts,
+  onOpenChat,
 }: {
   columnKey: ColumnKey;
   color: string;
   Icon: typeof Flame;
   contacts: Contact[];
+  onOpenChat?: (contactId: string) => void;
 }) {
   const t = useTranslations("Pipelines.temperature");
   const { setNodeRef, isOver } = useDroppable({ id: columnKey });
@@ -162,14 +167,22 @@ function TemperatureColumn({
             {t("dropContactHere")}
           </div>
         ) : (
-          contacts.map((contact) => <DraggableContactCard key={contact.id} contact={contact} />)
+          contacts.map((contact) => (
+            <DraggableContactCard key={contact.id} contact={contact} onOpenChat={onOpenChat} />
+          ))
         )}
       </div>
     </div>
   );
 }
 
-function DraggableContactCard({ contact }: { contact: Contact }) {
+function DraggableContactCard({
+  contact,
+  onOpenChat,
+}: {
+  contact: Contact;
+  onOpenChat?: (contactId: string) => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: contact.id });
 
   return (
@@ -179,18 +192,45 @@ function DraggableContactCard({ contact }: { contact: Contact }) {
       {...attributes}
       style={{ opacity: isDragging ? 0.3 : 1, touchAction: "none" }}
     >
-      <ContactCard contact={contact} />
+      <ContactCard contact={contact} onOpenChat={onOpenChat} />
     </div>
   );
 }
 
-function ContactCard({ contact }: { contact: Contact }) {
+function ContactCard({
+  contact,
+  onOpenChat,
+}: {
+  contact: Contact;
+  onOpenChat?: (contactId: string) => void;
+}) {
   const t = useTranslations("Pipelines.temperature");
   return (
     <div className="cursor-grab rounded-lg border border-border bg-card p-3 shadow-sm active:cursor-grabbing">
-      <p className="truncate text-sm font-medium text-foreground">
-        {contact.name || contact.phone || contact.instagram_username || t("noName")}
-      </p>
+      <div className="flex items-start justify-between gap-2">
+        <p className="min-w-0 flex-1 truncate text-sm font-medium text-foreground">
+          {contact.name || contact.phone || contact.instagram_username || t("noName")}
+        </p>
+        {onOpenChat && (
+          // Same click/drag split as DealCard: PointerSensor needs 5px of
+          // movement before it counts as a drag, so a plain tap still
+          // reaches this button even though the drag listeners sit on the
+          // wrapping div above; stopPropagation just keeps the tap from
+          // also being read as a card interaction.
+          <button
+            type="button"
+            title={t("openChat")}
+            aria-label={t("openChat")}
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenChat(contact.id);
+            }}
+            className="text-muted-foreground hover:bg-primary/15 hover:text-primary shrink-0 rounded-full p-1 transition-colors"
+          >
+            <MessageCircle className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       {contact.phone && (
         <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
       )}

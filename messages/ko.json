@@ -709,6 +709,7 @@
       "hot": "뜨거움",
       "dropContactHere": "여기에 채팅을 놓으세요",
       "noName": "이름 없음",
+      "openChat": "채팅으로 이동",
       "noContactsYet": "아직 연락처가 없습니다",
       "toastFailedMoveContact": "온도를 업데이트하지 못했습니다",
       "toastContactMoved": "온도가 업데이트되었습니다"

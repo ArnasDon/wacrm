@@ -709,6 +709,7 @@
       "hot": "Hot",
       "dropContactHere": "Drop a chat here",
       "noName": "No name",
+      "openChat": "Go to chat",
       "noContactsYet": "No contacts yet",
       "toastFailedMoveContact": "Failed to update temperature",
       "toastContactMoved": "Temperature updated"

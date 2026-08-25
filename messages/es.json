@@ -1326,6 +1326,7 @@
       "hot": "Caliente",
       "dropContactHere": "Suelta un chat aquí",
       "noName": "Sin nombre",
+      "openChat": "Ir al chat",
       "noContactsYet": "Todavía no hay contactos",
       "toastFailedMoveContact": "No se pudo actualizar la temperatura",
       "toastContactMoved": "Temperatura actualizada"

@@ -57,11 +57,24 @@ export async function POST(request: Request) {
         ? body.testEventCode.trim().slice(0, 40)
         : undefined;
 
+    // Meta rejects an event whose user_data has zero identifiers with
+    // a bare "Invalid parameter" (code 100) — a test click from this
+    // Settings button has no phone/email/fbclid to offer, so these
+    // two (always available from the request itself) are what keep
+    // the test send valid. Real production sends get the same
+    // treatment in leads/redirect/route.ts.
+    const clientIp =
+      request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      request.headers.get('x-real-ip')?.trim() ||
+      null;
+
     const result = await sendMetaLeadEvent({
       datasetId: config.datasetId,
       accessToken: config.accessToken,
       eventTime: Math.floor(Date.now() / 1000),
       testEventCode,
+      clientIpAddress: clientIp,
+      clientUserAgent: request.headers.get('user-agent'),
     });
 
     if (!result.ok) {

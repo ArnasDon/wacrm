@@ -156,6 +156,8 @@ export async function GET(request: Request) {
           phone,
           email,
           fbc,
+          clientIpAddress: ip !== 'unknown' ? ip : null,
+          clientUserAgent: request.headers.get('user-agent'),
         });
         if (!result.ok) {
           console.error(

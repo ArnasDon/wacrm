@@ -46,6 +46,18 @@ export interface MetaLeadEventInput {
   email?: string | null
   /** Meta's `fbc` click-id cookie/param format: `fb.1.<ts>.<fbclid>`. */
   fbc?: string | null
+  /**
+   * Sent as-is (never hashed — see Meta's own spec for these two).
+   * Not optional in practice: Meta rejects an event whose `user_data`
+   * has zero identifiers with a bare "Invalid parameter" (code 100),
+   * and a click with no phone/email/fbclid in it (e.g. the Settings
+   * page's own "send test event" button, or any real click Meta
+   * hasn't tagged for some reason) would otherwise send exactly that.
+   * These two are always available from the incoming request, so
+   * they're the floor every event can rely on.
+   */
+  clientIpAddress?: string | null
+  clientUserAgent?: string | null
   /** Optional — lets a test send show up under Events Manager's "Test events" tab instead of production. */
   testEventCode?: string
 }
@@ -67,6 +79,8 @@ export async function sendMetaLeadEvent(input: MetaLeadEventInput): Promise<Meta
   if (input.phone) userData.ph = [normalizePhoneAndHash(input.phone)]
   if (input.email) userData.em = [normalizeAndHash(input.email)]
   if (input.fbc) userData.fbc = input.fbc
+  if (input.clientIpAddress) userData.client_ip_address = input.clientIpAddress
+  if (input.clientUserAgent) userData.client_user_agent = input.clientUserAgent
 
   const payload = {
     data: [

@@ -185,7 +185,18 @@ export function LeadDistributionSettings({
       const res = await fetch('/api/organization/meta-capi-test', { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Meta recusou o evento de teste');
+        // Meta's own error (metaResponse.error.message / .code) is far
+        // more actionable than our generic "recusou" fallback — e.g.
+        // "Error validating access token" tells the owner to regenerate
+        // the token, while a bare "recusou" tells them nothing.
+        const metaError = data?.metaResponse?.error;
+        const detail = metaError?.message
+          ? `${metaError.message}${metaError.code ? ` (código ${metaError.code})` : ''}`
+          : null;
+        toast.error(data.error || 'Meta recusou o evento de teste', {
+          description: detail ?? undefined,
+          duration: 12000,
+        });
         return;
       }
       toast.success('Evento de teste enviado — confira em Gerenciador de Eventos → Eventos de teste.');

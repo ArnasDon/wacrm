@@ -16,6 +16,9 @@ const h = vi.hoisted(() => ({
   checkFreeBusy: vi.fn(),
   createEvent: vi.fn(),
   waitForQuietPeriod: vi.fn(),
+  createQuote: vi.fn(),
+  sendQuoteAsText: vi.fn(),
+  sendQuoteToConversation: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     claim: true as boolean,
@@ -26,7 +29,7 @@ const h = vi.hoisted(() => ({
     aiActionLogInserts: [] as Record<string, unknown>[],
     pipeline: null as { id: string } | null,
     contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234', email: null as string | null },
-    account: { default_currency: 'USD' } as { default_currency: string; timezone?: string },
+    account: { default_currency: 'USD' } as { default_currency: string; timezone?: string; catalog_delivery_mode?: string },
     dealInserts: [] as Record<string, unknown>[],
     createdDeal: { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' } as Record<string, unknown>,
     contactUpdates: [] as Record<string, unknown>[],
@@ -34,6 +37,8 @@ const h = vi.hoisted(() => ({
     gcalStatus: null as string | null,
     /** `quick_replies` row the mocked resolution lookup returns, or null. */
     quickReplyRow: null as { id: string; content_text: string } | null,
+    /** Account's active `products` rows, for the create_quote_chat item-matching lookup. */
+    products: [] as { id: string; name: string }[],
   },
 }))
 
@@ -55,6 +60,27 @@ vi.mock('./quick-reply-context', () => ({ loadQuickReplyContext: h.loadQuickRepl
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
+vi.mock('@/lib/quotes/create-quote', () => ({
+  createQuote: h.createQuote,
+  CreateQuoteError: class CreateQuoteError extends Error {
+    status: number
+    constructor(message: string, status = 400) {
+      super(message)
+      this.status = status
+    }
+  },
+}))
+vi.mock('@/lib/quotes/send-quote', () => ({
+  sendQuoteAsText: h.sendQuoteAsText,
+  sendQuoteToConversation: h.sendQuoteToConversation,
+  SendQuoteError: class SendQuoteError extends Error {
+    status: number
+    constructor(message: string, status = 400) {
+      super(message)
+      this.status = status
+    }
+  },
+}))
 vi.mock('@/lib/pipelines/move-deal', () => ({
   moveDeal: h.moveDeal,
   MoveDealError: class MoveDealError extends Error {
@@ -198,6 +224,16 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'products') {
+        // .select('id, name').eq('account_id', ...).eq('is_active', true) → thenable
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          then: (onFulfilled: (v: unknown) => unknown) =>
+            Promise.resolve({ data: h.state.products, error: null }).then(onFulfilled),
+        }
+        return chain
+      }
       // conversations
       return {
         select: () => ({
@@ -266,6 +302,10 @@ beforeEach(() => {
   h.state.contactUpdates = []
   h.state.gcalStatus = null
   h.state.quickReplyRow = null
+  h.state.products = []
+  h.createQuote.mockReset()
+  h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
+  h.sendQuoteToConversation.mockReset().mockResolvedValue(undefined)
   h.checkFreeBusy.mockReset().mockResolvedValue([])
   h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
   h.waitForQuietPeriod.mockReset().mockResolvedValue(true)
@@ -1113,5 +1153,88 @@ describe('dispatchInboundToAiReply — autonomous send_quick_reply', () => {
       expect.objectContaining({ text: 'Hello!' }),
     )
     expect(h.state.aiActionLogInserts).toEqual([])
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
+  const QUOTE_PROPOSAL = {
+    format: 'text' as const,
+    items: [{ name: 'Montessori Oslo Imperial', qty: 1 }],
+    customerNit: '',
+    customerEmail: '',
+    customerAddress: 'Villa Canales',
+  }
+
+  beforeEach(() => {
+    h.state.account.catalog_delivery_mode = 'photos'
+    h.generateReply.mockResolvedValue({
+      text: '¡Perfecto! Ya puedo prepararte la cotización.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      quoteProposal: QUOTE_PROPOSAL,
+    })
+  })
+
+  it('creates and sends the quote when the item matches a real catalog product', async () => {
+    h.state.products = [{ id: 'p1', name: 'Montessori Oslo Imperial' }]
+    h.createQuote.mockResolvedValue({ quote: { id: 'quote-1', total: 2250 }, items: [] })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.createQuote).toHaveBeenCalledWith(
+      expect.objectContaining({
+        contactId: 'contact-1',
+        items: [{ product_id: 'p1', quantity: 1 }],
+        allowFreeItems: false,
+      }),
+    )
+    expect(h.sendQuoteAsText).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'quote-1', 'conv-1')
+    // A successful quote must never also trip the silent-failure handoff.
+    expect(h.state.updatePayload).toBeNull()
+  })
+
+  it('hands off to a human instead of going silent when no item matches a real product (2026-08-25 incident)', async () => {
+    h.state.products = [{ id: 'p1', name: 'Montessori Tree Individual' }] // no "Oslo Imperial"
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.createQuote).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('Montessori Oslo Imperial')
+  })
+
+  it('hands off to a human when createQuote itself fails', async () => {
+    h.state.products = [{ id: 'p1', name: 'Montessori Oslo Imperial' }]
+    const { CreateQuoteError } = await import('@/lib/quotes/create-quote')
+    h.createQuote.mockRejectedValue(new CreateQuoteError('customerPhone and customerAddress are required'))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.sendQuoteAsText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('creating it failed')
+  })
+
+  it('hands off to a human when the quote is created but sending it fails', async () => {
+    h.state.products = [{ id: 'p1', name: 'Montessori Oslo Imperial' }]
+    h.createQuote.mockResolvedValue({ quote: { id: 'quote-1', total: 2250 }, items: [] })
+    const { SendQuoteError } = await import('@/lib/quotes/send-quote')
+    h.sendQuoteAsText.mockRejectedValue(new SendQuoteError('messaging window is closed'))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('was created but')
+  })
+
+  it('does nothing quote-related when the catalog is delivered digitally (own self-service cart)', async () => {
+    h.state.account.catalog_delivery_mode = 'digital'
+    h.state.products = [{ id: 'p1', name: 'Montessori Oslo Imperial' }]
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.createQuote).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toBeNull()
   })
 })

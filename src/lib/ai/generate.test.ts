@@ -274,8 +274,25 @@ describe('parseGeneration', () => {
     expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|CF|a@b.com|]]').quoteProposal).toBeNull()
   })
 
-  it('accepts a create-quote-chat marker with NIT/email left blank (ask_customer_tax_info off, migration 082)', () => {
-    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|||Dir]]')
+  it('treats N/A NIT/email as blank (ask_customer_tax_info off, migration 082)', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|N/A|N/A|Dir]]')
+    expect(res.quoteProposal).toEqual({
+      format: 'pdf',
+      items: [{ name: 'Silla', qty: 1 }],
+      customerNit: '',
+      customerEmail: '',
+      customerAddress: 'Dir',
+    })
+  })
+
+  it('is case-insensitive and accepts "N/A" without the slash', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|n/a|NA|Dir]]')
+    expect(res.quoteProposal?.customerNit).toBe('')
+    expect(res.quoteProposal?.customerEmail).toBe('')
+  })
+
+  it('resolves the address from the last segment even if the model drops the NIT/email slots entirely (defense in depth, 2026-08-25 incident)', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|Dir]]')
     expect(res.quoteProposal).toEqual({
       format: 'pdf',
       items: [{ name: 'Silla', qty: 1 }],

@@ -98,10 +98,17 @@ export const SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX = ']]'
  * `<pdf|text>|<Name>:<qty>,<Name>:<qty>,...|<NIT>|<email>|<address>` in
  * (auto-reply mode only, and only ever shown to the model when
  * `catalogDeliveryMode` is `'pdf'` or `'photos'` — see that param's own
- * doc comment). The `<NIT>`/`<email>` segments are left empty when the
- * account hasn't opted into `ask_customer_tax_info` (migration 082) —
- * `generate.ts`'s parser only ever requires items + address, never
- * NIT/email. When the catalog itself is a digital page, the
+ * doc comment). The `<NIT>`/`<email>` segments are always present —
+ * when the account hasn't opted into `ask_customer_tax_info`
+ * (migration 082) the model is told to write the literal `N/A` in
+ * both rather than leave them empty: an earlier version asked for
+ * genuinely empty segments ("three pipes in a row"), which turned out
+ * to be an unreliable ask for a small/fast model to reproduce exactly
+ * — it would drop the marker entirely rather than risk the syntax,
+ * silently killing every quote for an account with the flag off (real
+ * incident, 2026-08-25). `generate.ts`'s parser maps `N/A` back to an
+ * empty string, same end result, far more reliable to produce. When
+ * the catalog itself is a digital page, the
  * existing self-service cart on that page already covers this and
  * this marker is never offered, to avoid two competing quote paths.
  * Real products only: `dispatchInboundToAiReply` resolves each name
@@ -292,7 +299,7 @@ export function buildSystemPrompt(args: {
     if (catalog && catalog.length > 0 && (catalogDeliveryMode === 'pdf' || catalogDeliveryMode === 'photos')) {
       const customerInfoStep = askCustomerTaxInfo
         ? `Once they've told you the format AND you know their NIT (or "CF"/consumidor final if they have none), email, and address — read these from earlier in the conversation if already given, otherwise ask for whichever of the three you're still missing before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|<NIT>|<email>|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message.`
-        : `Once they've told you the format AND you know their delivery address — read it from earlier in the conversation if already given, otherwise ask for it before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|||<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message. This business does NOT collect a NIT/tax ID or email for quotes — leave those two segments completely empty exactly as shown (three pipes in a row before the address, marking the empty NIT and empty email slots), never ask the customer for either one.`
+        : `Once they've told you the format AND you know their delivery address — read it from earlier in the conversation if already given, otherwise ask for it before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|N/A|N/A|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message — write the literal text "N/A" for both the NIT and email slots exactly as shown, do not leave them blank and do not omit them. This business does NOT collect a NIT/tax ID or email for quotes — never ask the customer for either one.`
       parts.push(
         `This business's catalog is ${catalogDeliveryMode === 'pdf' ? 'a PDF' : 'photos'}, not a digital page with its own shopping cart — so when the customer asks for the price or a quote on one or more SPECIFIC products from the catalog list below (never something outside that list), you handle the quote yourself, in two steps across turns: ` +
           `(1) First, in plain text with no marker, ask whether they'd like the quote as a PDF or as a text message in the chat — ask this only once per conversation, don't repeat it if you already asked earlier in this same conversation. ` +

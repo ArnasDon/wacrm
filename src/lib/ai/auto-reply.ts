@@ -400,7 +400,11 @@ export async function dispatchInboundToAiReply(
     // has its own self-service cart for this.
     if (quoteProposal && catalogDeliveryMode !== 'digital') {
       try {
-        await autoCreateQuoteFromChat({ db, accountId, contactId, configOwnerUserId, conversationId, proposal: quoteProposal })
+        await autoCreateQuoteFromChat({
+          db, accountId, contactId, configOwnerUserId, conversationId, proposal: quoteProposal,
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
+        })
       } catch (err) {
         console.error('[ai auto-reply] autonomous create_quote_chat failed:', err)
       }
@@ -968,11 +972,15 @@ async function autoScheduleAppointment(args: {
  * Re-resolves every item name against the account's real, active
  * `products` (case-insensitive exact match) rather than trusting the
  * model's text — an unmatched name is dropped, never invented; if
- * NOTHING matches, this aborts quietly rather than send a broken or
- * empty quote. `createQuote({ allowFreeItems: false })` is the exact
- * same guard the public catalog's own cart relies on, so a chat-
- * originated quote can't invent a product or price there either even
- * if a name did match by coincidence.
+ * NOTHING matches, or the quote can't be created/sent for any other
+ * reason, this hands the conversation to a human instead of aborting
+ * silently — a real incident (2026-08-25) had the bot promise "I can
+ * prepare your quote now" and then go completely quiet, with nothing
+ * in the CRM to show anything had gone wrong. `createQuote({
+ * allowFreeItems: false })` is the exact same guard the public
+ * catalog's own cart relies on, so a chat-originated quote can't
+ * invent a product or price there either even if a name did match by
+ * coincidence.
  */
 async function autoCreateQuoteFromChat(args: {
   db: SupabaseClient
@@ -981,8 +989,19 @@ async function autoCreateQuoteFromChat(args: {
   configOwnerUserId: string
   conversationId: string
   proposal: NonNullable<GenerateResult['quoteProposal']>
+  handoffAgentId: string | null
+  alreadyAssigned: boolean
 }): Promise<void> {
-  const { db, accountId, contactId, configOwnerUserId, conversationId, proposal } = args
+  const { db, accountId, contactId, configOwnerUserId, conversationId, proposal, handoffAgentId, alreadyAssigned } = args
+
+  const handoff = (reason: string) =>
+    handOffToHuman({
+      db,
+      conversationId,
+      handoffAgentId,
+      alreadyAssigned,
+      summary: `🤖 The AI told this customer it would prepare a quote (${proposal.items.map((i) => `${i.name} x${i.qty}`).join(', ')}), but ${reason} — needs a human to finish it.`,
+    })
 
   const { data: products } = await db
     .from('products')
@@ -994,16 +1013,19 @@ async function autoCreateQuoteFromChat(args: {
   )
 
   const items: QuoteItemInput[] = []
+  const unmatched: string[] = []
   for (const item of proposal.items) {
     const productId = byName.get(item.name.trim().toLowerCase())
     if (!productId) {
       console.warn(`[ai auto-reply] create_quote_chat: no active product matches "${item.name}", skipping it`)
+      unmatched.push(item.name)
       continue
     }
     items.push({ product_id: productId, quantity: item.qty })
   }
   if (items.length === 0) {
     console.warn('[ai auto-reply] create_quote_chat: no item matched a real product, aborting')
+    await handoff(`couldn't match "${unmatched.join('", "')}" to a real catalog product`)
     return
   }
 
@@ -1031,6 +1053,7 @@ async function autoCreateQuoteFromChat(args: {
   } catch (err) {
     if (err instanceof CreateQuoteError) {
       console.error('[ai auto-reply] create_quote_chat: createQuote failed:', err.message)
+      await handoff(`creating it failed: ${err.message}`)
       return
     }
     throw err
@@ -1045,6 +1068,10 @@ async function autoCreateQuoteFromChat(args: {
   } catch (err) {
     if (err instanceof SendQuoteError) {
       console.error('[ai auto-reply] create_quote_chat: send failed:', err.message)
+      // The quote itself was created (quotes.id above) — only delivery
+      // failed, so a human can resend it from Products → Quotes instead
+      // of starting over from scratch.
+      await handoff(`the quote (#${created.quote.id.slice(0, 8)}) was created but couldn't be sent: ${err.message}`)
       return
     }
     throw err

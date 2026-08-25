@@ -119,7 +119,8 @@ export function parseGeneration(
   )
   let quoteProposal: GenerateResult['quoteProposal'] = null
   if (quoteMatch) {
-    const [rawFormat, itemsStr, nit, email, address] = quoteMatch[1].split('|').map((s) => s.trim())
+    const parts = quoteMatch[1].split('|').map((s) => s.trim())
+    const [rawFormat, itemsStr] = parts
     const format = rawFormat === 'text' ? 'text' : 'pdf'
     const items = (itemsStr ?? '')
       .split(',')
@@ -133,13 +134,24 @@ export function parseGeneration(
       })
       .filter((item): item is { name: string; qty: number } => item !== null)
     // NIT/email are optional (migration 082 — ask_customer_tax_info):
-    // the model is only ever taught to leave them blank, never to
-    // invent one, so an empty segment here is expected, not an error.
+    // when an account hasn't opted in, the model is told to write the
+    // literal "N/A" in both slots (never to leave them genuinely empty
+    // — an earlier version asked for that and the model would drop the
+    // whole marker rather than risk the exact-empty-segment syntax,
+    // silently killing every quote for that account, 2026-08-25
+    // incident). Address always comes from the LAST segment rather
+    // than a fixed position 5, so a marker that's missing the NIT/email
+    // slots entirely (the model reverting to the old, wrong shape)
+    // still resolves the address correctly instead of also failing.
+    const address = parts[parts.length - 1]
+    const isPlaceholder = (v: string | undefined) => !v || /^n\/?a$/i.test(v)
+    const nit = parts.length >= 5 && !isPlaceholder(parts[2]) ? parts[2] : ''
+    const email = parts.length >= 5 && !isPlaceholder(parts[3]) ? parts[3] : ''
     // Items and address are still required — a marker missing either
     // means the model jumped ahead without actually having what it
     // needs; better to silently ignore it than send a broken quote.
     if (items.length > 0 && address) {
-      quoteProposal = { format, items, customerNit: nit ?? '', customerEmail: email ?? '', customerAddress: address }
+      quoteProposal = { format, items, customerNit: nit, customerEmail: email, customerAddress: address }
     }
   }
 

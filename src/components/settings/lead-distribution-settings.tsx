@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy, Link2, Loader2, MessageCircle } from 'lucide-react';
+import { Copy, Link2, Loader2, MessageCircle, Radar } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -69,6 +69,17 @@ export function LeadDistributionSettings({
   const [messageTemplate, setMessageTemplate] = useState(organization.lead_message_template ?? '');
   const [savingFallback, setSavingFallback] = useState(false);
 
+  const [metaDatasetId, setMetaDatasetId] = useState(organization.meta_capi_dataset_id ?? '');
+  const [metaAccessToken, setMetaAccessToken] = useState('');
+  const [metaEnabled, setMetaEnabled] = useState(Boolean(organization.meta_capi_enabled));
+  const [savingMeta, setSavingMeta] = useState(false);
+  const [testingMeta, setTestingMeta] = useState(false);
+
+  useEffect(() => {
+    setMetaDatasetId(organization.meta_capi_dataset_id ?? '');
+    setMetaEnabled(Boolean(organization.meta_capi_enabled));
+  }, [organization.meta_capi_dataset_id, organization.meta_capi_enabled]);
+
   const [rows, setRows] = useState<Record<string, SellerRowState>>(() =>
     Object.fromEntries(
       accounts.map((a) => [
@@ -77,6 +88,28 @@ export function LeadDistributionSettings({
       ]),
     ),
   );
+
+  // The lazy useState initializer above only runs once on mount, so a
+  // seller invited (or removed) after this card first rendered never
+  // showed up here until a full page reload — `accounts` updates via
+  // `onChanged`'s refetch, but `rows` never resynced. This keeps
+  // `rows` in sync with `accounts` (adding new ids, dropping removed
+  // ones) while preserving any row a user is actively editing/saving,
+  // so unsaved local edits don't get clobbered by every parent
+  // refetch.
+  useEffect(() => {
+    setRows((prev) => {
+      const next: Record<string, SellerRowState> = {};
+      for (const a of accounts) {
+        next[a.id] = prev[a.id] ?? {
+          phone: a.leadRedirectPhone ?? '',
+          rotationEnabled: a.leadRotationEnabled,
+          saving: false,
+        };
+      }
+      return next;
+    });
+  }, [accounts]);
 
   const redirectLink =
     typeof window !== 'undefined'
@@ -116,6 +149,50 @@ export function LeadDistributionSettings({
       toast.error('Não foi possível conectar ao servidor');
     } finally {
       setSavingFallback(false);
+    }
+  }
+
+  async function handleSaveMetaCapi(nextEnabled?: boolean) {
+    setSavingMeta(true);
+    try {
+      const res = await fetch('/api/organization', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          metaCapiDatasetId: metaDatasetId.trim() || null,
+          ...(metaAccessToken.trim() ? { metaCapiAccessToken: metaAccessToken.trim() } : {}),
+          metaCapiEnabled: nextEnabled ?? metaEnabled,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Falha ao salvar');
+        return;
+      }
+      toast.success('Configuração da Meta Conversions API salva');
+      setMetaAccessToken('');
+      onChanged();
+    } catch {
+      toast.error('Não foi possível conectar ao servidor');
+    } finally {
+      setSavingMeta(false);
+    }
+  }
+
+  async function handleTestMetaCapi() {
+    setTestingMeta(true);
+    try {
+      const res = await fetch('/api/organization/meta-capi-test', { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || 'Meta recusou o evento de teste');
+        return;
+      }
+      toast.success('Evento de teste enviado — confira em Gerenciador de Eventos → Eventos de teste.');
+    } catch {
+      toast.error('Não foi possível conectar ao servidor');
+    } finally {
+      setTestingMeta(false);
     }
   }
 
@@ -176,10 +253,19 @@ export function LeadDistributionSettings({
       </CardHeader>
       <CardContent className="flex flex-col gap-6">
         <div className="flex flex-col gap-1.5">
-          <Label className="text-muted-foreground">Link para colocar no anúncio (Meta Ads)</Label>
+          <Label htmlFor="lead-redirect-link" className="text-muted-foreground">
+            Link para colocar no anúncio (Meta Ads)
+          </Label>
           <div className="flex gap-2">
-            <Input readOnly value={redirectLink} className="font-mono text-xs" />
-            <Button variant="outline" size="icon" onClick={handleCopyLink} className="shrink-0">
+            <Input id="lead-redirect-link" readOnly value={redirectLink} className="font-mono text-xs" />
+            <Button
+              variant="outline"
+              size="icon"
+              onClick={handleCopyLink}
+              className="shrink-0"
+              aria-label="Copiar link do anúncio"
+              title="Copiar link do anúncio"
+            >
               {copying ? <Link2 className="size-4" /> : <Copy className="size-4" />}
             </Button>
           </div>
@@ -214,10 +300,11 @@ export function LeadDistributionSettings({
                     </p>
                   </div>
                   <div className="flex flex-col gap-1.5 sm:w-56">
-                    <Label className="text-xs text-muted-foreground">
+                    <Label htmlFor={`lead-phone-${account.id}`} className="text-xs text-muted-foreground">
                       WhatsApp (com DDI e DDD, só números)
                     </Label>
                     <Input
+                      id={`lead-phone-${account.id}`}
                       placeholder="5511987654321"
                       value={row.phone}
                       onChange={(e) => updateRow(account.id, { phone: e.target.value })}
@@ -247,16 +334,22 @@ export function LeadDistributionSettings({
         <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
           <p className="text-sm font-medium text-foreground">Fallback (quando ninguém está disponível)</p>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground">WhatsApp de backup</Label>
+            <Label htmlFor="lead-fallback-phone" className="text-xs text-muted-foreground">
+              WhatsApp de backup
+            </Label>
             <Input
+              id="lead-fallback-phone"
               placeholder="5511987654321 (opcional)"
               value={fallbackPhone}
               onChange={(e) => setFallbackPhone(e.target.value)}
             />
           </div>
           <div className="flex flex-col gap-1.5">
-            <Label className="text-xs text-muted-foreground">Mensagem pré-preenchida no WhatsApp</Label>
+            <Label htmlFor="lead-fallback-message" className="text-xs text-muted-foreground">
+              Mensagem pré-preenchida no WhatsApp
+            </Label>
             <Input
+              id="lead-fallback-message"
               placeholder="Olá! Vi o anúncio e gostaria de mais informações."
               value={messageTemplate}
               onChange={(e) => setMessageTemplate(e.target.value)}
@@ -265,6 +358,66 @@ export function LeadDistributionSettings({
           <Button size="sm" onClick={handleSaveFallback} disabled={savingFallback} className="self-start">
             {savingFallback ? <Loader2 className="size-3.5 animate-spin" /> : 'Salvar fallback'}
           </Button>
+        </div>
+
+        <div className="flex flex-col gap-3 rounded-lg border border-border p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Radar className="size-4 text-muted-foreground" />
+              <p className="text-sm font-medium text-foreground">Meta Conversions API (avançado)</p>
+            </div>
+            <Switch
+              checked={metaEnabled}
+              onCheckedChange={(checked) => {
+                setMetaEnabled(checked);
+                handleSaveMetaCapi(checked);
+              }}
+              disabled={savingMeta}
+            />
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Avisa a Meta toda vez que um clique de anúncio vira um lead real neste CRM, para os
+            anúncios otimizarem por quem realmente conversa, não só por quem clicou. Pegue o
+            Dataset ID e gere o Access Token em Gerenciador de Eventos → sua fonte de dados → CRM
+            integration.
+          </p>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="meta-capi-dataset-id" className="text-xs text-muted-foreground">
+              Dataset ID
+            </Label>
+            <Input
+              id="meta-capi-dataset-id"
+              placeholder="1342718724187646"
+              value={metaDatasetId}
+              onChange={(e) => setMetaDatasetId(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="meta-capi-access-token" className="text-xs text-muted-foreground">
+              Access Token{' '}
+              {organization.metaCapiConfigured ? '(já salvo — deixe em branco para manter)' : ''}
+            </Label>
+            <Input
+              id="meta-capi-access-token"
+              type="password"
+              placeholder={organization.metaCapiConfigured ? '••••••••••••••••' : 'Cole o Access Token aqui'}
+              value={metaAccessToken}
+              onChange={(e) => setMetaAccessToken(e.target.value)}
+            />
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" onClick={() => handleSaveMetaCapi()} disabled={savingMeta} variant="outline">
+              {savingMeta ? <Loader2 className="size-3.5 animate-spin" /> : 'Salvar'}
+            </Button>
+            <Button
+              size="sm"
+              onClick={handleTestMetaCapi}
+              disabled={testingMeta || !organization.metaCapiConfigured}
+              variant="outline"
+            >
+              {testingMeta ? <Loader2 className="size-3.5 animate-spin" /> : 'Enviar evento de teste'}
+            </Button>
+          </div>
         </div>
       </CardContent>
     </Card>

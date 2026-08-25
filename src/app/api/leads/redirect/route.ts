@@ -2,16 +2,24 @@
 // GET /api/leads/redirect
 //
 // Public — no auth required. This is the URL you put as the
-// destination link on a Meta/Google Ads "click to WhatsApp"
-// campaign: ?org=<organizationId>, optionally with utm_source,
-// utm_medium, utm_campaign, utm_content, utm_term, and origin.
+// destination link on a Meta/Google Ads "Website"/Traffic-objective
+// campaign (NOT the native "click to WhatsApp" message-ad format,
+// which has no destination-URL field at all — see the redirect
+// pattern's own rationale in the CRM's Settings → Organização
+// help text): ?org=<organizationId>, optionally with utm_source,
+// utm_medium, utm_campaign, utm_content, utm_term, email, and origin.
+// Meta appends `fbclid` to this URL automatically on its own — no
+// extra setup needed for that one.
 //
 // Picks the next seller in the organization's round-robin (see
 // assign_next_seller() in 048_lead_distribution.sql), logs the lead,
 // and 307-redirects the browser straight to that seller's
 // https://wa.me/<number> — the same UX as a normal click-to-WhatsApp
 // ad, except the destination number rotates per click instead of
-// being hardcoded in the ad.
+// being hardcoded in the ad. If the organization has Meta Conversions
+// API reporting turned on (049_meta_conversions_api.sql), also
+// reports a "Lead" server event back to Meta after redirecting, so ad
+// delivery can optimize on real leads instead of just clicks.
 //
 // Falls back to organizations.fallback_lead_phone when no seller is
 // currently eligible (everyone paused, or nobody has set a number
@@ -21,9 +29,10 @@
 // lands here directly.
 // ============================================================
 
-import { NextResponse } from 'next/server';
+import { NextResponse, after } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit';
+import { resolveOrgMetaCapiConfig, sendMetaLeadEvent } from '@/lib/meta-capi';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null;
@@ -76,6 +85,7 @@ export async function GET(request: Request) {
 
   const name = searchParams.get('name')?.trim().slice(0, 120) || null;
   const phone = searchParams.get('phone')?.trim().slice(0, 30) || null;
+  const email = searchParams.get('email')?.trim().slice(0, 200) || null;
   const origin = searchParams.get('origin')?.trim().slice(0, 60) || 'meta_ads';
   const utm: Record<string, string> = {};
   for (const key of ['utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term']) {
@@ -83,11 +93,24 @@ export async function GET(request: Request) {
     if (value) utm[key] = value.slice(0, 200);
   }
 
+  // Meta's own click-id, appended automatically to the destination URL
+  // of a Traffic/Website-objective ad (same mechanism the utm_* params
+  // above rely on) — the match key the Conversions API "Lead" event
+  // below uses, formatted per Meta's documented `fbc` shape. Stored in
+  // the same `utm` jsonb column as the utm_* params rather than a new
+  // ad_leads column, since it's the same "extra context captured at
+  // click time" that column already exists for.
+  const fbclid = searchParams.get('fbclid')?.trim().slice(0, 200) || null;
+  const fbc = fbclid ? `fb.1.${Date.now()}.${fbclid}` : null;
+  if (fbc) utm.fbc = fbc;
+
   const admin = supabaseAdmin();
 
   const { data: org, error: orgError } = await admin
     .from('organizations')
-    .select('id, fallback_lead_phone, lead_message_template')
+    .select(
+      'id, fallback_lead_phone, lead_message_template, meta_capi_enabled, meta_capi_dataset_id, meta_capi_access_token',
+    )
     .eq('id', organizationId)
     .maybeSingle();
 
@@ -116,6 +139,36 @@ export async function GET(request: Request) {
 
   const row = Array.isArray(assigned) ? assigned[0] : assigned;
   const redirectPhone: string | null = row?.redirect_phone ?? null;
+
+  // Report the lead to Meta's Conversions API, if the store has it
+  // configured — scheduled with `after()` so it runs once the redirect
+  // response has already been sent to the customer's browser. Never
+  // let this delay (or, if Meta is down, ever block) the actual
+  // WhatsApp handoff above.
+  const capiConfig = resolveOrgMetaCapiConfig(org);
+  if (capiConfig) {
+    after(async () => {
+      try {
+        const result = await sendMetaLeadEvent({
+          datasetId: capiConfig.datasetId,
+          accessToken: capiConfig.accessToken,
+          eventTime: Math.floor(Date.now() / 1000),
+          phone,
+          email,
+          fbc,
+        });
+        if (!result.ok) {
+          console.error(
+            `[leads/redirect] Meta CAPI event failed for org ${organizationId}:`,
+            result.status,
+            result.body,
+          );
+        }
+      } catch (err) {
+        console.error(`[leads/redirect] Meta CAPI event threw for org ${organizationId}:`, err);
+      }
+    });
+  }
 
   if (redirectPhone) {
     return waRedirect(redirectPhone, message);

@@ -79,6 +79,11 @@ export interface Organization {
   fallback_lead_phone?: string | null;
   /** Custom wa.me pre-filled text; null falls back to a generic default. */
   lead_message_template?: string | null;
+  /** Meta Conversions API (CRM integration) — see 049_meta_conversions_api.sql. */
+  meta_capi_enabled?: boolean | null;
+  meta_capi_dataset_id?: string | null;
+  /** Never sent by the API — true/false only, mirrors uazapi's `configured` flag. */
+  metaCapiConfigured?: boolean;
 }
 
 /** 'suspended' blocks read+write access for every member account (migration 042). */

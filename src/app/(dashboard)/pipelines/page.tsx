@@ -304,9 +304,9 @@ export default function PipelinesPage() {
           <div className="h-8 w-48 animate-pulse rounded bg-muted" />
           <div className="h-9 w-28 animate-pulse rounded-lg bg-muted" />
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 overflow-x-auto">
           {[1, 2, 3, 4, 5].map((i) => (
-            <div key={i} className="h-96 w-72 animate-pulse rounded-xl bg-muted/50" />
+            <div key={i} className="h-96 w-72 shrink-0 animate-pulse rounded-xl bg-muted/50" />
           ))}
         </div>
       </div>

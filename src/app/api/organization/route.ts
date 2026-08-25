@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { createClient as createAdminClient } from '@supabase/supabase-js';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
+import { encrypt } from '@/lib/whatsapp/encryption';
 
 // Service-role client — needed once the org has seller accounts,
 // since the caller's own RLS-scoped client can only ever see the
@@ -36,7 +37,9 @@ export async function GET() {
 
     const { data: org, error: orgError } = await supabase
       .from('organizations')
-      .select('id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template')
+      .select(
+        'id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template, meta_capi_enabled, meta_capi_dataset_id, meta_capi_access_token',
+      )
       .eq('owner_account_id', accountId)
       .maybeSingle();
 
@@ -48,6 +51,12 @@ export async function GET() {
     if (!org) {
       return NextResponse.json({ organization: null, accounts: [] });
     }
+
+    // The access token itself is never sent back to the client — same
+    // treatment as uazapi's Admin Token (uazapi/settings/route.ts).
+    // `metaCapiConfigured` is all the UI needs to show "connected".
+    const { meta_capi_access_token: _metaCapiAccessToken, ...orgSafe } = org;
+    const metaCapiConfigured = Boolean(org.meta_capi_dataset_id && org.meta_capi_access_token);
 
     // RLS's accounts_org_select (migration 041) makes this return the
     // store account + every linked seller account for the caller —
@@ -113,7 +122,7 @@ export async function GET() {
     );
 
     return NextResponse.json({
-      organization: org,
+      organization: { ...orgSafe, metaCapiConfigured },
       accounts: enrichedAccounts,
     });
   } catch (err) {
@@ -174,15 +183,53 @@ export async function PATCH(request: Request) {
         typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 500) : null;
     }
 
+    // Meta Conversions API (CRM integration) — see
+    // 049_meta_conversions_api.sql. `metaCapiAccessToken` may be
+    // omitted (or blank) when a token is already saved, mirroring
+    // uazapi/settings's own POST — lets the owner flip `enabled` or
+    // fix a typo'd dataset id without re-pasting the secret.
+    if ('metaCapiDatasetId' in body) {
+      const raw = body.metaCapiDatasetId;
+      update.meta_capi_dataset_id =
+        typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 60) : null;
+    }
+    if ('metaCapiAccessToken' in body) {
+      const raw = typeof body.metaCapiAccessToken === 'string' ? body.metaCapiAccessToken.trim() : '';
+      if (raw) {
+        update.meta_capi_access_token = encrypt(raw);
+      }
+    }
+    if ('metaCapiEnabled' in body) {
+      update.meta_capi_enabled = Boolean(body.metaCapiEnabled);
+    }
+
     if (Object.keys(update).length === 0) {
       return NextResponse.json({ error: 'Nothing to update.' }, { status: 400 });
+    }
+
+    if (update.meta_capi_enabled === true) {
+      const { data: existing } = await supabase
+        .from('organizations')
+        .select('meta_capi_dataset_id, meta_capi_access_token')
+        .eq('id', org.id)
+        .maybeSingle();
+      const datasetId = 'meta_capi_dataset_id' in update ? update.meta_capi_dataset_id : existing?.meta_capi_dataset_id;
+      const hasToken = 'meta_capi_access_token' in update || Boolean(existing?.meta_capi_access_token);
+      if (!datasetId || !hasToken) {
+        return NextResponse.json(
+          { error: 'Configure o Dataset ID e o Access Token antes de ativar.' },
+          { status: 400 },
+        );
+      }
     }
 
     const { data: updated, error: updateError } = await supabase
       .from('organizations')
       .update(update)
       .eq('id', org.id)
-      .select('id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template')
+      .select(
+        'id, name, owner_account_id, created_at, fallback_lead_phone, lead_message_template, meta_capi_enabled, meta_capi_dataset_id, meta_capi_access_token',
+      )
       .single();
 
     if (updateError || !updated) {
@@ -190,7 +237,13 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Failed to update' }, { status: 500 });
     }
 
-    return NextResponse.json({ organization: updated });
+    const { meta_capi_access_token: _updatedToken, ...updatedSafe } = updated;
+    return NextResponse.json({
+      organization: {
+        ...updatedSafe,
+        metaCapiConfigured: Boolean(updated.meta_capi_dataset_id && updated.meta_capi_access_token),
+      },
+    });
   } catch (err) {
     return toErrorResponse(err);
   }

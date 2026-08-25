@@ -201,6 +201,8 @@
     "viewInbox": "Кірісті көру",
     "newAutomation": "Жаңа автоматтандыру",
     "recentActivity": "Соңғы әрекет",
+    "conversationsChartAriaLabel": "Күндер бойынша диалогтар",
+    "pipelineDonutAriaLabel": "Этаптар бойынша мәмілелер құны",
     "noActivity": "Соңғы әрекет жоқ",
     "viewAll": "Барлығын көру →",
     "noActivityYet": "Әрекет әлі жоқ",
@@ -332,6 +334,7 @@
       "pause": "Pause",
       "unsavedHint": "You have unsaved changes"
     },
+    "editAction": "Өңдеу",
     "editor": {
       "backToFlows": "Ағындарға оралу",
       "flowNamePlaceholder": "Ағын атауы",
@@ -1055,6 +1058,7 @@
         "delete": "Delete"
       },
       "contactInfo": "Contact Information",
+      "name": "Аты",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
       "createdAt": "Created At",
@@ -1505,6 +1509,9 @@
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
     },
+    "tags": "Тегтер",
+    "company": "Компания",
+    "unknown": "Белгісіз",
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
@@ -1529,6 +1536,9 @@
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
+      "open": "Ашық",
+      "pending": "Күтілуде",
+      "closed": "Жабық",
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
@@ -1589,7 +1599,20 @@
     },
     "allCompanies": "All companies",
     "clearAll": "Clear all",
-    "noMessagesYet": "No messages yet"
+    "noMessagesYet": "No messages yet",
+    "mediaViewer": {
+      "counter": "{total} ішінен {index}",
+      "previous": "Артқа",
+      "next": "Алға",
+      "zoomIn": "Толық өлшемге ұлғайту",
+      "zoomOut": "Экранға сыйдыру",
+      "openOriginal": "Түпнұсқаны ашу",
+      "download": "Жүктеп алу",
+      "downloadFailed": "Тіркемені жүктеп алу мүмкін болмады",
+      "failed": "Бұл тіркеме енді қолжетімсіз",
+      "imageAlt": "Сурет",
+      "you": "Сіз"
+    }
   },
   "broadcasts": {
     "title": "Хабарламалар",
@@ -2132,6 +2155,8 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
+        "matchWord": "Толық сөз",
+        "matchWordHint": "Кілт сөз тек жеке сөз ретінде сәйкес келеді, сондықтан \"k\" енді \"thanks\" сөзінде іске қосылмайды. Бос орындары бар тілдерде қысқа кілт сөздер үшін ыңғайлы; бос орынсыз жазылатын тілдерде \"Қамтиды\" режимін қолданыңыз.",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       },
       "delete": "Delete"
@@ -2171,6 +2196,7 @@
       "loadError": "Failed to load ({status})",
       "back": "Back to Automations"
     },
+    "editAction": "Өңдеу",
     "logs": {
       "title": "Execution logs",
       "loadError": "Failed to load logs",
@@ -2382,6 +2408,12 @@
       "tokenCorrupted": "Stored token can't be decrypted",
       "resetting": "Resetting...",
       "resetConfig": "Reset Configuration",
+      "mediaTitle": "Тіркемелерді сақтау",
+      "mediaDesc": "Meta қабылданған медиафайлдарды келгеннен кейін шамамен 30 күннен кейін жояды. Тіркемелерді өз сақтау орныңызға көшіруге болады, сонда олар қолжетімді болып қала береді.",
+      "mirrorInbound": "Кіріс тіркемелерді сақтау",
+      "mirrorInboundDesc": "Клиенттер жіберген әр фото, видео, дауыстық хабарлама мен құжаттың көшірмесін сақтау. Сіздің Supabase сақтау орныңыз қолданылады; 16 МБ-тан асатын файлдар өткізіліп тасталады.",
+      "mirrorInboundOffWarning": "Жаңа тіркемелер көшірілуін тоқтатады және келгеннен кейін шамамен 30 күн өткен соң қолжетімсіз болады.",
+      "mirrorInboundSaveFailed": "Тіркеме параметрін жаңарту мүмкін болмады.",
       "credentialsValid": "Credentials valid",
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",

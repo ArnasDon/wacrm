@@ -58,7 +58,7 @@ export function MediaLightbox({
   onActiveIdChange,
   contactLabel,
 }: MediaLightboxProps) {
-  const t = useTranslations("Inbox.mediaViewer");
+  const t = useTranslations("inbox.mediaViewer");
 
   const index = galleryIndexOf(items, activeId);
   const item = index >= 0 ? items[index] : null;

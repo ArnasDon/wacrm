@@ -410,7 +410,7 @@ function FlowCard({
       <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
         <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
-          {t("edit")}
+          {t("editAction")}
         </Button>
         <Button
           variant="ghost"

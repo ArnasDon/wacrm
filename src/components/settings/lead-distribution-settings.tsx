@@ -74,6 +74,7 @@ export function LeadDistributionSettings({
   const [metaEnabled, setMetaEnabled] = useState(Boolean(organization.meta_capi_enabled));
   const [savingMeta, setSavingMeta] = useState(false);
   const [testingMeta, setTestingMeta] = useState(false);
+  const [testEventCode, setTestEventCode] = useState('');
 
   useEffect(() => {
     setMetaDatasetId(organization.meta_capi_dataset_id ?? '');
@@ -182,7 +183,11 @@ export function LeadDistributionSettings({
   async function handleTestMetaCapi() {
     setTestingMeta(true);
     try {
-      const res = await fetch('/api/organization/meta-capi-test', { method: 'POST' });
+      const res = await fetch('/api/organization/meta-capi-test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ testEventCode: testEventCode.trim() || undefined }),
+      });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         // Meta's own error (metaResponse.error.message / .code) is far
@@ -199,7 +204,11 @@ export function LeadDistributionSettings({
         });
         return;
       }
-      toast.success('Evento de teste enviado — confira em Gerenciador de Eventos → Eventos de teste.');
+      toast.success(
+        testEventCode.trim()
+          ? 'Evento enviado — confira em Gerenciador de Eventos → Eventos de teste (aparece em segundos).'
+          : 'Evento enviado — sem código de teste, ele conta como um lead real e pode levar até 1 hora para aparecer na Visão geral.',
+      );
     } catch {
       toast.error('Não foi possível conectar ao servidor');
     } finally {
@@ -415,6 +424,22 @@ export function LeadDistributionSettings({
               value={metaAccessToken}
               onChange={(e) => setMetaAccessToken(e.target.value)}
             />
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="meta-capi-test-code" className="text-xs text-muted-foreground">
+              Código de teste (opcional)
+            </Label>
+            <Input
+              id="meta-capi-test-code"
+              placeholder="Copie em Gerenciador de Eventos → Eventos de teste"
+              value={testEventCode}
+              onChange={(e) => setTestEventCode(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              Com o código, o evento aparece na hora na aba &ldquo;Eventos de teste&rdquo; da Meta.
+              Sem ele, o evento vai como um lead real e pode levar até 1 hora para aparecer na
+              Visão geral.
+            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={() => handleSaveMetaCapi()} disabled={savingMeta} variant="outline">

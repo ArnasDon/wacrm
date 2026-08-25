@@ -27,6 +27,7 @@ const ROW = {
   auto_reply_enabled: false,
   auto_reply_max_per_conversation: 3,
   auto_schedule_appointments_enabled: false,
+  ask_customer_tax_info: false,
   embeddings_api_key: null,
 }
 

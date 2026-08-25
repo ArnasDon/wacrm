@@ -27,6 +27,15 @@ export interface AiConfig {
    *  `dispatchInboundToAiReply` only offers the capability to the
    *  model when the account's Google Calendar is actually connected. */
   autoScheduleAppointmentsEnabled: boolean
+  /** Whether the AI should ask the customer for their NIT/tax ID and
+   *  email before building a quote from chat (migration 082). Off by
+   *  default — most WhatsApp quotes never need either, and per-company
+   *  workflows shouldn't have this imposed on them; an account that
+   *  wants them collected opts in here. Only affects
+   *  `CREATE_QUOTE_SENTINEL_PREFIX`'s instructions in `buildSystemPrompt`
+   *  — has no effect on the human quote builder, which always shows
+   *  both fields as optional inputs. */
+  askCustomerTaxInfo: boolean
   /** Where auto-reply hands a conversation off when the model bails: an
    *  agent's `auth.users.id`, or null to leave it unassigned (drop into
    *  the shared queue). */
@@ -99,6 +108,8 @@ export interface GenerateResult {
   quoteProposal: {
     format: 'pdf' | 'text'
     items: { name: string; qty: number }[]
+    /** Empty string when not collected — optional per
+     *  `ai_configs.ask_customer_tax_info` (migration 082). */
     customerNit: string
     customerEmail: string
     customerAddress: string

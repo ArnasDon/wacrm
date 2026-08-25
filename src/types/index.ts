@@ -503,8 +503,10 @@ export interface Quote {
   user_id: string;
   contact_id: string;
   deal_id: string | null;
-  customer_nit: string;
-  customer_email: string;
+  /** Optional (migration 082) — no company is required to collect a
+   *  customer's tax ID/email for a quote; null when not given. */
+  customer_nit: string | null;
+  customer_email: string | null;
   customer_phone: string;
   customer_address: string;
   currency: string;

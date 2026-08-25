@@ -32,8 +32,11 @@ export interface CreateQuoteArgs {
   accountId: string
   userId: string
   contactId: string
-  customerNit: string
-  customerEmail: string
+  /** Optional (migration 082) — no company is required to collect a
+   *  customer's tax ID/email for a quote. An empty/missing value is
+   *  stored as null, never as an empty string. */
+  customerNit?: string | null
+  customerEmail?: string | null
   customerPhone: string
   customerAddress: string
   items: QuoteItemInput[]
@@ -64,9 +67,16 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     items, allowFreeItems,
   } = args
 
-  if (!customerNit?.trim() || !customerEmail?.trim() || !customerPhone?.trim() || !customerAddress?.trim()) {
-    throw new CreateQuoteError('customerNit, customerEmail, customerPhone, and customerAddress are all required')
+  // NIT/email are optional (migration 082, product decision 2026-08-25)
+  // — each company decides for itself whether it wants them, via
+  // ai_configs.ask_customer_tax_info for the AI's chat-quote flow.
+  // Phone and address stay required: a quote with no way to deliver it
+  // or ship the order isn't useful to anyone.
+  if (!customerPhone?.trim() || !customerAddress?.trim()) {
+    throw new CreateQuoteError('customerPhone and customerAddress are required')
   }
+  const normalizedNit = customerNit?.trim() || null
+  const normalizedEmail = customerEmail?.trim() || null
   if (!items || items.length === 0) {
     throw new CreateQuoteError('At least one item is required')
   }
@@ -238,8 +248,8 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
       user_id: userId,
       contact_id: contactId,
       deal_id: dealId,
-      customer_nit: customerNit.trim(),
-      customer_email: customerEmail.trim(),
+      customer_nit: normalizedNit,
+      customer_email: normalizedEmail,
       customer_phone: customerPhone.trim(),
       customer_address: customerAddress.trim(),
       currency,

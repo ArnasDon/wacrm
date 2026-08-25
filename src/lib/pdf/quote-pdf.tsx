@@ -57,12 +57,16 @@ function QuoteDocument({
 
         <View style={styles.section}>
           <Text style={styles.sectionLabel}>Cliente</Text>
-          <View style={styles.row}>
-            <Text>NIT: {quote.customer_nit}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text>Correo: {quote.customer_email}</Text>
-          </View>
+          {quote.customer_nit && (
+            <View style={styles.row}>
+              <Text>NIT: {quote.customer_nit}</Text>
+            </View>
+          )}
+          {quote.customer_email && (
+            <View style={styles.row}>
+              <Text>Correo: {quote.customer_email}</Text>
+            </View>
+          )}
           <View style={styles.row}>
             <Text>Celular: {quote.customer_phone}</Text>
           </View>

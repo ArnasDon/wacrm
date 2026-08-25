@@ -239,6 +239,7 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyEnabled: true,
     autoReplyMaxPerConversation: 3,
     autoScheduleAppointmentsEnabled: false,
+    askCustomerTaxInfo: false,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,

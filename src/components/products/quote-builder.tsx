@@ -191,12 +191,10 @@ export function QuoteBuilder({
       toast.error(t('toastItemsRequired'));
       return;
     }
-    if (
-      !customerNit.trim() ||
-      !customerEmail.trim() ||
-      !customerPhone.trim() ||
-      !customerAddress.trim()
-    ) {
+    // NIT/email are optional (migration 082) — each company decides for
+    // itself whether it wants to collect them; only phone and address
+    // are needed to actually deliver a quote.
+    if (!customerPhone.trim() || !customerAddress.trim()) {
       toast.error(t('toastCustomerFieldsRequired'));
       return;
     }
@@ -208,8 +206,8 @@ export function QuoteBuilder({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contact_id: selectedContact.id,
-          customer_nit: customerNit.trim(),
-          customer_email: customerEmail.trim(),
+          customer_nit: customerNit.trim() || undefined,
+          customer_email: customerEmail.trim() || undefined,
           customer_phone: customerPhone.trim(),
           customer_address: customerAddress.trim(),
           items: items.map((i) => ({

@@ -98,7 +98,10 @@ export const SCHEDULE_APPOINTMENT_SENTINEL_SUFFIX = ']]'
  * `<pdf|text>|<Name>:<qty>,<Name>:<qty>,...|<NIT>|<email>|<address>` in
  * (auto-reply mode only, and only ever shown to the model when
  * `catalogDeliveryMode` is `'pdf'` or `'photos'` — see that param's own
- * doc comment). When the catalog itself is a digital page, the
+ * doc comment). The `<NIT>`/`<email>` segments are left empty when the
+ * account hasn't opted into `ask_customer_tax_info` (migration 082) —
+ * `generate.ts`'s parser only ever requires items + address, never
+ * NIT/email. When the catalog itself is a digital page, the
  * existing self-service cart on that page already covers this and
  * this marker is never offered, to avoid two competing quote paths.
  * Real products only: `dispatchInboundToAiReply` resolves each name
@@ -214,8 +217,14 @@ export function buildSystemPrompt(args: {
    *  means the model is never taught `QUICK_REPLY_SENTINEL_PREFIX` at
    *  all, since there'd be nothing real for it to pick from. */
   quickReplies?: { id: string; title: string; preview: string }[] | null
+  /** Whether this account wants the AI to ask for the customer's NIT
+   *  (tax ID) and email before building a chat quote
+   *  (`ai_configs.ask_customer_tax_info`, migration 082) — off by
+   *  default. Only read when `catalogDeliveryMode` is `'pdf'`/`'photos'`
+   *  (the only case `CREATE_QUOTE_SENTINEL_PREFIX` is taught at all). */
+  askCustomerTaxInfo?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies, askCustomerTaxInfo } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -281,10 +290,13 @@ export function buildSystemPrompt(args: {
     }
 
     if (catalog && catalog.length > 0 && (catalogDeliveryMode === 'pdf' || catalogDeliveryMode === 'photos')) {
+      const customerInfoStep = askCustomerTaxInfo
+        ? `Once they've told you the format AND you know their NIT (or "CF"/consumidor final if they have none), email, and address — read these from earlier in the conversation if already given, otherwise ask for whichever of the three you're still missing before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|<NIT>|<email>|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message.`
+        : `Once they've told you the format AND you know their delivery address — read it from earlier in the conversation if already given, otherwise ask for it before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|||<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message. This business does NOT collect a NIT/tax ID or email for quotes — leave those two segments completely empty exactly as shown (three pipes in a row before the address, marking the empty NIT and empty email slots), never ask the customer for either one.`
       parts.push(
         `This business's catalog is ${catalogDeliveryMode === 'pdf' ? 'a PDF' : 'photos'}, not a digital page with its own shopping cart — so when the customer asks for the price or a quote on one or more SPECIFIC products from the catalog list below (never something outside that list), you handle the quote yourself, in two steps across turns: ` +
           `(1) First, in plain text with no marker, ask whether they'd like the quote as a PDF or as a text message in the chat — ask this only once per conversation, don't repeat it if you already asked earlier in this same conversation. ` +
-          `(2) Once they've told you the format AND you know their NIT (or "CF"/consumidor final if they have none), email, and address — read these from earlier in the conversation if already given, otherwise ask for whichever of the three you're still missing before proceeding, in the same natural reply — append ${CREATE_QUOTE_SENTINEL_PREFIX}<pdf or text>|<exact product name from the catalog below>:<quantity>,<exact product name>:<quantity>|<NIT>|<email>|<address>${CREATE_QUOTE_SENTINEL_SUFFIX} at the very end of your reply, after your customer-facing message. Use the EXACT product name as it appears in the catalog list below (the text before the price in parentheses) for every item — never a product not in that list, never an invented quantity or price; the price always comes from the real catalog, you never write one yourself. Never mention this marker to the customer, and never claim the quote is sent until you actually have everything needed to use this marker.`,
+          `(2) ${customerInfoStep} Use the EXACT product name as it appears in the catalog list below (the text before the price in parentheses) for every item — never a product not in that list, never an invented quantity or price; the price always comes from the real catalog, you never write one yourself. Never mention this marker to the customer, and never claim the quote is sent until you actually have everything needed to use this marker.`,
       )
     }
 

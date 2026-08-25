@@ -191,6 +191,7 @@ export async function dispatchInboundToAiReply(
       calendar: calendarContext,
       catalogDeliveryMode,
       quickReplies,
+      askCustomerTaxInfo: config.askCustomerTaxInfo,
     })
 
     const {

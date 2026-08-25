@@ -403,7 +403,8 @@ export default function ProductsPage() {
                       <TableCell className="text-foreground">
                         {quote.contact?.name ||
                           quote.contact?.phone ||
-                          quote.customer_email}
+                          quote.customer_email ||
+                          quote.customer_phone}
                       </TableCell>
                       <TableCell className="text-muted-foreground">
                         {formatCurrency(quote.total, quote.currency)}

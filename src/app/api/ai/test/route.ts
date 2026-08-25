@@ -72,6 +72,7 @@ export async function POST(request: Request) {
         autoReplyEnabled: false,
         autoReplyMaxPerConversation: 3,
         autoScheduleAppointmentsEnabled: false,
+        askCustomerTaxInfo: false,
         handoffAgentId: null,
         embeddingsApiKey: null,
       })

@@ -182,11 +182,11 @@ export async function POST(
       userId: auditUserId,
       contactId,
       // Public form only requires name + phone (per product decision —
-      // minimize friction for an anonymous visitor). Guatemalan
-      // convention for "no tax ID given" is "C/F" (Consumidor Final);
-      // email/address stay blank rather than fabricated.
-      customerNit: body?.nit?.trim() || 'C/F',
-      customerEmail: body?.email?.trim() || 'No proporcionado',
+      // minimize friction for an anonymous visitor). NIT/email are
+      // optional (migration 082) and stored as null rather than a
+      // fabricated placeholder when not given.
+      customerNit: body?.nit?.trim() || null,
+      customerEmail: body?.email?.trim() || null,
       customerPhone: phone,
       customerAddress: body?.address?.trim() || 'No proporcionada',
       items,

@@ -60,7 +60,15 @@ export async function PATCH(
     }
     update.status = body.status
   }
-  for (const field of ['customer_nit', 'customer_email', 'customer_phone', 'customer_address'] as const) {
+  // NIT/email are optional (migration 082) — an empty value clears them
+  // to null rather than being rejected. Phone/address stay required.
+  for (const field of ['customer_nit', 'customer_email'] as const) {
+    if (field in body) {
+      const value = typeof body[field] === 'string' ? body[field].trim() : ''
+      update[field] = value || null
+    }
+  }
+  for (const field of ['customer_phone', 'customer_address'] as const) {
     if (field in body) {
       const value = typeof body[field] === 'string' ? body[field].trim() : ''
       if (!value) return NextResponse.json({ error: `${field} cannot be empty` }, { status: 400 })

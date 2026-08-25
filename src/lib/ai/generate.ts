@@ -132,11 +132,14 @@ export function parseGeneration(
         return { name, qty: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 1 }
       })
       .filter((item): item is { name: string; qty: number } => item !== null)
-    // Require every field — a marker missing NIT/email/address means the
-    // model jumped ahead without actually having what it needs; better
-    // to silently ignore it than send a broken quote.
-    if (items.length > 0 && nit && email && address) {
-      quoteProposal = { format, items, customerNit: nit, customerEmail: email, customerAddress: address }
+    // NIT/email are optional (migration 082 — ask_customer_tax_info):
+    // the model is only ever taught to leave them blank, never to
+    // invent one, so an empty segment here is expected, not an error.
+    // Items and address are still required — a marker missing either
+    // means the model jumped ahead without actually having what it
+    // needs; better to silently ignore it than send a broken quote.
+    if (items.length > 0 && address) {
+      quoteProposal = { format, items, customerNit: nit ?? '', customerEmail: email ?? '', customerAddress: address }
     }
   }
 

@@ -49,4 +49,10 @@ describe('renderQuotePdf', () => {
     const buffer = await renderQuotePdf(quote({ subtotal: 0, total: 0 }), [], 'Chat Sandía')
     expect(buffer.length).toBeGreaterThan(0)
   })
+
+  it('renders with no NIT/email without throwing (migration 082 — optional)', async () => {
+    const buffer = await renderQuotePdf(quote({ customer_nit: null, customer_email: null }), [item()], 'Chat Sandía')
+    expect(buffer.length).toBeGreaterThan(0)
+    expect(buffer.subarray(0, 5).toString('utf-8')).toBe('%PDF-')
+  })
 })

@@ -110,14 +110,36 @@ function makeDb(fx: Fixture) {
 }
 
 describe('createQuote — customer field validation', () => {
-  it('rejects when a required customer field is missing', async () => {
+  it('rejects when phone is missing', async () => {
     const { db } = makeDb({ pipeline: null })
     await expect(
       createQuote({
         db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1',
-        ...CUSTOMER, customerNit: '', items: [{ product_id: 'p1', quantity: 1 }], allowFreeItems: true,
+        ...CUSTOMER, customerPhone: '', items: [{ product_id: 'p1', quantity: 1 }], allowFreeItems: true,
       }),
     ).rejects.toBeInstanceOf(CreateQuoteError)
+  })
+
+  it('rejects when address is missing', async () => {
+    const { db } = makeDb({ pipeline: null })
+    await expect(
+      createQuote({
+        db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1',
+        ...CUSTOMER, customerAddress: '', items: [{ product_id: 'p1', quantity: 1 }], allowFreeItems: true,
+      }),
+    ).rejects.toBeInstanceOf(CreateQuoteError)
+  })
+
+  it('accepts a missing NIT/email (migration 082 — optional per company), storing them as null', async () => {
+    const { db, inserted } = makeDb({ products: [{ id: 'p1', name: 'A', price: 10, is_active: true }], pipeline: null })
+    const { quote } = await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1',
+      ...CUSTOMER, customerNit: '', customerEmail: undefined,
+      items: [{ product_id: 'p1', quantity: 1 }], allowFreeItems: false,
+    })
+    expect(quote.customer_nit).toBeNull()
+    expect(quote.customer_email).toBeNull()
+    expect(inserted.quotes[0]).toMatchObject({ customer_nit: null, customer_email: null })
   })
 
   it('rejects an empty item list', async () => {

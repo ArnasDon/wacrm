@@ -82,6 +82,7 @@ export function AiConfig() {
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [autoScheduleAppointmentsEnabled, setAutoScheduleAppointmentsEnabled] =
     useState(false);
+  const [askCustomerTaxInfo, setAskCustomerTaxInfo] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   const [unclaimedTimeoutMinutes, setUnclaimedTimeoutMinutes] = useState(10);
   // Empty string = leave unassigned (shared queue).
@@ -113,6 +114,7 @@ export function AiConfig() {
         setAutoScheduleAppointmentsEnabled(
           Boolean(data.auto_schedule_appointments_enabled)
         );
+        setAskCustomerTaxInfo(Boolean(data.ask_customer_tax_info));
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setUnclaimedTimeoutMinutes(
           data.unclaimed_conversation_timeout_minutes ?? 10
@@ -168,6 +170,7 @@ export function AiConfig() {
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_schedule_appointments_enabled: autoScheduleAppointmentsEnabled,
+    ask_customer_tax_info: askCustomerTaxInfo,
     auto_reply_max_per_conversation: maxPerConversation,
     unclaimed_conversation_timeout_minutes: unclaimedTimeoutMinutes,
     handoff_agent_id: handoffAgentId || null,
@@ -464,6 +467,22 @@ export function AiConfig() {
               <Switch
                 checked={autoScheduleAppointmentsEnabled}
                 onCheckedChange={setAutoScheduleAppointmentsEnabled}
+                disabled={disabled || !autoReplyEnabled}
+              />
+            </div>
+
+            <div className="border-border flex items-center justify-between gap-4 rounded-md border p-3">
+              <div>
+                <p className="text-foreground text-sm font-medium">
+                  {t('askCustomerTaxInfo')}
+                </p>
+                <p className="text-muted-foreground text-xs">
+                  {t('askCustomerTaxInfoDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={askCustomerTaxInfo}
+                onCheckedChange={setAskCustomerTaxInfo}
                 disabled={disabled || !autoReplyEnabled}
               />
             </div>

@@ -12,6 +12,7 @@ function config(overrides: Partial<AiConfig> = {}): AiConfig {
     autoReplyEnabled: false,
     autoReplyMaxPerConversation: 3,
     autoScheduleAppointmentsEnabled: false,
+    askCustomerTaxInfo: false,
     handoffAgentId: null,
     embeddingsApiKey: null,
     ...overrides,
@@ -269,10 +270,19 @@ describe('parseGeneration', () => {
     expect(res.quoteProposal?.items).toEqual([{ name: 'Silla', qty: 1 }])
   })
 
-  it('ignores a create-quote-chat marker missing NIT, email, or address', () => {
-    expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1||a@b.com|Dir]]').quoteProposal).toBeNull()
-    expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|CF||Dir]]').quoteProposal).toBeNull()
+  it('ignores a create-quote-chat marker missing the address', () => {
     expect(parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|CF|a@b.com|]]').quoteProposal).toBeNull()
+  })
+
+  it('accepts a create-quote-chat marker with NIT/email left blank (ask_customer_tax_info off, migration 082)', () => {
+    const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf|Silla:1|||Dir]]')
+    expect(res.quoteProposal).toEqual({
+      format: 'pdf',
+      items: [{ name: 'Silla', qty: 1 }],
+      customerNit: '',
+      customerEmail: '',
+      customerAddress: 'Dir',
+    })
   })
 
   it('ignores a create-quote-chat marker with no items', () => {

@@ -63,9 +63,26 @@ export async function POST(request: Request, { params }: Params) {
     }
 
     const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
+    // Only set when a human manually takes over below — carried outside
+    // `update` because it also has to reach the internal_note insert
+    // after the conversation row is written.
+    let takeoverSummary: string | null = null
 
     if (paused) {
       if (assignToMe) update.assigned_agent_id = userId
+
+      // Same visible record the bot's own automated handoffs leave
+      // (handOffToHuman in auto-reply.ts) — until now, a manual "Take
+      // over" silently flipped the flag with no trace of who did it or
+      // why, unlike every other way a conversation leaves the bot.
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('full_name')
+        .eq('id', userId)
+        .maybeSingle()
+      const actorName = profile?.full_name || 'Un agente'
+      takeoverSummary = `🤖 ${actorName} tomó el control de esta conversación manualmente y pausó la IA.`
+      update.ai_handoff_summary = takeoverSummary
     } else {
       // Resuming hands the thread *back to the bot*. Clear the pause and
       // the handoff note, and — crucially — release ANY assignment, not
@@ -94,6 +111,21 @@ export async function POST(request: Request, { params }: Params) {
         { error: 'Failed to update conversation' },
         { status: 500 },
       )
+    }
+
+    // Best-effort, same as handOffToHuman's own note insert — never
+    // block the takeover itself (already committed above) on this.
+    if (takeoverSummary) {
+      const { error: noteError } = await supabase.from('messages').insert({
+        conversation_id: conversationId,
+        sender_type: 'bot',
+        content_type: 'internal_note',
+        content_text: takeoverSummary,
+        status: 'sent',
+      })
+      if (noteError) {
+        console.error('[ai/autoreply] failed to insert takeover internal note:', noteError)
+      }
     }
 
     return NextResponse.json({ success: true, paused })

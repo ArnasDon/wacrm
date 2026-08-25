@@ -199,7 +199,7 @@ function LineSvg({
         viewBox={`0 0 ${VB_W} ${VB_H}`}
         className="h-[240px] w-full"
         role="img"
-        aria-label={t('ariaLabel')}
+        aria-label={t('conversationsChartAriaLabel')}
       >
         {/* Y-axis gridlines + labels */}
         {ticks.map((t) => {

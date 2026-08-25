@@ -155,6 +155,20 @@
       "checkEmail": "Check your email",
       "checkEmailDescription": "We've sent a password reset link to {email}. Please check your inbox."
     },
+    "resetPassword": {
+      "title": "Set a new password",
+      "description": "Enter a new password for your account",
+      "passwordPlaceholder": "At least 6 characters",
+      "confirmPasswordPlaceholder": "Repeat your password",
+      "submit": "Update password",
+      "submitLoading": "Updating...",
+      "success": "Password updated",
+      "successDescription": "Your password has been updated. You can now sign in.",
+      "goToSignIn": "Go to sign in",
+      "errorPasswordMismatch": "Passwords do not match",
+      "errorPasswordLength": "Password must be at least 6 characters",
+      "errorInvalidLink": "This reset link is invalid or has expired. Please request a new one."
+    },
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",
     "descAccept": "Sign in and we'll take you to the invitation.",
@@ -188,6 +202,8 @@
     "viewInbox": "View Inbox",
     "newAutomation": "New Automation",
     "recentActivity": "Recent Activity",
+    "conversationsChartAriaLabel": "Conversations per day",
+    "pipelineDonutAriaLabel": "Pipeline value by stage",
     "noActivity": "No recent activity",
     "viewAll": "View all →",
     "noActivityYet": "No activity yet",
@@ -318,6 +334,7 @@
       "pause": "Pause",
       "unsavedHint": "You have unsaved changes"
     },
+    "editAction": "Edit",
     "editor": {
       "backToFlows": "Back to Flows",
       "flowNamePlaceholder": "Flow name",
@@ -1041,6 +1058,7 @@
         "delete": "Delete"
       },
       "contactInfo": "Contact Information",
+      "name": "Name",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
       "createdAt": "Created At",
@@ -1491,6 +1509,9 @@
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
     },
+    "tags": "Tags",
+    "company": "Company",
+    "unknown": "Unknown",
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
@@ -1515,6 +1536,9 @@
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
+      "open": "Open",
+      "pending": "Pending",
+      "closed": "Closed",
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
@@ -1575,7 +1599,20 @@
     },
     "allCompanies": "All companies",
     "clearAll": "Clear all",
-    "noMessagesYet": "No messages yet"
+    "noMessagesYet": "No messages yet",
+    "mediaViewer": {
+      "counter": "{index} of {total}",
+      "previous": "Previous",
+      "next": "Next",
+      "zoomIn": "Zoom to full size",
+      "zoomOut": "Fit to screen",
+      "openOriginal": "Open original",
+      "download": "Download",
+      "downloadFailed": "Couldn't download the attachment",
+      "failed": "This attachment is no longer available",
+      "imageAlt": "Shared image",
+      "you": "You"
+    }
   },
   "broadcasts": {
     "title": "Broadcasts",
@@ -1755,7 +1792,16 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Broadcast deleted",
+      "resumeTitle": "Some recipients need another attempt",
+      "resumeStalledTitle": "This campaign stopped part-way",
+      "resumeHint": "{count} recipients failed. Retrying sends them again from the server.",
+      "resumeStalledHint": "{count} recipients were never sent — the browser tab running this campaign was closed before it finished. Resuming completes it from the server.",
+      "resumePending": "Resume sending ({count})",
+      "retryFailed": "Retry failed ({count})",
+      "toastResumeStarted": "Sending {count} recipients in the background.",
+      "toastResumeStartedCapped": "Sending {count} recipients in the background. {remaining} more will need another run.",
+      "toastResumeFailed": "Could not resume: {error}"
     },
     "status": {
       "draft": "Draft",
@@ -2109,6 +2155,8 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
+        "matchWord": "Whole word",
+        "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       },
       "delete": "Delete"
@@ -2148,6 +2196,7 @@
       "loadError": "Failed to load ({status})",
       "back": "Back to Automations"
     },
+    "editAction": "Edit",
     "logs": {
       "title": "Execution logs",
       "loadError": "Failed to load logs",
@@ -2359,6 +2408,12 @@
       "tokenCorrupted": "Stored token can't be decrypted",
       "resetting": "Resetting...",
       "resetConfig": "Reset Configuration",
+      "mediaTitle": "Attachment Storage",
+      "mediaDesc": "Meta deletes received media about 30 days after it arrives. Attachments can be copied to your own storage so they stay viewable.",
+      "mirrorInbound": "Keep inbound attachments",
+      "mirrorInboundDesc": "Save a copy of every photo, video, voice note and document customers send. Uses your Supabase storage; files over 16 MB are skipped.",
+      "mirrorInboundOffWarning": "New attachments will stop being copied and will become unavailable about 30 days after they arrive.",
+      "mirrorInboundSaveFailed": "Could not update the attachment setting.",
       "credentialsValid": "Credentials valid",
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
@@ -2825,5 +2880,12 @@
     "description": "An unexpected error occurred. Please try again.",
     "retry": "Try again",
     "goHome": "Go home"
+  },
+  "AccountAccess": {
+    "unlinkedTitle": "This user is not linked to an account",
+    "unlinkedBody": "Nothing you change will be saved while this is unresolved — the database rejects every write from a user with no account or role. If you were invited to a team, ask the owner to re-send the invitation. On a self-hosted install, check that the account-bootstrap migration ran for this user.",
+    "errorTitle": "Could not load your permissions",
+    "errorBody": "Your account role did not load, so every action is treated as read-only and changes will not save. Check your connection and try again.",
+    "retry": "Retry"
   }
 }

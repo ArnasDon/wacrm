@@ -129,6 +129,17 @@ export async function middleware(request: NextRequest) {
     return supabaseResponse;
   }
 
+  // --- Supabase auth callback must NEVER be locale-prefixed ---
+  // The `/auth/callback` route handler performs the PKCE code exchange for
+  // email confirmation / password recovery. Its base URL is the Supabase
+  // project "Site URL", which carries no locale prefix. Handing it to
+  // next-intl would 307-redirect to /{locale}/auth/callback (no matching
+  // handler → 404) and drop the one-time `?code=`. Skip i18n and let the
+  // route handler run, returning any refreshed session cookies.
+  if (request.nextUrl.pathname.startsWith('/auth/')) {
+    return supabaseResponse;
+  }
+
   // --- i18n routing via next-intl ---
   // The next-intl middleware is REQUIRED — createNextIntlPlugin depends on
   // the locale context it sets up (cookies / headers).  Without it,

@@ -31,6 +31,17 @@ describe("buildMediaPath", () => {
     const path = buildMediaPath(ACCOUNT, "README", 1700000000000);
     expect(path).toBe(`account-${ACCOUNT}/1700000000000-README.bin`);
   });
+
+  it("omits the timestamp when passed null, for callers needing a stable path", () => {
+    const path = buildMediaPath(ACCOUNT, "photo.png", null);
+    expect(path).toBe(`account-${ACCOUNT}/photo.png`);
+  });
+
+  it("nests a subfolder below account-<id>, leaving the RLS segment first", () => {
+    const path = buildMediaPath(ACCOUNT, "photo.png", null, "inbound");
+    expect(path).toBe(`account-${ACCOUNT}/inbound/photo.png`);
+    expect(path.split("/")[0]).toBe(`account-${ACCOUNT}`);
+  });
 });
 
 describe("MEDIA_MAX_BYTES_BY_KIND", () => {

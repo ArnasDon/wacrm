@@ -32,5 +32,16 @@ yarn-error.log*
 .DS_Store
 *.pem
 .git
+.github
 .vercel
+.vscode
+.idea
+docs
+mcp-server
+supabase
 supabase/.temp
+Dockerfile
+docker-compose*.yml
+.dockerignore
+*.md
+!README.md

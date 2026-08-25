@@ -344,7 +344,7 @@ function AutomationCard({
             <DropdownMenuContent align="end">
               <DropdownMenuItem onClick={onEdit}>
                 <Pencil className="h-4 w-4" />
-                {t("edit")}
+                {t("editAction")}
               </DropdownMenuItem>
               <DropdownMenuItem onClick={onDuplicate}>
                 <Copy className="h-4 w-4" />

@@ -357,7 +357,7 @@ export default function ContactsPage() {
               className="border-border text-muted-foreground hover:bg-muted"
             >
               <SlidersHorizontal className="size-4" />
-              {t('customFields')}
+              {t('customFieldsBtn')}
             </Button>
           )}
           <GatedButton
@@ -368,7 +368,7 @@ export default function ContactsPage() {
             className="border-border text-muted-foreground hover:bg-muted"
           >
             <Upload className="size-4" />
-            {t('import')}
+            {t('importBtn')}
           </GatedButton>
           <GatedButton
             canAct={canEdit}

@@ -155,6 +155,20 @@
       "checkEmail": "Электрондық поштаны тексеріңіз",
       "checkEmailDescription": "Біз {email} мекенжайына құпия сөзді қалпына келтіру сілтемесін жібердік. Кіріс жәшігіңізді тексеріңіз."
     },
+    "resetPassword": {
+      "title": "Жаңа құпия сөз орнатыңыз",
+      "description": "Есептік жазбаңыз үшін жаңа құпия сөз енгізіңіз",
+      "passwordPlaceholder": "Кемінде 6 таңба",
+      "confirmPasswordPlaceholder": "Құпия сөзді қайталаңыз",
+      "submit": "Құпия сөзді жаңарту",
+      "submitLoading": "Жаңартылуда...",
+      "success": "Құпия сөз жаңартылды",
+      "successDescription": "Құпия сөзіңіз жаңартылды. Енді кіре аласыз.",
+      "goToSignIn": "Кіруге өту",
+      "errorPasswordMismatch": "Құпия сөздер сәйкес келмейді",
+      "errorPasswordLength": "Құпия сөз кемінде 6 таңбадан тұруы керек",
+      "errorInvalidLink": "Бұл қалпына келтіру сілтемесі жарамсыз немесе мерзімі өткен. Жаңасын сұраңыз."
+    },
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",
     "descAccept": "Sign in and we'll take you to the invitation.",
@@ -187,6 +201,8 @@
     "viewInbox": "Кірісті көру",
     "newAutomation": "Жаңа автоматтандыру",
     "recentActivity": "Соңғы әрекет",
+    "conversationsChartAriaLabel": "Күндер бойынша диалогтар",
+    "pipelineDonutAriaLabel": "Этаптар бойынша мәмілелер құны",
     "noActivity": "Соңғы әрекет жоқ",
     "viewAll": "Барлығын көру →",
     "noActivityYet": "Әрекет әлі жоқ",
@@ -318,6 +334,7 @@
       "pause": "Pause",
       "unsavedHint": "You have unsaved changes"
     },
+    "editAction": "Өңдеу",
     "editor": {
       "backToFlows": "Ағындарға оралу",
       "flowNamePlaceholder": "Ағын атауы",
@@ -1041,6 +1058,7 @@
         "delete": "Delete"
       },
       "contactInfo": "Contact Information",
+      "name": "Аты",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
       "createdAt": "Created At",
@@ -1491,6 +1509,9 @@
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
     },
+    "tags": "Тегтер",
+    "company": "Компания",
+    "unknown": "Белгісіз",
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
@@ -1515,6 +1536,9 @@
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
+      "open": "Ашық",
+      "pending": "Күтілуде",
+      "closed": "Жабық",
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
@@ -1575,7 +1599,20 @@
     },
     "allCompanies": "All companies",
     "clearAll": "Clear all",
-    "noMessagesYet": "No messages yet"
+    "noMessagesYet": "No messages yet",
+    "mediaViewer": {
+      "counter": "{total} ішінен {index}",
+      "previous": "Артқа",
+      "next": "Алға",
+      "zoomIn": "Толық өлшемге ұлғайту",
+      "zoomOut": "Экранға сыйдыру",
+      "openOriginal": "Түпнұсқаны ашу",
+      "download": "Жүктеп алу",
+      "downloadFailed": "Тіркемені жүктеп алу мүмкін болмады",
+      "failed": "Бұл тіркеме енді қолжетімсіз",
+      "imageAlt": "Сурет",
+      "you": "Сіз"
+    }
   },
   "broadcasts": {
     "title": "Хабарламалар",
@@ -1754,7 +1791,16 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Broadcast deleted",
+      "resumeTitle": "Кейбір алушыларға қайта әрекет қажет",
+      "resumeStalledTitle": "Бұл науқан жарты жолда тоқтап қалды",
+      "resumeHint": "{count} алушыға жіберілмеді. Қайталау оларды серверден қайта жібереді.",
+      "resumeStalledHint": "{count} алушыға мүлде жіберілмеді — науқанды жүргізіп тұрған браузер қойындысы аяқталмай жабылған. Жалғастыру оны серверден аяқтайды.",
+      "resumePending": "Жіберуді жалғастыру ({count})",
+      "retryFailed": "Сәтсіздерді қайталау ({count})",
+      "toastResumeStarted": "{count} алушыға фонда жіберілуде.",
+      "toastResumeStartedCapped": "{count} алушыға фонда жіберілуде. Тағы {remaining} алушыға қосымша жіберу қажет болады.",
+      "toastResumeFailed": "Жалғастыру мүмкін болмады: {error}"
     },
     "status": {
       "draft": "Жоба",
@@ -2109,6 +2155,8 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
+        "matchWord": "Толық сөз",
+        "matchWordHint": "Кілт сөз тек жеке сөз ретінде сәйкес келеді, сондықтан \"k\" енді \"thanks\" сөзінде іске қосылмайды. Бос орындары бар тілдерде қысқа кілт сөздер үшін ыңғайлы; бос орынсыз жазылатын тілдерде \"Қамтиды\" режимін қолданыңыз.",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       },
       "delete": "Delete"
@@ -2148,6 +2196,7 @@
       "loadError": "Failed to load ({status})",
       "back": "Back to Automations"
     },
+    "editAction": "Өңдеу",
     "logs": {
       "title": "Execution logs",
       "loadError": "Failed to load logs",
@@ -2359,6 +2408,12 @@
       "tokenCorrupted": "Stored token can't be decrypted",
       "resetting": "Resetting...",
       "resetConfig": "Reset Configuration",
+      "mediaTitle": "Тіркемелерді сақтау",
+      "mediaDesc": "Meta қабылданған медиафайлдарды келгеннен кейін шамамен 30 күннен кейін жояды. Тіркемелерді өз сақтау орныңызға көшіруге болады, сонда олар қолжетімді болып қала береді.",
+      "mirrorInbound": "Кіріс тіркемелерді сақтау",
+      "mirrorInboundDesc": "Клиенттер жіберген әр фото, видео, дауыстық хабарлама мен құжаттың көшірмесін сақтау. Сіздің Supabase сақтау орныңыз қолданылады; 16 МБ-тан асатын файлдар өткізіліп тасталады.",
+      "mirrorInboundOffWarning": "Жаңа тіркемелер көшірілуін тоқтатады және келгеннен кейін шамамен 30 күн өткен соң қолжетімсіз болады.",
+      "mirrorInboundSaveFailed": "Тіркеме параметрін жаңарту мүмкін болмады.",
       "credentialsValid": "Credentials valid",
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
@@ -2825,5 +2880,12 @@
     "description": "Күтпеген қате орын алды. Қайта байқап көріңіз.",
     "retry": "Қайта байқап көру",
     "goHome": "Басты бетке"
+  },
+  "AccountAccess": {
+    "unlinkedTitle": "Бұл пайдаланушы аккаунтқа байланыстырылмаған",
+    "unlinkedBody": "Бұл мәселе шешілмейінше өзгерістеріңіз сақталмайды — дерекқор аккаунты не рөлі жоқ пайдаланушының кез келген жазуын қабылдамайды. Егер сізді командаға шақырса, иесінен шақыруды қайта жіберуін сұраңыз. Өзіңіз хостинг жасаған нұсқада осы пайдаланушы үшін аккаунт-бастапқы миграциясы орындалғанын тексеріңіз.",
+    "errorTitle": "Рұқсаттарыңыз жүктелмеді",
+    "errorBody": "Аккаунт рөліңіз жүктелмеді, сондықтан барлық әрекет тек оқуға арналған ретінде саналады және өзгерістер сақталмайды. Байланысты тексеріп, қайта көріңіз.",
+    "retry": "Қайталау"
   }
 }

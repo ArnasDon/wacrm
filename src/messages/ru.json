@@ -155,6 +155,20 @@
       "checkEmail": "Проверьте электронную почту",
       "checkEmailDescription": "Мы отправили ссылку для сброса пароля на {email}. Проверьте входящие."
     },
+    "resetPassword": {
+      "title": "Задайте новый пароль",
+      "description": "Введите новый пароль для вашей учётной записи",
+      "passwordPlaceholder": "Не менее 6 символов",
+      "confirmPasswordPlaceholder": "Повторите пароль",
+      "submit": "Обновить пароль",
+      "submitLoading": "Обновление...",
+      "success": "Пароль обновлён",
+      "successDescription": "Ваш пароль обновлён. Теперь вы можете войти.",
+      "goToSignIn": "Перейти ко входу",
+      "errorPasswordMismatch": "Пароли не совпадают",
+      "errorPasswordLength": "Пароль должен содержать не менее 6 символов",
+      "errorInvalidLink": "Эта ссылка для сброса недействительна или устарела. Запросите новую."
+    },
     "titleAccept": "Sign in to accept",
     "titleWelcome": "Welcome back",
     "descAccept": "Sign in and we'll take you to the invitation.",
@@ -187,6 +201,8 @@
     "viewInbox": "Открыть входящие",
     "newAutomation": "Новая автоматизация",
     "recentActivity": "Последняя активность",
+    "conversationsChartAriaLabel": "Диалоги по дням",
+    "pipelineDonutAriaLabel": "Стоимость сделок по этапам",
     "noActivity": "Нет последней активности",
     "viewAll": "Смотреть все →",
     "noActivityYet": "Активности пока нет",
@@ -318,6 +334,7 @@
       "pause": "Pause",
       "unsavedHint": "You have unsaved changes"
     },
+    "editAction": "Редактировать",
     "editor": {
       "backToFlows": "К процессам",
       "flowNamePlaceholder": "Название процесса",
@@ -1041,6 +1058,7 @@
         "delete": "Delete"
       },
       "contactInfo": "Contact Information",
+      "name": "Имя",
       "unnamed": "Unknown",
       "contactDetailsDesc": "Contact details",
       "createdAt": "Created At",
@@ -1491,6 +1509,9 @@
     "page": {
       "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
     },
+    "tags": "Теги",
+    "company": "Компания",
+    "unknown": "Неизвестный",
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
       "filterAll": "All",
@@ -1515,6 +1536,9 @@
       "refresh": "Refresh",
       "refreshConversation": "Refresh conversation",
       "status": "Status",
+      "open": "Открыт",
+      "pending": "В ожидании",
+      "closed": "Закрыт",
       "statusOpen": "Open",
       "statusPending": "Pending",
       "statusClosed": "Closed",
@@ -1575,7 +1599,20 @@
     },
     "allCompanies": "All companies",
     "clearAll": "Clear all",
-    "noMessagesYet": "No messages yet"
+    "noMessagesYet": "No messages yet",
+    "mediaViewer": {
+      "counter": "{index} из {total}",
+      "previous": "Назад",
+      "next": "Вперёд",
+      "zoomIn": "Увеличить до полного размера",
+      "zoomOut": "По размеру экрана",
+      "openOriginal": "Открыть оригинал",
+      "download": "Скачать",
+      "downloadFailed": "Не удалось скачать вложение",
+      "failed": "Это вложение больше недоступно",
+      "imageAlt": "Изображение",
+      "you": "Вы"
+    }
   },
   "broadcasts": {
     "title": "Рассылки",
@@ -1754,7 +1791,16 @@
         "failed": "Failed"
       },
       "toastFailedDelete": "Failed to delete: {error}",
-      "toastDeleted": "Broadcast deleted"
+      "toastDeleted": "Broadcast deleted",
+      "resumeTitle": "Некоторым получателям нужна ещё одна попытка",
+      "resumeStalledTitle": "Эта рассылка остановилась на полпути",
+      "resumeHint": "Не доставлено {count} получателям. Повтор отправит их заново с сервера.",
+      "resumeStalledHint": "{count} получателям так и не отправлено — вкладка браузера, запустившая рассылку, была закрыта до завершения. Возобновление завершит её на сервере.",
+      "resumePending": "Возобновить отправку ({count})",
+      "retryFailed": "Повторить неудачные ({count})",
+      "toastResumeStarted": "Отправка {count} получателям в фоне.",
+      "toastResumeStartedCapped": "Отправка {count} получателям в фоне. Ещё {remaining} потребуют отдельного запуска.",
+      "toastResumeFailed": "Не удалось возобновить: {error}"
     },
     "status": {
       "draft": "Черновик",
@@ -2109,6 +2155,8 @@
         "matchType": "Match type",
         "matchContains": "Contains",
         "matchExact": "Exact",
+        "matchWord": "Целое слово",
+        "matchWordHint": "Ключевое слово совпадает только как отдельное слово, поэтому \"k\" больше не срабатывает на \"thanks\". Лучше всего подходит для коротких ключевых слов в языках с пробелами; для языков без пробелов используйте режим \"Содержит\".",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       },
       "delete": "Delete"
@@ -2148,6 +2196,7 @@
       "loadError": "Failed to load ({status})",
       "back": "Back to Automations"
     },
+    "editAction": "Редактировать",
     "logs": {
       "title": "Execution logs",
       "loadError": "Failed to load logs",
@@ -2359,6 +2408,12 @@
       "tokenCorrupted": "Stored token can't be decrypted",
       "resetting": "Resetting...",
       "resetConfig": "Reset Configuration",
+      "mediaTitle": "Хранение вложений",
+      "mediaDesc": "Meta удаляет полученные медиафайлы примерно через 30 дней после получения. Вложения можно копировать в ваше хранилище, чтобы они оставались доступными.",
+      "mirrorInbound": "Сохранять входящие вложения",
+      "mirrorInboundDesc": "Сохранять копию каждого фото, видео, голосового сообщения и документа от клиентов. Используется ваше хранилище Supabase; файлы больше 16 МБ пропускаются.",
+      "mirrorInboundOffWarning": "Новые вложения перестанут копироваться и станут недоступными примерно через 30 дней после получения.",
+      "mirrorInboundSaveFailed": "Не удалось обновить настройку вложений.",
       "credentialsValid": "Credentials valid",
       "notConnected": "Not Connected",
       "connectedDesc": "Your access token authenticates with Meta. See Registration status below for whether webhooks are actually wired.",
@@ -2825,5 +2880,12 @@
     "description": "Произошла непредвиденная ошибка. Пожалуйста, попробуйте ещё раз.",
     "retry": "Попробовать снова",
     "goHome": "На главную"
+  },
+  "AccountAccess": {
+    "unlinkedTitle": "Этот пользователь не привязан к аккаунту",
+    "unlinkedBody": "Пока это не решено, ваши изменения не сохранятся — база данных отклоняет любую запись от пользователя без аккаунта или роли. Если вас пригласили в команду, попросите владельца повторно отправить приглашение. На self-hosted установке проверьте, что миграция создания аккаунта выполнена для этого пользователя.",
+    "errorTitle": "Не удалось загрузить ваши разрешения",
+    "errorBody": "Роль вашего аккаунта не загрузилась, поэтому все действия считаются доступными только для чтения, и изменения не сохранятся. Проверьте соединение и попробуйте снова.",
+    "retry": "Повторить"
   }
 }

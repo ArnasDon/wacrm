@@ -26,7 +26,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
-import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import type { MessageTemplate } from '@/types';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
@@ -89,7 +89,6 @@ export async function createBroadcast(
   params: CreateBroadcastParams
 ): Promise<BroadcastPlan> {
   const { name, templateName, recipients } = params;
-  const templateLanguage = params.templateLanguage || 'en_US';
 
   if (!templateName) {
     throw new BroadcastError('bad_request', "'template_name' is required", 400);
@@ -127,21 +126,20 @@ export async function createBroadcast(
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
-  const { data: rawTemplateRow } = await db
-    .from('message_templates')
-    .select('*')
-    .eq('account_id', accountId)
-    .eq('name', templateName)
-    .eq('language', templateLanguage)
-    .maybeSingle();
-  if (rawTemplateRow && !isMessageTemplate(rawTemplateRow)) {
+  const resolvedTemplate = await resolveTemplateRow(
+    db,
+    accountId,
+    templateName,
+    params.templateLanguage
+  );
+  if (resolvedTemplate.malformed) {
     throw new BroadcastError(
       'template_malformed',
       'Template row is malformed locally — run "Sync from Meta" in Settings to repair it before broadcasting.',
       500
     );
   }
-  const templateRow = (rawTemplateRow as MessageTemplate | null) ?? null;
+  const templateRow = resolvedTemplate.row;
 
   // Resolve each recipient to a contact. Invalid phones are dropped
   // (counted as rejected) rather than aborting the whole broadcast.
@@ -193,51 +191,49 @@ export async function createBroadcast(
   // recipient change). `rejected` phones have no recipient row, so they
   // are reported to the caller in the POST response, not in these
   // persisted counts.
-  const { data: broadcast, error: bErr } = await db
-    .from('broadcasts')
-    .insert({
-      account_id: accountId,
-      user_id: auditUserId,
-      name: name || `API broadcast (${templateName})`,
-      template_name: templateName,
-      template_language: templateLanguage,
-      status: 'sending',
-      total_recipients: deduped.length,
-    })
-    .select('id')
-    .single();
-  if (bErr || !broadcast) {
-    console.error('[broadcast-core] create broadcast error:', bErr);
+  // Insert the parent broadcast and its recipient rows in ONE transaction
+  // (migration 037's create_broadcast_with_recipients). Previously these
+  // were two separate inserts: if the recipient insert failed, the parent
+  // was already persisted with status 'sending' and no recipients, leaving
+  // an orphaned campaign that looked like it was sending but had no
+  // delivery plan (issue #370). The function body is atomic, so a recipient
+  // failure now rolls the parent back and nothing orphaned survives.
+  const { data: createdRows, error: createErr } = await db.rpc(
+    'create_broadcast_with_recipients',
+    {
+      p_account_id: accountId,
+      p_user_id: auditUserId,
+      p_name: name || `API broadcast (${templateName})`,
+      p_template_name: templateName,
+      p_template_language: resolvedTemplate.language,
+      p_total_recipients: deduped.length,
+      p_contact_ids: deduped.map((r) => r.contactId),
+      // Frozen per-recipient params (migration 038) — without them a
+      // resume of this broadcast has no way to reconstruct {{1}}.
+      p_template_params: deduped.map((r) => r.params),
+    }
+  );
+  if (createErr || !createdRows || createdRows.length === 0) {
+    console.error('[broadcast-core] create broadcast error:', createErr);
     throw new BroadcastError('internal', 'Failed to create broadcast', 500);
   }
 
-  const { data: recipientRows, error: rErr } = await db
-    .from('broadcast_recipients')
-    .insert(
-      deduped.map((r) => ({
-        broadcast_id: broadcast.id,
-        contact_id: r.contactId,
-        status: 'pending' as const,
-      }))
-    )
-    .select('id, contact_id');
-  if (rErr || !recipientRows) {
-    console.error('[broadcast-core] create recipients error:', rErr);
-    throw new BroadcastError('internal', 'Failed to create broadcast', 500);
-  }
+  const broadcastId = createdRows[0].broadcast_id as string;
 
   // Pair each inserted recipient row back to its phone/params by
   // contact_id — unambiguous now that duplicates are collapsed.
   const byContact = new Map(deduped.map((r) => [r.contactId, r]));
-  const planned: PlannedRecipient[] = recipientRows.map((row) => {
-    const r = byContact.get(row.contact_id as string)!;
-    return { recipientRowId: row.id as string, phone: r.phone, params: r.params };
-  });
+  const planned: PlannedRecipient[] = createdRows.map(
+    (row: { recipient_id: string; contact_id: string }) => {
+      const r = byContact.get(row.contact_id)!;
+      return { recipientRowId: row.recipient_id, phone: r.phone, params: r.params };
+    }
+  );
 
   return {
-    broadcastId: broadcast.id,
+    broadcastId,
     templateName,
-    templateLanguage,
+    templateLanguage: resolvedTemplate.language,
     phoneNumberId: config.phone_number_id,
     accessToken,
     templateRow,
@@ -263,8 +259,6 @@ export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
-  let sentCount = 0;
-
   for (const recipient of plan.planned) {
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
@@ -293,7 +287,6 @@ export async function deliverBroadcast(
     }
 
     if (sentMessageId) {
-      sentCount++;
       await db
         .from('broadcast_recipients')
         .update({
@@ -314,14 +307,50 @@ export async function deliverBroadcast(
     }
   }
 
-  // Terminal status only — counts are trigger-owned (see the note
-  // above). If nothing sent, the broadcast failed outright; a partial
-  // send is still 'sent' (per-recipient failures show in failed_count).
+  await finalizeBroadcastStatus(db, plan.broadcastId);
+}
+
+/**
+ * Flip a broadcast out of `sending` once no recipient is left pending.
+ *
+ * Derived from the recipient rows rather than from a counter local to
+ * one delivery pass: a resume (issue #472) delivers only the leftovers,
+ * so "nothing sent *this* pass" must not mark a campaign failed when
+ * 800 of its 1 000 recipients went out earlier. `failed` means every
+ * single recipient failed; anything else that reached Meta is `sent`,
+ * with the per-recipient failures visible in `failed_count`.
+ *
+ * Per-status counts stay trigger-owned (migrations 003/005) — only the
+ * terminal `status` is written here.
+ */
+export async function finalizeBroadcastStatus(
+  db: SupabaseClient,
+  broadcastId: string
+): Promise<void> {
+  const countWhere = async (status: string): Promise<number> => {
+    const { count } = await db
+      .from('broadcast_recipients')
+      .select('id', { count: 'exact', head: true })
+      .eq('broadcast_id', broadcastId)
+      .eq('status', status);
+    return count ?? 0;
+  };
+
+  // Still work outstanding (a capped resume pass) — leave it 'sending'
+  // so the UI keeps offering Resume.
+  if ((await countWhere('pending')) > 0) return;
+
+  const failed = await countWhere('failed');
+  const { count: total } = await db
+    .from('broadcast_recipients')
+    .select('id', { count: 'exact', head: true })
+    .eq('broadcast_id', broadcastId);
+
   await db
     .from('broadcasts')
     .update({
-      status: sentCount > 0 ? 'sent' : 'failed',
+      status: failed > 0 && failed === (total ?? 0) ? 'failed' : 'sent',
       updated_at: new Date().toISOString(),
     })
-    .eq('id', plan.broadcastId);
+    .eq('id', broadcastId);
 }

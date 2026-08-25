@@ -122,11 +122,15 @@ export interface ZernioSendTextArgs {
   conversationId: string
   accountId: string
   text: string
+  /** Instagram/Facebook only — see `SendMessageParams.humanAgentTag`'s
+   *  own doc comment (`@/lib/messaging/types`) for the human-only,
+   *  support-only restriction Meta imposes on this. */
+  humanAgentTag?: boolean
 }
 
 /** Send a free-form DM text message via Zernio's inbox API. */
 export async function sendZernioText(args: ZernioSendTextArgs): Promise<ZernioSendResult> {
-  const { apiKey, conversationId, accountId, text } = args
+  const { apiKey, conversationId, accountId, text, humanAgentTag } = args
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
   const response = await zernioFetch(url, {
     method: 'POST',
@@ -134,7 +138,11 @@ export async function sendZernioText(args: ZernioSendTextArgs): Promise<ZernioSe
       'Content-Type': 'application/json',
       Authorization: `Bearer ${apiKey}`,
     },
-    body: JSON.stringify({ accountId, message: text }),
+    body: JSON.stringify({
+      accountId,
+      message: text,
+      ...(humanAgentTag ? { messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' } : {}),
+    }),
   })
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
@@ -161,11 +169,13 @@ export interface ZernioSendMediaArgs {
   caption?: string
   /** WhatsApp-only: display file name for a document attachment. */
   filename?: string
+  /** Instagram/Facebook only — see `ZernioSendTextArgs.humanAgentTag`. */
+  humanAgentTag?: boolean
 }
 
 /** Send an image, video, audio, or file attachment via a public URL. */
 export async function sendZernioMedia(args: ZernioSendMediaArgs): Promise<ZernioSendResult> {
-  const { apiKey, conversationId, accountId, kind, link, caption, filename } = args
+  const { apiKey, conversationId, accountId, kind, link, caption, filename, humanAgentTag } = args
   if (!link) throw new Error('sendZernioMedia requires a link.')
   const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/messages`
   const response = await zernioFetch(url, {
@@ -180,6 +190,7 @@ export async function sendZernioMedia(args: ZernioSendMediaArgs): Promise<Zernio
       attachmentType: toZernioAttachmentType(kind),
       ...(caption && kind !== 'audio' ? { message: caption } : {}),
       ...(kind === 'document' && filename ? { attachmentName: filename } : {}),
+      ...(humanAgentTag ? { messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' } : {}),
     }),
   })
   if (!response.ok) {

@@ -266,6 +266,7 @@
     "composer": {
       "draftHint": "Tap the ✨ to draft a reply with AI — you can edit it before sending",
       "sessionExpiredHint": "24-hour session expired. Use a template to re-engage.",
+      "humanAgentTagHint": "It's been over 24 hours since the last message. You can still reply, but Meta only allows this for supporting this customer — never for promotional or re-engagement content. Misuse can suspend this account's messaging.",
       "templates": "Templates",
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
       "sessionExpiredPlaceholder": "Session expired - use a template",

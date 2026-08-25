@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sendInstagramMessageToConversation } from './send-message';
 import { SendMessageError } from '@/lib/messaging/types';
+import { sendTextMessage as mockedSendTextMessage } from '@/lib/instagram/api';
 
 function noDb(): SupabaseClient {
   return {
@@ -90,7 +91,10 @@ interface CapturedWrites {
   conversation?: Record<string, unknown>;
 }
 
-function sendPathDb(captured: CapturedWrites, opts?: { noContact?: boolean; noConfig?: boolean }): SupabaseClient {
+function sendPathDb(
+  captured: CapturedWrites,
+  opts?: { noContact?: boolean; noConfig?: boolean; lastCustomerMessageAt?: string | null },
+): SupabaseClient {
   const conversation = {
     id: 'cv-1',
     channel: 'instagram',
@@ -107,6 +111,18 @@ function sendPathDb(captured: CapturedWrites, opts?: { noContact?: boolean; noCo
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
+        // `isWithinMessagingWindow`'s chain — only reached for
+        // `messages` when `humanAgentTag` is requested.
+        order: () => builder,
+        limit: () => builder,
+        maybeSingle: async () => ({
+          data: opts?.lastCustomerMessageAt === undefined
+            ? null
+            : opts.lastCustomerMessageAt
+              ? { created_at: opts.lastCustomerMessageAt }
+              : null,
+          error: null,
+        }),
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') captured.message = row;
           return builder;
@@ -186,5 +202,45 @@ describe('sendInstagramMessageToConversation — send path', () => {
         contentText: 'Hi',
       }),
     ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+  });
+});
+
+describe('sendInstagramMessageToConversation — humanAgentTag (24h-window exception)', () => {
+  it('applies the tag when the window has actually expired', async () => {
+    const captured: CapturedWrites = {};
+    const longAgo = new Date(Date.now() - 30 * 60 * 60 * 1000).toISOString(); // 30h ago
+    await sendInstagramMessageToConversation(
+      sendPathDb(captured, { lastCustomerMessageAt: longAgo }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'Hi', humanAgentTag: true },
+    );
+    expect(mockedSendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ humanAgentTag: true }),
+    );
+  });
+
+  it('does NOT apply the tag when the window is still open, even if the caller asked', async () => {
+    const captured: CapturedWrites = {};
+    const justNow = new Date().toISOString();
+    await sendInstagramMessageToConversation(
+      sendPathDb(captured, { lastCustomerMessageAt: justNow }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'Hi', humanAgentTag: true },
+    );
+    expect(mockedSendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ humanAgentTag: false }),
+    );
+  });
+
+  it('never applies the tag unless the caller explicitly asked, even outside the window', async () => {
+    const captured: CapturedWrites = {};
+    await sendInstagramMessageToConversation(
+      sendPathDb(captured, { lastCustomerMessageAt: null }),
+      'acct-1',
+      { conversationId: 'cv-1', messageType: 'text', contentText: 'Hi' },
+    );
+    expect(mockedSendTextMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ humanAgentTag: false }),
+    );
   });
 });

@@ -133,11 +133,17 @@ export interface SendTextMessageArgs {
   /** The recipient's Instagram-Scoped ID (IGSID). */
   to: string
   text: string
+  /** Send with Meta's `HUMAN_AGENT` message tag so a human agent can
+   *  reply outside the standard 24-hour window (7-day extension) —
+   *  see `SendMessageParams.humanAgentTag`'s own doc comment
+   *  (`@/lib/messaging/types`) for the human-only, support-only
+   *  restriction Meta imposes on this. */
+  humanAgentTag?: boolean
 }
 
 /** Send a free-form Instagram DM text message. */
 export async function sendTextMessage(args: SendTextMessageArgs): Promise<InstagramSendResult> {
-  const { igAccountId, accessToken, to, text } = args
+  const { igAccountId, accessToken, to, text, humanAgentTag } = args
   const url = `${META_API_BASE}/${igAccountId}/messages`
   const response = await metaFetch(url, {
     method: 'POST',
@@ -148,6 +154,7 @@ export async function sendTextMessage(args: SendTextMessageArgs): Promise<Instag
     body: JSON.stringify({
       recipient: { id: to },
       message: { text },
+      ...(humanAgentTag ? { messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' } : {}),
     }),
   })
   if (!response.ok) {
@@ -171,6 +178,8 @@ export interface SendMediaMessageArgs {
   kind: InstagramMediaKind
   /** Public URL Meta fetches at send time. */
   link: string
+  /** See `SendTextMessageArgs.humanAgentTag`. */
+  humanAgentTag?: boolean
 }
 
 /**
@@ -180,7 +189,7 @@ export interface SendMediaMessageArgs {
  * message is needed.
  */
 export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<InstagramSendResult> {
-  const { igAccountId, accessToken, to, kind, link } = args
+  const { igAccountId, accessToken, to, kind, link, humanAgentTag } = args
   if (!link) throw new Error('sendMediaMessage requires a link.')
   const url = `${META_API_BASE}/${igAccountId}/messages`
   const response = await metaFetch(url, {
@@ -197,6 +206,7 @@ export async function sendMediaMessage(args: SendMediaMessageArgs): Promise<Inst
           payload: { url: link, is_reusable: true },
         },
       },
+      ...(humanAgentTag ? { messaging_type: 'MESSAGE_TAG', tag: 'HUMAN_AGENT' } : {}),
     }),
   })
   if (!response.ok) {

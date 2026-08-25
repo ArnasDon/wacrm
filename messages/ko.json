@@ -266,6 +266,7 @@
     "composer": {
       "draftHint": "✨를 눌러 AI로 답장 초안을 작성하세요 — 보내기 전에 수정할 수 있습니다",
       "sessionExpiredHint": "24시간 세션이 만료되었습니다. 다시 연결하려면 템플릿을 사용하세요.",
+      "humanAgentTagHint": "마지막 메시지 이후 24시간이 지났습니다. 그래도 답장할 수 있지만, Meta는 이 고객을 지원하는 목적으로만 허용합니다 — 홍보성 또는 재참여 콘텐츠는 절대 안 됩니다. 잘못 사용하면 이 계정의 메시지 기능이 정지될 수 있습니다.",
       "templates": "템플릿",
       "readOnlyPlaceholder": "읽기 전용 — 뷰어는 열람만 가능하고 답장할 수 없습니다",
       "sessionExpiredPlaceholder": "세션 만료 - 템플릿을 사용하세요",

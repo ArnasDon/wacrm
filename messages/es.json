@@ -1023,6 +1023,7 @@
     "composer": {
       "draftHint": "Toca el ✨ para redactar una respuesta con IA — puedes editarla antes de enviarla",
       "sessionExpiredHint": "La sesión de 24 horas venció. Usa una plantilla para retomar el contacto.",
+      "humanAgentTagHint": "Pasaron 24 horas desde el último mensaje. Puedes responder igual, pero Meta solo permite esto para brindar soporte a este cliente — nunca para contenido promocional o de re-enganche. Un mal uso puede suspender la mensajería de esta cuenta.",
       "templates": "Plantillas",
       "readOnlyPlaceholder": "Solo lectura — los visores pueden ver pero no responder",
       "sessionExpiredPlaceholder": "Sesión vencida - usa una plantilla",

@@ -19,6 +19,7 @@ import { sendZernioText, sendZernioMedia, type ZernioMediaKind } from '@/lib/zer
 import { decrypt } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { SendMessageError, type SendMessageParams, type SendMessageResult } from '@/lib/messaging/types';
+import { isWithinMessagingWindow } from '@/lib/messaging/window';
 
 const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 
@@ -111,6 +112,12 @@ export async function sendFacebookMessageToConversation(
 
   const apiKey = decrypt(config.zernio_api_key);
 
+  // Only actually apply the tag when the window has truly expired —
+  // see the identical check in `@/lib/instagram/send-message`.
+  const humanAgentTag = params.humanAgentTag
+    ? !(await isWithinMessagingWindow(db, conversationId))
+    : false;
+
   let zernioMessageId = '';
   try {
     if (isMediaKind) {
@@ -122,6 +129,7 @@ export async function sendFacebookMessageToConversation(
         link: mediaUrl!,
         caption: contentText ?? undefined,
         filename: filename ?? undefined,
+        humanAgentTag,
       });
       zernioMessageId = result.messageId;
     } else {
@@ -130,6 +138,7 @@ export async function sendFacebookMessageToConversation(
         conversationId: zernioConversationId,
         accountId: config.zernio_account_id,
         text: contentText!,
+        humanAgentTag,
       });
       zernioMessageId = result.messageId;
     }

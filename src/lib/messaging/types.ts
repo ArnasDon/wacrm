@@ -48,6 +48,19 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. WhatsApp-only. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * Instagram/Facebook only — send with Meta's `HUMAN_AGENT` message
+   * tag so a human agent can reply outside the standard 24-hour
+   * messaging window (7-day extension). Meta requires this be a real
+   * human support reply — never automated content — so this must only
+   * ever be set from the dashboard compose box (a human clicking
+   * send), never from a Flow, Automation, or the AI auto-reply bot.
+   * Only actually applied when the conversation's window has in fact
+   * expired (`isWithinMessagingWindow`); a stray true on an otherwise
+   * normal send is a harmless no-op. Ignored for WhatsApp, which uses
+   * templates for this instead.
+   */
+  humanAgentTag?: boolean;
 }
 
 export interface SendMessageResult {

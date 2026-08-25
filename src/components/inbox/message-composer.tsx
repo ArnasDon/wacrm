@@ -194,12 +194,18 @@ export function MessageComposer({
   channel = 'whatsapp',
 }: MessageComposerProps) {
   const t = useTranslations('Inbox.composer');
-  const isInstagram = channel === 'instagram';
   // Templates and the interactive-message builder are WhatsApp-only —
   // both Instagram and Facebook lack them (Facebook's send layer rejects
   // both message types server-side).
   const hidesWhatsappOnlyFeatures =
     channel === 'instagram' || channel === 'facebook';
+  // WhatsApp has no way around an expired 24h window without a
+  // Meta-approved template — genuinely blocked here. Instagram/Facebook
+  // instead have Meta's HUMAN_AGENT message tag (7-day extension,
+  // human-support-only) — send-message.ts applies it automatically
+  // whenever a human sends here with the window actually expired, so
+  // the composer stays open rather than hard-blocking like WhatsApp.
+  const hardWindowBlock = sessionExpired && channel === 'whatsapp';
 
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
@@ -258,8 +264,8 @@ export function MessageComposer({
   // every capability — so the disabled branch is a no-op there.
   const canSend = useCan('send-messages');
   const readOnly = !canSend;
-  // Media (like free-form text) is only allowed inside the 24h window.
-  const inputsDisabled = readOnly || sessionExpired;
+  // Media (like free-form text) follows the same window rule as text.
+  const inputsDisabled = readOnly || hardWindowBlock;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -291,7 +297,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (!trimmed || sending || hardWindowBlock) return;
 
     setSending(true);
     try {
@@ -303,7 +309,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, hardWindowBlock, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -801,7 +807,7 @@ export function MessageComposer({
           />
         </div>
       )}
-      {sessionExpired && !isInstagram && (
+      {sessionExpired && channel === 'whatsapp' && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">{t('sessionExpiredHint')}</p>
           <Button
@@ -813,6 +819,11 @@ export function MessageComposer({
             <LayoutTemplate className="mr-1 h-3 w-3" />
             {t('templates')}
           </Button>
+        </div>
+      )}
+      {sessionExpired && hidesWhatsappOnlyFeatures && (
+        <div className="mb-2 rounded-lg bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-400">{t('humanAgentTagHint')}</p>
         </div>
       )}
 
@@ -1108,11 +1119,11 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t('readOnlyPlaceholder')
-                : sessionExpired
+                : hardWindowBlock
                   ? t('sessionExpiredPlaceholder')
                   : t('typeMessagePlaceholder')
             }
-            disabled={sessionExpired || readOnly}
+            disabled={hardWindowBlock || readOnly}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
@@ -1120,7 +1131,7 @@ export function MessageComposer({
             title={readOnly ? t('readOnlyTitle') : undefined}
             className={cn(
               'border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm transition-colors outline-none',
-              (sessionExpired || readOnly) && 'cursor-not-allowed opacity-50'
+              (hardWindowBlock || readOnly) && 'cursor-not-allowed opacity-50'
             )}
           />
 
@@ -1128,7 +1139,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || hardWindowBlock || sending}
             onClick={handleSend}
             className="bg-primary hover:bg-primary/90 h-9 w-9 shrink-0 p-0 disabled:opacity-40"
           >

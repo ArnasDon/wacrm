@@ -59,6 +59,7 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      human_agent_tag,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -166,6 +167,13 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        // Only ever set from a human clicking send in the inbox
+        // compose box (see `SendMessageParams.humanAgentTag`'s own doc
+        // comment) — this route is the dashboard's own send endpoint,
+        // reached only that way, never from a Flow/Automation/the AI
+        // bot (which all send through their own engine-send paths that
+        // never set this).
+        humanAgentTag: human_agent_tag === true,
       })
 
       return NextResponse.json({

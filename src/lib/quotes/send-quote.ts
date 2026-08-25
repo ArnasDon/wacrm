@@ -4,14 +4,16 @@ import { uploadCatalogPdf } from '@/lib/pdf/upload-pdf'
 import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
 import { formatCurrency } from '@/lib/currency'
 import type { Quote, QuoteItem } from '@/types'
+// Re-exported under its original name — see `@/lib/messaging/window`'s
+// own doc comment for why the definition moved there (circular-import
+// avoidance, same reasoning as `@/lib/messaging/types`).
+export { isWithinMessagingWindow } from '@/lib/messaging/window'
 
 export class SendQuoteError extends Error {
   constructor(message: string, readonly status = 400) {
     super(message)
   }
 }
-
-const MESSAGING_WINDOW_MS = 24 * 60 * 60 * 1000
 
 /**
  * The contact's most recently active conversation for this account, on
@@ -33,31 +35,6 @@ export async function findRecentConversation(
     .limit(1)
     .maybeSingle()
   return (data as { id: string } | null) ?? null
-}
-
-/**
- * Whether `conversationId` currently sits inside WhatsApp's 24-hour
- * customer-initiated messaging window — i.e. whether a business-sent
- * free-form message (like a quote PDF) is allowed right now. Meta
- * enforces this itself and simply errors outside the window
- * (`sendMessageToConversation` never pre-checks it), so callers that
- * want to avoid a doomed send — or branch to a fallback flow instead —
- * check this first.
- */
-export async function isWithinMessagingWindow(
-  db: SupabaseClient,
-  conversationId: string,
-): Promise<boolean> {
-  const { data } = await db
-    .from('messages')
-    .select('created_at')
-    .eq('conversation_id', conversationId)
-    .eq('sender_type', 'customer')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-  if (!data?.created_at) return false
-  return Date.now() - new Date(data.created_at as string).getTime() < MESSAGING_WINDOW_MS
 }
 
 /**

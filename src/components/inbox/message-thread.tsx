@@ -527,6 +527,16 @@ export function MessageThread({
             message_type: 'text',
             content_text: text,
             reply_to_message_id: replyToId,
+            // Instagram/Facebook only: the composer stays open past the
+            // 24h window for these channels (unlike WhatsApp, which has
+            // no way around it without a template) — a human sending
+            // here right now, past the window, is exactly Meta's
+            // HUMAN_AGENT tag use case. send-message.ts re-verifies the
+            // window server-side before actually applying it.
+            human_agent_tag:
+              (conversation.channel === 'instagram' ||
+                conversation.channel === 'facebook') &&
+              sessionInfo.expired,
           }),
         });
 
@@ -552,7 +562,7 @@ export function MessageThread({
         onUpdateMessage(tempId, { status: 'failed' });
       }
     },
-    [conversation, onNewMessage, onUpdateMessage]
+    [conversation, onNewMessage, onUpdateMessage, sessionInfo.expired]
   );
 
   const handleSendMedia = useCallback(
@@ -593,6 +603,11 @@ export function MessageThread({
             content_text: contentText,
             filename: payload.filename,
             reply_to_message_id: payload.replyToId,
+            // See handleSend's identical flag for why.
+            human_agent_tag:
+              (conversation.channel === 'instagram' ||
+                conversation.channel === 'facebook') &&
+              sessionInfo.expired,
           }),
         });
 
@@ -622,7 +637,7 @@ export function MessageThread({
         );
       }
     },
-    [conversation, onNewMessage, onUpdateMessage]
+    [conversation, onNewMessage, onUpdateMessage, sessionInfo.expired]
   );
 
   const handleSendInteractive = useCallback(

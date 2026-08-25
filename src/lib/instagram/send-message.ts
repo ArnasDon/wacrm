@@ -33,6 +33,7 @@ import type { InstagramMediaKind } from '@/lib/instagram/api';
 import { sendInstagramText, sendInstagramMedia } from '@/lib/instagram/provider-send';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { SendMessageError, type SendMessageParams, type SendMessageResult } from '@/lib/messaging/types';
+import { isWithinMessagingWindow } from '@/lib/messaging/window';
 
 const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 
@@ -128,16 +129,26 @@ export async function sendInstagramMessageToConversation(
     zernioConversationId: (conversation.zernio_conversation_id as string | null) ?? null,
   };
 
+  // Only actually apply the tag when the window has truly expired —
+  // never trust the caller's flag alone, so a stray/stale true from an
+  // older client can't tag a perfectly normal in-window send. See
+  // `SendMessageParams.humanAgentTag`'s own doc comment for why this
+  // must only ever originate from a human clicking send.
+  const humanAgentTag = params.humanAgentTag
+    ? !(await isWithinMessagingWindow(db, conversationId))
+    : false;
+
   let igMessageId = '';
   try {
     if (isMediaKind) {
       const result = await sendInstagramMedia(target, messageType as InstagramMediaKind, mediaUrl!, {
         caption: contentText,
         filename,
+        humanAgentTag,
       });
       igMessageId = result.messageId;
     } else {
-      const result = await sendInstagramText(target, contentText!);
+      const result = await sendInstagramText(target, contentText!, { humanAgentTag });
       igMessageId = result.messageId;
     }
   } catch (err) {

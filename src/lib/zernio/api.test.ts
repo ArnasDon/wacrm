@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendZernioText } from './api'
+import { sendZernioText, sendZernioMedia } from './api'
 
 function okResponse(json: unknown): Response {
   return { ok: true, status: 200, json: async () => json } as unknown as Response
@@ -38,5 +38,32 @@ describe('zernioFetch (via sendZernioText)', () => {
       json: async () => ({ error: 'Conversation not found' }),
     } as unknown as Response)
     await expect(sendZernioText(args)).rejects.toThrow('Conversation not found')
+  })
+})
+
+describe('humanAgentTag (Instagram/Facebook 24h-window exception)', () => {
+  it('omits messagingType/messageTag from the request body by default', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okResponse({ data: { messageId: 'zmsg-1' } }))
+    await sendZernioText(args)
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+    expect(body).not.toHaveProperty('messagingType')
+    expect(body).not.toHaveProperty('messageTag')
+  })
+
+  it('adds messagingType: MESSAGE_TAG and messageTag: HUMAN_AGENT when requested (text)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okResponse({ data: { messageId: 'zmsg-1' } }))
+    await sendZernioText({ ...args, humanAgentTag: true })
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+    expect(body).toMatchObject({ messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' })
+  })
+
+  it('adds the same tag fields for a media send', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(okResponse({ data: { messageId: 'zmsg-2' } }))
+    await sendZernioMedia({
+      apiKey: 'key', conversationId: 'conv-1', accountId: 'acct-1',
+      kind: 'image', link: 'https://example.com/x.jpg', humanAgentTag: true,
+    })
+    const body = JSON.parse((vi.mocked(fetch).mock.calls[0][1] as RequestInit).body as string)
+    expect(body).toMatchObject({ messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' })
   })
 })

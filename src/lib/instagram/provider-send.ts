@@ -50,7 +50,11 @@ export interface ProviderSendResult {
   messageId: string
 }
 
-export async function sendInstagramText(target: SendTarget, text: string): Promise<ProviderSendResult> {
+export async function sendInstagramText(
+  target: SendTarget,
+  text: string,
+  opts: { humanAgentTag?: boolean } = {},
+): Promise<ProviderSendResult> {
   const { config } = target
   if (isZernioProvider(config)) {
     const result = await sendZernioText({
@@ -58,6 +62,7 @@ export async function sendInstagramText(target: SendTarget, text: string): Promi
       conversationId: requireZernioConversation(target),
       accountId: config.zernio_account_id!,
       text,
+      humanAgentTag: opts.humanAgentTag,
     })
     return { messageId: result.messageId }
   }
@@ -66,6 +71,7 @@ export async function sendInstagramText(target: SendTarget, text: string): Promi
     accessToken: decrypt(config.access_token!),
     to: target.igsid,
     text,
+    humanAgentTag: opts.humanAgentTag,
   })
   return { messageId: result.messageId }
 }
@@ -74,7 +80,7 @@ export async function sendInstagramMedia(
   target: SendTarget,
   kind: InstagramMediaKind,
   link: string,
-  opts: { caption?: string | null; filename?: string | null } = {},
+  opts: { caption?: string | null; filename?: string | null; humanAgentTag?: boolean } = {},
 ): Promise<ProviderSendResult> {
   const { config } = target
   if (isZernioProvider(config)) {
@@ -91,6 +97,7 @@ export async function sendInstagramMedia(
       link,
       caption: opts.caption ?? undefined,
       filename: opts.filename ?? undefined,
+      humanAgentTag: opts.humanAgentTag,
     })
     return { messageId: result.messageId }
   }
@@ -100,6 +107,7 @@ export async function sendInstagramMedia(
     to: target.igsid,
     kind,
     link,
+    humanAgentTag: opts.humanAgentTag,
   })
   return { messageId: result.messageId }
 }

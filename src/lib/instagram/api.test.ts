@@ -87,6 +87,36 @@ describe("sendMediaMessage", () => {
   });
 });
 
+describe("humanAgentTag (24h-window exception)", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("adds messaging_type: MESSAGE_TAG and tag: HUMAN_AGENT when requested (text)", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ message_id: "ig-msg-4" }), { status: 200 });
+      }),
+    );
+    await sendTextMessage({ ...BASE_ARGS, text: "Hi", humanAgentTag: true });
+    expect(captured!.body).toMatchObject({ messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
+  });
+
+  it("adds the same tag fields for a media send", async () => {
+    let captured: { body: unknown } | null = null;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init: RequestInit) => {
+        captured = { body: JSON.parse(String(init.body)) };
+        return new Response(JSON.stringify({ message_id: "ig-msg-5" }), { status: 200 });
+      }),
+    );
+    await sendMediaMessage({ ...BASE_ARGS, kind: "image", link: "https://x/y.jpg", humanAgentTag: true });
+    expect(captured!.body).toMatchObject({ messaging_type: "MESSAGE_TAG", tag: "HUMAN_AGENT" });
+  });
+});
+
 describe("sendQuickReplies — validation", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn(neverFetch));

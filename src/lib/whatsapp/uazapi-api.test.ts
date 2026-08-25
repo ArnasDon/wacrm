@@ -60,7 +60,7 @@ describe("uazapi-api", () => {
     );
     const result = await createInstance({ baseUrl: BASE_URL, adminToken: ADMIN_TOKEN, name: "acme" });
     expect(result).toEqual({ instanceId: "inst-1", token: "instance-token-abc" });
-    expect(captured?.url).toBe("https://free.uazapi.com/instance/create");
+    expect(captured?.url).toBe("https://free.uazapi.com/instance/init");
     expect(captured?.headers?.admintoken).toBe("admin-secret");
     expect(captured?.headers?.token).toBeUndefined();
     expect(captured?.body).toEqual({ name: "acme" });

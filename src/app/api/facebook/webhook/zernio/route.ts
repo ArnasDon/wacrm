@@ -86,6 +86,16 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing account in payload' }, { status: 400 })
   }
 
+  // Same reasoning as the WhatsApp/Instagram Zernio routes' identical
+  // check: a webhook registered for Facebook still receives every
+  // other platform's events on the same Zernio account (no
+  // per-platform webhook scoping exists), and 404ing those tripped
+  // Zernio's endpoint-health circuit breaker on traffic that was never
+  // ours to begin with.
+  if (payload.account?.platform && payload.account.platform !== 'facebook') {
+    return NextResponse.json({ status: 'ignored', reason: 'not a facebook event' }, { status: 200 })
+  }
+
   const { data: config, error: configError } = await supabaseAdmin()
     .from('facebook_config')
     .select('*')
@@ -137,6 +147,26 @@ async function processZernioEvent(
 ) {
   if (payload.event === 'message.read' && payload.message) {
     await markMessageRead(supabaseAdmin(), payload.message.platformMessageId)
+    return
+  }
+
+  // Same fix as the Instagram Zernio route (identical bug, confirmed
+  // 2026-08-25): an agent reply from outside wacrm arrives as its own
+  // `message.sent` event, which this route previously never
+  // recognized (only `message.received`) — silently dropping it.
+  if (payload.event === 'message.sent' && payload.message) {
+    const message = payload.message
+    const attachment = message.attachments?.[0]
+    await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
+      channel: 'facebook',
+      accountId: config.account_id,
+      zernioConversationId: message.conversationId,
+      mid: message.platformMessageId,
+      contentText: attachment ? null : message.text,
+      mediaUrl: attachment?.url ?? null,
+      contentType: attachment ? toContentType(attachment.type) : 'text',
+      replyToMid: null,
+    })
     return
   }
 

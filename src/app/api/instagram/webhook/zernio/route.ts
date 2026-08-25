@@ -91,6 +91,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing account in payload' }, { status: 400 })
   }
 
+  // Same reasoning as the WhatsApp Zernio route's identical check: a
+  // webhook registered for Instagram still receives every other
+  // platform's events on the same Zernio account (no per-platform
+  // webhook scoping exists), and 404ing those tripped Zernio's
+  // endpoint-health circuit breaker on traffic that was never ours to
+  // begin with — suppressing genuine Instagram deliveries riding the
+  // same webhook along with it.
+  if (payload.account?.platform && payload.account.platform !== 'instagram') {
+    return NextResponse.json({ status: 'ignored', reason: 'not an instagram event' }, { status: 200 })
+  }
+
   const { data: config, error: configError } = await supabaseAdmin()
     .from('instagram_config')
     .select('*')
@@ -143,6 +154,36 @@ async function processZernioEvent(
 ) {
   if (payload.event === 'message.read' && payload.message) {
     await markMessageRead(supabaseAdmin(), payload.message.platformMessageId)
+    return
+  }
+
+  // An agent replying from the native Instagram app or Zernio's own
+  // inbox UI (instead of wacrm) arrives as its own `message.sent`
+  // event, not as an "outgoing"-direction `message.received` — this
+  // route only recognized the latter, so every reply sent outside
+  // wacrm was silently dropped (200 OK to Zernio, never persisted).
+  // Confirmed 2026-08-25 against a real conversation that had zero
+  // recorded agent messages despite an active back-and-forth. No
+  // `source` field exists here to separate this from wacrm's own
+  // Zernio-API sends the way WhatsApp Coexistence's does — but
+  // wacrm's own sends are keyed by Zernio's internal message id, not
+  // `platformMessageId`, and this event type has produced no
+  // duplicate-message reports where the equivalent
+  // "outgoing"-direction message.received case already runs this same
+  // path today.
+  if (payload.event === 'message.sent' && payload.message) {
+    const message = payload.message
+    const attachment = message.attachments?.[0]
+    await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
+      channel: 'instagram',
+      accountId: config.account_id,
+      zernioConversationId: message.conversationId,
+      mid: message.platformMessageId,
+      contentText: attachment ? null : message.text,
+      mediaUrl: attachment?.url ?? null,
+      contentType: attachment ? toContentType(attachment.type) : 'text',
+      replyToMid: null,
+    })
     return
   }
 

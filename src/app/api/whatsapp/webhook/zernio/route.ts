@@ -126,6 +126,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Missing account in payload' }, { status: 400 })
   }
 
+  // Zernio has no per-platform webhook scoping — a webhook registered
+  // for WhatsApp still receives every Instagram/Facebook event on the
+  // same account too (confirmed 2026-08-25 by inspecting a "failed"
+  // delivery's raw payload: an Instagram message.received landing on
+  // this endpoint). Returning 404 for those (the old behavior, since
+  // they'll never match a whatsapp_config row) made Zernio's own
+  // endpoint-health circuit breaker trip on the OTHER platforms'
+  // traffic and suppress delivery of genuine WhatsApp events riding
+  // the same webhook — the actual cause of WhatsApp messages silently
+  // not reaching wacrm. Acking these as 200 keeps this endpoint's
+  // reported health accurate.
+  if (payload.account?.platform && payload.account.platform !== 'whatsapp') {
+    return NextResponse.json({ status: 'ignored', reason: 'not a whatsapp event' }, { status: 200 })
+  }
+
   const { data: config, error: configError } = await supabaseAdmin()
     .from('whatsapp_config')
     .select('*')

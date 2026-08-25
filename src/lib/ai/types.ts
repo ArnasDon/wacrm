@@ -123,6 +123,15 @@ export interface GenerateResult {
    *  conversation's persisted history (and therefore the model's own
    *  context on the next turn) reflects exactly what was actually sent. */
   quickReplyId: string | null
+  /** True when `parseGeneration`'s last-resort safety net had to
+   *  force-strip a `[[...]]`-shaped marker that no named sentinel
+   *  recognized (real incident, 2026-08-25 — a create_quote_chat
+   *  marker reached a real customer verbatim). `text` is already
+   *  clean either way, but this signals that *something* the model
+   *  tried to do almost certainly did not happen (e.g. a promised
+   *  quote never got built) — auto-reply mode hands off to a human
+   *  on this instead of treating the send as a normal success. */
+  sentinelLeakDetected: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
 }

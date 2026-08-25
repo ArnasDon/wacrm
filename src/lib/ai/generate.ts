@@ -162,7 +162,7 @@ export function parseGeneration(
   )
   const quickReplyId = quickReplyMatch ? quickReplyMatch[1].trim() : null
 
-  const text = raw
+  let text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
     .split(MARK_DEAL_WON_SENTINEL)
@@ -176,6 +176,20 @@ export function parseGeneration(
     .replace(quickReplyMatch ? quickReplyMatch[0] : '', '')
     .trim()
 
+  // Defense in depth: every marker above is stripped by name, but a
+  // real incident (2026-08-25) had a `[[ACTION:create_quote_chat:...]]`
+  // marker reach a real customer verbatim over WhatsApp regardless —
+  // root cause never conclusively pinned down (possibly a deploy-
+  // transition race). Whatever the cause, no `[[...]]`-shaped sentinel
+  // must ever be customer-facing, so catch and strip any leftover one
+  // as a final safety net, independent of which specific marker it is.
+  const leftoverSentinel = /\[\[[^\n[\]]{1,300}\]\]/g
+  const sentinelLeakDetected = leftoverSentinel.test(text)
+  if (sentinelLeakDetected) {
+    console.error('[ai generate] a sentinel-shaped marker survived normal stripping, force-removing it:', text)
+    text = text.replace(leftoverSentinel, '').trim()
+  }
+
   return {
     text,
     handoff,
@@ -184,6 +198,7 @@ export function parseGeneration(
     sendCatalog,
     leadTemperature,
     appointmentProposal,
+    sentinelLeakDetected,
     quoteProposal,
     quickReplyId,
     usage,

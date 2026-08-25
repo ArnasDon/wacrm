@@ -51,6 +51,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -66,6 +67,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -78,6 +80,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -93,6 +96,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -115,6 +119,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -145,6 +150,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -169,6 +175,7 @@ describe('parseGeneration', () => {
       leadTemperature: 'hot',
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: null,
     })
@@ -205,6 +212,7 @@ describe('parseGeneration', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage,
     })
@@ -302,6 +310,18 @@ describe('parseGeneration', () => {
     })
   })
 
+  it('never leaves a sentinel-shaped marker in customer-facing text, even one none of the named strippers recognize (2026-08-25 incident — a create_quote_chat marker reached a real customer verbatim)', () => {
+    const res = parseGeneration('Perfecto, ya puedo prepararte la cotización. [[ACTION:create_quote_chat:text|Silla:1|N/A|N/A|Villa Canales]]')
+    expect(res.text).toBe('Perfecto, ya puedo prepararte la cotización.')
+    expect(res.text).not.toContain('[[')
+  })
+
+  it('force-strips a sentinel-shaped marker that no named stripper recognizes at all, as a last-resort safety net', () => {
+    const res = parseGeneration('Hola, un momento. [[ACTION:some_future_marker:foo|bar]]')
+    expect(res.text).toBe('Hola, un momento.')
+    expect(res.text).not.toContain('[[')
+  })
+
   it('ignores a create-quote-chat marker with no items', () => {
     const res = parseGeneration('ok [[ACTION:create_quote_chat:pdf||CF|a@b.com|Dir]]')
     expect(res.quoteProposal).toBeNull()
@@ -350,6 +370,7 @@ describe('generateReply — OpenAI', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
@@ -416,6 +437,7 @@ describe('generateReply — Anthropic', () => {
       leadTemperature: null,
       appointmentProposal: null,
       quoteProposal: null,
+      sentinelLeakDetected: false,
       quickReplyId: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })

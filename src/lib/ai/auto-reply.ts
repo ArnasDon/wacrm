@@ -195,7 +195,7 @@ export async function dispatchInboundToAiReply(
     })
 
     const {
-      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, quoteProposal, quickReplyId, usage,
+      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, usage,
     } = await generateReply({
       config,
       systemPrompt,
@@ -312,6 +312,24 @@ export async function dispatchInboundToAiReply(
       text: outboundText,
       aiGenerated: true,
     })
+
+    if (sentinelLeakDetected) {
+      // The customer already got the cleaned text above, but a
+      // `[[...]]` marker survived every named parser — almost
+      // certainly means whatever the model was trying to do (build a
+      // quote, book something) silently didn't happen. Hand off
+      // instead of letting it look like a normal successful turn; see
+      // `parseGeneration`'s own doc comment for the 2026-08-25
+      // incident this guards against.
+      await handOffToHuman({
+        db,
+        conversationId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary: `🤖 The AI's reply contained an unrecognized internal marker that had to be force-removed before sending — whatever it was trying to do (e.g. build a quote) most likely did not happen. Needs a human to check this conversation.`,
+      })
+      return
+    }
 
     if (quickReplyText) {
       try {

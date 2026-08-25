@@ -436,7 +436,7 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
-    expect(h.state.updatePayload?.ai_handoff_summary).toContain('reply limit')
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('límite de')
   })
 
   it('skips when there is nothing to reply to', async () => {
@@ -455,7 +455,7 @@ describe('dispatchInboundToAiReply — handoff', () => {
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(
-      'AI agent handed off',
+      'La IA transfirió la conversación',
     )
     // No handoff target configured → conversation left unassigned.
     expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
@@ -1238,7 +1238,7 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
 
     expect(h.sendQuoteAsText).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
-    expect(h.state.updatePayload?.ai_handoff_summary).toContain('creating it failed')
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('no se pudo crear la cotización')
   })
 
   it('hands off to a human when the quote is created but sending it fails', async () => {
@@ -1250,7 +1250,7 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
     await dispatchInboundToAiReply(ARGS)
 
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
-    expect(h.state.updatePayload?.ai_handoff_summary).toContain('was created but')
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('se creó pero no se pudo enviar')
   })
 
   it('does nothing quote-related when the catalog is delivered digitally (own self-service cart)', async () => {

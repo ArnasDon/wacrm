@@ -102,7 +102,7 @@ export async function dispatchInboundToAiReply(
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
-        summary: `🤖 AI agent reached its ${config.autoReplyMaxPerConversation}-reply limit for this conversation and paused — needs a human follow-up.`,
+        summary: `🤖 La IA alcanzó su límite de ${config.autoReplyMaxPerConversation} respuestas automáticas en esta conversación y se pausó — necesita seguimiento de un humano.`,
       })
       return
     }
@@ -326,7 +326,7 @@ export async function dispatchInboundToAiReply(
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
-        summary: `🤖 The AI's reply contained an unrecognized internal marker that had to be force-removed before sending — whatever it was trying to do (e.g. build a quote) most likely did not happen. Needs a human to check this conversation.`,
+        summary: `🤖 La respuesta de la IA contenía un marcador interno no reconocido que tuvo que eliminarse antes de enviarse — lo que sea que estaba intentando hacer (p. ej. armar una cotización) probablemente no se completó. Necesita que un humano revise esta conversación.`,
       })
       return
     }
@@ -660,7 +660,7 @@ async function flagDealClosing(args: {
     handoffAgentId,
     alreadyAssigned,
     summary:
-      'The customer explicitly confirmed the purchase. The AI assistant handed this conversation off so a teammate can close the sale.',
+      '🤖 El cliente confirmó explícitamente la compra. La IA transfirió esta conversación para que un compañero cierre la venta.',
   })
 
   await db.from('ai_action_log').insert({
@@ -1039,7 +1039,7 @@ async function autoCreateQuoteFromChat(args: {
       conversationId,
       handoffAgentId,
       alreadyAssigned,
-      summary: `🤖 The AI told this customer it would prepare a quote (${proposal.items.map((i) => `${i.name} x${i.qty}`).join(', ')}), but ${reason} — needs a human to finish it.`,
+      summary: `🤖 La IA le dijo a este cliente que le prepararía una cotización (${proposal.items.map((i) => `${i.name} x${i.qty}`).join(', ')}): ${reason}. Necesita que un humano la complete.`,
     })
 
   const { data: products } = await db
@@ -1064,7 +1064,7 @@ async function autoCreateQuoteFromChat(args: {
   }
   if (items.length === 0) {
     console.warn('[ai auto-reply] create_quote_chat: no item matched a real product, aborting')
-    await handoff(`couldn't match "${unmatched.join('", "')}" to a real catalog product`)
+    await handoff(`no se logró calzar "${unmatched.join('", "')}" con un producto real del catálogo`)
     return
   }
 
@@ -1092,7 +1092,7 @@ async function autoCreateQuoteFromChat(args: {
   } catch (err) {
     if (err instanceof CreateQuoteError) {
       console.error('[ai auto-reply] create_quote_chat: createQuote failed:', err.message)
-      await handoff(`creating it failed: ${err.message}`)
+      await handoff(`no se pudo crear la cotización (${err.message})`)
       return
     }
     throw err
@@ -1110,7 +1110,7 @@ async function autoCreateQuoteFromChat(args: {
       // The quote itself was created (quotes.id above) — only delivery
       // failed, so a human can resend it from Products → Quotes instead
       // of starting over from scratch.
-      await handoff(`the quote (#${created.quote.id.slice(0, 8)}) was created but couldn't be sent: ${err.message}`)
+      await handoff(`la cotización (#${created.quote.id.slice(0, 8)}) se creó pero no se pudo enviar (${err.message})`)
       return
     }
     throw err

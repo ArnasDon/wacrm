@@ -8,11 +8,14 @@ const MAX_QUOTE_LEN = 160
  * Build the short internal note the auto-reply bot leaves on a
  * conversation when it hands off to a human. Deterministic — composed
  * from context we already have (no extra LLM call / token spend), so it
- * can't fail or add latency to the handoff.
+ * can't fail or add latency to the handoff. Written in Spanish — this
+ * app's account-facing text (unlike its next-intl UI chrome) defaults
+ * to Spanish for its Guatemalan market.
  *
  * Reads as, e.g.:
- *   "🤖 AI agent handed off after 2 replies. Last customer message:
- *    “can I speak to a manager about my refund?”"
+ *   "🤖 La IA transfirió la conversación después de 2 respuestas.
+ *    Último mensaje del cliente: “¿puedo hablar con un encargado sobre
+ *    mi reembolso?”"
  *
  * `replyCount` is the bot's auto-reply tally for the thread (0 when it
  * bailed on the very first inbound without answering).
@@ -29,15 +32,15 @@ export function buildHandoffSummary(args: {
 
   const replies =
     replyCount === 0
-      ? 'without replying'
-      : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
+      ? 'sin responder'
+      : `después de ${replyCount} ${replyCount === 1 ? 'respuesta' : 'respuestas'}`
 
-  const base = `🤖 AI agent handed off ${replies}.`
+  const base = `🤖 La IA transfirió la conversación ${replies}.`
 
   if (!lastCustomer) return base
 
   const quote = truncate(lastCustomer.content.trim(), MAX_QUOTE_LEN)
-  return `${base} Last customer message: “${quote}”`
+  return `${base} Último mensaje del cliente: “${quote}”`
 }
 
 function truncate(text: string, max: number): string {

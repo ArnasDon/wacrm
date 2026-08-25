@@ -39,6 +39,8 @@ const h = vi.hoisted(() => ({
     quickReplyRow: null as { id: string; content_text: string } | null,
     /** Account's active `products` rows, for the create_quote_chat item-matching lookup. */
     products: [] as { id: string; name: string }[],
+    /** Rows inserted via `db.from('messages').insert(...)` — currently only handOffToHuman's internal note. */
+    messageInserts: [] as Record<string, unknown>[],
   },
 }))
 
@@ -234,6 +236,15 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'messages') {
+        // handOffToHuman's best-effort internal-note insert.
+        return {
+          insert: (payload: Record<string, unknown>) => {
+            h.state.messageInserts.push(payload)
+            return Promise.resolve({ error: null })
+          },
+        }
+      }
       // conversations
       return {
         select: () => ({
@@ -303,6 +314,7 @@ beforeEach(() => {
   h.state.gcalStatus = null
   h.state.quickReplyRow = null
   h.state.products = []
+  h.state.messageInserts = []
   h.createQuote.mockReset()
   h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
   h.sendQuoteToConversation.mockReset().mockResolvedValue(undefined)
@@ -457,6 +469,19 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+
+  it('leaves an internal_note message in the thread explaining the handoff, matching the banner summary (migration 083)', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.messageInserts).toEqual([
+      expect.objectContaining({
+        conversation_id: 'conv-1',
+        sender_type: 'bot',
+        content_type: 'internal_note',
+        content_text: h.state.updatePayload?.ai_handoff_summary,
+      }),
+    ])
   })
 })
 

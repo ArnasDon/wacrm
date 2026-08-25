@@ -489,9 +489,13 @@ async function notifyAiKeyInvalid(db: SupabaseClient, accountId: string): Promis
  * Shared conversation-update for every way the bot hands a conversation
  * off to a human: pauses the bot (sticky until re-enabled), records
  * when it happened (drives the dashboard's "average human wait time"
- * card — migration 070), leaves an internal note, and routes to the
- * configured handoff agent unless the thread already has one — never
- * stomps an existing human assignment. Assigning fires the
+ * card — migration 070), leaves an internal note — both on
+ * `conversations.ai_handoff_summary` (the thread banner) and as an
+ * actual `internal_note` message row inline in the thread itself
+ * (migration 083), so the reason is visible right where an agent is
+ * already scrolling, not just in an easy-to-miss banner — and routes
+ * to the configured handoff agent unless the thread already has one —
+ * never stomps an existing human assignment. Assigning fires the
  * `on_conversation_assigned` trigger, which notifies the agent.
  */
 async function handOffToHuman(args: {
@@ -511,6 +515,23 @@ async function handOffToHuman(args: {
     update.assigned_agent_id = handoffAgentId
   }
   await db.from('conversations').update(update).eq('id', conversationId)
+
+  // Best-effort — a failed insert here must never block the handoff
+  // itself (the conversation update above already paused the bot and
+  // routed it to a human, which matters far more than the note).
+  // Never touches conversations.last_message_text/last_message_at, so
+  // the inbox list preview keeps showing the last real exchange, not
+  // this note.
+  const { error: noteError } = await db.from('messages').insert({
+    conversation_id: conversationId,
+    sender_type: 'bot',
+    content_type: 'internal_note',
+    content_text: summary,
+    status: 'sent',
+  })
+  if (noteError) {
+    console.error('[ai auto-reply] failed to insert handoff internal note:', noteError)
+  }
 }
 
 /**

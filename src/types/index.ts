@@ -238,7 +238,11 @@ export type ContentType =
   | 'location'
   | 'template'
   /** Customer tapped a reply button or list row on a message we sent. */
-  | 'interactive';
+  | 'interactive'
+  /** An internal system note (e.g. why the AI handed a conversation off
+   *  to a human) — never sent to the customer over any channel, and
+   *  excluded from the AI's own conversation context. Migration 083. */
+  | 'internal_note';
 export type MessageStatus = 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
 
 export interface Message {

@@ -30,6 +30,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
   Info,
+  Bot,
 } from 'lucide-react';
 import { format, isToday, isYesterday, differenceInHours } from 'date-fns';
 import { useTranslations } from 'next-intl';
@@ -1190,6 +1191,23 @@ export function MessageThread({
                 {/* Messages */}
                 <div className="space-y-2">
                   {group.messages.map((msg) => {
+                    // System note left by the AI (e.g. why it handed a
+                    // conversation off) — never sent to the customer,
+                    // rendered as a centered pill rather than a chat
+                    // bubble so it reads as "internal", not a real turn.
+                    if (msg.content_type === 'internal_note') {
+                      return (
+                        <div
+                          key={msg.id}
+                          className="flex items-center justify-center py-1"
+                        >
+                          <div className="flex max-w-[85%] items-start gap-1.5 rounded-md bg-amber-500/10 px-3 py-1.5 text-xs text-amber-700 dark:text-amber-400">
+                            <Bot className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
+                            <span>{msg.content_text}</span>
+                          </div>
+                        </div>
+                      );
+                    }
                     const parent = msg.reply_to_message_id
                       ? messagesById.get(msg.reply_to_message_id)
                       : null;

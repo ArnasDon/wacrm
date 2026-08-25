@@ -21,8 +21,12 @@ freshly connected service is reproducible.
 - Node ≥ 20 locally if you want to generate secrets.
 
 > **FFmpeg**: inbox voice notes transcode browser recordings to Ogg/Opus
-> server-side (`/api/media/voice-note`). The bundled `nixpacks.toml`
-> provisions FFmpeg automatically — nothing to do, just don't delete it.
+> server-side (`/api/media/voice-note`). The service builds with the repo's
+> **Dockerfile** (`railway.json` → `builder: DOCKERFILE`), which installs
+> FFmpeg in its runtime stage — nothing to configure. Don't switch back to
+> the Nixpacks builder: its generated plan ignored `nixpacks.toml` and
+> shipped images without FFmpeg, while baking runtime secrets into
+> build-arg layers.
 
 ---
 

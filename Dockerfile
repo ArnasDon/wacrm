@@ -44,6 +44,12 @@ ENV NODE_ENV=production \
     PORT=3000 \
     HOSTNAME=0.0.0.0
 
+# Runtime binary (not an npm dep): converts browser voice-note recordings
+# to the Ogg/Opus container Meta's Cloud API requires — see
+# src/app/api/media/voice-note/route.ts. Alpine's ffmpeg build includes
+# libopus.
+RUN apk add --no-cache ffmpeg
+
 RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
 
 COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./

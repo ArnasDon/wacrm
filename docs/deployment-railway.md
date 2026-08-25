@@ -20,6 +20,10 @@ freshly connected service is reproducible.
   App ID if you submit image-header templates).
 - Node ≥ 20 locally if you want to generate secrets.
 
+> **FFmpeg**: inbox voice notes transcode browser recordings to Ogg/Opus
+> server-side (`/api/media/voice-note`). The bundled `nixpacks.toml`
+> provisions FFmpeg automatically — nothing to do, just don't delete it.
+
 ---
 
 ## 0. Pre-flight: rotate secrets (recommended)
@@ -76,26 +80,26 @@ hand — the `NEXT_PUBLIC_*` prefix already controls client exposure.
 
 ### Required (app won't start without these)
 
-| Variable | Where to get it |
-|---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API → Project URL |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → `anon` key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API → `service_role` key (**server secret**) |
-| `ENCRYPTION_KEY` | 64 hex chars (see step 0) — encrypts WhatsApp tokens |
-| `META_APP_SECRET` | Meta for Developers → App Settings → Basic → App Secret |
+| Variable                        | Where to get it                                                            |
+| ------------------------------- | -------------------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Supabase → Project Settings → API → Project URL                            |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API → `anon` key                             |
+| `SUPABASE_SERVICE_ROLE_KEY`     | Supabase → Project Settings → API → `service_role` key (**server secret**) |
+| `ENCRYPTION_KEY`                | 64 hex chars (see step 0) — encrypts WhatsApp tokens                       |
+| `META_APP_SECRET`               | Meta for Developers → App Settings → Basic → App Secret                    |
 
 ### Recommended
 
-| Variable | Value |
-|---|---|
-| `NEXT_PUBLIC_SITE_URL` | Your canonical public URL, e.g. `https://crm.example.com` (no trailing slash). Used for sitemap/OG and for links built without an incoming request (cron). Set after you know your domain (step 4), then redeploy. |
-| `AUTOMATION_CRON_SECRET` | Long random string (see step 0). Protects the two cron endpoints. Required if you use automation **Wait** steps or want the flow stale-run sweep. |
+| Variable                 | Value                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `NEXT_PUBLIC_SITE_URL`   | Your canonical public URL, e.g. `https://crm.example.com` (no trailing slash). Used for sitemap/OG and for links built without an incoming request (cron). Set after you know your domain (step 4), then redeploy. |
+| `AUTOMATION_CRON_SECRET` | Long random string (see step 0). Protects the two cron endpoints. Required if you use automation **Wait** steps or want the flow stale-run sweep.                                                                  |
 
 ### Optional (only if you use the feature)
 
-| Variable | Purpose |
-|---|---|
-| `META_APP_ID` | Needed only to submit message templates with an **image** header. |
+| Variable               | Purpose                                                                                                                                            |
+| ---------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `META_APP_ID`          | Needed only to submit message templates with an **image** header.                                                                                  |
 | `ALLOWED_INVITE_HOSTS` | Comma-separated hostname allow-list for invite URLs (defense-in-depth on multi-host setups). Usually unnecessary if `NEXT_PUBLIC_SITE_URL` is set. |
 
 ---

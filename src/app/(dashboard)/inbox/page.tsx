@@ -16,10 +16,63 @@ import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { playNotificationSound } from "@/lib/notifications/sound";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
 const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
+
+// Same device-scoped persistence as the contact-panel toggle above.
+// Defaults to "on" (no stored key yet) — see the mount effect below.
+const SOUND_ENABLED_STORAGE_KEY = "wacrm:inbox:sound-enabled";
+
+/**
+ * Native OS/browser notification for an inbound customer message,
+ * shown only when the tab isn't the one on screen — a foreground tab
+ * already has the sound cue plus the conversation list updating live,
+ * so a popup on top of that would just be noise. `visibilityState`
+ * (not `document.hasFocus()`) is deliberate: the mark-read flow in
+ * message-thread.tsx hit real bugs with `hasFocus()` misreporting
+ * focus state, and settled on `visibilityState` as the reliable
+ * signal for "is this tab the one the user is looking at".
+ */
+function notifyNewMessage(msg: Message, conversations: Conversation[]) {
+  if (typeof window === "undefined" || !("Notification" in window)) return;
+  if (Notification.permission !== "granted") return;
+  if (document.visibilityState === "visible") return;
+
+  const conv = conversations.find((c) => c.id === msg.conversation_id);
+  const title = conv?.contact?.name || conv?.contact?.phone || "wacrm";
+  const body = msg.content_text || `[${msg.content_type}]`;
+
+  try {
+    // `tag` collapses multiple inbound messages from the same
+    // conversation into a single notification instead of stacking one
+    // per message while the agent is away.
+    const notification = new Notification(title, { body, tag: msg.conversation_id });
+    notification.onclick = () => {
+      window.focus();
+      notification.close();
+    };
+  } catch {
+    // A handful of environments (notably iOS Safari) report
+    // Notification support but throw synchronously on construction —
+    // this is a nice-to-have, so fail silently rather than surface it.
+  }
+}
+
+// The initial fetch orders by `last_message_at DESC` (see
+// lib/inbox/conversations), but realtime message/conversation events
+// below patch rows in place with `.map()` — which preserves array
+// position. Without re-sorting after every patch, a conversation that
+// gets a new message stays wherever it was in the list instead of
+// jumping to the top, so the "most recent" ordering silently drifts out
+// of sync with reality the longer the page stays open.
+function byMostRecentFirst(a: Conversation, b: Conversation): number {
+  const aTime = a.last_message_at ? new Date(a.last_message_at).getTime() : 0;
+  const bTime = b.last_message_at ? new Date(b.last_message_at).getTime() : 0;
+  return bTime - aTime;
+}
 
 // `useSearchParams` (the `?c=<id>` deep link below) requires a Suspense
 // boundary or the production build bails to CSR and errors out. Thin
@@ -51,6 +104,14 @@ function InboxPageInner() {
   const [whatsappConnected, setWhatsappConnected] = useState<boolean | null>(
     null
   );
+  // Meta's 24h customer-service-window rule (free-text blocked, template
+  // required past 24h since the customer's last message) is a Meta Cloud
+  // API business policy, not a WhatsApp protocol constraint — Evolution
+  // Go pairs a real WhatsApp session with no such restriction. Threading
+  // this down lets MessageThread skip enforcing it for that provider.
+  const [whatsappProvider, setWhatsappProvider] = useState<
+    "meta" | "evolution" | null
+  >(null);
   /**
    * Bumped whenever we want children (ConversationList, MessageThread)
    * to refetch from the DB — used as a safety net against missed
@@ -89,6 +150,59 @@ function InboxPageInner() {
       return next;
     });
   }, []);
+
+  // Notification sound toggle — same restore-after-mount pattern as
+  // contactPanelOpen above (server renders "on", then reconciles to
+  // whatever's stored right after mount, avoiding a hydration mismatch).
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(SOUND_ENABLED_STORAGE_KEY);
+      if (stored !== null) setSoundEnabled(stored === "true");
+    } catch {
+      // localStorage can throw in private-browsing / sandboxed contexts.
+    }
+  }, []);
+
+  const handleToggleSound = useCallback(() => {
+    setSoundEnabled((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(SOUND_ENABLED_STORAGE_KEY, String(next));
+      } catch {
+        // Persistence is best-effort; ignore storage failures.
+      }
+      return next;
+    });
+  }, []);
+
+  // Ask for desktop-notification permission once, best-effort. Some
+  // browsers (Safari, Firefox) silently ignore this without a prior
+  // user gesture on the page rather than showing the prompt — that's
+  // fine, it just means notifyNewMessage's permission check below
+  // stays "default"/not-granted and the feature no-ops for that
+  // session; the sound alert (which needs no permission) still fires.
+  useEffect(() => {
+    if (typeof window === "undefined" || !("Notification" in window)) return;
+    if (Notification.permission === "default") {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  // `handleMessageEvent` below is a stable useCallback so the realtime
+  // subscription (useRealtime) doesn't resubscribe on every render —
+  // see knownConvIdsRef's comment for the same rationale applied to
+  // conversation ids. Mirroring live values into refs lets the sound/
+  // notification logic read current state without joining that
+  // callback's dependency array.
+  const soundEnabledRef = useRef(soundEnabled);
+  useEffect(() => {
+    soundEnabledRef.current = soundEnabled;
+  }, [soundEnabled]);
+  const conversationsRef = useRef<Conversation[]>([]);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
 
   // Fire the deep-link auto-select exactly once per URL — subsequent
   // list refreshes (realtime, manual refetch) must not snap the user
@@ -202,11 +316,14 @@ function InboxPageInner() {
 
       const { data } = await supabase
         .from("whatsapp_config")
-        .select("status")
+        .select("status, provider")
         .eq("account_id", accountId)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
+      setWhatsappProvider(
+        data?.provider === "evolution" ? "evolution" : "meta"
+      );
     };
 
     checkConnection();
@@ -218,6 +335,14 @@ function InboxPageInner() {
       const newMsg = event.new;
 
       if (event.eventType === "INSERT") {
+        // Alert on inbound customer messages only — an agent's own
+        // sent message (or a bot auto-reply) shouldn't ding the agent
+        // who just sent it.
+        if (newMsg.sender_type === "customer") {
+          if (soundEnabledRef.current) playNotificationSound();
+          notifyNewMessage(newMsg, conversationsRef.current);
+        }
+
         // Add to messages if it belongs to active conversation
         if (
           activeConversation &&
@@ -241,19 +366,21 @@ function InboxPageInner() {
         // always read false here.
         if (knownConvIdsRef.current.has(newMsg.conversation_id)) {
           setConversations((prev) =>
-            prev.map((c) =>
-              c.id === newMsg.conversation_id
-                ? {
-                    ...c,
-                    last_message_text: newMsg.content_text ?? "",
-                    last_message_at: newMsg.created_at,
-                    unread_count:
-                      activeConversation?.id === newMsg.conversation_id
-                        ? 0
-                        : c.unread_count + 1,
-                  }
-                : c,
-            ),
+            prev
+              .map((c) =>
+                c.id === newMsg.conversation_id
+                  ? {
+                      ...c,
+                      last_message_text: newMsg.content_text ?? "",
+                      last_message_at: newMsg.created_at,
+                      unread_count:
+                        activeConversation?.id === newMsg.conversation_id
+                          ? 0
+                          : c.unread_count + 1,
+                    }
+                  : c,
+              )
+              .sort(byMostRecentFirst),
           );
         } else {
           // First time we're seeing this conv: the conv-INSERT event
@@ -285,15 +412,24 @@ function InboxPageInner() {
       const conv = event.new;
 
       if (event.eventType === "INSERT") {
-        // Prepend immediately for snappy UX so the new conv shows in the
+        // Add immediately for snappy UX so the new conv shows in the
         // list right away, then hydrate to fill in the `contact` join
         // (realtime payloads never include joins). Skip both if we
         // already have the row — that shouldn't happen normally, but
         // out-of-order delivery would have us prepending a duplicate.
+        //
+        // Sorted insert, not an unconditional prepend: a conversation
+        // created with no message yet (e.g. the pipeline's "open
+        // conversation" find-or-create, which inserts a bare row with
+        // no `last_message_at`) isn't "the most recent activity" just
+        // because it's the newest *row* — prepending it jumped it to
+        // the top of the inbox as if a message had just arrived when
+        // none had, reported live, and it displaced conversations with
+        // genuinely more recent messages.
         if (!knownConvIdsRef.current.has(conv.id)) {
           setConversations((prev) => {
             if (prev.some((c) => c.id === conv.id)) return prev;
-            return [conv, ...prev];
+            return [...prev, conv].sort(byMostRecentFirst);
           });
           hydrateConversation(conv.id);
         }
@@ -308,15 +444,17 @@ function InboxPageInner() {
           // UPDATE to round-trip. Non-active convs take the value as-is.
           const isActive = activeConversation?.id === conv.id;
           setConversations((prev) =>
-            prev.map((c) =>
-              c.id === conv.id
-                ? {
-                    ...c,
-                    ...conv,
-                    unread_count: isActive ? 0 : conv.unread_count,
-                  }
-                : c,
-            ),
+            prev
+              .map((c) =>
+                c.id === conv.id
+                  ? {
+                      ...c,
+                      ...conv,
+                      unread_count: isActive ? 0 : conv.unread_count,
+                    }
+                  : c,
+              )
+              .sort(byMostRecentFirst),
           );
         } else {
           // UPDATE arrived before the INSERT (or after a missed INSERT)
@@ -590,6 +728,8 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            soundEnabled={soundEnabled}
+            onToggleSound={handleToggleSound}
           />
         </div>
 
@@ -613,6 +753,7 @@ function InboxPageInner() {
             conversation={activeConversation}
             contact={activeContact}
             messages={messages}
+            whatsappProvider={whatsappProvider}
             onMessagesLoaded={handleMessagesLoaded}
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}

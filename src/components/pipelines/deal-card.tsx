@@ -53,11 +53,25 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         .eq("contact_id", deal.contact_id)
         .order("created_at", { ascending: true })
         .limit(1);
-      if (error || !data || data.length === 0) {
+      if (!error && data && data.length > 0) {
+        router.push(`/inbox?c=${data[0].id}`);
+        return;
+      }
+
+      // No conversation exists yet (e.g. right after a conversations
+      // reset) — find-or-create through the server route rather than
+      // inserting from here directly, so the race-safe unique-index
+      // handling (migration 036) and account/role checks live in one
+      // place instead of being duplicated in every caller.
+      const res = await fetch(`/api/contacts/${deal.contact_id}/conversation`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.id) {
         toast.error(t("noConversation"));
         return;
       }
-      router.push(`/inbox?c=${data[0].id}`);
+      router.push(`/inbox?c=${json.id}`);
     } finally {
       setOpeningConversation(false);
     }

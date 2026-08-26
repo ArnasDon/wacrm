@@ -23,7 +23,7 @@ export interface EngineProviderCreds {
  * decrypt only the secret that provider actually uses — mirrors the
  * branch in send-message.ts's sendMessageToConversation. A 'meta' row
  * is guaranteed access_token IS NOT NULL, an 'evolution' row is
- * guaranteed evolution_instance_token IS NOT NULL (migration 037's
+ * guaranteed evolution_instance_token IS NOT NULL (migration 040's
  * CHECK constraints), so this never decrypts a null.
  */
 export function resolveEngineProviderCreds(config: {

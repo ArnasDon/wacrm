@@ -11,7 +11,7 @@
 //
 // Payload shape (confirmed against the Evolution Go API and a live
 // reference integration consuming this same event stream — see
-// migration 037 and evolution-api.ts for the outbound side):
+// migration 040 and evolution-api.ts for the outbound side):
 //   { event: 'Message' | 'Receipt' | 'PairSuccess' | 'LoggedOut',
 //     data: {...}, instanceId, instanceToken, state? }
 //
@@ -193,7 +193,7 @@ async function findConfigForInstance(
   if (!rows || rows.length === 0) return null
   if (rows.length > 1) {
     // Shouldn't happen — evolution_instance_uuid has a unique index
-    // (migration 037) — but fail closed rather than pick one at random.
+    // (migration 040) — but fail closed rather than pick one at random.
     console.error(
       `[evolution-webhook] multiple configs (${rows.length}) matched instance_uuid ${instanceId} — dropping`
     )

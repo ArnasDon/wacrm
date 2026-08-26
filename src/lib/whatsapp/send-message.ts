@@ -279,7 +279,7 @@ export async function sendMessageToConversation(
 
   // Meta and Evolution Go keep their secret in different columns
   // (access_token vs evolution_instance_token) — decrypt only the one
-  // this config's provider actually uses. See migration 037: a
+  // this config's provider actually uses. See migration 040: a
   // 'meta' row is guaranteed access_token IS NOT NULL, an 'evolution'
   // row is guaranteed evolution_instance_token IS NOT NULL.
   const accessToken = isEvolution ? '' : decrypt(config.access_token);

@@ -16,7 +16,7 @@ now work for Evolution accounts (no Meta approval needed), and the
 inbox gets read receipts, a new-message chime/desktop alert, and a
 "send to pipeline" shortcut.
 
-> **Migration required:** apply `supabase/migrations/038_evolution_health_check.sql`
+> **Migration required:** apply `supabase/migrations/041_evolution_health_check.sql`
 > (adds `whatsapp_config.evolution_reconnect_attempt_count` and
 > `evolution_last_reconnect_attempt_at`, used by the new health-check's
 > reconnect backoff).

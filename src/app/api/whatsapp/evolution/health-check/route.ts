@@ -9,7 +9,7 @@
 // time (no inbound message can arrive to trigger anything either, so
 // nothing else in the app would ever notice). This cron closes that
 // gap by polling Evolution Go's own GET /instance/status directly —
-// see migration 038 for the backoff-tracking columns.
+// see migration 041 for the backoff-tracking columns.
 //
 // Auth: same shared-secret pattern as /api/automations/cron
 // (`x-cron-secret` header against AUTOMATION_CRON_SECRET) — this is

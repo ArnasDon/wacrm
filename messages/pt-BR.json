@@ -437,9 +437,9 @@
         "custom": "Campos personalizados",
         "deals": "Negócios",
         "tags": "Tags",
-      "noTags": "Nenhuma tag",
-      "noDeals": "Nenhum negócio",
-      "addNotePlaceholder": "Adicionar uma nota..."
+        "noTags": "Nenhuma tag",
+        "noDeals": "Nenhum negócio",
+        "addNotePlaceholder": "Adicionar uma nota..."
       },
       "actions": {
         "edit": "Editar",
@@ -842,7 +842,16 @@
         "failed": "Falharam"
       },
       "toastFailedDelete": "Falha ao excluir: {error}",
-      "toastDeleted": "Transmissão excluída"
+      "toastDeleted": "Transmissão excluída",
+      "resumeHint": "{count} destinatários falharam. Tentar novamente os envia de novo a partir do servidor.",
+      "resumePending": "Retomar envio ({count})",
+      "resumeStalledHint": "{count} destinatários nunca chegaram a ser enviados — a aba do navegador que rodava essa campanha foi fechada antes de terminar. Retomar conclui o envio a partir do servidor.",
+      "resumeStalledTitle": "Essa campanha parou no meio do caminho",
+      "resumeTitle": "Alguns destinatários precisam de outra tentativa",
+      "retryFailed": "Tentar novamente as falhas ({count})",
+      "toastResumeFailed": "Não foi possível retomar: {error}",
+      "toastResumeStarted": "Enviando para {count} destinatários em segundo plano.",
+      "toastResumeStartedCapped": "Enviando para {count} destinatários em segundo plano. Mais {remaining} vão precisar de uma nova execução."
     },
     "new": {
       "title": "Nova transmissão",
@@ -1576,7 +1585,6 @@
       "deleteLocallyAria": "Excluir modelo localmente",
       "deleteMetaLocallyTitle": "Excluir da Meta e localmente",
       "deleteLocallyTitle": "Excluir localmente",
-
       "dialogEditTitle": "Editar modelo de mensagem",
       "dialogNewTitle": "Novo modelo de mensagem",
       "dialogEditDesc": "Salve suas alterações para reenviar à Meta. O status volta para PENDENTE durante a análise.",
@@ -1584,7 +1592,6 @@
       "dialogNewDesc": "Crie um modelo e envie-o para aprovação da Meta. Depois de aprovado, você pode usá-lo em transmissões e na caixa de entrada.",
       "dialogNewDescEvolution": "Crie um modelo reutilizável para enviar direto pela caixa de entrada — sem necessidade de aprovação para este tipo de conexão.",
       "authWarning": "Modelos do tipo AUTHENTICATION têm um corpo fixo + botão de OTP que exige um construtor diferente. Por enquanto, crie-os no Gerenciador do WhatsApp da Meta e use <bold>Sincronizar com a Meta</bold> para trazê-los.",
-
       "templateName": "Nome do modelo",
       "namePlaceholder": "ex.: confirmacao_pedido",
       "nameFixed": "O nome fica fixo assim que o modelo existe na Meta — crie um novo modelo para alterá-lo.",
@@ -1598,7 +1605,6 @@
       "langFixedEvolution": "O idioma fica fixo após a criação — crie um novo modelo para alterá-lo.",
       "langHint": "Precisa corresponder exatamente ao código na Meta — <code>en_US</code> e <code>en</code> são diferentes.",
       "langHintEvolution": "Usado só para diferenciar modelos — escolha o que fizer mais sentido para você.",
-
       "header": "Cabeçalho",
       "headerNone": "Nenhum",
       "headerText": "Texto",
@@ -1611,7 +1617,6 @@
       "headerSamplePlaceholder": "Valor de exemplo para {{1}} (obrigatório para análise da Meta)",
       "headerSampleAlt": "Amostra do cabeçalho",
       "qualityScoreTitle": "Pontuação de qualidade da Meta",
-
       "uploadImage": "Enviar imagem",
       "uploadHint": "JPEG ou PNG, até 5 MB",
       "mediaUrlPlaceholder": "https://… (ou cole um link público de {format})",
@@ -1619,17 +1624,14 @@
       "mediaHint": "Precisa ser um link HTTPS publicamente acessível. A Meta o acessa uma vez durante a análise, então ele precisa continuar no ar por cerca de 24 horas.",
       "videoHint": " Recomendado: MP4 / 3GPP, até 16 MB, até 60 segundos.",
       "documentHint": " Recomendado: PDF, até 100 MB.",
-
       "bodyText": "Texto do corpo",
       "bodyPlaceholder": "Olá {{1}}, seu pedido {{2}} está confirmado.",
       "bodyHint": "Use {{1}}, {{2}} para variáveis (precisam ser contínuas, começando em {{1}}).",
       "sampleValues": "Valores de exemplo (a Meta usa para analisar seu modelo)",
       "sampleAria": "Valor de exemplo para a variável do corpo {var}",
       "samplePlaceholder": "Exemplo para {var}",
-
       "footer": "Rodapé (opcional)",
       "footerPlaceholder": "Texto do rodapé opcional (máx. 60 caracteres)",
-
       "buttons": "Botões (opcional)",
       "addButton": "Adicionar botão",
       "buttonsLimit": "Até {max} botões. Botões QUICK_REPLY devem vir antes dos botões de URL / telefone / copiar código.",
@@ -1642,7 +1644,6 @@
       "urlSamplePlaceholder": "Valor de exemplo para {{1}} (obrigatório quando a URL tem variável)",
       "phonePlaceholder": "+5511999999999",
       "codePlaceholder": "Código de exemplo (ex.: VERAO20)",
-
       "cancel": "Cancelar",
       "saving": "Salvando…",
       "submitting": "Enviando…",
@@ -1650,13 +1651,11 @@
       "saveChanges": "Salvar alterações",
       "submitApproval": "Enviar para aprovação",
       "saveTemplate": "Salvar modelo",
-
       "deleteDialogTitle": "Excluir modelo?",
       "deleteMetaDesc": "\"{name}\" será excluído da Meta e do wacrm. Transmissões ativas que usam este modelo começarão a falhar no próximo envio. Esta ação não pode ser desfeita.",
       "deleteLocalDesc": "\"{name}\" será excluído do wacrm. Ele nunca foi enviado à Meta, então não é necessária nenhuma limpeza remota.",
       "deleting": "Excluindo…",
       "delete": "Excluir",
-
       "toastLoadFailed": "Falha ao carregar modelos",
       "toastSubmitFailed": "Falha ao enviar",
       "toastSubmitEditSuccess": "Edição enviada — a Meta geralmente analisa em até 24 horas.",
@@ -1684,7 +1683,6 @@
       "statusDisabled": "Desativado",
       "statusInAppeal": "Em recurso",
       "statusPendingDeletion": "Exclusão pendente",
-
       "validationNameRequired": "O nome do modelo é obrigatório.",
       "validationNameInvalidChars": "O nome do modelo deve conter apenas letras minúsculas, números e underscore (1 a 512 caracteres).",
       "validationLanguageRequired": "O idioma é obrigatório.",
@@ -1853,7 +1851,13 @@
         "confirmButton": "Apagar tudo",
         "successToast": "{count, plural, =0 {Nenhuma conversa para apagar} =1 {1 conversa apagada} other {# conversas apagadas}}",
         "errorToast": "Falha ao apagar as conversas"
-      }
+      },
+      "mediaTitle": "Armazenamento de anexos",
+      "mediaDesc": "A Meta apaga a mídia recebida cerca de 30 dias após chegar. Os anexos podem ser copiados para o seu próprio armazenamento para continuarem visíveis.",
+      "mirrorInbound": "Manter anexos recebidos",
+      "mirrorInboundDesc": "Salva uma cópia de cada foto, vídeo, áudio e documento enviado pelos clientes. Usa seu armazenamento do Supabase; arquivos acima de 16 MB são ignorados.",
+      "mirrorInboundOffWarning": "Novos anexos vão parar de ser copiados e ficarão indisponíveis cerca de 30 dias após chegarem.",
+      "mirrorInboundSaveFailed": "Não foi possível atualizar a configuração de anexos."
     },
     "sections": {
       "overview": "Visão geral",
@@ -1900,7 +1904,6 @@
       "profileSaved": "Perfil salvo",
       "emailChangeFailed": "Falha ao alterar e-mail: {message}",
       "profileSavedEmailCheck": "Perfil salvo — verifique seu e-mail para confirmar a alteração do endereço",
-
       "passwordTitle": "Senha",
       "passwordDesc": "Use pelo menos {min} caracteres. Você continuará conectado neste dispositivo depois de alterá-la.",
       "currentPassword": "Senha atual",
@@ -1914,7 +1917,6 @@
       "currentPasswordIncorrect": "A senha atual está incorreta",
       "passwordUpdateFailed": "Falha ao atualizar a senha: {message}",
       "passwordUpdated": "Senha atualizada",
-
       "sessionsTitle": "Sessões ativas",
       "sessionsDesc": "Saia de todos os dispositivos em que você está conectado — incluindo este. Útil se você perdeu um notebook ou compartilhou sua senha.",
       "signOutAll": "Sair de todos os dispositivos",
@@ -2055,5 +2057,12 @@
       "reindexTooltip": "Regerar embeddings de todos os documentos (ex.: após adicionar uma chave de embeddings)",
       "loading": "Carregando…"
     }
+  },
+  "AccountAccess": {
+    "unlinkedTitle": "Este usuário não está vinculado a uma conta",
+    "unlinkedBody": "Nada do que você alterar será salvo enquanto isso não for resolvido — o banco de dados rejeita toda escrita de um usuário sem conta ou papel definido. Se você foi convidado para um time, peça ao dono para reenviar o convite. Em uma instalação self-hosted, verifique se a migration de bootstrap de conta rodou para este usuário.",
+    "errorTitle": "Não foi possível carregar suas permissões",
+    "errorBody": "O papel da sua conta não carregou, então toda ação é tratada como somente leitura e as alterações não serão salvas. Verifique sua conexão e tente novamente.",
+    "retry": "Tentar novamente"
   }
 }

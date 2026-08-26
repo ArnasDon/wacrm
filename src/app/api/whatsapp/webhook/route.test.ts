@@ -233,9 +233,22 @@ function inboundRequest(message: Record<string, unknown> = TEXT_MESSAGE) {
       },
     ],
   }
+  const text = JSON.stringify(body)
   return {
-    text: async () => JSON.stringify(body),
-    headers: { get: () => 'sha256=stub' },
+    text: async () => text,
+    // readBodyWithLimit reads the real Fetch API body stream, not
+    // .text() — a plain object here would look like a zero-byte body
+    // and every downstream check would silently no-op.
+    body: new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(text))
+        controller.close()
+      },
+    }),
+    headers: {
+      get: (name: string) =>
+        name.toLowerCase() === 'x-hub-signature-256' ? 'sha256=stub' : null,
+    },
   } as unknown as Request
 }
 

@@ -220,7 +220,7 @@ describe('planBroadcastResume', () => {
         params: ['B456', 'Monday'],
       },
     ]);
-    expect(plan.accessToken).toBe('decrypted:tok');
+    expect(plan.creds.accessToken).toBe('decrypted:tok');
     expect(remaining).toBe(0);
     expect(unsendable).toBe(0);
   });

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { supabaseAdmin } from './admin-client'
 
 // ============================================================
 // Google Calendar OAuth (Authorization Code flow, `access_type=offline`
@@ -176,6 +177,65 @@ async function refreshAccessToken(
   return { accessToken: data.access_token, expiresAt }
 }
 
+/**
+ * Alerts the account's admins/owners that the Google Calendar
+ * connection needs to be reconnected — mirrors `notifyAiKeyInvalid` in
+ * src/lib/ai/auto-reply.ts for the same "an automated background
+ * failure must not go unnoticed" reason (real incident, 2026-08-26: a
+ * dead refresh token went unnoticed for days while the AI kept
+ * promising appointments it could never actually book). Also flips
+ * `google_calendar_config.status` to 'disconnected' and records
+ * `last_connection_error`, so every other read of that row (Settings,
+ * `check_calendar_availability`, `loadCalendarContext`) stops claiming
+ * the connection is healthy the instant this is known to be false,
+ * instead of only finding out via its own live API call. Throttled to
+ * at most one alert per account per 6h — a dead connection would
+ * otherwise renotify on every single customer message that tries to
+ * use the calendar. Best-effort: never throws, so a notification
+ * failure can't mask the real error already being reported to the
+ * caller of `getValidAccessToken`.
+ */
+async function notifyGoogleCalendarDisconnected(accountId: string, message: string): Promise<void> {
+  try {
+    const db = supabaseAdmin()
+
+    await db
+      .from('google_calendar_config')
+      .update({ status: 'disconnected', last_connection_error: message })
+      .eq('account_id', accountId)
+
+    const sixHoursAgo = new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString()
+    const { data: recent } = await db
+      .from('notifications')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('type', 'google_calendar_error')
+      .gte('created_at', sixHoursAgo)
+      .limit(1)
+      .maybeSingle()
+    if (recent) return
+
+    const { data: recipients } = await db
+      .from('profiles')
+      .select('user_id')
+      .eq('account_id', accountId)
+      .in('account_role', ['owner', 'admin'])
+    if (!recipients || recipients.length === 0) return
+
+    await db.from('notifications').insert(
+      recipients.map((r) => ({
+        account_id: accountId,
+        user_id: r.user_id as string,
+        type: 'google_calendar_error',
+        title: 'Google Calendar se desconectó',
+        body: 'El asistente de IA ya no puede consultar tu calendario ni agendar citas — Google rechazó el token de acceso. Reconectá desde Configuración → Google Calendar.',
+      })),
+    )
+  } catch (err) {
+    console.error('[google-calendar] failed to send disconnect notification:', err)
+  }
+}
+
 interface CalendarConfigRow {
   refresh_token: string
   access_token: string | null
@@ -216,13 +276,27 @@ export async function getValidAccessToken(db: SupabaseClient, accountId: string)
     refreshToken = decrypt(config.refresh_token)
   } catch (err) {
     console.error('[google-calendar] refresh_token decrypt failed:', err)
-    throw new GoogleCalendarError(
-      'Stored Google Calendar credentials cannot be decrypted — reconnect from Settings.',
-      400,
-    )
+    const message = 'Stored Google Calendar credentials cannot be decrypted — reconnect from Settings.'
+    void notifyGoogleCalendarDisconnected(accountId, message)
+    throw new GoogleCalendarError(message, 400)
   }
 
-  const { accessToken, expiresAt } = await refreshAccessToken(refreshToken)
+  let accessToken: string
+  let expiresAt: Date
+  try {
+    ;({ accessToken, expiresAt } = await refreshAccessToken(refreshToken))
+  } catch (err) {
+    // Only a genuine rejection from Google (it responded and said no —
+    // "invalid_grant" for an expired/revoked refresh_token is the
+    // common case) warrants waking someone up: it won't self-heal on
+    // the next request the way a transient timeout/network error
+    // (googleFetch's own "Google API request timed out" / "Could not
+    // reach Google" — Google never actually answered) might.
+    if (err instanceof GoogleCalendarError && err.message.startsWith('Google rejected the refresh token')) {
+      void notifyGoogleCalendarDisconnected(accountId, err.message)
+    }
+    throw err
+  }
 
   const { error: updateError } = await db
     .from('google_calendar_config')

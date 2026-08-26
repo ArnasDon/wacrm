@@ -1447,6 +1447,45 @@
       "modeRemove": "Remover",
       "tagPicked": "{mode} tag {tag}…",
       "tagNone": "{mode} tag (nenhuma escolhida)"
+    },
+    "templates": {
+      "welcome_menu": {
+        "name": "Menu de boas-vindas",
+        "description": "Recebe clientes que digitam uma palavra-chave e os direciona ao agente certo, dependendo se são clientes novos ou já existentes.",
+        "keywords": "suporte, ajuda, oi",
+        "welcomeText": "Oi! 👋 Bem-vindo ao suporte. Você já é cliente ou é a primeira vez por aqui?",
+        "welcomeFooterText": "Toque em um botão abaixo para continuar.",
+        "existingButtonTitle": "Já sou cliente",
+        "newButtonTitle": "Cliente novo",
+        "existingHandoffNote": "Cliente já existente precisa de ajuda — confira o histórico da conta antes de responder.",
+        "newHandoffNote": "Cliente novo — envie preços e link de integração."
+      },
+      "faq_bot": {
+        "name": "Bot de perguntas frequentes",
+        "description": "Responde perguntas comuns automaticamente. O cliente escolhe um assunto na lista; o bot responde e encerra.",
+        "keywords": "faq, pergunta, duvida",
+        "topicsText": "Com o que posso te ajudar?",
+        "topicsButtonLabel": "Ver assuntos",
+        "commonQuestionsTitle": "Perguntas comuns",
+        "hoursRowTitle": "Horário de atendimento",
+        "pricingRowTitle": "Preços",
+        "refundsRowTitle": "Política de reembolso",
+        "otherSectionTitle": "Outros",
+        "humanRowTitle": "Falar com um atendente",
+        "hoursAnswerText": "Atendemos de segunda a sexta, das 9h às 18h no horário local. Aos fins de semana, o suporte fica limitado a casos urgentes.",
+        "pricingAnswerText": "Nossos preços começam em $9/mês. Acesse https://example.com/pricing para ver a tabela completa.",
+        "refundsAnswerText": "Reembolsos são garantidos em até 30 dias da compra. Responda com o número do seu pedido que processamos para você.",
+        "humanHandoffNote": "Cliente pediu para falar com um atendente pelo bot de FAQ."
+      },
+      "lead_capture": {
+        "name": "Captura de leads",
+        "description": "Recebe o primeiro contato do cliente, coleta nome + e-mail + empresa e encaminha para vendas com as respostas na nota.",
+        "introText": "Bem-vindo! 👋 Vou fazer algumas perguntas rápidas para te encaminhar para a pessoa certa.",
+        "askNamePrompt": "Qual é o seu nome?",
+        "askEmailPrompt": "Obrigado, {{vars.name}}! Qual é o seu e-mail de trabalho?",
+        "askCompanyPrompt": "Já estamos quase terminando — qual é o nome da sua empresa?",
+        "handoffNote": "Novo lead — nome={{vars.name}}, e-mail={{vars.email}}, empresa={{vars.company}}."
+      }
     }
   },
   "Settings": {

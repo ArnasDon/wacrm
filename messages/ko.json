@@ -1455,6 +1455,45 @@
       "modeRemove": "제거",
       "tagPicked": "{tag} 태그 {mode}…",
       "tagNone": "태그 {mode} (선택된 태그 없음)"
+    },
+    "templates": {
+      "welcome_menu": {
+        "name": "환영 메뉴",
+        "description": "키워드를 입력한 고객을 맞이하고, 신규 고객인지 기존 고객인지에 따라 적절한 담당자에게 연결합니다.",
+        "keywords": "지원, 도움, 안녕",
+        "welcomeText": "안녕하세요! 👋 고객 지원팀입니다. 기존 고객이신가요, 아니면 처음이신가요?",
+        "welcomeFooterText": "아래 버튼을 눌러 계속하세요.",
+        "existingButtonTitle": "기존 고객",
+        "newButtonTitle": "신규 고객",
+        "existingHandoffNote": "기존 고객이 도움이 필요합니다 — 답변 전에 계정 이력을 확인하세요.",
+        "newHandoffNote": "신규 고객 — 가격 안내와 온보딩 링크를 공유하세요."
+      },
+      "faq_bot": {
+        "name": "FAQ 봇",
+        "description": "자주 묻는 질문에 자동으로 답변합니다. 고객이 목록에서 주제를 선택하면 봇이 답변하고 종료합니다.",
+        "keywords": "faq, 질문, 문의",
+        "topicsText": "무엇을 도와드릴까요?",
+        "topicsButtonLabel": "주제 보기",
+        "commonQuestionsTitle": "자주 묻는 질문",
+        "hoursRowTitle": "영업시간",
+        "pricingRowTitle": "요금",
+        "refundsRowTitle": "환불 정책",
+        "otherSectionTitle": "기타",
+        "humanRowTitle": "상담원과 대화하기",
+        "hoursAnswerText": "월-금 현지 시간 오전 9시~오후 6시에 운영합니다. 주말에는 긴급한 문의만 지원합니다.",
+        "pricingAnswerText": "요금은 월 $9부터 시작합니다. 자세한 내용은 https://example.com/pricing 에서 확인하세요.",
+        "refundsAnswerText": "구매 후 30일 이내 환불이 가능합니다. 주문 번호를 회신해 주시면 처리해 드리겠습니다.",
+        "humanHandoffNote": "고객이 FAQ 봇에서 상담원과의 대화를 요청했습니다."
+      },
+      "lead_capture": {
+        "name": "리드 수집",
+        "description": "첫 문의 고객을 맞이하고 이름·이메일·회사명을 수집한 뒤, 답변 내용을 메모에 담아 영업팀에 인계합니다.",
+        "introText": "환영합니다! 👋 적합한 담당자에게 연결해 드리기 위해 몇 가지 간단한 질문을 드릴게요.",
+        "askNamePrompt": "성함이 어떻게 되시나요?",
+        "askEmailPrompt": "감사합니다, {{vars.name}}님! 업무용 이메일 주소가 어떻게 되시나요?",
+        "askCompanyPrompt": "거의 다 됐습니다 — 회사명이 어떻게 되시나요?",
+        "handoffNote": "신규 리드 — 이름={{vars.name}}, 이메일={{vars.email}}, 회사={{vars.company}}."
+      }
     }
   },
   "Settings": {

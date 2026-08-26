@@ -26,6 +26,29 @@ import type { GenerateResult } from './types'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/**
+ * Catches a reply that TELLS the customer their appointment/demo is
+ * booked (in Spanish or English) when the model did NOT actually emit
+ * `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` this turn — i.e. a fabricated
+ * confirmation with nothing behind it. Real incident (2026-08-26): the
+ * model twice wrote "Confirmo tu demostración... te enviaré el enlace
+ * de Google Meet" / "Te agendé a ... recibirás el enlace" with no
+ * marker anywhere in the raw output, so no event was ever created —
+ * the customer was told they had a meeting that didn't exist. Only
+ * checked when `calendarContext` was non-null (the capability was
+ * actually on offer this turn), so a business that never enabled
+ * scheduling can't trip this on an unrelated reply. Deliberately broad
+ * rather than exact — false positives here just cost a handoff, false
+ * negatives ship another fake appointment.
+ */
+const FAKE_APPOINTMENT_CONFIRMATION_RE =
+  /\b(confirm(?:o|ada|ado|amos)\b.{0,40}\b(cita|demo|demostraci[oó]n|reuni[oó]n)|te\s+agend[eé]|qued[oóa]n?\s+agendad|(?:tu|la)\s+cita\s+(?:qued[oóa]|est[aá])\s+(?:confirmad|agendad)|enlace\s+de\s+(?:google\s+)?meet|link\s+de\s+(?:google\s+)?meet|videollamada\s+confirmada|your\s+(?:appointment|demo|meeting)\s+is\s+(?:booked|confirmed)|i(?:'|’)ve\s+booked\s+you)/i
+
+/** Generic, safe fallback sent instead of a fabricated confirmation —
+ *  never promises a time/date that was never actually booked. */
+const FAKE_APPOINTMENT_FALLBACK_TEXT =
+  'Ya casi tengo todo lo tuyo — dame un momento para confirmar el espacio con el equipo y te aviso apenas quede agendado. 🙌'
+
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
   accountId: string
@@ -240,6 +263,46 @@ export async function dispatchInboundToAiReply(
     }
     const outboundText = quickReplyText?.text ?? text
 
+    // Defense in depth against a fabricated appointment confirmation:
+    // the model told the customer their demo/appointment is booked
+    // without emitting SCHEDULE_APPOINTMENT_SENTINEL_PREFIX this turn,
+    // so `autoScheduleAppointment` below would never even attempt the
+    // real booking. Never let that text reach the customer — send a
+    // safe holding message instead and hand off so a human actually
+    // books it, rather than the customer believing a Meet link is
+    // coming that nobody will ever send.
+    if (calendarContext && !appointmentProposal && !handoff && FAKE_APPOINTMENT_CONFIRMATION_RE.test(outboundText)) {
+      console.error(
+        `[ai auto-reply] conversation ${conversationId}: reply looks like a fabricated appointment confirmation with no schedule_appointment marker — withholding it and handing off:`,
+        outboundText,
+      )
+      const { data: claimed, error: claimErr } = await db.rpc('claim_ai_reply_slot', {
+        conversation_id: conversationId,
+        max_replies: config.autoReplyMaxPerConversation,
+      })
+      if (claimErr) {
+        console.error('[ai auto-reply] claim_ai_reply_slot failed:', claimErr)
+      } else if (claimed === true) {
+        await engineSendText({
+          accountId,
+          userId: configOwnerUserId,
+          conversationId,
+          contactId,
+          text: FAKE_APPOINTMENT_FALLBACK_TEXT,
+          aiGenerated: true,
+        })
+      }
+      await handOffToHuman({
+        db,
+        conversationId,
+        handoffAgentId: config.handoffAgentId,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        summary:
+          '🤖 La IA le dijo a este cliente que su cita/demo ya estaba confirmada, pero nunca ejecutó el agendamiento real en Google Calendar — no se envió esa confirmación falsa. Necesita que un humano agende la cita de verdad.',
+      })
+      return
+    }
+
     if (!outboundText && !handoff) {
       // The model produced no usable reply text but didn't ask for a
       // human either — most likely it emitted only a marker (e.g. the
@@ -401,8 +464,10 @@ export async function dispatchInboundToAiReply(
     if (appointmentProposal && config.autoScheduleAppointmentsEnabled) {
       try {
         await autoScheduleAppointment({
-          db, accountId, contactId, configOwnerUserId, proposal: appointmentProposal,
+          db, accountId, contactId, configOwnerUserId, conversationId, proposal: appointmentProposal,
           timeZone: calendarContext?.timeZone ?? 'UTC',
+          handoffAgentId: config.handoffAgentId,
+          alreadyAssigned: Boolean(conv.assigned_agent_id),
         })
       } catch (err) {
         console.error('[ai auto-reply] autonomous schedule_appointment failed:', err)
@@ -918,35 +983,59 @@ async function loadCalendarContext(args: {
  * parse, the slot must still be free (a beat may have passed since
  * `loadCalendarContext`'s snapshot — e.g. a different conversation
  * booked the same slot in between), and the email must look real.
- * Any failure here is logged and silently dropped — it can never
- * affect the customer-facing reply, which already went out.
+ *
+ * The model is instructed to tell the customer the appointment is
+ * confirmed in the SAME reply that carries the marker (see
+ * `buildSystemPrompt`'s calendar section), and that reply has already
+ * been sent by the time this runs — so any failure here means the
+ * customer was just told they have a meeting that doesn't actually
+ * exist. Every failure path below hands the conversation off to a
+ * human instead of silently dropping it (real incident, 2026-08-26 —
+ * the model twice fabricated a confirmed appointment; this handles the
+ * companion case where the marker WAS present but booking still
+ * failed).
  */
 async function autoScheduleAppointment(args: {
   db: SupabaseClient
   accountId: string
   contactId: string
   configOwnerUserId: string
+  conversationId: string
   proposal: { start: string; end: string; email: string }
   /** Account's IANA timezone, for the created event's display timezone
    *  — the actual booked instant is already correct regardless (the
    *  proposal's offset-qualified datetime disambiguates it), this only
    *  affects how the event's time is labeled/rendered in Calendar. */
   timeZone: string
+  handoffAgentId: string | null
+  alreadyAssigned: boolean
 }): Promise<void> {
-  const { db, accountId, contactId, configOwnerUserId, proposal, timeZone } = args
+  const { db, accountId, contactId, configOwnerUserId, conversationId, proposal, timeZone, handoffAgentId, alreadyAssigned } = args
+
+  const handoff = (reason: string) =>
+    handOffToHuman({
+      db,
+      conversationId,
+      handoffAgentId,
+      alreadyAssigned,
+      summary: `🤖 La IA le confirmó una cita a este cliente pero no se logró agendar de verdad en Google Calendar (${reason}). Necesita que un humano la agende o le avise al cliente.`,
+    })
 
   const start = new Date(proposal.start)
   const end = new Date(proposal.end)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end <= start) {
     console.warn('[ai auto-reply] autonomous schedule_appointment: invalid start/end, skipping:', proposal)
+    await handoff('la fecha/hora que propuso no era válida')
     return
   }
   if (start.getTime() < Date.now() - 60_000) {
     console.warn('[ai auto-reply] autonomous schedule_appointment: proposed slot is in the past, skipping:', proposal)
+    await handoff('el horario propuesto ya había pasado')
     return
   }
   if (!EMAIL_RE.test(proposal.email)) {
     console.warn('[ai auto-reply] autonomous schedule_appointment: invalid attendee email, skipping:', proposal)
+    await handoff('el correo del asistente no era válido')
     return
   }
 
@@ -955,11 +1044,13 @@ async function autoScheduleAppointment(args: {
     busy = await checkFreeBusy(db, accountId, start.toISOString(), end.toISOString())
   } catch (err) {
     console.error('[ai auto-reply] autonomous schedule_appointment: freebusy re-check failed, skipping:', err)
+    await handoff('no se pudo verificar la disponibilidad real del calendario')
     return
   }
   const overlaps = busy.some((b) => new Date(b.start) < end && new Date(b.end) > start)
   if (overlaps) {
     console.warn('[ai auto-reply] autonomous schedule_appointment: slot is no longer free, skipping:', proposal)
+    await handoff('el horario ya no estaba disponible en el calendario real')
     return
   }
 
@@ -981,6 +1072,7 @@ async function autoScheduleAppointment(args: {
     })
   } catch (err) {
     console.error('[ai auto-reply] autonomous schedule_appointment: createEvent failed:', err)
+    await handoff('Google Calendar rechazó la creación del evento')
     return
   }
 

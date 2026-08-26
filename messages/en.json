@@ -234,6 +234,10 @@
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
+      "hideConversationList": "Hide conversation list",
+      "showConversationList": "Show conversation list",
+      "hideList": "Hide list",
+      "showList": "Show list",
       "hideContactPanel": "Hide contact panel",
       "showContactPanel": "Show contact panel",
       "hideContact": "Hide contact",

@@ -20,6 +20,9 @@ import { cn } from "@/lib/utils";
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
 const CONTACT_PANEL_STORAGE_KEY = "wacrm:inbox:contact-panel-open";
+// Same idea, for the desktop conversation-list panel — see
+// `handleToggleListPanel` below.
+const LIST_PANEL_STORAGE_KEY = "wacrm:inbox:list-panel-open";
 
 // `useSearchParams` (the `?c=<id>` deep link below) requires a Suspense
 // boundary or the production build bails to CSR and errors out. Thin
@@ -83,6 +86,33 @@ function InboxPageInner() {
       const next = !prev;
       try {
         localStorage.setItem(CONTACT_PANEL_STORAGE_KEY, String(next));
+      } catch {
+        // Persistence is best-effort; ignore storage failures.
+      }
+      return next;
+    });
+  }, []);
+
+  /**
+   * Same pattern as the contact panel above, for the conversation list.
+   * Defaults to `true` (unchanged historical layout) and is reconciled
+   * from localStorage post-mount to avoid a hydration mismatch.
+   */
+  const [listPanelOpen, setListPanelOpen] = useState(true);
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem(LIST_PANEL_STORAGE_KEY);
+      if (stored !== null) setListPanelOpen(stored === "true");
+    } catch {
+      // localStorage can throw in private-browsing / sandboxed contexts.
+    }
+  }, []);
+
+  const handleToggleListPanel = useCallback(() => {
+    setListPanelOpen((prev) => {
+      const next = !prev;
+      try {
+        localStorage.setItem(LIST_PANEL_STORAGE_KEY, String(next));
       } catch {
         // Persistence is best-effort; ignore storage failures.
       }
@@ -564,6 +594,11 @@ function InboxPageInner() {
   // it back to the list. On lg+ both panes render side-by-side as
   // before, unchanged.
   const hasActiveConv = !!activeConversation;
+  // The list stays force-visible whenever there's nothing else to show
+  // in its place — collapsing it with no active conversation would
+  // leave the page blank on desktop. Only once a thread is open does
+  // the agent's collapse choice take effect.
+  const desktopListVisible = !hasActiveConv || listPanelOpen;
 
   return (
     <div className="-m-4 -mb-[calc(4.25rem+env(safe-area-inset-bottom))] flex h-[calc(100dvh-3.5rem-4.25rem-env(safe-area-inset-bottom))] flex-col overflow-hidden sm:-m-6 sm:h-[calc(100dvh-3.5rem)] lg:mb-0">
@@ -581,11 +616,14 @@ function InboxPageInner() {
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel: Conversation list.
             Hidden on mobile when a conversation is selected so the
-            thread can occupy the full width. Always visible on lg+. */}
+            thread can occupy the full width. On lg+ it's always visible
+            UNLESS the agent collapsed it via the thread-header toggle
+            while a conversation is open — see `desktopListVisible`. */}
         <div
           className={cn(
             "flex h-full flex-1 lg:flex-none",
-            hasActiveConv ? "hidden lg:flex" : "flex",
+            hasActiveConv ? "hidden" : "flex",
+            desktopListVisible ? "lg:flex" : "lg:hidden",
           )}
         >
           <ConversationList
@@ -627,6 +665,8 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            listPanelOpen={listPanelOpen}
+            onToggleListPanel={handleToggleListPanel}
           />
         </div>
 

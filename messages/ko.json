@@ -234,6 +234,10 @@
     },
     "messageThread": {
       "backToConversations": "대화 목록으로 돌아가기",
+      "hideConversationList": "대화 목록 숨기기",
+      "showConversationList": "대화 목록 표시",
+      "hideList": "목록 숨기기",
+      "showList": "목록 표시",
       "hideContactPanel": "연락처 패널 숨기기",
       "showContactPanel": "연락처 패널 표시",
       "hideContact": "연락처 숨기기",

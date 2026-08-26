@@ -991,6 +991,10 @@
     },
     "messageThread": {
       "backToConversations": "Volver a conversaciones",
+      "hideConversationList": "Ocultar lista de conversaciones",
+      "showConversationList": "Mostrar lista de conversaciones",
+      "hideList": "Ocultar lista",
+      "showList": "Mostrar lista",
       "hideContactPanel": "Ocultar panel de contacto",
       "showContactPanel": "Mostrar panel de contacto",
       "hideContact": "Ocultar contacto",

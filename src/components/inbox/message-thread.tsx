@@ -30,6 +30,8 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  PanelLeftOpen,
+  PanelLeftClose,
   Info,
   Bot,
 } from 'lucide-react';
@@ -118,6 +120,15 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Desktop-only conversation-list toggle — mirrors `contactPanelOpen`
+   * above. Collapsing the list gives the thread the full width to read
+   * long messages/media without the 320px list eating into it. Both
+   * optional so existing callers keep working; the toggle button only
+   * renders when `onToggleListPanel` is wired up.
+   */
+  listPanelOpen?: boolean;
+  onToggleListPanel?: () => void;
 }
 
 function formatDateSeparator(
@@ -183,6 +194,8 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  listPanelOpen,
+  onToggleListPanel,
 }: MessageThreadProps) {
   const t = useTranslations('Inbox.messageThread');
   const tTimer = useTranslations('Inbox.sessionTimer');
@@ -1015,6 +1028,32 @@ export function MessageThread({
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Conversation-list toggle — desktop only. Collapses the
+              320px list pane so the thread reads at full width, e.g.
+              for a long message or a wide media attachment. Mirrors
+              the contact-panel toggle below. */}
+          {onToggleListPanel && (
+            <button
+              type="button"
+              onClick={onToggleListPanel}
+              aria-label={
+                listPanelOpen ? t('hideConversationList') : t('showConversationList')
+              }
+              title={listPanelOpen ? t('hideList') : t('showList')}
+              aria-pressed={listPanelOpen}
+              className={cn(
+                'hover:bg-muted hover:text-foreground hidden h-7 w-7 items-center justify-center rounded-md transition-colors lg:inline-flex',
+                listPanelOpen ? 'text-primary' : 'text-muted-foreground'
+              )}
+            >
+              {listPanelOpen ? (
+                <PanelLeftClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4" />
+              )}
+            </button>
+          )}
+
           {/* Contact-panel toggle — desktop only. The contact sidebar
               eats a chunk of horizontal width that crowds the thread on
               smaller laptops; this lets agents reclaim it when they just

@@ -75,6 +75,7 @@ import {
   applyEdgeConnection,
   deriveCanvasEdges,
   outgoingSlots,
+  type TranslateEdgeLabel,
 } from '@/lib/flows/edges';
 import { autoLayout, shouldAutoLayout } from '@/lib/flows/layout';
 import {
@@ -123,6 +124,22 @@ const NODE_HEIGHT = 90;
 // The true/false hues are derived from the start (emerald) and handoff
 // (rose) node colors so all branch/port colors stay single-sourced in
 // NODE_HUE — a palette tweak there can't leave these stale.
+// edges.ts stays framework-free (see its header comment), so it takes
+// a plain translator function instead of a next-intl hook — this
+// adapts a component's own `t` into that shape for its "next" /
+// "true" / "false" edge labels (button/row titles bypass this
+// entirely; they're user-authored and render as-is).
+function edgeLabelTranslator(
+  t: ReturnType<typeof useTranslations>
+): TranslateEdgeLabel {
+  return (key) =>
+    key === 'next'
+      ? t('edgeLabelNext')
+      : key === 'true'
+        ? t('edgeLabelTrue')
+        : t('edgeLabelFalse');
+}
+
 function slotColor(nodeType: NodeType, slotId: string, fallback: string) {
   if (nodeType === 'condition' && slotId === 'true') {
     return nodeColors('start').solid;
@@ -140,7 +157,7 @@ function FlowNodeCard({ data, selected }: NodeProps) {
   const c = nodeColors(node.node_type);
   const tSummary = useTranslations('Flows.summary');
   const summary = summarizeNode(node, tSummary);
-  const slots = outgoingSlots(node);
+  const slots = outgoingSlots(node, edgeLabelTranslator(t));
   // Start nodes are entry-only; nothing ever targets them, so they
   // don't need an incoming Handle. Every other node type accepts
   // incoming edges (including terminal handoff / end — they're the
@@ -301,7 +318,7 @@ function FlowCanvasInner() {
   );
 
   const autoLayoutPositions = useMemo(() => {
-    const canvasEdges = deriveCanvasEdges(builderNodes);
+    const canvasEdges = deriveCanvasEdges(builderNodes, edgeLabelTranslator(t));
 
     return shouldAutoLayout(builderNodes)
       ? autoLayout(
@@ -314,7 +331,7 @@ function FlowCanvasInner() {
           { direction: 'TB' }
         )
       : null;
-  }, [builderNodes]);
+  }, [builderNodes, t]);
 
   // If dagre had to place an all-zero flow, persist the generated
   // positions into editor state once. Otherwise the next drag would
@@ -359,7 +376,7 @@ function FlowCanvasInner() {
   }, [derivedRfNodes]);
 
   const rfEdges = useMemo(() => {
-    const canvasEdges = deriveCanvasEdges(builderNodes);
+    const canvasEdges = deriveCanvasEdges(builderNodes, edgeLabelTranslator(t));
 
     // sourceHandle is now wired up — the FlowNodeCard renders a Handle
     // per slot whose id matches the scheme in edges.ts, so React-Flow
@@ -379,7 +396,7 @@ function FlowCanvasInner() {
     }));
 
     return rfEdges;
-  }, [builderNodes]);
+  }, [builderNodes, t]);
 
   const handleNodesChange = useCallback(
     (changes: NodeChange<RfNode<NodeData>>[]) => {

@@ -254,7 +254,7 @@ function SendButtonsForm({
         ...buttons,
         {
           reply_id: `btn_${buttons.length + 1}`,
-          title: "Option",
+          title: t("defaultButtonTitle"),
           next_node_key: "",
         },
       ],
@@ -438,7 +438,7 @@ function SendListForm({
                 ...s.rows,
                 {
                   reply_id: `row_${totalRows + 1}`,
-                  title: `Option ${totalRows + 1}`,
+                  title: t("defaultRowTitle", { number: totalRows + 1 }),
                   next_node_key: "",
                 },
               ],
@@ -456,7 +456,7 @@ function SendListForm({
   return (
     <>
       <TextRow
-        label="Body text"
+        label={t("bodyText")}
         value={cfg.text ?? ""}
         onChange={(v) => onUpdateConfig({ text: v })}
         rows={3}
@@ -498,7 +498,7 @@ function SendListForm({
                   size="sm"
                   onClick={() => removeSection(sIdx)}
                   className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                  aria-label="Remove section"
+                  aria-label={t("removeSection")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -657,7 +657,7 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (
@@ -676,10 +676,10 @@ function ConditionForm({
                 <SelectValue placeholder={t("pickField")} />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="name">name</SelectItem>
-                <SelectItem value="email">email</SelectItem>
-                <SelectItem value="phone">phone</SelectItem>
-                <SelectItem value="company">company</SelectItem>
+                <SelectItem value="name">{t("contactFieldName")}</SelectItem>
+                <SelectItem value="email">{t("contactFieldEmail")}</SelectItem>
+                <SelectItem value="phone">{t("contactFieldPhone")}</SelectItem>
+                <SelectItem value="company">{t("contactFieldCompany")}</SelectItem>
               </SelectContent>
             </Select>
           ) : (
@@ -805,7 +805,7 @@ function SetTagForm({
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
                 {tags.map((t) => (

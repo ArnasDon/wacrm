@@ -1,6 +1,7 @@
 'use client';
 
 import { readResponseJson } from '@/lib/http/response-json';
+import { postJsonWithRetry } from '@/lib/http/fetch-with-retry';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -743,29 +744,27 @@ export function MessageThread({
       onNewMessage(optimisticMsg);
 
       try {
-        const res = await fetch('/api/whatsapp/send', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            conversation_id: conversation.id,
-            message_type: 'template',
-            template_name: template.name,
-            template_language: template.language,
-            // Structured params drive the new send-builder path
-            // (header media + URL button substitution). Body values
-            // are mirrored under both shapes so the route can fall
-            // back if the template row isn't found locally.
-            template_message_params: {
-              body: values.body,
-              headerText: values.headerText,
-              buttonParams: values.buttonParams,
-            },
-            template_params: values.body,
-            content_text: renderedBody,
-          }),
+        // Retries transient infra-level 502s (a slow/restarting app
+        // behind the reverse proxy returning a bare error page) before
+        // giving up — see fetch-with-retry.ts. A real Meta/validation
+        // error still comes back as JSON on the first attempt.
+        const { res, payload } = await postJsonWithRetry('/api/whatsapp/send', {
+          conversation_id: conversation.id,
+          message_type: 'template',
+          template_name: template.name,
+          template_language: template.language,
+          // Structured params drive the new send-builder path
+          // (header media + URL button substitution). Body values
+          // are mirrored under both shapes so the route can fall
+          // back if the template row isn't found locally.
+          template_message_params: {
+            body: values.body,
+            headerText: values.headerText,
+            buttonParams: values.buttonParams,
+          },
+          template_params: values.body,
+          content_text: renderedBody,
         });
-
-        const payload = await readResponseJson(res).catch(() => ({}));
 
         if (!res.ok) {
           const reason = payload?.error || `HTTP ${res.status}`;

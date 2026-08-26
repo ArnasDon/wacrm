@@ -1,6 +1,7 @@
 'use client';
 
 import { readResponseJson } from '@/lib/http/response-json';
+import { postJsonWithRetry } from '@/lib/http/fetch-with-retry';
 
 import { useState, useEffect, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
@@ -437,26 +438,25 @@ export function ContactDetailView({
     if (!contactId) return;
     setSendingTemplate(true);
     try {
-      const res = await fetch('/api/whatsapp/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          // No conversation_id — the route find-or-creates one for this
-          // contact, mirroring the inbox template-send payload otherwise.
-          contact_id: contactId,
-          message_type: 'template',
-          template_name: template.name,
-          template_language: template.language,
-          template_message_params: {
-            body: values.body,
-            headerText: values.headerText,
-            buttonParams: values.buttonParams,
-          },
-          template_params: values.body,
-        }),
+      // Retries transient infra-level 502s (a slow/restarting app
+      // behind the reverse proxy returning a bare error page) before
+      // giving up — see fetch-with-retry.ts. A real Meta/validation
+      // error still comes back as JSON on the first attempt.
+      const { res, payload } = await postJsonWithRetry('/api/whatsapp/send', {
+        // No conversation_id — the route find-or-creates one for this
+        // contact, mirroring the inbox template-send payload otherwise.
+        contact_id: contactId,
+        message_type: 'template',
+        template_name: template.name,
+        template_language: template.language,
+        template_message_params: {
+          body: values.body,
+          headerText: values.headerText,
+          buttonParams: values.buttonParams,
+        },
+        template_params: values.body,
       });
 
-      const payload = await readResponseJson(res).catch(() => ({}));
       if (!res.ok) {
         const reason = payload?.error || `HTTP ${res.status}`;
         toast.error(t('toastTemplateFailed', { reason }));

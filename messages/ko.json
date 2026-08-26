@@ -455,7 +455,11 @@
       "resultTags": "태그 {count}개 지정됨",
       "resultTags_plural": "태그 {count}개 지정됨",
       "resultSkipped": "{count}개 건너뜀",
+      "resultInvalidPhone": "전화번호 오류 {count}개",
+      "resultInvalidPhone_plural": "전화번호 오류 {count}개",
       "resultFailed": "{count}개 실패",
+      "failedRowsHeading": "실패한 행",
+      "unknownReason": "알 수 없는 오류",
       "willBeCreated": "{name} (가져오기 시 생성됨)",
       "columns": {
         "phone": "전화번호",
@@ -477,6 +481,8 @@
       "toastTagsSkipped": "알 수 없는 태그를 건너뛰었습니다 (설정에서 먼저 만드세요): {sample}{more}",
       "toastSkipped": "중복 {count}건을 건너뛰었습니다",
       "toastSkipped_plural": "중복 {count}건을 건너뛰었습니다",
+      "toastInvalidPhone": "연락처 {count}개에 사용할 수 있는 전화번호가 없었습니다",
+      "toastInvalidPhone_plural": "연락처 {count}개에 사용할 수 있는 전화번호가 없었습니다",
       "toastFailed": "연락처 {count}개를 가져오지 못했습니다",
       "toastFailed_plural": "연락처 {count}개를 가져오지 못했습니다",
       "toastError": "가져오기 실패"

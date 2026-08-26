@@ -142,7 +142,9 @@ export function ImportModal({
   const [result, setResult] = useState<{
     imported: number;
     skipped: number;
+    invalidPhone: number;
     failed: number;
+    failedDetails: { phone: string; name?: string; reason: string }[];
     tagsAssigned: number;
   } | null>(null);
 
@@ -221,9 +223,18 @@ export function ImportModal({
       let imported = 0;
       let skipped = 0;
       let failed = 0;
+      const failedDetails: { phone: string; name?: string; reason: string }[] =
+        [];
 
       // 1) De-dupe within the file by normalized phone (keep first).
-      const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
+      //    Rows with no usable phone at all are counted separately —
+      //    they never duplicated anything, so lumping them into
+      //    `skipped` would misreport them as dupes (see dedupeByPhone).
+      const {
+        unique,
+        duplicates: inFileDupes,
+        invalid: invalidPhone,
+      } = dedupeByPhone(parsedRows);
       skipped += inFileDupes;
 
       // 2) Skip numbers already in this account. One read of the
@@ -309,6 +320,22 @@ export function ImportModal({
               skipped++;
             } else {
               failed++;
+              // Keep the actual DB error instead of discarding it —
+              // "N contacts failed" with no reason attached left no
+              // way to tell an RLS/constraint failure from a fluke,
+              // let alone which contact it was.
+              console.error(
+                '[contacts import] insert failed for',
+                row.phone,
+                singleErr
+              );
+              failedDetails.push({
+                phone: row.phone,
+                name: row.name ?? undefined,
+                reason:
+                  (singleErr as { message?: string } | null)?.message ||
+                  t('unknownReason'),
+              });
             }
           }
         } else {
@@ -341,7 +368,14 @@ export function ImportModal({
         toast.warning(t('toastTagsWarning'));
       }
 
-      setResult({ imported, skipped, failed, tagsAssigned });
+      setResult({
+        imported,
+        skipped,
+        invalidPhone,
+        failed,
+        failedDetails,
+        tagsAssigned,
+      });
       if (imported > 0) {
         toast.success(t('toastImported', { count: imported }));
         onImported();
@@ -357,6 +391,9 @@ export function ImportModal({
       }
       if (skipped > 0) {
         toast.info(t('toastSkipped', { count: skipped }));
+      }
+      if (invalidPhone > 0) {
+        toast.warning(t('toastInvalidPhone', { count: invalidPhone }));
       }
       if (failed > 0) {
         toast.error(t('toastFailed', { count: failed }));
@@ -586,6 +623,12 @@ export function ImportModal({
                     {t('resultSkipped', { count: result.skipped })}
                   </div>
                 )}
+                {result.invalidPhone > 0 && (
+                  <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                    <AlertTriangle className="size-4 shrink-0" />
+                    {t('resultInvalidPhone', { count: result.invalidPhone })}
+                  </div>
+                )}
                 {result.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-red-400">
                     <XCircle className="size-4 shrink-0" />
@@ -593,6 +636,27 @@ export function ImportModal({
                   </div>
                 )}
               </div>
+
+              {result.failedDetails.length > 0 && (
+                <div className="mt-3 space-y-1 border-t border-border/80 pt-3">
+                  <p className="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">
+                    {t('failedRowsHeading')}
+                  </p>
+                  <ul className="max-h-32 space-y-1 overflow-y-auto text-xs">
+                    {result.failedDetails.map((row, i) => (
+                      <li
+                        key={i}
+                        className="flex items-baseline gap-2 text-muted-foreground"
+                      >
+                        <span className="shrink-0 font-mono text-popover-foreground">
+                          {row.name ? `${row.name} (${row.phone})` : row.phone}
+                        </span>
+                        <span className="truncate">{row.reason}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
             </div>
           )}
         </div>

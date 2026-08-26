@@ -76,21 +76,25 @@ export function isUniqueViolation(error: unknown): boolean {
 
 /**
  * De-duplicate parsed CSV rows by normalized phone, keeping the first
- * occurrence of each. Rows with an empty normalized phone are dropped
- * (they can't be a valid contact). Returns the unique rows plus the
- * count removed as in-file duplicates.
+ * occurrence of each. Rows with an empty normalized phone can't be a
+ * valid contact and are dropped too, but counted separately as
+ * `invalid` rather than folded into `duplicates` — they never
+ * duplicated anything, and the import result should say so instead of
+ * telling the user a contact with a real, unique number was skipped
+ * as a dupe.
  */
 export function dedupeByPhone<T extends { phone: string }>(
   rows: T[],
-): { unique: T[]; duplicates: number } {
+): { unique: T[]; duplicates: number; invalid: number } {
   const seen = new Set<string>();
   const unique: T[] = [];
   let duplicates = 0;
+  let invalid = 0;
 
   for (const row of rows) {
     const key = normalizeKey(row.phone);
     if (!key) {
-      duplicates++;
+      invalid++;
       continue;
     }
     if (seen.has(key)) {
@@ -101,5 +105,5 @@ export function dedupeByPhone<T extends { phone: string }>(
     unique.push(row);
   }
 
-  return { unique, duplicates };
+  return { unique, duplicates, invalid };
 }

@@ -72,6 +72,35 @@ function parseSendResponse(data: unknown): EvolutionSendResult {
 // Instance lifecycle (admin-authenticated)
 // ============================================================
 
+/**
+ * `readMessages: false` is deliberate — `true` makes Evolution Go send a
+ * WhatsApp read receipt (blue double-check, shown to the *customer*) the
+ * instant a message reaches this server, regardless of whether any human
+ * has actually looked at it in wacrm or on the phone (confirmed live —
+ * customers saw "read" the moment they sent a message, before any agent
+ * opened the conversation). wacrm now sends that receipt explicitly, via
+ * `markMessagesRead`, only when an agent opens the conversation — see
+ * the inbox's mark-read call. Reading directly on the linked phone still
+ * sends its own receipt natively; this setting only controls Evolution
+ * Go's *automatic* one.
+ *
+ * `alwaysOnline: false` is deliberate too — `true` reports this bridge
+ * session as permanently "online" to WhatsApp's servers. WhatsApp's
+ * push-notification service treats an always-online linked session as
+ * "the user is already looking at a client," so it suppresses the
+ * phone's own push notification for new messages (confirmed live: no
+ * notification arrived on the linked phone with neither wacrm nor
+ * WhatsApp Web open). A normal, non-"always online" linked device gets
+ * notifications like any other.
+ */
+const ADVANCED_SETTINGS = {
+  alwaysOnline: false,
+  rejectCall: true,
+  readMessages: false,
+  ignoreGroups: false,
+  ignoreStatus: true,
+}
+
 export interface CreateInstanceArgs {
   apiUrl: string
   adminToken: string
@@ -103,13 +132,7 @@ export async function createInstance(
       instanceId: instanceUuid,
       name: instanceName,
       token: generatedToken,
-      advancedSettings: {
-        alwaysOnline: true,
-        rejectCall: true,
-        readMessages: true,
-        ignoreGroups: false,
-        ignoreStatus: true,
-      },
+      advancedSettings: ADVANCED_SETTINGS,
     }),
   })
   if (!response.ok) {
@@ -147,6 +170,45 @@ export async function connectInstance(args: ConnectInstanceArgs): Promise<void> 
   })
   if (!response.ok) {
     await throwEvolutionError(response, `Evolution Go connect instance error: ${response.status}`)
+  }
+}
+
+export interface UpdateAdvancedSettingsArgs {
+  apiUrl: string
+  instanceToken: string
+  instanceUuid: string
+}
+
+/**
+ * Pushes `ADVANCED_SETTINGS` (notably `readMessages: false`, see its
+ * comment) onto an already-created instance. `createInstance` only sets
+ * these at creation time, so an instance created before this setting
+ * changed needs this to pick up the fix — called on every
+ * connect/reconnect (idempotent) so a live instance self-heals the next
+ * time its config is touched, without needing to delete and re-pair it.
+ *
+ * Instance-authenticated, not admin — confirmed live (the admin token
+ * that works for every other `/instance/*` lifecycle call gets a plain
+ * 401 "not authorized" here; the instance apikey is the one this
+ * specific endpoint actually wants).
+ */
+export async function updateAdvancedSettings(
+  args: UpdateAdvancedSettingsArgs
+): Promise<void> {
+  const { apiUrl, instanceToken, instanceUuid } = args
+  const response = await fetch(
+    `${trimBase(apiUrl)}/instance/${instanceUuid}/advanced-settings`,
+    {
+      method: 'PUT',
+      headers: { apikey: instanceToken, 'Content-Type': 'application/json' },
+      body: JSON.stringify(ADVANCED_SETTINGS),
+    }
+  )
+  if (!response.ok) {
+    await throwEvolutionError(
+      response,
+      `Evolution Go update advanced settings error: ${response.status}`
+    )
   }
 }
 
@@ -218,6 +280,49 @@ export async function getInstanceInfo(args: GetInstanceInfoArgs): Promise<Instan
   const payload = data?.data ?? data
   const jid: string | null = payload?.jid || null
   return { connected: Boolean(payload?.connected) || Boolean(jid), jid }
+}
+
+export interface GetInstanceStatusArgs {
+  apiUrl: string
+  instanceToken: string
+}
+
+export interface InstanceStatusResult {
+  /** Live websocket state — false the instant the connection to WhatsApp drops. */
+  connected: boolean
+  /** Whether a WhatsApp session is paired at all — false once WhatsApp revokes the pairing (e.g. unlinked from the phone), not just on a network drop. */
+  loggedIn: boolean
+}
+
+/**
+ * GET /instance/status, instance-authenticated (confirmed live — unlike
+ * `getInstanceInfo`, which needs the admin token). Response shape
+ * confirmed live: `{ data: { Connected: bool, LoggedIn: bool, Name: str } }`.
+ *
+ * The `connected`/`loggedIn` split matters for the health-check cron
+ * (see /api/whatsapp/evolution/health-check): `loggedIn: true,
+ * connected: false` is a live session whose socket dropped — safe to
+ * resume via `connectInstance`. `loggedIn: false` means WhatsApp itself
+ * revoked the pairing (unlinked from the phone) — reconnecting won't
+ * help, it needs a fresh QR scan, so the cron must not keep retrying
+ * `connectInstance` against it.
+ */
+export async function getInstanceStatus(
+  args: GetInstanceStatusArgs
+): Promise<InstanceStatusResult> {
+  const { apiUrl, instanceToken } = args
+  const response = await fetch(`${trimBase(apiUrl)}/instance/status`, {
+    headers: { apikey: instanceToken, 'Content-Type': 'application/json' },
+  })
+  if (!response.ok) {
+    await throwEvolutionError(response, `Evolution Go get instance status error: ${response.status}`)
+  }
+  const data = await response.json()
+  const payload = data?.data ?? data
+  return {
+    connected: Boolean(payload?.Connected),
+    loggedIn: Boolean(payload?.LoggedIn),
+  }
 }
 
 export interface InstanceLifecycleArgs {
@@ -402,6 +507,40 @@ export async function sendInteractiveList(
     await throwEvolutionError(response, `Evolution Go send/list error: ${response.status}`)
   }
   return parseSendResponse(await response.json())
+}
+
+// ============================================================
+// Read receipts (instance-authenticated) — explicit, agent-triggered
+// counterpart to disabling `readMessages` in ADVANCED_SETTINGS above.
+// ============================================================
+
+export interface MarkMessagesReadArgs {
+  apiUrl: string
+  instanceToken: string
+  /** The customer's number — same shape send-message.ts passes elsewhere. */
+  number: string
+  /** WhatsApp message ids (Info.ID from the inbound webhook) to mark read. */
+  messageIds: string[]
+}
+
+/**
+ * Sends the WhatsApp read receipt (blue double-check on the customer's
+ * side) for specific inbound messages. Called when an agent actually
+ * opens the conversation in wacrm — see the inbox's mark-read call —
+ * so "read" reflects a human looking at it, not just Evolution Go
+ * having received it.
+ */
+export async function markMessagesRead(args: MarkMessagesReadArgs): Promise<void> {
+  const { apiUrl, instanceToken, number, messageIds } = args
+  if (messageIds.length === 0) return
+  const response = await fetch(`${trimBase(apiUrl)}/message/markread`, {
+    method: 'POST',
+    headers: { apikey: instanceToken, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: messageIds, number }),
+  })
+  if (!response.ok) {
+    await throwEvolutionError(response, `Evolution Go mark-read error: ${response.status}`)
+  }
 }
 
 // ============================================================

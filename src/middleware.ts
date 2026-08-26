@@ -77,9 +77,12 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
-  // API routes that need auth (not webhooks)
+  // API routes that need auth (not webhooks, not the cron-secret-gated
+  // health check — same "no browser session, has its own auth" shape
+  // as a webhook, just polled by a scheduler instead of Evolution Go).
   if (!user && request.nextUrl.pathname.startsWith('/api/whatsapp/') &&
-      !request.nextUrl.pathname.includes('/webhook')) {
+      !request.nextUrl.pathname.includes('/webhook') &&
+      request.nextUrl.pathname !== '/api/whatsapp/evolution/health-check') {
     return withRefreshedCookies(
       NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     )

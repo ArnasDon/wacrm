@@ -22,6 +22,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import {
   createInstance,
   connectInstance,
+  updateAdvancedSettings,
   logoutInstance,
   deleteInstance,
 } from '@/lib/whatsapp/evolution-api'
@@ -102,6 +103,16 @@ export async function POST(request: Request) {
         instanceUuid = created.instanceUuid
         instanceToken = created.instanceToken
       }
+      // Order matters: settings BEFORE connect, not after. Confirmed
+      // live — Evolution Go only broadcasts presence (the "always
+      // online" flag's actual effect on WhatsApp's servers) once, at
+      // connect time; PUT-ing a settings change to an *already*-
+      // connected session does not retroactively re-broadcast it. So
+      // this self-heals an instance created before ADVANCED_SETTINGS
+      // last changed (createInstance only applies settings once, at
+      // creation) only if the update lands before the connect that
+      // follows it.
+      await updateAdvancedSettings({ apiUrl, instanceToken, instanceUuid })
       await connectInstance({ apiUrl, instanceToken, webhookUrl })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Evolution Go error'

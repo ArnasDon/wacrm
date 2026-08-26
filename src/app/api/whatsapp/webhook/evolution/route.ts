@@ -32,6 +32,9 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
+import { buildMediaPath } from '@/lib/storage/upload-media'
+import { extensionForMime } from '@/lib/media/filename'
+import { readBodyWithLimit } from '@/lib/http/read-body-with-limit'
 
 export const maxDuration = 60
 
@@ -59,7 +62,10 @@ interface EvolutionInfo {
   Chat?: string
   /** Actual sender JID for group messages. */
   Sender?: string
+  /** Phone-number JID for `Sender`, when whatsmeow has resolved a LID mapping. */
   SenderAlt?: string
+  /** Phone-number JID for the *recipient* — the one that matters when `IsFromMe` (Sender is then the agent's own account, not the chat partner). */
+  RecipientAlt?: string
   IsGroup?: boolean
   PushName?: string
   Timestamp?: string
@@ -120,10 +126,23 @@ interface WhatsappConfigRow {
 // Route
 // ============================================================
 
+// Evolution Go inlines media as base64 in the webhook body (see
+// uploadInlineMedia below), so this has to fit the largest allowed
+// attachment (chat-media bucket cap: 16 MB, migration 023) plus ~34%
+// base64 overhead and JSON framing — 25 MB leaves comfortable headroom
+// while still bounding the pre-auth request size an anonymous caller
+// can force this process to buffer.
+const MAX_WEBHOOK_BODY_BYTES = 25 * 1024 * 1024
+
 export async function POST(request: Request) {
+  const bodyResult = await readBodyWithLimit(request, MAX_WEBHOOK_BODY_BYTES)
+  if (!bodyResult.ok) {
+    return NextResponse.json({ error: 'Payload too large' }, { status: 413 })
+  }
+
   let body: EvolutionWebhookBody
   try {
-    body = await request.json()
+    body = JSON.parse(bodyResult.text)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
@@ -259,40 +278,123 @@ const ALLOWED_CONTENT_TYPES = new Set([
   'text', 'image', 'document', 'audio', 'video', 'location', 'template', 'interactive',
 ])
 
-function extractContent(message: EvolutionMessage): {
+interface ExtractedContent {
   contentType: string
   contentText: string | null
+  /** Already-fetchable URL, when Evolution Go ever supplies one directly. */
   mediaUrl: string | null
-} | null {
+  /** MIME type of the media part, for the base64 upload path below. */
+  mimeType: string | null
+  fileName: string | null
+}
+
+function extractContent(message: EvolutionMessage): ExtractedContent | null {
   if (message.conversation) {
-    return { contentType: 'text', contentText: message.conversation, mediaUrl: null }
+    return { contentType: 'text', contentText: message.conversation, mediaUrl: null, mimeType: null, fileName: null }
   }
   if (message.extendedTextMessage?.text) {
-    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: null }
+    return { contentType: 'text', contentText: message.extendedTextMessage.text, mediaUrl: null, mimeType: null, fileName: null }
   }
 
-  // Evolution Go hoists the resolved media URL to Message.mediaUrl (or
-  // inline Message.base64) regardless of which *Message type carries
-  // it — the per-type object below only supplies the caption/mimetype.
+  // A URL here would mean Evolution Go resolved the media server-side;
+  // in practice (confirmed live) it doesn't — the decrypted bytes come
+  // back inline on `message.base64` instead (see processEvolutionMessage,
+  // which uploads them to Storage to produce the real media_url).
   const mediaUrl = message.mediaUrl || null
   if (message.imageMessage) {
-    return { contentType: 'image', contentText: message.imageMessage.caption || null, mediaUrl }
+    return {
+      contentType: 'image',
+      contentText: message.imageMessage.caption || null,
+      mediaUrl,
+      mimeType: message.imageMessage.mimetype || null,
+      fileName: message.imageMessage.fileName || null,
+    }
   }
   if (message.videoMessage) {
-    return { contentType: 'video', contentText: message.videoMessage.caption || null, mediaUrl }
+    return {
+      contentType: 'video',
+      contentText: message.videoMessage.caption || null,
+      mediaUrl,
+      mimeType: message.videoMessage.mimetype || null,
+      fileName: message.videoMessage.fileName || null,
+    }
   }
   if (message.audioMessage) {
-    return { contentType: 'audio', contentText: null, mediaUrl }
+    return {
+      contentType: 'audio',
+      contentText: null,
+      mediaUrl,
+      mimeType: message.audioMessage.mimetype || null,
+      fileName: message.audioMessage.fileName || null,
+    }
   }
   if (message.documentMessage) {
-    return { contentType: 'document', contentText: message.documentMessage.caption || null, mediaUrl }
+    return {
+      contentType: 'document',
+      contentText: message.documentMessage.caption || null,
+      mediaUrl,
+      mimeType: message.documentMessage.mimetype || null,
+      fileName: message.documentMessage.fileName || null,
+    }
   }
   if (message.stickerMessage) {
     // Stickers have no CRM-native type — same fallback the Meta webhook
     // uses (image).
-    return { contentType: 'image', contentText: null, mediaUrl }
+    return {
+      contentType: 'image',
+      contentText: null,
+      mediaUrl,
+      mimeType: message.stickerMessage.mimetype || null,
+      fileName: message.stickerMessage.fileName || null,
+    }
   }
   return null
+}
+
+/**
+ * Evolution Go hands back the decrypted media inline as base64 on
+ * `Message.base64` rather than a fetchable URL (confirmed live —
+ * `Message.mediaUrl` is never actually populated despite what the field
+ * existing suggested). Upload it to the same `chat-media` bucket the
+ * inbox composer's outbound attachments use, so inbound Evolution media
+ * gets a real, browser-fetchable URL like every other media path in the
+ * app instead of silently landing as `media_url: null`.
+ */
+async function uploadInlineMedia(
+  accountId: string,
+  base64: string,
+  content: ExtractedContent
+): Promise<string | null> {
+  try {
+    // WhatsApp reports voice notes as `audio/ogg; codecs=opus` — the
+    // `chat-media` bucket's allowed_mime_types only lists the bare
+    // `audio/ogg` (migration 023), and Supabase Storage matches it
+    // exactly, so the parameterized form was rejected outright
+    // (confirmed live: "mime type audio/ogg; codecs=opus is not
+    // supported", every voice note silently dropped). Strip params —
+    // extensionForMime already does this internally, but the bucket
+    // upload itself was still sent the raw, unstripped value.
+    const mimeType = (content.mimeType || 'application/octet-stream').split(';')[0].trim()
+    const ext = extensionForMime(mimeType)
+    const baseName = content.fileName || `whatsapp-${content.contentType}.${ext}`
+    const path = buildMediaPath(accountId, baseName)
+    const bytes = Buffer.from(base64, 'base64')
+
+    const { error } = await supabaseAdmin()
+      .storage.from('chat-media')
+      .upload(path, bytes, { contentType: mimeType, upsert: false })
+
+    if (error) {
+      console.error('[evolution-webhook] media upload failed:', error)
+      return null
+    }
+
+    const { data } = supabaseAdmin().storage.from('chat-media').getPublicUrl(path)
+    return data?.publicUrl ?? null
+  } catch (err) {
+    console.error('[evolution-webhook] media upload threw:', err)
+    return null
+  }
 }
 
 async function processEvolutionMessage(
@@ -310,19 +412,57 @@ async function processEvolutionMessage(
 
   // Group chats aren't modelled in wacrm's schema (contacts/conversations
   // are 1:1 with a phone number) — skip rather than half-support them.
-  if (info.IsGroup) {
+  // `IsGroup` alone isn't reliable — some group-addressed events arrive
+  // with it unset, but the `@g.us` suffix on Chat is a direct, always-
+  // present signal straight from the JID, so check both.
+  if (info.IsGroup || info.Chat?.endsWith('@g.us')) {
     console.warn('[evolution-webhook] group message received, skipping (unsupported):', info.Chat)
     return
   }
 
-  // Messages the linked phone itself sent (outside wacrm, e.g. the
-  // business owner replying from their own WhatsApp app) have no Meta
-  // Cloud API equivalent — skip, same as that provider effectively does.
-  if (info.IsFromMe) return
+  // `IsFromMe` = the linked phone itself sent this (the agent replying
+  // from their own WhatsApp app, outside wacrm) rather than the customer.
+  // Meta Cloud API numbers are API-only with no such dual-use phone
+  // client, so this case doesn't exist for that provider — but Evolution
+  // Go pairs a *real* WhatsApp session, and agents do reply from the
+  // phone directly. Previously this returned early and dropped the
+  // message entirely, which is exactly the "sent from the phone but
+  // never shows up in the CRM" desync reported live. It's now processed
+  // as an agent-sent message instead of skipped further down.
+  const isFromMe = Boolean(info.IsFromMe)
 
   const rawMessageId = info.ID
-  const chatJid = info.Chat
+  let chatJid = info.Chat
   if (!rawMessageId || !chatJid) return
+
+  // WhatsApp's newer "LID" addressing hides the real phone number behind
+  // an opaque per-contact id (`<digits>@lid`) instead of the classic
+  // `<phone>@s.whatsapp.net`. Since wacrm keys contacts by phone number,
+  // treating the LID's digits as a phone number would create a bogus
+  // "contact" that fragments the real person's conversation into two
+  // (seen live: a contact record with phone "94103152910436", which is
+  // a LID, not a number). `SenderAlt` is whatsmeow's resolved
+  // phone-number JID for the same party when it has one; fall back to
+  // it, and if even that's unavailable (WhatsApp hasn't disclosed the
+  // number — a real possibility with this feature), skip the message
+  // rather than write garbage into contacts. Which alt field resolves
+  // `Chat` depends on direction: for a customer-sent message Sender ==
+  // Chat, so `SenderAlt` is the right one; for an agent-sent (IsFromMe)
+  // message `Chat` is the recipient, not the sender, so `RecipientAlt`
+  // is the one that actually maps to it — using SenderAlt there would
+  // resolve to the *agent's own* number instead of the customer's.
+  if (chatJid.endsWith('@lid')) {
+    const alt = isFromMe ? info.RecipientAlt : info.SenderAlt
+    if (alt?.endsWith('@s.whatsapp.net')) {
+      chatJid = alt
+    } else {
+      console.warn(
+        '[evolution-webhook] LID-addressed chat with no resolvable phone number, skipping:',
+        chatJid
+      )
+      return
+    }
+  }
 
   const content = extractContent(message)
   if (!content) {
@@ -330,10 +470,25 @@ async function processEvolutionMessage(
     return
   }
 
+  let resolvedMediaUrl = content.mediaUrl
+  if (!resolvedMediaUrl && message.base64) {
+    resolvedMediaUrl = await uploadInlineMedia(config.account_id, message.base64, content)
+  }
+
   const phone = chatJid.split('@')[0]?.replace(/:\d+$/, '')
   if (!phone) return
 
-  const pushName = info.PushName || phone
+  // `Info.PushName` is the *sender's* display name — for a customer
+  // message that's exactly who `phone` above resolves to, so it's safe
+  // to backfill/refresh the contact's name with it. For an `isFromMe`
+  // message the sender is the agent's own linked account, so PushName
+  // is the *business's own* WhatsApp display name, not the customer's
+  // (confirmed live: it overwrote real customer names with the
+  // account's own — "7K PRIME TV" — the moment this account replied to
+  // them from the phone). Passing '' here makes findOrCreateContact
+  // leave an existing contact's name alone and fall back to the phone
+  // number for a brand new one, same as when PushName is simply absent.
+  const pushName = isFromMe ? '' : (info.PushName || phone)
 
   const contactOutcome = await findOrCreateContact(
     config.account_id,
@@ -391,6 +546,61 @@ async function processEvolutionMessage(
     ? new Date(timestampMs).toISOString()
     : new Date().toISOString()
 
+  // An agent-sent message that the CRM itself dispatched (send-message.ts)
+  // already got its own row with this exact `message_id` (WhatsApp's own
+  // id, echoed back unchanged) — the dedup check above already caught
+  // that case. What lands here as `isFromMe` is genuinely new: the agent
+  // replied from their own phone, outside wacrm.
+  if (isFromMe) {
+    const { error: msgError } = await supabaseAdmin().from('messages').insert({
+      conversation_id: conversation.id,
+      sender_type: 'agent',
+      content_type: contentType,
+      content_text: content.contentText,
+      media_url: resolvedMediaUrl,
+      message_id: rawMessageId,
+      status: 'sent',
+      created_at: createdAt,
+      reply_to_message_id: replyToInternalId,
+    })
+    if (msgError) {
+      console.error('[evolution-webhook] error inserting agent (phone) message:', msgError)
+      return
+    }
+
+    await supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: content.contentText || `[${contentType}]`,
+        last_message_at: new Date().toISOString(),
+        // Not a customer message — nothing new for an agent to triage.
+        unread_count: 0,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
+
+    await reopenClosedConversation(supabaseAdmin(), conversation)
+
+    // Same "human stepped in" signal send-message.ts acts on when an
+    // agent sends from the CRM — replying from the phone is no
+    // different, so a Flow run waiting on this contact should yield too.
+    const { error: pauseErr } = await supabaseAdmin()
+      .from('flow_runs')
+      .update({
+        status: 'paused_by_agent',
+        ended_at: new Date().toISOString(),
+        end_reason: 'agent_replied',
+      })
+      .eq('account_id', config.account_id)
+      .eq('contact_id', contactRecord.id)
+      .eq('status', 'active')
+    if (pauseErr) {
+      console.error('[evolution-webhook] pause-on-agent-phone-reply failed:', pauseErr.message)
+    }
+
+    return
+  }
+
   const { count: priorCustomerMsgCount } = await supabaseAdmin()
     .from('messages')
     .select('id', { count: 'exact', head: true })
@@ -403,7 +613,7 @@ async function processEvolutionMessage(
     sender_type: 'customer',
     content_type: contentType,
     content_text: content.contentText,
-    media_url: content.mediaUrl,
+    media_url: resolvedMediaUrl,
     message_id: rawMessageId,
     status: 'delivered',
     created_at: createdAt,

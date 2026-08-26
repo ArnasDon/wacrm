@@ -27,22 +27,43 @@ import type { GenerateResult } from './types'
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
 /**
- * Catches a reply that TELLS the customer their appointment/demo is
- * booked (in Spanish or English) when the model did NOT actually emit
- * `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` this turn — i.e. a fabricated
- * confirmation with nothing behind it. Real incident (2026-08-26): the
- * model twice wrote "Confirmo tu demostración... te enviaré el enlace
- * de Google Meet" / "Te agendé a ... recibirás el enlace" with no
- * marker anywhere in the raw output, so no event was ever created —
- * the customer was told they had a meeting that didn't exist. Only
- * checked when `calendarContext` was non-null (the capability was
- * actually on offer this turn), so a business that never enabled
- * scheduling can't trip this on an unrelated reply. Deliberately broad
- * rather than exact — false positives here just cost a handoff, false
- * negatives ship another fake appointment.
+ * Phrase-shaped half of the fabricated-appointment-confirmation check
+ * below — kept as a first, narrower pass, but a fixed phrase list alone
+ * chases the model's wording forever (real incidents, 2026-08-26: first
+ * "Confirmo tu demostración... te enviaré el enlace de Google Meet" /
+ * "Te agendé a ... recibirás el enlace", then, after this list already
+ * covered those, a THIRD wording — "Te envío la invitación en unos
+ * minutos. Un asesor de nuestro equipo se conectará contigo" — slipped
+ * through it undetected). See `looksLikeFakeAppointmentConfirmation`
+ * for the more general signal this is paired with.
  */
 const FAKE_APPOINTMENT_CONFIRMATION_RE =
-  /\b(confirm(?:o|ada|ado|amos)\b.{0,40}\b(cita|demo|demostraci[oó]n|reuni[oó]n)|te\s+agend[eé]|qued[oóa]n?\s+agendad|(?:tu|la)\s+cita\s+(?:qued[oóa]|est[aá])\s+(?:confirmad|agendad)|enlace\s+de\s+(?:google\s+)?meet|link\s+de\s+(?:google\s+)?meet|videollamada\s+confirmada|your\s+(?:appointment|demo|meeting)\s+is\s+(?:booked|confirmed)|i(?:'|’)ve\s+booked\s+you)/i
+  /\b(confirm(?:o|ada|ado|amos)\b.{0,40}\b(cita|demo|demostraci[oó]n|reuni[oó]n)|te\s+agend[eé]|qued[oóa]n?\s+agendad|(?:tu|la)\s+cita\s+(?:qued[oóa]|est[aá])\s+(?:confirmad|agendad)|(?:te\s+(?:env[ií]o|enviar[eé]|mandar[eé])|recibir[aá]s)\s+(?:la\s+|el\s+)?(?:invitaci[oó]n|enlace|link)|enlace\s+de\s+(?:google\s+)?meet|link\s+de\s+(?:google\s+)?meet|videollamada\s+confirmada|(?:asesor|alguien\s+de\s+(?:nuestro\s+)?equipo).{0,30}(?:se\s+)?conectar[aá]|your\s+(?:appointment|demo|meeting)\s+is\s+(?:booked|confirmed)|i(?:'|’)ve\s+booked\s+you)/i
+
+/** Unanchored email scan (unlike `EMAIL_RE`, which validates a whole
+ *  string) — for finding an email address embedded anywhere in a reply. */
+const EMBEDDED_EMAIL_RE = /[^\s@]+@[^\s@]+\.[^\s@]+/
+
+/**
+ * True when a reply reads like it's telling the customer their
+ * appointment is handled, even though (by the time this runs) we
+ * already know no `SCHEDULE_APPOINTMENT_SENTINEL_PREFIX` marker backed
+ * it up this turn. A fixed phrase list can't keep up with every way a
+ * non-deterministic model might phrase "you're booked" (see the doc
+ * comment on `FAKE_APPOINTMENT_CONFIRMATION_RE`), so this pairs it with
+ * a second, more general signal: a DECLARATIVE reply (not a question —
+ * genuinely asking "what's your email?" ends in "?") that echoes an
+ * email address back to the customer. The model has no legitimate
+ * reason to state an email in a customer-facing sentence in calendar
+ * mode other than confirming where an invite is going — and we already
+ * know that invite was never actually created.
+ */
+function looksLikeFakeAppointmentConfirmation(text: string): boolean {
+  const trimmed = text.trim()
+  if (!trimmed || trimmed.endsWith('?')) return false
+  if (FAKE_APPOINTMENT_CONFIRMATION_RE.test(trimmed)) return true
+  return EMBEDDED_EMAIL_RE.test(trimmed)
+}
 
 /** Generic, safe fallback sent instead of a fabricated confirmation —
  *  never promises a time/date that was never actually booked. */
@@ -271,7 +292,7 @@ export async function dispatchInboundToAiReply(
     // safe holding message instead and hand off so a human actually
     // books it, rather than the customer believing a Meet link is
     // coming that nobody will ever send.
-    if (calendarContext && !appointmentProposal && !handoff && FAKE_APPOINTMENT_CONFIRMATION_RE.test(outboundText)) {
+    if (calendarContext && !appointmentProposal && !handoff && looksLikeFakeAppointmentConfirmation(outboundText)) {
       console.error(
         `[ai auto-reply] conversation ${conversationId}: reply looks like a fabricated appointment confirmation with no schedule_appointment marker — withholding it and handing off:`,
         outboundText,

@@ -23,6 +23,11 @@ export interface DataSourceRow {
   last_error: string | null
   created_at: string
   updated_at: string
+  /** First-5-rows snapshot (raw header-keyed) — see migration 046. Only
+   *  meaningful for `usage: knowledge` sources; catalog/both sources are
+   *  previewed live from ai_catalog_products instead (getDataSourcePreview
+   *  in service.ts). */
+  preview_sample: { sample: Record<string, string>[]; columns: string[] } | null
 }
 
 export interface DataSourceMutableFields {

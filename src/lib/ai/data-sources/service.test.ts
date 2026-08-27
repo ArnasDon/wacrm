@@ -14,6 +14,7 @@ import {
   createDataSourceFromFile,
   createDataSourceFromUrl,
   DataSourceError,
+  getDataSourcePreview,
   refreshDataSource,
 } from './service'
 
@@ -37,6 +38,7 @@ function fakeDb() {
         return api
       },
       order: () => api,
+      limit: () => api,
       single: () => run(true),
       maybeSingle: () => run(true),
       then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => run(false).then(resolve, reject),
@@ -481,5 +483,95 @@ describe('currency propagation — full audit (FASE 7)', () => {
       expect(source.currency).toBe(cur)
       expect(table('ai_catalog_products').some((p) => p.currency === 'USD')).toBe(false)
     }
+  })
+})
+
+// ============================================================
+// getDataSourcePreview — "Ver datos" (inventory/data-sources
+// unification pass, point 5). A saved source previously had no way
+// to look at its own data again once the create/refresh dialog
+// closed; this is what backs GET /api/ai/data-sources/[id]/preview.
+// ============================================================
+describe('getDataSourcePreview', () => {
+  it('returns null for a source id that does not exist / belongs to another account', async () => {
+    const { db } = fakeDb()
+    expect(await getDataSourcePreview(db, 'acct-1', 'nope')).toBeNull()
+  })
+
+  it('usage=catalog: previews live rows straight from ai_catalog_products, not a stale snapshot', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result).not.toBeNull()
+    expect(result!.preview.kind).toBe('catalog')
+    expect(result!.preview.rows).toHaveLength(1)
+    expect(result!.preview.rows[0]).toMatchObject({ name: 'Samsung Galaxy S25', price: 34900 })
+    expect(result!.preview.columns).toContain('price')
+    expect(result!.preview.columns).toContain('currency')
+  })
+
+  it('usage=both: also previews from ai_catalog_products (the structured side, not the flattened KB text)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Everything',
+      url: 'https://example.com/all.csv',
+      usage: 'both',
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result!.preview.kind).toBe('catalog')
+    expect(result!.preview.rows).toHaveLength(1)
+  })
+
+  it('usage=knowledge: previews the parse-time sample snapshot (no structured rows exist for this usage)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Store hours',
+      url: 'https://example.com/hours.csv',
+      usage: 'knowledge',
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result!.preview.kind).toBe('knowledge')
+    expect(result!.preview.rows).toHaveLength(1)
+    expect(result!.preview.rows[0]).toMatchObject({ Nombre: 'Samsung Galaxy S25' })
+    expect(result!.preview.columns).toEqual(['Nombre', 'Precio', 'Stock'])
+  })
+
+  it('reports kind=empty (not an error) for a catalog source whose parse produced zero usable product rows', async () => {
+    // The one data row has no name column value (only a price), so
+    // buildProductRows drops it as "nothing searchable" — 0 rows
+    // persisted to ai_catalog_products, but a real, successfully
+    // synced source, not a not-found/error state.
+    stubCsvFetch(csv([['Nombre', 'Precio'], ['', '100']]))
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Empty-ish',
+      url: 'https://example.com/empty.csv',
+      usage: 'catalog',
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result!.preview).toEqual({ kind: 'empty', columns: [], rows: [] })
   })
 })

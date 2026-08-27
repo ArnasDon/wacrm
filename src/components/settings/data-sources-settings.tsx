@@ -18,7 +18,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Database, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { Database, Eye, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
@@ -45,6 +45,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import { SettingsPanelHead } from './settings-panel-head';
+import { DataSourcePreviewDialog } from './data-source-preview-dialog';
 
 type SourceType = 'google_sheets' | 'remote_csv' | 'uploaded_csv';
 type Usage = 'knowledge' | 'catalog' | 'both';
@@ -81,6 +82,7 @@ export function DataSourcesSettings() {
   const [busyId, setBusyId] = useState<string | null>(null);
   const fileRefreshInputRef = useRef<HTMLInputElement | null>(null);
   const [refreshTargetId, setRefreshTargetId] = useState<string | null>(null);
+  const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
 
   const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
     google_sheets: t('sourceTypeGoogleSheets'),
@@ -286,6 +288,15 @@ export function DataSourcesSettings() {
                     {s.fallback_policy !== 'fallback_on_not_found' ? ` · ${s.fallback_policy}` : ''}
                   </p>
                   {s.last_error && <p className="text-xs text-red-400">{s.last_error}</p>}
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {/* Read-only, so it's available to any viewer — not
+                        wrapped in the admin-only RequireRole block below.
+                        See data-source-preview-dialog.tsx. */}
+                    <Button variant="outline" size="sm" onClick={() => setPreviewSourceId(s.id)}>
+                      <Eye className="size-3.5" />
+                      {t('viewData')}
+                    </Button>
+                  </div>
                   <RequireRole min="admin">
                     <div className="flex flex-wrap gap-2 pt-1">
                       <Button
@@ -343,6 +354,8 @@ export function DataSourcesSettings() {
         defaultCurrency={defaultCurrency}
         usageLabel={USAGE_LABEL}
       />
+
+      <DataSourcePreviewDialog sourceId={previewSourceId} onOpenChange={(open) => { if (!open) setPreviewSourceId(null); }} />
     </section>
   );
 }

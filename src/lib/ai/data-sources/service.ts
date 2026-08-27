@@ -34,7 +34,7 @@ import {
 import type { DataSourceMutableFields, DataSourceRow, DataSourceType, DataSourceUsage } from './types'
 
 const SELECT_COLUMNS =
-  'id, account_id, source_type, display_name, source_url, source_filename, usage, status, priority, is_primary, fallback_policy, currency, column_mapping, row_count, knowledge_document_id, last_synced_at, last_error, created_at, updated_at'
+  'id, account_id, source_type, display_name, source_url, source_filename, usage, status, priority, is_primary, fallback_policy, currency, column_mapping, row_count, knowledge_document_id, last_synced_at, last_error, created_at, updated_at, preview_sample'
 
 export class DataSourceError extends Error {
   constructor(message: string) {
@@ -103,6 +103,73 @@ export async function getDataSource(
     .maybeSingle()
   if (error) throw error
   return (data as DataSourceRow) ?? null
+}
+
+/** One row of a data source's "Ver datos" preview table. Field set is a
+ *  superset across both kinds — a knowledge-only preview's rows are
+ *  keyed by whatever raw column names the source file used (no fixed
+ *  shape), a catalog/both preview's rows use the fixed structured
+ *  product fields below. */
+export type DataSourcePreviewRow = Record<string, unknown>
+
+export interface DataSourcePreview {
+  /** 'catalog': live rows from ai_catalog_products (usage catalog/both —
+   *  the same data search_catalog/get_product return, so this is never
+   *  stale relative to what the agent can actually say).
+   *  'knowledge': the parse-time snapshot (usage knowledge — no
+   *  structured rows exist to read back from).
+   *  'empty': no rows of either kind yet (e.g. a source whose sync
+   *  failed before ever completing, or one created before migration
+   *  046 that hasn't been refreshed since). */
+  kind: 'catalog' | 'knowledge' | 'empty'
+  columns: string[]
+  rows: DataSourcePreviewRow[]
+}
+
+const PREVIEW_ROW_LIMIT = 20
+
+const CATALOG_PREVIEW_COLUMNS = [
+  'name', 'sku', 'brand', 'model', 'color', 'capacity', 'size', 'price', 'currency', 'available_quantity',
+]
+
+/** Real, live "Ver datos" preview for one data source — the columns it
+ *  detected, its metadata, and a sample of the actual persisted rows.
+ *  Never re-fetches/re-parses the source; reads back what the last
+ *  create/refresh already wrote, same discipline as everywhere else in
+ *  this pipeline (a preview must reflect what's actually stored, not
+ *  what a fresh re-fetch might currently contain). */
+export async function getDataSourcePreview(
+  db: SupabaseClient,
+  accountId: string,
+  id: string,
+): Promise<{ source: DataSourceRow; preview: DataSourcePreview } | null> {
+  const source = await getDataSource(db, accountId, id)
+  if (!source) return null
+
+  if (source.usage === 'catalog' || source.usage === 'both') {
+    const { data, error } = await db
+      .from('ai_catalog_products')
+      .select('name, sku, brand, model, color, capacity, size, price, currency, available_quantity')
+      .eq('account_id', accountId)
+      .eq('data_source_id', id)
+      .order('name', { ascending: true })
+      .limit(PREVIEW_ROW_LIMIT)
+    if (error) {
+      console.error('[data-sources] preview query failed:', error.message)
+      return { source, preview: { kind: 'empty', columns: [], rows: [] } }
+    }
+    const rows = (data ?? []) as DataSourcePreviewRow[]
+    if (rows.length === 0) return { source, preview: { kind: 'empty', columns: [], rows: [] } }
+    return { source, preview: { kind: 'catalog', columns: CATALOG_PREVIEW_COLUMNS, rows } }
+  }
+
+  if (source.preview_sample && source.preview_sample.sample.length > 0) {
+    return {
+      source,
+      preview: { kind: 'knowledge', columns: source.preview_sample.columns, rows: source.preview_sample.sample },
+    }
+  }
+  return { source, preview: { kind: 'empty', columns: [], rows: [] } }
 }
 
 export async function updateDataSourceMeta(
@@ -194,6 +261,10 @@ async function persistDataSource(
     status: 'active' as const,
     last_error: null as string | null,
     last_synced_at: new Date().toISOString(),
+    // See migration 046 — captured for every usage, only ever read back
+    // for `usage: knowledge` (catalog/both preview live from
+    // ai_catalog_products instead, in getDataSourcePreview below).
+    preview_sample: { sample: parsed.preview.sample, columns: parsed.metadata.columns },
     ...(opts.isLegacyDefault !== undefined ? { is_legacy_default: opts.isLegacyDefault } : {}),
   }
 

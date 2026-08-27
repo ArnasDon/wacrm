@@ -185,6 +185,79 @@ describe('searchCatalog — fallback policy', () => {
   })
 })
 
+// ============================================================
+// "Fuente principal" is an explicit preference, never a requirement —
+// the resolver must keep working when zero sources are marked
+// is_primary, ordering purely by priority. See the inventory/data-
+// sources unification pass, FASE 7/8: the agent must never end up
+// unable to reach the catalog just because principalSource === null.
+// ============================================================
+describe('searchCatalog / resolveCatalogProviders — primary is optional', () => {
+  it('Prueba 2: a single active catalog source with is_primary=false is used automatically — no primary required', async () => {
+    const { db } = fakeDb([
+      { id: 'prueba', display_name: 'PRUEBA', status: 'active', usage: 'catalog', priority: 100, is_primary: false, fallback_policy: 'fallback_on_not_found' },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = (id: string) => fakeProvider(`ds_${id}`, [PRODUCT('ds_prueba:x', 'PRUEBA')])
+
+    const resolved = await resolver.resolveCatalogProviders(db, 'acct-1')
+    expect(resolved).toHaveLength(1)
+    expect(await resolver.hasActiveCatalogSources(db, 'acct-1')).toBe(true)
+
+    const results = await resolver.searchCatalog(db, 'acct-1', { query: 'S25' })
+    expect(results).toHaveLength(1)
+    expect(results[0].source).toBe('PRUEBA')
+  })
+
+  it('Prueba 3: several active sources, none primary, are ordered and queried by priority ascending', async () => {
+    const { db } = fakeDb([
+      // Inserted out of priority order on purpose — the resolver, not
+      // insertion order, must decide the query sequence.
+      { id: 'dsC', display_name: 'C', status: 'active', usage: 'catalog', priority: 100, is_primary: false, fallback_policy: 'fallback_on_not_found' },
+      { id: 'dsA', display_name: 'A', status: 'active', usage: 'catalog', priority: 10, is_primary: false, fallback_policy: 'fallback_on_not_found' },
+      { id: 'dsB', display_name: 'B', status: 'active', usage: 'catalog', priority: 50, is_primary: false, fallback_policy: 'fallback_on_not_found' },
+    ])
+    const resolved = await resolver.resolveCatalogProviders(db, 'acct-1')
+    expect(resolved.map((r) => r.priority)).toEqual([10, 50, 100])
+
+    const queryOrder: string[] = []
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = (id: string, displayName: string) => ({
+      key: `ds_${id}`,
+      label: displayName,
+      async searchCatalog() {
+        queryOrder.push(displayName)
+        return [] // nothing found — forces fallback_on_not_found to keep going
+      },
+      async getProduct() { return null },
+      async getAvailability() { return null },
+      async getMedia() { return null },
+    })
+
+    await resolver.searchCatalog(db, 'acct-1', { query: 'S25' })
+    expect(queryOrder).toEqual(['A', 'B', 'C']) // priority 10, then 50, then 100
+  })
+
+  it('Prueba 4: when a source IS marked primary, it is queried first regardless of its priority number', async () => {
+    const { db } = fakeDb([
+      { id: 'dsA', display_name: 'A', status: 'active', usage: 'catalog', priority: 10, is_primary: false, fallback_policy: 'fallback_on_not_found' },
+      { id: 'dsB', display_name: 'B', status: 'active', usage: 'catalog', priority: 100, is_primary: true, fallback_policy: 'fallback_on_not_found' },
+    ])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(h as any).dataSourceProviderFactory = (id: string, displayName: string) => ({
+      ...fakeProvider(`ds_${id}`, id === 'dsB' ? [PRODUCT('ds_dsB:x', displayName)] : []),
+      label: displayName,
+    })
+
+    const resolved = await resolver.resolveCatalogProviders(db, 'acct-1')
+    expect(resolved.map((r) => r.provider.label)).toEqual(['B', 'A']) // primary first despite higher priority number
+
+    const results = await resolver.searchCatalog(db, 'acct-1', { query: 'S25' })
+    expect(results).toHaveLength(1)
+    expect(results[0].source).toBe('B') // primary found it — never even reached A
+  })
+})
+
 describe('by-id routing — no source mixing', () => {
   it('getProduct routes to the exact provider encoded in the id, ignoring every other active source', async () => {
     const { db } = fakeDb([

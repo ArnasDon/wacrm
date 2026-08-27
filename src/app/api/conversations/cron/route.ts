@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/conversations/admin-client'
 import { reassignUnclaimedConversations } from '@/lib/conversations/reassign'
+import { recordHeartbeat } from '@/lib/observability/heartbeat'
 
 /**
  * Auto-assigns open conversations that have sat unclaimed past their
@@ -32,5 +33,6 @@ export async function GET(request: Request) {
   }
 
   const result = await reassignUnclaimedConversations(supabaseAdmin())
+  await recordHeartbeat('conversations_cron')
   return NextResponse.json(result)
 }

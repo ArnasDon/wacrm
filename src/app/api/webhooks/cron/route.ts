@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/webhooks/admin-client'
 import { retryDelivery } from '@/lib/webhooks/deliver'
+import { recordHeartbeat } from '@/lib/observability/heartbeat'
 import type { WebhookEvent } from '@/lib/webhooks/events'
 
 /**
@@ -40,8 +41,14 @@ export async function GET(request: Request) {
     .order('next_retry_at', { ascending: true })
     .limit(50)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  if (!due || due.length === 0) return NextResponse.json({ processed: 0 })
+  if (error) {
+    await recordHeartbeat('webhooks_cron', { status: 'error', detail: error.message })
+    return NextResponse.json({ error: error.message }, { status: 500 })
+  }
+  if (!due || due.length === 0) {
+    await recordHeartbeat('webhooks_cron')
+    return NextResponse.json({ processed: 0 })
+  }
 
   let processed = 0
   for (const row of due) {
@@ -64,5 +71,6 @@ export async function GET(request: Request) {
     processed++
   }
 
+  await recordHeartbeat('webhooks_cron', { detail: `processed ${processed}` })
   return NextResponse.json({ processed })
 }

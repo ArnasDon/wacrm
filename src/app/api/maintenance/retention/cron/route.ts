@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/ai/admin-client';
 import { pruneOrphanedChatMedia } from '@/lib/maintenance/retention';
+import { recordHeartbeat } from '@/lib/observability/heartbeat';
 
 function authorized(request: Request): boolean {
   const expected =
@@ -33,13 +34,19 @@ export async function GET(request: Request) {
     p_batch_size: 1000,
   });
   if (error) {
+    await recordHeartbeat('retention_cron', { status: 'error', detail: error.message });
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
   try {
     const media = await pruneOrphanedChatMedia(admin, { dryRun, limit: 200 });
+    await recordHeartbeat('retention_cron', { detail: dryRun ? 'dry-run' : 'executed' });
     return NextResponse.json({ dryRun, database, media });
   } catch (mediaError) {
+    await recordHeartbeat('retention_cron', {
+      status: 'error',
+      detail: mediaError instanceof Error ? mediaError.message : 'media cleanup failed',
+    });
     return NextResponse.json(
       {
         dryRun,

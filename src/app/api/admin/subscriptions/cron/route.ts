@@ -6,6 +6,7 @@ import {
   findOverdueAccounts,
   sendSubscriptionAlerts,
 } from '@/lib/admin/subscriptions'
+import { recordHeartbeat } from '@/lib/observability/heartbeat'
 
 /**
  * Daily subscription-alert sweep. Same secret-header pattern as
@@ -48,5 +49,8 @@ export async function GET(request: Request) {
   }
 
   const result = await sendSubscriptionAlerts(db)
+  await recordHeartbeat('subscriptions_cron', {
+    detail: `dueSoon ${result.dueSoon.length}, overdue ${result.overdue.length}`,
+  })
   return NextResponse.json(result)
 }

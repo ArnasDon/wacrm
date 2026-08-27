@@ -1,0 +1,71 @@
+name: Deploy
+
+# Protected deploy: only fires after the CI workflow has finished on
+# `main` AND concluded success. Nothing reaches production that did not
+# pass lint + typecheck + test + build first.
+#
+# SETUP (one-time):
+#   1. In EasyPanel, turn OFF "auto deploy on push" for the wacrm
+#      service and switch it to deploy via API / deploy hook.
+#   2. EasyPanel → service → Deploy → copy the deploy hook URL.
+#   3. GitHub repo → Settings → Secrets and variables → Actions →
+#      new secret `EASYPANEL_DEPLOY_HOOK` = that URL.
+#   4. Settings → Branches → protect `main`: require the "CI" status
+#      check, require PRs before merging, no direct pushes.
+#
+# If you would rather keep EasyPanel's own auto-deploy-from-main, you
+# do not need this file — branch protection alone already means only
+# CI-green commits land on main. This workflow just moves the trigger
+# into GitHub so the deploy is visibly gated and logged.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Trigger EasyPanel deploy
+    runs-on: ubuntu-latest
+    # Only when the CI run that triggered us actually passed.
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    steps:
+      - name: Guard — deploy hook configured
+        run: |
+          if [ -z "${{ secrets.EASYPANEL_DEPLOY_HOOK }}" ]; then
+            echo "::error::EASYPANEL_DEPLOY_HOOK secret is not set — see this file's SETUP notes."
+            exit 1
+          fi
+
+      - name: Call EasyPanel deploy hook
+        run: |
+          echo "Deploying commit ${{ github.event.workflow_run.head_sha }}"
+          code=$(curl -sS -o /tmp/deploy_out -w '%{http_code}' -X POST "${{ secrets.EASYPANEL_DEPLOY_HOOK }}")
+          echo "EasyPanel responded $code"
+          cat /tmp/deploy_out || true
+          case "$code" in
+            2*) echo "Deploy triggered." ;;
+            *)  echo "::error::EasyPanel deploy hook returned $code"; exit 1 ;;
+          esac
+
+      - name: Post-deploy health probe
+        run: |
+          # Give the container time to swap, then confirm /api/health.
+          for i in $(seq 1 20); do
+            sleep 15
+            code=$(curl -sS -o /tmp/health -w '%{http_code}' "https://sandia-sandia-crm.kmencc.easypanel.host/api/health" || echo 000)
+            echo "attempt $i: /api/health -> $code"
+            if [ "$code" = "200" ]; then
+              echo "Healthy."
+              cat /tmp/health
+              exit 0
+            fi
+          done
+          echo "::error::/api/health did not return 200 within ~5 min of deploy — check EasyPanel logs and consider a rollback (docs/RUNBOOK.md §1)."
+          cat /tmp/health || true
+          exit 1

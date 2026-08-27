@@ -21,6 +21,7 @@ import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/goog
 import { formatWithOffset } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteToConversation, sendQuoteAsText, SendQuoteError } from '@/lib/quotes/send-quote'
+import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 import type { LeadTemperature } from '@/types'
 import type { GenerateResult } from './types'
 
@@ -245,6 +246,10 @@ export async function dispatchInboundToAiReply(
       systemPrompt,
       messages,
     })
+
+    // The provider call succeeded, so the key is valid again — clear any
+    // open "AI provider rejected the key" alert for this account.
+    void resolveSystemAlert(`ai_key_invalid:${accountId}`)
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -569,6 +574,18 @@ async function notifyAiKeyInvalid(db: SupabaseClient, accountId: string): Promis
       body: 'The AI provider rejected the configured API key, so customers are not getting automatic replies. Check Settings → AI.',
     })),
   )
+
+  // Also feed the operational alert sink (Telegram/email) so the
+  // platform operator sees it, not just the account's own admins.
+  await dispatchSystemAlert({
+    severity: 'warning',
+    source: 'ai_key_invalid',
+    title: 'AI provider rejected an account API key',
+    detail: { account_id: accountId },
+    dedupKey: `ai_key_invalid:${accountId}`,
+    accountId,
+    throttleMinutes: 360,
+  })
 }
 
 /**

@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { supabaseAdmin } from './admin-client'
+import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 
 // ============================================================
 // Google Calendar OAuth (Authorization Code flow, `access_type=offline`
@@ -231,6 +232,16 @@ async function notifyGoogleCalendarDisconnected(accountId: string, message: stri
         body: 'El asistente de IA ya no puede consultar tu calendario ni agendar citas — Google rechazó el token de acceso. Reconectá desde Configuración → Google Calendar.',
       })),
     )
+
+    await dispatchSystemAlert({
+      severity: 'warning',
+      source: 'google_calendar',
+      title: 'Google Calendar disconnected for an account',
+      detail: { account_id: accountId, message },
+      dedupKey: `google_calendar:${accountId}`,
+      accountId,
+      throttleMinutes: 360,
+    })
   } catch (err) {
     console.error('[google-calendar] failed to send disconnect notification:', err)
   }
@@ -308,6 +319,10 @@ export async function getValidAccessToken(db: SupabaseClient, accountId: string)
     // don't fail the caller over a non-critical write.
     console.error('[google-calendar] failed to persist refreshed access_token:', updateError)
   }
+
+  // A successful refresh means the connection is healthy again — clear
+  // any open "disconnected" alert for this account.
+  void resolveSystemAlert(`google_calendar:${accountId}`)
 
   return accessToken
 }

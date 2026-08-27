@@ -42,13 +42,20 @@ export async function GET(request: Request) {
 
   for (const hb of hbs) {
     const dedupKey = `cron_heartbeat:${hb.name}`;
-    const bad = hb.stale || hb.lastStatus === 'error';
+    const neverRan = hb.lastStatus === 'never';
+    const wentStale = hb.stale && !neverRan; // ran before, then stopped
+    const bad = wentStale || neverRan || hb.lastStatus === 'error';
     if (bad) {
       flagged.push(hb.name);
-      const severity = hb.stale ? ('critical' as const) : ('warning' as const);
-      const title = hb.stale
-        ? `Cron "${hb.name}" has not run`
-        : `Cron "${hb.name}" last run errored`;
+      // critical == "was healthy, now dead" (a real outage). A job that
+      // has never reported is setup-not-finished, and one bad run is a
+      // blip until it repeats — both are warnings.
+      const severity = wentStale ? ('critical' as const) : ('warning' as const);
+      const title = wentStale
+        ? `Cron "${hb.name}" stopped running`
+        : neverRan
+          ? `Cron "${hb.name}" has never reported`
+          : `Cron "${hb.name}" last run errored`;
       const detail = {
         job: hb.name,
         lastStatus: hb.lastStatus,

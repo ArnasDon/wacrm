@@ -43,6 +43,19 @@ export class DataSourceError extends Error {
   }
 }
 
+/**
+ * The account's configured display currency (accounts.default_currency),
+ * falling back to 'USD' only when the account row has none set. This is
+ * the SAME source of truth the legacy /api/ai/knowledge/{upload,sheet}
+ * routes already used — callers here must use it too instead of
+ * hardcoding 'USD', or a DOP (or any non-USD) account gets every new
+ * catalog product mislabeled (AI_Catalog_Fix_Kit FASE 12).
+ */
+export async function accountDefaultCurrency(db: SupabaseClient, accountId: string): Promise<string> {
+  const { data } = await db.from('accounts').select('default_currency').eq('id', accountId).maybeSingle()
+  return (data as { default_currency?: string } | null)?.default_currency ?? 'USD'
+}
+
 export async function listDataSources(db: SupabaseClient, accountId: string): Promise<DataSourceRow[]> {
   const { data, error } = await db
     .from('ai_data_sources')
@@ -52,6 +65,29 @@ export async function listDataSources(db: SupabaseClient, accountId: string): Pr
     .order('priority', { ascending: true })
   if (error) throw error
   return (data ?? []) as DataSourceRow[]
+}
+
+/** The account's legacy single-inventory data source, if one has been
+ *  created (via the /api/ai/knowledge/{upload,sheet} compatibility
+ *  routes) — see migration 045's partial unique index, which guarantees
+ *  at most one such row exists per account. */
+export async function findLegacyDefaultDataSource(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<DataSourceRow | null> {
+  const { data, error } = await db
+    .from('ai_data_sources')
+    .select(SELECT_COLUMNS)
+    .eq('account_id', accountId)
+    .eq('is_legacy_default', true)
+    .maybeSingle()
+  if (error) {
+    // Tolerate migration 045 not being applied yet — same "degrade,
+    // don't break" discipline as elsewhere in this feature.
+    console.warn('[data-sources] legacy-default lookup failed (migration 045 applied?):', error.message)
+    return null
+  }
+  return (data as DataSourceRow) ?? null
 }
 
 export async function getDataSource(
@@ -123,6 +159,10 @@ interface IngestOptions {
   selectedColumns?: string[]
   /** Existing row id when refreshing; omitted when creating. */
   existingId?: string
+  /** Marks this as THE account's legacy single-inventory source (see
+   *  migration 045's partial unique index) — set only by the
+   *  /api/ai/knowledge/{upload,sheet} compatibility routes. */
+  isLegacyDefault?: boolean
 }
 
 /** Parse + persist one data source (create or refresh). Shared by the
@@ -154,6 +194,7 @@ async function persistDataSource(
     status: 'active' as const,
     last_error: null as string | null,
     last_synced_at: new Date().toISOString(),
+    ...(opts.isLegacyDefault !== undefined ? { is_legacy_default: opts.isLegacyDefault } : {}),
   }
 
   if (opts.isPrimary) {
@@ -300,6 +341,12 @@ export interface CreateFromUrlInput {
   fallbackPolicy?: DataSourceRow['fallback_policy']
   currency?: string
   selectedColumns?: string[]
+  /** Upsert an existing row instead of always creating a new one — used
+   *  by the legacy /api/ai/knowledge/sheet compatibility route so
+   *  re-uploading keeps replacing THE ONE inventory source, matching
+   *  the pre-unification "there is only one inventory" behavior. */
+  existingId?: string
+  isLegacyDefault?: boolean
 }
 
 export async function createDataSourceFromUrl(
@@ -329,6 +376,8 @@ export async function createDataSourceFromUrl(
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
       currency: input.currency ?? 'USD',
       selectedColumns: input.selectedColumns,
+      existingId: input.existingId,
+      isLegacyDefault: input.isLegacyDefault,
     },
     parsed,
   )
@@ -346,6 +395,8 @@ export interface CreateFromFileInput {
   fallbackPolicy?: DataSourceRow['fallback_policy']
   currency?: string
   selectedColumns?: string[]
+  existingId?: string
+  isLegacyDefault?: boolean
 }
 
 export async function createDataSourceFromFile(
@@ -373,6 +424,8 @@ export async function createDataSourceFromFile(
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
       currency: input.currency ?? 'USD',
       selectedColumns: input.selectedColumns,
+      existingId: input.existingId,
+      isLegacyDefault: input.isLegacyDefault,
     },
     parsed,
   )

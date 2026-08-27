@@ -10,6 +10,7 @@ vi.mock('../knowledge', () => ({ ingestDocument: h.ingestDocument }))
 vi.mock('../config', () => ({ loadEmbeddingsKey: h.loadEmbeddingsKey }))
 
 import {
+  accountDefaultCurrency,
   createDataSourceFromUrl,
   DataSourceError,
   refreshDataSource,
@@ -269,5 +270,46 @@ describe('refreshDataSource — replaces only its own rows', () => {
     await expect(
       refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
     ).rejects.toBeInstanceOf(DataSourceError)
+  })
+})
+
+// ============================================================
+// AI_Catalog_Fix_Kit FASE 12 — currency. Regression test for the real
+// bug the audit found: createDataSourceFromUrl/File defaulted to a
+// hardcoded 'USD' when no currency was supplied, so a DOP account's
+// catalog prices got labeled USD. accountDefaultCurrency() (used by
+// /api/ai/data-sources and the legacy /api/ai/knowledge/{upload,sheet}
+// routes) must resolve accounts.default_currency instead.
+// ============================================================
+describe('accountDefaultCurrency', () => {
+  it('reads accounts.default_currency for the given account', async () => {
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-1', default_currency: 'DOP' })
+    expect(await accountDefaultCurrency(db, 'acct-1')).toBe('DOP')
+  })
+
+  it('falls back to USD only when the account has no default_currency set', async () => {
+    const { db } = fakeDb()
+    expect(await accountDefaultCurrency(db, 'acct-missing')).toBe('USD')
+  })
+
+  it('a data source created without an explicit currency uses the account default, never a hardcoded USD', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-1', default_currency: 'DOP' })
+    const currency = await accountDefaultCurrency(db, 'acct-1')
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Products',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      currency, // exactly what the route now passes — never omitted
+    })
+    expect(source.currency).toBe('DOP')
+    expect(table('ai_catalog_products')[0].currency).toBe('DOP')
+    expect(table('ai_catalog_products')[0].currency).not.toBe('USD')
   })
 })

@@ -4,15 +4,22 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
 import { parseSheetCsv, InventoryError } from '@/lib/ai/inventory-parser'
-import { supabaseAdmin } from '@/lib/ai/admin-client'
+import {
+  accountDefaultCurrency,
+  createDataSourceFromUrl,
+  DataSourceError,
+  findLegacyDefaultDataSource,
+} from '@/lib/ai/data-sources/service'
 
 /**
  * POST /api/ai/knowledge/sheet  (admin+)
  *
- * Import inventory from a Google Sheets public CSV URL.
+ * Kept for compatibility with AiKnowledgeCard's inventory uploader —
+ * see the parallel comment in /api/ai/knowledge/upload/route.ts. Same
+ * request/response contract; internally unified onto the structured
+ * Data Sources pipeline (usage='both', upserting THE account's one
+ * legacy source).
  *
  * Body: { url: string }
  *   The URL must be a published Google Sheet in CSV format:
@@ -24,12 +31,7 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-sheet:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const { data: account } = await supabase
-      .from('accounts')
-      .select('default_currency')
-      .eq('id', accountId)
-      .maybeSingle()
-    const currency = account?.default_currency ?? 'USD'
+    const currency = await accountDefaultCurrency(supabase, accountId)
 
     const body = await request.json().catch(() => null)
     const url = typeof body?.url === 'string' ? body.url.trim() : ''
@@ -37,7 +39,6 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'url is required.' }, { status: 400 })
     }
 
-    // Validate it looks like a Google Sheets export URL.
     if (!url.includes('docs.google.com/spreadsheets')) {
       return NextResponse.json(
         { error: 'Not a valid Google Sheets URL. Publish your sheet as CSV and paste the export URL.' },
@@ -45,7 +46,9 @@ export async function POST(request: Request) {
       )
     }
 
-    // Download the CSV.
+    // Downloaded here (in addition to inside createDataSourceFromUrl)
+    // only to keep returning `preview`/`metadata` in this route's
+    // existing response shape without changing that public contract.
     let csvText: string
     try {
       const res = await fetch(url, { signal: AbortSignal.timeout(30_000) })
@@ -56,7 +59,7 @@ export async function POST(request: Request) {
         )
       }
       csvText = await res.text()
-    } catch (err) {
+    } catch {
       return NextResponse.json(
         { error: 'Could not reach the Google Sheets URL. Check the link and try again.' },
         { status: 502 },
@@ -82,59 +85,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 422 })
     }
 
-    // Delete ALL existing inventory-type documents for this account.
-    const adminDb = supabaseAdmin()
-    const { error: delErr } = await adminDb
-      .from('ai_knowledge_documents')
-      .delete()
-      .eq('account_id', accountId)
-      .eq('type', 'inventory')
-    if (delErr) {
-      console.error('[ai/knowledge/sheet] delete error:', delErr)
-      return NextResponse.json({ error: 'Failed to replace existing inventory.' }, { status: 500 })
-    }
+    const existing = await findLegacyDefaultDataSource(supabase, accountId)
 
-    // Insert the new inventory document.
-    const title = `Inventario — Google Sheets`
-    const { data: doc, error: insErr } = await adminDb
-      .from('ai_knowledge_documents')
-      .insert({
-        account_id: accountId,
-        created_by: userId,
-        type: 'inventory',
-        title,
-        content: parsed.content,
-        metadata: parsed.metadata,
-      })
-      .select('id')
-      .single()
-    if (insErr || !doc) {
-      console.error('[ai/knowledge/sheet] insert error:', insErr)
-      return NextResponse.json({ error: 'Failed to save inventory document.' }, { status: 500 })
-    }
-
-    // Ingest (chunk + optionally embed).
-    const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(supabase, accountId)
-    let ingestWarning: string | undefined
+    let source
     try {
-      await ingestDocument(adminDb, accountId, { embeddingsApiKey }, doc.id, parsed.content)
+      source = await createDataSourceFromUrl(supabase, {
+        accountId,
+        userId,
+        sourceType: 'google_sheets',
+        displayName: 'Inventario — Google Sheets',
+        url,
+        usage: 'both',
+        currency,
+        selectedColumns,
+        existingId: existing?.id,
+        isLegacyDefault: true,
+      })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'indexing failed'
-      console.error('[ai/knowledge/sheet] ingest error:', err)
-      ingestWarning = `Saved, but semantic indexing failed (${message}). Lexical search still works.`
-    }
-
-    if (!ingestWarning && corrupt) {
-      ingestWarning =
-        'Saved with keyword search only — your embeddings key could not be decrypted.'
+      const message = err instanceof DataSourceError ? err.message : 'Failed to save inventory.'
+      console.error('[ai/knowledge/sheet] createDataSourceFromUrl error:', err)
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
-      id: doc.id,
+      id: source.id,
       preview: parsed.preview,
       metadata: parsed.metadata,
-      warning: ingestWarning,
     })
   } catch (err) {
     return toErrorResponse(err)

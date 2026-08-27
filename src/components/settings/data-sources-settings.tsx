@@ -1,7 +1,7 @@
 'use client';
 
 // ============================================================
-// DataSourcesSettings — Settings → Data Sources
+// DataSourcesSettings — AI Agents → Setup → Data sources
 //
 // Google Sheets / remote CSV / uploaded CSV sources the AI agent can
 // draw on, independently of the Budun ERP Catalog integration (see
@@ -11,14 +11,15 @@
 // the structured product table the search_catalog/get_product/
 // get_availability/get_product_media tools query.
 //
-// Kept intentionally plain (no next-intl wiring) — this is a large new
-// settings surface layered on top of an already sizeable feature; see
-// the implementation report for the i18n follow-up note.
+// Rendered from src/components/settings/ai-config.tsx (AI Agents →
+// Setup), not from the generic Settings rail — every source the agent
+// itself consults belongs there (AI_Catalog_Fix_Kit FASE 3).
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Database, Loader2, Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,6 +43,7 @@ import {
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { RequireRole } from '@/components/auth/require-role';
+import { useAuth } from '@/hooks/use-auth';
 import { SettingsPanelHead } from './settings-panel-head';
 
 type SourceType = 'google_sheets' | 'remote_csv' | 'uploaded_csv';
@@ -65,24 +67,14 @@ interface DataSourceRow {
   last_error: string | null;
 }
 
-const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
-  google_sheets: 'Google Sheets',
-  remote_csv: 'Remote CSV',
-  uploaded_csv: 'Uploaded CSV',
-};
-
-const USAGE_LABEL: Record<Usage, string> = {
-  knowledge: 'Knowledge base only',
-  catalog: 'Catalog only (search_catalog / get_product / …)',
-  both: 'Both — knowledge base + catalog',
-};
-
-function fmtDate(iso: string | null): string {
-  if (!iso) return 'never';
+function fmtDate(iso: string | null, never: string): string {
+  if (!iso) return never;
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function DataSourcesSettings() {
+  const t = useTranslations('Settings.dataSources');
+  const { defaultCurrency } = useAuth();
   const [sources, setSources] = useState<DataSourceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
@@ -90,40 +82,51 @@ export function DataSourcesSettings() {
   const fileRefreshInputRef = useRef<HTMLInputElement | null>(null);
   const [refreshTargetId, setRefreshTargetId] = useState<string | null>(null);
 
+  const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
+    google_sheets: t('sourceTypeGoogleSheets'),
+    remote_csv: t('sourceTypeRemoteCsv'),
+    uploaded_csv: t('sourceTypeUploadedCsv'),
+  };
+  const USAGE_LABEL: Record<Usage, string> = {
+    knowledge: t('usageKnowledge'),
+    catalog: t('usageCatalog'),
+    both: t('usageBoth'),
+  };
+
   const load = useCallback(async () => {
     try {
       const res = await fetch('/api/ai/data-sources', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Failed to load data sources.');
+        toast.error(data.error || t('loadFailed'));
         return;
       }
       setSources(data.data_sources ?? []);
     } catch {
-      toast.error('Network error while loading data sources.');
+      toast.error(t('networkError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   async function handleDelete(source: DataSourceRow) {
-    if (!confirm(`Delete "${source.display_name}"? This removes its knowledge/catalog content.`)) return;
+    if (!confirm(t('deleteConfirm', { name: source.display_name }))) return;
     setBusyId(source.id);
     try {
       const res = await fetch(`/api/ai/data-sources/${source.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Delete failed.');
+        toast.error(data.error || t('deleteFailed'));
         return;
       }
-      toast.success('Data source deleted.');
+      toast.success(t('deleteSuccess'));
       setSources((prev) => prev.filter((s) => s.id !== source.id));
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -147,13 +150,13 @@ export function DataSourcesSettings() {
       }
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Refresh failed.');
+        toast.error(data.error || t('refreshFailed'));
         return;
       }
-      toast.success(`Refreshed — ${data.data_source?.row_count ?? 0} rows.`);
+      toast.success(t('refreshSuccess', { rows: data.data_source?.row_count ?? 0 }));
       await load();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -169,12 +172,12 @@ export function DataSourcesSettings() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Update failed.');
+        toast.error(data.error || t('updateFailed'));
         return;
       }
       await load();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -191,12 +194,12 @@ export function DataSourcesSettings() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Update failed.');
+        toast.error(data.error || t('updateFailed'));
         return;
       }
       await load();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -213,13 +216,13 @@ export function DataSourcesSettings() {
   return (
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
-        title="Data Sources"
-        description="Google Sheets, remote CSV and uploaded CSV files the AI agent can use for its knowledge base and/or product catalog. The Knowledge Base itself (policies, hours, FAQ) keeps working independently — see the Knowledge Base tab under AI Agents."
+        title={t('title')}
+        description={t('description')}
         action={
           <RequireRole min="admin">
             <Button onClick={() => setCreateOpen(true)}>
               <Plus className="size-4" />
-              Add data source
+              {t('addDataSource')}
             </Button>
           </RequireRole>
         }
@@ -242,7 +245,7 @@ export function DataSourcesSettings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <Database className="text-muted-foreground size-6" />
-            <p className="text-muted-foreground mt-2 text-sm">No data sources configured yet.</p>
+            <p className="text-muted-foreground mt-2 text-sm">{t('noDataSources')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -268,14 +271,18 @@ export function DataSourcesSettings() {
                             : 'border-border bg-muted text-muted-foreground'
                       }`}
                     >
-                      {s.status}
+                      {s.status === 'active' ? t('statusActive') : s.status === 'error' ? t('statusError') : t('statusDisabled')}
                     </Badge>
                     {s.is_primary && (
-                      <Badge className="border-primary/40 bg-primary/10 text-primary text-[10px]">primary</Badge>
+                      <Badge className="border-primary/40 bg-primary/10 text-primary text-[10px]">{t('primaryBadge')}</Badge>
                     )}
                   </div>
                   <p className="text-muted-foreground text-xs">
-                    Priority {s.priority} · {s.row_count ?? 0} rows · last synced {fmtDate(s.last_synced_at)}
+                    {t('priorityInfo', {
+                      priority: s.priority,
+                      rows: s.row_count ?? 0,
+                      date: fmtDate(s.last_synced_at, t('never')),
+                    })}
                     {s.fallback_policy !== 'fallback_on_not_found' ? ` · ${s.fallback_policy}` : ''}
                   </p>
                   {s.last_error && <p className="text-xs text-red-400">{s.last_error}</p>}
@@ -292,7 +299,7 @@ export function DataSourcesSettings() {
                         ) : (
                           <RefreshCw className="size-3.5" />
                         )}
-                        Refresh
+                        {t('refresh')}
                       </Button>
                       <Button
                         variant="outline"
@@ -300,7 +307,7 @@ export function DataSourcesSettings() {
                         disabled={busyId === s.id}
                         onClick={() => handleTogglePrimary(s)}
                       >
-                        {s.is_primary ? 'Unset primary' : 'Set primary'}
+                        {s.is_primary ? t('unsetPrimary') : t('setPrimary')}
                       </Button>
                       <Button
                         variant="outline"
@@ -308,7 +315,7 @@ export function DataSourcesSettings() {
                         disabled={busyId === s.id}
                         onClick={() => handleToggleStatus(s)}
                       >
-                        {s.status === 'disabled' ? 'Enable' : 'Disable'}
+                        {s.status === 'disabled' ? t('enable') : t('disable')}
                       </Button>
                       <Button
                         variant="outline"
@@ -318,7 +325,7 @@ export function DataSourcesSettings() {
                         className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
                       >
                         <Trash2 className="size-3.5" />
-                        Delete
+                        {t('delete')}
                       </Button>
                     </div>
                   </RequireRole>
@@ -329,7 +336,13 @@ export function DataSourcesSettings() {
         </Card>
       )}
 
-      <CreateDataSourceDialog open={createOpen} onOpenChange={setCreateOpen} onCreated={load} />
+      <CreateDataSourceDialog
+        open={createOpen}
+        onOpenChange={setCreateOpen}
+        onCreated={load}
+        defaultCurrency={defaultCurrency}
+        usageLabel={USAGE_LABEL}
+      />
     </section>
   );
 }
@@ -338,11 +351,16 @@ function CreateDataSourceDialog({
   open,
   onOpenChange,
   onCreated,
+  defaultCurrency,
+  usageLabel,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
+  defaultCurrency: string;
+  usageLabel: Record<Usage, string>;
 }) {
+  const t = useTranslations('Settings.dataSources');
   const [sourceType, setSourceType] = useState<SourceType>('google_sheets');
   const [displayName, setDisplayName] = useState('');
   const [url, setUrl] = useState('');
@@ -351,6 +369,15 @@ function CreateDataSourceDialog({
   const [fallbackPolicy, setFallbackPolicy] = useState<FallbackPolicy>('fallback_on_not_found');
   const [isPrimary, setIsPrimary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [currency, setCurrency] = useState(defaultCurrency || 'USD');
+
+  // Re-seed the currency once the account's real default arrives (it's
+  // not known on first render) — without this every source silently
+  // defaults to the hook's placeholder value instead of the account's
+  // actual configured currency.
+  useEffect(() => {
+    if (defaultCurrency) setCurrency(defaultCurrency);
+  }, [defaultCurrency]);
 
   function reset() {
     setSourceType('google_sheets');
@@ -361,19 +388,20 @@ function CreateDataSourceDialog({
     setFallbackPolicy('fallback_on_not_found');
     setIsPrimary(false);
     setSubmitting(false);
+    setCurrency(defaultCurrency || 'USD');
   }
 
   async function handleCreate() {
     if (!displayName.trim()) {
-      toast.error('Name is required.');
+      toast.error(t('nameRequired'));
       return;
     }
     if (sourceType !== 'uploaded_csv' && !url.trim()) {
-      toast.error('URL is required.');
+      toast.error(t('urlRequired'));
       return;
     }
     if (sourceType === 'uploaded_csv' && !file) {
-      toast.error('Choose a file to upload.');
+      toast.error(t('chooseFile'));
       return;
     }
     setSubmitting(true);
@@ -384,21 +412,22 @@ function CreateDataSourceDialog({
       fd.set('usage', usage);
       fd.set('fallback_policy', fallbackPolicy);
       fd.set('is_primary', String(isPrimary));
+      fd.set('currency', currency.trim() || defaultCurrency || 'USD');
       if (sourceType === 'uploaded_csv' && file) fd.set('file', file);
       else fd.set('url', url.trim());
 
       const res = await fetch('/api/ai/data-sources', { method: 'POST', body: fd });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Failed to create data source.');
+        toast.error(data.error || t('createFailed'));
         return;
       }
-      toast.success(`Added — ${data.data_source?.row_count ?? 0} rows detected.`);
+      toast.success(t('createSuccess', { rows: data.data_source?.row_count ?? 0 }));
       reset();
       onOpenChange(false);
       onCreated();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setSubmitting(false);
     }
@@ -414,39 +443,37 @@ function CreateDataSourceDialog({
     >
       <DialogContent className="border-border bg-popover sm:max-w-md">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">Add data source</DialogTitle>
-          <DialogDescription className="text-muted-foreground">
-            Connect a Google Sheet, a remote CSV URL, or upload a CSV/Excel file.
-          </DialogDescription>
+          <DialogTitle className="text-popover-foreground">{t('createTitle')}</DialogTitle>
+          <DialogDescription className="text-muted-foreground">{t('createDesc')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Source</Label>
+            <Label className="text-muted-foreground">{t('sourceLabel')}</Label>
             <Select value={sourceType} onValueChange={(v) => setSourceType(v as SourceType)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="google_sheets">Google Sheets (public CSV link)</SelectItem>
-                <SelectItem value="remote_csv">Remote CSV URL</SelectItem>
-                <SelectItem value="uploaded_csv">Upload CSV / Excel</SelectItem>
+                <SelectItem value="google_sheets">{t('sourceGoogleSheetsOption')}</SelectItem>
+                <SelectItem value="remote_csv">{t('sourceRemoteCsvOption')}</SelectItem>
+                <SelectItem value="uploaded_csv">{t('sourceUploadOption')}</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Name</Label>
+            <Label className="text-muted-foreground">{t('nameLabel')}</Label>
             <Input
               value={displayName}
               onChange={(e) => setDisplayName(e.target.value)}
-              placeholder="e.g. Product catalog, Store hours"
+              placeholder={t('namePlaceholder')}
             />
           </div>
 
           {sourceType === 'uploaded_csv' ? (
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">File</Label>
+              <Label className="text-muted-foreground">{t('fileLabel')}</Label>
               <Input
                 type="file"
                 accept=".csv,.xlsx,.xls"
@@ -455,7 +482,7 @@ function CreateDataSourceDialog({
             </div>
           ) : (
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">URL</Label>
+              <Label className="text-muted-foreground">{t('urlLabel')}</Label>
               <Input
                 value={url}
                 onChange={(e) => setUrl(e.target.value)}
@@ -468,35 +495,48 @@ function CreateDataSourceDialog({
             </div>
           )}
 
+          {(usage === 'catalog' || usage === 'both') && (
+            <div className="space-y-1.5">
+              <Label className="text-muted-foreground">{t('currencyLabel')}</Label>
+              <Input
+                value={currency}
+                onChange={(e) => setCurrency(e.target.value.toUpperCase().slice(0, 3))}
+                placeholder="USD"
+                maxLength={3}
+                className="w-24 uppercase"
+              />
+              <p className="text-muted-foreground text-xs">
+                {t('currencyHint', { currency: defaultCurrency || 'USD' })}
+              </p>
+            </div>
+          )}
+
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Use for</Label>
+            <Label className="text-muted-foreground">{t('useForLabel')}</Label>
             <Select value={usage} onValueChange={(v) => setUsage(v as Usage)}>
               <SelectTrigger>
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="knowledge">{USAGE_LABEL.knowledge}</SelectItem>
-                <SelectItem value="catalog">{USAGE_LABEL.catalog}</SelectItem>
-                <SelectItem value="both">{USAGE_LABEL.both}</SelectItem>
+                <SelectItem value="knowledge">{usageLabel.knowledge}</SelectItem>
+                <SelectItem value="catalog">{usageLabel.catalog}</SelectItem>
+                <SelectItem value="both">{usageLabel.both}</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-muted-foreground text-xs">
-              &quot;Catalog&quot; rows are only ever returned through the agent&apos;s search_catalog/get_product
-              tools — never pasted into the prompt — so price/stock can&apos;t be guessed from memory.
-            </p>
+            <p className="text-muted-foreground text-xs">{t('usageHint')}</p>
           </div>
 
           {(usage === 'catalog' || usage === 'both') && (
             <div className="space-y-1.5">
-              <Label className="text-muted-foreground">If another catalog source already has a match</Label>
+              <Label className="text-muted-foreground">{t('fallbackLabel')}</Label>
               <Select value={fallbackPolicy} onValueChange={(v) => setFallbackPolicy(v as FallbackPolicy)}>
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="fallback_on_not_found">Use this source only if others found nothing</SelectItem>
-                  <SelectItem value="primary_only">Never fall back to other sources</SelectItem>
-                  <SelectItem value="search_all_active">Always search alongside other active sources</SelectItem>
+                  <SelectItem value="fallback_on_not_found">{t('fallbackOnNotFound')}</SelectItem>
+                  <SelectItem value="primary_only">{t('fallbackPrimaryOnly')}</SelectItem>
+                  <SelectItem value="search_all_active">{t('fallbackSearchAll')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -504,7 +544,7 @@ function CreateDataSourceDialog({
 
           <label className="flex cursor-pointer items-center gap-2.5">
             <Checkbox checked={isPrimary} onCheckedChange={(c) => setIsPrimary(c === true)} />
-            <span className="text-foreground text-sm">Set as primary source</span>
+            <span className="text-foreground text-sm">{t('setPrimaryCheckbox')}</span>
           </label>
         </div>
 
@@ -517,16 +557,16 @@ function CreateDataSourceDialog({
             }}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={handleCreate} disabled={submitting}>
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Adding…
+                {t('adding')}
               </>
             ) : (
-              'Add data source'
+              t('addDataSource')
             )}
           </Button>
         </DialogFooter>

@@ -1,12 +1,10 @@
 import {
   Coins,
-  Database,
   FileText,
   KeyRound,
   Languages,
   LayoutGrid,
   Palette,
-  Plug,
   PlugZap,
   Shield,
   Tags,
@@ -35,8 +33,6 @@ export const SETTINGS_SECTIONS = [
   'quick-replies',
   'fields',
   'deals',
-  'data-sources',
-  'integrations',
   'members',
   'api',
 ] as const;
@@ -64,8 +60,6 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
   fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
   deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
-  'data-sources': { id: 'data-sources', label: 'Data sources', icon: Database, group: 'workspace' },
-  integrations: { id: 'integrations', label: 'Integrations', icon: Plug, group: 'workspace' },
   members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
   api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
 };

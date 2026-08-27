@@ -1,7 +1,7 @@
 'use client';
 
 // ============================================================
-// CatalogIntegrationsSettings — Settings → Integrations → Inventory API
+// CatalogIntegrationsSettings — AI Agents → Setup → Integrations
 //
 // Configures external Catalog API providers the AI agent's
 // search_catalog/get_product/get_availability/get_product_media tools
@@ -15,11 +15,15 @@
 // the API after save — this form always POSTs/PATCHes it fresh (blank
 // = "leave unchanged" on an edit), mirroring whatsapp-config.tsx's
 // masked-token contract.
+//
+// Rendered from src/components/settings/ai-config.tsx (AI Agents →
+// Setup), not the generic Settings rail (AI_Catalog_Fix_Kit FASE 3).
 // ============================================================
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { CheckCircle2, Loader2, Plug, Plus, Trash2, XCircle, Zap } from 'lucide-react';
+import { useTranslations } from 'next-intl';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -52,12 +56,13 @@ interface CatalogIntegrationRow {
   last_error: string | null;
 }
 
-function fmtDate(iso: string | null): string {
-  if (!iso) return 'never';
+function fmtDate(iso: string | null, never: string): string {
+  if (!iso) return never;
   return new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
 export function CatalogIntegrationsSettings() {
+  const t = useTranslations('Settings.catalogIntegrations');
   const [integrations, setIntegrations] = useState<CatalogIntegrationRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -70,16 +75,16 @@ export function CatalogIntegrationsSettings() {
       const res = await fetch('/api/integrations/catalog', { cache: 'no-store' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Failed to load integrations.');
+        toast.error(data.error || t('loadFailed'));
         return;
       }
       setIntegrations(data.integrations ?? []);
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -91,32 +96,32 @@ export function CatalogIntegrationsSettings() {
       const res = await fetch(`/api/integrations/catalog/${integration.id}/test`, { method: 'POST' });
       const data = await res.json().catch(() => ({}));
       if (data.ok) {
-        toast.success(`Connected — ${data.latencyMs}ms.`);
+        toast.success(t('testSuccessMsg', { ms: data.latencyMs }));
       } else {
-        toast.error(data.message || 'Connection failed.');
+        toast.error(data.message || t('testFailedMsg'));
       }
       await load();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setTestingId(null);
     }
   }
 
   async function handleDelete(integration: CatalogIntegrationRow) {
-    if (!confirm(`Remove "${integration.display_name}"? The agent will stop using it immediately.`)) return;
+    if (!confirm(t('removeConfirm', { name: integration.display_name }))) return;
     setBusyId(integration.id);
     try {
       const res = await fetch(`/api/integrations/catalog/${integration.id}`, { method: 'DELETE' });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Delete failed.');
+        toast.error(data.error || t('removeFailed'));
         return;
       }
-      toast.success('Integration removed.');
+      toast.success(t('removeSuccess'));
       setIntegrations((prev) => prev.filter((i) => i.id !== integration.id));
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -133,12 +138,12 @@ export function CatalogIntegrationsSettings() {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Update failed.');
+        toast.error(data.error || t('updateFailed'));
         return;
       }
       await load();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -155,13 +160,13 @@ export function CatalogIntegrationsSettings() {
   return (
     <section className="animate-in fade-in-50 space-y-6 duration-200">
       <SettingsPanelHead
-        title="Integrations — Inventory API"
-        description="Connect an external Catalog API (Budun ERP) so the agent can answer with real, live product/price/stock/photo data instead of the static Knowledge Base. Read-only — WACRM never writes to the ERP."
+        title={t('title')}
+        description={t('description')}
         action={
           <RequireRole min="admin">
             <Button onClick={() => { setEditing(null); setDialogOpen(true); }}>
               <Plus className="size-4" />
-              Add integration
+              {t('addIntegration')}
             </Button>
           </RequireRole>
         }
@@ -171,7 +176,7 @@ export function CatalogIntegrationsSettings() {
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <Plug className="text-muted-foreground size-6" />
-            <p className="text-muted-foreground mt-2 text-sm">No Catalog API integration configured yet.</p>
+            <p className="text-muted-foreground mt-2 text-sm">{t('noIntegrations')}</p>
           </CardContent>
         </Card>
       ) : (
@@ -194,17 +199,17 @@ export function CatalogIntegrationsSettings() {
                             : 'border-border bg-muted text-muted-foreground'
                       }`}
                     >
-                      {i.status}
+                      {i.status === 'active' ? t('statusActive') : i.status === 'error' ? t('statusError') : t('statusDisabled')}
                     </Badge>
                     {i.is_primary && (
-                      <Badge className="border-primary/40 bg-primary/10 text-primary text-[10px]">primary</Badge>
+                      <Badge className="border-primary/40 bg-primary/10 text-primary text-[10px]">{t('primaryBadge')}</Badge>
                     )}
                     {i.last_test_ok === true && <CheckCircle2 className="size-3.5 text-emerald-400" />}
                     {i.last_test_ok === false && <XCircle className="size-3.5 text-red-400" />}
                   </div>
                   <p className="text-muted-foreground font-mono text-xs">{i.base_url}</p>
                   <p className="text-muted-foreground text-xs">
-                    Scopes: {i.scopes.join(', ')} · last test {fmtDate(i.last_test_at)}
+                    {t('scopesInfo', { scopes: i.scopes.join(', '), date: fmtDate(i.last_test_at, t('never')) })}
                   </p>
                   {i.last_error && <p className="text-xs text-red-400">{i.last_error}</p>}
                   <RequireRole min="admin">
@@ -220,10 +225,10 @@ export function CatalogIntegrationsSettings() {
                         ) : (
                           <Zap className="size-3.5" />
                         )}
-                        Test connection
+                        {t('testConnection')}
                       </Button>
                       <Button variant="outline" size="sm" onClick={() => { setEditing(i); setDialogOpen(true); }}>
-                        Edit / rotate secret
+                        {t('editRotate')}
                       </Button>
                       <Button
                         variant="outline"
@@ -231,7 +236,7 @@ export function CatalogIntegrationsSettings() {
                         disabled={busyId === i.id}
                         onClick={() => handleToggleStatus(i)}
                       >
-                        {i.status === 'disabled' ? 'Enable' : 'Disable'}
+                        {i.status === 'disabled' ? t('enable') : t('disable')}
                       </Button>
                       <Button
                         variant="outline"
@@ -241,7 +246,7 @@ export function CatalogIntegrationsSettings() {
                         className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
                       >
                         <Trash2 className="size-3.5" />
-                        Remove
+                        {t('remove')}
                       </Button>
                     </div>
                   </RequireRole>
@@ -273,6 +278,7 @@ function IntegrationDialog({
   editing: CatalogIntegrationRow | null;
   onSaved: () => void;
 }) {
+  const t = useTranslations('Settings.catalogIntegrations');
   const [displayName, setDisplayName] = useState(editing?.display_name ?? '');
   const [baseUrl, setBaseUrl] = useState(editing?.base_url ?? '');
   const [appKey, setAppKey] = useState(editing?.app_key ?? '');
@@ -294,11 +300,11 @@ function IntegrationDialog({
 
   async function handleSave() {
     if (!displayName.trim() || !baseUrl.trim()) {
-      toast.error('Name and Base URL are required.');
+      toast.error(t('nameUrlRequired'));
       return;
     }
     if (!editing && !secret.trim()) {
-      toast.error('Application Secret is required for a new integration.');
+      toast.error(t('secretRequired'));
       return;
     }
     setSubmitting(true);
@@ -322,14 +328,14 @@ function IntegrationDialog({
       );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        toast.error(data.error || 'Save failed.');
+        toast.error(data.error || t('saveFailed'));
         return;
       }
-      toast.success(editing ? 'Integration updated.' : 'Integration added.');
+      toast.success(editing ? t('saveSuccessEdit') : t('saveSuccessNew'));
       onOpenChange(false);
       onSaved();
     } catch {
-      toast.error('Network error.');
+      toast.error(t('networkError'));
     } finally {
       setSubmitting(false);
     }
@@ -340,21 +346,18 @@ function IntegrationDialog({
       <DialogContent className="border-border bg-popover sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">
-            {editing ? 'Edit integration' : 'Add Inventory API integration'}
+            {editing ? t('editDialogTitle') : t('createDialogTitle')}
           </DialogTitle>
-          <DialogDescription className="text-muted-foreground">
-            Budun ERP — Catalog API. Read-only scopes (catalog:read, catalog:availability:read,
-            catalog:media:read). The secret is stored encrypted and never shown again.
-          </DialogDescription>
+          <DialogDescription className="text-muted-foreground">{t('dialogDesc')}</DialogDescription>
         </DialogHeader>
 
         <div className="space-y-4">
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Display name</Label>
-            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder="Budun ERP" />
+            <Label className="text-muted-foreground">{t('displayNameLabel')}</Label>
+            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={t('displayNamePlaceholder')} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">ERP Inventory API Base URL</Label>
+            <Label className="text-muted-foreground">{t('baseUrlLabel')}</Label>
             <Input
               value={baseUrl}
               onChange={(e) => setBaseUrl(e.target.value)}
@@ -363,22 +366,22 @@ function IntegrationDialog({
           </div>
           <div className="space-y-1.5">
             <Label className="text-muted-foreground">
-              Application ID / App Key <span className="text-muted-foreground">(optional)</span>
+              {t('appKeyLabel')} <span className="text-muted-foreground">{t('appKeyOptional')}</span>
             </Label>
             <Input value={appKey} onChange={(e) => setAppKey(e.target.value)} />
           </div>
           <div className="space-y-1.5">
-            <Label className="text-muted-foreground">Application Secret</Label>
+            <Label className="text-muted-foreground">{t('secretLabel')}</Label>
             <Input
               type="password"
               value={secret}
               onChange={(e) => setSecret(e.target.value)}
-              placeholder={editing ? 'Leave blank to keep current secret' : ''}
+              placeholder={editing ? t('secretPlaceholderEdit') : ''}
             />
           </div>
           <label className="flex cursor-pointer items-center gap-2.5">
             <Checkbox checked={isPrimary} onCheckedChange={(c) => setIsPrimary(c === true)} />
-            <span className="text-foreground text-sm">Use as the primary catalog integration</span>
+            <span className="text-foreground text-sm">{t('primaryCheckbox')}</span>
           </label>
         </div>
 
@@ -388,16 +391,16 @@ function IntegrationDialog({
             onClick={() => onOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            Cancel
+            {t('cancel')}
           </Button>
           <Button onClick={handleSave} disabled={submitting}>
             {submitting ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
-                Saving…
+                {t('saving')}
               </>
             ) : (
-              'Save'
+              t('save')
             )}
           </Button>
         </DialogFooter>

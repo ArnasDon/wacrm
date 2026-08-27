@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import {
+  accountDefaultCurrency,
   createDataSourceFromFile,
   createDataSourceFromUrl,
   DataSourceError,
@@ -58,7 +59,13 @@ export async function POST(request: Request) {
     const priorityRaw = formData.get('priority')
     const priority = priorityRaw ? Number(priorityRaw) : undefined
     const isPrimary = formData.get('is_primary') === 'true'
-    const currency = formData.get('currency') ? String(formData.get('currency')) : undefined
+    // Default to the account's configured currency (same pattern as the
+    // legacy /api/ai/knowledge/{upload,sheet} routes) — NOT a hardcoded
+    // 'USD'. Without this, an account whose real currency is DOP gets
+    // every new catalog product mislabeled USD, which the agent then
+    // repeats verbatim (AI_Catalog_Fix_Kit FASE 12).
+    const requestedCurrency = formData.get('currency') ? String(formData.get('currency')) : undefined
+    const currency = requestedCurrency ?? (await accountDefaultCurrency(supabase, accountId))
 
     if (!displayName) {
       return NextResponse.json({ error: 'display_name is required.' }, { status: 400 })

@@ -112,8 +112,8 @@ const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
   model: ['modelo', 'model'],
   description: ['descripcion_comercial', 'descripcion_larga', 'notas', 'notes', 'comentario', 'comentarios'],
   color: ['color', 'colour', 'colores', 'colors'],
-  capacity: ['capacidad', 'capacity', 'almacenamiento', 'storage', 'gb', 'memoria'],
-  size: ['talla', 'size', 'tamano', 'tama\u00f1o'],
+  capacity: ['capacidad', 'capacity', 'almacenamiento', 'storage', 'gb', 'memoria', 'ram'],
+  size: ['talla', 'size', 'tamano', 'tama\u00f1o', 'pulgadas', 'inches', 'inch', 'pulgada'],
   image: [
     'imagen', 'image', 'foto', 'photo', 'image_url', 'imagen_url',
     'picture', 'picture_url', 'foto_url', 'url_imagen', 'url_foto',

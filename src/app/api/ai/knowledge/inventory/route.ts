@@ -3,26 +3,24 @@ import {
   requireRole,
   toErrorResponse,
 } from '@/lib/auth/account'
-import { supabaseAdmin } from '@/lib/ai/admin-client'
+import { deleteDataSource, findLegacyDefaultDataSource } from '@/lib/ai/data-sources/service'
 
 /**
  * DELETE /api/ai/knowledge/inventory  (admin+)
  *
- * Remove all inventory-type documents for the current account.
- * Chunks are cascade-deleted by the FK.
+ * Kept for compatibility with AiKnowledgeCard's inventory uploader.
+ * Now deletes the account's legacy default Data Source (see migration
+ * 045) — its ai_catalog_products rows and linked KB document cascade
+ * with it (AI_Catalog_Fix_Kit FASE 2/3 unification). A no-op (still
+ * `success: true`) when there's nothing to delete, matching the old
+ * route's idempotent-DELETE behavior.
  */
 export async function DELETE() {
   try {
-    const { accountId } = await requireRole('admin')
-    const adminDb = supabaseAdmin()
-    const { error } = await adminDb
-      .from('ai_knowledge_documents')
-      .delete()
-      .eq('account_id', accountId)
-      .eq('type', 'inventory')
-    if (error) {
-      console.error('[ai/knowledge/inventory DELETE] error:', error)
-      return NextResponse.json({ error: 'Failed to delete inventory.' }, { status: 500 })
+    const { supabase, accountId } = await requireRole('admin')
+    const existing = await findLegacyDefaultDataSource(supabase, accountId)
+    if (existing) {
+      await deleteDataSource(supabase, accountId, existing.id)
     }
     return NextResponse.json({ success: true })
   } catch (err) {

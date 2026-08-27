@@ -4,17 +4,28 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { loadEmbeddingsKey } from '@/lib/ai/config'
-import { ingestDocument } from '@/lib/ai/knowledge'
 import { parseInventoryFile, InventoryError } from '@/lib/ai/inventory-parser'
-import { supabaseAdmin } from '@/lib/ai/admin-client'
+import {
+  accountDefaultCurrency,
+  createDataSourceFromFile,
+  DataSourceError,
+  findLegacyDefaultDataSource,
+} from '@/lib/ai/data-sources/service'
 
 /**
  * POST /api/ai/knowledge/upload  (admin+)
  *
- * Upload a CSV or Excel inventory file. Parses it into a single
- * KB document (type='inventory'), replacing any previous inventory
- * document atomically.
+ * Kept for compatibility with AiKnowledgeCard's inventory uploader
+ * (src/components/settings/ai-knowledge.tsx) — SAME request/response
+ * contract as before, but internally unified onto the structured
+ * pipeline (AI_Catalog_Fix_Kit FASE 2/3): this now upserts THE
+ * account's one legacy data source (ai_data_sources, usage='both') via
+ * src/lib/ai/data-sources/service.ts instead of writing directly to a
+ * standalone ai_knowledge_documents(type='inventory') row. `usage:
+ * 'both'` preserves the old "inventory text is searchable in the KB"
+ * behavior while ALSO making it queryable by the catalog tools
+ * (search_catalog/get_product/...) — one inventory, one pipeline, no
+ * second independent catalog.
  *
  * Body: multipart/form-data with field "file".
  */
@@ -24,12 +35,7 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-upload:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const { data: account } = await supabase
-      .from('accounts')
-      .select('default_currency')
-      .eq('id', accountId)
-      .maybeSingle()
-    const currency = account?.default_currency ?? 'USD'
+    const currency = await accountDefaultCurrency(supabase, accountId)
 
     const formData = await request.formData().catch(() => null)
     if (!formData) {
@@ -60,6 +66,10 @@ export async function POST(request: Request) {
       }
     } catch { /* ignore */ }
 
+    // Parsed here (in addition to inside createDataSourceFromFile) only
+    // to keep returning `preview`/`metadata` in this route's existing
+    // response shape without changing that public contract — cheap for
+    // the CSV/Excel sizes this UI targets.
     let parsed
     try {
       parsed = parseInventoryFile(buffer, filename, selectedColumns, currency)
@@ -68,59 +78,33 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: message }, { status: 422 })
     }
 
-    // Delete ALL existing inventory-type documents for this account.
-    const adminDb = supabaseAdmin()
-    const { error: delErr } = await adminDb
-      .from('ai_knowledge_documents')
-      .delete()
-      .eq('account_id', accountId)
-      .eq('type', 'inventory')
-    if (delErr) {
-      console.error('[ai/knowledge/upload] delete error:', delErr)
-      return NextResponse.json({ error: 'Failed to replace existing inventory.' }, { status: 500 })
-    }
+    const existing = await findLegacyDefaultDataSource(supabase, accountId)
 
-    // Insert the new inventory document.
-    const title = `Inventario — ${filename}`
-    const { data: doc, error: insErr } = await adminDb
-      .from('ai_knowledge_documents')
-      .insert({
-        account_id: accountId,
-        created_by: userId,
-        type: 'inventory',
-        title,
-        content: parsed.content,
-        metadata: parsed.metadata,
-      })
-      .select('id')
-      .single()
-    if (insErr || !doc) {
-      console.error('[ai/knowledge/upload] insert error:', insErr)
-      return NextResponse.json({ error: 'Failed to save inventory document.' }, { status: 500 })
-    }
-
-    // Ingest (chunk + optionally embed).
-    const { key: embeddingsApiKey, corrupt } = await loadEmbeddingsKey(supabase, accountId)
-    let ingestWarning: string | undefined
+    let source
     try {
-      await ingestDocument(adminDb, accountId, { embeddingsApiKey }, doc.id, parsed.content)
+      source = await createDataSourceFromFile(supabase, {
+        accountId,
+        userId,
+        displayName: `Inventario — ${filename}`,
+        filename,
+        buffer,
+        usage: 'both',
+        currency,
+        selectedColumns,
+        existingId: existing?.id,
+        isLegacyDefault: true,
+      })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'indexing failed'
-      console.error('[ai/knowledge/upload] ingest error:', err)
-      ingestWarning = `Saved, but semantic indexing failed (${message}). Lexical search still works.`
-    }
-
-    if (!ingestWarning && corrupt) {
-      ingestWarning =
-        'Saved with keyword search only — your embeddings key could not be decrypted.'
+      const message = err instanceof DataSourceError ? err.message : 'Failed to save inventory.'
+      console.error('[ai/knowledge/upload] createDataSourceFromFile error:', err)
+      return NextResponse.json({ error: message }, { status: 500 })
     }
 
     return NextResponse.json({
       success: true,
-      id: doc.id,
+      id: source.id,
       preview: parsed.preview,
       metadata: parsed.metadata,
-      warning: ingestWarning,
     })
   } catch (err) {
     return toErrorResponse(err)

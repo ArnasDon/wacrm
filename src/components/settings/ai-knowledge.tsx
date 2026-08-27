@@ -53,12 +53,16 @@ interface InventoryPreview {
   detected: DetectedColumnMap;
 }
 
+interface LegacyDataSource {
+  id: string;
+  source_type: 'google_sheets' | 'remote_csv' | 'uploaded_csv';
+  row_count: number | null;
+}
+
 function InventoryUploader({
-  inventoryDocs,
   canEdit,
   onRefresh,
 }: {
-  inventoryDocs: DocSummary[];
   canEdit: boolean;
   onRefresh: () => Promise<void>;
 }) {
@@ -72,6 +76,31 @@ function InventoryUploader({
   const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
   const fileRef = useRef<HTMLInputElement>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // The inventory upload is now backed by the unified Data Sources
+  // pipeline (a single ai_data_sources row flagged is_legacy_default —
+  // see AI_Catalog_Fix_Kit FASE 2/3), not a KB document, so "is there
+  // already an inventory loaded" is answered by fetching THAT row
+  // rather than filtering the generic Knowledge Base document list.
+  const [legacySource, setLegacySource] = useState<LegacyDataSource | null>(null);
+  const [legacyLoading, setLegacyLoading] = useState(true);
+
+  const fetchLegacySource = useCallback(async () => {
+    try {
+      const res = await fetch('/api/ai/data-sources');
+      const data = await res.json().catch(() => ({}));
+      const rows = Array.isArray(data.data_sources) ? data.data_sources : [];
+      const found = rows.find((r: { is_legacy_default?: boolean }) => r.is_legacy_default);
+      setLegacySource(found ?? null);
+    } catch {
+      setLegacySource(null);
+    } finally {
+      setLegacyLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchLegacySource();
+  }, [fetchLegacySource]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -123,7 +152,6 @@ function InventoryUploader({
     }
   }, []);
 
-  const invDoc = inventoryDocs[0];
   const allColumns = preview?.sample.length
     ? Object.keys(preview.sample[0])
     : [];
@@ -133,11 +161,11 @@ function InventoryUploader({
     if (preview) setSelectedColumns(allColumns);
   }, [preview]);
 
-  const sourceLabel = (src: string) => {
-    const map: Record<string, string> = {
-      csv: t('inventorySourceCsv'),
-      excel: t('inventorySourceExcel'),
-      sheet: t('inventorySourceSheet'),
+  const sourceLabel = (src: LegacyDataSource['source_type']) => {
+    const map: Record<LegacyDataSource['source_type'], string> = {
+      uploaded_csv: t('inventorySourceCsv'),
+      remote_csv: t('inventorySourceCsv'),
+      google_sheets: t('inventorySourceSheet'),
     };
     return map[src] ?? src;
   };
@@ -235,7 +263,7 @@ function InventoryUploader({
       setSheetUrl('');
       setSelectedColumns([]);
       if (fileRef.current) fileRef.current.value = '';
-      await onRefresh();
+      await Promise.all([onRefresh(), fetchLegacySource()]);
     } catch {
       toast.error(t('uploadFailed'));
     } finally {
@@ -248,7 +276,7 @@ function InventoryUploader({
       const res = await fetch('/api/ai/knowledge/inventory', { method: 'DELETE' });
       if (res.ok) {
         toast.success(t('inventoryDeleteSuccess'));
-        await onRefresh();
+        await Promise.all([onRefresh(), fetchLegacySource()]);
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('inventoryDeleteFailed'));
@@ -274,14 +302,12 @@ function InventoryUploader({
       </div>
       <p className="text-xs text-muted-foreground">{t('inventoryDesc')}</p>
 
-      {invDoc && (
+      {legacySource && (
         <div className="flex items-center justify-between rounded-md bg-muted/50 px-3 py-2 text-xs">
           <span>
             {t('inventoryStatus', {
-              rows: (metadata as { rows?: number })?.rows ?? '?',
-              source: sourceLabel(
-                (invDoc.metadata as Record<string, string>)?.source ?? 'csv',
-              ),
+              rows: legacySource.row_count ?? '?',
+              source: sourceLabel(legacySource.source_type),
             })}
           </span>
           {canEdit && (
@@ -292,7 +318,7 @@ function InventoryUploader({
         </div>
       )}
 
-      {!invDoc && canEdit && !preview && (
+      {!legacySource && !legacyLoading && canEdit && !preview && (
         <div
           onDrop={handleDrop}
           onDragOver={handleDragOver}
@@ -721,7 +747,6 @@ export function AiKnowledgeCard({
 
         {!loading && (
           <InventoryUploader
-            inventoryDocs={docs.filter((d) => d.type === 'inventory')}
             canEdit={canEdit}
             onRefresh={fetchDocs}
           />

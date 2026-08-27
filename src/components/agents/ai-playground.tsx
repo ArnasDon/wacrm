@@ -13,6 +13,13 @@ interface Turn {
   handoff?: boolean;
   /** assistant-only: how many KB chunks were retrieved for this turn. */
   knowledgeCount?: number;
+  /** assistant-only: catalog tools the agent actually called this turn
+   *  (search_catalog/get_product/…) — surfaced so a tester can see
+   *  whether it consulted the catalog or answered from the KB/memory. */
+  toolCalls?: { name: string }[];
+  /** assistant-only: product photo(s) get_product_media resolved. Never
+   *  actually sent — Playground never touches WhatsApp. */
+  media?: { url: string; alt?: string }[];
 }
 
 function isSpanish(text: string): boolean {
@@ -29,6 +36,12 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Structured cross-turn catalog state the server returns and expects
+  // back verbatim — see src/lib/ai/catalog/context.ts. This is what
+  // lets "¿y el morado?" resolve two turns after "¿tienen el A07?"
+  // without the model having to re-derive the product from its own
+  // prior prose. Opaque to this component; never rendered.
+  const catalogContextRef = useRef<unknown>(null);
 
   const loadingTextRef = useRef('Thinking…');
 
@@ -52,9 +65,11 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
       const res = await fetch('/api/ai/playground', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // Send only role+content — the server ignores anything else.
         body: JSON.stringify({
+          // The server ignores anything on each turn besides role+content
+          // — catalog_context is the one exception, carried separately.
           messages: next.map((t) => ({ role: t.role, content: t.content })),
+          catalog_context: catalogContextRef.current,
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -69,6 +84,9 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         setInput(text);
         return;
       }
+      // Persist for the NEXT request regardless of whether this turn
+      // used the catalog — carries forward what earlier turns resolved.
+      catalogContextRef.current = data.catalog_context ?? catalogContextRef.current;
       setTurns([
         ...next,
         {
@@ -80,6 +98,8 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
           handoff: Boolean(data.handoff),
           knowledgeCount:
             typeof data.knowledge_count === 'number' ? data.knowledge_count : 0,
+          toolCalls: Array.isArray(data.tool_calls) ? data.tool_calls : undefined,
+          media: Array.isArray(data.media) ? data.media : undefined,
         },
       ]);
     } catch {
@@ -112,7 +132,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         <Button
           variant="ghost"
           size="sm"
-          onClick={() => setTurns([])}
+          onClick={() => { setTurns([]); catalogContextRef.current = null; }}
           disabled={turns.length === 0 || sending}
           className="text-muted-foreground"
         >
@@ -179,6 +199,16 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
                   {t.knowledgeCount > 0
                     ? `📄 Found ${t.knowledgeCount} product(s)`
                     : '📄 No matching products found'}
+                </p>
+              )}
+              {t.role === 'assistant' && t.toolCalls && t.toolCalls.length > 0 && (
+                <p className={cn('mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted-foreground', t.content && 'border-t border-border/50 pt-1.5')}>
+                  🔧 {t.toolCalls.map((c) => c.name).join(', ')}
+                </p>
+              )}
+              {t.role === 'assistant' && t.media && t.media.length > 0 && (
+                <p className="mt-1.5 text-xs text-muted-foreground">
+                  📷 {t.media.length} photo(s) resolved — not sent (Playground never messages WhatsApp)
                 </p>
               )}
             </div>

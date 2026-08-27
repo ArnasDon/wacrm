@@ -9,6 +9,7 @@ import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
 import { hasActiveCatalogSources } from '@/lib/ai/catalog/resolver'
 import { CATALOG_TOOL_SPECS, executeCatalogTool } from '@/lib/ai/tools/catalog-tools'
+import { catalogContextToPromptText, updateCatalogContext, type CatalogTurnContext } from '@/lib/ai/catalog/context'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -55,6 +56,15 @@ export async function POST(request: Request) {
       )
     }
 
+    // The client resends this from the previous response (Playground has
+    // no conversationId to persist against, unlike auto-reply which uses
+    // conversations.ai_catalog_context) — closes the exact gap that
+    // produced "showed a product one turn, then said no confirmed info
+    // the next": tool results are otherwise ephemeral, discarded once
+    // generateReply returns text.
+    const incomingCatalogContext: CatalogTurnContext | null =
+      body?.catalog_context && typeof body.catalog_context === 'object' ? body.catalog_context : null
+
     const config = await loadAiConfig(supabase, accountId, {
       requireActive: false,
     }).catch((err) => {
@@ -98,6 +108,7 @@ export async function POST(request: Request) {
       knowledge,
       timeContext: getSystemTimeContext(),
       catalogToolsAvailable: catalogAvailable,
+      catalogContextText: catalogContextToPromptText(incomingCatalogContext),
     })
 
     const { text, handoff, toolCalls } = await generateReply({
@@ -117,12 +128,19 @@ export async function POST(request: Request) {
       .map((c) => (c.result as { primaryImage?: { url: string; alt?: string } | null }).primaryImage)
       .filter((img): img is { url: string; alt?: string } => !!img)
 
+    const nextCatalogContext = catalogAvailable
+      ? updateCatalogContext(incomingCatalogContext, toolCalls)
+      : incomingCatalogContext
+
     return NextResponse.json({
       reply: text,
       handoff,
       knowledge_count: knowledge.length,
       tool_calls: toolCalls.map((c) => ({ name: c.name, input: c.input })),
       media,
+      // Opaque to the client — it must only store this and resend it
+      // verbatim as `catalog_context` on the next request.
+      catalog_context: nextCatalogContext,
     })
   } catch (err) {
     if (err instanceof AiError) {

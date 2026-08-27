@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { encodeCatalogId } from '../id'
 import { toCatalogProduct } from '../whitelist'
+import { rankBySignificantTokens } from '../normalize'
 import type {
   CatalogAvailability,
   CatalogMedia,
@@ -20,6 +21,12 @@ import type {
   CatalogProvider,
   CatalogSearchArgs,
 } from '../types'
+
+/** Cap on how many of this data source's rows the in-memory fallback
+ *  tier (normalize.ts) scans when the DB-side exact/FTS search finds
+ *  nothing. Bounds cost for large catalogs — see the module doc in
+ *  normalize.ts for why this tier is TypeScript-side rather than SQL. */
+const FALLBACK_SCAN_LIMIT = 500
 
 interface CatalogProductRow {
   id: string
@@ -84,18 +91,52 @@ export class DataSourceCatalogProvider implements CatalogProvider {
   }
 
   async searchCatalog(args: CatalogSearchArgs): Promise<CatalogProduct[]> {
+    const limit = args.limit ?? 10
     const { data, error } = await this.db.rpc('search_ai_catalog_products', {
       p_account_id: this.accountId,
       p_data_source_ids: [this.dataSourceId],
       p_query: args.query ?? '',
       p_color: args.color ?? null,
-      p_match_count: args.limit ?? 10,
+      p_match_count: limit,
     })
     if (error) {
       console.error('[catalog] data-source search failed:', error.message)
       return []
     }
-    return ((data ?? []) as CatalogProductRow[]).map((r) => rowToProduct(r, this.key, this.label))
+    const exact = ((data ?? []) as CatalogProductRow[]).map((r) => rowToProduct(r, this.key, this.label))
+    if (exact.length > 0 || !args.query || !args.query.trim()) return exact
+
+    // Progressive fallback (AI_Catalog_Fix_Kit FASE 5): the DB-side
+    // exact/FTS pass found nothing, e.g. `TCL de 50 pulgadas` against a
+    // stored name of `TV TCL ... 50 ...` with no literal "pulgadas".
+    // Scan this source's rows and rank by normalized/tolerant token
+    // overlap instead of failing straight to "no encontrado".
+    return this.fallbackSearch(args)
+  }
+
+  private async fallbackSearch(args: CatalogSearchArgs): Promise<CatalogProduct[]> {
+    const limit = args.limit ?? 10
+    const { data, error } = await this.db
+      .from('ai_catalog_products')
+      .select('*')
+      .eq('account_id', this.accountId)
+      .eq('data_source_id', this.dataSourceId)
+      .limit(FALLBACK_SCAN_LIMIT)
+    if (error || !data) {
+      if (error) console.error('[catalog] fallback scan failed:', error.message)
+      return []
+    }
+
+    const rows = data as CatalogProductRow[]
+    const ranked = rankBySignificantTokens(
+      args.query,
+      rows,
+      (r) => [r.name, r.sku, r.brand, r.model, r.color, r.capacity, r.size].filter(Boolean).join(' '),
+    )
+    const filtered = args.color
+      ? ranked.filter((m) => !m.item.color || m.item.color.toLowerCase().includes(args.color!.toLowerCase()))
+      : ranked
+    return filtered.slice(0, limit).map((m) => rowToProduct(m.item, this.key, this.label))
   }
 
   async getProduct(nativeId: string): Promise<CatalogProduct | null> {

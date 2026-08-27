@@ -11,6 +11,7 @@ import { engineSendMedia, engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { hasActiveCatalogSources } from './catalog/resolver'
 import { CATALOG_TOOL_SPECS, GET_PRODUCT_MEDIA, executeCatalogTool } from './tools/catalog-tools'
+import { catalogContextToPromptText, updateCatalogContext, type CatalogTurnContext } from './catalog/context'
 import type { ToolExecutor } from './types'
 
 interface DispatchArgs {
@@ -76,6 +77,25 @@ export async function dispatchInboundToAiReply(
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
+
+    // Best-effort, SEPARATE from the query above on purpose: migration
+    // 045 (conversations.ai_catalog_context) may not be applied yet in
+    // every environment. If the column is missing, this query errors
+    // and we simply proceed with no cross-turn context rather than
+    // failing the whole dispatch — auto-reply must keep working exactly
+    // as before this feature on an environment that hasn't migrated.
+    let previousCatalogContext: CatalogTurnContext | null = null
+    try {
+      const { data: ctxRow, error: ctxErr } = await db
+        .from('conversations')
+        .select('ai_catalog_context')
+        .eq('id', conversationId)
+        .maybeSingle()
+      if (ctxErr) throw ctxErr
+      previousCatalogContext = (ctxRow?.ai_catalog_context as CatalogTurnContext | null) ?? null
+    } catch (err) {
+      console.warn('[ai auto-reply] ai_catalog_context read failed (migration 045 applied?):', err)
+    }
     if (conv.assigned_agent_id) return // a human owns this thread
     if (conv.ai_autoreply_disabled) return // handed off / turned off here
     // Cheap early-out; the authoritative cap check is the atomic claim
@@ -131,15 +151,35 @@ export async function dispatchInboundToAiReply(
       mode: 'auto_reply',
       knowledge,
       catalogToolsAvailable: catalogAvailable,
+      catalogContextText: catalogContextToPromptText(previousCatalogContext),
     })
 
-    const { text, handoff, usage } = await generateReply({
+    const { text, handoff, usage, toolCalls } = await generateReply({
       config,
       systemPrompt,
       messages,
       tools,
       executeTool,
     })
+
+    // Fold this turn's tool results into the cross-turn catalog context
+    // (AI_Catalog_Fix_Kit FASE 5/6/9) so a later short follow-up like
+    // "¿y el morado?" can resolve the right product even though the
+    // tool-calling loop's own tool_calls are otherwise ephemeral. Only
+    // written when there's something new OR something to carry forward
+    // — and best-effort for the same reason as the read above.
+    if (catalogAvailable && (toolCalls.length > 0 || previousCatalogContext)) {
+      const nextCatalogContext = updateCatalogContext(previousCatalogContext, toolCalls)
+      try {
+        const { error } = await db
+          .from('conversations')
+          .update({ ai_catalog_context: nextCatalogContext })
+          .eq('id', conversationId)
+        if (error) throw error
+      } catch (err) {
+        console.warn('[ai auto-reply] ai_catalog_context write failed (migration 045 applied?):', err)
+      }
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`

@@ -26,6 +26,8 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
+import { DataSourcesSettings } from './data-sources-settings';
+import { CatalogIntegrationsSettings } from './catalog-integrations-settings';
 import { AI_PROVIDER_DEFAULT_MODEL, AI_DEFAULT_MODELS } from '@/lib/ai/defaults';
 import { AI_PROVIDERS, type AiProvider } from '@/lib/ai/types';
 import type { OpenRouterModelOption } from '@/app/api/ai/openrouter/models/route';
@@ -545,6 +547,14 @@ export function AiConfig() {
               : hasStoredEmbeddingsKey
           }
         />
+
+        {/* Data Sources + Integrations — moved here from Settings
+            (AI_Catalog_Fix_Kit FASE 3): every source the agent itself
+            consults belongs under AI Agents → Setup, not scattered
+            across Configuración. Same components, just remounted —
+            see settings-sections.ts for the removal from the rail. */}
+        <DataSourcesSettings />
+        <CatalogIntegrationsSettings />
 
         <div className="flex items-center justify-between">
           {configured ? (

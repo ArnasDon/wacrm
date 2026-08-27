@@ -354,10 +354,19 @@ export async function createDataSourceFromUrl(
   input: CreateFromUrlInput,
 ): Promise<DataSourceRow> {
   if (input.sourceType === 'google_sheets') assertGoogleSheetsUrl(input.url)
+  // Resolve ONCE, from the same source of truth the API routes already
+  // use — never a bare 'USD' fallback here. This is the second half of
+  // the currency root-cause fix: every caller (today, only the API
+  // routes) already resolves and passes `currency` explicitly, but a
+  // hardcoded 'USD' fallback sitting here too meant a future caller
+  // that forgot to pass it would silently reintroduce the exact bug.
+  // Resolved before parsing so the flattened KB text (knowledge/both
+  // usage) also gets the right currency, not just the structured rows.
+  const currency = input.currency ?? (await accountDefaultCurrency(db, input.accountId))
   const csvText = await fetchCsv(input.url)
   let parsed: ParsedInventory
   try {
-    parsed = parseSheetCsv(csvText, input.url, input.selectedColumns, input.currency)
+    parsed = parseSheetCsv(csvText, input.url, input.selectedColumns, currency)
   } catch (err) {
     throw new DataSourceError(err instanceof InventoryError ? err.message : 'Failed to parse data.')
   }
@@ -374,7 +383,7 @@ export async function createDataSourceFromUrl(
       priority: input.priority ?? 100,
       isPrimary: input.isPrimary ?? false,
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
-      currency: input.currency ?? 'USD',
+      currency,
       selectedColumns: input.selectedColumns,
       existingId: input.existingId,
       isLegacyDefault: input.isLegacyDefault,
@@ -403,9 +412,12 @@ export async function createDataSourceFromFile(
   db: SupabaseClient,
   input: CreateFromFileInput,
 ): Promise<DataSourceRow> {
+  // See the matching comment in createDataSourceFromUrl — resolved once,
+  // from accountDefaultCurrency, never a bare 'USD' fallback.
+  const currency = input.currency ?? (await accountDefaultCurrency(db, input.accountId))
   let parsed: ParsedInventory
   try {
-    parsed = parseInventoryFile(input.buffer, input.filename, input.selectedColumns, input.currency)
+    parsed = parseInventoryFile(input.buffer, input.filename, input.selectedColumns, currency)
   } catch (err) {
     throw new DataSourceError(err instanceof InventoryError ? err.message : 'Failed to parse file.')
   }
@@ -422,7 +434,7 @@ export async function createDataSourceFromFile(
       priority: input.priority ?? 100,
       isPrimary: input.isPrimary ?? false,
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
-      currency: input.currency ?? 'USD',
+      currency,
       selectedColumns: input.selectedColumns,
       existingId: input.existingId,
       isLegacyDefault: input.isLegacyDefault,
@@ -444,18 +456,31 @@ export async function refreshDataSource(db: SupabaseClient, input: RefreshInput)
   const existing = await getDataSource(db, input.accountId, input.id)
   if (!existing) throw new DataSourceError('Data source not found.')
 
+  // Re-resolve the account's CURRENT currency on every refresh rather
+  // than reusing `existing.currency` verbatim. Root-cause fix: a row
+  // created before the account-currency wiring existed (or by any other
+  // bug that left the wrong code stored) would otherwise PERPETUATE that
+  // wrong currency forever, since every subsequent refresh just copied
+  // whatever was already on the row — "5. Una futura sincronización del
+  // mismo Google Sheet no vuelva a convertir DOP en USD" only holds if
+  // refresh actively re-checks the source of truth, not just the cache
+  // of its own last write. There is currently no UI to override a data
+  // source's currency independently of the account's, so this is safe;
+  // if that ever changes, this call site is the one to revisit.
+  const currency = await accountDefaultCurrency(db, input.accountId)
+
   try {
     let parsed: ParsedInventory
     if (existing.source_type === 'uploaded_csv') {
       if (!input.file) {
         throw new DataSourceError('Re-upload the file to refresh an uploaded CSV source.')
       }
-      parsed = parseInventoryFile(input.file.buffer, input.file.filename, undefined, existing.currency)
+      parsed = parseInventoryFile(input.file.buffer, input.file.filename, undefined, currency)
     } else {
       if (!existing.source_url) throw new DataSourceError('This data source has no URL to refresh.')
       if (existing.source_type === 'google_sheets') assertGoogleSheetsUrl(existing.source_url)
       const csvText = await fetchCsv(existing.source_url)
-      parsed = parseSheetCsv(csvText, existing.source_url, undefined, existing.currency)
+      parsed = parseSheetCsv(csvText, existing.source_url, undefined, currency)
     }
 
     return await persistDataSource(
@@ -471,7 +496,7 @@ export async function refreshDataSource(db: SupabaseClient, input: RefreshInput)
         priority: existing.priority,
         isPrimary: existing.is_primary,
         fallbackPolicy: existing.fallback_policy,
-        currency: existing.currency,
+        currency,
         existingId: existing.id,
       },
       parsed,

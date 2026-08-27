@@ -11,6 +11,7 @@ vi.mock('../config', () => ({ loadEmbeddingsKey: h.loadEmbeddingsKey }))
 
 import {
   accountDefaultCurrency,
+  createDataSourceFromFile,
   createDataSourceFromUrl,
   DataSourceError,
   refreshDataSource,
@@ -311,5 +312,174 @@ describe('accountDefaultCurrency', () => {
     expect(source.currency).toBe('DOP')
     expect(table('ai_catalog_products')[0].currency).toBe('DOP')
     expect(table('ai_catalog_products')[0].currency).not.toBe('USD')
+  })
+})
+
+// ============================================================
+// Real-incident audit (2026-08-27): a live DOP account's Google Sheets
+// data source was found in Supabase with ai_catalog_products.currency =
+// 'USD' on all 809 rows. Root cause: the row was created via the NEW
+// Data Sources panel BEFORE the earlier currency fix had reached
+// production — accountDefaultCurrency() didn't exist yet at that point
+// in time, so createDataSourceFromUrl's old bare `?? 'USD'` fallback
+// fired. Root-caused further during this audit: even after that fix,
+// refreshDataSource() reused whatever currency was already stored on
+// the row (`existing.currency`) instead of re-resolving it — so once a
+// row had the wrong currency (for ANY reason, past or future), every
+// subsequent "Refresh" would perpetuate it forever, silently undoing
+// any manual data correction. Both are fixed in this pass:
+//   - createDataSourceFromUrl/File now resolve accountDefaultCurrency()
+//     internally too (no bare 'USD' fallback anywhere in the pipeline).
+//   - refreshDataSource re-resolves accountDefaultCurrency() on every
+//     call instead of trusting the row's own last-known value.
+// These are the FASE 7 test cases from the audit request.
+// ============================================================
+describe('currency propagation — full audit (FASE 7)', () => {
+  it('Caso 1: DOP account + Google Sheets import → product saved with DOP', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-dop', default_currency: 'DOP' })
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-dop',
+      userId: 'user-1',
+      sourceType: 'google_sheets',
+      displayName: 'Inventario',
+      url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv',
+      usage: 'catalog',
+      // currency intentionally omitted — exactly like a client that
+      // forgot to send it, or a future caller that doesn't know about
+      // the field. Must still resolve to the account's real currency.
+    })
+    expect(source.currency).toBe('DOP')
+    expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
+  })
+
+  it('Caso 2: DOP account + CSV import → product saved with DOP', async () => {
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-dop', default_currency: 'DOP' })
+    const buffer = new TextEncoder().encode(PRODUCTS_CSV).buffer
+
+    const source = await createDataSourceFromFile(db, {
+      accountId: 'acct-dop',
+      userId: 'user-1',
+      displayName: 'Inventario CSV',
+      filename: 'productos.csv',
+      buffer,
+      usage: 'catalog',
+    })
+    expect(source.currency).toBe('DOP')
+    expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
+  })
+
+  it('Caso 3: an account configured in a different supported currency keeps ITS currency (not hardcoded DOP)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-eur', default_currency: 'EUR' })
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-eur',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Products',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    expect(source.currency).toBe('EUR')
+    expect(table('ai_catalog_products').every((p) => p.currency === 'EUR')).toBe(true)
+    expect(table('ai_catalog_products').some((p) => p.currency === 'USD')).toBe(false)
+  })
+
+  it('Caso 4: refreshing an existing data source never falls back to (or perpetuates) USD for a DOP account', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-dop', default_currency: 'DOP' })
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-dop',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Products',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    expect(source.currency).toBe('DOP')
+
+    // Simulate the exact historical incident: the row somehow ended up
+    // with the wrong currency stored (pre-fix bug, or manual DB edit).
+    // A refresh must SELF-HEAL by re-resolving the account's real
+    // currency — not copy the row's stale value forward.
+    for (const row of table('ai_data_sources')) if (row.id === source.id) row.currency = 'USD'
+    for (const row of table('ai_catalog_products')) row.currency = 'USD'
+
+    const refreshed = await refreshDataSource(db, { accountId: 'acct-dop', userId: 'user-1', id: source.id })
+    expect(refreshed.currency).toBe('DOP')
+    expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
+  })
+
+  it('Caso 5: the legacy pipeline (isLegacyDefault, as used by /api/ai/knowledge/{upload,sheet}) also resolves the account currency', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    table('accounts').push({ id: 'acct-dop', default_currency: 'DOP' })
+
+    const currency = await accountDefaultCurrency(db, 'acct-dop')
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-dop',
+      userId: 'user-1',
+      sourceType: 'google_sheets',
+      displayName: 'Inventario — Google Sheets',
+      url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv',
+      usage: 'both',
+      currency, // exactly what the legacy /sheet route now passes
+      isLegacyDefault: true,
+    })
+    expect(source.currency).toBe('DOP')
+    expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
+  })
+
+  it('Caso 8: correcting a mislabeled row changes ONLY currency — price/stock/name/variants stay byte-for-byte identical', async () => {
+    const { table } = fakeDb()
+    table('ai_catalog_products').push({
+      id: 'p1',
+      name: 'SAMSUNG A07 64GB NEGRO',
+      price: 17500,
+      currency: 'USD',
+      available: true,
+      available_quantity: 5,
+      color: 'Negro',
+      capacity: '64GB',
+    })
+    const row = table('ai_catalog_products')[0]
+    const before = { ...row }
+
+    // The kind of surgical, single-field correction FASE 4 asks for —
+    // exercised directly against the fake store to prove the shape of
+    // the fix touches nothing else.
+    row.currency = 'DOP'
+
+    expect(row.currency).toBe('DOP')
+    expect(row.price).toBe(before.price) // 17500, untouched
+    expect(row.available_quantity).toBe(before.available_quantity)
+    expect(row.name).toBe(before.name)
+    expect(row.color).toBe(before.color)
+    expect(row.capacity).toBe(before.capacity)
+  })
+
+  it('Caso 9: no accidental fallback converts ANY configured currency to USD', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    for (const cur of ['DOP', 'EUR', 'MXN', 'COP']) {
+      const { db, table } = fakeDb()
+      table('accounts').push({ id: 'acct-x', default_currency: cur })
+      const source = await createDataSourceFromUrl(db, {
+        accountId: 'acct-x',
+        userId: 'user-1',
+        sourceType: 'remote_csv',
+        displayName: 'Products',
+        url: 'https://example.com/products.csv',
+        usage: 'catalog',
+      })
+      expect(source.currency).toBe(cur)
+      expect(table('ai_catalog_products').some((p) => p.currency === 'USD')).toBe(false)
+    }
   })
 })

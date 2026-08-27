@@ -9,6 +9,7 @@ import {
   parseSheetCsv,
   InventoryError,
 } from '@/lib/ai/inventory-parser'
+import { accountDefaultCurrency } from '@/lib/ai/data-sources/service'
 
 /**
  * POST /api/ai/knowledge/inventory/preview  (admin+)
@@ -28,12 +29,11 @@ export async function POST(request: Request) {
     const limit = checkRateLimit(`ai-inventory:${userId}`, RATE_LIMITS.adminAction)
     if (!limit.success) return rateLimitResponse(limit)
 
-    const { data: account } = await supabase
-      .from('accounts')
-      .select('default_currency')
-      .eq('id', accountId)
-      .maybeSingle()
-    const currency = account?.default_currency ?? 'USD'
+    // Same source of truth as the rest of the pipeline — see
+    // src/lib/ai/data-sources/service.ts::accountDefaultCurrency. This
+    // route never persists anything, but the preview it shows should
+    // match what an actual import would use.
+    const currency = await accountDefaultCurrency(supabase, accountId)
 
     const contentType = request.headers.get('content-type') ?? ''
 

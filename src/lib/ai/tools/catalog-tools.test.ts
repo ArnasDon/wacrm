@@ -58,6 +58,10 @@ describe('executeCatalogTool', () => {
     expect(h.searchCatalog).toHaveBeenCalledWith({}, 'account-1', { query: 'S25', color: 'Negro', limit: 8 })
     expect(result.products).toHaveLength(1)
     expect(result.products[0]).not.toHaveProperty('source')
+    // FASE 7 Caso 6: the tool result is the ONLY currency source the model
+    // is allowed to quote — it must carry whatever the resolver returned,
+    // never a hardcoded 'USD'.
+    expect(result.products[0]).toMatchObject({ price: 34900, currency: 'DOP' })
   })
 
   it('search_catalog with an empty query short-circuits without hitting the resolver', async () => {
@@ -78,6 +82,10 @@ describe('executeCatalogTool', () => {
       product: Record<string, unknown>
     }
     expect(result.product.price).toBe(34900)
+    // FASE 7 Caso 7: get_product must also pass the resolver's currency
+    // through untouched — this is the value the AI response is required
+    // to quote (e.g. "RD$34,900"), never a guessed or hardcoded one.
+    expect(result.product.currency).toBe('DOP')
     expect(result.product).not.toHaveProperty('source')
   })
 

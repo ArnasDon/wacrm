@@ -1,4 +1,4 @@
-import { AiError, type AiUsage, type ChatMessage } from '../types'
+import { AiError, type AiUsage, type ChatMessage, type ToolExecutor, type ToolSpec } from '../types'
 
 // ============================================================
 // Bits shared by the OpenAI + Anthropic adapters.
@@ -10,6 +10,18 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** When set, the adapter declares these tools to the model and runs
+   *  its own bounded tool-calling loop (request → tool_calls →
+   *  `executeTool` → re-request) before returning. Omitted entirely for
+   *  accounts with no catalog source configured — zero wire/behavior
+   *  change for everyone else. */
+  tools?: ToolSpec[]
+  executeTool?: ToolExecutor
+  /** Hard cap on model↔tool round trips within one `generateReply` call
+   *  (defaults to `MAX_TOOL_TURNS` in ../defaults). Bounds latency and
+   *  cost against a model that keeps calling tools instead of
+   *  answering. */
+  maxToolTurns?: number
 }
 
 /**

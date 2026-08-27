@@ -7,6 +7,8 @@ import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt, getSystemTimeContext } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
 import { AiError, type ChatMessage } from '@/lib/ai/types'
+import { hasActiveCatalogSources } from '@/lib/ai/catalog/resolver'
+import { CATALOG_TOOL_SPECS, executeCatalogTool } from '@/lib/ai/tools/catalog-tools'
 
 // Keep the tested transcript bounded, mirroring the live context window.
 const MAX_TURNS = 20
@@ -78,15 +80,50 @@ export async function POST(request: Request) {
       config,
       latestUserMessage(messages),
     )
+
+    // Same tool wiring as auto-reply (src/lib/ai/auto-reply.ts) MINUS
+    // the WhatsApp media side-effect — the Playground never sends a
+    // real message, so it calls the shared catalog executor directly.
+    // "El Playground de WACRM funciona con datos reales de prueba" is
+    // exactly this: an admin can verify product/price/color/variant/
+    // stock/photo answers before turning auto-reply on, without
+    // messaging a real customer.
+    const catalogAvailable = await hasActiveCatalogSources(supabase, accountId)
+    const tools = catalogAvailable ? CATALOG_TOOL_SPECS : undefined
+    const executeTool = catalogAvailable ? executeCatalogTool(supabase, accountId) : undefined
+
     const systemPrompt = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
       timeContext: getSystemTimeContext(),
+      catalogToolsAvailable: catalogAvailable,
     })
 
-    const { text, handoff } = await generateReply({ config, systemPrompt, messages })
-    return NextResponse.json({ reply: text, handoff, knowledge_count: knowledge.length })
+    const { text, handoff, toolCalls } = await generateReply({
+      config,
+      systemPrompt,
+      messages,
+      tools,
+      executeTool,
+    })
+
+    // Surface any product photo a get_product_media call resolved so
+    // the Playground UI can show "📷 image would be sent here" instead
+    // of silently swallowing it — the Playground itself never calls
+    // engineSendMedia (see the comment above).
+    const media = toolCalls
+      .filter((c) => c.name === 'get_product_media' && c.result && typeof c.result === 'object' && !('error' in (c.result as object)))
+      .map((c) => (c.result as { primaryImage?: { url: string; alt?: string } | null }).primaryImage)
+      .filter((img): img is { url: string; alt?: string } => !!img)
+
+    return NextResponse.json({
+      reply: text,
+      handoff,
+      knowledge_count: knowledge.length,
+      tool_calls: toolCalls.map((c) => ({ name: c.name, input: c.input })),
+      media,
+    })
   } catch (err) {
     if (err instanceof AiError) {
       return NextResponse.json(

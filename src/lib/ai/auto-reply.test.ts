@@ -8,6 +8,7 @@ const h = vi.hoisted(() => ({
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
   engineSendText: vi.fn(),
+  engineSendMedia: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -21,7 +22,34 @@ vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/flows/meta-send', () => ({
+  engineSendText: h.engineSendText,
+  engineSendMedia: h.engineSendMedia,
+}))
+// Generic chainable query-builder double: every method returns itself
+// so an arbitrary .select().eq().eq().order().order() (or .in(), etc.)
+// call sequence type-checks, and the object is thenable so `await`-ing
+// it at any point in the chain resolves to `{data, error: null}`.
+// Used for tables the catalog resolver touches (catalog_integrations /
+// ai_data_sources) — defaulting to an empty result keeps every existing
+// test's behavior identical to before those tables existed (no active
+// catalog source → hasActiveCatalogSources() is false → no tools
+// attached → generateReply is called exactly as these tests expect).
+function chainable(data: unknown) {
+  const obj: Record<string, unknown> = {
+    select: () => obj,
+    eq: () => obj,
+    in: () => obj,
+    order: () => obj,
+    limit: () => obj,
+    maybeSingle: () => Promise.resolve({ data: null, error: null }),
+    single: () => Promise.resolve({ data: null, error: null }),
+    then: (resolve: (v: { data: unknown; error: null }) => void) =>
+      resolve({ data, error: null }),
+  }
+  return obj
+}
+
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -35,6 +63,9 @@ vi.mock('./admin-client', () => ({
             Promise.resolve({ data: h.state.autoResponders, error: null }),
         }
         return chain
+      }
+      if (table === 'catalog_integrations' || table === 'ai_data_sources') {
+        return chainable([])
       }
       // conversations
       return {
@@ -57,7 +88,7 @@ vi.mock('./admin-client', () => ({
   }),
 }))
 
-import { dispatchInboundToAiReply } from './auto-reply'
+import { dispatchInboundToAiReply, wrapWithMediaSideEffect } from './auto-reply'
 
 const ARGS = {
   accountId: 'acct-1',
@@ -208,5 +239,66 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+})
+
+// ============================================================
+// wrapWithMediaSideEffect — the only place a catalog tool result
+// triggers an actual WhatsApp send. Tested directly (not through the
+// full dispatch path) since it's the one piece of this feature with a
+// real external side effect.
+// ============================================================
+describe('wrapWithMediaSideEffect', () => {
+  const target = { accountId: 'acct-1', userId: 'user-1', conversationId: 'conv-1', contactId: 'contact-1' }
+
+  beforeEach(() => h.engineSendMedia.mockClear())
+
+  it('sends the resolved primary image via engineSendMedia on a successful get_product_media call', async () => {
+    const base = vi.fn().mockResolvedValue({
+      productId: 'ds_1:sku-1',
+      primaryImage: { url: 'https://x/img.jpg' },
+      images: [{ url: 'https://x/img.jpg' }],
+    })
+    h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'wamid-1' })
+    const wrapped = wrapWithMediaSideEffect(base, target)
+
+    const result = await wrapped({ id: 'c1', name: 'get_product_media', input: { id: 'ds_1:sku-1' } })
+
+    expect(h.engineSendMedia).toHaveBeenCalledWith({
+      accountId: 'acct-1',
+      userId: 'user-1',
+      conversationId: 'conv-1',
+      contactId: 'contact-1',
+      kind: 'image',
+      link: 'https://x/img.jpg',
+    })
+    // The tool result the model sees is unchanged by the side effect.
+    expect(result).toEqual({
+      productId: 'ds_1:sku-1',
+      primaryImage: { url: 'https://x/img.jpg' },
+      images: [{ url: 'https://x/img.jpg' }],
+    })
+  })
+
+  it('does not send anything for a get_product_media call that errored (not_found / no_media_available)', async () => {
+    const base = vi.fn().mockResolvedValue({ error: 'no_media_available' })
+    const wrapped = wrapWithMediaSideEffect(base, target)
+    await wrapped({ id: 'c2', name: 'get_product_media', input: {} })
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('never sends media for a different tool (search_catalog / get_product / get_availability)', async () => {
+    const base = vi.fn().mockResolvedValue({ products: [{ primaryImage: { url: 'https://x/img.jpg' } }] })
+    const wrapped = wrapWithMediaSideEffect(base, target)
+    await wrapped({ id: 'c3', name: 'search_catalog', input: {} })
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('swallows an engineSendMedia failure — the tool result still reaches the model', async () => {
+    const base = vi.fn().mockResolvedValue({ primaryImage: { url: 'https://x/img.jpg' }, images: [] })
+    h.engineSendMedia.mockImplementationOnce(() => Promise.reject(new Error('WhatsApp not configured')))
+    const wrapped = wrapWithMediaSideEffect(base, target)
+    const result = await wrapped({ id: 'c4', name: 'get_product_media', input: {} })
+    expect(result).toMatchObject({ primaryImage: { url: 'https://x/img.jpg' } })
   })
 })

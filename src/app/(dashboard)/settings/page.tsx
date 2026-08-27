@@ -16,6 +16,8 @@ import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
+import { DataSourcesSettings } from '@/components/settings/data-sources-settings';
+import { CatalogIntegrationsSettings } from '@/components/settings/catalog-integrations-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import { LanguagePanel } from '@/components/settings/language-panel';
@@ -81,6 +83,8 @@ function SettingsPageInner() {
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
+    'data-sources': <DataSourcesSettings />,
+    integrations: <CatalogIntegrationsSettings />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
   };

@@ -9,6 +9,38 @@ export interface ParsedInventory {
   content: string
   metadata: InventoryMetadata
   preview: InventoryPreview
+  /**
+   * Structured rows for `usage: catalog|both` data sources (see
+   * src/lib/ai/data-sources/service.ts). Always computed — cheap — but
+   * only persisted to `ai_catalog_products` by callers that opted into
+   * catalog usage; the legacy KB-only upload/sheet routes ignore it.
+   * `name` is required for a row to be usable as a product; rows with no
+   * detected name column fall back to the first non-empty cell so a
+   * catalog-usage sheet without a "Nombre" header still produces
+   * something searchable rather than being silently dropped.
+   */
+  products: CatalogProductRow[]
+}
+
+/** One structured product row extracted from a CSV/Excel/Sheet, before
+ *  it becomes an `ai_catalog_products` row. Prices are already parsed to
+ *  a plain number (no currency symbol) — currency is applied separately. */
+export interface CatalogProductRow {
+  /** Row index within the parsed data (0-based) — used as the stable
+   *  `source_product_id` when no SKU column was detected. */
+  rowIndex: number
+  sku: string | null
+  name: string
+  brand: string | null
+  model: string | null
+  description: string | null
+  color: string | null
+  capacity: string | null
+  size: string | null
+  variantLabel: string | null
+  price: number | null
+  availableQuantity: number | null
+  imageUrl: string | null
 }
 
 export interface InventoryMetadata {
@@ -34,6 +66,16 @@ export interface DetectedColumnMap {
   price: string | null
   stock: string | null
   category: string | null
+  /** Below: only used to build structured `products` rows for catalog-
+   *  usage data sources \u2014 the flattened KB `content` text (legacy path)
+   *  doesn't depend on these being detected. */
+  brand: string | null
+  model: string | null
+  description: string | null
+  color: string | null
+  capacity: string | null
+  size: string | null
+  image: string | null
 }
 
 const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
@@ -63,8 +105,18 @@ const COLUMN_SYNONYMS: Record<keyof DetectedColumnMap, string[]> = {
   category: [
     'categoria', 'categor\u00eda', 'category', 'departamento',
     'department', 'linea', 'l\u00ednea', 'grupo', 'group',
-    'familia', 'tipo', 'clase', 'segmento', 'marca',
+    'familia', 'tipo', 'clase', 'segmento',
     'subcategoria', 'subcategor\u00eda',
+  ],
+  brand: ['marca', 'brand', 'fabricante', 'manufacturer'],
+  model: ['modelo', 'model'],
+  description: ['descripcion_comercial', 'descripcion_larga', 'notas', 'notes', 'comentario', 'comentarios'],
+  color: ['color', 'colour', 'colores', 'colors'],
+  capacity: ['capacidad', 'capacity', 'almacenamiento', 'storage', 'gb', 'memoria'],
+  size: ['talla', 'size', 'tamano', 'tama\u00f1o'],
+  image: [
+    'imagen', 'image', 'foto', 'photo', 'image_url', 'imagen_url',
+    'picture', 'picture_url', 'foto_url', 'url_imagen', 'url_foto',
   ],
 }
 
@@ -243,7 +295,70 @@ function buildInventory(
       ...(trimmedErrors && trimmedErrors.length > 0 ? { parseErrors: trimmedErrors } : {}),
     },
     preview: { sample, detected },
+    products: buildProductRows(dataRows, headerLower, detected),
   }
+}
+
+/**
+ * Structured rows for catalog-usage data sources (see
+ * src/lib/ai/data-sources/service.ts). Reuses the same column detection
+ * as the flattened KB `content` above so both representations always
+ * agree on which column is which. A row with no usable name (no
+ * detected `name` column AND no non-empty first cell) is dropped — it
+ * has nothing a customer could search for.
+ */
+function buildProductRows(
+  dataRows: string[][],
+  headerLower: string[],
+  detected: DetectedColumnMap,
+): CatalogProductRow[] {
+  const idx = (col: string | null): number => (col !== null ? headerLower.indexOf(col) : -1)
+  const skuIdx = idx(detected.sku)
+  const nameIdx = idx(detected.name)
+  const priceIdx = idx(detected.price)
+  const stockIdx = idx(detected.stock)
+  const brandIdx = idx(detected.brand)
+  const modelIdx = idx(detected.model)
+  const descIdx = idx(detected.description)
+  const colorIdx = idx(detected.color)
+  const capacityIdx = idx(detected.capacity)
+  const sizeIdx = idx(detected.size)
+  const imageIdx = idx(detected.image)
+
+  const cell = (row: string[], i: number): string | null => {
+    if (i < 0) return null
+    const v = row[i]?.trim()
+    return v ? v : null
+  }
+
+  const products: CatalogProductRow[] = []
+  dataRows.forEach((row, rowIndex) => {
+    const name = cell(row, nameIdx) ?? cell(row, 0)
+    if (!name) return // nothing searchable in this row
+
+    const priceRaw = cell(row, priceIdx)
+    const stockRaw = cell(row, stockIdx)
+    const capacity = cell(row, capacityIdx)
+    const size = cell(row, sizeIdx)
+
+    products.push({
+      rowIndex,
+      sku: cell(row, skuIdx),
+      name,
+      brand: cell(row, brandIdx),
+      model: cell(row, modelIdx),
+      description: cell(row, descIdx),
+      color: cell(row, colorIdx),
+      capacity,
+      size,
+      variantLabel: capacity ?? size,
+      price: priceRaw !== null ? parsePrice(priceRaw) : null,
+      availableQuantity:
+        stockRaw !== null && isNumeric(stockRaw) ? Math.round(Number(stockRaw.replace(/,/g, ''))) : null,
+      imageUrl: cell(row, imageIdx),
+    })
+  })
+  return products
 }
 
 function parsePrice(raw: string): number | null {
@@ -260,7 +375,11 @@ function isNumeric(val: string): boolean {
 }
 
 function detectColumns(header: string[]): DetectedColumnMap {
-  const detected: DetectedColumnMap = { sku: null, name: null, price: null, stock: null, category: null }
+  const detected: DetectedColumnMap = {
+    sku: null, name: null, price: null, stock: null, category: null,
+    brand: null, model: null, description: null, color: null,
+    capacity: null, size: null, image: null,
+  }
 
   for (const [role, synonyms] of Object.entries(COLUMN_SYNONYMS)) {
     for (const h of header) {
@@ -292,6 +411,13 @@ function buildHeaderLabels(detected: DetectedColumnMap, header: string[]): (stri
       price: 'Precio',
       stock: 'Stock',
       category: 'Categor\u00eda',
+      brand: 'Marca',
+      model: 'Modelo',
+      description: 'Descripci\u00f3n',
+      color: 'Color',
+      capacity: 'Capacidad',
+      size: 'Talla',
+      image: 'Imagen',
     }
     return labels[role] ?? role
   })

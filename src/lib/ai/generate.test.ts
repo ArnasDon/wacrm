@@ -44,6 +44,7 @@ describe('parseGeneration', () => {
       text: 'Hello there',
       handoff: false,
       usage: null,
+      toolCalls: [],
     })
   })
 
@@ -52,11 +53,13 @@ describe('parseGeneration', () => {
       text: '',
       handoff: true,
       usage: null,
+      toolCalls: [],
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
       text: 'Let me get a human',
       handoff: true,
       usage: null,
+      toolCalls: [],
     })
   })
 
@@ -66,6 +69,7 @@ describe('parseGeneration', () => {
       text: 'Hi',
       handoff: false,
       usage,
+      toolCalls: [],
     })
   })
 })
@@ -90,6 +94,7 @@ describe('generateReply — OpenAI', () => {
       text: 'Sure — happy to help!',
       handoff: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
+      toolCalls: [],
     })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.openai.com')
@@ -221,6 +226,7 @@ describe('generateReply — Anthropic', () => {
     expect(res).toEqual({
       text: 'Hi there!',
       handoff: false,
+      toolCalls: [],
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -263,5 +269,160 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+// ============================================================
+// Tool-calling loop — the mechanism that makes "the model can't get a
+// real price without a genuine tool round trip" a code-level guarantee,
+// not just a prompt instruction (docs/integrations/ai-data-integration/
+// 01_MASTER_EXECUTION.md "REGLA CRÍTICA DE PRECIOS"). Exercised through
+// the public generateReply() API — same convention as the rest of this
+// file — with `fetch` mocked to return a tool_calls response on the
+// first call and a final text response on the second.
+// ============================================================
+
+const TOOL_SPECS = [
+  { name: 'search_catalog', description: 'search', inputSchema: { type: 'object', properties: {} } },
+]
+
+describe('generateReply — tool calling (OpenAI wire)', () => {
+  it('executes a requested tool call and feeds the result back for a final answer', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  { id: 'call_1', type: 'function', function: { name: 'search_catalog', arguments: '{"query":"S25"}' } },
+                ],
+              },
+            },
+          ],
+          usage: { prompt_tokens: 20, completion_tokens: 5, total_tokens: 25 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          choices: [{ message: { content: 'Cuesta RD$34,900.' } }],
+          usage: { prompt_tokens: 40, completion_tokens: 10, total_tokens: 50 },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const executeTool = vi.fn().mockResolvedValue({ products: [{ id: 'p1', price: 34900 }] })
+
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: '¿Cuánto cuesta el S25?' }],
+      tools: TOOL_SPECS,
+      executeTool,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(executeTool).toHaveBeenCalledWith({ id: 'call_1', name: 'search_catalog', input: { query: 'S25' } })
+    expect(res.text).toBe('Cuesta RD$34,900.')
+    expect(res.toolCalls).toEqual([
+      { name: 'search_catalog', input: { query: 'S25' }, result: { products: [{ id: 'p1', price: 34900 }] } },
+    ])
+    // Usage is aggregated across BOTH round trips, not just the last one.
+    expect(res.usage).toEqual({ promptTokens: 60, completionTokens: 15, totalTokens: 75 })
+
+    // Second request must include the tool result in the conversation.
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    const toolMessage = secondBody.messages.find((m: { role: string }) => m.role === 'tool')
+    expect(toolMessage.content).toContain('34900')
+  })
+
+  it('never declares tools on the wire when none are attached (accounts with no catalog source)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ choices: [{ message: { content: 'Hi!' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.tools).toBeUndefined()
+  })
+
+  it('stops after MAX_TOOL_TURNS instead of looping forever on a model that never answers', async () => {
+    const toolCallResponse = okResponse({
+      choices: [
+        {
+          message: {
+            content: null,
+            tool_calls: [{ id: 'call_x', type: 'function', function: { name: 'search_catalog', arguments: '{}' } }],
+          },
+        },
+      ],
+    })
+    const fetchMock = vi.fn().mockResolvedValue(toolCallResponse)
+    vi.stubGlobal('fetch', fetchMock)
+    const executeTool = vi.fn().mockResolvedValue({ products: [] })
+
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: TOOL_SPECS,
+      executeTool,
+      maxToolTurns: 2,
+    })
+
+    // Bounded: exactly maxToolTurns+1 requests, then a safe fallback
+    // reply rather than throwing or hanging.
+    expect(fetchMock.mock.calls.length).toBeLessThanOrEqual(3)
+    expect(res.text).toBeTruthy()
+  })
+})
+
+describe('generateReply — tool calling (Anthropic wire)', () => {
+  it('executes a requested tool call via tool_use/tool_result blocks', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okResponse({
+          content: [{ type: 'tool_use', id: 'toolu_1', name: 'search_catalog', input: { query: 'S25' } }],
+          usage: { input_tokens: 20, output_tokens: 5 },
+        }),
+      )
+      .mockResolvedValueOnce(
+        okResponse({
+          content: [{ type: 'text', text: 'Cuesta RD$34,900.' }],
+          usage: { input_tokens: 40, output_tokens: 10 },
+        }),
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    const executeTool = vi.fn().mockResolvedValue({ products: [{ id: 'p1', price: 34900 }] })
+
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: '¿Cuánto cuesta el S25?' }],
+      tools: TOOL_SPECS,
+      executeTool,
+    })
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(executeTool).toHaveBeenCalledWith({ id: 'toolu_1', name: 'search_catalog', input: { query: 'S25' } })
+    expect(res.text).toBe('Cuesta RD$34,900.')
+    expect(res.usage).toEqual({ promptTokens: 60, completionTokens: 15, totalTokens: 75 })
+
+    const secondBody = JSON.parse(fetchMock.mock.calls[1][1].body)
+    const toolResultMessage = secondBody.messages.find(
+      (m: { role: string; content: unknown }) => m.role === 'user' && Array.isArray(m.content),
+    )
+    expect(toolResultMessage.content[0]).toMatchObject({ type: 'tool_result', tool_use_id: 'toolu_1' })
+    expect(toolResultMessage.content[0].content).toContain('34900')
+  })
+
+  it('never declares tools on the wire when none are attached', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ content: [{ type: 'text', text: 'Hi!' }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    await generateReply({ config: config({ provider: 'anthropic' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    const body = JSON.parse(fetchMock.mock.calls[0][1].body)
+    expect(body.tools).toBeUndefined()
   })
 })

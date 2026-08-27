@@ -36,6 +36,12 @@ export const HANDOFF_SENTINEL = '[[HANDOFF]]'
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
 
+/** Hard cap on model↔tool round trips per `generateReply` call, when
+ *  catalog tools are attached. Bounds latency/cost against a model that
+ *  keeps calling tools instead of answering; a real search_catalog →
+ *  get_product → get_availability chain needs at most 2-3. */
+export const MAX_TOOL_TURNS = 4
+
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
 
@@ -92,8 +98,16 @@ export function buildSystemPrompt(args: {
   knowledge?: string[]
   /** Current date/time context (for open/closed awareness). */
   timeContext?: string
+  /** True when catalog tools (search_catalog/get_product/
+   *  get_availability/get_product_media) are attached to this call —
+   *  see src/lib/ai/tools/catalog-tools.ts. Adds the mandatory-tool-use
+   *  rule from docs/integrations/ai-data-integration/
+   *  03_AGENT_PROMPT_RULES.md. Omitted (false) for accounts with no
+   *  active catalog source, leaving the prompt byte-for-byte what it
+   *  was before this feature existed. */
+  catalogToolsAvailable?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, timeContext } = args
+  const { userPrompt, mode, knowledge, timeContext, catalogToolsAvailable } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -117,6 +131,22 @@ export function buildSystemPrompt(args: {
         `then reply with exactly ${HANDOFF_SENTINEL}. ` +
         `${HANDOFF_SENTINEL} is processed silently — the customer does not see it. ` +
         'Prefer handing off over guessing.',
+    )
+  }
+
+  if (catalogToolsAvailable) {
+    parts.push(
+      'CATALOG TOOLS — This business has a live product catalog connected. For ANY question about a specific ' +
+        'product, price, stock, availability, color, variant, capacity or photo, you MUST call search_catalog ' +
+        '(then get_product/get_availability/get_product_media as needed) and answer ONLY with what the tool ' +
+        'returns. Never invent, estimate, or reuse a price/stock/variant from memory, from the KNOWLEDGE BASE ' +
+        'below, or from a different product/variant than the one the tool matched. If the tool finds nothing or ' +
+        'reports an error, say exactly (translated to the customer\'s language): ' +
+        '"No tengo un precio/dato confirmado para ese producto en este momento." ' +
+        'If a product has multiple variants and the customer\'s message does not identify which one, list the ' +
+        'real variants the tool returned and ask which one, or offer to check with a human — never guess a ' +
+        'variant. To send a photo, call get_product_media; do not paste image URLs into your reply — the photo ' +
+        'is sent separately through the normal channel.',
     )
   }
 

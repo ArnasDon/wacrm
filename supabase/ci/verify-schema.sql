@@ -42,6 +42,14 @@ BEGIN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
   END IF;
 
+  -- The BSUID index (040) is the only thing stopping a username-only
+  -- WhatsApp sender from forking a new contact per inbound message. A
+  -- typo in its name would apply cleanly and guarantee nothing.
+  IF to_regclass('public.idx_contacts_account_wa_user_id') IS NULL THEN
+    RAISE EXCEPTION
+      'idx_contacts_account_wa_user_id is missing — migration 040 did not apply';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

@@ -29,18 +29,51 @@ export const GET_PRODUCT_MEDIA = 'get_product_media'
 
 export const CATALOG_TOOL_NAMES = [SEARCH_CATALOG, GET_PRODUCT, GET_AVAILABILITY, GET_PRODUCT_MEDIA] as const
 
+/** Default page size when the model doesn't specify `limit` — generous
+ *  enough that a plain exploratory query ("qué TVs tienen") already
+ *  represents the category fairly, without the model having to think
+ *  to raise it. See MAX_SEARCH_LIMIT for the hard cap. */
+const DEFAULT_SEARCH_LIMIT = 20
+/** Hard cap on `limit`, regardless of what the model requests — keeps
+ *  one search_catalog call, and the reply built from it, bounded. Use
+ *  `offset` across multiple calls (within MAX_TOOL_TURNS) for a truly
+ *  exhaustive listing beyond this. */
+const MAX_SEARCH_LIMIT = 50
+
 export const CATALOG_TOOL_SPECS: ToolSpec[] = [
   {
     name: SEARCH_CATALOG,
     description:
       'Busca productos reales en el catálogo del negocio (nombre, marca, modelo o SKU). ' +
       'Úsala SIEMPRE que el cliente pregunte por un producto, precio, color, variante o disponibilidad — ' +
-      'nunca respondas esos datos de memoria. Devuelve una lista de productos con su id, precio y stock reales.',
+      'nunca respondas esos datos de memoria. ' +
+      'Devuelve { products, returned, total, has_more, next_offset }. `total` es cuántos productos coinciden EN ' +
+      'TOTAL (puede ser más que los `products` devueltos); `has_more: true` significa que existen más resultados ' +
+      'que no están en esta respuesta — en ese caso NUNCA digas que esta es la lista completa. ' +
+      'Para una consulta ESPECÍFICA (un producto/variante exacto, p. ej. "A07 negro de 64") deja `limit` por defecto. ' +
+      'Para una consulta EXPLORATORIA amplia (p. ej. "qué TVs tienen", "qué marcas hay") sube `limit` (hasta ' +
+      `${MAX_SEARCH_LIMIT}) para representar bien la categoría. ` +
+      'Para una consulta EXHAUSTIVA ("dame todos", "el listado completo") llama de nuevo con `offset: next_offset` ' +
+      'mientras `has_more` sea true, hasta cubrir todo o hasta un límite razonable — si son demasiados resultados, ' +
+      'dilo e informa el `total`, no los ocultes.',
     inputSchema: {
       type: 'object',
       properties: {
         query: { type: 'string', description: 'Texto de búsqueda, p. ej. "Samsung S25 256GB".' },
         color: { type: 'string', description: 'Color solicitado, si el cliente lo mencionó.' },
+        limit: {
+          type: 'number',
+          description: `Cuántos productos devolver (por defecto ${DEFAULT_SEARCH_LIMIT}, máximo ${MAX_SEARCH_LIMIT}). Súbelo para consultas exploratorias/exhaustivas.`,
+        },
+        offset: {
+          type: 'number',
+          description: 'Cuántos resultados saltar — para continuar una consulta exhaustiva, usa el next_offset de la respuesta anterior.',
+        },
+        available_only: {
+          type: 'boolean',
+          description:
+            'true para excluir agotados (útil en "qué tienen disponible"). NUNCA lo pongas en true cuando el cliente pregunta por un producto/variante específico — si está agotado, debe poder verse igual para poder decírselo honestamente.',
+        },
       },
       required: ['query'],
     },
@@ -84,6 +117,16 @@ function str(v: unknown): string {
   return typeof v === 'string' ? v : ''
 }
 
+function clampLimit(v: unknown): number {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : DEFAULT_SEARCH_LIMIT
+  return Math.min(Math.max(n, 1), MAX_SEARCH_LIMIT)
+}
+
+function nonNegativeInt(v: unknown): number {
+  const n = typeof v === 'number' && Number.isFinite(v) ? Math.floor(v) : 0
+  return Math.max(n, 0)
+}
+
 /**
  * Build the ToolExecutor for the generic catalog tools, scoped to one
  * account. `db` should be the service-role client the auto-reply/
@@ -100,13 +143,23 @@ export function executeCatalogTool(db: SupabaseClient, accountId: string) {
       switch (call.name) {
         case SEARCH_CATALOG: {
           const query = str(input.query)
-          if (!query.trim()) return { products: [] }
-          const products = await resolver.searchCatalog(db, accountId, {
+          if (!query.trim()) return { products: [], returned: 0, total: 0, has_more: false }
+          const limit = clampLimit(input.limit)
+          const offset = nonNegativeInt(input.offset)
+          const result = await resolver.searchCatalog(db, accountId, {
             query,
             color: input.color ? str(input.color) : undefined,
-            limit: 8,
+            limit,
+            offset,
+            availableOnly: input.available_only === true,
           })
-          return { products: products.map(toToolResultProduct) }
+          return {
+            products: result.products.map(toToolResultProduct),
+            returned: result.products.length,
+            total: result.total,
+            has_more: result.hasMore,
+            ...(result.hasMore ? { next_offset: offset + result.products.length } : {}),
+          }
         }
         case GET_PRODUCT: {
           const id = str(input.id)

@@ -22,9 +22,21 @@ const STOPWORDS = new Set([
 
 /** Controlled synonym groups — every member normalizes to the group's
  *  first entry. Intentionally small and curated (not a general thesaurus)
- *  so it can't introduce false positives. */
+ *  so it can't introduce false positives. Each group covers words that
+ *  are lexically DIFFERENT (not just typos/spacing — those are already
+ *  handled by tokenMatches' Levenshtein fallback below); RAM/"memoria"
+ *  is deliberately NOT included here — those words essentially never
+ *  appear literally in a real product name (capacity is stored as
+ *  e.g. "128GB"), so mapping them wouldn't match anything real; that
+ *  kind of loose intent ("que tenga bastante memoria" → sort by
+ *  capacity) belongs to the LLM's own reasoning over the tool results,
+ *  not to string-token matching. */
 const SYNONYM_GROUPS: string[][] = [
-  ['tv', 'televisor', 'television', 'smarttv'],
+  ['tv', 'televisor', 'television', 'smarttv', 'tele'],
+  ['aire', 'acondicionador', 'ac'],
+  ['nevera', 'refrigerador', 'refrigeradora', 'frigider'],
+  ['abanico', 'ventilador'],
+  ['celular', 'telefono', 'movil', 'smartphone', 'cel'],
 ]
 const SYNONYM_MAP: Map<string, string> = new Map(
   SYNONYM_GROUPS.flatMap((group) => group.map((word) => [word, group[0]] as const)),
@@ -61,6 +73,9 @@ export function normalizeText(raw: string): string {
   // GLUED because that's how these already appear in real product
   // names ("SAMSUNG A05 128GB"), unlike inches.
   s = s.replace(/\b(\d+)\s*(gb|mb|tb)\b/gi, '$1$2')
+  // "64 gigas" / "64 giga" — same idea, spelled-out colloquial form —
+  // normalizes to the same glued "64gb" so it matches a stored "64GB".
+  s = s.replace(/\b(\d+)\s*gigas?\b/gi, '$1gb')
   s = s.replace(/\s+/g, ' ').trim()
   return s
 }

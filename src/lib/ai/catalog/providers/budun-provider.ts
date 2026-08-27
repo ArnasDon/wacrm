@@ -19,6 +19,7 @@ import type {
   CatalogProduct,
   CatalogProvider,
   CatalogSearchArgs,
+  CatalogSearchResult,
 } from '../types'
 
 /** Provider key prefix for Budun integrations. See catalog/id.ts —
@@ -46,9 +47,17 @@ export class BudunProvider implements CatalogProvider {
     })
   }
 
-  async searchCatalog(args: CatalogSearchArgs): Promise<CatalogProduct[]> {
-    const results = await this.client.search(args.query, args.color, args.limit)
-    return results.map((r) => this.toProduct(r))
+  async searchCatalog(args: CatalogSearchArgs): Promise<CatalogSearchResult> {
+    // Budun ERP's /search/ endpoint (src/lib/budun/client.ts) has no
+    // offset/total-count/availability-filter support in the spec — not
+    // invented here (AI Sales Agent audit, Part 19: no modificar/
+    // inventar endpoints Budun). `total` is honestly reported as
+    // unknown; `hasMore` is a heuristic (a full page back suggests
+    // there may be more) rather than a real count.
+    const limit = args.limit ?? 10
+    const results = await this.client.search(args.query, args.color, limit)
+    const products = results.map((r) => this.toProduct(r))
+    return { products, total: null, hasMore: products.length >= limit }
   }
 
   async getProduct(nativeId: string): Promise<CatalogProduct | null> {

@@ -52,6 +52,35 @@ export interface CatalogSearchArgs {
   query: string
   color?: string
   limit?: number
+  /** How many matching rows to skip — pagination for an exhaustive
+   *  ("dame todas las TCL") follow-up. 0/undefined = first page. */
+  offset?: number
+  /** Opt-in stock filter. Never applied unless explicitly requested —
+   *  a specific product/variant lookup must still surface an agotado
+   *  item so the agent can say so honestly, rather than silently
+   *  seeing nothing and guessing it doesn't exist. */
+  availableOnly?: boolean
+}
+
+/**
+ * search_catalog's real result shape (AI Sales Agent audit — Part 2):
+ * a bare `CatalogProduct[]` gave the model no way to know whether it
+ * was looking at the whole matching set or an arbitrary partial slice
+ * of it, which is the root cause of "shows 2 KOOLHOME TVs and calls it
+ * the full inventory" when other brands existed too.
+ */
+export interface CatalogSearchResult {
+  products: CatalogProduct[]
+  /** Total rows matching the query (after any availableOnly filter),
+   *  independent of `limit`/`offset`. `null` when the provider can't
+   *  report an exact count (e.g. an ERP search endpoint that doesn't
+   *  return one) — callers must treat `null` as "unknown", never as
+   *  zero or as "no more results". */
+  total: number | null
+  /** True when there are more matching rows beyond this page. Always
+   *  computable even when `total` is null (falls back to "we got a
+   *  full page, so there's likely more"). */
+  hasMore: boolean
 }
 
 export interface CatalogAvailability {
@@ -87,7 +116,7 @@ export class CatalogError extends Error {
 export interface CatalogProvider {
   readonly key: string
   readonly label: string
-  searchCatalog(args: CatalogSearchArgs): Promise<CatalogProduct[]>
+  searchCatalog(args: CatalogSearchArgs): Promise<CatalogSearchResult>
   getProduct(nativeId: string): Promise<CatalogProduct | null>
   getAvailability(nativeId: string): Promise<CatalogAvailability | null>
   getMedia(nativeId: string): Promise<CatalogMedia | null>

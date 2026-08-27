@@ -50,24 +50,56 @@ beforeEach(() => {
 describe('executeCatalogTool', () => {
   const execute = executeCatalogTool({} as never, 'account-1')
 
-  it('search_catalog forwards accountId + args and strips `source` from every result', async () => {
-    h.searchCatalog.mockResolvedValue([PRODUCT])
+  it('search_catalog forwards accountId + args (with default limit/offset) and strips `source` from every result', async () => {
+    h.searchCatalog.mockResolvedValue({ products: [PRODUCT], total: 1, hasMore: false })
     const result = (await execute({ id: 'c1', name: SEARCH_CATALOG, input: { query: 'S25', color: 'Negro' } })) as {
       products: unknown[]
+      returned: number
+      total: number | null
+      has_more: boolean
     }
-    expect(h.searchCatalog).toHaveBeenCalledWith({}, 'account-1', { query: 'S25', color: 'Negro', limit: 8 })
+    expect(h.searchCatalog).toHaveBeenCalledWith({}, 'account-1', {
+      query: 'S25',
+      color: 'Negro',
+      limit: 20,
+      offset: 0,
+      availableOnly: false,
+    })
     expect(result.products).toHaveLength(1)
     expect(result.products[0]).not.toHaveProperty('source')
+    expect(result.returned).toBe(1)
+    expect(result.total).toBe(1)
+    expect(result.has_more).toBe(false)
     // FASE 7 Caso 6: the tool result is the ONLY currency source the model
     // is allowed to quote — it must carry whatever the resolver returned,
     // never a hardcoded 'USD'.
     expect(result.products[0]).toMatchObject({ price: 34900, currency: 'DOP' })
   })
 
+  it('search_catalog respects an explicit limit/offset/available_only, clamped to the safe range', async () => {
+    h.searchCatalog.mockResolvedValue({ products: [PRODUCT], total: 47, hasMore: true })
+    const result = (await execute({
+      id: 'c1',
+      name: SEARCH_CATALOG,
+      input: { query: 'TCL', limit: 999, offset: 20, available_only: true },
+    })) as { has_more: boolean; next_offset: number }
+    expect(h.searchCatalog).toHaveBeenCalledWith({}, 'account-1', {
+      query: 'TCL',
+      color: undefined,
+      limit: 50, // clamped to MAX_SEARCH_LIMIT
+      offset: 20,
+      availableOnly: true,
+    })
+    // has_more=true must carry a next_offset the model can pass straight
+    // back in as `offset` to continue an exhaustive listing.
+    expect(result.has_more).toBe(true)
+    expect(result.next_offset).toBe(21) // offset(20) + returned(1)
+  })
+
   it('search_catalog with an empty query short-circuits without hitting the resolver', async () => {
     const result = await execute({ id: 'c1', name: SEARCH_CATALOG, input: { query: '  ' } })
     expect(h.searchCatalog).not.toHaveBeenCalled()
-    expect(result).toEqual({ products: [] })
+    expect(result).toEqual({ products: [], returned: 0, total: 0, has_more: false })
   })
 
   it('get_product returns {error: "not_found"} for an id the resolver can\'t match — never invents data', async () => {

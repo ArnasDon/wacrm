@@ -45,6 +45,14 @@ export interface CatalogContextProduct {
   size: string | null
   price: number | null
   currency: string | null
+  /** The search_catalog query that surfaced this product, when known
+   *  (null for one resolved via a bare get_product call with no
+   *  preceding search this turn). Lets the rendered context group
+   *  entries by "what you were looking at when" — AI Sales Agent
+   *  audit, Part 8: makes a topic change (phone → TV) visually
+   *  obvious to the model instead of one flat, unlabeled list where an
+   *  old product could get confused for part of the current topic. */
+  fromQuery: string | null
 }
 
 export interface CatalogTurnContext {
@@ -59,17 +67,20 @@ export interface CatalogTurnContext {
 
 const MAX_CONTEXT_PRODUCTS = 20
 
-function toContextProduct(p: {
-  id: string
-  name: string
-  brand: string | null
-  model: string | null
-  colors?: string[]
-  capacity: string | null
-  size: string | null
-  price: number | null
-  currency: string | null
-}): CatalogContextProduct {
+function toContextProduct(
+  p: {
+    id: string
+    name: string
+    brand: string | null
+    model: string | null
+    colors?: string[]
+    capacity: string | null
+    size: string | null
+    price: number | null
+    currency: string | null
+  },
+  fromQuery: string | null,
+): CatalogContextProduct {
   return {
     id: p.id,
     name: p.name,
@@ -80,6 +91,7 @@ function toContextProduct(p: {
     size: p.size,
     price: p.price,
     currency: p.currency,
+    fromQuery,
   }
 }
 
@@ -109,13 +121,13 @@ export function updateCatalogContext(
       if (result && Array.isArray(result.products)) {
         for (const raw of result.products) {
           const p = raw as Parameters<typeof toContextProduct>[0]
-          if (p && typeof p.id === 'string') merged.set(p.id, toContextProduct(p))
+          if (p && typeof p.id === 'string') merged.set(p.id, toContextProduct(p, lastQuery))
         }
       }
     } else if (call.name === GET_PRODUCT) {
       const result = call.result as { product?: unknown } | null
       const p = result?.product as Parameters<typeof toContextProduct>[0] | undefined
-      if (p && typeof p.id === 'string') merged.set(p.id, toContextProduct(p))
+      if (p && typeof p.id === 'string') merged.set(p.id, toContextProduct(p, lastQuery))
     }
   }
 
@@ -143,11 +155,30 @@ export function updateCatalogContext(
 export function catalogContextToPromptText(context: CatalogTurnContext | null | undefined): string | null {
   if (!context || context.products.length === 0) return null
 
-  const lines = context.products.map((p) => {
+  const line = (p: CatalogContextProduct) => {
     const attrs = [p.brand, p.model, p.color, p.capacity, p.size].filter(Boolean).join(' ')
     const price = p.price !== null ? `${p.price}${p.currency ? ' ' + p.currency : ''}` : 'sin precio registrado'
     return `- id="${p.id}" ${p.name}${attrs ? ` (${attrs})` : ''} — último precio visto: ${price}`
-  })
+  }
+
+  // Grouped by the search that surfaced each product (most-recent group
+  // first — products.values() insertion order already has this turn's
+  // results first) rather than one flat list, so a topic change (e.g.
+  // customer moves on from a phone to asking about TVs) is visually
+  // obvious: the model sees "estos productos eran de tu búsqueda
+  // anterior 'a07'" as a clearly separate group from the current one,
+  // instead of every product it has ever resolved this conversation
+  // blurring together.
+  const groups = new Map<string, CatalogContextProduct[]>()
+  for (const p of context.products) {
+    const key = p.fromQuery ?? '(sin búsqueda asociada)'
+    const list = groups.get(key)
+    if (list) list.push(p)
+    else groups.set(key, [p])
+  }
+  const grouped = Array.from(groups.entries())
+    .map(([query, products]) => `De la búsqueda "${query}":\n${products.map(line).join('\n')}`)
+    .join('\n\n')
 
   return (
     'CONTEXTO DE CATÁLOGO DE TURNOS ANTERIORES (solo para identificar a qué producto/variante se refiere el ' +
@@ -155,8 +186,13 @@ export function catalogContextToPromptText(context: CatalogTurnContext | null | 
     'junto con esta lista para resolver la referencia). ' +
     'NUNCA respondas un precio o stock usando solo estos valores: son de un turno anterior y pueden estar ' +
     'desactualizados — vuelve a llamar a get_product/get_availability con el id correcto antes de confirmar ' +
-    'cualquier precio, stock o disponibilidad.\n' +
-    (context.lastQuery ? `Última búsqueda: "${context.lastQuery}"\n` : '') +
-    lines.join('\n')
+    'cualquier precio, stock o disponibilidad. ' +
+    'CAMBIO DE TEMA: si el mensaje actual del cliente ya no se relaciona con la búsqueda/categoría más reciente ' +
+    'de abajo (p. ej. estaban viendo un celular y ahora pide "ahora quiero una TV", "y de neveras", "otra cosa"), ' +
+    'trátalo como una búsqueda nueva — llama a search_catalog con la nueva categoría en vez de forzar la ' +
+    'referencia sobre el producto/grupo anterior. Los grupos más antiguos siguen disponibles solo por si el ' +
+    'cliente vuelve a mencionar algo de ellos ("y el A07 de hace rato, en negro").\n' +
+    (context.lastQuery ? `Última búsqueda: "${context.lastQuery}"\n\n` : '\n') +
+    grouped
   )
 }

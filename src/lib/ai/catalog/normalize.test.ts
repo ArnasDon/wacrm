@@ -30,6 +30,12 @@ describe('normalizeText', () => {
     expect(normalizeText('50 pulgadas')).not.toContain('500')
     expect(normalizeText('64GB')).not.toContain('128')
   })
+
+  it('treats the spelled-out "gigas"/"giga" colloquialism the same as "GB" (Part 10)', () => {
+    expect(normalizeText('64 gigas')).toBe('64gb')
+    expect(normalizeText('64 giga')).toBe('64gb')
+    expect(normalizeText('64GB')).toBe(normalizeText('64 gigas'))
+  })
 })
 
 describe('significantTokens — model code recovery', () => {
@@ -51,6 +57,40 @@ describe('significantTokens — model code recovery', () => {
   it('applies the controlled tv synonym group', () => {
     expect(significantTokens(normalizeText('televisor'))).toContain('tv')
     expect(significantTokens(normalizeText('smart tv'))).toContain('tv')
+    expect(significantTokens(normalizeText('tele'))).toContain('tv') // Part 9's example list
+  })
+
+  // Part 10 — generic synonym groups (not product/brand-specific; must
+  // work for any future product line that uses these same category
+  // words). Each group's members all normalize to the group's first
+  // entry, so two customers using different words for the same thing
+  // become the same searchable token.
+  it('applies the aire/acondicionador/ac group', () => {
+    const canonical = 'aire'
+    for (const word of ['aire', 'acondicionador', 'ac']) {
+      expect(significantTokens(normalizeText(word))).toContain(canonical)
+    }
+  })
+
+  it('applies the nevera/refrigerador group (incl. the Dominican colloquialism "frigider")', () => {
+    const canonical = 'nevera'
+    for (const word of ['nevera', 'refrigerador', 'refrigeradora', 'frigider']) {
+      expect(significantTokens(normalizeText(word))).toContain(canonical)
+    }
+  })
+
+  it('applies the abanico/ventilador group', () => {
+    const canonical = 'abanico'
+    for (const word of ['abanico', 'ventilador']) {
+      expect(significantTokens(normalizeText(word))).toContain(canonical)
+    }
+  })
+
+  it('applies the celular/telefono/smartphone group, including the "cel" abbreviation', () => {
+    const canonical = 'celular'
+    for (const word of ['celular', 'telefono', 'movil', 'smartphone', 'cel']) {
+      expect(significantTokens(normalizeText(word))).toContain(canonical)
+    }
   })
 })
 

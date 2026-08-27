@@ -25,6 +25,7 @@ import type {
   CatalogProduct,
   CatalogProvider,
   CatalogSearchArgs,
+  CatalogSearchResult,
 } from './types'
 
 type FallbackPolicy = 'primary_only' | 'fallback_on_not_found' | 'search_all_active'
@@ -117,32 +118,58 @@ function findProviderForId(providers: ResolvedProvider[], id: string): { provide
   return { provider: match.provider, nativeId: decoded.nativeId }
 }
 
+/**
+ * `total`/`hasMore` are what let the agent know it's looking at a
+ * partial page rather than the whole matching inventory (AI Sales
+ * Agent audit, Part 2) — this was the real architectural gap behind
+ * "shows 2 KOOLHOME TVs and presents that as the full lineup" when
+ * Samsung/TCL rows existed too: the tool layer had a hardcoded limit
+ * and no way to say "there's more".
+ *
+ * Pagination across MULTIPLE merged providers (fallback_policy
+ * 'search_all_active') doesn't compose from independent per-provider
+ * offsets — each provider is instead asked for its own rows from 0
+ * through `offset + limit`, and the single requested page is sliced
+ * out of the concatenation. Correct always; only "wastes" a bounded
+ * amount of re-fetched work for a very large offset across many
+ * providers, which the tool layer caps anyway.
+ */
 export async function searchCatalog(
   db: SupabaseClient,
   accountId: string,
   args: CatalogSearchArgs,
-): Promise<CatalogProduct[]> {
+): Promise<CatalogSearchResult> {
   const providers = await resolveCatalogProviders(db, accountId)
   const limit = args.limit ?? 10
+  const offset = args.offset ?? 0
+  const fetchCount = offset + limit
 
-  const results: CatalogProduct[] = []
+  const collected: CatalogProduct[] = []
+  let total: number | null = 0
+  let anyHasMore = false
+
   for (const { provider, fallbackPolicy } of providers) {
-    let found: CatalogProduct[] = []
+    let result: CatalogSearchResult = { products: [], total: null, hasMore: false }
     try {
-      found = await provider.searchCatalog({ ...args, limit })
+      result = await provider.searchCatalog({ ...args, limit: fetchCount, offset: 0 })
     } catch (err) {
       console.error(`[catalog resolver] search failed on provider ${provider.key}:`, err instanceof Error ? err.message : err)
     }
-    results.push(...found)
+    collected.push(...result.products)
+    total = total === null || result.total === null ? null : total + result.total
+    if (result.hasMore) anyHasMore = true
 
     // 'primary_only' never falls through to another source, found or
     // not. 'fallback_on_not_found' (the default) stops as soon as one
     // provider actually found something. 'search_all_active' always
     // continues, merging every active source's results.
     if (fallbackPolicy === 'primary_only') break
-    if (fallbackPolicy === 'fallback_on_not_found' && results.length > 0) break
+    if (fallbackPolicy === 'fallback_on_not_found' && result.products.length > 0) break
   }
-  return results.slice(0, limit)
+
+  const page = collected.slice(offset, offset + limit)
+  const hasMore = anyHasMore || collected.length > offset + limit
+  return { products: page, total, hasMore }
 }
 
 export async function getProduct(

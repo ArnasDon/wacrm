@@ -116,3 +116,92 @@ describe('rankBySignificantTokens — the reported real-world scenarios', () => 
     expect(names).not.toContain('CABLE HDMI 5 METROS')
   })
 })
+
+// ============================================================
+// FASE FINAL DE AUDITORÍA — every query variant explicitly listed for
+// review, run against a MULTI-CATEGORY catalog (phones, TVs, A/C, fans)
+// to prove the logic is generic, not hardcoded for any one brand/kind.
+// Each group asserts every equivalent phrasing resolves to the same
+// top result, and that distinct real variants (different price/stock)
+// are never conflated.
+// ============================================================
+describe('rankBySignificantTokens — full audit query list (generic across categories)', () => {
+  const STORE = [
+    // Phones — model code + capacity + color, no dedicated columns
+    { name: 'SAMSUNG A07 128GB NEGRO', price: 9000, stock: 5 },
+    { name: 'SAMSUNG A07 128GB MORADO', price: 9000, stock: 3 },
+    { name: 'SAMSUNG A07 128GB VERDE', price: 9000, stock: 0 },
+    { name: 'SAMSUNG A07 64GB NEGRO', price: 7500, stock: 2 },
+    { name: 'SAMSUNG A07 64GB MORADO', price: 7500, stock: 0 },
+    { name: 'SAMSUNG A05 128GB NEGRO', price: 8500, stock: 4 }, // decoy: different model
+    // TVs — size with no unit at all in the real name
+    { name: 'TV TCL GOOGLE TV SMART 50 4K ULTRA HD RESOLUTION', price: 24500, stock: 6 },
+    { name: 'TV TCL GOOGLE TV SMART 65 4K ULTRA HD RESOLUTION', price: 38500, stock: 1 },
+    // Appliances — proves the logic isn't phone/TV-specific
+    { name: 'AIRE ACONDICIONADO VIDVIE 12000 BTU SPLIT INVERTER', price: 26500, stock: 4 },
+    { name: 'ABANICO RECARGABLE STARZ', price: 3000, stock: 10 },
+  ]
+  const text = (p: { name: string }) => p.name
+
+  const samsungA07Queries = ['Samsung A07', 'Samsung A 07', 'Samsung A-07', 'A07', 'a 07', 'a-07']
+  it.each(samsungA07Queries)('%s → Samsung A07 rows, never the A05 decoy', (q) => {
+    const ranked = rankBySignificantTokens(q, STORE, text)
+    expect(ranked.length).toBeGreaterThan(0)
+    expect(ranked.every((r) => r.item.name.includes('A07'))).toBe(true)
+    expect(ranked.some((r) => r.item.name.includes('A05'))).toBe(false)
+  })
+
+  const tcl50Queries = ['50 pulgadas', '50"', '50 pulgadas TCL', 'TCL 50', 'TV TCL de 50', 'la TCL de 50']
+  it.each(tcl50Queries)('%s → the 50" TCL, never the 65" one', (q) => {
+    const ranked = rankBySignificantTokens(q, STORE, text)
+    expect(ranked.length).toBeGreaterThan(0)
+    expect(ranked[0].item.name).toContain('50')
+    expect(ranked[0].item.name).not.toContain('65')
+  })
+
+  it('"esa TCL" / "esa de 50" alone are pure anaphora — outside a normalizer\'s job', () => {
+    // Neither phrase names a brand/attribute a text search can act on;
+    // resolving them requires the conversational catalog CONTEXT (see
+    // context.test.ts), not the search layer. Documented here so the
+    // boundary between the two mechanisms is explicit, not assumed.
+    expect(rankBySignificantTokens('esa', STORE, text)).toEqual([])
+  })
+
+  const capacityQueries = ['64GB', '64 GB', 'de 64', 'el negro de 64']
+  it.each(capacityQueries)('%s → actually finds the 64GB row, with its own price — never the 128GB one', (q) => {
+    const ranked = rankBySignificantTokens(q, STORE, text)
+    const a07_64 = ranked.find((r) => r.item.name === 'SAMSUNG A07 64GB NEGRO')
+    // Must genuinely be found, not just "if present" — this is the real
+    // regression check: "de 64" bare must resolve, not silently return
+    // nothing because its own merge-noise token ("de64") can't match.
+    expect(a07_64).toBeDefined()
+    expect(a07_64!.item.price).toBe(7500)
+    // The 128GB variant must NEVER appear for an explicit "64" query —
+    // that would be exactly the capacity-merge bug this guards against.
+    expect(ranked.some((r) => r.item.name === 'SAMSUNG A07 128GB NEGRO')).toBe(false)
+  })
+
+  it('"la morada" / "el verde" match on color alone across different products (generic, not Samsung-specific)', () => {
+    const morada = rankBySignificantTokens('morado', STORE, text)
+    expect(morada.some((r) => r.item.name.includes('MORADO'))).toBe(true)
+    const verde = rankBySignificantTokens('verde', STORE, text)
+    expect(verde.some((r) => r.item.name.includes('VERDE'))).toBe(true)
+  })
+
+  it('a non-phone, non-TV category (A/C, fan) is found the same way — the logic is generic', () => {
+    const ac = rankBySignificantTokens('aire acondicionado vidvie 12000', STORE, text)
+    expect(ac[0]?.item.name).toContain('AIRE ACONDICIONADO')
+    const fan = rankBySignificantTokens('abanico starz', STORE, text)
+    expect(fan[0]?.item.name).toContain('ABANICO')
+  })
+
+  it('every 128GB variant keeps its OWN price/stock — never inherited from another color', () => {
+    const results = rankBySignificantTokens('samsung a07 128gb', STORE, text)
+    const negro = results.find((r) => r.item.name.includes('NEGRO'))!
+    const verde = results.find((r) => r.item.name.includes('VERDE'))!
+    expect(negro.item.price).toBe(9000)
+    expect(verde.item.price).toBe(9000) // same price here, but from ITS OWN row
+    expect(negro.item.stock).toBe(5)
+    expect(verde.item.stock).toBe(0) // different stock — proves rows are independent, not merged
+  })
+})

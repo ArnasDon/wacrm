@@ -73,23 +73,44 @@ export function normalizeText(raw: string): string {
  * also produce "a07" so they match a candidate's glued "a07" token).
  * The original split tokens are kept too — this only ADDS candidates,
  * so it can't remove a real match, only extend recall.
+ *
+ * Returns the flat, combined list — used directly by simple callers
+ * (see rankByTokens below for the ranking-specific split that a query's
+ * coverage THRESHOLD needs).
  */
 export function significantTokens(normalized: string): string[] {
+  const { core, bonus } = tokenizeForRanking(normalized)
+  return [...core, ...bonus]
+}
+
+/**
+ * Like significantTokens, but keeps the speculative letter+digit merge
+ * tokens ("de" + "64" → "de64" when "de" is only a stopword adjacent to
+ * a number, not a real model-code prefix) SEPARATE from the real,
+ * meaningful tokens. This matters for rankByTokens' coverage threshold:
+ * a merge token can only ever ADD a match (bonus), it must never COUNT
+ * toward how many matches are required, or a query like "de 64" (real
+ * token: just "64") would need its own noise byproduct to also match
+ * something — which it structurally can't — and would wrongly find
+ * nothing.
+ */
+function tokenizeForRanking(normalized: string): { core: string[]; bonus: string[] } {
   const raw = normalized.split(' ').map((t) => t.trim()).filter(Boolean)
-  const out: string[] = []
+  const core: string[] = []
   for (const t of raw) {
-    if (t.length > 1 && !STOPWORDS.has(t)) out.push(SYNONYM_MAP.get(t) ?? t)
+    if (t.length > 1 && !STOPWORDS.has(t)) core.push(SYNONYM_MAP.get(t) ?? t)
   }
+  const bonus: string[] = []
   for (let i = 0; i < raw.length - 1; i++) {
     const a = raw[i]
     const b = raw[i + 1]
     // Short letter-prefix + numeric-suffix model code split by
     // normalization ("a" + "07"), or the reverse ("07" + "a") — merge
     // into "a07" without removing the originals.
-    if (/^[a-z]{1,3}$/.test(a) && /^\d{1,4}$/.test(b)) out.push(a + b)
-    else if (/^\d{1,4}$/.test(a) && /^[a-z]{1,3}$/.test(b)) out.push(a + b)
+    if (/^[a-z]{1,3}$/.test(a) && /^\d{1,4}$/.test(b)) bonus.push(a + b)
+    else if (/^\d{1,4}$/.test(a) && /^[a-z]{1,3}$/.test(b)) bonus.push(a + b)
   }
-  return out
+  return { core, bonus }
 }
 
 /** Iterative Levenshtein edit distance — small inputs only (product
@@ -121,12 +142,35 @@ function fuzzyThreshold(len: number): number {
   return 2
 }
 
+/**
+ * A bare number ("64") matches a number+unit token ("64gb") ONLY when
+ * the numeric part is an EXACT match — anchored regex, so "64" never
+ * matches "164gb" or "640gb". This is what makes "el de 64" / "64 GB" /
+ * "64GB" equivalent: storage/RAM units stay glued in normalizeText
+ * (they already appear glued in real catalog names), so the customer's
+ * unit-less phrasing needs this one explicit bridge — unlike inches,
+ * where the unit is stripped instead because real names usually omit
+ * it entirely (see normalizeText's doc comment).
+ */
+function bareNumberMatchesUnit(a: string, b: string): boolean {
+  const unit = /^(\d+)(gb|mb|tb)$/
+  const bareA = /^\d+$/.test(a) ? a : null
+  const bareB = /^\d+$/.test(b) ? b : null
+  const matchA = a.match(unit)
+  const matchB = b.match(unit)
+  if (bareA && matchB) return bareA === matchB[1]
+  if (bareB && matchA) return bareB === matchA[1]
+  return false
+}
+
 /** True when `token` matches `candidateToken` exactly, as a substring,
- *  or within the length-scaled Levenshtein threshold. */
+ *  via the bare-number/unit bridge, or within the length-scaled
+ *  Levenshtein threshold. */
 function tokenMatches(token: string, candidateToken: string): boolean {
   if (token === candidateToken) return true
   if (token.length >= 3 && candidateToken.includes(token)) return true
   if (candidateToken.length >= 3 && token.includes(candidateToken)) return true
+  if (bareNumberMatchesUnit(token, candidateToken)) return true
   return levenshtein(token, candidateToken) <= fuzzyThreshold(Math.max(token.length, candidateToken.length))
 }
 
@@ -144,14 +188,15 @@ export interface ScoredMatch<T> {
  * both score every candidate whose name contains "tcl" and a token
  * equivalent to "50" — regardless of word order.
  *
- * A candidate needs at least HALF of the query's significant tokens to
- * match (minimum 1) — not just one. Without this, a query for a
- * specific model ("Samsung A07") would also surface every OTHER
- * Samsung product on the single shared token "samsung", which is not
- * "no false positives" in spirit even though no single token was
- * mis-matched — see normalize.test.ts for the exact regression this
- * guards. A single-word query (e.g. just "samsung") still needs only
- * that one token, so plain browsing-by-brand still works.
+ * A candidate needs a STRICT MAJORITY of the query's significant tokens
+ * to match (more than half — minimum 1). A plain "half" (queryTokens/2
+ * rounded up) is not enough: for a 2-token query like "Samsung A07",
+ * that rounds to 1, so a decoy that only shares the brand word
+ * ("Samsung A05") would still qualify on "samsung" alone — see
+ * normalize.test.ts for the exact regression this guards, found twice
+ * during audits (3-token and then 2-token queries). A single-word
+ * query (e.g. just "samsung") still needs only that one token, so
+ * plain browsing-by-brand still works.
  *
  * Sorted by score descending, ties broken by shorter name (more
  * specific match) then alphabetically for determinism.
@@ -161,9 +206,16 @@ export function rankBySignificantTokens<T>(
   candidates: T[],
   getSearchableText: (item: T) => string,
 ): ScoredMatch<T>[] {
-  const queryTokens = significantTokens(normalizeText(query))
-  if (queryTokens.length === 0) return []
-  const minMatched = Math.max(1, Math.ceil(queryTokens.length / 2))
+  const { core, bonus } = tokenizeForRanking(normalizeText(query))
+  if (core.length === 0) return []
+  const queryTokens = [...core, ...bonus]
+  // Based on CORE tokens only — a speculative merge token like "de64"
+  // (from "de 64", where "de" is just a stopword adjacent to a number)
+  // must never count toward the denominator: it can only ever add a
+  // match, never itself be required, or "de 64" (real content: just
+  // "64") would need its own noise byproduct to also match something
+  // it structurally never can, and wrongly find nothing.
+  const minMatched = Math.max(1, Math.floor(core.length / 2) + 1)
 
   const scored: ScoredMatch<T>[] = []
   for (const item of candidates) {

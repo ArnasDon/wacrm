@@ -132,7 +132,79 @@ export function validateFlowForActivation(
     }
   }
 
+  // Infinite-loop guard — a cycle made ENTIRELY of auto-advance nodes
+  // (no send_buttons / send_list / collect_input to pause for input)
+  // spins forever at runtime; the engine only stops it via a 64-hop
+  // safety break that fails the run. A cycle that passes through a
+  // suspending node is fine (the "re-ask on bad input" pattern), so
+  // those are not flagged.
+  for (const loopKey of autoAdvanceCycleNodes(nodes)) {
+    issues.push({
+      severity: "error",
+      scope: "node",
+      node_key: loopKey,
+      message: `Node "${loopKey}" is part of a loop with no step that waits for the customer — the flow would run forever here.`,
+    });
+  }
+
   return issues;
+}
+
+// ============================================================
+// Auto-advance cycle detection
+//
+// Node types the runner walks straight through without pausing (see
+// engine.ts `isAutoAdvance`). A cycle confined to these is the only
+// kind that loops without end.
+// ============================================================
+const AUTO_ADVANCE_TYPES = new Set([
+  "start",
+  "send_message",
+  "send_media",
+  "condition",
+  "set_tag",
+]);
+
+/** Node keys that sit on at least one cycle formed only from
+ *  auto-advance nodes and edges between them. Empty when the flow has
+ *  no such loop. */
+function autoAdvanceCycleNodes(nodes: NodeInput[]): Set<string> {
+  const byKey = new Map<string, NodeInput>();
+  for (const n of nodes) byKey.set(n.node_key, n);
+
+  const isAuto = (key: string) => {
+    const n = byKey.get(key);
+    return !!n && AUTO_ADVANCE_TYPES.has(n.node_type);
+  };
+
+  const onCycle = new Set<string>();
+  const state = new Map<string, "visiting" | "done">();
+  const stack: string[] = [];
+
+  const dfs = (key: string) => {
+    if (!isAuto(key)) return;
+    state.set(key, "visiting");
+    stack.push(key);
+    const node = byKey.get(key);
+    for (const next of node ? outgoingEdges(node) : []) {
+      if (!isAuto(next)) continue;
+      const s = state.get(next);
+      if (s === "visiting") {
+        // Back-edge: everything from `next` up the stack is on the cycle.
+        const from = stack.lastIndexOf(next);
+        for (const k of stack.slice(from)) onCycle.add(k);
+      } else if (s === undefined) {
+        dfs(next);
+      }
+    }
+    stack.pop();
+    state.set(key, "done");
+  };
+
+  for (const n of nodes) {
+    if (state.get(n.node_key) === undefined && isAuto(n.node_key)) dfs(n.node_key);
+  }
+  return onCycle;
 }
 
 // ============================================================

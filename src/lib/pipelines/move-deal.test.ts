@@ -8,9 +8,13 @@ interface Fixture {
   stage?: { id: string; pipeline_id: string; is_won: boolean } | null;
   /** deals row returned after the update, or null (deal not in that pipeline/account). */
   updatedDeal?: { id: string; pipeline_id: string; stage_id: string; status: string } | null;
+  /** deals.status returned by the pre-move point lookup (only hit on a
+   *  move to a non-won stage). Defaults to `updatedDeal.status`. */
+  statusBeforeMove?: string | null;
 }
 
 function makeDb(fx: Fixture, updatePayloads: Record<string, unknown>[] = []): SupabaseClient {
+  let dealsReads = 0;
   return {
     from(table: string) {
       const b: Record<string, unknown> = {
@@ -25,6 +29,13 @@ function makeDb(fx: Fixture, updatePayloads: Record<string, unknown>[] = []): Su
             return { data: fx.stage ?? null, error: null };
           }
           if (table === 'deals') {
+            dealsReads += 1;
+            // First `deals` read on a non-won move is the pre-move
+            // status lookup; the read that resolves the UPDATE comes
+            // after. On a won move there's only the UPDATE read.
+            if (dealsReads === 1 && !fx.stage?.is_won && fx.statusBeforeMove !== undefined) {
+              return { data: fx.statusBeforeMove === null ? null : { status: fx.statusBeforeMove }, error: null };
+            }
             return { data: fx.updatedDeal ?? null, error: null };
           }
           return { data: null, error: null };
@@ -93,6 +104,55 @@ describe('moveDeal', () => {
     await moveDeal(db, 'acct-1', 'deal-1', 'stage-2');
 
     expect(updatePayloads[0]).toEqual({ stage_id: 'stage-2' });
+  });
+
+  it('reopens a won deal (status→open, won_at→null) when moved back to a non-won stage', async () => {
+    const updatePayloads: Record<string, unknown>[] = [];
+    const db = makeDb(
+      {
+        stage: { id: 'stage-2', pipeline_id: 'pipe-1', is_won: false },
+        statusBeforeMove: 'won',
+        updatedDeal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-2', status: 'open' },
+      },
+      updatePayloads,
+    );
+
+    const result = await moveDeal(db, 'acct-1', 'deal-1', 'stage-2');
+
+    expect(result.isWonStage).toBe(false);
+    expect(updatePayloads[0]).toEqual({ stage_id: 'stage-2', status: 'open', won_at: null });
+  });
+
+  it('leaves a lost deal untouched when moved to a non-won stage (no silent revive)', async () => {
+    const updatePayloads: Record<string, unknown>[] = [];
+    const db = makeDb(
+      {
+        stage: { id: 'stage-2', pipeline_id: 'pipe-1', is_won: false },
+        statusBeforeMove: 'lost',
+        updatedDeal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-2', status: 'lost' },
+      },
+      updatePayloads,
+    );
+
+    await moveDeal(db, 'acct-1', 'deal-1', 'stage-2');
+
+    expect(updatePayloads[0]).toEqual({ stage_id: 'stage-2' });
+  });
+
+  it('leaves an already-open deal untouched when moved between pre-sale stages', async () => {
+    const updatePayloads: Record<string, unknown>[] = [];
+    const db = makeDb(
+      {
+        stage: { id: 'stage-3', pipeline_id: 'pipe-1', is_won: false },
+        statusBeforeMove: 'open',
+        updatedDeal: { id: 'deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-3', status: 'open' },
+      },
+      updatePayloads,
+    );
+
+    await moveDeal(db, 'acct-1', 'deal-1', 'stage-3');
+
+    expect(updatePayloads[0]).toEqual({ stage_id: 'stage-3' });
   });
 
   it('throws 404 when the stage does not belong to the caller account (cross-tenant)', async () => {

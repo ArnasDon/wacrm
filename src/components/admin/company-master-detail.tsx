@@ -130,10 +130,12 @@ export function CompanyMasterDetail({
   useEffect(() => {
     if (!selected) return;
     // Reset the editable draft when the operator selects another company.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setAmount(selected.subscriptionAmount?.toString() ?? '');
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     setCurrency(selected.subscriptionCurrency || 'GTQ');
+    // Narrow deps on purpose: re-sync the draft only when the selected
+    // company or its subscription fields change, not on every re-render
+    // that produces a fresh `selected` object.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selected?.id,
     selected?.subscriptionAmount,

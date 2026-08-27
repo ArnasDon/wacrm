@@ -5,19 +5,25 @@ import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { verifyZernioAccount } from '@/lib/zernio/api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
-/** Mirrors src/app/api/instagram/config/route.ts's helper of the same name. */
-async function resolveAccountId(
+/** Mirrors src/app/api/instagram/config/route.ts's helper of the same name.
+ *  Returns the caller's account plus their role, so write handlers can
+ *  gate on `admin` in the route itself (defense in depth) instead of
+ *  relying only on the `facebook_config` RLS policies (migration 041) —
+ *  same bar every other channel/AI config route enforces. */
+async function resolveAccount(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-): Promise<string | null> {
+): Promise<{ accountId: string; role: string } | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', userId)
     .maybeSingle()
   if (error || !data?.account_id) return null
-  return data.account_id as string
+  return { accountId: data.account_id as string, role: (data.account_role as string) ?? '' }
 }
+
+const WRITE_ROLES = new Set(['owner', 'admin'])
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -50,13 +56,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json(
         { connected: false, reason: 'no_account', message: 'Your profile is not linked to an account.' },
         { status: 200 },
       )
     }
+    const accountId = account.accountId
 
     const { data: config, error: configError } = await supabase
       .from('facebook_config')
@@ -143,10 +150,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
     }
+    if (!WRITE_ROLES.has(account.role)) {
+      return NextResponse.json(
+        { error: 'Solo un administrador puede cambiar la configuración de Facebook.' },
+        { status: 403 },
+      )
+    }
+    const accountId = account.accountId
 
     const body = await request.json()
     const { zernio_api_key, zernio_account_id } = body
@@ -274,10 +288,17 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
     }
+    if (!WRITE_ROLES.has(account.role)) {
+      return NextResponse.json(
+        { error: 'Solo un administrador puede cambiar la configuración de Facebook.' },
+        { status: 403 },
+      )
+    }
+    const accountId = account.accountId
 
     const { error: deleteError } = await supabase.from('facebook_config').delete().eq('account_id', accountId)
 

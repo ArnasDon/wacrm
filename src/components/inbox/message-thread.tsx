@@ -51,7 +51,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChannelBadge } from './channel-badge';
 import { ContactSidebar } from './contact-sidebar';
 import { MessageBubble } from './message-bubble';

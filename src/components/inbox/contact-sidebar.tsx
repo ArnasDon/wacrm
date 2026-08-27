@@ -585,6 +585,9 @@ export function ContactSidebar({
           <div className="flex flex-col items-center text-center">
             <div className="bg-muted text-foreground flex h-16 w-16 items-center justify-center rounded-full text-lg font-semibold">
               {contact.avatar_url ? (
+                // Remote WhatsApp CDN avatar (tiny, arbitrary host) — not
+                // worth an allowlisted next/image remote pattern.
+                // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={contact.avatar_url}
                   alt={displayName}

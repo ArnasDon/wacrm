@@ -242,10 +242,28 @@ interface ExecuteArgs {
   startPosition: number
   logId: string | null
   triggerEvent: string
+  /** `condition` recursion depth. Bounded so a pathological (or
+   *  hand-crafted) deeply-nested condition tree can't blow the stack or
+   *  fan out into hundreds of DB round-trips per run. */
+  depth?: number
 }
+
+/** Beyond this many nested `condition` branches, stop descending. The
+ *  builder keeps human-authored trees far shallower; this only bites a
+ *  malformed/adversarial automation. */
+const MAX_CONDITION_DEPTH = 20
 
 async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   const db = supabaseAdmin()
+
+  if ((args.depth ?? 0) > MAX_CONDITION_DEPTH) {
+    console.error(
+      '[automations] condition nesting exceeded MAX_CONDITION_DEPTH, halting this branch',
+      { automationId: args.automation.id, depth: args.depth },
+    )
+    await finalizeLog(args.logId, 'failed', 'condition nesting too deep')
+    return
+  }
 
   const baseQuery = db
     .from('automation_steps')
@@ -325,6 +343,7 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
           branch: taken ? 'yes' : 'no',
           startPosition: 0,
           logId: args.logId,
+          depth: (args.depth ?? 0) + 1,
         })
         continue
       }
@@ -499,11 +518,19 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         agentId = profiles?.[0]?.user_id
       }
       if (!agentId) return 'no agent resolved'
-      await db
+      // Assign only the conversation that fired this automation when we
+      // know it. Falling back to "every conversation this contact has"
+      // (the old behaviour) mis-assigns unrelated threads on other
+      // channels for a contact with more than one.
+      let assignQuery = db
         .from('conversations')
         .update({ assigned_agent_id: agentId })
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
+      if (args.context.conversation_id) {
+        assignQuery = assignQuery.eq('id', args.context.conversation_id)
+      }
+      await assignQuery
       return `assigned to ${agentId}`
     }
 
@@ -562,6 +589,22 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'create_deal': {
       const cfg = step.step_config as CreateDealStepConfig
       if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
+      // Defense in depth: the service-role client bypasses RLS, and a
+      // hand-crafted automation payload could reference another
+      // account's pipeline/stage id. Confirm the target stage belongs
+      // to a pipeline in THIS account before inserting the deal (same
+      // guard `update_contact_field` applies to custom_field_id, and
+      // `moveDeal` applies to its own stage lookup).
+      const { data: stageOwned } = await db
+        .from('pipeline_stages')
+        .select('id, pipelines!inner(account_id)')
+        .eq('id', cfg.stage_id)
+        .eq('pipeline_id', cfg.pipeline_id)
+        .eq('pipelines.account_id', args.automation.account_id)
+        .maybeSingle()
+      if (!stageOwned) {
+        throw new Error('create_deal: pipeline/stage does not belong to this account')
+      }
       // Match the account's configured default currency rather than
       // the static `deals.currency` DB default — keeps automation-
       // created deals consistent with the one-currency-per-account

@@ -8,6 +8,7 @@ vi.mock('@/lib/whatsapp/send-message', async (importOriginal) => {
 
 import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
 import { sendCatalogToConversation, SendCatalogError } from './send-catalog'
+import { signCatalogConversation } from './catalog-link-token'
 
 const h = vi.mocked({ sendMessageToConversation })
 const sentMessage = { messageId: 'msg-1', whatsappMessageId: 'wamid-1' }
@@ -53,7 +54,12 @@ beforeEach(() => {
   h.sendMessageToConversation.mockClear()
   h.sendMessageToConversation.mockResolvedValue(sentMessage)
   process.env.NEXT_PUBLIC_SITE_URL = 'https://crm.example.com'
+  process.env.ENCRYPTION_KEY = process.env.ENCRYPTION_KEY ?? 'a'.repeat(64)
 })
+
+/** The catalog link's `?c=` value is `<conversationId>.<hmac>` — build
+ *  the expected token via the same signer the code uses. */
+const cParam = (conversationId: string) => signCatalogConversation(conversationId)
 afterEach(() => {
   delete process.env.NEXT_PUBLIC_SITE_URL
 })
@@ -63,11 +69,15 @@ describe('sendCatalogToConversation — digital mode (default)', () => {
     const db = makeDb({ activeProductCount: 2 })
     const result = await sendCatalogToConversation(db, 'acct-1', 'conv-1')
 
-    expect(result).toEqual({ catalogUrl: 'https://crm.example.com/catalog/acct-1?c=conv-1' })
+    expect(result).toEqual({
+      catalogUrl: `https://crm.example.com/catalog/acct-1?c=${cParam('conv-1')}`,
+    })
     expect(h.sendMessageToConversation).toHaveBeenCalledWith(db, 'acct-1', {
       conversationId: 'conv-1',
       messageType: 'text',
-      contentText: expect.stringContaining('https://crm.example.com/catalog/acct-1?c=conv-1'),
+      contentText: expect.stringContaining(
+        `https://crm.example.com/catalog/acct-1?c=${cParam('conv-1')}`,
+      ),
     })
   })
 
@@ -75,13 +85,19 @@ describe('sendCatalogToConversation — digital mode (default)', () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://crm.example.com/'
     const db = makeDb({ activeProductCount: 1 })
     const result = await sendCatalogToConversation(db, 'acct-1', 'conv-1')
-    expect(result.catalogUrl).toBe('https://crm.example.com/catalog/acct-1?c=conv-1')
+    expect(result.catalogUrl).toBe(
+      `https://crm.example.com/catalog/acct-1?c=${cParam('conv-1')}`,
+    )
   })
 
-  it('carries the conversation id in the catalog URL so the quote-request route can deliver back onto the right channel', async () => {
+  it('carries a signed conversation id in the catalog URL so the quote-request route can deliver back onto the right channel', async () => {
     const db = makeDb({ activeProductCount: 1 })
     const result = await sendCatalogToConversation(db, 'acct-1', 'conv-ig-1')
-    expect(result.catalogUrl).toBe('https://crm.example.com/catalog/acct-1?c=conv-ig-1')
+    expect(result.catalogUrl).toBe(
+      `https://crm.example.com/catalog/acct-1?c=${cParam('conv-ig-1')}`,
+    )
+    // token is `<id>.<hmac>`, not the bare id
+    expect(result.catalogUrl).toContain('?c=conv-ig-1.')
   })
 
   it('throws without sending when the account has no active products', async () => {

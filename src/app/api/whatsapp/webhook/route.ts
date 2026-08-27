@@ -1,7 +1,7 @@
 import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl } from '@/lib/whatsapp/meta-api'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
@@ -297,7 +297,20 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       // Handle incoming messages
       if (!value.messages || !value.contacts) continue
 
-      const decryptedAccessToken = decrypt(config.access_token)
+      // A single account with a corrupt/rotated access_token must not
+      // abort processing of the rest of this batched delivery (Meta can
+      // fan several changes into one POST).
+      let decryptedAccessToken: string
+      try {
+        decryptedAccessToken = decrypt(config.access_token)
+      } catch (err) {
+        console.error(
+          '[webhook] access_token decrypt failed for phone_number_id:',
+          phoneNumberId,
+          err instanceof Error ? err.message : err,
+        )
+        continue
+      }
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]

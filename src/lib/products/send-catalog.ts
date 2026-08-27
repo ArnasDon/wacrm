@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
+import { signCatalogConversation } from '@/lib/products/catalog-link-token'
 
 export class SendCatalogError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -121,8 +122,10 @@ export async function sendCatalogToConversation(
   // Carries the originating conversation so the public catalog page can
   // hand it straight back on "Me lo llevo" (see quote-request/route.ts)
   // instead of having to guess which of the contact's conversations —
-  // possibly on a different channel — to deliver the quote into.
-  const catalogUrl = `${siteBaseUrl()}/catalog/${accountId}?c=${conversationId}`
+  // possibly on a different channel — to deliver the quote into. The id
+  // is HMAC-signed (see catalog-link-token.ts) so a visitor can't swap
+  // in another conversation's id.
+  const catalogUrl = `${siteBaseUrl()}/catalog/${accountId}?c=${signCatalogConversation(conversationId)}`
 
   try {
     await sendMessageToConversation(db, accountId, {

@@ -102,8 +102,19 @@ export async function PATCH(
     }
 
     if ('next_payment_due_at' in body) {
-      const value = body.next_payment_due_at;
-      if (value !== null && typeof value !== 'string') {
+      const raw = body.next_payment_due_at;
+      // null clears the billing cycle. A string must parse to a real
+      // instant — an unparseable value ("banana") stored as-is would
+      // read back as `Invalid Date` in `findAccountsDueInDays`, whose
+      // day-diff check then never matches, silently muting every payment
+      // alert for this account. Normalise to ISO so what's stored is
+      // always a canonical timestamp.
+      let value: string | null;
+      if (raw === null) {
+        value = null;
+      } else if (typeof raw === 'string' && !Number.isNaN(Date.parse(raw))) {
+        value = new Date(raw).toISOString();
+      } else {
         return NextResponse.json(
           { error: 'Fecha de pago inválida' },
           { status: 400 }

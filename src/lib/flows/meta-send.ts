@@ -226,7 +226,7 @@ export async function engineSendText(
   if (lastError) throw lastError
 
   if (workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id).eq('account_id', args.accountId)
   }
 
   const { error: msgErr } = await db.from('messages').insert({
@@ -394,7 +394,7 @@ export async function engineSendMedia(
   if (lastError) throw lastError
 
   if (workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id).eq('account_id', args.accountId)
   }
 
   // content_type='image'|'video'|'document' — these are already in the
@@ -625,7 +625,7 @@ async function sendInteractiveViaMeta(
   if (lastError) throw lastError
 
   if (workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id).eq('account_id', input.accountId)
   }
 
   // Persist the bot's prompt to the messages table so it appears in

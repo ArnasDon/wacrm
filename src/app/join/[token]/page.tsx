@@ -346,9 +346,9 @@ export default function JoinPage() {
               )}
             </Button>
             <p className="text-muted-foreground text-center text-xs">
-              Accepting moves your login into{' '}
+              Accepting adds your login to{' '}
               <span className="text-muted-foreground">{peek.account_name}</span>
-              . Your empty personal account from signup will be cleaned up.
+              {' '}as {ROLE_LABEL[peek.role]}.
             </p>
           </CardContent>
         </Card>

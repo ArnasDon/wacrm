@@ -13,10 +13,8 @@ import { toast } from 'sonner';
 import type {
   Contact,
   Tag,
-  ContactTag,
   ContactNote,
   CustomField,
-  ContactCustomValue,
   Deal,
   MessageTemplate,
   LeadTemperature,
@@ -38,7 +36,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
 import {
   Select,
   SelectContent,
@@ -47,7 +44,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Phone,
   Mail,
@@ -58,7 +54,6 @@ import {
   Plus,
   Trash2,
   Save,
-  X,
   DollarSign,
   LayoutTemplate,
 } from 'lucide-react';

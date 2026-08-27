@@ -468,10 +468,21 @@ describe('executeBusinessAction — schedule_appointment', () => {
 })
 
 describe('executeBusinessAction — audit logging', () => {
-  it('throws when the ai_action_log insert fails, even though the mutation already succeeded', async () => {
-    const { db } = makeDb({ conversation: { id: 'conv-1', status: 'open' }, auditError: true })
-    await expect(
-      executeBusinessAction({ db, accountId: 'acct-1', userId: 'user-1', action: 'close_conversation', targetId: 'conv-1' }),
-    ).rejects.toMatchObject({ status: 500 })
+  it('still returns the result (never a retryable error) when the ai_action_log insert fails — the real-world effect already happened', async () => {
+    const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { db, inserts } = makeDb({ conversation: { id: 'conv-1', status: 'open' }, auditError: true })
+
+    const result = await executeBusinessAction({
+      db, accountId: 'acct-1', userId: 'user-1', action: 'close_conversation', targetId: 'conv-1',
+    })
+
+    expect(result).toEqual({ id: 'conv-1', status: 'closed' })
+    // Insert is retried once before giving up.
+    expect(inserts.filter((i) => i.table === 'ai_action_log')).toHaveLength(2)
+    expect(errSpy).toHaveBeenCalledWith(
+      expect.stringContaining('ai_action_log insert failed'),
+      expect.any(String),
+    )
+    errSpy.mockRestore()
   })
 })

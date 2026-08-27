@@ -197,7 +197,7 @@ export async function executeBusinessAction(args: {
     throw new BusinessActionError(`Unsupported action: ${action as string}`)
   }
 
-  const { error: auditError } = await db.from('ai_action_log').insert({
+  const auditRow = {
     account_id: accountId, actor_user_id: userId, action, target_id: targetId,
     input: {
       ...(stageId ? { stageId } : {}),
@@ -206,7 +206,24 @@ export async function executeBusinessAction(args: {
       ...(action === 'schedule_appointment' ? { startTime, endTime, attendeeEmail, appointmentSummary } : {}),
     },
     result,
-  })
-  if (auditError) throw new BusinessActionError('Action completed but audit logging failed', 500)
+  }
+  // The action's real-world effect has already happened by this point (a
+  // deal moved, a Google Calendar event + a customer email sent, a quote
+  // created). Audit logging must NEVER surface as a retryable failure:
+  // returning a 5xx here makes the client re-POST the same confirmed
+  // action and double-book / double-quote. Best-effort with one retry,
+  // then log loudly and return the result anyway — the same discipline
+  // the autonomous auto-reply path already applies to its own
+  // ai_action_log writes.
+  let { error: auditError } = await db.from('ai_action_log').insert(auditRow)
+  if (auditError) {
+    ;({ error: auditError } = await db.from('ai_action_log').insert(auditRow))
+  }
+  if (auditError) {
+    console.error(
+      `[business-action] ${action} on ${targetId} (account ${accountId}) succeeded but ai_action_log insert failed:`,
+      auditError.message,
+    )
+  }
   return result
 }

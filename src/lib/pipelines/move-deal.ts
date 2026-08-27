@@ -35,8 +35,16 @@ export interface MoveDealResult {
 /**
  * Move `dealId` to `stageId`, validating the stage belongs to a
  * pipeline in `accountId` (and that the deal itself is in that same
- * pipeline — a deal can't jump pipelines through this call). When the
- * target stage is flagged `is_won`, also sets `deals.status = 'won'`.
+ * pipeline — a deal can't jump pipelines through this call).
+ *
+ * Keeps `stage_id` and `status` from drifting apart in BOTH directions:
+ *  - target stage flagged `is_won` → sets `status = 'won'` + stamps `won_at`;
+ *  - target stage NOT `is_won`, and the deal was `won` → reopens it
+ *    (`status = 'open'`, clears `won_at`), so a won card dragged back
+ *    into the pipeline (or an owner-confirmed `move_deal` on a won deal)
+ *    can't leave a "won" deal parked in a pre-sale column. A `lost` deal
+ *    is left untouched — reopening it is a deliberate action, not a
+ *    side effect of a stage move.
  *
  * Throws {@link MoveDealError}; callers map it to their own response
  * shape (JSON error vs BusinessActionError).
@@ -61,6 +69,21 @@ export async function moveDeal(
   if (isWonStage) {
     updates.status = 'won';
     updates.won_at = new Date().toISOString();
+  } else {
+    // One extra point lookup so the reopen only fires for a deal that
+    // was actually `won` — an `open` deal's status/`won_at` are left
+    // exactly as they are, and a `lost` deal isn't silently revived.
+    const { data: current, error: currentError } = await db
+      .from('deals')
+      .select('status')
+      .eq('id', dealId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (currentError) throw new MoveDealError(currentError.message, 500);
+    if (current?.status === 'won') {
+      updates.status = 'open';
+      updates.won_at = null;
+    }
   }
 
   const { data, error } = await db

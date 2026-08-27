@@ -547,3 +547,45 @@ describe("reachableFromEntry", () => {
     expect(set).toEqual(new Set(["a", "b"]));
   });
 });
+
+describe("validateFlowForActivation — infinite loop guard", () => {
+  it("flags a cycle made only of auto-advance nodes as an error", () => {
+    const flow = { ...validFlow, entry_node_id: "start" };
+    const nodes = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "a" } },
+      { node_key: "a", node_type: "send_message", config: { text: "hi", next_node_key: "b" } },
+      { node_key: "b", node_type: "send_message", config: { text: "again", next_node_key: "a" } },
+    ];
+    const issues = validateFlowForActivation(flow, nodes);
+    const loopErrors = issues.filter(
+      (i) => i.severity === "error" && /run forever/.test(i.message),
+    );
+    expect(loopErrors.map((i) => i.node_key).sort()).toEqual(["a", "b"]);
+  });
+
+  it("does NOT flag a loop that passes through a node waiting for input", () => {
+    const flow = { ...validFlow, entry_node_id: "start" };
+    const nodes = [
+      { node_key: "start", node_type: "start", config: { next_node_key: "ask" } },
+      {
+        node_key: "ask",
+        node_type: "collect_input",
+        config: { prompt: "Your email?", var_key: "email", next_node_key: "confirm" },
+      },
+      {
+        node_key: "confirm",
+        node_type: "send_buttons",
+        config: {
+          text: "Right?",
+          buttons: [
+            { reply_id: "no", title: "No", next_node_key: "ask" },
+            { reply_id: "yes", title: "Yes", next_node_key: "done" },
+          ],
+        },
+      },
+      { node_key: "done", node_type: "handoff", config: {} },
+    ];
+    const issues = validateFlowForActivation(flow, nodes);
+    expect(issues.filter((i) => /run forever/.test(i.message))).toEqual([]);
+  });
+});

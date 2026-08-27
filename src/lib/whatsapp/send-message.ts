@@ -484,7 +484,8 @@ export async function sendMessageToConversation(
     await db
       .from('contacts')
       .update({ phone: workingPhone })
-      .eq('id', contact.id);
+      .eq('id', contact.id)
+      .eq('account_id', accountId);
   }
 
   // Persist the sent message. Field names MUST match the messages

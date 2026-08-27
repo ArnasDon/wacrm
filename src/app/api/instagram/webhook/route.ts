@@ -209,13 +209,27 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
       }
 
       if (event.message) {
+        // A single account with a corrupt/rotated `access_token` must
+        // not abort processing of the rest of this batched delivery
+        // (Meta fans several accounts' events into one POST).
+        let accessToken: string
+        try {
+          accessToken = decrypt(config.access_token)
+        } catch (err) {
+          console.error(
+            '[instagram webhook] access_token decrypt failed for ig_account_id:',
+            igAccountId,
+            err instanceof Error ? err.message : err
+          )
+          continue
+        }
         await processMessagingEvent(
           event.message,
           customerIgsid,
           isEcho,
           config.account_id,
           config.user_id,
-          decrypt(config.access_token)
+          accessToken
         )
       }
     }

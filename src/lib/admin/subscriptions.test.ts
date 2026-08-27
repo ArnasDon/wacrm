@@ -6,7 +6,7 @@ vi.mock('@/lib/email/send', () => ({
 }))
 
 import { sendEmail } from '@/lib/email/send'
-import { findAccountsDueInDays, sendSubscriptionAlerts } from './subscriptions'
+import { addOneMonth, findAccountsDueInDays, sendSubscriptionAlerts } from './subscriptions'
 
 interface Row {
   id: string
@@ -144,5 +144,41 @@ describe('sendSubscriptionAlerts', () => {
     expect(h.sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({ subject: expect.stringContaining('vencido') }),
     )
+  })
+})
+
+describe('addOneMonth', () => {
+  it('advances a mid-month date by exactly one month, keeping the day and time', () => {
+    const r = addOneMonth(new Date(2026, 2, 15, 9, 30, 0)) // 15 Mar 2026 09:30
+    expect([r.getFullYear(), r.getMonth(), r.getDate(), r.getHours(), r.getMinutes()]).toEqual([
+      2026, 3, 15, 9, 30,
+    ])
+  })
+
+  it('rolls the year over from December to January', () => {
+    const r = addOneMonth(new Date(2026, 11, 10)) // 10 Dec 2026
+    expect([r.getFullYear(), r.getMonth(), r.getDate()]).toEqual([2027, 0, 10])
+  })
+
+  it('clamps Jan 31 to Feb 28 in a non-leap year instead of skipping to March', () => {
+    const r = addOneMonth(new Date(2027, 0, 31)) // 31 Jan 2027 (2027 not leap)
+    expect([r.getFullYear(), r.getMonth(), r.getDate()]).toEqual([2027, 1, 28])
+  })
+
+  it('clamps Jan 31 to Feb 29 in a leap year', () => {
+    const r = addOneMonth(new Date(2028, 0, 31)) // 31 Jan 2028 (leap)
+    expect([r.getFullYear(), r.getMonth(), r.getDate()]).toEqual([2028, 1, 29])
+  })
+
+  it('clamps Aug 31 to Sep 30 (30-day target month)', () => {
+    const r = addOneMonth(new Date(2026, 7, 31)) // 31 Aug 2026
+    expect([r.getFullYear(), r.getMonth(), r.getDate()]).toEqual([2026, 8, 30])
+  })
+
+  it('does not mutate its argument', () => {
+    const input = new Date(2026, 0, 31)
+    const before = input.getTime()
+    addOneMonth(input)
+    expect(input.getTime()).toBe(before)
   })
 })

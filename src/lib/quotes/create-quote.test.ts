@@ -25,8 +25,9 @@ interface Fixture {
   pipeline?: { id: string } | null
   stage?: { id: string } | null
   /** The contact's existing open deal, if any — `null`/omitted means
-   *  none, so `createQuote` falls through to creating a new one. */
-  existingOpenDeal?: { id: string } | null
+   *  none, so `createQuote` falls through to creating a new one.
+   *  `value` defaults to undefined (treated as "never priced"). */
+  existingOpenDeal?: { id: string; value?: number | null } | null
 }
 
 const CUSTOMER = {
@@ -41,13 +42,22 @@ const CUSTOMER = {
  *  `.maybeSingle()` / `.single()`, others just await the last `.eq()`). */
 function makeDb(fx: Fixture) {
   const inserted: Record<string, Record<string, unknown>[]> = {}
+  const updated: Record<string, Record<string, unknown>[]> = {}
 
   function builder(table: string) {
-    const state: { mode: 'select' | 'insert'; insertPayload?: Record<string, unknown> | Record<string, unknown>[] } = {
+    const state: {
+      mode: 'select' | 'insert' | 'update'
+      insertPayload?: Record<string, unknown> | Record<string, unknown>[]
+      updatePayload?: Record<string, unknown>
+    } = {
       mode: 'select',
     }
 
     async function resolve() {
+      if (state.mode === 'update') {
+        updated[table] = [...(updated[table] ?? []), state.updatePayload!]
+        return { data: null, error: null }
+      }
       if (state.mode === 'insert') {
         const rows = Array.isArray(state.insertPayload) ? state.insertPayload : [state.insertPayload!]
         inserted[table] = [...(inserted[table] ?? []), ...rows]
@@ -97,6 +107,11 @@ function makeDb(fx: Fixture) {
         state.insertPayload = payload
         return b
       },
+      update: (payload: Record<string, unknown>) => {
+        state.mode = 'update'
+        state.updatePayload = payload
+        return b
+      },
       then: (onFulfilled: (v: unknown) => unknown, onRejected?: (e: unknown) => unknown) =>
         resolve().then(onFulfilled, onRejected),
     }
@@ -106,6 +121,7 @@ function makeDb(fx: Fixture) {
   return {
     db: { from: (table: string) => builder(table) } as unknown as SupabaseClient,
     inserted,
+    updated,
   }
 }
 
@@ -365,20 +381,36 @@ describe('createQuote — linked deal', () => {
     })
   })
 
-  it('reuses the contact\'s existing open deal instead of creating a second one', async () => {
-    const { db, inserted } = makeDb({
+  it('reuses the contact\'s existing open deal instead of creating a second one, and seeds its value when unpriced', async () => {
+    const { db, inserted, updated } = makeDb({
       products: [{ id: 'p1', name: 'A', price: 10, is_active: true }],
       pipeline: { id: 'pipe-1' },
       stage: { id: 'stage-1' },
-      existingOpenDeal: { id: 'existing-deal-1' },
+      existingOpenDeal: { id: 'existing-deal-1' }, // value undefined -> treated as 0
     })
     const { quote } = await createQuote({
       db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
-      items: [{ product_id: 'p1', quantity: 1 }],
+      items: [{ product_id: 'p1', quantity: 3 }],
       allowFreeItems: false,
     })
     expect(quote.deal_id).toBe('existing-deal-1')
     expect(inserted.deals).toBeUndefined()
+    expect(updated.deals).toEqual([{ value: 30 }])
+  })
+
+  it('leaves a manually-priced existing deal\'s value untouched', async () => {
+    const { db, updated } = makeDb({
+      products: [{ id: 'p1', name: 'A', price: 10, is_active: true }],
+      pipeline: { id: 'pipe-1' },
+      stage: { id: 'stage-1' },
+      existingOpenDeal: { id: 'existing-deal-1', value: 500 },
+    })
+    await createQuote({
+      db, accountId: 'acct-1', userId: 'user-1', contactId: 'contact-1', ...CUSTOMER,
+      items: [{ product_id: 'p1', quantity: 1 }],
+      allowFreeItems: false,
+    })
+    expect(updated.deals).toBeUndefined()
   })
 
   it('leaves deal_id null when the account has no pipeline yet, without failing the quote', async () => {

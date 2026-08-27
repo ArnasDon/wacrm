@@ -78,7 +78,7 @@ export async function POST(request: Request, { params }: Params) {
       const { data: profile } = await supabase
         .from('profiles')
         .select('full_name')
-        .eq('id', userId)
+        .eq('user_id', userId)
         .maybeSingle()
       const actorName = profile?.full_name || 'Un agente'
       takeoverSummary = `🤖 ${actorName} tomó el control de esta conversación manualmente y pausó la IA.`

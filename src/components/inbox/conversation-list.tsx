@@ -666,6 +666,9 @@ function ConversationItem({
       <div className="relative shrink-0">
         <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
           {contact?.avatar_url ? (
+            // Remote WhatsApp CDN avatar (tiny, arbitrary host) — not
+            // worth an allowlisted next/image remote pattern.
+            // eslint-disable-next-line @next/next/no-img-element
             <img
               src={contact.avatar_url}
               alt={displayName}

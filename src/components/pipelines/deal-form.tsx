@@ -220,9 +220,15 @@ export function DealForm({
   async function handleStatusChange(status: DealStatus) {
     if (!deal) return;
     setStatusAction(status);
+    // Keep `won_at` in step with `status` (KPI "won in this window"
+    // reads `won_at`): stamp it when winning, clear it when reopening
+    // or marking lost. Mirrors `moveDeal` on the server.
     const { error } = await supabase
       .from("deals")
-      .update({ status })
+      .update({
+        status,
+        won_at: status === "won" ? new Date().toISOString() : null,
+      })
       .eq("id", deal.id);
     setStatusAction(null);
     if (error) {

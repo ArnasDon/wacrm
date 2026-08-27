@@ -127,6 +127,29 @@ export interface MarkPaidResult {
  * is un-suspended; a manual suspension for any other reason is left
  * alone, since paying doesn't override an unrelated admin decision.
  */
+/**
+ * One calendar month after `base`, keeping the time of day. A bare
+ * `setMonth(+1)` overflows for month-end dates — Jan 31 → "Feb 31" →
+ * rolls forward to Mar 3, silently skipping a whole billing month. This
+ * clamps the day to the last day of the target month instead, so a due
+ * date on the 31st lands on Feb 28/29, Apr 30, etc. and the day-of-month
+ * is restored the following month.
+ */
+export function addOneMonth(base: Date): Date {
+  const day = base.getDate()
+  const result = new Date(base)
+  // Move to the 1st first so changing the month can't itself roll over.
+  result.setDate(1)
+  result.setMonth(result.getMonth() + 1)
+  const lastDayOfTargetMonth = new Date(
+    result.getFullYear(),
+    result.getMonth() + 1,
+    0,
+  ).getDate()
+  result.setDate(Math.min(day, lastDayOfTargetMonth))
+  return result
+}
+
 export async function markAccountPaid(db: SupabaseClient, accountId: string): Promise<MarkPaidResult> {
   const { data: account, error: fetchError } = await db
     .from('accounts')
@@ -139,8 +162,7 @@ export async function markAccountPaid(db: SupabaseClient, accountId: string): Pr
   const now = new Date()
   const currentDue = account.next_payment_due_at ? new Date(account.next_payment_due_at as string) : null
   const base = currentDue && currentDue > now ? currentDue : now
-  const nextDue = new Date(base)
-  nextDue.setMonth(nextDue.getMonth() + 1)
+  const nextDue = addOneMonth(base)
 
   const update: Record<string, unknown> = {
     last_marked_paid_at: now.toISOString(),

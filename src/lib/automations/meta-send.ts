@@ -321,7 +321,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   if (lastError) throw lastError
 
   if (workingPhone !== sanitized) {
-    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id)
+    await db.from('contacts').update({ phone: workingPhone }).eq('id', contact.id).eq('account_id', input.accountId)
   }
 
   // Persist the sent message so it appears in the inbox with a real

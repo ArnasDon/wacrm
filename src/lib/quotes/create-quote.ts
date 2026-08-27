@@ -8,6 +8,19 @@ export class CreateQuoteError extends Error {
   }
 }
 
+/** Bounds on a single quote — the public "Me lo llevo" form and the AI
+ *  both feed this, so an out-of-range payload should be a clean 400,
+ *  not a quote/deal with an absurd total polluting pipeline reporting. */
+const MAX_QUOTE_ITEMS = 100
+const MAX_ITEM_QUANTITY = 100_000
+
+/** Round a currency amount to 2 decimals — `unit_price * quantity`
+ *  summed in floating point drifts (0.1 + 0.2 …), and these values are
+ *  persisted and shown to customers. */
+function round2(n: number): number {
+  return Math.round((n + Number.EPSILON) * 100) / 100
+}
+
 export interface QuoteItemInput {
   /** Present = catalog product (price/name always re-read from `products`,
    *  never trusted from the caller). Absent = free-form item, only
@@ -80,6 +93,9 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
   if (!items || items.length === 0) {
     throw new CreateQuoteError('At least one item is required')
   }
+  if (items.length > MAX_QUOTE_ITEMS) {
+    throw new CreateQuoteError(`A quote can have at most ${MAX_QUOTE_ITEMS} items`)
+  }
 
   const productIds = [...new Set(items.filter((i) => i.product_id).map((i) => i.product_id as string))]
   const productsById = new Map<string, { id: string; name: string; price: number; installation_cost: number | null; is_active: boolean }>()
@@ -112,6 +128,9 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     const quantity = Number(raw.quantity)
     if (!Number.isFinite(quantity) || quantity <= 0) {
       throw new CreateQuoteError('Each item needs a positive quantity')
+    }
+    if (quantity > MAX_ITEM_QUANTITY) {
+      throw new CreateQuoteError(`Item quantity cannot exceed ${MAX_ITEM_QUANTITY}`)
     }
     if (raw.product_id) {
       const product = productsById.get(raw.product_id)
@@ -164,7 +183,9 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     }
   }
 
-  const subtotal = resolvedItems.reduce((sum, i) => sum + i.unit_price * i.quantity, 0)
+  const subtotal = round2(
+    resolvedItems.reduce((sum, i) => sum + round2(i.unit_price * i.quantity), 0),
+  )
   const total = subtotal
 
   const { data: account } = await db
@@ -187,7 +208,7 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
   let dealId: string | null = null
   const { data: existingDeal } = await db
     .from('deals')
-    .select('id')
+    .select('id, value')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
     .eq('status', 'open')
@@ -197,6 +218,19 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
 
   if (existingDeal) {
     dealId = existingDeal.id as string
+    // Seed the deal's value from this quote when it has never been
+    // priced (0 / null — e.g. a deal the AI's autonomous stage
+    // progression created with `value: 0`). A value a human already
+    // set is left alone: re-pricing an existing deal from every new
+    // quote would fight manual edits.
+    const currentValue = Number(existingDeal.value ?? 0)
+    if (!Number.isFinite(currentValue) || currentValue === 0) {
+      await db
+        .from('deals')
+        .update({ value: total })
+        .eq('id', dealId)
+        .eq('account_id', accountId)
+    }
   } else {
     // No open deal yet — land a brand-new one in the account's oldest
     // pipeline, first stage. There's no "default pipeline" concept
@@ -269,7 +303,7 @@ export async function createQuote(args: CreateQuoteArgs): Promise<CreatedQuote> 
     description: item.description,
     unit_price: item.unit_price,
     quantity: item.quantity,
-    line_total: item.unit_price * item.quantity,
+    line_total: round2(item.unit_price * item.quantity),
     position: index,
   }))
   const { data: insertedItems, error: itemsError } = await db

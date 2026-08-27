@@ -12,18 +12,24 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
  * kept as a local copy rather than a shared import so each config
  * route stays a self-contained file, same as the WhatsApp one.
  */
-async function resolveAccountId(
+async function resolveAccount(
   supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
-): Promise<string | null> {
+): Promise<{ accountId: string; role: string } | null> {
   const { data, error } = await supabase
     .from('profiles')
-    .select('account_id')
+    .select('account_id, account_role')
     .eq('user_id', userId)
     .maybeSingle()
   if (error || !data?.account_id) return null
-  return data.account_id as string
+  return { accountId: data.account_id as string, role: (data.account_role as string) ?? '' }
 }
+
+// Write handlers (POST/DELETE) gate on `admin` in the route itself —
+// defense in depth, not a substitute for the `instagram_config` RLS
+// policies (migration 039), and consistent with every other
+// channel/AI config route. GET stays readable by any member.
+const WRITE_ROLES = new Set(['owner', 'admin'])
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _adminClient: any = null
@@ -55,13 +61,14 @@ export async function GET() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json(
         { connected: false, reason: 'no_account', message: 'Your profile is not linked to an account.' },
         { status: 200 },
       )
     }
+    const accountId = account.accountId
 
     const { data: config, error: configError } = await supabase
       .from('instagram_config')
@@ -187,10 +194,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
     }
+    if (!WRITE_ROLES.has(account.role)) {
+      return NextResponse.json(
+        { error: 'Solo un administrador puede cambiar la configuración de Instagram.' },
+        { status: 403 },
+      )
+    }
+    const accountId = account.accountId
 
     const body = await request.json()
     const provider: 'meta' | 'zernio' = body.provider === 'zernio' ? 'zernio' : 'meta'
@@ -444,10 +458,17 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const account = await resolveAccount(supabase, user.id)
+    if (!account) {
       return NextResponse.json({ error: 'Your profile is not linked to an account.' }, { status: 403 })
     }
+    if (!WRITE_ROLES.has(account.role)) {
+      return NextResponse.json(
+        { error: 'Solo un administrador puede cambiar la configuración de Instagram.' },
+        { status: 403 },
+      )
+    }
+    const accountId = account.accountId
 
     const { error: deleteError } = await supabase.from('instagram_config').delete().eq('account_id', accountId)
 

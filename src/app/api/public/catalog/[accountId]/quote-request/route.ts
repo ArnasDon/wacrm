@@ -42,6 +42,7 @@ import {
   sendQuoteToConversation,
 } from '@/lib/quotes/send-quote'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
+import { verifyCatalogConversation } from '@/lib/products/catalog-link-token'
 
 function getClientIp(request: Request): string {
   const xff = request.headers.get('x-forwarded-for')
@@ -132,7 +133,12 @@ export async function POST(
     // which makes no sense for a channel that isn't WhatsApp. Resolve
     // the conversation's own contact first and skip the phone lookup
     // entirely whenever we have one.
-    const requestedConversationId = body?.conversation_id?.trim()
+    // The `?c=` token is HMAC-signed by sendCatalogToConversation. An
+    // unsigned / stale / tampered value verifies to null, and we fall
+    // back to phone-based resolution below — the `accountId` alone was
+    // never enough of a boundary to trust a caller-supplied id (the
+    // catalog accountId is public).
+    const requestedConversationId = verifyCatalogConversation(body?.conversation_id)
     const requestedConv = requestedConversationId
       ? (
           await db

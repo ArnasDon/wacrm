@@ -81,6 +81,7 @@ próprios.
 | `src/lib/automations/meta-send.ts` | `engineSendText` / `engineSendTemplate` viram wrappers finos. `engineSendInteractive` não muda. |
 | `src/lib/whatsapp/broadcast-core.ts` | `BroadcastPlan.phoneNumberId` + `.accessToken` → `.connection`. `deliverBroadcast` monta o transporte. |
 | `src/lib/whatsapp/broadcast-resume.ts` | Monta o plano com `connection`. |
+| `src/app/api/whatsapp/broadcast/route.ts` | Sexto call site, ausente da lista da spec §4.2. Usa `resolveConnection` + `transport.sendTemplate`. |
 | `src/app/api/whatsapp/react/route.ts` | Usa `resolveConnection` + `transport.sendReaction`. |
 | `src/lib/whatsapp/broadcast-resume.test.ts` | **Uma linha** (Task 7) — rename de campo, não mudança de comportamento. |
 
@@ -2331,6 +2332,8 @@ git commit -m "refactor(automations): route the engine senders through the send 
 **Files:**
 - Modify: `src/lib/whatsapp/broadcast-core.ts`
 - Modify: `src/lib/whatsapp/broadcast-resume.ts`
+- Modify: `src/app/api/whatsapp/broadcast/route.ts` (o sexto call site,
+  ausente da lista da spec — ver Step 4b)
 - Modify: `src/lib/whatsapp/broadcast-resume.test.ts` (**exatamente uma
   linha** — ver Step 4)
 - Test: `src/lib/whatsapp/broadcast-core.test.ts` (**não editar**)
@@ -2498,6 +2501,68 @@ Se o mock de `encryption` daquele arquivo usar um especificador
 relativo, ele continua valendo — o Vitest resolve `./encryption` e
 `@/lib/whatsapp/encryption` para o mesmo módulo, que é o que
 `resolveConnection` importa.
+
+- [ ] **Step 4b: O sexto call site — `/api/whatsapp/broadcast`**
+
+> **Este arquivo não estava na lista da spec.** A spec §4.2 diz "copiada
+> em 5 lugares" e nomeia cinco; `src/app/api/whatsapp/broadcast/route.ts`
+> é um **sexto**, descoberto durante a execução. Ele é o broadcast do
+> **dashboard**, distinto do broadcast da **API pública** que vive em
+> `broadcast-core.ts`, e carrega a cópia inteira: lookup de
+> `whatsapp_config`, `decrypt`, resolução de template, loop de
+> `phoneVariants` e chamada a `sendTemplateMessage`. Deixá-lo de fora
+> faria a Onda 1 encontrar exatamente o ramo `if (provider === ...)` que
+> esta onda existe para evitar, e reprovaria o próprio portão da Task 9.
+
+Troque o lookup de config + `decrypt` por:
+
+```ts
+    let connection: TransportConnection
+    try {
+      connection = await resolveConnection(supabase, accountId)
+    } catch {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        },
+        { status: 400 },
+      )
+    }
+    const transport = createTransport(connection)
+```
+
+A resolução de template e o guard de `malformed` **não mudam** — este
+caminho aborta em linha malformada, como a inbox.
+
+Troque o loop de variantes por uma chamada só, mantendo a captura de erro
+por destinatário exatamente como está:
+
+```ts
+      let sentMessageId: string | null = null
+      let lastError: string | null = null
+      try {
+        // O retry de variantes vive dentro do transporte. O
+        // `normalizedRecipient` é ignorado de propósito: este caminho
+        // nunca reescreveu o telefone do contato.
+        const result = await transport.sendTemplate({
+          to: sanitized,
+          templateName: template_name,
+          language: resolvedTemplate.language,
+          template: templateRow ?? undefined,
+          messageParams: recipient.messageParams,
+          params: recipient.params ?? [],
+        })
+        sentMessageId = result.providerMessageId
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : 'Unknown error'
+      }
+```
+
+Imports: saem `sendTemplateMessage`, `decrypt`, `phoneVariants` e
+`isRecipientNotAllowedError`; entram `resolveConnection`,
+`createTransport` e o tipo `TransportConnection`. `sanitizePhoneForMeta`
+e `isValidE164` **ficam** — a validação por destinatário não muda.
 
 - [ ] **Step 5: Rodar a suíte alvo e confirmar paridade**
 

@@ -129,7 +129,18 @@ export function ConversationList({
         return;
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      // Hide conversations that have never carried a message. The
+      // WhatsApp-via-Zernio webhook creates a bare conversation on the
+      // `conversation.started` event (so a later Coexistence echo has a
+      // row to attach to), but Zernio also fires that event in bulk when
+      // a number (re)connects — a burst of contact rows with no message.
+      // Every real message path sets last_message_at
+      // (bump_conversation_on_inbound + the outbound send helpers);
+      // `conversations/cron` prunes the stale empty rows from the DB.
+      const withMessages = normalizeConversations(data ?? []).filter(
+        (c) => c.last_message_at != null || c.last_message_text != null,
+      );
+      onConversationsLoadedRef.current(withMessages);
       setLoading(false);
     })();
 

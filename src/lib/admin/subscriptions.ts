@@ -13,6 +13,9 @@ export interface OverdueAccount {
   id: string
   name: string
   next_payment_due_at: string
+  /** `accounts.owner_user_id` — used to email the business owner the
+   *  due-soon reminder. May be null for a half-provisioned account. */
+  owner_user_id: string | null
 }
 
 /**
@@ -24,7 +27,7 @@ export interface OverdueAccount {
 export async function findOverdueAccounts(db: SupabaseClient): Promise<OverdueAccount[]> {
   const { data, error } = await db
     .from('accounts')
-    .select('id, name, next_payment_due_at')
+    .select('id, name, next_payment_due_at, owner_user_id')
     .not('next_payment_due_at', 'is', null)
     .lt('next_payment_due_at', new Date().toISOString())
     .is('suspended_at', null)
@@ -46,7 +49,7 @@ export async function findAccountsDueInDays(
 ): Promise<OverdueAccount[]> {
   const { data, error } = await db
     .from('accounts')
-    .select('id, name, next_payment_due_at')
+    .select('id, name, next_payment_due_at, owner_user_id')
     .not('next_payment_due_at', 'is', null)
     .is('suspended_at', null)
   if (error) throw error
@@ -62,18 +65,79 @@ export async function findAccountsDueInDays(
 }
 
 /**
+ * Emails the registered business owner of each due-soon account a
+ * direct payment reminder (from the `payments` mailbox). Best-effort:
+ * one owner lookup query, then a per-owner fan-out where a single bad
+ * address or SMTP hiccup can't block the others or the caller — the
+ * PAYMENTS_INBOX summary has already been sent by the time this runs.
+ * Accounts with no `owner_user_id`, or an owner whose profile has no
+ * email, are silently skipped.
+ */
+async function notifyOwnersDueSoon(
+  db: SupabaseClient,
+  accounts: OverdueAccount[],
+): Promise<void> {
+  const ownerIds = [
+    ...new Set(
+      accounts
+        .map((a) => a.owner_user_id)
+        .filter((v): v is string => typeof v === 'string' && v.length > 0),
+    ),
+  ]
+  if (ownerIds.length === 0) return
+
+  const { data: owners, error } = await db
+    .from('profiles')
+    .select('user_id, email')
+    .in('user_id', ownerIds)
+  if (error || !owners) {
+    console.error('[subscriptions] owner lookup for due-soon reminder failed:', error)
+    return
+  }
+
+  const emailByUser = new Map<string, string | null>(
+    (owners as { user_id: string; email: string | null }[]).map((o) => [o.user_id, o.email]),
+  )
+
+  await Promise.allSettled(
+    accounts.map(async (a) => {
+      const to = a.owner_user_id ? emailByUser.get(a.owner_user_id) : null
+      if (!to) return
+      const dueOn = formatDueDate(a.next_payment_due_at)
+      await sendEmail({
+        account: 'payments',
+        to,
+        subject: `Tu mensualidad de SANDÍA vence el ${dueOn}`,
+        text:
+          `Hola,\n\n` +
+          `Te recordamos que la mensualidad de tu cuenta de SANDÍA (${a.name}) ` +
+          `vence el ${dueOn}.\n\n` +
+          `Para evitar la suspensión del servicio, realizá el pago antes de esa ` +
+          `fecha y avisanos para registrarlo. Si ya lo hiciste, podés ignorar ` +
+          `este mensaje.\n\n` +
+          `— Equipo SANDÍA`,
+      })
+    }),
+  )
+}
+
+/**
  * Angel decided against auto-suspending accounts (2026-08-16) — he wants
  * to review and suspend by hand, not have it happen silently. This
- * sends him two kinds of email alert instead, both to PAYMENTS_INBOX,
- * and mutates nothing:
+ * sends him two kinds of email alert instead, to PAYMENTS_INBOX, and
+ * mutates nothing:
  *
  *   - "due soon": accounts hitting their 3-day warning today (fires
  *     once, since the day-diff check only ever matches on that one day).
+ *     The registered business owner of each such account ALSO gets a
+ *     direct reminder email (`notifyOwnersDueSoon`) — added 2026-08-28
+ *     at Angel's request so the client hears about it, not just him.
  *   - "overdue": accounts already past due and still active (fires
  *     every day the cron runs until Angel marks it paid or suspends it
  *     by hand from /admin — a one-shot "last day" email risks getting
  *     lost if he's away that day, so this keeps nudging instead of
- *     going silent).
+ *     going silent). Owner is NOT emailed here — the overdue nudge is
+ *     Angel's internal suspend-review queue.
  */
 export async function sendSubscriptionAlerts(
   db: SupabaseClient,
@@ -92,6 +156,7 @@ export async function sendSubscriptionAlerts(
         .map((a) => `${a.name} — vence el ${formatDueDate(a.next_payment_due_at)}`)
         .join('\n'),
     })
+    await notifyOwnersDueSoon(db, dueSoon)
   }
 
   if (overdue.length > 0) {

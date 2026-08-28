@@ -279,22 +279,23 @@ export async function sendViaConnection(
     );
   }
 
-  // 2. Conexão + transporte.
+  // 2. Conexão + transporte. `resolveConnection` roda FORA do try/catch
+  //    de propósito: ela já lança `SendMessageError` quando apropriado, e
+  //    deixa um erro cru de `decrypt()` (credencial corrompida) propagar
+  //    sem reclassificação — igual ao `send-message.ts` de hoje.
+  const connection = await resolveConnection(db, accountId, {
+    connectionId: params.connectionId,
+    conversationId,
+    selfHeal: params.selfHealCredential,
+  });
   let transport: WhatsAppTransport;
   try {
-    const connection = await resolveConnection(db, accountId, {
-      connectionId: params.connectionId,
-      conversationId,
-      selfHeal: params.selfHealCredential,
-    });
     transport = createTransport(connection);
   } catch (err) {
-    // `resolveConnection` já lança `SendMessageError` — deixa passar como
-    // está. `createTransport` pode lançar um `Error` cru (ex.: Meta sem
+    // `createTransport` pode lançar um `Error` cru (ex.: Meta sem
     // `phone_number_id`); o contrato do núcleo é sempre lançar
-    // `SendMessageError`, então embrulha o resto com o mesmo código que
-    // "não configurado" usa hoje.
-    if (err instanceof SendMessageError) throw err;
+    // `SendMessageError`, então embrulha com o mesmo código que "não
+    // configurado" usa hoje.
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -303,8 +304,7 @@ export async function sendViaConnection(
     );
   }
 
-  // 3. Capacidade — antes de qualquer trabalho de banco, para que um
-  //    tipo não suportado dê 400 claro em vez de erro opaco no fio.
+  // 3. Capacidade — erro claro de 400 em vez de falha opaca no fio.
   const capability = requiredCapability(message.kind);
   if (capability && !transport.capabilities[capability]) {
     const err = new UnsupportedCapabilityError(transport.provider, capability);

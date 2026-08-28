@@ -12,6 +12,12 @@ interface Row {
   id: string
   name: string
   next_payment_due_at: string
+  owner_user_id?: string | null
+}
+
+interface OwnerRow {
+  user_id: string
+  email: string | null
 }
 
 const h = vi.mocked({ sendEmail })
@@ -36,10 +42,31 @@ function makeDb(rows: Row[]) {
 /** `sendSubscriptionAlerts` runs findAccountsDueInDays (select/not/is)
  *  and findOverdueAccounts (select/not/lt/is) in parallel against the
  *  same fake client — disambiguate which query is which by whether
- *  `.lt()` was called in that particular chain. */
-function makeAlertsDb({ dueSoonRows, overdueRows }: { dueSoonRows: Row[]; overdueRows: Row[] }) {
+ *  `.lt()` was called in that particular chain. The owner-email
+ *  reminder then queries `profiles` (select/in) — routed by table name. */
+function makeAlertsDb({
+  dueSoonRows,
+  overdueRows,
+  owners = [],
+}: {
+  dueSoonRows: Row[]
+  overdueRows: Row[]
+  owners?: OwnerRow[]
+}) {
   return {
-    from: () => {
+    from: (table: string) => {
+      if (table === 'profiles') {
+        const chain: {
+          select: () => typeof chain
+          in: () => typeof chain
+          then: (resolve: (v: { data: OwnerRow[]; error: null }) => void) => void
+        } = {
+          select: () => chain,
+          in: () => chain,
+          then: (resolve) => resolve({ data: owners, error: null }),
+        }
+        return chain
+      }
       let usedLt = false
       const chain: {
         select: () => typeof chain
@@ -129,6 +156,57 @@ describe('sendSubscriptionAlerts', () => {
 
     expect(result).toEqual({ dueSoon: [], overdue: [] })
     expect(h.sendEmail).not.toHaveBeenCalled()
+  })
+
+  it('also emails the registered owner of each due-soon account', async () => {
+    vi.setSystemTime(new Date('2026-08-16T12:00:00Z'))
+    const db = makeAlertsDb({
+      dueSoonRows: [
+        { id: '1', name: 'Empresa A', next_payment_due_at: '2026-08-19T00:00:00Z', owner_user_id: 'u1' },
+        { id: '2', name: 'Empresa B', next_payment_due_at: '2026-08-19T00:00:00Z', owner_user_id: 'u2' },
+      ],
+      overdueRows: [],
+      owners: [
+        { user_id: 'u1', email: 'duenoA@example.com' },
+        { user_id: 'u2', email: 'duenoB@example.com' },
+      ],
+    })
+
+    await sendSubscriptionAlerts(db)
+
+    const calls = h.sendEmail.mock.calls.map((c) => c[0])
+    // 1 summary to the payments inbox + 1 reminder per owner
+    expect(calls).toHaveLength(3)
+    expect(calls.filter((c) => c.to === 'asistentedechat@gmail.com')).toHaveLength(1)
+    const ownerMail = calls.find((c) => c.to === 'duenoA@example.com')
+    expect(ownerMail).toBeDefined()
+    expect(ownerMail!.subject).toContain('vence el')
+    expect(ownerMail!.text).toContain('Empresa A')
+    expect(calls.some((c) => c.to === 'duenoB@example.com')).toBe(true)
+  })
+
+  it('skips owners with no registered email and never sends to overdue owners', async () => {
+    vi.setSystemTime(new Date('2026-08-16T12:00:00Z'))
+    const db = makeAlertsDb({
+      dueSoonRows: [
+        { id: '1', name: 'Sin correo', next_payment_due_at: '2026-08-19T00:00:00Z', owner_user_id: 'u1' },
+      ],
+      overdueRows: [
+        { id: '9', name: 'Vencida', next_payment_due_at: '2026-08-10T00:00:00Z', owner_user_id: 'u9' },
+      ],
+      owners: [
+        { user_id: 'u1', email: null },
+        { user_id: 'u9', email: 'noDebeRecibir@example.com' },
+      ],
+    })
+
+    await sendSubscriptionAlerts(db)
+
+    const calls = h.sendEmail.mock.calls.map((c) => c[0])
+    expect(calls.some((c) => c.to === 'noDebeRecibir@example.com')).toBe(false)
+    // only the two payments-inbox summaries (due-soon + overdue)
+    expect(calls.every((c) => c.to === 'asistentedechat@gmail.com')).toBe(true)
+    expect(calls).toHaveLength(2)
   })
 
   it('sends only the overdue email when nothing is due-soon', async () => {

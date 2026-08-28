@@ -18,8 +18,13 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { BroadcastError, type BroadcastPlan } from '@/lib/whatsapp/broadcast-core';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import {
+  BroadcastError,
+  type BroadcastPlan,
+} from '@/lib/whatsapp/broadcast-core';
+import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
+import type { TransportConnection } from '@/lib/whatsapp/providers';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 
@@ -166,7 +171,10 @@ export async function planBroadcastResume(
     .order('created_at', { ascending: true });
 
   if (recError) {
-    console.error('[broadcast-resume] recipient load failed:', recError.message);
+    console.error(
+      '[broadcast-resume] recipient load failed:',
+      recError.message
+    );
     throw new BroadcastError('internal', 'Failed to load recipients', 500);
   }
 
@@ -205,17 +213,24 @@ export async function planBroadcastResume(
     );
   }
 
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-  if (configError || !config) {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // Conexão (falha rápido). O broadcast fala com o transporte direto:
+  // ele persiste em `broadcast_recipients`, não em `messages`, então o
+  // núcleo de envio não se aplica.
+  let connection: TransportConnection;
+  try {
+    connection = await resolveConnection(db, accountId);
+  } catch (err) {
+    if (
+      err instanceof SendMessageError &&
+      err.code === 'whatsapp_not_configured'
+    ) {
+      throw new BroadcastError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
   }
 
   const resolvedTemplate = await resolveTemplateRow(
@@ -236,8 +251,7 @@ export async function planBroadcastResume(
     broadcastId,
     templateName: broadcast.template_name,
     templateLanguage: resolvedTemplate.language,
-    phoneNumberId: config.phone_number_id,
-    accessToken: decrypt(config.access_token),
+    connection,
     templateRow: resolvedTemplate.row,
     planned: slice.map((row) => ({
       recipientRowId: row.id,

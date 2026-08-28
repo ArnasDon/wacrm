@@ -1566,26 +1566,17 @@ export async function sendViaConnection(
 ): Promise<SendViaConnectionResult> {
   const { message, conversationId } = params;
 
-  // 1. Conexão + transporte.
-  const connection = await resolveConnection(db, accountId, {
-    connectionId: params.connectionId,
-    conversationId,
-    selfHeal: params.selfHealCredential,
-  });
-  const transport = createTransport(connection);
+  // A ORDEM DOS PASSOS 1–3 NÃO É ARBITRÁRIA. Ela reproduz a ordem que
+  // `send-message.ts` usa hoje — conversa → telefone do contato → E.164
+  // → config — e que os dois engines também seguem. Resolver a conexão
+  // primeiro (como a lista de passos da spec §4.2 sugere) faria uma
+  // conta sem `whatsapp_config` responder `whatsapp_not_configured`/400
+  // a um envio para conversa inexistente, onde hoje responde
+  // `not_found`/404: mudança observável no envelope v1 público, contra o
+  // critério de aceite da própria onda. Entre a lista de passos e o
+  // "zero mudança observável", vale o segundo.
 
-  // 2. Capacidade — antes de qualquer trabalho de banco, para que um
-  //    tipo não suportado dê 400 claro em vez de erro opaco no fio.
-  const capability = requiredCapability(message.kind);
-  if (capability && !transport.capabilities[capability]) {
-    const err = new UnsupportedCapabilityError(transport.provider, capability);
-    throw new SendMessageError('bad_request', err.message, 400, {
-      reason: 'unsupported_capability',
-      cause: err,
-    });
-  }
-
-  // 3. Contato + telefone.
+  // 1. Contato + telefone.
   const contact = await loadContact(db, accountId, params);
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
   if (!isValidE164(sanitizedPhone)) {
@@ -1595,6 +1586,36 @@ export async function sendViaConnection(
       400,
       { reason: 'contact_phone_invalid', cause: contact.phone }
     );
+  }
+
+  // 2. Conexão + transporte. `createTransport` pode lançar `Error` cru
+  //    (transporte Meta sem `phone_number_id`); o núcleo promete lançar
+  //    sempre `SendMessageError`, então converte aqui.
+  const connection = await resolveConnection(db, accountId, {
+    connectionId: params.connectionId,
+    conversationId,
+    selfHeal: params.selfHealCredential,
+  });
+  let transport: WhatsAppTransport;
+  try {
+    transport = createTransport(connection);
+  } catch (err) {
+    throw new SendMessageError(
+      'whatsapp_not_configured',
+      'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      400,
+      { reason: 'not_configured', cause: err }
+    );
+  }
+
+  // 3. Capacidade — erro claro de 400 em vez de falha opaca no fio.
+  const capability = requiredCapability(message.kind);
+  if (capability && !transport.capabilities[capability]) {
+    const err = new UnsupportedCapabilityError(transport.provider, capability);
+    throw new SendMessageError('bad_request', err.message, 400, {
+      reason: 'unsupported_capability',
+      cause: err,
+    });
   }
 
   // 4. Alvo da resposta citada.
@@ -1668,7 +1689,7 @@ export async function sendViaConnection(
     console.error('[send-core] error inserting sent message:', msgError);
     throw new SendMessageError(
       'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError?.message}`,
+      `Message sent to Meta but failed to save to DB: ${msgError?.message ?? 'no row returned'}`,
       500,
       { reason: 'message_insert_failed', cause: msgError?.message }
     );

@@ -158,6 +158,68 @@ describe('rankBySignificantTokens — the reported real-world scenarios', () => 
 })
 
 // ============================================================
+// AI Sales Agent audit (re-pass) — Part 10's "una laptop barata"
+// example: a subjective qualifier that never appears in a real
+// product name must not silently zero out an otherwise-good query.
+// Guarded closely against reopening the A07≠A05 regression above —
+// a token WITH a digit (a model code, a size) must never be relaxed
+// away just because that exact model/size happens to be absent.
+// ============================================================
+describe('rankBySignificantTokens — subjective qualifiers do not veto real matches (Part 10)', () => {
+  const LAPTOPS = [
+    { name: 'LAPTOP HP 15 CORE I5 8GB 256GB SSD' },
+    { name: 'LAPTOP LENOVO IDEAPAD 14 CORE I3 8GB 256GB' },
+    { name: 'NEVERA WHIRLPOOL 15 PIES' }, // not a laptop
+  ]
+  const text = (p: { name: string }) => p.name
+
+  it('"una laptop barata" still finds real laptops even though no name literally says "barata"', () => {
+    const ranked = rankBySignificantTokens('una laptop barata', LAPTOPS, text)
+    expect(ranked.length).toBe(2)
+    expect(ranked.map((r) => r.item.name)).not.toContain('NEVERA WHIRLPOOL 15 PIES')
+  })
+
+  it('same relaxation for "quiero algo bueno y economico" style qualifiers, still scoped to the right category', () => {
+    const ranked = rankBySignificantTokens('laptop buena y economica', LAPTOPS, text)
+    expect(ranked.length).toBeGreaterThan(0)
+    expect(ranked.every((r) => r.item.name.includes('LAPTOP'))).toBe(true)
+  })
+
+  it('a genuinely irrelevant query (nothing matches at all) still correctly returns nothing — relaxation cannot invent a match', () => {
+    const ranked = rankBySignificantTokens('bicicleta barata', LAPTOPS, text)
+    expect(ranked).toEqual([])
+  })
+
+  it('CRITICAL: a missing MODEL NUMBER is never relaxed away — "Samsung A07" must not match "Samsung A05" even when A07 does not exist anywhere in this catalog', () => {
+    // Deliberately a catalog with ONLY the A05 decoy — no real A07 row
+    // at all, unlike the CATALOG above. If "a07" (a digit-bearing
+    // token) were relaxed away just because it matches nothing here,
+    // "samsung" alone would incorrectly qualify the A05.
+    const onlyA05 = [{ name: 'SAMSUNG A05 128GB + 4GB NEGRO' }, { name: 'SAMSUNG A05 64GB + 4GB NEGRO' }]
+    for (const q of ['samsung a07', 'a 07', 'a-07']) {
+      expect(rankBySignificantTokens(q, onlyA05, text)).toEqual([])
+    }
+  })
+
+  it('a missing SIZE is never relaxed away either — "TCL de 55" must not match a TCL 50 just because 55 does not exist', () => {
+    const onlySize50 = [{ name: 'TV TCL GOOGLE TV SMART 50 4K' }]
+    expect(rankBySignificantTokens('tcl de 55 pulgadas', onlySize50, text)).toEqual([])
+  })
+
+  it('a missing BRAND (no digit) IS relaxed away — a store without Asus can still surface real laptops as alternatives', () => {
+    // "asus" matches nothing anywhere in this catalog, but "laptop"
+    // (literally present in both real product names) is the real
+    // signal — surfacing the HP/Lenovo laptops as alternatives is
+    // desired retail behavior (Part 7), not a precision bug the way a
+    // model-number substitution (the two CRITICAL cases above) would
+    // be, precisely because "asus" has no digit.
+    const ranked = rankBySignificantTokens('asus laptop', LAPTOPS, text)
+    expect(ranked.length).toBe(2)
+    expect(ranked.every((r) => r.item.name.includes('LAPTOP'))).toBe(true)
+  })
+})
+
+// ============================================================
 // FASE FINAL DE AUDITORÍA — every query variant explicitly listed for
 // review, run against a MULTI-CATEGORY catalog (phones, TVs, A/C, fans)
 // to prove the logic is generic, not hardcoded for any one brand/kind.

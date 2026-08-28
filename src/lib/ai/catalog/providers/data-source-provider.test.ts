@@ -38,6 +38,7 @@ function fakeDb(opts: {
           filters.push([col, val])
           return api
         },
+        order: () => api,
         limit: () => Promise.resolve(opts.scanError ? { data: null, error: opts.scanError } : { data: opts.scanRows ?? [], error: null }),
         maybeSingle: () => {
           if (opts.scanError) return Promise.resolve({ data: null, error: opts.scanError })
@@ -184,6 +185,24 @@ describe('DataSourceCatalogProvider.searchCatalog — fallback tier (DB-side FTS
 
     const everything = await provider.searchCatalog({ query: 'tcl 50' })
     expect(everything.products).toHaveLength(2) // the agotado one is still findable
+  })
+
+  it('without availableOnly, an available match still sorts BEFORE an agotado one — never hidden behind it (AI Sales Agent audit re-pass, Part 9)', async () => {
+    // Deliberately inserted agotado-first, and the agotado row is a
+    // "better" textual match (appears earlier alphabetically / matches
+    // more tokens) than the available one, so a naive score-only sort
+    // would put it first. Availability must win as the primary key,
+    // same as the DB tier's `ORDER BY available DESC` (migration 047).
+    const scanRows = [
+      row({ id: 'r1', source_product_id: 'r1', name: 'TV TCL 50 4K AGOTADA', brand: 'TCL', available: false, available_quantity: 0 }),
+      row({ id: 'r2', source_product_id: 'r2', name: 'TV TCL 50 QLED', brand: 'TCL', available: true, available_quantity: 4 }),
+    ]
+    const { db } = fakeDb({ rpcRows: [], scanRows })
+    const provider = new DataSourceCatalogProvider(db, 'acct-1', 'ds-1', 'PRUEBA')
+
+    const result = await provider.searchCatalog({ query: 'tcl 50' })
+    expect(result.products).toHaveLength(2) // both still findable...
+    expect(result.products[0].available).toBe(true) // ...but the available one leads
   })
 })
 

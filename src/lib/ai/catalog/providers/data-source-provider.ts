@@ -156,6 +156,14 @@ export class DataSourceCatalogProvider implements CatalogProvider {
       .select('*')
       .eq('account_id', this.accountId)
       .eq('data_source_id', this.dataSourceId)
+      // Deterministic base order — without it Postgres doesn't
+      // guarantee the same row order across separate calls, and since
+      // rankBySignificantTokens' sort is stable (ties keep INPUT
+      // order), an undeterministic scan here would make pagination
+      // within this tier flaky: the same row could land on two
+      // different pages, or on neither, between the offset=0 and
+      // offset=N calls of one "dame todas las X" listing.
+      .order('id', { ascending: true })
       .limit(FALLBACK_SCAN_LIMIT)
     if (error || !data) {
       if (error) console.error('[catalog] fallback scan failed:', error.message)
@@ -168,9 +176,17 @@ export class DataSourceCatalogProvider implements CatalogProvider {
       rows,
       (r) => [r.name, r.sku, r.brand, r.model, r.color, r.capacity, r.size].filter(Boolean).join(' '),
     )
-    const filtered = args.color
+    const colorFiltered = args.color
       ? ranked.filter((m) => !m.item.color || m.item.color.toLowerCase().includes(args.color!.toLowerCase()))
       : ranked
+    // Stable partition: available matches first, agotados after —
+    // relative ranking order preserved within each group. Mirrors the
+    // DB tier's `ORDER BY available DESC, rank DESC` (migration 047)
+    // so a customer browsing ("qué tienen") never sees an agotado item
+    // pushed ahead of an available one just because this particular
+    // query happened to miss the DB-side FTS pass and land here
+    // instead (AI Sales Agent audit, Part 9).
+    const filtered = [...colorFiltered.filter((m) => m.item.available), ...colorFiltered.filter((m) => !m.item.available)]
     const page = filtered.slice(offset, offset + limit).map((m) => rowToProduct(m.item, this.key, this.label))
     // `total` here is honestly bounded by FALLBACK_SCAN_LIMIT — this
     // tier only ever scans the first 500 rows of the data source, so

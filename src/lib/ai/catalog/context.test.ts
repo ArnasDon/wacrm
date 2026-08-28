@@ -148,3 +148,49 @@ describe('catalogContextToPromptText — topic change (Part 8)', () => {
     expect(ctx.products[0].fromQuery).toBe('tcl 50')
   })
 })
+
+// ============================================================
+// AI Sales Agent audit (re-pass), Part 12 Escenario 1 — the exact
+// scripted conversation given this turn: A26 → A07 (a DIFFERENT model,
+// not a variant of A26) → morado de 64 → topic change to TV → "y de
+// otra marca" → Samsung → TCL. Distinct from the earlier topic-change
+// test: this checks that TWO SIMILAR BUT DIFFERENT PHONE MODELS in
+// immediate sequence never get cross-contaminated (a customer asking
+// about the A26 first, then the A07, must not have the A26 silently
+// forgotten NOR the A07 answered with A26 data or vice versa).
+// ============================================================
+describe('updateCatalogContext — two different models in sequence stay independently resolvable', () => {
+  const A26_NEGRO = { id: 'ds_1:a26-negro', name: 'Samsung A26 128GB Negro', brand: 'Samsung', model: 'A26', colors: ['Negro'], capacity: '128GB', size: null, price: 11500, currency: 'DOP' }
+  const A26_AZUL = { id: 'ds_1:a26-azul', name: 'Samsung A26 128GB Azul', brand: 'Samsung', model: 'A26', colors: ['Azul'], capacity: '128GB', size: null, price: 11500, currency: 'DOP' }
+
+  it('"tienen el A26 y qué colores" then "y el A07 tiene de 128" — the A26 answer is never reused for the A07 question', () => {
+    // Turn 1: "Tienen el A26 y qué colores?"
+    let ctx = updateCatalogContext(null, [searchCall('samsung a26', [A26_NEGRO, A26_AZUL])])
+    expect(ctx.lastQuery).toBe('samsung a26')
+
+    // Turn 2: "Bien y el A07 tiene de 128?" — a DIFFERENT model, not a
+    // color/capacity follow-up of the A26. Must trigger its own fresh
+    // search, not silently answer using A26 rows.
+    ctx = updateCatalogContext(ctx, [searchCall('samsung a07 128', [A07_128_NEGRO, A07_128_MORADO])])
+    expect(ctx.lastQuery).toBe('samsung a07 128')
+
+    // Turn 3: "Y no tienen el morado de 64?" — back to A07, a different
+    // capacity this time.
+    ctx = updateCatalogContext(ctx, [getProductCall(A07_64_MORADO)])
+
+    // Both models remain independently present and correct — the A26
+    // entries were never overwritten or dropped just because the A07
+    // became the active topic, and neither model's price/color data
+    // bled into the other's.
+    const byId = new Map(ctx.products.map((p) => [p.id, p]))
+    expect(byId.get(A26_NEGRO.id)).toMatchObject({ model: 'A26', color: 'Negro', price: 11500 })
+    expect(byId.get(A26_AZUL.id)).toMatchObject({ model: 'A26', color: 'Azul', price: 11500 })
+    expect(byId.get(A07_128_NEGRO.id)).toMatchObject({ model: 'A07', capacity: '128GB', price: 9000 })
+    expect(byId.get(A07_64_MORADO.id)).toMatchObject({ model: 'A07', capacity: '64GB', price: 7500 })
+    // The rendered prompt keeps them in clearly separate, labeled
+    // groups rather than one ambiguous blended list.
+    const text = catalogContextToPromptText(ctx)!
+    expect(text).toContain('De la búsqueda "samsung a26"')
+    expect(text).toContain('De la búsqueda "samsung a07 128"')
+  })
+})

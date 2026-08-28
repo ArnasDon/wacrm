@@ -151,7 +151,8 @@ export function buildSystemPrompt(args: {
         '(then get_product/get_availability/get_product_media as needed) and answer ONLY with what the tool ' +
         'returns. Never invent, estimate, or reuse a price/stock/variant from memory, from the KNOWLEDGE BASE ' +
         'below, or from a different product/variant than the one the tool matched — two colors or capacities of ' +
-        'the same model can have DIFFERENT real prices; never assume they match. ' +
+        'the same model can have DIFFERENT real prices AND different stock levels; never assume either one ' +
+        'matches across variants — one color being in stock does not mean every color is. ' +
         'PRICE SEQUENCE (always follow in order): 1) resolve which exact product/variant the customer means ' +
         '(use the conversation history and the CATALOG CONTEXT section if present); 2) call get_product or ' +
         'get_availability for that exact id; 3) answer with exactly what it returned. ' +
@@ -194,7 +195,12 @@ export function buildSystemPrompt(args: {
         'there are, summarize/group them (see GROUPING below), and offer to keep going — never silently truncate ' +
         'and call it complete. A short one-word or ambiguous message ("dame todos", "todas") almost always refers ' +
         'to whatever category/brand was just discussed — use the conversation and CATALOG CONTEXT (if present) to ' +
-        'know what "todas" means before calling the tool.',
+        'know what "todas" means before calling the tool. ' +
+        'CONTINUING VS CHANGING TOPIC: after an exploratory search (e.g. "qué TVs tienen"), a short follow-up that ' +
+        'names only a brand or attribute ("y de otra marca", "y Samsung", "y TCL", "y de 55") continues the SAME ' +
+        'category — search again within that category using the new brand/attribute, do not treat "Samsung" alone ' +
+        'as an unrelated new query. Only start a genuinely different search when the customer names a different ' +
+        'category/product (see the CAMBIO DE TEMA instruction in the CATALOG CONTEXT section, when present).',
     )
 
     parts.push(

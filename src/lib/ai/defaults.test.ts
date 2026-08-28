@@ -22,6 +22,12 @@ describe('buildSystemPrompt — catalog accounts get the new commercial/coverage
     expect(withoutCatalog).not.toContain('has_more')
   })
 
+  it('instructs a bare brand/attribute follow-up ("y Samsung", "y de otra marca") to continue the current category, not start an unrelated search', () => {
+    const prompt = buildSystemPrompt({ ...base, catalogToolsAvailable: true })
+    expect(prompt).toContain('CONTINUING VS CHANGING TOPIC')
+    expect(prompt.toLowerCase()).toContain('"y de otra marca"')
+  })
+
   it('includes GROUPING guidance that explicitly forbids inventing attributes', () => {
     const prompt = buildSystemPrompt({ ...base, catalogToolsAvailable: true })
     expect(prompt).toContain('GROUPING')

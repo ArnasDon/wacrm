@@ -25,14 +25,24 @@
 --
 -- RETURNS TABLE instead of SETOF ai_catalog_products (Postgres doesn't
 -- allow CREATE OR REPLACE to change a function's return type), hence
--- the explicit DROP + CREATE. Same columns as before, in the same
--- order, plus total_count appended at the end — additive from the
--- caller's point of view.
+-- the DROP of the OLD 5-arg/SETOF signature first. Same columns as
+-- before, in the same order, plus total_count appended at the end —
+-- additive from the caller's point of view.
+--
+-- The creation itself uses CREATE OR REPLACE (not bare CREATE), even
+-- though nothing with this exact 7-arg signature can exist on a FIRST
+-- run: if this file is ever re-run (a manual re-apply, a migration
+-- repair) AFTER already succeeding once, the DROP above becomes a
+-- no-op (the 5-arg signature is already gone) and a bare CREATE would
+-- then fail with "function already exists" against its own prior
+-- output. CREATE OR REPLACE against an identical return type is a
+-- true no-op-equivalent, matching 045/046's "safe to run multiple
+-- times" discipline.
 -- ============================================================
 
 DROP FUNCTION IF EXISTS public.search_ai_catalog_products(uuid, uuid[], text, text, integer);
 
-CREATE FUNCTION public.search_ai_catalog_products(
+CREATE OR REPLACE FUNCTION public.search_ai_catalog_products(
   p_account_id      uuid,
   p_data_source_ids uuid[],
   p_query           text,
@@ -86,7 +96,16 @@ RETURNS TABLE (
     p.available DESC,
     CASE WHEN p_query IS NULL OR trim(p_query) = '' THEN 0
          ELSE ts_rank(p.fts, plainto_tsquery('simple', p_query)) END DESC,
-    p.name ASC
+    p.name ASC,
+    p.id ASC -- final deterministic tiebreaker: two rows CAN legitimately
+             -- tie on (available, rank, name) — e.g. two color variants
+             -- sharing the exact same product name — and without a
+             -- unique last key, Postgres does not guarantee the same
+             -- relative order for tied rows across separate query
+             -- executions. That would risk a row silently appearing on
+             -- both page 1 AND page 2 (or on neither) of a paginated
+             -- "dame todas las X" listing. `id` is the primary key, so
+             -- this makes the ordering fully deterministic.
   LIMIT GREATEST(p_match_count, 0)
   OFFSET GREATEST(p_offset, 0);
 $$ LANGUAGE sql STABLE SECURITY INVOKER SET search_path = public;

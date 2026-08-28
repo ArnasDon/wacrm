@@ -17,8 +17,8 @@ BEGIN
   IF to_regclass('public.messages') IS NULL THEN
     RAISE EXCEPTION 'public.messages is missing — migrations did not apply';
   END IF;
-  IF to_regclass('public.whatsapp_config') IS NULL THEN
-    RAISE EXCEPTION 'public.whatsapp_config is missing — migrations did not apply';
+  IF to_regclass('public.whatsapp_connections') IS NULL THEN
+    RAISE EXCEPTION 'public.whatsapp_connections is missing — migrations did not apply';
   END IF;
 
   -- Supabase provides the storage schema; migrations 016/020/023 write

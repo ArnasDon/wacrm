@@ -1,22 +1,29 @@
 // ============================================================
-// Outbound message send — the core that both the dashboard's
-// `/api/whatsapp/send` route and the public `/api/v1/messages`
-// endpoint call.
+// Envio de mensagem — a fachada que tanto a rota `/api/whatsapp/send`
+// do dashboard quanto a pública `/api/v1/messages` chamam.
 //
-// Given a conversation and message params, this:
-//   1. validates the params for the message type,
-//   2. loads the conversation + contact + WhatsApp config,
-//   3. sends to Meta (with phone-variant retry + contact auto-fix),
-//   4. persists the message + updates the conversation,
-//   5. pauses any active Flow run for the contact (agent stepped in).
+// Dado uma conversa e os params da mensagem, este arquivo:
+//   1. valida o formato dos params para o tipo de mensagem,
+//   2. resolve a linha de template local — quando o tipo é
+//      `template` —, ABORTANDO com `template_malformed` numa linha
+//      malformada, e coloca o idioma resolvido (não o cru pedido pelo
+//      chamador) no fio,
+//   3. calcula o corpo persistido de templates (o composer pré-
+//      renderiza e manda em `contentText`; ver `persistedText` abaixo),
+//   4. monta um `OutboundMessage` a partir de tudo isso e delega a
+//      `sendViaConnection`, do núcleo (`send-core.ts`).
 //
-// It is transport-agnostic: it takes a `SupabaseClient` and an
-// `accountId` and throws `SendMessageError` on failure. The callers
-// own auth, rate-limiting, body parsing, and mapping the error to
-// their respective response shapes (internal `{ error }` vs the v1
-// envelope). Behaviour is identical to the original inline route —
-// this is a straight extraction so the public endpoint can reuse it
-// without duplicating ~250 lines of Meta plumbing.
+// Tudo o que costumava estar aqui — resolver a conexão, decriptar a
+// credencial, chamar o provedor, tentar variantes de telefone,
+// persistir a mensagem, atualizar a conversa e pausar o flow ativo —
+// agora vive atrás de `sendViaConnection`, espalhado entre
+// `send-core.ts`, `resolve-connection.ts` e `providers/meta-transport.ts`.
+//
+// Este arquivo segue transport-agnostic: recebe um `SupabaseClient` e
+// um `accountId` e lança `SendMessageError` na falha. Os dois
+// chamadores são donos de auth, rate-limiting, parsing do corpo, e do
+// mapeamento do erro para o próprio formato de resposta (`{ error }`
+// interno vs. o envelope v1).
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -48,9 +55,10 @@ export const VALID_MESSAGE_TYPES = [
 ] as const;
 
 // `SendMessageError` mora em `send-error.ts` desde a extração do seam,
-// para que `send-core.ts` e `resolve-conversation.ts` o importem sem
-// ciclo. Re-exportado aqui porque este continua sendo o caminho de
-// import que o resto do código usa.
+// para que `send-core.ts` o importe sem ciclo. Re-exportado aqui
+// porque `resolve-conversation.ts`, as duas rotas e os testes ainda
+// importam a classe deste caminho — o de sempre —, e continuam
+// podendo.
 export { SendMessageError } from '@/lib/whatsapp/send-error';
 export type { SendFailureReason } from '@/lib/whatsapp/send-error';
 

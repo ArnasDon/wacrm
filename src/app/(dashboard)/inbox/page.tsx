@@ -182,6 +182,12 @@ function InboxPageInner() {
       const fetched = normalizeConversation(data);
       setConversations((prev) => {
         const existing = prev.find((c) => c.id === fetched.id);
+        // Never introduce a message-less conversation into the list (a
+        // bare `conversation.started` row — see conversation-list.tsx).
+        // If it's already shown, leave it; only guard the fresh-add path.
+        if (!existing && !fetched.last_message_at && !fetched.last_message_text) {
+          return prev;
+        }
         if (existing) {
           // Already in state — keep its fields (a realtime UPDATE may
           // have landed while the fetch was in flight and patched
@@ -318,6 +324,12 @@ function InboxPageInner() {
       const conv = event.new;
 
       if (event.eventType === "INSERT") {
+        // Skip conversations with no message yet — the WhatsApp-via-Zernio
+        // webhook creates a bare conversation on `conversation.started`
+        // (and Zernio fires that in bulk on a number reconnect). When a
+        // real message lands, bump_conversation_on_inbound sets
+        // last_message_at and the UPDATE branch below hydrates it in.
+        if (!conv.last_message_at && !conv.last_message_text) return;
         // Prepend immediately for snappy UX so the new conv shows in the
         // list right away, then hydrate to fill in the `contact` join
         // (realtime payloads never include joins). Skip both if we

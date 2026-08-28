@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/conversations/admin-client'
 import { reassignUnclaimedConversations } from '@/lib/conversations/reassign'
+import { pruneEmptyStaleConversations } from '@/lib/conversations/prune-empty'
 import { recordHeartbeat } from '@/lib/observability/heartbeat'
 
 /**
@@ -33,6 +34,10 @@ export async function GET(request: Request) {
   }
 
   const result = await reassignUnclaimedConversations(supabaseAdmin())
+  const pruned = await pruneEmptyStaleConversations(supabaseAdmin()).catch((err) => {
+    console.error('[conversations/cron] prune failed:', err)
+    return { pruned: 0 }
+  })
   await recordHeartbeat('conversations_cron')
-  return NextResponse.json(result)
+  return NextResponse.json({ ...result, ...pruned })
 }

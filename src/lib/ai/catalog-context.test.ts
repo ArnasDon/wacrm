@@ -38,15 +38,16 @@ describe('loadCatalogContext', () => {
   })
 
   it('formats each product with its currency-formatted price', async () => {
-    // Non-breaking-space-tolerant, matching src/lib/currency.test.ts's
-    // convention — Intl may insert an NBSP between symbol and amount.
+    // Assert on structure, not the localized currency symbol: Intl
+    // renders GTQ as "Q150" under an es-* runtime locale but "GTQ 150"
+    // under en-* (the CI runner), and formatCurrency passes `undefined`
+    // for the locale. Same reason the USD test below only checks "(".
     const res = await loadCatalogContext(
       makeDb([{ name: 'Camisa', price: 150, description: null }], 'GTQ'),
       'acct-1',
     )
     expect(res).toHaveLength(1)
-    expect(res![0]).toContain('- Camisa (Q')
-    expect(res![0]).toContain('150)')
+    expect(res![0]).toMatch(/^- Camisa \(.*150\)/)
   })
 
   it('appends a short description when present', async () => {

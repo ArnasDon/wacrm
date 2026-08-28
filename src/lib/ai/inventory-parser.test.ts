@@ -174,4 +174,29 @@ describe('parseSheetCsv — column selection filters every representation', () =
     expect(parsed.products).toHaveLength(1)
     expect(parsed.products[0].name).toBe('Producto X') // recovered via the column-0 fallback
   })
+
+  // AI Sales Agent audit (final pass), Part 9 — the exact "internal
+  // cost column must never reach the agent" scenario, verified across
+  // BOTH representations the agent can see: the flattened KB `content`
+  // text AND the structured `products` rows that become
+  // ai_catalog_products.
+  it('a sensitive/internal column excluded from selection never appears in KB content OR structured products', () => {
+    const withInternalCost = csv([
+      ['Nombre', 'Precio', 'Cantidad', 'Costo_Interno'],
+      ['Producto X', '1500', '10', '900'],
+    ])
+    const parsed = parseSheetCsv(withInternalCost, 'https://x/sheet.csv', ['Nombre', 'Precio', 'Cantidad'])
+
+    // Not in the flattened KB text (what retrieveKnowledge chunks/embeds).
+    expect(parsed.content).not.toContain('Costo_Interno')
+    expect(parsed.content).not.toContain('900')
+    // Not in preview.sample (what "Ver datos" / preview_sample stores).
+    expect(parsed.preview.sample[0]).not.toHaveProperty('Costo_Interno')
+    // Not on the structured product row under any field — description
+    // is the most likely accidental leak point for an unrecognized
+    // column, so check the whole object, not just the obvious fields.
+    const product = parsed.products[0]
+    expect(Object.values(product)).not.toContain('900')
+    expect(JSON.stringify(product)).not.toContain('Costo_Interno')
+  })
 })

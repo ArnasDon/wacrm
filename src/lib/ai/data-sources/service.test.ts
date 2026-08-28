@@ -332,7 +332,60 @@ describe('refreshDataSource — column selection (point 17)', () => {
     expect(refreshed.selected_columns).toEqual(['Nombre', 'Precio', 'Stock']) // ...but the selection itself is untouched
     expect(refreshed.status).toBe('active') // never breaks the source
     expect(refreshed.last_error).toBeNull() // this is a warning, not a sync failure
-    expect(table('ai_catalog_products')[0]).toMatchObject({ name: 'Samsung Galaxy S25', price: 34900 })
+    // The product row honestly has NO stock data (null) rather than
+    // silently keeping the stale number from before the column
+    // vanished, or fabricating a new one — "no lo sé" is correct here,
+    // a wrong-but-present number would be worse (AI Sales Agent audit,
+    // Part 5: "evitar generar datos incorrectos silenciosamente").
+    expect(table('ai_catalog_products')[0]).toMatchObject({
+      name: 'Samsung Galaxy S25',
+      price: 34900,
+      available_quantity: null,
+    })
+  })
+
+  // AI Sales Agent audit (final pass), Part 6 — a column that shows up
+  // for the first time on refresh must be VISIBLE (detected, usable if
+  // the user later re-configures) but never silently opted into
+  // automatically. Otherwise a business's newly-added, possibly
+  // sensitive column ("costo_interno") would leak into the agent's
+  // catalog the moment someone edits the sheet, with no one having
+  // chosen that.
+  it('a brand-new column appearing on refresh is detected but never auto-added to selected_columns', async () => {
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Cantidad'], ['Producto X', '1500', '10']]))
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      selectedColumns: ['Nombre', 'Precio', 'Cantidad'],
+    })
+
+    // Upstream sheet gains a new "Marca" column.
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Cantidad', 'Marca'], ['Producto X', '1500', '10', 'MarcaX']]))
+    const { source: refreshed, droppedColumns } = await refreshDataSource(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      id: source.id,
+    })
+
+    expect(droppedColumns).toEqual([]) // nothing PREVIOUSLY selected went missing
+    expect(refreshed.selected_columns).toEqual(['Nombre', 'Precio', 'Cantidad']) // "Marca" NOT auto-added
+    // The new column is genuinely detected as metadata (column_mapping
+    // records that a "brand" column named "marca" exists — structural
+    // info, not customer-facing data) — it's only not USED for
+    // anything yet, not invisible to the system. The "Ver datos"
+    // dialog itself still won't show it (it filters column_mapping
+    // entries down to ones ALSO in selected_columns), and it never
+    // reaches the flattened KB text / ai_catalog_products either,
+    // since neither is populated for a column outside the selection.
+    expect(refreshed.column_mapping?.brand).toBe('marca')
+    // ...but the actual DATA never landed anywhere selection-gated.
+    expect(refreshed.preview_sample?.columns).not.toContain('Marca')
+    expect(refreshed.preview_sample?.sample.some((r) => 'Marca' in r)).toBe(false)
   })
 
   it('a source with no explicit selection (null) stays null across a refresh — still "use everything"', async () => {
@@ -659,6 +712,46 @@ describe('getDataSourcePreview', () => {
     expect(result!.preview.rows[0]).not.toHaveProperty('Stock')
     // And the persisted selection itself is readable back off the row.
     expect(source.selected_columns).toEqual(['Nombre', 'Precio'])
+  })
+
+  // AI Sales Agent audit (final pass), Part 2/3/14 — the exact bug
+  // found on re-audit: the frontend used to only send selected_columns
+  // when the user excluded something, so leaving every box checked
+  // (the default, most common path) silently persisted null instead
+  // of the explicit list the user had just configured. Fixed in
+  // data-sources-settings.tsx; this asserts the SERVICE side already
+  // does the right thing once given an explicit "select everything"
+  // array — a real array, never coerced to null just because it
+  // happens to equal "all".
+  it('a NEW source that explicitly selects every detected column still persists selected_columns as an array, not null', async () => {
+    stubCsvFetch(PRODUCTS_CSV) // headers: Nombre, Precio, Stock
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      selectedColumns: ['Nombre', 'Precio', 'Stock'], // every real column, explicitly
+    })
+    expect(source.selected_columns).toEqual(['Nombre', 'Precio', 'Stock'])
+    expect(source.selected_columns).not.toBeNull()
+  })
+
+  it('a source created with NO selection step at all (selectedColumns never passed) is the only case that persists null', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      // selectedColumns omitted entirely — legacy/compatibility path.
+    })
+    expect(source.selected_columns).toBeNull()
   })
 
   it('a row that produced zero usable ai_catalog_products still shows a real raw preview — "Ver datos" is not gated on catalog success', async () => {

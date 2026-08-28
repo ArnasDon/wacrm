@@ -506,13 +506,16 @@ function CreateDataSourceDialog({
       fd.set('fallback_policy', fallbackPolicy);
       fd.set('is_primary', String(isPrimary));
       fd.set('currency', currency.trim() || defaultCurrency || 'USD');
-      // Only sent when the user actually excluded something — an
-      // empty/omitted selection means "every detected column", the
-      // same behavior a source had before this step existed.
-      const allDetected = detection?.columns ?? [];
-      if (selectedColumns.size < allDetected.length) {
-        fd.set('selected_columns', JSON.stringify(Array.from(selectedColumns)));
-      }
+      // Always sent, explicitly, once the user has been through the
+      // detection/selection step — even when every column stayed
+      // checked. `selected_columns` must never persist as null for a
+      // source created through this wizard; null is reserved for
+      // sources that predate the column-selection feature entirely
+      // (final-audit finding: this used to only send the field when
+      // something was EXCLUDED, so the default "leave everything
+      // checked" path — the common case — silently saved null instead
+      // of the explicit list the user had just configured).
+      fd.set('selected_columns', JSON.stringify(Array.from(selectedColumns)));
       if (sourceType === 'uploaded_csv' && file) fd.set('file', file);
       else fd.set('url', url.trim());
 

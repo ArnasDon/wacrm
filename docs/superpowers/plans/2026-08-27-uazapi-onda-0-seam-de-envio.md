@@ -2599,13 +2599,23 @@ quatro arquivos.
 Run:
 
 ```bash
-git grep -ln "whatsapp_config" -- src/lib/whatsapp src/lib/flows src/lib/automations
+git grep -n "\.from('whatsapp_config')" -- src/lib/whatsapp src/lib/flows src/lib/automations
 ```
 
-Expected: só `src/lib/whatsapp/resolve-connection.ts`. (As rotas de
-config, templates, mídia, webhook e os componentes de settings ainda
-leem a tabela — são superfícies de configuração e inbound, tratadas nas
-Ondas 1–2.)
+Expected: exatamente **duas** linhas —
+`src/lib/whatsapp/resolve-connection.ts` (o caminho de envio, que é o
+alvo desta onda) e `src/lib/whatsapp/resolve-conversation.ts` (que
+resolve o dono da config ao criar conversa; caminho de inbound, fora do
+escopo da Onda 0 e tratado na Onda 1). Antes da onda eram **seis**:
+`send-message.ts`, `broadcast-core.ts`, `broadcast-resume.ts`,
+`flows/meta-send.ts` (×3 no mesmo arquivo), `automations/meta-send.ts` e
+`resolve-conversation.ts`.
+
+`encryption.ts` e `meta-api.ts` citam `whatsapp_config` em comentário —
+por isso o grep é por `.from('whatsapp_config')`, não pela string solta.
+As rotas de config, templates, mídia e webhook, e os componentes de
+settings, também seguem lendo a tabela: são superfícies de configuração
+e inbound, das Ondas 1–2.
 
 Run:
 
@@ -2613,8 +2623,11 @@ Run:
 git grep -in "uazapi" -- src/
 ```
 
-Expected: uma ocorrência, o membro `'uazapi'` da união `ProviderName` em
-`src/lib/whatsapp/providers/types.ts`.
+Expected: **duas** ocorrências — o membro `'uazapi'` da união
+`ProviderName` em `src/lib/whatsapp/providers/types.ts` e o caso de
+teste em `providers/meta-transport.test.ts` que verifica que
+`createTransport` lança para um provider ainda não implementado. Nenhuma
+outra: nenhum código de produção fala com a UAZAPI nesta onda.
 
 - [ ] **Step 4: Build**
 

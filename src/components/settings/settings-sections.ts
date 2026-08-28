@@ -10,6 +10,7 @@ import {
   Palette,
   PlugZap,
   Shield,
+  Sheet,
   Tags,
   ThumbsUp,
   User,
@@ -44,6 +45,7 @@ export const SETTINGS_SECTIONS = [
   'webhooks',
   'billing',
   'google-calendar',
+  'google-sheets',
   'support',
 ] as const;
 
@@ -76,6 +78,7 @@ export const SECTION_META: Record<SettingsSection, SectionMeta> = {
   webhooks: { id: 'webhooks', label: 'Webhooks', icon: Webhook, group: 'workspace' },
   billing: { id: 'billing', label: 'Billing', icon: Banknote, group: 'workspace' },
   'google-calendar': { id: 'google-calendar', label: 'Google Calendar', icon: CalendarDays, group: 'workspace' },
+  'google-sheets': { id: 'google-sheets', label: 'Google Sheets', icon: Sheet, group: 'workspace' },
   support: { id: 'support', label: 'Tickets', icon: LifeBuoy, group: 'workspace' },
 };
 

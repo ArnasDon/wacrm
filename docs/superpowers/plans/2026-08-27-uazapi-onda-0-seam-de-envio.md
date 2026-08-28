@@ -1823,7 +1823,16 @@ estão**. Troque só o corpo de `sendMessageToConversation`, a partir do
           templateName: templateName!,
           language: sendLanguage,
           template: templateRow,
-          messageParams: templateMessageParams as SendTimeParams | undefined,
+          // `templateMessageParams` é `unknown` no contrato público; o
+          // `?? undefined` é a expressão que este arquivo já usava ao
+          // chamar `sendTemplateMessage`, preservada à risca. (Verificado:
+          // `meta-api` só acessa este objeto com optional chaining
+          // — `messageParams?.body` etc. — então null e undefined são
+          // equivalentes ali; o `??` fica por fidelidade, não por
+          // necessidade.)
+          messageParams: (templateMessageParams ?? undefined) as
+            | SendTimeParams
+            | undefined,
           params: templateParams || [],
           // Corpo *substituído*: o composer pré-renderiza e manda em
           // `contentText`; todo outro chamador manda nada, e gravar null
@@ -1880,10 +1889,13 @@ neste arquivo), e `resolveTemplateRow`, `templateBodyParams` e
 `templateContentText` também — a resolução e a renderização do template
 ficam aqui, não no núcleo.
 
-> Se `templateMessageParams as SendTimeParams | undefined` reclamar no
-> typecheck, reproduza exatamente a coerção que o arquivo faz hoje na
-> chamada a `sendTemplateMessage` — o objetivo é não mudar tipagem, só
-> mover a chamada.
+> A coerção de `templateMessageParams` foi verificada contra o código
+> atual antes desta task: hoje o arquivo passa
+> `messageParams: templateMessageParams ?? undefined` para
+> `sendTemplateMessage`, e `meta-api` lê o objeto apenas por optional
+> chaining. O código acima reproduz essa expressão e só acrescenta o
+> `as` que o `unknown` do contrato público exige. Não invente outra
+> coerção.
 
 - [ ] **Step 4: Rodar a suíte alvo e confirmar paridade**
 

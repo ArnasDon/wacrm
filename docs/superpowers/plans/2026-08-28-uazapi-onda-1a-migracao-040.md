@@ -651,8 +651,14 @@ Aplique, em todas as ocorrências do handler (`GET`, `POST`, `DELETE`):
    `.select('phone_number_id, credential, status')`.
 4. O `baseRow` (~352-361): `access_token: encryptedAccessToken` →
    `credential: encryptedAccessToken`.
-5. O INSERT (~388-392): acrescente `provider: 'meta',` ao objeto
-   (junto de `account_id`, `user_id`, `...baseRow`).
+5. O INSERT (~388-392): acrescente `provider: 'meta',` **e**
+   `is_primary: true,` ao objeto (junto de `account_id`, `user_id`,
+   antes do `...baseRow`). Motivo do `is_primary`: a 040 backfilla toda
+   linha existente para `true`; esta rota é o único lugar que cria linha
+   de conexão Meta, e na 1a há uma por account (logo, é a primária).
+   Também: atualize o comentário ~398-401 que diz que `account_id` é
+   "UNIQUE" — a 040 dropa esse constraint e o substitui pelo índice
+   parcial `(account_id, provider) WHERE archived_at IS NULL`.
 6. Se qualquer ponto lê `config.access_token` / `existing.access_token`
    / `data.access_token` de uma linha da tabela, renomeie para
    `.credential`. **Não** toque: o parâmetro `access_token` do corpo do
@@ -907,6 +913,10 @@ tocados vs a Estrutura de arquivos deste plano.
   rename puro (`webhook`, `resolve-conversation`, `templates/*`,
   `media`, `verify-registration`, `inbox/page`, `settings-*`) — passam
   a importar quando existe a segunda conexão.
+- **1b/1c:** filtro `archived_at IS NULL` nas 4 queries escopadas de
+  `config/route.ts` (GET select, lookup "existing", UPDATE, DELETE) e no
+  check "claimed" — os índices únicos da 040 são parciais nisso; inerte
+  na 1a (nada arquiva), mas necessário quando o ciclo de arquivo existir.
 - **1b:** renomear a interface `WhatsAppConfig` → `WhatsAppConnection` e
   adicionar ao tipo as 9 colunas que a 040 criou mas a 1a não lê.
 - **1b:** mover o toggle `mirror_inbound_media` do cliente para

@@ -129,7 +129,9 @@ cobertura adiados da Onda 0 (movidos para a 1b).
   WHERE status='active'` (017).
 - Produces: tabela `whatsapp_connections` com coluna `credential` e as
   10 colunas novas; `conversations.connection_id` e
-  `broadcasts.connection_id` NOT NULL.
+  `broadcasts.connection_id` **nullable** (`ON DELETE SET NULL`,
+  backfilled); `redeem_invitation()` re-criada apontando para o nome
+  novo.
 
 > **Verificação:** não há Supabase CLI nem Docker nesta máquina. A
 > migração é validada por `.github/workflows/migrations.yml` quando o
@@ -281,21 +283,19 @@ CREATE POLICY whatsapp_connections_delete ON whatsapp_connections
   FOR DELETE USING (is_account_member(account_id, 'admin'));
 
 -- ------------------------------------------------------------
--- 8. conversations.connection_id
+-- 8. conversations.connection_id  (NULLABLE na 1a — decisão 1a-6.
+--    SET NOT NULL + ON DELETE RESTRICT + ciclo de arquivo vão para a
+--    1b/1c junto dos paths de criação de conversa que populam a coluna.)
 -- ------------------------------------------------------------
 ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS connection_id UUID
-  REFERENCES whatsapp_connections(id) ON DELETE RESTRICT;
+  REFERENCES whatsapp_connections(id) ON DELETE SET NULL;
 
 UPDATE conversations c
   SET connection_id = wc.id
   FROM whatsapp_connections wc
   WHERE wc.account_id = c.account_id
     AND c.connection_id IS NULL;
-
--- Falha alto se algum ficou sem conexão (não deveria: sem conexão não
--- há como ter conversa com número).
-ALTER TABLE conversations ALTER COLUMN connection_id SET NOT NULL;
 
 DROP INDEX IF EXISTS idx_conversations_account_contact;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_contact_connection
@@ -307,23 +307,33 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_contact_connection
 DROP INDEX IF EXISTS idx_one_active_run_per_contact;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_one_active_run_per_conversation
   ON flow_runs (account_id, conversation_id)
-  WHERE status = 'active';
+  WHERE status = 'active' AND conversation_id IS NOT NULL;
 
 -- ------------------------------------------------------------
--- 10. broadcasts.connection_id
+-- 10. broadcasts.connection_id  (NULLABLE na 1a — ver seção 8)
 -- ------------------------------------------------------------
 ALTER TABLE broadcasts
   ADD COLUMN IF NOT EXISTS connection_id UUID
-  REFERENCES whatsapp_connections(id) ON DELETE RESTRICT;
+  REFERENCES whatsapp_connections(id) ON DELETE SET NULL;
 
 UPDATE broadcasts b
   SET connection_id = wc.id
   FROM whatsapp_connections wc
   WHERE wc.account_id = b.account_id
     AND b.connection_id IS NULL;
-
-ALTER TABLE broadcasts ALTER COLUMN connection_id SET NOT NULL;
 -- broadcasts.template_name NOT NULL FICA (relaxar é Onda 3).
+
+-- ------------------------------------------------------------
+-- 11. redeem_invitation() referencia `whatsapp_config` pelo nome no
+--     corpo; plpgsql resolve em runtime e o rename não reescreve
+--     funções. Corpo byte-idêntico a 019, só a tabela muda.
+--     (Copie o CREATE OR REPLACE inteiro de
+--     supabase/migrations/019_invitation_rpcs.sql e troque só o
+--     `whatsapp_config` do `UNION ALL SELECT 1 FROM ...`.)
+-- ------------------------------------------------------------
+-- CREATE OR REPLACE FUNCTION public.redeem_invitation(...) ... $$
+--   ... FROM whatsapp_connections WHERE account_id = v_old_account_id ...
+-- $$ ...;
 ```
 
 > Se o Step 1 mostrar que o CHECK de `status` de 001 tem outro nome
@@ -348,10 +358,18 @@ por:
   IF to_regclass('public.whatsapp_connections') IS NULL THEN
     RAISE EXCEPTION 'public.whatsapp_connections is missing — migrations did not apply';
   END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'whatsapp_connections_status_check'
+  ) THEN
+    RAISE EXCEPTION 'the 040 status CHECK (whatsapp_connections_status_check) was not installed';
+  END IF;
 ```
 
-Não adicione statement novo (o arquivo tem que ter **exatamente um** —
-ver o comentário no fim dele).
+As duas asserções ficam **dentro** do bloco `DO $$ … END $$;` existente.
+Não adicione statement top-level novo (o arquivo tem que ter
+**exatamente um** — ver o comentário no fim dele).
 
 - [ ] **Step 4: Revisão de SQL contra checklist**
 
@@ -372,12 +390,18 @@ Confirme, relendo o arquivo:
   são renomeados (não recriados).
 - [ ] As 4 políticas RLS são dropadas pelo nome antigo e recriadas pelo
   novo, com a **mesma** cláusula `USING`/`WITH CHECK`.
-- [ ] `conversations.connection_id`: add nullable → UPDATE backfill →
-  `SET NOT NULL`. Idem `broadcasts.connection_id`.
+- [ ] `conversations.connection_id`: add **nullable** + UPDATE backfill,
+  **SEM `SET NOT NULL`**, FK `ON DELETE SET NULL`. Idem
+  `broadcasts.connection_id`.
 - [ ] `idx_conversations_account_contact` dropado, o novo com 3 colunas
-  criado. `idx_one_active_run_per_contact` → `_per_conversation`.
+  criado. `idx_one_active_run_per_contact` → `_per_conversation` com
+  predicado `... AND conversation_id IS NOT NULL`.
 - [ ] `broadcasts.template_name` **não** é tocado.
-- [ ] `verify-schema.sql` continua com um único statement.
+- [ ] Seção 11: `CREATE OR REPLACE FUNCTION public.redeem_invitation`
+  presente, corpo copiado de 019, só `whatsapp_config` →
+  `whatsapp_connections` no `UNION ALL`. Nada mais mudou na função.
+- [ ] `verify-schema.sql` continua com **um** statement top-level; a
+  asserção do CHECK de `status` está dentro do `DO $$`.
 
 - [ ] **Step 5: Typecheck + commit**
 
@@ -844,3 +868,9 @@ tocados vs a Estrutura de arquivos deste plano.
   `PATCH /api/whatsapp/connections/[id]`.
 - **1b/1c:** resolução de conexão em 3 níveis em `resolveConnection`;
   união discriminada em `TransportConnection`.
+- **1b/1c:** `SET NOT NULL` em `conversations.connection_id` /
+  `broadcasts.connection_id` + `ON DELETE RESTRICT` + o ciclo de arquivo
+  (`archived_at` via `PATCH`/`DELETE`, trocar o `DELETE` do botão "Reset
+  Configuration" por arquivo), junto dos paths de criação de conversa
+  (inbound webhook, `resolve-conversation`) que passam a popular
+  `connection_id`. Pacote único — decisão 1a-6.

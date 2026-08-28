@@ -121,20 +121,31 @@ Segue §4.1 da spec-mãe integralmente. Resumo operacional:
 **Outras tabelas**
 
 - `conversations.connection_id UUID REFERENCES whatsapp_connections(id)
-  ON DELETE RESTRICT`. Backfill para a conexão única do account →
-  `SET NOT NULL`. Troca `idx_conversations_account_contact` (migração
-  036) por `idx_conversations_account_contact_connection` UNIQUE
+  **ON DELETE SET NULL**`. Add a coluna + backfill para a conexão única
+  do account, mas **NÃO** roda `SET NOT NULL` na 1a (ver a decisão
+  1a-6). Troca `idx_conversations_account_contact` (migração 036) por
+  `idx_conversations_account_contact_connection` UNIQUE
   `(account_id, contact_id, connection_id)`.
 - `flow_runs`: `DROP INDEX idx_one_active_run_per_contact`
   (`(account_id, contact_id)`, migração 017) →
   `idx_one_active_run_per_conversation` UNIQUE
-  `(account_id, conversation_id) WHERE status='active'`.
-  `flow_runs.conversation_id` já existe; sem coluna nova. Com um único
+  `(account_id, conversation_id) WHERE status='active' AND
+  conversation_id IS NOT NULL`. `flow_runs.conversation_id` já existe
+  (nullable, `ON DELETE SET NULL`); sem coluna nova. Com um único
   número, os dois índices selecionam o mesmo conjunto — mudança inerte
   hoje; vira correção efetiva só quando houver dois números.
-- `broadcasts.connection_id` UUID — nullable → backfill para a primária
-  → `NOT NULL`. `broadcasts.template_name NOT NULL` **fica** (relaxar é
-  Onda 3).
+- `broadcasts.connection_id` UUID `ON DELETE SET NULL` — add + backfill,
+  **sem `SET NOT NULL`** na 1a. `broadcasts.template_name NOT NULL`
+  **fica** (relaxar é Onda 3).
+- **Duas funções Postgres referenciam a tabela pelo nome no corpo** e
+  `plpgsql` resolve isso em runtime (o rename não reescreve corpo de
+  função): `redeem_invitation()` (migração 019) tem
+  `... FROM whatsapp_config ...` num `UNION ALL`. A 040 acrescenta um
+  `CREATE OR REPLACE FUNCTION` com o corpo byte-idêntico a 019 e só a
+  tabela trocada. (`create_broadcast_with_recipients` da 038 também
+  insere em `broadcasts` sem `connection_id` — coberto por a coluna
+  ficar nullable.) Estas são as **únicas** duas refs SQL-resident vivas
+  a `whatsapp_config` (verificado grepando `supabase/` inteiro).
 - `messages` e `contacts` — **sem alteração** (decisão deliberada da
   spec-mãe: `message → connection` sai por join; `contacts` é a decisão
   5 materializada).
@@ -235,6 +246,7 @@ Decisão: **os três testes entram na 1b**, como primeira task, antes de
 | 1a-3 | `TransportConnection` continua flat na 1a | A união `meta`\|`uazapi` só ganha campos reais na 1b. |
 | 1a-4 | `mirror_inbound_media` fica como está (cliente → `.eq('account_id')`) | Efeito idêntico com uma conexão; mover para rota é superfície de 1b. |
 | 1a-5 | Os 3 testes de cobertura da Onda 0 vão para a **1b**, não a 1a | Os 3 caminhos recebem `connection` pronto e não tocam `whatsapp_config` — não são rede para o rename da 1a. Protegem o `providers/` na 1b. `deliverBroadcast` ainda nem tem harness de teste. Revertido do rascunho inicial da spec após verificação no planejamento. |
+| 1a-6 | `conversations.connection_id` e `broadcasts.connection_id` ficam **nullable** na 1a; `SET NOT NULL` + `ON DELETE RESTRICT` + ciclo de arquivo vão **juntos para a 1b/1c** | Achado na revisão da Task 1: `NOT NULL` obrigaria a tocar os paths de criação de conversa (inbound webhook, `resolve-conversation`) que são 1c; `NOT NULL` + `RESTRICT` quebra o botão "Reset Configuration" (`config/route.ts:441-465` faz `DELETE` da linha de config); e o RPC `create_broadcast_with_recipients` (038) insere em `broadcasts` sem `connection_id`. Com a coluna nullable + `ON DELETE SET NULL`, os três somem e o estado "órfão" pós-reset é o mesmo de hoje. Custo: o índice único `(account_id, contact_id, connection_id)` fica mais fraco só para linhas com `connection_id` NULL (histórico de accounts que clicaram reset). |
 
 ---
 
@@ -278,13 +290,19 @@ explicitamente no corpo do PR.
 | Backfill de `conversations.connection_id` erra em account sem conexão | Account sem linha em `whatsapp_config` também não tem conversas com número (não há como ter mandado/recebido). O `SET NOT NULL` roda após o backfill; a migração falha alto se sobrar `NULL`. |
 | `verify-schema.sql` desatualizado quebra a CI silenciosamente cedo | Está na lista de colaterais da §3.1; o plano tem um passo dedicado. |
 | Rename mecânico em teste mascara uma mudança de comportamento real | Critério de aceite separa "rename de identificador em mock" (permitido) de "mudança de asserção" (defeito); a revisão de cada task verifica isso. |
-| `flow_runs` — a troca de índice altera comportamento | Com um número por account, `(account_id, contact_id)` e `(account_id, conversation_id)` selecionam o mesmo conjunto. Inerte na 1a; vira correção efetiva só quando existe a segunda conexão. |
+| `flow_runs` — a troca de índice altera comportamento | Com um número por account, `(account_id, contact_id)` e `(account_id, conversation_id)` selecionam o mesmo conjunto. Inerte na 1a; vira correção efetiva só quando existe a segunda conexão. O predicado leva `AND conversation_id IS NOT NULL` para deixar explícito que runs sem conversa não têm backstop (era plan-mandated pela §4.1). |
+| Uma função/RPC Postgres referencia `whatsapp_config` pelo nome e o rename não reescreve corpo de função | A revisão da Task 1 grepou `supabase/` inteiro: só `redeem_invitation` (019) e `create_broadcast_with_recipients` (038) são refs vivas. A 040 faz `CREATE OR REPLACE` de `redeem_invitation`; a coluna nullable cobre o INSERT do RPC de broadcast. `verify-schema.sql` ganha uma asserção de que o CHECK novo de `status` existe. |
 
 ---
 
 ## 8. Fora de escopo desta leva
 
 - Os 3 testes de cobertura adiados da Onda 0 (§3.3) — 1b.
+- `SET NOT NULL` em `conversations.connection_id` /
+  `broadcasts.connection_id`, `ON DELETE RESTRICT`, e o ciclo de
+  arquivo de conexão (`archived_at` via `PATCH`/`DELETE`) — 1b/1c,
+  junto dos paths de criação de conversa que passam a popular
+  `connection_id` (decisão 1a-6).
 - Qualquer código UAZAPI (transporte, provisionamento, rotas, env, UI) —
   1b e 1c.
 - Resolução de conexão em 3 níveis e união discriminada em

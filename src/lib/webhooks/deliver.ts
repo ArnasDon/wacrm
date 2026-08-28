@@ -32,6 +32,7 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { buildSignatureHeader } from '@/lib/webhooks/sign';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import type { WebhookEvent } from '@/lib/webhooks/events';
+import { dispatchToGoogleSheets } from '@/lib/google-sheets/dispatch';
 
 /** Per-endpoint HTTP timeout. Kept short — this runs in `after()`. */
 export const DELIVERY_TIMEOUT_MS = 5000;
@@ -66,6 +67,13 @@ export async function dispatchWebhookEvent(
   data: unknown
 ): Promise<void> {
   try {
+    // Same event feed also lands in a connected Google Sheet, if the
+    // account set one up. Independent of webhook endpoints — fired
+    // first, awaited (we're already in an after()/best-effort context)
+    // so a slow Sheets append doesn't get abandoned by a serverless
+    // freeze, but its own errors are swallowed inside.
+    await dispatchToGoogleSheets(db, accountId, event, data);
+
     const { data: rows, error } = await db
       .from('webhook_endpoints')
       .select('id, url, secret')

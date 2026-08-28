@@ -1,10 +1,11 @@
 // ============================================================
 // Núcleo de envio.
 //
-// A sequência "resolve conexão → confere capacidade → resolve contato →
-// envia pelo transporte → persiste em `messages` → atualiza a conversa →
-// pausa o flow ativo" existia copiada em `send-message.ts`,
-// `flows/meta-send.ts` e `automations/meta-send.ts`. Existe aqui.
+// A sequência "resolve contato → confere telefone → resolve conexão →
+// confere capacidade → envia pelo transporte → persiste em `messages` →
+// atualiza a conversa → pausa o flow ativo" existia copiada em
+// `send-message.ts`, `flows/meta-send.ts` e `automations/meta-send.ts`.
+// Existe aqui.
 //
 // O núcleo NÃO cobre:
 //   - reações (vão para `message_reactions`, não `messages`);
@@ -263,26 +264,10 @@ export async function sendViaConnection(
 ): Promise<SendViaConnectionResult> {
   const { message, conversationId } = params;
 
-  // 1. Conexão + transporte.
-  const connection = await resolveConnection(db, accountId, {
-    connectionId: params.connectionId,
-    conversationId,
-    selfHeal: params.selfHealCredential,
-  });
-  const transport = createTransport(connection);
-
-  // 2. Capacidade — antes de qualquer trabalho de banco, para que um
-  //    tipo não suportado dê 400 claro em vez de erro opaco no fio.
-  const capability = requiredCapability(message.kind);
-  if (capability && !transport.capabilities[capability]) {
-    const err = new UnsupportedCapabilityError(transport.provider, capability);
-    throw new SendMessageError('bad_request', err.message, 400, {
-      reason: 'unsupported_capability',
-      cause: err,
-    });
-  }
-
-  // 3. Contato + telefone.
+  // 1. Contato + telefone. Vem antes da conexão porque `send-message.ts`
+  //    (o caminho de hoje) resolve a conversa/contato antes de checar a
+  //    configuração — um envio para conversa inexistente/alheia tem de
+  //    dar 404 mesmo numa conta sem `whatsapp_config`, não 400.
   const contact = await loadContact(db, accountId, params);
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
   if (!isValidE164(sanitizedPhone)) {
@@ -292,6 +277,41 @@ export async function sendViaConnection(
       400,
       { reason: 'contact_phone_invalid', cause: contact.phone }
     );
+  }
+
+  // 2. Conexão + transporte.
+  let transport: WhatsAppTransport;
+  try {
+    const connection = await resolveConnection(db, accountId, {
+      connectionId: params.connectionId,
+      conversationId,
+      selfHeal: params.selfHealCredential,
+    });
+    transport = createTransport(connection);
+  } catch (err) {
+    // `resolveConnection` já lança `SendMessageError` — deixa passar como
+    // está. `createTransport` pode lançar um `Error` cru (ex.: Meta sem
+    // `phone_number_id`); o contrato do núcleo é sempre lançar
+    // `SendMessageError`, então embrulha o resto com o mesmo código que
+    // "não configurado" usa hoje.
+    if (err instanceof SendMessageError) throw err;
+    throw new SendMessageError(
+      'whatsapp_not_configured',
+      'WhatsApp not configured. Please set up your WhatsApp integration first.',
+      400,
+      { reason: 'not_configured', cause: err }
+    );
+  }
+
+  // 3. Capacidade — antes de qualquer trabalho de banco, para que um
+  //    tipo não suportado dê 400 claro em vez de erro opaco no fio.
+  const capability = requiredCapability(message.kind);
+  if (capability && !transport.capabilities[capability]) {
+    const err = new UnsupportedCapabilityError(transport.provider, capability);
+    throw new SendMessageError('bad_request', err.message, 400, {
+      reason: 'unsupported_capability',
+      cause: err,
+    });
   }
 
   // 4. Alvo da resposta citada.
@@ -367,7 +387,7 @@ export async function sendViaConnection(
     console.error('[send-core] error inserting sent message:', msgError);
     throw new SendMessageError(
       'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError?.message}`,
+      `Message sent to Meta but failed to save to DB: ${msgError?.message ?? 'no row returned'}`,
       500,
       { reason: 'message_insert_failed', cause: msgError?.message }
     );

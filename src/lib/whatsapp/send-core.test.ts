@@ -33,6 +33,7 @@ import { sendViaConnection } from './send-core';
 import { SendMessageError } from './send-error';
 import { UnsupportedCapabilityError } from './providers/types';
 import type { WhatsAppTransport } from './providers/types';
+import type { MessageTemplate } from '@/types';
 
 const CONN = {
   id: 'cfg-1',
@@ -40,6 +41,15 @@ const CONN = {
   provider: 'meta' as const,
   phoneNumberId: 'pn-1',
   credential: 'tok',
+};
+
+const TEMPLATE: MessageTemplate = {
+  id: 'tmpl-1',
+  user_id: 'u-1',
+  name: 'promo',
+  category: 'Marketing',
+  body_text: 'Hello {{1}}',
+  created_at: '2026-01-01T00:00:00Z',
 };
 
 /** Transporte falso: registra a chamada, devolve o que lhe mandarem. */
@@ -74,15 +84,52 @@ interface Writes {
   contact?: Record<string, unknown>;
 }
 
-function coreDb(
-  writes: Writes,
-  contactPhone = '5511999998888'
-): SupabaseClient {
+interface ContactRow {
+  phone: string;
+  accountId: string;
+}
+
+interface ParentMessageRow {
+  conversationId: string;
+  providerMessageId: string | null;
+}
+
+interface CoreDbOptions {
+  /** Telefone devolvido pelo join conversa→contato (caminho da inbox/API). */
+  contactPhone?: string;
+  contactRowId?: string;
+  /**
+   * Contatos endereçáveis por id, para o ramo `contactId` de
+   * `loadContact` (caminho dos engines). Chave = id do contato. O fake
+   * SÓ devolve a linha quando `account_id` no filtro bate com
+   * `accountId` da linha — prova real do escopo por conta, não vácua.
+   */
+  contactsById?: Record<string, ContactRow>;
+  /**
+   * Mensagens-pai endereçáveis por id, para `resolveReplyTarget`. Chave
+   * = nosso `messages.id`. Só resolve quando `conversation_id` do
+   * filtro bate com a da linha.
+   */
+  messagesById?: Record<string, ParentMessageRow>;
+}
+
+function coreDb(writes: Writes, options: CoreDbOptions = {}): SupabaseClient {
+  const {
+    contactPhone = '5511999998888',
+    contactRowId = 'ct-1',
+    contactsById = {},
+    messagesById = {},
+  } = options;
+
   return {
     from(table: string) {
+      const filters: Record<string, unknown> = {};
       const builder: Record<string, unknown> = {
         select: () => builder,
-        eq: () => builder,
+        eq: (col: string, val: unknown) => {
+          filters[col] = val;
+          return builder;
+        },
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') writes.message = row;
           return builder;
@@ -92,17 +139,38 @@ function coreDb(
           if (table === 'contacts') writes.contact = row;
           return builder;
         },
-        maybeSingle: async () => ({
-          data:
-            table === 'contacts' ? { id: 'ct-1', phone: contactPhone } : null,
-          error: null,
-        }),
+        maybeSingle: async () => {
+          if (table === 'contacts') {
+            const row = contactsById[filters.id as string];
+            if (row && row.accountId === filters.account_id) {
+              return {
+                data: { id: filters.id, phone: row.phone },
+                error: null,
+              };
+            }
+            return { data: null, error: null };
+          }
+          if (table === 'messages') {
+            const row = messagesById[filters.id as string];
+            if (row && row.conversationId === filters.conversation_id) {
+              return {
+                data: {
+                  message_id: row.providerMessageId,
+                  conversation_id: row.conversationId,
+                },
+                error: null,
+              };
+            }
+            return { data: null, error: null };
+          }
+          return { data: null, error: null };
+        },
         single: async () => {
           if (table === 'conversations') {
             return {
               data: {
-                id: 'cv-1',
-                contact: { id: 'ct-1', phone: contactPhone },
+                id: filters.id ?? 'cv-1',
+                contact: { id: contactRowId, phone: contactPhone },
               },
               error: null,
             };
@@ -290,7 +358,7 @@ describe('sendViaConnection', () => {
     const spy = vi.spyOn(transport, 'sendText');
     createTransport.mockReturnValue(transport);
 
-    await sendViaConnection(coreDb({}, '123'), 'acct-1', {
+    await sendViaConnection(coreDb({}, { contactPhone: '123' }), 'acct-1', {
       conversationId: 'cv-1',
       message: { kind: 'text', text: 'oi' },
       senderType: 'agent',
@@ -325,5 +393,245 @@ describe('sendViaConnection', () => {
       expect(e.cause).toBe(boom);
     });
     expect.assertions(5);
+  });
+
+  it('persiste template com content_type/template_name corretos e content_text = persistedText', async () => {
+    const writes: Writes = {};
+    createTransport.mockReturnValue(fakeTransport());
+
+    await sendViaConnection(coreDb(writes), 'acct-1', {
+      conversationId: 'cv-1',
+      message: {
+        kind: 'template',
+        templateName: 'promo',
+        language: 'en_US',
+        template: TEMPLATE,
+        params: ['Foo'],
+        persistedText: 'Hello Foo',
+      },
+      senderType: 'agent',
+    });
+
+    expect(writes.message).toMatchObject({
+      content_type: 'template',
+      template_name: 'promo',
+      content_text: 'Hello Foo',
+      media_url: null,
+      interactive_payload: null,
+    });
+  });
+
+  it('persiste persistedText mesmo quando a linha local de template não vai no fio (caminho das Automations)', async () => {
+    const writes: Writes = {};
+    createTransport.mockReturnValue(fakeTransport());
+
+    await sendViaConnection(coreDb(writes), 'acct-1', {
+      conversationId: 'cv-1',
+      message: {
+        kind: 'template',
+        templateName: 'promo',
+        language: 'en',
+        params: ['Foo'],
+        persistedText: 'Hello Foo (Automations)',
+      },
+      senderType: 'bot',
+    });
+
+    expect(writes.message).toMatchObject({
+      content_type: 'template',
+      template_name: 'promo',
+      content_text: 'Hello Foo (Automations)',
+    });
+  });
+
+  it('grava content_text null e cai para [template] no preview quando persistedText está ausente', async () => {
+    const writes: Writes = {};
+    createTransport.mockReturnValue(fakeTransport());
+
+    await sendViaConnection(coreDb(writes), 'acct-1', {
+      conversationId: 'cv-1',
+      message: { kind: 'template', templateName: 'promo', language: 'en' },
+      senderType: 'agent',
+    });
+
+    expect(writes.message).toMatchObject({ content_text: null });
+    expect(writes.conversation).toMatchObject({
+      last_message_text: '[template]',
+    });
+  });
+
+  it('resolve o contato pelo contactId quando informado (caminho dos engines)', async () => {
+    const writes: Writes = {};
+    const calls: unknown[] = [];
+    createTransport.mockReturnValue(fakeTransport({}, calls));
+
+    const db = coreDb(writes, {
+      contactsById: {
+        'ct-eng': { phone: '5511977776666', accountId: 'acct-1' },
+      },
+    });
+
+    const result = await sendViaConnection(db, 'acct-1', {
+      conversationId: 'cv-1',
+      contactId: 'ct-eng',
+      message: { kind: 'text', text: 'oi' },
+      senderType: 'bot',
+    });
+
+    expect(result.messageId).toBe('msg-1');
+    expect(calls[0]).toMatchObject({ to: '5511977776666' });
+  });
+
+  it('rejeita com not_found/404 quando o contactId não pertence à conta (escopo por account_id)', async () => {
+    createTransport.mockReturnValue(fakeTransport());
+
+    const db = coreDb(
+      {},
+      {
+        contactsById: {
+          'ct-foreign': { phone: '5511900000000', accountId: 'acct-OTHER' },
+        },
+      }
+    );
+
+    await sendViaConnection(db, 'acct-1', {
+      conversationId: 'cv-1',
+      contactId: 'ct-foreign',
+      message: { kind: 'text', text: 'oi' },
+      senderType: 'bot',
+    }).catch((e: SendMessageError) => {
+      expect(e.code).toBe('not_found');
+      expect(e.status).toBe(404);
+      expect(e.reason).toBe('contact_not_found');
+    });
+    expect.assertions(3);
+  });
+
+  it('persiste reply_to_message_id e repassa o id de provedor do pai ao transporte', async () => {
+    const writes: Writes = {};
+    const calls: unknown[] = [];
+    createTransport.mockReturnValue(fakeTransport({}, calls));
+
+    const db = coreDb(writes, {
+      messagesById: {
+        'reply-1': {
+          conversationId: 'cv-1',
+          providerMessageId: 'wamid-parent',
+        },
+      },
+    });
+
+    await sendViaConnection(db, 'acct-1', {
+      conversationId: 'cv-1',
+      message: { kind: 'text', text: 'oi' },
+      senderType: 'agent',
+      replyToMessageId: 'reply-1',
+    });
+
+    expect(writes.message).toMatchObject({ reply_to_message_id: 'reply-1' });
+    expect(calls[0]).toMatchObject({
+      replyToProviderMessageId: 'wamid-parent',
+    });
+  });
+
+  it('rejeita quando o pai citado não pertence a esta conversa', async () => {
+    createTransport.mockReturnValue(fakeTransport());
+
+    const db = coreDb(
+      {},
+      {
+        messagesById: {
+          'reply-2': {
+            conversationId: 'cv-OTHER',
+            providerMessageId: 'wamid-x',
+          },
+        },
+      }
+    );
+
+    await sendViaConnection(db, 'acct-1', {
+      conversationId: 'cv-1',
+      message: { kind: 'text', text: 'oi' },
+      senderType: 'agent',
+      replyToMessageId: 'reply-2',
+    }).catch((e: SendMessageError) => {
+      expect(e.code).toBe('bad_request');
+      expect(e.status).toBe(400);
+      expect(e.message).toBe(
+        'reply_to_message_id not found in this conversation'
+      );
+    });
+    expect.assertions(3);
+  });
+
+  it('envia sem contexto de resposta quando o pai não tem message_id de provedor', async () => {
+    const calls: unknown[] = [];
+    createTransport.mockReturnValue(fakeTransport({}, calls));
+
+    const db = coreDb(
+      {},
+      {
+        messagesById: {
+          'reply-3': { conversationId: 'cv-1', providerMessageId: null },
+        },
+      }
+    );
+
+    const result = await sendViaConnection(db, 'acct-1', {
+      conversationId: 'cv-1',
+      message: { kind: 'text', text: 'oi' },
+      senderType: 'agent',
+      replyToMessageId: 'reply-3',
+    });
+
+    expect(result.providerMessageId).toBe('pmid-1');
+    expect(calls[0]).toMatchObject({ replyToProviderMessageId: undefined });
+  });
+
+  it('repassa link, caption e filename ao transporte no envio de mídia, normalizando caption vazia para undefined', async () => {
+    const calls: unknown[] = [];
+    createTransport.mockReturnValue(fakeTransport({}, calls));
+
+    await sendViaConnection(coreDb({}), 'acct-1', {
+      conversationId: 'cv-1',
+      message: {
+        kind: 'media',
+        mediaKind: 'image',
+        link: 'https://x/y.jpg',
+        caption: '',
+        filename: 'photo.jpg',
+      },
+      senderType: 'agent',
+    });
+
+    expect(calls[0]).toMatchObject({
+      link: 'https://x/y.jpg',
+      caption: undefined,
+      filename: 'photo.jpg',
+    });
+  });
+
+  it('repassa templateName, language, params e template ao transporte no envio de template', async () => {
+    const calls: unknown[] = [];
+    createTransport.mockReturnValue(fakeTransport({}, calls));
+
+    await sendViaConnection(coreDb({}), 'acct-1', {
+      conversationId: 'cv-1',
+      message: {
+        kind: 'template',
+        templateName: 'promo',
+        language: 'en_US',
+        template: TEMPLATE,
+        params: ['Foo'],
+      },
+      senderType: 'agent',
+    });
+
+    expect(calls[0]).toMatchObject({
+      templateName: 'promo',
+      language: 'en_US',
+      params: ['Foo'],
+      template: TEMPLATE,
+    });
   });
 });

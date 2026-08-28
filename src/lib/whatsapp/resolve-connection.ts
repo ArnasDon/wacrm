@@ -1,11 +1,11 @@
 // ============================================================
 // Resolução de conexão de WhatsApp.
 //
-// O ÚNICO lugar do caminho de envio que lê a tabela de configuração e
-// decripta a credencial. Toda a Onda 1 (rename para
-// `whatsapp_connections`, `access_token` → `credential`, resolução em
-// três níveis) cabe dentro deste arquivo: nada acima dele conhece o nome
-// da tabela ou o formato do ciphertext.
+// O ÚNICO lugar do caminho de envio que lê a tabela de conexões e
+// decripta a credencial. A resolução em três níveis (conversa →
+// explícito → primária) entra na Onda 1b; a 1a só fez o rename da
+// tabela. Nada acima deste arquivo conhece o nome da tabela ou o
+// formato do ciphertext.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -39,9 +39,10 @@ export async function resolveConnection(
   options: ResolveConnectionOptions = {}
 ): Promise<TransportConnection> {
   const { data: config, error } = await db
-    .from('whatsapp_config')
+    .from('whatsapp_connections')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
     .single();
 
   if (error || !config) {
@@ -53,13 +54,13 @@ export async function resolveConnection(
     );
   }
 
-  const credential = decrypt(config.access_token);
+  const credential = decrypt(config.credential);
 
   // Auto-cura de ciphertexts CBC legados. Fire-and-forget, idempotente.
-  if (options.selfHeal && isLegacyFormat(config.access_token)) {
+  if (options.selfHeal && isLegacyFormat(config.credential)) {
     void db
-      .from('whatsapp_config')
-      .update({ access_token: encrypt(credential) })
+      .from('whatsapp_connections')
+      .update({ credential: encrypt(credential) })
       .eq('id', config.id)
       .then(
         ({ error: upgradeError }: { error: { message: string } | null }) => {
@@ -76,8 +77,8 @@ export async function resolveConnection(
   return {
     id: config.id,
     accountId,
-    // Onda 0: a tabela não tem coluna `provider` ainda. A migração 040
-    // faz o backfill com este mesmo valor para toda linha existente.
+    // Backfill da 040: toda linha existente é 'meta'. A 1b acrescenta o
+    // ramo 'uazapi' e a resolução em três níveis.
     provider: 'meta',
     phoneNumberId: config.phone_number_id ?? null,
     credential,

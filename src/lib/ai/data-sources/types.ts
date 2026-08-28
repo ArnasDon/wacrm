@@ -23,11 +23,16 @@ export interface DataSourceRow {
   last_error: string | null
   created_at: string
   updated_at: string
-  /** First-5-rows snapshot (raw header-keyed) — see migration 046. Only
-   *  meaningful for `usage: knowledge` sources; catalog/both sources are
-   *  previewed live from ai_catalog_products instead (getDataSourcePreview
-   *  in service.ts). */
+  /** First-5-rows snapshot (raw header-keyed, filtered to
+   *  selected_columns when set) — see migration 046. The uniform
+   *  source "Ver datos" (getDataSourcePreview in service.ts) reads
+   *  back for every usage type. */
   preview_sample: { sample: Record<string, string>[]; columns: string[] } | null
+  /** Raw header names the user chose to keep, out of everything
+   *  detected — see migration 048. `null` means no explicit selection
+   *  was ever made (every detected column is in use), the exact
+   *  behavior a source had before this feature existed. */
+  selected_columns: string[] | null
 }
 
 export interface DataSourceMutableFields {

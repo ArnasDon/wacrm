@@ -156,6 +156,14 @@ export function DataSourcesSettings() {
         return;
       }
       toast.success(t('refreshSuccess', { rows: data.data_source?.row_count ?? 0 }));
+      // Non-fatal: the sync above already succeeded. Just lets the user
+      // know a previously-selected column vanished upstream (point 17)
+      // — their selection itself is untouched, so it reactivates on its
+      // own if the column comes back in a later sync.
+      const dropped: string[] = data.dropped_columns ?? [];
+      if (dropped.length > 0) {
+        toast.warning(t('columnsNoLongerExist', { columns: dropped.join(', ') }));
+      }
       await load();
     } catch {
       toast.error(t('networkError'));
@@ -360,6 +368,13 @@ export function DataSourcesSettings() {
   );
 }
 
+interface ColumnDetection {
+  /** Every real header found in the file/sheet — always complete. */
+  columns: string[];
+  /** First few rows, keyed by raw header name. */
+  sample: Record<string, string>[];
+}
+
 function CreateDataSourceDialog({
   open,
   onOpenChange,
@@ -374,6 +389,7 @@ function CreateDataSourceDialog({
   usageLabel: Record<Usage, string>;
 }) {
   const t = useTranslations('Settings.dataSources');
+  const [step, setStep] = useState<'details' | 'columns'>('details');
   const [sourceType, setSourceType] = useState<SourceType>('google_sheets');
   const [displayName, setDisplayName] = useState('');
   const [url, setUrl] = useState('');
@@ -382,7 +398,14 @@ function CreateDataSourceDialog({
   const [fallbackPolicy, setFallbackPolicy] = useState<FallbackPolicy>('fallback_on_not_found');
   const [isPrimary, setIsPrimary] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [detecting, setDetecting] = useState(false);
   const [currency, setCurrency] = useState(defaultCurrency || 'USD');
+
+  // Step 2 state — populated by handleDetectColumns, driven entirely
+  // by what was ACTUALLY found in the file/sheet (no fixed schema —
+  // see the module doc in data-source-preview-dialog.tsx for why).
+  const [detection, setDetection] = useState<ColumnDetection | null>(null);
+  const [selectedColumns, setSelectedColumns] = useState<Set<string>>(new Set());
 
   // Re-seed the currency once the account's real default arrives (it's
   // not known on first render) — without this every source silently
@@ -393,6 +416,7 @@ function CreateDataSourceDialog({
   }, [defaultCurrency]);
 
   function reset() {
+    setStep('details');
     setSourceType('google_sheets');
     setDisplayName('');
     setUrl('');
@@ -401,10 +425,17 @@ function CreateDataSourceDialog({
     setFallbackPolicy('fallback_on_not_found');
     setIsPrimary(false);
     setSubmitting(false);
+    setDetecting(false);
+    setDetection(null);
+    setSelectedColumns(new Set());
     setCurrency(defaultCurrency || 'USD');
   }
 
-  async function handleCreate() {
+  // Reuses the SAME preview endpoint the legacy inventory uploader
+  // already used (/api/ai/knowledge/inventory/preview) — it parses
+  // without persisting anything, returning every real header it
+  // found. No second detection implementation.
+  async function handleDetectColumns() {
     if (!displayName.trim()) {
       toast.error(t('nameRequired'));
       return;
@@ -417,6 +448,55 @@ function CreateDataSourceDialog({
       toast.error(t('chooseFile'));
       return;
     }
+    setDetecting(true);
+    try {
+      let res: Response;
+      if (sourceType === 'uploaded_csv' && file) {
+        const fd = new FormData();
+        fd.set('file', file);
+        res = await fetch('/api/ai/knowledge/inventory/preview', { method: 'POST', body: fd });
+      } else {
+        res = await fetch('/api/ai/knowledge/inventory/preview', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url: url.trim() }),
+        });
+      }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(data.error || t('detectColumnsFailed'));
+        return;
+      }
+      const columns: string[] = data.metadata?.columns ?? [];
+      const sample: Record<string, string>[] = data.preview?.sample ?? [];
+      if (columns.length === 0) {
+        toast.error(t('detectColumnsFailed'));
+        return;
+      }
+      setDetection({ columns, sample });
+      setSelectedColumns(new Set(columns)); // every real column pre-checked, matching the legacy uploader's default
+      setStep('columns');
+    } catch {
+      toast.error(t('networkError'));
+    } finally {
+      setDetecting(false);
+    }
+  }
+
+  function toggleColumn(col: string) {
+    setSelectedColumns((prev) => {
+      const next = new Set(prev);
+      if (next.has(col)) next.delete(col);
+      else next.add(col);
+      return next;
+    });
+  }
+
+  async function handleCreate() {
+    if (selectedColumns.size === 0) {
+      toast.error(t('selectAtLeastOneColumn'));
+      return;
+    }
     setSubmitting(true);
     try {
       const fd = new FormData();
@@ -426,6 +506,13 @@ function CreateDataSourceDialog({
       fd.set('fallback_policy', fallbackPolicy);
       fd.set('is_primary', String(isPrimary));
       fd.set('currency', currency.trim() || defaultCurrency || 'USD');
+      // Only sent when the user actually excluded something — an
+      // empty/omitted selection means "every detected column", the
+      // same behavior a source had before this step existed.
+      const allDetected = detection?.columns ?? [];
+      if (selectedColumns.size < allDetected.length) {
+        fd.set('selected_columns', JSON.stringify(Array.from(selectedColumns)));
+      }
       if (sourceType === 'uploaded_csv' && file) fd.set('file', file);
       else fd.set('url', url.trim());
 
@@ -446,6 +533,8 @@ function CreateDataSourceDialog({
     }
   }
 
+  const previewColumns = detection ? detection.columns.filter((c) => selectedColumns.has(c)) : [];
+
   return (
     <Dialog
       open={open}
@@ -454,134 +543,219 @@ function CreateDataSourceDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="border-border bg-popover sm:max-w-md">
+      <DialogContent className="border-border bg-popover flex max-h-[85vh] w-[min(1100px,calc(100vw-2rem))] max-w-none flex-col sm:max-w-none">
         <DialogHeader>
-          <DialogTitle className="text-popover-foreground">{t('createTitle')}</DialogTitle>
-          <DialogDescription className="text-muted-foreground">{t('createDesc')}</DialogDescription>
+          <DialogTitle className="text-popover-foreground">
+            {step === 'details' ? t('createTitle') : t('detectColumnsTitle')}
+          </DialogTitle>
+          <DialogDescription className="text-muted-foreground">
+            {step === 'details' ? t('createDesc') : t('detectColumnsDesc')}
+          </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4">
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t('sourceLabel')}</Label>
-            <Select value={sourceType} onValueChange={(v) => setSourceType(v as SourceType)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="google_sheets">{t('sourceGoogleSheetsOption')}</SelectItem>
-                <SelectItem value="remote_csv">{t('sourceRemoteCsvOption')}</SelectItem>
-                <SelectItem value="uploaded_csv">{t('sourceUploadOption')}</SelectItem>
-              </SelectContent>
-            </Select>
+        {step === 'details' && (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">{t('sourceLabel')}</Label>
+                <Select value={sourceType} onValueChange={(v) => setSourceType(v as SourceType)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="google_sheets">{t('sourceGoogleSheetsOption')}</SelectItem>
+                    <SelectItem value="remote_csv">{t('sourceRemoteCsvOption')}</SelectItem>
+                    <SelectItem value="uploaded_csv">{t('sourceUploadOption')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">{t('nameLabel')}</Label>
+                <Input
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={t('namePlaceholder')}
+                />
+              </div>
+            </div>
+
+            {sourceType === 'uploaded_csv' ? (
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">{t('fileLabel')}</Label>
+                <Input
+                  type="file"
+                  accept=".csv,.xlsx,.xls"
+                  onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                />
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">{t('urlLabel')}</Label>
+                <Input
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder={
+                    sourceType === 'google_sheets'
+                      ? 'https://docs.google.com/spreadsheets/d/.../export?format=csv'
+                      : 'https://example.com/products.csv'
+                  }
+                />
+              </div>
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <Label className="text-muted-foreground">{t('useForLabel')}</Label>
+                <Select value={usage} onValueChange={(v) => setUsage(v as Usage)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="knowledge">{usageLabel.knowledge}</SelectItem>
+                    <SelectItem value="catalog">{usageLabel.catalog}</SelectItem>
+                    <SelectItem value="both">{usageLabel.both}</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-muted-foreground text-xs">{t('usageHint')}</p>
+              </div>
+
+              {(usage === 'catalog' || usage === 'both') && (
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t('currencyLabel')}</Label>
+                  <Input
+                    value={currency}
+                    onChange={(e) => setCurrency(e.target.value.toUpperCase().slice(0, 3))}
+                    placeholder="USD"
+                    maxLength={3}
+                    className="w-24 uppercase"
+                  />
+                  <p className="text-muted-foreground text-xs">
+                    {t('currencyHint', { currency: defaultCurrency || 'USD' })}
+                  </p>
+                </div>
+              )}
+
+              {(usage === 'catalog' || usage === 'both') && (
+                <div className="space-y-1.5">
+                  <Label className="text-muted-foreground">{t('fallbackLabel')}</Label>
+                  <Select value={fallbackPolicy} onValueChange={(v) => setFallbackPolicy(v as FallbackPolicy)}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="fallback_on_not_found">{t('fallbackOnNotFound')}</SelectItem>
+                      <SelectItem value="primary_only">{t('fallbackPrimaryOnly')}</SelectItem>
+                      <SelectItem value="search_all_active">{t('fallbackSearchAll')}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <label className="flex cursor-pointer items-center gap-2.5">
+              <Checkbox checked={isPrimary} onCheckedChange={(c) => setIsPrimary(c === true)} />
+              <span className="text-foreground text-sm">{t('setPrimaryCheckbox')}</span>
+            </label>
           </div>
+        )}
 
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t('nameLabel')}</Label>
-            <Input
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              placeholder={t('namePlaceholder')}
-            />
+        {step === 'columns' && detection && (
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto">
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">{t('detectedColumnsHeading')}</p>
+              <p className="mb-2 text-xs text-muted-foreground">{t('detectedColumnsHint')}</p>
+              <div className="grid grid-cols-2 gap-x-4 gap-y-2 rounded-md border border-border p-3 sm:grid-cols-3 md:grid-cols-4">
+                {detection.columns.map((col) => (
+                  <label key={col} className="flex cursor-pointer items-center gap-2 text-sm">
+                    <Checkbox checked={selectedColumns.has(col)} onCheckedChange={() => toggleColumn(col)} />
+                    <span className="truncate text-foreground" title={col}>{col}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <p className="mb-2 text-sm font-medium text-foreground">{t('previewSampleTitle')}</p>
+              {previewColumns.length === 0 ? (
+                <p className="rounded-md border border-dashed border-border p-4 text-center text-xs text-muted-foreground">
+                  {t('selectAtLeastOneColumn')}
+                </p>
+              ) : (
+                <div className="overflow-x-auto rounded-md border border-border">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-muted/50">
+                        {previewColumns.map((col) => (
+                          <th key={col} className="whitespace-nowrap px-2 py-1.5 text-left font-medium text-muted-foreground">
+                            {col}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {detection.sample.map((row, ri) => (
+                        <tr key={ri} className="border-t border-border">
+                          {previewColumns.map((col) => (
+                            <td key={col} className="max-w-60 truncate px-2 py-1.5 text-foreground">
+                              {row[col] ?? ''}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
           </div>
-
-          {sourceType === 'uploaded_csv' ? (
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('fileLabel')}</Label>
-              <Input
-                type="file"
-                accept=".csv,.xlsx,.xls"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              />
-            </div>
-          ) : (
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('urlLabel')}</Label>
-              <Input
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={
-                  sourceType === 'google_sheets'
-                    ? 'https://docs.google.com/spreadsheets/d/.../export?format=csv'
-                    : 'https://example.com/products.csv'
-                }
-              />
-            </div>
-          )}
-
-          {(usage === 'catalog' || usage === 'both') && (
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('currencyLabel')}</Label>
-              <Input
-                value={currency}
-                onChange={(e) => setCurrency(e.target.value.toUpperCase().slice(0, 3))}
-                placeholder="USD"
-                maxLength={3}
-                className="w-24 uppercase"
-              />
-              <p className="text-muted-foreground text-xs">
-                {t('currencyHint', { currency: defaultCurrency || 'USD' })}
-              </p>
-            </div>
-          )}
-
-          <div className="space-y-1.5">
-            <Label className="text-muted-foreground">{t('useForLabel')}</Label>
-            <Select value={usage} onValueChange={(v) => setUsage(v as Usage)}>
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="knowledge">{usageLabel.knowledge}</SelectItem>
-                <SelectItem value="catalog">{usageLabel.catalog}</SelectItem>
-                <SelectItem value="both">{usageLabel.both}</SelectItem>
-              </SelectContent>
-            </Select>
-            <p className="text-muted-foreground text-xs">{t('usageHint')}</p>
-          </div>
-
-          {(usage === 'catalog' || usage === 'both') && (
-            <div className="space-y-1.5">
-              <Label className="text-muted-foreground">{t('fallbackLabel')}</Label>
-              <Select value={fallbackPolicy} onValueChange={(v) => setFallbackPolicy(v as FallbackPolicy)}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fallback_on_not_found">{t('fallbackOnNotFound')}</SelectItem>
-                  <SelectItem value="primary_only">{t('fallbackPrimaryOnly')}</SelectItem>
-                  <SelectItem value="search_all_active">{t('fallbackSearchAll')}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          <label className="flex cursor-pointer items-center gap-2.5">
-            <Checkbox checked={isPrimary} onCheckedChange={(c) => setIsPrimary(c === true)} />
-            <span className="text-foreground text-sm">{t('setPrimaryCheckbox')}</span>
-          </label>
-        </div>
+        )}
 
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => {
-              reset();
-              onOpenChange(false);
-            }}
-            className="border-border text-muted-foreground hover:bg-muted"
-          >
-            {t('cancel')}
-          </Button>
-          <Button onClick={handleCreate} disabled={submitting}>
-            {submitting ? (
-              <>
-                <Loader2 className="size-4 animate-spin" />
-                {t('adding')}
-              </>
-            ) : (
-              t('addDataSource')
-            )}
-          </Button>
+          {step === 'details' ? (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  reset();
+                  onOpenChange(false);
+                }}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                {t('cancel')}
+              </Button>
+              <Button onClick={handleDetectColumns} disabled={detecting}>
+                {detecting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    {t('detectingColumns')}
+                  </>
+                ) : (
+                  t('detectColumnsButton')
+                )}
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                variant="outline"
+                onClick={() => setStep('details')}
+                className="border-border text-muted-foreground hover:bg-muted"
+              >
+                {t('back')}
+              </Button>
+              <Button onClick={handleCreate} disabled={submitting || selectedColumns.size === 0}>
+                {submitting ? (
+                  <>
+                    <Loader2 className="size-4 animate-spin" />
+                    {t('adding')}
+                  </>
+                ) : (
+                  t('addDataSource')
+                )}
+              </Button>
+            </>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

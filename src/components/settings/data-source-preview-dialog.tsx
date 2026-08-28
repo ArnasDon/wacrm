@@ -5,13 +5,15 @@
 //
 // Reads GET /api/ai/data-sources/[id]/preview (src/lib/ai/data-
 // sources/service.ts::getDataSourcePreview), which itself reads back
-// whatever the last create/refresh actually persisted — never
-// re-fetches or re-parses the source. For usage catalog/both this is
-// a live sample straight from ai_catalog_products (the same table
-// search_catalog/get_product query), so what's shown here can never
-// disagree with what the agent can say. For usage knowledge (no
-// structured rows exist) it falls back to the parse-time snapshot
-// captured in ai_data_sources.preview_sample (migration 046).
+// whatever the last create/refresh actually persisted (preview_sample
+// — migration 046) — never re-fetches or re-parses the source, and
+// never a fixed/structured schema. The columns shown are exactly
+// `source.selected_columns` (or every detected column, for a source
+// that predates the column-selection step) — the SAME raw header
+// names the user picked in "Detectar columnas" when creating the
+// source. A sheet with no "Talla"/"Color"/"Capacidad" columns simply
+// never shows those — there is no fixed list of expected fields here
+// (AI Sales Agent audit — column-selection pass, point 9).
 //
 // This replaces, for the new Data Sources system, the preview table
 // AiKnowledgeCard's legacy InventoryUploader only ever showed BEFORE
@@ -35,7 +37,7 @@ import {
 } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 
-type PreviewKind = 'catalog' | 'knowledge' | 'empty';
+type PreviewKind = 'sheet' | 'empty';
 
 interface PreviewSource {
   id: string;
@@ -48,24 +50,27 @@ interface PreviewSource {
   row_count: number | null;
   last_synced_at: string | null;
   last_error: string | null;
+  /** Only the roles the parser actually detected are ever non-null —
+   *  rendered below filtered to those, never a fixed 12-field grid. */
   column_mapping: Record<string, string | null> | null;
+  /** null = no explicit selection was ever made (every column is in
+   *  use) — falls back to preview.columns in that case. */
+  selected_columns: string[] | null;
 }
 
 interface PreviewResponse {
   data_source: PreviewSource;
-  preview: { kind: PreviewKind; columns: string[]; rows: Record<string, unknown>[] };
+  preview: { kind: PreviewKind; columns: string[]; rows: Record<string, string>[] };
 }
 
-const DETECTED_ROLES = [
-  'sku', 'name', 'price', 'stock', 'category',
-  'brand', 'model', 'description', 'color', 'capacity', 'size', 'image',
-] as const;
-
-const COLUMN_LABEL_KEY: Record<string, string> = {
+/** column_mapping's role keys → their display label. Only rendered for
+ *  roles that actually resolved to a real column — see the render
+ *  below (`.filter(([, col]) => col !== null)`), never "No detectada"
+ *  spam for a field the source doesn't have. */
+const ROLE_LABEL_KEY: Record<string, string> = {
   sku: 'colSku', name: 'colName', price: 'colPrice', stock: 'colStock', category: 'colCategory',
   brand: 'colBrand', model: 'colModel', description: 'colDescription', color: 'colColor',
   capacity: 'colCapacity', size: 'colSize', image: 'colImage',
-  currency: 'colCurrency', available_quantity: 'colStock',
 };
 
 function fmtDate(iso: string | null, never: string): string {
@@ -117,10 +122,24 @@ export function DataSourcePreviewDialog({
   const open = sourceId !== null;
   const source = data?.data_source;
   const preview = data?.preview;
+  // Falls back to every previewed column when the source predates the
+  // selection step (selected_columns is null) — "todas" in that case,
+  // matching what the source has always actually used.
+  const keptColumns = source?.selected_columns ?? preview?.columns ?? [];
+  const keptColumnsLower = new Set(keptColumns.map((c) => c.toLowerCase()));
+  // Only a role whose detected column is actually KEPT — a role
+  // mapped to a column the user excluded isn't "in use" for anything
+  // (buildProductRows nulls it out too), so showing it here would
+  // contradict "solo columnas seleccionadas".
+  const detectedRoles = source?.column_mapping
+    ? Object.entries(source.column_mapping).filter(
+        (entry): entry is [string, string] => entry[1] !== null && keptColumnsLower.has(entry[1].toLowerCase()),
+      )
+    : [];
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onOpenChange(false); }}>
-      <DialogContent className="border-border bg-popover flex max-h-[85vh] max-w-3xl flex-col">
+      <DialogContent className="border-border bg-popover flex max-h-[85vh] w-[min(1100px,calc(100vw-2rem))] max-w-none flex-col sm:max-w-none">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">
             {source ? t('previewTitle', { name: source.display_name }) : t('viewData')}
@@ -173,21 +192,30 @@ export function DataSourcePreviewDialog({
                 </div>
               )}
 
-              {source.column_mapping && (
+              <div>
+                <p className="mb-1.5 text-xs font-medium text-foreground">{t('selectedColumnsTitle')}</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {keptColumns.map((col) => (
+                    <Badge key={col} className="border-primary/30 bg-primary/10 text-primary text-[10px]">
+                      {col}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+
+              {/* Optional bonus, only for roles that were actually
+                  detected among the KEPT columns — never a fixed
+                  12-field grid with "No detectada" filler. */}
+              {detectedRoles.length > 0 && (
                 <div>
-                  <p className="mb-1.5 text-xs font-medium text-foreground">{t('previewColumnsTitle')}</p>
+                  <p className="mb-1.5 text-xs font-medium text-foreground">{t('autoMappingTitle')}</p>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-md border border-border p-3 text-xs sm:grid-cols-3">
-                    {DETECTED_ROLES.map((role) => {
-                      const value = source.column_mapping?.[role] ?? null;
-                      return (
-                        <div key={role} className="flex items-center gap-1">
-                          <span className="shrink-0 text-muted-foreground">{t(COLUMN_LABEL_KEY[role])}: </span>
-                          <span className={value ? 'truncate font-medium text-foreground' : 'shrink-0 text-muted-foreground/70'}>
-                            {value ?? t('notDetected')}
-                          </span>
-                        </div>
-                      );
-                    })}
+                    {detectedRoles.map(([role, col]) => (
+                      <div key={role} className="flex items-center gap-1">
+                        <span className="shrink-0 text-muted-foreground">{t(ROLE_LABEL_KEY[role] ?? role)}: </span>
+                        <span className="truncate font-medium text-foreground">{col}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -204,8 +232,8 @@ export function DataSourcePreviewDialog({
                       <TableHeader>
                         <TableRow className="hover:bg-transparent">
                           {preview.columns.map((col) => (
-                            <TableHead key={col} className="text-[11px]">
-                              {preview.kind === 'catalog' ? t(COLUMN_LABEL_KEY[col] ?? col) : col}
+                            <TableHead key={col} className="text-[11px] whitespace-nowrap">
+                              {col}
                             </TableHead>
                           ))}
                         </TableRow>
@@ -214,8 +242,8 @@ export function DataSourcePreviewDialog({
                         {preview.rows.map((row, ri) => (
                           <TableRow key={ri}>
                             {preview.columns.map((col) => (
-                              <TableCell key={col} className="max-w-48 truncate text-xs">
-                                {String(row[col] ?? '')}
+                              <TableCell key={col} className="max-w-60 truncate text-xs">
+                                {row[col] ?? ''}
                               </TableCell>
                             ))}
                           </TableRow>

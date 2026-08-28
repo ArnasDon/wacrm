@@ -49,7 +49,14 @@ export interface InventoryMetadata {
   url?: string
   currency: string
   rows: number
+  /** Every real header found in the file — always complete, so a
+   *  column-selection UI has the full list to choose from regardless
+   *  of whether a selection was already applied to this parse. */
   columns: string[]
+  /** `columns` narrowed to `selectedColumns` when one was passed;
+   *  identical to `columns` otherwise. What preview.sample's keys and
+   *  the persisted preview_sample actually contain. */
+  previewColumns: string[]
   detected: DetectedColumnMap
   selectedColumns?: string[]
   parseErrors?: string[]
@@ -270,9 +277,17 @@ function buildInventory(
   }
 
   // Preview — use raw header keys so the user sees real column names.
+  // Respects columnIndices when a selection was made: the DETECTION
+  // step (no selectedColumns passed yet) always previews every real
+  // column so the user has something to choose from; the persisted
+  // preview_sample of an already-configured source (selectedColumns
+  // passed) only ever shows what was actually kept — "Ver datos" must
+  // never display a column the user explicitly excluded.
+  const previewHeader = columnIndices !== null ? columnIndices.map((ci) => rawHeader[ci]) : rawHeader
   const sample: Record<string, string>[] = dataRows.slice(0, 5).map((row) => {
     const obj: Record<string, string> = {}
-    for (let ci = 0; ci < headerLower.length; ci++) {
+    const cols = columnIndices !== null ? columnIndices : rawHeader.map((_h, ci) => ci)
+    for (const ci of cols) {
       obj[rawHeader[ci]] = row[ci]?.trim() ?? ''
     }
     return obj
@@ -290,12 +305,13 @@ function buildInventory(
       rows: dataRows.length,
       ...(truncated ? { truncated: true } : {}),
       columns: rawHeader,
+      previewColumns: previewHeader,
       detected,
       ...(columnIndices !== null ? { selectedColumns } : {}),
       ...(trimmedErrors && trimmedErrors.length > 0 ? { parseErrors: trimmedErrors } : {}),
     },
     preview: { sample, detected },
-    products: buildProductRows(dataRows, headerLower, detected),
+    products: buildProductRows(dataRows, headerLower, detected, columnIndices),
   }
 }
 
@@ -306,13 +322,27 @@ function buildInventory(
  * agree on which column is which. A row with no usable name (no
  * detected `name` column AND no non-empty first cell) is dropped — it
  * has nothing a customer could search for.
+ *
+ * `columnIndices` (null = every column) is the SAME selection the KB
+ * `content` text and the persisted preview already respect — a column
+ * the user deliberately excluded must not populate a role field here
+ * either. If the customer excludes "capacidad", the catalog rows'
+ * `capacity` stays null even though the sheet has that column,
+ * matching "el agente IA solo debe recibir las columnas seleccionadas"
+ * (AI Sales Agent audit — column selection pass).
  */
 function buildProductRows(
   dataRows: string[][],
   headerLower: string[],
   detected: DetectedColumnMap,
+  columnIndices: number[] | null,
 ): CatalogProductRow[] {
-  const idx = (col: string | null): number => (col !== null ? headerLower.indexOf(col) : -1)
+  const selected = (i: number): boolean => columnIndices === null || columnIndices.includes(i)
+  const idx = (col: string | null): number => {
+    if (col === null) return -1
+    const i = headerLower.indexOf(col)
+    return i !== -1 && selected(i) ? i : -1
+  }
   const skuIdx = idx(detected.sku)
   const nameIdx = idx(detected.name)
   const priceIdx = idx(detected.price)
@@ -333,6 +363,11 @@ function buildProductRows(
 
   const products: CatalogProductRow[] = []
   dataRows.forEach((row, rowIndex) => {
+    // cell(row, 0) is a deliberate exception to the selection filter:
+    // it's the last-resort fallback for a sheet with no detected name
+    // column at all (or one the user excluded) — a product with no
+    // name is unsearchable and gets dropped below, so this exists
+    // purely to avoid silently losing every row over that one field.
     const name = cell(row, nameIdx) ?? cell(row, 0)
     if (!name) return // nothing searchable in this row
 

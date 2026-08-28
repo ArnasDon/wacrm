@@ -34,7 +34,7 @@ import {
 import type { DataSourceMutableFields, DataSourceRow, DataSourceType, DataSourceUsage } from './types'
 
 const SELECT_COLUMNS =
-  'id, account_id, source_type, display_name, source_url, source_filename, usage, status, priority, is_primary, fallback_policy, currency, column_mapping, row_count, knowledge_document_id, last_synced_at, last_error, created_at, updated_at, preview_sample'
+  'id, account_id, source_type, display_name, source_url, source_filename, usage, status, priority, is_primary, fallback_policy, currency, column_mapping, row_count, knowledge_document_id, last_synced_at, last_error, created_at, updated_at, preview_sample, selected_columns'
 
 export class DataSourceError extends Error {
   constructor(message: string) {
@@ -105,39 +105,39 @@ export async function getDataSource(
   return (data as DataSourceRow) ?? null
 }
 
-/** One row of a data source's "Ver datos" preview table. Field set is a
- *  superset across both kinds — a knowledge-only preview's rows are
- *  keyed by whatever raw column names the source file used (no fixed
- *  shape), a catalog/both preview's rows use the fixed structured
- *  product fields below. */
-export type DataSourcePreviewRow = Record<string, unknown>
+/** One row of a data source's "Ver datos" preview table, keyed by the
+ *  file's own raw header names — never a fixed/structured schema, so
+ *  the UI can never show a column ("Talla", "Color", ...) that simply
+ *  doesn't exist in that particular source. */
+export type DataSourcePreviewRow = Record<string, string>
 
 export interface DataSourcePreview {
-  /** 'catalog': live rows from ai_catalog_products (usage catalog/both —
-   *  the same data search_catalog/get_product return, so this is never
-   *  stale relative to what the agent can actually say).
-   *  'knowledge': the parse-time snapshot (usage knowledge — no
-   *  structured rows exist to read back from).
-   *  'empty': no rows of either kind yet (e.g. a source whose sync
-   *  failed before ever completing, or one created before migration
-   *  046 that hasn't been refreshed since). */
-  kind: 'catalog' | 'knowledge' | 'empty'
+  /** 'sheet': the parse-time snapshot (preview_sample) — same for
+   *  every usage (catalog/knowledge/both), always the RAW selected
+   *  columns, never the structured ai_catalog_products schema. Kept
+   *  in sync with the catalog rows because both are produced by the
+   *  exact same parse pass (inventory-parser.ts), so this can't drift
+   *  from what search_catalog/get_product actually return.
+   *  'empty': no snapshot yet (a source created before migration 046
+   *  that hasn't been refreshed since, or one whose last sync failed
+   *  before producing any rows). */
+  kind: 'sheet' | 'empty'
+  /** The columns actually kept for this source — source.selected_columns
+   *  when the user made an explicit choice, otherwise every column the
+   *  parser detected (backward-compatible with a source that predates
+   *  the column-selection step). Always equals `Object.keys(rows[0])`
+   *  when rows is non-empty. */
   columns: string[]
   rows: DataSourcePreviewRow[]
 }
 
-const PREVIEW_ROW_LIMIT = 20
-
-const CATALOG_PREVIEW_COLUMNS = [
-  'name', 'sku', 'brand', 'model', 'color', 'capacity', 'size', 'price', 'currency', 'available_quantity',
-]
-
-/** Real, live "Ver datos" preview for one data source — the columns it
- *  detected, its metadata, and a sample of the actual persisted rows.
- *  Never re-fetches/re-parses the source; reads back what the last
- *  create/refresh already wrote, same discipline as everywhere else in
- *  this pipeline (a preview must reflect what's actually stored, not
- *  what a fresh re-fetch might currently contain). */
+/** Real "Ver datos" preview for one data source — the columns it
+ *  detected/kept, its metadata, and a sample of the actual persisted
+ *  rows. Never re-fetches/re-parses the source; reads back what the
+ *  last create/refresh already wrote (preview_sample), same
+ *  discipline as everywhere else in this pipeline — a preview must
+ *  reflect what's actually stored, not what a fresh re-fetch might
+ *  currently contain. */
 export async function getDataSourcePreview(
   db: SupabaseClient,
   accountId: string,
@@ -146,27 +146,10 @@ export async function getDataSourcePreview(
   const source = await getDataSource(db, accountId, id)
   if (!source) return null
 
-  if (source.usage === 'catalog' || source.usage === 'both') {
-    const { data, error } = await db
-      .from('ai_catalog_products')
-      .select('name, sku, brand, model, color, capacity, size, price, currency, available_quantity')
-      .eq('account_id', accountId)
-      .eq('data_source_id', id)
-      .order('name', { ascending: true })
-      .limit(PREVIEW_ROW_LIMIT)
-    if (error) {
-      console.error('[data-sources] preview query failed:', error.message)
-      return { source, preview: { kind: 'empty', columns: [], rows: [] } }
-    }
-    const rows = (data ?? []) as DataSourcePreviewRow[]
-    if (rows.length === 0) return { source, preview: { kind: 'empty', columns: [], rows: [] } }
-    return { source, preview: { kind: 'catalog', columns: CATALOG_PREVIEW_COLUMNS, rows } }
-  }
-
   if (source.preview_sample && source.preview_sample.sample.length > 0) {
     return {
       source,
-      preview: { kind: 'knowledge', columns: source.preview_sample.columns, rows: source.preview_sample.sample },
+      preview: { kind: 'sheet', columns: source.preview_sample.columns, rows: source.preview_sample.sample },
     }
   }
   return { source, preview: { kind: 'empty', columns: [], rows: [] } }
@@ -261,10 +244,16 @@ async function persistDataSource(
     status: 'active' as const,
     last_error: null as string | null,
     last_synced_at: new Date().toISOString(),
-    // See migration 046 — captured for every usage, only ever read back
-    // for `usage: knowledge` (catalog/both preview live from
-    // ai_catalog_products instead, in getDataSourcePreview below).
-    preview_sample: { sample: parsed.preview.sample, columns: parsed.metadata.columns },
+    // See migration 046 — the uniform source getDataSourcePreview()
+    // reads back for "Ver datos", for every usage. previewColumns (not
+    // the always-complete `columns`) so this stays in lockstep with
+    // what selected_columns actually kept — never shows a column the
+    // user excluded.
+    preview_sample: { sample: parsed.preview.sample, columns: parsed.metadata.previewColumns },
+    // See migration 048. null = no explicit selection was ever made
+    // (every column detected is in use) — the exact prior behavior,
+    // preserved for any source created before this feature existed.
+    selected_columns: opts.selectedColumns ?? null,
     ...(opts.isLegacyDefault !== undefined ? { is_legacy_default: opts.isLegacyDefault } : {}),
   }
 
@@ -523,7 +512,19 @@ export interface RefreshInput {
   file?: { filename: string; buffer: ArrayBuffer }
 }
 
-export async function refreshDataSource(db: SupabaseClient, input: RefreshInput): Promise<DataSourceRow> {
+export interface RefreshResult {
+  source: DataSourceRow
+  /** Previously-selected columns (existing.selected_columns) that no
+   *  longer appear in the freshly-fetched sheet/file — e.g. someone
+   *  renamed or removed a column upstream. Never auto-pruned from
+   *  `selected_columns` itself (point 17: the selection is conserved
+   *  verbatim so the column re-activates on its own if it comes back);
+   *  this is purely an informational warning for the caller to show,
+   *  the refresh still succeeds and the source stays active. */
+  droppedColumns: string[]
+}
+
+export async function refreshDataSource(db: SupabaseClient, input: RefreshInput): Promise<RefreshResult> {
   const existing = await getDataSource(db, input.accountId, input.id)
   if (!existing) throw new DataSourceError('Data source not found.')
 
@@ -541,20 +542,29 @@ export async function refreshDataSource(db: SupabaseClient, input: RefreshInput)
   const currency = await accountDefaultCurrency(db, input.accountId)
 
   try {
+    // Preserve the existing column selection across a refresh (point
+    // 17 — "no debe perder automáticamente la selección de columnas").
+    // Passed straight to the parser exactly like a create call would;
+    // a selected column that no longer exists in the fresh data
+    // simply won't match anything in buildInventory's own filter
+    // (silently excluded from this sync, same as if it had never been
+    // selected) — surfaced below as `droppedColumns`, not an error.
+    const selectedColumns = existing.selected_columns ?? undefined
+
     let parsed: ParsedInventory
     if (existing.source_type === 'uploaded_csv') {
       if (!input.file) {
         throw new DataSourceError('Re-upload the file to refresh an uploaded CSV source.')
       }
-      parsed = parseInventoryFile(input.file.buffer, input.file.filename, undefined, currency)
+      parsed = parseInventoryFile(input.file.buffer, input.file.filename, selectedColumns, currency)
     } else {
       if (!existing.source_url) throw new DataSourceError('This data source has no URL to refresh.')
       if (existing.source_type === 'google_sheets') assertGoogleSheetsUrl(existing.source_url)
       const csvText = await fetchCsv(existing.source_url)
-      parsed = parseSheetCsv(csvText, existing.source_url, undefined, currency)
+      parsed = parseSheetCsv(csvText, existing.source_url, selectedColumns, currency)
     }
 
-    return await persistDataSource(
+    const source = await persistDataSource(
       db,
       {
         accountId: input.accountId,
@@ -568,10 +578,16 @@ export async function refreshDataSource(db: SupabaseClient, input: RefreshInput)
         isPrimary: existing.is_primary,
         fallbackPolicy: existing.fallback_policy,
         currency,
+        selectedColumns,
         existingId: existing.id,
       },
       parsed,
     )
+
+    const survivingLower = new Set(parsed.metadata.previewColumns.map((c) => c.toLowerCase()))
+    const droppedColumns = (existing.selected_columns ?? []).filter((c) => !survivingLower.has(c.toLowerCase()))
+
+    return { source, droppedColumns }
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Refresh failed.'
     await db.from('ai_data_sources').update({ status: 'error', last_error: message }).eq('id', existing.id)

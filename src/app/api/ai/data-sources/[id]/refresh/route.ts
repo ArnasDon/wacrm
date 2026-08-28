@@ -30,8 +30,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       }
     }
 
-    const source = await refreshDataSource(supabase, { accountId, userId, id, file })
-    return NextResponse.json({ success: true, data_source: source })
+    const { source, droppedColumns } = await refreshDataSource(supabase, { accountId, userId, id, file })
+    return NextResponse.json({
+      success: true,
+      data_source: source,
+      // Non-fatal — the refresh already succeeded above. Lets the UI
+      // warn "la columna X ya no existe en tu hoja" without treating
+      // it as a sync failure (point 17).
+      ...(droppedColumns.length > 0 ? { dropped_columns: droppedColumns } : {}),
+    })
   } catch (err) {
     if (err instanceof DataSourceError) {
       return NextResponse.json({ error: err.message }, { status: 422 })

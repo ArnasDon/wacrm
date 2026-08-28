@@ -126,3 +126,52 @@ describe('parseSheetCsv — structured product rows', () => {
     expect(parsed.content).toContain('Stock: 5 unidades')
   })
 })
+
+// ============================================================
+// Column selection (AI Sales Agent audit — column-selection pass):
+// selectedColumns must filter EVERY representation the parser
+// produces — the flattened KB content (already did, unchanged), the
+// persisted preview snapshot, AND the structured catalog `products` —
+// not just the KB text. This is what makes "el agente IA solo debe
+// recibir las columnas seleccionadas" actually true end to end, and
+// what "Ver datos" showing only selected columns is built on.
+// ============================================================
+describe('parseSheetCsv — column selection filters every representation', () => {
+  const SHEET = csv([
+    ['Nombre', 'Precio', 'Cantidad', 'Marca', 'Modelo'],
+    ['Producto X', '1500', '10', 'MarcaX', 'ModeloX'],
+  ])
+
+  it('metadata.columns always lists every real header, regardless of selection', () => {
+    const parsed = parseSheetCsv(SHEET, 'https://x/sheet.csv', ['Nombre', 'Precio'])
+    expect(parsed.metadata.columns).toEqual(['Nombre', 'Precio', 'Cantidad', 'Marca', 'Modelo'])
+  })
+
+  it('metadata.previewColumns / preview.sample only contain the SELECTED columns', () => {
+    const parsed = parseSheetCsv(SHEET, 'https://x/sheet.csv', ['Nombre', 'Precio'])
+    expect(parsed.metadata.previewColumns).toEqual(['Nombre', 'Precio'])
+    expect(parsed.preview.sample).toEqual([{ Nombre: 'Producto X', Precio: '1500' }])
+    expect(parsed.preview.sample[0]).not.toHaveProperty('Marca')
+  })
+
+  it('an excluded role column is null on the structured product row, even though the sheet has it', () => {
+    const parsed = parseSheetCsv(SHEET, 'https://x/sheet.csv', ['Nombre', 'Precio', 'Cantidad']) // Marca/Modelo excluded
+    expect(parsed.products).toHaveLength(1)
+    expect(parsed.products[0]).toMatchObject({ name: 'Producto X', price: 1500, availableQuantity: 10 })
+    expect(parsed.products[0].brand).toBeNull()
+    expect(parsed.products[0].model).toBeNull()
+  })
+
+  it('selecting every real column is equivalent to no selection at all', () => {
+    const all = parseSheetCsv(SHEET, 'https://x/sheet.csv', ['Nombre', 'Precio', 'Cantidad', 'Marca', 'Modelo'])
+    const none = parseSheetCsv(SHEET, 'https://x/sheet.csv')
+    expect(all.products).toEqual(none.products)
+    expect(all.preview.sample).toEqual(none.preview.sample)
+  })
+
+  it('an unselected name column still falls back to the first cell, so a row is never silently lost over it', () => {
+    const parsed = parseSheetCsv(SHEET, 'https://x/sheet.csv', ['Precio']) // Nombre excluded
+    expect(parsed.products).toHaveLength(1)
+    expect(parsed.products[0].name).toBe('Producto X') // recovered via the column-0 fallback
+  })
+})

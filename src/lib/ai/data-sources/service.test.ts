@@ -277,6 +277,89 @@ describe('refreshDataSource — replaces only its own rows', () => {
 })
 
 // ============================================================
+// Column selection survives a refresh (AI Sales Agent audit — column
+// -selection pass, point 17): "no debe perder automáticamente la
+// selección de columnas... si una columna ya no existe, mostrar una
+// advertencia, no romper la fuente."
+// ============================================================
+describe('refreshDataSource — column selection (point 17)', () => {
+  it('preserves selected_columns across a refresh and keeps filtering by it', async () => {
+    stubCsvFetch(PRODUCTS_CSV) // Nombre, Precio, Stock
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      selectedColumns: ['Nombre', 'Precio'], // Stock excluded
+    })
+    expect(source.selected_columns).toEqual(['Nombre', 'Precio'])
+
+    stubCsvFetch(PRODUCTS_CSV) // same headers, a real refresh
+    const { source: refreshed, droppedColumns } = await refreshDataSource(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      id: source.id,
+    })
+    expect(refreshed.selected_columns).toEqual(['Nombre', 'Precio']) // NOT reset to null/all
+    expect(droppedColumns).toEqual([]) // both selected columns still exist
+  })
+
+  it('warns (droppedColumns) but does not fail the refresh when a selected column disappears upstream', async () => {
+    stubCsvFetch(PRODUCTS_CSV) // Nombre, Precio, Stock
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      selectedColumns: ['Nombre', 'Precio', 'Stock'],
+    })
+
+    // Upstream sheet drops the "Stock" column entirely on the next sync.
+    stubCsvFetch(csv([['Nombre', 'Precio'], ['Samsung Galaxy S25', '34900']]))
+    const { source: refreshed, droppedColumns } = await refreshDataSource(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      id: source.id,
+    })
+
+    expect(droppedColumns).toEqual(['Stock']) // surfaced as a warning...
+    expect(refreshed.selected_columns).toEqual(['Nombre', 'Precio', 'Stock']) // ...but the selection itself is untouched
+    expect(refreshed.status).toBe('active') // never breaks the source
+    expect(refreshed.last_error).toBeNull() // this is a warning, not a sync failure
+    expect(table('ai_catalog_products')[0]).toMatchObject({ name: 'Samsung Galaxy S25', price: 34900 })
+  })
+
+  it('a source with no explicit selection (null) stays null across a refresh — still "use everything"', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    expect(source.selected_columns).toBeNull()
+
+    stubCsvFetch(PRODUCTS_CSV)
+    const { source: refreshed, droppedColumns } = await refreshDataSource(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      id: source.id,
+    })
+    expect(refreshed.selected_columns).toBeNull()
+    expect(droppedColumns).toEqual([])
+  })
+})
+
+// ============================================================
 // AI_Catalog_Fix_Kit FASE 12 — currency. Regression test for the real
 // bug the audit found: createDataSourceFromUrl/File defaulted to a
 // hardcoded 'USD' when no currency was supplied, so a DOP account's
@@ -414,7 +497,7 @@ describe('currency propagation — full audit (FASE 7)', () => {
     for (const row of table('ai_data_sources')) if (row.id === source.id) row.currency = 'USD'
     for (const row of table('ai_catalog_products')) row.currency = 'USD'
 
-    const refreshed = await refreshDataSource(db, { accountId: 'acct-dop', userId: 'user-1', id: source.id })
+    const { source: refreshed } = await refreshDataSource(db, { accountId: 'acct-dop', userId: 'user-1', id: source.id })
     expect(refreshed.currency).toBe('DOP')
     expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
   })
@@ -498,7 +581,7 @@ describe('getDataSourcePreview', () => {
     expect(await getDataSourcePreview(db, 'acct-1', 'nope')).toBeNull()
   })
 
-  it('usage=catalog: previews live rows straight from ai_catalog_products, not a stale snapshot', async () => {
+  it('usage=catalog: previews the RAW selected columns (not the structured ai_catalog_products schema)', async () => {
     stubCsvFetch(PRODUCTS_CSV)
     const { db } = fakeDb()
     const source = await createDataSourceFromUrl(db, {
@@ -512,14 +595,16 @@ describe('getDataSourcePreview', () => {
 
     const result = await getDataSourcePreview(db, 'acct-1', source.id)
     expect(result).not.toBeNull()
-    expect(result!.preview.kind).toBe('catalog')
+    expect(result!.preview.kind).toBe('sheet')
     expect(result!.preview.rows).toHaveLength(1)
-    expect(result!.preview.rows[0]).toMatchObject({ name: 'Samsung Galaxy S25', price: 34900 })
-    expect(result!.preview.columns).toContain('price')
-    expect(result!.preview.columns).toContain('currency')
+    // Raw header keys (from PRODUCTS_CSV: Nombre/Precio/Stock), never
+    // the structured product schema (name/price/currency/...) — this
+    // is what column-selection filters, so it must be the raw view.
+    expect(result!.preview.rows[0]).toMatchObject({ Nombre: 'Samsung Galaxy S25' })
+    expect(result!.preview.columns).toEqual(['Nombre', 'Precio', 'Stock'])
   })
 
-  it('usage=both: also previews from ai_catalog_products (the structured side, not the flattened KB text)', async () => {
+  it('usage=both: same uniform raw preview as catalog/knowledge — one code path for every usage', async () => {
     stubCsvFetch(PRODUCTS_CSV)
     const { db } = fakeDb()
     const source = await createDataSourceFromUrl(db, {
@@ -532,11 +617,11 @@ describe('getDataSourcePreview', () => {
     })
 
     const result = await getDataSourcePreview(db, 'acct-1', source.id)
-    expect(result!.preview.kind).toBe('catalog')
+    expect(result!.preview.kind).toBe('sheet')
     expect(result!.preview.rows).toHaveLength(1)
   })
 
-  it('usage=knowledge: previews the parse-time sample snapshot (no structured rows exist for this usage)', async () => {
+  it('usage=knowledge: previews the same parse-time sample snapshot', async () => {
     stubCsvFetch(PRODUCTS_CSV)
     const { db } = fakeDb()
     const source = await createDataSourceFromUrl(db, {
@@ -549,19 +634,40 @@ describe('getDataSourcePreview', () => {
     })
 
     const result = await getDataSourcePreview(db, 'acct-1', source.id)
-    expect(result!.preview.kind).toBe('knowledge')
+    expect(result!.preview.kind).toBe('sheet')
     expect(result!.preview.rows).toHaveLength(1)
     expect(result!.preview.rows[0]).toMatchObject({ Nombre: 'Samsung Galaxy S25' })
     expect(result!.preview.columns).toEqual(['Nombre', 'Precio', 'Stock'])
   })
 
-  it('reports kind=empty (not an error) for a catalog source whose parse produced zero usable product rows', async () => {
-    // The one data row has no name column value (only a price), so
-    // buildProductRows drops it as "nothing searchable" — 0 rows
-    // persisted to ai_catalog_products, but a real, successfully
-    // synced source, not a not-found/error state.
-    stubCsvFetch(csv([['Nombre', 'Precio'], ['', '100']]))
+  it('only the SELECTED columns appear in the preview — never a column the user excluded', async () => {
+    stubCsvFetch(PRODUCTS_CSV) // headers: Nombre, Precio, Stock
     const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'PRUEBA',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+      selectedColumns: ['Nombre', 'Precio'], // Stock deliberately excluded
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result!.preview.columns).toEqual(['Nombre', 'Precio'])
+    expect(result!.preview.rows[0]).toEqual({ Nombre: 'Samsung Galaxy S25', Precio: '34900' })
+    expect(result!.preview.rows[0]).not.toHaveProperty('Stock')
+    // And the persisted selection itself is readable back off the row.
+    expect(source.selected_columns).toEqual(['Nombre', 'Precio'])
+  })
+
+  it('a row that produced zero usable ai_catalog_products still shows a real raw preview — "Ver datos" is not gated on catalog success', async () => {
+    // The one data row has no name column value (only a price), so
+    // buildProductRows drops it as "nothing searchable" for the
+    // catalog — but the raw sheet preview is independent of that and
+    // must still show exactly what the sheet actually contains.
+    stubCsvFetch(csv([['Nombre', 'Precio'], ['', '100']]))
+    const { db, table } = fakeDb()
     const source = await createDataSourceFromUrl(db, {
       accountId: 'acct-1',
       userId: 'user-1',
@@ -570,8 +676,29 @@ describe('getDataSourcePreview', () => {
       url: 'https://example.com/empty.csv',
       usage: 'catalog',
     })
+    expect(table('ai_catalog_products')).toHaveLength(0) // no usable products
 
     const result = await getDataSourcePreview(db, 'acct-1', source.id)
+    expect(result!.preview.kind).toBe('sheet')
+    expect(result!.preview.rows).toEqual([{ Nombre: '', Precio: '100' }])
+  })
+
+  it('reports kind=empty for a source that predates migration 046 (preview_sample never populated)', async () => {
+    const { db, table } = fakeDb()
+    // Simulate a legacy row inserted before preview_sample existed —
+    // every other column present, preview_sample genuinely absent.
+    table('ai_data_sources').push({
+      id: 'legacy-1',
+      account_id: 'acct-1',
+      source_type: 'google_sheets',
+      display_name: 'Old source',
+      usage: 'catalog',
+      status: 'active',
+      preview_sample: null,
+      selected_columns: null,
+    })
+
+    const result = await getDataSourcePreview(db, 'acct-1', 'legacy-1')
     expect(result!.preview).toEqual({ kind: 'empty', columns: [], rows: [] })
   })
 })

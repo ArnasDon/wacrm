@@ -396,15 +396,18 @@ export async function POST(request: Request) {
       }
     } else {
       // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
-      // up-front), `user_id` is the audit column identifying which
-      // member of the account saved the config.
+      // (NOT NULL post-017); uniqueness is now the partial index on
+      // `(account_id, provider)` from migration 040, so a second Meta
+      // row for the same account trips it up-front. `user_id` is the
+      // audit column identifying which member of the account saved the
+      // config.
       const { error: insertError } = await supabase
         .from('whatsapp_connections')
         .insert({
           account_id: accountId,
           user_id: user.id,
           provider: 'meta',
+          is_primary: true,
           ...baseRow,
         });
 

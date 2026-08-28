@@ -42,11 +42,21 @@ todos os call sites em lockstep, como **rename puro**: nenhuma mudança
 de comportamento observável, ainda exclusivamente Meta. Mergiável e
 deployável sozinha, mesma disciplina de aceite da Onda 0.
 
-Inclui também, **antes** de qualquer mudança em `resolve-connection.ts`,
-os três testes de cobertura que a revisão final da Onda 0 pediu (§3.3).
+Não inclui novos testes: a 1a só acrescenta renames de identificador em
+mocks. Os três testes de cobertura adiados da Onda 0 foram movidos para
+a **1b** — ver §3.3.
 
 ### Defere para a 1b
 
+- Os três testes de cobertura adiados da Onda 0 (`deliverBroadcast`,
+  `broadcast/route.ts`, `react/route.ts`). A revisão final da Onda 0 os
+  queria "antes de `resolve-connection.ts` mudar de forma", mas esses
+  três caminhos **não referenciam `whatsapp_config`** (recebem
+  `connection` pronto), então não são rede para o rename da 1a — e sim
+  para o `providers/` quando a 1b acrescenta o transporte UAZAPI e
+  `TransportConnection` vira união. `deliverBroadcast` também não tem
+  harness de teste hoje (`broadcast-core.test.ts` não mocka
+  `@/lib/whatsapp/providers`).
 - Resolução de conexão em 3 níveis (conversa → `connection_id` explícito
   → primária). Na 1a, `resolveConnection` continua colapsando para a
   conexão `provider='meta'` do account.
@@ -195,24 +205,24 @@ Toda linha existente de `whatsapp_config` vira `provider='meta'`,
   ficar como está (não há tipos gerados do Supabase para regenerar).
 - **RLS / policies** — nomes acompanham o rename; nenhuma regra muda.
 
-### 3.3 Testes de cobertura adiados da Onda 0
+### 3.3 Testes de cobertura adiados da Onda 0 — movidos para a 1b
 
-Escritos **primeiro** na 1a, contra o código atual (pré-rename), e
-devem continuar passando depois do rename — são a rede que faltava para
-os três caminhos que enviam pelo transporte direto (sem passar pelo
-núcleo):
+A revisão final da Onda 0 registrou como dívida que `deliverBroadcast`,
+`broadcast/route.ts` e `react/route.ts` não têm teste asseriando a
+chamada ao transporte, e pediu que fossem "antes de
+`resolve-connection.ts` mudar de forma".
 
-- **`deliverBroadcast` (`broadcast-core.ts`)** — assere que
-  `transport.sendTemplate` recebe `to` / `templateName` / `language` /
-  `template` / `params` corretos; e que uma falha de construção do
-  transporte marca a linha `failed` e chama `finalizeBroadcastStatus`
-  (não deixa o broadcast preso em `sending`).
-- **`src/app/api/whatsapp/broadcast/route.ts`** — idem no loop
-  por-destinatário; envelope HTTP 200 com `failedCount`.
-- **`src/app/api/whatsapp/react/route.ts`** — assere que
-  `transport.sendReaction` recebe `to` / `targetProviderMessageId` /
-  `emoji`; e que uma falha devolve 502 com o prefixo
-  `Meta API error:`.
+Durante o planejamento ficou claro que esse enquadramento não se aplica
+à 1a: os três caminhos recebem `connection` pronto e **não tocam
+`whatsapp_config`**, então o rename da 1a não os afeta. Eles protegem o
+`providers/` na 1b, quando surge o segundo transporte e
+`TransportConnection` vira união discriminada. Além disso
+`broadcast-core.test.ts` não mocka `@/lib/whatsapp/providers` hoje —
+escrever o teste de `deliverBroadcast` exige montar esse mock do zero,
+que é trabalho de 1b, não "rename puro".
+
+Decisão: **os três testes entram na 1b**, como primeira task, antes de
+`providers/index.ts` ganhar o ramo `'uazapi'`.
 
 ---
 
@@ -224,7 +234,7 @@ núcleo):
 | 1a-2 | `resolveConnection` na 1a só troca o nome da tabela; 3 níveis e união discriminada ficam para a 1b | Menor rename possível. Com uma conexão por account os 3 níveis são equivalentes na prática — o código só seria exercitado na 1b, quando o UAZAPI passa a importar. |
 | 1a-3 | `TransportConnection` continua flat na 1a | A união `meta`\|`uazapi` só ganha campos reais na 1b. |
 | 1a-4 | `mirror_inbound_media` fica como está (cliente → `.eq('account_id')`) | Efeito idêntico com uma conexão; mover para rota é superfície de 1b. |
-| 1a-5 | Os 3 testes de cobertura da Onda 0 entram na 1a, antes do rename | A revisão final da Onda 0 pediu que fossem antes de `resolve-connection.ts` mudar de forma. |
+| 1a-5 | Os 3 testes de cobertura da Onda 0 vão para a **1b**, não a 1a | Os 3 caminhos recebem `connection` pronto e não tocam `whatsapp_config` — não são rede para o rename da 1a. Protegem o `providers/` na 1b. `deliverBroadcast` ainda nem tem harness de teste. Revertido do rascunho inicial da spec após verificação no planejamento. |
 
 ---
 
@@ -238,10 +248,8 @@ Mesma disciplina da Onda 0:
   `credential`) em fixtures e mocks. Qualquer teste cuja **asserção de
   comportamento** precise mudar indica que o rename deixou de ser puro —
   é um defeito, não um ajuste.
-- **Mais os três testes de cobertura** da §3.3 (novos arquivos ou novos
-  casos nos arquivos de teste de broadcast/react — não conta como
-  "suíte alterada"; é a cobertura que a Onda 0 deixou registrada como
-  dívida).
+- **Nenhum teste novo.** A dívida de cobertura da Onda 0 (§3.3) foi
+  movida para a 1b. A 1a não cria arquivo de teste nem caso de teste.
 - **CI de migração:** a 040 entra em `ci/validate-migrations`; atenção
   ao backfill de `conversations.connection_id` / `broadcasts.connection_id`
   e ao `verify-schema.sql` renomeado. `migrations.yml` roda no PR.
@@ -276,6 +284,7 @@ explicitamente no corpo do PR.
 
 ## 8. Fora de escopo desta leva
 
+- Os 3 testes de cobertura adiados da Onda 0 (§3.3) — 1b.
 - Qualquer código UAZAPI (transporte, provisionamento, rotas, env, UI) —
   1b e 1c.
 - Resolução de conexão em 3 níveis e união discriminada em

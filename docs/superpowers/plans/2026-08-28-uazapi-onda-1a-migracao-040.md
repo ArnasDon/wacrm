@@ -34,7 +34,9 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
   exceto o rename mecânico do identificador `whatsapp_config` →
   `whatsapp_connections` e `access_token` → `credential` em fixtures e
   mocks. Qualquer teste cuja **asserção de comportamento** precise mudar
-  é um defeito, não um ajuste.
+  é um defeito, não um ajuste. **Nenhum arquivo de teste novo, nenhum
+  caso de teste novo** — os testes de cobertura da Onda 0 foram movidos
+  para a 1b.
 - **Contrato HTTP público inalterado byte a byte.** `/api/whatsapp/config`
   (GET/POST/DELETE), `/api/whatsapp/webhook`, `/api/whatsapp/templates/*`,
   `/api/whatsapp/media/*` — mesmos códigos, mensagens e formatos de
@@ -62,8 +64,8 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
 - Rode `npx prettier --write <arquivos tocados>` antes de cada commit.
 - Baseline da suíte: **851 passando / 5 falhando** (as 5 são locale/fuso
   pré-existentes em `currency.test.ts` ×3 e `dashboard/date-utils.test.ts`
-  ×2). A 1a acrescenta só os casos da Task 1 (se ela ficar nesta leva) e
-  os renames de identificador em mock; as mesmas 5 continuam falhando.
+  ×2). A 1a mantém **851 / 5** — só renames de identificador em mock, que
+  não mudam contagem.
 
 ---
 
@@ -80,9 +82,6 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
 | Arquivo | Mudança |
 |---|---|
 | `supabase/ci/verify-schema.sql` | `to_regclass('public.whatsapp_config')` → `'public.whatsapp_connections'`. |
-| `src/lib/whatsapp/broadcast-core.test.ts` | + casos que asserem os args de `transport.sendTemplate` em `deliverBroadcast` e a finalização em falha de construção (dívida da Onda 0). |
-| `src/app/api/whatsapp/broadcast/route.test.ts` | **Criado** — asserções dos args de `transport.sendTemplate` no loop por-destinatário (dívida da Onda 0). |
-| `src/app/api/whatsapp/react/route.test.ts` | **Criado** — asserções dos args de `transport.sendReaction` e do 502 em falha (dívida da Onda 0). |
 | `src/lib/whatsapp/resolve-connection.ts` | Rename da tabela (×2) + `.eq('provider','meta')` no select + `credential` (×3) + comentário de cabeçalho no presente. |
 | `src/lib/whatsapp/resolve-connection.test.ts` | Rename do identificador no mock. |
 | `src/types/index.ts` | `WhatsAppConfig.access_token` → `credential`; `status` ampliado; `+ provider`. |
@@ -105,152 +104,12 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
 
 **Deliberadamente fora da 1a** (spec 1a §2, §8): resolução em 3 níveis,
 união discriminada em `TransportConnection`, mover `mirror_inbound_media`
-para rota, qualquer código UAZAPI, o pipeline de inbound.
+para rota, qualquer código UAZAPI, o pipeline de inbound, os testes de
+cobertura adiados da Onda 0 (movidos para a 1b).
 
 ---
 
-## Task 1: Testes de cobertura adiados da Onda 0
-
-**Files:**
-- Modify: `src/lib/whatsapp/broadcast-core.test.ts`
-- Create: `src/app/api/whatsapp/broadcast/route.test.ts`
-- Create: `src/app/api/whatsapp/react/route.test.ts`
-
-**Interfaces:**
-- Consumes: `deliverBroadcast(db, plan)` de
-  `@/lib/whatsapp/broadcast-core`; o transporte falso já usado em
-  `broadcast-core.test.ts`; os handlers `POST` de
-  `src/app/api/whatsapp/broadcast/route.ts` e
-  `src/app/api/whatsapp/react/route.ts`.
-- Produces: nada (só testes). Estes testes são escritos contra o código
-  **atual** (pré-rename) e devem continuar passando após a Task 6.
-
-> **Por que primeiro:** a revisão final da Onda 0 registrou como dívida
-> que `deliverBroadcast` e as duas rotas de transporte-direto não têm
-> teste asseriando a chamada ao transporte. A spec 1a §4 decisão 1a-5
-> põe essa dívida aqui.
->
-> **⚠️ Recomendação do autor do plano (decidir no handoff):** mover esta
-> task para a **1b**. Os 3 caminhos (`deliverBroadcast`,
-> `broadcast/route.ts`, `react/route.ts`) **não referenciam
-> `whatsapp_config`** — recebem `connection` pronto — então não são rede
-> para o rename da 1a. Eles protegem o `providers/` quando a 1b
-> acrescenta o transporte UAZAPI e `TransportConnection` vira união.
-> Além disso `deliverBroadcast` não tem harness de teste hoje
-> (`broadcast-core.test.ts` não mocka `@/lib/whatsapp/providers`), então
-> a task exige montar um mock de `createTransport` do zero — trabalho de
-> 1b, não "rename puro". Se a decisão for manter na 1a, os Steps abaixo
-> valem; se for mover, a 1a começa na Task 2.
-
-- [ ] **Step 1: Ler os três alvos e o teste existente**
-
-Leia, sem editar:
-- `src/lib/whatsapp/broadcast-core.test.ts` inteiro (o mock do Supabase,
-  o transporte falso, o helper de plano).
-- `src/lib/whatsapp/broadcast-core.ts` — a função `deliverBroadcast`
-  (o loop por-destinatário, o `try { const transport =
-  createTransport(plan.connection); … }`, os updates de
-  `broadcast_recipients` e o `finalizeBroadcastStatus` no fim).
-- `src/app/api/whatsapp/broadcast/route.ts` — o handler `POST`: a
-  resolução de conexão, o loop por-destinatário com `const transport =
-  createTransport(connection)` dentro do `try`, `results` /
-  `sentCount` / `failedCount`, o envelope 200.
-- `src/app/api/whatsapp/react/route.ts` — o handler `POST`: a resolução
-  de conexão (primeiro `try`), o segundo `try` com
-  `const transport = createTransport(connection)` e
-  `transport.sendReaction({ to, targetProviderMessageId, emoji })`, o
-  `catch` que devolve `502` com `Meta API error: ${message}`.
-
-Anote no report as assinaturas exatas (nomes de campo dos args do
-transporte, formato do envelope de resposta, textos de erro).
-
-- [ ] **Step 2: `broadcast-core.test.ts` — casos novos para `deliverBroadcast`**
-
-Acrescente ao `describe('deliverBroadcast', …)` existente (ou crie o
-bloco se não houver) casos que:
-
-1. **args do transporte** — com um plano de 1 destinatário e um
-   transporte falso que registra a chamada, assere que
-   `transport.sendTemplate` recebeu exatamente
-   `{ to: recipient.phone, templateName: plan.templateName,
-   language: plan.templateLanguage, template: plan.templateRow ??
-   undefined, params: recipient.params }` (use os nomes de campo reais
-   confirmados no Step 1).
-2. **`providerMessageId` persistido** — o `broadcast_recipients` do
-   destinatário recebe `status: 'sent'`,
-   `whatsapp_message_id: <result.providerMessageId>`.
-3. **falha de construção do transporte finaliza para `failed`** — faça
-   `createTransport` (mockado) lançar `new Error('Meta transport
-   requires a phone_number_id')`; assere que a linha do destinatário
-   fica `status: 'failed'` com `error_message` contendo a mensagem, que
-   `finalizeBroadcastStatus` roda, e que **não** há exceção propagada
-   de `deliverBroadcast` (o broadcast não fica preso em `sending`).
-
-Siga o estilo do arquivo: `vi.fn()` para o transporte, o mesmo mock de
-`db` já presente. Não invente helpers novos se os do arquivo servem.
-
-- [ ] **Step 3: Rodar e ver passar**
-
-Run: `npm test -- src/lib/whatsapp/broadcast-core.test.ts`
-Expected: PASS, contagem = a anterior + 3 (ou os casos que você
-escreveu). Zero warning no output.
-
-- [ ] **Step 4: `broadcast/route.test.ts` — criar**
-
-Crie `src/app/api/whatsapp/broadcast/route.test.ts` no mesmo estilo de
-`src/app/api/whatsapp/webhook/route.test.ts` (mesma forma de mock de
-`next/server`, `supabaseAdmin`, auth). Casos:
-
-1. Caminho feliz de 1 destinatário: `transport.sendTemplate` recebe
-   `{ to: <sanitized>, templateName: template_name, language:
-   resolvedTemplate.language, template: templateRow ?? undefined,
-   messageParams: recipient.messageParams, params: recipient.params ??
-   [] }` (nomes reais do Step 1); resposta HTTP 200 com `sentCount: 1`,
-   `failedCount: 0`.
-2. Falha por destinatário: `transport.sendTemplate` lança; a linha vai
-   para `results` como falha, `failedCount: 1`, resposta ainda 200.
-3. Falha de construção do transporte (`createTransport` lança): cada
-   destinatário conta como falha, `failedCount = N`, resposta 200 (não
-   500) — o `createTransport` está dentro do `try` por-destinatário.
-
-- [ ] **Step 5: `react/route.test.ts` — criar**
-
-Crie `src/app/api/whatsapp/react/route.test.ts`. Casos:
-
-1. Caminho feliz: `transport.sendReaction` recebe
-   `{ to: <sanitizedPhone>, targetProviderMessageId:
-   targetMessage.message_id, emoji }`; resposta de sucesso (o código e
-   corpo reais — confirme no Step 1).
-2. Sem config (`resolveConnection` lança `SendMessageError` com
-   `code === 'whatsapp_not_configured'`): resposta `400` com
-   `{ error: 'WhatsApp not configured.' }`.
-3. Falha do transporte (`sendReaction` lança): resposta `502` com
-   `{ error: \`Meta API error: \${message}\` }`.
-
-- [ ] **Step 6: Rodar os três arquivos**
-
-Run: `npm test -- src/lib/whatsapp/broadcast-core.test.ts src/app/api/whatsapp/broadcast/route.test.ts src/app/api/whatsapp/react/route.test.ts`
-Expected: PASS. Output limpo.
-
-Run: `npm run typecheck`
-Expected: sem erros.
-
-- [ ] **Step 7: Suíte inteira + commit**
-
-Run: `npm test`
-Expected: `851 + N` passando / 5 falhando, onde `N` é o número de casos
-que você escreveu (N ≥ 3). Se qualquer teste **existente** mudar de
-resultado, pare e investigue — a Task 1 só adiciona.
-
-```bash
-npx prettier --write src/lib/whatsapp/broadcast-core.test.ts src/app/api/whatsapp/broadcast/route.test.ts src/app/api/whatsapp/react/route.test.ts
-git add src/lib/whatsapp/broadcast-core.test.ts src/app/api/whatsapp/broadcast/route.test.ts src/app/api/whatsapp/react/route.test.ts
-git commit -m "test(whatsapp): cover the transport-direct send paths (Onda 0 debt)"
-```
-
----
-
-## Task 2: Migração `040_whatsapp_connections.sql` + `verify-schema.sql`
+## Task 1: Migração `040_whatsapp_connections.sql` + `verify-schema.sql`
 
 **Files:**
 - Create: `supabase/migrations/040_whatsapp_connections.sql`
@@ -276,7 +135,7 @@ git commit -m "test(whatsapp): cover the transport-direct send paths (Onda 0 deb
 > migração é validada por `.github/workflows/migrations.yml` quando o
 > branch é pushado (roda `supabase db reset --local --no-seed` +
 > `verify-schema.sql` num Postgres limpo). O Step 4 desta task é uma
-> revisão de SQL contra um checklist; o portão de CI é a Task 8.
+> revisão de SQL contra um checklist; o portão de CI é a Task 7.
 
 - [ ] **Step 1: Reler §4.1 da spec-mãe e o schema atual**
 
@@ -525,6 +384,9 @@ Confirme, relendo o arquivo:
 Run: `npm run typecheck`
 Expected: sem erros (nenhum arquivo `.ts` mudou ainda; sanity check).
 
+Run: `npm test`
+Expected: **851 passando / 5 falhando** — inalterado (só SQL mudou).
+
 ```bash
 npx prettier --write supabase/ci/verify-schema.sql
 git add supabase/migrations/040_whatsapp_connections.sql supabase/ci/verify-schema.sql
@@ -532,19 +394,19 @@ git commit -m "feat(db): migration 040 — whatsapp_config becomes whatsapp_conn
 ```
 
 > A partir daqui, rodar `supabase db reset` local (se alguém instalar o
-> CLI) quebra o app até a Task 7 terminar. Os testes unitários mockam o
+> CLI) quebra o app até a Task 6 terminar. Os testes unitários mockam o
 > Supabase e não são afetados.
 
 ---
 
-## Task 3: `resolve-connection.ts` + teste
+## Task 2: `resolve-connection.ts` + teste
 
 **Files:**
 - Modify: `src/lib/whatsapp/resolve-connection.ts`
 - Modify: `src/lib/whatsapp/resolve-connection.test.ts`
 
 **Interfaces:**
-- Consumes: a tabela `whatsapp_connections` (Task 2) com coluna
+- Consumes: a tabela `whatsapp_connections` (Task 1) com coluna
   `credential` e `provider`.
 - Produces: `resolveConnection()` com assinatura e tipo de retorno
   **inalterados** (`TransportConnection` continua flat).
@@ -640,7 +502,7 @@ git commit -m "refactor(whatsapp): resolveConnection reads whatsapp_connections"
 
 ---
 
-## Task 4: Tipo `WhatsAppConfig`
+## Task 3: Tipo `WhatsAppConfig`
 
 **Files:**
 - Modify: `src/types/index.ts`
@@ -670,15 +532,15 @@ entram no tipo na 1b, quando forem usadas. `user_id`, `phone_number_id`,
 Run: `npm run typecheck`
 Expected: erros **apenas** onde algo lê `.access_token` de um valor
 tipado como `WhatsAppConfig`. Anote cada um. O esperado é
-`src/components/settings/whatsapp-config.tsx` (tratado na Task 7) e
-possivelmente `src/app/api/whatsapp/config/route.ts` (Task 5). Se o
+`src/components/settings/whatsapp-config.tsx` (tratado na Task 6) e
+possivelmente `src/app/api/whatsapp/config/route.ts` (Task 4). Se o
 typecheck acusar um arquivo **fora** da lista da Estrutura de arquivos,
 pare e reporte — é um call site que o plano não previu.
 
-> O typecheck pode ficar vermelho ao fim desta task se Task 5/7 ainda
+> O typecheck pode ficar vermelho ao fim desta task se Task 4/6 ainda
 > não rodaram. Isso é esperado: a 1a é um rename em lockstep e o verde
-> só é exigido no portão (Task 8). Registre os erros como "esperados,
-> cobertos pelas Tasks 5 e 7".
+> só é exigido no portão (Task 7). Registre os erros como "esperados,
+> cobertos pelas Tasks 4 e 6".
 
 - [ ] **Step 3: Commit**
 
@@ -690,14 +552,14 @@ git commit -m "refactor(types): WhatsAppConfig gains credential/provider, wider 
 
 ---
 
-## Task 5: `/api/whatsapp/config/route.ts`
+## Task 4: `/api/whatsapp/config/route.ts`
 
 **Files:**
 - Modify: `src/app/api/whatsapp/config/route.ts`
 
 **Interfaces:**
-- Consumes: `whatsapp_connections` (Task 2), tipo `WhatsAppConfig`
-  (Task 4).
+- Consumes: `whatsapp_connections` (Task 1), tipo `WhatsAppConfig`
+  (Task 3).
 - Produces: nada novo. **Contrato HTTP byte a byte inalterado.**
 
 > Não há `route.test.ts` para este arquivo. A verificação é typecheck +
@@ -737,7 +599,7 @@ Aplique, em todas as ocorrências do handler (`GET`, `POST`, `DELETE`):
 
 Run: `npm run typecheck`
 Expected: este arquivo sem erros. (Outros arquivos podem seguir
-vermelhos até a Task 7 — anote.)
+vermelhos até a Task 6 — anote.)
 
 - [ ] **Step 3: Checklist de contrato HTTP**
 
@@ -761,7 +623,7 @@ git commit -m "refactor(whatsapp): config route reads/writes the meta connection
 
 ---
 
-## Task 6: Rename em lote — libs e rotas de API
+## Task 5: Rename em lote — libs e rotas de API
 
 **Files:**
 - Modify: `src/lib/whatsapp/resolve-conversation.ts` + `.test.ts`
@@ -774,7 +636,7 @@ git commit -m "refactor(whatsapp): config route reads/writes the meta connection
 - Modify: `src/app/api/whatsapp/config/verify-registration/route.ts`
 
 **Interfaces:**
-- Consumes: `whatsapp_connections` (Task 2).
+- Consumes: `whatsapp_connections` (Task 1).
 - Produces: nada. **Rename mecânico, zero mudança de comportamento.**
 
 > Estas são todas a mesma transformação. Sem filtro de provider (com uma
@@ -846,7 +708,7 @@ git commit -m "refactor(whatsapp): rename whatsapp_config table refs in libs and
 
 ---
 
-## Task 7: Rename em lote — componentes/cliente + sweep de comentários
+## Task 6: Rename em lote — componentes/cliente + sweep de comentários
 
 **Files:**
 - Modify: `src/app/(dashboard)/inbox/page.tsx`
@@ -857,8 +719,8 @@ git commit -m "refactor(whatsapp): rename whatsapp_config table refs in libs and
   `src/lib/automations/meta-send.ts`, `src/lib/whatsapp/send-core.ts`
 
 **Interfaces:**
-- Consumes: `whatsapp_connections` (Task 2), tipo `WhatsAppConfig`
-  (Task 4).
+- Consumes: `whatsapp_connections` (Task 1), tipo `WhatsAppConfig`
+  (Task 3).
 - Produces: nada. Rename mecânico.
 
 - [ ] **Step 1: Sites de query no cliente**
@@ -869,7 +731,7 @@ git commit -m "refactor(whatsapp): rename whatsapp_config table refs in libs and
   `.from('whatsapp_connections')`.
 - `whatsapp-config.tsx` ~124, ~215: `.from('whatsapp_config')` →
   `.from('whatsapp_connections')`. Se o componente lê `.access_token`
-  do objeto tipado `WhatsAppConfigType` (o typecheck da Task 4 apontou),
+  do objeto tipado `WhatsAppConfigType` (o typecheck da Task 3 apontou),
   renomeie para `.credential`. Comentários ~43, ~84, ~243, ~260 que
   citam `whatsapp_config` / `access_token` (a coluna) → nomes novos;
   **não** toque em texto que fala do token que o usuário digita.
@@ -890,7 +752,7 @@ tabela:
 - [ ] **Step 3: Typecheck + suíte parcial**
 
 Run: `npm run typecheck`
-Expected: **verde** agora (todas as Tasks 3-7 aplicadas).
+Expected: **verde** agora (todas as Tasks 2-6 aplicadas).
 
 Run: `npm test -- src/components/settings`
 Expected: PASS (se houver testes ali).
@@ -905,17 +767,17 @@ git commit -m "refactor(whatsapp): rename whatsapp_config refs in UI and comment
 
 ---
 
-## Task 8: Portão de aceite da 1a
+## Task 7: Portão de aceite da 1a
 
 **Files:** nenhum novo.
 
 - [ ] **Step 1: Grep — nenhuma referência sobrando à tabela antiga**
 
-Run: `git grep -n "whatsapp_config" -- 'src/**' 'supabase/**'`
+Run: `git grep -n "whatsapp_config" -- 'src/**' 'supabase/ci/**'`
 Expected: **zero linhas.** Qualquer sobra (código, comentário, log,
 fixture, `verify-schema.sql`) é defeito — trate antes de seguir. (O
 nome aparece legitimamente só no histórico de migrações 001-039, que
-não se toca.)
+não se toca — por isso o grep exclui `supabase/migrations/`.)
 
 Run: `git grep -n "access_token" -- 'src/lib/whatsapp/**' 'src/app/api/whatsapp/**'`
 Expected: só ocorrências que **não** são a coluna — o parâmetro
@@ -926,10 +788,9 @@ resumível, o corpo de request em `config/route.ts`. Nenhuma leitura de
 - [ ] **Step 2: Suíte, typecheck, lint, build**
 
 Run: `npm test`
-Expected: **`851 + N` passando / 5 falhando** (as 5 de baseline:
-`currency` ×3, `date-utils` ×2), onde `N` são os casos da Task 1 (0 se
-a Task 1 foi movida para a 1b). Nenhum teste existente mudou de
-resultado.
+Expected: **851 passando / 5 falhando** (as 5 de baseline: `currency`
+×3, `date-utils` ×2). Nenhum teste existente mudou de resultado; nenhum
+teste novo.
 
 Run: `npm run typecheck`
 Expected: sem erros.
@@ -944,13 +805,12 @@ Expected: sucesso.
 - [ ] **Step 3: Diff da suíte vs `main`**
 
 Run: `git diff main --stat -- '*.test.ts' '*.test.tsx'`
-Expected: só os 3 arquivos da Task 1 (`broadcast-core.test.ts` alterado,
-`broadcast/route.test.ts` e `react/route.test.ts` novos) + os renames de
-identificador em `resolve-connection.test.ts`,
-`resolve-conversation.test.ts`, `webhook/route.test.ts` (e
-`contacts.test.ts` se aplicável). Toda mudança em teste que **não** seja
-"arquivo novo da Task 1" ou "rename de `whatsapp_config`/`access_token`
-em mock" é violação do critério de aceite — reporte.
+Expected: só renames de identificador em
+`resolve-connection.test.ts`, `resolve-conversation.test.ts`,
+`webhook/route.test.ts` (e `contacts.test.ts` se aplicável) — poucas
+linhas cada, todas trocando `whatsapp_config`/`access_token`. **Zero
+arquivo de teste novo. Zero caso de teste novo.** Qualquer outra
+mudança em teste é violação do critério de aceite — reporte.
 
 - [ ] **Step 4: Migração — CI**
 
@@ -961,15 +821,20 @@ do job aponta o statement — corrija a 040 e re-push.
 
 - [ ] **Step 5: Relatório final da leva**
 
-No report: contagem da suíte antes/depois, saída dos greps do Step 1,
-resultado do `migrations.yml`, e a lista de arquivos tocados vs a
-Estrutura de arquivos deste plano.
+No report: contagem da suíte antes/depois (851/5 → 851/5), saída dos
+greps do Step 1, resultado do `migrations.yml`, e a lista de arquivos
+tocados vs a Estrutura de arquivos deste plano.
 
 ---
 
 ## Follow-ups (fora da 1a, registrar)
 
-- **1b:** `.eq('provider', ...)` nos call sites que hoje ficaram com
+- **1b:** os 3 testes de cobertura adiados da Onda 0 (`deliverBroadcast`,
+  `broadcast/route.ts`, `react/route.ts`) — movidos para cá porque não
+  protegem o rename da 1a (esses caminhos não tocam `whatsapp_config`) e
+  sim o `providers/` quando a 1b acrescenta o transporte UAZAPI. Exigem
+  montar um mock de `createTransport` do zero em `broadcast-core.test.ts`.
+- **1b:** `.eq('provider', ...)` nos call sites que na 1a ficaram com
   rename puro (`webhook`, `resolve-conversation`, `templates/*`,
   `media`, `verify-registration`, `inbox/page`, `settings-*`) — passam
   a importar quando existe a segunda conexão.

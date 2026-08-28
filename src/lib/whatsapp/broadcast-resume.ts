@@ -23,6 +23,7 @@ import {
   type BroadcastPlan,
 } from '@/lib/whatsapp/broadcast-core';
 import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
 import type { TransportConnection } from '@/lib/whatsapp/providers';
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
@@ -218,12 +219,18 @@ export async function planBroadcastResume(
   let connection: TransportConnection;
   try {
     connection = await resolveConnection(db, accountId);
-  } catch {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  } catch (err) {
+    if (
+      err instanceof SendMessageError &&
+      err.code === 'whatsapp_not_configured'
+    ) {
+      throw new BroadcastError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
   }
 
   const resolvedTemplate = await resolveTemplateRow(

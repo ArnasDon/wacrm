@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
 import {
   createTransport,
   type TransportConnection,
@@ -121,16 +122,21 @@ export async function POST(request: Request) {
     let connection: TransportConnection;
     try {
       connection = await resolveConnection(supabase, accountId);
-    } catch {
-      return NextResponse.json(
-        {
-          error:
-            'WhatsApp not configured. Please set up your WhatsApp integration first.',
-        },
-        { status: 400 }
-      );
+    } catch (err) {
+      if (
+        err instanceof SendMessageError &&
+        err.code === 'whatsapp_not_configured'
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'WhatsApp not configured. Please set up your WhatsApp integration first.',
+          },
+          { status: 400 }
+        );
+      }
+      throw err;
     }
-    const transport = createTransport(connection);
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -174,6 +180,7 @@ export async function POST(request: Request) {
       let sentMessageId: string | null = null;
       let lastError: string | null = null;
       try {
+        const transport = createTransport(connection);
         // O retry de variantes vive dentro do transporte. O
         // `normalizedRecipient` é ignorado de propósito: este caminho
         // nunca reescreveu o telefone do contato.

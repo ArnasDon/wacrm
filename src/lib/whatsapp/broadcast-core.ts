@@ -19,6 +19,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
 import {
   createTransport,
   type TransportConnection,
@@ -113,12 +114,18 @@ export async function createBroadcast(
   let connection: TransportConnection;
   try {
     connection = await resolveConnection(db, accountId);
-  } catch {
-    throw new BroadcastError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  } catch (err) {
+    if (
+      err instanceof SendMessageError &&
+      err.code === 'whatsapp_not_configured'
+    ) {
+      throw new BroadcastError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400
+      );
+    }
+    throw err;
   }
 
   // Template row (once) for header/button components; guard a
@@ -261,13 +268,12 @@ export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
-  const transport = createTransport(plan.connection);
-
   for (const recipient of plan.planned) {
     let sentMessageId: string | null = null;
     let lastError: string | null = null;
 
     try {
+      const transport = createTransport(plan.connection);
       // O retry de variantes de telefone vive dentro do transporte. O
       // `normalizedRecipient` que ele devolve é deliberadamente
       // ignorado: o broadcast nunca reescreveu o telefone do contato.

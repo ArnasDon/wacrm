@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
-import { createTransport } from '@/lib/whatsapp/providers';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
+import {
+  createTransport,
+  type TransportConnection,
+} from '@/lib/whatsapp/providers';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
   checkRateLimit,
@@ -91,21 +95,31 @@ export async function POST(request: Request) {
     }
 
     // Conexão + transporte. A reação não passa pelo núcleo de envio:
-    // ela grava em `message_reactions`, não em `messages`.
-    let transport;
+    // ela grava em `message_reactions`, não em `messages`. O
+    // `createTransport` fica no try do envio: uma credencial sem
+    // `phone_number_id` cai no mesmo 502 que uma falha de rede, e um
+    // erro cru de `decrypt` (credencial corrompida) sobe pro handler
+    // externo como 500, não vira "não configurado".
+    let connection: TransportConnection;
     try {
-      const connection = await resolveConnection(supabase, accountId);
-      transport = createTransport(connection);
-    } catch {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
-        { status: 400 }
-      );
+      connection = await resolveConnection(supabase, accountId);
+    } catch (err) {
+      if (
+        err instanceof SendMessageError &&
+        err.code === 'whatsapp_not_configured'
+      ) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 }
+        );
+      }
+      throw err;
     }
 
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
+      const transport = createTransport(connection);
       await transport.sendReaction({
         to: sanitizedPhone,
         targetProviderMessageId: targetMessage.message_id,

@@ -31,7 +31,7 @@ export async function GET(
       )
     }
 
-    // Resolve the caller's account_id — whatsapp_config is one-per-
+    // Resolve the caller's account_id — whatsapp_connections is one-per-
     // account post-multi-user, so a teammate fetching media for a
     // conversation in the shared inbox needs the account's config,
     // not their personal (non-existent) row.
@@ -50,7 +50,7 @@ export async function GET(
 
     // Fetch and decrypt WhatsApp config
     const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_connections')
       .select('*')
       .eq('account_id', accountId)
       .single()
@@ -62,7 +62,7 @@ export async function GET(
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const accessToken = decrypt(config.credential)
 
     // Get the download URL from Meta
     const mediaInfo = await getMediaUrl({ mediaId, accessToken })

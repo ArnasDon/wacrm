@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
     automationCompleted: 0,
-    /** whatsapp_config.mirror_inbound_media for the matched row (#466). */
+    /** whatsapp_connections.mirror_inbound_media for the matched row (#466). */
     mirrorInboundMedia: true as boolean | undefined,
     /** Objects the inbound-media mirror pushed into chat-media. */
     storageUploads: [] as {
@@ -45,7 +45,7 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from(table: string) {
       switch (table) {
-        case 'whatsapp_config':
+        case 'whatsapp_connections':
           return {
             select: () => ({
               eq: () =>
@@ -54,7 +54,7 @@ vi.mock('@supabase/supabase-js', () => ({
                     {
                       account_id: 'acc-1',
                       user_id: 'user-1',
-                      access_token: 'enc',
+                      credential: 'enc',
                       mirror_inbound_media: h.state.mirrorInboundMedia,
                     },
                   ],

@@ -114,7 +114,7 @@ export async function GET(request: Request) {
 
     // Fetch all whatsapp configs to check verify tokens
     const { data: configs, error: configError } = await supabaseAdmin()
-      .from('whatsapp_config')
+      .from('whatsapp_connections')
       .select('id, verify_token')
 
     if (configError || !configs) {
@@ -147,7 +147,7 @@ export async function GET(request: Request) {
       // since it's a no-op once the column is already GCM.
       if (isLegacyFormat(matchedConfig.verify_token)) {
         void supabaseAdmin()
-          .from('whatsapp_config')
+          .from('whatsapp_connections')
           .update({ verify_token: encrypt(verifyToken) })
           .eq('id', matchedConfig.id)
           .then(({ error }: { error: unknown }) => {
@@ -264,13 +264,13 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       // post-migration 013 (UNIQUE constraint), but a row created
       // before the constraint, or a race, would still surface here.
       const { data: configRows, error: configError } = await supabaseAdmin()
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .select('*')
         .eq('phone_number_id', phoneNumberId)
 
       if (configError) {
         console.error(
-          'Error fetching whatsapp_config for phone_number_id:',
+          'Error fetching whatsapp_connections for phone_number_id:',
           phoneNumberId,
           configError
         )
@@ -295,7 +295,7 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const config = configRows[0]
 
-      const decryptedAccessToken = decrypt(config.access_token)
+      const decryptedAccessToken = decrypt(config.credential)
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]
@@ -575,7 +575,7 @@ async function handleReaction(
 async function processMessage(
   message: WhatsAppMessage,
   contact: { profile: { name: string }; wa_id: string },
-  // Tenancy. Resolved from the matched whatsapp_config row; every
+  // Tenancy. Resolved from the matched whatsapp_connections row; every
   // contact / conversation / message row created downstream is
   // stamped with this so any member of the account can see it.
   accountId: string,

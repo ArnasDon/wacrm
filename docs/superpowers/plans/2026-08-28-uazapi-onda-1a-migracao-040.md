@@ -37,6 +37,16 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
   é um defeito, não um ajuste. **Nenhum arquivo de teste novo, nenhum
   caso de teste novo** — os testes de cobertura da Onda 0 foram movidos
   para a 1b.
+- **Regra de lockstep para mocks de teste:** um `.test.ts` cujo caminho
+  mockado alcança `resolveConnection()` tem o rename do identificador do
+  mock (`'whatsapp_config'` → `'whatsapp_connections'`, `access_token` →
+  `credential` na fixture) feito **junto da Task 2**, não da Task 5 —
+  senão a suíte fica vermelha entre as tasks. São
+  `send/route.test.ts`, `broadcast-core.test.ts`,
+  `broadcast-resume.test.ts`, `send-message.test.ts` (mais o próprio
+  `resolve-connection.test.ts`). Os testes cujo arquivo de produção só é
+  renomeado na Task 5 (`webhook/route.test.ts`,
+  `resolve-conversation.test.ts`, `contacts.test.ts`) ficam na Task 5.
 - **Contrato HTTP público inalterado byte a byte.** `/api/whatsapp/config`
   (GET/POST/DELETE), `/api/whatsapp/webhook`, `/api/whatsapp/templates/*`,
   `/api/whatsapp/media/*` — mesmos códigos, mensagens e formatos de
@@ -84,6 +94,10 @@ Vitest 4.1.10 (`environment: node`), Prettier (`semi: true`,
 | `supabase/ci/verify-schema.sql` | `to_regclass('public.whatsapp_config')` → `'public.whatsapp_connections'`. |
 | `src/lib/whatsapp/resolve-connection.ts` | Rename da tabela (×2) + `.eq('provider','meta')` no select + `credential` (×3) + comentário de cabeçalho no presente. |
 | `src/lib/whatsapp/resolve-connection.test.ts` | Rename do identificador no mock. |
+| `src/app/api/whatsapp/send/route.test.ts` | Rename do identificador no mock DB (`case 'whatsapp_config'` + `access_token`) — o caminho passa por `resolveConnection`. |
+| `src/lib/whatsapp/broadcast-core.test.ts` | Idem (`if (table === 'whatsapp_config')` + `access_token`). |
+| `src/lib/whatsapp/broadcast-resume.test.ts` | Idem (`CONFIG` fixture + qualquer check de tabela no mock). |
+| `src/lib/whatsapp/send-message.test.ts` | Idem (`if (table === 'whatsapp_config')` + `access_token`). |
 | `src/types/index.ts` | `WhatsAppConfig.access_token` → `credential`; `status` ampliado; `+ provider`. |
 | `src/app/api/whatsapp/config/route.ts` | Rename (×6 `.from`) + `.eq('provider','meta')` em select/update/delete + `provider: 'meta'` no insert + `credential` nos objetos + strings de log. |
 | `src/lib/whatsapp/resolve-conversation.ts` | Rename da tabela (×1). |
@@ -428,12 +442,18 @@ git commit -m "feat(db): migration 040 — whatsapp_config becomes whatsapp_conn
 **Files:**
 - Modify: `src/lib/whatsapp/resolve-connection.ts`
 - Modify: `src/lib/whatsapp/resolve-connection.test.ts`
+- Modify (rename de identificador no mock DB — o caminho passa por
+  `resolveConnection`): `src/app/api/whatsapp/send/route.test.ts`,
+  `src/lib/whatsapp/broadcast-core.test.ts`,
+  `src/lib/whatsapp/broadcast-resume.test.ts`,
+  `src/lib/whatsapp/send-message.test.ts`.
 
 **Interfaces:**
 - Consumes: a tabela `whatsapp_connections` (Task 1) com coluna
   `credential` e `provider`.
 - Produces: `resolveConnection()` com assinatura e tipo de retorno
-  **inalterados** (`TransportConnection` continua flat).
+  **inalterados** (`TransportConnection` continua flat). A suíte
+  continua **851/5** ao fim desta task.
 
 - [ ] **Step 1: Editar `resolve-connection.ts`**
 
@@ -508,19 +528,44 @@ código precisa continuar resolvendo: garanta que o builder falso ignora
 builder`). Se o teste montar a linha sem `provider`, adicione
 `provider: 'meta'` à fixture.
 
-- [ ] **Step 3: Rodar o teste**
+- [ ] **Step 3: Renomear o mock DB nos 4 testes que passam por `resolveConnection`**
+
+Esses testes mockam o Supabase com o nome antigo da tabela e seus
+caminhos chamam `resolveConnection` — sem o rename, a suíte fica
+vermelha. Só identificador (rename permitido pelas Global Constraints):
+
+- `src/app/api/whatsapp/send/route.test.ts` (~:53 `case 'whatsapp_config':`,
+  ~:59 `access_token:` na linha mockada).
+- `src/lib/whatsapp/broadcast-core.test.ts` (~:63
+  `if (table === 'whatsapp_config')`, ~:69 `access_token:`).
+- `src/lib/whatsapp/broadcast-resume.test.ts` (~:173 `const CONFIG = {
+  … access_token: 'tok' }` + qualquer outro check de tabela no mock;
+  **não** toque na asserção `plan.connection.credential`).
+- `src/lib/whatsapp/send-message.test.ts` (~:218 `access_token:`, ~:239
+  `if (table === 'whatsapp_config')`).
+
+Em cada um: `'whatsapp_config'` → `'whatsapp_connections'`,
+`access_token` → `credential` **só onde representa a coluna do mock**.
+Se um teste precisar de mais que rename de identificador (uma asserção
+muda), pare e reporte.
+
+- [ ] **Step 4: Rodar a suíte**
 
 Run: `npm test -- src/lib/whatsapp/resolve-connection.test.ts`
 Expected: PASS, **mesma contagem de antes**. Output limpo.
 
-Run: `npm run typecheck`
-Expected: sem erros.
+Run: `npm test`
+Expected: **851 passando / 5 falhando** (as 5 de baseline). Zero
+regressão.
 
-- [ ] **Step 4: Commit**
+Run: `npm run typecheck`
+Expected: sem erros (nenhuma mudança de tipo nesta task).
+
+- [ ] **Step 5: Commit**
 
 ```bash
-npx prettier --write src/lib/whatsapp/resolve-connection.ts src/lib/whatsapp/resolve-connection.test.ts
-git add src/lib/whatsapp/resolve-connection.ts src/lib/whatsapp/resolve-connection.test.ts
+npx prettier --write src/lib/whatsapp/resolve-connection.ts src/lib/whatsapp/resolve-connection.test.ts src/app/api/whatsapp/send/route.test.ts src/lib/whatsapp/broadcast-core.test.ts src/lib/whatsapp/broadcast-resume.test.ts src/lib/whatsapp/send-message.test.ts
+git add src/lib/whatsapp/resolve-connection.ts src/lib/whatsapp/resolve-connection.test.ts src/app/api/whatsapp/send/route.test.ts src/lib/whatsapp/broadcast-core.test.ts src/lib/whatsapp/broadcast-resume.test.ts src/lib/whatsapp/send-message.test.ts
 git commit -m "refactor(whatsapp): resolveConnection reads whatsapp_connections"
 ```
 

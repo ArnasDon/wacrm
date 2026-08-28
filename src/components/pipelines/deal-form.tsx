@@ -220,18 +220,18 @@ export function DealForm({
   async function handleStatusChange(status: DealStatus) {
     if (!deal) return;
     setStatusAction(status);
-    // Keep `won_at` in step with `status` (KPI "won in this window"
-    // reads `won_at`): stamp it when winning, clear it when reopening
-    // or marking lost. Mirrors `moveDeal` on the server.
-    const { error } = await supabase
-      .from("deals")
-      .update({
-        status,
-        won_at: status === "won" ? new Date().toISOString() : null,
-      })
-      .eq("id", deal.id);
+    // Route through the server (not a direct Supabase write) so a "won"
+    // here fires the same `deal.won` / `deal.stage_changed` webhook
+    // events the Kanban drag does — those feed automations and a
+    // connected Google Sheet. The route also keeps `won_at` in step
+    // with `status` (KPI "won in this window" reads `won_at`).
+    const res = await fetch(`/api/deals/${deal.id}/status`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    }).catch(() => null);
     setStatusAction(null);
-    if (error) {
+    if (!res || !res.ok) {
       toast.error(t("toastFailedStatus"));
       return;
     }

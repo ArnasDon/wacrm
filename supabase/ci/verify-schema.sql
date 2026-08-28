@@ -20,6 +20,12 @@ BEGIN
   IF to_regclass('public.whatsapp_connections') IS NULL THEN
     RAISE EXCEPTION 'public.whatsapp_connections is missing — migrations did not apply';
   END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'whatsapp_connections_status_check'
+  ) THEN
+    RAISE EXCEPTION 'the 040 status CHECK (whatsapp_connections_status_check) was not installed';
+  END IF;
 
   -- Supabase provides the storage schema; migrations 016/020/023 write
   -- to it. If it is absent the bucket migrations silently accomplish

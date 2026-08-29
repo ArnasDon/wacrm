@@ -581,26 +581,53 @@ export async function handleOutboundEchoMessageForZernioConversation(
     channel: EchoChannel
     accountId: string
     zernioConversationId: string
+    /**
+     * The `whatsapp_config` id this echo arrived on, when the caller
+     * has one (the WhatsApp Zernio route does; the IG/FB ones have no
+     * such concept and pass nothing). Reconnecting a Zernio number
+     * mints a fresh `whatsapp_config` row, and for a window the same
+     * `zernio_conversation_id` can map to more than one conversation
+     * row — the pre-reconnect thread plus a new one the inbound webhook
+     * started under the new config. Preferring the row on the live
+     * config keeps the echo on the same thread inbound is writing to.
+     */
+    whatsappConfigId?: string | null
   },
 ): Promise<void> {
-  const { channel, accountId, zernioConversationId } = args
+  const { channel, accountId, zernioConversationId, whatsappConfigId } = args
 
-  const { data: conversation, error } = await db
+  // Deliberately NOT `.maybeSingle()`: when a number reconnect left two
+  // rows briefly sharing this `zernio_conversation_id`, `.maybeSingle()`
+  // returned an error and this function bailed — silently dropping every
+  // Coexistence echo account-wide until the rows were merged by hand
+  // (2026-08-29 incident). Fetch all matches and pick one deterministically.
+  const { data: rows, error } = await db
     .from('conversations')
     .select('*')
     .eq('account_id', accountId)
     .eq('zernio_conversation_id', zernioConversationId)
-    .maybeSingle()
+    .order('created_at', { ascending: true })
 
   if (error) {
     console.error(`[${channel} outbound-echo] error looking up conversation for zernio_conversation_id:`, zernioConversationId, error)
     return
   }
-  if (!conversation) {
+  if (!rows || rows.length === 0) {
     console.warn(
       `[${channel} outbound-echo] no existing conversation for zernio_conversation_id ${zernioConversationId} — an agent's own external-app message to a brand-new contact can't be attributed without a customer id, skipping.`,
     )
     return
+  }
+
+  // Prefer the row on the live config; otherwise the oldest, which
+  // carries the conversation's history.
+  const conversation =
+    (whatsappConfigId && rows.find((r) => r.whatsapp_config_id === whatsappConfigId)) || rows[0]
+
+  if (rows.length > 1) {
+    console.warn(
+      `[${channel} outbound-echo] ${rows.length} conversations share zernio_conversation_id ${zernioConversationId}; writing to ${conversation.id}. These rows should be merged (see migration 091).`,
+    )
   }
 
   await persistOutboundEchoMessage(db, channel, conversation, args)

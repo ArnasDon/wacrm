@@ -24,6 +24,10 @@ import {
  *  (optional reply-parent lookup, then the idempotent upsert). */
 function makeDb(fx: {
   conversation?: { id: string; contact_id: string } | null
+  /** Multi-row result for the Zernio echo lookup (which ends in `.order(...)`,
+   *  no `.limit`); falls back to `conversation` wrapped in an array. */
+  conversations?: Record<string, unknown>[]
+  conversationLookupError?: unknown
   messageUpsertResult?: { id: string }[]
   replyParent?: { id: string } | null
   contact?: { id: string } | null
@@ -34,6 +38,11 @@ function makeDb(fx: {
     conversationInserts: [] as Record<string, unknown>[],
   }
 
+  const listResult = () => ({
+    data: fx.conversations ?? (fx.conversation ? [fx.conversation] : []),
+    error: fx.conversationLookupError ?? null,
+  })
+
   const db = {
     from(table: string) {
       if (table === 'conversations') {
@@ -41,8 +50,11 @@ function makeDb(fx: {
           select: () => readChain,
           eq: () => readChain,
           order: () => readChain,
-          limit: () => Promise.resolve({ data: fx.conversation ? [fx.conversation] : [], error: null }),
+          limit: () => Promise.resolve(listResult()),
           maybeSingle: () => Promise.resolve({ data: fx.conversation ?? null, error: null }),
+          // `.order(...)` is the last call on the echo lookup — make the
+          // chain awaitable so it resolves to the list result.
+          then: (resolve: (v: unknown) => void) => resolve(listResult()),
         }
         return {
           ...readChain,
@@ -174,6 +186,57 @@ describe('handleOutboundEchoMessageForZernioConversation', () => {
       content_text: 'respondido desde la app oficial de whatsapp',
       message_id: 'wamid-1',
     })
+  })
+
+  it('does NOT bail when two rows share the zernio_conversation_id — writes to the one on the live whatsapp_config (2026-08-29 incident)', async () => {
+    // A number reconnect left the old thread + a fresh one briefly
+    // sharing this id. The old code did `.maybeSingle()`, errored, and
+    // dropped the echo entirely; now it must still land — on the row
+    // matching the config the echo arrived on.
+    const { db, state } = makeDb({
+      conversations: [
+        { id: 'conv-old', contact_id: 'contact-1', whatsapp_config_id: 'cfg-old', created_at: '2026-08-01T00:00:00Z' },
+        { id: 'conv-new', contact_id: 'contact-1', whatsapp_config_id: 'cfg-new', created_at: '2026-08-29T00:00:00Z' },
+      ],
+    })
+
+    await handleOutboundEchoMessageForZernioConversation(db, {
+      channel: 'whatsapp',
+      accountId: 'acct-1',
+      whatsappConfigId: 'cfg-new',
+      zernioConversationId: 'zconv-1',
+      mid: 'wamid-2',
+      contentText: 'sí llegó',
+      mediaUrl: null,
+      contentType: 'text',
+      replyToMid: null,
+    })
+
+    expect(state.upserts).toHaveLength(1)
+    expect(state.upserts[0].row).toMatchObject({ conversation_id: 'conv-new', message_id: 'wamid-2' })
+  })
+
+  it('falls back to the oldest row when no whatsapp_config match (still never bails on >1 row)', async () => {
+    const { db, state } = makeDb({
+      conversations: [
+        { id: 'conv-old', contact_id: 'contact-1', whatsapp_config_id: null, created_at: '2026-08-01T00:00:00Z' },
+        { id: 'conv-new', contact_id: 'contact-1', whatsapp_config_id: 'cfg-new', created_at: '2026-08-29T00:00:00Z' },
+      ],
+    })
+
+    await handleOutboundEchoMessageForZernioConversation(db, {
+      channel: 'whatsapp',
+      accountId: 'acct-1',
+      zernioConversationId: 'zconv-1',
+      mid: 'wamid-3',
+      contentText: 'a la fila más antigua',
+      mediaUrl: null,
+      contentType: 'text',
+      replyToMid: null,
+    })
+
+    expect(state.upserts).toHaveLength(1)
+    expect(state.upserts[0].row).toMatchObject({ conversation_id: 'conv-old', message_id: 'wamid-3' })
   })
 })
 

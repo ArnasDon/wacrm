@@ -24,8 +24,23 @@ import type {
 
 /** Provider key prefix for Budun integrations. See catalog/id.ts —
  *  must never contain a colon. */
+const KEY_PREFIX = 'budun_'
+
 export function budunProviderKey(integrationId: string): string {
-  return `budun_${integrationId}`
+  return `${KEY_PREFIX}${integrationId}`
+}
+
+/** True when a resolved provider's `key` identifies it as a Budun (i.e.
+ *  EXTERNAL/HTTP-backed) integration, as opposed to the internal Sheet/
+ *  CSV-backed DataSourceCatalogProvider (`ds_...`). Used by
+ *  catalog/resolver.ts to gate the external-call rate limit — kept here
+ *  (next to the prefix it checks) rather than duplicating the literal
+ *  `'budun_'` string elsewhere. Deliberately a plain key-prefix check,
+ *  not `instanceof BudunProvider`, so it also recognizes the exact same
+ *  provider shape test doubles already construct (see resolver.test.ts's
+ *  `fakeProvider('budun_...', ...)`  fixtures). */
+export function isBudunProviderKey(key: string): boolean {
+  return key.startsWith(KEY_PREFIX)
 }
 
 export class BudunProvider implements CatalogProvider {

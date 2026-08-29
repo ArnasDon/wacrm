@@ -27,6 +27,7 @@ import {
 import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
+import { BusinessProfileSettings } from './business-profile-settings';
 import { DataSourcesSettings } from './data-sources-settings';
 import { CatalogIntegrationsSettings } from './catalog-integrations-settings';
 import { AI_PROVIDER_DEFAULT_MODEL, AI_DEFAULT_MODELS } from '@/lib/ai/defaults';
@@ -541,6 +542,15 @@ export function AiConfig() {
             </div>
           </CardContent>
         </Card>
+
+        {/* Business Profile (AI optimization project, FASE 6) — structured
+            identity/contact/location/hours/delivery/payment/policy info
+            + the department/contact directory the agent reads via
+            buildBusinessProfileContext(). Placed right after Behaviour,
+            before Knowledge, since it's official structured business
+            data — a distinct source from the Knowledge Base's document
+            retrieval (see auto-reply.ts's routing integration). */}
+        <BusinessProfileSettings />
 
         <AiKnowledgeCard
           accountId={accountId}

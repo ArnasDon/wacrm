@@ -53,13 +53,30 @@ export interface ChatMessage {
 
 /**
  * Token counts for one provider call, normalized across OpenAI
- * (`prompt`/`completion`) and Anthropic (`input`/`output`). Null when
- * the provider didn't return usage. Logged to `ai_usage_log`.
+ * (`prompt`/`completion`), OpenRouter (same shape — an OpenAI-compatible
+ * gateway, see providers/openai-compatible.ts), and Anthropic
+ * (`input`/`output`). Null (the whole `AiUsage | null`) when the
+ * provider didn't return usage at all. Logged to `ai_usage_log`.
  */
 export interface AiUsage {
   promptTokens: number
   completionTokens: number
   totalTokens: number
+  /** Anthropic prompt caching only (FASE 8) — tokens spent WRITING a new
+   *  cache entry this call (billed at a premium over a normal input
+   *  token). Present only when Anthropic's response actually reported
+   *  `cache_creation_input_tokens`; omitted entirely for every other
+   *  provider and for an Anthropic call that didn't create a cache
+   *  entry — never coerced to 0, matching the FASE 2 breakdown metrics'
+   *  "NULL means never computed" discipline (see usage.ts). Distinct
+   *  from `promptTokens`, which Anthropic already reports net of any
+   *  cached tokens — never add this into `promptTokens` yourself. */
+  cacheCreationInputTokens?: number
+  /** Anthropic prompt caching only — tokens served FROM an existing
+   *  cache entry this call (billed at a steep discount vs. a normal
+   *  input token). Same "present only when actually reported" rule as
+   *  `cacheCreationInputTokens` above. */
+  cacheReadInputTokens?: number
 }
 
 /** Raw text + usage a provider adapter returns before handoff parsing.

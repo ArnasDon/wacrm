@@ -16,6 +16,47 @@ type AnthropicContentBlock =
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | { type: 'tool_result'; tool_use_id: string; content: string }
 
+/** One block of the REQUEST's `system` field — distinct from
+ *  `AnthropicContentBlock` above (which models the RESPONSE's content
+ *  array and tool-result turns). `cache_control` is the only field
+ *  prompt caching adds (AI optimization project, FASE 8): Anthropic
+ *  caches everything from the start of `system` up through a block that
+ *  carries it. Never present on a block built from dynamic content —
+ *  see `toAnthropicSystem` below. */
+type AnthropicSystemBlock = { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
+
+/**
+ * Build the `system` field for the wire request. When the caller
+ * supplied `systemPromptBlocks` (see providers/shared.ts and
+ * ../defaults.ts::buildSystemPromptBlocks), this returns TWO blocks:
+ * the stable/rule prefix marked as an ephemeral cache breakpoint, then
+ * (only if non-empty) everything dynamic — current message context,
+ * retrieved Knowledge, catalog context, Business Profile data — with NO
+ * `cache_control`, exactly matching FASE 8's explicit "never cache
+ * dynamic content" rule. The leading `\n\n` on the second block
+ * reproduces the same separator `buildSystemPrompt`'s plain-string
+ * `parts.join('\n\n')` would have inserted there, so the text Anthropic
+ * actually sees is identical to the flat string other providers get —
+ * just split at a different point (see buildSystemPromptBlocks's doc for
+ * why the two blocks are ordered stable-then-dynamic rather than
+ * following the original interleaved order).
+ *
+ * Falls back to the plain string (no array, no cache_control) when
+ * `systemPromptBlocks` is absent — the exact behavior this feature
+ * didn't change, still the only path for OpenAI/OpenRouter and for any
+ * caller that hasn't been updated to pass blocks.
+ */
+function toAnthropicSystem(systemPrompt: string, blocks?: { stable: string; dynamic: string }): string | AnthropicSystemBlock[] {
+  if (!blocks) return systemPrompt
+  const result: AnthropicSystemBlock[] = [
+    { type: 'text', text: blocks.stable, cache_control: { type: 'ephemeral' } },
+  ]
+  if (blocks.dynamic) {
+    result.push({ type: 'text', text: `\n\n${blocks.dynamic}` })
+  }
+  return result
+}
+
 interface AnthropicMessage {
   role: 'user' | 'assistant'
   content: string | AnthropicContentBlock[]
@@ -24,7 +65,20 @@ interface AnthropicMessage {
 interface AnthropicResponse {
   content?: AnthropicContentBlock[]
   stop_reason?: string
-  usage?: { input_tokens?: number; output_tokens?: number }
+  // `cache_creation_input_tokens`/`cache_read_input_tokens` (AI
+  // optimization project, FASE 8's follow-up — Usage integration) are
+  // ONLY present on a response when prompt caching actually wrote to or
+  // read from a cache entry this call; a request with no
+  // `systemPromptBlocks` (no cache_control on the wire — see
+  // toAnthropicSystem above) never has them at all. Kept strictly
+  // separate from `input_tokens`, which Anthropic already reports net
+  // of both — never add them together.
+  usage?: {
+    input_tokens?: number
+    output_tokens?: number
+    cache_creation_input_tokens?: number
+    cache_read_input_tokens?: number
+  }
 }
 
 /**
@@ -58,13 +112,26 @@ function toAnthropicTools(tools: NonNullable<ProviderArgs['tools']>) {
  * ("TOOL CALLING").
  */
 export async function generateAnthropic(args: ProviderArgs): Promise<ProviderResult> {
-  const { apiKey, model, systemPrompt, messages, timeoutMs, tools, executeTool } = args
+  const { apiKey, model, systemPrompt, systemPromptBlocks, messages, timeoutMs, tools, executeTool } = args
   const maxTurns = args.maxToolTurns ?? MAX_TOOL_TURNS
 
   const wireMessages = normalizeForAnthropic(messages)
-  const aggregatedUsage = { prompt: 0, completion: 0 }
+  const aggregatedUsage = { prompt: 0, completion: 0, cacheCreation: 0, cacheRead: 0 }
+  // Tracked separately from the running sums above: a turn that never
+  // reports cache fields at all (caching not configured for this call)
+  // must leave the final AiUsage without these keys entirely — summing
+  // absent fields as 0 would otherwise be indistinguishable from "this
+  // call genuinely created/read zero cache tokens", which is a real,
+  // different, reportable state (see normalizeUsage's doc).
+  let sawCacheCreation = false
+  let sawCacheRead = false
   const toolCallLog: ToolCallLogEntry[] = []
   const wireTools = tools && tools.length > 0 ? toAnthropicTools(tools) : undefined
+  // Built ONCE, outside the loop — the same value is sent on every turn
+  // of the tool-calling exchange below (turns 2+ are exactly where the
+  // cache breakpoint pays off: identical `system` content, cheaper
+  // "cache read" pricing instead of full input reprocessing).
+  const wireSystem = toAnthropicSystem(systemPrompt, systemPromptBlocks)
 
   for (let turn = 0; ; turn++) {
     let res: Response
@@ -78,7 +145,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         },
         body: JSON.stringify({
           model,
-          system: systemPrompt,
+          system: wireSystem,
           max_tokens: MAX_OUTPUT_TOKENS,
           messages: wireMessages,
           ...(wireTools ? { tools: wireTools } : {}),
@@ -98,6 +165,14 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
 
     aggregatedUsage.prompt += data?.usage?.input_tokens ?? 0
     aggregatedUsage.completion += data?.usage?.output_tokens ?? 0
+    if (typeof data?.usage?.cache_creation_input_tokens === 'number') {
+      aggregatedUsage.cacheCreation += data.usage.cache_creation_input_tokens
+      sawCacheCreation = true
+    }
+    if (typeof data?.usage?.cache_read_input_tokens === 'number') {
+      aggregatedUsage.cacheRead += data.usage.cache_read_input_tokens
+      sawCacheRead = true
+    }
 
     const toolUseBlocks = blocks.filter((b): b is Extract<AnthropicContentBlock, { type: 'tool_use' }> => b.type === 'tool_use')
 
@@ -119,22 +194,28 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
       .join('')
       .trim()
 
+    // Anthropic reports input/output but no total — normalizeUsage sums.
+    // Cache fields are passed through only when at least one turn this
+    // call actually reported them — see the sawCacheCreation/sawCacheRead
+    // doc above.
+    const usage = normalizeUsage({
+      prompt: aggregatedUsage.prompt,
+      completion: aggregatedUsage.completion,
+      cacheCreationInputTokens: sawCacheCreation ? aggregatedUsage.cacheCreation : undefined,
+      cacheReadInputTokens: sawCacheRead ? aggregatedUsage.cacheRead : undefined,
+    })
+
     if (!text) {
       if (toolCallLog.length > 0) {
         return {
           text: 'Un momento, permíteme confirmar esa información.',
-          usage: normalizeUsage({ prompt: aggregatedUsage.prompt, completion: aggregatedUsage.completion }),
+          usage,
           toolCalls: toolCallLog,
         }
       }
       throw new AiError('Anthropic returned an empty response.', { code: 'empty_response' })
     }
 
-    // Anthropic reports input/output but no total — normalizeUsage sums.
-    return {
-      text,
-      usage: normalizeUsage({ prompt: aggregatedUsage.prompt, completion: aggregatedUsage.completion }),
-      toolCalls: toolCallLog,
-    }
+    return { text, usage, toolCalls: toolCallLog }
   }
 }

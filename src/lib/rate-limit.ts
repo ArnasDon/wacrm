@@ -173,7 +173,34 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** External catalog PROVIDER calls (Budun ERP today), per account —
+   *  AI optimization project, next phase after FASE 6. Bounds real
+   *  outbound HTTP volume toward a live third-party ERP, independent of
+   *  and in addition to whatever limit Budun itself enforces server-side.
+   *  Consumed once per actual attempted HTTP call (search/getProduct/
+   *  getAvailability — see catalog/resolver.ts), NOT per tool call and
+   *  NOT for the internal Google Sheets/CSV catalog (DataSourceCatalog
+   *  Provider never touches this — it's pure Supabase reads). One
+   *  customer turn can make up to MAX_TOOL_TURNS (4) tool calls, each
+   *  potentially one external hit (search_catalog → get_product →
+   *  get_availability → get_product_media), so 60/min comfortably covers
+   *  several full turns from several concurrent customers on the same
+   *  account while still bounding cost/abuse toward the ERP. */
+  catalogExternalAccount: { limit: 60, windowMs: 60_000 },
 } as const;
+
+/**
+ * Per-account budget for outbound calls to an EXTERNAL catalog provider
+ * (Budun ERP) — see RATE_LIMITS.catalogExternalAccount's doc above.
+ * Call once immediately before making an actual outbound HTTP attempt;
+ * skip that call entirely when this returns false. Reuses the same
+ * in-memory fixed-window mechanism as every other bucket in this file —
+ * see the module doc's note on the single-instance limitation, which
+ * applies here identically (no new caveat introduced).
+ */
+export function checkCatalogExternalBudget(accountId: string): boolean {
+  return checkRateLimit(`catalog-external:${accountId}`, RATE_LIMITS.catalogExternalAccount).success;
+}
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
  *  leak buckets across files. Not wired up in production code. */

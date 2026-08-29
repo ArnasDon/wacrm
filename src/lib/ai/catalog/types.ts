@@ -13,6 +13,8 @@
 // upstream ERP/sheet actually returned.
 // ============================================================
 
+import type { CatalogFacets } from './facets'
+
 export interface CatalogImage {
   url: string
   alt?: string
@@ -81,6 +83,39 @@ export interface CatalogSearchResult {
    *  computable even when `total` is null (falls back to "we got a
    *  full page, so there's likely more"). */
   hasMore: boolean
+  /** True when at least one EXTERNAL provider (Budun) this search would
+   *  have queried was skipped because this account's external-call
+   *  budget for the current window was exhausted (see
+   *  RATE_LIMITS.catalogExternalAccount) — the HTTP call was never made.
+   *  Purely additive metadata alongside real `products`/`total`/
+   *  `hasMore` from whatever OTHER providers (e.g. the internal Sheet/
+   *  CSV catalog) did run normally; absent/undefined in the ordinary
+   *  case (no provider skipped), so every existing caller/test that
+   *  doesn't check this field sees byte-for-byte the same shape as
+   *  before. Never set by a provider's own `searchCatalog` — only by
+   *  catalog/resolver.ts, the one place that decides whether to call a
+   *  provider at all. */
+  externalLimitReached?: boolean
+  /** True when at least one Budun-backed provider was ACTUALLY invoked
+   *  this search (the budget allowed it) — AI optimization project,
+   *  FASE 12 (observability). Not mutually exclusive with
+   *  `externalLimitReached`: a `search_all_active` fan-out across two
+   *  Budun integrations could have one blocked and one used in the same
+   *  call. Absent/undefined whenever no Budun provider was queried at
+   *  all (an account with only an internal catalog never sets this).
+   *  Never a second query or a second HTTP call — purely an observation
+   *  of what catalog/resolver.ts's own loop already does. */
+  externalUsed?: boolean
+  /** Real aggregations (distinct brands/colors/capacities/sizes, price
+   *  range, stock counts) over the products THIS search actually
+   *  examined — AI optimization project, FASE 11. See
+   *  catalog/facets.ts::computeFacets for the full contract and the
+   *  "never invented, only what was actually fetched" guarantee.
+   *  Omitted entirely (never an empty object) when there's nothing to
+   *  report. Never set by a provider's own `searchCatalog` — only by
+   *  catalog/resolver.ts, computed once over the merged results from
+   *  every provider this call queried. */
+  facets?: CatalogFacets
 }
 
 export interface CatalogAvailability {

@@ -8,6 +8,15 @@ export interface ProviderArgs {
   apiKey: string
   model: string
   systemPrompt: string
+  /** Stable/dynamic split of the SAME system prompt (AI optimization
+   *  project, FASE 8) — used ONLY by the Anthropic adapter to mark a
+   *  `cache_control` breakpoint on the stable prefix. OpenAI/OpenRouter
+   *  never read this field; their wire payload is unaffected either way
+   *  — they always use the plain `systemPrompt` string above, exactly
+   *  as before this feature existed. Omitted entirely falls back to
+   *  today's behavior everywhere, including for Anthropic (plain
+   *  string, no caching). See ../defaults.ts::buildSystemPromptBlocks. */
+  systemPromptBlocks?: { stable: string; dynamic: string }
   messages: ChatMessage[]
   timeoutMs: number
   /** When set, the adapter declares these tools to the model and runs
@@ -30,11 +39,21 @@ export interface ProviderArgs {
  * omit counts). Returns null when there's nothing usable, so logging can
  * distinguish "no usage reported" from "zero tokens". `total` falls back
  * to prompt + completion when the provider doesn't send it (Anthropic).
+ *
+ * `cacheCreationInputTokens`/`cacheReadInputTokens` (Anthropic prompt
+ * caching, FASE 8) are ONLY included in the returned object when the
+ * caller actually passed a real number — never defaulted to 0/null —
+ * so an OpenAI/OpenRouter call (which never has this concept) gets back
+ * an `AiUsage` with exactly the same 3 keys it always had, and every
+ * existing exact-shape assertion (`toEqual({promptTokens, ...})`)
+ * elsewhere in the codebase keeps working unchanged.
  */
 export function normalizeUsage(raw: {
   prompt?: unknown
   completion?: unknown
   total?: unknown
+  cacheCreationInputTokens?: unknown
+  cacheReadInputTokens?: unknown
 }): AiUsage | null {
   const num = (v: unknown): number =>
     typeof v === 'number' && Number.isFinite(v) && v >= 0 ? Math.floor(v) : 0
@@ -45,7 +64,14 @@ export function normalizeUsage(raw: {
   if (promptTokens === 0 && completionTokens === 0 && totalTokens === 0) {
     return null
   }
-  return { promptTokens, completionTokens, totalTokens }
+  const usage: AiUsage = { promptTokens, completionTokens, totalTokens }
+  if (typeof raw.cacheCreationInputTokens === 'number' && Number.isFinite(raw.cacheCreationInputTokens) && raw.cacheCreationInputTokens >= 0) {
+    usage.cacheCreationInputTokens = Math.floor(raw.cacheCreationInputTokens)
+  }
+  if (typeof raw.cacheReadInputTokens === 'number' && Number.isFinite(raw.cacheReadInputTokens) && raw.cacheReadInputTokens >= 0) {
+    usage.cacheReadInputTokens = Math.floor(raw.cacheReadInputTokens)
+  }
+  return usage
 }
 
 /** Map a fetch rejection (timeout / DNS / offline) to a typed AiError. */

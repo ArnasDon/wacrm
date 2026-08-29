@@ -2,6 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AiConfig } from './types'
 import { chunkText } from './chunk'
 import { embedTexts, toVectorLiteral } from './embeddings'
+import { kbEmptyCacheTtlMs } from './defaults'
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -12,6 +13,93 @@ import { embedTexts, toVectorLiteral } from './embeddings'
 interface MatchRow {
   id: string
   content: string
+}
+
+// ------------------------------------------------------------
+// Per-account, short-TTL cache of "does this account have ANY
+// Knowledge Base chunks" — AI optimization project, FASE 4 (negative
+// side only, originally) broadened in FASE 5 to also remember a
+// positive answer, so the routing layer (routing.ts) can ask this
+// BEFORE deciding whether a turn needs Knowledge at all, and
+// `retrieveKnowledge`'s own guard below then reuses the exact same
+// cached answer instead of re-querying — one real `count()` per TTL
+// window either way, never two just because two call sites asked in
+// the same request.
+//
+// Module-level (one process, not one request), but strictly keyed by
+// accountId, so it can never answer one account's state for a
+// different one. Bounded by `kbEmptyCacheTtlMs()` AND invalidated
+// immediately by `ingestDocument` for that account — never a source of
+// staleness for an account that genuinely just gained or lost content.
+// A cache-miss/expired entry always re-checks the database for real;
+// a query failure is never cached and fails OPEN (assume content might
+// exist) rather than silently skipping Knowledge for an account it
+// could actually help.
+// ------------------------------------------------------------
+interface KbStateEntry {
+  hasContent: boolean
+  until: number
+}
+const kbStateCache = new Map<string, KbStateEntry>()
+
+function cachedKbState(accountId: string): boolean | undefined {
+  const entry = kbStateCache.get(accountId)
+  if (!entry) return undefined
+  if (Date.now() >= entry.until) {
+    kbStateCache.delete(accountId)
+    return undefined
+  }
+  return entry.hasContent
+}
+
+function setCachedKbState(accountId: string, hasContent: boolean): void {
+  kbStateCache.set(accountId, { hasContent, until: Date.now() + kbEmptyCacheTtlMs() })
+}
+
+function clearCachedKbState(accountId: string): void {
+  kbStateCache.delete(accountId)
+}
+
+/** Forget every account's cached Knowledge-Base-presence state, forcing
+ *  the next check per account to recheck the database. Exported for
+ *  tests (isolating cases that reuse the same account id) and as an
+ *  operational escape hatch — not called anywhere in the normal
+ *  request path. */
+export function resetKnowledgeEmptyCache(): void {
+  kbStateCache.clear()
+}
+
+/**
+ * Cheap, cached "does this account have any Knowledge Base chunks at
+ * all" check — the same guard `retrieveKnowledge` already applies,
+ * exposed standalone so the routing layer (routing.ts) can gate
+ * whether to attempt Knowledge for a turn BEFORE paying for embedding/
+ * RPC work, without adding a second real query when `retrieveKnowledge`
+ * itself runs right after (it reuses this exact cached answer).
+ */
+export async function accountHasKnowledgeBase(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<boolean> {
+  const cached = cachedKbState(accountId)
+  if (cached !== undefined) return cached
+
+  try {
+    const { count, error } = await db
+      .from('ai_knowledge_chunks')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+    if (!error) {
+      const hasContent = (count ?? 0) > 0
+      setCachedKbState(accountId, hasContent)
+      return hasContent
+    }
+  } catch (err) {
+    console.error('[ai knowledge] failed to check KB size:', err)
+  }
+  // Unknown (query threw or errored) — fail open, and don't cache an
+  // unknown state as if it were confirmed either way.
+  return true
 }
 
 /**
@@ -31,6 +119,13 @@ export async function ingestDocument(
   documentId: string,
   content: string,
 ): Promise<void> {
+  // Any ingest for this account can change whether it has zero chunks
+  // overall (adding the account's first content, or clearing its only
+  // document down to nothing) — forget the cached state unconditionally
+  // so the next check re-checks for real rather than trusting a mark
+  // that may now be wrong (FASE 4).
+  clearCachedKbState(accountId)
+
   const chunks = chunkText(content)
 
   // Replace, don't append — re-ingest must be idempotent.
@@ -91,19 +186,12 @@ export async function retrieveKnowledge(
   const query = queryText.trim()
   if (!query || k <= 0) return []
 
-  // Avoid embedding/RPC work when the account has no knowledge chunks.
-  try {
-    const { count, error } = await db
-      .from('ai_knowledge_chunks')
-      .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-
-    if (!error && (count ?? 0) === 0) {
-      return []
-    }
-  } catch (err) {
-    console.error('[ai knowledge] failed to check KB size:', err)
-  }
+  // Avoid embedding/RPC work when the account has no knowledge chunks —
+  // cached (FASE 4), and the same cache the routing layer's
+  // accountHasKnowledgeBase() call already warmed for this account, so
+  // this is a second real query only the first time either is asked in
+  // a given TTL window, never twice per turn.
+  if (!(await accountHasKnowledgeBase(db, accountId))) return []
 
   const picked = new Map<string, string>() // id → content, preserves order
 

@@ -55,7 +55,11 @@ export const CATALOG_TOOL_SPECS: ToolSpec[] = [
       `${MAX_SEARCH_LIMIT}) para representar bien la categoría. ` +
       'Para una consulta EXHAUSTIVA ("dame todos", "el listado completo") llama de nuevo con `offset: next_offset` ' +
       'mientras `has_more` sea true, hasta cubrir todo o hasta un límite razonable — si son demasiados resultados, ' +
-      'dilo e informa el `total`, no los ocultes.',
+      'dilo e informa el `total`, no los ocultes. ' +
+      'Puede incluir además `facets` (brands, colors, capacities, sizes, priceRange, stock) con los valores REALES ' +
+      'encontrados entre estos resultados — úsalo para responder "qué marcas/colores/capacidades tienen" o "en qué ' +
+      'rango de precios". Si `facets` falta o no incluye una clave, no tienes ese dato confirmado — nunca lo ' +
+      'inventes ni asumas valores típicos de la categoría.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -135,8 +139,24 @@ function nonNegativeInt(v: unknown): number {
  * explicit `account_id` filters regardless of which client is passed,
  * same discipline as the rest of the AI pipeline (`loadAiConfig`,
  * `retrieveKnowledge`).
+ *
+ * `cache` (AI optimization project, FASE 3) lets every tool call this
+ * executor makes for the SAME turn share one `resolveCatalogProviders`
+ * resolution instead of each re-querying `catalog_integrations`/
+ * `ai_data_sources` from scratch — a search_catalog → get_product →
+ * get_availability chain otherwise resolves providers three times over.
+ * Pass the same `ResolverCache` the caller already used for
+ * `hasActiveCatalogSources` to also fold that resolution in; omit it
+ * (the default) to have this executor create its own cache scoped to
+ * just its own calls — either way the cache never outlives this one
+ * closure/dispatch. See `catalog/resolver.ts`'s `ResolverCache` doc for
+ * the full lifetime guarantee.
  */
-export function executeCatalogTool(db: SupabaseClient, accountId: string) {
+export function executeCatalogTool(
+  db: SupabaseClient,
+  accountId: string,
+  cache: resolver.ResolverCache = resolver.createResolverCache(),
+) {
   return async function execute(call: ToolCallRequest): Promise<unknown> {
     const input = (call.input ?? {}) as Record<string, unknown>
     try {
@@ -146,39 +166,64 @@ export function executeCatalogTool(db: SupabaseClient, accountId: string) {
           if (!query.trim()) return { products: [], returned: 0, total: 0, has_more: false }
           const limit = clampLimit(input.limit)
           const offset = nonNegativeInt(input.offset)
-          const result = await resolver.searchCatalog(db, accountId, {
-            query,
-            color: input.color ? str(input.color) : undefined,
-            limit,
-            offset,
-            availableOnly: input.available_only === true,
-          })
+          const result = await resolver.searchCatalog(
+            db,
+            accountId,
+            {
+              query,
+              color: input.color ? str(input.color) : undefined,
+              limit,
+              offset,
+              availableOnly: input.available_only === true,
+            },
+            cache,
+          )
           return {
             products: result.products.map(toToolResultProduct),
             returned: result.products.length,
             total: result.total,
             has_more: result.hasMore,
             ...(result.hasMore ? { next_offset: offset + result.products.length } : {}),
+            // Additive metadata only — never replaces real products from
+            // another (e.g. internal) provider that DID run this call.
+            // See resolver.ts's EXTERNAL_LIMIT_REACHED doc.
+            ...(result.externalLimitReached ? { external_limit_reached: true } : {}),
+            // Observability only (FASE 12) — lets the caller (auto-reply.ts
+            // /draft/route.ts) tell, after the fact, whether this turn's
+            // search actually reached Budun, without re-deriving it or
+            // making any extra call. Not meant to change model behavior —
+            // no new prompt rule was added for it.
+            ...(result.externalUsed ? { external_used: true } : {}),
+            // Real aggregations over THESE results only (FASE 11) — see
+            // catalog/facets.ts. Omitted entirely when there's nothing
+            // to report, so a search with no brand/color/etc. data never
+            // shows an empty/misleading facets object.
+            ...(result.facets ? { facets: result.facets } : {}),
           }
         }
         case GET_PRODUCT: {
           const id = str(input.id)
           if (!id) return { error: 'id is required' }
-          const product = await resolver.getProduct(db, accountId, id)
+          const product = await resolver.getProduct(db, accountId, id, cache)
+          // Checked BEFORE the not-found fallback — a rate-limit block
+          // must never surface as a false "not_found"/"no disponible".
+          if (product === resolver.EXTERNAL_LIMIT_REACHED) return { error: 'external_limit_reached' }
           if (!product) return { error: 'not_found' }
           return { product: toToolResultProduct(product) }
         }
         case GET_AVAILABILITY: {
           const id = str(input.id)
           if (!id) return { error: 'id is required' }
-          const availability = await resolver.getAvailability(db, accountId, id)
+          const availability = await resolver.getAvailability(db, accountId, id, cache)
+          if (availability === resolver.EXTERNAL_LIMIT_REACHED) return { error: 'external_limit_reached' }
           if (!availability) return { error: 'not_found' }
           return availability
         }
         case GET_PRODUCT_MEDIA: {
           const id = str(input.id)
           if (!id) return { error: 'id is required' }
-          const media = await resolver.getProductMedia(db, accountId, id)
+          const media = await resolver.getProductMedia(db, accountId, id, cache)
+          if (media === resolver.EXTERNAL_LIMIT_REACHED) return { error: 'external_limit_reached' }
           if (!media) return { error: 'not_found' }
           if (!media.primaryImage && media.images.length === 0) {
             return { error: 'no_media_available' }

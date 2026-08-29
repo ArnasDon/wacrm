@@ -16,6 +16,13 @@ export interface GenerateArgs {
   config: AiConfig
   /** Fully-built system prompt (see `buildSystemPrompt`). */
   systemPrompt: string
+  /** Stable/dynamic split of the SAME system prompt (see
+   *  `buildSystemPromptBlocks`, AI optimization project FASE 8) —
+   *  threaded straight through to the provider adapters; only the
+   *  Anthropic one reads it (to mark a prompt-cache breakpoint on the
+   *  stable prefix). Omitted entirely reproduces today's behavior for
+   *  every provider, Anthropic included. */
+  systemPromptBlocks?: { stable: string; dynamic: string }
   /** Recent conversation turns, oldest first. */
   messages: ChatMessage[]
   /** Catalog tools to attach (see src/lib/ai/tools/catalog-tools.ts).
@@ -33,12 +40,13 @@ export interface GenerateArgs {
  * of the raw text. Throws `AiError` on any provider/network failure.
  */
 export async function generateReply(args: GenerateArgs): Promise<GenerateResult> {
-  const { config, systemPrompt, messages, tools, executeTool, maxToolTurns } = args
+  const { config, systemPrompt, systemPromptBlocks, messages, tools, executeTool, maxToolTurns } = args
   const timeoutMs = aiRequestTimeoutMs()
   const providerArgs = {
     apiKey: config.apiKey,
     model: config.model,
     systemPrompt,
+    systemPromptBlocks,
     messages,
     timeoutMs,
     tools,

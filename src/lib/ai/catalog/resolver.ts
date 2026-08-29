@@ -15,9 +15,11 @@
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { checkCatalogExternalBudget } from '@/lib/rate-limit'
+import { computeFacets } from './facets'
 import { decodeCatalogId } from './id'
 import { buildBudunClient, loadActiveCatalogIntegrations } from './integrations'
-import { BudunProvider } from './providers/budun-provider'
+import { BudunProvider, isBudunProviderKey } from './providers/budun-provider'
 import { DataSourceCatalogProvider, dataSourceProviderKey } from './providers/data-source-provider'
 import type {
   CatalogAvailability,
@@ -29,6 +31,45 @@ import type {
 } from './types'
 
 type FallbackPolicy = 'primary_only' | 'fallback_on_not_found' | 'search_all_active'
+
+/**
+ * Sentinel returned by getProduct/getAvailability/getProductMedia
+ * IN PLACE OF `null` when the target is an EXTERNAL (Budun) provider and
+ * this account's external-call budget for the current window is
+ * exhausted (RATE_LIMITS.catalogExternalAccount) — the HTTP call was
+ * never attempted. Deliberately distinct from `null` (which still means,
+ * exactly as before, "resolved a provider but the item genuinely wasn't
+ * found there"): catalog-tools.ts checks for this specific value so a
+ * rate-limit block is never reported to the model as a false
+ * "not_found"/"no disponible" — see this module's `searchCatalog` doc
+ * for the equivalent case when multiple providers are involved.
+ */
+export const EXTERNAL_LIMIT_REACHED = 'external_limit_reached' as const
+type ExternalLimitReached = typeof EXTERNAL_LIMIT_REACHED
+
+/** True (and consumes one unit of the account's external-call budget)
+ *  only when `provider` is Budun-backed AND that budget still had room;
+ *  always true immediately, with no budget consumed, for the internal
+ *  Sheet/CSV catalog — it's never gated by this check at all.
+ *
+ * Observability (FASE 12) — this is the ONE choke point all four
+ * catalog tools (search_catalog/get_product/get_availability/
+ * get_product_media) already call through, so a single `console.warn`
+ * here gives log-based visibility into "cuándo se alcanza el límite"
+ * across all of them, with zero change to the return value, zero new
+ * query, and zero change to catalog behavior — pure instrumentation of
+ * a real execution point, per the FASE 12 authorization. Only the
+ * BLOCKED case is logged; logging every successful call would spam
+ * production logs for no operational benefit — operators care about
+ * the rare "budget exhausted" event, not the common case. */
+function tryConsumeExternalBudget(accountId: string, provider: CatalogProvider): boolean {
+  if (!isBudunProviderKey(provider.key)) return true
+  const allowed = checkCatalogExternalBudget(accountId)
+  if (!allowed) {
+    console.warn(`[catalog external] budget exhausted — account=${accountId} provider=${provider.key}`)
+  }
+  return allowed
+}
 
 interface ResolvedProvider {
   provider: CatalogProvider
@@ -48,12 +89,57 @@ interface DataSourceRow {
 }
 
 /**
+ * Per-dispatch memoization for `resolveCatalogProviders` — AI
+ * optimization project, FASE 3. A single customer turn can call
+ * search_catalog → get_product → get_availability → get_product_media
+ * in sequence (see tools/catalog-tools.ts), and each of those, plus the
+ * earlier `hasActiveCatalogSources` gate, independently re-resolved
+ * `catalog_integrations` + `ai_data_sources` from scratch — up to 5
+ * redundant round trips for data that cannot have changed mid-turn.
+ *
+ * Callers create exactly ONE `ResolverCache` per `generateReply()`
+ * dispatch (see auto-reply.ts / playground/route.ts) and thread it
+ * through every resolver call for that turn. It is a plain object held
+ * in one closure's memory — never a module-level/global map, never
+ * written to a database or persisted anywhere, so it cannot outlive the
+ * request that created it, cannot leak between accounts (a fresh object
+ * per dispatch, never keyed/shared), and cannot serve stale data across
+ * turns (the next inbound message creates a brand-new cache). Passing
+ * no cache at all (every existing caller/test) reproduces today's
+ * behavior exactly — resolve fresh, every time.
+ */
+export interface ResolverCache {
+  providers?: Promise<ResolvedProvider[]>
+}
+
+/** Fresh, empty cache for one dispatch. */
+export function createResolverCache(): ResolverCache {
+  return {}
+}
+
+/**
  * Every active catalog-capable provider for this account, ordered
  * primary-first then by priority (lower = higher priority). Used both
  * for free-text search (which may fan out per `fallback_policy`) and to
  * reconstruct a single provider by its key for by-id follow-ups.
+ *
+ * Pass `cache` (see `ResolverCache` above) to reuse one resolution
+ * across every catalog tool call within the same turn; omit it to
+ * resolve fresh, exactly as before this parameter existed.
  */
 export async function resolveCatalogProviders(
+  db: SupabaseClient,
+  accountId: string,
+  cache?: ResolverCache,
+): Promise<ResolvedProvider[]> {
+  if (cache) {
+    if (!cache.providers) cache.providers = resolveCatalogProvidersUncached(db, accountId)
+    return cache.providers
+  }
+  return resolveCatalogProvidersUncached(db, accountId)
+}
+
+async function resolveCatalogProvidersUncached(
   db: SupabaseClient,
   accountId: string,
 ): Promise<ResolvedProvider[]> {
@@ -100,8 +186,12 @@ export async function resolveCatalogProviders(
  *  callers use this to decide whether to register the generic catalog
  *  tools at all (accounts with nothing configured see zero behavior
  *  change, same prompt/pipeline as before this feature). */
-export async function hasActiveCatalogSources(db: SupabaseClient, accountId: string): Promise<boolean> {
-  const resolved = await resolveCatalogProviders(db, accountId)
+export async function hasActiveCatalogSources(
+  db: SupabaseClient,
+  accountId: string,
+  cache?: ResolverCache,
+): Promise<boolean> {
+  const resolved = await resolveCatalogProviders(db, accountId, cache)
   return resolved.length > 0
 }
 
@@ -138,8 +228,9 @@ export async function searchCatalog(
   db: SupabaseClient,
   accountId: string,
   args: CatalogSearchArgs,
+  cache?: ResolverCache,
 ): Promise<CatalogSearchResult> {
-  const providers = await resolveCatalogProviders(db, accountId)
+  const providers = await resolveCatalogProviders(db, accountId, cache)
   const limit = args.limit ?? 10
   const offset = args.offset ?? 0
   const fetchCount = offset + limit
@@ -147,13 +238,33 @@ export async function searchCatalog(
   const collected: CatalogProduct[] = []
   let total: number | null = 0
   let anyHasMore = false
+  let externalLimitReached = false
+  // Observability (FASE 12) — true the moment a Budun-backed provider is
+  // ACTUALLY invoked (budget allowed it). Distinct from
+  // `externalLimitReached`: the two are not mutually exclusive across a
+  // `search_all_active` fan-out (e.g. two configured Budun integrations,
+  // one blocked and one still within budget). Never a second query —
+  // just observing what this same loop already does.
+  let externalUsed = false
 
   for (const { provider, fallbackPolicy } of providers) {
     let result: CatalogSearchResult = { products: [], total: null, hasMore: false }
-    try {
-      result = await provider.searchCatalog({ ...args, limit: fetchCount, offset: 0 })
-    } catch (err) {
-      console.error(`[catalog resolver] search failed on provider ${provider.key}:`, err instanceof Error ? err.message : err)
+    if (!tryConsumeExternalBudget(accountId, provider)) {
+      // Budun-backed AND this account's external-call budget is
+      // exhausted for the current window — the HTTP call is never made.
+      // Treated exactly like "this provider found nothing" for the
+      // fallback-chain logic below (an internal Sheet/CSV source further
+      // down the chain still runs normally), but flagged distinctly so
+      // catalog-tools.ts never reports this as a false "producto no
+      // disponible" — see EXTERNAL_LIMIT_REACHED's doc.
+      externalLimitReached = true
+    } else {
+      if (isBudunProviderKey(provider.key)) externalUsed = true
+      try {
+        result = await provider.searchCatalog({ ...args, limit: fetchCount, offset: 0 })
+      } catch (err) {
+        console.error(`[catalog resolver] search failed on provider ${provider.key}:`, err instanceof Error ? err.message : err)
+      }
     }
     collected.push(...result.products)
     total = total === null || result.total === null ? null : total + result.total
@@ -169,17 +280,33 @@ export async function searchCatalog(
 
   const page = collected.slice(offset, offset + limit)
   const hasMore = anyHasMore || collected.length > offset + limit
-  return { products: page, total, hasMore }
+  // Facets (AI optimization project, FASE 11) — computed from `collected`
+  // (everything every queried provider actually returned this call,
+  // BEFORE the offset/limit slice), not just `page`: it's already fully
+  // in memory at zero extra cost, and it's a strictly more representative
+  // sample than the final page alone. Never a second query, never a
+  // second Budun call — see catalog/facets.ts's module doc.
+  const facets = computeFacets(collected)
+  return {
+    products: page,
+    total,
+    hasMore,
+    ...(externalLimitReached ? { externalLimitReached: true } : {}),
+    ...(externalUsed ? { externalUsed: true } : {}),
+    ...(facets ? { facets } : {}),
+  }
 }
 
 export async function getProduct(
   db: SupabaseClient,
   accountId: string,
   id: string,
-): Promise<CatalogProduct | null> {
-  const providers = await resolveCatalogProviders(db, accountId)
+  cache?: ResolverCache,
+): Promise<CatalogProduct | null | ExternalLimitReached> {
+  const providers = await resolveCatalogProviders(db, accountId, cache)
   const target = findProviderForId(providers, id)
   if (!target) return null
+  if (!tryConsumeExternalBudget(accountId, target.provider)) return EXTERNAL_LIMIT_REACHED
   return target.provider.getProduct(target.nativeId)
 }
 
@@ -187,10 +314,12 @@ export async function getAvailability(
   db: SupabaseClient,
   accountId: string,
   id: string,
-): Promise<CatalogAvailability | null> {
-  const providers = await resolveCatalogProviders(db, accountId)
+  cache?: ResolverCache,
+): Promise<CatalogAvailability | null | ExternalLimitReached> {
+  const providers = await resolveCatalogProviders(db, accountId, cache)
   const target = findProviderForId(providers, id)
   if (!target) return null
+  if (!tryConsumeExternalBudget(accountId, target.provider)) return EXTERNAL_LIMIT_REACHED
   return target.provider.getAvailability(target.nativeId)
 }
 
@@ -198,10 +327,12 @@ export async function getProductMedia(
   db: SupabaseClient,
   accountId: string,
   id: string,
-): Promise<CatalogMedia | null> {
-  const providers = await resolveCatalogProviders(db, accountId)
+  cache?: ResolverCache,
+): Promise<CatalogMedia | null | ExternalLimitReached> {
+  const providers = await resolveCatalogProviders(db, accountId, cache)
   const target = findProviderForId(providers, id)
   if (!target) return null
+  if (!tryConsumeExternalBudget(accountId, target.provider)) return EXTERNAL_LIMIT_REACHED
   return target.provider.getMedia(target.nativeId)
 }
 

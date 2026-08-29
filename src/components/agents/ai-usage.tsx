@@ -32,6 +32,12 @@ interface UsageResponse {
     prompt_tokens: number;
     completion_tokens: number;
     total_tokens: number;
+    // Anthropic prompt caching (FASE 8/9) — null (not 0) when nothing in
+    // this window ever touched caching, surfaced honestly rather than
+    // as a fabricated zero. See FASE 12 (observability).
+    cache_creation_input_tokens: number | null;
+    cache_read_input_tokens: number | null;
+    cache_hit_rate: number | null;
   };
   by_mode: {
     auto_reply: { calls: number; tokens: number };
@@ -42,8 +48,24 @@ interface UsageResponse {
     provider: string;
     calls: number;
     tokens: number;
+    cache_creation_input_tokens: number;
+    cache_read_input_tokens: number;
   }[];
   daily: { date: string; tokens: number; calls: number }[];
+  // FASE 12 — real aggregates over the FASE 2/9 breakdown columns
+  // already captured; no new query beyond the one above.
+  catalog_observability: {
+    attached_calls: number;
+    used_calls: number;
+    external_used_calls: number;
+    external_blocked_calls: number;
+  };
+  knowledge_observability: {
+    retrieved_calls: number;
+    skipped_by_routing_calls: number;
+  };
+  routing: { catalog: number; knowledge: number; both: number; neither: number };
+  cost_available: boolean;
 }
 
 const WINDOWS = [7, 30, 90] as const;
@@ -155,7 +177,21 @@ export function AiUsageCard() {
                 value={formatCompactNumber(data.by_mode.draft.tokens)}
                 icon={PencilLine}
               />
+              {/* Anthropic prompt caching (FASE 8/9) — only shown once
+                  there is real cache data in this window; an account
+                  that never uses Anthropic caching sees no change here
+                  at all (FASE 12, observability). */}
+              {data.totals.cache_hit_rate !== null && (
+                <Stat
+                  label="Cache hit rate"
+                  value={`${Math.round(data.totals.cache_hit_rate * 100)}%`}
+                />
+              )}
             </div>
+            <p className="text-xs text-muted-foreground">
+              Cost: not available — no pricing source is configured for this
+              project. Token counts above are real.
+            </p>
 
             <div>
               <p className="mb-2 text-xs font-medium text-muted-foreground">
@@ -193,9 +229,53 @@ export function AiUsageCard() {
                       <span className="flex-shrink-0 tabular-nums text-muted-foreground">
                         {formatCompactNumber(m.tokens)} tok · {m.calls}{' '}
                         {m.calls === 1 ? 'call' : 'calls'}
+                        {/* Only for the model(s) that actually reported
+                            cache data — every other model's row is
+                            unchanged from before this feature. */}
+                        {(m.cache_creation_input_tokens > 0 || m.cache_read_input_tokens > 0) && (
+                          <>
+                            {' '}
+                            · cache {formatCompactNumber(m.cache_read_input_tokens)} read /{' '}
+                            {formatCompactNumber(m.cache_creation_input_tokens)} write
+                          </>
+                        )}
                       </span>
                     </li>
                   ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Budun (external catalog) observability — FASE 7/12. Only
+                rendered for an account that actually attached/used
+                catalog tools this window; an account with no catalog
+                configured sees no change here at all. */}
+            {data.catalog_observability.used_calls > 0 && (
+              <div>
+                <p className="mb-2 text-xs font-medium text-muted-foreground">
+                  Catalog tool calls
+                </p>
+                <ul className="divide-y divide-border rounded-md border border-border text-sm">
+                  <li className="flex items-center justify-between px-3 py-2">
+                    <span className="text-foreground">Used</span>
+                    <span className="tabular-nums text-muted-foreground">{data.catalog_observability.used_calls}</span>
+                  </li>
+                  {data.catalog_observability.external_used_calls > 0 && (
+                    <li className="flex items-center justify-between px-3 py-2">
+                      <span className="text-foreground">Reached Budun (external)</span>
+                      <span className="tabular-nums text-muted-foreground">
+                        {data.catalog_observability.external_used_calls}
+                      </span>
+                    </li>
+                  )}
+                  {data.catalog_observability.external_blocked_calls > 0 && (
+                    <li className="flex items-center justify-between px-3 py-2">
+                      <span className="text-foreground">Blocked by Budun rate limit</span>
+                      <span className="tabular-nums text-amber-500">
+                        {data.catalog_observability.external_blocked_calls}
+                      </span>
+                    </li>
+                  )}
                 </ul>
               </div>
             )}

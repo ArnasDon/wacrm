@@ -3,20 +3,29 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 
 // ============================================================
-// BusinessProfileSettings — per-section save fix.
+// BusinessProfileSettings — per-section save + camelCase mapping fix.
 //
-// Root cause this suite pins down: the ORIGINAL single "Guardar" button
-// sent the entire `profile` snapshot on every save. A browser tab whose
-// local state didn't yet include a field (never typed, or lost across a
-// reload) would silently overwrite that field back to empty on its next
-// save — even a field a DIFFERENT, more recent save had already set.
-// The fix gives each section its own button, each sending ONLY that
-// section's keys, relying on the API's pre-existing (and already
-// correct) partial-update contract. These tests exercise the REAL
-// component against a fetch mock that merges partial PUT bodies the
-// same way `upsertBusinessProfile` does — only keys present in the
-// request are ever changed — so a cross-section overwrite would show up
-// here exactly as it would in production.
+// Two bugs, both pinned down by this suite:
+//
+// 1. The ORIGINAL single "Guardar" button sent the entire `profile`
+//    snapshot on every save. A browser tab whose local state didn't yet
+//    include a field could silently overwrite that field back to empty
+//    on its next save, even one a DIFFERENT, more recent save had
+//    already set. Fixed by giving each section its own button, each
+//    sending ONLY that section's keys.
+//
+// 2. `fromApi()` used to read snake_case field names (`business_name`,
+//    `google_maps_url`, ...) but GET/PUT /api/ai/business-profile
+//    actually return `BusinessProfileRow` — camelCase (`businessName`,
+//    `googleMapsUrl`, ...). Every single-word field (phone, address,
+//    city, ...) is spelled the same in both conventions, so those
+//    looked fine; every multi-word field silently reverted to its
+//    empty default on every load AND every post-save resync. This
+//    suite's own mock used to make the SAME mistake in reverse (storing
+//    and echoing back snake_case), which is exactly why it never caught
+//    the bug — `mockBackend` below now stores and returns the real
+//    camelCase shape, translating the incoming snake_case PUT body the
+//    same way `service.ts`'s `inputToRow()` + `toProfile()` do.
 // ============================================================
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -46,7 +55,8 @@ vi.mock('next-intl', () => ({
 const { toastMock } = vi.hoisted(() => ({ toastMock: { success: vi.fn(), error: vi.fn() } }))
 vi.mock('sonner', () => ({ toast: toastMock }))
 
-import { BusinessProfileSettings } from './business-profile-settings'
+import { BusinessProfileSettings, fromApi } from './business-profile-settings'
+import type { BusinessProfileRow } from '@/lib/ai/business-profile/types'
 
 // Section save buttons render in this fixed top-to-bottom order (see
 // business-profile-settings.tsx); the translation mock renders every
@@ -91,18 +101,35 @@ function jsonResponse(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status })
 }
 
+// The exact snake_case → camelCase translation route.ts's readString()
+// (incoming key) / service.ts's toProfile() (outgoing key) apply in
+// production — used below to make the mock's PUT handler behave like
+// the real backend instead of just echoing the request verbatim.
+const SNAKE_TO_CAMEL: Record<string, string> = {
+  business_name: 'businessName',
+  google_maps_url: 'googleMapsUrl',
+  business_hours: 'businessHours',
+  delivery_enabled: 'deliveryEnabled',
+  delivery_description: 'deliveryDescription',
+  delivery_coverage_areas: 'deliveryCoverageAreas',
+  payment_methods: 'paymentMethods',
+  warranty_policy: 'warrantyPolicy',
+  return_policy: 'returnPolicy',
+  financing_policy: 'financingPolicy',
+  delivery_policy: 'deliveryPolicy',
+}
+
 /**
- * Fetch mock with an in-memory "current row" that PUT requests merge
- * into — shallow `{ ...row, ...body }`, exactly mirroring
- * `upsertBusinessProfile`'s partial-write contract (only keys present
- * in the request body are changed; every absent key is left untouched).
- * This is what makes the "no sobrescritura entre secciones" tests below
- * meaningful: if the component ever regressed to sending the full
- * snapshot again, a later section's save WOULD stomp an earlier one
- * here exactly as it would against real Supabase.
+ * Fetch mock whose internal "current row" is stored and returned in the
+ * REAL camelCase shape (`BusinessProfileRow`) — never the request's own
+ * snake_case keys. PUT merges only the keys present in the body (mirrors
+ * `upsertBusinessProfile`'s partial-write contract: absent keys are left
+ * untouched), translating each snake_case request key to its camelCase
+ * column the same way `service.ts` does, so a regression to the full
+ * legacy snapshot in either direction would fail these tests.
  */
-function mockBackend(initialRow: Record<string, unknown> | null = null) {
-  let row: Record<string, unknown> | null = initialRow
+function mockBackend(initialRow: Partial<BusinessProfileRow> | null = null) {
+  let row: Partial<BusinessProfileRow> | null = initialRow
   const puts: Record<string, unknown>[] = []
   let putGate: Promise<void> | null = null
 
@@ -117,7 +144,11 @@ function mockBackend(initialRow: Record<string, unknown> | null = null) {
       if (putGate) await putGate
       const body = JSON.parse(String(init!.body)) as Record<string, unknown>
       puts.push(body)
-      row = { ...(row ?? {}), ...body }
+      const camelPatch: Record<string, unknown> = {}
+      for (const [snakeKey, value] of Object.entries(body)) {
+        camelPatch[SNAKE_TO_CAMEL[snakeKey] ?? snakeKey] = value
+      }
+      row = { ...(row ?? {}), ...camelPatch }
       return jsonResponse({ success: true, profile: row })
     }
     return jsonResponse({}, 404)
@@ -146,8 +177,58 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
+describe('fromApi() — camelCase mapping (unit)', () => {
+  it('preserves every multi-word field from a realistic camelCase API response', () => {
+    const apiResponse: BusinessProfileRow = {
+      id: 'profile-1',
+      accountId: 'acct-1',
+      businessName: 'Kuki CompuCell',
+      description: null,
+      phone: null,
+      whatsapp: null,
+      email: null,
+      website: null,
+      address: null,
+      city: null,
+      state: null,
+      country: null,
+      googleMapsUrl: 'https://maps.google.com/?q=Duarte+88',
+      businessHours: { monday: { enabled: true, open: '08:00', close: '18:00' } },
+      deliveryEnabled: true,
+      deliveryDescription: 'Delivery nacional',
+      deliveryCoverageAreas: [],
+      paymentMethods: ['Efectivo', 'Transferencia'],
+      warrantyPolicy: '90 días',
+      returnPolicy: '7 días',
+      financingPolicy: 'Disponible',
+      deliveryPolicy: 'Entrega según zona',
+      links: [],
+      faq: [],
+      createdAt: 'now',
+      updatedAt: 'now',
+    }
+
+    const result = fromApi(apiResponse)
+
+    expect(result.businessName).toBe('Kuki CompuCell')
+    expect(result.googleMapsUrl).toBe('https://maps.google.com/?q=Duarte+88')
+    expect(result.businessHours).toEqual({ monday: { enabled: true, open: '08:00', close: '18:00' } })
+    expect(result.deliveryEnabled).toBe(true)
+    expect(result.deliveryDescription).toBe('Delivery nacional')
+    expect(result.paymentMethods).toBe('Efectivo, Transferencia')
+    expect(result.warrantyPolicy).toBe('90 días')
+    expect(result.returnPolicy).toBe('7 días')
+    expect(result.financingPolicy).toBe('Disponible')
+    expect(result.deliveryPolicy).toBe('Entrega según zona')
+  })
+
+  it('returns the empty profile for null (unconfigured account), not an error', () => {
+    expect(fromApi(null).businessName).toBe('')
+  })
+})
+
 describe('BusinessProfileSettings — per-section save', () => {
-  it('Identidad: saves only identity fields, none of the other 16 keys', async () => {
+  it('Identidad: saves only identity fields, stays visible after the PUT, and after reload', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('identityTitle')
@@ -166,9 +247,20 @@ describe('BusinessProfileSettings — per-section save', () => {
       website: null,
     })
     await waitFor(() => expect(toastMock.success).toHaveBeenCalledWith('saveSuccess'))
+    // The bug this fix targets: businessName must still be showing in
+    // the input right after its own save resolves, not reverted to ''.
+    await waitFor(() => expect(fieldByLabel('businessName').value).toBe('Kuki CompuCell'))
+    expect(fieldByLabel('phone').value).toBe('809-284-3495')
+
+    // And it must survive an unrelated remount (a page reload), reading
+    // back from the same camelCase shape the mock now returns.
+    cleanup()
+    render(<BusinessProfileSettings />)
+    await screen.findByText('identityTitle')
+    expect(fieldByLabel('businessName').value).toBe('Kuki CompuCell')
   })
 
-  it('Ubicación: saves location fields including a real Google Maps URL — never null when filled', async () => {
+  it('Ubicación: address/city/state/country/googleMapsUrl all stay visible after saving', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('locationTitle')
@@ -190,13 +282,18 @@ describe('BusinessProfileSettings — per-section save', () => {
       country: 'Republica Dominicana',
       google_maps_url: 'https://maps.google.com/?q=Duarte+88',
     })
-    // The regression this whole fix was for: googleMapsUrl must NOT
-    // silently become null when the user actually filled it.
-    expect(backend.puts[0].google_maps_url).not.toBeNull()
-    expect(backend.getRow()?.google_maps_url).toBe('https://maps.google.com/?q=Duarte+88')
+    // The original regression: googleMapsUrl must not become null when
+    // filled, and — the newly-fixed regression — must still be VISIBLE
+    // in the input after the save, not reset to '' by fromApi().
+    expect(backend.getRow()?.googleMapsUrl).toBe('https://maps.google.com/?q=Duarte+88')
+    await waitFor(() => expect(fieldByLabel('googleMapsUrl').value).toBe('https://maps.google.com/?q=Duarte+88'))
+    expect(fieldByLabel('address').value).toBe('Duarte 88')
+    expect(fieldByLabel('city').value).toBe('Loma de Cabrera')
+    expect(fieldByLabel('state').value).toBe('Dajabon')
+    expect(fieldByLabel('country').value).toBe('Republica Dominicana')
   })
 
-  it('Horarios: enabling a day with open/close times persists the full nested object, never {}', async () => {
+  it('Horarios: monday through sunday, enabled/open/close all stay visible after saving, never {}', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('hoursTitle')
@@ -209,18 +306,26 @@ describe('BusinessProfileSettings — per-section save', () => {
     fireEvent.click(saveButton('hours'))
 
     await waitFor(() => expect(backend.puts).toHaveLength(1))
-    expect(backend.puts[0]).toEqual({
-      business_hours: { monday: { enabled: true, open: '09:00', close: '18:00' } },
-    })
-    expect(backend.getRow()?.business_hours).not.toEqual({})
+    const monday = { monday: { enabled: true, open: '09:00', close: '18:00' } }
+    expect(backend.puts[0]).toEqual({ business_hours: monday })
+    expect(backend.getRow()?.businessHours).toEqual(monday)
+    expect(backend.getRow()?.businessHours).not.toEqual({})
+
+    // Visible in the UI after the save, not collapsed back to {} by
+    // fromApi() misreading `businessHours` as `business_hours`.
+    await waitFor(() => expect(screen.getAllByRole('checkbox')[0].hasAttribute('data-checked')).toBe(true))
+    const timeInputsAfter = document.querySelectorAll('input[type="time"]')
+    expect((timeInputsAfter[0] as HTMLInputElement).value).toBe('09:00')
+    expect((timeInputsAfter[1] as HTMLInputElement).value).toBe('18:00')
   })
 
-  it('Delivery/Pagos: saves delivery + payment fields as one section', async () => {
+  it('Delivery/Pagos: deliveryEnabled/deliveryDescription/deliveryCoverageAreas/paymentMethods stay visible after saving', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('deliveryTitle')
 
     fireEvent.click(screen.getAllByRole('checkbox').find((c) => c.closest('label')?.textContent === 'deliveryEnabled')!)
+    fireEvent.change(fieldByLabel('deliveryDetails'), { target: { value: 'Entrega en 24h' } })
     fireEvent.change(fieldByLabel('coverageAreas'), { target: { value: 'Loma de Cabrera, Dajabón' } })
     fireEvent.change(fieldByLabel('paymentMethods'), { target: { value: 'Efectivo, Transferencia' } })
     fireEvent.click(saveButton('delivery'))
@@ -228,30 +333,47 @@ describe('BusinessProfileSettings — per-section save', () => {
     await waitFor(() => expect(backend.puts).toHaveLength(1))
     expect(backend.puts[0]).toEqual({
       delivery_enabled: true,
-      delivery_description: null,
+      delivery_description: 'Entrega en 24h',
       delivery_coverage_areas: ['Loma de Cabrera', 'Dajabón'],
       payment_methods: ['Efectivo', 'Transferencia'],
     })
+    expect(backend.getRow()?.deliveryEnabled).toBe(true)
+
+    await waitFor(() => expect(fieldByLabel('deliveryDetails').value).toBe('Entrega en 24h'))
+    expect(fieldByLabel('coverageAreas').value).toBe('Loma de Cabrera, Dajabón')
+    expect(fieldByLabel('paymentMethods').value).toBe('Efectivo, Transferencia')
+    expect(
+      screen.getAllByRole('checkbox').find((c) => c.closest('label')?.textContent === 'deliveryEnabled')!.hasAttribute('data-checked'),
+    ).toBe(true)
   })
 
-  it('Políticas: saves the four policy fields', async () => {
+  it('Políticas: warranty/return/financing/delivery policy text all stay visible after saving', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('policiesTitle')
 
     fireEvent.change(fieldByLabel('warrantyPolicy'), { target: { value: '90 días' } })
+    fireEvent.change(fieldByLabel('returnPolicy'), { target: { value: '7 días' } })
+    fireEvent.change(fieldByLabel('financingPolicy'), { target: { value: 'Disponible' } })
+    fireEvent.change(fieldByLabel('deliveryPolicy'), { target: { value: 'Entrega según zona' } })
     fireEvent.click(saveButton('policies'))
 
     await waitFor(() => expect(backend.puts).toHaveLength(1))
     expect(backend.puts[0]).toEqual({
       warranty_policy: '90 días',
-      return_policy: null,
-      financing_policy: null,
-      delivery_policy: null,
+      return_policy: '7 días',
+      financing_policy: 'Disponible',
+      delivery_policy: 'Entrega según zona',
     })
+    expect(backend.getRow()?.warrantyPolicy).toBe('90 días')
+
+    await waitFor(() => expect(fieldByLabel('warrantyPolicy').value).toBe('90 días'))
+    expect(fieldByLabel('returnPolicy').value).toBe('7 días')
+    expect(fieldByLabel('financingPolicy').value).toBe('Disponible')
+    expect(fieldByLabel('deliveryPolicy').value).toBe('Entrega según zona')
   })
 
-  it('Links/FAQ: shared button saves both arrays together, nothing else', async () => {
+  it('Links/FAQ: shared button saves both arrays together and they stay visible after saving', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)
     await screen.findByText('linksTitle')
@@ -269,6 +391,9 @@ describe('BusinessProfileSettings — per-section save', () => {
       links: [{ label: 'Instagram', url: 'https://instagram.com/kuki', type: 'website' }],
       faq: [{ question: '¿Hacen envíos?', answer: 'Sí, a todo el país.' }],
     })
+
+    await waitFor(() => expect(screen.getByDisplayValue('Instagram')).toBeTruthy())
+    expect(screen.getByDisplayValue('¿Hacen envíos?')).toBeTruthy()
   })
 
   it('no sobrescritura entre secciones: saving Location after Identity leaves Identity intact', async () => {
@@ -279,7 +404,7 @@ describe('BusinessProfileSettings — per-section save', () => {
     fireEvent.change(fieldByLabel('businessName'), { target: { value: 'Kuki CompuCell' } })
     fireEvent.click(saveButton('identity'))
     await waitFor(() => expect(backend.puts).toHaveLength(1))
-    expect(backend.getRow()?.business_name).toBe('Kuki CompuCell')
+    expect(backend.getRow()?.businessName).toBe('Kuki CompuCell')
 
     // A second save — of a COMPLETELY different section — must not even
     // mention business_name, let alone null it out.
@@ -288,20 +413,28 @@ describe('BusinessProfileSettings — per-section save', () => {
     await waitFor(() => expect(backend.puts).toHaveLength(2))
 
     expect(backend.puts[1]).not.toHaveProperty('business_name')
-    expect(backend.getRow()?.business_name).toBe('Kuki CompuCell')
+    expect(backend.getRow()?.businessName).toBe('Kuki CompuCell')
     expect(backend.getRow()?.address).toBe('Duarte 88')
+    // Visible in the DOM too, not just in the mock's internal row.
+    expect(fieldByLabel('businessName').value).toBe('Kuki CompuCell')
+    expect(fieldByLabel('address').value).toBe('Duarte 88')
   })
 
   it('reload/relectura: a fresh mount shows exactly the stored values in every section', async () => {
     mockBackend({
-      business_name: 'Kuki CompuCell',
+      businessName: 'Kuki CompuCell',
       phone: '809-284-3495',
       address: 'Duarte 88',
       city: 'Loma de Cabrera',
-      google_maps_url: 'https://maps.google.com/?q=Duarte+88',
-      business_hours: { monday: { enabled: true, open: '09:00', close: '18:00' } },
-      delivery_enabled: true,
-      payment_methods: ['Efectivo'],
+      googleMapsUrl: 'https://maps.google.com/?q=Duarte+88',
+      businessHours: { monday: { enabled: true, open: '09:00', close: '18:00' } },
+      deliveryEnabled: true,
+      deliveryDescription: 'Entrega en 24h',
+      paymentMethods: ['Efectivo'],
+      warrantyPolicy: '90 días',
+      returnPolicy: '7 días',
+      financingPolicy: 'Disponible',
+      deliveryPolicy: 'Entrega según zona',
       links: [{ label: 'Instagram', url: 'https://instagram.com/kuki', type: 'website' }],
       faq: [{ question: '¿Hacen envíos?', answer: 'Sí' }],
     })
@@ -314,12 +447,18 @@ describe('BusinessProfileSettings — per-section save', () => {
     expect(fieldByLabel('googleMapsUrl').value).toBe('https://maps.google.com/?q=Duarte+88')
     expect(screen.getAllByRole('checkbox')[0].hasAttribute('data-checked')).toBe(true) // Monday enabled
     expect((document.querySelectorAll('input[type="time"]')[0] as HTMLInputElement).value).toBe('09:00')
+    expect(fieldByLabel('deliveryDetails').value).toBe('Entrega en 24h')
+    expect(fieldByLabel('paymentMethods').value).toBe('Efectivo')
+    expect(fieldByLabel('warrantyPolicy').value).toBe('90 días')
+    expect(fieldByLabel('returnPolicy').value).toBe('7 días')
+    expect(fieldByLabel('financingPolicy').value).toBe('Disponible')
+    expect(fieldByLabel('deliveryPolicy').value).toBe('Entrega según zona')
     expect(screen.getByDisplayValue('Instagram')).toBeTruthy()
     expect(screen.getByDisplayValue('¿Hacen envíos?')).toBeTruthy()
   })
 
   it('valores vacíos: an untouched section is never sent, so it can never be nulled by another save', async () => {
-    const backend = mockBackend({ business_name: 'Kuki CompuCell' })
+    const backend = mockBackend({ businessName: 'Kuki CompuCell' })
     render(<BusinessProfileSettings />)
     await screen.findByText('locationTitle')
 
@@ -331,7 +470,7 @@ describe('BusinessProfileSettings — per-section save', () => {
     await waitFor(() => expect(backend.puts).toHaveLength(1))
     expect(backend.puts[0]).toEqual({ address: null, city: null, state: null, country: null, google_maps_url: null })
     expect(backend.puts[0]).not.toHaveProperty('business_name')
-    expect(backend.getRow()?.business_name).toBe('Kuki CompuCell')
+    expect(backend.getRow()?.businessName).toBe('Kuki CompuCell')
   })
 
   it('error: a failed save shows an error and does not clear the field the user typed', async () => {

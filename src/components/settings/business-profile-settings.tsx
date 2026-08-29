@@ -49,9 +49,9 @@ import {
 import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { RequireRole } from '@/components/auth/require-role';
 import { SettingsPanelHead } from './settings-panel-head';
-import { WEEKDAYS, type Weekday, type DayHours, type BusinessHours, type BusinessLink, type BusinessFaqItem } from '@/lib/ai/business-profile/types';
+import { WEEKDAYS, type Weekday, type DayHours, type BusinessHours, type BusinessLink, type BusinessFaqItem, type BusinessProfileRow } from '@/lib/ai/business-profile/types';
 
-interface ProfileState {
+export interface ProfileState {
   businessName: string;
   description: string;
   phone: string;
@@ -101,35 +101,21 @@ const EMPTY_PROFILE: ProfileState = {
   faq: [],
 };
 
-interface ProfileRowFromApi {
-  business_name: string | null;
-  description: string | null;
-  phone: string | null;
-  whatsapp: string | null;
-  email: string | null;
-  website: string | null;
-  address: string | null;
-  city: string | null;
-  state: string | null;
-  country: string | null;
-  google_maps_url: string | null;
-  business_hours: BusinessHours | null;
-  delivery_enabled: boolean;
-  delivery_description: string | null;
-  delivery_coverage_areas: string[] | null;
-  payment_methods: string[] | null;
-  warranty_policy: string | null;
-  return_policy: string | null;
-  financing_policy: string | null;
-  delivery_policy: string | null;
-  links: BusinessLink[] | null;
-  faq: BusinessFaqItem[] | null;
-}
-
-function fromApi(row: ProfileRowFromApi | null): ProfileState {
+// Root cause of the "data vanishes after saving/reloading" bug: this
+// used to be a hand-written interface with snake_case field names
+// (business_name, google_maps_url, ...), but GET/PUT /api/ai/business-
+// profile actually return `BusinessProfileRow` — the camelCase shape
+// service.ts's toProfile() produces (businessName, googleMapsUrl, ...).
+// Every single-word field (phone, address, city, ...) happens to be
+// spelled the same in both conventions, so those looked fine; every
+// multi-word field never matched anything and silently fell back to
+// its empty default on every load AND every post-save resync. Using
+// the real shared type here — instead of a hand-rolled duplicate — is
+// what makes that class of drift impossible to reintroduce.
+export function fromApi(row: BusinessProfileRow | null): ProfileState {
   if (!row) return EMPTY_PROFILE;
   return {
-    businessName: row.business_name ?? '',
+    businessName: row.businessName ?? '',
     description: row.description ?? '',
     phone: row.phone ?? '',
     whatsapp: row.whatsapp ?? '',
@@ -139,16 +125,16 @@ function fromApi(row: ProfileRowFromApi | null): ProfileState {
     city: row.city ?? '',
     state: row.state ?? '',
     country: row.country ?? '',
-    googleMapsUrl: row.google_maps_url ?? '',
-    businessHours: row.business_hours ?? {},
-    deliveryEnabled: row.delivery_enabled ?? false,
-    deliveryDescription: row.delivery_description ?? '',
-    deliveryCoverageAreas: (row.delivery_coverage_areas ?? []).join(', '),
-    paymentMethods: (row.payment_methods ?? []).join(', '),
-    warrantyPolicy: row.warranty_policy ?? '',
-    returnPolicy: row.return_policy ?? '',
-    financingPolicy: row.financing_policy ?? '',
-    deliveryPolicy: row.delivery_policy ?? '',
+    googleMapsUrl: row.googleMapsUrl ?? '',
+    businessHours: row.businessHours ?? {},
+    deliveryEnabled: row.deliveryEnabled ?? false,
+    deliveryDescription: row.deliveryDescription ?? '',
+    deliveryCoverageAreas: (row.deliveryCoverageAreas ?? []).join(', '),
+    paymentMethods: (row.paymentMethods ?? []).join(', '),
+    warrantyPolicy: row.warrantyPolicy ?? '',
+    returnPolicy: row.returnPolicy ?? '',
+    financingPolicy: row.financingPolicy ?? '',
+    deliveryPolicy: row.deliveryPolicy ?? '',
     links: row.links ?? [],
     faq: row.faq ?? [],
   };

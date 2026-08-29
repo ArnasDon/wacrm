@@ -125,6 +125,8 @@ export function SettingsOverview({
           .from('whatsapp_connections')
           .select('phone_number_id')
           .eq('account_id', acctId)
+          .eq('provider', 'meta')
+          .is('archived_at', null)
           .maybeSingle(),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
       ]);

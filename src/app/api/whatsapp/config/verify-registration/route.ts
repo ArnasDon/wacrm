@@ -59,6 +59,8 @@ export async function GET() {
     .from('whatsapp_connections')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
+    .is('archived_at', null)
     .maybeSingle()
 
   if (!config) {

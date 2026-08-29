@@ -90,6 +90,7 @@ export async function GET() {
       .select('phone_number_id, credential, status')
       .eq('account_id', accountId)
       .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     if (configError) {
@@ -225,6 +226,8 @@ export async function POST(request: Request) {
       .select('account_id')
       .eq('phone_number_id', phone_number_id)
       .neq('account_id', accountId)
+      .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     if (claimedError) {
@@ -289,6 +292,7 @@ export async function POST(request: Request) {
       .select('id, registered_at, phone_number_id')
       .eq('account_id', accountId)
       .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     const sameNumber =
@@ -385,7 +389,8 @@ export async function POST(request: Request) {
         .from('whatsapp_connections')
         .update(baseRow)
         .eq('account_id', accountId)
-        .eq('provider', 'meta');
+        .eq('provider', 'meta')
+        .is('archived_at', null);
 
       if (updateError) {
         console.error('Error updating whatsapp_connections:', updateError);
@@ -489,7 +494,8 @@ export async function DELETE() {
       .from('whatsapp_connections')
       .delete()
       .eq('account_id', accountId)
-      .eq('provider', 'meta');
+      .eq('provider', 'meta')
+      .is('archived_at', null);
 
     if (deleteError) {
       console.error('Error deleting whatsapp_connections:', deleteError);

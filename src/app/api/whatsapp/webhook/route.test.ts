@@ -45,23 +45,33 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from(table: string) {
       switch (table) {
-        case 'whatsapp_connections':
-          return {
-            select: () => ({
-              eq: () =>
-                Promise.resolve({
-                  data: [
-                    {
-                      account_id: 'acc-1',
-                      user_id: 'user-1',
-                      credential: 'enc',
-                      mirror_inbound_media: h.state.mirrorInboundMedia,
-                    },
-                  ],
-                  error: null,
-                }),
-            }),
+        case 'whatsapp_connections': {
+          // Chain-aware: the route now appends `.eq('provider','meta')`
+          // and `.is('archived_at', null)` before awaiting, so every
+          // filter must return the (thenable) builder again.
+          const chain: Record<string, unknown> = {
+            eq: () => chain,
+            is: () => chain,
+            then: (
+              onFulfilled: (v: { data: unknown; error: null }) => unknown,
+              onRejected?: (r: unknown) => unknown,
+            ) =>
+              Promise.resolve({
+                data: [
+                  {
+                    account_id: 'acc-1',
+                    user_id: 'user-1',
+                    credential: 'enc',
+                    mirror_inbound_media: h.state.mirrorInboundMedia,
+                  },
+                ],
+                error: null,
+              }).then(onFulfilled, onRejected),
           }
+          return {
+            select: () => chain,
+          }
+        }
         case 'conversations':
           // findOrCreateConversation: select().eq().eq().order().limit()
           return {

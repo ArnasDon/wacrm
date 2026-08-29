@@ -124,6 +124,8 @@ export function WhatsAppConfig() {
         .from('whatsapp_connections')
         .select('*')
         .eq('account_id', acctId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .maybeSingle();
 
       if (error) {
@@ -214,7 +216,9 @@ export function WhatsAppConfig() {
       const { error } = await supabase
         .from('whatsapp_connections')
         .update({ mirror_inbound_media: next })
-        .eq('account_id', accountId);
+        .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null);
       if (error) throw new Error(error.message);
       setConfig({ ...config, mirror_inbound_media: next });
     } catch (error) {

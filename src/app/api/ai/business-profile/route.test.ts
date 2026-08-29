@@ -154,4 +154,39 @@ describe('PUT /api/ai/business-profile — partial update at the route layer', (
     expect(body.profile.businessName).toBe('Kuki CompuCell');
     expect(body.profile.googleMapsUrl).toBe('https://maps.google.com/?q=x');
   });
+
+  it('the four policy fields survive a PUT with the exact reported values ("1"/"2"/"3"/"4"), through the real route+service', async () => {
+    const { supabase, getRow } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    // Other sections saved first, matching the reported real sequence.
+    await PUT(putRequest({ business_name: 'Kuki CompuCell' }));
+    await PUT(putRequest({ google_maps_url: 'https://maps.google.com/?q=x' }));
+
+    const res = await PUT(putRequest({
+      warranty_policy: '1',
+      return_policy: '2',
+      financing_policy: '3',
+      delivery_policy: '4',
+    }));
+    expect(res.status).toBe(200);
+
+    const body = (await res.json()) as {
+      profile: { warrantyPolicy: string; returnPolicy: string; financingPolicy: string; deliveryPolicy: string };
+    };
+    expect(body.profile.warrantyPolicy).toBe('1');
+    expect(body.profile.returnPolicy).toBe('2');
+    expect(body.profile.financingPolicy).toBe('3');
+    expect(body.profile.deliveryPolicy).toBe('4');
+
+    const row = getRow()!;
+    expect(row.warranty_policy).toBe('1');
+    expect(row.return_policy).toBe('2');
+    expect(row.financing_policy).toBe('3');
+    expect(row.delivery_policy).toBe('4');
+    // Isolation: the policies-only PUT must not have touched what the
+    // two earlier PUTs stored.
+    expect(row.business_name).toBe('Kuki CompuCell');
+    expect(row.google_maps_url).toBe('https://maps.google.com/?q=x');
+  });
 });

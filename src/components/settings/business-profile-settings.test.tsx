@@ -373,6 +373,82 @@ describe('BusinessProfileSettings — per-section save', () => {
     expect(fieldByLabel('deliveryPolicy').value).toBe('Entrega según zona')
   })
 
+  it('Políticas — reproduces the exact reported scenario: "1"/"2"/"3"/"4" after other sections were already saved, survives unmount, touches nothing else', async () => {
+    const backend = mockBackend()
+    render(<BusinessProfileSettings />)
+    await screen.findByText('identityTitle')
+
+    // Replicate the real sequence: Identidad, Ubicación, Delivery and
+    // Links all saved first, exactly like the reported session, before
+    // ever touching Políticas.
+    fireEvent.change(fieldByLabel('businessName'), { target: { value: 'Kuki CompuCell' } })
+    fireEvent.click(saveButton('identity'))
+    await waitFor(() => expect(backend.puts).toHaveLength(1))
+
+    fireEvent.change(fieldByLabel('address'), { target: { value: 'Duarte 88' } })
+    fireEvent.change(fieldByLabel('googleMapsUrl'), { target: { value: 'https://maps.google.com/?q=x' } })
+    fireEvent.click(saveButton('location'))
+    await waitFor(() => expect(backend.puts).toHaveLength(2))
+
+    fireEvent.click(screen.getAllByRole('checkbox').find((c) => c.closest('label')?.textContent === 'deliveryEnabled')!)
+    fireEvent.click(saveButton('delivery'))
+    await waitFor(() => expect(backend.puts).toHaveLength(3))
+
+    fireEvent.click(screen.getByText('addLink'))
+    fireEvent.change(screen.getByPlaceholderText('linkLabelPlaceholder'), { target: { value: 'Instagram' } })
+    fireEvent.click(saveButton('linksFaq'))
+    await waitFor(() => expect(backend.puts).toHaveLength(4))
+
+    // Now Políticas, with the exact reported values.
+    fireEvent.change(fieldByLabel('warrantyPolicy'), { target: { value: '1' } })
+    fireEvent.change(fieldByLabel('returnPolicy'), { target: { value: '2' } })
+    fireEvent.change(fieldByLabel('financingPolicy'), { target: { value: '3' } })
+    fireEvent.change(fieldByLabel('deliveryPolicy'), { target: { value: '4' } })
+    fireEvent.click(saveButton('policies'))
+
+    await waitFor(() => expect(backend.puts).toHaveLength(5))
+    // 3. PUT body — exactly these 4 keys, exactly these 4 values.
+    expect(backend.puts[4]).toEqual({
+      warranty_policy: '1',
+      return_policy: '2',
+      financing_policy: '3',
+      delivery_policy: '4',
+    })
+    // 5. Response `profile` — camelCase, real values.
+    expect(backend.getRow()?.warrantyPolicy).toBe('1')
+    expect(backend.getRow()?.returnPolicy).toBe('2')
+    expect(backend.getRow()?.financingPolicy).toBe('3')
+    expect(backend.getRow()?.deliveryPolicy).toBe('4')
+
+    // The reported symptom: do the 4 textareas actually still show
+    // 1/2/3/4 right after the save resolves?
+    await waitFor(() => expect(fieldByLabel('warrantyPolicy').value).toBe('1'))
+    expect(fieldByLabel('returnPolicy').value).toBe('2')
+    expect(fieldByLabel('financingPolicy').value).toBe('3')
+    expect(fieldByLabel('deliveryPolicy').value).toBe('4')
+
+    // Unmount/remount (a real reload) — must still show 1/2/3/4.
+    cleanup()
+    render(<BusinessProfileSettings />)
+    await screen.findByText('policiesTitle')
+    expect(fieldByLabel('warrantyPolicy').value).toBe('1')
+    expect(fieldByLabel('returnPolicy').value).toBe('2')
+    expect(fieldByLabel('financingPolicy').value).toBe('3')
+    expect(fieldByLabel('deliveryPolicy').value).toBe('4')
+
+    // Isolation: saving Políticas must not have touched anything else
+    // saved earlier in the session.
+    expect(backend.puts[4]).not.toHaveProperty('business_name')
+    expect(backend.puts[4]).not.toHaveProperty('google_maps_url')
+    expect(backend.puts[4]).not.toHaveProperty('business_hours')
+    expect(backend.puts[4]).not.toHaveProperty('delivery_enabled')
+    expect(backend.puts[4]).not.toHaveProperty('links')
+    expect(fieldByLabel('businessName').value).toBe('Kuki CompuCell')
+    expect(fieldByLabel('address').value).toBe('Duarte 88')
+    expect(fieldByLabel('googleMapsUrl').value).toBe('https://maps.google.com/?q=x')
+    expect(screen.getByDisplayValue('Instagram')).toBeTruthy()
+  })
+
   it('Links/FAQ: shared button saves both arrays together and they stay visible after saving', async () => {
     const backend = mockBackend()
     render(<BusinessProfileSettings />)

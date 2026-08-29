@@ -395,19 +395,23 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017); uniqueness is now the partial index on
-      // `(account_id, provider)` from migration 040, so a second Meta
-      // row for the same account trips it up-front. `user_id` is the
-      // audit column identifying which member of the account saved the
-      // config.
+      // Primeira conexão não-arquivada do account (qualquer provider) =
+      // primária. As seguintes entram como não-primária; a promoção é
+      // via PATCH /api/whatsapp/connections/[id] (Onda 1b-ii). Na 1b-i
+      // nenhuma linha `uazapi` existe, então isto é sempre `true`.
+      const { count: existingCount } = await supabase
+        .from('whatsapp_connections')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .is('archived_at', null);
+
       const { error: insertError } = await supabase
         .from('whatsapp_connections')
         .insert({
           account_id: accountId,
           user_id: user.id,
           provider: 'meta',
-          is_primary: true,
+          is_primary: (existingCount ?? 0) === 0,
           ...baseRow,
         });
 

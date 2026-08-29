@@ -77,10 +77,8 @@ export async function resolveConnection(
   return {
     id: config.id,
     accountId,
-    // Backfill da 040: toda linha existente é 'meta'. A 1b acrescenta o
-    // ramo 'uazapi' e a resolução em três níveis.
-    provider: 'meta',
-    phoneNumberId: config.phone_number_id ?? null,
     credential,
+    provider: 'meta',
+    phoneNumberId: config.phone_number_id ?? '',
   };
 }

@@ -28,18 +28,31 @@ export interface ProviderCapabilities {
 }
 
 /**
- * Linha de configuração com a credencial JÁ DECRIPTADA. Produzida por
- * `resolveConnection()`; consumida só por transportes.
+ * Linha de conexão com a credencial JÁ DECRIPTADA. Produzida por
+ * `resolveConnection()`; consumida só por transportes. União
+ * discriminada por `provider` — cada variante carrega só os campos que
+ * seu transporte usa.
  */
-export interface TransportConnection {
+interface TransportConnectionBase {
   id: string;
   accountId: string;
-  provider: ProviderName;
-  /** Meta: `phone_number_id`. Null para provedores que não usam um. */
-  phoneNumberId: string | null;
-  /** Meta: access token. (Onda 1: UAZAPI usa a mesma coluna.) */
+  /** Meta: access token. UAZAPI: instance token. */
   credential: string;
 }
+
+export type TransportConnection =
+  | (TransportConnectionBase & {
+      provider: 'meta';
+      /** `phone_number_id`. Sempre presente numa linha Meta real. */
+      phoneNumberId: string;
+    })
+  | (TransportConnectionBase & {
+      provider: 'uazapi';
+      /** `uazapi_instance_id`. */
+      instanceId: string;
+      /** `uazapi_base_url` — raiz da API do servidor UAZAPI do operador. */
+      baseUrl: string;
+    });
 
 export interface TransportResult {
   providerMessageId: string;

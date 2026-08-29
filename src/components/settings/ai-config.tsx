@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
 import { DataSourcesSettings } from './data-sources-settings';
@@ -66,7 +67,7 @@ export function AiConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [removing, setRemoving] = useState(false);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
 
   const [configured, setConfigured] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
@@ -238,29 +239,32 @@ export function AiConfig() {
     }
   };
 
+  // The actual destructive operation, run only from the second step of
+  // the confirmation dialog below — never from the trigger button
+  // itself. Throws on failure (network or API error) so the dialog
+  // keeps itself open and shows the error instead of pretending the
+  // config was removed; only resolves (and only then does the dialog
+  // close) once the DELETE genuinely succeeded.
   const handleRemove = async () => {
-    setRemoving(true);
+    let res: Response;
     try {
-      const res = await fetch('/api/ai/config', { method: 'DELETE' });
-      if (res.ok) {
-        toast.success(t('removeSuccess'));
-        setConfigured(false);
-        setHasStoredKey(false);
-        setApiKey('');
-        setKeyEdited(false);
-        setIsActive(false);
-        setAutoReplyEnabled(false);
-        setSystemPrompt('');
-        setHandoffAgentId('');
-      } else {
-        const data = await res.json();
-        toast.error(data.error ?? t('removeFailed'));
-      }
+      res = await fetch('/api/ai/config', { method: 'DELETE' });
     } catch {
-      toast.error(t('removeFailed'));
-    } finally {
-      setRemoving(false);
+      throw new Error(t('removeFailed'));
     }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? t('removeFailed'));
+    }
+    toast.success(t('removeSuccess'));
+    setConfigured(false);
+    setHasStoredKey(false);
+    setApiKey('');
+    setKeyEdited(false);
+    setIsActive(false);
+    setAutoReplyEnabled(false);
+    setSystemPrompt('');
+    setHandoffAgentId('');
   };
 
   if (loading || profileLoading) {
@@ -560,15 +564,11 @@ export function AiConfig() {
           {configured ? (
             <Button
               variant="ghost"
-              onClick={handleRemove}
-              disabled={!canEdit || removing}
+              onClick={() => setRemoveConfirmOpen(true)}
+              disabled={!canEdit}
               className="text-destructive hover:text-destructive"
             >
-              {removing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
-              )}
+              <Trash2 className="mr-2 h-4 w-4" />
               {t('remove')}
             </Button>
           ) : (
@@ -581,6 +581,33 @@ export function AiConfig() {
           </Button>
         </div>
       </div>
+
+      <DestructiveConfirmDialog
+        open={removeConfirmOpen}
+        onOpenChange={setRemoveConfirmOpen}
+        title={t('removeConfirmTitle')}
+        description={t('removeConfirmDescription')}
+        cancelLabel={t('removeConfirmCancel')}
+        confirmLabel={t('removeConfirmContinue')}
+        errorFallback={t('removeFailed')}
+        onConfirm={handleRemove}
+        critical={{
+          title: t('removeCriticalTitle'),
+          confirmLabel: t('removeCriticalConfirmButton'),
+          description: (
+            <>
+              <p>{t('removeCriticalIntro')}</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>{t('removeCriticalItemProviderModel')}</li>
+                <li>{t('removeCriticalItemApiKey')}</li>
+                {hasStoredEmbeddingsKey && <li>{t('removeCriticalItemEmbeddingsKey')}</li>}
+                <li>{t('removeCriticalItemBehavior')}</li>
+              </ul>
+              <p className="mt-2">{t('removeCriticalIrreversible')}</p>
+            </>
+          ),
+        }}
+      />
     </div>
   );
 }

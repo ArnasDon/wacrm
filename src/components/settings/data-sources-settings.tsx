@@ -42,6 +42,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import { SettingsPanelHead } from './settings-panel-head';
@@ -83,6 +84,7 @@ export function DataSourcesSettings() {
   const fileRefreshInputRef = useRef<HTMLInputElement | null>(null);
   const [refreshTargetId, setRefreshTargetId] = useState<string | null>(null);
   const [previewSourceId, setPreviewSourceId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DataSourceRow | null>(null);
 
   const SOURCE_TYPE_LABEL: Record<SourceType, string> = {
     google_sheets: t('sourceTypeGoogleSheets'),
@@ -115,20 +117,23 @@ export function DataSourcesSettings() {
     void load();
   }, [load]);
 
-  async function handleDelete(source: DataSourceRow) {
-    if (!confirm(t('deleteConfirm', { name: source.display_name }))) return;
+  // The actual delete, run only from DestructiveConfirmDialog's confirm
+  // button below — never directly from the row's trash icon. Throws on
+  // failure so the dialog stays open and shows the error instead of
+  // silently pretending the source was removed.
+  async function performDelete(source: DataSourceRow) {
     setBusyId(source.id);
     try {
-      const res = await fetch(`/api/ai/data-sources/${source.id}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data.error || t('deleteFailed'));
-        return;
+      let res: Response;
+      try {
+        res = await fetch(`/api/ai/data-sources/${source.id}`, { method: 'DELETE' });
+      } catch {
+        throw new Error(t('networkError'));
       }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t('deleteFailed'));
       toast.success(t('deleteSuccess'));
       setSources((prev) => prev.filter((s) => s.id !== source.id));
-    } catch {
-      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -340,7 +345,7 @@ export function DataSourcesSettings() {
                         variant="outline"
                         size="sm"
                         disabled={busyId === s.id}
-                        onClick={() => handleDelete(s)}
+                        onClick={() => setDeleteTarget(s)}
                         className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
                       >
                         <Trash2 className="size-3.5" />
@@ -364,6 +369,19 @@ export function DataSourcesSettings() {
       />
 
       <DataSourcePreviewDialog sourceId={previewSourceId} onOpenChange={(open) => { if (!open) setPreviewSourceId(null); }} />
+
+      <DestructiveConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => { if (!next) setDeleteTarget(null); }}
+        title={t('deleteConfirmTitle')}
+        description={t('deleteConfirmDescription', { name: deleteTarget?.display_name ?? '' })}
+        cancelLabel={t('deleteConfirmCancel')}
+        confirmLabel={t('deleteConfirmButton')}
+        errorFallback={t('deleteFailed')}
+        onConfirm={async () => {
+          if (deleteTarget) await performDelete(deleteTarget);
+        }}
+      />
     </section>
   );
 }

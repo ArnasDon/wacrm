@@ -39,6 +39,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { RequireRole } from '@/components/auth/require-role';
 import { SettingsPanelHead } from './settings-panel-head';
 
@@ -69,6 +70,7 @@ export function CatalogIntegrationsSettings() {
   const [editing, setEditing] = useState<CatalogIntegrationRow | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [testingId, setTestingId] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CatalogIntegrationRow | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -108,20 +110,25 @@ export function CatalogIntegrationsSettings() {
     }
   }
 
-  async function handleDelete(integration: CatalogIntegrationRow) {
-    if (!confirm(t('removeConfirm', { name: integration.display_name }))) return;
+  // The actual delete, run only from the second step of the
+  // confirmation dialog below — never directly from the row's remove
+  // button. Also deletes the stored credential (encrypted_secret) along
+  // with the row, which is why this flow requires double confirmation.
+  // Throws on failure so the dialog stays open and shows the error
+  // instead of silently pretending the integration was removed.
+  async function performDelete(integration: CatalogIntegrationRow) {
     setBusyId(integration.id);
     try {
-      const res = await fetch(`/api/integrations/catalog/${integration.id}`, { method: 'DELETE' });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        toast.error(data.error || t('removeFailed'));
-        return;
+      let res: Response;
+      try {
+        res = await fetch(`/api/integrations/catalog/${integration.id}`, { method: 'DELETE' });
+      } catch {
+        throw new Error(t('networkError'));
       }
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || t('removeFailed'));
       toast.success(t('removeSuccess'));
       setIntegrations((prev) => prev.filter((i) => i.id !== integration.id));
-    } catch {
-      toast.error(t('networkError'));
     } finally {
       setBusyId(null);
     }
@@ -242,7 +249,7 @@ export function CatalogIntegrationsSettings() {
                         variant="outline"
                         size="sm"
                         disabled={busyId === i.id}
-                        onClick={() => handleDelete(i)}
+                        onClick={() => setDeleteTarget(i)}
                         className="border-red-500/40 bg-red-500/10 text-red-300 hover:border-red-500/60 hover:bg-red-500/20 hover:text-red-200"
                       >
                         <Trash2 className="size-3.5" />
@@ -262,6 +269,33 @@ export function CatalogIntegrationsSettings() {
         onOpenChange={setDialogOpen}
         editing={editing}
         onSaved={load}
+      />
+
+      <DestructiveConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => { if (!next) setDeleteTarget(null); }}
+        title={t('removeConfirmTitle')}
+        description={t('removeConfirmDescription', { name: deleteTarget?.display_name ?? '' })}
+        cancelLabel={t('removeConfirmCancel')}
+        confirmLabel={t('removeConfirmContinue')}
+        errorFallback={t('removeFailed')}
+        onConfirm={async () => {
+          if (deleteTarget) await performDelete(deleteTarget);
+        }}
+        critical={{
+          title: t('removeCriticalTitle'),
+          confirmLabel: t('removeCriticalConfirmButton'),
+          description: (
+            <>
+              <p>{t('removeCriticalIntro')}</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>{t('removeCriticalItemConnection')}</li>
+                <li>{t('removeCriticalItemSecret')}</li>
+              </ul>
+              <p className="mt-2">{t('removeCriticalIrreversible')}</p>
+            </>
+          ),
+        }}
       />
     </section>
   );

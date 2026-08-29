@@ -33,7 +33,18 @@ es5`).
 - **A suíte existente passa.** A única mudança permitida em testes é
   ajuste de forma: um `TransportConnection` literal / mock de
   `resolveConnection` que hoje é flat ganha a forma da variante
-  (`provider: 'meta'` + `phoneNumberId`). **Exceção autorizada:** o teste
+  (`provider: 'meta'` + `phoneNumberId`). **Regra de lockstep (Task 3):**
+  a Task 3 troca a CADEIA de query de `resolveConnection`
+  (`.eq().eq().single()` → `.is('archived_at',null)` + `.eq('id'|'is_primary')`
+  condicional + `.maybeSingle()`). Os fakes de Supabase dos testes cujo
+  caminho mockado passa por `resolveConnection` —
+  `send-message.test.ts`, `broadcast-core.test.ts`,
+  `broadcast-resume.test.ts`, `send/route.test.ts` — precisam modelar a
+  cadeia nova (aceitar `.is()`/`.eq()` extra, resolver via
+  `.maybeSingle()`, table-aware se preciso). É **enabler**, zero
+  asserção muda — mesmo padrão do restructure de mock que a 1a aceitou.
+  Esses 4 arquivos entram na Task 3.
+  **Exceção autorizada:** o teste
   `it('lança para um provider ainda não implementado')` em
   `providers/meta-transport.test.ts` — a 1b-i implementa `'uazapi'`, então
   esse teste passa a asseriar que `createTransport({…provider:'uazapi'})`
@@ -286,6 +297,11 @@ git commit -m "fix(whatsapp): config route elects is_primary by connection count
 **Files:**
 - Modify: `src/lib/whatsapp/resolve-connection.ts`
 - Modify: `src/lib/whatsapp/resolve-connection.test.ts`
+- Modify (enabler nos fakes de Supabase — o caminho mockado passa por
+  `resolveConnection`; ver Global Constraints): `src/lib/whatsapp/send-message.test.ts`,
+  `src/lib/whatsapp/broadcast-core.test.ts`,
+  `src/lib/whatsapp/broadcast-resume.test.ts`,
+  `src/app/api/whatsapp/send/route.test.ts`
 
 **Interfaces:**
 - Consumes: `TransportConnection` união (Task 1).

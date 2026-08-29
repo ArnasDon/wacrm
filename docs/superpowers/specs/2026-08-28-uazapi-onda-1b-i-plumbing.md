@@ -187,12 +187,22 @@ já tem `connectionId`, `conversationId`, `selfHeal`). Lógica nova:
 `conversationId` aponta para uma conversa com `connection_id` de uma
 conexão arquivada (ou o `connectionId` explícito é inválido), o passo 3
 não devolve linha. Decisão: cair para o passo 4 (primária), não
-lançar. Motivo: preserva o comportamento de hoje para o único caso
-alcançável na 1b-i — uma conversa com `connection_id` NULL (todas, até
-a 1c) resolve para a primária, que é a única linha Meta. Custo se
-errado: um envio para uma conexão arquivada iria pela primária em vez
-de falhar — aceitável e provavelmente desejável; a 1b-ii/1c refina se
-preciso.
+lançar. Custo se errado: um envio para uma conexão arquivada iria pela
+primária em vez de falhar — aceitável e provavelmente desejável; a
+1b-ii/1c refina se preciso.
+
+**Correção (revisão da Task 3):** o texto original dizia que "uma
+conversa com `connection_id` NULL (todas, até a 1c)" seria o caso
+comum. **Falso** — a migração 040 backfilla `conversations.connection_id`
+para a linha de conexão do account. Na prática, o caminho de envio
+(`send-core` passa `conversationId`) exercita o **nível 1**: a conversa
+tem um `connection_id` não-NULL apontando para a linha primária, que é
+carregada por id. Com um account só-Meta o resultado é a mesma
+`TransportConnection` de sempre; o custo é uma query a mais
+(`conversations` + `whatsapp_connections` vs 1). `connection_id` NULL só
+aparece em conversa órfã do botão "Reset Configuration" (pré-1c). O
+fallthrough para a primária continua sendo a rede para esse caso e para
+o alvo arquivado.
 
 ### 3.4 União `TransportConnection`
 

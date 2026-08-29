@@ -1558,7 +1558,8 @@
       "channelSelectorTitle": "기본 채널",
       "channelSelectorDesc": "브로드캐스트, 플로우, 공개 API가 이 연결을 사용합니다.",
       "channelSelectorMeta": "공식 API (Meta)",
-      "channelSelectorUazapi": "QR 코드 (UAZAPI)"
+      "channelSelectorUazapi": "QR 코드 (UAZAPI)",
+      "connectionsLoadError": "연결 목록을 불러오지 못했습니다. 새로고침 후 다시 시도하세요."
     },
     "sections": {
       "overview": "개요",

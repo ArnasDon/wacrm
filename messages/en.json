@@ -1558,7 +1558,8 @@
       "channelSelectorTitle": "Default channel",
       "channelSelectorDesc": "Broadcasts, Flows and the public API use this connection.",
       "channelSelectorMeta": "Official API (Meta)",
-      "channelSelectorUazapi": "QR Code (UAZAPI)"
+      "channelSelectorUazapi": "QR Code (UAZAPI)",
+      "connectionsLoadError": "Could not load the connection list. Refresh to try again."
     },
     "sections": {
       "overview": "Overview",

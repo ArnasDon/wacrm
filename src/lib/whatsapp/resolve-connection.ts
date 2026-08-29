@@ -2,10 +2,11 @@
 // Resolução de conexão de WhatsApp.
 //
 // O ÚNICO lugar do caminho de envio que lê a tabela de conexões e
-// decripta a credencial. A resolução em três níveis (conversa →
-// explícito → primária) entra na Onda 1b; a 1a só fez o rename da
-// tabela. Nada acima deste arquivo conhece o nome da tabela ou o
-// formato do ciphertext.
+// decripta a credencial. A resolução acontece em três níveis: a
+// conexão da conversa de origem → o `connectionId` explícito → a linha
+// primária da conta. A variante devolvida (`meta` ou `uazapi`) é
+// montada aqui a partir de `row.provider`. Nada acima deste arquivo
+// conhece o nome da tabela ou o formato do ciphertext.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -38,14 +39,46 @@ export async function resolveConnection(
   accountId: string,
   options: ResolveConnectionOptions = {}
 ): Promise<TransportConnection> {
-  const { data: config, error } = await db
+  // Nível 1: a conexão da conversa de origem, se houver e não for NULL.
+  let targetId: string | undefined;
+  if (options.conversationId) {
+    const { data: conv } = await db
+      .from('conversations')
+      .select('connection_id')
+      .eq('id', options.conversationId)
+      .eq('account_id', accountId)
+      .maybeSingle();
+    if (conv?.connection_id) targetId = conv.connection_id as string;
+  }
+  // Nível 2: connectionId explícito.
+  if (!targetId && options.connectionId) targetId = options.connectionId;
+
+  // Carrega o alvo (nível 1/2) ou a primária (nível 3).
+  const query = db
     .from('whatsapp_connections')
     .select('*')
     .eq('account_id', accountId)
-    .eq('provider', 'meta')
-    .single();
+    .is('archived_at', null);
+  const { data: row } = targetId
+    ? await query.eq('id', targetId).maybeSingle()
+    : await query.eq('is_primary', true).maybeSingle();
 
-  if (error || !config) {
+  // Alvo que não carregou (arquivado / id inválido) → cai para a primária.
+  const resolved =
+    row ??
+    (targetId
+      ? (
+          await db
+            .from('whatsapp_connections')
+            .select('*')
+            .eq('account_id', accountId)
+            .is('archived_at', null)
+            .eq('is_primary', true)
+            .maybeSingle()
+        ).data
+      : null);
+
+  if (!resolved) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -54,14 +87,14 @@ export async function resolveConnection(
     );
   }
 
-  const credential = decrypt(config.credential);
+  const credential = decrypt(resolved.credential);
 
   // Auto-cura de ciphertexts CBC legados. Fire-and-forget, idempotente.
-  if (options.selfHeal && isLegacyFormat(config.credential)) {
+  if (options.selfHeal && isLegacyFormat(resolved.credential)) {
     void db
       .from('whatsapp_connections')
       .update({ credential: encrypt(credential) })
-      .eq('id', config.id)
+      .eq('id', resolved.id)
       .then(
         ({ error: upgradeError }: { error: { message: string } | null }) => {
           if (upgradeError) {
@@ -74,11 +107,21 @@ export async function resolveConnection(
       );
   }
 
+  if (resolved.provider === 'uazapi') {
+    return {
+      id: resolved.id,
+      accountId,
+      credential,
+      provider: 'uazapi',
+      instanceId: resolved.uazapi_instance_id,
+      baseUrl: resolved.uazapi_base_url,
+    };
+  }
   return {
-    id: config.id,
+    id: resolved.id,
     accountId,
     credential,
     provider: 'meta',
-    phoneNumberId: config.phone_number_id ?? '',
+    phoneNumberId: resolved.phone_number_id ?? '',
   };
 }

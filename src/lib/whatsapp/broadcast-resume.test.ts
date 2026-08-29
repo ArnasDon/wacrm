@@ -125,6 +125,7 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
       const b: Record<string, unknown> = {
         select: () => b,
         eq: () => b,
+        is: () => b,
         order: () => b,
         in: (col: string, vals: unknown) => {
           if (col === 'status') writes.statusFilter = vals;
@@ -135,10 +136,14 @@ function planDb(fx: PlanFixture, writes: PlanWrites = {}): SupabaseClient {
           writes.failedUpdate = row;
           return b;
         },
-        maybeSingle: async () => ({
-          data: fx.broadcast === undefined ? null : fx.broadcast,
-          error: null,
-        }),
+        // `resolveConnection` now reads the connection row through
+        // `.is('archived_at', null).eq('is_primary', true).maybeSingle()`;
+        // the broadcast lookup keeps using `.maybeSingle()` on its table.
+        maybeSingle: async () => {
+          const fixture =
+            table === 'whatsapp_connections' ? fx.config : fx.broadcast;
+          return { data: fixture === undefined ? null : fixture, error: null };
+        },
         single: async () => ({
           data: fx.config === undefined ? null : fx.config,
           error: null,
@@ -164,7 +169,12 @@ const BROADCAST = {
   template_language: 'en_US',
 };
 
-const CONFIG = { phone_number_id: 'pn-1', credential: 'tok', provider: 'meta' };
+const CONFIG = {
+  phone_number_id: 'pn-1',
+  credential: 'tok',
+  provider: 'meta',
+  is_primary: true,
+};
 
 function recipient(
   id: string,

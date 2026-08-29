@@ -217,6 +217,7 @@ function sendPathDb(
     phone_number_id: 'pn-1',
     credential: 'token',
     provider: 'meta',
+    is_primary: true,
   };
 
   return {
@@ -224,6 +225,7 @@ function sendPathDb(
       const builder: Record<string, unknown> = {
         select: () => builder,
         eq: () => builder,
+        is: () => builder,
         insert: (row: Record<string, unknown>) => {
           if (table === 'messages') captured.message = row;
           return builder;
@@ -232,7 +234,13 @@ function sendPathDb(
           if (table === 'conversations') captured.conversation = row;
           return builder;
         },
-        maybeSingle: async () => ({ data: null, error: null }),
+        // `resolveConnection` reads the connection row through
+        // `.is('archived_at', null).eq('is_primary', true).maybeSingle()`;
+        // every other `.maybeSingle()` on this fake still yields no row.
+        maybeSingle: async () =>
+          table === 'whatsapp_connections'
+            ? { data: config, error: null }
+            : { data: null, error: null },
         single: async () => {
           if (table === 'conversations') {
             return { data: conversation, error: null };

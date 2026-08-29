@@ -9,6 +9,25 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+Renames the WhatsApp connection table and widens it for a second
+provider (UAZAPI), landing ahead of the code that will use it.
+
+> **Migration required — coordinated deploy:** apply
+> `supabase/migrations/040_whatsapp_connections.sql` and the new code
+> together. Code that predates the migration, or a database that
+> predates the code, will fail on every WhatsApp operation.
+
+### Changed
+
+- **`whatsapp_config` is now `whatsapp_connections`**, and its
+  `access_token` column is now `credential`. The table also gains
+  `provider`, `is_primary`, and eight other columns for the upcoming
+  second-provider support, and `conversations` and `broadcasts` each
+  gain a nullable `connection_id`. No behaviour change for existing
+  single-connection accounts.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

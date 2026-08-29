@@ -16,8 +16,13 @@
 -- ------------------------------------------------------------
 -- 1. Tabela: rename + coluna credential
 -- ------------------------------------------------------------
-ALTER TABLE whatsapp_config RENAME TO whatsapp_connections;
-ALTER TABLE whatsapp_connections RENAME COLUMN access_token TO credential;
+DO $$
+BEGIN
+  IF to_regclass('public.whatsapp_config') IS NOT NULL THEN
+    ALTER TABLE whatsapp_config RENAME TO whatsapp_connections;
+    ALTER TABLE whatsapp_connections RENAME COLUMN access_token TO credential;
+  END IF;
+END $$;
 
 -- ------------------------------------------------------------
 -- 2. Colunas novas (não usadas na 1a; ver spec-mãe §4.1)
@@ -134,8 +139,13 @@ UPDATE conversations c
     AND c.connection_id IS NULL;
 
 DROP INDEX IF EXISTS idx_conversations_account_contact;
+-- NULLS NOT DISTINCT mantém vivo o guard de corrida da 036
+-- (uma conversa por (account, contact)) enquanto connection_id ainda é
+-- nullable na 1a: com toda linha NULL o índice se comporta igual ao
+-- (account_id, contact_id) da 036. Vira irrelevante quando a 1b/1c
+-- fizer SET NOT NULL na coluna.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_account_contact_connection
-  ON conversations (account_id, contact_id, connection_id);
+  ON conversations (account_id, contact_id, connection_id) NULLS NOT DISTINCT;
 
 -- ------------------------------------------------------------
 -- 9. flow_runs: run ativo passa a ser por conversa

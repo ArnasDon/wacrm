@@ -59,6 +59,7 @@ export async function resolveConversationByPhone(
     .from('whatsapp_connections')
     .select('id')
     .eq('account_id', accountId)
+    .is('archived_at', null)
     .maybeSingle();
   if (!config) {
     throw new SendMessageError(

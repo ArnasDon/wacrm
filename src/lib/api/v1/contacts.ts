@@ -78,6 +78,8 @@ export async function resolveAuditUserId(
     .from('whatsapp_connections')
     .select('user_id')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
+    .is('archived_at', null)
     .maybeSingle();
   const configOwner = config?.user_id as string | undefined;
   if (configOwner) return configOwner;

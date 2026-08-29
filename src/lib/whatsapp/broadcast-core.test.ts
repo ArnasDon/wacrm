@@ -61,18 +61,24 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   const database = {
     from(table: string) {
       if (table === 'whatsapp_connections') {
+        // `resolveConnection` reads this row through
+        // `.eq('account_id').is('archived_at', null).eq('is_primary', true).maybeSingle()`.
+        const result = () =>
+          Promise.resolve({
+            data: {
+              phone_number_id: 'pn-1',
+              credential: 'enc',
+              provider: 'meta',
+              is_primary: true,
+            },
+            error: null,
+          });
         const chain: Record<string, unknown> = {
           select: () => chain,
           eq: () => chain,
-          single: () =>
-            Promise.resolve({
-              data: {
-                phone_number_id: 'pn-1',
-                credential: 'enc',
-                provider: 'meta',
-              },
-              error: null,
-            }),
+          is: () => chain,
+          single: result,
+          maybeSingle: result,
         };
         return chain;
       }

@@ -46,6 +46,7 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
+    is: () => builder,
     order: () => builder,
     limit: () => {
       // Only the conversation lookup terminates on `.limit(1)`.

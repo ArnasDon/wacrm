@@ -114,9 +114,16 @@ describe('createTransport', () => {
     expect(createTransport(conn).provider).toBe('meta');
   });
 
-  it('lança para um provider ainda não implementado', () => {
-    expect(() => createTransport({ ...conn, provider: 'uazapi' })).toThrow(
-      /uazapi/
-    );
+  it('devolve o transporte UAZAPI para provider="uazapi"', () => {
+    const uaz = createTransport({
+      id: 'cfg-2',
+      accountId: 'acct-1',
+      credential: 'tok',
+      provider: 'uazapi',
+      instanceId: 'i-1',
+      baseUrl: 'https://uazapi.example',
+    });
+    expect(uaz.provider).toBe('uazapi');
+    expect(uaz.capabilities.templates).toBe(false);
   });
 });

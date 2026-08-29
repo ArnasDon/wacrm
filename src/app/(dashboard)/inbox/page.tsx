@@ -204,6 +204,8 @@ function InboxPageInner() {
         .from("whatsapp_connections")
         .select("status")
         .eq("account_id", accountId)
+        .eq("provider", "meta")
+        .is("archived_at", null)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");

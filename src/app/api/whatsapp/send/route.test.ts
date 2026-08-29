@@ -61,6 +61,7 @@ function makeSupabaseMock() {
               phone_number_id: 'PNID-1',
               credential: 'enc-token',
               provider: 'meta',
+              is_primary: true,
             },
             error: null,
           };
@@ -98,6 +99,7 @@ function makeSupabaseMock() {
     for (const m of [
       'select',
       'eq',
+      'is',
       'in',
       'order',
       'limit',

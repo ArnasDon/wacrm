@@ -116,6 +116,8 @@ export async function GET(request: Request) {
     const { data: configs, error: configError } = await supabaseAdmin()
       .from('whatsapp_connections')
       .select('id, verify_token')
+      .eq('provider', 'meta')
+      .is('archived_at', null)
 
     if (configError || !configs) {
       console.error('Error fetching configs for verification:', configError)
@@ -150,6 +152,8 @@ export async function GET(request: Request) {
           .from('whatsapp_connections')
           .update({ verify_token: encrypt(verifyToken) })
           .eq('id', matchedConfig.id)
+          .eq('provider', 'meta')
+          .is('archived_at', null)
           .then(({ error }: { error: unknown }) => {
             if (error) {
               console.warn(
@@ -267,6 +271,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         .from('whatsapp_connections')
         .select('*')
         .eq('phone_number_id', phoneNumberId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
 
       if (configError) {
         console.error(

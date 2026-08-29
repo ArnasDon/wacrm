@@ -142,6 +142,8 @@ export async function PATCH(
         .from('whatsapp_connections')
         .select('*')
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -282,6 +284,8 @@ export async function DELETE(
         .from('whatsapp_connections')
         .select('*')
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(

@@ -90,6 +90,7 @@ export async function GET() {
       .select('phone_number_id, credential, status')
       .eq('account_id', accountId)
       .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     if (configError) {
@@ -225,6 +226,8 @@ export async function POST(request: Request) {
       .select('account_id')
       .eq('phone_number_id', phone_number_id)
       .neq('account_id', accountId)
+      .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     if (claimedError) {
@@ -289,6 +292,7 @@ export async function POST(request: Request) {
       .select('id, registered_at, phone_number_id')
       .eq('account_id', accountId)
       .eq('provider', 'meta')
+      .is('archived_at', null)
       .maybeSingle();
 
     const sameNumber =
@@ -385,7 +389,8 @@ export async function POST(request: Request) {
         .from('whatsapp_connections')
         .update(baseRow)
         .eq('account_id', accountId)
-        .eq('provider', 'meta');
+        .eq('provider', 'meta')
+        .is('archived_at', null);
 
       if (updateError) {
         console.error('Error updating whatsapp_connections:', updateError);
@@ -395,19 +400,23 @@ export async function POST(request: Request) {
         );
       }
     } else {
-      // Insert with both columns: `account_id` is the tenancy key
-      // (NOT NULL post-017); uniqueness is now the partial index on
-      // `(account_id, provider)` from migration 040, so a second Meta
-      // row for the same account trips it up-front. `user_id` is the
-      // audit column identifying which member of the account saved the
-      // config.
+      // Primeira conexão não-arquivada do account (qualquer provider) =
+      // primária. As seguintes entram como não-primária; a promoção é
+      // via PATCH /api/whatsapp/connections/[id] (Onda 1b-ii). Na 1b-i
+      // nenhuma linha `uazapi` existe, então isto é sempre `true`.
+      const { count: existingCount } = await supabase
+        .from('whatsapp_connections')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+        .is('archived_at', null);
+
       const { error: insertError } = await supabase
         .from('whatsapp_connections')
         .insert({
           account_id: accountId,
           user_id: user.id,
           provider: 'meta',
-          is_primary: true,
+          is_primary: (existingCount ?? 0) === 0,
           ...baseRow,
         });
 
@@ -485,7 +494,8 @@ export async function DELETE() {
       .from('whatsapp_connections')
       .delete()
       .eq('account_id', accountId)
-      .eq('provider', 'meta');
+      .eq('provider', 'meta')
+      .is('archived_at', null);
 
     if (deleteError) {
       console.error('Error deleting whatsapp_connections:', deleteError);

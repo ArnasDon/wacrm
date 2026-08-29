@@ -68,7 +68,7 @@ async function withPhoneVariants(
 }
 
 export function createMetaTransport(
-  conn: TransportConnection
+  conn: Extract<TransportConnection, { provider: 'meta' }>
 ): WhatsAppTransport {
   const phoneNumberId = conn.phoneNumberId;
   if (!phoneNumberId) {

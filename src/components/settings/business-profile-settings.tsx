@@ -187,6 +187,52 @@ function toApiBody(p: ProfileState) {
   };
 }
 
+// ------------------------------------------------------------
+// Per-section save (Parte "Business Profile robustness" fix).
+//
+// Root cause of the original bug: ONE button sent the ENTIRE `profile`
+// snapshot on every save. Two browser tabs (or one tab left open across
+// a page reload with unsaved edits in a different section) could each
+// hold a different, incomplete copy of the form — whichever saved LAST
+// silently overwrote every other section back to whatever ITS stale
+// snapshot had, even fields it never touched. The API/service layer
+// already supported a true partial update (only keys present in the
+// body are written — see upsertBusinessProfile's `!== undefined`
+// contract); this UI simply never used that capability.
+//
+// The fix: one save button per section, each sending ONLY that
+// section's snake_case keys. `SECTION_API_FIELDS` partitions every key
+// `toApiBody()` can produce into exactly one section — the assertion in
+// this file's test suite guards that partition against ever going out
+// of sync with `toApiBody()` again.
+// ------------------------------------------------------------
+
+type SectionKey = 'identity' | 'location' | 'hours' | 'delivery' | 'policies' | 'linksFaq';
+
+type ApiBody = ReturnType<typeof toApiBody>;
+
+const SECTION_API_FIELDS: Record<SectionKey, (keyof ApiBody)[]> = {
+  identity: ['business_name', 'description', 'phone', 'whatsapp', 'email', 'website'],
+  location: ['address', 'city', 'state', 'country', 'google_maps_url'],
+  hours: ['business_hours'],
+  delivery: ['delivery_enabled', 'delivery_description', 'delivery_coverage_areas', 'payment_methods'],
+  policies: ['warranty_policy', 'return_policy', 'financing_policy', 'delivery_policy'],
+  linksFaq: ['links', 'faq'],
+};
+
+/** The exact partial body one section's Guardar button sends — every
+ *  other key is genuinely ABSENT (not `undefined`-valued, actually
+ *  missing from the JSON), so the API's `readString`/`readStringArray`
+ *  treat it as "leave unchanged" rather than "clear it". */
+function buildSectionBody(section: SectionKey, p: ProfileState): Partial<ApiBody> {
+  const full = toApiBody(p);
+  const body: Partial<ApiBody> = {};
+  for (const key of SECTION_API_FIELDS[section]) {
+    (body as Record<string, unknown>)[key] = full[key];
+  }
+  return body;
+}
+
 interface DepartmentRow {
   id: string;
   name: string;
@@ -209,7 +255,11 @@ interface ContactRow {
 export function BusinessProfileSettings() {
   const t = useTranslations('Settings.businessProfile');
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  // Which section is currently saving, if any. ALL section buttons are
+  // disabled while this is non-null — simpler and safer than allowing
+  // concurrent section saves, at the cost of a very brief (one network
+  // round trip) disable of unrelated buttons.
+  const [savingSection, setSavingSection] = useState<SectionKey | null>(null);
   const [profile, setProfile] = useState<ProfileState>(EMPTY_PROFILE);
   const [departments, setDepartments] = useState<DepartmentRow[]>([]);
   const [contacts, setContacts] = useState<ContactRow[]>([]);
@@ -236,13 +286,19 @@ export function BusinessProfileSettings() {
     void load();
   }, [load]);
 
-  async function handleSave() {
-    setSaving(true);
+  // Saves ONLY `section`'s fields (see buildSectionBody). On success the
+  // form is resynced from the server's full row, not just the section
+  // just saved — every other field comes back exactly as Supabase has
+  // it, self-healing any staleness the rest of the form may have
+  // accumulated (e.g. a change another admin made meanwhile).
+  async function saveSection(section: SectionKey) {
+    if (savingSection) return; // belt-and-suspenders; buttons are also disabled while saving
+    setSavingSection(section);
     try {
       const res = await fetch('/api/ai/business-profile', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(toApiBody(profile)),
+        body: JSON.stringify(buildSectionBody(section, profile)),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -254,7 +310,7 @@ export function BusinessProfileSettings() {
     } catch {
       toast.error(t('networkError'));
     } finally {
-      setSaving(false);
+      setSavingSection(null);
     }
   }
 
@@ -351,6 +407,7 @@ export function BusinessProfileSettings() {
               <Input value={profile.website} onChange={(e) => setProfile((p) => ({ ...p, website: e.target.value }))} />
             </div>
           </div>
+          <SectionSaveButton section="identity" savingSection={savingSection} onSave={saveSection} label={t('save')} />
         </CardContent>
       </Card>
 
@@ -382,6 +439,7 @@ export function BusinessProfileSettings() {
             <Label className="text-muted-foreground">{t('googleMapsUrl')}</Label>
             <Input value={profile.googleMapsUrl} onChange={(e) => setProfile((p) => ({ ...p, googleMapsUrl: e.target.value }))} />
           </div>
+          <SectionSaveButton section="location" savingSection={savingSection} onSave={saveSection} label={t('save')} />
         </CardContent>
       </Card>
 
@@ -422,6 +480,7 @@ export function BusinessProfileSettings() {
               </div>
             );
           })}
+          <SectionSaveButton section="hours" savingSection={savingSection} onSave={saveSection} label={t('save')} />
         </CardContent>
       </Card>
 
@@ -462,6 +521,7 @@ export function BusinessProfileSettings() {
               placeholder={t('commaSeparatedPlaceholder')}
             />
           </div>
+          <SectionSaveButton section="delivery" savingSection={savingSection} onSave={saveSection} label={t('save')} />
         </CardContent>
       </Card>
 
@@ -486,6 +546,9 @@ export function BusinessProfileSettings() {
           <div className="space-y-1.5">
             <Label className="text-muted-foreground">{t('deliveryPolicy')}</Label>
             <Textarea rows={2} value={profile.deliveryPolicy} onChange={(e) => setProfile((p) => ({ ...p, deliveryPolicy: e.target.value }))} />
+          </div>
+          <div className="sm:col-span-2">
+            <SectionSaveButton section="policies" savingSection={savingSection} onSave={saveSection} label={t('save')} />
           </div>
         </CardContent>
       </Card>
@@ -553,20 +616,47 @@ export function BusinessProfileSettings() {
             <Plus className="size-3.5" />
             {t('addFaqItem')}
           </Button>
+          {/* Shared button — Links and FAQ save together as one section
+              (per the agreed section grouping), each sending only its
+              own two keys (`links`, `faq`), never touching any other
+              field. */}
+          <SectionSaveButton section="linksFaq" savingSection={savingSection} onSave={saveSection} label={t('save')} />
         </CardContent>
       </Card>
 
-      <RequireRole min="admin">
-        <div className="flex justify-end">
-          <Button onClick={handleSave} disabled={saving}>
-            {saving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
-            {t('save')}
-          </Button>
-        </div>
-      </RequireRole>
-
       <DirectoryCard departments={departments} contacts={contacts} onChanged={load} />
     </section>
+  );
+}
+
+// ------------------------------------------------------------
+// One save button per Business Profile section. Admin-gated exactly
+// like the old single button was; disabled while ANY section is
+// saving (not just this one) — see the `savingSection` state doc in
+// BusinessProfileSettings for why a global guard was chosen over
+// allowing sections to save concurrently.
+// ------------------------------------------------------------
+function SectionSaveButton({
+  section,
+  savingSection,
+  onSave,
+  label,
+}: {
+  section: SectionKey;
+  savingSection: SectionKey | null;
+  onSave: (section: SectionKey) => void;
+  label: string;
+}) {
+  const isSaving = savingSection === section;
+  return (
+    <RequireRole min="admin">
+      <div className="flex justify-end pt-2">
+        <Button onClick={() => onSave(section)} disabled={savingSection !== null}>
+          {isSaving ? <Loader2 className="size-4 animate-spin" /> : <Save className="size-4" />}
+          {label}
+        </Button>
+      </div>
+    </RequireRole>
   );
 }
 

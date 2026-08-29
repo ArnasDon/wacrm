@@ -356,6 +356,21 @@ variante da Meta; mapeamento de corpo da UAZAPI).
 
 - Env vars `UAZAPI_*`, client HTTP, as 6 rotas de conexão, o card de
   Settings, o fluxo de QR, o envio provado por API — **1b-ii**.
+- **Achados da revisão final do branch, adiados para a 1b-ii** (no-op
+  hoje; alcançáveis só com uma 2ª conexão):
+  - `react/route.ts` e os 3 caminhos de broadcast chamam
+    `resolveConnection` sem `conversationId` → sempre nível 3. Passar
+    `{ conversationId: conversation.id }` antes de a 2ª conexão existir,
+    senão uma reação numa conversa UAZAPI sai pela primária Meta.
+  - `resolveConnection` não guarda contra `uazapi_instance_id` /
+    `uazapi_base_url` NULL — um `baseUrl` NULL vira `TypeError` na
+    construção do transporte (o `send-core` embrulha em 400). Guard
+    explícito fecha a simetria com o `?? ''` do ramo Meta.
+  - `config/route.ts`: a count query da eleição de `is_primary` não
+    checa `error`; e o `DELETE` remove a linha Meta sem re-apontar
+    `is_primary`. Ambos junto do trabalho de `PATCH`/promoção da 1b-ii.
+  - Confirmar contra uma resposta real da UAZAPI o campo do id da
+    mensagem em `/send/*` e `/message/react`.
 - `SET NOT NULL` / `ON DELETE RESTRICT` em `conversations.connection_id`,
   `fetchMedia`, pipeline de inbound, mudanças de inbox — **1c**.
 - `sendTemplate`/`sendInteractive` reais na UAZAPI, broadcast UAZAPI —

@@ -49,15 +49,32 @@ function db({
               error: null,
             };
           }
-          const row = connections.find(
-            (r) =>
-              (filt.id === undefined || r.id === filt.id) &&
-              (filt.account_id === undefined ||
-                r.account_id === filt.account_id) &&
-              (filt.is_primary === undefined ||
-                r.is_primary === filt.is_primary) &&
-              r.archived_at == null
-          );
+          const row = connections.find((r) => {
+            if (filt.id !== undefined && r.id !== filt.id) return false;
+            if (
+              filt.account_id !== undefined &&
+              r.account_id !== filt.account_id
+            )
+              return false;
+            if (
+              filt.is_primary !== undefined &&
+              r.is_primary !== filt.is_primary
+            )
+              return false;
+            // Honra o acumulador de `.is()`: só filtra por archived_at
+            // quando o código de produção realmente chamou
+            // `.is('archived_at', null)`. Sem isso, o teste passaria mesmo
+            // que esse `.is()` fosse removido de resolve-connection.ts.
+            if ('archived_at__is' in filt) {
+              const want = filt['archived_at__is'];
+              if (want === null) {
+                if (r.archived_at != null) return false;
+              } else if (r.archived_at !== want) {
+                return false;
+              }
+            }
+            return true;
+          });
           return { data: row ?? null, error: null };
         },
       };

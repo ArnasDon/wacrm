@@ -17,13 +17,16 @@ import { SendMessageError } from '@/lib/whatsapp/send-error';
 
 export interface ResolveConnectionOptions {
   /**
-   * Conexão explícita. Onda 0: aceito e ignorado — há no máximo uma
-   * linha por account, então os três níveis da spec §4 (conversa →
-   * explícito → primária) colapsam num só. A assinatura já existe para
-   * que os call sites não precisem mudar de novo na Onda 1.
+   * Conexão explícita a usar (nível 2). Aplicada quando a conversa de
+   * origem não fixa uma conexão; ainda cede para a primária se este id
+   * não carregar (arquivado / inválido).
    */
   connectionId?: string;
-  /** Conversa de origem. Mesma observação de `connectionId`. */
+  /**
+   * Conversa de origem (nível 1). Seu `connection_id` é tentado
+   * primeiro; se for NULL ou a linha não carregar, cai para o
+   * `connectionId` explícito e depois para a primária.
+   */
   conversationId?: string;
   /**
    * Reescreve um ciphertext CBC legado no formato GCM atual. Ligado só

@@ -117,6 +117,7 @@ export async function GET(request: Request) {
       .from('whatsapp_connections')
       .select('id, verify_token')
       .eq('provider', 'meta')
+      .is('archived_at', null)
 
     if (configError || !configs) {
       console.error('Error fetching configs for verification:', configError)

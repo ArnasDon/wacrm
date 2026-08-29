@@ -66,9 +66,14 @@ export function createUazapiTransport(
   // O 200 de `/send/text` e `/send/media` é `allOf: [Message, { response }]`.
   // No schema `Message`, `messageid` = "ID original da mensagem no provedor"
   // (o id endereçável, formato `3EB0…`); `id` é só o uuid interno da UAZAPI.
-  // Schema inequívoco → sem cadeia de fallback.
-  const messageId = (json: Record<string, unknown>): string =>
-    (json.messageid as string) ?? '';
+  // Schema inequívoco → sem cadeia de fallback. Se nenhum id vier, lança
+  // (paridade com o transporte Meta) — um caminho novo não passa
+  // silenciosamente com um id de mensagem vazio.
+  const messageId = (json: Record<string, unknown>): string => {
+    const id = (json.messageid as string) ?? (json.id as string);
+    if (!id) throw new Error('UAZAPI response missing message id');
+    return id;
+  };
 
   return {
     provider: 'uazapi',
@@ -111,14 +116,16 @@ export function createUazapiTransport(
         id: args.targetProviderMessageId,
       });
       // Uma reação não gera mensagem endereçável nova; devolve o id-alvo
-      // (o caller não persiste este valor — paridade com o transporte Meta).
-      // O schema formal expõe `messageid`/`id` no topo; a prosa dos exemplos
-      // mostra `reaction.id`. Aceita ambos e cai no id-alvo.
+      // (o caller não persiste este valor — paridade com o transporte Meta,
+      // por isso este caminho não lança).
+      // Schema-first: o `/message/react` 200 formal expõe `id`/`messageid`
+      // no topo e não tem objeto `reaction` (o `reaction.id` só aparece na
+      // prosa dos exemplos). Preferimos o campo do schema e caímos no id-alvo.
       const reaction = json.reaction as Record<string, unknown> | undefined;
       return {
         providerMessageId:
-          (reaction?.id as string) ??
           (json.messageid as string) ??
+          (reaction?.id as string) ??
           args.targetProviderMessageId,
       };
     },

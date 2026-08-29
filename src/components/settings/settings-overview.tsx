@@ -122,7 +122,7 @@ export function SettingsOverview({
       setWhatsappLoading(true);
       const [row, health] = await Promise.allSettled([
         supabase
-          .from('whatsapp_config')
+          .from('whatsapp_connections')
           .select('phone_number_id')
           .eq('account_id', acctId)
           .maybeSingle(),

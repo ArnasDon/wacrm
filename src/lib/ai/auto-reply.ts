@@ -11,7 +11,7 @@ import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
 interface DispatchArgs {
-  /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
+  /** Tenancy key — drives config, contact, and whatsapp_connections lookups. */
   accountId: string
   conversationId: string
   contactId: string

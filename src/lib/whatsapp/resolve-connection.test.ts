@@ -41,7 +41,8 @@ const ROW = {
   id: 'cfg-1',
   account_id: 'acct-1',
   phone_number_id: 'pn-1',
-  access_token: 'cipher',
+  credential: 'cipher',
+  provider: 'meta',
 };
 
 describe('resolveConnection', () => {
@@ -73,7 +74,7 @@ describe('resolveConnection', () => {
   });
 
   it('reescreve um ciphertext legado só quando selfHeal está ligado', async () => {
-    const legacy = { ...ROW, access_token: 'legacy-cipher' };
+    const legacy = { ...ROW, credential: 'legacy-cipher' };
 
     const off: Captured = { updates: [] };
     await resolveConnection(configDb(legacy, off), 'acct-1');
@@ -82,7 +83,7 @@ describe('resolveConnection', () => {
     const on: Captured = { updates: [] };
     await resolveConnection(configDb(legacy, on), 'acct-1', { selfHeal: true });
     expect(on.updates).toEqual([
-      { access_token: 'encrypted:decrypted:legacy-cipher' },
+      { credential: 'encrypted:decrypted:legacy-cipher' },
     ]);
   });
 

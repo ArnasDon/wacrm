@@ -40,7 +40,7 @@ type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
   const supabase = createClient();
-  // After multi-user, whatsapp_config is one-row-per-account, not
+  // After multi-user, whatsapp_connections is one-row-per-account, not
   // one-row-per-user. We pull `accountId` straight off the auth
   // context and key every read off it — so a teammate who just
   // joined an account sees the inviter's saved config without
@@ -81,7 +81,7 @@ export function WhatsAppConfig() {
   // page it is NOT part of handleSave: that path insists on re-entering
   // the access token so it can re-verify with Meta, which is a silly
   // toll to pay for flipping a boolean. The switch writes straight to
-  // the row instead — RLS (migration 017) restricts whatsapp_config
+  // the row instead — RLS (migration 017) restricts whatsapp_connections
   // UPDATE to admins, hence the canEditSettings gate below; without it
   // a viewer's toggle would match zero rows and appear to work.
   const [mirrorMedia, setMirrorMedia] = useState(true);
@@ -121,7 +121,7 @@ export function WhatsAppConfig() {
       // on the table guarantees the .maybeSingle() return type
       // remains accurate.
       const { data, error } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .select('*')
         .eq('account_id', acctId)
         .maybeSingle();
@@ -212,7 +212,7 @@ export function WhatsAppConfig() {
     setSavingMirror(true);
     try {
       const { error } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .update({ mirror_inbound_media: next })
         .eq('account_id', accountId);
       if (error) throw new Error(error.message);

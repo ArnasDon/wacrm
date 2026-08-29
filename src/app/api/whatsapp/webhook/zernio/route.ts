@@ -290,6 +290,7 @@ async function processZernioEvent(payload: ZernioWebhookPayload, config: any) {
     await handleOutboundEchoMessageForZernioConversation(supabaseAdmin(), {
       channel: 'whatsapp',
       accountId: config.account_id,
+      whatsappConfigId: config.id,
       zernioConversationId: message.conversationId,
       mid: message.platformMessageId,
       contentText: attachment ? null : message.text,
@@ -354,7 +355,50 @@ async function findOrCreateConversation(
   configOwnerUserId: string,
   contactId: string,
   whatsappConfigId: string,
+  zernioConversationId: string | null,
 ) {
+  // Match on Zernio's own conversation id first — it is stable across a
+  // number reconnect, which mints a brand-new `whatsapp_config` row.
+  // Without this, a reconnect makes the `whatsapp_config_id` filter
+  // below miss the pre-reconnect thread and start a duplicate one; that
+  // duplicate then broke Coexistence-echo persistence account-wide,
+  // because the echo path looks a conversation up by `zernio_conversation_id`
+  // alone and a second match made it bail (2026-08-29 incident).
+  if (zernioConversationId) {
+    const { data: byZid, error: zidError } = await supabaseAdmin()
+      .from('conversations')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('zernio_conversation_id', zernioConversationId)
+      .order('created_at', { ascending: true })
+      .limit(1)
+
+    if (zidError) {
+      console.error('[whatsapp zernio webhook] error finding conversation by zernio id:', zidError)
+      return null
+    }
+    if (byZid && byZid.length > 0) {
+      const conv = byZid[0]
+      // Adopt the live config onto a row that predates it (or was
+      // created under a now-replaced connection). If a stray duplicate
+      // already holds that (account, contact, config) slot the unique
+      // index will reject this — fall through and use the row as-is
+      // rather than fail the whole inbound message.
+      if (conv.whatsapp_config_id !== whatsappConfigId) {
+        const { error: adoptError } = await supabaseAdmin()
+          .from('conversations')
+          .update({ whatsapp_config_id: whatsappConfigId })
+          .eq('id', conv.id)
+        if (adoptError) {
+          console.error('[whatsapp zernio webhook] could not adopt config onto conversation', conv.id, adoptError)
+        } else {
+          conv.whatsapp_config_id = whatsappConfigId
+        }
+      }
+      return { conversation: conv, created: false }
+    }
+  }
+
   // Scoped to the number the message arrived on — see the Meta webhook's
   // identical comment for why (one thread per contact per number).
   const { data: existingRows, error: findError } = await supabaseAdmin()
@@ -382,20 +426,26 @@ async function findOrCreateConversation(
       contact_id: contactId,
       channel: 'whatsapp',
       whatsapp_config_id: whatsappConfigId,
+      zernio_conversation_id: zernioConversationId,
     })
     .select()
     .single()
 
   if (createError) {
     if (isUniqueViolation(createError)) {
-      const { data: raced } = await supabaseAdmin()
+      // Lost a race — another concurrent inbound already created the row.
+      // It may collide on either unique index: (account, contact, config)
+      // or (account, zernio_conversation_id) — try both.
+      let racedQuery = supabaseAdmin()
         .from('conversations')
         .select('*')
         .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .eq('whatsapp_config_id', whatsappConfigId)
         .order('created_at', { ascending: true })
         .limit(1)
+      racedQuery = zernioConversationId
+        ? racedQuery.eq('zernio_conversation_id', zernioConversationId)
+        : racedQuery.eq('contact_id', contactId).eq('whatsapp_config_id', whatsappConfigId)
+      const { data: raced } = await racedQuery
       if (raced && raced.length > 0) return { conversation: raced[0], created: false }
     }
     console.error('[whatsapp zernio webhook] error creating conversation:', createError)
@@ -416,7 +466,7 @@ async function processConversationStarted(conversation: ZernioWebhookConversatio
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id)
+  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id, conversation.id)
   if (!convResult) return
   const conv = convResult.conversation
 
@@ -466,19 +516,17 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id)
+  const convResult = await findOrCreateConversation(accountId, configOwnerUserId, contactRecord.id, config.id, message.conversationId)
   if (!convResult) return
   const conversation = convResult.conversation
 
-  // `findOrCreateConversation` above never wrote `zernio_conversation_id`
-  // (unlike the Instagram/Facebook Zernio routes' shared
-  // `handleInboundDmMessage`, which does this same check) — every
+  // `findOrCreateConversation` now stamps `zernio_conversation_id` on
+  // brand-new and adopted rows, but a conversation created before that
+  // (or by some other path) can still be sitting at null — and every
   // WhatsApp send via Zernio addresses a conversation by this id
-  // (`requireZernioConversation` in zernio-send.ts), so a conversation
-  // stuck at null could receive messages fine but could never send a
-  // reply. Mirrors handleInboundDmMessage's identical check so an
-  // already-existing conversation from before this fix self-heals on
-  // its very next inbound message, not just brand-new ones.
+  // (`requireZernioConversation` in zernio-send.ts), so a row stuck at
+  // null could receive messages fine but never send a reply. Keep the
+  // self-heal so such a row fixes itself on its very next inbound.
   if (message.conversationId && conversation.zernio_conversation_id !== message.conversationId) {
     await supabaseAdmin()
       .from('conversations')

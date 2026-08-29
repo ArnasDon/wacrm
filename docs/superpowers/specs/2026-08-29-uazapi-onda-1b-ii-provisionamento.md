@@ -466,5 +466,9 @@ resolve para a primária Meta como antes, o toggle de mídia passa a ir por
   UAZAPI — **Onda 3**.
 - Reconciliação de instâncias órfãs (via `GET /instance/all`);
   pareamento por número de telefone — **follow-up sem onda**.
-- Se o plano cortar o `conversationId` de `react/route.ts` / broadcast
-  para a 1c por tamanho, registrar aqui na revisão do plano.
+- **Broadcast NÃO recebe `conversationId`/`connectionId` nesta wave.** Um
+  broadcast fan-out não tem conversa única; o alvo correto é
+  `{ connectionId: broadcast.connection_id }`, que exige threading por
+  `deliverBroadcast`/`resumeBroadcast` e só importa com broadcast-sobre-
+  UAZAPI — Onda 3. `react/route.ts` (que já tem a conversa) foi feito na
+  Task 8; broadcast fica para a Onda 3.

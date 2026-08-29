@@ -917,6 +917,23 @@ tocados vs a Estrutura de arquivos deste plano.
   `config/route.ts` (GET select, lookup "existing", UPDATE, DELETE) e no
   check "claimed" — os índices únicos da 040 são parciais nisso; inerte
   na 1a (nada arquiva), mas necessário quando o ciclo de arquivo existir.
+- **1b (achados da revisão final da 1a):**
+  - `config/route.ts:410` seta `is_primary: true` incondicional. Quando
+    uma conexão UAZAPI puder ser primária, salvar a config Meta pela
+    primeira vez viola `idx_connections_one_primary` (500 genérico). A 1b
+    precisa de regra de eleição de primária ao inserir.
+  - Órfãos de `connection_id`: o `DELETE` do botão "Reset Configuration"
+    → `ON DELETE SET NULL` → conversas perdem `connection_id` sem nada
+    re-popular. O backfill do `SET NOT NULL` da 1b/1c tem que tratar
+    essas linhas (ou o botão vira arquivo, como já previsto).
+  - `WhatsAppConfig.phone_number_id: string` no tipo diverge da coluna
+    agora nullable (`040:46`) — Meta sempre tem, UAZAPI não; marcar
+    `string | null` junto da união `TransportConnection`. Idem as 10
+    colunas novas da 040 que a 1a não pôs no tipo.
+  - Varrer `.eq('provider', ...)` / `archived_at IS NULL` nos 21 call
+    sites que a 1a deixou com rename puro **antes** da primeira linha
+    `provider='uazapi'` — `templates/*`, `media/*`, `verify-registration`
+    usam `.single()` e dão PGRST116 no instante que surge a 2ª linha.
 - **1b:** renomear a interface `WhatsAppConfig` → `WhatsAppConnection` e
   adicionar ao tipo as 9 colunas que a 040 criou mas a 1a não lê.
 - **1b:** mover o toggle `mirror_inbound_media` do cliente para

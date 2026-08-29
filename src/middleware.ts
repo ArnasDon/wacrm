@@ -1,8 +1,19 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Supabase Auth (GoTrue) can become unavailable while the rest of the
+// project (REST/Storage/gateway) stays healthy. Without a hard ceiling
+// here, a hung getUser() call blocks this middleware — which runs on
+// nearly every route via the matcher below — until Vercel's own platform
+// limit fires, turning a scoped third-party Auth outage into a site-wide
+// 504 (MIDDLEWARE_INVOCATION_TIMEOUT). AUTH_TIMEOUT_MS only bounds how
+// long we wait for an answer; it never changes what a *successful*
+// answer means.
+const AUTH_TIMEOUT_MS = 5000
+
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
+  const authController = new AbortController()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -20,10 +31,56 @@ export async function middleware(request: NextRequest) {
           )
         },
       },
+      global: {
+        // Actually cancels the in-flight request once AUTH_TIMEOUT_MS
+        // elapses (see below), instead of merely racing past a call that
+        // keeps running unattended in the background.
+        fetch: (input: RequestInfo | URL, init?: RequestInit) =>
+          fetch(input, { ...init, signal: authController.signal }),
+      },
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  // A timeout means Auth did not answer in time — that is NOT the same
+  // thing as "Auth answered and there is no user". The two must never be
+  // conflated: `authTimedOut` keeps the distinction explicit (used below
+  // only for a minimal, non-sensitive log line), while `user` itself is
+  // null in both cases so every existing gate below fails closed on a
+  // timeout exactly as it already does for a confirmed logged-out
+  // visitor — protected paths and /api/whatsapp/* both deny, public
+  // paths are unaffected since they never key off `user` at all.
+  let authTimedOut = false
+  let timer: ReturnType<typeof setTimeout>
+  const timeout = new Promise<null>((resolve) => {
+    timer = setTimeout(() => {
+      authTimedOut = true
+      authController.abort()
+      resolve(null)
+    }, AUTH_TIMEOUT_MS)
+  })
+  const call = supabase.auth.getUser().then(
+    ({ data }) => data.user,
+    () => {
+      // A network/abort error from Auth is indistinguishable from Auth
+      // being down — treat it the same as a timeout, never as a
+      // confirmed logout.
+      authTimedOut = true
+      return null
+    }
+  )
+
+  let user: Awaited<typeof call>
+  try {
+    user = await Promise.race([call, timeout])
+  } finally {
+    clearTimeout(timer!)
+  }
+
+  if (authTimedOut) {
+    // Minimal, non-sensitive signal for ops visibility — no token,
+    // cookie, user id, or request body is ever logged here.
+    console.warn(`[middleware] supabase.auth.getUser() did not respond within ${AUTH_TIMEOUT_MS}ms`)
+  }
 
   // getUser() transparently refreshes an expired access token, which
   // ROTATES the refresh token and writes the new cookies onto

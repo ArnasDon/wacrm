@@ -16,10 +16,10 @@
 // (AI Sales Agent audit — column-selection pass, point 9).
 //
 // This replaces, for the new Data Sources system, the preview table
-// AiKnowledgeCard's legacy InventoryUploader only ever showed BEFORE
-// saving (see ai-knowledge.tsx) — the gap the unification pass was
-// asked to close: a saved source had no way to look at its own data
-// again.
+// the legacy Inventario uploader (AiKnowledgeCard's InventoryUploader,
+// removed once Data Sources fully absorbed it) only ever showed BEFORE
+// saving — the gap the unification pass was asked to close: a saved
+// source had no way to look at its own data again.
 // ============================================================
 
 import { useEffect, useState } from 'react';

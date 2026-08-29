@@ -555,26 +555,6 @@ describe('currency propagation — full audit (FASE 7)', () => {
     expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
   })
 
-  it('Caso 5: the legacy pipeline (isLegacyDefault, as used by /api/ai/knowledge/{upload,sheet}) also resolves the account currency', async () => {
-    stubCsvFetch(PRODUCTS_CSV)
-    const { db, table } = fakeDb()
-    table('accounts').push({ id: 'acct-dop', default_currency: 'DOP' })
-
-    const currency = await accountDefaultCurrency(db, 'acct-dop')
-    const source = await createDataSourceFromUrl(db, {
-      accountId: 'acct-dop',
-      userId: 'user-1',
-      sourceType: 'google_sheets',
-      displayName: 'Inventario — Google Sheets',
-      url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv',
-      usage: 'both',
-      currency, // exactly what the legacy /sheet route now passes
-      isLegacyDefault: true,
-    })
-    expect(source.currency).toBe('DOP')
-    expect(table('ai_catalog_products').every((p) => p.currency === 'DOP')).toBe(true)
-  })
-
   it('Caso 8: correcting a mislabeled row changes ONLY currency — price/stock/name/variants stay byte-for-byte identical', async () => {
     const { table } = fakeDb()
     table('ai_catalog_products').push({

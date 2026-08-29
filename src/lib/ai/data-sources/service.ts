@@ -67,29 +67,6 @@ export async function listDataSources(db: SupabaseClient, accountId: string): Pr
   return (data ?? []) as DataSourceRow[]
 }
 
-/** The account's legacy single-inventory data source, if one has been
- *  created (via the /api/ai/knowledge/{upload,sheet} compatibility
- *  routes) — see migration 045's partial unique index, which guarantees
- *  at most one such row exists per account. */
-export async function findLegacyDefaultDataSource(
-  db: SupabaseClient,
-  accountId: string,
-): Promise<DataSourceRow | null> {
-  const { data, error } = await db
-    .from('ai_data_sources')
-    .select(SELECT_COLUMNS)
-    .eq('account_id', accountId)
-    .eq('is_legacy_default', true)
-    .maybeSingle()
-  if (error) {
-    // Tolerate migration 045 not being applied yet — same "degrade,
-    // don't break" discipline as elsewhere in this feature.
-    console.warn('[data-sources] legacy-default lookup failed (migration 045 applied?):', error.message)
-    return null
-  }
-  return (data as DataSourceRow) ?? null
-}
-
 export async function getDataSource(
   db: SupabaseClient,
   accountId: string,
@@ -209,10 +186,6 @@ interface IngestOptions {
   selectedColumns?: string[]
   /** Existing row id when refreshing; omitted when creating. */
   existingId?: string
-  /** Marks this as THE account's legacy single-inventory source (see
-   *  migration 045's partial unique index) — set only by the
-   *  /api/ai/knowledge/{upload,sheet} compatibility routes. */
-  isLegacyDefault?: boolean
 }
 
 /** Parse + persist one data source (create or refresh). Shared by the
@@ -254,7 +227,6 @@ async function persistDataSource(
     // (every column detected is in use) — the exact prior behavior,
     // preserved for any source created before this feature existed.
     selected_columns: opts.selectedColumns ?? null,
-    ...(opts.isLegacyDefault !== undefined ? { is_legacy_default: opts.isLegacyDefault } : {}),
   }
 
   if (opts.isPrimary) {
@@ -401,12 +373,6 @@ export interface CreateFromUrlInput {
   fallbackPolicy?: DataSourceRow['fallback_policy']
   currency?: string
   selectedColumns?: string[]
-  /** Upsert an existing row instead of always creating a new one — used
-   *  by the legacy /api/ai/knowledge/sheet compatibility route so
-   *  re-uploading keeps replacing THE ONE inventory source, matching
-   *  the pre-unification "there is only one inventory" behavior. */
-  existingId?: string
-  isLegacyDefault?: boolean
 }
 
 export async function createDataSourceFromUrl(
@@ -445,8 +411,6 @@ export async function createDataSourceFromUrl(
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
       currency,
       selectedColumns: input.selectedColumns,
-      existingId: input.existingId,
-      isLegacyDefault: input.isLegacyDefault,
     },
     parsed,
   )
@@ -464,8 +428,6 @@ export interface CreateFromFileInput {
   fallbackPolicy?: DataSourceRow['fallback_policy']
   currency?: string
   selectedColumns?: string[]
-  existingId?: string
-  isLegacyDefault?: boolean
 }
 
 export async function createDataSourceFromFile(
@@ -496,8 +458,6 @@ export async function createDataSourceFromFile(
       fallbackPolicy: input.fallbackPolicy ?? 'fallback_on_not_found',
       currency,
       selectedColumns: input.selectedColumns,
-      existingId: input.existingId,
-      isLegacyDefault: input.isLegacyDefault,
     },
     parsed,
   )

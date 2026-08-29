@@ -213,13 +213,12 @@ export function WhatsAppConfig() {
     setMirrorMedia(next);
     setSavingMirror(true);
     try {
-      const { error } = await supabase
-        .from('whatsapp_connections')
-        .update({ mirror_inbound_media: next })
-        .eq('account_id', accountId)
-        .eq('provider', 'meta')
-        .is('archived_at', null);
-      if (error) throw new Error(error.message);
+      const res = await fetch(`/api/whatsapp/connections/${config.id}`, {
+        method: 'PATCH',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ mirror_inbound_media: next }),
+      });
+      if (!res.ok) throw new Error(`PATCH failed (${res.status})`);
       setConfig({ ...config, mirror_inbound_media: next });
     } catch (error) {
       console.error('Failed to update media retention setting:', error);

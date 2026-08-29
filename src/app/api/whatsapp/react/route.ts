@@ -102,7 +102,13 @@ export async function POST(request: Request) {
     // externo como 500, não vira "não configurado".
     let connection: TransportConnection;
     try {
-      connection = await resolveConnection(supabase, accountId);
+      // Passa a conversa de origem para que a reação respeite a conexão
+      // daquela conversa (nível 1 do resolveConnection) em vez de sempre
+      // cair na primária. Broadcast fica de fora desta wave (fan-out não
+      // tem conversa única) — ver spec §7.
+      connection = await resolveConnection(supabase, accountId, {
+        conversationId: conversation.id,
+      });
     } catch (err) {
       if (
         err instanceof SendMessageError &&

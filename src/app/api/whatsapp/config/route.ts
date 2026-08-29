@@ -404,11 +404,19 @@ export async function POST(request: Request) {
       // primária. As seguintes entram como não-primária; a promoção é
       // via PATCH /api/whatsapp/connections/[id] (Onda 1b-ii). Na 1b-i
       // nenhuma linha `uazapi` existe, então isto é sempre `true`.
-      const { count: existingCount } = await supabase
+      const { count: existingCount, error: countError } = await supabase
         .from('whatsapp_connections')
         .select('id', { count: 'exact', head: true })
         .eq('account_id', accountId)
         .is('archived_at', null);
+
+      if (countError) {
+        console.error('Error counting whatsapp_connections:', countError);
+        return NextResponse.json(
+          { error: 'Failed to save configuration' },
+          { status: 500 }
+        );
+      }
 
       const { error: insertError } = await supabase
         .from('whatsapp_connections')

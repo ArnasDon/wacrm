@@ -16,7 +16,10 @@ const SELECT_COLS =
 
 export async function GET() {
   try {
-    const { supabase, accountId } = await requireRole('admin');
+    // Read-only, sanitized ConnectionDTO[] (no secrets) — any account
+    // member may list connections (RLS whatsapp_connections_select
+    // already allows it). Every MUTATION below stays admin-gated.
+    const { supabase, accountId } = await requireRole('agent');
     const { data, error } = await supabase
       .from('whatsapp_connections')
       .select(SELECT_COLS)
@@ -85,6 +88,29 @@ export async function POST(request: Request) {
       .update(secret)
       .digest('hex');
 
+    // 2b. Eleição de is_primary (FIX 2): a primeira e única conexão do
+    // account (inclusive uma conta só-UAZAPI) nasce primária — não há
+    // canal do qual "trocar silenciosamente". "Nasce não-primária" só
+    // vale quando já existe outra conexão ativa. Espelha config/route.ts.
+    const { count: activeCount, error: countError } = await supabase
+      .from('whatsapp_connections')
+      .select('id', { count: 'exact', head: true })
+      .eq('account_id', accountId)
+      .is('archived_at', null);
+    if (countError) {
+      console.error(
+        '[connections POST] count failed, rolling back instance',
+        countError
+      );
+      await deleteInstance(baseUrl, instance.token).catch((e) =>
+        console.error('[connections POST] rollback deleteInstance failed', e)
+      );
+      return NextResponse.json(
+        { error: 'Failed to save the connection.' },
+        { status: 502 }
+      );
+    }
+
     // 3. Grava a linha.
     const { data: inserted, error: insertError } = await supabase
       .from('whatsapp_connections')
@@ -96,7 +122,7 @@ export async function POST(request: Request) {
         uazapi_instance_id: instance.instanceId,
         uazapi_base_url: baseUrl,
         status: 'disconnected',
-        is_primary: false,
+        is_primary: (activeCount ?? 0) === 0,
         webhook_secret_hash: webhookSecretHash,
       })
       .select(SELECT_COLS)

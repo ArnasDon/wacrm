@@ -3,14 +3,20 @@
 //
 // PATCH  — mutate one connection (ANY provider) by id: `label`,
 //          `is_primary`, `mirror_inbound_media`. Promoting a row to
-//          primary sets is_primary=true on the TARGET first, then a
-//          second UPDATE clears it on the account's other active rows
-//          (the window with 2 primaries is harmless — resolveConnection
-//          uses .limit(1); the reverse order would leave 0 and break a
-//          concurrent send). Demoting the sole active connection is 400.
+//          primary CLEARS is_primary on the account's other active rows
+//          FIRST, then sets is_primary=true on the TARGET. Migration
+//          040's idx_connections_one_primary partial unique index
+//          forbids a 2-primary window, so the reverse order would 23505.
+//          This leaves a sub-ms window with 0 primaries (acceptable — a
+//          concurrent send resolving via resolveConnection level 3 in
+//          that window gets the same whatsapp_not_configured it would
+//          get mid-switch). A deferrable constraint / RPC is the clean
+//          long-term fix — deferred to 1c (needs a migration). Demoting
+//          the sole active connection is 400.
 //
 // DELETE  — archive: for uazapi rows, best-effort disconnect + delete of
-//          the remote instance (failures logged, never block), then
+//          the remote instance (pinned via row.uazapi_base_url; failures
+//          logged, never block), then
 //          stamp archived_at / status / is_primary. If the archived row
 //          was primary and exactly one active row remains, it inherits.
 //
@@ -23,7 +29,6 @@ import { NextResponse } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { decrypt } from '@/lib/whatsapp/encryption';
-import { uazapiEnv } from '@/lib/whatsapp/uazapi-env';
 import {
   disconnectInstance,
   deleteInstance,
@@ -96,9 +101,24 @@ export async function PATCH(
     }
 
     if (body.is_primary === true) {
-      // set-new-first: the window between the two UPDATEs has 2 primary
-      // rows (resolveConnection level 4 uses .limit(1) — harmless); the
-      // reverse order would leave 0 and break a concurrent send.
+      // Clear every OTHER primary FIRST — migration 040's
+      // idx_connections_one_primary partial unique index forbids a
+      // 2-primary window, so promoting the target before demoting the
+      // others would 23505 and 500 this route. The sub-ms window with 0
+      // primaries is acceptable (see the file header).
+      const { error: clearError } = await supabase
+        .from('whatsapp_connections')
+        .update({ is_primary: false })
+        .eq('account_id', accountId)
+        .is('archived_at', null)
+        .neq('id', id);
+      if (clearError) {
+        console.error('[connections PATCH] clear other primaries', clearError);
+        return NextResponse.json(
+          { error: 'Failed to update connection' },
+          { status: 500 }
+        );
+      }
       patch.is_primary = true;
     } else if (body.is_primary === false) {
       if ((await activeCount(supabase, accountId)) <= 1) {
@@ -126,15 +146,6 @@ export async function PATCH(
           { status: 500 }
         );
       }
-    }
-
-    if (body.is_primary === true) {
-      await supabase
-        .from('whatsapp_connections')
-        .update({ is_primary: false })
-        .eq('account_id', accountId)
-        .is('archived_at', null)
-        .neq('id', id);
     }
 
     const { data: fresh } = await supabase
@@ -167,7 +178,8 @@ export async function DELETE(
     if (row.provider === 'uazapi' && row.uazapi_base_url) {
       try {
         const token = decrypt(row.credential);
-        const { baseUrl } = uazapiEnv();
+        // Pin the UAZAPI server per-connection (FIX 5).
+        const baseUrl = row.uazapi_base_url;
         await disconnectInstance(baseUrl, token).catch(() => {});
         await deleteInstance(baseUrl, token);
       } catch (err) {

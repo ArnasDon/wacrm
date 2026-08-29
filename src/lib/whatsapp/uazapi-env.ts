@@ -29,7 +29,13 @@ export function resolveAppBaseUrl(request: Request): string {
   if (explicit) return explicit.replace(/\/+$/, '');
 
   const headers = request.headers;
-  const fwdHost = headers.get('x-forwarded-host');
+  // Behind a proxy chain both x-forwarded-host and x-forwarded-proto
+  // arrive comma-joined ("a.example, b.example") — take the first hop.
+  // TODO: src/app/api/account/invitations/route.ts (getBaseUrl) has an
+  // ALLOWED_INVITE_HOSTS allow-list for the same header-trust problem;
+  // extract it to src/lib/http/base-url.ts and share it here. This
+  // route is admin-gated so it's lower risk, hence deferred.
+  const fwdHost = headers.get('x-forwarded-host')?.split(',')[0].trim();
   const host = fwdHost || headers.get('host');
   if (!host) throw new Error('cannot resolve app base URL: no host header');
 

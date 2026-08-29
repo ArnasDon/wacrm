@@ -5,11 +5,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 //
 // PATCH  — mutates label / is_primary / mirror_inbound_media on ONE
 //          connection (any provider) by id. Promoting a connection to
-//          primary sets is_primary=true on the target row FIRST, then a
-//          second UPDATE clears is_primary on every other active row —
-//          the reverse order would leave the account with 0 primaries and
-//          break a concurrent send. Demoting the sole active connection is
-//          refused with 400.
+//          primary CLEARS is_primary on every other active row FIRST,
+//          then sets is_primary=true on the target row — migration 040's
+//          idx_connections_one_primary partial unique index forbids a
+//          2-primary window, so the reverse order 23505s (FIX 1). The
+//          sub-ms 0-primary window is accepted. Demoting the sole active
+//          connection is refused with 400.
 //
 // DELETE  — archives a connection: for uazapi rows it best-effort
 //          disconnects and deletes the remote instance (a failure there is
@@ -37,6 +38,13 @@ let freshRow: Record<string, unknown> | null = null;
 let archivedRow: Record<string, unknown> | null = null;
 // Forced error from an UPDATE terminal.
 let updateError: { message: string } | null = null;
+// When true, the mock rejects an UPDATE that sets is_primary=true for the
+// account while another active primary still exists — simulating migration
+// 040's idx_connections_one_primary partial unique index.
+let simulateOnePrimaryIndex = false;
+// Flipped once an UPDATE with { is_primary: false } has run (the
+// clear-others step), releasing the simulated index.
+let primariesCleared = false;
 
 // Captures: every whatsapp_connections UPDATE in call order, each with the
 // filters chained after it.
@@ -80,6 +88,21 @@ function makeSupabaseMock() {
             if (kind === 'single') {
               return { data: archivedRow, error: updateError };
             }
+            const lastPayload = b._lastUpdatePayload as
+              Record<string, unknown> | undefined;
+            if (
+              simulateOnePrimaryIndex &&
+              lastPayload?.is_primary === true &&
+              !primariesCleared
+            ) {
+              return {
+                data: null,
+                error: {
+                  message:
+                    'duplicate key value violates unique constraint "idx_connections_one_primary"',
+                },
+              };
+            }
             return { data: null, error: updateError };
           }
           return connRead();
@@ -103,8 +126,10 @@ function makeSupabaseMock() {
     }
     b.update = vi.fn((payload: Record<string, unknown>) => {
       didUpdate = true;
+      b._lastUpdatePayload = payload;
       if (table === 'whatsapp_connections') {
         updateCalls.push({ payload, filters: b._filters as unknown[][] });
+        if (payload.is_primary === false) primariesCleared = true;
       }
       return b;
     });
@@ -176,7 +201,9 @@ beforeEach(() => {
     provider: 'uazapi',
     is_primary: false,
     credential: 'enc-cred',
-    uazapi_base_url: 'https://api.uazapi.com',
+    // Distinct from the env base URL so DELETE's remote cleanup is
+    // proven to use the per-connection value, not uazapiEnv() (FIX 5).
+    uazapi_base_url: 'https://pinned.uazapi.example',
   };
   activeCountValue = 2;
   remainingRows = [];
@@ -203,6 +230,8 @@ beforeEach(() => {
     created_at: '2026-08-01T00:00:00Z',
   };
   updateError = null;
+  simulateOnePrimaryIndex = false;
+  primariesCleared = false;
   updateCalls.length = 0;
   supabaseMock = makeSupabaseMock();
   disconnectInstance.mockClear();
@@ -309,20 +338,47 @@ describe('PATCH', () => {
     expect(updateCalls[0].payload).toEqual({ mirror_inbound_media: false });
   });
 
-  it('is_primary:true → sets the target row primary FIRST, then clears the others', async () => {
+  it('is_primary:true → CLEARS the other active rows FIRST, then promotes the target (FIX 1)', async () => {
     const res = await PATCH(patchRequest({ is_primary: true }), { params });
 
     expect(res.status).toBe(200);
     expect(updateCalls).toHaveLength(2);
 
-    // 1st UPDATE: promote the target id.
-    expect(updateCalls[0].payload).toEqual({ is_primary: true });
-    expect(updateCalls[0].filters).toContainEqual(['eq', 'id', 'conn-1']);
+    // 1st UPDATE: demote every OTHER active row (migration 040's
+    // idx_connections_one_primary forbids a 2-primary window).
+    expect(updateCalls[0].payload).toEqual({ is_primary: false });
+    expect(updateCalls[0].filters).toContainEqual(['neq', 'id', 'conn-1']);
+    expect(updateCalls[0].filters).toContainEqual(['is', 'archived_at', null]);
 
-    // 2nd UPDATE: demote every other active row.
-    expect(updateCalls[1].payload).toEqual({ is_primary: false });
-    expect(updateCalls[1].filters).toContainEqual(['neq', 'id', 'conn-1']);
-    expect(updateCalls[1].filters).toContainEqual(['is', 'archived_at', null]);
+    // 2nd UPDATE: promote the target id.
+    expect(updateCalls[1].payload).toEqual({ is_primary: true });
+    expect(updateCalls[1].filters).toContainEqual(['eq', 'id', 'conn-1']);
+  });
+
+  it('is_primary:true dodges the one-primary unique index: promoting the target only after the others are cleared still returns 200 (FIX 1)', async () => {
+    // The mock rejects an UPDATE that sets is_primary=true for the
+    // account while ANOTHER active primary still exists (simulating
+    // idx_connections_one_primary). The new ordering clears first, so
+    // the target promotion no longer collides.
+    simulateOnePrimaryIndex = true;
+
+    const res = await PATCH(patchRequest({ is_primary: true }), { params });
+
+    expect(res.status).toBe(200);
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[0].payload).toEqual({ is_primary: false });
+    expect(updateCalls[1].payload).toEqual({ is_primary: true });
+  });
+
+  it('is_primary:true 500s if clearing the other primaries fails — the target is never promoted (FIX 1)', async () => {
+    updateError = { message: 'clear boom' };
+
+    const res = await PATCH(patchRequest({ is_primary: true }), { params });
+
+    expect(res.status).toBe(500);
+    // Only the clear-others UPDATE was attempted.
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload).toEqual({ is_primary: false });
   });
 
   it('is_primary:false on the only active connection → 400, no write', async () => {
@@ -355,11 +411,11 @@ describe('DELETE', () => {
     expect(res.status).toBe(200);
 
     expect(disconnectInstance).toHaveBeenCalledWith(
-      'https://api.uazapi.com',
+      'https://pinned.uazapi.example',
       'plaintext-token'
     );
     expect(deleteInstance).toHaveBeenCalledWith(
-      'https://api.uazapi.com',
+      'https://pinned.uazapi.example',
       'plaintext-token'
     );
 
@@ -406,7 +462,7 @@ describe('DELETE', () => {
       provider: 'uazapi',
       is_primary: true,
       credential: 'enc-cred',
-      uazapi_base_url: 'https://api.uazapi.com',
+      uazapi_base_url: 'https://pinned.uazapi.example',
     };
     remainingRows = [{ id: 'conn-2' }];
 
@@ -425,7 +481,7 @@ describe('DELETE', () => {
       provider: 'uazapi',
       is_primary: true,
       credential: 'enc-cred',
-      uazapi_base_url: 'https://api.uazapi.com',
+      uazapi_base_url: 'https://pinned.uazapi.example',
     };
     remainingRows = [{ id: 'conn-2' }, { id: 'conn-3' }];
 
@@ -441,7 +497,7 @@ describe('DELETE', () => {
       provider: 'uazapi',
       is_primary: true,
       credential: 'enc-cred',
-      uazapi_base_url: 'https://api.uazapi.com',
+      uazapi_base_url: 'https://pinned.uazapi.example',
     };
     remainingRows = [];
 

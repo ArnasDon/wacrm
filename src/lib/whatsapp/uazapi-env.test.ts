@@ -47,6 +47,17 @@ describe('resolveAppBaseUrl', () => {
     expect(resolveAppBaseUrl(req)).toBe('https://crm.proxy.com');
   });
 
+  it('pega o primeiro hop de um x-forwarded-host encadeado por proxy', () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
+    const req = new Request('http://internal/api/x', {
+      headers: {
+        'x-forwarded-host': 'a.example, b.example',
+        'x-forwarded-proto': 'https, http',
+      },
+    });
+    expect(resolveAppBaseUrl(req)).toBe('https://a.example');
+  });
+
   it('cai para host com https como proto default', () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
     const req = new Request('http://internal/api/x', {

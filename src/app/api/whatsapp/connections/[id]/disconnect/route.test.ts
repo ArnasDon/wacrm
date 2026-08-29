@@ -125,7 +125,9 @@ beforeEach(() => {
     is_primary: false,
     status: 'connected',
     credential: 'enc-cred',
-    uazapi_base_url: 'https://api.uazapi.com',
+    // Distinct from the env base URL so the test proves the route pins
+    // the per-connection value, not uazapiEnv().baseUrl (FIX 5).
+    uazapi_base_url: 'https://pinned.uazapi.example',
     uazapi_instance_id: 'inst-1',
   };
   freshRow = {
@@ -188,7 +190,7 @@ describe('POST /api/whatsapp/connections/[id]/disconnect', () => {
     expect(res.status).toBe(200);
 
     expect(disconnectInstance).toHaveBeenCalledWith(
-      'https://api.uazapi.com',
+      'https://pinned.uazapi.example',
       'plaintext-token'
     );
 

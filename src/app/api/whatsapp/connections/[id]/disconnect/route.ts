@@ -13,7 +13,6 @@ import { NextResponse } from 'next/server';
 
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { decrypt } from '@/lib/whatsapp/encryption';
-import { uazapiEnv } from '@/lib/whatsapp/uazapi-env';
 import { disconnectInstance } from '@/lib/whatsapp/uazapi-admin';
 import { loadUazapiConnectionRow } from '@/lib/whatsapp/uazapi-connection-row';
 import { toConnectionDTO } from '@/lib/whatsapp/uazapi-connection-dto';
@@ -37,8 +36,8 @@ export async function POST(
     }
 
     try {
-      const { baseUrl } = uazapiEnv();
-      await disconnectInstance(baseUrl, decrypt(row.credential));
+      // Pin the UAZAPI server per-connection (FIX 5).
+      await disconnectInstance(row.uazapi_base_url, decrypt(row.credential));
     } catch (err) {
       console.error('[connections disconnect] remote disconnect failed', err);
     }

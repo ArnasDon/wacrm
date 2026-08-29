@@ -169,9 +169,16 @@ hash → (3) `INSERT` na `whatsapp_connections` → (4) `configureWebhook`.
 
 ### 3.4 Rotas
 
-Todas: gate `canEditSettings` (mesmo do `config/route.ts`), `accountId`
-do auth, **nunca** devolvem `credential` nem token ao cliente. A forma
-saneada de uma conexão exposta ao cliente:
+Todas as **mutações** (`POST`, `PATCH`, `DELETE`, `/connect`,
+`/disconnect`): gate `requireRole('admin')` (= `canEditSettings`, mesmo
+do `config/route.ts`). **Exceção:** `GET /connections` é
+`requireRole('agent')` — resposta read-only e saneada (ver abaixo).
+`accountId` do auth, **nunca** devolvem `credential` nem token ao
+cliente. As rotas de ciclo de vida UAZAPI (`/connect`, `/status`,
+`/disconnect`, `DELETE`) usam `row.uazapi_base_url` (fixado por conexão),
+**não** `uazapiEnv().baseUrl`; `uazapiEnv()` só é usado no `POST
+/connections` (onde o admin token é necessário). A forma saneada de uma
+conexão exposta ao cliente:
 
 ```ts
 type ConnectionDTO = {
@@ -194,6 +201,14 @@ como `ConnectionDTO[]`. Usada pela UI para montar os dois cards e o
 seletor de canal padrão, e pelo `<WhatsAppConfig />` para descobrir o
 `id` da linha Meta (toggle de mídia).
 
+Gate `requireRole('agent')` (não `admin`): a resposta é o
+`ConnectionDTO[]` saneado — sem segredos — e a RLS
+`whatsapp_connections_select` já deixa qualquer membro do account ler a
+tabela. Um `agent`/`viewer` na tela de Settings antes via o card Meta
+read-only; um `GET` 403 renderizaria um banner de erro destrutivo. Toda
+mutação continua `requireRole('admin')` e os botões do card/seletor
+continuam gated por `canEditSettings` no cliente.
+
 #### `POST /api/whatsapp/connections`
 
 Cria a conexão UAZAPI.
@@ -207,11 +222,18 @@ Cria a conexão UAZAPI.
    `webhook_secret_hash = sha256(secret)` — mesmo algoritmo que o
    `webhook-signature.ts` usa, se aplicável; senão `node:crypto`
    `createHash('sha256')`.
+4b. **Eleição de `is_primary`** por contagem de conexões ativas:
+   `select('id', { count: 'exact', head: true }).eq('account_id')
+   .is('archived_at', null)`. Erro aqui → `deleteInstance` best-effort +
+   502 (mesmo caminho de rollback do `INSERT`).
 5. `INSERT`: `account_id`, `provider='uazapi'`,
    `credential = encrypt(token)`, `uazapi_instance_id = instance.id`,
    `uazapi_base_url = baseUrl`, `status='disconnected'`,
-   `is_primary = false`, `webhook_secret_hash`. Erro aqui →
-   `deleteInstance` best-effort + 502.
+   `is_primary = (count ?? 0) === 0`, `webhook_secret_hash`. Erro aqui →
+   `deleteInstance` best-effort + 502. Uma primeira-e-única conexão
+   (inclusive uma conta **só-UAZAPI**) nasce primária — não há canal do
+   qual "trocar silenciosamente"; "nasce não-primária" só vale quando já
+   existe outra conexão ativa.
 6. `configureWebhook(baseUrl, token, APP_URL + '/api/whatsapp/webhook/uazapi/' + secret)`.
    Erro aqui → grava `last_connection_error`, **não** falha a request.
 7. 201 com o `ConnectionDTO` da linha nova.
@@ -224,22 +246,40 @@ Cria a conexão UAZAPI.
 1. Carrega a linha (`id` + `account_id` + `provider='uazapi'` +
    `archived_at IS NULL`); 404 se não for do account.
 2. `decrypt(credential)` → instance token.
-3. `connectInstance(baseUrl, token)` → `{ instance: { qrcode, paircode } }`.
-4. `UPDATE status='connecting'`.
-5. 200 `{ qrcode, paircode, expiresInSeconds: 120 }`.
+3. `connectInstance(row.uazapi_base_url, token)` →
+   `{ instance: { qrcode, paircode } }`.
+4. **Re-registra o webhook** (spec-mãe §3.3): o segredo cru só existiu
+   como local no `POST /connections`, então um webhook que falhou na
+   criação era irrecuperável. Gera `secret = randomBytes(32).hex` +
+   `hash = sha256(secret)`, chama `configureWebhook(row.uazapi_base_url,
+   token, resolveAppBaseUrl(request) + '/api/whatsapp/webhook/uazapi/' +
+   secret)`. Sucesso → inclui `webhook_secret_hash = hash` no mesmo
+   `UPDATE` do `status` e limpa `last_connection_error`. `configureWebhook`
+   lança → captura, **ainda devolve o QR (200)**, mas grava um
+   `last_connection_error` específico de webhook em vez de limpar (e não
+   persiste o hash novo — a UAZAPI não tem o segredo). `resolveAppBaseUrl`
+   é a origem do app (para onde a UAZAPI faz POST de volta), sem relação
+   com `row.uazapi_base_url` (o servidor UAZAPI com quem falamos).
+5. `UPDATE status='connecting'` (+ campos do passo 4).
+6. 200 `{ qrcode, paircode, expiresInSeconds: 120 }`.
 
 #### `GET /api/whatsapp/connections/[id]/status`
 
 1. Carrega a linha (como acima).
-2. `instanceStatus(baseUrl, token)` →
+2. `instanceStatus(row.uazapi_base_url, token)` →
    `{ instance: { qrcode, profileName }, status: { connected, jid } }`.
 3. Mapeia e persiste:
    - `status.connected === true` → `UPDATE status='connected'`,
      `display_phone = status.jid?.user ?? null`,
      `profile_name = instance.profileName ?? null`,
      `last_connection_error = null`.
-   - senão → `UPDATE status = instance.status` (um de
-     `disconnected|connecting|hibernated`).
+   - senão → `UPDATE status = whitelist(instance.status)`, onde a
+     whitelist é `disconnected|connecting|connected|hibernated|banned`
+     (= CHECK da migração 040) e qualquer valor fora dela cai para
+     `disconnected`. Sem a whitelist, um valor inesperado da UAZAPI daria
+     23514, hoje engolido → 200 com status nunca persistido e a UI em
+     polling eterno. O `error` do `UPDATE` é checado → 500 em vez de 200
+     silencioso.
 4. 200 `{ status, display_phone, profile_name, qrcode? }` — repassa
    `instance.qrcode` fresco enquanto `connecting`, para a UI trocar a
    imagem sem novo `/connect`.
@@ -257,13 +297,18 @@ for). Aplica só os campos presentes:
 - `mirror_inbound_media` → `UPDATE mirror_inbound_media` (é isto que
   substitui o `.update().eq('account_id')` client-side do
   `whatsapp-config.tsx`).
-- `is_primary: true` → **set-new-primeiro**: `UPDATE ... SET is_primary=true
-  WHERE id=?` e **depois** `UPDATE ... SET is_primary=false WHERE
-  account_id=? AND id<>? AND archived_at IS NULL`. A janela entre os dois
-  tem 2 linhas primárias; o `resolveConnection` nível 4 pega uma via
-  `.limit(1)` — inofensivo. A ordem inversa deixaria 0 primárias e um
-  envio nesse instante daria "não configurado". Sem RPC porque a 1b-ii
-  não tem migração.
+- `is_primary: true` → **limpa-as-outras-primeiro**: `UPDATE ... SET
+  is_primary=false WHERE account_id=? AND id<>? AND archived_at IS NULL`
+  (checa `error`, 500 se falhar, **não** prossegue) e **depois** `UPDATE
+  ... SET is_primary=true WHERE id=?`. O índice único parcial
+  `idx_connections_one_primary` da migração 040 (`(account_id) WHERE
+  is_primary AND archived_at IS NULL`) **proíbe** uma janela com 2
+  primárias — a ordem "set-new-primeiro" daria 23505 e a rota 500. A
+  janela resultante tem 0 primárias por sub-ms: aceitável — um envio
+  concorrente que resolve via `resolveConnection` nível 3 nesse instante
+  recebe o mesmo `whatsapp_not_configured` que receberia no meio da
+  troca. A correção limpa (constraint deferível / RPC) precisa de
+  migração — adiada para a 1c.
 - `is_primary: false` explícito → 400 se for a única conexão ativa do
   account ("o account precisa de um canal padrão"); senão `UPDATE
   is_primary=false`.
@@ -273,7 +318,7 @@ for). Aplica só os campos presentes:
 #### `POST /api/whatsapp/connections/[id]/disconnect`
 
 Desconecta **sem** arquivar. Carrega a linha (`provider='uazapi'`),
-`disconnectInstance(baseUrl, token)` best-effort, `UPDATE
+`disconnectInstance(row.uazapi_base_url, token)` best-effort, `UPDATE
 status='disconnected'`. 200 com o `ConnectionDTO`. Reconectar reabre o QR
 (`/connect`).
 
@@ -282,9 +327,10 @@ status='disconnected'`. 200 com o `ConnectionDTO`. Reconectar reabre o QR
 Arquiva (não apaga — respeita o futuro `ON DELETE RESTRICT` da 1c).
 
 1. Carrega a linha do account (404 se não for).
-2. Se `provider='uazapi'`: `disconnectInstance` best-effort →
-   `deleteInstance(baseUrl, token)` (senão a cota do operador vaza; erro
-   aqui é logado, não impede o arquivamento).
+2. Se `provider='uazapi'`: `disconnectInstance(row.uazapi_base_url,
+   token)` best-effort → `deleteInstance(row.uazapi_base_url, token)`
+   (senão a cota do operador vaza; erro aqui é logado, não impede o
+   arquivamento).
 3. `UPDATE archived_at = now()`, `status='disconnected'`,
    `is_primary = false`.
 4. **Repasse do primary:** se a linha arquivada era `is_primary` e sobra
@@ -378,9 +424,9 @@ se faltar qualquer chave em `ko.json` ou sobrar chave órfã.
 | 1bii-1 | Webhook registrado já na criação da conexão, mesmo com o handler 404 até a 1c | A 1c só liga o handler — sem varrer/reconfigurar instâncias existentes. Eventos perdidos no intervalo não importam (a 1c não depende de histórico retroativo). |
 | 1bii-2 | "Envio provado" = teste de integração com `fetch` mockado + smoke manual do operador pós-merge; **não bloqueia o merge** | CI não tem servidor UAZAPI nem número real. O teste prova a fiação; a divergência de campo real (ex: `messageid` vs `id`) vira follow-up rápido. |
 | 1bii-3 | Toggle de `mirror_inbound_media` migra para `PATCH /connections/[id]` (por id), não stopgap `.eq('provider','meta')` | Assim que a 1ª linha `uazapi` existe, o `.update().eq('account_id')` client-side atinge as duas linhas. A rota por id é a correção definitiva e a `PATCH` já existe nesta leva. |
-| 1bii-4 | Conexão UAZAPI nasce `is_primary=false`; ao arquivar a primária, se sobra **exatamente uma** ativa, ela herda | Sem trocas silenciosas de canal em broadcast/Flows/API. Fecha o follow-up 1b-i do `DELETE` não re-apontar `is_primary`. |
+| 1bii-4 | `is_primary` eleito por contagem de conexões ativas (`=== 0`): uma primeira-e-única conexão (inclusive conta só-UAZAPI) nasce primária; "nasce não-primária" só quando já existe outra ativa. Ao arquivar a primária, se sobra **exatamente uma** ativa, ela herda | Sem trocas silenciosas de canal em broadcast/Flows/API quando já há um canal; mas uma conta só-UAZAPI precisa de uma primária para conseguir enviar. Fecha o follow-up 1b-i do `DELETE` não re-apontar `is_primary`. |
 | 1bii-5 | Sem migração | A 040 criou todas as colunas e índices. |
-| 1bii-6 | `is_primary` via dois `UPDATE` sequenciais, set-new-primeiro (sem RPC) | A 1b-ii não tem migração para criar função. A janela com 2 primárias é inofensiva (`.limit(1)`); a ordem inversa (0 primárias) quebraria um envio concorrente. |
+| 1bii-6 | `is_primary` via dois `UPDATE` sequenciais, **limpa-as-outras-primeiro** (sem RPC) | O índice único parcial `idx_connections_one_primary` da migração 040 proíbe uma janela com 2 primárias — "set-new-primeiro" daria 23505. Limpar as outras primeiro deixa 0 primárias por sub-ms (aceitável: mesmo `whatsapp_not_configured` de uma troca em andamento). A 1b-ii não tem migração para uma função/constraint deferível; correção limpa adiada para a 1c. |
 | 1bii-7 | Provisionamento não-atômico com rollback best-effort; instância órfã por crash entre passos é follow-up sem onda | Transação distribuída real (CRM + servidor UAZAPI) não se justifica; o guard 409 + `GET /instance/all` cobrem a reconciliação. |
 | 1bii-8 | QR-only; sem pareamento por número de telefone | Menor superfície; a spec-mãe §4.4 descreve "Conectar via QR Code". |
 | 1bii-9 | Rotas dedicadas `/disconnect` e `DELETE` separadas | Coerente com o ciclo de vida da spec-mãe §4.4 (desconectar mantém a linha; remover arquiva + `DELETE /instance`). |
@@ -448,7 +494,7 @@ resolve para a primária Meta como antes, o toggle de mídia passa a ir por
 |---|---|
 | A forma real da resposta da UAZAPI (`/instance/create`, `/instance/connect`, `/instance/status`) diverge do assumido em §3.2 | O plano lê os schemas em `docs/uazapi-openapi-spec.yaml` (linhas 63-175 `Instance`, 1466 `create`, 1641 `connect`, 2008 `status`); `uazapi-admin.test.ts` fixa a forma. O smoke manual do operador é a validação real. |
 | Processo morre entre `createInstance` e o `INSERT` → instância órfã | Guard 409 impede 2ª tentativa; reconciliação via `GET /instance/all` é follow-up sem onda. Aceito como vazamento pequeno (decisão 1bii-7). |
-| `is_primary` sem transação real deixa 0 primárias por um instante | Ordem set-new-primeiro (decisão 1bii-6): a janela tem 2 primárias, não 0; `resolveConnection` nível 4 usa `.limit(1)`. |
+| `is_primary` sem transação real deixa 0 primárias por um instante | Ordem limpa-as-outras-primeiro (decisão 1bii-6): o índice `idx_connections_one_primary` da 040 proíbe a janela de 2 primárias, então a de 0 primárias (sub-ms) é o mal menor — mesmo `whatsapp_not_configured` de uma troca em andamento. Constraint deferível / RPC adiada para a 1c. |
 | Webhook registrado aponta para endpoint 404 até a 1c; a UAZAPI pode marcar o webhook como falho | A UAZAPI apenas entrega e ignora a resposta; sem retry-storm documentado. Se virar problema, a 1c registra o handler e o próximo evento `connection` normaliza. |
 | `mirror_inbound_media` via `PATCH` muda o caminho de escrita do toggle Meta | Mesma coluna, mesmo efeito; `route.test.ts` do `PATCH` cobre. O componente Meta só troca o `supabase.update()` por `fetch(PATCH)`. |
 | `ko.json` fica com chave faltando e `messages.test.ts` quebra | O plano trata `en.json` e `ko.json` no mesmo passo, com tradução coreana real, e roda `messages.test.ts` antes do commit. |
@@ -472,3 +518,15 @@ resolve para a primária Meta como antes, o toggle de mídia passa a ir por
   `deliverBroadcast`/`resumeBroadcast` e só importa com broadcast-sobre-
   UAZAPI — Onda 3. `react/route.ts` (que já tem a conversa) foi feito na
   Task 8; broadcast fica para a Onda 3.
+
+## Follow-ups abertos após 1b-ii
+
+- **RLS `whatsapp_connections_select` expõe colunas de segredo a qualquer
+  membro do account** via um `select('*')` client-side: `credential`,
+  `webhook_secret_hash`, `uazapi_instance_id`, `uazapi_base_url`.
+  Pré-existente (a política sempre foi por linha, não por coluna), mas
+  `webhook_secret_hash` passa a ser **populado** nesta leva (no `POST
+  /connections` e agora também no `/connect`). Rastrear uma view com
+  colunas restritas ou uma política `SELECT` por coluna para uma leva
+  posterior. Nenhuma rota desta leva devolve essas colunas — o vetor é o
+  cliente Supabase direto.

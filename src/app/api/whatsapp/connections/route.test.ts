@@ -4,11 +4,14 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // Tests for GET | POST /api/whatsapp/connections.
 //
 // GET  — lists the account's non-archived connections (both providers) as
-//        ConnectionDTO[], never leaking the encrypted credential.
+//        ConnectionDTO[], never leaking the encrypted credential. Gated at
+//        requireRole('agent') — read-only + sanitized (FIX 6); every
+//        mutation stays admin-gated.
 // POST — provisions one UAZAPI connection: dedupe (409) → createInstance →
-//        secret + sha256 hash → INSERT → configureWebhook. Rolls the
-//        instance back on INSERT failure (502); a webhook failure is
-//        non-fatal (row kept, last_connection_error recorded, still 201).
+//        secret + sha256 hash → is_primary election by active-connection
+//        count (FIX 2) → INSERT → configureWebhook. Rolls the instance
+//        back on a failing count query or INSERT failure (502); a webhook
+//        failure is non-fatal (row kept, last_connection_error, still 201).
 //
 // Shape mirrors src/app/api/whatsapp/send/route.test.ts: a chainable
 // Supabase mock via vi.mock('@/lib/supabase/server') plus a `callerRole`
@@ -21,6 +24,10 @@ let callerRole = 'admin';
 let existingUazapiRow: Record<string, unknown> | null = null;
 // Forced error from the INSERT terminal (drives the rollback path).
 let insertError: { message: string } | null = null;
+// Result of the is_primary-election count query (FIX 2).
+let activeConnCount = 0;
+// Forced error from that count query (drives the 502 rollback path).
+let countError: { message: string } | null = null;
 // Rows the GET select resolves to (raw DB rows, credential included).
 let connectionRows: Array<Record<string, unknown>> = [];
 
@@ -55,6 +62,11 @@ function makeSupabaseMock() {
       if (didUpdate) {
         return { data: null, error: null };
       }
+      // The is_primary-election count query (FIX 2): select('id', {
+      // count: 'exact', head: true }) before any insert/update.
+      if (b._selectCount) {
+        return { count: activeConnCount, error: countError };
+      }
       return { data: connectionRows, error: null };
     };
 
@@ -83,11 +95,17 @@ function makeSupabaseMock() {
     };
 
     const b: Record<string, unknown> = {};
+    b._selectCount = false;
     const chain = () => b;
     for (const m of ['select', 'eq', 'in', 'order', 'limit', 'is']) {
       b[m] = vi.fn((...args: unknown[]) => {
         if (m === 'order') orderCalls.push(args);
         if (m === 'is') isCalls.push(args);
+        if (m === 'select') {
+          const opts = args[1];
+          b._selectCount =
+            !!opts && typeof opts === 'object' && 'count' in opts;
+        }
         return chain();
       });
     }
@@ -162,6 +180,8 @@ beforeEach(() => {
   callerRole = 'admin';
   existingUazapiRow = null;
   insertError = null;
+  activeConnCount = 0;
+  countError = null;
   connectionRows = [];
   insertPayloads.length = 0;
   updatePayloads.length = 0;
@@ -178,8 +198,18 @@ afterEach(() => {
 });
 
 describe('GET /api/whatsapp/connections', () => {
-  it('403s a non-admin caller (agent)', async () => {
+  it('200s for an agent caller — the list is read-only + sanitized (FIX 6)', async () => {
     callerRole = 'agent';
+
+    const res = await GET();
+
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data).toEqual([]);
+  });
+
+  it('403s a viewer caller (below agent)', async () => {
+    callerRole = 'viewer';
 
     const res = await GET();
 
@@ -269,7 +299,9 @@ describe('POST /api/whatsapp/connections', () => {
     expect(createInstance).not.toHaveBeenCalled();
   });
 
-  it('happy path: creates the instance, inserts the row, registers the webhook, returns 201', async () => {
+  it('happy path: fresh account → the new row is elected is_primary, webhook registered, 201 (FIX 2)', async () => {
+    activeConnCount = 0;
+
     const res = await POST(postRequest());
     const json = await res.json();
 
@@ -290,7 +322,8 @@ describe('POST /api/whatsapp/connections', () => {
     expect(payload.uazapi_instance_id).toBe('inst-id');
     expect(payload.uazapi_base_url).toBe('https://api.uazapi.com');
     expect(payload.status).toBe('disconnected');
-    expect(payload.is_primary).toBe(false);
+    // First-and-only connection (incl. a UAZAPI-only account) → primary.
+    expect(payload.is_primary).toBe(true);
     expect(payload.webhook_secret_hash).toMatch(/^[0-9a-f]{64}$/);
 
     // configureWebhook url ends with /api/whatsapp/webhook/uazapi/<64 hex>.
@@ -314,6 +347,30 @@ describe('POST /api/whatsapp/connections', () => {
     ]);
     expect(json.data.id).toBe('conn-new');
     expect(deleteInstance).not.toHaveBeenCalled();
+  });
+
+  it('an account that already has an active connection → the new row is born non-primary (FIX 2)', async () => {
+    activeConnCount = 1;
+
+    const res = await POST(postRequest());
+
+    expect(res.status).toBe(201);
+    expect(insertPayloads).toHaveLength(1);
+    expect(insertPayloads[0].is_primary).toBe(false);
+  });
+
+  it('a failing election count query rolls the instance back and 502s (FIX 2)', async () => {
+    countError = { message: 'count boom' };
+
+    const res = await POST(postRequest());
+
+    expect(res.status).toBe(502);
+    expect(insertPayloads).toHaveLength(0);
+    expect(deleteInstance).toHaveBeenCalledWith(
+      'https://api.uazapi.com',
+      'inst-token'
+    );
+    expect(configureWebhook).not.toHaveBeenCalled();
   });
 
   it('rollback: an INSERT error triggers deleteInstance with the new token and 502', async () => {

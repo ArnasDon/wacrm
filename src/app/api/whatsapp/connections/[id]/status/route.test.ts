@@ -8,7 +8,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 // the mapping:
 //   connected  → UPDATE status='connected' + display_phone + profile_name
 //                + last_connection_error=null
-//   otherwise  → UPDATE status = st.instanceStatus ?? 'disconnected'
+//   otherwise  → UPDATE status = whitelisted(st.instanceStatus) ?? 'disconnected'
+//                (whitelist mirrors migration 040's CHECK; a failing
+//                 UPDATE now 500s instead of a silent 200)
 // Response: { status, display_phone, profile_name, qrcode } (phone/name
 // only when connected; qrcode passed straight through).
 // ---------------------------------------------------------------------------
@@ -16,6 +18,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 let callerRole = 'admin';
 let loadRowResult: Record<string, unknown> | null = null;
 let statusResult: Record<string, unknown> = {};
+// Forced error from the persist UPDATE terminal (drives the 500 path).
+let forcedUpdateError: { message: string } | null = null;
 
 const updateCalls: Array<{
   payload: Record<string, unknown>;
@@ -48,7 +52,7 @@ function makeSupabaseMock() {
         case 'whatsapp_connections':
           if (didUpdate) {
             void kind;
-            return { data: null, error: null };
+            return { data: null, error: forcedUpdateError };
           }
           return connRead();
         default:
@@ -129,9 +133,12 @@ beforeEach(() => {
     is_primary: false,
     status: 'connecting',
     credential: 'enc-cred',
-    uazapi_base_url: 'https://api.uazapi.com',
+    // Distinct from the env base URL so the test proves the route pins
+    // the per-connection value, not uazapiEnv().baseUrl (FIX 5).
+    uazapi_base_url: 'https://pinned.uazapi.example',
     uazapi_instance_id: 'inst-1',
   };
+  forcedUpdateError = null;
   statusResult = {
     connected: false,
     loggedIn: false,
@@ -197,7 +204,7 @@ describe('GET /api/whatsapp/connections/[id]/status', () => {
 
     expect(res.status).toBe(200);
     expect(instanceStatus).toHaveBeenCalledWith(
-      'https://api.uazapi.com',
+      'https://pinned.uazapi.example',
       'plaintext-token'
     );
 
@@ -264,5 +271,38 @@ describe('GET /api/whatsapp/connections/[id]/status', () => {
     expect(res.status).toBe(200);
     expect(updateCalls[0].payload).toEqual({ status: 'disconnected' });
     expect(json.status).toBe('disconnected');
+  });
+
+  it('an unexpected instanceStatus is whitelisted down to disconnected (FIX 7)', async () => {
+    statusResult = {
+      connected: false,
+      loggedIn: false,
+      phone: null,
+      profileName: null,
+      instanceStatus: 'weird_new_value',
+      qrcode: 'qr-xyz',
+    };
+
+    const res = await GET(statusRequest(), { params });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    // Never persists a value outside migration 040's CHECK.
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload).toEqual({ status: 'disconnected' });
+    expect(json).toEqual({
+      status: 'disconnected',
+      display_phone: null,
+      profile_name: null,
+      qrcode: 'qr-xyz',
+    });
+  });
+
+  it('a failing persist UPDATE surfaces as 500, not a silent 200 (FIX 7)', async () => {
+    forcedUpdateError = { message: '23514 check violation' };
+
+    const res = await GET(statusRequest(), { params });
+
+    expect(res.status).toBe(500);
   });
 });

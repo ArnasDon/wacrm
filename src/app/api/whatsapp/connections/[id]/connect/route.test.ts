@@ -96,21 +96,26 @@ vi.mock('@/lib/supabase/server', () => ({
   createClient: vi.fn(async () => supabaseMock),
 }));
 
-const { connectInstance } = vi.hoisted(() => ({
+const { connectInstance, configureWebhook } = vi.hoisted(() => ({
   connectInstance: vi.fn(
     async (): Promise<{
       qrcode: string | null;
       paircode: string | null;
     }> => ({ qrcode: 'qr-data', paircode: 'PAIR12' })
   ),
+  configureWebhook: vi.fn(async () => undefined),
 }));
-vi.mock('@/lib/whatsapp/uazapi-admin', () => ({ connectInstance }));
+vi.mock('@/lib/whatsapp/uazapi-admin', () => ({
+  connectInstance,
+  configureWebhook,
+}));
 
 vi.mock('@/lib/whatsapp/uazapi-env', () => ({
   uazapiEnv: () => ({
     baseUrl: 'https://api.uazapi.com',
     adminToken: 'admin-tok',
   }),
+  resolveAppBaseUrl: () => 'https://crm.example.com',
 }));
 
 vi.mock('@/lib/whatsapp/encryption', () => ({
@@ -136,13 +141,17 @@ beforeEach(() => {
     is_primary: false,
     status: 'disconnected',
     credential: 'enc-cred',
-    uazapi_base_url: 'https://api.uazapi.com',
+    // Distinct from the env base URL so the test proves the route pins
+    // the per-connection value, not uazapiEnv().baseUrl (FIX 5).
+    uazapi_base_url: 'https://pinned.uazapi.example',
     uazapi_instance_id: 'inst-1',
   };
   updateCalls.length = 0;
   supabaseMock = makeSupabaseMock();
   connectInstance.mockClear();
   connectInstance.mockResolvedValue({ qrcode: 'qr-data', paircode: 'PAIR12' });
+  configureWebhook.mockClear();
+  configureWebhook.mockResolvedValue(undefined);
   vi.spyOn(console, 'error').mockImplementation(() => {});
 });
 
@@ -160,6 +169,7 @@ describe('POST /api/whatsapp/connections/[id]/connect', () => {
     expect(res.status).toBe(403);
     expect(supabaseMock.from).not.toHaveBeenCalledWith('whatsapp_connections');
     expect(connectInstance).not.toHaveBeenCalled();
+    expect(configureWebhook).not.toHaveBeenCalled();
   });
 
   it('404s when the row does not load for the account', async () => {
@@ -181,22 +191,33 @@ describe('POST /api/whatsapp/connections/[id]/connect', () => {
     expect(connectInstance).not.toHaveBeenCalled();
   });
 
-  it('happy path: connects, persists status=connecting, returns qrcode/paircode/expiry', async () => {
+  it('happy path: connects via the pinned base URL, re-registers the webhook, persists status=connecting + fresh hash', async () => {
     const res = await POST(connectRequest(), { params });
     const json = await res.json();
 
     expect(res.status).toBe(200);
 
+    // FIX 5: the UAZAPI admin call uses row.uazapi_base_url, NOT the env.
     expect(connectInstance).toHaveBeenCalledWith(
-      'https://api.uazapi.com',
+      'https://pinned.uazapi.example',
       'plaintext-token'
     );
 
+    // FIX 3: webhook re-registered against the pinned base + app origin.
+    expect(configureWebhook).toHaveBeenCalledTimes(1);
+    const [wBase, wToken, wUrl] = configureWebhook.mock.calls[0] as string[];
+    expect(wBase).toBe('https://pinned.uazapi.example');
+    expect(wToken).toBe('plaintext-token');
+    expect(wUrl).toMatch(
+      /^https:\/\/crm\.example\.com\/api\/whatsapp\/webhook\/uazapi\/[0-9a-f]{64}$/
+    );
+
     expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload).toEqual({
-      status: 'connecting',
-      last_connection_error: null,
-    });
+    expect(updateCalls[0].payload.status).toBe('connecting');
+    expect(updateCalls[0].payload.last_connection_error).toBeNull();
+    expect(updateCalls[0].payload.webhook_secret_hash).toMatch(
+      /^[0-9a-f]{64}$/
+    );
     expect(updateCalls[0].filters).toContainEqual(['eq', 'id', 'conn-1']);
     expect(updateCalls[0].filters).toContainEqual([
       'eq',
@@ -209,6 +230,28 @@ describe('POST /api/whatsapp/connections/[id]/connect', () => {
       paircode: 'PAIR12',
       expiresInSeconds: 120,
     });
+  });
+
+  it('configureWebhook throwing is non-fatal: still 200 with the QR, UPDATE records a webhook error', async () => {
+    configureWebhook.mockRejectedValueOnce(new Error('webhook down'));
+
+    const res = await POST(connectRequest(), { params });
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(json).toEqual({
+      qrcode: 'qr-data',
+      paircode: 'PAIR12',
+      expiresInSeconds: 120,
+    });
+
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0].payload.status).toBe('connecting');
+    expect(updateCalls[0].payload.last_connection_error).toEqual(
+      expect.stringMatching(/webhook/i)
+    );
+    // The new hash is only persisted once UAZAPI actually has the secret.
+    expect(updateCalls[0].payload).not.toHaveProperty('webhook_secret_hash');
   });
 
   it('passes through null qrcode/paircode from the client', async () => {

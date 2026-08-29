@@ -111,6 +111,19 @@ export async function resolveConnection(
   }
 
   if (resolved.provider === 'uazapi') {
+    // Uma linha uazapi sem instância/base URL é um provisionamento
+    // pela metade (criação interrompida antes do UPDATE de status, ou
+    // linha inserida à mão). Falha como "não configurado" — o mesmo
+    // 400 de "sem conexão" — em vez de montar uma TransportConnection
+    // inválida que viraria TypeError no primeiro fetch do transporte.
+    if (!resolved.uazapi_instance_id || !resolved.uazapi_base_url) {
+      throw new SendMessageError(
+        'whatsapp_not_configured',
+        'WhatsApp not configured. Please set up your WhatsApp integration first.',
+        400,
+        { reason: 'not_configured' }
+      );
+    }
     return {
       id: resolved.id,
       accountId,

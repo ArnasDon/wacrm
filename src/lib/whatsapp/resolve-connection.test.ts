@@ -232,4 +232,49 @@ describe('resolveConnection', () => {
     );
     expect(captured.updates).toEqual([]);
   });
+
+  describe('guard de linha uazapi incompleta', () => {
+    it('lança whatsapp_not_configured quando uazapi_base_url é NULL', async () => {
+      const incompleteUaz = {
+        ...UAZ,
+        uazapi_base_url: null,
+        is_primary: true,
+      };
+      await expect(
+        resolveConnection(db({ connections: [incompleteUaz] }), 'acct-1')
+      ).rejects.toMatchObject({
+        code: 'whatsapp_not_configured',
+        status: 400,
+      });
+    });
+
+    it('lança quando uazapi_instance_id é NULL', async () => {
+      const incompleteUaz = {
+        ...UAZ,
+        uazapi_instance_id: null,
+        is_primary: true,
+      };
+      await expect(
+        resolveConnection(db({ connections: [incompleteUaz] }), 'acct-1')
+      ).rejects.toMatchObject({
+        code: 'whatsapp_not_configured',
+      });
+    });
+
+    it('resolve normal quando ambos presentes', async () => {
+      const completeUaz = {
+        ...UAZ,
+        is_primary: true,
+      };
+      const conn = await resolveConnection(
+        db({ connections: [completeUaz] }),
+        'acct-1'
+      );
+      expect(conn).toMatchObject({
+        provider: 'uazapi',
+        instanceId: 'inst-9',
+        baseUrl: 'https://uaz.example',
+      });
+    });
+  });
 });

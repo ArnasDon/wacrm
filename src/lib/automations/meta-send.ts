@@ -23,7 +23,7 @@ import { supabaseAdmin } from './admin-client';
 // ------------------------------------------------------------
 
 interface SendTextArgs {
-  /** Account-level tenancy key. Drives contact + whatsapp_config
+  /** Account-level tenancy key. Drives contact + whatsapp_connections
    *  lookups so an automation authored by user A still sends through
    *  the WhatsApp number user B saved on the same account. */
   accountId: string;

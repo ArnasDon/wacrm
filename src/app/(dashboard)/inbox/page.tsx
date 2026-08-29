@@ -183,7 +183,7 @@ function InboxPageInner() {
 
       if (!user) return;
 
-      // whatsapp_config is one-row-per-account post-multi-user, so
+      // whatsapp_connections is one-row-per-account post-multi-user, so
       // the previous `.eq('user_id', user.id)` would miss the row
       // for any teammate who didn't personally save the config —
       // the "WhatsApp not connected" banner would show in the
@@ -201,7 +201,7 @@ function InboxPageInner() {
       }
 
       const { data } = await supabase
-        .from("whatsapp_config")
+        .from("whatsapp_connections")
         .select("status")
         .eq("account_id", accountId)
         .maybeSingle();

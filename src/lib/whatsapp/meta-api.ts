@@ -69,7 +69,7 @@ export async function verifyPhoneNumber(
 // Cloud API registration (subscription for inbound webhooks)
 // ============================================================
 //
-// Saving a phone_number_id + access_token to whatsapp_config is NOT
+// Saving a phone_number_id + access_token to whatsapp_connections is NOT
 // enough to receive inbound events from Meta. Two extra calls are
 // required:
 //

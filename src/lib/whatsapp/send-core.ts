@@ -267,7 +267,7 @@ export async function sendViaConnection(
   // 1. Contato + telefone. Vem antes da conexão porque `send-message.ts`
   //    (o caminho de hoje) resolve a conversa/contato antes de checar a
   //    configuração — um envio para conversa inexistente/alheia tem de
-  //    dar 404 mesmo numa conta sem `whatsapp_config`, não 400.
+  //    dar 404 mesmo numa conta sem `whatsapp_connections`, não 400.
   const contact = await loadContact(db, accountId, params);
   const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
   if (!isValidE164(sanitizedPhone)) {

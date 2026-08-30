@@ -3,16 +3,10 @@
 //
 // PATCH  — mutate one connection (ANY provider) by id: `label`,
 //          `is_primary`, `mirror_inbound_media`. Promoting a row to
-//          primary CLEARS is_primary on the account's other active rows
-//          FIRST, then sets is_primary=true on the TARGET. Migration
-//          040's idx_connections_one_primary partial unique index
-//          forbids a 2-primary window, so the reverse order would 23505.
-//          This leaves a sub-ms window with 0 primaries (acceptable — a
-//          concurrent send resolving via resolveConnection level 3 in
-//          that window gets the same whatsapp_not_configured it would
-//          get mid-switch). A deferrable constraint / RPC is the clean
-//          long-term fix — deferred to 1c (needs a migration). Demoting
-//          the sole active connection is 400.
+//          primary calls the `set_primary_connection` RPC (migration 041),
+//          which atomically updates all rows in one statement and checks
+//          the deferrable EXCLUDE constraint at COMMIT (no 0-primary
+//          window). Demoting the sole active connection is 400.
 //
 // DELETE  — archive: for uazapi rows, best-effort disconnect + delete of
 //          the remote instance (pinned via row.uazapi_base_url; failures
@@ -101,25 +95,32 @@ export async function PATCH(
     }
 
     if (body.is_primary === true) {
-      // Clear every OTHER primary FIRST — migration 040's
-      // idx_connections_one_primary partial unique index forbids a
-      // 2-primary window, so promoting the target before demoting the
-      // others would 23505 and 500 this route. The sub-ms window with 0
-      // primaries is acceptable (see the file header).
-      const { error: clearError } = await supabase
-        .from('whatsapp_connections')
-        .update({ is_primary: false })
-        .eq('account_id', accountId)
-        .is('archived_at', null)
-        .neq('id', id);
-      if (clearError) {
-        console.error('[connections PATCH] clear other primaries', clearError);
+      // Atomic promotion: the RPC does UPDATE ... SET is_primary =
+      // (id = p_id) in one statement; migration 041's DEFERRABLE EXCLUDE
+      // constraint checks at COMMIT, so there is no 0-primary window.
+      const { error: rpcError } = await supabase.rpc('set_primary_connection', {
+        p_id: id,
+        p_account_id: accountId,
+      });
+      if (rpcError) {
+        const code = (rpcError as { code?: string }).code;
+        if (code === 'P0002') {
+          return NextResponse.json(
+            { error: 'Connection not found' },
+            { status: 404 }
+          );
+        }
+        if (code === '42501') {
+          return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+        }
+        console.error('[connections PATCH] set_primary_connection', rpcError);
         return NextResponse.json(
           { error: 'Failed to update connection' },
           { status: 500 }
         );
       }
-      patch.is_primary = true;
+      // is_primary is already applied by the RPC — do NOT add it to
+      // `patch`.
     } else if (body.is_primary === false) {
       if ((await activeCount(supabase, accountId)) <= 1) {
         return NextResponse.json(

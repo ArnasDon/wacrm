@@ -6,9 +6,11 @@ import { useAuth } from "@/hooks/use-auth";
 import {
   IconLogout,
   IconMenu2,
+  IconSearch,
   IconSettings as SettingsIcon,
   IconUser,
 } from "@tabler/icons-react";
+import { openCommandMenu } from "@/components/layout/command-menu";
 import {
   Avatar,
   AvatarFallback,
@@ -89,6 +91,28 @@ export function Header({ onOpenSidebar }: HeaderProps) {
       </div>
 
       <div className="flex items-center justify-self-end gap-1 sm:gap-2">
+        {/* ⌘K palette trigger. Pill on desktop, icon on mobile. */}
+        <button
+          type="button"
+          onClick={openCommandMenu}
+          aria-label={t("search")}
+          className="hidden h-8 items-center gap-2 rounded-md border border-border bg-muted/40 pr-1.5 pl-2.5 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:flex"
+        >
+          <IconSearch className="size-4" />
+          <span>{t("search")}</span>
+          <kbd className="rounded border border-border bg-background px-1.5 font-sans text-[11px] leading-5 text-muted-foreground">
+            ⌘K
+          </kbd>
+        </button>
+        <button
+          type="button"
+          onClick={openCommandMenu}
+          aria-label={t("search")}
+          className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:hidden"
+        >
+          <IconSearch className="h-5 w-5" />
+        </button>
+
         <ModeToggle />
 
         <DropdownMenu>

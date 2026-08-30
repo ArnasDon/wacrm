@@ -44,7 +44,19 @@
     "menuSettings": "Settings",
     "menuSignOut": "Sign out"
   },
+  "CommandMenu": {
+    "placeholder": "Type a command or search…",
+    "empty": "No results found.",
+    "goTo": "Go to",
+    "platform": "Platform",
+    "actions": "Actions",
+    "newContact": "New contact",
+    "switchToLight": "Switch to light mode",
+    "switchToDark": "Switch to dark mode",
+    "signOut": "Sign out"
+  },
   "Header": {
+    "search": "Search…",
     "dashboard": "Dashboard",
     "kpis": "KPIs",
     "inbox": "Inbox",

@@ -11,6 +11,7 @@ import { BrowserNotifications } from "@/components/notifications/browser-notific
 import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { PushSubscriptionSync } from "@/components/pwa/push-subscription-sync";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
+import { CommandMenu } from "@/components/layout/command-menu";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
 // itself can stay a server component and export metadata (noindex) —
@@ -59,6 +60,9 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       {/* Keeps the server's push-subscription row fresh when the user
           has already granted permission (never asks). Headless. */}
       <PushSubscriptionSync />
+      {/* ⌘K / Ctrl+K quick-nav + actions palette. Renders its own
+          dialog; inert until opened. */}
+      <CommandMenu />
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />

@@ -44,7 +44,19 @@
     "menuSettings": "설정",
     "menuSignOut": "로그아웃"
   },
+  "CommandMenu": {
+    "placeholder": "명령어를 입력하거나 검색하세요…",
+    "empty": "결과가 없습니다.",
+    "goTo": "이동",
+    "platform": "플랫폼",
+    "actions": "작업",
+    "newContact": "새 연락처",
+    "switchToLight": "라이트 모드로 전환",
+    "switchToDark": "다크 모드로 전환",
+    "signOut": "로그아웃"
+  },
   "Header": {
+    "search": "검색…",
     "dashboard": "대시보드",
     "kpis": "KPI",
     "inbox": "인박스",

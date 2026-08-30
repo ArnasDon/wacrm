@@ -139,19 +139,32 @@ export async function resumePendingExecution(pending: {
   context: AutomationContext
 }): Promise<void> {
   const db = supabaseAdmin()
-  const { data: automation, error } = await db
-    .from('automations')
-    .select('*')
-    .eq('id', pending.automation_id)
-    .single()
 
-  if (error || !automation) {
-    console.error('[automations] resume: missing automation', pending.automation_id, error)
-    await markPending(pending.id, 'failed')
-    return
-  }
-
+  // BUG A2 fix: the whole body — including the initial `automations`
+  // lookup, not just executeStepsFrom below — is now inside one
+  // try/catch. The cron's claim step already flipped this row's status
+  // to 'running' before calling this function; if ANY step here threw
+  // (this lookup previously didn't just return `{error}` on a genuine
+  // network-level failure, it could reject the promise outright — a
+  // real, documented difference in supabase-js between "the request
+  // completed with a Postgres error" and "the request itself never
+  // completed"), the exception used to escape before `markPending`
+  // ever ran, leaving the row stuck at 'running' forever: the cron's
+  // own SELECT only ever looks for `status='pending'`, so a 'running'
+  // row is never picked up, retried, or reported again by anything.
   try {
+    const { data: automation, error } = await db
+      .from('automations')
+      .select('*')
+      .eq('id', pending.automation_id)
+      .single()
+
+    if (error || !automation) {
+      console.error('[automations] resume: missing automation', pending.automation_id, error)
+      await markPending(pending.id, 'failed')
+      return
+    }
+
     await executeStepsFrom({
       automation: automation as Automation,
       contactId: pending.contact_id,

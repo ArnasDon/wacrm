@@ -37,7 +37,9 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "env:push": "bash scripts/vercel-env-push.sh",
+    "env:pull": "vercel env pull .env.production.remote --environment=production"
   },
   "dependencies": {
     "@base-ui/react": "^1.6.0",

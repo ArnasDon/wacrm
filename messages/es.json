@@ -430,7 +430,25 @@
     }
   },
   "Contacts": {
+    "views": {
+      "all": "Todos",
+      "saveView": "Guardar vista",
+      "save": "Guardar",
+      "rename": "Renombrar",
+      "share": "Compartir con el equipo",
+      "unshare": "Dejar de compartir",
+      "delete": "Eliminar",
+      "updateWithCurrent": "Actualizar con los filtros actuales",
+      "unsavedChanges": "Cambios sin guardar",
+      "viewOptions": "Opciones de la vista"
+    },
     "page": {
+      "sort": {
+        "recent": "Más recientes",
+        "oldest": "Más antiguos",
+        "name": "Nombre A–Z",
+        "name_desc": "Nombre Z–A"
+      },
       "title": "Contactos",
       "subtitle": "Administra tu lista de contactos. {count} contactos en total.",
       "subtitleZero": "Administra tu lista de contactos.",

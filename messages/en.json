@@ -461,7 +461,25 @@
     }
   },
   "Contacts": {
+    "views": {
+      "all": "All",
+      "saveView": "Save view",
+      "save": "Save",
+      "rename": "Rename",
+      "share": "Share with team",
+      "unshare": "Stop sharing",
+      "delete": "Delete",
+      "updateWithCurrent": "Update with current filters",
+      "unsavedChanges": "Unsaved changes",
+      "viewOptions": "View options"
+    },
     "page": {
+      "sort": {
+        "recent": "Newest first",
+        "oldest": "Oldest first",
+        "name": "Name A–Z",
+        "name_desc": "Name Z–A"
+      },
       "title": "Contacts",
       "subtitle": "Manage your contact list. {count} total contacts.",
       "subtitleZero": "Manage your contact list.",

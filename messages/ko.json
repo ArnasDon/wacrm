@@ -461,7 +461,25 @@
     }
   },
   "Contacts": {
+    "views": {
+      "all": "전체",
+      "saveView": "뷰 저장",
+      "save": "저장",
+      "rename": "이름 변경",
+      "share": "팀과 공유",
+      "unshare": "공유 중지",
+      "delete": "삭제",
+      "updateWithCurrent": "현재 필터로 업데이트",
+      "unsavedChanges": "저장되지 않은 변경사항",
+      "viewOptions": "뷰 옵션"
+    },
     "page": {
+      "sort": {
+        "recent": "최신순",
+        "oldest": "오래된순",
+        "name": "이름 A–Z",
+        "name_desc": "이름 Z–A"
+      },
       "title": "연락처",
       "subtitle": "연락처 목록을 관리하세요. 전체 연락처 {count}개.",
       "subtitleZero": "연락처 목록을 관리하세요.",

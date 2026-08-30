@@ -60,8 +60,38 @@ import { downloadContactsExcel, toContactExportRow } from '@/lib/contacts/export
 import { useCan } from '@/hooks/use-can';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
+import { ArrowDownUp } from 'lucide-react';
+import { ViewsBar } from '@/components/contacts/views-bar';
+import { useSavedViews } from '@/hooks/use-saved-views';
+import {
+  CONTACT_SORTS,
+  configsEqual,
+  sanitizeContactsConfig,
+  type ContactSort,
+  type ContactsViewConfig,
+  type SavedView,
+} from '@/lib/saved-views/types';
 
 const PAGE_SIZE = 25;
+
+// Apply a ContactSort to a PostgREST query builder. Mirrors the CASE
+// ladder in filter_contacts_by_tags (migration 096) so both list
+// paths order identically.
+function applySort<T>(query: T, sort: ContactSort): T {
+  const q = query as unknown as {
+    order: (col: string, opts: { ascending: boolean; nullsFirst?: boolean }) => T;
+  };
+  switch (sort) {
+    case 'oldest':
+      return q.order('created_at', { ascending: true });
+    case 'name':
+      return q.order('name', { ascending: true, nullsFirst: false });
+    case 'name_desc':
+      return q.order('name', { ascending: false, nullsFirst: false });
+    default:
+      return q.order('created_at', { ascending: false });
+  }
+}
 
 interface ContactWithTags extends Contact {
   tags?: Tag[];
@@ -80,6 +110,51 @@ export default function ContactsPage() {
   const [totalCount, setTotalCount] = useState(0);
   // Tag filter — contacts shown must have ANY of these tags (OR).
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([]);
+  // Row order. Applies to both the plain and tag-filtered query paths
+  // (the RPC gained a p_sort arg in migration 096).
+  const [sort, setSort] = useState<ContactSort>('recent');
+
+  // Saved views (migration 096). `activeViewId` is null on the "Todos"
+  // tab or when the current filters have drifted from every saved view.
+  const savedViews = useSavedViews('contacts');
+  const [activeViewId, setActiveViewId] = useState<string | null>(null);
+
+  const currentConfig: ContactsViewConfig = sanitizeContactsConfig({
+    search,
+    tagIds: selectedTagIds,
+    sort,
+  });
+  const activeView = savedViews.views.find((v) => v.id === activeViewId) ?? null;
+  const dirty = activeView
+    ? !configsEqual(currentConfig, activeView.config)
+    : false;
+
+  const applyConfig = useCallback((cfg: ContactsViewConfig) => {
+    setSearch(cfg.search ?? '');
+    setSelectedTagIds(cfg.tagIds ?? []);
+    setSort(cfg.sort ?? 'recent');
+    setPage(0);
+  }, []);
+
+  function selectView(view: SavedView) {
+    applyConfig(view.config);
+    setActiveViewId(view.id);
+  }
+
+  function selectAllView() {
+    applyConfig({});
+    setActiveViewId(null);
+  }
+
+  async function createView(name: string) {
+    const created = await savedViews.create(name, currentConfig);
+    if (created) setActiveViewId(created.id);
+  }
+
+  async function updateActiveView() {
+    if (!activeView) return;
+    await savedViews.update(activeView.id, { config: currentConfig });
+  }
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -147,6 +222,7 @@ export default function ContactsPage() {
         p_search: term || null,
         p_limit: PAGE_SIZE,
         p_offset: from,
+        p_sort: sort,
       });
       if (seq !== fetchSeq.current) return; // superseded by a newer fetch
       if (error) {
@@ -158,11 +234,10 @@ export default function ContactsPage() {
       contactRows = rows.map((r) => r.contact);
       count = rows.length > 0 ? Number(rows[0].total_count) : 0;
     } else {
-      let query = supabase
-        .from('contacts')
-        .select('*', { count: 'exact' })
-        .order('created_at', { ascending: false })
-        .range(from, to);
+      let query = applySort(
+        supabase.from('contacts').select('*', { count: 'exact' }),
+        sort,
+      ).range(from, to);
 
       if (term) {
         const like = `%${term}%`;
@@ -211,7 +286,7 @@ export default function ContactsPage() {
 
     setContacts(enriched);
     setLoading(false);
-  }, [supabase, page, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, page, search, selectedTagIds, sort, tagsMap, t]);
 
   /** Exports every contact matching the CURRENT search + tag filters —
    *  not just the loaded page — to Excel. Mirrors fetchContacts' two
@@ -233,12 +308,13 @@ export default function ContactsPage() {
           p_search: term || null,
           p_limit: 100000,
           p_offset: 0,
+          p_sort: sort,
         });
         if (error) throw error;
         const rows = (data ?? []) as { contact: Contact }[];
         allContacts = rows.map((r) => r.contact);
       } else {
-        let query = supabase.from('contacts').select('*').order('created_at', { ascending: false });
+        let query = applySort(supabase.from('contacts').select('*'), sort);
         if (term) {
           const like = `%${term}%`;
           query = query.or(`name.ilike.${like},phone.ilike.${like},email.ilike.${like}`);
@@ -273,7 +349,7 @@ export default function ContactsPage() {
     } finally {
       setExporting(false);
     }
-  }, [supabase, search, selectedTagIds, tagsMap, t]);
+  }, [supabase, search, selectedTagIds, sort, tagsMap, t]);
 
   // Load-once-on-mount-ish data fetches. Each setter inside runs
   // inside an async promise completion (Supabase await), not
@@ -446,6 +522,25 @@ export default function ContactsPage() {
         </div>
       </div>
 
+      {/* Saved views */}
+      <ViewsBar
+        views={savedViews.views}
+        activeViewId={activeViewId}
+        dirty={dirty}
+        onSelectAll={selectAllView}
+        onSelectView={selectView}
+        onCreate={createView}
+        onUpdateActive={updateActiveView}
+        onRename={(view, name) => savedViews.update(view.id, { name })}
+        onToggleShared={(view) =>
+          savedViews.update(view.id, { is_shared: !view.is_shared })
+        }
+        onDelete={async (view) => {
+          const ok = await savedViews.remove(view.id);
+          if (ok && view.id === activeViewId) selectAllView();
+        }}
+      />
+
       {/* Search + tag filter */}
       <div className="space-y-2">
         <div className="flex flex-col sm:flex-row gap-2">
@@ -463,6 +558,35 @@ export default function ContactsPage() {
               className="pl-8 bg-card border-border text-foreground placeholder:text-muted-foreground"
             />
           </div>
+
+          {/* Sort */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              render={
+                <Button
+                  variant="outline"
+                  className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                />
+              }
+            >
+              <ArrowDownUp className="size-4" />
+              {t(`sort.${sort}`)}
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="min-w-44">
+              {CONTACT_SORTS.map((s) => (
+                <DropdownMenuItem
+                  key={s}
+                  onClick={() => {
+                    setSort(s);
+                    setPage(0);
+                  }}
+                  className={sort === s ? 'font-medium text-foreground' : undefined}
+                >
+                  {t(`sort.${s}`)}
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
 
           <Popover>
             <PopoverTrigger

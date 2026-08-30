@@ -180,6 +180,61 @@ describe('createDataSourceFromUrl — validation', () => {
     ).rejects.toBeInstanceOf(DataSourceError)
   })
 
+  // ----------------------------------------------------------
+  // Audit follow-up (same day): assertGoogleSheetsUrl() used to accept
+  // any URL whose full string CONTAINED 'docs.google.com/spreadsheets'
+  // anywhere — a substring match, not a hostname check. That let a
+  // 'google_sheets' source actually point at an attacker-controlled
+  // host, e.g. the attacker's own domain with a matching path, or a
+  // lookalike subdomain that merely starts with the expected string.
+  // Now fixed to require the REAL parsed hostname to be exactly
+  // 'docs.google.com'. This is independent of the SSRF fix
+  // (assertSafeUrl) below — assertSafeUrl already validates the real
+  // resolved host/IP for every source type; this fix is about a
+  // 'google_sheets'-labeled source not silently being an unrelated host.
+  // ----------------------------------------------------------
+  it('accepts a legitimate Google Sheets export URL (real hostname docs.google.com)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'google_sheets',
+      displayName: 'Inventario',
+      url: 'https://docs.google.com/spreadsheets/d/x/export?format=csv',
+      usage: 'knowledge',
+    })
+    expect(source.source_type).toBe('google_sheets')
+  })
+
+  it('rejects a lookalike URL whose real host is the ATTACKER\'s domain, with the expected string only in the path', async () => {
+    const { db } = fakeDb()
+    await expect(
+      createDataSourceFromUrl(db, {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        sourceType: 'google_sheets',
+        displayName: 'Evil',
+        url: 'https://evil.com/docs.google.com/spreadsheets/d/x/export?format=csv',
+        usage: 'knowledge',
+      }),
+    ).rejects.toBeInstanceOf(DataSourceError)
+  })
+
+  it('rejects a lookalike SUBDOMAIN whose real host is docs.google.com.evil.com, not docs.google.com', async () => {
+    const { db } = fakeDb()
+    await expect(
+      createDataSourceFromUrl(db, {
+        accountId: 'acct-1',
+        userId: 'user-1',
+        sourceType: 'google_sheets',
+        displayName: 'Evil',
+        url: 'https://docs.google.com.evil.com/spreadsheets/d/x/export?format=csv',
+        usage: 'knowledge',
+      }),
+    ).rejects.toBeInstanceOf(DataSourceError)
+  })
+
   it('surfaces an HTML response (unpublished sheet) as a DataSourceError, not a crash', async () => {
     vi.stubGlobal(
       'fetch',

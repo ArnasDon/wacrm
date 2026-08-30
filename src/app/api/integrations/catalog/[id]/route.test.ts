@@ -38,6 +38,7 @@ vi.mock('@/lib/auth/account', async (importOriginal) => {
 });
 
 import { PATCH, DELETE } from './route';
+import { GET as GET_LIST } from '../route';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/account';
 import { __resetRateLimitForTests } from '@/lib/rate-limit';
 
@@ -104,6 +105,11 @@ function fakeSupabase(seed: Record<string, unknown>[] = []) {
         filters.push([col, val]);
         return api;
       },
+      // No-op passthrough — real ordering is irrelevant to what these
+      // tests assert, but listCatalogIntegrations() (used by the
+      // shared GET_LIST round-trip test below) always chains `.order()`
+      // twice, so the fake must at least accept the call.
+      order: () => api,
       update: (p: Record<string, unknown>) => {
         op = 'update';
         payload = p;
@@ -306,6 +312,127 @@ describe('PATCH /api/integrations/catalog/[id]', () => {
     const res = await PATCH(patchRequest({ display_name: 'X', account_id: 'acct-attacker' }), params('int-1'));
     expect(res.status).toBe(200);
     expect(rows[0].account_id).toBe('acct-1');
+  });
+});
+
+// ============================================================
+// BUG STATUS — Enable/Disable didn't persist: the PATCH route never
+// read body.status, SaveCatalogIntegrationInput had no `status` field,
+// and saveCatalogIntegration() never included it in the UPDATE payload.
+// A toggle click got a real 200 back with the row's UNCHANGED status.
+// ============================================================
+describe('PATCH /api/integrations/catalog/[id] — status (Enable/Disable)', () => {
+  it('status: "disabled" → 200 and the row is really persisted as disabled', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('int-1'));
+    const body = (await res.json()) as { success: boolean; integration: { status: string } };
+    expect(res.status).toBe(200);
+    expect(body.success).toBe(true);
+    expect(body.integration.status).toBe('disabled');
+    expect(rows[0].status).toBe('disabled');
+  });
+
+  it('status: "active" → 200 and the row is really persisted as active', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { status: 'disabled' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'active' }), params('int-1'));
+    expect(res.status).toBe(200);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it('a subsequent GET (list) reflects the persisted status — not just the PATCH response', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const patchRes = await PATCH(patchRequest({ status: 'disabled' }), params('int-1'));
+    expect(patchRes.status).toBe(200);
+    expect(rows[0].status).toBe('disabled'); // sanity: really persisted before we even call GET
+
+    const getRes = await GET_LIST();
+    const getBody = (await getRes.json()) as { integrations: { id: string; status: string }[] };
+    expect(getRes.status).toBe(200);
+    expect(getBody.integrations.find((i) => i.id === 'int-1')?.status).toBe('disabled');
+  });
+
+  it('a status-only PATCH does not modify base_url/app_key/scopes/is_primary/priority/encrypted_secret', async () => {
+    const { supabase, rows } = fakeSupabase([
+      integration('int-1', 'acct-1', {
+        status: 'active',
+        base_url: 'https://original.example.com',
+        app_key: 'original-app-key',
+        scopes: ['catalog:read', 'catalog:media:read'],
+        is_primary: true,
+        priority: 42,
+        encrypted_secret: 'enc:original-secret',
+      }),
+    ]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('int-1'));
+    expect(res.status).toBe(200);
+    expect(rows[0].status).toBe('disabled');
+    expect(rows[0].base_url).toBe('https://original.example.com');
+    expect(rows[0].app_key).toBe('original-app-key');
+    expect(rows[0].scopes).toEqual(['catalog:read', 'catalog:media:read']);
+    expect(rows[0].is_primary).toBe(true);
+    expect(rows[0].priority).toBe(42);
+    expect(rows[0].encrypted_secret).toBe('enc:original-secret');
+  });
+
+  it('status change on a non-existent id → 404, nothing written', async () => {
+    const { supabase } = fakeSupabase([]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('does-not-exist'));
+    expect(res.status).toBe(404);
+  });
+
+  it('MULTI-TENANT: status change on another account\'s id → 404, victim\'s status left untouched', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-victim', 'acct-victim', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-attacker', userId: 'user-attacker' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('int-victim'));
+    expect(res.status).toBe(404);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it('status: "error" is rejected with 400 — that value is reserved for testCatalogIntegration()\'s own result, never client-settable', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'error' }), params('int-1'));
+    expect(res.status).toBe(400);
+    expect(rows[0].status).toBe('active'); // unchanged — rejected before any write
+  });
+
+  it('an invalid status value ("banana") is rejected with 400, nothing written', async () => {
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'banana' }), params('int-1'));
+    expect(res.status).toBe(400);
+    expect(rows[0].status).toBe('active');
+  });
+
+  it('a genuine backend/Supabase error during a status UPDATE is NOT converted into a 404 or a false 200', async () => {
+    const { supabase } = fakeSupabase([integration('int-db-error', 'acct-1', { status: 'active' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('int-db-error'));
+    expect(res.status).toBe(500);
+  });
+
+  it('a status-only PATCH response never exposes encrypted_secret or the secret', async () => {
+    const { supabase } = fakeSupabase([integration('int-1', 'acct-1', { status: 'active', encrypted_secret: 'enc:super-secret-value' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ status: 'disabled' }), params('int-1'));
+    const text = await res.text();
+    expect(text).not.toContain('super-secret-value');
+    expect(text).not.toContain('encrypted_secret');
   });
 });
 

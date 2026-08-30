@@ -120,6 +120,18 @@ export interface SaveCatalogIntegrationInput {
   /** `undefined` = leave unchanged. `true`/`false` = set explicitly. */
   isPrimary?: boolean
   priority?: number
+  /**
+   * `undefined` = leave unchanged. `'active'`/`'disabled'` = the
+   * account's own Enable/Disable toggle (catalog-integrations-
+   * settings.tsx's handleToggleStatus). `'error'` is deliberately NOT a
+   * valid value here — that state is set exclusively by
+   * `testCatalogIntegration()` as the outcome of a real connection
+   * test, never chosen directly by a client request. The route enforces
+   * this (rejects anything other than 'active'/'disabled' with 400)
+   * before this ever reaches here, but the type itself only offers the
+   * two client-choosable values.
+   */
+  status?: 'active' | 'disabled'
 }
 
 const DEFAULT_SCOPES = ['catalog:read', 'catalog:availability:read', 'catalog:media:read']
@@ -141,6 +153,7 @@ export async function saveCatalogIntegration(
   if (input.scopes !== undefined) base.scopes = input.scopes.length > 0 ? input.scopes : DEFAULT_SCOPES
   if (input.isPrimary !== undefined) base.is_primary = input.isPrimary
   if (input.priority !== undefined) base.priority = input.priority
+  if (input.status !== undefined) base.status = input.status
   if (input.secret) base.encrypted_secret = encrypt(input.secret)
 
   if (input.id) {

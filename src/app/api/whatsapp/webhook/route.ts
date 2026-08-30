@@ -196,13 +196,35 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const value = change.value
 
+      // Status callbacks (delivery / read / failed) are processed for
+      // ANY number, BEFORE the connection lookup below. `processStatusUpdate`
+      // resolves the owning account from the stored message
+      // (`messages → conversations(account_id)`) and never reads
+      // `s.connectionId` / `s.accountId`, so a receipt trailing in from
+      // Meta after the config was reset / archived / disconnected still
+      // mirrors onto `messages.status` and the parent broadcast's counts.
+      // The placeholder row satisfies `metaStatusToInbound`'s shape and
+      // is not otherwise used.
+      if (value.statuses) {
+        for (const status of value.statuses) {
+          await processStatusUpdate(
+            db,
+            metaStatusToInbound(status, { id: '', account_id: '', user_id: '' })
+          )
+        }
+      }
+
+      // Everything below is the inbound-message path only.
+      if (!value.messages || !value.contacts) continue
+
       const phoneNumberId = value.metadata.phone_number_id
 
-      // Find the connection by phone_number_id. `.single()` returns
-      // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
-      // operators see the real cause in logs. ≥2 rows shouldn't happen
-      // post-migration 013 (UNIQUE constraint), but a row created
-      // before the constraint, or a race, would still surface here.
+      // Find the connection by phone_number_id. The array form (not
+      // `.single()`) with explicit length guards keeps 0 rows and ≥2
+      // rows apart in the logs — `.single()` folds both into one
+      // PGRST116. ≥2 rows shouldn't happen post-migration 013 (UNIQUE
+      // constraint), but a pre-constraint row, or a race, would surface
+      // here.
       const { data: configRows, error: configError } = await db
         .from('whatsapp_connections')
         .select('*')
@@ -236,16 +258,6 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const row = configRows[0]
-
-      // Status updates.
-      if (value.statuses) {
-        for (const status of value.statuses) {
-          await processStatusUpdate(db, metaStatusToInbound(status, row))
-        }
-      }
-
-      // Incoming messages.
-      if (!value.messages || !value.contacts) continue
 
       for (let i = 0; i < value.messages.length; i++) {
         const message = value.messages[i]

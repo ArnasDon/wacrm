@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  processStatusUpdate: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -214,6 +215,9 @@ vi.mock('@/lib/ai/auto-reply', () => ({
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
+vi.mock('@/lib/whatsapp/inbound/process-status-update', () => ({
+  processStatusUpdate: h.processStatusUpdate,
+}))
 
 import { POST } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
@@ -285,6 +289,7 @@ beforeEach(() => {
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.processStatusUpdate.mockResolvedValue(undefined)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<void>((resolve) => {
@@ -549,5 +554,59 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
     expect(h.state.automationCompleted).toBe(3)
+  })
+})
+
+describe('status webhook: processed regardless of a matching connection', () => {
+  // A delivery / read receipt for an already-sent message can trail in
+  // from Meta after the account was reset / archived / disconnected, so
+  // no whatsapp_connections row resolves for its phone_number_id.
+  // processStatusUpdate resolves the owning account from the stored
+  // message itself, so it MUST still run — regressing this freezes
+  // messages.status and every broadcast's delivered/read/failed counts.
+  function statusRequest(phoneNumberId: string) {
+    const body = {
+      entry: [
+        {
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                metadata: { phone_number_id: phoneNumberId },
+                statuses: [
+                  {
+                    id: 'wamid.SENT1',
+                    status: 'read',
+                    timestamp: '1700000123',
+                    recipient_id: '15551230000',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    return {
+      text: async () => JSON.stringify(body),
+      headers: { get: () => 'sha256=stub' },
+    } as unknown as Request
+  }
+
+  it('runs processStatusUpdate for a status-only webhook whose number has no config', async () => {
+    const res = await POST(statusRequest('pn-unknown-after-reset'))
+    for (const cb of h.state.afterCallbacks) await cb()
+
+    expect(res).toBeDefined()
+    expect(h.processStatusUpdate).toHaveBeenCalledTimes(1)
+    // Normalized from the raw Meta status envelope — timestamp in ms.
+    expect(h.processStatusUpdate.mock.calls[0][1]).toMatchObject({
+      providerMessageId: 'wamid.SENT1',
+      status: 'read',
+      timestamp: new Date(1700000123 * 1000),
+    })
+    // The inbound-message path never ran (no contacts / messages).
+    expect(h.state.upsertCalls).toHaveLength(0)
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
   })
 })

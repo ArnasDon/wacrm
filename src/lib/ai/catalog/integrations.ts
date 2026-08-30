@@ -14,6 +14,22 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt, encrypt } from '@/lib/whatsapp/encryption'
 import { BudunClient } from '@/lib/budun/client'
 
+/**
+ * Thrown by saveCatalogIntegration/deleteCatalogIntegration when `id`
+ * doesn't exist, or doesn't belong to the calling account. Routes map
+ * this to 404 (see src/app/api/integrations/catalog/[id]/route.ts).
+ * Mirrors DataSourceNotFoundError (src/lib/ai/data-sources/service.ts):
+ * a caller must be able to tell "the target row isn't there for you"
+ * apart from a genuine backend/Supabase failure, which stays a
+ * distinct throw and keeps mapping to 500 — never converted to 404.
+ */
+export class CatalogIntegrationNotFoundError extends Error {
+  constructor() {
+    super('Catalog integration not found.')
+    this.name = 'CatalogIntegrationNotFoundError'
+  }
+}
+
 export interface CatalogIntegrationRow {
   id: string
   account_id: string
@@ -114,14 +130,6 @@ export async function saveCatalogIntegration(
   userId: string,
   input: SaveCatalogIntegrationInput,
 ): Promise<CatalogIntegrationRow> {
-  if (input.isPrimary === true) {
-    // Only one primary integration per account — demote any other
-    // active row before promoting this one (app-level, not a DB
-    // constraint, so a save never fails on a race; the UI re-reads
-    // after saving).
-    await db.from('catalog_integrations').update({ is_primary: false }).eq('account_id', accountId)
-  }
-
   // Only include a key in the update payload when the caller actually
   // means to change it — omitting a field here (not sending `undefined`
   // explicitly, just not setting the key) is what keeps a PATCH that
@@ -136,6 +144,35 @@ export async function saveCatalogIntegration(
   if (input.secret) base.encrypted_secret = encrypt(input.secret)
 
   if (input.id) {
+    // Verify the target row actually exists for THIS account BEFORE any
+    // other side effect — in particular before the is_primary-clearing
+    // update below. Bug E1 fix: a PATCH for a wrong/foreign/already-
+    // deleted id used to demote the account's real primary integration
+    // even though the request itself went on to fail with no rollback.
+    // `accountId` here is always the server-resolved value from
+    // requireRole() — never accepted from the client.
+    const { data: existing, error: lookupError } = await db
+      .from('catalog_integrations')
+      .select('id')
+      .eq('id', input.id)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    // A genuine backend/Supabase failure during the lookup itself must
+    // surface as-is (mapped to 500 by the route) — never silently
+    // reinterpreted as "not found" (404).
+    if (lookupError) throw lookupError
+    if (!existing) throw new CatalogIntegrationNotFoundError()
+
+    if (input.isPrimary === true) {
+      // Only one primary integration per account — demote any other
+      // active row before promoting this one (app-level, not a DB
+      // constraint, so a save never fails on a race; the UI re-reads
+      // after saving). Safe here: `input.id` is now confirmed to belong
+      // to this account, so the update below can no longer fail on a
+      // not-found id after this has already run.
+      await db.from('catalog_integrations').update({ is_primary: false }).eq('account_id', accountId)
+    }
+
     const { data, error } = await db
       .from('catalog_integrations')
       .update(base)
@@ -145,6 +182,13 @@ export async function saveCatalogIntegration(
       .single()
     if (error) throw error
     return data as CatalogIntegrationRow
+  }
+
+  // CREATE path — `input.id` is absent, so there is no existing row to
+  // protect; the is_primary clear below always targets this SAME
+  // accountId's own rows regardless of anything the client sent.
+  if (input.isPrimary === true) {
+    await db.from('catalog_integrations').update({ is_primary: false }).eq('account_id', accountId)
   }
 
   if (!input.secret) {
@@ -175,6 +219,20 @@ export async function deleteCatalogIntegration(
   accountId: string,
   id: string,
 ): Promise<void> {
+  // Existence check first — not for a corruption risk (a delete has no
+  // side effect on OTHER rows the way is_primary-clearing does), but so
+  // the route can report a consistent 404 rather than a silent 200 for
+  // an id that never existed / already belonged to nobody in this
+  // account (Bug E2's DELETE half).
+  const { data: existing, error: lookupError } = await db
+    .from('catalog_integrations')
+    .select('id')
+    .eq('id', id)
+    .eq('account_id', accountId)
+    .maybeSingle()
+  if (lookupError) throw lookupError
+  if (!existing) throw new CatalogIntegrationNotFoundError()
+
   const { error } = await db.from('catalog_integrations').delete().eq('id', id).eq('account_id', accountId)
   if (error) throw error
 }

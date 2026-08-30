@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { deleteCatalogIntegration, saveCatalogIntegration } from '@/lib/ai/catalog/integrations'
+import {
+  CatalogIntegrationNotFoundError,
+  deleteCatalogIntegration,
+  saveCatalogIntegration,
+} from '@/lib/ai/catalog/integrations'
 
 /**
  * PATCH /api/integrations/catalog/[id]  (admin+)
@@ -36,6 +40,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     })
     return NextResponse.json({ success: true, integration })
   } catch (err) {
+    // Nonexistent/foreign id → 404, not the generic 500 toErrorResponse
+    // would otherwise produce for this throw. Checked before the
+    // fallback so a genuine backend/Supabase error still reaches
+    // toErrorResponse unchanged (Bug E2 fix).
+    if (err instanceof CatalogIntegrationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     return toErrorResponse(err)
   }
 }
@@ -51,6 +62,9 @@ export async function DELETE(_request: Request, { params }: { params: Promise<{ 
     await deleteCatalogIntegration(supabase, accountId, id)
     return NextResponse.json({ success: true })
   } catch (err) {
+    if (err instanceof CatalogIntegrationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     return toErrorResponse(err)
   }
 }

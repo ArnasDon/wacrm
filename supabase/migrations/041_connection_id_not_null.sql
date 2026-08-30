@@ -51,29 +51,43 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.set_primary_connection(UUID, UUID) FROM PUBLIC, anon, authenticated;
-GRANT EXECUTE ON FUNCTION public.set_primary_connection(UUID, UUID) TO service_role;
+-- Self-authorizing SECURITY DEFINER RPC: the body gates on
+-- is_account_member(p_account_id, 'admin'), so `authenticated` (the
+-- RLS-scoped SSR client behind requireRole('admin')) must be able to
+-- EXECUTE it. Mirrors the migration-018 house pattern
+-- (set_member_role / transfer_account_ownership).
+ALTER FUNCTION public.set_primary_connection(UUID, UUID) OWNER TO postgres;
+REVOKE ALL ON FUNCTION public.set_primary_connection(UUID, UUID) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.set_primary_connection(UUID, UUID) TO authenticated, service_role;
 
 -- ------------------------------------------------------------
 -- 2. conversations.connection_id
 -- ------------------------------------------------------------
--- Órfã: conta sem conexão meta ativa. connection_id não tem a quem
--- pertencer; o inbound desse contato já falha hoje. Apaga (messages
--- via cascade).
+-- Órfã: conta SEM NENHUMA conexão ativa (qualquer provider). Desde a
+-- 1b-ii uma conta uazapi-only é válida, então filtrar por provider =
+-- 'meta' aqui apagaria silenciosamente o histórico Meta dessas contas.
+-- connection_id não tem a quem pertencer; o inbound desse contato já
+-- falha hoje. Apaga (messages via cascade).
 DELETE FROM conversations c
   WHERE c.connection_id IS NULL
     AND NOT EXISTS (
       SELECT 1 FROM whatsapp_connections wc
       WHERE wc.account_id = c.account_id
-        AND wc.provider = 'meta' AND wc.archived_at IS NULL
+        AND wc.archived_at IS NULL
     );
 
+-- Backfill determinístico: meta primeiro, senão a conexão ativa
+-- primária, senão a mais antiga. Uma conta uazapi-only recebe sua
+-- conexão uazapi (não fica NULL e não bate no guard abaixo).
 UPDATE conversations c
-  SET connection_id = wc.id
-  FROM whatsapp_connections wc
-  WHERE c.connection_id IS NULL
-    AND wc.account_id = c.account_id
-    AND wc.provider = 'meta' AND wc.archived_at IS NULL;
+  SET connection_id = pick.id
+  FROM (
+    SELECT DISTINCT ON (account_id) account_id, id
+    FROM whatsapp_connections
+    WHERE archived_at IS NULL
+    ORDER BY account_id, (provider = 'meta') DESC, is_primary DESC, created_at ASC
+  ) pick
+  WHERE c.connection_id IS NULL AND pick.account_id = c.account_id;
 
 DO $$
 DECLARE n INT;
@@ -99,15 +113,18 @@ DELETE FROM broadcasts b
     AND NOT EXISTS (
       SELECT 1 FROM whatsapp_connections wc
       WHERE wc.account_id = b.account_id
-        AND wc.provider = 'meta' AND wc.archived_at IS NULL
+        AND wc.archived_at IS NULL
     );
 
 UPDATE broadcasts b
-  SET connection_id = wc.id
-  FROM whatsapp_connections wc
-  WHERE b.connection_id IS NULL
-    AND wc.account_id = b.account_id
-    AND wc.provider = 'meta' AND wc.archived_at IS NULL;
+  SET connection_id = pick.id
+  FROM (
+    SELECT DISTINCT ON (account_id) account_id, id
+    FROM whatsapp_connections
+    WHERE archived_at IS NULL
+    ORDER BY account_id, (provider = 'meta') DESC, is_primary DESC, created_at ASC
+  ) pick
+  WHERE b.connection_id IS NULL AND pick.account_id = b.account_id;
 
 DO $$
 DECLARE n INT;

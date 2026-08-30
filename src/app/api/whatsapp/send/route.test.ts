@@ -21,6 +21,18 @@ let callerRole: string = 'admin';
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
 let createdConversation: Record<string, unknown> | null = null;
+// The account's primary active WhatsApp connection. The contact_id path
+// resolves it to stamp conversations.connection_id (NOT NULL since
+// migration 041); a test can null it to exercise the "no default
+// channel" 400.
+let primaryConnectionRow: Record<string, unknown> | null = {
+  id: 'cfg-1',
+  account_id: 'acct-1',
+  phone_number_id: 'PNID-1',
+  credential: 'enc-token',
+  provider: 'meta',
+  is_primary: true,
+};
 
 const CONTACT = {
   id: 'contact-1',
@@ -54,17 +66,7 @@ function makeSupabaseMock() {
             error: null,
           };
         case 'whatsapp_connections':
-          return {
-            data: {
-              id: 'cfg-1',
-              account_id: 'acct-1',
-              phone_number_id: 'PNID-1',
-              credential: 'enc-token',
-              provider: 'meta',
-              is_primary: true,
-            },
-            error: null,
-          };
+          return { data: primaryConnectionRow, error: null };
         case 'message_templates':
           return { data: null, error: null };
         default:
@@ -202,6 +204,14 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     createdConversation = null;
     contactRow = CONTACT;
     callerRole = 'admin';
+    primaryConnectionRow = {
+      id: 'cfg-1',
+      account_id: 'acct-1',
+      phone_number_id: 'PNID-1',
+      credential: 'enc-token',
+      provider: 'meta',
+      is_primary: true,
+    };
     supabaseMock = makeSupabaseMock();
     sendTemplateMessage.mockClear();
   });
@@ -218,11 +228,13 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(json.success).toBe(true);
     expect(json.whatsapp_message_id).toBe('wamid-1');
 
-    // A conversation was created for this contact.
+    // A conversation was created for this contact, stamped with the
+    // account's primary connection (connection_id is NOT NULL — 041).
     expect(conversationInserts).toHaveLength(1);
     expect(conversationInserts[0]).toMatchObject({
       account_id: 'acct-1',
       contact_id: 'contact-1',
+      connection_id: 'cfg-1',
     });
 
     // The template was sent to the contact's number.
@@ -273,6 +285,21 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     expect(sendTemplateMessage).not.toHaveBeenCalled();
   });
 
+  it('400s when the account has no primary connection to stamp', async () => {
+    // conversations.connection_id is NOT NULL (migration 041). With no
+    // primary active connection there is no default channel to attribute
+    // the new conversation to — bail before reaching Meta.
+    primaryConnectionRow = null;
+
+    const res = await postContactTemplate();
+    const json = await res.json();
+
+    expect(res.status).toBe(400);
+    expect(json.error).toMatch(/not configured/i);
+    expect(conversationInserts).toHaveLength(0);
+    expect(sendTemplateMessage).not.toHaveBeenCalled();
+  });
+
   it('400s when neither conversation_id nor contact_id is provided', async () => {
     const res = await POST(
       new Request('http://localhost/api/whatsapp/send', {
@@ -298,6 +325,14 @@ describe('POST /api/whatsapp/send — role enforcement', () => {
     createdConversation = null;
     contactRow = CONTACT;
     callerRole = 'admin';
+    primaryConnectionRow = {
+      id: 'cfg-1',
+      account_id: 'acct-1',
+      phone_number_id: 'PNID-1',
+      credential: 'enc-token',
+      provider: 'meta',
+      is_primary: true,
+    };
     supabaseMock = makeSupabaseMock();
     sendTemplateMessage.mockClear();
   });

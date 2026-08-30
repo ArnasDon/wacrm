@@ -282,3 +282,20 @@ O ramo `body.is_primary === false` (rebaixar) fica igual (single `.update()`, gu
 - Rota `/api/whatsapp/webhook/uazapi/[secret]`, `fetchMedia` UAZAPI, reconciliar + re-registrar `configureWebhook`, handler do evento `connection`, UI da inbox — **1c-ii**.
 - `sendTemplate`/`sendInteractive` reais na UAZAPI, broadcast por conexão específica — **Onda 3**.
 - Refresh de `display_phone`/`profile_name` (ficaram vazios no smoke da 1b-ii porque o WhatsApp libera os dados 1–2s após conectar) — **1c-ii**, junto do handler do evento `connection`.
+
+### 7.1 Desvios de comportamento conhecidos (media/adapter)
+
+Duas pequenas mudanças de comportamento no caminho de mídia/adapter da Meta,
+não cobertas por teste dirigido. Aceitáveis, registradas aqui para não serem
+descobertas como mistério depois.
+
+1. **Mídia inbound com `getMediaUrl` falhando.** Quando o `getMediaUrl` da Meta
+   lança (ou `mirror_inbound_media` está desligado), a mídia inbound agora grava
+   a URL de proxy `/api/whatsapp/media/<id>` onde o código antigo gravava `null`
+   ao pegar o throw do `getMediaUrl`. Bolha quebrada em vez de bolha ausente.
+
+2. **Envelope de mensagem Meta malformado.** Um `image`/`video`/`document`/
+   `audio`/`sticker`/`interactive`/`location` com o campo de id/payload ausente
+   agora mapeia para `content_type:'text'` + `[Unsupported message type: X]` em
+   vez do antigo `content_type` específico do tipo + texto null/label. Impacto
+   real ~nulo (a Meta não manda esses) e discutivelmente mais correto.

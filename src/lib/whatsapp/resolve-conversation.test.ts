@@ -11,8 +11,16 @@ import { SendMessageError } from './send-message';
 // ------------------------------------------------------------
 type ContactRow = { id: string; phone: string; name?: string | null };
 
+// Captures every `conversations` INSERT payload the code under test
+// sends, so a test can assert connection_id (NOT NULL since migration
+// 041) is threaded through. Reset at the top of each `makeDb`.
+const conversationInsertPayloads: Array<Record<string, unknown>> = [];
+
 interface Script {
-  config?: { user_id: string } | null; // whatsapp_connections.maybeSingle
+  // whatsapp_connections.maybeSingle — serves both the config presence
+  // check (needs `id` for connection_id threading) and resolveAuditUserId
+  // (reads `user_id`).
+  config?: { id?: string; user_id: string } | null;
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -30,6 +38,7 @@ interface Script {
 }
 
 function makeDb(script: Script): SupabaseClient {
+  conversationInsertPayloads.length = 0;
   let table = '';
   let mode: 'select' | 'insert' | 'update' = 'select';
   let likeCalls = 0;
@@ -37,8 +46,9 @@ function makeDb(script: Script): SupabaseClient {
 
   const builder: Record<string, unknown> = {
     select: () => builder,
-    insert: () => {
+    insert: (payload: Record<string, unknown>) => {
       mode = 'insert';
+      if (table === 'conversations') conversationInsertPayloads.push(payload);
       return builder;
     },
     update: () => {
@@ -137,7 +147,7 @@ describe('resolveConversationByPhone', () => {
 
   it('returns the existing contact + conversation without creating', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { id: 'conn-1', user_id: 'owner-1' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversation: { id: 'cv1' },
     });
@@ -155,7 +165,7 @@ describe('resolveConversationByPhone', () => {
 
   it('creates contact + conversation when none exist', async () => {
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { id: 'conn-1', user_id: 'owner-1' },
       contactCandidates: [],
       insertedContactId: 'c2',
       existingConversation: null,
@@ -172,6 +182,15 @@ describe('resolveConversationByPhone', () => {
       contactId: 'c2',
       contactCreated: true,
     });
+    // connection_id (NOT NULL since migration 041) is the resolved
+    // connection row id, threaded from the config lookup.
+    expect(conversationInsertPayloads).toHaveLength(1);
+    expect(conversationInsertPayloads[0]).toMatchObject({
+      account_id: 'acct',
+      user_id: 'owner-1',
+      contact_id: 'c2',
+      connection_id: 'conn-1',
+    });
   });
 
   it('re-resolves an existing contact when the insert loses a unique race', async () => {
@@ -179,7 +198,7 @@ describe('resolveConversationByPhone', () => {
     // 23505 unique violation, and the post-race re-lookup now returns
     // the row a concurrent writer created.
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { id: 'conn-1', user_id: 'owner-1' },
       contactCandidatesByCall: [[], [{ id: 'c-raced', phone: '14155550123' }]],
       insertContactError: { code: '23505' },
       existingConversation: { id: 'cv-raced' },
@@ -196,7 +215,7 @@ describe('resolveConversationByPhone', () => {
     // post-race re-lookup returns the winning conversation — no duplicate
     // conversation is created (issue #363).
     const db = makeDb({
-      config: { user_id: 'owner-1' },
+      config: { id: 'conn-1', user_id: 'owner-1' },
       contactCandidates: [{ id: 'c1', phone: '14155550123' }],
       existingConversationByCall: [null, { id: 'cv-raced' }],
       insertConversationError: { code: '23505' },
@@ -206,6 +225,10 @@ describe('resolveConversationByPhone', () => {
       conversationId: 'cv-raced',
       contactId: 'c1',
       contactCreated: false,
+    });
+    // Even on the race path, the attempted INSERT carried connection_id.
+    expect(conversationInsertPayloads[0]).toMatchObject({
+      connection_id: 'conn-1',
     });
   });
 });

@@ -3,7 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
+import {
+  IconLogout,
+  IconMenu2,
+  IconSettings as SettingsIcon,
+  IconUser,
+} from "@tabler/icons-react";
 import {
   Avatar,
   AvatarFallback,
@@ -60,18 +65,18 @@ export function Header({ onOpenSidebar }: HeaderProps) {
     "U";
 
   return (
-    <header className="app-header grid min-h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background/95 px-4 backdrop-blur-xl lg:px-6">
+    <header className="app-header grid min-h-14 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-3 border-b border-border bg-background px-4 lg:px-6">
       <div className="flex min-w-0 items-center gap-2 justify-self-start">
         {/* Hamburger — mobile only. 44×44 hit target per Apple HIG. */}
         <button
           type="button"
           onClick={onOpenSidebar}
           aria-label={t("openMenu")}
-          className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
+          className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:hidden"
         >
-          <Menu className="h-5 w-5" />
+          <IconMenu2 className="h-5 w-5" />
         </button>
-        <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
+        <h1 className="truncate text-[15px] font-semibold text-foreground">
           {t(titleKey as string)}
         </h1>
       </div>
@@ -128,7 +133,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
               />
             }
           >
-            <User className="size-4" />
+            <IconUser className="size-4" />
             {t("menuProfile")}
           </DropdownMenuItem>
           <DropdownMenuItem
@@ -147,7 +152,7 @@ export function Header({ onOpenSidebar }: HeaderProps) {
             onClick={signOut}
             className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
           >
-            <LogOut className="size-4" />
+            <IconLogout className="size-4" />
             {t("menuSignOut")}
           </DropdownMenuItem>
         </DropdownMenuContent>

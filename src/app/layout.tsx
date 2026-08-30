@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
-import localFont from 'next/font/local';
+import { Inter } from 'next/font/google';
 import Script from 'next/script';
 import './globals.css';
 import { ThemeProvider } from '@/hooks/use-theme';
@@ -15,8 +15,11 @@ import {
   THEME_IDS,
 } from '@/lib/themes';
 
-const appFont = localFont({
-  src: '../../node_modules/next/dist/next-devtools/server/font/geist-latin.woff2',
+// Inter — the typeface Twenty (twentyhq/twenty) uses. Self-hosted by
+// next/font at build time (no runtime request to Google). SIL Open
+// Font License. Exposed as --font-sans, consumed in globals.css.
+const appFont = Inter({
+  subsets: ['latin'],
   variable: '--font-sans',
   display: 'swap',
 });

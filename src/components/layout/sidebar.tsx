@@ -8,28 +8,29 @@ import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
-  Bell,
-  Bot,
-  Crown,
-  GitBranch,
-  LayoutDashboard,
-  Building2,
-  LifeBuoy,
-  LogOut,
-  MessageSquare,
-  Package,
-  Radio,
-  Settings,
-  Shield,
-  TrendingUp,
-  User,
-  UserCog,
-  Users,
-  UsersRound,
-  Workflow,
-  X,
-  Zap,
-} from "lucide-react";
+  IconBell,
+  IconRobot,
+  IconCrown,
+  IconGitBranch,
+  IconLayoutDashboard,
+  IconBuilding,
+  IconLifebuoy,
+  IconLogout,
+  IconMessage,
+  IconPackage,
+  IconSpeakerphone,
+  IconSettings,
+  IconShield,
+  IconTrendingUp,
+  IconUser,
+  IconUserCog,
+  IconUsers,
+  IconUsersGroup,
+  IconSitemap,
+  IconX,
+  IconBolt,
+  type Icon,
+} from "@tabler/icons-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
 // Per-role chip metadata used in the sidebar's account strip + the
@@ -38,31 +39,31 @@ import type { AccountRole } from "@/lib/auth/roles";
 // wants to recolour "agent" rows, this is the one diff.
 const ROLE_CHIP: Record<
   AccountRole,
-  { icon: typeof Crown; labelKey: string; className: string }
+  { icon: Icon; labelKey: string; className: string }
 > = {
   owner: {
-    icon: Crown,
+    icon: IconCrown,
     labelKey: "roleOwner",
     // Amber: scarce, immutable, "the boss" — gets visual emphasis.
     className:
-      "border-amber-500/40 bg-amber-500/10 text-amber-300",
+      "border-amber-500/40 bg-amber-500/10 text-amber-700 dark:text-amber-300",
   },
   admin: {
-    icon: Shield,
+    icon: IconShield,
     labelKey: "roleAdmin",
     // Primary-tinted: significant but not as scarce as owner.
     className:
       "border-primary/40 bg-primary/10 text-primary",
   },
   agent: {
-    icon: UserCog,
+    icon: IconUserCog,
     labelKey: "roleAgent",
     // Neutral slate: the operational default.
     className:
       "border-border bg-muted text-foreground",
   },
   viewer: {
-    icon: User,
+    icon: IconUser,
     labelKey: "roleViewer",
     // Muted slate: read-only role; visually quieter than agent.
     className:
@@ -85,7 +86,7 @@ import {
 interface NavItem {
   href: string;
   labelKey: string;
-  icon: typeof LayoutDashboard;
+  icon: Icon;
   /**
    * When true, the nav row renders a small "Beta" chip after the label.
    * Purely informational — doesn't affect routing or access.
@@ -94,21 +95,21 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
-  { href: "/kpis", labelKey: "kpis", icon: TrendingUp },
-  { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
-  { href: "/notifications", labelKey: "notifications", icon: Bell },
-  { href: "/contacts", labelKey: "contacts", icon: Users },
-  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
-  { href: "/products", labelKey: "products", icon: Package },
-  { href: "/broadcasts", labelKey: "broadcasts", icon: Radio },
-  { href: "/automations", labelKey: "automations", icon: Zap },
-  { href: "/flows", labelKey: "flows", icon: Workflow, beta: true },
-  { href: "/agents", labelKey: "aiAgents", icon: Bot },
+  { href: "/dashboard", labelKey: "dashboard", icon: IconLayoutDashboard },
+  { href: "/kpis", labelKey: "kpis", icon: IconTrendingUp },
+  { href: "/inbox", labelKey: "inbox", icon: IconMessage },
+  { href: "/notifications", labelKey: "notifications", icon: IconBell },
+  { href: "/contacts", labelKey: "contacts", icon: IconUsers },
+  { href: "/pipelines", labelKey: "pipelines", icon: IconGitBranch },
+  { href: "/products", labelKey: "products", icon: IconPackage },
+  { href: "/broadcasts", labelKey: "broadcasts", icon: IconSpeakerphone },
+  { href: "/automations", labelKey: "automations", icon: IconBolt },
+  { href: "/flows", labelKey: "flows", icon: IconSitemap, beta: true },
+  { href: "/agents", labelKey: "aiAgents", icon: IconRobot },
 ];
 
 const bottomNavItems = [
-  { href: "/settings", labelKey: "settings", icon: Settings },
+  { href: "/settings", labelKey: "settings", icon: IconSettings },
 ];
 
 interface SidebarProps {
@@ -185,7 +186,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       <aside
         className={cn(
           // Mobile: fixed drawer that slides in from the left.
-          "app-sidebar fixed inset-y-0 left-0 z-40 flex h-full w-[min(20rem,88vw)] flex-col border-r border-border bg-card shadow-2xl",
+          "app-sidebar fixed inset-y-0 left-0 z-40 flex h-full w-[min(20rem,88vw)] flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl",
           "transition-transform duration-200 ease-out will-change-transform",
           open ? "translate-x-0" : "-translate-x-full",
           // Desktop: static, always visible — reset all the mobile framing.
@@ -195,12 +196,12 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
       >
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
-        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
+        <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-3">
+          <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-sidebar-accent">
+            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
+              <IconMessage className="h-4 w-4" />
             </div>
-            <span className="text-sm font-semibold text-foreground">
+            <span className="text-sm font-semibold text-sidebar-foreground">
               {t("title")}
             </span>
           </Link>
@@ -208,9 +209,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             type="button"
             onClick={onClose}
             aria-label={t("closeMenu")}
-            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground lg:hidden"
+            className="flex h-9 w-9 items-center justify-center rounded-md text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground lg:hidden"
           >
-            <X className="h-5 w-5" />
+            <IconX className="h-5 w-5" />
           </button>
         </div>
 
@@ -238,10 +239,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                     href={item.href}
                     className={cn(
                       // Taller on mobile so fingers can hit the row reliably (≥44px).
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      "flex items-center gap-3 rounded-md px-2.5 py-2.5 text-sm font-medium transition-colors lg:py-1.5",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-sidebar-accent font-semibold text-sidebar-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
                     <item.icon className="h-4 w-4" />
@@ -277,7 +278,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             })}
           </ul>
 
-          <div className="my-4 border-t border-border" />
+          <div className="my-3 border-t border-sidebar-border" />
 
           {isPlatformAdmin ? (
             <>
@@ -286,18 +287,18 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   <Link
                     href="/admin"
                     className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      "flex items-center gap-3 rounded-md px-2.5 py-2.5 text-sm font-medium transition-colors lg:py-1.5",
                       pathname.startsWith("/admin")
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-sidebar-accent font-semibold text-sidebar-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
-                    <Building2 className="h-4 w-4" />
+                    <IconBuilding className="h-4 w-4" />
                     Plataforma
                   </Link>
                 </li>
               </ul>
-              <div className="my-4 border-t border-border" />
+              <div className="my-3 border-t border-sidebar-border" />
             </>
           ) : null}
 
@@ -309,10 +310,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   <Link
                     href={item.href}
                     className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                      "flex items-center gap-3 rounded-md px-2.5 py-2.5 text-sm font-medium transition-colors lg:py-1.5",
                       isActive
-                        ? "bg-primary/10 text-primary"
-                        : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                        ? "bg-sidebar-accent font-semibold text-sidebar-foreground"
+                        : "text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground",
                     )}
                   >
                     <item.icon className="h-4 w-4" />
@@ -325,7 +326,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         </nav>
 
         {/* User section */}
-        <div className="shrink-0 border-t border-border p-3">
+        <div className="shrink-0 border-t border-sidebar-border p-3">
           {/* Account name display — surfaced only when the account
               name differs from the user's own name (see
               `showAccountStrip`). For a default solo account the two
@@ -334,7 +335,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               which account they're acting in. */}
           {showAccountStrip && account?.name ? (
             <div className="mb-2 flex items-center gap-2 px-3 text-xs text-muted-foreground">
-              <UsersRound className="size-3.5 shrink-0" />
+              <IconUsersGroup className="size-3.5 shrink-0" />
               {/* `title=` exposes the full name on hover when it
                   gets truncated (long account names + narrow
                   sidebars). Cheap a11y win. */}
@@ -400,7 +401,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   />
                 }
               >
-                <User className="size-4" />
+                <IconUser className="size-4" />
                 {t("menuProfile")}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -412,7 +413,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                   />
                 }
               >
-                <Settings className="size-4" />
+                <IconSettings className="size-4" />
                 {t("menuSettings")}
               </DropdownMenuItem>
               <DropdownMenuItem
@@ -422,7 +423,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 }}
                 className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
               >
-                <LifeBuoy className="size-4" />
+                <IconLifebuoy className="size-4" />
                 Reportar un problema
               </DropdownMenuItem>
               <DropdownMenuSeparator className="bg-border" />
@@ -430,7 +431,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
                 onClick={signOut}
                 className="text-popover-foreground focus:bg-accent focus:text-accent-foreground"
               >
-                <LogOut className="size-4" />
+                <IconLogout className="size-4" />
                 {t("menuSignOut")}
               </DropdownMenuItem>
             </DropdownMenuContent>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Moon, Sun } from "lucide-react";
+import { IconMoon, IconSun } from "@tabler/icons-react";
 
 import { useTheme } from "@/hooks/use-theme";
 import { cn } from "@/lib/utils";
@@ -28,14 +28,14 @@ export function ModeToggle({ className }: { className?: string }) {
       aria-label={switchLabel}
       title={switchLabel}
       className={cn(
-        "flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+        "flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
         className,
       )}
     >
       {mode === "dark" ? (
-        <Moon className="h-5 w-5" />
+        <IconMoon className="h-5 w-5" />
       ) : (
-        <Sun className="h-5 w-5" />
+        <IconSun className="h-5 w-5" />
       )}
     </button>
   );

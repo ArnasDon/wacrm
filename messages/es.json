@@ -945,7 +945,19 @@
       "tagNone": "{mode} etiqueta (ninguna elegida)"
     }
   },
+  "CommandMenu": {
+    "placeholder": "Escribe un comando o busca…",
+    "empty": "Sin resultados.",
+    "goTo": "Ir a",
+    "platform": "Plataforma",
+    "actions": "Acciones",
+    "newContact": "Nuevo contacto",
+    "switchToLight": "Cambiar a modo claro",
+    "switchToDark": "Cambiar a modo oscuro",
+    "signOut": "Cerrar sesión"
+  },
   "Header": {
+    "search": "Buscar…",
     "dashboard": "Panel",
     "kpis": "KPIs",
     "inbox": "Bandeja de entrada",

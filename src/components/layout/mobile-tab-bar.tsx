@@ -3,16 +3,22 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useTranslations } from "next-intl";
-import { Home, MessageSquare, Users, GitBranch, MoreHorizontal } from "lucide-react";
+import {
+  IconLayoutDashboard,
+  IconMessage,
+  IconUsers,
+  IconGitBranch,
+  IconDots,
+} from "@tabler/icons-react";
 import { cn } from "@/lib/utils";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 
 const tabs = [
-  { href: "/dashboard", labelKey: "dashboard", icon: Home },
-  { href: "/inbox", labelKey: "inbox", icon: MessageSquare },
-  { href: "/contacts", labelKey: "contacts", icon: Users },
-  { href: "/pipelines", labelKey: "pipelines", icon: GitBranch },
-  { href: "/settings", labelKey: "settings", icon: MoreHorizontal },
+  { href: "/dashboard", labelKey: "dashboard", icon: IconLayoutDashboard },
+  { href: "/inbox", labelKey: "inbox", icon: IconMessage },
+  { href: "/contacts", labelKey: "contacts", icon: IconUsers },
+  { href: "/pipelines", labelKey: "pipelines", icon: IconGitBranch },
+  { href: "/settings", labelKey: "settings", icon: IconDots },
 ] as const;
 
 export function MobileTabBar() {
@@ -43,7 +49,7 @@ export function MobileTabBar() {
                 )}
               >
                 <span className={cn("relative rounded-full px-4 py-1", active && "bg-primary-soft")}>
-                  <tab.icon className="size-5" strokeWidth={active ? 2.4 : 1.9} />
+                  <tab.icon className="size-5" stroke={active ? 2.4 : 1.9} />
                   {showUnread && (
                     <span className="absolute right-2 top-0 size-2.5 rounded-full border-2 border-background bg-primary" />
                   )}

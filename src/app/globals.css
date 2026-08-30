@@ -140,70 +140,90 @@ select {
  * project/Color Themes.html — change one, change the other.
  * ============================================================ */
 
-/* ---- MODE: neutral surfaces ---- */
+/* ---- MODE: neutral surfaces ----
+ *
+ * Retuned 2026-08 toward Twenty's palette (twentyhq/twenty): near-
+ * neutral greys, hairline borders, white primary surface in light,
+ * ~#171717 / #1D1D1D surfaces in dark. Hue held near 260 with almost
+ * zero chroma so the greys read flat, the way Twenty's do. Light is
+ * now the default mode (see src/lib/themes.ts). */
 
 :root,
-html[data-mode="dark"] {
-  --background: oklch(0.13 0.01 260);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.18 0.01 260);
-  --card-2: oklch(0.205 0.01 260);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.18 0.01 260);
-  --popover-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.22 0.01 260);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.22 0.01 260);
-  --muted-foreground: oklch(0.65 0.01 260);
-  --accent: oklch(0.22 0.01 260);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.28 0.01 260);
-  --input: oklch(0.28 0.01 260);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.16 0.01 260);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.22 0.01 260);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.28 0.01 260);
-}
-
 html[data-mode="light"] {
-  --background: oklch(0.99 0.002 260);
-  --foreground: oklch(0.21 0.01 260);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.255 0.004 260); /* Twenty gray80 ~#1D1D1D */
   --card: oklch(1 0 0);
-  --card-2: oklch(0.985 0.002 260);
-  --card-foreground: oklch(0.21 0.01 260);
+  --card-2: oklch(0.976 0.001 260); /* tile / hover ~#F5F5F5 */
+  --card-foreground: oklch(0.255 0.004 260);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.21 0.01 260);
-  --secondary: oklch(0.967 0.003 260);
-  --secondary-foreground: oklch(0.25 0.01 260);
-  --muted: oklch(0.967 0.003 260);
-  --muted-foreground: oklch(0.52 0.015 260);
-  --accent: oklch(0.96 0.004 260);
-  --accent-foreground: oklch(0.25 0.01 260);
+  --popover-foreground: oklch(0.255 0.004 260);
+  --secondary: oklch(0.955 0.001 260); /* Twenty gray10 ~#F1F1F1 */
+  --secondary-foreground: oklch(0.3 0.004 260);
+  --muted: oklch(0.955 0.001 260);
+  --muted-foreground: oklch(0.53 0.006 260); /* Twenty gray50 ~#575757 */
+  --accent: oklch(0.955 0.001 260);
+  --accent-foreground: oklch(0.3 0.004 260);
   --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0.004 260);
-  --input: oklch(0.922 0.004 260);
-  --chart-2: oklch(0.6 0.1 260);
-  --chart-3: oklch(0.7 0.06 260);
-  --chart-4: oklch(0.8 0.04 260);
-  --chart-5: oklch(0.87 0.03 260);
-  --radius: 0.625rem;
-  --sidebar: oklch(0.985 0.002 260);
-  --sidebar-foreground: oklch(0.21 0.01 260);
-  --sidebar-accent: oklch(0.96 0.004 260);
-  --sidebar-accent-foreground: oklch(0.25 0.01 260);
-  --sidebar-border: oklch(0.922 0.004 260);
+  --border: oklch(0.906 0.002 260); /* Twenty gray20 ~#E3E3E3 */
+  --input: oklch(0.906 0.002 260);
+  --chart-2: oklch(0.62 0.09 250);
+  --chart-3: oklch(0.71 0.06 250);
+  --chart-4: oklch(0.8 0.04 250);
+  --chart-5: oklch(0.87 0.03 250);
+  --radius: 0.5rem; /* Twenty borderRadius.md = 8px */
+  --sidebar: oklch(0.985 0.001 260);
+  --sidebar-foreground: oklch(0.255 0.004 260);
+  --sidebar-accent: oklch(0.955 0.001 260);
+  --sidebar-accent-foreground: oklch(0.3 0.004 260);
+  --sidebar-border: oklch(0.92 0.002 260);
 }
 
-/* ---- ACCENT: primary color ---- */
+html[data-mode="dark"] {
+  --background: oklch(0.195 0.003 260); /* Twenty dark primary ~#171717 */
+  --foreground: oklch(0.93 0.002 260);
+  --card: oklch(0.225 0.003 260); /* ~#1D1D1D */
+  --card-2: oklch(0.25 0.003 260);
+  --card-foreground: oklch(0.93 0.002 260);
+  --popover: oklch(0.225 0.003 260);
+  --popover-foreground: oklch(0.93 0.002 260);
+  --secondary: oklch(0.255 0.003 260);
+  --secondary-foreground: oklch(0.93 0.002 260);
+  --muted: oklch(0.255 0.003 260);
+  --muted-foreground: oklch(0.63 0.005 260);
+  --accent: oklch(0.255 0.003 260);
+  --accent-foreground: oklch(0.93 0.002 260);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.29 0.003 260); /* Twenty gray70 ~#2B2B2B */
+  --input: oklch(0.29 0.003 260);
+  --chart-2: oklch(0.62 0.09 250);
+  --chart-3: oklch(0.52 0.07 250);
+  --chart-4: oklch(0.43 0.05 250);
+  --chart-5: oklch(0.34 0.04 250);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.175 0.003 260);
+  --sidebar-foreground: oklch(0.93 0.002 260);
+  --sidebar-accent: oklch(0.255 0.003 260);
+  --sidebar-accent-foreground: oklch(0.93 0.002 260);
+  --sidebar-border: oklch(0.27 0.003 260);
+}
+
+/* ---- ACCENT: primary color ----
+ * `blue` is the new default — Twenty's action blue (~#1961ED). */
 
 :root,
+html[data-theme="blue"] {
+  --primary: oklch(0.53 0.215 262);
+  --primary-foreground: oklch(0.985 0 0);
+  --primary-hover: oklch(0.475 0.2 262);
+  --primary-soft: oklch(0.53 0.215 262 / 0.1);
+  --primary-soft-2: oklch(0.53 0.215 262 / 0.18);
+  --ring: oklch(0.53 0.215 262);
+  --chart-1: oklch(0.53 0.215 262);
+  --sidebar-primary: oklch(0.53 0.215 262);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-ring: oklch(0.53 0.215 262);
+}
+
 html[data-theme="violet"] {
   --primary: oklch(0.526 0.247 293);
   --primary-foreground: oklch(0.985 0 0);

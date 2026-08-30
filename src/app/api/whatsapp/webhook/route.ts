@@ -758,62 +758,69 @@ async function processMessage(
         ? 'interactive' // template quick-reply tap (issue #478)
         : 'text'        // reaction, unknown → text fallback
 
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
-
-  // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
-  // transient 5xx), and each retry replays the exact same message.id. The
-  // unique index on (conversation_id, message_id) added in migration 037
-  // makes a replay conflict; `ignoreDuplicates` turns that into an ON
-  // CONFLICT DO NOTHING, and the `.select()` then returns the inserted row
-  // ONLY on a genuine first insert — an empty result means this delivery
-  // was a replay. This is the single idempotency boundary that must sit
-  // BEFORE the unread bump and all downstream fan-out below (issue #367).
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
-    .from('messages')
-    .upsert(
-      {
-        conversation_id: conversation.id,
-        sender_type: 'customer',
-        content_type: contentType,
-        content_text: contentText,
-        media_url: mediaUrl,
-        // Meta's MIME type for the attachment (migration 039). Was
-        // discarded before, which forced the download path to guess an
-        // extension from the fetched blob — impossible to do until the
-        // bytes had already been fetched successfully.
-        media_type: mediaType,
-        message_id: message.id,
-        status: 'delivered',
-        created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        reply_to_message_id: replyToInternalId,
-        // Only populated for content_type='interactive'. Migration 010 added
-        // the column; null for every other content_type so existing inserts
-        // behave identically.
-        interactive_reply_id: interactiveReplyId,
-      },
-      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
-    )
-    .select('id')
+  // Atomic insert + first-message check (BUG B1 fix). Meta retries
+  // webhook deliveries (a slow ack, a transient 5xx) — each retry
+  // replays the exact same message.id — and TWO DIFFERENT messages
+  // from the same brand-new contact can also arrive as two separate
+  // webhook deliveries processed concurrently (each in its own
+  // `after()` invocation). The previous code computed "is this the
+  // contact's first message" via a plain SELECT COUNT before
+  // inserting: two such concurrent deliveries could both read count=0
+  // before either had inserted, so BOTH concluded
+  // isFirstInboundMessage=true and both fired the
+  // `first_inbound_message` automation trigger.
+  //
+  // `insert_inbound_customer_message` (migration 053) closes that
+  // window: it takes a row lock on the conversation BEFORE counting
+  // prior customer messages, so a concurrent call for the SAME
+  // conversation blocks until this one commits — there is no window
+  // left in which two callers can both observe the pre-insert count.
+  // It also folds in the exact same ON CONFLICT (conversation_id,
+  // message_id) DO NOTHING idempotency (migration 037, issue #367) and
+  // the exact same unread-count bump (bump_conversation_on_inbound,
+  // migration 037, issue #369 — now called from inside this function)
+  // that used to be two separate round-trips here.
+  const { data: insertResultRows, error: msgError } = await supabaseAdmin().rpc(
+    'insert_inbound_customer_message',
+    {
+      p_conversation_id: conversation.id,
+      p_message_id: message.id,
+      p_content_type: contentType,
+      p_content_text: contentText,
+      p_media_url: mediaUrl,
+      // Meta's MIME type for the attachment (migration 039). Was
+      // discarded before, which forced the download path to guess an
+      // extension from the fetched blob — impossible to do until the
+      // bytes had already been fetched successfully.
+      p_media_type: mediaType,
+      p_created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      p_reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      p_interactive_reply_id: interactiveReplyId,
+      p_last_message_text: contentText || `[${message.type}]`,
+    }
+  )
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
     return
   }
 
+  const insertResult = insertResultRows?.[0] as
+    | {
+        message_id: string | null
+        was_inserted: boolean
+        is_first_customer_message: boolean
+      }
+    | undefined
+
   // Replayed delivery: the message already exists, so acknowledge it as a
   // no-op. Returning here is what keeps a retry from double-bumping unread,
   // re-advancing flows, re-firing automations, re-invoking AI handling, and
   // re-dispatching public webhooks (issue #367).
-  if (!insertedRows || insertedRows.length === 0) {
+  if (!insertResult || !insertResult.was_inserted) {
     console.info(
       '[webhook] duplicate inbound message ignored (idempotent replay):',
       message.id
@@ -821,24 +828,13 @@ async function processMessage(
     return
   }
 
-  // Update conversation. The unread bump is done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than as a read-modify-write of the
-  // snapshot loaded above: two inbound messages for the same conversation
-  // can process concurrently, and computing `snapshot + 1` in the app let
-  // both reads see the same value and write the same increment, losing one
-  // (issue #369). The RPC increments in a single UPDATE and refreshes the
-  // last-message summary in the same statement.
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
-      p_conversation_id: conversation.id,
-      p_last_message_text: contentText || `[${message.type}]`,
-    }
-  )
-
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
+  // Race-free per-conversation "is this the very first customer
+  // message" answer, computed atomically inside
+  // insert_inbound_customer_message while holding the conversation's
+  // row lock — see the comment above. Feeds the exact same downstream
+  // consumers (Flows' entry-trigger check, the automations dispatch
+  // below) that the old count-based flag fed.
+  const isFirstInboundMessage = insertResult.is_first_customer_message
 
   // A customer writing again re-opens the thread (issue #409). Kept as a
   // separate conditional statement rather than a `status` field on the

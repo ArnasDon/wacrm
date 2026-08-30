@@ -451,10 +451,22 @@ async function persistDataSource(
   }
 
   // ---- knowledge side: reuse ai_knowledge_documents/chunks verbatim.
+  //
+  // Bug #1 fix (refresh atomicity): this used to DELETE this source's
+  // existing document FIRST, then INSERT the new one — two independent
+  // Postgrest calls, no transaction. If the insert (or the ingest step
+  // it depends on) failed after the delete had already committed, the
+  // source's Knowledge Base content was gone with no rollback, even
+  // though the refresh as a whole reported failure. Now: the new
+  // document (and its chunks, via ingestDocument) is written FIRST;
+  // only once that has fully succeeded — and `ai_data_sources` has
+  // already been repointed at it — is the PREVIOUS document removed.
+  // A failure at any point up to that repoint leaves the old document
+  // (and the chunks depending on it via ON DELETE CASCADE) completely
+  // untouched, so the account never loses Knowledge Base content it
+  // already had because a refresh happened to fail midway.
   if (usage === 'knowledge' || usage === 'both') {
-    // Replace only THIS source's document (not the legacy singleton
-    // type='inventory' doc, not another source's doc).
-    await db.from('ai_knowledge_documents').delete().eq('data_source_id', source.id)
+    const previousKnowledgeDocumentId = source.knowledge_document_id
 
     const { data: doc, error: docErr } = await db
       .from('ai_knowledge_documents')
@@ -482,22 +494,61 @@ async function persistDataSource(
 
     await db.from('ai_data_sources').update({ knowledge_document_id: doc.id }).eq('id', source.id)
     source.knowledge_document_id = doc.id
+
+    // Only now — the new document is live and `ai_data_sources` already
+    // points at it — remove the PREVIOUS one (not the legacy singleton
+    // type='inventory' doc, not another source's doc: `data_source_id`
+    // scoping is preserved by targeting this exact prior id). Its own
+    // chunks cascade-delete with it (ai_knowledge_chunks.document_id
+    // is ON DELETE CASCADE — migration 030).
+    if (previousKnowledgeDocumentId) {
+      await db.from('ai_knowledge_documents').delete().eq('id', previousKnowledgeDocumentId)
+    }
   } else if (source.knowledge_document_id) {
     // Usage changed away from knowledge/both on a refresh — drop the
     // now-orphaned document rather than leaving stale text reachable by
-    // retrieveKnowledge().
+    // retrieveKnowledge(). No new document is being written in this
+    // branch, so there is nothing to protect by reordering — a plain
+    // delete is the correct, complete action here.
     await db.from('ai_knowledge_documents').delete().eq('id', source.knowledge_document_id)
     await db.from('ai_data_sources').update({ knowledge_document_id: null }).eq('id', source.id)
     source.knowledge_document_id = null
   }
 
   // ---- catalog side: structured rows, NEVER written to the KB.
+  //
+  // Bug #1 fix (refresh atomicity): same root cause and same fix shape
+  // as the knowledge-document block above — the previous generation's
+  // rows are captured and only removed AFTER the new generation has
+  // been inserted successfully, so a failed insert can never leave the
+  // account with an empty catalog for this source.
+  //
+  // Exception, unchanged from prior behavior: when `rows` is genuinely
+  // empty (the sync parsed successfully but produced zero catalog-
+  // eligible rows — e.g. every row lacked any usable name column, see
+  // inventory-parser.ts's buildProductRows), there is nothing to insert
+  // and this is NOT a failure — it is an accurate "this source
+  // currently has zero catalog rows" result. The previous generation is
+  // still removed in that case, exactly as it was before this fix,
+  // because leaving stale rows behind would misrepresent the source's
+  // real current content. Only a genuine INSERT ERROR (not "zero rows
+  // to insert") is now non-destructive.
   if (usage === 'catalog' || usage === 'both') {
-    await db.from('ai_catalog_products').delete().eq('data_source_id', source.id)
+    const { data: previousProductRows, error: previousProductsErr } = await db
+      .from('ai_catalog_products')
+      .select('id')
+      .eq('data_source_id', source.id)
+    if (previousProductsErr) throw previousProductsErr
+    const previousProductIds = (previousProductRows ?? []).map((r) => (r as { id: string }).id)
+
     const rows = toCatalogProductRows(parsed.products, source.id, accountId, opts.currency)
     if (rows.length > 0) {
       const { error: insErr } = await db.from('ai_catalog_products').insert(rows)
       if (insErr) throw insErr
+    }
+    if (previousProductIds.length > 0) {
+      const { error: delErr } = await db.from('ai_catalog_products').delete().in('id', previousProductIds)
+      if (delErr) throw delErr
     }
   } else {
     await db.from('ai_catalog_products').delete().eq('data_source_id', source.id)
@@ -506,32 +557,64 @@ async function persistDataSource(
   return source
 }
 
+/**
+ * Bug #4 fix: two rows in the same source sharing the same SKU value
+ * (a data-entry mistake in the sheet, a re-exported ERP file, two
+ * variants that mistakenly carry one SKU, ...) used to collide on the
+ * exact same `source_product_id` (`p.sku ?? row-${p.rowIndex}` with no
+ * uniqueness check) — nothing in the schema prevents it either (no
+ * UNIQUE constraint on (data_source_id, source_product_id), and none is
+ * being added in this pass). Both rows still got inserted, silently
+ * identical, which broke every by-id follow-up
+ * (getProduct/getAvailability/getProductMedia's `.maybeSingle()` lookup
+ * no longer matched exactly one row for that id) even though
+ * search_catalog kept showing both as if they were fine.
+ *
+ * Fix: the FIRST row to use a given SKU in this sync keeps using it as
+ * `source_product_id`, byte-identical to before this fix. Any LATER row
+ * whose SKU repeats one already claimed in this same sync falls back to
+ * the SAME rowIndex-based id already used for rows with no SKU at all —
+ * `rowIndex` is unique per row by construction, so this can never
+ * collide with anything else. Neither row is ever dropped or merged;
+ * `sku` itself (a plain display/lookup field, not the id) still shows
+ * the real, duplicated value on both rows. A source with no duplicate
+ * SKUs produces byte-identical output to before this fix.
+ */
 function toCatalogProductRows(
   products: CatalogProductRow[],
   dataSourceId: string,
   accountId: string,
   currency: string,
 ) {
-  return products.map((p) => ({
-    account_id: accountId,
-    data_source_id: dataSourceId,
-    source_product_id: p.sku ?? `row-${p.rowIndex}`,
-    sku: p.sku,
-    name: p.name,
-    brand: p.brand,
-    model: p.model,
-    description: p.description,
-    color: p.color,
-    variant_label: p.variantLabel,
-    capacity: p.capacity,
-    size: p.size,
-    price: p.price,
-    currency,
-    available: p.availableQuantity === null ? true : p.availableQuantity > 0,
-    available_quantity: p.availableQuantity,
-    primary_image_url: p.imageUrl,
-    images: p.imageUrl ? [{ url: p.imageUrl }] : [],
-  }))
+  const seenSourceProductIds = new Set<string>()
+  return products.map((p) => {
+    let sourceProductId = p.sku ?? `row-${p.rowIndex}`
+    if (seenSourceProductIds.has(sourceProductId)) {
+      sourceProductId = `row-${p.rowIndex}`
+    }
+    seenSourceProductIds.add(sourceProductId)
+
+    return {
+      account_id: accountId,
+      data_source_id: dataSourceId,
+      source_product_id: sourceProductId,
+      sku: p.sku,
+      name: p.name,
+      brand: p.brand,
+      model: p.model,
+      description: p.description,
+      color: p.color,
+      variant_label: p.variantLabel,
+      capacity: p.capacity,
+      size: p.size,
+      price: p.price,
+      currency,
+      available: p.availableQuantity === null ? true : p.availableQuantity > 0,
+      available_quantity: p.availableQuantity,
+      primary_image_url: p.imageUrl,
+      images: p.imageUrl ? [{ url: p.imageUrl }] : [],
+    }
+  })
 }
 
 /**

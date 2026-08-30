@@ -28,13 +28,24 @@ function fakeDb() {
   const tables = new Map<string, Record<string, unknown>[]>()
   let nextId = 1
   const table = (name: string) => tables.get(name) ?? tables.set(name, []).get(name)!
+  // Bug #1 regression tests need to simulate a genuine INSERT failure
+  // (network blip, oversized payload, ...) on a specific table, exactly
+  // once, without otherwise changing the fake's behavior. Marking a
+  // table here makes its NEXT insert() call return a Postgrest-shaped
+  // error instead of writing anything — then clears itself so later
+  // inserts (e.g. a subsequent successful refresh) behave normally.
+  const failNextInsert = new Set<string>()
 
   function builder(tableName: string, op: 'select' | 'update' | 'insert' | 'delete', payload?: Record<string, unknown>) {
-    const filters: [string, unknown][] = []
+    const filters: [string, unknown, 'eq' | 'in'][] = []
     const api = {
       select: () => api,
       eq: (col: string, val: unknown) => {
-        filters.push([col, val])
+        filters.push([col, val, 'eq'])
+        return api
+      },
+      in: (col: string, vals: unknown[]) => {
+        filters.push([col, vals, 'in'])
         return api
       },
       order: () => api,
@@ -44,7 +55,8 @@ function fakeDb() {
       then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => run(false).then(resolve, reject),
     }
     const rows = table(tableName)
-    const matches = (row: Record<string, unknown>) => filters.every(([col, val]) => row[col] === val)
+    const matches = (row: Record<string, unknown>) =>
+      filters.every(([col, val, mode]) => (mode === 'in' ? (val as unknown[]).includes(row[col]) : row[col] === val))
 
     async function run(singleResult: boolean) {
       if (op === 'select') {
@@ -57,6 +69,10 @@ function fakeDb() {
         return singleResult ? { data: matched[0] ?? null, error: null } : { data: matched, error: null }
       }
       if (op === 'insert') {
+        if (failNextInsert.has(tableName)) {
+          failNextInsert.delete(tableName)
+          return { data: null, error: { message: `simulated insert failure on ${tableName}` } }
+        }
         const items = Array.isArray(payload) ? payload : [payload as Record<string, unknown>]
         const inserted = items.map((p) => ({ id: `${tableName}-${nextId++}`, ...p }))
         rows.push(...inserted)
@@ -83,6 +99,7 @@ function fakeDb() {
       }),
     } as unknown as SupabaseClient,
     table,
+    failNextInsertOn: (name: string) => failNextInsert.add(name),
   }
 }
 
@@ -328,6 +345,200 @@ describe('refreshDataSource — replaces only its own rows', () => {
     await expect(
       refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
     ).rejects.toBeInstanceOf(DataSourceError)
+  })
+})
+
+// ============================================================
+// Bug #1 fix — refresh atomicity. persistDataSource() used to DELETE a
+// source's existing ai_catalog_products/ai_knowledge_documents rows
+// BEFORE inserting the new ones, with no transaction. A failed insert
+// after a successful delete left the account with an empty catalog/KB
+// document for that source, with no rollback. Fixed by inserting the
+// new generation first and only removing the previous one once that
+// succeeds — these tests fail against the pre-fix code (the previous
+// rows would already be gone by the time the insert error is thrown)
+// and pass against the fix.
+// ============================================================
+describe('refreshDataSource — Bug #1 fix: refresh atomicity', () => {
+  it('a failed INSERT into ai_catalog_products during a refresh preserves the PREVIOUS generation of rows', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table, failNextInsertOn } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Source',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    const originalRows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(originalRows).toHaveLength(1) // sanity: the source really has a row to lose
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
+    failNextInsertOn('ai_catalog_products')
+
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).rejects.toBeTruthy()
+
+    // This is the exact bug: against the pre-fix code, the DELETE had
+    // already run before the failed INSERT, so this would be empty.
+    const survivingRows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(survivingRows).toHaveLength(1)
+    expect(survivingRows[0].name).toBe('Samsung Galaxy S25') // the ORIGINAL row, untouched
+  })
+
+  it('a failed INSERT into ai_knowledge_documents during a refresh preserves the PREVIOUS document (same root cause, knowledge side)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table, failNextInsertOn } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Source',
+      url: 'https://example.com/products.csv',
+      usage: 'knowledge',
+    })
+    const originalDocs = table('ai_knowledge_documents').filter((d) => d.data_source_id === source.id)
+    expect(originalDocs).toHaveLength(1)
+    const originalDocId = originalDocs[0].id
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
+    failNextInsertOn('ai_knowledge_documents')
+
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).rejects.toBeTruthy()
+
+    // Pre-fix, the old document was deleted before the new insert was
+    // even attempted — this would be empty.
+    const survivingDocs = table('ai_knowledge_documents').filter((d) => d.data_source_id === source.id)
+    expect(survivingDocs).toHaveLength(1)
+    expect(survivingDocs[0].id).toBe(originalDocId)
+    expect(survivingDocs[0].content).toContain('Samsung Galaxy S25') // the ORIGINAL content
+  })
+
+  it('a SUCCESSFUL refresh still replaces the previous generation cleanly — no duplicates left behind', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Source',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    expect(table('ai_catalog_products')).toHaveLength(1)
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(1) // replaced, not appended
+    expect(rows[0].name).toBe('Producto Nuevo')
+  })
+
+  it('DOCUMENTED, UNCHANGED behavior: a refresh that legitimately parses zero catalog-eligible rows still empties the previous catalog (not a failure)', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Source',
+      url: 'https://example.com/products.csv',
+      usage: 'catalog',
+    })
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(1)
+
+    // A CSV that parses successfully — buildInventory does not reject
+    // it, `dataRows.length` is 2 — but produces ZERO catalog-eligible
+    // rows: no header matches the `name` synonyms, and every row's
+    // first cell (buildProductRows' last-resort name fallback,
+    // `cell(row, 0)`) is empty too. Both of buildProductRows' only ways
+    // to find a name come up empty for every row, so `products` ends up
+    // genuinely empty even though the sync itself succeeded.
+    stubCsvFetch(csv([['Precio', 'Stock'], ['', '100'], ['', '200']]))
+    const result = await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+
+    // Not an error — the refresh completes normally...
+    expect(result.source.status).toBe('active')
+    // ...and the previous generation IS still removed: this is the
+    // documented, UNCHANGED behavior from before the Bug #1 fix — the
+    // source genuinely has zero catalog rows right now, so leaving the
+    // stale ones behind would misrepresent its real current content.
+    // Only a genuine INSERT ERROR (a different code path, tested above)
+    // is now non-destructive — a legitimate zero-row result never was,
+    // and still isn't, treated as one.
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(0)
+  })
+})
+
+// ============================================================
+// Bug #4 fix — duplicate SKU within one source used to collide on the
+// same `source_product_id` (no dedup, no DB constraint), breaking
+// getProduct/getAvailability/getProductMedia's by-id lookup for BOTH
+// rows even though search_catalog kept showing them. Fixed in
+// toCatalogProductRows(): the first row keeps using its SKU as-is: a
+// LATER row whose SKU repeats one already used in this sync falls back
+// to its own (always-unique) rowIndex-based id instead.
+// ============================================================
+describe('createDataSourceFromUrl / refreshDataSource — Bug #4 fix: duplicate SKU', () => {
+  it('two rows sharing the same SKU end up with DISTINCT source_product_id — neither dropped, neither merged', async () => {
+    stubCsvFetch(
+      csv([
+        ['SKU', 'Nombre', 'Precio'],
+        ['DUP1', 'Producto Negro', '100'],
+        ['DUP1', 'Producto Blanco', '110'], // same SKU as row above — data-entry mistake
+      ]),
+    )
+    const { db, table } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Dup SKU source',
+      url: 'https://example.com/dup.csv',
+      usage: 'catalog',
+    })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(2) // both rows persisted — neither dropped
+    const ids = rows.map((r) => r.source_product_id)
+    expect(new Set(ids).size).toBe(2) // distinct ids — this is the actual fix
+    // sku itself is untouched — still shows the real, duplicated value
+    // on both rows (it's a display/lookup field, not the id).
+    expect(rows.every((r) => r.sku === 'DUP1')).toBe(true)
+    // The first row (by parse order) keeps the SKU verbatim as its id —
+    // unchanged from before this fix.
+    const first = rows.find((r) => r.name === 'Producto Negro')!
+    const second = rows.find((r) => r.name === 'Producto Blanco')!
+    expect(first.source_product_id).toBe('DUP1')
+    expect(second.source_product_id).not.toBe('DUP1')
+  })
+
+  it('a source with NO duplicate SKUs is byte-identical to before this fix', async () => {
+    stubCsvFetch(PRODUCTS_CSV) // single row, real SKU-less data — unaffected by the fix either way
+    const { db, table } = fakeDb()
+
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1',
+      userId: 'user-1',
+      sourceType: 'remote_csv',
+      displayName: 'Normal source',
+      url: 'https://example.com/normal.csv',
+      usage: 'catalog',
+    })
+
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].source_product_id).toBe('row-0') // unchanged fallback for a row with no SKU column at all
   })
 })
 

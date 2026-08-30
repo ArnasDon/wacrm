@@ -12,3 +12,11 @@
 export type ProviderMediaRef =
   | { provider: 'meta'; mediaId: string }
   | { provider: 'uazapi'; [k: string]: unknown };
+
+export interface InboundStatus {
+  connectionId: string;
+  accountId: string;
+  providerMessageId: string;
+  status: string;
+  timestamp: Date;
+}

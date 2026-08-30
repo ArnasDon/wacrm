@@ -148,6 +148,19 @@ const nextConfig: NextConfig = {
         headers: [{ key: 'Cache-Control', value: 'no-store' }],
       },
       {
+        // The service worker must never be cached: the browser needs to
+        // re-fetch and byte-diff it on every load so a deploy that
+        // changes it rolls out promptly (it also registers with
+        // `updateViaCache: 'none'`). Also pin its content type — some
+        // CDNs mis-serve `.js` from /public.
+        source: '/sw.js',
+        headers: [
+          { key: 'Content-Type', value: 'application/javascript; charset=utf-8' },
+          { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
+          { key: 'Service-Worker-Allowed', value: '/' },
+        ],
+      },
+      {
         source: '/:path((?!_next/static|_next/image|api).*)',
         headers: [
           {

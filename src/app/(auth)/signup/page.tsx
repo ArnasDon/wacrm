@@ -68,7 +68,7 @@ function SignupPageInner() {
       ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
       : undefined;
 
-    const { error } = await supabase.auth.signUp({
+    const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -81,6 +81,20 @@ function SignupPageInner() {
 
     if (error) {
       setError(error.message);
+      setLoading(false);
+      return;
+    }
+
+    // Supabase's email enumeration protection answers a signup for an
+    // already-registered, confirmed address with a 200 and a decoy user
+    // — throwaway id, empty `identities` — so attackers can't probe
+    // which emails exist. No confirmation mail is sent in that case, so
+    // falling through to "Check your email" below would leave the user
+    // waiting on a message that is never coming.
+    if (data.user && data.user.identities?.length === 0) {
+      setError(
+        "An account with this email already exists. Please sign in instead."
+      );
       setLoading(false);
       return;
     }

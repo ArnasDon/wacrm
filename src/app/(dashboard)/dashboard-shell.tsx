@@ -8,6 +8,7 @@ import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { BrowserNotifications } from "@/components/notifications/browser-notifications";
+import { ServiceWorkerRegister } from "@/components/pwa/service-worker-register";
 import { MobileTabBar } from "@/components/layout/mobile-tab-bar";
 
 // Auth-gated dashboard shell. Extracted from the layout so the layout
@@ -51,6 +52,10 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
           assigned to this agent (manual reassignment or AI handoff).
           Headless — renders nothing. */}
       <BrowserNotifications />
+      {/* Registers /sw.js — makes the app installable + offline-aware,
+          and (once web push lands) the receiver for background
+          notifications. Headless. */}
+      <ServiceWorkerRegister />
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
       <div className="flex flex-1 flex-col overflow-hidden">
         <Header onOpenSidebar={() => setSidebarOpen(true)} />

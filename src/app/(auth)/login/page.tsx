@@ -40,7 +40,13 @@ function LoginPageInner() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  // `/auth/callback` bounces here with `?error=` when an emailed link
+  // can't be redeemed (expired, already used, wrong browser). Seed the
+  // error box from it so the user is told why they landed back on the
+  // sign-in form instead of being dumped here with no explanation.
+  const [error, setError] = useState<string | null>(
+    searchParams.get("error")
+  );
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
 

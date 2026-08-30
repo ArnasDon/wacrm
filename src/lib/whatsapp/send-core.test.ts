@@ -74,6 +74,10 @@ function fakeTransport(
     sendInteractive: ok,
     sendTemplate: ok,
     sendReaction: ok,
+    fetchMedia: vi.fn(async () => ({
+      bytes: new Uint8Array(),
+      mimeType: 'application/octet-stream',
+    })),
     ...overrides,
   } as WhatsAppTransport;
 }

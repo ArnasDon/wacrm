@@ -5,6 +5,8 @@ const sendMediaMessage = vi.fn();
 const sendReactionMessage = vi.fn();
 const sendTemplateMessage = vi.fn();
 const sendInteractiveButtons = vi.fn();
+const getMediaUrl = vi.fn();
+const downloadMedia = vi.fn();
 vi.mock('@/lib/whatsapp/meta-api', async (io) => ({
   ...(await io<Record<string, unknown>>()),
   sendTextMessage: (...a: unknown[]) => sendTextMessage(...a),
@@ -12,6 +14,8 @@ vi.mock('@/lib/whatsapp/meta-api', async (io) => ({
   sendReactionMessage: (...a: unknown[]) => sendReactionMessage(...a),
   sendTemplateMessage: (...a: unknown[]) => sendTemplateMessage(...a),
   sendInteractiveButtons: (...a: unknown[]) => sendInteractiveButtons(...a),
+  getMediaUrl: (...a: unknown[]) => getMediaUrl(...a),
+  downloadMedia: (...a: unknown[]) => downloadMedia(...a),
 }));
 
 import { createMetaTransport } from './meta-transport';
@@ -40,6 +44,15 @@ const CASES = [
       sendReactionMessage.mockResolvedValue({ messageId: 'wamid.3' });
       sendTemplateMessage.mockResolvedValue({ messageId: 'wamid.4' });
       sendInteractiveButtons.mockResolvedValue({ messageId: 'wamid.5' });
+      getMediaUrl.mockResolvedValue({
+        url: 'https://cdn.meta/asset',
+        mimeType: 'image/jpeg',
+        fileSize: 3,
+      });
+      downloadMedia.mockResolvedValue({
+        buffer: Buffer.from([1, 2, 3]),
+        contentType: 'image/jpeg',
+      });
     },
   },
   {
@@ -71,6 +84,8 @@ describe.each(CASES)(
       sendReactionMessage.mockReset();
       sendTemplateMessage.mockReset();
       sendInteractiveButtons.mockReset();
+      getMediaUrl.mockReset();
+      downloadMedia.mockReset();
       fetchMock.mockReset();
       arm();
     });
@@ -179,6 +194,25 @@ describe.each(CASES)(
             payload: { kind: 'buttons', body: 'b', buttons: [] } as never,
           })
         ).toThrow(UnsupportedCapabilityError);
+      }
+    });
+
+    it('fetchMedia: meta delega para getMediaUrl+downloadMedia; uazapi lança 1c-ii', async () => {
+      const t = make();
+      if (name === 'meta') {
+        const out = await t.fetchMedia({ provider: 'meta', mediaId: 'm-1' });
+        expect(getMediaUrl).toHaveBeenCalledTimes(1);
+        expect(getMediaUrl.mock.calls[0][0]).toMatchObject({ mediaId: 'm-1' });
+        expect(downloadMedia).toHaveBeenCalledTimes(1);
+        expect(out).toMatchObject({
+          bytes: expect.any(Uint8Array),
+          mimeType: expect.any(String),
+        });
+      } else {
+        // Paridade com os outros stubs UAZAPI: lança de forma síncrona.
+        expect(() => t.fetchMedia({ provider: 'uazapi' } as never)).toThrow(
+          /1c-ii/
+        );
       }
     });
   }

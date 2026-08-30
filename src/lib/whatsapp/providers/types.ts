@@ -8,6 +8,7 @@
 // próprio call site — os dois gravam em tabelas que não são `messages`.
 // ============================================================
 
+import type { ProviderMediaRef } from '@/lib/whatsapp/inbound/types';
 import type { MediaKind } from '@/lib/whatsapp/meta-api';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
@@ -112,6 +113,15 @@ export interface WhatsAppTransport {
   sendInteractive(args: TransportInteractiveArgs): Promise<TransportResult>;
   sendTemplate(args: TransportTemplateArgs): Promise<TransportResult>;
   sendReaction(args: TransportReactionArgs): Promise<TransportResult>;
+  /**
+   * Baixa os bytes de uma mídia recebida. Meta: getMediaUrl + downloadMedia.
+   * UAZAPI: POST /message/download (Onda 1c-ii — hoje lança).
+   */
+  fetchMedia(ref: ProviderMediaRef): Promise<{
+    bytes: Uint8Array;
+    mimeType: string;
+    filename?: string;
+  }>;
 }
 
 /**

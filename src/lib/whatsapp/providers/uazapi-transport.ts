@@ -136,5 +136,16 @@ export function createUazapiTransport(
     sendInteractive(): Promise<TransportResult> {
       throw new UnsupportedCapabilityError('uazapi', 'interactive');
     },
+
+    // Inbound: a UAZAPI expõe POST /message/download, mas o cabeamento
+    // (base64 → bytes, mime) entra na Onda 1c-ii. Hoje lança para que o
+    // caminho de mídia não passe silenciosamente com um envelope vazio.
+    fetchMedia(): Promise<{
+      bytes: Uint8Array;
+      mimeType: string;
+      filename?: string;
+    }> {
+      throw new Error('uazapi fetchMedia: implementado na Onda 1c-ii');
+    },
   };
 }

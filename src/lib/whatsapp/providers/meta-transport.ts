@@ -15,6 +15,8 @@ import {
   sendInteractiveButtons,
   sendInteractiveList,
   sendReactionMessage,
+  getMediaUrl,
+  downloadMedia,
 } from '@/lib/whatsapp/meta-api';
 import {
   phoneVariants,
@@ -175,6 +177,30 @@ export function createMetaTransport(
         emoji: args.emoji,
       });
       return { providerMessageId: r.messageId };
+    },
+
+    // Inbound: resolve a mídia recebida para bytes. Duas chamadas à Graph
+    // API — `getMediaUrl` (id → URL curta autenticada + mime) e
+    // `downloadMedia` (URL → binário). O mime dos metadados vence; o
+    // header do CDN é só o último recurso.
+    async fetchMedia(ref) {
+      if (ref.provider !== 'meta') {
+        throw new Error(
+          `meta transport: unexpected media ref provider ${ref.provider}`
+        );
+      }
+      const info = await getMediaUrl({
+        mediaId: ref.mediaId,
+        accessToken,
+      });
+      const { buffer, contentType } = await downloadMedia({
+        downloadUrl: info.url,
+        accessToken,
+      });
+      return {
+        bytes: new Uint8Array(buffer),
+        mimeType: info.mimeType || contentType,
+      };
     },
   };
 }

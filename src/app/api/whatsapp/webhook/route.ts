@@ -3,6 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
+import { MEDIA_MAX_BYTES } from '@/lib/storage/upload-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
@@ -945,19 +946,37 @@ async function parseMessageContent(
     try {
       const info = await getMediaUrl({ mediaId, accessToken })
 
-      if (mirror) {
-        const mirrored = await mirrorInboundMedia({
-          storage: supabaseAdmin().storage,
-          accountId: mirror.accountId,
-          mediaId,
-          downloadUrl: info.url,
-          accessToken,
-          mimeType: info.mimeType,
-          fileSize: info.fileSize,
-          fileName,
-          messageTimestamp: message.timestamp,
-        })
-        if (mirrored) return mirrored
+      // Fetch the bytes here and hand them to the mirror (which no longer
+      // downloads). Bridge only — Onda 1c-ii swaps this getMediaUrl +
+      // downloadMedia pair for `transport.fetchMedia(ref)`. Skip oversized
+      // media before spending the transfer, and keep the download's own
+      // failure best-effort: any mirror-path error falls through to the
+      // proxy URL, exactly as when the skip/try lived inside the mirror.
+      const tooBig =
+        typeof info.fileSize === 'number' && info.fileSize > MEDIA_MAX_BYTES
+      if (mirror && !tooBig) {
+        try {
+          const { buffer } = await downloadMedia({
+            downloadUrl: info.url,
+            accessToken,
+          })
+          const mirrored = await mirrorInboundMedia({
+            storage: supabaseAdmin().storage,
+            accountId: mirror.accountId,
+            mediaId,
+            bytes: new Uint8Array(buffer),
+            mimeType: info.mimeType,
+            fileSize: info.fileSize,
+            fileName,
+            messageTimestamp: message.timestamp,
+          })
+          if (mirrored) return mirrored
+        } catch (error) {
+          console.warn(
+            `[mirror-media] could not mirror ${mediaId}:`,
+            error instanceof Error ? error.message : error
+          )
+        }
       }
 
       return `/api/whatsapp/media/${mediaId}`

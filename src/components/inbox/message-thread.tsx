@@ -10,6 +10,7 @@ import { usePresence } from '@/hooks/use-presence';
 import { PresenceDot } from '@/components/presence/presence-dot';
 import { presenceLabel } from '@/lib/presence';
 import { cn } from '@/lib/utils';
+import { dateKeyInZone, browserTimeZone } from '@/lib/timezone';
 import type {
   Conversation,
   Message,
@@ -35,7 +36,7 @@ import {
   Info,
   Bot,
 } from 'lucide-react';
-import { format, isToday, isYesterday, differenceInHours } from 'date-fns';
+import { differenceInHours } from 'date-fns';
 import { useTranslations } from 'next-intl';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -132,20 +133,33 @@ interface MessageThreadProps {
 
 function formatDateSeparator(
   dateStr: string,
-  t: ReturnType<typeof useTranslations>
+  t: ReturnType<typeof useTranslations>,
+  timeZone?: string | null
 ): string {
-  const date = new Date(dateStr);
-  if (isToday(date)) return t('today');
-  if (isYesterday(date)) return t('yesterday');
-  return format(date, 'MMMM d, yyyy');
+  // "Today"/"Yesterday" and the day grouping are all decided in the
+  // account's zone (see `dateKeyInZone`) so a late-night message lands
+  // on the right day for every teammate, not just those in the same
+  // timezone as the customer.
+  const key = dateKeyInZone(dateStr, timeZone);
+  const now = new Date();
+  if (key === dateKeyInZone(now, timeZone)) return t('today');
+  if (key === dateKeyInZone(new Date(now.getTime() - 86_400_000), timeZone)) {
+    return t('yesterday');
+  }
+  return new Date(dateStr).toLocaleDateString(undefined, {
+    timeZone: timeZone || browserTimeZone(),
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  });
 }
 
-function groupMessagesByDate(messages: Message[]) {
+function groupMessagesByDate(messages: Message[], timeZone?: string | null) {
   const groups: { date: string; messages: Message[] }[] = [];
   let currentDate = '';
 
   for (const msg of messages) {
-    const day = format(new Date(msg.created_at), 'yyyy-MM-dd');
+    const day = dateKeyInZone(msg.created_at, timeZone);
     if (day !== currentDate) {
       currentDate = day;
       groups.push({ date: msg.created_at, messages: [msg] });
@@ -200,7 +214,7 @@ export function MessageThread({
   const tTimer = useTranslations('Inbox.sessionTimer');
   const tQuote = useTranslations('Inbox.replyQuote');
 
-  const { user, accountId } = useAuth();
+  const { user, accountId, account } = useAuth();
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -961,7 +975,7 @@ export function MessageThread({
   const subtitle =
     contact.phone ||
     (contact.instagram_username ? `@${contact.instagram_username}` : '');
-  const messageGroups = groupMessagesByDate(messages);
+  const messageGroups = groupMessagesByDate(messages, account?.timezone);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
   );
@@ -1237,7 +1251,7 @@ export function MessageThread({
                 {/* Date separator */}
                 <div className="mb-4 flex items-center justify-center">
                   <span className="bg-muted text-muted-foreground rounded-full px-3 py-1 text-[10px] font-medium">
-                    {formatDateSeparator(group.date, t)}
+                    {formatDateSeparator(group.date, t, account?.timezone)}
                   </span>
                 </div>
                 {/* Messages */}
@@ -1301,6 +1315,7 @@ export function MessageThread({
                           reply={reply}
                           reactions={msgReactions}
                           currentUserId={user?.id}
+                          timeZone={account?.timezone}
                           onToggleReaction={handlePillToggle}
                           onOpenMedia={handleMediaChange}
                         />

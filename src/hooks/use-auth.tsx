@@ -54,6 +54,12 @@ interface AccountSummary {
    *  for every account except Chat Sandía's own) means signing in on
    *  a new device signs every other session for that user out. */
   enforce_single_session: boolean;
+  /** IANA timezone for the business (migration 063). The inbox formats
+   *  message timestamps and day separators in this zone so they read
+   *  the same for every teammate regardless of where they are. Null
+   *  only for rows predating 063 / while loading — callers fall back
+   *  to the viewer's own zone. */
+  timezone: string | null;
 }
 
 /**
@@ -257,7 +263,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // USD fallback below for older schemas where it reads null);
             // enforce_single_session added in migration 067.
             .select(
-              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session'
+              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session, timezone'
             )
             .eq('id', data.account_id)
             .maybeSingle();
@@ -276,6 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               suspended_at: account.suspended_at ?? null,
               suspended_reason: account.suspended_reason ?? null,
               enforce_single_session: account.enforce_single_session !== false,
+              timezone: account.timezone ?? null,
             };
           }
         }

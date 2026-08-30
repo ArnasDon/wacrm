@@ -38,13 +38,6 @@ let freshRow: Record<string, unknown> | null = null;
 let archivedRow: Record<string, unknown> | null = null;
 // Forced error from an UPDATE terminal.
 let updateError: { message: string } | null = null;
-// When true, the mock rejects an UPDATE that sets is_primary=true for the
-// account while another active primary still exists — simulating migration
-// 040's idx_connections_one_primary partial unique index.
-let simulateOnePrimaryIndex = false;
-// Flipped once an UPDATE with { is_primary: false } has run (the
-// clear-others step), releasing the simulated index.
-let primariesCleared = false;
 
 // Captures: every whatsapp_connections UPDATE in call order, each with the
 // filters chained after it.
@@ -88,21 +81,6 @@ function makeSupabaseMock() {
             if (kind === 'single') {
               return { data: archivedRow, error: updateError };
             }
-            const lastPayload = b._lastUpdatePayload as
-              Record<string, unknown> | undefined;
-            if (
-              simulateOnePrimaryIndex &&
-              lastPayload?.is_primary === true &&
-              !primariesCleared
-            ) {
-              return {
-                data: null,
-                error: {
-                  message:
-                    'duplicate key value violates unique constraint "idx_connections_one_primary"',
-                },
-              };
-            }
             return { data: null, error: updateError };
           }
           return connRead();
@@ -129,7 +107,6 @@ function makeSupabaseMock() {
       b._lastUpdatePayload = payload;
       if (table === 'whatsapp_connections') {
         updateCalls.push({ payload, filters: b._filters as unknown[][] });
-        if (payload.is_primary === false) primariesCleared = true;
       }
       return b;
     });
@@ -139,6 +116,8 @@ function makeSupabaseMock() {
     return b;
   }
 
+  const rpc = vi.fn().mockResolvedValue({ error: null });
+
   return {
     auth: {
       getUser: vi.fn(async () => ({
@@ -147,6 +126,7 @@ function makeSupabaseMock() {
       })),
     },
     from: vi.fn((table: string) => builder(table)),
+    rpc,
   };
 }
 
@@ -230,8 +210,6 @@ beforeEach(() => {
     created_at: '2026-08-01T00:00:00Z',
   };
   updateError = null;
-  simulateOnePrimaryIndex = false;
-  primariesCleared = false;
   updateCalls.length = 0;
   supabaseMock = makeSupabaseMock();
   disconnectInstance.mockClear();
@@ -338,47 +316,56 @@ describe('PATCH', () => {
     expect(updateCalls[0].payload).toEqual({ mirror_inbound_media: false });
   });
 
-  it('is_primary:true → CLEARS the other active rows FIRST, then promotes the target (FIX 1)', async () => {
+  it('is_primary:true → calls set_primary_connection RPC', async () => {
     const res = await PATCH(patchRequest({ is_primary: true }), { params });
 
     expect(res.status).toBe(200);
-    expect(updateCalls).toHaveLength(2);
-
-    // 1st UPDATE: demote every OTHER active row (migration 040's
-    // idx_connections_one_primary forbids a 2-primary window).
-    expect(updateCalls[0].payload).toEqual({ is_primary: false });
-    expect(updateCalls[0].filters).toContainEqual(['neq', 'id', 'conn-1']);
-    expect(updateCalls[0].filters).toContainEqual(['is', 'archived_at', null]);
-
-    // 2nd UPDATE: promote the target id.
-    expect(updateCalls[1].payload).toEqual({ is_primary: true });
-    expect(updateCalls[1].filters).toContainEqual(['eq', 'id', 'conn-1']);
+    expect(supabaseMock.rpc).toHaveBeenCalledWith('set_primary_connection', {
+      p_id: 'conn-1',
+      p_account_id: 'acct-1',
+    });
+    // No UPDATE calls for is_primary (the RPC handles it atomically).
+    const isPrimaryUpdates = updateCalls.filter(
+      (c) => c.payload.is_primary === true
+    );
+    expect(isPrimaryUpdates).toHaveLength(0);
   });
 
-  it('is_primary:true dodges the one-primary unique index: promoting the target only after the others are cleared still returns 200 (FIX 1)', async () => {
-    // The mock rejects an UPDATE that sets is_primary=true for the
-    // account while ANOTHER active primary still exists (simulating
-    // idx_connections_one_primary). The new ordering clears first, so
-    // the target promotion no longer collides.
-    simulateOnePrimaryIndex = true;
+
+  it('is_primary:true: RPC error code P0002 → 404', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      error: { code: 'P0002', message: 'raise_exception' },
+    });
 
     const res = await PATCH(patchRequest({ is_primary: true }), { params });
 
-    expect(res.status).toBe(200);
-    expect(updateCalls).toHaveLength(2);
-    expect(updateCalls[0].payload).toEqual({ is_primary: false });
-    expect(updateCalls[1].payload).toEqual({ is_primary: true });
+    expect(res.status).toBe(404);
+    const json = await res.json();
+    expect(json.error).toBe('Connection not found');
   });
 
-  it('is_primary:true 500s if clearing the other primaries fails — the target is never promoted (FIX 1)', async () => {
-    updateError = { message: 'clear boom' };
+  it('is_primary:true: RPC error code 42501 → 403', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      error: { code: '42501', message: 'insufficient_privilege' },
+    });
+
+    const res = await PATCH(patchRequest({ is_primary: true }), { params });
+
+    expect(res.status).toBe(403);
+    const json = await res.json();
+    expect(json.error).toBe('Forbidden');
+  });
+
+  it('is_primary:true: RPC other error → 500', async () => {
+    supabaseMock.rpc.mockResolvedValueOnce({
+      error: { code: 'XYZ', message: 'boom' },
+    });
 
     const res = await PATCH(patchRequest({ is_primary: true }), { params });
 
     expect(res.status).toBe(500);
-    // Only the clear-others UPDATE was attempted.
-    expect(updateCalls).toHaveLength(1);
-    expect(updateCalls[0].payload).toEqual({ is_primary: false });
+    const json = await res.json();
+    expect(json.error).toBe('Failed to update connection');
   });
 
   it('is_primary:false on the only active connection → 400, no write', async () => {

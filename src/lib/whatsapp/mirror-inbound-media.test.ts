@@ -50,18 +50,14 @@ function fakeStorage(uploadError: { message: string } | null = null) {
   return { storage, uploads };
 }
 
-function fakeDownload(bytes: number, contentType = "image/jpeg") {
-  return vi.fn(async () => ({
-    buffer: Buffer.alloc(bytes),
-    contentType,
-  }));
+/** `Uint8Array` of `n` zero bytes — a stand-in for the fetched media. */
+function fakeBytes(n: number) {
+  return new Uint8Array(n);
 }
 
 const BASE = {
   accountId: ACCOUNT,
   mediaId: MEDIA_ID,
-  downloadUrl: "https://lookaside.fbsbx.com/whatsapp/abc",
-  accessToken: "test-token",
 } as const;
 
 describe("normalizeMimeType", () => {
@@ -140,15 +136,14 @@ describe("mirrorInboundMedia", () => {
 
   it("uploads to chat-media and returns the durable public URL", async () => {
     const { storage, uploads } = fakeStorage();
-    const download = fakeDownload(1024);
 
     const url = await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: "image/jpeg",
       fileSize: 1024,
       messageTimestamp: "1754899200",
-      download,
     });
 
     expect(uploads).toHaveLength(1);
@@ -167,9 +162,9 @@ describe("mirrorInboundMedia", () => {
     const args = {
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: "image/jpeg" as const,
       messageTimestamp: "1754899200",
-      download: fakeDownload(1024),
     };
 
     await mirrorInboundMedia(args);
@@ -189,41 +184,39 @@ describe("mirrorInboundMedia", () => {
     await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(2048),
       mimeType: "audio/ogg; codecs=opus",
-      download: fakeDownload(2048, "audio/ogg; codecs=opus"),
     });
 
     expect(uploads[0].options.contentType).toBe("audio/ogg");
     expect(uploads[0].path).toMatch(/\.ogg$/);
   });
 
-  it("skips oversized media without downloading it", async () => {
+  it("skips media whose declared size is over the bucket limit", async () => {
     const { storage, uploads } = fakeStorage();
-    const download = fakeDownload(1024);
 
     const url = await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: "application/pdf",
       fileSize: MEDIA_MAX_BYTES + 1,
-      download,
     });
 
     expect(url).toBeNull();
-    expect(download).not.toHaveBeenCalled();
     expect(uploads).toHaveLength(0);
   });
 
-  it("skips media that turns out oversized once downloaded", async () => {
-    // Meta's file_size is advisory; the transfer is the truth.
+  it("skips media whose bytes are over the bucket limit", async () => {
+    // The declared file_size is advisory; the bytes are the truth.
     const { storage, uploads } = fakeStorage();
 
     const url = await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(MEDIA_MAX_BYTES + 1),
       mimeType: "video/mp4",
       fileSize: 1024,
-      download: fakeDownload(MEDIA_MAX_BYTES + 1, "video/mp4"),
     });
 
     expect(url).toBeNull();
@@ -237,40 +230,50 @@ describe("mirrorInboundMedia", () => {
     const url = await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: "application/x-7z-compressed",
-      download: fakeDownload(1024, "application/x-7z-compressed"),
     });
 
     expect(url).toBeNull();
   });
 
-  it("returns null instead of throwing when the download fails", async () => {
-    // The caller is the Meta webhook: a throw here would surface as a
-    // failed delivery and have Meta retry the whole message.
-    const { storage } = fakeStorage();
+  it("returns null instead of throwing when Storage throws", async () => {
+    // The caller is the inbound webhook pipeline: a throw here would
+    // surface as a failed delivery and have the provider retry the whole
+    // message.
+    const storage = {
+      from() {
+        return {
+          async upload() {
+            throw new Error("storage upload exploded");
+          },
+          getPublicUrl(path: string) {
+            return { data: { publicUrl: `https://cdn.test/${path}` } };
+          },
+        };
+      },
+    };
 
     const url = await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: "image/png",
-      download: vi.fn(async () => {
-        throw new Error("Media download failed: 404");
-      }),
     });
 
     expect(url).toBeNull();
   });
 
-  it("falls back to the download's content type when Meta gave none", async () => {
+  it("defaults the upload type to application/octet-stream when no MIME is given", async () => {
     const { storage, uploads } = fakeStorage();
 
     await mirrorInboundMedia({
       ...BASE,
       storage,
+      bytes: fakeBytes(1024),
       mimeType: null,
-      download: fakeDownload(1024, "image/png"),
     });
 
-    expect(uploads[0].options.contentType).toBe("image/png");
+    expect(uploads[0].options.contentType).toBe("application/octet-stream");
   });
 });

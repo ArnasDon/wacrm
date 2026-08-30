@@ -1,4 +1,3 @@
-import { downloadMedia } from "./meta-api";
 import { extensionForMime } from "@/lib/media/filename";
 import { buildMediaPath, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
 
@@ -53,19 +52,16 @@ export interface MirrorInboundMediaArgs {
   accountId: string;
   /** Meta's media id. Makes the object path deterministic. */
   mediaId: string;
-  /** Short-lived CDN URL from `getMediaUrl`. */
-  downloadUrl: string;
-  accessToken: string;
-  /** Meta's `mime_type` for the media. */
+  /** The media bytes, already fetched by the transport's `fetchMedia`. */
+  bytes: Uint8Array;
+  /** The transport's resolved MIME type for the media. */
   mimeType?: string | null;
-  /** Meta's `file_size`, when it gave us one — lets us skip before downloading. */
+  /** Declared byte size, when the provider gave one — lets us skip before uploading. Defaults to `bytes.byteLength`. */
   fileSize?: number | null;
   /** `document.filename`, when the sender's client supplied one. */
   fileName?: string | null;
   /** Meta's message timestamp (epoch SECONDS) — keeps download names distinct. */
   messageTimestamp?: string | number | null;
-  /** Injected in tests. */
-  download?: typeof downloadMedia;
 }
 
 /**
@@ -140,7 +136,7 @@ export function mirrorFileName(args: {
 }
 
 /**
- * Download the bytes from Meta and put them in `chat-media`.
+ * Put already-fetched inbound media bytes in `chat-media`.
  *
  * @returns the durable public URL, or `null` if the mirror was skipped
  *          or failed — in which case the caller must fall back to the
@@ -153,48 +149,45 @@ export async function mirrorInboundMedia(
     storage,
     accountId,
     mediaId,
-    downloadUrl,
-    accessToken,
+    bytes,
     mimeType,
     fileSize,
     fileName,
     messageTimestamp,
-    download = downloadMedia,
   } = args;
 
   const normalizedMime = normalizeMimeType(mimeType);
 
-  // Skip oversized media BEFORE spending the transfer. The bucket
-  // rejects anything past its 16 MB `file_size_limit` anyway, and Meta
-  // allows documents up to 100 MB, so this is a real case rather than a
-  // defensive one.
-  if (typeof fileSize === "number" && fileSize > MEDIA_MAX_BYTES) {
+  // Skip oversized media before spending an upload. The bucket rejects
+  // anything past its 16 MB `file_size_limit` anyway, and a provider can
+  // hand us a document many times that, so this is a real case rather
+  // than a defensive one. Prefer the declared size when we have one;
+  // otherwise the bytes we were handed are the truth.
+  const declaredSize =
+    typeof fileSize === "number" ? fileSize : bytes.byteLength;
+  if (declaredSize > MEDIA_MAX_BYTES) {
     console.warn(
-      `[mirror-media] skipping ${mediaId}: ${fileSize} bytes exceeds the ${MEDIA_MAX_BYTES}-byte bucket limit`,
+      `[mirror-media] skipping ${mediaId}: ${declaredSize} bytes exceeds the ${MEDIA_MAX_BYTES}-byte bucket limit`,
     );
     return null;
   }
 
   try {
-    const { buffer, contentType } = await download({ downloadUrl, accessToken });
-
-    // Meta's `file_size` is advisory; the transfer is the truth. Check
+    // A declared `file_size` is advisory; the bytes are the truth. Check
     // again so an understated size can't push a rejected upload onto
     // the bucket.
-    if (buffer.byteLength > MEDIA_MAX_BYTES) {
+    if (bytes.byteLength > MEDIA_MAX_BYTES) {
       console.warn(
-        `[mirror-media] skipping ${mediaId}: downloaded ${buffer.byteLength} bytes, over the ${MEDIA_MAX_BYTES}-byte bucket limit`,
+        `[mirror-media] skipping ${mediaId}: ${bytes.byteLength} bytes, over the ${MEDIA_MAX_BYTES}-byte bucket limit`,
       );
       return null;
     }
 
-    // Meta's metadata MIME wins over the CDN response header: it's what
-    // the message row records, so mirroring it keeps `media_type` and
-    // the stored object describing the same thing.
-    const uploadType =
-      normalizedMime ??
-      normalizeMimeType(contentType) ??
-      "application/octet-stream";
+    // The transport's resolved MIME is what the message row records, so
+    // mirroring it keeps `media_type` and the stored object describing
+    // the same thing. Fall back to the bucket's catch-all only when we
+    // were handed nothing usable.
+    const uploadType = normalizedMime ?? "application/octet-stream";
 
     const objectName = mirrorFileName({
       mediaId,
@@ -210,7 +203,7 @@ export async function mirrorInboundMedia(
     // `upsert: true` for that same reason: on the rare Meta redelivery
     // the second pass rewrites byte-identical content at the same key
     // instead of erroring or orphaning a duplicate.
-    const { error } = await storage.from(MIRROR_BUCKET).upload(path, buffer, {
+    const { error } = await storage.from(MIRROR_BUCKET).upload(path, bytes, {
       contentType: uploadType,
       cacheControl: "3600",
       upsert: true,

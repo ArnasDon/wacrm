@@ -15,11 +15,14 @@ import {
   sendInteractiveButtons,
   sendInteractiveList,
   sendReactionMessage,
+  getMediaUrl,
+  downloadMedia,
 } from '@/lib/whatsapp/meta-api';
 import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { MEDIA_MAX_BYTES } from '@/lib/storage/upload-media';
 import type {
   TransportConnection,
   TransportInteractiveArgs,
@@ -175,6 +178,42 @@ export function createMetaTransport(
         emoji: args.emoji,
       });
       return { providerMessageId: r.messageId };
+    },
+
+    // Inbound: resolve a mídia recebida para bytes. Duas chamadas à Graph
+    // API — `getMediaUrl` (id → URL curta autenticada + mime) e
+    // `downloadMedia` (URL → binário). O mime dos metadados vence; o
+    // header do CDN é só o último recurso.
+    async fetchMedia(ref) {
+      if (ref.provider !== 'meta') {
+        throw new Error(
+          `meta transport: unexpected media ref provider ${ref.provider}`
+        );
+      }
+      const info = await getMediaUrl({
+        mediaId: ref.mediaId,
+        accessToken,
+      });
+      // Meta's `file_size` lets us reject a file the `chat-media` bucket
+      // would refuse WITHOUT spending the full transfer (issue #466) — a
+      // 90 MB document costs nothing to skip here. The caller's try/catch
+      // turns this into the proxy-URL fallback.
+      if (
+        typeof info.fileSize === 'number' &&
+        info.fileSize > MEDIA_MAX_BYTES
+      ) {
+        throw new Error(
+          `media ${ref.mediaId} is ${info.fileSize} bytes, over the ${MEDIA_MAX_BYTES}-byte limit`
+        );
+      }
+      const { buffer, contentType } = await downloadMedia({
+        downloadUrl: info.url,
+        accessToken,
+      });
+      return {
+        bytes: new Uint8Array(buffer),
+        mimeType: info.mimeType || contentType,
+      };
     },
   };
 }

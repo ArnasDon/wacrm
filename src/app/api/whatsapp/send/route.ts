@@ -126,11 +126,29 @@ export async function POST(request: Request) {
         )
       }
 
+      // conversations.connection_id is NOT NULL (migration 041). No
+      // connection is in hand on this path, so resolve the account's
+      // primary active connection — the same channel a broadcast uses.
+      const { data: primaryConn } = await supabase
+        .from('whatsapp_connections')
+        .select('id')
+        .eq('account_id', accountId)
+        .eq('is_primary', true)
+        .is('archived_at', null)
+        .maybeSingle()
+      if (!primaryConn) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 }
+        )
+      }
+
       const resolved = await findOrCreateConversation(
         supabase,
         accountId,
         userId,
-        contact_id
+        contact_id,
+        primaryConn.id
       )
       if (!resolved) {
         return NextResponse.json(
@@ -203,12 +221,14 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string,
+  connectionId: string,
 ): Promise<string | null> {
   const { data: existing } = await supabase
     .from('conversations')
     .select('id')
     .eq('account_id', accountId)
     .eq('contact_id', contactId)
+    .eq('connection_id', connectionId)
     .maybeSingle()
 
   if (existing) return existing.id
@@ -219,6 +239,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      connection_id: connectionId,
     })
     .select('id')
     .single()

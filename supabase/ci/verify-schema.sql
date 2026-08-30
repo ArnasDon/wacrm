@@ -60,6 +60,29 @@ BEGIN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
   END IF;
 
+  -- 041: conversations.connection_id NOT NULL
+  IF (SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'conversations' AND column_name = 'connection_id') <> 'NO' THEN
+    RAISE EXCEPTION 'verify-schema: conversations.connection_id is nullable';
+  END IF;
+
+  -- 041: FK ON DELETE RESTRICT
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'conversations_connection_id_fkey' AND confdeltype = 'r'
+  ) THEN
+    RAISE EXCEPTION 'verify-schema: conversations FK is not ON DELETE RESTRICT';
+  END IF;
+
+  -- 041: is_primary EXCLUDE constraint, deferível
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'whatsapp_connections_one_primary'
+      AND contype = 'x' AND condeferrable
+  ) THEN
+    RAISE EXCEPTION 'verify-schema: one_primary is not a deferrable exclusion constraint';
+  END IF;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

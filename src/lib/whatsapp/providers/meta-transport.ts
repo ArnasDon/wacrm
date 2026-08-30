@@ -22,6 +22,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { MEDIA_MAX_BYTES } from '@/lib/storage/upload-media';
 import type {
   TransportConnection,
   TransportInteractiveArgs,
@@ -193,6 +194,18 @@ export function createMetaTransport(
         mediaId: ref.mediaId,
         accessToken,
       });
+      // Meta's `file_size` lets us reject a file the `chat-media` bucket
+      // would refuse WITHOUT spending the full transfer (issue #466) — a
+      // 90 MB document costs nothing to skip here. The caller's try/catch
+      // turns this into the proxy-URL fallback.
+      if (
+        typeof info.fileSize === 'number' &&
+        info.fileSize > MEDIA_MAX_BYTES
+      ) {
+        throw new Error(
+          `media ${ref.mediaId} is ${info.fileSize} bytes, over the ${MEDIA_MAX_BYTES}-byte limit`
+        );
+      }
       const { buffer, contentType } = await downloadMedia({
         downloadUrl: info.url,
         accessToken,

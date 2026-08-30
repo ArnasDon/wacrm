@@ -46,49 +46,52 @@ vi.mock('@supabase/supabase-js', () => ({
     from(table: string) {
       switch (table) {
         case 'whatsapp_connections': {
-          // Chain-aware: the route now appends `.eq('provider','meta')`
-          // and `.is('archived_at', null)` before awaiting, so every
-          // filter must return the (thenable) builder again.
+          // Chain-aware: the envelope adapter awaits the builder after
+          // `.eq('provider','meta').is('archived_at', null)` (array
+          // result), and processInboundMessage's media path re-loads the
+          // row by id with `.single()`. A single well-formed row backs
+          // both — enough for `createTransport` in the media path.
+          const row = {
+            id: 'conn-1',
+            account_id: 'acc-1',
+            user_id: 'user-1',
+            credential: 'enc',
+            provider: 'meta',
+            phone_number_id: 'pn-1',
+            mirror_inbound_media: h.state.mirrorInboundMedia,
+            uazapi_base_url: null,
+          }
           const chain: Record<string, unknown> = {
             eq: () => chain,
             is: () => chain,
+            single: () => Promise.resolve({ data: row, error: null }),
+            maybeSingle: () => Promise.resolve({ data: row, error: null }),
             then: (
               onFulfilled: (v: { data: unknown; error: null }) => unknown,
               onRejected?: (r: unknown) => unknown,
             ) =>
-              Promise.resolve({
-                data: [
-                  {
-                    account_id: 'acc-1',
-                    user_id: 'user-1',
-                    credential: 'enc',
-                    mirror_inbound_media: h.state.mirrorInboundMedia,
-                  },
-                ],
-                error: null,
-              }).then(onFulfilled, onRejected),
+              Promise.resolve({ data: [row], error: null }).then(
+                onFulfilled,
+                onRejected,
+              ),
           }
           return {
             select: () => chain,
           }
         }
-        case 'conversations':
-          // findOrCreateConversation: select().eq().eq().order().limit()
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  order: () => ({
-                    limit: () =>
-                      Promise.resolve({
-                        data: [h.state.conversation],
-                        error: null,
-                      }),
-                  }),
-                }),
-              }),
-            }),
+        case 'conversations': {
+          // findOrCreateConnectionAwareConversation:
+          //   select().eq('account_id').eq('contact_id').eq('connection_id')
+          //          .order().limit()
+          // Chain-aware so any number of `.eq()` resolves to the same builder.
+          const cchain: Record<string, unknown> = {
+            eq: () => cchain,
+            order: () => cchain,
+            limit: () =>
+              Promise.resolve({ data: [h.state.conversation], error: null }),
           }
+          return { select: () => cchain }
+        }
         case 'broadcast_recipients':
           // flagBroadcastReplyIfAny: select().eq().eq().in().order().limit()
           return {

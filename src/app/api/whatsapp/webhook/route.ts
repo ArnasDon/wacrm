@@ -245,18 +245,31 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const value = change.value
+      // Every change carries the receiving number's phone_number_id in
+      // its metadata. Resolve it once up front so the statuses branch
+      // below can scope its queries to the owning account — `message_id`
+      // (`status.id`) alone is NOT a safe scoping key: migration 037
+      // documents it as NOT globally unique across phone numbers, so two
+      // different accounts' numbers can share the same Meta message id.
+      const phoneNumberId = value.metadata.phone_number_id
 
       // Handle status updates
       if (value.statuses) {
-        for (const status of value.statuses) {
-          await handleStatusUpdate(status)
+        const statusAccountId = await resolveAccountIdForPhoneNumber(phoneNumberId)
+        if (statusAccountId) {
+          for (const status of value.statuses) {
+            await handleStatusUpdate(status, statusAccountId)
+          }
+        } else {
+          console.error(
+            '[webhook] dropping status update(s) — could not resolve a single owning account for phone_number_id:',
+            phoneNumberId,
+          )
         }
       }
 
       // Handle incoming messages
       if (!value.messages || !value.contacts) continue
-
-      const phoneNumberId = value.metadata.phone_number_id
 
       // Find user's config by phone_number_id. `.single()` returns
       // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
@@ -364,24 +377,90 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
-async function handleStatusUpdate(status: {
-  id: string
-  status: string
-  timestamp: string
-  recipient_id: string
-}) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
-    .from('messages')
-    .update({ status: status.status })
-    .eq('message_id', status.id)
+/**
+ * Resolve the single account that owns `phoneNumberId`. Shared by the
+ * statuses branch above so `handleStatusUpdate` never has to fall back
+ * to matching by `message_id` alone (see the caller's comment for why
+ * that's unsafe). Mirrors the inbound-message branch's own
+ * `whatsapp_config` lookup and its 0-row / ≥2-row handling — an
+ * unresolved or ambiguous owner means "drop, don't guess."
+ */
+async function resolveAccountIdForPhoneNumber(
+  phoneNumberId: string,
+): Promise<string | null> {
+  const { data: configRows, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('phone_number_id', phoneNumberId)
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (error) {
+    console.error(
+      'Error resolving account for phone_number_id (status update):',
+      phoneNumberId,
+      error,
+    )
+    return null
+  }
+  if (!configRows || configRows.length === 0) {
+    console.error(
+      'No config found for phone_number_id (status update):',
+      phoneNumberId,
+    )
+    return null
+  }
+  if (configRows.length > 1) {
+    console.error(
+      `Multiple configs (${configRows.length}) found for phone_number_id (status update):`,
+      phoneNumberId,
+      '— resolve duplicates so each number maps to a single account.',
+    )
+    return null
+  }
+  return (configRows[0] as { account_id: string }).account_id
+}
+
+async function handleStatusUpdate(
+  status: {
+    id: string
+    status: string
+    timestamp: string
+    recipient_id: string
+  },
+  // The account that owns the phone_number_id this status arrived on
+  // (resolved by the caller via resolveAccountIdForPhoneNumber). Every
+  // query below is scoped to THIS account in addition to matching
+  // `status.id` — migration 037 documents `message_id` as NOT globally
+  // unique across phone numbers, so two different accounts can each
+  // have a row that matches `status.id`. Without this scope, a status
+  // meant for one tenant could flip another tenant's message/recipient
+  // status, or leak that tenant's data into the wrong account's public
+  // webhook.
+  accountId: string,
+) {
+  // 1) Mirror onto messages (legacy behavior) — Meta's status values
+  //    already match the CHECK constraint on messages.status.
+  //    `messages` has no `account_id` column of its own (only
+  //    `conversation_id`), so resolve the matching row ids scoped to
+  //    THIS account's conversations first, then update only those —
+  //    never a bare `.eq('message_id', ...)` across every tenant. Still
+  //    0..N rows within the account, exactly as before.
+  const { data: ownMessages, error: ownMsgLookupErr } = await supabaseAdmin()
+    .from('messages')
+    .select('id, conversations!inner(account_id)')
+    .eq('message_id', status.id)
+    .eq('conversations.account_id', accountId)
+
+  if (ownMsgLookupErr) {
+    console.error('Error resolving messages for status update:', ownMsgLookupErr)
+  } else if (ownMessages && ownMessages.length > 0) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .in('id', ownMessages.map((m: { id: string }) => m.id))
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -389,15 +468,18 @@ async function handleStatusUpdate(status: {
   // endpoint can't delay the broadcast_recipients update.
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
-  //    (added in migration 003). The aggregate trigger on
+  //    (added in migration 003), scoped to THIS account's own
+  //    broadcasts — `broadcast_recipients` likewise has no `account_id`
+  //    column of its own, only `broadcast_id`. The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's
   //    sent/delivered/read/failed counts automatically.
   const tsIso = new Date(parseInt(status.timestamp) * 1000).toISOString()
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcasts!inner(account_id)')
     .eq('whatsapp_message_id', status.id)
+    .eq('broadcasts.account_id', accountId)
     .maybeSingle()
 
   if (recFetchErr) {
@@ -425,30 +507,30 @@ async function handleStatusUpdate(status: {
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).
   //    Runs last so a slow subscriber can't delay the mirrors above.
-  //    Bounded to one row (message_id isn't unique) purely to resolve
-  //    the owning account for delivery.
+  //    Scoped to THIS account (the one that actually received the
+  //    status) so a message_id collision can never resolve to — and
+  //    notify — a different tenant's public webhook endpoint. `accountId`
+  //    is already trusted (resolved from phone_number_id by the caller),
+  //    so it's used directly rather than re-derived from the join.
   const { data: msgRow } = await supabaseAdmin()
     .from('messages')
-    .select('conversation_id, conversations(account_id)')
+    .select('conversation_id, conversations!inner(account_id)')
     .eq('message_id', status.id)
+    .eq('conversations.account_id', accountId)
     .limit(1)
     .maybeSingle()
 
   if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null
-    const accountId = conv?.account_id
-    if (accountId) {
-      await dispatchWebhookEvent(
-        supabaseAdmin(),
-        accountId,
-        'message.status_updated',
-        {
-          whatsapp_message_id: status.id,
-          conversation_id: msgRow.conversation_id,
-          status: status.status,
-        }
-      )
-    }
+    await dispatchWebhookEvent(
+      supabaseAdmin(),
+      accountId,
+      'message.status_updated',
+      {
+        whatsapp_message_id: status.id,
+        conversation_id: msgRow.conversation_id,
+        status: status.status,
+      }
+    )
   }
 }
 

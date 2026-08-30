@@ -104,6 +104,39 @@ Verificar: `select jobname, schedule, active from cron.job;` lista
 `data-retention-sweep`, y a los pocos minutos `/api/health` deja de
 reportar `degraded (stale: retention_cron)`.
 
+### 2d. Notificaciones push (PWA) — CÓDIGO LISTO, faltan variables + migraciones
+
+La app ya es instalable (PWA con service worker) y trae Web Push
+completo. Para activarlo:
+
+1. **Generá las claves VAPID** (una vez):
+
+   ```bash
+   npx web-push generate-vapid-keys
+   ```
+
+2. **En EasyPanel**, agregá:
+   - `NEXT_PUBLIC_VAPID_PUBLIC_KEY` = la clave pública
+   - `VAPID_PRIVATE_KEY` = la clave privada
+   - `VAPID_SUBJECT` = `mailto:...` (opcional)
+   - `PUSH_FANOUT_SECRET` = *(opcional — si no lo ponés, usa `WEBHOOK_CRON_SECRET`)*
+
+3. **Aplicá las migraciones** en el SQL editor de Supabase:
+   - `094_push_subscriptions.sql` — tal cual.
+   - `095_notifications_push_fanout.sql` — reemplazá `:'base_url'` por
+     `https://sandia-sandia-crm.kmencc.easypanel.host` y `:'push_secret'`
+     por el valor de tu `WEBHOOK_CRON_SECRET` (o el `PUSH_FANOUT_SECRET`
+     dedicado si configuraste uno).
+
+4. Cada usuario activa el toggle en **Configuración → Tu perfil →
+   Notificaciones push** (pide permiso del navegador) y puede mandarse
+   una prueba. Funciona en Android instalado + escritorio; en iPhone
+   solo con la PWA "añadida a inicio" (iOS 16.4+) y de forma menos
+   confiable.
+
+Sin las claves VAPID, todo esto queda inerte: el toggle no aparece y no
+se envía nada.
+
 ---
 
 ## 3. Entorno de staging — PENDIENTE (requiere tu aprobación de costo)

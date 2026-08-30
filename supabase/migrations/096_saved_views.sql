@@ -117,4 +117,9 @@ $$;
 
 ALTER FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT, TEXT) OWNER TO postgres;
 REVOKE ALL ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT, TEXT) FROM PUBLIC;
+-- The pre-096 definition carried an explicit `anon` EXECUTE grant that
+-- REVOKE ... FROM PUBLIC doesn't clear. Drop it — the function is
+-- SECURITY INVOKER + RLS-protected, but no unauthenticated caller has
+-- any business here.
+REVOKE EXECUTE ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT, TEXT) FROM anon;
 GRANT EXECUTE ON FUNCTION public.filter_contacts_by_tags(UUID[], TEXT, INT, INT, TEXT) TO authenticated;

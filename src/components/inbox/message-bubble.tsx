@@ -12,7 +12,7 @@ import {
   CornerDownLeft,
   Sparkles,
 } from "lucide-react";
-import { format } from "date-fns";
+import { timeInZone } from "@/lib/timezone";
 import { ReplyQuote } from "./reply-quote";
 import { MessageReactions } from "./message-reactions";
 import {
@@ -31,6 +31,10 @@ interface MessageBubbleProps {
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
   currentUserId?: string;
+  /** Account IANA timezone — the timestamp is rendered in this zone so
+   *  it reads the same for every teammate. Falls back to the viewer's
+   *  own zone when absent. */
+  timeZone?: string | null;
   onToggleReaction?: (emoji: string) => void;
   /**
    * Opens the thread's media viewer on this message. Only images and videos
@@ -220,13 +224,14 @@ export function MessageBubble({
   reply,
   reactions,
   currentUserId,
+  timeZone,
   onToggleReaction,
   onOpenMedia,
 }: MessageBubbleProps) {
   const t = useTranslations("Inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
-  const time = format(new Date(message.created_at), "HH:mm");
+  const time = timeInZone(message.created_at, timeZone);
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.

@@ -49,6 +49,54 @@ export function formatWithOffset(date: Date, timeZone: string): string {
   return `${year}-${month}-${day}T${hour}:${minute}:${second}${offset}`
 }
 
+/** The viewer's own IANA timezone — the fallback for the inbox
+ *  helpers below when an account has no `timezone` set yet (rows from
+ *  before migration 063) or it's still loading. */
+export function browserTimeZone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
+/** `HH:mm` (24h) for `date` as read in `timeZone`. Used for WhatsApp
+ *  message timestamps in the inbox so "07:19" means 07:19 where the
+ *  business is, not wherever the teammate viewing the thread happens
+ *  to be. Falls back to the viewer's own zone when `timeZone` is
+ *  absent. */
+export function timeInZone(date: Date | string, timeZone?: string | null): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: timeZone || browserTimeZone(),
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? '00'
+  return `${get('hour')}:${get('minute')}`
+}
+
+/** `yyyy-MM-dd` for `date` as read in `timeZone` — the key the inbox
+ *  uses to group messages into day sections and to decide
+ *  "Today"/"Yesterday". Computing it in the account's zone keeps the
+ *  day boundary where the business is (a message sent at 23:30 local
+ *  shouldn't jump into tomorrow just because the viewer is east of
+ *  them). Falls back to the viewer's own zone when `timeZone` is
+ *  absent. */
+export function dateKeyInZone(date: Date | string, timeZone?: string | null): string {
+  const d = typeof date === 'string' ? new Date(date) : date
+  // 'en-CA' renders a date as yyyy-MM-dd.
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: timeZone || browserTimeZone(),
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(d)
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? ''
+  return `${get('year')}-${get('month')}-${get('day')}`
+}
+
 /** Validates an IANA timezone identifier the cheap way — asks
  *  `Intl.DateTimeFormat` to use it and see if it throws. Used wherever
  *  a caller-supplied timezone string is persisted (Settings). */

@@ -44,3 +44,13 @@ Sin `?execute=true` solo simula. El job diario debe llamar:
 `RETENTION_CRON_SECRET` es preferido; durante la transición se acepta
 `WEBHOOK_CRON_SECRET` como respaldo. La primera ejecución debe hacerse sin
 `execute=true`, revisar los conteos y luego activar el job diario.
+
+## Job programado
+
+`092_schedule_data_retention_cron.sql` registra el job pg_cron
+`data-retention-sweep` (diario 09:20 UTC, ~03:20 en América/Guatemala) que
+llama al endpoint con `?execute=true`. Se aplica en el SQL editor de
+Supabase reemplazando `:'base_url'` y `:'retention_secret'` por literales —
+lo más simple es usar el valor de `WEBHOOK_CRON_SECRET` para no tener que
+tocar el env de EasyPanel. Por lotes de 1,000 filas/tabla, así que un
+backlog inicial se drena en varios días. Ver `docs/OPS_SETUP.md` §2c.

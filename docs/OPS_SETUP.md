@@ -85,13 +85,24 @@ Si algún día EasyPanel también agenda automations/flows por su cuenta,
 bórralo de ahí para que pg_cron sea la única fuente (las rutas
 self-lock, así que un solapamiento breve es seguro).
 
-### 2c. Retención de datos — DECISIÓN PENDIENTE
+### 2c. Retención de datos — RESUELTO (2026-08-29)
 
-`/api/maintenance/retention/cron` tampoco está agendado y **borra
-datos** cuando se llama con `?execute=true` (sin eso es dry-run). No lo
-agendé por eso. Cuando decidas la política (ver `docs/data-retention.md`),
-pon `RETENTION_CRON_SECRET` y agrega el job a pg_cron con `?execute=true`
-a una hora de bajo tráfico.
+Política aprobada: se mantienen los plazos que ya trae `run_data_retention()`
+(migración 080) — 30–180 días, solo historial técnico/operativo; contactos,
+mensajes, conversaciones, deals, cotizaciones, difusiones, productos y
+`ai_action_log` nunca se tocan.
+
+**Aplicá `092_schedule_data_retention_cron.sql`** en el SQL editor de
+Supabase (o por psql), reemplazando `:'base_url'` y `:'retention_secret'`
+por literales. Lo más simple: usá tu `WEBHOOK_CRON_SECRET` actual como
+`retention_secret` — la ruta lo acepta como fallback y no hay que agregar
+nada en EasyPanel. Corre 1×/día a las 09:20 UTC (~03:20 Guatemala) con
+`?execute=true`; por lotes de 1000 filas/tabla, así que un backlog inicial
+se drena en varios días solo.
+
+Verificar: `select jobname, schedule, active from cron.job;` lista
+`data-retention-sweep`, y a los pocos minutos `/api/health` deja de
+reportar `degraded (stale: retention_cron)`.
 
 ---
 

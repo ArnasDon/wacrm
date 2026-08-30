@@ -2141,6 +2141,7 @@
       "webhooks": "Webhooks",
       "billing": "Facturación",
       "google-calendar": "Google Calendar",
+      "google-sheets": "Google Sheets",
       "support": "Tickets"
     },
     "groups": {

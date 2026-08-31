@@ -5,7 +5,6 @@ import { toast } from 'sonner';
 import { Loader2, KeyRound } from 'lucide-react';
 
 import { createClient } from '@/lib/supabase/client';
-import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -22,7 +21,6 @@ const MIN_PASSWORD = 8;
 
 export function PasswordForm() {
   const t = useTranslations('Settings.profile');
-  const { profile } = useAuth();
   const supabase = createClient();
 
   const [current, setCurrent] = useState('');
@@ -33,10 +31,6 @@ export function PasswordForm() {
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!profile?.email) {
-      toast.error(t('cannotChangeNoEmail'));
-      return;
-    }
     if (next.length < MIN_PASSWORD) {
       setConfirmError(t('passwordTooShort', { min: MIN_PASSWORD }));
       return;
@@ -49,12 +43,24 @@ export function PasswordForm() {
     setSaving(true);
 
     try {
-      // Supabase doesn't expose a "verify password without issuing a
-      // session" API, so we re-authenticate with the provided current
-      // password. If it matches, the session refreshes silently; if it
-      // doesn't, we abort before calling updateUser.
+      // Re-authenticate against the REAL, current Supabase Auth email
+      // (auth.users.email, via getUser()) — never `profile.email`
+      // (profiles.email), which is only a point-in-time copy taken at
+      // signup and can go stale after the user changes their email
+      // (AUTH-N2). Using the stale copy here would make this
+      // re-authentication step fail with a misleading "current
+      // password incorrect" for a user who typed the right password.
+      const {
+        data: { user },
+        error: getUserError,
+      } = await supabase.auth.getUser();
+      if (getUserError || !user?.email) {
+        toast.error(t('cannotChangeNoEmail'));
+        return;
+      }
+
       const { error: signInError } = await supabase.auth.signInWithPassword({
-        email: profile.email,
+        email: user.email,
         password: current,
       });
       if (signInError) {

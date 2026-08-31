@@ -36,6 +36,29 @@ export interface GenerateArgs {
 }
 
 /**
+ * Provider failures that are expected to self-heal — the same call a
+ * moment later has a real chance of succeeding. Everything else
+ * (`invalid_key`, `unsupported_provider`) won't change on a retry and
+ * must surface immediately. Drove the 2026-08-30 incident: right after
+ * an account's Anthropic key was restored, the next inbound hit a
+ * transient overload during generation and the customer's question was
+ * silently dropped with no retry and no handoff.
+ */
+const RETRYABLE_AI_ERROR_CODES = new Set([
+  'timeout',
+  'rate_limited',
+  'network_error',
+  'provider_error',
+  'empty_response',
+])
+
+/** True when `err` is an `AiError` whose failure mode is worth one retry
+ *  (see `RETRYABLE_AI_ERROR_CODES`). */
+export function isRetryableAiError(err: unknown): boolean {
+  return err instanceof AiError && RETRYABLE_AI_ERROR_CODES.has(err.code)
+}
+
+/**
  * Generate the next reply from the account's configured provider.
  * Dispatches to the right adapter, then parses the handoff sentinel out
  * of the raw text. Throws `AiError` on any provider/network failure.

@@ -137,15 +137,36 @@ export function createUazapiTransport(
       throw new UnsupportedCapabilityError('uazapi', 'interactive');
     },
 
-    // Inbound: a UAZAPI expõe POST /message/download, mas o cabeamento
-    // (base64 → bytes, mime) entra na Onda 1c-ii. Hoje lança para que o
-    // caminho de mídia não passe silenciosamente com um envelope vazio.
-    fetchMedia(): Promise<{
+    async fetchMedia(ref): Promise<{
       bytes: Uint8Array;
       mimeType: string;
       filename?: string;
     }> {
-      throw new Error('uazapi fetchMedia: implementado na Onda 1c-ii');
+      if (ref.provider !== 'uazapi') {
+        throw new Error(
+          `uazapi transport: unexpected media ref provider ${ref.provider}`
+        );
+      }
+      const json = await call('/message/download', {
+        id: ref.messageId,
+        return_base64: true,
+        return_link: false,
+      });
+      // Resposta (yaml ~7330): { mimetype (sempre), base64Data (se
+      // return_base64), fileURL, transcription }. Defensivo no campo do
+      // base64 — o nome exato o smoke confirma.
+      const b64 =
+        (json.base64Data as string) ??
+        (json.base64 as string) ??
+        (json.file as string);
+      if (!b64) {
+        throw new Error('uazapi /message/download: no base64 in response');
+      }
+      return {
+        bytes: Uint8Array.from(Buffer.from(b64, 'base64')),
+        mimeType: (json.mimetype as string) ?? 'application/octet-stream',
+        filename: (json.fileName as string) ?? (json.filename as string) ?? undefined,
+      };
     },
   };
 }

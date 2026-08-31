@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -150,24 +151,30 @@ export function PipelineBoardMobile({
                     {t("move")}
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end" className="min-w-48">
-                    <DropdownMenuLabel>{t("moveTo")}</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    {sortedStages.map((s) => (
-                      <DropdownMenuItem
-                        key={s.id}
-                        disabled={s.id === deal.stage_id}
-                        onClick={() => {
-                          if (s.id !== deal.stage_id) onDealMoved(deal.id, s.id);
-                        }}
-                      >
-                        <span
-                          aria-hidden
-                          className="size-2 shrink-0 rounded-full"
-                          style={{ backgroundColor: s.color }}
-                        />
-                        {s.name}
-                      </DropdownMenuItem>
-                    ))}
+                    {/* base-ui's Menu.GroupLabel (DropdownMenuLabel)
+                        THROWS at render without a Menu.Group ancestor —
+                        see dropdown-menu-group-label.test.tsx / #336. */}
+                    <DropdownMenuGroup>
+                      <DropdownMenuLabel>{t("moveTo")}</DropdownMenuLabel>
+                      <DropdownMenuSeparator />
+                      {sortedStages.map((s) => (
+                        <DropdownMenuItem
+                          key={s.id}
+                          disabled={s.id === deal.stage_id}
+                          onClick={() => {
+                            if (s.id !== deal.stage_id)
+                              onDealMoved(deal.id, s.id);
+                          }}
+                        >
+                          <span
+                            aria-hidden
+                            className="size-2 shrink-0 rounded-full"
+                            style={{ backgroundColor: s.color }}
+                          />
+                          {s.name}
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuGroup>
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import {
   DropdownMenu,
   DropdownMenuContent,
+  DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuSeparator,
@@ -163,33 +164,38 @@ export function TemperatureBoardMobile({
                       {t("changeTo")}
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="min-w-44">
-                      <DropdownMenuLabel>{t("changeTo")}</DropdownMenuLabel>
-                      <DropdownMenuSeparator />
-                      {SETTABLE_TEMPERATURES.map((temp) => {
-                        const meta = TEMPERATURE_COLUMNS.find(
-                          (c) => c.key === temp,
-                        );
-                        const Icon = meta?.icon;
-                        return (
-                          <DropdownMenuItem
-                            key={temp}
-                            disabled={contact.lead_temperature === temp}
-                            onClick={() => {
-                              if (contact.lead_temperature !== temp) {
-                                onContactMoved(contact.id, temp);
-                              }
-                            }}
-                          >
-                            {Icon ? (
-                              <Icon
-                                className="size-3.5"
-                                style={{ color: meta?.color }}
-                              />
-                            ) : null}
-                            {t(temp)}
-                          </DropdownMenuItem>
-                        );
-                      })}
+                      {/* base-ui's Menu.GroupLabel (DropdownMenuLabel)
+                          THROWS at render without a Menu.Group ancestor —
+                          see dropdown-menu-group-label.test.tsx / #336. */}
+                      <DropdownMenuGroup>
+                        <DropdownMenuLabel>{t("changeTo")}</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {SETTABLE_TEMPERATURES.map((temp) => {
+                          const meta = TEMPERATURE_COLUMNS.find(
+                            (c) => c.key === temp,
+                          );
+                          const Icon = meta?.icon;
+                          return (
+                            <DropdownMenuItem
+                              key={temp}
+                              disabled={contact.lead_temperature === temp}
+                              onClick={() => {
+                                if (contact.lead_temperature !== temp) {
+                                  onContactMoved(contact.id, temp);
+                                }
+                              }}
+                            >
+                              {Icon ? (
+                                <Icon
+                                  className="size-3.5"
+                                  style={{ color: meta?.color }}
+                                />
+                              ) : null}
+                              {t(temp)}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </DropdownMenuGroup>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>

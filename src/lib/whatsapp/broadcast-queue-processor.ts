@@ -7,6 +7,7 @@ import {
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import { hasCreditsForOne, chargeBillableMessage } from '@/lib/billing/charge';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import type { Contact, MessageTemplate } from '@/types';
 
@@ -222,7 +223,16 @@ export async function processSingleRecipient(
     const messageParams =
       isMediaHeader && headerMediaUrl ? { headerMediaUrl } : undefined;
 
-    // 7. Sanitize phone & build variants
+    // 7. Pre-check prepaid credit balance before sending template broadcast
+    const hasCredits = await hasCreditsForOne(broadcast.account_id);
+    if (!hasCredits) {
+      console.warn(
+        `[broadcast-processor] Insufficient prepaid credits for account ${broadcast.account_id}, pausing broadcast send.`
+      );
+      return { noMorePending: true, success: false };
+    }
+
+    // 8. Sanitize phone & build variants
     const sanitized = sanitizePhoneForMeta(contact.phone);
     if (!isValidE164(sanitized)) {
       console.warn(
@@ -266,7 +276,7 @@ export async function processSingleRecipient(
       }
     }
 
-    // 8. Stamp recipient row
+    // 9. Stamp recipient row & debit credit wallet
     if (sentMessageId) {
       console.log(
         `[broadcast-processor] Sent broadcast message to ${contact.phone} (wamid: ${sentMessageId})`,
@@ -280,6 +290,8 @@ export async function processSingleRecipient(
           error_message: null,
         })
         .eq('id', recipient.id);
+
+      void chargeBillableMessage(broadcast.account_id, 'broadcast', broadcast.id);
     } else {
       console.error(
         `[broadcast-processor] Failed to send broadcast to ${contact.phone}:`,
@@ -388,38 +400,57 @@ export async function drainBroadcastQueue(
   await checkAndFinalizeIfDone(db, broadcastId);
 }
 
+// Number of messages sent per cron invocation. Cloudflare cron fires once per
+// minute, so this equals the messages-per-minute delivery rate.
+const MESSAGES_PER_RUN = 2;
+
+// Pause between the sequential sends within a single run, so the two messages
+// go out one after another rather than back-to-back in the same instant.
+const INTER_MESSAGE_DELAY_MS = 1000;
+
 /**
- * Sends exactly one queued recipient. Vercel invokes this endpoint once per
- * minute, which makes the delivery rate predictable and keeps the work within
- * a serverless function's lifetime.
+ * Sends MESSAGES_PER_RUN queued recipients sequentially per invocation.
+ * Vercel invokes this endpoint once per minute, which makes the delivery rate
+ * predictable and keeps the work within a serverless function's lifetime.
  */
 export async function processBroadcastQueue(
   db: SupabaseClient,
 ): Promise<{ processed: number; completed: number }> {
   let processedCount = 0;
-  let completedCount = 0;
+  const completedCount = 0;
 
-  // Select the oldest queued recipient globally so simultaneous broadcasts do
-  // not multiply the configured one-message-per-minute delivery rate.
-  const { data: pendingRecipients } = await db
-    .from('broadcast_recipients')
-    .select('broadcast_id')
-    .eq('status', 'pending')
-    .order('created_at', { ascending: true })
-    .limit(1);
+  for (let i = 0; i < MESSAGES_PER_RUN; i++) {
+    // Re-select the oldest queued recipient globally each iteration so that
+    // (a) simultaneous broadcasts do not multiply the configured rate, and
+    // (b) the second send can come from a different broadcast if the first
+    //     broadcast just ran out of pending recipients.
+    const { data: pendingRecipients } = await db
+      .from('broadcast_recipients')
+      .select('broadcast_id')
+      .eq('status', 'pending')
+      .order('created_at', { ascending: true })
+      .limit(1);
 
-  if (!pendingRecipients || pendingRecipients.length === 0) {
-    return { processed: 0, completed: 0 };
+    if (!pendingRecipients || pendingRecipients.length === 0) {
+      break; // Nothing left to send this run.
+    }
+
+    const broadcastId = pendingRecipients[0].broadcast_id;
+    await drainBroadcastQueue(db, broadcastId, 0, 1).catch((err) =>
+      console.error(
+        `[broadcast-cron] Error processing broadcast ${broadcastId}:`,
+        err,
+      ),
+    );
+    processedCount++;
+
+    // Pause before the next send (skip after the last one).
+    if (i < MESSAGES_PER_RUN - 1) {
+      await new Promise((resolve) =>
+        setTimeout(resolve, INTER_MESSAGE_DELAY_MS),
+      );
+    }
   }
-
-  const broadcastId = pendingRecipients[0].broadcast_id;
-  await drainBroadcastQueue(db, broadcastId, 0, 1).catch((err) =>
-    console.error(
-      `[broadcast-cron] Error processing broadcast ${broadcastId}:`,
-      err,
-    ),
-  );
-  processedCount = 1;
 
   return { processed: processedCount, completed: completedCount };
 }

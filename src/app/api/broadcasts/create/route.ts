@@ -1,7 +1,5 @@
-import { after, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
-import { supabaseAdmin } from '@/lib/automations/admin-client';
-import { drainBroadcastQueue } from '@/lib/whatsapp/broadcast-queue-processor';
 
 export const maxDuration = 60;
 
@@ -171,17 +169,16 @@ export async function POST(request: Request) {
       }
     }
 
-    // 6. Schedule background server drain in after() callback
-    const broadcastId = broadcast.id;
-    after(async () => {
-      try {
-        const admin = supabaseAdmin();
-        await drainBroadcastQueue(admin, broadcastId, 1000, 45);
-      } catch (err) {
-        console.error(`[broadcast-create] Error in background drain for ${broadcastId}:`, err);
-      }
-    });
-
+    // 6. No immediate drain here — the broadcast is left with every
+    //    recipient row 'pending' and status 'sending'. The Cloudflare
+    //    Worker's per-minute cron (calling GET /api/broadcasts/cron,
+    //    which processes two globally-oldest-pending recipients
+    //    per tick) is the only thing that sends messages, so every
+    //    broadcast — including its very first message — goes out at a
+    //    paced 2/min. A prior version fired an immediate background
+    //    burst of up to 45 messages at 1s intervals here; that fast
+    //    start is what triggered Meta's rate-limit and "healthy
+    //    ecosystem engagement" throttling on the IIA campaign.
     return NextResponse.json({
       success: true,
       broadcastId: broadcast.id,

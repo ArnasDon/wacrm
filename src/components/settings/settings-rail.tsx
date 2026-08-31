@@ -11,6 +11,9 @@ import {
   type SettingsSection,
 } from './settings-sections';
 
+import { useAuth } from '@/hooks/use-auth';
+import { hasMinRole } from '@/lib/auth/roles';
+
 // Width at/above which the rail is a vertical column (already in view, so
 // no auto-scroll needed). Mirrors the Tailwind `lg:` breakpoint that
 // drives the row→column switch in the markup below — keep the two in sync.
@@ -32,6 +35,7 @@ export function SettingsRail({
   hints?: Partial<Record<SettingsSection, ReactNode>>;
 }) {
   const t = useTranslations('Settings');
+  const { accountRole } = useAuth();
   const activeRef = useRef<HTMLButtonElement>(null);
 
   // When horizontal (mobile), keep the active chip in view. On desktop
@@ -46,6 +50,8 @@ export function SettingsRail({
     });
   }, [active]);
 
+  const userRole = accountRole ?? 'viewer';
+
   return (
     <nav
       aria-label="Settings sections"
@@ -57,7 +63,9 @@ export function SettingsRail({
     >
       {RAIL_GROUPS.map(({ label, group }) => {
         const items = SETTINGS_SECTIONS.filter(
-          (s) => SECTION_META[s].group === group,
+          (s) =>
+            SECTION_META[s].group === group &&
+            hasMinRole(userRole, SECTION_META[s].minRole ?? 'viewer'),
         );
         return (
           <div

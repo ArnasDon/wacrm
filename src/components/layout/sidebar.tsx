@@ -187,12 +187,19 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Logo row. On mobile we put a close button here; on desktop the
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-border px-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-semibold text-foreground">
-              {t("title")}
+          <Link href="/dashboard" className="flex items-center gap-2 overflow-hidden">
+            {account?.logo_url ? (
+              <div className="relative flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-border bg-muted overflow-hidden">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={account.logo_url} alt={account.business_name || account.name || t("title")} className="h-full w-full object-contain p-0.5" />
+              </div>
+            ) : (
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <MessageSquare className="h-4 w-4" />
+              </div>
+            )}
+            <span className="text-sm font-semibold text-foreground truncate max-w-36">
+              {account?.business_name || account?.name || t("title")}
             </span>
           </Link>
           <button

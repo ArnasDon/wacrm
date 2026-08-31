@@ -4,9 +4,10 @@ import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
+  buildPhoneIndex,
   dedupeByPhone,
+  findInPhoneIndex,
   isUniqueViolation,
-  normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
   parseContactCsv,
@@ -227,26 +228,27 @@ export function ImportModal({
       const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
       skipped += inFileDupes;
 
-      // 2) Look up numbers already in this account by the generated
-      //    `phone_normalized` column (migration 022). Existing contacts are
+      // 2) Look up numbers already in this account. Existing contacts are
       //    UPDATED in place rather than skipped, so a re-uploaded CSV refreshes
-      //    fields and merges tags instead of being a no-op.
+      //    fields and merges tags instead of being a no-op. Matching goes
+      //    through the same suffix-tolerant index the webhook/manual-form
+      //    path uses (dedupe.ts) rather than an exact phone_normalized
+      //    string match — a contact stored with a country-code prefix
+      //    ("+919505048493") still needs to match a bare CSV number
+      //    ("9505048493"), otherwise it's silently miscounted as new and
+      //    its CSV tags never reach the real existing row.
       const { data: existingRows } = await supabase
         .from('contacts')
         .select('id, phone_normalized')
         .eq('account_id', accountId);
-      const existingIdByPhone = new Map<string, string>();
-      for (const r of (existingRows ?? []) as {
-        id: string;
-        phone_normalized: string | null;
-      }[]) {
-        if (r.phone_normalized) existingIdByPhone.set(r.phone_normalized, r.id);
-      }
+      const existingPhoneIndex = buildPhoneIndex(
+        (existingRows ?? []) as { id: string; phone_normalized: string | null }[],
+      );
 
       const toInsert: ParsedContactRow[] = [];
       const toUpdate: { contactId: string; row: ParsedContactRow }[] = [];
       for (const row of unique) {
-        const existingId = existingIdByPhone.get(normalizeKey(row.phone));
+        const existingId = findInPhoneIndex(existingPhoneIndex, row.phone);
         if (existingId) toUpdate.push({ contactId: existingId, row });
         else toInsert.push(row);
       }

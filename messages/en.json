@@ -140,6 +140,7 @@
       "company": "Company",
       "allCompanies": "All companies",
       "clearAll": "Clear all",
+      "export": "Export",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
       "unknown": "Unknown"
@@ -1503,6 +1504,7 @@
       "profile": "Your profile",
       "security": "Login & security",
       "appearance": "Appearance",
+      "business": "Business profile",
       "whatsapp": "WhatsApp",
       "templates": "Templates",
       "quick-replies": "Quick replies",

@@ -9,9 +9,10 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Download } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -201,6 +202,29 @@ export function ConversationList({
     setSelectedCompany(null);
   }, []);
 
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = useCallback(async () => {
+    setExporting(true);
+    try {
+      const res = await fetch("/api/inbox/export");
+      if (!res.ok) throw new Error("Export failed");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `inbox-replies-${new Date().toISOString().slice(0, 10)}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast.error("Could not export inbox replies");
+    } finally {
+      setExporting(false);
+    }
+  }, []);
+
   const hasContactFilters = selectedTagIds.length > 0 || selectedCompany !== null;
 
   const handleSearchChange = useCallback(
@@ -350,6 +374,16 @@ export function ConversationList({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          <button
+            onClick={handleExport}
+            disabled={exporting}
+            title={t("export")}
+            className="ml-auto inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted disabled:opacity-50"
+          >
+            <Download className="h-3.5 w-3.5" />
+            <span>{t("export")}</span>
+          </button>
         </div>
 
         {hasContactFilters && (

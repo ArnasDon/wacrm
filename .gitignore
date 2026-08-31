@@ -45,3 +45,7 @@ next-env.d.ts
 
 # Local data backups (sensitive — never commit)
 backups/
+
+# open-next & wrangler build artifacts
+.open-next/
+.wrangler/

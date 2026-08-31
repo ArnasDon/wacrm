@@ -44,6 +44,7 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
+import { hasCreditsForOne, chargeBillableMessage } from '@/lib/billing/charge';
 
 export const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 export const VALID_MESSAGE_TYPES = [
@@ -395,6 +396,18 @@ export async function sendMessageToConversation(
     return result.messageId;
   };
 
+  // Billing pre-check: only billable outbound template messages require prepaid credits.
+  if (messageType === 'template') {
+    const hasCredits = await hasCreditsForOne(accountId);
+    if (!hasCredits) {
+      throw new SendMessageError(
+        'insufficient_credits',
+        'Not enough prepaid credits — please recharge your wallet.',
+        402
+      );
+    }
+  }
+
   // Send via Meta — retry across phone-number variants if Meta rejects
   // with "recipient not in allowed list"; persist a working variant
   // back to the contact so the next send goes straight through.
@@ -473,6 +486,11 @@ export async function sendMessageToConversation(
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
       500
     );
+  }
+
+  // Debit template send after successful send + DB insert
+  if (messageType === 'template' && messageRecord) {
+    void chargeBillableMessage(accountId, 'message', messageRecord.id);
   }
 
   const lastMessageText =

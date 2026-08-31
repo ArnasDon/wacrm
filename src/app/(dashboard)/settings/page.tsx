@@ -11,11 +11,13 @@ import { SettingsOverview } from '@/components/settings/settings-overview';
 import { ProfileForm } from '@/components/settings/profile-form';
 import { SecurityPanel } from '@/components/settings/security-panel';
 import { AppearancePanel } from '@/components/settings/appearance-panel';
+import { BusinessProfileForm } from '@/components/settings/business-profile-form';
 import { WhatsAppConfig } from '@/components/settings/whatsapp-config';
 import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
+import { WhatsAppUsageCard } from '@/components/settings/whatsapp-usage';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
@@ -74,11 +76,13 @@ function SettingsPageInner() {
     profile: <ProfileForm />,
     security: <SecurityPanel />,
     appearance: <AppearancePanel />,
+    business: <BusinessProfileForm />,
     whatsapp: <WhatsAppConfig />,
     templates: <TemplateManager />,
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
+    usage: <WhatsAppUsageCard />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
   };

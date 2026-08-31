@@ -194,9 +194,6 @@ export default function BroadcastDetailPage() {
   useEffect(() => {
     if (broadcast?.status !== 'sending') return;
 
-    // Trigger server background drain for any remaining pending recipients
-    fetch('/api/broadcasts/cron', { method: 'POST' }).catch(() => {});
-
     const timer = setInterval(() => {
       fetchData();
     }, 5000);
@@ -210,6 +207,22 @@ export default function BroadcastDetailPage() {
         ? recipients
         : recipients.filter((r) => r.status === statusFilter),
     [recipients, statusFilter],
+  );
+
+  // Must stay above the `loading`/`error` early returns below — hooks
+  // can't be called conditionally. Previously declared after those
+  // returns, so the mount render (loading=true, returns early) called
+  // two fewer hooks than the render once data arrived, which is a hard
+  // React error ("Rendered more hooks than during the previous
+  // render") that crashed this page on every load.
+  const pendingCount = useMemo(
+    () => recipients.filter((r) => r.status === 'pending').length,
+    [recipients],
+  );
+
+  const failedCount = useMemo(
+    () => recipients.filter((r) => r.status === 'failed').length,
+    [recipients],
   );
 
   function handleExport() {
@@ -285,20 +298,9 @@ export default function BroadcastDetailPage() {
     { label: t('stats.replied'), value: broadcast.replied_count, color: 'bg-indigo-500' },
   ];
 
-  const pendingCount = useMemo(
-    () => recipients.filter((r) => r.status === 'pending').length,
-    [recipients],
-  );
-
-  const failedCount = useMemo(
-    () => recipients.filter((r) => r.status === 'failed').length,
-    [recipients],
-  );
-
   async function handleResumeQueue() {
     try {
-      await fetch('/api/broadcasts/cron', { method: 'POST' });
-      toast.success('Queue process resumed in background!');
+      toast.success('Queue is active and will send the next message within a minute.');
       fetchData();
     } catch {
       toast.error('Failed to trigger queue processing');
@@ -334,8 +336,7 @@ export default function BroadcastDetailPage() {
         .update({ status: 'sending', updated_at: new Date().toISOString() })
         .eq('id', broadcastId);
 
-      await fetch('/api/broadcasts/cron', { method: 'POST' });
-      toast.success('Retrying failed messages in background!');
+      toast.success('Failed messages have been queued and will retry within a minute.');
       fetchData();
     } catch {
       toast.error('Failed to retry failed messages');

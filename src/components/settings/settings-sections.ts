@@ -1,10 +1,12 @@
 import {
+  Building2,
   Coins,
   FileText,
   KeyRound,
   LayoutGrid,
   Palette,
   PlugZap,
+  Receipt,
   Shield,
   Tags,
   User,
@@ -12,6 +14,7 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react';
+import type { AccountRole } from '@/lib/auth/roles';
 
 /**
  * Settings information architecture for the redesigned page.
@@ -26,11 +29,13 @@ export const SETTINGS_SECTIONS = [
   'profile',
   'security',
   'appearance',
+  'business',
   'whatsapp',
   'templates',
   'quick-replies',
   'fields',
   'deals',
+  'usage',
   'members',
   'api',
 ] as const;
@@ -39,26 +44,29 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const DEFAULT_SECTION: SettingsSection = 'overview';
 
-/** Rail grouping. `adminOnly` items are hidden for non-admins. */
+/** Rail grouping. `minRole` controls the lowest role that may SEE the section. */
 export interface SectionMeta {
   id: SettingsSection;
   label: string;
   icon: LucideIcon;
   group: 'top' | 'account' | 'workspace';
+  minRole?: AccountRole;
 }
 
 export const SECTION_META: Record<SettingsSection, SectionMeta> = {
-  overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top' },
-  profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account' },
-  security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account' },
-  appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account' },
-  whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace' },
-  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace' },
-  'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace' },
-  fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace' },
-  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace' },
-  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace' },
-  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace' },
+  overview: { id: 'overview', label: 'Overview', icon: LayoutGrid, group: 'top', minRole: 'viewer' },
+  profile: { id: 'profile', label: 'Your profile', icon: User, group: 'account', minRole: 'viewer' },
+  security: { id: 'security', label: 'Login & security', icon: Shield, group: 'account', minRole: 'viewer' },
+  appearance: { id: 'appearance', label: 'Appearance', icon: Palette, group: 'account', minRole: 'viewer' },
+  business: { id: 'business', label: 'Business profile', icon: Building2, group: 'workspace', minRole: 'admin' },
+  whatsapp: { id: 'whatsapp', label: 'WhatsApp', icon: PlugZap, group: 'workspace', minRole: 'admin' },
+  templates: { id: 'templates', label: 'Templates', icon: FileText, group: 'workspace', minRole: 'admin' },
+  'quick-replies': { id: 'quick-replies', label: 'Quick replies', icon: Zap, group: 'workspace', minRole: 'admin' },
+  fields: { id: 'fields', label: 'Fields & tags', icon: Tags, group: 'workspace', minRole: 'admin' },
+  deals: { id: 'deals', label: 'Deals & currency', icon: Coins, group: 'workspace', minRole: 'admin' },
+  usage: { id: 'usage', label: 'Usage & billing', icon: Receipt, group: 'workspace', minRole: 'admin' },
+  members: { id: 'members', label: 'Team members', icon: UsersRound, group: 'workspace', minRole: 'admin' },
+  api: { id: 'api', label: 'API keys', icon: KeyRound, group: 'workspace', minRole: 'admin' },
 };
 
 export const RAIL_GROUPS: { label: string | null; group: SectionMeta['group'] }[] = [

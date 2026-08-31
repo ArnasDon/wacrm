@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  buildPhoneIndex,
   dedupeByPhone,
   findExistingContact,
+  findInPhoneIndex,
   isExactMatch,
   isUniqueViolation,
   normalizeKey,
@@ -93,5 +95,41 @@ describe("findExistingContact", () => {
   it("returns null for an empty phone without querying", async () => {
     const db = stubDb([{ id: "c1", phone: "15551234567" }]);
     expect(await findExistingContact(db, "acct", "   ")).toBeNull();
+  });
+});
+
+describe("buildPhoneIndex / findInPhoneIndex", () => {
+  it("matches a bare CSV number against a country-code-prefixed contact", () => {
+    // The exact bug this pair fixes: a contact stored as "+919505048493"
+    // (phone_normalized "919505048493") must still be found by a CSV row
+    // carrying the bare 10-digit "9505048493" — an exact string match on
+    // phone_normalized would miss this and re-import it as new.
+    const index = buildPhoneIndex([
+      { id: "c1", phone_normalized: "919505048493" },
+    ]);
+    expect(findInPhoneIndex(index, "9505048493")).toBe("c1");
+  });
+
+  it("prefers an exact match over a fuzzy one when both exist", () => {
+    const index = buildPhoneIndex([
+      { id: "fuzzy", phone_normalized: "919505048493" },
+      { id: "exact", phone_normalized: "9505048493" },
+    ]);
+    expect(findInPhoneIndex(index, "9505048493")).toBe("exact");
+  });
+
+  it("returns undefined when no candidate matches", () => {
+    const index = buildPhoneIndex([{ id: "c1", phone_normalized: "15559999999" }]);
+    expect(findInPhoneIndex(index, "15551234567")).toBeUndefined();
+  });
+
+  it("skips contacts with no normalized phone", () => {
+    const index = buildPhoneIndex([{ id: "c1", phone_normalized: null }]);
+    expect(findInPhoneIndex(index, "15551234567")).toBeUndefined();
+  });
+
+  it("returns undefined for an empty phone without matching anything", () => {
+    const index = buildPhoneIndex([{ id: "c1", phone_normalized: "15551234567" }]);
+    expect(findInPhoneIndex(index, "   ")).toBeUndefined();
   });
 });

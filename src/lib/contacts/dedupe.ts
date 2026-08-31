@@ -74,6 +74,67 @@ export function isUniqueViolation(error: unknown): boolean {
   return (error as { code?: string }).code === "23505";
 }
 
+/** One indexed contact — just enough to match and to report back an id. */
+export interface PhoneIndexEntry {
+  id: string;
+  phoneNormalized: string;
+}
+
+/**
+ * Build a batch-friendly lookup of existing contacts by phone, for CSV
+ * import. `findExistingContact` above does one DB round trip per phone
+ * (fine for a single webhook message); a CSV can carry hundreds of
+ * rows, so import instead fetches every account contact once and
+ * matches in memory via this index.
+ *
+ * Bucketed by last-8-digit suffix (same tolerance as `phonesMatch`) so
+ * a contact stored with a country-code prefix ("+919505048493") is
+ * still found by a bare CSV number ("9505048493") — an exact
+ * `phone_normalized` string match alone misses that pairing entirely,
+ * which is what let existing contacts get silently re-classified as
+ * "new" (and their CSV tags dropped) purely over a formatting
+ * difference, not an actual missing contact.
+ */
+export function buildPhoneIndex(
+  contacts: { id: string; phone_normalized: string | null }[],
+): Map<string, PhoneIndexEntry[]> {
+  const index = new Map<string, PhoneIndexEntry[]>();
+  for (const c of contacts) {
+    const normalized = c.phone_normalized;
+    if (!normalized) continue;
+    const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
+    const bucket = index.get(suffix);
+    const entry = { id: c.id, phoneNormalized: normalized };
+    if (bucket) bucket.push(entry);
+    else index.set(suffix, [entry]);
+  }
+  return index;
+}
+
+/**
+ * Look up `phone` in an index built by `buildPhoneIndex`. Exact
+ * normalized match wins when present; otherwise falls back to the
+ * same trunk-prefix-tolerant `phonesMatch` used by `findExistingContact`,
+ * so the two matching paths (single lookup vs batch import) agree on
+ * what counts as "the same contact".
+ */
+export function findInPhoneIndex(
+  index: Map<string, PhoneIndexEntry[]>,
+  phone: string,
+): string | undefined {
+  const normalized = normalizeKey(phone);
+  if (!normalized) return undefined;
+  const suffix = normalized.length >= 8 ? normalized.slice(-8) : normalized;
+  const candidates = index.get(suffix);
+  if (!candidates) return undefined;
+
+  const exact = candidates.find((c) => c.phoneNormalized === normalized);
+  if (exact) return exact.id;
+
+  const fuzzy = candidates.find((c) => phonesMatch(c.phoneNormalized, phone));
+  return fuzzy?.id;
+}
+
 /**
  * De-duplicate parsed CSV rows by normalized phone, keeping the first
  * occurrence of each. Rows with an empty normalized phone are dropped

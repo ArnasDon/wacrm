@@ -769,6 +769,9 @@
       "addDeal": "Add Deal"
     },
     "temperature": {
+      "changeTo": "Change to",
+      "changeContactTemp": "Change {name}'s temperature",
+      "columnTabsLabel": "Temperature columns",
       "description": "Drag a chat between columns to reclassify it — the AI also updates this on its own as conversations happen.",
       "unclassified": "Unclassified",
       "cold": "Cold",

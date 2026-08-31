@@ -1386,6 +1386,9 @@
       "addDeal": "Agregar Negocio"
     },
     "temperature": {
+      "changeTo": "Cambiar a",
+      "changeContactTemp": "Cambiar temperatura de {name}",
+      "columnTabsLabel": "Columnas de temperatura",
       "description": "Arrastra un chat entre columnas para reclasificarlo — la IA también actualiza esto por su cuenta a medida que ocurren las conversaciones.",
       "unclassified": "Sin clasificar",
       "cold": "Frío",

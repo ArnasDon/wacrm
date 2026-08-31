@@ -5,14 +5,20 @@ import type { Conversation, Contact, Tag } from "@/types";
  * can filter conversations by contact tag without a second round-trip.
  * `contact_tags(tags(*))` returns the join rows; {@link normalizeConversation}
  * flattens them onto `contact.tags`.
+ *
+ * `connection:whatsapp_connections(...)` embeds the owning channel (migration
+ * 040) as a single object so the Inbox can badge which connection a
+ * conversation belongs to once an account has more than one active channel.
  */
 export const CONVERSATION_SELECT =
-  "*, contact:contacts(*, contact_tags(tags(*)))";
+  "*, contact:contacts(*, contact_tags(tags(*))), connection:whatsapp_connections(provider, display_phone, label)";
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };
 type RawConversation = Omit<Conversation, "contact"> & {
   contact?: RawContact | null;
+  /** Embedded owning-channel row — a single object, passed through as-is. */
+  connection?: Conversation["connection"];
 };
 
 /**

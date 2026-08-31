@@ -181,6 +181,18 @@ export interface Conversation {
   ai_autoreply_disabled?: boolean;
   ai_reply_count?: number;
   ai_handoff_summary?: string | null;
+  /**
+   * Owning channel (migration 040), embedded by `CONVERSATION_SELECT` as a
+   * single object. Lets the Inbox badge which connection a conversation
+   * belongs to — and show "via <number>" in the thread header — once an
+   * account has more than one active channel (Meta + UAZAPI). Absent on
+   * rows fetched without the embed.
+   */
+  connection?: {
+    provider: 'meta' | 'uazapi';
+    display_phone: string | null;
+    label: string | null;
+  } | null;
 }
 
 // ============================================================

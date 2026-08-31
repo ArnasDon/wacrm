@@ -105,6 +105,13 @@ interface MessageThreadProps {
    */
   contactPanelOpen?: boolean;
   onToggleContactPanel?: () => void;
+  /**
+   * Distinct channel providers across the loaded conversations. When > 1
+   * the header shows a discreet "via <number>" line so the agent knows
+   * which connection this thread runs on. Optional; defaults to 1 (single
+   * channel — nothing shown).
+   */
+  activeChannelCount?: number;
 }
 
 function formatDateSeparator(dateStr: string, t: ReturnType<typeof useTranslations>): string {
@@ -163,6 +170,7 @@ export function MessageThread({
   onRefresh,
   contactPanelOpen,
   onToggleContactPanel,
+  activeChannelCount = 1,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -880,6 +888,15 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.phone;
+  // UAZAPI has no official WhatsApp-template concept in this wave, so the
+  // composer's template button is hidden for those threads.
+  const templatesEnabled = conversation.connection?.provider !== "uazapi";
+  // Discreet "via <number>" header line — only meaningful once the account
+  // runs more than one active channel.
+  const viaNumber =
+    conversation.connection?.display_phone ??
+    conversation.connection?.label ??
+    null;
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -922,6 +939,11 @@ export function MessageThread({
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
+            {activeChannelCount > 1 && viaNumber && (
+              <p className="truncate text-[10px] text-muted-foreground">
+                {t("viaNumber", { number: viaNumber })}
+              </p>
+            )}
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
@@ -1180,6 +1202,7 @@ export function MessageThread({
         onSendMedia={handleSendMedia}
         onSendInteractive={handleSendInteractive}
         onOpenTemplates={handleOpenTemplates}
+        templatesEnabled={templatesEnabled}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
       />

@@ -1377,6 +1377,11 @@
       "temperatureView": "Temperatura del Cliente"
     },
     "board": {
+      "move": "Mover",
+      "moveTo": "Mover a",
+      "moveDeal": "Mover {title}",
+      "noDealsInStage": "Sin negociaciones en esta etapa",
+      "stageTabsLabel": "Etapas del pipeline",
       "dropDealHere": "Suelta un negocio aquí",
       "addDeal": "Agregar Negocio"
     },

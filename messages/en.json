@@ -760,6 +760,11 @@
       "temperatureView": "Customer Temperature"
     },
     "board": {
+      "move": "Move",
+      "moveTo": "Move to",
+      "moveDeal": "Move {title}",
+      "noDealsInStage": "No deals in this stage",
+      "stageTabsLabel": "Pipeline stages",
       "dropDealHere": "Drop a deal here",
       "addDeal": "Add Deal"
     },

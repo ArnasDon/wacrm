@@ -16,9 +16,11 @@ import {
 } from "@dnd-kit/core";
 import type { Deal, PipelineStage } from "@/types";
 import { DealCard } from "./deal-card";
+import { PipelineBoardMobile } from "./pipeline-board-mobile";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
@@ -40,6 +42,7 @@ export function PipelineBoard({
   onOpenChat,
 }: PipelineBoardProps) {
   const { defaultCurrency } = useAuth();
+  const isDesktop = useIsDesktop();
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
 
   const sortedStages = useMemo(
@@ -89,6 +92,23 @@ export function PipelineBoard({
 
   function handleDragCancel() {
     setActiveDealId(null);
+  }
+
+  // Phone/tablet: a stage-tab + vertical-list view with a tap-to-move
+  // menu. Horizontal drag-Kanban on touch kept dropping cards into the
+  // wrong stage while trying to scroll to an off-screen column.
+  if (!isDesktop) {
+    return (
+      <PipelineBoardMobile
+        sortedStages={sortedStages}
+        dealsByStage={dealsByStage}
+        currency={defaultCurrency}
+        onDealMoved={onDealMoved}
+        onAddDeal={onAddDeal}
+        onEditDeal={onEditDeal}
+        onOpenChat={onOpenChat}
+      />
+    );
   }
 
   return (

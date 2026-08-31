@@ -1231,8 +1231,9 @@ export function MessageThread({
         </div>
       </div>
 
-      {/* Messages Area */}
-      <div ref={scrollRef} className="flex-1 overflow-y-auto px-4 py-4">
+      {/* Messages Area — `overflow-x-hidden` so a bubble mid swipe-to-
+          reply can never bump the thread into a horizontal scroll. */}
+      <div ref={scrollRef} className="flex-1 overflow-x-hidden overflow-y-auto px-4 py-4">
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="border-primary h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" />

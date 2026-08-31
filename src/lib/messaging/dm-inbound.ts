@@ -147,7 +147,38 @@ async function findOrCreateConversation(
   accountId: string,
   configOwnerUserId: string,
   contactId: string,
+  /**
+   * Zernio's own conversation id, when this call comes from a Zernio
+   * webhook (IG/FB). A `conversation.started` and the first
+   * `message.received` for the same chat arrive as two separate
+   * `after()` callbacks that race each other: resolving purely by
+   * `(account, contact)` let BOTH `INSERT` — the
+   * `(account_id, contact_id, whatsapp_config_id)` unique index does
+   * not bind when `whatsapp_config_id IS NULL` (every IG/FB row) — so
+   * you'd get two conversations, one carrying the zernio id and one
+   * carrying the customer's first message. Replying to the message row
+   * then fails ("No Zernio conversation exists yet") because the Zernio
+   * send needs that id. Matching on the zernio id first makes the
+   * second event find the first; stamping it in the `INSERT` lets the
+   * partial unique index `(account_id, zernio_conversation_id)` reject
+   * a true tie so the loser re-resolves instead of leaving an orphan.
+   */
+  zernioConversationId: string | null = null,
 ) {
+  if (zernioConversationId) {
+    const { data: byZernio, error: byZernioError } = await db
+      .from('conversations')
+      .select('*')
+      .eq('account_id', accountId)
+      .eq('zernio_conversation_id', zernioConversationId)
+      .maybeSingle()
+    if (byZernioError) {
+      console.error(`[${channel} inbound] error finding conversation by zernio id:`, byZernioError)
+    } else if (byZernio) {
+      return { conversation: byZernio, created: false }
+    }
+  }
+
   const { data: existingRows, error: findError } = await db
     .from('conversations')
     .select('*')
@@ -171,12 +202,30 @@ async function findOrCreateConversation(
       user_id: configOwnerUserId,
       contact_id: contactId,
       channel,
+      // Stamp the zernio id in the INSERT, not a follow-up UPDATE, so a
+      // concurrent create trips the partial unique index and the branch
+      // below re-resolves to the winner instead of leaving a second,
+      // id-less row that can never be replied to.
+      zernio_conversation_id: zernioConversationId,
     })
     .select()
     .single()
 
   if (createError) {
     if (isUniqueViolation(createError)) {
+      // Lost the race — re-resolve. By the zernio id first (covers the
+      // partial unique index), then by contact.
+      if (zernioConversationId) {
+        const { data: byZernio } = await db
+          .from('conversations')
+          .select('*')
+          .eq('account_id', accountId)
+          .eq('zernio_conversation_id', zernioConversationId)
+          .maybeSingle()
+        if (byZernio) {
+          return { conversation: byZernio, created: false }
+        }
+      }
       const { data: raced } = await db
         .from('conversations')
         .select('*')
@@ -210,7 +259,14 @@ export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmM
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(db, channel, accountId, configOwnerUserId, contactRecord.id)
+  const convResult = await findOrCreateConversation(
+    db,
+    channel,
+    accountId,
+    configOwnerUserId,
+    contactRecord.id,
+    msg.zernioConversationId ?? null,
+  )
   if (!convResult) return
   const conversation = convResult.conversation
 
@@ -222,11 +278,24 @@ export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmM
     })
   }
 
+  // Backfill for the case where the row was found by contact (not by
+  // zernio id) and doesn't carry one yet — `findOrCreateConversation`
+  // has already ruled out any *other* row owning this id, so this can't
+  // hit the unique index. Surface a failure instead of the old silent
+  // swallow.
   if (msg.zernioConversationId && conversation.zernio_conversation_id !== msg.zernioConversationId) {
-    await db
+    const { error: stampError } = await db
       .from('conversations')
       .update({ zernio_conversation_id: msg.zernioConversationId })
       .eq('id', conversation.id)
+    if (stampError) {
+      console.error(
+        `[${channel} inbound] failed to stamp zernio_conversation_id on ${conversation.id}:`,
+        stampError.message,
+      )
+    } else {
+      conversation.zernio_conversation_id = msg.zernioConversationId
+    }
   }
 
   let replyToInternalId: string | null = null
@@ -399,15 +468,28 @@ export async function ensureZernioConversationStarted(db: SupabaseClient, args: 
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
-  const convResult = await findOrCreateConversation(db, channel, accountId, configOwnerUserId, contactRecord.id)
+  const convResult = await findOrCreateConversation(
+    db,
+    channel,
+    accountId,
+    configOwnerUserId,
+    contactRecord.id,
+    zernioConversationId,
+  )
   if (!convResult) return
   const conversation = convResult.conversation
 
   if (conversation.zernio_conversation_id !== zernioConversationId) {
-    await db
+    const { error: stampError } = await db
       .from('conversations')
       .update({ zernio_conversation_id: zernioConversationId })
       .eq('id', conversation.id)
+    if (stampError) {
+      console.error(
+        `[${channel} inbound] failed to stamp zernio_conversation_id on ${conversation.id}:`,
+        stampError.message,
+      )
+    }
   }
 
   if (convResult.created) {

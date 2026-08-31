@@ -15,7 +15,7 @@
  * version string then evicts the old precache in `activate`.
  */
 
-const SW_VERSION = 'v2';
+const SW_VERSION = 'v3';
 const CACHE = `sandia-static-${SW_VERSION}`;
 const PRECACHE = [
   '/offline.html',
@@ -45,39 +45,24 @@ self.addEventListener('fetch', (event) => {
   const { request } = event;
   if (request.method !== 'GET') return;
 
-  // Navigations: network-first, fall back to the offline page. Never
-  // cache the response — it's per-user and auth-gated.
+  // Navigations: pure network pass-through, offline page only on a real
+  // network failure. Deliberately does NOT reconstruct or re-`mode` the
+  // request — v2 did (`fetch(url, {redirect:'follow', credentials:
+  // 'include'})`, cors mode) and that refetch failed on the auth
+  // redirect, so the installed PWA showed the offline page with a live
+  // connection. The browser already follows a navigation's own
+  // redirects (incl. an opaqueredirect handed back here) just fine.
   if (request.mode === 'navigate') {
     event.respondWith(
-      (async () => {
-        try {
-          // Re-issue as a redirect-FOLLOWING request. A raw navigation
-          // Request is `redirect: 'manual'`, so an ordinary 30x — e.g.
-          // the `window.location = '/login'` hop right after sign-out,
-          // which the middleware may still bounce once — comes back as
-          // an opaqueredirect the SW can't hand to the page. The
-          // navigation then dies with the browser's generic "couldn't
-          // load this page" screen (installed-PWA only; a tab hides it)
-          // until a manual reload. Following it here keeps logout — and
-          // any other redirecting route — working on the first try.
-          return await fetch(request.url, {
-            redirect: 'follow',
-            credentials: 'include',
-          });
-        } catch {
-          // Genuinely offline. Return the precached page, or a
-          // last-resort inline one — NEVER resolve to `undefined`,
-          // which itself makes the navigation fail with that same
-          // browser error screen.
-          return (
-            (await caches.match('/offline.html', { ignoreSearch: true })) ||
-            new Response(
-              '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sin conexión</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#020617;color:#e2e8f0;font:15px system-ui,sans-serif"><div style="text-align:center;padding:24px"><p>No se pudo cargar Chat Sandía.</p><button onclick="location.reload()" style="font:inherit;font-weight:600;padding:10px 18px;border:0;border-radius:10px;background:#7c3aed;color:#fff">Reintentar</button></div>',
-              { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
-            )
-          );
-        }
-      })(),
+      fetch(request).catch(
+        async () =>
+          (await caches.match('/offline.html', { ignoreSearch: true })) ||
+          // Never resolve to `undefined` — that itself fails the nav.
+          new Response(
+            '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sin conexión</title><body style="margin:0;display:grid;place-items:center;min-height:100vh;background:#020617;color:#e2e8f0;font:15px system-ui,sans-serif"><div style="text-align:center;padding:24px"><p>No se pudo cargar Chat Sandía.</p><button onclick="location.reload()" style="font:inherit;font-weight:600;padding:10px 18px;border:0;border-radius:10px;background:#7c3aed;color:#fff">Reintentar</button></div>',
+            { headers: { 'Content-Type': 'text/html; charset=utf-8' } },
+          ),
+      ),
     );
     return;
   }

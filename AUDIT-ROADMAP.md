@@ -602,6 +602,62 @@ el resto de la cobertura de este módulo.
 `src/lib/ai/auto-reply.test.ts`. Ningún otro archivo de código, ninguna
 migración, ninguna configuración de Supabase.
 
+### Tercera pasada — auditoría de seguridad dirigida del Agente IA
+
+Pasada adicional, 100% read-only, enfocada en fugas cross-tenant,
+exposición de PII/datos internos, prompt injection, manipulación de
+RAG/contexto, bypass de controles server-side, ejecución de acciones
+no autorizadas, abuso de tools, exposición de credenciales,
+autenticación/autorización, y diferencias de aislamiento entre
+auto-reply/draft/playground. Completó la cobertura de
+`catalog/resolver.ts`, `catalog/whitelist.ts`,
+`business-profile/handoff-intent.ts` (completo), `context.ts`, y la
+autorización + RLS de las rutas de Business Profile.
+
+**Resultado: NO se encontraron vulnerabilidades activas.**
+
+**Riesgos potenciales registrados (preventivos, NO vulnerabilidades
+activas, NO cerrados — pendientes de una eventual decisión futura):**
+
+- **R1 — `buildConversationContext` (`src/lib/ai/context.ts`) no
+  valida por sí misma que `conversationId` pertenezca a `accountId`;
+  depende de que el caller ya lo haya validado.** Verificado que los 3
+  call sites actuales son seguros (auto-reply.ts recibe un
+  `conversationId` resuelto internamente por el webhook ya autenticado;
+  draft/route.ts verifica la propiedad vía RLS antes de llamarla;
+  playground/route.ts no la usa). **Clasificación: RIESGO POTENCIAL /
+  ARQUITECTÓNICO — NO EXPLOTABLE con los call sites actuales.** Un
+  futuro caller que omita esa validación sí sería vulnerable (IDOR de
+  lectura de conversación ajena).
+- **R2 — posible inyección de prompt indirecta vía datos de catálogo
+  externos (Budun ERP / CSV-Sheets).** La regla anti-inyección del
+  system prompt (`defaults.ts`) está redactada específicamente sobre
+  los mensajes del cliente, no sobre el contenido de los resultados de
+  las tools de catálogo. **Clasificación: RIESGO POTENCIAL / NO
+  VERIFICADO** — condicionado a que la fuente de catálogo de la propia
+  cuenta (su ERP Budun o su CSV/Sheet) esté comprometida o sea
+  maliciosa; no explotable por un cliente de WhatsApp cualquiera; no
+  se dispone de evidencia de explotación real.
+
+**Controles confirmados (con evidencia de código/SQL, esta pasada o
+reconfirmados de pasadas anteriores):**
+- Aislamiento multi-tenant del catálogo (`catalog/resolver.ts`) — `accountId` nunca proviene de argumentos de tool-call; un `id` fabricado por el modelo no tiene camino hacia otra cuenta.
+- Allow-list estricta de campos de producto (`catalog/whitelist.ts`) — IMEI, costo, margen, proveedor, datos de otros clientes, etc. no tienen ningún camino hacia la salida.
+- Handoff determinístico (`business-profile/handoff-intent.ts`, lectura completa) — nunca adivina ante ambigüedad, siempre real contra datos de la cuenta.
+- Autorización de Business Profile (`viewer` lectura / `admin` escritura, confirmado por código).
+- RLS de Business Profile (migración 050) — políticas SELECT/INSERT/UPDATE/DELETE completas en las 3 tablas.
+- Exclusión de información interna (`notes` de contacto nunca llega al prompt ni al resumen de handoff).
+- Equivalencia de seguridad entre proveedores LLM (OpenAI/Anthropic/OpenRouter reciben el mismo prompt, las mismas tools, los mismos límites).
+
+**Hallazgo histórico:** cross-tenant leakage en
+`match_ai_knowledge_fts`/`match_ai_knowledge_semantic`
+(GHSA-fg5p-2qc3-jmxr) — **CORREGIDO, NO ACTIVO** (migración 032,
+vigente).
+
+**Integridad de esta pasada:** 100% read-only — sin cambios de código,
+tests, Supabase ni migraciones. `AUTH-N1`–`AUTH-N6` y F2 no fueron
+reabiertos ni modificados; F3 permanece sin implementar.
+
 ## 2.1 Instrucción base / sistema
 PENDIENTE
 

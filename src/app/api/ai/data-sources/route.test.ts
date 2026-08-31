@@ -27,6 +27,7 @@ vi.mock('node:dns/promises', () => ({ lookup: mocks.dnsLookup }));
 
 import { GET, POST } from './route';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/account';
+import { MAX_UPLOAD_BYTES } from '@/lib/uploads/size-limit';
 
 /** Same generic in-memory multi-table fake used throughout FASE 3/4 —
  *  real column projection, real chain shapes (select/insert/update/
@@ -324,6 +325,37 @@ describe('POST /api/ai/data-sources — BUG #1 (SSRF) fix', () => {
     vi.unstubAllGlobals();
   });
 
+});
+
+describe('POST /api/ai/data-sources — ST-N2 (upload size limit)', () => {
+  it('an uploaded_csv file over the size limit is rejected with 413, nothing persisted', async () => {
+    const { supabase, tables } = fakeSupabase({ accounts: [{ id: 'acct-1', default_currency: 'USD' }] });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const oversized = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], 'huge.csv', { type: 'text/csv' });
+    const res = await POST(postFormRequest({ source_type: 'uploaded_csv', display_name: 'x', file: oversized }));
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(413);
+    expect(body.error).toContain('25 MB');
+    expect(tables.ai_data_sources ?? []).toHaveLength(0);
+  });
+
+  it('an uploaded_csv file exactly at the size limit is still accepted', async () => {
+    const { supabase } = fakeSupabase({ accounts: [{ id: 'acct-1', default_currency: 'USD' }] });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    // Pad the real CSV content out to exactly MAX_UPLOAD_BYTES with
+    // trailing newlines the parser simply ignores as blank lines.
+    const padded = REAL_CSV + '\n'.repeat(MAX_UPLOAD_BYTES - REAL_CSV.length);
+    const atLimit = new File([padded], 'exact.csv', { type: 'text/csv' });
+    expect(atLimit.size).toBe(MAX_UPLOAD_BYTES);
+
+    const res = await POST(postFormRequest({ source_type: 'uploaded_csv', display_name: 'x', file: atLimit }));
+    expect(res.status).toBe(200);
+  });
+});
+
+describe('POST /api/ai/data-sources — BUG #1 (SSRF) fix (regression)', () => {
   it('a redirect chain to a blocked address is also rejected — the hop is re-validated, not just the original URL', async () => {
     mocks.dnsLookup.mockImplementation(async (hostname: string) => {
       if (hostname === 'public-redirector.example') return [{ address: '93.184.216.34', family: 4 }];

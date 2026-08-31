@@ -38,6 +38,7 @@ import { POST } from './route';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/account';
 import { PdfExtractError } from '@/lib/pdf-extract';
 import { encrypt } from '@/lib/whatsapp/encryption';
+import { MAX_UPLOAD_BYTES } from '@/lib/uploads/size-limit';
 
 /** Same generic fake as ../route.test.ts. */
 function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
@@ -191,6 +192,34 @@ describe('POST /api/ai/knowledge/upload-pdf', () => {
     const res = await POST(formDataRequest({ file: pdfFile('catalogo.xlsx') }));
     expect(res.status).toBe(400);
     expect(mocks.extractPdfText).not.toHaveBeenCalled();
+  });
+
+  it('ST-N2: a file over the size limit is rejected with 413, extraction never attempted', async () => {
+    const { supabase } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+    mocks.supabaseAdmin.mockReturnValue(supabase);
+
+    const oversized = new File([new Uint8Array(MAX_UPLOAD_BYTES + 1)], 'huge.pdf', {
+      type: 'application/pdf',
+    });
+    const res = await POST(formDataRequest({ file: oversized }));
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(413);
+    expect(body.error).toContain('25 MB');
+    expect(mocks.extractPdfText).not.toHaveBeenCalled();
+  });
+
+  it('ST-N2: a file exactly at the size limit is still accepted', async () => {
+    const { supabase, tables } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+    mocks.supabaseAdmin.mockReturnValue(supabase);
+
+    const atLimit = new File([new Uint8Array(MAX_UPLOAD_BYTES)], 'exact.pdf', {
+      type: 'application/pdf',
+    });
+    const res = await POST(formDataRequest({ file: atLimit }));
+    expect(res.status).toBe(200);
+    expect(tables.ai_knowledge_documents).toHaveLength(1);
   });
 
   it('a valid PDF is saved under the AUTHENTICATED account, defaulting the title from the filename', async () => {

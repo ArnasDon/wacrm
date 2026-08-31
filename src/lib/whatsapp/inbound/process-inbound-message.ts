@@ -317,6 +317,12 @@ export async function processInboundMessage(
   if (content.kind === 'media') {
     const ref = content.ref;
     const mediaId = ref.provider === 'meta' ? ref.mediaId : undefined;
+    // Key that makes the mirrored object path unique + redelivery-stable.
+    // Meta: the media id. uazapi: the provider message id (the `3EB0…`
+    // `messageid`) — unique per message, stable across redelivery. Using
+    // `''` for uazapi collided every attachment onto one storage key.
+    const mirrorKey =
+      ref.provider === 'meta' ? ref.mediaId : msg.providerMessageId;
     const proxyFallback =
       ref.provider === 'meta' ? `/api/whatsapp/media/${mediaId}` : null;
     mediaType = content.mimeType ?? null;
@@ -338,7 +344,7 @@ export async function processInboundMessage(
         const mirrored = await mirrorInboundMedia({
           storage: db.storage,
           accountId: msg.accountId,
-          mediaId: mediaId ?? '',
+          mediaId: mirrorKey,
           bytes,
           mimeType,
           // The sender's own filename becomes the mirrored object's name.

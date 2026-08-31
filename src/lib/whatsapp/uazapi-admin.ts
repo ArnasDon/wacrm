@@ -7,7 +7,7 @@
 // tudo depois. Só as rotas de `/api/whatsapp/connections` chamam isto.
 // ============================================================
 
-const WEBHOOK_EVENTS = ['messages', 'messages_update', 'connection', 'history'];
+const WEBHOOK_EVENTS = ['messages', 'messages_update', 'connection'];
 
 type Json = Record<string, unknown>;
 
@@ -57,13 +57,22 @@ export async function configureWebhook(
   instanceToken: string,
   url: string
 ): Promise<void> {
+  // isGroupYes: skip group chats (else every group becomes a "contact").
+  // wasSentByApi: skip the echo of our own API sends — prevents an
+  //   inbound→auto-reply→inbound loop. NOTE: we deliberately do NOT use
+  //   `fromMeYes` here: it also hides messages the operator types on the
+  //   phone, and — unconfirmed — may suppress `messages_update` status
+  //   receipts for our own sends, which would make the status half of
+  //   this webhook dead. Revisit after the §5 smoke confirms whether
+  //   excludeMessages applies to messages_update.
+  // history is NOT subscribed (it dumps months of backlog).
   await call(`${baseUrl}/webhook`, {
     method: 'POST',
     headers: { token: instanceToken },
     body: JSON.stringify({
       url,
       events: WEBHOOK_EVENTS,
-      excludeMessages: ['wasSentByApi'],
+      excludeMessages: ['isGroupYes', 'wasSentByApi'],
     }),
   });
 }

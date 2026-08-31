@@ -197,7 +197,7 @@ describe.each(CASES)(
       }
     });
 
-    it('fetchMedia: meta delega para getMediaUrl+downloadMedia; uazapi lança 1c-ii', async () => {
+    it('fetchMedia: meta delega para getMediaUrl+downloadMedia; uazapi chama /message/download', async () => {
       const t = make();
       if (name === 'meta') {
         const out = await t.fetchMedia({ provider: 'meta', mediaId: 'm-1' });
@@ -209,10 +209,35 @@ describe.each(CASES)(
           mimeType: expect.any(String),
         });
       } else {
-        // Paridade com os outros stubs UAZAPI: lança de forma síncrona.
-        expect(() => t.fetchMedia({ provider: 'uazapi' } as never)).toThrow(
-          /1c-ii/
-        );
+        // UAZAPI: chama /message/download com body { id, return_base64, return_link }
+        fetchMock.mockResolvedValue({
+          ok: true,
+          json: async () => ({
+            mimetype: 'image/jpeg',
+            base64Data: Buffer.from('abc').toString('base64'),
+          }),
+        });
+        const out = await t.fetchMedia({
+          provider: 'uazapi',
+          messageId: '3EB0X',
+        });
+        expect(out).toMatchObject({
+          bytes: expect.any(Uint8Array),
+          mimeType: 'image/jpeg',
+        });
+        expect(fetchMock).toHaveBeenCalledTimes(1);
+        const [url, init] = fetchMock.mock.calls[0] as [
+          string,
+          { body: string; headers: Record<string, string> },
+        ];
+        expect(url.endsWith('/message/download')).toBe(true);
+        const body = JSON.parse(init.body);
+        expect(body).toEqual({
+          id: '3EB0X',
+          return_base64: true,
+          return_link: false,
+        });
+        expect(init.headers.token).toBe('tok');
       }
     });
   }

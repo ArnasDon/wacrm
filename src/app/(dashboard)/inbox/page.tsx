@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react";
+import {
+  Suspense,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -10,7 +17,10 @@ import {
 } from "@/lib/inbox/conversations";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
-import { ConversationList } from "@/components/inbox/conversation-list";
+import {
+  ConversationList,
+  countActiveChannels,
+} from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
@@ -504,6 +514,14 @@ function InboxPageInner() {
   }, [router]);
 
 
+  // Distinct channel providers across the loaded conversations. Drives the
+  // conversation-list channel badge and the thread header's "via <number>"
+  // line — both only render once the account runs more than one channel.
+  const activeChannelCount = useMemo(
+    () => countActiveChannels(conversations),
+    [conversations],
+  );
+
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
   }, []);
@@ -625,6 +643,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            activeChannelCount={activeChannelCount}
           />
         </div>
 

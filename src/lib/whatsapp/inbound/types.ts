@@ -13,7 +13,7 @@ import type { MediaKind } from '@/lib/whatsapp/meta-api';
 
 export type ProviderMediaRef =
   | { provider: 'meta'; mediaId: string }
-  | { provider: 'uazapi'; [k: string]: unknown };
+  | { provider: 'uazapi'; messageId: string };
 
 /**
  * Envelope de mensagem recebida, já normalizado — nenhum campo cru de

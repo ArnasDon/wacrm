@@ -21,6 +21,9 @@ interface Script {
   // check (needs `id` for connection_id threading) and resolveAuditUserId
   // (reads `user_id`).
   config?: { id?: string; user_id: string } | null;
+  /** When true, simulate multiple rows available; .maybeSingle() without
+   *  is_primary filter returns error, with filter returns config. */
+  multipleConfigs?: boolean;
   contactCandidates?: ContactRow[]; // contacts .like (same every call)
   /** Per-call `.like` results — overrides contactCandidates. Lets a
    *  test simulate "miss, then hit" for the unique-race path. */
@@ -43,6 +46,8 @@ function makeDb(script: Script): SupabaseClient {
   let mode: 'select' | 'insert' | 'update' = 'select';
   let likeCalls = 0;
   let convLookupCalls = 0;
+  let hasPrimaryFilter = false;
+  let hasProviderFilter = false;
 
   const builder: Record<string, unknown> = {
     select: () => builder,
@@ -55,7 +60,11 @@ function makeDb(script: Script): SupabaseClient {
       mode = 'update';
       return builder;
     },
-    eq: () => builder,
+    eq: (key?: string) => {
+      if (key === 'is_primary') hasPrimaryFilter = true;
+      if (key === 'provider') hasProviderFilter = true;
+      return builder;
+    },
     is: () => builder,
     order: () => builder,
     limit: () => {
@@ -77,8 +86,18 @@ function makeDb(script: Script): SupabaseClient {
       return Promise.resolve({ data, error: null });
     },
     maybeSingle: () => {
-      if (table === 'whatsapp_connections')
+      if (table === 'whatsapp_connections') {
+        // Simulate PGRST116 (multiple rows) when multiple configs available
+        // but neither is_primary nor provider filter was applied. Filtering
+        // by provider (e.g., 'meta') or is_primary alone narrows to one row.
+        if (script.multipleConfigs && !hasPrimaryFilter && !hasProviderFilter) {
+          return Promise.resolve({
+            data: null,
+            error: { code: 'PGRST116', message: 'Results contain multiple rows' },
+          });
+        }
         return Promise.resolve({ data: script.config ?? null, error: null });
+      }
       return Promise.resolve({ data: null, error: null });
     },
     single: () => {
@@ -115,6 +134,8 @@ function makeDb(script: Script): SupabaseClient {
     from: (t: string) => {
       table = t;
       mode = 'select';
+      hasPrimaryFilter = false;
+      hasProviderFilter = false;
       return builder;
     },
   } as unknown as SupabaseClient;
@@ -229,6 +250,55 @@ describe('resolveConversationByPhone', () => {
     // Even on the race path, the attempted INSERT carried connection_id.
     expect(conversationInsertPayloads[0]).toMatchObject({
       connection_id: 'conn-1',
+    });
+  });
+
+  it('resolves to the primary connection when multiple connections exist', async () => {
+    // Account has 2 connections: meta (is_primary: false) and uazapi
+    // (is_primary: true). The fix ensures .eq('is_primary', true) filters
+    // to the primary one, not throwing PGRST116. The conversation INSERT
+    // carries connection_id = <the uazapi row id>.
+    const db = makeDb({
+      config: { id: 'conn-uazapi-primary', user_id: 'owner-1' },
+      multipleConfigs: true,
+      contactCandidates: [],
+      insertedContactId: 'c3',
+      existingConversation: null,
+      insertedConversationId: 'cv3',
+    });
+    const res = await resolveConversationByPhone(
+      db,
+      'acct',
+      '+14155550199',
+      'Jane'
+    );
+    expect(res).toEqual({
+      conversationId: 'cv3',
+      contactId: 'c3',
+      contactCreated: true,
+    });
+    // connection_id must be the primary (uazapi) connection.
+    expect(conversationInsertPayloads).toHaveLength(1);
+    expect(conversationInsertPayloads[0]).toMatchObject({
+      account_id: 'acct',
+      user_id: 'owner-1',
+      contact_id: 'c3',
+      connection_id: 'conn-uazapi-primary',
+    });
+  });
+
+  it('still fails with whatsapp_not_configured when no connections exist', async () => {
+    // Verify that zero connections still triggers the not_configured error,
+    // same as before the is_primary filter was added.
+    const db = makeDb({
+      config: null,
+      contactCandidates: [],
+    });
+    await expect(
+      resolveConversationByPhone(db, 'acct', '+14155550123')
+    ).rejects.toMatchObject({
+      code: 'whatsapp_not_configured',
+      status: 400,
     });
   });
 });

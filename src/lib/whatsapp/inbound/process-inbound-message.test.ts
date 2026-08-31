@@ -472,6 +472,47 @@ describe('processInboundMessage — media', () => {
       media_type: 'image/jpeg',
     });
   });
+
+  it('uazapi media: mirror key is the providerMessageId, not "" (FIX 3 — no cross-contact collision)', async () => {
+    const { db, state } = setup();
+    state.connRow = {
+      id: 'conn-1',
+      account_id: 'acc-1',
+      credential: 'enc',
+      provider: 'uazapi',
+      uazapi_instance_id: 'inst-1',
+      uazapi_base_url: 'https://pinned.uazapi.example',
+      mirror_inbound_media: true,
+    };
+    h.mirrorInboundMedia.mockResolvedValue(
+      'https://cdn.test/chat-media/account-acc-1/inbound/3EB0ABC-invoice.pdf'
+    );
+    const uazapiMedia: InboundMessage['content'] = {
+      kind: 'media',
+      mediaKind: 'document',
+      filename: 'invoice.pdf',
+      mimeType: 'application/pdf',
+      ref: { provider: 'uazapi', messageId: '3EB0ABC' },
+    };
+
+    await processInboundMessage(
+      db,
+      textMsg({ providerMessageId: '3EB0ABC', content: uazapiMedia })
+    );
+
+    expect(h.mirrorInboundMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: '3EB0ABC' })
+    );
+    // Two different messages carrying the same filename get distinct keys.
+    h.mirrorInboundMedia.mockClear();
+    await processInboundMessage(
+      db,
+      textMsg({ providerMessageId: '3EB0XYZ', content: uazapiMedia })
+    );
+    expect(h.mirrorInboundMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaId: '3EB0XYZ' })
+    );
+  });
 });
 
 describe('processInboundMessage — unsupported', () => {

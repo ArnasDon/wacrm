@@ -149,7 +149,9 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "channelMeta": "Meta",
+      "channelQr": "QR"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -173,7 +175,8 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "viaNumber": "via {number}"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -1543,6 +1546,7 @@
       "uazapiConnect": "Connect via QR code",
       "uazapiNewQr": "Generate a new QR code",
       "uazapiReconnect": "Reconnect",
+      "uazapiReconfigureWebhook": "Re-register webhook",
       "uazapiDisconnect": "Disconnect",
       "uazapiRemove": "Remove",
       "uazapiScanHint": "Open WhatsApp on your phone → Settings → Linked devices → Link a device, then scan this code.",

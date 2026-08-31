@@ -53,12 +53,13 @@ export async function resolveConversationByPhone(
     );
   }
 
-  // Fail fast (and create nothing) when the account has no WhatsApp
-  // connected — the same error the send would raise anyway.
+  // Fail fast (and create nothing) when the account has no primary
+  // WhatsApp connection — the same error the send would raise anyway.
   const { data: config } = await db
     .from('whatsapp_connections')
     .select('id')
     .eq('account_id', accountId)
+    .eq('is_primary', true)
     .is('archived_at', null)
     .maybeSingle();
   if (!config) {

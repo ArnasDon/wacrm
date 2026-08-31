@@ -541,6 +541,24 @@
       "phoneRequired": "El número de teléfono es obligatorio"
     },
     "detailView": {
+      "activity": {
+        "empty": "Sin actividad todavía.",
+        "note": "Nota",
+        "msgIn": "Mensaje del contacto",
+        "msgOut": "Mensaje enviado",
+        "dealCreated": "Negociación creada",
+        "dealWon": "Negociación ganada",
+        "today": "Hoy",
+        "yesterday": "Ayer",
+        "quote": "Cotización · {status}",
+        "quoteStatus": {
+          "draft": "borrador",
+          "sent": "enviada",
+          "accepted": "aceptada",
+          "rejected": "rechazada",
+          "expired": "vencida"
+        }
+      },
       "tabs": {
         "details": "Detalles",
         "activity": "Actividad",

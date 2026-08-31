@@ -572,6 +572,24 @@
       "phoneRequired": "전화번호는 필수입니다"
     },
     "detailView": {
+      "activity": {
+        "empty": "아직 활동이 없습니다.",
+        "note": "메모",
+        "msgIn": "연락처의 메시지",
+        "msgOut": "보낸 메시지",
+        "dealCreated": "거래 생성됨",
+        "dealWon": "거래 성사됨",
+        "today": "오늘",
+        "yesterday": "어제",
+        "quote": "견적 · {status}",
+        "quoteStatus": {
+          "draft": "초안",
+          "sent": "발송됨",
+          "accepted": "수락됨",
+          "rejected": "거절됨",
+          "expired": "만료됨"
+        }
+      },
       "tabs": {
         "details": "상세 정보",
         "activity": "활동",

@@ -572,6 +572,24 @@
       "phoneRequired": "Phone number is required"
     },
     "detailView": {
+      "activity": {
+        "empty": "No activity yet.",
+        "note": "Note",
+        "msgIn": "Message from contact",
+        "msgOut": "Message sent",
+        "dealCreated": "Deal created",
+        "dealWon": "Deal won",
+        "today": "Today",
+        "yesterday": "Yesterday",
+        "quote": "Quote · {status}",
+        "quoteStatus": {
+          "draft": "draft",
+          "sent": "sent",
+          "accepted": "accepted",
+          "rejected": "rejected",
+          "expired": "expired"
+        }
+      },
       "tabs": {
         "details": "Details",
         "activity": "Activity",

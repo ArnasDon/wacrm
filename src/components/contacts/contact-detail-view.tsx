@@ -44,6 +44,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
+import { ContactTimeline } from '@/components/contacts/contact-timeline';
 import {
   Phone,
   Mail,
@@ -578,6 +579,12 @@ export function ContactDetailView({
                     {t('tabs.details')}
                   </TabsTrigger>
                   <TabsTrigger
+                    value="activity"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.activity')}
+                  </TabsTrigger>
+                  <TabsTrigger
                     value="tags"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
@@ -602,6 +609,14 @@ export function ContactDetailView({
                     {t('tabs.deals')}
                   </TabsTrigger>
                 </TabsList>
+
+                {/* Activity Tab — unified timeline */}
+                <TabsContent
+                  value="activity"
+                  className="flex-1 overflow-y-auto px-4 py-3"
+                >
+                  <ContactTimeline contactId={contactId} open={open} />
+                </TabsContent>
 
                 {/* Details Tab */}
                 <TabsContent

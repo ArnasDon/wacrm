@@ -56,6 +56,20 @@ async function zernioFetch(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
+/** Thrown by `verifyZernioAccount`. `kind` lets a caller tell a real
+ *  credential rejection ('auth') apart from a transient failure or a
+ *  response-shape quirk it should not surface as "disconnected". */
+export class ZernioVerifyError extends Error {
+  constructor(
+    message: string,
+    readonly kind: 'auth' | 'not_found' | 'platform_mismatch' | 'transient',
+    readonly status?: number,
+  ) {
+    super(message)
+    this.name = 'ZernioVerifyError'
+  }
+}
+
 async function throwZernioError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
@@ -85,31 +99,107 @@ export interface VerifyZernioAccountArgs {
   expectedPlatform: string
 }
 
+interface ZernioAccountRow {
+  _id?: string
+  id?: string
+  accountId?: string
+  platform?: string
+  username?: string
+  displayName?: string
+  name?: string
+}
+
+/** Every response envelope Zernio's `/accounts` has been seen to use. */
+function extractAccounts(data: unknown): ZernioAccountRow[] {
+  const d = data as Record<string, unknown> | null
+  const candidates: unknown[] = [
+    (d?.data as Record<string, unknown> | undefined)?.accounts,
+    d?.accounts,
+    d?.data,
+    d,
+  ]
+  for (const c of candidates) {
+    if (Array.isArray(c)) return c as ZernioAccountRow[]
+  }
+  return []
+}
+
+function rowId(a: ZernioAccountRow): string | undefined {
+  return a._id ?? a.id ?? a.accountId
+}
+
 /**
  * Verify a Zernio-connected account by id, for a specific platform.
  * Zernio has no get-by-id account endpoint, so this lists every
  * account on the key and finds the match — used by each channel's
  * config route "Test Connection" and health check.
+ *
+ * Tolerant on purpose: the id key (`_id` / `id` / `accountId`), the
+ * response envelope, and the platform-string casing have all varied
+ * across Zernio API revisions, and a channel that is demonstrably
+ * live (its webhook is delivering) must not read as "disconnected"
+ * just because this list call's shape drifted. Genuine credential
+ * rejections still throw `ZernioVerifyError({ kind: 'auth' })`.
  */
 export async function verifyZernioAccount(args: VerifyZernioAccountArgs): Promise<ZernioAccountInfo> {
   const { apiKey, accountId, expectedPlatform } = args
-  const response = await zernioFetch(`${ZERNIO_API_BASE}/accounts`, {
-    headers: { Authorization: `Bearer ${apiKey}` },
-  })
+
+  let response: Response
+  try {
+    response = await zernioFetch(`${ZERNIO_API_BASE}/accounts`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+    })
+  } catch (err) {
+    // Network / timeout — transient, not a credential problem.
+    throw new ZernioVerifyError(
+      err instanceof Error ? err.message : 'Could not reach the Zernio API.',
+      'transient',
+    )
+  }
+
   if (!response.ok) {
-    await throwZernioError(response, `Zernio API error: ${response.status}`)
+    let detail = `Zernio API error: ${response.status}`
+    try {
+      const body = (await response.json()) as ZernioErrorResponse
+      if (body.error) detail = body.error
+    } catch {
+      /* non-JSON body */
+    }
+    const kind =
+      response.status === 401 || response.status === 403 ? 'auth' : 'transient'
+    throw new ZernioVerifyError(detail, kind, response.status)
   }
-  const data = await response.json()
-  const accounts: Array<{ _id: string; platform: string; username?: string; displayName?: string }> =
-    data?.data?.accounts ?? data?.accounts ?? []
-  const match = accounts.find((a) => a._id === accountId)
+
+  let data: unknown
+  try {
+    data = await response.json()
+  } catch {
+    throw new ZernioVerifyError('Zernio API returned a non-JSON response.', 'transient')
+  }
+
+  const accounts = extractAccounts(data)
+  const match = accounts.find((a) => rowId(a) === accountId)
   if (!match) {
-    throw new Error('No Zernio account with this ID was found for this API key.')
+    throw new ZernioVerifyError(
+      'No Zernio account with this ID was found on this API key.',
+      'not_found',
+    )
   }
-  if (match.platform !== expectedPlatform) {
-    throw new Error(`This Zernio account is connected to "${match.platform}", not ${expectedPlatform}.`)
+  if (
+    match.platform &&
+    match.platform.toLowerCase() !== expectedPlatform.toLowerCase()
+  ) {
+    throw new ZernioVerifyError(
+      `This Zernio account is connected to "${match.platform}", not ${expectedPlatform}.`,
+      'platform_mismatch',
+    )
   }
-  return { id: match._id, platform: match.platform, username: match.username, displayName: match.displayName }
+  return {
+    id: rowId(match) ?? accountId,
+    platform: match.platform ?? expectedPlatform,
+    username: match.username,
+    displayName: match.displayName ?? match.name,
+  }
 }
 
 // ============================================================

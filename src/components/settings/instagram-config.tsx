@@ -147,7 +147,10 @@ export function InstagramConfig() {
             if (payload.connected) {
               setConnectionStatus('connected');
               setResetReason(null);
-              setStatusMessage('');
+              // A soft warning (e.g. Zernio's account list couldn't be
+              // reached to re-verify) — the link is still live, so stay
+              // "connected" but surface the note.
+              setStatusMessage(payload.verify_warning || '');
             } else {
               setConnectionStatus('disconnected');
               setResetReason(
@@ -485,9 +488,10 @@ export function InstagramConfig() {
             </div>
             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
-                ? provider === 'zernio'
-                  ? t('zernioConnectedDesc')
-                  : t('connectedDesc')
+                ? statusMessage ||
+                  (provider === 'zernio'
+                    ? t('zernioConnectedDesc')
+                    : t('connectedDesc'))
                 : statusMessage || t('notConnectedDesc')}
             </AlertDescription>
           </Alert>

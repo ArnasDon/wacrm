@@ -3,7 +3,7 @@ import crypto from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import { verifyIgAccount } from '@/lib/instagram/api'
-import { verifyZernioAccount } from '@/lib/zernio/api'
+import { verifyZernioAccount, ZernioVerifyError } from '@/lib/zernio/api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /**
@@ -121,11 +121,29 @@ export async function GET() {
         })
       } catch (err) {
         const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
-        console.error('[instagram/config GET] Zernio API verification failed:', message)
-        return NextResponse.json(
-          { connected: false, reason: 'zernio_api_error', message: `Zernio API rejected the credentials: ${message}` },
-          { status: 200 }
-        )
+        const kind = err instanceof ZernioVerifyError ? err.kind : 'transient'
+        console.error(`[instagram/config GET] Zernio verify (${kind}):`, message)
+
+        // Only a definitive credential rejection means "disconnected".
+        // Anything else (timeout, a drifted response shape, the account
+        // just not appearing in the /accounts list) must not override a
+        // saved, working connection — inbound rides the webhook secret
+        // and outbound rides the stored key + conversation id, neither
+        // of which depends on this list call. Mirrors the WhatsApp
+        // config route, which has no live check at all.
+        if (kind === 'auth') {
+          return NextResponse.json(
+            { connected: false, reason: 'zernio_api_error', message: `Zernio rechazó las credenciales: ${message}` },
+            { status: 200 }
+          )
+        }
+        return NextResponse.json({
+          connected: config.status === 'connected',
+          reason: config.status === 'connected' ? undefined : 'zernio_api_error',
+          verify_warning:
+            'No se pudo re-verificar la conexión con Zernio en este momento. La configuración guardada sigue activa.',
+          message: config.status === 'connected' ? undefined : message,
+        })
       }
     }
 

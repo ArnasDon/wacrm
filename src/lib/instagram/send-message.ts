@@ -30,10 +30,11 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import type { InstagramMediaKind } from '@/lib/instagram/api';
-import { sendInstagramText, sendInstagramMedia } from '@/lib/instagram/provider-send';
+import { sendInstagramText, sendInstagramMedia, isZernioProvider } from '@/lib/instagram/provider-send';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { SendMessageError, type SendMessageParams, type SendMessageResult } from '@/lib/messaging/types';
 import { isWithinMessagingWindow } from '@/lib/messaging/window';
+import { resolveZernioConversationIdForContact } from '@/lib/messaging/resolve-zernio-conversation';
 
 const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 
@@ -123,10 +124,37 @@ export async function sendInstagramMessageToConversation(
     );
   }
 
+  // Zernio addresses an existing conversation by its opaque id. If the
+  // row being replied to has none — a missed `conversation.started`
+  // webhook, or an older duplicate row is the one open in the inbox
+  // (common on chats that start from an ad or a post → DM) — fall back
+  // to any sibling conversation of this contact that does carry one, so
+  // the agent can still reply instead of hitting a dead end.
+  let zernioConversationId = (conversation.zernio_conversation_id as string | null) ?? null;
+  if (!zernioConversationId && isZernioProvider(config)) {
+    zernioConversationId = await resolveZernioConversationIdForContact(
+      db,
+      accountId,
+      contact.id,
+      'instagram',
+    );
+    if (zernioConversationId) {
+      console.warn(
+        `[instagram/send-message] conversation ${conversationId} had no zernio_conversation_id; sending via a sibling conversation's id (${zernioConversationId}).`,
+      );
+    } else {
+      throw new SendMessageError(
+        'instagram_no_conversation',
+        'This chat is not linked to an Instagram conversation yet. It links automatically once the customer sends another message — if it keeps happening, re-save the Instagram connection in Settings.',
+        409,
+      );
+    }
+  }
+
   const target = {
     config,
     igsid: contact.instagram_id as string,
-    zernioConversationId: (conversation.zernio_conversation_id as string | null) ?? null,
+    zernioConversationId,
   };
 
   // Only actually apply the tag when the window has truly expired —

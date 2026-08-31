@@ -20,6 +20,7 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { SendMessageError, type SendMessageParams, type SendMessageResult } from '@/lib/messaging/types';
 import { isWithinMessagingWindow } from '@/lib/messaging/window';
+import { resolveZernioConversationIdForContact } from '@/lib/messaging/resolve-zernio-conversation';
 
 const MEDIA_KINDS = ['image', 'video', 'document', 'audio'] as const;
 
@@ -87,13 +88,29 @@ export async function sendFacebookMessageToConversation(
     throw new SendMessageError('bad_request', 'Contact has no Facebook identity', 400);
   }
 
-  const zernioConversationId = conversation.zernio_conversation_id as string | null;
+  // See the identical comment in `@/lib/instagram/send-message`: fall
+  // back to any sibling conversation of this contact that carries a
+  // Zernio id when the row being replied to has none, so a reply to a
+  // chat that started from an ad / a post → DM never dead-ends.
+  let zernioConversationId = conversation.zernio_conversation_id as string | null;
   if (!zernioConversationId) {
-    throw new SendMessageError(
-      'facebook_no_conversation',
-      'No Zernio conversation exists yet for this contact. The customer needs to message first before an agent can reply.',
-      400
+    zernioConversationId = await resolveZernioConversationIdForContact(
+      db,
+      accountId,
+      contact.id,
+      'facebook'
     );
+    if (zernioConversationId) {
+      console.warn(
+        `[facebook/send-message] conversation ${conversationId} had no zernio_conversation_id; sending via a sibling conversation's id (${zernioConversationId}).`
+      );
+    } else {
+      throw new SendMessageError(
+        'facebook_no_conversation',
+        'This chat is not linked to a Facebook conversation yet. It links automatically once the customer sends another message — if it keeps happening, re-save the Facebook connection in Settings.',
+        409
+      );
+    }
   }
 
   const { data: config, error: configError } = await db

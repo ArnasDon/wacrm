@@ -315,6 +315,25 @@ export function UazapiConnectionCard({
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
+                onClick={() => {
+                  if (!effectiveId) return;
+                  const id = effectiveId;
+                  void runAction(async () => {
+                    const res = await fetch(
+                      `/api/whatsapp/connections/${id}/reconfigure-webhook`,
+                      { method: 'POST' }
+                    );
+                    if (!res.ok) throw new Error('reconfigure failed');
+                    onChanged();
+                  });
+                }}
+                disabled={disabled}
+              >
+                {busy ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                {t('uazapiReconfigureWebhook')}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={handleDisconnect}
                 disabled={disabled}
               >

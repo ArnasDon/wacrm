@@ -1543,6 +1543,7 @@
       "uazapiConnect": "Connect via QR code",
       "uazapiNewQr": "Generate a new QR code",
       "uazapiReconnect": "Reconnect",
+      "uazapiReconfigureWebhook": "Re-register webhook",
       "uazapiDisconnect": "Disconnect",
       "uazapiRemove": "Remove",
       "uazapiScanHint": "Open WhatsApp on your phone → Settings → Linked devices → Link a device, then scan this code.",

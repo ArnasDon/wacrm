@@ -1543,6 +1543,7 @@
       "uazapiConnect": "QR 코드로 연결",
       "uazapiNewQr": "새 QR 코드 생성",
       "uazapiReconnect": "다시 연결",
+      "uazapiReconfigureWebhook": "웹훅 다시 등록",
       "uazapiDisconnect": "연결 해제",
       "uazapiRemove": "제거",
       "uazapiScanHint": "휴대폰에서 WhatsApp 열기 → 설정 → 연결된 기기 → 기기 연결을 누른 뒤 이 코드를 스캔하세요.",

@@ -100,6 +100,7 @@ luego se investiga con calma. No depurar en caliente sobre `main`.
 | Google Calendar desconectado | Alerta `google_calendar`; el owner debe re-autorizar en Ajustes |
 | Broadcasts atascados | `broadcasts` en estado `sending` con `locked_at` viejo; cron `webhooks`/`automations` (sección 5) |
 | Automations/flows no disparan | Heartbeats `automations_cron` / `flows_cron` (sección 5) |
+| No se puede responder un chat de Instagram/Facebook | Alerta `inbox_integrity` en Telegram — `detail.sample_conversation_ids` lista las conversaciones sin `zernio_conversation_id`. Causa habitual: dos filas para el mismo contacto (carrera de webhooks de Zernio). Reparar = mover `messages`/`ai_usage_log` de la fila huérfana a la que tiene el id y borrar la huérfana (ver PR #28/#29). El envío ya tiene un fallback a una conversación hermana, así que la alerta es de "revisar", no de "caído". |
 
 ### 4.1 WhatsApp / Meta Cloud API
 

@@ -16,6 +16,7 @@ import { NextResponse, after } from 'next/server';
 import { loadHeartbeatHealth } from '@/lib/observability/heartbeat';
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts';
 import { runAlertTriage, isTriageConfigured } from '@/lib/observability/triage';
+import { checkInboxIntegrity } from '@/lib/observability/inbox-integrity';
 
 function authorized(request: Request): boolean {
   const expected =
@@ -89,10 +90,47 @@ export async function GET(request: Request) {
   // external monitor's `/api/health?full=1` call still surfaces stale
   // jobs directly.
 
+  // Inbox integrity — catch a recurrence of the IG/FB dup-conversation /
+  // id-less-conversation class of bug (PRs #28/#29) before a customer
+  // does. Best-effort: a failure here never fails the cron.
+  let inbox: Awaited<ReturnType<typeof checkInboxIntegrity>> | null = null;
+  try {
+    inbox = await checkInboxIntegrity();
+    const dedupKey = 'inbox_integrity:zernio';
+    const problem =
+      !inbox.scanFailed &&
+      (inbox.unrepliableConversationIds.length > 0 || inbox.duplicateThreadGroups > 0);
+    if (problem) {
+      await dispatchSystemAlert({
+        severity: 'warning',
+        source: 'inbox_integrity',
+        title: 'Instagram/Facebook conversations that may not be repliable',
+        detail: {
+          unrepliable_conversations: inbox.unrepliableConversationIds.length,
+          sample_conversation_ids: inbox.unrepliableConversationIds.slice(0, 15),
+          duplicate_thread_groups: inbox.duplicateThreadGroups,
+        },
+        dedupKey,
+        throttleMinutes: 720,
+      });
+    } else if (!inbox.scanFailed) {
+      await resolveSystemAlert(dedupKey);
+    }
+  } catch (err) {
+    console.error('[heartbeat-check] inbox integrity check failed:', err);
+  }
+
   return NextResponse.json({
     checked: hbs.length,
     flagged,
     ok: recovered,
     triaged,
+    inbox_integrity: inbox
+      ? {
+          scan_failed: inbox.scanFailed,
+          unrepliable_conversations: inbox.unrepliableConversationIds.length,
+          duplicate_thread_groups: inbox.duplicateThreadGroups,
+        }
+      : null,
   });
 }

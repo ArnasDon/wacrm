@@ -110,7 +110,9 @@ export function FacebookConfig() {
             if (payload.connected) {
               setConnectionStatus('connected');
               setResetReason(null);
-              setStatusMessage('');
+              // Soft warning (e.g. Zernio's account list couldn't be
+              // re-checked) — link is still live, keep "connected".
+              setStatusMessage(payload.verify_warning || '');
             } else {
               setConnectionStatus('disconnected');
               setResetReason(
@@ -367,7 +369,7 @@ export function FacebookConfig() {
             </div>
             <AlertDescription className="text-muted-foreground">
               {connectionStatus === 'connected'
-                ? t('connectedDesc')
+                ? statusMessage || t('connectedDesc')
                 : statusMessage || t('notConnectedDesc')}
             </AlertDescription>
           </Alert>

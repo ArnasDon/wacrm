@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import crypto from 'node:crypto'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
-import { verifyZernioAccount } from '@/lib/zernio/api'
+import { verifyZernioAccount, ZernioVerifyError } from '@/lib/zernio/api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 
 /** Mirrors src/app/api/instagram/config/route.ts's helper of the same name.
@@ -115,11 +115,25 @@ export async function GET() {
       })
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown Zernio API error'
-      console.error('[facebook/config GET] Zernio API verification failed:', message)
-      return NextResponse.json(
-        { connected: false, reason: 'zernio_api_error', message: `Zernio API rejected the credentials: ${message}` },
-        { status: 200 }
-      )
+      const kind = err instanceof ZernioVerifyError ? err.kind : 'transient'
+      console.error(`[facebook/config GET] Zernio verify (${kind}):`, message)
+
+      // See the matching comment in the Instagram config route: only a
+      // real credential rejection is "disconnected"; a flaky or drifted
+      // /accounts list call must not override a saved, working link.
+      if (kind === 'auth') {
+        return NextResponse.json(
+          { connected: false, reason: 'zernio_api_error', message: `Zernio rechazó las credenciales: ${message}` },
+          { status: 200 }
+        )
+      }
+      return NextResponse.json({
+        connected: config.status === 'connected',
+        reason: config.status === 'connected' ? undefined : 'zernio_api_error',
+        verify_warning:
+          'No se pudo re-verificar la conexión con Zernio en este momento. La configuración guardada sigue activa.',
+        message: config.status === 'connected' ? undefined : message,
+      })
     }
   } catch (error) {
     console.error('Error in Facebook config GET:', error)

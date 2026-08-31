@@ -523,6 +523,85 @@ Esta fase comienza SOLO después de completar la auditoría estructural
 previa (Fase 1, incluyendo AUTH-N3 y cualquier hallazgo posterior que
 surja de ella).
 
+## Hallazgos operativos — auditoría del pipeline del Agente IA
+
+Dos pasadas read-only (arquitectura general + profundización dirigida
+a routing/Knowledge-RPCs/usage/handoff/providers) produjeron:
+
+- F1 — Defensa contra prompt injection: **CONTROL EXISTENTE**, confirmado por código (`defaults.ts`).
+- F2 — Fallo silencioso del proveedor LLM: **RESUELTO / CERRADO END-TO-END** (detalle abajo).
+- F3 — Ausencia de `temperature` explícito: **informativo/deuda de configuración**, no implementado, no bloqueante.
+- F4 — Aislamiento multi-tenant en catalog tools: **CONTROL EXISTENTE**, confirmado por código.
+- F5 — Handoff determinístico en servidor (nunca decidido por el modelo): **CONTROL EXISTENTE**, confirmado por código.
+- F6 — Claves BYO cifradas y por-cuenta: **CONTROL EXISTENTE**, confirmado por código.
+- Hallazgo histórico documentado (no abierto): cross-tenant leakage en
+  `match_ai_knowledge_fts`/`match_ai_knowledge_semantic` (GHSA-fg5p-2qc3-jmxr),
+  ya corregido en la migración 032 (`SECURITY DEFINER → SECURITY INVOKER`) — confirmado vigente por lectura directa de las migraciones 030/032/041(040)/044.
+
+### F2 — Fallo silencioso del proveedor LLM: RESUELTO / CERRADO END-TO-END
+
+**Tipo:** confiabilidad/robustez — NO es una vulnerabilidad de seguridad.
+**Severidad original:** BAJA-MEDIA. Sin cambios por el cierre.
+
+**Problema antes de la corrección:** cuando `generateReply()` lanzaba
+una excepción (`AiError` de timeout/rate-limit/clave inválida/
+respuesta malformada, o un error de red), `dispatchInboundToAiReply`
+solo capturaba el error en su `catch` externo con `console.error` y
+retornaba — la conversación quedaba sin ninguna respuesta y sin
+marcarse `pending`/handoff: ni el bot contestaba ni un humano era
+notificado.
+
+**Corrección implementada** (`src/lib/ai/auto-reply.ts`):
+- Se extrajo la lógica ya existente para marcar una conversación como
+  handoff/pending a una función interna `handOffToHuman(summaryOverride?)`
+  — la MISMA ruta determinística que ya usaba el handoff solicitado por
+  el modelo (`loadBusinessProfileForAgent` → `detectHandoffIntent`/
+  `describeHandoffIntent` → `conversations.update(...)`). No se creó
+  ninguna ruta paralela de notificación/handoff.
+- La llamada a `generateReply()` ahora tiene su propio `try/catch`
+  específico. Ante un fallo del proveedor:
+  - se registra el error original con `console.error` (sin exponer
+    claves ni tokens — solo el objeto de error, mismo patrón que el
+    resto del archivo);
+  - se marca la conversación `pending`, `ai_autoreply_disabled: true`;
+  - se conserva la resolución determinística de departamento/contacto
+    contra los datos reales de la cuenta (nunca inventada);
+  - se registra un `ai_handoff_summary` que indica explícitamente un
+    "provider error", distinguible de un handoff normal solicitado por
+    el modelo;
+  - NO se intenta reclamar `ai_reply_slot` (`claim_ai_reply_slot`
+    nunca se llama en este camino);
+  - NO se envía ninguna respuesta generada por IA ni un mensaje
+    inventado como sustituto.
+  - Si el propio `update` de handoff/pending también falla, se registra
+    un segundo error distinto y la función termina limpiamente sin
+    volver a lanzar y sin intentar enviar ningún mensaje.
+- La generación exitosa, la respuesta de texto normal, y el handoff
+  solicitado por el modelo (`[[HANDOFF]]`/texto vacío) conservan su
+  comportamiento exacto de antes — confirmado por los 34 tests
+  preexistentes de `auto-reply.test.ts`, sin modificar sus expectativas.
+
+**Tests:**
+- `auto-reply.test.ts`: 38 passed (34 previos + 4 nuevos, cubriendo un
+  `Error` genérico, un `AiError` real con código `timeout`, la
+  resolución de departamento real ante un fallo de proveedor, y el
+  caso de doble fallo — proveedor Y el propio update de handoff — sin
+  que la función lance ni intente enviar nada).
+- `src/lib/ai` completo: 27 test files, 441 tests passed.
+- Suite completa: 136 test files, 1629 tests passed.
+- `tsc --noEmit`: 0 errores.
+- ESLint: 0 errores, 37 warnings preexistentes (sin cambios).
+- `git diff --check`: limpio.
+
+**Nota residual explícita:** no se realizó una prueba operativa contra
+un proveedor LLM real fallando en producción — la validación de este
+fallo se hizo enteramente mediante mocks automatizados en Vitest, como
+el resto de la cobertura de este módulo.
+
+**Archivos modificados:** `src/lib/ai/auto-reply.ts`,
+`src/lib/ai/auto-reply.test.ts`. Ningún otro archivo de código, ninguna
+migración, ninguna configuración de Supabase.
+
 ## 2.1 Instrucción base / sistema
 PENDIENTE
 

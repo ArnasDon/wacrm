@@ -226,15 +226,90 @@ export async function dispatchInboundToAiReply(
     // branching on config.provider.
     const systemPromptBlocks = buildSystemPromptBlocks(systemPromptArgs)
 
+    // Deterministic hand-off-to-human, reused for two different reasons:
+    // (a) the model itself decided to hand off ([[HANDOFF]] or empty
+    // text — see the `handoff || !text` branch below), and (b) F2 —
+    // `generateReply` throwing (AiError from a timeout/rate-limit/
+    // malformed response/network failure) must NOT leave the customer's
+    // message silently unanswered with no signal to a human either.
+    // Both reasons resolve department/contact/summary identically; only
+    // the summary text differs, so a human can tell "the bot chose to
+    // hand off" apart from "the bot never got a reply because the
+    // provider failed". Extracting this (rather than duplicating the
+    // block) means there is exactly one place that writes the pending/
+    // handoff shape — the two call sites can't drift apart.
+    // `conv`/`config` are already guaranteed non-null by the early
+    // returns above (`if (!config...) return`, `if (convErr || !conv)
+    // return`) — re-bound here only because TypeScript does not carry
+    // that narrowing into a nested function's body, not as a new
+    // runtime check.
+    const activeConv = conv
+    const activeConfig = config
+
+    async function handOffToHuman(summaryOverride?: string) {
+      businessProfile ??= await loadBusinessProfileForAgent(db, accountId)
+      const intent = detectHandoffIntent(latestMessage, businessProfile.departments, businessProfile.contacts)
+      const intentNote = describeHandoffIntent(intent)
+
+      const summary = summaryOverride ?? buildHandoffSummary({
+        messages,
+        replyCount: activeConv.ai_reply_count ?? 0,
+      })
+      const update: Record<string, unknown> = {
+        ai_autoreply_disabled: true,
+        ai_handoff_summary: intentNote ? `${summary} ${intentNote}` : summary,
+        status: 'pending',
+        ai_handoff_department_id: intent.department?.id ?? null,
+        ai_handoff_contact_id: intent.contact?.id ?? null,
+      }
+      // Only set the assignee when a target is configured AND the thread
+      // isn't already owned — never stomp an existing human assignment.
+      // A contact's OWN optional linked_user_id (migration 050) is the
+      // most specific match and wins over the account's generic default
+      // handoff agent when both are available.
+      const resolvedAssignee = intent.contact?.linkedUserId ?? activeConfig.handoffAgentId
+      if (resolvedAssignee && !activeConv.assigned_agent_id) {
+        update.assigned_agent_id = resolvedAssignee
+      }
+      await db.from('conversations').update(update).eq('id', conversationId)
+    }
+
     const generateStartedAt = Date.now()
-    const { text, handoff, usage, toolCalls } = await generateReply({
-      config,
-      systemPrompt,
-      systemPromptBlocks,
-      messages,
-      tools,
-      executeTool,
-    })
+    let generated: Awaited<ReturnType<typeof generateReply>>
+    try {
+      generated = await generateReply({
+        config,
+        systemPrompt,
+        systemPromptBlocks,
+        messages,
+        tools,
+        executeTool,
+      })
+    } catch (err) {
+      // F2 — a provider failure (timeout, rate limit, invalid key,
+      // malformed response, network error — anything generateReply
+      // throws as AiError, or an unexpected exception) must never leave
+      // this inbound silently unanswered: no bot reply, but also no
+      // human ever notified. Never invent a substitute reply here — a
+      // fabricated "sorry, try again" would itself be an ungrounded
+      // model-less guess, exactly what this whole pipeline exists to
+      // avoid. Escalate to a human instead, via the exact same
+      // deterministic route a model-requested handoff already uses.
+      console.error('[ai auto-reply] generateReply failed — handing off to a human instead of leaving the inbound unanswered:', err)
+      try {
+        await handOffToHuman(
+          '🤖 The AI agent could not generate a reply (provider error) — a human needs to take over this conversation.',
+        )
+      } catch (handoffErr) {
+        // The fallback itself failed (e.g. DB unreachable) — log it
+        // distinctly so this doesn't read as the same original error.
+        // Nothing left to try: the outer catch below would only repeat
+        // this same log, so return here rather than re-throwing.
+        console.error('[ai auto-reply] handoff fallback after a provider failure ALSO failed:', handoffErr)
+      }
+      return
+    }
+    const { text, handoff, usage, toolCalls } = generated
     const latencyMs = Date.now() - generateStartedAt
 
     // Fold this turn's tool results into the cross-turn catalog context
@@ -316,32 +391,8 @@ export async function dispatchInboundToAiReply(
       // handoff-intent.ts's module doc). Reuses this turn's own
       // Business Profile load when routing already fetched it; a turn
       // that skipped Knowledge (so never loaded it) fetches it now,
-      // ONLY on this comparatively rare path.
-      businessProfile ??= await loadBusinessProfileForAgent(db, accountId)
-      const intent = detectHandoffIntent(latestMessage, businessProfile.departments, businessProfile.contacts)
-      const intentNote = describeHandoffIntent(intent)
-
-      const summary = buildHandoffSummary({
-        messages,
-        replyCount: conv.ai_reply_count ?? 0,
-      })
-      const update: Record<string, unknown> = {
-        ai_autoreply_disabled: true,
-        ai_handoff_summary: intentNote ? `${summary} ${intentNote}` : summary,
-        status: 'pending',
-        ai_handoff_department_id: intent.department?.id ?? null,
-        ai_handoff_contact_id: intent.contact?.id ?? null,
-      }
-      // Only set the assignee when a target is configured AND the thread
-      // isn't already owned — never stomp an existing human assignment.
-      // A contact's OWN optional linked_user_id (migration 050) is the
-      // most specific match and wins over the account's generic default
-      // handoff agent when both are available.
-      const resolvedAssignee = intent.contact?.linkedUserId ?? config.handoffAgentId
-      if (resolvedAssignee && !conv.assigned_agent_id) {
-        update.assigned_agent_id = resolvedAssignee
-      }
-      await db.from('conversations').update(update).eq('id', conversationId)
+      // ONLY on this comparatively rare path. See handOffToHuman above.
+      await handOffToHuman()
       return
     }
 

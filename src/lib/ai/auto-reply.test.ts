@@ -21,6 +21,10 @@ const h = vi.hoisted(() => ({
     // written before catalog tools existed); routing tests below set
     // this to a real active row to make hasActiveCatalogSources() true.
     dataSources: [] as Record<string, unknown>[],
+    // F2 — when true, the conversations.update().eq(...) call inside
+    // handOffToHuman() rejects, simulating the pending/handoff fallback
+    // itself failing (e.g. DB unreachable) on top of a provider failure.
+    failHandoffUpdate: false as boolean,
     // Business Profile (FASE 6) — unconfigured by default; individual
     // tests set these to exercise buildBusinessProfileContext()/
     // detectHandoffIntent() against real-shaped rows.
@@ -122,7 +126,12 @@ vi.mock('./admin-client', () => ({
         }),
         update: (payload: Record<string, unknown>) => {
           h.state.updatePayload = payload
-          return { eq: () => Promise.resolve({ error: null }) }
+          return {
+            eq: () =>
+              h.state.failHandoffUpdate
+                ? Promise.reject(new Error('conversations update failed (simulated)'))
+                : Promise.resolve({ error: null }),
+          }
         },
       }
     },
@@ -180,6 +189,7 @@ beforeEach(() => {
   h.state.departments = []
   h.state.contacts = []
   h.state.catalogProductRows = []
+  h.state.failHandoffUpdate = false
   h.loadAiConfig.mockResolvedValue(aiConfig())
   // Not "hi" — that's a real greeting under routing.ts's own vocabulary
   // and would route to 'neither', which is correct behavior but would
@@ -656,6 +666,72 @@ describe('dispatchInboundToAiReply — facets integration (FASE 11)', () => {
 
     const rpcCall = h.state.rpcCalls.find((c) => c.name === 'search_ai_catalog_products')
     expect((rpcCall?.args as { p_account_id: string }).p_account_id).toBe('acct-1')
+  })
+})
+
+// ============================================================
+// F2 — provider failure must escalate to a human via the SAME
+// deterministic pending/handoff route a model-requested handoff uses,
+// never leave the inbound silently unanswered with nobody told, and
+// never send the customer a fabricated reply.
+// ============================================================
+describe('dispatchInboundToAiReply — F2: provider failure', () => {
+  it('a generic Error from generateReply marks the conversation pending/handoff and sends nothing to the customer', async () => {
+    h.generateReply.mockRejectedValue(new Error('network error'))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // No fabricated reply, and the reply-slot RPC is never even attempted.
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.rpcCalls).toHaveLength(0)
+
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      status: 'pending',
+    })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('provider error')
+  })
+
+  it('an AiError (e.g. a timeout) from generateReply is handled the exact same functional way as a plain thrown error', async () => {
+    const { AiError } = await import('./types')
+    h.generateReply.mockRejectedValue(
+      new AiError('The AI provider took too long to respond.', { code: 'timeout', status: 504 }),
+    )
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      status: 'pending',
+    })
+  })
+
+  it("still resolves a department from the customer's own message on a provider failure, same deterministic resolution a model-requested handoff uses", async () => {
+    h.state.departments = [
+      {
+        id: 'd1', account_id: 'acct-1', name: 'Ventas', description: null,
+        active: true, sort_order: 100, created_at: 't', updated_at: 't',
+      },
+    ]
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con ventas' }])
+    h.generateReply.mockRejectedValue(new Error('provider is down'))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.updatePayload).toMatchObject({ ai_handoff_department_id: 'd1' })
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('never throws and never sends anything, even when the handoff fallback itself also fails', async () => {
+    h.state.failHandoffUpdate = true
+    h.generateReply.mockRejectedValue(new Error('network error'))
+
+    // The module's own contract ("it owns its try/catch and NEVER
+    // throws") must hold even when BOTH the provider call and the
+    // fallback it triggers fail.
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).not.toHaveBeenCalled()
   })
 })
 

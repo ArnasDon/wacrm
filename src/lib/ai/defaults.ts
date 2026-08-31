@@ -145,11 +145,21 @@ export const MAX_OUTPUT_TOKENS = 1024
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
+const DEFAULT_AUTO_REPLY_RETRY_DELAY_MS = 1_500
 
 /** Per-call provider timeout. Override with `AI_REQUEST_TIMEOUT_MS`. */
 export function aiRequestTimeoutMs(): number {
   const raw = Number(process.env.AI_REQUEST_TIMEOUT_MS)
   return Number.isFinite(raw) && raw > 0 ? raw : DEFAULT_REQUEST_TIMEOUT_MS
+}
+
+/** Backoff before the single auto-reply retry after a *transient*
+ *  provider failure (timeout / 429 / 5xx / network / empty completion).
+ *  Override with `AI_AUTOREPLY_RETRY_DELAY_MS`; 0 keeps the retry but
+ *  drops the wait (used by tests). */
+export function aiAutoReplyRetryDelayMs(): number {
+  const raw = Number(process.env.AI_AUTOREPLY_RETRY_DELAY_MS)
+  return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_AUTO_REPLY_RETRY_DELAY_MS
 }
 
 /** How many recent text messages to feed the model. Override with

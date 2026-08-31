@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { generateReply, parseGeneration } from './generate'
+import { generateReply, parseGeneration, isRetryableAiError } from './generate'
 import { AiError, type AiConfig } from './types'
 
 function config(overrides: Partial<AiConfig> = {}): AiConfig {
@@ -342,6 +342,25 @@ describe('parseGeneration', () => {
 
   it('returns null quickReplyId when the marker is absent', () => {
     expect(parseGeneration('Just a normal reply.').quickReplyId).toBeNull()
+  })
+})
+
+describe('isRetryableAiError', () => {
+  it('is true for transient provider failure modes', () => {
+    for (const code of ['timeout', 'rate_limited', 'network_error', 'provider_error', 'empty_response']) {
+      expect(isRetryableAiError(new AiError('x', { code }))).toBe(true)
+    }
+  })
+
+  it('is false for a rejected key and an unsupported provider', () => {
+    expect(isRetryableAiError(new AiError('bad key', { code: 'invalid_key' }))).toBe(false)
+    expect(isRetryableAiError(new AiError('nope', { code: 'unsupported_provider' }))).toBe(false)
+  })
+
+  it('is false for a non-AiError', () => {
+    expect(isRetryableAiError(new Error('boom'))).toBe(false)
+    expect(isRetryableAiError('boom')).toBe(false)
+    expect(isRetryableAiError(null)).toBe(false)
   })
 })
 

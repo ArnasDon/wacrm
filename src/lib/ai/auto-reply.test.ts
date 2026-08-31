@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import type { AiConfig } from './types'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { AiError, type AiConfig } from './types'
 
 // Shared, hoisted mock state so the module mocks can close over it.
 const h = vi.hoisted(() => ({
@@ -59,7 +59,12 @@ vi.mock('./context', () => ({ buildConversationContext: h.buildConversationConte
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
 vi.mock('./catalog-context', () => ({ loadCatalogContext: h.loadCatalogContext }))
 vi.mock('./quick-reply-context', () => ({ loadQuickReplyContext: h.loadQuickReplyContext }))
-vi.mock('./generate', () => ({ generateReply: h.generateReply }))
+// Only `generateReply` is stubbed — `isRetryableAiError` (used by the
+// dispatch's one-retry wrapper) keeps its real implementation.
+vi.mock('./generate', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('./generate')>()
+  return { ...actual, generateReply: h.generateReply }
+})
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: h.dispatchWebhookEvent }))
 vi.mock('@/lib/quotes/create-quote', () => ({
@@ -482,6 +487,83 @@ describe('dispatchInboundToAiReply — handoff', () => {
         content_text: h.state.updatePayload?.ai_handoff_summary,
       }),
     ])
+  })
+})
+
+describe('dispatchInboundToAiReply — provider failure handling', () => {
+  // Keep the retry instant so these cases don't each sleep the real backoff.
+  beforeEach(() => {
+    process.env.AI_AUTOREPLY_RETRY_DELAY_MS = '0'
+  })
+  afterEach(() => {
+    delete process.env.AI_AUTOREPLY_RETRY_DELAY_MS
+  })
+
+  it('retries once on a transient provider error, then sends the recovered reply', async () => {
+    h.generateReply
+      .mockRejectedValueOnce(new AiError('overloaded', { code: 'provider_error' }))
+      .mockResolvedValueOnce({
+        text: 'Recuperado!',
+        handoff: false,
+        markDealWon: false,
+        moveToStageName: null,
+        sendCatalog: false,
+      })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.generateReply).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Recuperado!' }),
+    )
+    // A recovered call must not also trip the failure handoff.
+    expect(h.state.updatePayload).toBeNull()
+  })
+
+  it('hands off to a human when a transient provider error outlives the retry', async () => {
+    h.generateReply.mockRejectedValue(new AiError('529 overloaded', { code: 'provider_error' }))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.generateReply).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.rpcCalls).toHaveLength(0) // never claimed a reply slot
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('error temporal')
+    // …and leaves the matching internal note in the thread.
+    expect(h.state.messageInserts).toEqual([
+      expect.objectContaining({
+        content_type: 'internal_note',
+        content_text: h.state.updatePayload?.ai_handoff_summary,
+      }),
+    ])
+  })
+
+  it('routes the failure handoff to the configured agent', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-7' }))
+    h.generateReply.mockRejectedValue(new AiError('timed out', { code: 'timeout' }))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      assigned_agent_id: 'agent-7',
+    })
+  })
+
+  it('does not retry and does not force a per-conversation handoff on an invalid-key error', async () => {
+    h.generateReply.mockRejectedValue(new AiError('rejected', { code: 'invalid_key' }))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toBeNull()
+  })
+
+  it('never throws out of dispatch even when generation keeps failing', async () => {
+    h.generateReply.mockRejectedValue(new AiError('boom', { code: 'network_error' }))
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
   })
 })
 

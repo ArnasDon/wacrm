@@ -6,8 +6,8 @@ import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { loadCatalogContext } from './catalog-context'
 import { loadQuickReplyContext } from './quick-reply-context'
-import { generateReply } from './generate'
-import { buildSystemPrompt, type AutoReplyCalendarContext } from './defaults'
+import { generateReply, isRetryableAiError, type GenerateArgs } from './generate'
+import { buildSystemPrompt, aiAutoReplyRetryDelayMs, type AutoReplyCalendarContext } from './defaults'
 import { AiError, type AiConfig } from './types'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
@@ -239,13 +239,29 @@ export async function dispatchInboundToAiReply(
       askCustomerTaxInfo: config.askCustomerTaxInfo,
     })
 
+    let generation: GenerateResult
+    try {
+      generation = await generateReplyWithOneRetry({ config, systemPrompt, messages })
+    } catch (err) {
+      // The provider call failed even after the transient-error retry.
+      // Handled here (not the outer catch) so we know it was generation
+      // that failed, not the send or an autonomous action below — a bad
+      // key notifies the account's admins; anything transient that
+      // outlived the retry hands the conversation to a human instead of
+      // leaving the customer's question unanswered forever.
+      await handleAiGenerationFailure({
+        db,
+        accountId,
+        conversationId,
+        config,
+        alreadyAssigned: Boolean(conv.assigned_agent_id),
+        err,
+      })
+      return
+    }
     const {
       text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, usage,
-    } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    } = generation
 
     // The provider call succeeded, so the key is valid again — clear any
     // open "AI provider rejected the key" alert for this account.
@@ -519,23 +535,105 @@ export async function dispatchInboundToAiReply(
       }
     }
   } catch (err) {
-    if (err instanceof AiError && err.code === 'invalid_key') {
-      // A broken BYO key used to fail exactly like any other AI error —
-      // logged to the server console only, customer gets no reply, and
-      // nothing in the product itself ever surfaced it (confirmed live
-      // 2026-08-21: an account's bot went silently dead for hours,
-      // discovered only because a customer complained). Distinct from
-      // transient errors (timeout/rate_limited/network/provider_error)
-      // below, which are expected to self-heal and don't warrant
-      // waking anyone up.
-      console.error('[ai auto-reply] AI provider rejected the API key:', err.message)
-      await notifyAiKeyInvalid(supabaseAdmin(), accountId).catch((notifyErr) => {
-        console.error('[ai auto-reply] failed to send invalid-key notification:', notifyErr)
-      })
-    } else {
-      console.error('[ai auto-reply] dispatch failed:', err)
-    }
+    // Safety net for the post-generation path only (the send + the
+    // autonomous actions above). A provider/generation failure is
+    // caught at the `generateReplyWithOneRetry` call site and handled
+    // by `handleAiGenerationFailure` — it never reaches here.
+    console.error('[ai auto-reply] dispatch failed:', err)
   }
+}
+
+/**
+ * The account's configured provider call, with ONE retry on a transient
+ * failure. A single 429/529/timeout right as a restored key resumes
+ * traffic (real incident, 2026-08-30) must not drop the customer's
+ * message on the floor. A non-retryable error (`invalid_key`,
+ * `unsupported_provider`) rethrows immediately with no wait.
+ */
+async function generateReplyWithOneRetry(args: GenerateArgs): Promise<GenerateResult> {
+  try {
+    return await generateReply(args)
+  } catch (err) {
+    if (!isRetryableAiError(err)) throw err
+    const code = err instanceof AiError ? err.code : 'unknown'
+    console.warn(
+      `[ai auto-reply] provider call failed transiently (${code}), retrying once:`,
+      err instanceof Error ? err.message : err,
+    )
+    const delayMs = aiAutoReplyRetryDelayMs()
+    if (delayMs > 0) await new Promise((resolve) => setTimeout(resolve, delayMs))
+    return await generateReply(args)
+  }
+}
+
+/**
+ * Terminal handler for a provider call that failed even after
+ * `generateReplyWithOneRetry`'s single retry. Two paths:
+ *
+ *   - `invalid_key` — the account's BYO key is being rejected. Notify
+ *     the account's admins/owners (throttled 6h) + open the
+ *     `ai_key_invalid` system alert, same as before. No per-conversation
+ *     handoff: the whole account is down, so handing off every open
+ *     thread helps nobody — fixing the key is the one real remedy.
+ *
+ *   - anything else (timeout / 429 / 5xx / network / empty completion)
+ *     that outlived the retry — a transient provider problem. The
+ *     customer asked something and the bot has nothing to say, so
+ *     rather than going silent forever: hand the conversation to a
+ *     human (pauses the bot, routes + notifies, leaves an internal
+ *     note) AND raise an `ai_generate_error` ops alert so a recurring
+ *     outage is visible, not just a line in the server log.
+ */
+async function handleAiGenerationFailure(args: {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  config: AiConfig
+  alreadyAssigned: boolean
+  err: unknown
+}): Promise<void> {
+  const { db, accountId, conversationId, config, alreadyAssigned, err } = args
+
+  if (err instanceof AiError && err.code === 'invalid_key') {
+    // A broken BYO key used to fail exactly like any other AI error —
+    // logged to the server console only, customer gets no reply, and
+    // nothing in the product itself ever surfaced it (confirmed live
+    // 2026-08-21: an account's bot went silently dead for hours,
+    // discovered only because a customer complained).
+    console.error('[ai auto-reply] AI provider rejected the API key:', err.message)
+    await notifyAiKeyInvalid(db, accountId).catch((notifyErr) => {
+      console.error('[ai auto-reply] failed to send invalid-key notification:', notifyErr)
+    })
+    return
+  }
+
+  const code = err instanceof AiError ? err.code : 'unknown'
+  const message = err instanceof Error ? err.message : String(err)
+  console.error(`[ai auto-reply] generateReply failed after retry (${code}):`, message)
+
+  void dispatchSystemAlert({
+    severity: 'warning',
+    source: 'ai_generate_error',
+    title: 'AI auto-reply could not generate a response',
+    detail: {
+      account_id: accountId,
+      conversation_id: conversationId,
+      code,
+      message: message.slice(0, 300),
+    },
+    dedupKey: `ai_generate_error:${accountId}`,
+    accountId,
+    throttleMinutes: 60,
+  })
+
+  await handOffToHuman({
+    db,
+    conversationId,
+    handoffAgentId: config.handoffAgentId,
+    alreadyAssigned,
+    summary:
+      '🤖 La IA tuvo un error temporal con el proveedor y no pudo generar una respuesta (se reintentó una vez). La conversación se pasó a un humano para darle seguimiento.',
+  })
 }
 
 /**

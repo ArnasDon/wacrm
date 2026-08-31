@@ -28,16 +28,12 @@ import {
 } from "@dnd-kit/core";
 import type { Contact, LeadTemperature } from "@/types";
 import { useTranslations } from "next-intl";
-import { Flame, Snowflake, Sun, HelpCircle, MessageCircle } from "lucide-react";
+import { Flame, MessageCircle } from "lucide-react";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
+import { TemperatureBoardMobile } from "./temperature-board-mobile";
+import { TEMPERATURE_COLUMNS, type ColumnKey } from "./temperature-columns";
 
-type ColumnKey = LeadTemperature | "unclassified";
-
-const COLUMNS: { key: ColumnKey; color: string; icon: typeof Flame }[] = [
-  { key: "unclassified", color: "#71717a", icon: HelpCircle },
-  { key: "cold", color: "#3b82f6", icon: Snowflake },
-  { key: "warm", color: "#f97316", icon: Sun },
-  { key: "hot", color: "#ef4444", icon: Flame },
-];
+const COLUMNS = TEMPERATURE_COLUMNS;
 
 interface TemperatureBoardProps {
   contacts: Contact[];
@@ -47,6 +43,7 @@ interface TemperatureBoardProps {
 }
 
 export function TemperatureBoard({ contacts, onContactMoved, onOpenChat }: TemperatureBoardProps) {
+  const isDesktop = useIsDesktop();
   const [activeContactId, setActiveContactId] = useState<string | null>(null);
 
   const contactsByColumn = useMemo(() => {
@@ -89,6 +86,19 @@ export function TemperatureBoard({ contacts, onContactMoved, onOpenChat }: Tempe
 
   function handleDragCancel() {
     setActiveContactId(null);
+  }
+
+  // Phone/tablet: a column-tab + vertical-list view with a "Cambiar a"
+  // menu per card. Same reasoning as PipelineBoardMobile — horizontal
+  // drag on touch fought with scrolling to reach an off-screen column.
+  if (!isDesktop) {
+    return (
+      <TemperatureBoardMobile
+        contactsByColumn={contactsByColumn}
+        onContactMoved={onContactMoved}
+        onOpenChat={onOpenChat}
+      />
+    );
   }
 
   return (

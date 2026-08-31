@@ -769,6 +769,9 @@
       "addDeal": "딜 추가"
     },
     "temperature": {
+      "changeTo": "변경 대상",
+      "changeContactTemp": "{name}의 온도 변경",
+      "columnTabsLabel": "온도 열",
       "description": "채팅 카드를 열 사이로 드래그해서 다시 분류하세요 — AI도 대화가 진행되면서 자동으로 업데이트합니다.",
       "unclassified": "미분류",
       "cold": "차가움",

@@ -45,6 +45,7 @@ import {
 } from '@/components/ui/select';
 import { LeadTemperatureBadge } from '@/components/contacts/lead-temperature-badge';
 import { ContactTimeline } from '@/components/contacts/contact-timeline';
+import { ContactTasks } from '@/components/contacts/contact-tasks';
 import {
   Phone,
   Mail,
@@ -585,6 +586,12 @@ export function ContactDetailView({
                     {t('tabs.activity')}
                   </TabsTrigger>
                   <TabsTrigger
+                    value="tasks"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.tasks')}
+                  </TabsTrigger>
+                  <TabsTrigger
                     value="tags"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
@@ -616,6 +623,14 @@ export function ContactDetailView({
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
                   <ContactTimeline contactId={contactId} open={open} />
+                </TabsContent>
+
+                {/* Tasks Tab — follow-ups */}
+                <TabsContent
+                  value="tasks"
+                  className="flex min-h-0 flex-1 flex-col px-4 py-3"
+                >
+                  <ContactTasks contactId={contactId} />
                 </TabsContent>
 
                 {/* Details Tab */}

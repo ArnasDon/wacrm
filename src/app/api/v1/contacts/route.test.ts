@@ -15,8 +15,26 @@ const mocks = vi.hoisted(() => ({
   requireApiKey: vi.fn(),
 }));
 
+// The route now calls `withApiKey` (added for API-N2's audit log —
+// see src/lib/auth/api-context.ts). This fake reproduces exactly the
+// auth-then-handler behavior every test below already configures via
+// `mocks.requireApiKey`, without exercising the real logging side
+// effect (covered separately in api-context.test.ts).
 vi.mock('@/lib/auth/api-context', () => ({
   requireApiKey: mocks.requireApiKey,
+  withApiKey: async (
+    request: Request,
+    scope: string | undefined,
+    handler: (ctx: unknown) => Promise<Response>
+  ) => {
+    const { toApiErrorResponse } = await import('@/lib/api/v1/respond');
+    try {
+      const ctx = await mocks.requireApiKey(request, scope);
+      return await handler(ctx);
+    } catch (err) {
+      return toApiErrorResponse(err);
+    }
+  },
 }));
 
 import { GET } from './route';
@@ -71,7 +89,9 @@ beforeEach(() => {
 
 describe('GET /api/v1/contacts — cursor filter-injection fix', () => {
   it('a cursor crafted with an RFC-1123 createdAt (comma) never reaches PostgREST as raw filter syntax, never 500s, and behaves as "no cursor" (first page)', async () => {
-    const { supabase, orCalls } = fakeSupabase([contact('c1', '2026-01-01T00:00:00Z')]);
+    const { supabase, orCalls } = fakeSupabase([
+      contact('c1', '2026-01-01T00:00:00Z'),
+    ]);
     mocks.requireApiKey.mockResolvedValue({ supabase, accountId: 'acct-1' });
 
     // Exactly the payload proven in the audit to pass the OLD
@@ -79,10 +99,12 @@ describe('GET /api/v1/contacts — cursor filter-injection fix', () => {
     // (Date.parse("Thu, 01 Jan 1970 00:00:00 GMT") === 0, not NaN).
     const evilCursor = Buffer.from(
       'Thu, 01 Jan 1970 00:00:00 GMT|11111111-1111-1111-1111-111111111111',
-      'utf8',
+      'utf8'
     ).toString('base64url');
 
-    const res = await GET(new Request(`http://localhost/api/v1/contacts?cursor=${evilCursor}`));
+    const res = await GET(
+      new Request(`http://localhost/api/v1/contacts?cursor=${evilCursor}`)
+    );
     const body = (await res.json()) as { data: { id: string }[] };
 
     expect(res.status).not.toBe(500);
@@ -97,35 +119,43 @@ describe('GET /api/v1/contacts — cursor filter-injection fix', () => {
   });
 
   it('a cursor crafted with a Date.prototype.toString()-style createdAt (parentheses) is rejected the same way', async () => {
-    const { supabase, orCalls } = fakeSupabase([contact('c1', '2026-01-01T00:00:00Z')]);
+    const { supabase, orCalls } = fakeSupabase([
+      contact('c1', '2026-01-01T00:00:00Z'),
+    ]);
     mocks.requireApiKey.mockResolvedValue({ supabase, accountId: 'acct-1' });
 
     const evilCursor = Buffer.from(
       'Wed Dec 31 1969 19:30:00 GMT-0430 (Some Timezone)|11111111-1111-1111-1111-111111111111',
-      'utf8',
+      'utf8'
     ).toString('base64url');
 
-    const res = await GET(new Request(`http://localhost/api/v1/contacts?cursor=${evilCursor}`));
+    const res = await GET(
+      new Request(`http://localhost/api/v1/contacts?cursor=${evilCursor}`)
+    );
     expect(res.status).toBe(200);
     expect(orCalls).toEqual([]);
   });
 
   it('a legitimate, server-issued cursor still works exactly as before (no regression)', async () => {
-    const { supabase, orCalls } = fakeSupabase([contact('c2', '2026-01-01T00:00:00Z')]);
+    const { supabase, orCalls } = fakeSupabase([
+      contact('c2', '2026-01-01T00:00:00Z'),
+    ]);
     mocks.requireApiKey.mockResolvedValue({ supabase, accountId: 'acct-1' });
 
     const realCursor = Buffer.from(
       '2026-01-01T00:00:00Z|11111111-1111-1111-1111-111111111111',
-      'utf8',
+      'utf8'
     ).toString('base64url');
 
-    const res = await GET(new Request(`http://localhost/api/v1/contacts?cursor=${realCursor}`));
+    const res = await GET(
+      new Request(`http://localhost/api/v1/contacts?cursor=${realCursor}`)
+    );
     expect(res.status).toBe(200);
     // A real cursor DOES produce exactly one .or() call — proving the
     // fix didn't also break the legitimate path.
     expect(orCalls).toHaveLength(1);
     expect(orCalls[0]).toBe(
-      'created_at.lt.2026-01-01T00:00:00Z,and(created_at.eq.2026-01-01T00:00:00Z,id.lt.11111111-1111-1111-1111-111111111111)',
+      'created_at.lt.2026-01-01T00:00:00Z,and(created_at.eq.2026-01-01T00:00:00Z,id.lt.11111111-1111-1111-1111-111111111111)'
     );
   });
 });

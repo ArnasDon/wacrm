@@ -7,8 +7,8 @@
 // secret is never returned here — it's shown once at creation only.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
   WEBHOOK_PUBLIC_COLUMNS,
@@ -20,8 +20,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
+  return withApiKey(request, 'webhooks:manage', async (ctx) => {
     const { id } = await params;
 
     const { data, error } = await ctx.supabase
@@ -38,17 +37,14 @@ export async function GET(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok(serializeWebhookEndpoint(data as Record<string, unknown>));
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }
 
 export async function PATCH(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
+  return withApiKey(request, 'webhooks:manage', async (ctx) => {
     const { id } = await params;
 
     const body = (await request.json().catch(() => null)) as Record<
@@ -112,17 +108,14 @@ export async function PATCH(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok(serializeWebhookEndpoint(data as Record<string, unknown>));
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }
 
 export async function DELETE(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
+  return withApiKey(request, 'webhooks:manage', async (ctx) => {
     const { id } = await params;
 
     const { data, error } = await ctx.supabase
@@ -140,7 +133,5 @@ export async function DELETE(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok({ id: data.id, deleted: true });
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }

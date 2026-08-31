@@ -8,7 +8,7 @@
 // same shared send core.
 //
 // Auth: API key with the `messages:send` scope. Account context (and
-// the service-role client) come from `requireApiKey`.
+// the service-role client) come from `requireApiKey`, via `withApiKey`.
 //
 // Body:
 //   {
@@ -31,8 +31,11 @@
 //               "contact_id", "contact_created" } }
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { NextResponse } from 'next/server';
+
+import { withApiKey, type ApiKeyContext } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
+import { withIdempotency } from '@/lib/api/v1/idempotency';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 import {
   sendMessageToConversation,
@@ -42,9 +45,7 @@ import {
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
 export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'messages:send');
-
+  return withApiKey(request, 'messages:send', async (ctx) => {
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
@@ -53,6 +54,27 @@ export async function POST(request: Request) {
       return fail('bad_request', 'Request body must be a JSON object', 400);
     }
 
+    // Idempotency (API-N1): a no-op when the caller didn't send an
+    // Idempotency-Key header — see src/lib/api/v1/idempotency.ts. Wraps
+    // exactly the side-effecting part of the pipeline (contact/
+    // conversation resolution + the real Meta send), never the auth/
+    // body-parsing above.
+    return withIdempotency(
+      request,
+      ctx.supabase,
+      ctx.accountId,
+      'messages:send',
+      body,
+      () => sendMessage(ctx, body)
+    );
+  });
+}
+
+async function sendMessage(
+  ctx: ApiKeyContext,
+  body: Record<string, unknown>
+): Promise<NextResponse> {
+  try {
     const to = typeof body.to === 'string' ? body.to.trim() : '';
     if (!to) {
       return fail('bad_request', "'to' is required", 400);
@@ -141,6 +163,6 @@ export async function POST(request: Request) {
     if (err instanceof SendMessageError) {
       return fail(err.code, err.message, err.status);
     }
-    return toApiErrorResponse(err);
+    throw err;
   }
 }

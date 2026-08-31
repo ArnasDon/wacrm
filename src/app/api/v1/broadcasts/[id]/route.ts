@@ -8,15 +8,14 @@
 // Account-scoped: a foreign id → 404.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
 
 export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'broadcasts:send');
+  return withApiKey(request, 'broadcasts:send', async (ctx) => {
     const { id } = await params;
 
     const { data, error } = await ctx.supabase
@@ -35,7 +34,5 @@ export async function GET(
     if (!data) return fail('not_found', 'Broadcast not found', 404);
 
     return ok(data);
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }

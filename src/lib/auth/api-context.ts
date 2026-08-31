@@ -28,13 +28,21 @@
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { after } from 'next/server';
+import type { NextResponse } from 'next/server';
 
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { findActiveKeyByHash, touchLastUsed } from '@/lib/api-keys/store';
 import { hashApiKey, looksLikeApiKey } from '@/lib/api-keys/keys';
 import { hasScope, type ApiScope } from '@/lib/api-keys/scopes';
-import { forbidden, rateLimited, unauthorized } from '@/lib/api/v1/respond';
+import {
+  forbidden,
+  rateLimited,
+  unauthorized,
+  toApiErrorResponse,
+} from '@/lib/api/v1/respond';
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import { logApiRequest } from '@/lib/api/v1/audit-log';
 
 export interface ApiKeyContext {
   /** Discriminant — lets shared logic tell key auth from cookie auth. */
@@ -115,4 +123,69 @@ export async function requireApiKey(
     scopes: row.scopes,
     createdBy: row.created_by,
   };
+}
+
+/**
+ * Authenticate + run a public-API route handler, then log the request
+ * (security audit finding API-N2). This is the single choke point all
+ * 11 `/api/v1/*` routes call through, so every one of them gets
+ * uniform audit-log coverage without repeating logging code per file.
+ *
+ * `handler` receives the resolved `ApiKeyContext` and returns the
+ * route's normal `NextResponse` — everything a route did before this
+ * fix (its own domain-error handling, `ok`/`fail`/`okList` calls)
+ * stays exactly as it was, just moved inside this callback. Any error
+ * `handler` throws that it doesn't handle itself is mapped by the same
+ * `toApiErrorResponse` every route already used directly.
+ *
+ * The log write happens via `after()` (already used elsewhere in this
+ * module for the broadcast fan-out) so it gets a real chance to finish
+ * even in a short-lived serverless invocation, and is best-effort: see
+ * `logApiRequest` — a failed write is only ever `console.warn`'d, never
+ * thrown, so it can't affect the response the caller is waiting on.
+ *
+ * Logs `accountId: null, keyId: null` for a request that never
+ * resolved a key at all (bad/missing/revoked/expired) — still a
+ * useful signal ("someone hit this endpoint and failed auth") without
+ * fabricating an account that was never established.
+ */
+export async function withApiKey(
+  request: Request,
+  scope: ApiScope | undefined,
+  handler: (ctx: ApiKeyContext) => Promise<NextResponse>
+): Promise<NextResponse> {
+  const path = new URL(request.url).pathname;
+  let accountId: string | null = null;
+  let keyId: string | null = null;
+  let response: NextResponse;
+
+  try {
+    const ctx = await requireApiKey(request, scope);
+    accountId = ctx.accountId;
+    keyId = ctx.keyId;
+    response = await handler(ctx);
+  } catch (err) {
+    response = toApiErrorResponse(err);
+  }
+
+  after(() => {
+    // Defensive: `logApiRequest` itself is already fire-and-forget
+    // internally, but this guarantees a logging failure can NEVER
+    // affect the caller — by the time `after()` runs the response is
+    // already on its way regardless, but nothing here should ever be
+    // allowed to throw uncaught.
+    try {
+      logApiRequest({
+        accountId,
+        keyId,
+        method: request.method,
+        path,
+        status: response.status,
+      });
+    } catch (err) {
+      console.warn('[api/v1] audit log dispatch failed:', err);
+    }
+  });
+
+  return response;
 }

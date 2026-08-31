@@ -68,8 +68,19 @@ export function PasswordForm() {
         return;
       }
 
+      // AUTH-N4: send the current password alongside the new one so
+      // Supabase Auth's own "Require current password when updating"
+      // check can validate it server-side — the signInWithPassword
+      // above only protects the app's own UI; a request made directly
+      // against the Auth API with a stolen/hijacked session token would
+      // skip it entirely. This is a no-op while that Dashboard setting
+      // is off, and becomes the real enforcement once it's on. Confirmed
+      // safe for /reset-password (which never sends current_password):
+      // GoTrue's own source (internal/api/user.go) skips this check
+      // entirely when `session.IsRecovery()` is true.
       const { error: updateError } = await supabase.auth.updateUser({
         password: next,
+        current_password: current,
       });
       if (updateError) {
         toast.error(t('passwordUpdateFailed', { message: updateError.message }));

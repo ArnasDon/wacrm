@@ -105,9 +105,36 @@ describe('PasswordForm — AUTH-N2 (re-authenticate against the real current ema
     await waitFor(() =>
       expect(mocks.updateUser).toHaveBeenCalledWith({
         password: 'new-password-123',
+        current_password: 'correct-current-pw',
       }),
     )
     await waitFor(() => expect(mocks.toastSuccess).toHaveBeenCalledWith('passwordUpdated'))
+  })
+
+  // AUTH-N4: Supabase's own "Require current password when updating"
+  // check is enforced server-side on the `current_password` field of
+  // this same updateUser call — signInWithPassword above only ever
+  // protected the app's own UI. Asserted as its own test (distinct
+  // current/new values) so a regression that swaps the two fields, or
+  // drops current_password silently, fails here even if the
+  // "no regression" test above happened to use the same string twice.
+  it('AUTH-N4: current_password sent to updateUser matches exactly what was typed as the current password', async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { email: 'user@example.com' } },
+      error: null,
+    })
+    mocks.signInWithPassword.mockResolvedValue({ error: null })
+    mocks.updateUser.mockResolvedValue({ error: null })
+
+    render(<PasswordForm />)
+    fillAndSubmit('this-is-the-old-one', 'this-is-the-new-one', 'this-is-the-new-one')
+
+    await waitFor(() => expect(mocks.updateUser).toHaveBeenCalled())
+    const call = mocks.updateUser.mock.calls[0][0]
+    expect(call.current_password).toBe('this-is-the-old-one')
+    expect(call.password).toBe('this-is-the-new-one')
+    // Never accidentally the same value, and never mixed up.
+    expect(call.current_password).not.toBe(call.password)
   })
 
   it('getUser() returning no user blocks the operation safely — signInWithPassword is never called', async () => {

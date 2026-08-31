@@ -57,8 +57,17 @@ direcciones deben confirmar). No se encontró ningún defecto de código.
 No se modificó nada.
 
 ## AUTH-N4 — Seguridad del cambio y recuperación de contraseña
-ESTADO: VALIDADO — PENDIENTE DE COMMIT/PUSH. NO cerrado END-TO-END
-todavía (falta commit + push, que requieren autorización separada).
+ESTADO: CERRADO END-TO-END
+COMMIT: `c4484fc3a4be9521065447997d960e6c82b7f747` —
+`fix(auth): harden password changes with current password`, pushed a
+`origin/main`.
+
+(Corrección documental: esta entrada quedó registrada como "VALIDADO
+— PENDIENTE DE COMMIT/PUSH" tras la fase de validación, pero el
+commit y push se completaron después, en la fase de cierre. El resto
+de esta sección — controles de Supabase, validaciones, cambio de
+código y tests — describe correctamente lo que se hizo y se conserva
+sin alterar.)
 
 **Controles de Supabase — ambos ON.** Activados manualmente por el
 usuario en el Dashboard de producción:
@@ -213,6 +222,15 @@ respuesta — mantenido por trazabilidad:** ninguna página de guía
 interacción explícitamente; solo el código fuente la contiene.
 
 Severidad: MEDIA-ALTA (sin cambios).
+
+**Cierre confirmado:** AUTH-N4 cerrado end-to-end en el commit
+`c4484fc3a4be9521065447997d960e6c82b7f747` (código implementado y
+validado, `current_password` aplicado en `password-form.tsx`, tests
+correspondientes pasando, Secure password change y Require current
+password when updating ambos ON, recovery preservado, AUTH-N1/N2/N3
+intactos). AUTH-N5 se cerró posteriormente en
+`bc95c2a93468d7f5b36df01ebd60c508925a0f5c`. AUTH-N6 permanece NO
+INICIADO.
 
 ## AUTH-N5 — Política de fortaleza de contraseña débil e inconsistente
 ESTADO: CERRADO END-TO-END (ver "CIERRE END-TO-END DE AUTH-N5" más

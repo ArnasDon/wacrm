@@ -572,6 +572,14 @@
       "phoneRequired": "전화번호는 필수입니다"
     },
     "detailView": {
+      "tasks": {
+        "placeholder": "새 작업…",
+        "add": "추가",
+        "due": "기한",
+        "empty": "아직 작업이 없습니다.",
+        "delete": "작업 삭제",
+        "completed": "{count}개 완료됨"
+      },
       "activity": {
         "empty": "아직 활동이 없습니다.",
         "note": "메모",
@@ -591,6 +599,7 @@
         }
       },
       "tabs": {
+        "tasks": "작업",
         "details": "상세 정보",
         "activity": "활동",
         "notes": "메모",

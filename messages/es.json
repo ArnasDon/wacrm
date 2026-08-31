@@ -541,6 +541,14 @@
       "phoneRequired": "El número de teléfono es obligatorio"
     },
     "detailView": {
+      "tasks": {
+        "placeholder": "Nueva tarea…",
+        "add": "Agregar",
+        "due": "Fecha límite",
+        "empty": "Sin tareas todavía.",
+        "delete": "Eliminar tarea",
+        "completed": "{count} completadas"
+      },
       "activity": {
         "empty": "Sin actividad todavía.",
         "note": "Nota",
@@ -560,6 +568,7 @@
         }
       },
       "tabs": {
+        "tasks": "Tareas",
         "details": "Detalles",
         "activity": "Actividad",
         "notes": "Notas",

@@ -572,6 +572,14 @@
       "phoneRequired": "Phone number is required"
     },
     "detailView": {
+      "tasks": {
+        "placeholder": "New task…",
+        "add": "Add",
+        "due": "Due date",
+        "empty": "No tasks yet.",
+        "delete": "Delete task",
+        "completed": "{count} completed"
+      },
       "activity": {
         "empty": "No activity yet.",
         "note": "Note",
@@ -591,6 +599,7 @@
         }
       },
       "tabs": {
+        "tasks": "Tasks",
         "details": "Details",
         "activity": "Activity",
         "notes": "Notes",

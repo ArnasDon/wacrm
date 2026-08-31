@@ -451,10 +451,52 @@ queda confirmado en el reporte de la fase de cierre de esta misma
 conversación (mismo patrón ya usado para las entradas de AUTH-N1/N2/N3
 de este archivo, escritas después del hecho).
 
-### Propuesta AUTH-N6 — Prevent use of leaked passwords desactivado
-Comprobación contra HaveIBeenPwned desactivada (requiere plan Pro+).
-No depende del código del proyecto. Higiene general, no una brecha
-activa. Severidad propuesta: BAJA.
+## AUTH-N6 — BLOQUEADO POR PLAN FREE
+ESTADO: BLOQUEADO POR PLAN FREE (no es una vulnerabilidad abierta —
+es una mejora de seguridad opcional, no disponible bajo el plan
+actual del proyecto)
+
+**"Prevent use of leaked passwords" permanece OFF.** No se activó.
+
+**Auditoría read-only completa (fase previa):** confirmado por código
+fuente oficial de GoTrue (`internal/api/password.go`,
+`checkPasswordStrength`) que esta protección comprueba la contraseña
+contra HaveIBeenPwned.org y se aplica tanto a `signUp` como a
+`updateUser` (cambio de contraseña y recovery/reset, sin excepción
+para sesiones de tipo recovery) — misma función que ya implementa
+AUTH-N5 (longitud + letras/dígitos), produciendo un único
+`WeakPasswordError` combinado. No se encontró ninguna vulnerabilidad
+de lógica ni bypass explotable en el estado actual (OFF): a
+diferencia de AUTH-N4/AUTH-N5, aquí no existe ninguna promesa de la
+UI que el servidor no respalde — es simplemente la ausencia de un
+control opcional de higiene de contraseñas.
+
+**Motivo del bloqueo:** el proyecto/organización de Supabase utiliza
+actualmente el **plan FREE** — **CONFIRMADO POR EL USUARIO**
+manualmente en el Dashboard (verificación que esta sesión no puede
+hacer por sí misma: se intentó `supabase projects list` y
+`supabase orgs list`, en ambos casos sin ningún campo de plan/tier de
+facturación en la respuesta — no existe un subcomando de billing en
+el CLI de Supabase). Según la documentación oficial ya auditada
+(`supabase.com/docs/guides/auth/password-security`): *"Leaked
+password protection is available on the Pro Plan and above."* — el
+plan actual no la soporta.
+
+**Sin workaround de código.** No se implementó, ni se debe
+implementar, ninguna lógica de aplicación que compense esta
+protección de plataforma — sería una duplicación innecesaria de una
+función que Supabase ya resuelve nativamente a nivel de servidor
+cuando el plan lo permite.
+
+**Camino a futuro:** si el proyecto pasa a un plan Pro o superior,
+activar el toggle en el Dashboard es la única acción necesaria — no
+requiere ningún cambio de código (los 3 flujos ya manejan
+genéricamente cualquier error de política de contraseña que Supabase
+devuelva, confirmado en la auditoría de AUTH-N5). No debe crearse
+código ni tests adicionales mientras no exista esa necesidad real.
+
+Severidad: BAJA (mejora de higiene recomendada, no una vulnerabilidad
+activa) — sin cambios respecto a la clasificación original.
 
 ### Investigado y DESCARTADO como brecha — sesiones tras cambio de contraseña/email
 Documentación oficial de Supabase (`guides/auth/sessions`) confirma

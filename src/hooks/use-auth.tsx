@@ -443,7 +443,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
-    await supabase.auth.signOut();
+    // Best-effort: the local session is cleared synchronously by the
+    // client either way; a slow or failing global-revoke round-trip
+    // must not strand the user on a half-logged-out dashboard, so the
+    // redirect below always runs.
+    await supabase.auth.signOut().catch((err) => {
+      console.warn('[auth] signOut revoke failed; signing out locally anyway:', err);
+    });
     setUser(null);
     setProfile(null);
     setAccount(null);

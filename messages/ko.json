@@ -2286,6 +2286,13 @@
       "signOutFailed": "로그아웃 실패: {message}"
     },
     "appearance": {
+      "fontSize": "글자 크기",
+      "fontSizeHint": "앱 전체를 확대합니다. 이 기기에 저장됩니다.",
+      "fontSizeSm": "작게",
+      "fontSizeMd": "보통",
+      "fontSizeLg": "크게",
+      "fontSizeXl": "아주 크게",
+      "useFontSize": "{size} 글자 크기 사용",
       "title": "화면 설정",
       "description": "앱 전체에서 사용할 모드와 강조 색상을 설정합니다. 이 기기에 저장되며, 바로 적용되니 자유롭게 시도해보세요.",
       "mode": "모드",

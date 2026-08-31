@@ -54,6 +54,46 @@ export function isMode(value: unknown): value is Mode {
   );
 }
 
+/**
+ * FONT SCALE — a third, orthogonal axis: how big the UI text is.
+ *
+ * Applied as `data-font-scale` on <html>; the matching
+ * `html[data-font-scale="..."]` rules in globals.css set the root
+ * `font-size` as a percentage, so every rem-based size in the app
+ * (which is nearly all of them) scales proportionally. `md` is the
+ * unchanged 100%. Persisted under its own localStorage key and
+ * replayed by the boot script, exactly like MODE / THEME.
+ */
+export const FONT_SCALES = ["sm", "md", "lg", "xl"] as const;
+
+export type FontScale = (typeof FONT_SCALES)[number];
+
+export const DEFAULT_FONT_SCALE: FontScale = "md";
+
+export const FONT_SCALE_STORAGE_KEY = "wacrm.font-scale";
+
+export function isFontScale(value: unknown): value is FontScale {
+  return (
+    typeof value === "string" &&
+    (FONT_SCALES as ReadonlyArray<string>).includes(value)
+  );
+}
+
+export interface FontScaleMeta {
+  id: FontScale;
+  /** key under `Settings.appearance` */
+  labelKey: string;
+  /** px size of the "Aa" preview glyph in the picker */
+  preview: number;
+}
+
+export const FONT_SCALE_META: ReadonlyArray<FontScaleMeta> = [
+  { id: "sm", labelKey: "fontSizeSm", preview: 13 },
+  { id: "md", labelKey: "fontSizeMd", preview: 15 },
+  { id: "lg", labelKey: "fontSizeLg", preview: 17 },
+  { id: "xl", labelKey: "fontSizeXl", preview: 19 },
+];
+
 export interface ThemeMeta {
   id: ThemeId;
   name: string;

@@ -10,12 +10,16 @@ import {
 } from "react";
 
 import {
+  DEFAULT_FONT_SCALE,
   DEFAULT_MODE,
   DEFAULT_THEME,
+  FONT_SCALE_STORAGE_KEY,
   MODE_STORAGE_KEY,
   STORAGE_KEY,
+  isFontScale,
   isMode,
   isThemeId,
+  type FontScale,
   type Mode,
   type ThemeId,
 } from "@/lib/themes";
@@ -26,10 +30,11 @@ import {
  *   • `mode`  — light / dark (`data-mode` on <html>)
  * The two are independent, so any accent renders in either mode.
  *
- * The boot script in `src/app/layout.tsx` has already applied both
- * `data-theme` and `data-mode` before React hydrates, so by the time
- * this Provider mounts the page is already painted correctly. We just
- * read what's there and keep it in sync going forward.
+ * The boot script in `src/app/layout.tsx` has already applied
+ * `data-theme`, `data-mode` and `data-font-scale` before React
+ * hydrates, so by the time this Provider mounts the page is already
+ * painted correctly. We just read what's there and keep it in sync
+ * going forward.
  *
  * Persistence is localStorage only (device-scoped). A future
  * follow-up could mirror to `profiles.preferences` for cross-device
@@ -43,6 +48,8 @@ interface ThemeContextValue {
   mode: Mode;
   setMode: (next: Mode) => void;
   toggleMode: () => void;
+  fontScale: FontScale;
+  setFontScale: (next: FontScale) => void;
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -76,9 +83,24 @@ function readInitialMode(): Mode {
   return DEFAULT_MODE;
 }
 
+function readInitialFontScale(): FontScale {
+  if (typeof window === "undefined") return DEFAULT_FONT_SCALE;
+  const fromAttr = document.documentElement.dataset.fontScale;
+  if (isFontScale(fromAttr)) return fromAttr;
+  try {
+    const stored = localStorage.getItem(FONT_SCALE_STORAGE_KEY);
+    if (isFontScale(stored)) return stored;
+  } catch {
+    // localStorage can throw in private-browsing / sandboxed contexts.
+  }
+  return DEFAULT_FONT_SCALE;
+}
+
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>(readInitialTheme);
   const [mode, setModeState] = useState<Mode>(readInitialMode);
+  const [fontScale, setFontScaleState] =
+    useState<FontScale>(readInitialFontScale);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
@@ -109,6 +131,18 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     setMode(mode === "dark" ? "light" : "dark");
   }, [mode, setMode]);
 
+  const setFontScale = useCallback((next: FontScale) => {
+    setFontScaleState(next);
+    if (typeof document !== "undefined") {
+      document.documentElement.dataset.fontScale = next;
+    }
+    try {
+      localStorage.setItem(FONT_SCALE_STORAGE_KEY, next);
+    } catch {
+      // Same private-browsing edge case as above.
+    }
+  }, []);
+
   // Sync from other tabs — change theme or mode in tab A, tab B
   // catches up without a refresh.
   useEffect(() => {
@@ -125,14 +159,23 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
           setModeState(e.newValue);
           document.documentElement.dataset.mode = e.newValue;
         }
+        return;
+      }
+      if (e.key === FONT_SCALE_STORAGE_KEY) {
+        if (isFontScale(e.newValue) && e.newValue !== fontScale) {
+          setFontScaleState(e.newValue);
+          document.documentElement.dataset.fontScale = e.newValue;
+        }
       }
     }
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
-  }, [theme, mode]);
+  }, [theme, mode, fontScale]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme, mode, setMode, toggleMode }}>
+    <ThemeContext.Provider
+      value={{ theme, setTheme, mode, setMode, toggleMode, fontScale, setFontScale }}
+    >
       {children}
     </ThemeContext.Provider>
   );
@@ -150,6 +193,8 @@ export function useTheme(): ThemeContextValue {
       mode: DEFAULT_MODE,
       setMode: () => {},
       toggleMode: () => {},
+      fontScale: DEFAULT_FONT_SCALE,
+      setFontScale: () => {},
     };
   }
   return ctx;

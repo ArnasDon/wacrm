@@ -2258,6 +2258,13 @@
       "signOutFailed": "Error al cerrar sesión: {message}"
     },
     "appearance": {
+      "fontSize": "Tamaño del texto",
+      "fontSizeHint": "Agranda todo en la app. Se guarda en este dispositivo.",
+      "fontSizeSm": "Pequeño",
+      "fontSizeMd": "Normal",
+      "fontSizeLg": "Grande",
+      "fontSizeXl": "Muy grande",
+      "useFontSize": "Usar tamaño de texto {size}",
       "title": "Apariencia",
       "description": "Configura el modo y el color de acento usados en toda la app. Se guarda en este dispositivo — pruébalo, cambia en vivo.",
       "mode": "Modo",

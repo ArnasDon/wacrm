@@ -56,13 +56,14 @@ describe("dedupeByPhone", () => {
     expect(duplicates).toBe(1);
   });
 
-  it("drops rows with no digits", () => {
-    const { unique, duplicates } = dedupeByPhone([
+  it("drops rows with no digits, counted as invalid rather than duplicate", () => {
+    const { unique, duplicates, invalid } = dedupeByPhone([
       { phone: "   " },
       { phone: "+1 555-3333" },
     ]);
     expect(unique).toHaveLength(1);
-    expect(duplicates).toBe(1);
+    expect(duplicates).toBe(0);
+    expect(invalid).toBe(1);
   });
 });
 

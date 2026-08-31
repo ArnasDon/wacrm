@@ -455,7 +455,11 @@
       "resultTags": "{count} tag assigned",
       "resultTags_plural": "{count} tags assigned",
       "resultSkipped": "{count} skipped",
+      "resultInvalidPhone": "{count} invalid phone",
+      "resultInvalidPhone_plural": "{count} invalid phones",
       "resultFailed": "{count} failed",
+      "failedRowsHeading": "Failed rows",
+      "unknownReason": "Unknown error",
       "willBeCreated": "{name} (will be created on import)",
       "columns": {
         "phone": "Phone",
@@ -477,6 +481,8 @@
       "toastTagsSkipped": "Unknown tags skipped (create them in Settings first): {sample}{more}",
       "toastSkipped": "{count} duplicate skipped",
       "toastSkipped_plural": "{count} duplicates skipped",
+      "toastInvalidPhone": "{count} contact had no usable phone number",
+      "toastInvalidPhone_plural": "{count} contacts had no usable phone number",
       "toastFailed": "{count} contact failed to import",
       "toastFailed_plural": "{count} contacts failed to import",
       "toastError": "Import failed"

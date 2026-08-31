@@ -204,4 +204,37 @@ describe('PasswordForm — AUTH-N2 (re-authenticate against the real current ema
     expect(await screen.findByText('passwordMismatch')).toBeTruthy()
     expect(mocks.getUser).not.toHaveBeenCalled()
   })
+
+  // AUTH-N5: a server-side rejection (e.g. Supabase's "Password
+  // requirements" complexity check) must still reach the user. This
+  // component has no client-side character-class validation of its
+  // own — an 8+ character password that fails Supabase's policy
+  // relies entirely on the existing `passwordUpdateFailed` error path.
+  // Does not assert any specific real Supabase error string, only
+  // that whatever `error.message` comes back is surfaced.
+  it('AUTH-N5: a password-policy rejection from Supabase on updateUser is shown to the user', async () => {
+    mocks.getUser.mockResolvedValue({
+      data: { user: { email: 'user@example.com' } },
+      error: null,
+    })
+    mocks.signInWithPassword.mockResolvedValue({ error: null })
+    mocks.updateUser.mockResolvedValue({
+      error: { message: 'Password should contain at least one letter and one digit' },
+    })
+
+    render(<PasswordForm />)
+    fillAndSubmit('correct-current-pw', 'onlyletters', 'onlyletters')
+
+    // The mocked translate() echoes `key:JSON(vars)` as a single
+    // string (see the top of this file) — toast.error is called with
+    // that one already-interpolated string, same as every other
+    // toast.error assertion in this file.
+    await waitFor(() =>
+      expect(mocks.toastError).toHaveBeenCalledWith(
+        `passwordUpdateFailed:${JSON.stringify({
+          message: 'Password should contain at least one letter and one digit',
+        })}`,
+      ),
+    )
+  })
 })

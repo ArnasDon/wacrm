@@ -14,13 +14,13 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, Loader2 } from "lucide-react";
+import { MIN_PASSWORD } from "@/lib/auth/password-policy";
 
-// Matches the existing "change my password" rule
-// (src/components/settings/password-form.tsx) — this page is the
-// same underlying action (supabase.auth.updateUser({ password })),
-// just reached via a recovery link instead of Settings, so it keeps
-// the same minimum rather than inventing a different one.
-const MIN_PASSWORD = 8;
+// This page is the same underlying action as "change my password"
+// (src/components/settings/password-form.tsx,
+// supabase.auth.updateUser({ password })), just reached via a
+// recovery link instead of Settings — MIN_PASSWORD is shared (AUTH-N5)
+// so it can't drift from the other two password-writing flows.
 
 export default function ResetPasswordPage() {
   const router = useRouter();

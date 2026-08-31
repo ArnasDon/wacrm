@@ -214,14 +214,224 @@ interacción explícitamente; solo el código fuente la contiene.
 
 Severidad: MEDIA-ALTA (sin cambios).
 
-### Propuesta AUTH-N5 — Política de fortaleza de contraseña débil e inconsistente
-Minimum password length = 6 en Supabase (aplica a TODOS los flujos,
-es un único ajuste global). `signup/page.tsx` exige 6 (coincide);
-`password-form.tsx` y `reset-password/page.tsx` declaran
-`MIN_PASSWORD = 8` pero solo lo validan en el cliente — el servidor
-seguiría aceptando 6-7 caracteres pese a la promesa de la UI.
-"Password requirements" no exige ninguna clase de carácter. Severidad
-propuesta: MEDIA.
+## AUTH-N5 — Política de fortaleza de contraseña débil e inconsistente
+ESTADO: CERRADO END-TO-END (ver "CIERRE END-TO-END DE AUTH-N5" más
+abajo para el commit final — el resto de esta sección es el historial
+completo de auditoría, implementación y validación, conservado tal
+cual se produjo)
+
+**Alcance auditado:** barrido exhaustivo de todo `src/` (no solo los
+3 archivos conocidos) buscando `signUp|updateUser|admin.createUser|
+admin.updateUserById|admin.generateLink|MIN_PASSWORD|minLength|
+password.length|confirmPassword` y cualquier esquema Zod/Yup/Valibot
+de contraseña. **CONFIRMADO POR CÓDIGO**: existen exactamente 3
+puntos de escritura de contraseña en todo el repositorio —
+`signup/page.tsx` (`signUp`), `password-form.tsx` (`updateUser`),
+`reset-password/page.tsx` (`updateUser`) — sin ningún endpoint propio,
+función admin, ni esquema de validación compartido (no se usa
+Zod/Yup/Valibot para contraseñas en ningún lugar). Tres falsos
+positivos descartados tras inspección: `security-panel.tsx` (solo
+renderiza `<PasswordForm/>`), `lib/api-keys/keys.ts` (comentario sobre
+API keys, no contraseñas de usuario), `lib/auth/roles.ts` (mención de
+paso, sin lógica).
+
+**Evidencia — tabla de longitud (re-confirmada, sin cambios respecto
+a lo ya reportado en AUTH-N4):**
+
+| Flujo | Frontend | Mensaje si falla | Servidor (Supabase, global) |
+|---|---|---|---|
+| Signup | `password.length < 6` (hardcodeado, sin constante ni i18n) | `"Password must be at least 6 characters"` (string literal en inglés, no traducido) | Minimum password length = 6 |
+| Cambio (Settings) | `MIN_PASSWORD = 8` | `t('passwordTooShort', {min: 8})` | Minimum password length = 6 |
+| Recovery | `MIN_PASSWORD = 8` | `Password must be at least ${MIN_PASSWORD} characters` | Minimum password length = 6 |
+
+**CONFIRMADO POR CÓDIGO.** El servidor es un único ajuste global — no
+existe forma de tener un mínimo distinto por flujo en Supabase Auth.
+
+**Causa raíz:** cada uno de los 3 archivos define su propia constante
+de longitud de forma independiente (dos de ellos coinciden en 8, uno
+diverge en 6 y además ni siquiera usa una constante con nombre), y
+ninguno está respaldado por el servidor, cuyo mínimo real (6) es
+menor que lo que dos de las tres pantallas prometen.
+
+**Impacto real (sin exagerar):** esto NO es un bypass de autenticación
+ni una escalada de privilegios — una contraseña de 6-7 caracteres solo
+afecta la resistencia de la CUENTA PROPIA del usuario que la eligió
+frente a fuerza bruta/diccionario; no permite a un atacante actuar
+sobre una cuenta ajena por sí solo. Es un gap de "defensa en
+profundidad", no una vulnerabilidad de lógica.
+
+**Explotabilidad:** ninguna directa. El único "bypass" real y
+demostrado es que la promesa de la UI (8 caracteres en 2 de 3
+pantallas) no está garantizada por el servidor — alguien podría, en
+teoría, llamar directamente a la API de Supabase Auth y fijar una
+contraseña de 6-7 caracteres para su PROPIA cuenta pese a que la UI
+dice que exige 8. No hay ningún escenario donde esto afecte a otro
+usuario.
+
+**Clasificación (evitando una sola etiqueta de severidad para cosas
+distintas, tal como se pidió):**
+- Mínimo global de 6 caracteres: **HARDENING RECOMENDADO**, no
+  vulnerabilidad. Severidad propuesta si se quiere trackear: BAJA.
+- Discrepancia UI (8) vs servidor (6) en 2 de 3 pantallas:
+  **INCONSISTENCIA DE POLÍTICA/UX**, no vulnerabilidad — la promesa
+  de la interfaz no es 100% garantizada, pero no habilita ningún daño
+  a terceros.
+- Ausencia de requisitos de complejidad ("Password requirements" =
+  ninguno): **HARDENING RECOMENDADO**, mismo razonamiento que el
+  mínimo de longitud.
+- Mensaje de error de signup hardcodeado en inglés, sin i18n ni
+  constante compartida: **INCONSISTENCIA DE CÓDIGO** (deuda técnica),
+  no un hallazgo de seguridad.
+
+**Configuración Supabase — estado:**
+- "Minimum password length" = 6 y "Password requirements" = ninguno:
+  **NO VERIFICABLE DESDE ESTA SESIÓN, y adicionalmente basado en una
+  confirmación manual ANTERIOR** (la captura de pantalla del usuario
+  de la fase de auditoría de AUTH-N3, antes de que se activaran los
+  dos toggles de AUTH-N4 en ese mismo panel). No se puede asumir que
+  sigue igual solo por no haber sido tocado explícitamente — el
+  usuario debe reconfirmar el valor actual de ambos ajustes
+  (Authentication → Providers → Email) antes de que esto se considere
+  vigente.
+- Ambos son ajustes **globales**, afectan por igual a signup,
+  `updateUser` (cambio) y recovery/reset — mismo mecanismo confirmado
+  en la investigación de AUTH-N4 (un único punto de configuración sin
+  granularidad por flujo). **CONFIRMADO POR CÓDIGO FUENTE** (mismo
+  archivo GoTrue `internal/api/user.go` revisado en AUTH-N4 aplica el
+  mínimo de longitud sin distinguir el tipo de sesión).
+- **Contraseñas existentes NO se ven afectadas retroactivamente** por
+  subir el mínimo o activar requisitos: estos ajustes solo se evalúan
+  en el momento de ESCRIBIR una contraseña nueva (`signUp`/
+  `updateUser`), nunca contra hashes ya almacenados. **INFERENCIA de
+  alta confianza** (es como funciona estructuralmente cualquier
+  validación de entrada en un sistema de auth — no se encontró/buscó
+  una cita documental específica para este punto, dado que es una
+  propiedad estructural más que una decisión de producto).
+- Subir el mínimo a 8 en el Dashboard, por sí solo, **no rompe
+  ningún flujo existente**, pero sí requiere un cambio de código
+  adicional (ver abajo) para que `signup/page.tsx` deje de prometer
+  6 y quedar inconsistente con el resto.
+- Activar "Password requirements" (letras+dígitos, por ejemplo) solo
+  afectaría contraseñas nuevas/cambiadas — ninguno de los 3 flujos
+  tiene hoy una validación de complejidad que pudiera entrar en
+  conflicto; un rechazo del servidor se propagaría como un
+  `error.message` genérico en los 3 flujos (ya manejado, aunque sin
+  test específico para ese mensaje exacto).
+
+**Tests existentes:**
+- `password-form.test.tsx`: sí cubre el rechazo client-side de una
+  contraseña corta (test "a too-short new password is rejected
+  client-side").
+- `reset-password/page.test.tsx`: sí cubre el mismo caso
+  (AUTH-N1.11, "a too-short password is rejected client-side").
+- `signup/page.tsx`: **CERO tests** — confirmado, no existe ningún
+  archivo `*.test.*` para signup en todo el repo.
+- Ninguno de los 3 flujos tiene un test que simule un RECHAZO
+  server-side por longitud/complejidad (todas las pruebas actuales
+  cortan en la validación del cliente, antes de llamar a Supabase) —
+  gap de cobertura si se decide subir el mínimo real.
+
+**Preguntas aún no resueltas:**
+1. Estado real y actual de "Minimum password length" y "Password
+   requirements" — pendiente de reconfirmación manual.
+2. Si se decide implementar, falta decidir el valor exacto de
+   "Password requirements" (ninguno / letras+dígitos / + mayúsculas /
+   + símbolos) — no hay instrucción previa que fije esto.
+
+Severidad global propuesta para AUTH-N5 (como conjunto): **BAJA-MEDIA**
+— ajustada a la baja respecto a la propuesta original (MEDIA) tras
+esta auditoría más detallada: es hardening + inconsistencia, no una
+vulnerabilidad de lógica explotable.
+
+### CIERRE END-TO-END DE AUTH-N5
+ESTADO: CERRADO END-TO-END
+
+**Política final aplicada:** mínimo global 8 caracteres + "letras y
+dígitos" como requisito de complejidad, coherente en signup, cambio
+de contraseña y recovery/reset.
+
+**Configuración de Supabase — confirmada por el usuario (Dashboard de
+producción):**
+- "Minimum password length": 6 → **8** ✅ activado.
+- "Password requirements": ninguno → **letras y dígitos** ✅ activado.
+- Sin tocar (confirmado que permanecen igual): "Secure password
+  change" ON, "Require current password when updating" ON, "Prevent
+  use of leaked passwords" OFF (AUTH-N6, NO iniciado).
+
+**Archivos nuevos:**
+- `src/lib/auth/password-policy.ts` — única constante compartida
+  `MIN_PASSWORD = 8`, sin lógica de complejidad de caracteres (esa
+  parte es 100% responsabilidad del servidor, igual que
+  `current_password` en AUTH-N4 — no hay validación de mayúsculas/
+  dígitos/símbolos en ningún cliente de este proyecto).
+- `src/app/(auth)/signup/page.test.tsx` — signup no tenía ningún test
+  antes de esta fase.
+
+**Archivos modificados:**
+- `signup/page.tsx`: `password.length < 6` → `< MIN_PASSWORD`
+  (import del módulo compartido); mensaje de error y placeholder
+  ahora usan el valor dinámico en vez de "6" hardcodeado; se agregó
+  `minLength={MIN_PASSWORD}` al input (los otros dos flujos ya lo
+  tenían). **No se introdujo i18n en este archivo**: `signup/page.tsx`
+  no usa `next-intl` en ningún string (a diferencia de `login/page.tsx`
+  que sí), no existe un namespace `SignupPage` en `messages/*.json`, y
+  reutilizar la clave `Settings.profile.passwordTooShort` habría sido
+  semánticamente incorrecto (esa clave vive bajo el namespace de
+  ajustes de cuenta, no el de una página pública de registro).
+  Introducir `useTranslations` para un solo string en un archivo que
+  no lo usa en ningún otro lugar habría sido menos consistente, no
+  más — se mantuvo el mismo patrón de string dinámico ya usado por
+  `reset-password/page.tsx` para el mismo mensaje. Ningún otro texto
+  del archivo fue tocado.
+- `password-form.tsx`: `const MIN_PASSWORD = 8` local reemplazada por
+  el import del módulo compartido — mismo valor, cero cambio de
+  comportamiento. **`current_password` (AUTH-N4) intacto, sin tocar.**
+- `reset-password/page.tsx`: mismo cambio de import que arriba. **Sin
+  `current_password`, sin `reauthenticate()`, sin tocar
+  `/auth/callback` ni `sanitizeNextPath`** — confirmado por grep
+  (`current_password` → sin resultados en este archivo) y por diff
+  (solo el bloque de import/comentario cambia).
+
+**Tests añadidos:**
+- `signup/page.test.tsx` (nuevo, 5 tests): 7 caracteres rechazado,
+  8 caracteres pasa la validación y llama a `signUp`, sin regresión en
+  el éxito completo, confirmación no coincidente sigue rechazada, y un
+  rechazo de política por parte de Supabase se muestra al usuario.
+- `password-form.test.tsx`: +1 test — rechazo de política server-side
+  en `updateUser` se muestra vía `passwordUpdateFailed`. Los 10 tests
+  previos (incluidos los de AUTH-N4) quedaron intactos, sin modificar.
+- `reset-password/page.test.tsx`: +2 tests — límite exacto 7
+  (rechazado) vs 8 (acepta y llama `updateUser`), y rechazo de
+  política server-side mostrado al usuario. Los tests previos de
+  AUTH-N1 quedaron intactos.
+
+**Validación:** `vitest run` → 136/136 archivos, 1625/1625 tests (1617
+previos + 8 nuevos); `tsc --noEmit` → 0 errores; `eslint .` → 0
+errores, 37 warnings preexistentes sin cambios; `git diff --check` →
+limpio.
+
+**Limitación explícita:** no se agregó un test de límite 7-vs-8
+dedicado para `password-form.tsx` porque su `MIN_PASSWORD` ya era 8
+antes de esta fase y no cambió de valor — el comportamiento en el
+límite es idéntico al de los otros dos flujos (misma expresión
+`length < MIN_PASSWORD`) pero no fue pedido explícitamente para este
+archivo en el alcance de tests de esta fase (sí lo fue para signup y
+reset-password).
+
+**Integridad de módulos cerrados, confirmada antes del commit:**
+AUTH-N1 (`/auth/callback`, `sanitizeNextPath`) intacto — no aparece en
+el diff. AUTH-N2 (`user.email` real vía `getUser()`) intacto. AUTH-N3
+(Secure email change) sin archivos relacionados tocados. AUTH-N4
+(`current_password: current` en `password-form.tsx`) intacto,
+confirmado por grep — sigue presente sin modificar; sus 10 tests
+originales pasan sin cambios. **AUTH-N6 — NO INICIADO.**
+
+**Commit/push:** este mismo archivo se publica como parte del commit
+`fix(auth): unify password policy` a `origin/main` — el hash exacto
+no puede auto-referenciarse dentro del propio commit que lo contiene;
+queda confirmado en el reporte de la fase de cierre de esta misma
+conversación (mismo patrón ya usado para las entradas de AUTH-N1/N2/N3
+de este archivo, escritas después del hecho).
 
 ### Propuesta AUTH-N6 — Prevent use of leaked passwords desactivado
 Comprobación contra HaveIBeenPwned desactivada (requiere plan Pro+).

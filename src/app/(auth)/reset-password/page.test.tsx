@@ -113,6 +113,57 @@ describe("with a valid session", () => {
     expect(mocks.updateUser).not.toHaveBeenCalled();
   });
 
+  // AUTH-N5: the shared MIN_PASSWORD floor (8, same constant as
+  // password-form.tsx and signup/page.tsx) — an explicit 7-vs-8
+  // boundary check, distinct from the "short" case above.
+  it("AUTH-N5: a 7-character password is rejected, an 8-character one passes the length check", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    mocks.updateUser.mockResolvedValue({ error: null });
+
+    render(<ResetPasswordPage />);
+
+    const passwordInput = await screen.findByLabelText(/^new password$/i);
+    const confirmInput = screen.getByLabelText(/confirm new password/i);
+
+    fireEvent.change(passwordInput, { target: { value: "1234567" } });
+    fireEvent.change(confirmInput, { target: { value: "1234567" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    expect(await screen.findByText(/at least 8 characters/i)).toBeTruthy();
+    expect(mocks.updateUser).not.toHaveBeenCalled();
+
+    fireEvent.change(passwordInput, { target: { value: "12345678" } });
+    fireEvent.change(confirmInput, { target: { value: "12345678" } });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+    await waitFor(() =>
+      expect(mocks.updateUser).toHaveBeenCalledWith({ password: "12345678" }),
+    );
+  });
+
+  // AUTH-N5: a server-side rejection (e.g. Supabase's "Password
+  // requirements" complexity check) must still reach the user — this
+  // page has no client-side character-class validation, and (unlike
+  // password-form.tsx) never sends current_password, so this is the
+  // only gate a policy-violating recovery password passes through.
+  it("AUTH-N5: a password-policy rejection from Supabase is shown to the user", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
+    mocks.updateUser.mockResolvedValue({
+      error: { message: "Password should contain at least one letter and one digit" },
+    });
+
+    render(<ResetPasswordPage />);
+
+    const passwordInput = await screen.findByLabelText(/^new password$/i);
+    fireEvent.change(passwordInput, { target: { value: "onlyletters" } });
+    fireEvent.change(screen.getByLabelText(/confirm new password/i), {
+      target: { value: "onlyletters" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /update password/i }));
+
+    expect(
+      await screen.findByText(/password should contain at least one letter/i),
+    ).toBeTruthy();
+  });
+
   it("mismatched confirmation is rejected client-side, updateUser is never called", async () => {
     mocks.getUser.mockResolvedValue({ data: { user: { id: "user-1" } } });
 

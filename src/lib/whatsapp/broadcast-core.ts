@@ -19,7 +19,14 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  renderTemplateAsText,
+} from '@/lib/whatsapp/evolution-api';
+import {
+  resolveEngineProviderCreds,
+  type EngineProviderCreds,
+} from '@/lib/whatsapp/engine-send-core';
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -66,15 +73,14 @@ export interface BroadcastPlan {
   broadcastId: string;
   templateName: string;
   templateLanguage: string;
-  phoneNumberId: string;
-  accessToken: string;
+  creds: EngineProviderCreds;
   templateRow: MessageTemplate | null;
   planned: PlannedRecipient[];
   /** Phones rejected up front (invalid E.164) — counted as failed. */
   rejected: number;
 }
 
-const MAX_RECIPIENTS = 1000;
+export const MAX_RECIPIENTS = 1000;
 
 /**
  * Validate + persist a broadcast, resolving each recipient to a
@@ -122,7 +128,7 @@ export async function createBroadcast(
       400
     );
   }
-  const accessToken = decrypt(config.access_token);
+  const creds = resolveEngineProviderCreds(config);
 
   // Template row (once) for header/button components; guard a
   // malformed local row rather than N identical opaque failures.
@@ -234,8 +240,7 @@ export async function createBroadcast(
     broadcastId,
     templateName,
     templateLanguage: resolvedTemplate.language,
-    phoneNumberId: config.phone_number_id,
-    accessToken,
+    creds,
     templateRow,
     planned,
     rejected,
@@ -266,15 +271,30 @@ export async function deliverBroadcast(
 
     for (const variant of variants) {
       try {
-        const result = await sendTemplateMessage({
-          phoneNumberId: plan.phoneNumberId,
-          accessToken: plan.accessToken,
-          to: variant,
-          templateName: plan.templateName,
-          language: plan.templateLanguage,
-          template: plan.templateRow ?? undefined,
-          params: recipient.params,
-        });
+        // Evolution Go has no template API — same fallback used
+        // everywhere else in the app: render the approved template
+        // down to plain text.
+        const result = plan.creds.isEvolution
+          ? await evolutionSendTextMessage({
+              apiUrl: plan.creds.evolutionApiUrl,
+              instanceToken: plan.creds.evolutionInstanceToken,
+              to: variant,
+              text: renderTemplateAsText(
+                plan.templateRow,
+                plan.templateName,
+                undefined,
+                recipient.params
+              ),
+            })
+          : await sendTemplateMessage({
+              phoneNumberId: plan.creds.phoneNumberId,
+              accessToken: plan.creds.accessToken,
+              to: variant,
+              templateName: plan.templateName,
+              language: plan.templateLanguage,
+              template: plan.templateRow ?? undefined,
+              params: recipient.params,
+            });
         sentMessageId = result.messageId;
         lastError = null;
         break;

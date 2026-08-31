@@ -1,10 +1,14 @@
 import { sendTextMessage, sendTemplateMessage } from '@/lib/whatsapp/meta-api'
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  renderTemplateAsText,
+} from '@/lib/whatsapp/evolution-api'
+import { resolveEngineProviderCreds } from '@/lib/whatsapp/engine-send-core'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -52,13 +56,17 @@ interface SendTemplateArgs {
   params?: string[]
 }
 
-export async function engineSendText(args: SendTextArgs): Promise<{ whatsapp_message_id: string }> {
+export type SendProvider = 'evolution' | 'meta'
+
+export async function engineSendText(
+  args: SendTextArgs,
+): Promise<{ whatsapp_message_id: string; provider: SendProvider }> {
   return sendViaMeta({ ...args, kind: 'text' })
 }
 
 export async function engineSendTemplate(
   args: SendTemplateArgs,
-): Promise<{ whatsapp_message_id: string }> {
+): Promise<{ whatsapp_message_id: string; provider: SendProvider }> {
   return sendViaMeta({ ...args, kind: 'template' })
 }
 
@@ -109,7 +117,9 @@ type SendInput =
   | (SendTextArgs & { kind: 'text' })
   | (SendTemplateArgs & { kind: 'template' })
 
-async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: string }> {
+async function sendViaMeta(
+  input: SendInput,
+): Promise<{ whatsapp_message_id: string; provider: SendProvider }> {
   const db = supabaseAdmin()
 
   // Scope the contact + config lookups by account_id, not user_id.
@@ -144,7 +154,28 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const creds = resolveEngineProviderCreds(config)
+
+  // Evolution Go has no template API — same fallback send-message.ts
+  // uses for the manual send path: render the approved template down
+  // to plain text. Only fetched when actually needed (Evolution +
+  // template step) to avoid an extra query on every other send.
+  let evolutionTemplateText: string | null = null
+  if (creds.isEvolution && input.kind === 'template') {
+    const { data: templateRow } = await db
+      .from('message_templates')
+      .select('*')
+      .eq('account_id', input.accountId)
+      .eq('name', input.templateName)
+      .eq('language', input.language || 'en_US')
+      .maybeSingle()
+    evolutionTemplateText = renderTemplateAsText(
+      templateRow,
+      input.templateName,
+      undefined,
+      input.params
+    )
+  }
 
   // Local template row — read for the body we persist below, not for
   // the Meta payload (the wire shape is deliberately unchanged here).
@@ -163,10 +194,19 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       : null
 
   const attempt = async (phone: string): Promise<string> => {
+    if (creds.isEvolution) {
+      const r = await evolutionSendTextMessage({
+        apiUrl: creds.evolutionApiUrl,
+        instanceToken: creds.evolutionInstanceToken,
+        to: phone,
+        text: input.kind === 'template' ? evolutionTemplateText! : input.text,
+      })
+      return r.messageId
+    }
     if (input.kind === 'template') {
       const r = await sendTemplateMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+        phoneNumberId: creds.phoneNumberId,
+        accessToken: creds.accessToken,
         to: phone,
         templateName: input.templateName,
         language: input.language,
@@ -175,8 +215,8 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       return r.messageId
     }
     const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+      phoneNumberId: creds.phoneNumberId,
+      accessToken: creds.accessToken,
       to: phone,
       text: input.text,
     })
@@ -248,5 +288,5 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
     })
     .eq('id', input.conversationId)
 
-  return { whatsapp_message_id: waMessageId }
+  return { whatsapp_message_id: waMessageId, provider: creds.isEvolution ? 'evolution' : 'meta' }
 }

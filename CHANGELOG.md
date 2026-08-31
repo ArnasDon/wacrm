@@ -9,6 +9,64 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-08-26
+
+Evolution Go stops silently dropping connections, message templates
+now work for Evolution accounts (no Meta approval needed), and the
+inbox gets read receipts, a new-message chime/desktop alert, and a
+"send to pipeline" shortcut.
+
+> **Migration required:** apply `supabase/migrations/041_evolution_health_check.sql`
+> (adds `whatsapp_config.evolution_reconnect_attempt_count` and
+> `evolution_last_reconnect_attempt_at`, used by the new health-check's
+> reconnect backoff).
+>
+> **Cron required:** point a scheduler at
+> `GET /api/whatsapp/evolution/health-check` (same `x-cron-secret` auth
+> as `/api/automations/cron`) every few minutes — see `docs/docker.md`.
+
+### Added
+
+- **Evolution Go auto-reconnect.** A dropped whatsmeow session used to
+  sit disconnected indefinitely — no webhook ever fires for that
+  failure mode, so nothing in the app noticed. A new polling
+  health-check resumes it automatically, backing off between attempts
+  (5/10/20/30min) so a prolonged outage on the Evolution Go host
+  doesn't turn into a retry storm, and stops retrying entirely once
+  WhatsApp itself revokes the pairing.
+- **Message templates on Evolution Go.** Templates no longer require a
+  Meta Business Account — for an Evolution-provider account they save
+  and become usable immediately, with no approval step.
+- **"Send to pipeline" from the inbox.** Create a deal for the current
+  contact straight from the message thread instead of switching to
+  Pipelines.
+- **Read receipts, on your terms.** Evolution Go's automatic
+  read-receipt (which marked messages "read" the instant they reached
+  the server, before any agent looked) is now sent explicitly only when
+  an agent opens the conversation. The linked phone's own push
+  notifications, previously suppressed by an "always online" flag, work
+  normally again too.
+- **New-message chime + desktop notification**, both toggleable
+  per-device from the conversation list.
+
+### Fixed
+
+- Inbound Evolution media (images, voice notes, documents) was never
+  getting a real URL — it arrives inline as base64, not a fetchable
+  link — and voice notes specifically were rejected outright by a
+  strict mime-type match on the storage bucket. Both now upload
+  correctly.
+- Messages an agent sent from their own linked phone (outside wacrm)
+  were dropped entirely instead of appearing in the thread.
+- LID-addressed chats (WhatsApp's newer opaque-id addressing) could
+  fragment a contact's conversation in two; now resolved back to the
+  real phone number.
+- Template validation errors were always in English regardless of the
+  UI language; now translated.
+- A conversation with no messages yet (e.g. right after opening one
+  from a deal card) sorted to the top of the inbox instead of the
+  bottom.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

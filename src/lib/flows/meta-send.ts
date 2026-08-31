@@ -7,8 +7,14 @@ import {
   type InteractiveListSection,
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  sendMediaMessage as evolutionSendMediaMessage,
+  sendInteractiveButtons as evolutionSendInteractiveButtons,
+  sendInteractiveList as evolutionSendInteractiveList,
+} from '@/lib/whatsapp/evolution-api'
+import { resolveEngineProviderCreds } from '@/lib/whatsapp/engine-send-core'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
-import { decrypt } from '@/lib/whatsapp/encryption'
 import {
   sanitizePhoneForMeta,
   isValidE164,
@@ -91,12 +97,21 @@ export async function engineSendText(
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const creds = resolveEngineProviderCreds(config)
 
   const attempt = async (phone: string): Promise<string> => {
+    if (creds.isEvolution) {
+      const r = await evolutionSendTextMessage({
+        apiUrl: creds.evolutionApiUrl,
+        instanceToken: creds.evolutionInstanceToken,
+        to: phone,
+        text: args.text,
+      })
+      return r.messageId
+    }
     const r = await sendTextMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+      phoneNumberId: creds.phoneNumberId,
+      accessToken: creds.accessToken,
       to: phone,
       text: args.text,
     })
@@ -135,7 +150,7 @@ export async function engineSendText(
     ai_generated: args.aiGenerated ?? false,
   })
   if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    throw new Error(`sent but DB insert failed: ${msgErr.message}`)
   }
 
   await db
@@ -201,12 +216,24 @@ export async function engineSendMedia(
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const creds = resolveEngineProviderCreds(config)
 
   const attempt = async (phone: string): Promise<string> => {
+    if (creds.isEvolution) {
+      const r = await evolutionSendMediaMessage({
+        apiUrl: creds.evolutionApiUrl,
+        instanceToken: creds.evolutionInstanceToken,
+        to: phone,
+        kind: args.kind,
+        url: args.link,
+        caption: args.caption,
+        filename: args.filename,
+      })
+      return r.messageId
+    }
     const r = await sendMediaMessage({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+      phoneNumberId: creds.phoneNumberId,
+      accessToken: creds.accessToken,
       to: phone,
       kind: args.kind,
       link: args.link,
@@ -252,7 +279,7 @@ export async function engineSendMedia(
     status: 'sent',
   })
   if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    throw new Error(`sent but DB insert failed: ${msgErr.message}`)
   }
 
   await db
@@ -353,13 +380,36 @@ async function sendInteractiveViaMeta(
     throw new Error('WhatsApp not configured for this account')
   }
 
-  const accessToken = decrypt(config.access_token)
+  const creds = resolveEngineProviderCreds(config)
 
   const attempt = async (phone: string): Promise<string> => {
+    if (creds.isEvolution) {
+      if (input.kind === 'buttons') {
+        const r = await evolutionSendInteractiveButtons({
+          apiUrl: creds.evolutionApiUrl,
+          instanceToken: creds.evolutionInstanceToken,
+          to: phone,
+          bodyText: input.bodyText,
+          buttons: input.buttons,
+          footerText: input.footerText,
+        })
+        return r.messageId
+      }
+      const r = await evolutionSendInteractiveList({
+        apiUrl: creds.evolutionApiUrl,
+        instanceToken: creds.evolutionInstanceToken,
+        to: phone,
+        bodyText: input.bodyText,
+        buttonLabel: input.buttonLabel,
+        sections: input.sections,
+        footerText: input.footerText,
+      })
+      return r.messageId
+    }
     if (input.kind === 'buttons') {
       const r = await sendInteractiveButtons({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+        phoneNumberId: creds.phoneNumberId,
+        accessToken: creds.accessToken,
         to: phone,
         bodyText: input.bodyText,
         buttons: input.buttons,
@@ -369,8 +419,8 @@ async function sendInteractiveViaMeta(
       return r.messageId
     }
     const r = await sendInteractiveList({
-      phoneNumberId: config.phone_number_id,
-      accessToken,
+      phoneNumberId: creds.phoneNumberId,
+      accessToken: creds.accessToken,
       to: phone,
       bodyText: input.bodyText,
       buttonLabel: input.buttonLabel,
@@ -445,7 +495,7 @@ async function sendInteractiveViaMeta(
     status: 'sent',
   })
   if (msgErr) {
-    throw new Error(`sent to Meta but DB insert failed: ${msgErr.message}`)
+    throw new Error(`sent but DB insert failed: ${msgErr.message}`)
   }
 
   await db

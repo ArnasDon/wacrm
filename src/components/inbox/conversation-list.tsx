@@ -9,7 +9,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Bell, BellOff } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -34,6 +34,9 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /** Whether the new-message chime is on — see inbox/page.tsx. */
+  soundEnabled: boolean;
+  onToggleSound: () => void;
 }
 
 const STATUS_COLORS: Record<ConversationStatus, string> = {
@@ -52,6 +55,8 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  soundEnabled,
+  onToggleSound,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   
@@ -95,10 +100,18 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
+      // Postgres's default null ordering for DESC is NULLS FIRST — a
+      // conversation with no messages yet (last_message_at IS NULL, e.g.
+      // one created via the pipeline's "open conversation" find-or-
+      // create with no send yet) sorted to the very top of every page
+      // load, ahead of every conversation with a real recent message,
+      // even though nothing had actually arrived. `nullsFirst: false`
+      // overrides Postgres's default so an empty conversation sorts to
+      // the bottom instead, matching what "most recent" should mean.
       const { data, error } = await supabase
         .from("conversations")
         .select(CONVERSATION_SELECT)
-        .order("last_message_at", { ascending: false });
+        .order("last_message_at", { ascending: false, nullsFirst: false });
 
       if (cancelled) return;
 
@@ -350,6 +363,24 @@ export function ConversationList({
               </DropdownMenuContent>
             </DropdownMenu>
           )}
+
+          <button
+            type="button"
+            onClick={onToggleSound}
+            aria-label={soundEnabled ? t("muteSound") : t("unmuteSound")}
+            title={soundEnabled ? t("muteSound") : t("unmuteSound")}
+            aria-pressed={soundEnabled}
+            className={cn(
+              "ml-auto inline-flex h-7 w-7 items-center justify-center rounded-md transition-colors hover:bg-muted",
+              soundEnabled ? "text-muted-foreground hover:text-foreground" : "text-amber-400",
+            )}
+          >
+            {soundEnabled ? (
+              <Bell className="h-3.5 w-3.5" />
+            ) : (
+              <BellOff className="h-3.5 w-3.5" />
+            )}
+          </button>
         </div>
 
         {hasContactFilters && (

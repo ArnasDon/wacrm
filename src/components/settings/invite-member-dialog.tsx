@@ -38,6 +38,7 @@ import {
 } from '@/components/ui/select';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/hooks/use-auth';
+import { copyToClipboard as copyLinkToClipboard } from '@/lib/utils';
 
 type InviteRole = 'admin' | 'agent' | 'viewer';
 
@@ -146,15 +147,15 @@ export function InviteMemberDialog({
     }
   }
 
-  async function copyToClipboard() {
+  async function handleCopyLink() {
     if (!result) return;
-    try {
-      await navigator.clipboard.writeText(result.url);
+    const ok = await copyLinkToClipboard(result.url);
+    if (ok) {
       toast.success(t('copied'));
-    } catch {
-      // Most likely "not in a secure context" — happens on http://
-      // local IPs. Surface the link in the toast so the admin can
-      // hand-copy it.
+    } else {
+      // Both the modern Clipboard API and the execCommand fallback
+      // failed (rare — usually a hardened browser policy). Surface
+      // the link in the toast so the admin can hand-copy it.
       toast.error(t('clipboardBlocked'));
     }
   }
@@ -208,7 +209,7 @@ export function InviteMemberDialog({
                 />
                 <Button
                   type="button"
-                  onClick={copyToClipboard}
+                  onClick={handleCopyLink}
                   className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
                 >
                   <Copy className="size-4" />

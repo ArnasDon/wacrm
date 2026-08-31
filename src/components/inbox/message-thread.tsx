@@ -27,6 +27,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  Kanban,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -50,6 +51,7 @@ import {
 } from "./message-composer";
 import { deleteAccountMedia } from "@/lib/storage/upload-media";
 import { TemplatePicker } from "./template-picker";
+import { SendToPipelineDialog } from "./send-to-pipeline-dialog";
 import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
@@ -65,6 +67,13 @@ interface MessageThreadProps {
   conversation: Conversation | null;
   contact: Contact | null;
   messages: Message[];
+  /**
+   * Meta's 24h customer-service-window rule doesn't apply to Evolution
+   * Go (a real paired WhatsApp session, not a Cloud API business
+   * number) — `undefined`/`null` while still loading is treated the
+   * same as "meta" so the timer doesn't flicker off then back on.
+   */
+  whatsappProvider?: "meta" | "evolution" | null;
   onMessagesLoaded: (messages: Message[]) => void;
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
@@ -153,6 +162,7 @@ export function MessageThread({
   conversation,
   contact,
   messages,
+  whatsappProvider,
   onMessagesLoaded,
   onNewMessage,
   onUpdateMessage,
@@ -173,6 +183,7 @@ export function MessageThread({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [pipelineModalOpen, setPipelineModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [reactions, setReactions] = useState<MessageReaction[]>([]);
   // Purely visual spin state for the manual-refresh button. The actual
@@ -231,8 +242,9 @@ export function MessageThread({
     };
   }, []);
 
-  // 24-hour session timer
+  // 24-hour session timer — Meta Cloud API only (see the prop doc comment).
   const sessionInfo = useMemo(() => {
+    if (whatsappProvider === "evolution") return { expired: false, remaining: "" };
     if (!messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
@@ -256,7 +268,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, whatsappProvider]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -453,7 +465,55 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
-  }, [conversationId, hasUnread]);
+
+    // Send the actual WhatsApp read receipt now that a human opened
+    // this thread (see the route's doc comment for why this replaces
+    // Evolution Go's own automatic one). No-ops server-side for a
+    // Meta-provider account.
+    //
+    // `conversation` being the active one in React state is NOT the same
+    // as a human looking at it — an inbox tab left open in the
+    // background (minimized window, laptop lid closed) keeps
+    // `activeConversation` set and re-runs this effect on every new
+    // message, which sent a real WhatsApp read receipt for messages
+    // nobody had actually seen (reported live). Gate on tab *visibility*
+    // only — NOT `document.hasFocus()` too: that API is notoriously
+    // unreliable (can report unfocused while the tab plainly is, and
+    // once already true it never fires a transition to wake the
+    // deferred branch below) — confirmed live, it broke the send
+    // entirely even with the tab genuinely open and active, zero
+    // mark-read calls reaching Evolution Go. `visibilityState` alone
+    // reliably distinguishes "this tab is the one on screen" from
+    // "minimized / another tab is in front", which is the actual
+    // scenario the bug report was about.
+    if (whatsappProvider === "evolution") {
+      const sendReadReceipt = () => {
+        fetch("/api/whatsapp/evolution/mark-read", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ conversation_id: conversationId }),
+        }).catch((err) => console.error("Failed to send read receipt:", err));
+      };
+
+      if (document.visibilityState === "visible") {
+        sendReadReceipt();
+      } else {
+        const onVisible = () => {
+          if (document.visibilityState === "visible") {
+            sendReadReceipt();
+            cleanup();
+          }
+        };
+        const cleanup = () => {
+          document.removeEventListener("visibilitychange", onVisible);
+          window.removeEventListener("focus", onVisible);
+        };
+        document.addEventListener("visibilitychange", onVisible);
+        window.addEventListener("focus", onVisible);
+        return cleanup;
+      }
+    }
+  }, [conversationId, hasUnread, whatsappProvider]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
@@ -786,7 +846,7 @@ export function MessageThread({
         return;
       }
       if (messageId.startsWith("temp-")) {
-        toast.error("Wait for the message to finish sending");
+        toast.error(t("waitForSend"));
         return;
       }
 
@@ -836,7 +896,7 @@ export function MessageThread({
         setReactions(snapshot);
       }
     },
-    [conversation, user?.id],
+    [conversation, user?.id, t],
   );
 
   const handleAssignChange = useCallback(
@@ -851,13 +911,13 @@ export function MessageThread({
 
       if (error) {
         console.error("Failed to update assignment:", error);
-        toast.error("Failed to update assignment");
+        toast.error(t("assignUpdateError"));
         return;
       }
 
       onAssignChange(conversation.id, agentId);
     },
-    [conversation, onAssignChange],
+    [conversation, onAssignChange, t],
   );
 
   // Empty state — same WhatsApp-style doodle background as the active
@@ -924,17 +984,20 @@ export function MessageThread({
             <p className="truncate text-xs text-muted-foreground">{contact.phone}</p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
-              the name + back arrow keep their room. */}
-          <Badge
-            variant="outline"
-            className={cn(
-              "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
-              sessionInfo.expired ? "text-red-400" : "text-primary"
-            )}
-          >
-            <Clock className="h-3 w-3" />
-            {sessionInfo.remaining}
-          </Badge>
+              the name + back arrow keep their room, and entirely for
+              Evolution Go (see the `whatsappProvider` prop doc). */}
+          {whatsappProvider !== "evolution" && (
+            <Badge
+              variant="outline"
+              className={cn(
+                "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
+                sessionInfo.expired ? "text-red-400" : "text-primary"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {sessionInfo.remaining}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -1076,6 +1139,21 @@ export function MessageThread({
               )}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {/* Send to pipeline — creates a deal for this contact,
+              mirroring deal-card.tsx's reverse trip (pipeline → inbox). */}
+          {contact && (
+            <button
+              type="button"
+              onClick={() => setPipelineModalOpen(true)}
+              aria-label={t("sendToPipelineTitle")}
+              title={t("sendToPipelineTitle")}
+              className="inline-flex h-7 items-center justify-center gap-1 rounded-md px-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Kanban className="h-3 w-3" />
+              <span className="hidden sm:inline">{t("sendToPipeline")}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1188,6 +1266,12 @@ export function MessageThread({
         open={templateModalOpen}
         onOpenChange={setTemplateModalOpen}
         onSelect={handleSendTemplate}
+      />
+
+      <SendToPipelineDialog
+        open={pipelineModalOpen}
+        onOpenChange={setPipelineModalOpen}
+        contact={contact}
       />
 
       {/* Full-size viewer for the thread's images/videos. Renders nothing

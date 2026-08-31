@@ -1,8 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import type { Deal, PipelineStage } from "@/types";
-import { Calendar, Check, X } from "lucide-react";
+import { Calendar, Check, X, MessageSquare, Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
+import { createClient } from "@/lib/supabase/client";
 import { useTranslations } from "next-intl";
 
 interface DealCardProps {
@@ -28,8 +32,50 @@ function initials(name?: string, fallback?: string) {
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
   const t = useTranslations("Pipelines.card");
+  const router = useRouter();
+  const [openingConversation, setOpeningConversation] = useState(false);
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
   const assigneeLabel = deal.assignee?.full_name || null;
+
+  // deals.conversation_id is never actually populated by any write
+  // path (deal-form.tsx only reads it for display, create_deal steps
+  // don't set it either) — resolve the conversation from contact_id
+  // at click time instead of trusting the column.
+  async function handleOpenConversation(e: React.MouseEvent) {
+    e.stopPropagation();
+    if (!deal.contact_id || openingConversation) return;
+    setOpeningConversation(true);
+    try {
+      const supabase = createClient();
+      const { data, error } = await supabase
+        .from("conversations")
+        .select("id")
+        .eq("contact_id", deal.contact_id)
+        .order("created_at", { ascending: true })
+        .limit(1);
+      if (!error && data && data.length > 0) {
+        router.push(`/inbox?c=${data[0].id}`);
+        return;
+      }
+
+      // No conversation exists yet (e.g. right after a conversations
+      // reset) — find-or-create through the server route rather than
+      // inserting from here directly, so the race-safe unique-index
+      // handling (migration 036) and account/role checks live in one
+      // place instead of being duplicated in every caller.
+      const res = await fetch(`/api/contacts/${deal.contact_id}/conversation`, {
+        method: "POST",
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.id) {
+        toast.error(t("noConversation"));
+        return;
+      }
+      router.push(`/inbox?c=${json.id}`);
+    } finally {
+      setOpeningConversation(false);
+    }
+  }
 
   return (
     <button
@@ -77,7 +123,31 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
           {initials(deal.contact?.name, deal.contact?.phone)}
         </span>
-        <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
+          {contactLabel}
+        </span>
+        {deal.contact_id && (
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={t("openConversation")}
+            title={t("openConversation")}
+            onClick={handleOpenConversation}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                handleOpenConversation(e as unknown as React.MouseEvent);
+              }
+            }}
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-primary/15 hover:text-primary"
+          >
+            {openingConversation ? (
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            ) : (
+              <MessageSquare className="h-3.5 w-3.5" />
+            )}
+          </span>
+        )}
       </div>
 
       <div className="mt-2 flex items-center justify-between">

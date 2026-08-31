@@ -2,13 +2,14 @@
 
 import { Suspense, useMemo } from "react"
 import { useSearchParams } from "next/navigation"
+import { useTranslations } from "next-intl"
 
 import {
   AutomationBuilder,
   type BuilderInitial,
   type BuilderStep,
 } from "@/components/automations/automation-builder"
-import { AUTOMATION_TEMPLATES, type TemplateSlug } from "@/lib/automations/templates"
+import { TEMPLATE_SLUGS, resolveTemplate, type TemplateSlug } from "@/lib/automations/templates"
 import type { AutomationStepType, AutomationTriggerType } from "@/types"
 
 // `useSearchParams` requires a Suspense boundary or the production build
@@ -25,12 +26,13 @@ export default function NewAutomationPage() {
 function NewAutomationPageInner() {
   const params = useSearchParams()
   const template = params.get("template") as TemplateSlug | null
+  const tTemplates = useTranslations("Automations.templates")
 
   const initial: BuilderInitial = useMemo(() => {
-    if (template && AUTOMATION_TEMPLATES[template]) {
-      const t = AUTOMATION_TEMPLATES[template]
+    if (template && TEMPLATE_SLUGS.includes(template)) {
+      const resolved = resolveTemplate(template, tTemplates)
       const steps = expandFromSeeds(
-        t.steps.map((seed, idx) => ({
+        resolved.steps.map((seed, idx) => ({
           index: idx,
           step_type: seed.step_type,
           step_config: seed.step_config as Record<string, unknown>,
@@ -39,10 +41,10 @@ function NewAutomationPageInner() {
         })),
       )
       return {
-        name: t.name,
-        description: t.description,
-        trigger_type: t.trigger_type,
-        trigger_config: t.trigger_config as Record<string, unknown>,
+        name: resolved.name,
+        description: resolved.description,
+        trigger_type: resolved.trigger_type,
+        trigger_config: resolved.trigger_config as Record<string, unknown>,
         is_active: false,
         steps,
       }
@@ -55,6 +57,7 @@ function NewAutomationPageInner() {
       is_active: false,
       steps: [],
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tTemplates is a stable next-intl handle scoped to the current locale; re-running per template id is what we want.
   }, [template])
 
   return <AutomationBuilder initial={initial} />

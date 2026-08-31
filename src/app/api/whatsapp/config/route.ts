@@ -7,6 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { canEditSettings, isAccountRole } from '@/lib/auth/roles'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -29,6 +30,28 @@ async function resolveAccountId(
     .maybeSingle()
   if (error || !data?.account_id) return null
   return data.account_id as string
+}
+
+/**
+ * Same lookup as `resolveAccountId`, plus the caller's role — POST/DELETE
+ * write the account's WhatsApp connection (registers/deregisters the
+ * business's phone number with Meta), which `canEditSettings` gates to
+ * admin+ everywhere else (templates/sync, evolution/qr, ...). RLS backs
+ * this up too (`whatsapp_config_insert`/`_delete` require admin), but the
+ * service-role client used below to detect cross-user phone_number_id
+ * conflicts bypasses RLS, so the app has to enforce it directly.
+ */
+async function resolveAccountIdAndRole(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+): Promise<{ accountId: string; role: import('@/lib/auth/roles').AccountRole } | null> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('account_id, account_role')
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error || !data?.account_id || !isAccountRole(data.account_role)) return null
+  return { accountId: data.account_id as string, role: data.account_role }
 }
 
 // Lazy-initialised service-role client. We need it to detect a
@@ -87,7 +110,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, access_token, status, provider')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -108,6 +131,18 @@ export async function GET() {
         },
         { status: 200 }
       )
+    }
+
+    // This endpoint only knows how to verify Meta credentials — an
+    // 'evolution' row has neither phone_number_id nor access_token, so
+    // don't fall into the Meta decrypt/verify path below (it would
+    // misreport as "token_corrupted"). The Evolution settings panel
+    // manages its own status via GET /api/whatsapp/evolution/qr.
+    if (config.provider === 'evolution') {
+      return NextResponse.json({
+        connected: config.status === 'connected',
+        provider: 'evolution',
+      })
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.
@@ -176,10 +211,17 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const resolved = await resolveAccountIdAndRole(supabase, user.id)
+    if (!resolved) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+    const { accountId, role } = resolved
+    if (!canEditSettings(role)) {
+      return NextResponse.json(
+        { error: "This action requires the 'admin' role or higher" },
         { status: 403 },
       )
     }
@@ -354,6 +396,11 @@ export async function POST(request: Request) {
     // store the credentials and the error so the UI can guide the
     // user through a retry.
     const baseRow = {
+      // Saving Meta credentials through this endpoint always means "use
+      // Meta" — flips a row that was previously provider='evolution'
+      // back, so send-message.ts and the inbound webhook route stop
+      // routing through Evolution Go the moment Meta creds are saved.
+      provider: 'meta',
       phone_number_id,
       waba_id: waba_id || null,
       access_token: encryptedAccessToken,
@@ -451,10 +498,17 @@ export async function DELETE() {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const accountId = await resolveAccountId(supabase, user.id)
-    if (!accountId) {
+    const resolved = await resolveAccountIdAndRole(supabase, user.id)
+    if (!resolved) {
       return NextResponse.json(
         { error: 'Your profile is not linked to an account.' },
+        { status: 403 },
+      )
+    }
+    const { accountId, role } = resolved
+    if (!canEditSettings(role)) {
+      return NextResponse.json(
+        { error: "This action requires the 'admin' role or higher" },
         { status: 403 },
       )
     }

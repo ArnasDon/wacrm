@@ -21,7 +21,12 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
-import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import {
+  engineSendText,
+  engineSendTemplate,
+  engineSendInteractive,
+  type SendProvider,
+} from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 
@@ -355,6 +360,10 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 }
 
+function providerLabel(provider: SendProvider): string {
+  return provider === 'evolution' ? 'Evolution' : 'Meta'
+}
+
 async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {
   const db = supabaseAdmin()
 
@@ -365,14 +374,14 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const text = interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
-      const { whatsapp_message_id } = await engineSendText({
+      const { whatsapp_message_id, provider } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
         conversationId,
         contactId: args.contactId,
         text,
       })
-      return `sent via Meta (${whatsapp_message_id})`
+      return `sent via ${providerLabel(provider)} (${whatsapp_message_id})`
     }
 
     case 'send_buttons':
@@ -418,7 +427,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
             })
             .map((k) => String(cfg.variables![k]))
         : []
-      const { whatsapp_message_id } = await engineSendTemplate({
+      const { whatsapp_message_id, provider } = await engineSendTemplate({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
         conversationId,
@@ -427,7 +436,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         language: cfg.language,
         params,
       })
-      return `template sent via Meta (${whatsapp_message_id})`
+      return `template sent via ${providerLabel(provider)} (${whatsapp_message_id})`
     }
 
     case 'add_tag': {
@@ -770,8 +779,7 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
       // (supports over-midnight ranges like "18:00-09:00").
       const [from, to] = (cfg.operand ?? '').split('-')
       if (!from || !to) return false
-      const now = new Date()
-      const mins = now.getHours() * 60 + now.getMinutes()
+      const mins = minutesOfDayInBusinessTimezone()
       const parse = (s: string) => {
         const [h, m] = s.split(':').map(Number)
         return (h || 0) * 60 + (m || 0)
@@ -783,6 +791,27 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
     default:
       return false
   }
+}
+
+// Business hours are evaluated in this timezone regardless of the
+// server/container's own TZ — using the process-local clock here caused
+// `time_of_day` conditions to silently misfire whenever the container ran
+// in UTC (the WACRM app container has no TZ set and defaults to UTC,
+// while the business operates on Brazil time), shifting the comparison
+// window by 3 hours every day.
+const BUSINESS_TIMEZONE = 'America/Sao_Paulo'
+
+/** Exported for direct unit testing of the UTC-vs-business-timezone boundary. */
+export function minutesOfDayInBusinessTimezone(): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: BUSINESS_TIMEZONE,
+    hour: '2-digit',
+    minute: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(new Date())
+  const hour = Number(parts.find((p) => p.type === 'hour')?.value ?? 0)
+  const minute = Number(parts.find((p) => p.type === 'minute')?.value ?? 0)
+  return hour * 60 + minute
 }
 
 function waitMs(cfg: WaitStepConfig): number {

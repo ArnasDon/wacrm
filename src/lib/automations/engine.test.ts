@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 // Shared mock state for the service-role client. Lives in a hoisted block
 // so the vi.mock factory below can close over it.
@@ -104,7 +104,11 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
-import { runAutomationsForTrigger, triggerMatches } from "./engine";
+import {
+  runAutomationsForTrigger,
+  triggerMatches,
+  minutesOfDayInBusinessTimezone,
+} from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
 
 const ACCOUNT = "acct-1";
@@ -347,6 +351,29 @@ function customStep(field: string, value: string) {
     step_config: { field, value },
   };
 }
+
+describe("minutesOfDayInBusinessTimezone — timezone bug regression", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("reads Brazil local time even when the process clock is UTC (09:56 BRT)", () => {
+    // 2026-08-08T12:56:00Z is 09:56 in America/Sao_Paulo (UTC-3). Before the
+    // fix, this read the container's own TZ (UTC in production, since the
+    // wacrm-app-1 image has no TZ set) and returned 12*60+56=776 instead of
+    // 9*60+56=596 — landing inside the "open" window of a 10:59-22:05
+    // schedule and silently skipping the out-of-office reply.
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-08T12:56:00Z"));
+    expect(minutesOfDayInBusinessTimezone()).toBe(9 * 60 + 56);
+  });
+
+  it("reads Brazil local time for a late-evening instant (20:00 BRT)", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-08T23:00:00Z"));
+    expect(minutesOfDayInBusinessTimezone()).toBe(20 * 60);
+  });
+});
 
 describe("triggerMatches — interactive_reply", () => {
   function automation(reply_ids: string[]): Automation {

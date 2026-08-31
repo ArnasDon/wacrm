@@ -152,14 +152,24 @@ export function DealForm({
   }, [open, contactId, supabase]);
 
   async function handleSave() {
-    if (!title.trim() || !contactId || !stageId) {
+    if (!contactId || !stageId) {
       toast.error(t("toastRequired"));
       return;
     }
     setSaving(true);
 
+    // Naming the deal isn't the point of dropping a contact into a
+    // pipeline stage — default to the contact's name/phone so saving
+    // isn't blocked on typing a title. Users who want a real deal
+    // title can still type one.
+    const resolvedTitle =
+      title.trim() ||
+      contacts.find((c) => c.id === contactId)?.name ||
+      contacts.find((c) => c.id === contactId)?.phone ||
+      t("titlePlaceholder");
+
     const payload = {
-      title: title.trim(),
+      title: resolvedTitle,
       value: parseFloat(value) || 0,
       currency,
       contact_id: contactId,
@@ -260,13 +270,17 @@ export function DealForm({
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("title")}</Label>
+              <Label className="text-muted-foreground">
+                {t("title")}{" "}
+                <span className="text-xs font-normal">{t("titleOptional")}</span>
+              </Label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder={t("titlePlaceholder")}
                 className="border-border bg-muted text-foreground"
               />
+              <p className="text-xs text-muted-foreground">{t("titleHint")}</p>
             </div>
 
             <div className="grid gap-2">
@@ -439,7 +453,7 @@ export function DealForm({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !title.trim() || !contactId || !stageId}
+                disabled={saving || !contactId || !stageId}
                 className="flex-1 bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? t("saving") : deal ? t("saveChanges") : t("createDeal")}

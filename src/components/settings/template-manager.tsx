@@ -24,7 +24,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsPanelHead } from './settings-panel-head';
 import {
@@ -47,7 +47,10 @@ import type {
   TemplateButton,
   TemplateSampleValues,
 } from '@/types';
-import { templateStatusConfig } from '@/lib/template-status';
+import {
+  getTemplateStatusDisplay,
+  TEMPLATE_CATEGORY_LABEL_KEYS,
+} from '@/lib/template-status';
 import {
   extractVariableIndices,
   TEMPLATE_LIMITS,
@@ -92,6 +95,8 @@ const emptyForm: TemplateFormData = {
 };
 
 const COMMON_LANGUAGE_CODES = [
+  'pt_BR',
+  'pt_PT',
   'en_US',
   'en_GB',
   'en',
@@ -102,14 +107,49 @@ const COMMON_LANGUAGE_CODES = [
   'fr_FR',
   'de',
   'it',
-  'pt_BR',
-  'pt_PT',
   'nl',
   'pl',
   'ru',
   'tr',
   'lt',
 ];
+
+/**
+ * Meta's language codes use an underscore (pt_BR) — Intl.DisplayNames
+ * wants BCP-47 (pt-BR). Falls back to the raw code if the runtime
+ * doesn't recognize it, so an unusual code never renders blank.
+ */
+function languageLabel(code: string, locale: string): string {
+  try {
+    const displayNames = new Intl.DisplayNames([locale], { type: 'language' });
+    const name = displayNames.of(code.replace('_', '-'));
+    return name && name !== code ? `${name} (${code})` : code;
+  } catch {
+    return code;
+  }
+}
+
+// New templates default to the workspace's own language rather than
+// always English — a pt-BR user creating their first template
+// shouldn't have to notice and override an en_US default.
+function defaultLanguageForLocale(locale: string): string {
+  return locale.toLowerCase().startsWith('pt') ? 'pt_BR' : 'en_US';
+}
+
+function headerFormatLabel(type: HeaderFormat, t: (key: string) => string): string {
+  switch (type) {
+    case 'none':
+      return t('headerNone');
+    case 'text':
+      return t('headerText');
+    case 'image':
+      return t('headerImage');
+    case 'video':
+      return t('headerVideo');
+    case 'document':
+      return t('headerDocument');
+  }
+}
 
 function emptyButton(type: TemplateButton['type']): TemplateButton {
   switch (type) {
@@ -126,11 +166,19 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 
 export function TemplateManager() {
   const t = useTranslations('Settings.templates');
+  const locale = useLocale();
   const supabase = createClient();
-  const { user, loading: authLoading } = useAuth();
+  const { user, accountId, loading: authLoading } = useAuth();
 
   const [loading, setLoading] = useState(true);
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
+  // Evolution Go has no Meta-approval concept — drives several UI
+  // differences below (no Sync button, no header/footer/buttons since
+  // renderTemplateAsText only ever sends body_text, immediate-use
+  // copy instead of "submitted for review"). `null` while loading is
+  // treated as Meta so the form doesn't flash between shapes.
+  const [provider, setProvider] = useState<'meta' | 'evolution' | null>(null);
+  const isEvolution = provider === 'evolution';
   const [dialogOpen, setDialogOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -187,6 +235,19 @@ export function TemplateManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [authLoading, user?.id]);
 
+  useEffect(() => {
+    if (!accountId) return;
+    (async () => {
+      const { data } = await supabase
+        .from('whatsapp_config')
+        .select('provider')
+        .eq('account_id', accountId)
+        .maybeSingle();
+      setProvider(data?.provider === 'evolution' ? 'evolution' : 'meta');
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accountId]);
+
   async function fetchTemplates(userId: string) {
     try {
       setLoading(true);
@@ -217,7 +278,7 @@ export function TemplateManager() {
     return {
       name: form.name.trim(),
       category: form.category,
-      language: form.language.trim() || 'en_US',
+      language: form.language.trim() || defaultLanguageForLocale(locale),
       header_type: form.header_format === 'none' ? undefined : form.header_format,
       header_content:
         form.header_format === 'text' ? form.header_content.trim() : undefined,
@@ -253,7 +314,7 @@ export function TemplateManager() {
 
   function openCreate() {
     setEditingId(null);
-    setForm(emptyForm);
+    setForm({ ...emptyForm, language: defaultLanguageForLocale(locale) });
     setDialogOpen(true);
   }
 
@@ -274,9 +335,15 @@ export function TemplateManager() {
       });
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(
-          data?.error || `${isEdit ? 'Edit' : 'Submit'} failed (HTTP ${res.status})`,
-        );
+        // `code`/`values` come from a TemplateValidationError on the
+        // server (see template-validators.ts) — translate it so the
+        // user sees this in their own language instead of the raw
+        // English fallback in `data.error`. Any other server error
+        // (Meta API failures, etc.) has no `code` and falls back as-is.
+        const message = data?.code
+          ? t(data.code, data.values)
+          : data?.error || `${isEdit ? 'Edit' : 'Submit'} failed (HTTP ${res.status})`;
+        throw new Error(message);
       }
       // Refresh first, then close — re-opening the dialog
       // immediately should not show a stale list.
@@ -286,9 +353,13 @@ export function TemplateManager() {
           ? isEdit
             ? t('toastSaveEditDry')
             : t('toastSaveNewDry')
-          : isEdit
-            ? t('toastSubmitEditSuccess')
-            : t('toastSubmitNewSuccess'),
+          : isEvolution
+            ? isEdit
+              ? t('toastSubmitEditSuccessEvolution')
+              : t('toastSubmitNewSuccessEvolution')
+            : isEdit
+              ? t('toastSubmitEditSuccess')
+              : t('toastSubmitNewSuccess'),
       );
       setDialogOpen(false);
       setForm(emptyForm);
@@ -485,18 +556,20 @@ export function TemplateManager() {
     <section className="animate-in fade-in-50 space-y-4 duration-200">
       <SettingsPanelHead
         title={t('title')}
-        description={t('description')}
+        description={isEvolution ? t('descriptionEvolution') : t('description')}
         action={
           <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              onClick={handleSyncFromMeta}
-              disabled={syncing}
-              title={t('syncTitle')}
-            >
-              <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? t('syncing') : t('syncFromMeta')}
-            </Button>
+            {!isEvolution && (
+              <Button
+                variant="outline"
+                onClick={handleSyncFromMeta}
+                disabled={syncing}
+                title={t('syncTitle')}
+              >
+                <RefreshCw className={`size-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? t('syncing') : t('syncFromMeta')}
+              </Button>
+            )}
             <Button onClick={openCreate}>
               <Plus className="size-4" />
               {t('newTemplate')}
@@ -518,7 +591,7 @@ export function TemplateManager() {
         <div className="grid gap-3 xl:grid-cols-2">
           {templates.map((template) => {
             const statusKey = template.status || 'DRAFT';
-            const status = templateStatusConfig[statusKey];
+            const status = getTemplateStatusDisplay(statusKey, t);
             return (
               <Card key={template.id}>
                 <CardContent className="flex items-start justify-between pt-4">
@@ -528,7 +601,7 @@ export function TemplateManager() {
                       <Badge
                         className={`text-xs border ${categoryColors[template.category] || ''}`}
                       >
-                        {template.category}
+                        {t(TEMPLATE_CATEGORY_LABEL_KEYS[template.category])}
                       </Badge>
                       <Badge className={`text-xs border ${status.classes}`}>
                         {status.label}
@@ -547,7 +620,7 @@ export function TemplateManager() {
                                 ? 'text-yellow-400'
                                 : 'text-red-400'
                           }`}
-                          title="Meta quality score"
+                          title={t('qualityScoreTitle')}
                         >
                           {template.quality_score}
                         </span>
@@ -576,7 +649,7 @@ export function TemplateManager() {
                         variant="ghost"
                         size="sm"
                         onClick={() => openEdit(template)}
-                        title={t('editTitle')}
+                        title={isEvolution ? t('editTitleEvolution') : t('editTitle')}
                         aria-label={t('editLabel')}
                         className="text-muted-foreground hover:text-primary hover:bg-primary/10 h-8 px-2"
                       >
@@ -645,12 +718,16 @@ export function TemplateManager() {
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
               {editingId
-                ? t('dialogEditDesc')
-                : t('dialogNewDesc')}
+                ? isEvolution
+                  ? t('dialogEditDescEvolution')
+                  : t('dialogEditDesc')
+                : isEvolution
+                  ? t('dialogNewDescEvolution')
+                  : t('dialogNewDesc')}
             </DialogDescription>
           </DialogHeader>
 
-          {form.category === 'Authentication' && (
+          {!isEvolution && form.category === 'Authentication' && (
             <div className="flex items-start gap-2 rounded border border-amber-700/40 bg-amber-950/30 px-3 py-2 text-xs text-amber-300">
               <AlertCircle className="size-4 mt-0.5 shrink-0" />
               <p>{t.rich('authWarning', { bold: (chunks) => <strong>{chunks}</strong> })}</p>
@@ -678,6 +755,9 @@ export function TemplateManager() {
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('category')}</Label>
                 <Select
+                  items={Object.fromEntries(
+                    CATEGORIES.map((cat) => [cat, t(TEMPLATE_CATEGORY_LABEL_KEYS[cat])]),
+                  )}
                   value={form.category}
                   onValueChange={(val) =>
                     setForm({
@@ -696,7 +776,7 @@ export function TemplateManager() {
                         value={cat}
                         className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
                       >
-                        {cat}
+                        {t(TEMPLATE_CATEGORY_LABEL_KEYS[cat])}
                       </SelectItem>
                     ))}
                   </SelectContent>
@@ -705,24 +785,37 @@ export function TemplateManager() {
 
               <div className="space-y-2">
                 <Label className="text-muted-foreground">{t('language')}</Label>
-                <Input
-                  list="template-language-codes"
-                  placeholder="en_US"
+                <Select
+                  items={Object.fromEntries(
+                    COMMON_LANGUAGE_CODES.map((code) => [code, languageLabel(code, locale)]),
+                  )}
                   value={form.language}
-                  onChange={(e) =>
-                    setForm({ ...form, language: e.target.value })
-                  }
+                  onValueChange={(val) => {
+                    if (!val) return;
+                    setForm({ ...form, language: val });
+                  }}
                   disabled={editingId !== null}
-                  className="bg-muted border-border text-foreground placeholder:text-muted-foreground disabled:opacity-60 disabled:cursor-not-allowed"
-                />
-                <datalist id="template-language-codes">
-                  {COMMON_LANGUAGE_CODES.map((code) => (
-                    <option key={code} value={code} />
-                  ))}
-                </datalist>
+                >
+                  <SelectTrigger className="w-full bg-muted border-border text-foreground disabled:opacity-60 disabled:cursor-not-allowed">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border">
+                    {COMMON_LANGUAGE_CODES.map((code) => (
+                      <SelectItem
+                        key={code}
+                        value={code}
+                        className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
+                      >
+                        {languageLabel(code, locale)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <p className="text-[11px] text-muted-foreground">
                   {editingId ? (
-                    t('langFixed')
+                    isEvolution ? t('langFixedEvolution') : t('langFixed')
+                  ) : isEvolution ? (
+                    t('langHintEvolution')
                   ) : (
                     <span>{t.rich('langHint', { code: (chunks) => <code>{chunks}</code> })}</span>
                   )}
@@ -730,9 +823,17 @@ export function TemplateManager() {
               </div>
             </div>
 
+            {/* Header/footer/buttons are Meta-approval concepts — Evolution
+                Go sends templates via renderTemplateAsText, which only
+                ever reads body_text (see evolution-api.ts), so these
+                fields would be dead weight in that form. */}
+            {!isEvolution && (
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('header')}</Label>
               <Select
+                items={Object.fromEntries(
+                  HEADER_FORMATS.map((type) => [type, headerFormatLabel(type, t)]),
+                )}
                 value={form.header_format}
                 onValueChange={(val) =>
                   // Preserve header_content, header_media_url, and
@@ -757,15 +858,7 @@ export function TemplateManager() {
                       value={type}
                       className="text-popover-foreground focus:bg-muted focus:text-popover-foreground"
                     >
-                      {type === 'none'
-                        ? t('headerNone')
-                        : type === 'text'
-                          ? t('headerText')
-                          : type === 'image'
-                            ? t('headerImage')
-                            : type === 'video'
-                              ? t('headerVideo')
-                              : t('headerDocument')}
+                      {headerFormatLabel(type, t)}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -775,7 +868,7 @@ export function TemplateManager() {
                 <div className="space-y-2 mt-2">
                   <Input
                     id="template-header-text"
-                    aria-label="Header text"
+                    aria-label={t('headerTextAria')}
                     placeholder={t.raw('headerTextPlaceholder')}
                     value={form.header_content}
                     onChange={(e) =>
@@ -845,7 +938,7 @@ export function TemplateManager() {
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
                       src={form.header_media_url}
-                      alt="Header sample"
+                      alt={t('headerSampleAlt')}
                       className="max-h-28 rounded-md border border-border object-contain"
                     />
                   )}
@@ -861,6 +954,7 @@ export function TemplateManager() {
                 </div>
               )}
             </div>
+            )}
 
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('bodyText')}</Label>
@@ -905,6 +999,8 @@ export function TemplateManager() {
               )}
             </div>
 
+            {!isEvolution && (
+            <>
             <div className="space-y-2">
               <Label className="text-muted-foreground">{t('footer')}</Label>
               <Input
@@ -946,6 +1042,12 @@ export function TemplateManager() {
                     >
                       <div className="flex items-center gap-2">
                         <Select
+                          items={{
+                            QUICK_REPLY: t('btnQuickReply'),
+                            URL: t('btnUrl'),
+                            PHONE_NUMBER: t('btnPhone'),
+                            COPY_CODE: t('btnCopyCode'),
+                          }}
                           value={btn.type}
                           onValueChange={(val) => {
                             // Same null guard as the Header Select
@@ -1051,6 +1153,8 @@ export function TemplateManager() {
                 </div>
               )}
             </div>
+            </>
+            )}
           </div>
 
           <DialogFooter className="bg-popover border-border">
@@ -1072,9 +1176,9 @@ export function TemplateManager() {
                   {editingId ? t('saving') : t('submitting')}
                 </>
               ) : editingId ? (
-                t('saveResubmit')
+                isEvolution ? t('saveChanges') : t('saveResubmit')
               ) : (
-                t('submitApproval')
+                isEvolution ? t('saveTemplate') : t('submitApproval')
               )}
             </Button>
           </DialogFooter>

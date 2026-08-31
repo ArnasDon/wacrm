@@ -28,7 +28,16 @@ import {
   sendInteractiveButtons,
   sendInteractiveList,
   type MediaKind,
-} from '@/lib/whatsapp/meta-api';
+} from '@/lib/whatsapp/meta-api'
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  sendMediaMessage as evolutionSendMediaMessage,
+  sendInteractiveButtons as evolutionSendInteractiveButtons,
+  sendInteractiveList as evolutionSendInteractiveList,
+  renderTemplateAsText,
+  type EvolutionQuoted,
+} from '@/lib/whatsapp/evolution-api'
+import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder';
 import {
   validateInteractivePayload,
   interactivePayloadPreviewText,
@@ -266,10 +275,21 @@ export async function sendMessageToConversation(
     );
   }
 
-  const accessToken = decrypt(config.access_token);
+  const isEvolution = config.provider === 'evolution';
+
+  // Meta and Evolution Go keep their secret in different columns
+  // (access_token vs evolution_instance_token) — decrypt only the one
+  // this config's provider actually uses. See migration 040: a
+  // 'meta' row is guaranteed access_token IS NOT NULL, an 'evolution'
+  // row is guaranteed evolution_instance_token IS NOT NULL.
+  const accessToken = isEvolution ? '' : decrypt(config.access_token);
+  const evolutionInstanceToken = isEvolution
+    ? decrypt(config.evolution_instance_token)
+    : '';
+  const evolutionApiUrl: string = config.evolution_api_url || '';
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
-  if (isLegacyFormat(config.access_token)) {
+  if (!isEvolution && isLegacyFormat(config.access_token)) {
     void db
       .from('whatsapp_config')
       .update({ access_token: encrypt(accessToken) })
@@ -288,10 +308,11 @@ export async function sendMessageToConversation(
   // belong to this same conversation — otherwise a caller could quote
   // messages they can't see by guessing UUIDs.
   let contextMessageId: string | undefined;
+  let evolutionQuoted: EvolutionQuoted | undefined;
   if (replyToMessageId) {
     const { data: parent, error: parentError } = await db
       .from('messages')
-      .select('message_id, conversation_id')
+      .select('message_id, conversation_id, sender_type')
       .eq('id', replyToMessageId)
       .eq('conversation_id', conversationId)
       .maybeSingle();
@@ -305,10 +326,22 @@ export async function sendMessageToConversation(
     }
     if (!parent.message_id) {
       console.warn(
-        '[send-message] reply target has no Meta message_id; sending without context'
+        '[send-message] reply target has no provider message_id; sending without context'
       );
     } else {
       contextMessageId = parent.message_id;
+      // Evolution Go needs the quoted message's sender JID, not just
+      // its id. We only reliably know that for a customer-sent parent
+      // (the contact's own phone) — an agent-sent parent would need
+      // the connected instance's own number, which isn't tracked
+      // anywhere today, so we skip the quote preview in that case
+      // rather than guess.
+      if (isEvolution && parent.sender_type === 'customer') {
+        evolutionQuoted = {
+          messageId: parent.message_id,
+          participant: `${sanitizePhoneForMeta(contact.phone)}@s.whatsapp.net`,
+        };
+      }
     }
   }
 
@@ -336,7 +369,75 @@ export async function sendMessageToConversation(
     sendLanguage = resolved.language;
   }
 
-  const attempt = async (phone: string): Promise<string> => {
+  const attemptEvolution = async (phone: string): Promise<string> => {
+    // Evolution Go has no template API — render the approved template
+    // down to plain text and send it as a regular message (same
+    // fallback the reference integration uses).
+    if (messageType === 'template') {
+      const result = await evolutionSendTextMessage({
+        apiUrl: evolutionApiUrl,
+        instanceToken: evolutionInstanceToken,
+        to: phone,
+        text: renderTemplateAsText(
+          templateRow,
+          templateName!,
+          templateMessageParams as SendTimeParams | undefined,
+          templateParams || []
+        ),
+        quoted: evolutionQuoted,
+      });
+      return result.messageId;
+    }
+    if (isMediaKind) {
+      const result = await evolutionSendMediaMessage({
+        apiUrl: evolutionApiUrl,
+        instanceToken: evolutionInstanceToken,
+        to: phone,
+        kind: messageType as MediaKind,
+        url: mediaUrl!,
+        caption: contentText || undefined,
+        filename: filename || undefined,
+        quoted: evolutionQuoted,
+      });
+      return result.messageId;
+    }
+    if (messageType === 'interactive') {
+      const p = interactivePayload!;
+      if (p.kind === 'buttons') {
+        const result = await evolutionSendInteractiveButtons({
+          apiUrl: evolutionApiUrl,
+          instanceToken: evolutionInstanceToken,
+          to: phone,
+          bodyText: p.body,
+          footerText: p.footer || undefined,
+          buttons: p.buttons,
+          quoted: evolutionQuoted,
+        });
+        return result.messageId;
+      }
+      const result = await evolutionSendInteractiveList({
+        apiUrl: evolutionApiUrl,
+        instanceToken: evolutionInstanceToken,
+        to: phone,
+        bodyText: p.body,
+        buttonLabel: p.button_label,
+        footerText: p.footer || undefined,
+        sections: p.sections,
+        quoted: evolutionQuoted,
+      });
+      return result.messageId;
+    }
+    const result = await evolutionSendTextMessage({
+      apiUrl: evolutionApiUrl,
+      instanceToken: evolutionInstanceToken,
+      to: phone,
+      text: contentText!,
+      quoted: evolutionQuoted,
+    });
+    return result.messageId;
+  };
+
+  const attemptMeta = async (phone: string): Promise<string> => {
     if (messageType === 'template') {
       const result = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
@@ -402,9 +503,13 @@ export async function sendMessageToConversation(
     return result.messageId;
   };
 
-  // Send via Meta — retry across phone-number variants if Meta rejects
-  // with "recipient not in allowed list"; persist a working variant
-  // back to the contact so the next send goes straight through.
+  const attempt = isEvolution ? attemptEvolution : attemptMeta;
+
+  // Send via the configured provider. The phone-variant retry loop is
+  // a Meta-specific quirk (sandbox "recipient not in allowed list"
+  // rejections) — for Evolution Go, isRecipientNotAllowedError never
+  // matches, so the loop naturally sends once and rethrows on any
+  // failure, which is what we want there too.
   let waMessageId = '';
   let workingPhone = sanitizedPhone;
   try {
@@ -432,9 +537,16 @@ export async function sendMessageToConversation(
     if (lastError) throw lastError;
   } catch (err) {
     const message =
-      err instanceof Error ? err.message : 'Unknown Meta API error';
-    console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+      err instanceof Error
+        ? err.message
+        : `Unknown ${isEvolution ? 'Evolution Go' : 'Meta'} API error`;
+    const providerLabel = isEvolution ? 'Evolution Go' : 'Meta';
+    console.error(`[send-message] ${providerLabel} send failed:`, message);
+    throw new SendMessageError(
+      isEvolution ? 'evolution_error' : 'meta_error',
+      `${providerLabel} API error: ${message}`,
+      502
+    );
   }
 
   if (workingPhone !== sanitizedPhone) {

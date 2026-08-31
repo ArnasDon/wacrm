@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { sendTemplateMessage } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import {
+  sendTextMessage as evolutionSendTextMessage,
+  renderTemplateAsText,
+} from '@/lib/whatsapp/evolution-api'
+import { resolveEngineProviderCreds } from '@/lib/whatsapp/engine-send-core'
 import type { SendTimeParams } from '@/lib/whatsapp/template-send-builder'
 import { resolveTemplateRow } from '@/lib/whatsapp/template-body'
 import {
@@ -15,6 +19,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from '@/lib/rate-limit'
+import { MAX_RECIPIENTS } from '@/lib/whatsapp/broadcast-core'
 
 interface BroadcastResult {
   phone: string
@@ -120,6 +125,20 @@ export async function POST(request: Request) {
       )
     }
 
+    // Same cap as the public /api/v1/broadcasts path (broadcast-core.ts).
+    // The rate limit above only throttles how often a campaign can be
+    // *started* — this bounds how many messages one call can fan out,
+    // so a single request can't blast an unbounded audience and run up
+    // real messaging cost or risk the number getting banned for spam.
+    if (recipients.length > MAX_RECIPIENTS) {
+      return NextResponse.json(
+        {
+          error: `A broadcast is capped at ${MAX_RECIPIENTS} recipients per request; split larger sends`,
+        },
+        { status: 400 }
+      )
+    }
+
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
       .select('*')
@@ -136,7 +155,7 @@ export async function POST(request: Request) {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const creds = resolveEngineProviderCreds(config)
 
     // Load the template row once so sendTemplateMessage can build
     // header + button components on each iteration. Loading inside
@@ -185,16 +204,31 @@ export async function POST(request: Request) {
 
       for (const variant of variants) {
         try {
-          const result = await sendTemplateMessage({
-            phoneNumberId: config.phone_number_id,
-            accessToken,
-            to: variant,
-            templateName: template_name,
-            language: resolvedTemplate.language,
-            template: templateRow ?? undefined,
-            messageParams: recipient.messageParams,
-            params: recipient.params ?? [],
-          })
+          // Evolution Go has no template API — same fallback used by
+          // the manual send path and the automations/flows engines:
+          // render the approved template down to plain text.
+          const result = creds.isEvolution
+            ? await evolutionSendTextMessage({
+                apiUrl: creds.evolutionApiUrl,
+                instanceToken: creds.evolutionInstanceToken,
+                to: variant,
+                text: renderTemplateAsText(
+                  templateRow,
+                  template_name,
+                  recipient.messageParams as SendTimeParams | undefined,
+                  recipient.params ?? []
+                ),
+              })
+            : await sendTemplateMessage({
+                phoneNumberId: creds.phoneNumberId,
+                accessToken: creds.accessToken,
+                to: variant,
+                templateName: template_name,
+                language: resolvedTemplate.language,
+                template: templateRow ?? undefined,
+                messageParams: recipient.messageParams,
+                params: recipient.params ?? [],
+              })
           sentMessageId = result.messageId
           lastError = null
           break

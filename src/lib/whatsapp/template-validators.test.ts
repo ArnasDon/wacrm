@@ -115,6 +115,14 @@ describe('validateHeader', () => {
       }),
     ).toThrow(/valid URL/);
   });
+  it('image header rejects a plain http:// URL (https-only, matches webhook_endpoints policy)', () => {
+    expect(() =>
+      validateHeader({
+        header_type: 'image',
+        header_media_url: 'http://example.com/img.jpg',
+      }),
+    ).toThrow(/https/);
+  });
 });
 
 describe('validateButtons', () => {

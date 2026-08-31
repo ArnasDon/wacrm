@@ -24,6 +24,25 @@
 
 import type { BuilderNode } from "@/components/flows/shared";
 
+// The three canvas-drawn labels that aren't user-authored content
+// (button/row titles echo what the user typed and never need this —
+// see edgeLabel below). Kept decoupled from next-intl's own types so
+// this stays the pure, framework-free module the header comment
+// promises; the caller supplies a translator, or omitting it falls
+// back to English (used by callers/tests with no React context).
+export type EdgeLabelKey = "next" | "true" | "false";
+export type TranslateEdgeLabel = (key: EdgeLabelKey) => string;
+
+const DEFAULT_EDGE_LABELS: Record<EdgeLabelKey, string> = {
+  next: "Next",
+  true: "true",
+  false: "false",
+};
+
+function edgeLabel(key: EdgeLabelKey, t?: TranslateEdgeLabel): string {
+  return t ? t(key) : DEFAULT_EDGE_LABELS[key];
+}
+
 export interface CanvasEdge {
   /** Stable per-edge id — required by React-Flow. */
   id: string;
@@ -37,7 +56,10 @@ export interface CanvasEdge {
   label?: string;
 }
 
-export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
+export function deriveCanvasEdges(
+  nodes: BuilderNode[],
+  t?: TranslateEdgeLabel,
+): CanvasEdge[] {
   const knownKeys = new Set(nodes.map((n) => n.node_key));
   const edges: CanvasEdge[] = [];
 
@@ -70,7 +92,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: trueNext,
             sourceHandle: "true",
-            label: "true",
+            label: edgeLabel("true", t),
           });
         }
         if (falseNext && knownKeys.has(falseNext)) {
@@ -79,7 +101,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
             source: node.node_key,
             target: falseNext,
             sourceHandle: "false",
-            label: "false",
+            label: edgeLabel("false", t),
           });
         }
         break;
@@ -171,7 +193,10 @@ export interface OutgoingSlot {
   label: string;
 }
 
-export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
+export function outgoingSlots(
+  node: BuilderNode,
+  t?: TranslateEdgeLabel,
+): OutgoingSlot[] {
   const cfg = node.config;
   switch (node.node_type) {
     case "start":
@@ -179,12 +204,12 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
-      return [{ id: "next", label: "Next" }];
+      return [{ id: "next", label: edgeLabel("next", t) }];
 
     case "condition":
       return [
-        { id: "true", label: "true" },
-        { id: "false", label: "false" },
+        { id: "true", label: edgeLabel("true", t) },
+        { id: "false", label: edgeLabel("false", t) },
       ];
 
     case "send_buttons": {

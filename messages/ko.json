@@ -15,7 +15,7 @@
     "createAccount": "계정 만들기"
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "7K PRIME TV CRM",
     "dashboard": "대시보드",
     "inbox": "인박스",
     "notifications": "알림",
@@ -66,6 +66,33 @@
     "errorTitle": "권한을 불러올 수 없음",
     "errorBody": "계정 역할을 불러오지 못해 모든 작업이 읽기 전용으로 처리되며 변경 사항은 저장되지 않습니다. 연결을 확인한 후 다시 시도하세요.",
     "retry": "다시 시도"
+  },
+  "LocaleSwitcher": {
+    "switchLanguage": "언어 변경"
+  },
+  "InteractiveBuilder": {
+    "kindButtons": "답장 버튼",
+    "kindList": "목록",
+    "bodyLabel": "본문",
+    "bodyPlaceholder": "고객이 옵션 위에서 보게 될 내용",
+    "headerLabel": "헤더 (선택 사항)",
+    "footerLabel": "푸터 (선택 사항)",
+    "showReplyIds": "답장 id 표시 (고급)",
+    "preview": "미리보기",
+    "buttonsLabel": "버튼 ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "버튼 텍스트",
+    "addButton": "버튼 추가",
+    "listButtonLabelField": "목록 버튼 텍스트",
+    "rowsLabel": "행 ({count}/{max})",
+    "sectionTitlePlaceholder": "섹션 제목 (선택 사항)",
+    "rowTitlePlaceholder": "행 제목",
+    "rowDescriptionPlaceholder": "설명 (선택 사항)",
+    "addRow": "행 추가",
+    "addSection": "섹션 추가",
+    "previewBodyPlaceholder": "메시지 본문…",
+    "previewDefaultButton": "버튼",
+    "previewDefaultMenu": "메뉴"
   },
   "Dashboard": {
     "page": {
@@ -149,7 +176,9 @@
       "clearAll": "모두 지우기",
       "noConversations": "대화를 찾을 수 없습니다",
       "noMessagesYet": "아직 메시지가 없습니다",
-      "unknown": "알 수 없음"
+      "unknown": "알 수 없음",
+      "muteSound": "새 메시지 알림음 끄기",
+      "unmuteSound": "새 메시지 알림음 켜기"
     },
     "messageThread": {
       "backToConversations": "대화 목록으로 돌아가기",
@@ -173,7 +202,11 @@
       "selectConversation": "대화를 선택하세요",
       "selectConversationHint": "왼쪽에서 대화를 선택해 메시지를 시작하세요",
       "today": "오늘",
-      "yesterday": "어제"
+      "yesterday": "어제",
+      "assignUpdateError": "배정 업데이트에 실패했습니다",
+      "waitForSend": "메시지 전송이 끝날 때까지 기다려 주세요",
+      "sendToPipeline": "파이프라인",
+      "sendToPipelineTitle": "이 연락처를 파이프라인에 추가"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -209,7 +242,16 @@
       "send": "보내기",
       "quickReplyNamePrompt": "이 빠른 답장의 이름을 지정하세요:",
       "quickReplySaved": "빠른 답장으로 저장되었습니다.",
-      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다."
+      "quickReplySaveError": "빠른 답장을 저장하지 못했습니다.",
+      "aiNotConfigured": "AI가 아직 설정되지 않았습니다 — 설정 → AI 어시스턴트에서 활성화하세요.",
+      "draftFailed": "답장 초안을 작성하지 못했습니다.",
+      "draftEmpty": "어시스턴트가 응답을 반환하지 않았습니다.",
+      "aiUnreachable": "AI 어시스턴트에 연결할 수 없습니다.",
+      "mediaTooLarge": "파일 크기가 {size}MB입니다 — {kind} 제한은 {limit}MB입니다.",
+      "uploadFailed": "업로드에 실패했습니다.",
+      "recordingTooLong": "녹음이 너무 깁니다 (16MB 초과).",
+      "voiceUnsupported": "이 브라우저에서는 음성 녹음이 지원되지 않습니다.",
+      "micDenied": "마이크 접근이 거부되었거나 사용할 수 없습니다."
     },
     "bubble": {
       "photo": "사진",
@@ -279,6 +321,23 @@
       "cancel": "취소",
       "send": "템플릿 보내기"
     },
+    "sendToPipeline": {
+      "dialogTitle": "파이프라인에 추가",
+      "dialogDesc": "{name}님을 위한 거래를 만들어 파이프라인 단계에 추가합니다.",
+      "pipeline": "파이프라인",
+      "selectPipeline": "파이프라인 선택",
+      "stage": "단계",
+      "dealTitle": "거래 제목",
+      "dealTitleOptional": "(선택 사항)",
+      "dealTitlePlaceholder": "기본값은 연락처 이름입니다",
+      "noPipelines": "아직 파이프라인이 없습니다.",
+      "noPipelinesHint": "먼저 파이프라인에서 하나를 만드세요.",
+      "cancel": "취소",
+      "create": "파이프라인에 추가",
+      "creating": "추가 중…",
+      "toastCreated": "{pipeline} — {stage}에 추가되었습니다.",
+      "toastFailed": "거래를 만들지 못했습니다."
+    },
     "sidebar": {
       "contactInfo": "연락처 정보",
       "tags": "태그",
@@ -286,7 +345,8 @@
       "deals": "딜",
       "noTags": "태그 없음",
       "noDeals": "딜 없음",
-      "addNotePlaceholder": "메모 추가..."
+      "addNotePlaceholder": "메모 추가...",
+      "copyFailed": "복사할 수 없습니다 — 번호를 직접 선택해 주세요."
     },
     "aiBanner": {
       "pausedTitle": "이 대화에서 AI 어시스턴트가 일시 중지됨",
@@ -426,6 +486,7 @@
       "saveChangesBtn": "변경 사항 저장",
       "saveCustomFieldsBtn": "커스텀 필드 저장",
       "toastPhoneRequired": "전화번호는 필수입니다",
+      "copyFailed": "복사할 수 없습니다 — 번호를 직접 선택해 주세요.",
       "toastUpdateFailed": "연락처를 업데이트하지 못했습니다",
       "toastUpdated": "연락처가 업데이트되었습니다",
       "toastNotAuthenticated": "인증되지 않았습니다",
@@ -500,6 +561,103 @@
       "toastDeleted": "\"{name}\"을(를) 삭제했습니다."
     }
   },
+  "Notifications": {
+    "page": {
+      "title": "알림",
+      "subtitle": "다른 팀원이 당신에게 배정한 대화가 여기에 표시됩니다.",
+      "markAllRead": "모두 읽음으로 표시",
+      "retry": "재시도",
+      "emptyTitle": "아직 알림이 없습니다",
+      "emptyDesc": "누군가 당신에게 대화를 배정하면 여기에 알림이 표시됩니다.",
+      "unread": "읽지 않음",
+      "markReadError": "알림을 읽음으로 표시하지 못했습니다",
+      "markAllReadError": "모두 읽음으로 표시하지 못했습니다"
+    }
+  },
+  "Join": {
+    "loading": "초대 확인 중…",
+    "roles": {
+      "admin": "관리자",
+      "agent": "상담원",
+      "viewer": "뷰어"
+    },
+    "errors": {
+      "not_found": {
+        "title": "초대를 찾을 수 없습니다",
+        "body": "이 링크는 유효한 초대와 일치하지 않습니다. URL을 확인하거나 초대한 사람에게 새 링크를 요청하세요."
+      },
+      "used": {
+        "title": "이미 사용된 초대입니다",
+        "body": "이 초대는 이미 수락되었습니다. 본인이 아니라면 계정 관리자에게 새 링크를 요청하세요."
+      },
+      "expired": {
+        "title": "초대가 만료되었습니다",
+        "body": "이 초대는 만료되었습니다. 계정 관리자에게 새 초대를 요청하세요 — 생성하는 데 몇 초밖에 걸리지 않습니다."
+      },
+      "server_error": {
+        "title": "문제가 발생했습니다",
+        "body": "지금은 이 초대를 확인할 수 없습니다. 잠시 후 페이지를 새로고침해 보세요."
+      },
+      "tryAgain": "다시 시도",
+      "createAccountInstead": "대신 새 계정 만들기",
+      "signIn": "로그인"
+    },
+    "invite": {
+      "titleRich": "<account>{accountName}</account>에 초대되었습니다",
+      "descriptionRich": "<role>{roleLabel}</role>(으)로 참여합니다. 링크는 {expiresDate}까지 유효합니다.",
+      "acceptButton": "초대 수락",
+      "accepting": "수락 중…",
+      "acceptNoteRich": "수락하면 로그인이 <account>{accountName}</account>(으)로 이동합니다. 가입 시 생성된 빈 개인 계정은 정리됩니다.",
+      "createAndJoin": "계정 만들고 참여하기",
+      "alreadyHaveAccount": "이미 계정이 있습니다"
+    },
+    "conflict": {
+      "title": "이 계정으로는 {accountName}에 참여할 수 없습니다",
+      "bodyRich": "<account>{accountName}</account>에 참여하려면 로그아웃한 후 다른 이메일로 다시 가입하세요. 초대 링크는 만료되지 않는 한 계속 유효합니다.",
+      "staySignedIn": "로그인 유지",
+      "signOutAndRetry": "로그아웃하고 다른 이메일 사용",
+      "signingOut": "로그아웃 중…",
+      "defaultMessage": "이미 다른 계정에 속해 있습니다. 다른 이메일로 로그인하여 이 계정에 참여하세요."
+    },
+    "toasts": {
+      "acceptFailed": "초대 수락에 실패했습니다",
+      "welcome": "팀에 오신 것을 환영합니다",
+      "serverUnreachable": "서버에 연결할 수 없습니다",
+      "signOutFailed": "로그아웃할 수 없습니다. 페이지를 새로고침해 보세요."
+    }
+  },
+  "AiPlayground": {
+    "title": "플레이그라운드",
+    "subtitle": "고객이 된 것처럼 응답을 테스트하세요",
+    "reset": "초기화",
+    "emptyTitle": "메시지를 보내 에이전트가 어떻게 응답하는지 확인하세요.",
+    "emptyDesc": "지식 베이스를 사용하며 핸드오프를 포함해 자동 응답 봇과 완전히 동일하게 동작합니다.",
+    "goToSetup": "아직 설정하지 않으셨나요? 설정으로 이동",
+    "handoffNotice": "여기서 상담원에게 넘어갑니다",
+    "thinking": "생각 중…",
+    "placeholder": "고객 메시지를 입력하세요…",
+    "errors": {
+      "notConfigured": "아직 설정된 에이전트가 없습니다 — 먼저 설정을 완료하세요.",
+      "noReply": "응답을 받지 못했습니다.",
+      "unreachable": "에이전트에 연결할 수 없습니다."
+    }
+  },
+  "AiUsage": {
+    "title": "토큰 사용량",
+    "description": "초안 작성과 자동 응답 봇이 사용한 공급자 키의 토큰입니다. 개수만 표시되며 메시지 내용은 저장되지 않습니다.",
+    "lastDays": "최근 {days}일",
+    "emptyTitle": "최근 {days}일 동안 AI 사용 내역이 없습니다.",
+    "emptyDesc": "어시스턴트가 초안을 작성하거나 자동 응답을 보내면 여기에 채워집니다.",
+    "statTotalTokens": "총 토큰",
+    "statLlmCalls": "LLM 호출",
+    "statAutoReply": "자동 응답",
+    "statDrafts": "초안",
+    "tokensPerDay": "일별 토큰",
+    "byModel": "모델별",
+    "modelCalls": "{tokens} 토큰 · 호출 {calls}회",
+    "truncatedNotice": "일부 구간만 표시 중입니다 — 사용량이 많아 최근 기록만 요약되어 있습니다.",
+    "loadFailed": "사용량을 불러오지 못했습니다"
+  },
   "Pipelines": {
     "page": {
       "selectPipeline": "파이프라인 선택",
@@ -512,7 +670,7 @@
       "newPipeline": "새 파이프라인",
       "pipelineName": "파이프라인 이름",
       "pipelineNamePlaceholder": "예: 기업 영업",
-      "defaultStagesDesc": "기본 단계(신규 리드 → 성사)가 자동으로 생성됩니다.",
+      "defaultStagesDesc": "기본 단계({first} → {last})가 자동으로 생성됩니다.",
       "cancel": "취소",
       "creating": "만드는 중...",
       "createPipelineBtn": "파이프라인 만들기",
@@ -520,7 +678,13 @@
       "toastFailedMoveDeal": "딜을 이동하지 못했습니다",
       "toastFailedCreatePipeline": "파이프라인을 만들지 못했습니다",
       "toastPipelineCreated": "파이프라인이 생성되었습니다",
-      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다."
+      "toastNotLinkedToAccount": "프로필이 계정에 연결되어 있지 않습니다.",
+      "defaultPipelineName": "영업 파이프라인",
+      "defaultStageNewLead": "신규 리드",
+      "defaultStageQualified": "자격 확인됨",
+      "defaultStageProposalSent": "제안서 발송",
+      "defaultStageNegotiation": "협상 중",
+      "defaultStageWon": "성사됨"
     },
     "board": {
       "dropDealHere": "여기에 딜을 놓으세요",
@@ -529,13 +693,17 @@
     "card": {
       "noContact": "연락처 없음",
       "won": "성사",
-      "lost": "실패"
+      "lost": "실패",
+      "openConversation": "대화 열기",
+      "noConversation": "이 연락처에는 아직 대화가 없습니다"
     },
     "form": {
       "editDeal": "딜 수정",
       "newDeal": "새 딜",
       "title": "제목",
       "titlePlaceholder": "딜 제목",
+      "titleOptional": "(선택 사항)",
+      "titleHint": "비워두면 연락처 이름이 사용됩니다.",
       "contact": "연락처",
       "selectContact": "연락처 선택",
       "linkToConversation": "대화에 연결",
@@ -559,7 +727,7 @@
       "confirm": "확인",
       "deleting": "삭제 중...",
       "deleteDeal": "딜 삭제",
-      "toastRequired": "제목, 연락처, 단계는 필수입니다",
+      "toastRequired": "연락처와 단계는 필수입니다",
       "toastFailedSave": "딜을 저장하지 못했습니다",
       "toastNotSignedIn": "로그인되어 있지 않습니다",
       "toastNotLinked": "프로필이 계정에 연결되어 있지 않습니다.",
@@ -919,6 +1087,7 @@
       "activeAria": "활성",
       "save": "저장",
       "saveDraft": "초안 저장",
+      "delete": "삭제",
       "untitled": "제목 없는 자동화",
       "backToAutomations": "자동화로 돌아가기",
       "toasts": {
@@ -1012,6 +1181,29 @@
         "matchExact": "정확히 일치",
         "closeConversationHint": "대화 상태를 \"닫힘\"으로 설정합니다. 추가 설정이 필요 없습니다."
       }
+    },
+    "templates": {
+      "welcome_message": {
+        "name": "환영 메시지",
+        "description": "처음 연락한 고객에게 인사말로 자동 응답합니다.",
+        "step0": "안녕하세요! 👋 연락 주셔서 감사합니다. 곧 답변 드리겠습니다."
+      },
+      "out_of_office": {
+        "name": "부재중",
+        "description": "업무 시간 외에 아무도 기다리지 않도록 자동으로 응답합니다.",
+        "step1": "메시지 감사합니다! 저희 팀은 현재 오프라인 상태이며(오전 9시–오후 6시), 내일 가장 먼저 답변드리겠습니다."
+      },
+      "lead_qualifier": {
+        "name": "리드 확인",
+        "description": "수신 리드를 걸러내기 위한 자격 확인 질문을 합니다.",
+        "keywords": "가격, 견적, 구매",
+        "step0": "좋습니다 — 가격 문의 도와드릴게요! 간단한 질문 하나: 대략 몇 자리(시트)가 필요하신가요?"
+      },
+      "follow_up_reminder": {
+        "name": "후속 조치 알림",
+        "description": "24시간 내에 답장이 없으면 알림을 보냅니다.",
+        "step1": "다시 한번 확인드립니다 — 다른 궁금한 점 있으신가요? 언제든 도와드리겠습니다!"
+      }
     }
   },
   "Flows": {
@@ -1098,6 +1290,25 @@
       "listView": "목록",
       "noNodeSelected": "선택된 노드가 없습니다",
       "noNodeDesc": "캔버스에서 노드를 선택해 설정을 편집하세요.",
+      "backToFlows": "플로우로 돌아가기",
+      "flowNamePlaceholder": "플로우 이름",
+      "unsavedChangesHint": "저장되지 않은 변경사항 — 저장을 눌러 유지하세요",
+      "edited": "수정됨",
+      "runs": "실행",
+      "delete": "삭제",
+      "pause": "일시정지",
+      "activateDisabledHint": "활성화하기 전에 아래 문제를 해결하세요",
+      "activate": "활성화",
+      "save": "저장",
+      "descriptionPlaceholder": "짧은 설명을 추가하세요 (내부용 — 고객에게는 보이지 않습니다)",
+      "descriptionAria": "플로우 설명",
+      "statusDraft": "초안",
+      "statusActive": "활성",
+      "statusArchived": "보관됨",
+      "editorViewLabel": "편집기 보기",
+      "edgeLabelNext": "다음",
+      "edgeLabelTrue": "참",
+      "edgeLabelFalse": "거짓",
       "form": {
         "advancesTo": "다음 진행",
         "textToCustomer": "고객에게 전송되는 텍스트",
@@ -1155,7 +1366,17 @@
         "filenamePlaceholder": "invoice.pdf",
         "advanceAfterSending": "전송 후 다음 진행",
         "pickNextNode": "다음 노드를 선택하세요…",
-        "none": "— 없음 —"
+        "none": "— 없음 —",
+        "fileTooLarge": "파일 크기가 {size}MB입니다 — 제한은 16MB입니다.",
+        "fileUploaded": "파일이 업로드되었습니다.",
+        "uploadFailed": "업로드에 실패했습니다.",
+        "defaultButtonTitle": "옵션",
+        "defaultRowTitle": "옵션 {number}",
+        "removeSection": "섹션 제거",
+        "contactFieldName": "이름",
+        "contactFieldEmail": "이메일",
+        "contactFieldPhone": "전화번호",
+        "contactFieldCompany": "회사"
       },
       "categories": {
         "messaging": "메시징",
@@ -1234,6 +1455,45 @@
       "modeRemove": "제거",
       "tagPicked": "{tag} 태그 {mode}…",
       "tagNone": "태그 {mode} (선택된 태그 없음)"
+    },
+    "templates": {
+      "welcome_menu": {
+        "name": "환영 메뉴",
+        "description": "키워드를 입력한 고객을 맞이하고, 신규 고객인지 기존 고객인지에 따라 적절한 담당자에게 연결합니다.",
+        "keywords": "지원, 도움, 안녕",
+        "welcomeText": "안녕하세요! 👋 고객 지원팀입니다. 기존 고객이신가요, 아니면 처음이신가요?",
+        "welcomeFooterText": "아래 버튼을 눌러 계속하세요.",
+        "existingButtonTitle": "기존 고객",
+        "newButtonTitle": "신규 고객",
+        "existingHandoffNote": "기존 고객이 도움이 필요합니다 — 답변 전에 계정 이력을 확인하세요.",
+        "newHandoffNote": "신규 고객 — 가격 안내와 온보딩 링크를 공유하세요."
+      },
+      "faq_bot": {
+        "name": "FAQ 봇",
+        "description": "자주 묻는 질문에 자동으로 답변합니다. 고객이 목록에서 주제를 선택하면 봇이 답변하고 종료합니다.",
+        "keywords": "faq, 질문, 문의",
+        "topicsText": "무엇을 도와드릴까요?",
+        "topicsButtonLabel": "주제 보기",
+        "commonQuestionsTitle": "자주 묻는 질문",
+        "hoursRowTitle": "영업시간",
+        "pricingRowTitle": "요금",
+        "refundsRowTitle": "환불 정책",
+        "otherSectionTitle": "기타",
+        "humanRowTitle": "상담원과 대화하기",
+        "hoursAnswerText": "월-금 현지 시간 오전 9시~오후 6시에 운영합니다. 주말에는 긴급한 문의만 지원합니다.",
+        "pricingAnswerText": "요금은 월 $9부터 시작합니다. 자세한 내용은 https://example.com/pricing 에서 확인하세요.",
+        "refundsAnswerText": "구매 후 30일 이내 환불이 가능합니다. 주문 번호를 회신해 주시면 처리해 드리겠습니다.",
+        "humanHandoffNote": "고객이 FAQ 봇에서 상담원과의 대화를 요청했습니다."
+      },
+      "lead_capture": {
+        "name": "리드 수집",
+        "description": "첫 문의 고객을 맞이하고 이름·이메일·회사명을 수집한 뒤, 답변 내용을 메모에 담아 영업팀에 인계합니다.",
+        "introText": "환영합니다! 👋 적합한 담당자에게 연결해 드리기 위해 몇 가지 간단한 질문을 드릴게요.",
+        "askNamePrompt": "성함이 어떻게 되시나요?",
+        "askEmailPrompt": "감사합니다, {{vars.name}}님! 업무용 이메일 주소가 어떻게 되시나요?",
+        "askCompanyPrompt": "거의 다 됐습니다 — 회사명이 어떻게 되시나요?",
+        "handoffNote": "신규 리드 — 이름={{vars.name}}, 이메일={{vars.email}}, 회사={{vars.company}}."
+      }
     }
   },
   "Settings": {
@@ -1255,6 +1515,27 @@
       "appearance": "{mode} 모드 · {theme} 색상",
       "yourAccount": "내 계정",
       "loading": "불러오는 중…"
+    },
+    "quickReplies": {
+      "title": "빠른 답장",
+      "description": "상담원이 받은편지함 작성창에서 삽입할 수 있는 재사용 가능한 문구입니다 — 일반 텍스트 또는 저장된 인터랙티브 메시지입니다.",
+      "newButton": "새 빠른 답장",
+      "emptyState": "아직 빠른 답장이 없습니다. 대화에서 재사용할 답장을 만들어 보세요.",
+      "editTitle": "빠른 답장 편집",
+      "createTitle": "새 빠른 답장",
+      "nameLabel": "이름",
+      "namePlaceholder": "예: 영업시간",
+      "textTab": "텍스트",
+      "interactiveTab": "인터랙티브",
+      "textPlaceholder": "삽입할 메시지 텍스트",
+      "cancel": "취소",
+      "save": "저장",
+      "deleteConfirm": "이 빠른 답장을 삭제하시겠습니까?",
+      "nameRequired": "빠른 답장의 이름을 입력하세요.",
+      "saveError": "빠른 답장을 저장하지 못했습니다.",
+      "updated": "빠른 답장이 업데이트되었습니다.",
+      "created": "빠른 답장이 생성되었습니다.",
+      "deleteError": "빠른 답장을 삭제하지 못했습니다."
     },
     "members": {
       "title": "팀원",
@@ -1285,7 +1566,13 @@
       "removeDialogDesc": "<bold>{name}</bold>을(를) 이 계정에서 제거하시겠습니까? 이 계정에서 로그아웃되며 다음 로그인 시 새로운 개인 계정이 발급됩니다. 로그인 정보 자체는 삭제되지 않습니다.",
       "cancel": "취소",
       "removing": "제거 중...",
-      "removeBtn": "멤버 제거"
+      "removeBtn": "멤버 제거",
+      "serverUnreachable": "서버에 연결할 수 없습니다",
+      "loadMembersError": "멤버를 불러오지 못했습니다",
+      "loadInvitationsError": "초대를 불러오지 못했습니다",
+      "updateRoleError": "역할 업데이트에 실패했습니다",
+      "removeMemberError": "멤버 제거에 실패했습니다",
+      "revokeInvitationError": "초대 취소에 실패했습니다"
     },
     "invite": {
       "inviteCreated": "초대가 생성되었습니다",
@@ -1353,6 +1640,7 @@
     "templates": {
       "title": "메시지 템플릿",
       "description": "템플릿을 만들어 Meta에 승인을 요청하세요. 다른 곳에서 승인된 템플릿을 가져오려면 \"Meta에서 동기화\"를 사용하세요.",
+      "descriptionEvolution": "재사용 가능한 메시지 템플릿을 만드세요. 승인이 필요 없으며 바로 사용할 수 있습니다.",
       "syncFromMeta": "Meta에서 동기화",
       "syncing": "동기화 중…",
       "syncTitle": "Meta WhatsApp 비즈니스 계정에서 승인된 템플릿 가져오기",
@@ -1360,6 +1648,7 @@
       "noTemplates": "아직 템플릿이 없습니다.",
       "createFirst": "시작할 첫 메시지 템플릿을 만드세요.",
       "editTitle": "수정하면 Meta 재검토가 트리거되어 상태가 대기 중으로 바뀝니다.",
+      "editTitleEvolution": "이 템플릿을 수정하세요 — 변경 사항이 즉시 적용됩니다.",
       "editLabel": "템플릿 수정",
       "edit": "수정",
       "resubmitTitle": "템플릿을 수정해 Meta 검토를 위해 다시 제출하세요.",
@@ -1369,22 +1658,26 @@
       "deleteLocallyAria": "로컬에서 템플릿 삭제",
       "deleteMetaLocallyTitle": "Meta와 로컬에서 삭제",
       "deleteLocallyTitle": "로컬에서 삭제",
-
       "dialogEditTitle": "메시지 템플릿 수정",
       "dialogNewTitle": "새 메시지 템플릿",
       "dialogEditDesc": "변경 사항을 저장해 Meta에 재제출하세요. 검토 중에는 상태가 다시 대기 중으로 바뀝니다.",
+      "dialogEditDescEvolution": "변경 사항을 저장하세요 — 승인 절차 없이 즉시 적용됩니다.",
       "dialogNewDesc": "템플릿을 만들어 Meta 승인을 요청하세요. 승인되면 브로드캐스트와 인박스에서 사용할 수 있습니다.",
+      "dialogNewDescEvolution": "인박스에서 바로 보낼 수 있는 재사용 템플릿을 만드세요 — 이 연결 유형은 승인이 필요 없습니다.",
       "authWarning": "AUTHENTICATION 템플릿은 본문과 OTP 버튼 형식이 고정되어 있어 별도의 빌더가 필요합니다. 지금은 Meta WhatsApp 관리자에서 만든 뒤 <bold>Meta에서 동기화</bold>로 가져오세요.",
-
       "templateName": "템플릿 이름",
       "namePlaceholder": "예: order_confirmation",
       "nameFixed": "템플릿이 Meta에 존재하면 이름이 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
       "nameHint": "소문자, 숫자, 밑줄만 사용할 수 있습니다.",
       "category": "카테고리",
+      "categoryMarketing": "마케팅",
+      "categoryUtility": "유틸리티",
+      "categoryAuthentication": "인증",
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
+      "langFixedEvolution": "언어는 생성 후 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
-
+      "langHintEvolution": "템플릿을 구분하기 위한 용도입니다 — 정리 방식에 맞는 것을 선택하세요.",
       "header": "헤더",
       "headerNone": "없음",
       "headerText": "텍스트",
@@ -1393,8 +1686,10 @@
       "headerDocument": "문서",
       "headerTextPlaceholder": "헤더 텍스트 (최대 60자, {{1}} 선택 가능)",
       "headerSampleAria": "헤더 변수 샘플 값",
+      "headerTextAria": "헤더 텍스트",
       "headerSamplePlaceholder": "{{1}}의 샘플 값 (Meta 검토에 필요)",
-
+      "headerSampleAlt": "헤더 샘플",
+      "qualityScoreTitle": "Meta 품질 점수",
       "uploadImage": "이미지 업로드",
       "uploadHint": "JPEG 또는 PNG, 5MB 이하",
       "mediaUrlPlaceholder": "https://… (또는 공개 {format} 링크 붙여넣기)",
@@ -1402,17 +1697,14 @@
       "mediaHint": "공개적으로 접근 가능한 HTTPS 링크여야 합니다. Meta가 검토 중 한 번 가져오므로 약 24시간 동안 살아있어야 합니다.",
       "videoHint": " 권장: MP4 / 3GPP, 16MB 이하, 60초 이하.",
       "documentHint": " 권장: PDF, 100MB 이하.",
-
       "bodyText": "본문 텍스트",
       "bodyPlaceholder": "안녕하세요 {{1}}님, 주문 {{2}}이(가) 확정되었습니다.",
       "sampleValues": "샘플 값 (Meta가 템플릿 검토에 사용합니다)",
       "bodyHint": "변수에는 {{1}}, {{2}}를 사용하세요 ({{1}}부터 연속되어야 합니다).",
       "sampleAria": "본문 변수 {var}의 샘플 값",
       "samplePlaceholder": "{var}의 샘플",
-
       "footer": "푸터 (선택)",
       "footerPlaceholder": "선택적 푸터 텍스트 (최대 60자)",
-
       "buttons": "버튼 (선택)",
       "addButton": "버튼 추가",
       "buttonsLimit": "최대 {max}개 버튼. QUICK_REPLY 버튼은 URL / 전화 / 코드 복사 버튼보다 앞에 와야 합니다.",
@@ -1425,23 +1717,24 @@
       "urlSamplePlaceholder": "{{1}}의 예시 값 (URL에 변수가 있을 때 필요)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "예시 코드 (예: SUMMER20)",
-
       "cancel": "취소",
       "saving": "저장 중…",
       "submitting": "제출 중…",
       "saveResubmit": "저장 & 재제출",
+      "saveChanges": "변경 사항 저장",
       "submitApproval": "승인 요청",
-
+      "saveTemplate": "템플릿 저장",
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
       "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
       "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
-
       "toastLoadFailed": "템플릿을 불러오지 못했습니다",
       "toastSubmitFailed": "제출하지 못했습니다",
       "toastSubmitEditSuccess": "수정 사항이 제출되었습니다 — Meta는 보통 24시간 이내에 검토합니다.",
+      "toastSubmitEditSuccessEvolution": "템플릿이 업데이트되었습니다.",
       "toastSubmitNewSuccess": "Meta에 제출되었습니다 — 일반적인 검토 시간은 24시간입니다. 상태는 자동으로 업데이트됩니다.",
+      "toastSubmitNewSuccessEvolution": "템플릿이 저장되어 바로 사용할 수 있습니다.",
       "toastSaveEditDry": "템플릿이 업데이트되었습니다 (드라이런 — Meta 호출 없음)",
       "toastSaveNewDry": "템플릿이 저장되었습니다 (드라이런 — Meta 호출 없음)",
       "toastSyncCount": "Meta에서 템플릿 {total}개를 동기화했습니다",
@@ -1454,7 +1747,48 @@
       "toastInvalidImage": "헤더 이미지는 JPEG 또는 PNG여야 합니다.",
       "toastImageTooLarge": "이미지 크기가 {size}MB입니다 — Meta 제한은 5MB입니다.",
       "toastUploadSuccess": "이미지가 업로드되었습니다.",
-      "toastUploadFailed": "업로드에 실패했습니다."
+      "toastUploadFailed": "업로드에 실패했습니다.",
+      "statusDraft": "임시 저장",
+      "statusPending": "대기 중",
+      "statusApproved": "승인됨",
+      "statusRejected": "거부됨",
+      "statusPaused": "일시 중지됨",
+      "statusDisabled": "비활성화됨",
+      "statusInAppeal": "이의 신청 중",
+      "statusPendingDeletion": "삭제 대기 중",
+      "validationNameRequired": "템플릿 이름은 필수입니다.",
+      "validationNameInvalidChars": "템플릿 이름은 소문자, 숫자, 밑줄만 사용할 수 있습니다 (1~512자).",
+      "validationLanguageRequired": "언어는 필수입니다.",
+      "validationBodyRequired": "본문 텍스트는 필수입니다.",
+      "validationBodyTooLong": "본문 텍스트가 {max}자를 초과합니다 (현재 {count}자).",
+      "validationBodyVarsNotContiguous": "본문 변수는 1부터 연속되어야 합니다 — 발견됨: {found}",
+      "validationFooterTooLong": "바닥글이 {max}자를 초과합니다 (현재 {count}자).",
+      "validationFooterHasVariables": "바닥글에는 변수를 포함할 수 없습니다 (Meta 규칙).",
+      "validationHeaderTextRequired": "텍스트 헤더에는 헤더 내용이 필요합니다.",
+      "validationHeaderTextTooLong": "헤더 텍스트가 {max}자를 초과합니다 (현재 {count}자).",
+      "validationHeaderTextTooManyVars": "헤더 텍스트는 변수를 최대 하나만 사용할 수 있습니다 — {count}개 발견됨.",
+      "validationHeaderTextVarMustBeOne": "헤더 텍스트는 변수를 하나만 사용할 수 있으며, 첫 번째 변수여야 합니다.",
+      "validationHeaderMediaRequired": "{type} 헤더에는 공개 샘플 URL이나 업로드된 파일이 필요합니다.",
+      "validationHeaderMediaUrlInvalid": "헤더 미디어 URL은 유효한 URL이어야 합니다.",
+      "validationHeaderMediaUrlHttps": "헤더 미디어 URL은 https를 사용해야 합니다.",
+      "validationButtonsTooMany": "템플릿은 최대 {max}개의 버튼을 가질 수 있습니다 (현재 {count}개).",
+      "validationButtonsUrlTooMany": "URL 버튼은 최대 {max}개까지 허용됩니다 (현재 {count}개).",
+      "validationButtonsPhoneTooMany": "전화 버튼은 최대 {max}개까지 허용됩니다 (현재 {count}개).",
+      "validationButtonsCopyCodeTooMany": "코드 복사 버튼은 최대 {max}개까지 허용됩니다 (현재 {count}개).",
+      "validationButtonsQuickReplyInterleaved": "빠른 답장 버튼은 URL/전화/코드 복사 버튼과 섞을 수 없습니다 — 앞쪽에 모아주세요.",
+      "validationButtonMissingText": "버튼 #{index} ({type})에 라벨이 없습니다.",
+      "validationButtonTextTooLong": "버튼 #{index}의 라벨이 {max}자를 초과합니다.",
+      "validationButtonUrlMissing": "URL 버튼 #{index}에 URL이 없습니다.",
+      "validationButtonUrlInvalid": "URL 버튼 #{index}의 URL이 유효하지 않습니다.",
+      "validationButtonUrlTooManyVars": "URL 버튼 #{index}은 변수를 최대 하나만 가질 수 있습니다 (Meta 규칙).",
+      "validationButtonUrlVarMustBeOne": "URL 버튼 #{index}의 변수는 첫 번째여야 합니다 (Meta 규칙).",
+      "validationButtonUrlExampleRequired": "URL 버튼 #{index}이 변수를 사용합니다 — Meta는 예시 값을 요구합니다.",
+      "validationButtonPhoneMissing": "전화 버튼 #{index}에 전화번호가 없습니다.",
+      "validationButtonCopyCodeExampleMissing": "코드 복사 버튼 #{index}에 예시 값이 없습니다.",
+      "validationSampleBodyCountMismatch": "본문에 변수가 {varCount}개 있습니다 — 정확히 {varCount}개의 샘플 값을 입력하세요 (현재 {gotCount}개).",
+      "validationSampleHeaderCountMismatch": "헤더에 변수가 {varCount}개 있습니다 — 정확히 {varCount}개의 샘플 값을 입력하세요 (현재 {gotCount}개).",
+      "validationSampleBodyValueEmpty": "본문 샘플 값 #{index}이 비어 있습니다.",
+      "validationSampleHeaderValueEmpty": "헤더 샘플 값 #{index}이 비어 있습니다."
     },
     "roles": {
       "admin": "관리자",
@@ -1510,6 +1844,27 @@
       "mirrorInboundDesc": "고객이 보낸 사진, 동영상, 음성 메모, 문서를 모두 복사해 저장합니다. Supabase 스토리지를 사용하며 16MB를 초과하는 파일은 건너뜁니다.",
       "mirrorInboundOffWarning": "새 첨부파일이 더 이상 복사되지 않으며, 도착 후 약 30일이 지나면 볼 수 없게 됩니다.",
       "mirrorInboundSaveFailed": "첨부파일 설정을 업데이트하지 못했습니다.",
+      "webhookUrlCopied": "웹훅 URL이 복사되었습니다",
+      "copyFailed": "복사할 수 없습니다 — URL을 직접 선택해 주세요.",
+      "loadConfigError": "WhatsApp 설정을 불러오지 못했습니다",
+      "phoneNumberIdRequired": "전화번호 ID는 필수입니다",
+      "accessTokenRequiredInitial": "초기 설정 시 액세스 토큰이 필요합니다",
+      "reenterAccessToken": "변경 사항을 저장하려면 액세스 토큰을 다시 입력하세요",
+      "saveConfigError": "설정을 저장하지 못했습니다",
+      "savedButRegistrationFailed": "저장되었지만 Meta가 번호를 등록하지 못했습니다: {error}",
+      "registrationSkipped": "자격 증명이 저장 및 확인되었습니다. 인바운드 등록은 건너뛰었습니다(PIN 없음) — 아래 등록 상태를 확인하세요.",
+      "liveConnected": "라이브 — {name}에서 이제 이벤트를 수신할 수 있습니다.",
+      "connectedGeneric": "WhatsApp이 연결되었습니다. 1분 이내에 이벤트 수신이 시작됩니다.",
+      "connectedToName": "{name}에 연결됨",
+      "apiConnectionSuccess": "API 연결에 성공했습니다",
+      "apiConnectionFailed": "API 연결에 실패했습니다",
+      "connectionTestFailed": "연결 테스트에 실패했습니다. 네트워크를 확인하고 다시 시도하세요.",
+      "registrationLive": "번호가 완전히 연결되었습니다 — Meta가 이벤트를 전달하고 있습니다.",
+      "registrationNotLive": "번호가 완전히 등록되지 않았습니다. 어떤 단계가 실패했는지 아래 점검 항목을 확인하세요.",
+      "verifyEndpointUnreachable": "확인 엔드포인트에 연결할 수 없습니다.",
+      "resetConfirm": "현재 WhatsApp 설정이 삭제되어 다시 입력해야 합니다. 계속하시겠습니까?",
+      "resetConfigError": "설정 초기화에 실패했습니다",
+      "resetConfigSuccess": "설정이 초기화되었습니다. 이제 자격 증명을 다시 입력할 수 있습니다.",
       "saving": "저장 중...",
       "saveConfig": "설정 저장",
       "testing": "테스트 중...",
@@ -1536,7 +1891,46 @@
       "step4_3": "위의 <strong class=\"text-foreground\">웹훅 콜백 URL</strong>을 붙여넣기",
       "step4_4": "여기서 설정한 것과 동일한 <strong class=\"text-foreground\">인증 토큰</strong>을 입력",
       "step4_5": "\"messages\" 웹훅 필드를 구독",
-      "metaDocs": "Meta WhatsApp API 문서"
+      "metaDocs": "Meta WhatsApp API 문서",
+      "providerMeta": "Meta Cloud API",
+      "providerEvolution": "Evolution Go",
+      "evolution": {
+        "title": "Evolution Go 연결",
+        "description": "자체 호스팅한 Evolution Go 서버를 통해 비공식 WhatsApp 번호를 연결합니다. Meta Cloud API와 독립적으로 작동합니다 — 이 계정은 두 제공업체 중 하나만 선택할 수 있습니다.",
+        "statusConnected": "연결됨",
+        "statusDisconnected": "연결되지 않음",
+        "apiUrlLabel": "Evolution Go 서버 URL",
+        "instanceNameLabel": "인스턴스 이름",
+        "adminTokenLabel": "관리자 API 키",
+        "adminTokenPlaceholderSaved": "저장됨 — 재연결하거나 교체하려면 다시 입력하세요",
+        "adminTokenHint": "Evolution Go 서버의 관리자 apikey입니다 (평문으로 저장되지 않으며, 연결할 때마다 다시 입력해야 합니다).",
+        "connectButton": "연결하고 QR 코드 표시",
+        "disconnectButton": "연결 해제",
+        "disconnectConfirm": "이 Evolution Go 인스턴스를 연결 해제하시겠습니까? 다시 연결하려면 새 QR 코드를 스캔해야 합니다.",
+        "disconnectedToast": "Evolution Go 인스턴스 연결이 해제되었습니다",
+        "disconnectError": "Evolution Go 인스턴스 연결 해제에 실패했습니다",
+        "connectError": "Evolution Go에 연결하지 못했습니다",
+        "connectedToast": "Evolution Go를 통해 WhatsApp이 연결되었습니다",
+        "qrPollError": "연결 상태를 확인하지 못했습니다",
+        "validationRequired": "서버 URL, 인스턴스 이름, 관리자 API 키가 모두 필요합니다",
+        "qrTitle": "스캔하여 WhatsApp 연결",
+        "qrDescription": "연결할 휴대폰에서 WhatsApp을 열고 → 연결된 기기 → 기기 연결을 선택한 다음 이 코드를 스캔하세요.",
+        "qrTimeout": "QR 코드가 만료되었습니다. 재시도를 클릭하여 새 코드를 생성하세요.",
+        "qrRetry": "재시도"
+      },
+      "dangerZone": {
+        "title": "대화 초기화",
+        "description": "하나의 WhatsApp 번호 연결을 해제한 직후, 다른 번호를 연결하기 전에 실행하세요. 이전 번호의 남은 대화가 새 번호/제공업체가 활성화된 후 전송 오류를 일으킬 수 있습니다.",
+        "button": "모든 대화 삭제",
+        "dialogTitle": "모든 대화를 삭제하시겠습니까?",
+        "dialogDescription": "이 계정의 모든 대화와 메시지가 영구적으로 삭제됩니다 — 되돌릴 수 없습니다. 연락처와 파이프라인 딜은 유지됩니다.",
+        "confirmLabel": "확인하려면 {word}를 입력하세요",
+        "confirmWord": "삭제",
+        "cancel": "취소",
+        "confirmButton": "전체 삭제",
+        "successToast": "{count, plural, =0 {삭제할 대화가 없습니다} other {대화 #개가 삭제되었습니다}}",
+        "errorToast": "대화를 삭제하지 못했습니다"
+      }
     },
     "sections": {
       "overview": "개요",
@@ -1583,7 +1977,6 @@
       "profileSaved": "프로필이 저장되었습니다",
       "emailChangeFailed": "이메일 변경 실패: {message}",
       "profileSavedEmailCheck": "프로필이 저장되었습니다 — 이메일 주소 변경을 확인하려면 이메일을 확인하세요",
-
       "passwordTitle": "비밀번호",
       "passwordDesc": "최소 {min}자 이상 사용하세요. 변경 후에도 이 기기에서는 로그인이 유지됩니다.",
       "currentPassword": "현재 비밀번호",
@@ -1597,7 +1990,6 @@
       "currentPasswordIncorrect": "현재 비밀번호가 올바르지 않습니다",
       "passwordUpdateFailed": "비밀번호 업데이트 실패: {message}",
       "passwordUpdated": "비밀번호가 업데이트되었습니다",
-
       "sessionsTitle": "활성 세션",
       "sessionsDesc": "이 기기를 포함해 로그인되어 있는 모든 기기에서 로그아웃합니다. 노트북을 분실했거나 비밀번호를 공유한 경우 유용합니다.",
       "signOutAll": "모든 기기에서 로그아웃",

@@ -22,6 +22,7 @@ import {
   Loader2,
 } from "lucide-react";
 import { extractVariableIndices } from "@/lib/whatsapp/template-validators";
+import { getTemplateCategoryLabel } from "@/lib/template-status";
 import { useTranslations } from "next-intl";
 
 export interface TemplateSendValues {
@@ -80,6 +81,10 @@ export function TemplatePicker({
   onSelect,
 }: TemplatePickerProps) {
   const t = useTranslations("Inbox.templatePicker");
+  // Separate namespace for the category badge's label — shared with
+  // the Settings templates screen so "Marketing"/"Utility" reads the
+  // same translated word everywhere a template shows up.
+  const tCategory = useTranslations("Settings.templates");
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -230,7 +235,7 @@ export function TemplatePicker({
                           {t.name}
                         </p>
                         <Badge className="border border-primary/30 bg-primary/20 text-[10px] text-primary">
-                          {t.category}
+                          {getTemplateCategoryLabel(t.category, tCategory)}
                         </Badge>
                         {t.language && (
                           <span className="text-[10px] uppercase text-muted-foreground">

@@ -48,6 +48,22 @@ export async function GET(
       )
     }
 
+    // Defense in depth: confirm this mediaId actually belongs to a
+    // message in one of this account's conversations before spending
+    // the account's Meta access token on it. Meta's own token scoping
+    // already stops a token from resolving another WABA's media, but
+    // that's an undocumented third-party behaviour, not a contract —
+    // don't rely on it alone for cross-tenant isolation.
+    const { data: mediaMessage } = await supabase
+      .from('messages')
+      .select('id, conversations!inner(account_id)')
+      .eq('media_url', `/api/whatsapp/media/${mediaId}`)
+      .eq('conversations.account_id', accountId)
+      .maybeSingle()
+    if (!mediaMessage) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
+
     // Fetch and decrypt WhatsApp config
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')

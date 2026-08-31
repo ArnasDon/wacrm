@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "7K PRIME TV CRM",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -66,6 +66,33 @@
     "errorTitle": "Could not load your permissions",
     "errorBody": "Your account role did not load, so every action is treated as read-only and changes will not save. Check your connection and try again.",
     "retry": "Retry"
+  },
+  "LocaleSwitcher": {
+    "switchLanguage": "Change language"
+  },
+  "InteractiveBuilder": {
+    "kindButtons": "Reply buttons",
+    "kindList": "List",
+    "bodyLabel": "Body",
+    "bodyPlaceholder": "What the customer reads above the options",
+    "headerLabel": "Header (optional)",
+    "footerLabel": "Footer (optional)",
+    "showReplyIds": "Show reply IDs (advanced)",
+    "preview": "Preview",
+    "buttonsLabel": "Buttons ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "Button label",
+    "addButton": "Add button",
+    "listButtonLabelField": "List button label",
+    "rowsLabel": "Rows ({count}/{max})",
+    "sectionTitlePlaceholder": "Section title (optional)",
+    "rowTitlePlaceholder": "Row title",
+    "rowDescriptionPlaceholder": "Description (optional)",
+    "addRow": "Add row",
+    "addSection": "Add section",
+    "previewBodyPlaceholder": "Message body…",
+    "previewDefaultButton": "Button",
+    "previewDefaultMenu": "Menu"
   },
   "Dashboard": {
     "page": {
@@ -149,7 +176,9 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "muteSound": "Mute new-message sound",
+      "unmuteSound": "Unmute new-message sound"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -173,7 +202,11 @@
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",
-      "yesterday": "Yesterday"
+      "yesterday": "Yesterday",
+      "assignUpdateError": "Failed to update assignment",
+      "waitForSend": "Wait for the message to finish sending",
+      "sendToPipeline": "Pipeline",
+      "sendToPipelineTitle": "Add this contact to a pipeline"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -209,7 +242,16 @@
       "send": "Send",
       "quickReplyNamePrompt": "Name this quick reply:",
       "quickReplySaved": "Saved as a quick reply.",
-      "quickReplySaveError": "Couldn't save the quick reply."
+      "quickReplySaveError": "Couldn't save the quick reply.",
+      "aiNotConfigured": "AI isn't set up yet — enable it in Settings → AI Assistant.",
+      "draftFailed": "Couldn't draft a reply.",
+      "draftEmpty": "The assistant didn't return a reply.",
+      "aiUnreachable": "Couldn't reach the AI assistant.",
+      "mediaTooLarge": "File is {size} MB — {kind} limit is {limit} MB.",
+      "uploadFailed": "Upload failed.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "voiceUnsupported": "Voice recording isn't supported in this browser.",
+      "micDenied": "Microphone access denied or unavailable."
     },
     "bubble": {
       "photo": "Photo",
@@ -279,6 +321,23 @@
       "cancel": "Cancel",
       "send": "Send template"
     },
+    "sendToPipeline": {
+      "dialogTitle": "Add to pipeline",
+      "dialogDesc": "Create a deal for {name} and drop it into a pipeline stage.",
+      "pipeline": "Pipeline",
+      "selectPipeline": "Select a pipeline",
+      "stage": "Stage",
+      "dealTitle": "Deal title",
+      "dealTitleOptional": "(optional)",
+      "dealTitlePlaceholder": "Defaults to the contact's name",
+      "noPipelines": "No pipelines yet.",
+      "noPipelinesHint": "Create one first in Pipelines.",
+      "cancel": "Cancel",
+      "create": "Add to pipeline",
+      "creating": "Adding…",
+      "toastCreated": "Added to {pipeline} — {stage}.",
+      "toastFailed": "Couldn't create the deal."
+    },
     "sidebar": {
       "contactInfo": "Contact info",
       "tags": "Tags",
@@ -286,7 +345,8 @@
       "deals": "Deals",
       "noTags": "No tags",
       "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+      "addNotePlaceholder": "Add a note...",
+      "copyFailed": "Couldn't copy — select the number manually."
     },
     "aiBanner": {
       "pausedTitle": "AI assistant is paused here",
@@ -426,6 +486,7 @@
       "saveChangesBtn": "Save Changes",
       "saveCustomFieldsBtn": "Save Custom Fields",
       "toastPhoneRequired": "Phone number is required",
+      "copyFailed": "Couldn't copy — select the number manually.",
       "toastUpdateFailed": "Failed to update contact",
       "toastUpdated": "Contact updated",
       "toastNotAuthenticated": "Not authenticated",
@@ -500,6 +561,103 @@
       "toastDeleted": "Deleted \"{name}\"."
     }
   },
+  "Notifications": {
+    "page": {
+      "title": "Notifications",
+      "subtitle": "Conversations other teammates assign to you show up here.",
+      "markAllRead": "Mark all as read",
+      "retry": "Retry",
+      "emptyTitle": "No notifications yet",
+      "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
+      "unread": "Unread",
+      "markReadError": "Failed to mark notification as read",
+      "markAllReadError": "Failed to mark all as read"
+    }
+  },
+  "Join": {
+    "loading": "Verifying invitation…",
+    "roles": {
+      "admin": "Admin",
+      "agent": "Agent",
+      "viewer": "Viewer"
+    },
+    "errors": {
+      "not_found": {
+        "title": "Invite not found",
+        "body": "This link doesn’t match a valid invitation. Double-check the URL or ask the person who invited you to send a new one."
+      },
+      "used": {
+        "title": "Invite already used",
+        "body": "This invitation has already been accepted. If that wasn’t you, ask the account admin to send a fresh link."
+      },
+      "expired": {
+        "title": "Invite expired",
+        "body": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate."
+      },
+      "server_error": {
+        "title": "Something went wrong",
+        "body": "We couldn’t verify this invitation right now. Try refreshing the page in a moment."
+      },
+      "tryAgain": "Try again",
+      "createAccountInstead": "Create a new account instead",
+      "signIn": "Sign in"
+    },
+    "invite": {
+      "titleRich": "You're invited to <account>{accountName}</account>",
+      "descriptionRich": "You'll join as <role>{roleLabel}</role>. Link valid until {expiresDate}.",
+      "acceptButton": "Accept invitation",
+      "accepting": "Accepting…",
+      "acceptNoteRich": "Accepting moves your login into <account>{accountName}</account>. Your empty personal account from signup will be cleaned up.",
+      "createAndJoin": "Create account & join",
+      "alreadyHaveAccount": "I already have an account"
+    },
+    "conflict": {
+      "title": "Can't join {accountName} with this account",
+      "bodyRich": "To join <account>{accountName}</account>, sign out and sign up again with a different email address. The invite link stays valid as long as it hasn't expired.",
+      "staySignedIn": "Stay signed in",
+      "signOutAndRetry": "Sign out & use a different email",
+      "signingOut": "Signing out…",
+      "defaultMessage": "You are already in another account. Sign in with a different email to join this one."
+    },
+    "toasts": {
+      "acceptFailed": "Failed to accept invitation",
+      "welcome": "Welcome to the team",
+      "serverUnreachable": "Could not reach the server",
+      "signOutFailed": "Could not sign out. Try refreshing the page."
+    }
+  },
+  "AiPlayground": {
+    "title": "Playground",
+    "subtitle": "test replies as if you were a customer",
+    "reset": "Reset",
+    "emptyTitle": "Send a message to see how your agent would reply.",
+    "emptyDesc": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+    "goToSetup": "Not set up yet? Go to Setup",
+    "handoffNotice": "Would hand off to a human here",
+    "thinking": "Thinking…",
+    "placeholder": "Type a customer message…",
+    "errors": {
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "noReply": "Couldn't get a reply.",
+      "unreachable": "Couldn't reach the agent."
+    }
+  },
+  "AiUsage": {
+    "title": "Token usage",
+    "description": "Tokens spent on your provider key by drafts and the auto-reply bot. Counts only — no message content is stored here.",
+    "lastDays": "Last {days} days",
+    "emptyTitle": "No AI usage in the last {days} days yet.",
+    "emptyDesc": "This fills in as the assistant drafts and auto-replies.",
+    "statTotalTokens": "Total tokens",
+    "statLlmCalls": "LLM calls",
+    "statAutoReply": "Auto-reply",
+    "statDrafts": "Drafts",
+    "tokensPerDay": "Tokens per day",
+    "byModel": "By model",
+    "modelCalls": "{tokens} tok · {calls, plural, =1 {# call} other {# calls}}",
+    "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here.",
+    "loadFailed": "Failed to load usage"
+  },
   "Pipelines": {
     "page": {
       "selectPipeline": "Select Pipeline",
@@ -512,7 +670,7 @@
       "newPipeline": "New Pipeline",
       "pipelineName": "Pipeline Name",
       "pipelineNamePlaceholder": "e.g., Enterprise Sales",
-      "defaultStagesDesc": "Default stages (New Lead → Won) will be created automatically.",
+      "defaultStagesDesc": "Default stages ({first} → {last}) will be created automatically.",
       "cancel": "Cancel",
       "creating": "Creating...",
       "createPipelineBtn": "Create Pipeline",
@@ -520,7 +678,13 @@
       "toastFailedMoveDeal": "Failed to move deal",
       "toastFailedCreatePipeline": "Failed to create pipeline",
       "toastPipelineCreated": "Pipeline created",
-      "toastNotLinkedToAccount": "Your profile is not linked to an account."
+      "toastNotLinkedToAccount": "Your profile is not linked to an account.",
+      "defaultPipelineName": "Sales Pipeline",
+      "defaultStageNewLead": "New Lead",
+      "defaultStageQualified": "Qualified",
+      "defaultStageProposalSent": "Proposal Sent",
+      "defaultStageNegotiation": "Negotiation",
+      "defaultStageWon": "Won"
     },
     "board": {
       "dropDealHere": "Drop a deal here",
@@ -529,13 +693,17 @@
     "card": {
       "noContact": "No contact",
       "won": "Won",
-      "lost": "Lost"
+      "lost": "Lost",
+      "openConversation": "Open conversation",
+      "noConversation": "This contact has no conversation yet"
     },
     "form": {
       "editDeal": "Edit Deal",
       "newDeal": "New Deal",
       "title": "Title",
       "titlePlaceholder": "Deal title",
+      "titleOptional": "(optional)",
+      "titleHint": "Leave blank to use the contact's name.",
       "contact": "Contact",
       "selectContact": "Select a contact",
       "linkToConversation": "Link to Conversation",
@@ -559,7 +727,7 @@
       "confirm": "Confirm",
       "deleting": "Deleting...",
       "deleteDeal": "Delete Deal",
-      "toastRequired": "Title, contact, and stage are required",
+      "toastRequired": "Contact and stage are required",
       "toastFailedSave": "Failed to save deal",
       "toastNotSignedIn": "Not signed in",
       "toastNotLinked": "Your profile is not linked to an account.",
@@ -919,6 +1087,7 @@
       "activeAria": "Active",
       "save": "Save",
       "saveDraft": "Save Draft",
+      "delete": "Delete",
       "untitled": "Untitled automation",
       "backToAutomations": "Back to automations",
       "toasts": {
@@ -1012,6 +1181,29 @@
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
       }
+    },
+    "templates": {
+      "welcome_message": {
+        "name": "Welcome Message",
+        "description": "Auto-reply to first-time contacts with a greeting.",
+        "step0": "Hi! 👋 Thanks for reaching out. We'll get back to you shortly."
+      },
+      "out_of_office": {
+        "name": "Out of Office",
+        "description": "Auto-reply during off-hours so nobody is left waiting.",
+        "step1": "Thanks for your message! Our team is offline right now (9am–6pm) and will reply first thing tomorrow."
+      },
+      "lead_qualifier": {
+        "name": "Lead Qualifier",
+        "description": "Ask qualification questions to filter inbound leads.",
+        "keywords": "pricing, quote, buy",
+        "step0": "Great — happy to help with pricing! Quick question: roughly how many seats are you looking for?"
+      },
+      "follow_up_reminder": {
+        "name": "Follow-up Reminder",
+        "description": "Send a nudge if a contact has not replied within 24 hours.",
+        "step1": "Just circling back — did you have any other questions for us? Happy to help!"
+      }
     }
   },
   "Flows": {
@@ -1098,6 +1290,25 @@
       "listView": "List",
       "noNodeSelected": "No node selected",
       "noNodeDesc": "Select a node on the canvas to edit its configuration.",
+      "backToFlows": "Back to Flows",
+      "flowNamePlaceholder": "Flow name",
+      "unsavedChangesHint": "Unsaved changes — hit Save to persist",
+      "edited": "Edited",
+      "runs": "Runs",
+      "delete": "Delete",
+      "pause": "Pause",
+      "activateDisabledHint": "Fix the issues below before activating",
+      "activate": "Activate",
+      "save": "Save",
+      "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
+      "descriptionAria": "Flow description",
+      "statusDraft": "Draft",
+      "statusActive": "Active",
+      "statusArchived": "Archived",
+      "editorViewLabel": "Editor view",
+      "edgeLabelNext": "Next",
+      "edgeLabelTrue": "true",
+      "edgeLabelFalse": "false",
       "form": {
         "advancesTo": "Advances to",
         "textToCustomer": "Text sent to the customer",
@@ -1155,7 +1366,17 @@
         "filenamePlaceholder": "invoice.pdf",
         "advanceAfterSending": "After sending, advance to",
         "pickNextNode": "Pick a next node…",
-        "none": "— None —"
+        "none": "— None —",
+        "fileTooLarge": "File is {size} MB — limit is 16 MB.",
+        "fileUploaded": "File uploaded.",
+        "uploadFailed": "Upload failed.",
+        "defaultButtonTitle": "Option",
+        "defaultRowTitle": "Option {number}",
+        "removeSection": "Remove section",
+        "contactFieldName": "Name",
+        "contactFieldEmail": "Email",
+        "contactFieldPhone": "Phone",
+        "contactFieldCompany": "Company"
       },
       "categories": {
         "messaging": "Messaging",
@@ -1234,6 +1455,45 @@
       "modeRemove": "Remove",
       "tagPicked": "{mode} tag {tag}…",
       "tagNone": "{mode} tag (none picked)"
+    },
+    "templates": {
+      "welcome_menu": {
+        "name": "Welcome menu",
+        "description": "Greet customers who type a keyword and route them to the right agent based on whether they're new or existing.",
+        "keywords": "support, help, hi",
+        "welcomeText": "Hi! 👋 Welcome to support. Are you an existing customer or new here?",
+        "welcomeFooterText": "Tap a button below to continue.",
+        "existingButtonTitle": "Existing customer",
+        "newButtonTitle": "New customer",
+        "existingHandoffNote": "Existing customer needs assistance — please check account history before replying.",
+        "newHandoffNote": "New customer — share pricing + onboarding link."
+      },
+      "faq_bot": {
+        "name": "FAQ bot",
+        "description": "Answer common questions automatically. Customer picks a topic from a list; the bot replies with the answer and ends.",
+        "keywords": "faq, question, info",
+        "topicsText": "What can I help you with?",
+        "topicsButtonLabel": "View topics",
+        "commonQuestionsTitle": "Common questions",
+        "hoursRowTitle": "Opening hours",
+        "pricingRowTitle": "Pricing",
+        "refundsRowTitle": "Refund policy",
+        "otherSectionTitle": "Other",
+        "humanRowTitle": "Talk to a human",
+        "hoursAnswerText": "We're open Mon–Fri, 9am–6pm local time. Weekend support is limited to urgent issues.",
+        "pricingAnswerText": "Our pricing starts at $9/mo. Visit https://example.com/pricing for the full breakdown.",
+        "refundsAnswerText": "Refunds are honored within 30 days of purchase. Reply with your order number and we'll process it.",
+        "humanHandoffNote": "Customer asked to talk to a human from the FAQ bot."
+      },
+      "lead_capture": {
+        "name": "Lead capture",
+        "description": "Greet first-time inbounds, capture name + email + company, then hand off to sales with the answers in the note.",
+        "introText": "Welcome! 👋 I'll ask a few quick questions so we can get you to the right person.",
+        "askNamePrompt": "What's your name?",
+        "askEmailPrompt": "Thanks {{vars.name}}! What's your work email?",
+        "askCompanyPrompt": "Almost done — what's your company name?",
+        "handoffNote": "New lead — name={{vars.name}}, email={{vars.email}}, company={{vars.company}}."
+      }
     }
   },
   "Settings": {
@@ -1255,6 +1515,27 @@
       "appearance": "{mode} mode · {theme} accent",
       "yourAccount": "Your account",
       "loading": "Loading…"
+    },
+    "quickReplies": {
+      "title": "Quick replies",
+      "description": "Reusable snippets — plain text or a saved interactive message — that agents can insert from the inbox composer.",
+      "newButton": "New quick reply",
+      "emptyState": "No quick replies yet. Create one to reuse it across conversations.",
+      "editTitle": "Edit quick reply",
+      "createTitle": "New quick reply",
+      "nameLabel": "Name",
+      "namePlaceholder": "e.g. Business hours",
+      "textTab": "Text",
+      "interactiveTab": "Interactive",
+      "textPlaceholder": "The message text to insert",
+      "cancel": "Cancel",
+      "save": "Save",
+      "deleteConfirm": "Delete this quick reply?",
+      "nameRequired": "Give the quick reply a name.",
+      "saveError": "Couldn't save the quick reply.",
+      "updated": "Quick reply updated.",
+      "created": "Quick reply created.",
+      "deleteError": "Couldn't delete the quick reply."
     },
     "members": {
       "title": "Team members",
@@ -1285,7 +1566,13 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "serverUnreachable": "Could not reach the server",
+      "loadMembersError": "Failed to load members",
+      "loadInvitationsError": "Failed to load invitations",
+      "updateRoleError": "Failed to update role",
+      "removeMemberError": "Failed to remove member",
+      "revokeInvitationError": "Failed to revoke invitation"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -1353,6 +1640,7 @@
     "templates": {
       "title": "Message templates",
       "description": "Create templates and submit them to Meta for approval. Use \"Sync from Meta\" to pull templates approved elsewhere.",
+      "descriptionEvolution": "Create reusable message templates. No approval needed — they're ready to use right away.",
       "syncFromMeta": "Sync from Meta",
       "syncing": "Syncing…",
       "syncTitle": "Pull approved templates from your Meta WhatsApp Business Account",
@@ -1360,6 +1648,7 @@
       "noTemplates": "No templates yet.",
       "createFirst": "Create your first message template to get started.",
       "editTitle": "Editing triggers Meta re-review — status flips to PENDING.",
+      "editTitleEvolution": "Edit this template — changes apply immediately.",
       "editLabel": "Edit template",
       "edit": "Edit",
       "resubmitTitle": "Edit the template and resubmit to Meta for review.",
@@ -1373,17 +1662,24 @@
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
+      "dialogEditDescEvolution": "Save your changes — no approval process, updates apply immediately.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
+      "dialogNewDescEvolution": "Build a reusable template you can send right away from the inbox — no approval needed for this connection type.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-      
+
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
       "nameHint": "Lowercase letters, digits, and underscores only.",
       "category": "Category",
+      "categoryMarketing": "Marketing",
+      "categoryUtility": "Utility",
+      "categoryAuthentication": "Authentication",
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
+      "langFixedEvolution": "Language is fixed after creation — create a new template to change it.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
+      "langHintEvolution": "Used to tell templates apart — pick whichever fits how you organize them.",
       
       "header": "Header",
       "headerNone": "None",
@@ -1392,8 +1688,11 @@
       "headerVideo": "Video",
       "headerDocument": "Document",
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
+      "headerTextAria": "Header text",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
+      "headerSampleAlt": "Header sample",
+      "qualityScoreTitle": "Meta quality score",
       
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
@@ -1430,7 +1729,9 @@
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
+      "saveChanges": "Save Changes",
       "submitApproval": "Submit for Approval",
+      "saveTemplate": "Save Template",
       
       "deleteDialogTitle": "Delete template?",
       "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
@@ -1441,7 +1742,9 @@
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
+      "toastSubmitEditSuccessEvolution": "Template updated.",
       "toastSubmitNewSuccess": "Submitted to Meta — typical review time is 24 hours. Status updates automatically.",
+      "toastSubmitNewSuccessEvolution": "Template saved and ready to use.",
       "toastSaveEditDry": "Template updated (dry-run — no Meta call)",
       "toastSaveNewDry": "Template saved (dry-run — no Meta call)",
       "toastSyncCount": "Synced {total} {total, plural, =1 {template} other {templates}} from Meta",
@@ -1454,7 +1757,49 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "statusDraft": "Draft",
+      "statusPending": "Pending",
+      "statusApproved": "Approved",
+      "statusRejected": "Rejected",
+      "statusPaused": "Paused",
+      "statusDisabled": "Disabled",
+      "statusInAppeal": "In Appeal",
+      "statusPendingDeletion": "Pending Deletion",
+
+      "validationNameRequired": "Template name is required.",
+      "validationNameInvalidChars": "Template name must use only lowercase letters, digits, and underscores (1-512 chars).",
+      "validationLanguageRequired": "Language is required.",
+      "validationBodyRequired": "Body text is required.",
+      "validationBodyTooLong": "Body text exceeds {max} chars (got {count}).",
+      "validationBodyVarsNotContiguous": "Body variables must be contiguous starting at 1 — found: {found}",
+      "validationFooterTooLong": "Footer text exceeds {max} chars (got {count}).",
+      "validationFooterHasVariables": "Footer text cannot contain variables (Meta rule).",
+      "validationHeaderTextRequired": "The text header needs some header text.",
+      "validationHeaderTextTooLong": "Header text exceeds {max} chars (got {count}).",
+      "validationHeaderTextTooManyVars": "The header text can use at most one variable — found {count}.",
+      "validationHeaderTextVarMustBeOne": "The header text can use only one variable, and it must be the first one.",
+      "validationHeaderMediaRequired": "The {type} header needs either a public sample URL or an uploaded file.",
+      "validationHeaderMediaUrlInvalid": "The header media URL must be a valid URL.",
+      "validationHeaderMediaUrlHttps": "The header media URL must use https.",
+      "validationButtonsTooMany": "Templates can have at most {max} buttons (got {count}).",
+      "validationButtonsUrlTooMany": "At most {max} URL button(s) allowed (got {count}).",
+      "validationButtonsPhoneTooMany": "At most {max} phone button(s) allowed (got {count}).",
+      "validationButtonsCopyCodeTooMany": "At most {max} copy-code button(s) allowed (got {count}).",
+      "validationButtonsQuickReplyInterleaved": "Quick-reply buttons can't be mixed with URL/phone/copy-code buttons — group them at the start.",
+      "validationButtonMissingText": "Button #{index} ({type}) is missing its label.",
+      "validationButtonTextTooLong": "Button #{index}'s label exceeds {max} chars.",
+      "validationButtonUrlMissing": "URL button #{index} is missing its URL.",
+      "validationButtonUrlInvalid": "URL button #{index} has an invalid URL.",
+      "validationButtonUrlTooManyVars": "URL button #{index} can have at most one variable (Meta rule).",
+      "validationButtonUrlVarMustBeOne": "URL button #{index}'s variable must be the first one (Meta rule).",
+      "validationButtonUrlExampleRequired": "URL button #{index} uses a variable — Meta requires an example value.",
+      "validationButtonPhoneMissing": "Phone button #{index} is missing a phone number.",
+      "validationButtonCopyCodeExampleMissing": "Copy-code button #{index} is missing its example value.",
+      "validationSampleBodyCountMismatch": "The body has {varCount} variable(s) — supply exactly {varCount} sample value(s) (got {gotCount}).",
+      "validationSampleHeaderCountMismatch": "The header has {varCount} variable(s) — supply exactly {varCount} sample value(s) (got {gotCount}).",
+      "validationSampleBodyValueEmpty": "Body sample value #{index} is empty.",
+      "validationSampleHeaderValueEmpty": "Header sample value #{index} is empty."
     },
     "roles": {
       "admin": "Admin",
@@ -1510,6 +1855,27 @@
       "mirrorInboundDesc": "Save a copy of every photo, video, voice note and document customers send. Uses your Supabase storage; files over 16 MB are skipped.",
       "mirrorInboundOffWarning": "New attachments will stop being copied and will become unavailable about 30 days after they arrive.",
       "mirrorInboundSaveFailed": "Could not update the attachment setting.",
+      "webhookUrlCopied": "Webhook URL copied to clipboard",
+      "copyFailed": "Couldn't copy — select the URL manually.",
+      "loadConfigError": "Failed to load WhatsApp configuration",
+      "phoneNumberIdRequired": "Phone Number ID is required",
+      "accessTokenRequiredInitial": "Access Token is required for initial setup",
+      "reenterAccessToken": "Please re-enter the Access Token to save changes",
+      "saveConfigError": "Failed to save configuration",
+      "savedButRegistrationFailed": "Saved, but Meta couldn't register the number: {error}",
+      "registrationSkipped": "Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.",
+      "liveConnected": "Live — {name} can now receive events.",
+      "connectedGeneric": "WhatsApp connected. Events will start flowing within a minute.",
+      "connectedToName": "Connected to {name}",
+      "apiConnectionSuccess": "API connection successful",
+      "apiConnectionFailed": "API connection failed",
+      "connectionTestFailed": "Connection test failed. Check network and try again.",
+      "registrationLive": "Number is fully wired — Meta is delivering events.",
+      "registrationNotLive": "Number is not fully registered. See the checks below for which step failed.",
+      "verifyEndpointUnreachable": "Could not reach the verification endpoint.",
+      "resetConfirm": "This will delete the current WhatsApp config so you can re-enter it. Continue?",
+      "resetConfigError": "Failed to reset configuration",
+      "resetConfigSuccess": "Configuration cleared. You can now re-enter your credentials.",
       "saving": "Saving...",
       "saveConfig": "Save Configuration",
       "testing": "Testing...",
@@ -1536,7 +1902,46 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "providerMeta": "Meta Cloud API",
+      "providerEvolution": "Evolution Go",
+      "evolution": {
+        "title": "Evolution Go connection",
+        "description": "Connect an unofficial, self-hosted WhatsApp number through your own Evolution Go server. Runs independently from the Meta Cloud API — pick one provider for this account.",
+        "statusConnected": "Connected",
+        "statusDisconnected": "Not connected",
+        "apiUrlLabel": "Evolution Go server URL",
+        "instanceNameLabel": "Instance name",
+        "adminTokenLabel": "Admin API key",
+        "adminTokenPlaceholderSaved": "Saved — re-enter to reconnect or rotate",
+        "adminTokenHint": "The Evolution Go server's admin apikey (not stored in plain text — re-entering it is required each time you connect).",
+        "connectButton": "Connect & show QR code",
+        "disconnectButton": "Disconnect",
+        "disconnectConfirm": "Disconnect this Evolution Go instance? You'll need to scan a new QR code to reconnect.",
+        "disconnectedToast": "Evolution Go instance disconnected",
+        "disconnectError": "Failed to disconnect Evolution Go instance",
+        "connectError": "Failed to connect to Evolution Go",
+        "connectedToast": "WhatsApp connected via Evolution Go",
+        "qrPollError": "Failed to check connection status",
+        "validationRequired": "Server URL, instance name, and admin API key are all required",
+        "qrTitle": "Scan to connect WhatsApp",
+        "qrDescription": "Open WhatsApp on the phone you want to connect → Linked devices → Link a device, then scan this code.",
+        "qrTimeout": "QR code timed out. Click retry to generate a new one.",
+        "qrRetry": "Retry"
+      },
+      "dangerZone": {
+        "title": "Reset conversations",
+        "description": "Run this right after disconnecting one WhatsApp number and before connecting a different one. Leftover conversations from the old number can cause send errors once a new number/provider is live.",
+        "button": "Delete all conversations",
+        "dialogTitle": "Delete ALL conversations?",
+        "dialogDescription": "This permanently deletes every conversation and message for this account — it cannot be undone. Contacts and pipeline deals are kept.",
+        "confirmLabel": "Type {word} to confirm",
+        "confirmWord": "DELETE",
+        "cancel": "Cancel",
+        "confirmButton": "Delete everything",
+        "successToast": "{count, plural, =0 {No conversations to delete} =1 {1 conversation deleted} other {# conversations deleted}}",
+        "errorToast": "Failed to delete conversations"
+      }
     },
     "sections": {
       "overview": "Overview",

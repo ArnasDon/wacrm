@@ -126,7 +126,7 @@ const nextConfig: NextConfig = {
    *   /broadcasts, etc.) are server-rendered per request — Next.js
    *   and Supabase auth already prevent them from being served
    *   from a shared cache. The s-maxage here is a ceiling; Next.js
-   *   and auth middleware still set `private` / `no-store` for
+   *   and auth proxy still set `private` / `no-store` for
    *   per-user responses.
    *
    * Security headers are appended via a separate catch-all rule

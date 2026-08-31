@@ -7,6 +7,30 @@ import { useAuth } from "@/hooks/use-auth";
 import { HEARTBEAT_MS, IDLE_AFTER_MS, type StoredPresence } from "@/lib/presence";
 
 /**
+ * Does this failure describe the network giving out rather than the
+ * server saying no?
+ *
+ * `fetch` collapses every transport-level problem into one opaque
+ * "Failed to fetch" (wording varies by engine: Firefox says "NetworkError
+ * when attempting to fetch resource", Safari "Load failed"), with no
+ * status and no body to distinguish "you are offline" from "the server
+ * is down". Matching on the message is unlovely, but it is the only
+ * signal the platform hands us, and the cost of a wrong guess is one
+ * log line either way.
+ */
+function isTransientNetworkFailure(message: string): boolean {
+  const m = message.toLowerCase();
+  return (
+    m.includes("failed to fetch") ||
+    m.includes("networkerror") ||
+    m.includes("network request failed") ||
+    m.includes("load failed") ||
+    m.includes("aborted") ||
+    m.includes("the operation was aborted")
+  );
+}
+
+/**
  * PresenceHeartbeat — headless. Mount ONCE per signed-in dashboard tab
  * (in the dashboard shell, below the auth gate). Reports this tab's
  * presence to the `member_presence` table via the `touch_presence` RPC
@@ -55,15 +79,44 @@ export function PresenceHeartbeat() {
       // in the same frame. The 30s interval is never affected.
       const t = Date.now();
       if (t - lastBeatAt < 1_000) return;
-      lastBeatAt = t;
-      const { error } = await supabase.rpc("touch_presence", {
-        p_status: currentStatus(),
-      });
-      if (error && !cancelled) {
-        // Non-fatal: presence is best-effort. Log once per failure so a
-        // misconfigured RPC is visible without spamming.
-        console.error("[PresenceHeartbeat] touch_presence failed:", error.message);
+      // Don't even try while the browser reports no connectivity — the
+      // fetch is guaranteed to reject, and a laptop asleep for an hour
+      // would otherwise wake up to a stack of failures for beats nobody
+      // needed. Presence recovers on the next interval once back online.
+      if (typeof navigator !== "undefined" && navigator.onLine === false) {
+        return;
       }
+      lastBeatAt = t;
+
+      // The RPC can fail two different ways and only one of them used to
+      // be handled. A reachable server that refuses the call resolves
+      // with `{ error }`; a call that never reaches the server at all —
+      // offline, DNS blip, dev-server restart, an ad blocker, or the
+      // browser cancelling in-flight requests as the tab navigates away
+      // — *rejects*. `beat()` is invoked as `void beat()` from an
+      // interval and two listeners, so an uncaught rejection there
+      // becomes an unhandled promise rejection that Next's dev overlay
+      // reports as a hard error. That contradicts the "best-effort"
+      // contract in this component's own doc comment, so catch both.
+      let failure: string | null = null;
+      try {
+        const { error } = await supabase.rpc("touch_presence", {
+          p_status: currentStatus(),
+        });
+        if (error) failure = error.message;
+      } catch (err) {
+        failure = err instanceof Error ? err.message : String(err);
+      }
+
+      if (!failure || cancelled) return;
+
+      // A transport failure says nothing about this app's correctness —
+      // it means the network moved under us. Staying silent on those
+      // keeps the console meaningful: anything logged here is a real,
+      // server-side refusal worth investigating (a missing RPC, a bad
+      // grant, "No account for caller").
+      if (isTransientNetworkFailure(failure)) return;
+      console.error("[PresenceHeartbeat] touch_presence failed:", failure);
     };
 
     // Activity listeners. `passive` so we never block scroll/input.

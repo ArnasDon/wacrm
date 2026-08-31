@@ -107,7 +107,18 @@ export default async function RootLayout({
           dangerouslySetInnerHTML={{ __html: THEME_BOOT_SCRIPT }}
         />
       </head>
-      <body className="min-h-full bg-background text-foreground font-sans">
+      <body
+        className="min-h-full bg-background text-foreground font-sans"
+        // Grammarly and friends inject attributes onto <body> (
+        // `data-new-gr-c-s-check-loaded`, `data-gr-ext-installed`) between
+        // the server HTML arriving and React hydrating, which React then
+        // reports as a hydration mismatch. Nothing in this app can prevent
+        // that — the extension edits the DOM before our code runs — and
+        // the resulting error buries genuine mismatches in the overlay.
+        // Scoped to this element's own attributes, so a real mismatch in
+        // any child still surfaces.
+        suppressHydrationWarning
+      >
         <NextIntlClientProvider messages={messages} locale={locale}>
           <ThemeProvider>
             {children}

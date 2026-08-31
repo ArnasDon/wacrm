@@ -74,9 +74,9 @@ export function LoginForm({ signupMode }: LoginFormProps) {
 
     // Full-page navigation (not router.push) so the browser issues a
     // fresh top-level request that carries the just-written Supabase
-    // auth cookies to the middleware gating /dashboard. A soft
+    // auth cookies to the proxy gating /dashboard. A soft
     // client-side navigation can reach the protected route before the
-    // server observes the new session, so the middleware bounces it
+    // server observes the new session, so the proxy bounces it
     // back to /login — which looks like the page "just refreshing"
     // instead of signing in (issue #365). Mirrors the deliberate full
     // reload the invite-accept flow already uses in join/[token].

@@ -258,8 +258,13 @@ describe('ensureZernioConversationStarted', () => {
     })
 
     expect(state.conversationInserts).toHaveLength(1)
-    expect(state.conversationInserts[0]).toMatchObject({ account_id: 'acct-1', contact_id: 'contact-new' })
-    expect(state.conversationUpdates).toContainEqual({ zernio_conversation_id: 'zconv-new' })
+    // The zernio id is stamped IN the insert now (not a follow-up
+    // update) so a racing create trips the partial unique index.
+    expect(state.conversationInserts[0]).toMatchObject({
+      account_id: 'acct-1',
+      contact_id: 'contact-new',
+      zernio_conversation_id: 'zconv-new',
+    })
     expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'conversation.created', expect.objectContaining({ contact_id: 'contact-new' }))
     expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'contact.created', expect.objectContaining({ contact_id: 'contact-new' }))
   })

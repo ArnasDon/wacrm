@@ -435,6 +435,24 @@ function InboxPageInner() {
     };
   }, []);
 
+  // Mobile only: while a conversation is open, flag <html> so the app
+  // chrome (top header + bottom tab bar) steps aside and the thread
+  // runs full-screen, like opening a chat in WhatsApp. The CSS that
+  // acts on `data-mobile-chat` is scoped to `max-width: 1023.98px`, so
+  // desktop is unaffected regardless of this attribute. Cleared on
+  // "back" and on unmount.
+  useEffect(() => {
+    const el = document.documentElement;
+    if (activeConversation) {
+      el.dataset.mobileChat = "true";
+    } else {
+      delete el.dataset.mobileChat;
+    }
+    return () => {
+      delete el.dataset.mobileChat;
+    };
+  }, [activeConversation]);
+
   /**
    * Manual refresh trigger for the thread-header refresh button.
    * Bumps the same resyncToken the reconnect / visibility paths use,
@@ -612,7 +630,19 @@ function InboxPageInner() {
   const desktopListVisible = !hasActiveConv || listPanelOpen;
 
   return (
-    <div className="-m-4 -mb-[calc(4.25rem+env(safe-area-inset-bottom))] flex h-[calc(100dvh-3.5rem-4.25rem-env(safe-area-inset-bottom))] flex-col overflow-hidden sm:-m-6 sm:h-[calc(100dvh-3.5rem)] lg:mb-0">
+    <div
+      className={cn(
+        "-m-4 -mb-[calc(4.25rem+env(safe-area-inset-bottom))] flex flex-col overflow-hidden sm:-m-6 lg:mb-0 lg:h-[calc(100dvh-3.5rem)] lg:pb-0",
+        // On mobile a picked conversation goes full-bleed (the app
+        // header + tab bar are hidden via `data-mobile-chat`), so it
+        // reclaims their height; the bottom inset keeps the composer
+        // clear of the iOS home indicator. Otherwise the list keeps
+        // room for both bars.
+        hasActiveConv
+          ? "h-[100dvh] pb-[env(safe-area-inset-bottom)]"
+          : "h-[calc(100dvh-3.5rem-4.25rem-env(safe-area-inset-bottom))] sm:h-[calc(100dvh-3.5rem)]",
+      )}
+    >
       {/* WhatsApp connection banner — in the flex column, not absolute,
           so it pushes the panels down instead of overlapping them. */}
       {whatsappConnected === false && (

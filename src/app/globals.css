@@ -43,6 +43,48 @@ select {
   }
 }
 
+/* Mobile: an open inbox conversation takes over the screen like
+ * WhatsApp — the app's top header and bottom tab bar step aside so the
+ * thread's own header + composer are the only chrome. The inbox page
+ * toggles `data-mobile-chat` on <html> while a conversation is open;
+ * "back" clears it and the chrome returns. Desktop (lg+) is untouched. */
+@media (max-width: 1023.98px) {
+  html[data-mobile-chat] .app-header,
+  html[data-mobile-chat] .mobile-tab-bar {
+    display: none;
+  }
+}
+
+@media (max-width: 1023.98px) and (display-mode: standalone) {
+  /* The app header normally carries the notch inset — hand it to the
+   * thread header while the app header is hidden. */
+  html[data-mobile-chat] .inbox-thread-header {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* WhatsApp-style message-bubble tail. `<MessageBubble>` sets `wa-bubble`
+ * + a direction class and exposes its own fill colour as `--tail-bg`. */
+.wa-bubble {
+  position: relative;
+}
+.wa-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 12px;
+  background: var(--tail-bg, transparent);
+}
+.wa-bubble-out::after {
+  right: -6px;
+  clip-path: polygon(0 0, 0 100%, 100% 100%);
+}
+.wa-bubble-in::after {
+  left: -6px;
+  clip-path: polygon(100% 0, 0 100%, 100% 100%);
+}
+
 @media (display-mode: standalone) {
   .app-header {
     padding-top: env(safe-area-inset-top);
@@ -176,6 +218,13 @@ html[data-mode="light"] {
   --sidebar-accent: oklch(0.955 0.001 260);
   --sidebar-accent-foreground: oklch(0.3 0.004 260);
   --sidebar-border: oklch(0.92 0.002 260);
+  /* WhatsApp-style chat bubbles — used only for the WhatsApp channel in
+   * the inbox thread (Instagram/Facebook keep the accent fill). */
+  --wa-out: #d9fdd3;
+  --wa-out-foreground: #111b21;
+  --wa-in: #ffffff;
+  --wa-in-foreground: #111b21;
+  --wa-meta: rgba(17, 27, 33, 0.45); /* timestamp / ticks on a bubble */
 }
 
 html[data-mode="dark"] {
@@ -205,6 +254,11 @@ html[data-mode="dark"] {
   --sidebar-accent: oklch(0.255 0.003 260);
   --sidebar-accent-foreground: oklch(0.93 0.002 260);
   --sidebar-border: oklch(0.27 0.003 260);
+  --wa-out: #005c4b;
+  --wa-out-foreground: #e9edef;
+  --wa-in: #202c33;
+  --wa-in-foreground: #e9edef;
+  --wa-meta: rgba(233, 237, 239, 0.6);
 }
 
 /* ---- ACCENT: primary color ----

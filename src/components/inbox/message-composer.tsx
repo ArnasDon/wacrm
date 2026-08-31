@@ -1060,6 +1060,45 @@ export function MessageComposer({
                 )}
                 {t('sendCatalog')}
               </DropdownMenuItem>
+
+              {/* On mobile the composer keeps only attach + input + send
+                  (WhatsApp-style), so the template / draft / suggest
+                  actions live here instead of as their own buttons.
+                  Hidden on lg+, where those buttons are shown inline. */}
+              {!hidesWhatsappOnlyFeatures && (
+                <DropdownMenuItem
+                  className="lg:hidden"
+                  disabled={readOnly}
+                  onClick={onOpenTemplates}
+                >
+                  <LayoutTemplate className="mr-2 h-4 w-4" />
+                  {t('sendTemplate')}
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                className="lg:hidden"
+                disabled={readOnly || drafting}
+                onClick={handleDraft}
+              >
+                {drafting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Sparkles className="mr-2 h-4 w-4" />
+                )}
+                {t('draftWithAI')}
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                className="lg:hidden"
+                disabled={readOnly || suggesting}
+                onClick={handleSuggestAction}
+              >
+                {suggesting ? (
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                ) : (
+                  <Lightbulb className="mr-2 h-4 w-4" />
+                )}
+                {t('suggestAction')}
+              </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
 
@@ -1070,7 +1109,7 @@ export function MessageComposer({
               canAct={!readOnly}
               gateReason="send messages"
               title={readOnly ? undefined : t('sendTemplate')}
-              className="text-muted-foreground hover:text-foreground h-9 w-9 shrink-0 p-0"
+              className="text-muted-foreground hover:text-foreground hidden h-9 w-9 shrink-0 p-0 lg:inline-flex"
               onClick={onOpenTemplates}
             >
               <LayoutTemplate className="h-4 w-4" />
@@ -1084,7 +1123,7 @@ export function MessageComposer({
             gateReason="send messages"
             disabled={drafting}
             title={readOnly ? undefined : t('draftWithAI')}
-            className="text-muted-foreground hover:text-primary h-9 w-9 shrink-0 p-0"
+            className="text-muted-foreground hover:text-primary hidden h-9 w-9 shrink-0 p-0 lg:inline-flex"
             onClick={handleDraft}
           >
             {drafting ? (
@@ -1101,7 +1140,7 @@ export function MessageComposer({
             gateReason="send messages"
             disabled={suggesting}
             title={readOnly ? undefined : t('suggestAction')}
-            className="text-muted-foreground hover:text-primary h-9 w-9 shrink-0 p-0"
+            className="text-muted-foreground hover:text-primary hidden h-9 w-9 shrink-0 p-0 lg:inline-flex"
             onClick={handleSuggestAction}
           >
             {suggesting ? (
@@ -1130,29 +1169,51 @@ export function MessageComposer({
             // The placeholder text also surfaces the read-only state.
             title={readOnly ? t('readOnlyTitle') : undefined}
             className={cn(
-              'border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-xl border px-4 py-2.5 text-sm transition-colors outline-none',
+              'border-border bg-muted text-foreground placeholder-muted-foreground focus:border-primary/50 flex-1 resize-none rounded-[1.25rem] border px-4 py-2.5 text-sm transition-colors outline-none lg:rounded-xl',
               (hardWindowBlock || readOnly) && 'cursor-not-allowed opacity-50'
             )}
           />
 
+          {/* Send — always shown on desktop; on mobile it appears only
+              once there's text to send (WhatsApp swaps it for the mic
+              below when the field is empty). */}
           <GatedButton
             size="sm"
             canAct={!readOnly}
             gateReason="send messages"
             disabled={!text.trim() || hardWindowBlock || sending}
             onClick={handleSend}
-            className="bg-primary hover:bg-primary/90 h-9 w-9 shrink-0 p-0 disabled:opacity-40"
+            className={cn(
+              'bg-primary hover:bg-primary/90 h-9 w-9 shrink-0 rounded-full p-0 disabled:opacity-40 lg:rounded-md',
+              !text.trim() && 'hidden lg:inline-flex'
+            )}
           >
             <Send className="h-4 w-4" />
           </GatedButton>
+
+          {/* Mic — mobile only, and only while the field is empty. Taps
+              straight into the existing voice-note recorder. */}
+          {!text.trim() && (
+            <GatedButton
+              size="sm"
+              canAct={!readOnly}
+              gateReason="send messages"
+              disabled={inputsDisabled || busy}
+              title={readOnly ? undefined : t('voiceNote')}
+              onClick={() => void startRecording()}
+              className="bg-primary hover:bg-primary/90 h-9 w-9 shrink-0 rounded-full p-0 disabled:opacity-40 lg:hidden"
+            >
+              <Mic className="h-4 w-4" />
+            </GatedButton>
+          )}
         </div>
       )}
 
       {/* Hint sits outside the flex row so its height doesn't push
-          `items-end` buttons below the textarea. Indented to line up
-          under the textarea left edge. */}
+          `items-end` buttons below the textarea. Desktop-only — it
+          points at buttons the mobile composer folds into the + menu. */}
       {!draft && !recording && (
-        <p className="text-muted-foreground mt-1 pl-[5.5rem] text-[10px]">
+        <p className="text-muted-foreground mt-1 hidden pl-[5.5rem] text-[10px] lg:block">
           {t('draftHint')}
         </p>
       )}

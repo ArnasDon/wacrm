@@ -24,7 +24,6 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
@@ -90,10 +89,29 @@ const FAIL_COPY: Record<PeekFail['reason'], { title: string; body: string }> = {
   },
 };
 
-export default function JoinPage() {
-  const params = useParams<{ token: string }>();
-  const token = params?.token;
+interface JoinClientProps {
+  /** Invite token from the route segment, already URL-decoded. */
+  token: string;
+  /**
+   * May a signed-out visitor holding this (valid) invite register a
+   * new login? False when SIGNUP_MODE=disabled — the invite is real,
+   * but this deployment creates no new logins, so the only path in is
+   * an account that already exists.
+   */
+  inviteSignupAllowed: boolean;
+  /**
+   * May a visitor register with no invite at all? Only true when
+   * SIGNUP_MODE=open. Gates the "create a new account instead"
+   * escape hatch on the dead-invite cards.
+   */
+  selfServeSignupAllowed: boolean;
+}
 
+export function JoinClient({
+  token,
+  inviteSignupAllowed,
+  selfServeSignupAllowed,
+}: JoinClientProps) {
   const [peek, setPeek] = useState<PeekResult | null>(null);
   // Local auth probe — the AuthProvider lives inside the (dashboard)
   // route group, so it doesn't reach this page. We hit Supabase
@@ -259,26 +277,39 @@ export default function JoinPage() {
               >
                 Try again
               </Button>
-              <Link href="/signup">
-                <Button
-                  variant="outline"
-                  className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
-                >
-                  Create a new account instead
-                </Button>
-              </Link>
+              {selfServeSignupAllowed && (
+                <Link href="/signup">
+                  <Button
+                    variant="outline"
+                    className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    Create a new account instead
+                  </Button>
+                </Link>
+              )}
             </>
           ) : (
             <>
-              <Link href="/signup">
-                <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-                  Create a new account instead
-                </Button>
-              </Link>
+              {/* "Start your own account" only exists where the
+                  deployment actually accepts self-serve signups. On a
+                  closed or invite-only instance a dead invite leaves
+                  signing in as the only real option, so promote it to
+                  primary rather than offering a link that dead-ends. */}
+              {selfServeSignupAllowed && (
+                <Link href="/signup">
+                  <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+                    Create a new account instead
+                  </Button>
+                </Link>
+              )}
               <Link href="/login">
                 <Button
-                  variant="outline"
-                  className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                  variant={selfServeSignupAllowed ? 'outline' : 'default'}
+                  className={
+                    selfServeSignupAllowed
+                      ? 'w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                      : 'w-full bg-primary text-primary-foreground hover:bg-primary/90'
+                  }
                 >
                   Sign in
                 </Button>
@@ -412,19 +443,38 @@ export default function JoinPage() {
     <Card className="w-full max-w-md border-border bg-card">
       {inviteHeader}
       <CardContent className="flex flex-col gap-2">
-        <Link href={`/signup?invite=${encodeURIComponent(token!)}`}>
-          <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
-            Create account &amp; join
-          </Button>
-        </Link>
-        <Link href={`/login?invite=${encodeURIComponent(token!)}`}>
+        {/* With SIGNUP_MODE=disabled the invite stays perfectly valid —
+            what's gone is the ability to mint a new login for it. Say
+            so instead of silently dropping the button, or the invitee
+            is left wondering which half of the flow is broken. */}
+        {inviteSignupAllowed && (
+          <Link href={`/signup?invite=${encodeURIComponent(token)}`}>
+            <Button className="w-full bg-primary text-primary-foreground hover:bg-primary/90">
+              Create account &amp; join
+            </Button>
+          </Link>
+        )}
+        <Link href={`/login?invite=${encodeURIComponent(token)}`}>
           <Button
-            variant="outline"
-            className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+            variant={inviteSignupAllowed ? 'outline' : 'default'}
+            className={
+              inviteSignupAllowed
+                ? 'w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground'
+                : 'w-full bg-primary text-primary-foreground hover:bg-primary/90'
+            }
           >
-            I already have an account
+            {inviteSignupAllowed
+              ? 'I already have an account'
+              : 'Sign in to accept'}
           </Button>
         </Link>
+        {!inviteSignupAllowed && (
+          <p className="text-center text-xs text-muted-foreground">
+            New sign-ups are closed on this workspace. Sign in with an
+            existing login to accept, or ask an admin to create one for
+            you.
+          </p>
+        )}
       </CardContent>
     </Card>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { useTranslations } from "next-intl";
@@ -16,21 +16,23 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { MessageSquare, UsersRound } from "lucide-react";
+import {
+  allowsInviteSignup,
+  allowsSelfServeSignup,
+  type SignupMode,
+} from "@/lib/auth/signup-mode";
 
-// `useSearchParams` opts the component out of static prerendering
-// unless it sits under a Suspense boundary. We split the form into
-// a child component so the outer page can prerender the chrome
-// (background, card frame) while the form hydrates with the query
-// string on the client.
-export default function LoginPage() {
-  return (
-    <Suspense fallback={null}>
-      <LoginPageInner />
-    </Suspense>
-  );
+interface LoginFormProps {
+  /**
+   * This deployment's signup mode, resolved server-side in
+   * `page.tsx`. `SIGNUP_MODE` has no NEXT_PUBLIC_ prefix, so it is
+   * absent from the browser bundle and cannot be read here — it has
+   * to arrive as a prop.
+   */
+  signupMode: SignupMode;
 }
 
-function LoginPageInner() {
+export function LoginForm({ signupMode }: LoginFormProps) {
   const searchParams = useSearchParams();
   // Forwarded from `/join/<token>` when the visitor already has an
   // account. After a successful sign-in we send them to the join
@@ -49,6 +51,10 @@ function LoginPageInner() {
   );
   const [loading, setLoading] = useState(false);
   const supabase = createClient();
+
+  const showSignupLink = inviteToken
+    ? allowsInviteSignup(signupMode)
+    : allowsSelfServeSignup(signupMode);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -155,19 +161,26 @@ function LoginPageInner() {
             </Button>
           </form>
 
-          <p className="mt-6 text-center text-sm text-muted-foreground">
-            {t('noAccount')}{" "}
-            <Link
-              href={
-                inviteToken
-                  ? `/signup?invite=${encodeURIComponent(inviteToken)}`
-                  : "/signup"
-              }
-              className="text-primary hover:text-primary/80"
-            >
-              {t('createAccount')}
-            </Link>
-          </p>
+          {/* Pointing at a /signup that will only turn the visitor
+              away is worse than showing no link at all, so the CTA
+              tracks what the mode actually permits: open → always;
+              invite_only → only when this sign-in carries an invite
+              token to hand onward; disabled → never. */}
+          {showSignupLink && (
+            <p className="mt-6 text-center text-sm text-muted-foreground">
+              {t('noAccount')}{" "}
+              <Link
+                href={
+                  inviteToken
+                    ? `/signup?invite=${encodeURIComponent(inviteToken)}`
+                    : "/signup"
+                }
+                className="text-primary hover:text-primary/80"
+              >
+                {t('createAccount')}
+              </Link>
+            </p>
+          )}
         </CardContent>
       </Card>
     </div>

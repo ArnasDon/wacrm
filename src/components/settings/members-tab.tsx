@@ -5,9 +5,18 @@
 //
 // Two stacked sections:
 //   1. Roster   — every member of the account. Admin+ can change a
-//                 teammate's role inline and remove them. Owner row
-//                 is non-editable everywhere (transfer is its own
-//                 separate flow, deferred to a later PR).
+//                 teammate's role inline and remove them. The owner
+//                 row is never editable through the role dropdown:
+//                 promotion to / demotion from owner only happens
+//                 via the explicit Transfer ownership flow below,
+//                 which the `set_member_role` RPC enforces too.
+//   1b. Transfer — owner only. Hands the account to another member
+//                 in one atomic RPC (the caller drops to admin, the
+//                 target becomes owner, accounts.owner_user_id moves).
+//                 Gated behind a confirmation dialog with an explicit
+//                 acknowledgement, because the caller loses owner-only
+//                 powers the moment it succeeds and can only get them
+//                 back if the new owner transfers back.
 //   2. Pending  — outstanding invite links. Admin+ can revoke. The
 //                 plaintext URL is gone after the create dialog
 //                 closes, so we surface a "revoke + new link" hint
@@ -25,6 +34,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import {
   AlertTriangle,
+  Crown,
   Loader2,
   Mail,
   MailX,
@@ -47,6 +57,7 @@ import {
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Dialog,
   DialogContent,
@@ -65,8 +76,10 @@ import {
 import { useTranslations } from 'next-intl';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { usePresence } from '@/hooks/use-presence';
 import type { AccountRole } from '@/lib/auth/roles';
+import type { SignupMode } from '@/lib/auth/signup-mode';
 import { presenceLabel, summarize } from '@/lib/presence';
 import {
   PRESENCE_DOT_CLASS,
@@ -127,11 +140,19 @@ function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, stri
 export function MembersTab() {
   const t = useTranslations('Settings.members');
   const tRoles = useTranslations('Settings.roles');
-  const { user, canManageMembers } = useAuth();
+  const { user, canManageMembers, account, refreshProfile } = useAuth();
+  // Owner-only. Mirrors the `requireRole('owner')` guard on
+  // POST /api/account/transfer-ownership and the `v_caller_role <>
+  // 'owner'` check inside the RPC, so the button is absent for
+  // exactly the callers the server would refuse.
+  const canTransferOwnership = useCan('transfer-ownership');
   const { getPresence, getRow, now } = usePresence();
 
   const [members, setMembers] = useState<Member[]>([]);
   const [invitations, setInvitations] = useState<Invitation[]>([]);
+  // Deployment signup mode, reported alongside the invitations list.
+  // Null until that fetch lands, and for non-admins who never make it.
+  const [signupMode, setSignupMode] = useState<SignupMode | null>(null);
   const [loading, setLoading] = useState(true);
 
   const [inviteOpen, setInviteOpen] = useState(false);
@@ -139,6 +160,14 @@ export function MembersTab() {
   const [pendingMemberAction, setPendingMemberAction] = useState<string | null>(
     null,
   );
+  // Transfer-ownership dialog. `transferAck` is the explicit "yes, I
+  // understand I'm giving this away" checkbox — a bare confirm button
+  // sits one stray click away from the Remove button it shares a row
+  // with, and unlike Remove this one cannot be undone by the person
+  // who triggered it.
+  const [transferTarget, setTransferTarget] = useState<Member | null>(null);
+  const [transferAck, setTransferAck] = useState(false);
+  const [transferring, setTransferring] = useState(false);
 
   const loadEverything = useCallback(async () => {
     try {
@@ -163,8 +192,14 @@ export function MembersTab() {
           toast.error(payload.error || 'Failed to load invitations');
           return;
         }
-        const idata = (await ires.json()) as { invitations: Invitation[] };
+        const idata = (await ires.json()) as {
+          invitations: Invitation[];
+          // Absent on a deployment running an older build of this
+          // route — leave the banner off rather than guessing.
+          signupMode?: SignupMode;
+        };
         setInvitations(idata.invitations);
+        setSignupMode(idata.signupMode ?? null);
       } else {
         setInvitations([]);
       }
@@ -251,6 +286,49 @@ export function MembersTab() {
       toast.error('Could not reach the server');
     } finally {
       setPendingMemberAction(null);
+    }
+  }
+
+  async function handleTransferOwnership() {
+    if (!transferTarget) return;
+    const target = transferTarget;
+    setTransferring(true);
+    try {
+      const res = await fetch('/api/account/transfer-ownership', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newOwnerUserId: target.user_id }),
+      });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        toast.error(payload.error || 'Failed to transfer ownership');
+        return;
+      }
+
+      toast.success(
+        t('transferredToast', { name: target.full_name || t('unnamed') }),
+      );
+      setTransferTarget(null);
+      setTransferAck(false);
+
+      // Two refreshes, and both are load-bearing:
+      //
+      //   loadEverything() re-reads the roster so the crown moves and
+      //   the caller's own row shows Admin. Patching state locally
+      //   would work too, but the server just rewrote three rows in
+      //   one transaction and re-reading is the honest version.
+      //
+      //   refreshProfile() re-reads `profiles.account_role` into
+      //   AuthProvider. Without it `useCan('transfer-ownership')`
+      //   keeps answering true for the rest of the session, leaving
+      //   a demoted admin looking at owner-only buttons that now 403
+      //   — including the one that just fired.
+      await Promise.all([loadEverything(), refreshProfile()]);
+    } catch (err) {
+      console.error('[MembersTab] transfer ownership error:', err);
+      toast.error('Could not reach the server');
+    } finally {
+      setTransferring(false);
     }
   }
 
@@ -411,8 +489,11 @@ export function MembersTab() {
                       role dropdown lines up under the avatar. */}
                   <div className="flex items-center gap-2 sm:gap-3">
                     {/* Role display / editor. Inline Select is admin+
-                        only AND not allowed on the owner row (owner
-                        changes go through transfer, which lands later). */}
+                        only AND never on the owner row: `owner` is
+                        absent from EDITABLE_ROLES and `set_member_role`
+                        refuses both directions, so promoting or
+                        demoting an owner is only ever the deliberate
+                        Transfer ownership flow below. */}
                     {canManageMembers && !isOwnerRow && !isSelf ? (
                       <Select
                         value={member.role}
@@ -447,6 +528,38 @@ export function MembersTab() {
                       </span>
                     )}
 
+                    {/* Transfer ownership. Owner only, and never on
+                        the owner's own row — `isOwnerRow && isSelf`
+                        describes the caller themselves, and the RPC
+                        rejects transferring to yourself anyway. Amber
+                        to match the owner chip, so the crown reads as
+                        "grant the amber role" rather than as another
+                        destructive red action beside Remove. */}
+                    {canTransferOwnership && !isOwnerRow && !isSelf && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setTransferAck(false);
+                                setTransferTarget(member);
+                              }}
+                              disabled={isBusy}
+                              aria-label={t('transferAria', {
+                                name: member.full_name || t('unnamed'),
+                              })}
+                              className="border-amber-500/40 bg-amber-500/10 text-amber-300 hover:border-amber-500/60 hover:bg-amber-500/20 hover:text-amber-200"
+                            >
+                              <Crown className="size-4" />
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>{t('makeOwner')}</TooltipContent>
+                      </Tooltip>
+                    )}
+
                     {/* Remove. Admin+ only; never on the owner row;
                         never on yourself. Pre-polish styling was
                         neutral-default + red-on-hover — the
@@ -455,15 +568,25 @@ export function MembersTab() {
                         state with a darker shade on hover so the
                         affordance reads at-a-glance. */}
                     {canManageMembers && !isOwnerRow && !isSelf && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setRemovingMember(member)}
-                        disabled={isBusy}
-                        className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
-                      >
-                        <Trash2 className="size-4" />
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => setRemovingMember(member)}
+                              disabled={isBusy}
+                              aria-label={t('removeAria', {
+                                name: member.full_name || t('unnamed'),
+                              })}
+                              className="border-red-500/40 bg-red-500/10 text-red-300 hover:bg-red-500/20 hover:border-red-500/60 hover:text-red-200"
+                            >
+                              <Trash2 className="size-4" />
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>{t('remove')}</TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </li>
@@ -472,6 +595,19 @@ export function MembersTab() {
           </ul>
         </CardContent>
       </Card>
+
+      {/* Owner-only footnote. The crown button on each row is a bare
+          icon; without a line naming what it does, the only way to
+          find out is to click it. Suppressed on a one-person account,
+          where there is nobody to transfer to and the buttons don't
+          render at all. */}
+      {canTransferOwnership && members.length > 1 && (
+        <p className="text-xs text-muted-foreground">
+          {t.rich('transferHint', {
+            bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+          })}
+        </p>
+      )}
 
       {/* Pending invitations — admin+ only */}
       <RequireRole min="admin">
@@ -490,6 +626,19 @@ export function MembersTab() {
               no "copy link again" button. Stating the constraint up
               front (rather than letting the user discover it by
               looking for a button) keeps it from feeling like a bug. */}
+          {/* An invite link is only half the onboarding path: the other
+              half is the invitee minting a login. With SIGNUP_MODE
+              =disabled that half is gone, and the link silently only
+              works for people who already have an account here. Say so
+              at the point of creation rather than letting the admin
+              find out from a confused teammate. */}
+          {signupMode === 'disabled' && (
+            <div className="mb-3 flex gap-2 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-200">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>{t('signupsClosedNotice')}</span>
+            </div>
+          )}
+
           {invitations.length > 0 ? (
             <p className="mb-3 text-xs text-muted-foreground">
               {t('inviteHint')}
@@ -565,6 +714,93 @@ export function MembersTab() {
         onOpenChange={setInviteOpen}
         onCreated={loadEverything}
       />
+
+      <Dialog
+        open={transferTarget !== null}
+        onOpenChange={(open) => {
+          if (!open && !transferring) {
+            setTransferTarget(null);
+            setTransferAck(false);
+          }
+        }}
+      >
+        <DialogContent className="bg-popover border-border sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-popover-foreground">
+              <Crown className="size-4 text-amber-400" />
+              {t('transferDialogTitle')}
+            </DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {t.rich('transferDialogDesc', {
+                name: transferTarget?.full_name || t('unnamed'),
+                account: account?.name ?? '',
+                bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
+              })}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Spell out both halves of the swap. "Transfer ownership"
+              on its own reads as "give them the badge"; the half
+              people miss is that they lose it themselves, along with
+              the ability to take it back. */}
+          <ul className="space-y-2 py-1 text-xs text-muted-foreground">
+            <li className="flex gap-2">
+              <Crown className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+              <span>
+                {t('transferConsequenceTarget', {
+                  name: transferTarget?.full_name || t('unnamed'),
+                })}
+              </span>
+            </li>
+            <li className="flex gap-2">
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-amber-400" />
+              <span>{t('transferConsequenceSelf')}</span>
+            </li>
+          </ul>
+
+          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3 py-2.5">
+            <Checkbox
+              checked={transferAck}
+              onCheckedChange={(checked) => setTransferAck(checked === true)}
+              disabled={transferring}
+              className="mt-0.5"
+            />
+            <span className="text-xs text-muted-foreground">
+              {t('transferAck', {
+                name: transferTarget?.full_name || t('unnamed'),
+              })}
+            </span>
+          </label>
+
+          <DialogFooter className="bg-popover border-border">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setTransferTarget(null);
+                setTransferAck(false);
+              }}
+              disabled={transferring}
+              className="border-border text-muted-foreground hover:bg-muted"
+            >
+              {t('cancel')}
+            </Button>
+            <Button
+              onClick={handleTransferOwnership}
+              disabled={!transferAck || transferring}
+              className="bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+            >
+              {transferring ? (
+                <>
+                  <Loader2 className="size-4 animate-spin" />
+                  {t('transferring')}
+                </>
+              ) : (
+                t('transferBtn')
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog
         open={removingMember !== null}

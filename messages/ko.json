@@ -1285,7 +1285,20 @@
       "removeDialogDesc": "<bold>{name}</bold>을(를) 이 계정에서 제거하시겠습니까? 이 계정에서 로그아웃되며 다음 로그인 시 새로운 개인 계정이 발급됩니다. 로그인 정보 자체는 삭제되지 않습니다.",
       "cancel": "취소",
       "removing": "제거 중...",
-      "removeBtn": "멤버 제거"
+      "removeBtn": "멤버 제거",
+      "signupsClosedNotice": "이 배포에서는 신규 가입이 차단되어 있습니다(SIGNUP_MODE=disabled). 따라서 초대 링크는 이미 로그인 계정이 있는 사람에게만 동작합니다. 운영자에게 초대 가입 허용을 요청하거나, 계정을 먼저 만들어 주세요.",
+      "makeOwner": "소유자로 지정",
+      "transferAria": "{name}에게 소유권 이전",
+      "removeAria": "{name} 제거",
+      "transferHint": "소유권은 소유자만 이전할 수 있습니다. 팀원 행의 <bold>왕관</bold> 버튼으로 계정을 넘길 수 있으며, 이전 후 본인은 관리자가 됩니다.",
+      "transferDialogTitle": "소유권 이전",
+      "transferDialogDesc": "<bold>{name}</bold>을(를) <bold>{account}</bold>의 소유자로 지정하시겠습니까?",
+      "transferConsequenceTarget": "{name}이(가) 설정, 결제, 멤버 관리 및 소유권 재이전을 포함한 모든 권한을 갖게 됩니다.",
+      "transferConsequenceSelf": "본인은 즉시 관리자로 강등됩니다. 소유권을 되돌리려면 새 소유자가 다시 이전해야 합니다.",
+      "transferAck": "이 계정을 {name}에게 넘기고 소유자 역할을 포기한다는 점을 이해했습니다.",
+      "transferBtn": "소유권 이전",
+      "transferring": "이전 중...",
+      "transferredToast": "이제 {name}이(가) 소유자입니다"
     },
     "invite": {
       "inviteCreated": "초대가 생성되었습니다",

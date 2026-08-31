@@ -32,6 +32,7 @@ import {
   rateLimitResponse,
   RATE_LIMITS,
 } from "@/lib/rate-limit";
+import { getSignupMode } from "@/lib/auth/signup-mode";
 
 // Resolve the base URL we publish invite links under.
 //
@@ -158,7 +159,16 @@ export async function GET() {
       );
     }
 
-    return NextResponse.json({ invitations: data ?? [] });
+    // Ride along with the roster fetch so the Members tab can warn an
+    // admin *before* they generate a link that a brand-new teammate
+    // would not be able to redeem. Admin-only response already, and
+    // the mode is a deployment fact rather than a secret — but there
+    // is still no reason to hand it to anonymous callers, which is
+    // why it lives here and not on a public endpoint.
+    return NextResponse.json({
+      invitations: data ?? [],
+      signupMode: getSignupMode(),
+    });
   } catch (err) {
     return toErrorResponse(err);
   }

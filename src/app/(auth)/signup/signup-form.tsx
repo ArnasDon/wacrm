@@ -1,8 +1,7 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,25 +15,23 @@ import {
 } from "@/components/ui/card";
 import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
 
-// `useSearchParams` opts the component out of static prerendering
-// unless wrapped in Suspense — same pattern as /login.
-export default function SignupPage() {
-  return (
-    <Suspense fallback={null}>
-      <SignupPageInner />
-    </Suspense>
-  );
+interface SignupFormProps {
+  /**
+   * Invite token carried over from `/join/<token>`, resolved by the
+   * server component in `page.tsx` rather than read from the query
+   * string here — that same value is what the signup gate validated
+   * before deciding to render this form, so reading it twice from
+   * two different places could only ever disagree.
+   *
+   * It survives the signup → email verification → redirect round
+   * trip via `emailRedirectTo` below, which points back at
+   * /join/<token> so the user lands on the redeem step after
+   * verifying instead of being dropped on /dashboard.
+   */
+  inviteToken: string | null;
 }
 
-function SignupPageInner() {
-  const searchParams = useSearchParams();
-  // When the user lands here from `/join/<token>` we carry the
-  // invite token in the query so it survives the signup → email
-  // verification → redirect round-trip. `emailRedirectTo` below
-  // points back at /join/<token> so the user lands on the redeem
-  // step after verifying instead of being dropped on /dashboard.
-  const inviteToken = searchParams.get("invite");
-
+export function SignupForm({ inviteToken }: SignupFormProps) {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

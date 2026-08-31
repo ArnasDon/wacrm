@@ -1285,7 +1285,20 @@
       "removeDialogDesc": "Remove <bold>{name}</bold> from the account? They'll be signed out of this account and given a fresh personal account on their next sign-in. Their login isn't deleted.",
       "cancel": "Cancel",
       "removing": "Removing...",
-      "removeBtn": "Remove member"
+      "removeBtn": "Remove member",
+      "signupsClosedNotice": "New sign-ups are closed on this deployment (SIGNUP_MODE=disabled), so an invite link only works for people who already have a login here. Ask your operator to allow invited sign-ups, or create the login for them first.",
+      "makeOwner": "Make owner",
+      "transferAria": "Transfer ownership to {name}",
+      "removeAria": "Remove {name}",
+      "transferHint": "Only the owner can transfer ownership. Use the <bold>crown</bold> button on a teammate's row to hand the account over \u2014 you'll become an Admin.",
+      "transferDialogTitle": "Transfer ownership",
+      "transferDialogDesc": "Make <bold>{name}</bold> the owner of <bold>{account}</bold>?",
+      "transferConsequenceTarget": "{name} gets full control \u2014 settings, billing, members, and the ability to transfer ownership again.",
+      "transferConsequenceSelf": "You'll be demoted to Admin immediately. Only the new owner can transfer it back.",
+      "transferAck": "I understand I'm handing this account to {name} and giving up my owner role.",
+      "transferBtn": "Transfer ownership",
+      "transferring": "Transferring...",
+      "transferredToast": "{name} is now the owner"
     },
     "invite": {
       "inviteCreated": "Invite created",

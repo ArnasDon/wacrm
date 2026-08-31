@@ -11,6 +11,7 @@ import {
 } from "@/components/ui/popover";
 import type { Message } from "@/types";
 import { useTranslations } from "next-intl";
+import { SwipeToReply } from "./swipe-to-reply";
 
 // WhatsApp's own quick-reaction bar starts with these six. Picking the same
 // set keeps the affordance familiar without pulling in a 300KB emoji library.
@@ -94,7 +95,9 @@ export function MessageActions({
        *  100%, which used to bleed across into the contact-sidebar
        *  area. See issue #165. */}
       <div className="group/actions relative min-w-0 max-w-[75%]">
-        {children}
+        <SwipeToReply onReply={onReply} fromEnd={isAgent}>
+          {children}
+        </SwipeToReply>
       <div
         data-touch-open={touchOpen || pickerOpen ? "true" : undefined}
         className={cn(

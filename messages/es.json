@@ -550,6 +550,7 @@
         "completed": "{count} completadas"
       },
       "activity": {
+        "internalNote": "Nota interna",
         "empty": "Sin actividad todavía.",
         "note": "Nota",
         "msgIn": "Mensaje del contacto",

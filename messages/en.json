@@ -581,6 +581,7 @@
         "completed": "{count} completed"
       },
       "activity": {
+        "internalNote": "Internal note",
         "empty": "No activity yet.",
         "note": "Note",
         "msgIn": "Message from contact",

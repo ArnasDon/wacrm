@@ -5,6 +5,7 @@ import { useTranslations } from 'next-intl';
 import {
   IconMessage,
   IconNote,
+  IconNotebook,
   IconFileDollar,
   IconTargetArrow,
   IconTrophy,
@@ -23,7 +24,14 @@ import { cn } from '@/lib/utils';
  * to the account by its own RLS. No new tables.
  */
 
-type Kind = 'msg_in' | 'msg_out' | 'note' | 'quote' | 'deal_created' | 'deal_won';
+type Kind =
+  | 'msg_in'
+  | 'msg_out'
+  | 'internal_note'
+  | 'note'
+  | 'quote'
+  | 'deal_created'
+  | 'deal_won';
 
 interface TimelineItem {
   id: string;
@@ -37,6 +45,7 @@ interface TimelineItem {
 const ICONS: Record<Kind, Icon> = {
   msg_in: IconMessage,
   msg_out: IconMessage,
+  internal_note: IconNotebook,
   note: IconNote,
   quote: IconFileDollar,
   deal_created: IconTargetArrow,
@@ -46,6 +55,7 @@ const ICONS: Record<Kind, Icon> = {
 const ACCENT: Record<Kind, string> = {
   msg_in: 'text-sky-600 dark:text-sky-400',
   msg_out: 'text-blue-600 dark:text-blue-400',
+  internal_note: 'text-muted-foreground',
   note: 'text-amber-600 dark:text-amber-400',
   quote: 'text-violet-600 dark:text-violet-400',
   deal_created: 'text-muted-foreground',
@@ -172,10 +182,26 @@ export function ContactTimeline({
     }
 
     for (const m of (msgsRes.data ?? []) as Record<string, unknown>[]) {
-      const inbound = m.sender_type === 'customer';
       const type = (m.content_type as string) ?? 'text';
+      const hasText =
+        typeof m.content_text === 'string' && m.content_text.trim().length > 0;
+
+      // Internal notes (migration 083) are team-only jottings on the
+      // thread, not customer messages — give them their own row.
+      if (type === 'internal_note') {
+        merged.push({
+          id: `msg-${m.id}`,
+          kind: 'internal_note',
+          at: m.created_at as string,
+          title: t('internalNote'),
+          body: hasText ? (m.content_text as string) : undefined,
+        });
+        continue;
+      }
+
+      const inbound = m.sender_type === 'customer';
       const text =
-        type === 'text' && typeof m.content_text === 'string' && m.content_text.trim()
+        type === 'text' && hasText
           ? (m.content_text as string)
           : (MEDIA_LABEL[type] ?? `[${type}]`);
       merged.push({

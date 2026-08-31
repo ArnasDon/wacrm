@@ -581,6 +581,7 @@
         "completed": "{count}개 완료됨"
       },
       "activity": {
+        "internalNote": "내부 메모",
         "empty": "아직 활동이 없습니다.",
         "note": "메모",
         "msgIn": "연락처의 메시지",

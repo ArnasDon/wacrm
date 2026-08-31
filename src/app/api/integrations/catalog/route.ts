@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { listCatalogIntegrations, saveCatalogIntegration } from '@/lib/ai/catalog/integrations'
+import {
+  CatalogIntegrationValidationError,
+  listCatalogIntegrations,
+  saveCatalogIntegration,
+} from '@/lib/ai/catalog/integrations'
 
 /**
  * GET /api/integrations/catalog  (viewer+)
@@ -48,15 +52,23 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'secret is required.' }, { status: 400 })
     }
 
-    const integration = await saveCatalogIntegration(supabase, accountId, userId, {
-      provider,
-      displayName: display_name,
-      baseUrl: base_url,
-      appKey: app_key ?? null,
-      secret,
-      scopes: Array.isArray(scopes) ? scopes : undefined,
-      isPrimary: Boolean(is_primary),
-    })
+    let integration
+    try {
+      integration = await saveCatalogIntegration(supabase, accountId, userId, {
+        provider,
+        displayName: display_name,
+        baseUrl: base_url,
+        appKey: app_key ?? null,
+        secret,
+        scopes: Array.isArray(scopes) ? scopes : undefined,
+        isPrimary: Boolean(is_primary),
+      })
+    } catch (err) {
+      if (err instanceof CatalogIntegrationValidationError) {
+        return NextResponse.json({ error: err.message }, { status: 400 })
+      }
+      throw err
+    }
     return NextResponse.json({ success: true, integration })
   } catch (err) {
     return toErrorResponse(err)

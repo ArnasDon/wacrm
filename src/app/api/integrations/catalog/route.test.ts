@@ -9,12 +9,19 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
+  isSafeBudunUrl: vi.fn(async () => true),
 }));
 
 vi.mock('@/lib/auth/account', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/auth/account')>();
   return { ...actual, requireRole: mocks.requireRole };
 });
+
+// SSRF guard (IC-A1) — mocked `true` by default so the existing
+// `https://...example.com` fixtures below (never resolved by real DNS
+// in this suite) keep passing; overridden in the dedicated test below
+// that proves the route surfaces a rejection as 400.
+vi.mock('@/lib/budun/url-safety', () => ({ isSafeBudunUrl: mocks.isSafeBudunUrl }));
 
 import { GET, POST } from './route';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/account';
@@ -136,6 +143,8 @@ function integration(id: string, accountId: string, overrides: Partial<Record<st
 
 beforeEach(() => {
   mocks.requireRole.mockReset();
+  mocks.isSafeBudunUrl.mockReset();
+  mocks.isSafeBudunUrl.mockResolvedValue(true);
   __resetRateLimitForTests();
 });
 
@@ -257,5 +266,17 @@ describe('POST /api/integrations/catalog', () => {
     const otherAccount = rows.find((r) => r.id === 'int-other-account-primary')!;
     expect(oldPrimary.is_primary).toBe(false);
     expect(otherAccount.is_primary).toBe(true); // untouched — different account
+  });
+
+  it('SSRF guard (IC-A1): a base_url the guard rejects → 400, nothing written', async () => {
+    mocks.isSafeBudunUrl.mockResolvedValue(false);
+    const { supabase, rows } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(
+      postRequest({ provider: 'budun', display_name: 'Evil', base_url: 'http://169.254.169.254', secret: 's' }),
+    );
+    expect(res.status).toBe(400);
+    expect(rows.length).toBe(0);
   });
 });

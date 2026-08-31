@@ -13,6 +13,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt, encrypt } from '@/lib/whatsapp/encryption'
 import { BudunClient } from '@/lib/budun/client'
+import { isSafeBudunUrl } from '@/lib/budun/url-safety'
 
 /**
  * Thrown by saveCatalogIntegration/deleteCatalogIntegration when `id`
@@ -27,6 +28,20 @@ export class CatalogIntegrationNotFoundError extends Error {
   constructor() {
     super('Catalog integration not found.')
     this.name = 'CatalogIntegrationNotFoundError'
+  }
+}
+
+/**
+ * Thrown by `saveCatalogIntegration` when `baseUrl` fails the SSRF
+ * guard (IC-A1) — a malformed URL, a non-http(s) scheme, or a hostname
+ * that resolves to a loopback/private/link-local/reserved address.
+ * Routes map this to 400. Message is deliberately generic — see
+ * `@/lib/budun/url-safety` for why.
+ */
+export class CatalogIntegrationValidationError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'CatalogIntegrationValidationError'
   }
 }
 
@@ -142,6 +157,20 @@ export async function saveCatalogIntegration(
   userId: string,
   input: SaveCatalogIntegrationInput,
 ): Promise<CatalogIntegrationRow> {
+  // SSRF guard (IC-A1) — checked BEFORE any read/write below, on both
+  // create (baseUrl always present, enforced further down) and update
+  // (baseUrl present only when the caller is actually changing it; an
+  // omitted key here means "leave unchanged" and re-validating an
+  // already-stored value on every unrelated field edit would be
+  // wasteful). This is the persistence-time half of the fix — the
+  // runtime half lives in `BudunClient.get()`, re-checked immediately
+  // before every actual fetch.
+  if (input.baseUrl !== undefined && !(await isSafeBudunUrl(input.baseUrl))) {
+    throw new CatalogIntegrationValidationError(
+      'base_url must be a publicly reachable http:// or https:// URL.',
+    )
+  }
+
   // Only include a key in the update payload when the caller actually
   // means to change it — omitting a field here (not sending `undefined`
   // explicitly, just not setting the key) is what keeps a PATCH that

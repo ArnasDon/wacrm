@@ -3,6 +3,7 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import {
   CatalogIntegrationNotFoundError,
+  CatalogIntegrationValidationError,
   deleteCatalogIntegration,
   saveCatalogIntegration,
 } from '@/lib/ai/catalog/integrations'
@@ -56,6 +57,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
     // toErrorResponse unchanged (Bug E2 fix).
     if (err instanceof CatalogIntegrationNotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    if (err instanceof CatalogIntegrationValidationError) {
+      return NextResponse.json({ error: err.message }, { status: 400 })
     }
     return toErrorResponse(err)
   }

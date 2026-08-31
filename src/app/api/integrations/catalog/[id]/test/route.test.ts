@@ -25,6 +25,12 @@ vi.mock('@/lib/auth/account', async (importOriginal) => {
   return { ...actual, requireRole: mocks.requireRole };
 });
 
+// SSRF guard (IC-A1) — `BudunClient` now re-validates `base_url` before
+// every fetch; mocked `true` here since this file's fixtures use a
+// plain `https://erp.example.com` never resolved by real DNS in this
+// suite. `client.test.ts` covers the guard's own behavior in detail.
+vi.mock('@/lib/budun/url-safety', () => ({ isSafeBudunUrl: vi.fn(async () => true) }));
+
 import { POST } from './route';
 import { UnauthorizedError, ForbiddenError } from '@/lib/auth/account';
 import { __resetRateLimitForTests } from '@/lib/rate-limit';

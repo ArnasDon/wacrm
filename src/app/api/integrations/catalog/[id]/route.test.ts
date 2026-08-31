@@ -30,12 +30,17 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
 
 const mocks = vi.hoisted(() => ({
   requireRole: vi.fn(),
+  isSafeBudunUrl: vi.fn(async () => true),
 }));
 
 vi.mock('@/lib/auth/account', async (importOriginal) => {
   const actual = await importOriginal<typeof import('@/lib/auth/account')>();
   return { ...actual, requireRole: mocks.requireRole };
 });
+
+// SSRF guard (IC-A1) — mocked `true` by default; overridden in the
+// dedicated test below that proves a rejection surfaces as 400.
+vi.mock('@/lib/budun/url-safety', () => ({ isSafeBudunUrl: mocks.isSafeBudunUrl }));
 
 import { PATCH, DELETE } from './route';
 import { GET as GET_LIST } from '../route';
@@ -175,6 +180,8 @@ function patchRequest(body: unknown) {
 
 beforeEach(() => {
   mocks.requireRole.mockReset();
+  mocks.isSafeBudunUrl.mockReset();
+  mocks.isSafeBudunUrl.mockResolvedValue(true);
   __resetRateLimitForTests();
 });
 
@@ -312,6 +319,16 @@ describe('PATCH /api/integrations/catalog/[id]', () => {
     const res = await PATCH(patchRequest({ display_name: 'X', account_id: 'acct-attacker' }), params('int-1'));
     expect(res.status).toBe(200);
     expect(rows[0].account_id).toBe('acct-1');
+  });
+
+  it('SSRF guard (IC-A1): a base_url the guard rejects → 400, the row is left unmodified', async () => {
+    mocks.isSafeBudunUrl.mockResolvedValue(false);
+    const { supabase, rows } = fakeSupabase([integration('int-1', 'acct-1', { base_url: 'https://original.example.com' })]);
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await PATCH(patchRequest({ base_url: 'http://192.168.1.1' }), params('int-1'));
+    expect(res.status).toBe(400);
+    expect(rows[0].base_url).toBe('https://original.example.com');
   });
 });
 

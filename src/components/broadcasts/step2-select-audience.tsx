@@ -1,14 +1,17 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { parseBroadcastCsv } from '@/lib/broadcast-csv';
 import { CustomField, Tag } from '@/types';
 import { Button } from '@/components/ui/button';
+import { toast } from 'sonner';
 import {
   Users,
   Tags,
   Filter,
   Upload,
+  FileText,
   Loader2,
   ArrowRight,
   ArrowLeft,
@@ -91,6 +94,16 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  // The picked file's name, shown back to the user. The parsed rows
+  // themselves live on `audience.csvContacts` (owned by the wizard) so
+  // they survive stepping forward and back.
+  const [pickedCsvName, setPickedCsvName] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  const csvCount = audience.csvContacts?.length ?? 0;
+  // Only meaningful while the rows it produced are still in play —
+  // picking another audience type wipes `csvContacts`.
+  const csvFileName = csvCount > 0 ? pickedCsvName : null;
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -212,6 +225,30 @@ export function Step2SelectAudience({
   useEffect(() => {
     fetchEstimatedCount();
   }, [fetchEstimatedCount]);
+
+  async function handleCsvChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = e.target.files?.[0];
+    if (!selected) return;
+
+    const result = parseBroadcastCsv(await selected.text());
+
+    if (!result.ok) {
+      toast.error(
+        result.error === 'missing_phone_column'
+          ? t('selectAudience.errorCsvMissingPhone')
+          : t('selectAudience.errorCsvParse'),
+      );
+      // Clear the input so re-picking the same corrected file still
+      // fires `change` (the browser suppresses it for an identical value).
+      e.target.value = '';
+      setPickedCsvName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      return;
+    }
+
+    setPickedCsvName(selected.name);
+    onUpdate({ ...audience, csvContacts: result.contacts });
+  }
 
   function toggleTag(tagId: string) {
     const current = audience.tagIds ?? [];
@@ -388,6 +425,49 @@ export function Step2SelectAudience({
               />
             </div>
           )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <div>
+            <p className="text-sm font-medium text-foreground">
+              {t('selectAudience.uploadCsv')}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t('selectAudience.csvFormatDesc')}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => csvInputRef.current?.click()}
+            className="group flex w-full flex-col items-center gap-2 rounded-lg border border-dashed border-border bg-muted/40 px-4 py-6 text-center transition-colors hover:border-primary/40 hover:bg-muted/70"
+          >
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-muted text-muted-foreground group-hover:text-foreground">
+              {csvFileName ? (
+                <FileText className="h-5 w-5" />
+              ) : (
+                <Upload className="h-5 w-5" />
+              )}
+            </div>
+            <p className="text-sm text-foreground">
+              {csvFileName ?? t('selectAudience.uploadCsv')}
+            </p>
+            {csvCount > 0 && (
+              <p className="text-xs text-primary">
+                {t('selectAudience.csvContactsFound', { count: csvCount })}
+              </p>
+            )}
+          </button>
+
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleCsvChange}
+            className="hidden"
+          />
         </div>
       )}
 

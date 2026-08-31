@@ -7,6 +7,7 @@ import {
   BATCH_SEND_ATTEMPTS,
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
+import { normalizeKey } from '@/lib/contacts/dedupe';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -224,6 +225,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
    * Pre-existing implementation synthesized `csv-N` strings as
    * contact_id, which failed the UUID cast on insert — every CSV
    * broadcast silently created zero recipients.
+   *
+   * Matching is on the normalized number throughout, so it agrees with
+   * the account-wide unique index rather than colliding with it.
    */
   async function upsertCsvContacts(
     supabase: ReturnType<typeof createClient>,
@@ -242,37 +246,47 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       throw new Error('Your profile is not linked to an account.');
     }
 
-    // De-duplicate by phone within the CSV (users can paste duplicates).
-    const uniqueByPhone = new Map<string, { phone: string; name?: string }>();
+    // De-duplicate within the CSV on the NORMALIZED number — the same
+    // key the DB's UNIQUE (account_id, phone_normalized) index uses
+    // (migration 022). Keyed on the raw string instead, "+1 555-0100"
+    // and "15550100" survived as two rows and the insert below died on
+    // a 23505, failing the whole broadcast.
+    const uniqueByKey = new Map<string, { phone: string; name?: string }>();
     for (const row of csvRows) {
-      if (row.phone) uniqueByPhone.set(row.phone, row);
+      const key = normalizeKey(row.phone);
+      if (key && !uniqueByKey.has(key)) uniqueByKey.set(key, row);
     }
-    const phones = [...uniqueByPhone.keys()];
+    const keys = [...uniqueByKey.keys()];
 
-    // Single round-trip lookup of existing contacts by phone.
+    // Single round-trip lookup of the contacts already in this ACCOUNT.
+    // Scoping to `user_id` missed rows a teammate created on a shared
+    // account, so those numbers looked new and their inserts collided
+    // with the account-wide unique index.
     const { data: existing, error: lookupErr } = await supabase
       .from('contacts')
       .select('*')
-      .eq('user_id', user.id)
-      .in('phone', phones);
+      .eq('account_id', accountId)
+      .in('phone_normalized', keys);
     if (lookupErr) {
       throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
     }
 
-    const byPhone = new Map<string, Contact>();
+    const byKey = new Map<string, Contact>();
     for (const c of (existing ?? []) as Contact[]) {
-      if (c.phone) byPhone.set(c.phone, c);
+      const key = normalizeKey(c.phone ?? '');
+      if (key) byKey.set(key, c);
     }
 
     // Insert only missing contacts, in one batch per 200 rows (PostgREST
     // has a default payload cap — 200 keeps individual requests small).
-    const missing = phones
-      .filter((p) => !byPhone.has(p))
-      .map((phone) => ({
+    const missing = keys
+      .filter((k) => !byKey.has(k))
+      .map((k) => uniqueByKey.get(k)!)
+      .map((row) => ({
         user_id: user.id,
         account_id: accountId,
-        phone,
-        name: uniqueByPhone.get(phone)?.name ?? null,
+        phone: row.phone,
+        name: row.name ?? null,
       }));
 
     const INSERT_CHUNK = 200;
@@ -286,13 +300,14 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         throw new Error(`Failed to create CSV contacts: ${insertErr.message}`);
       }
       for (const c of (inserted ?? []) as Contact[]) {
-        if (c.phone) byPhone.set(c.phone, c);
+        const key = normalizeKey(c.phone ?? '');
+        if (key) byKey.set(key, c);
       }
     }
 
     // Preserve input order so analytics roughly matches the CSV order.
-    return phones
-      .map((p) => byPhone.get(p))
+    return keys
+      .map((k) => byKey.get(k))
       .filter((c): c is Contact => Boolean(c));
   }
 

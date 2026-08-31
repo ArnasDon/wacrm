@@ -355,7 +355,7 @@ function CreateKeyDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="border-border bg-popover sm:max-w-md">
+      <DialogContent className="sm:max-w-md">
         {createdKey ? (
           <>
             <DialogHeader>

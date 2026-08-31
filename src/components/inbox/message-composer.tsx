@@ -547,14 +547,16 @@ export function MessageComposer({
         </div>
       )}
       {sessionExpired && (
-        <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
-          <p className="text-xs text-amber-400">
+        // Amber = warning semantics (docs/DESIGN.md §2). Bordered so it
+        // reads as a notice, not a shout.
+        <div className="mb-2 flex items-center justify-between rounded-md border border-amber-500/25 bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-700 dark:text-amber-400">
             {t("sessionExpiredHint")}
           </p>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 text-xs text-amber-400 hover:text-amber-300"
+            className="h-7 text-xs font-medium text-amber-700 hover:bg-amber-500/15 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-300"
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="mr-1 h-3 w-3" />
@@ -607,29 +609,29 @@ export function MessageComposer({
         />
       ) : recording ? (
         // Recording bar — replaces the composer while the mic is live.
-        <div className="flex items-center gap-3 rounded-xl border border-border bg-muted px-4 py-2.5">
-          <span className="flex h-2.5 w-2.5 shrink-0 animate-pulse rounded-full bg-red-500" />
-          <span className="flex-1 text-sm text-foreground">
+        <div className="flex items-center gap-3 rounded-md border border-border bg-muted px-3.5 py-2">
+          <span className="flex h-2 w-2 shrink-0 animate-pulse rounded-full bg-red-500" />
+          <span className="flex-1 text-[13px] text-foreground tabular-nums">
             {t("recording", { current: formatDuration(recordSeconds), max: formatDuration(MAX_RECORDING_SECONDS) })}
           </span>
           <button
             type="button"
             onClick={cancelRecording}
-            className="rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-card hover:text-foreground"
+            className="rounded-md px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
           >
             {t("cancel")}
           </button>
           <Button
             size="sm"
             onClick={stopRecording}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90"
+            className="h-8 w-8 shrink-0 bg-primary p-0 hover:bg-primary/90"
             title={t("stopAndAttach")}
           >
-            <Square className="h-4 w-4" />
+            <Square className="h-3.5 w-3.5" />
           </Button>
         </div>
       ) : (
-        <div className="flex items-end gap-2">
+        <div className="flex items-end gap-1.5">
           {/* Attach menu — photo / video / document / voice. */}
           <DropdownMenu>
             <DropdownMenuTrigger
@@ -641,7 +643,7 @@ export function MessageComposer({
                     ? undefined
                     : t("attachMedia")
               }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               {busy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -681,7 +683,7 @@ export function MessageComposer({
                     ? undefined
                     : t("moreActions")
               }
-              className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md p-0 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50"
             >
               <Plus className="h-4 w-4" />
             </DropdownMenuTrigger>
@@ -703,7 +705,7 @@ export function MessageComposer({
             canAct={!readOnly}
             gateReason="send messages"
             title={readOnly ? undefined : t("sendTemplate")}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-foreground"
+            className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:bg-muted hover:text-foreground"
             onClick={onOpenTemplates}
           >
             <LayoutTemplate className="h-4 w-4" />
@@ -716,7 +718,7 @@ export function MessageComposer({
             gateReason="send messages"
             disabled={drafting}
             title={readOnly ? undefined : t("draftWithAI")}
-            className="h-9 w-9 shrink-0 p-0 text-muted-foreground hover:text-primary"
+            className="h-8 w-8 shrink-0 p-0 text-muted-foreground hover:bg-muted hover:text-primary"
             onClick={handleDraft}
           >
             {drafting ? (
@@ -745,7 +747,7 @@ export function MessageComposer({
             // The placeholder text also surfaces the read-only state.
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
-              "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
+              "flex-1 resize-none rounded-md border border-border bg-background px-3.5 py-2 text-[13px] text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/40",
               (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />
@@ -756,7 +758,7 @@ export function MessageComposer({
             gateReason="send messages"
             disabled={!text.trim() || sessionExpired || sending}
             onClick={handleSend}
-            className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
+            className="h-8 w-8 shrink-0 rounded-md bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >
             <Send className="h-4 w-4" />
           </GatedButton>
@@ -767,7 +769,7 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
       {!draft && !recording && (
-        <p className="mt-1 pl-[5.5rem] text-[10px] text-muted-foreground">
+        <p className="mt-1.5 pl-[4.875rem] text-[11px] text-muted-foreground">
           {t("draftHint")}
         </p>
       )}
@@ -839,7 +841,7 @@ function MediaDraftPreview({
   t: ReturnType<typeof useTranslations>;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-muted/40 p-3">
+    <div className="rounded-md border border-border bg-muted/40 p-3">
       <div className="flex items-start gap-3">
         <div className="min-w-0 flex-1">
           {draft.kind === "image" && (
@@ -847,18 +849,18 @@ function MediaDraftPreview({
             <img
               src={draft.mediaUrl}
               alt={draft.filename}
-              className="max-h-40 rounded-lg object-cover"
+              className="max-h-40 rounded-md object-cover"
             />
           )}
           {draft.kind === "video" && (
-            <video src={draft.mediaUrl} controls className="max-h-40 rounded-lg" />
+            <video src={draft.mediaUrl} controls className="max-h-40 rounded-md" />
           )}
           {draft.kind === "audio" && (
             <audio src={draft.mediaUrl} controls className="w-full" />
           )}
           {draft.kind === "document" && (
-            <div className="flex items-center gap-2 text-sm text-foreground">
-              <FileText className="h-5 w-5 shrink-0 text-muted-foreground" />
+            <div className="flex items-center gap-2 text-[13px] text-foreground">
+              <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
               <span className="truncate">{draft.filename}</span>
             </div>
           )}
@@ -867,13 +869,13 @@ function MediaDraftPreview({
           type="button"
           onClick={onDiscard}
           aria-label={t("removeAttachment")}
-          className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+          className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="mt-2 flex items-end gap-2">
+      <div className="mt-2 flex items-end gap-1.5">
         {draft.kind !== "audio" && (
           <input
             value={draft.caption}
@@ -886,7 +888,7 @@ function MediaDraftPreview({
               }
             }}
             placeholder={t("addCaption")}
-            className="flex-1 rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
+            className="flex-1 rounded-md border border-border bg-background px-3.5 py-2 text-[13px] text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/40"
           />
         )}
         <GatedButton
@@ -896,7 +898,7 @@ function MediaDraftPreview({
           disabled={busy}
           onClick={onSend}
           className={cn(
-            "h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
+            "h-8 w-8 shrink-0 rounded-md bg-primary p-0 hover:bg-primary/90 disabled:opacity-40",
             draft.kind === "audio" && "ml-auto",
           )}
         >

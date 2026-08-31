@@ -5,8 +5,9 @@ scripts and automations — send messages, manage contacts, launch
 broadcasts — without going through the dashboard UI.
 
 > **Status:** stable. Authentication, scopes, rate limiting, the
-> messages / contacts / conversations / broadcasts endpoints, and
-> outbound event [webhooks](#webhooks) all ship now.
+> messages / contacts / conversations / broadcasts / deals / pipelines
+> / templates endpoints, and outbound event [webhooks](#webhooks) all
+> ship now.
 
 ## Authentication
 
@@ -50,6 +51,10 @@ it. Grant the minimum.
 | `conversations:read` | List and read conversations              |
 | `broadcasts:send`    | Launch broadcast campaigns               |
 | `webhooks:manage`    | Register and manage outbound webhooks    |
+| `pipelines:read`     | List pipelines and their stages          |
+| `deals:read`         | List and read deals                      |
+| `deals:write`        | Create, update, and delete deals         |
+| `templates:read`     | List and read WhatsApp message templates |
 
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
@@ -263,6 +268,129 @@ Broadcast status + counts. Scope: `broadcasts:send`. `status` moves
 `sending` → `sent`; `delivered_count` / `read_count` keep climbing as
 Meta delivery webhooks arrive. `404` for another account's broadcast.
 
+### `GET /api/v1/pipelines`
+
+List pipelines, each with its stages embedded (sorted left-to-right by
+board position). Scope: `pipelines:read`. Pipelines are settings-class
+and few per account, so — like webhooks — this returns the whole
+roster rather than paginating.
+
+```json
+{
+  "data": [
+    {
+      "id": "…", "name": "Sales Pipeline",
+      "stages": [
+        { "id": "…", "name": "New Lead", "position": 0, "color": "#3b82f6" },
+        { "id": "…", "name": "Qualified", "position": 1, "color": "#eab308" }
+      ],
+      "created_at": "…"
+    }
+  ],
+  "meta": { "next_cursor": null }
+}
+```
+
+### `GET /api/v1/pipelines/{id}`
+
+Read one pipeline + its stages. Scope: `pipelines:read`. `404` if it
+belongs to another account.
+
+### `GET /api/v1/deals`
+
+List deals, newest first. Scope: `deals:read`. Paginated. Optional
+filters: `?pipeline_id=`, `?stage_id=`, `?status=` (`open` / `won` /
+`lost`), `?contact_id=`, `?assigned_to=`.
+
+```json
+{
+  "data": [
+    {
+      "id": "…", "pipeline_id": "…", "stage_id": "…",
+      "contact_id": "…", "conversation_id": null, "assigned_to": null,
+      "title": "Acme renewal", "value": 1200.5, "currency": "USD",
+      "notes": null, "expected_close_date": "2026-09-01", "status": "open",
+      "created_at": "…", "updated_at": "…"
+    }
+  ],
+  "meta": { "next_cursor": "…" }
+}
+```
+
+### `POST /api/v1/deals`
+
+Create a deal. Scope: `deals:write`. `pipeline_id`, `stage_id`, and
+`title` are required — `stage_id` must belong to `pipeline_id` (`400`
+otherwise). `contact_id` and `assigned_to`, if given, must reference a
+contact / account member in this account (`400` otherwise); both are
+optional (a deal can start unassigned / uncontacted). `currency`
+defaults to the account's configured default currency. `status`
+defaults to `open`.
+
+```bash
+curl -X POST https://your-crm.example.com/api/v1/deals \
+  -H "Authorization: Bearer wacrm_live_xxx" \
+  -H "Content-Type: application/json" \
+  -d '{
+        "pipeline_id": "…",
+        "stage_id": "…",
+        "title": "Acme renewal",
+        "value": 1200.50,
+        "currency": "USD",
+        "contact_id": "…",
+        "expected_close_date": "2026-09-01"
+      }'
+```
+
+Response (201): the serialized deal (same shape as the list rows
+above).
+
+### `GET` / `PATCH` / `DELETE /api/v1/deals/{id}`
+
+Read, update, or delete one deal. Scopes: `deals:read` / `deals:write`
+/ `deals:write`. A deal in another account returns `404`. `PATCH`
+updates only the fields you send — `title`, `value`, `currency`,
+`contact_id`, `assigned_to`, `notes`, `expected_close_date`, `status`,
+and `stage_id` (moves the deal within its **own** pipeline; a foreign
+stage id is a `400`). `pipeline_id` is immutable after creation —
+delete and recreate the deal to move it to a different pipeline.
+
+### `GET /api/v1/templates`
+
+List WhatsApp message templates, newest first. Scope: `templates:read`.
+Paginated. Optional filters: `?status=` (Meta's raw enum — `APPROVED`,
+`PENDING`, `REJECTED`, `PAUSED`, `DISABLED`, `IN_APPEAL`,
+`PENDING_DELETION`, `DRAFT`) and `?category=` (`Marketing` / `Utility`
+/ `Authentication`). Use this to discover a template's approved
+`name` / `language` / variables before calling `POST /api/v1/messages`
+with `type: "template"`.
+
+```json
+{
+  "data": [
+    {
+      "id": "…", "name": "order_update", "category": "Utility",
+      "language": "en_US", "header_type": "text",
+      "header_content": "Order {{1}}", "header_media_url": null,
+      "body_text": "Your order {{1}} shipped.", "footer_text": null,
+      "buttons": [{ "type": "QUICK_REPLY", "text": "Track" }],
+      "sample_values": { "body": ["A123"] },
+      "status": "APPROVED", "quality_score": "GREEN",
+      "rejection_reason": null,
+      "created_at": "…", "updated_at": "…"
+    }
+  ],
+  "meta": { "next_cursor": "…" }
+}
+```
+
+### `GET /api/v1/templates/{id}`
+
+Read one template. Scope: `templates:read`. `404` if it belongs to
+another account. Templates are read-only over the public API —
+submitting, editing, or resubmitting a template to Meta stays a
+dashboard-only flow.
+
 ## Pagination
 
 Every list endpoint pages the same way. Request a page size with
@@ -377,7 +505,7 @@ internal targets are refused at delivery time.
 ## Roadmap
 
 The public API now covers messaging, contacts, conversations,
-broadcasts, and outbound webhooks — the full scope of
-[#245](https://github.com/ArnasDon/wacrm/issues/245). Future ideas
-(deals/pipelines, templates, flows, a delivery queue for webhooks) are
-not yet scheduled.
+broadcasts, deals/pipelines, message templates, and outbound webhooks
+— the full scope of [#245](https://github.com/ArnasDon/wacrm/issues/245)
+plus the deals/pipelines and templates extension. Future ideas (flows,
+a delivery queue for webhooks) are not yet scheduled.

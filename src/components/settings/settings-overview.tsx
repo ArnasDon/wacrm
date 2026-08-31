@@ -260,13 +260,11 @@ export function SettingsOverview({
               type="button"
               onClick={() => onSelect(section)}
               className={cn(
-                'group flex items-start gap-3.5 rounded-xl border border-border bg-card p-4 text-left transition-colors',
+                'group flex items-start gap-3.5 rounded-lg border border-border bg-card p-4 text-left transition-colors',
                 'hover:border-primary-soft-2 hover:bg-card-2',
               )}
             >
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary-soft text-primary">
-                <Icon className="size-4" />
-              </span>
+              <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1">
                 <span className="block text-sm font-semibold text-foreground">
                   {tSections(section)}

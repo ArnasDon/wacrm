@@ -1,12 +1,14 @@
 import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
-import { buildConversationContext } from './context'
+import { buildContextWithHistorySummary } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
+import { loadAiTools } from './tools/config'
+import { persistToolCallMessages } from './tools/persist'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 
@@ -38,6 +40,15 @@ interface DispatchArgs {
  * The 24h WhatsApp session window is inherently open here — we're
  * reacting to a customer message that just landed — so no separate
  * window check is needed.
+ *
+ * Tool calls (see `loadAiTools` below) are NOT gated by method or by a
+ * human-approval step: a GET and a POST/PUT/PATCH/DELETE tool both fire
+ * autonomously, purely on the model's own decision, driven entirely by
+ * what the customer typed. That's a deliberate scope call, not an
+ * oversight — an approval step is a materially bigger feature (a
+ * pending/approve state + UI). If a business wires up a state-changing
+ * tool (cancel an order, issue a refund), the tool's own `description`
+ * and the downstream API's business logic are the only backstops today.
  */
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
@@ -79,7 +90,12 @@ export async function dispatchInboundToAiReply(
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
 
-    const messages = await buildConversationContext(db, conversationId)
+    const { messages, historySummary } = await buildContextWithHistorySummary(
+      db,
+      accountId,
+      conversationId,
+      config,
+    )
     if (messages.length === 0) return
 
     // Account-wide throttle on the shared BYO key. The per-conversation
@@ -104,19 +120,45 @@ export async function dispatchInboundToAiReply(
       accountId,
       config,
       latestUserMessage(messages),
+      config.knowledgeTopK,
     )
 
-    const systemPrompt = buildSystemPrompt({
+    const { systemPrompt, knowledgeBlock, historyBlock } = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'auto_reply',
       knowledge,
+      historySummary,
+      handoffSensitivity: config.handoffSensitivity,
     })
 
-    const { text, handoff, usage } = await generateReply({
+    // Tools are best-effort to load: a decrypt/DB failure here degrades
+    // to "no tools this turn" rather than losing the reply entirely.
+    // Same treatment for the account-wide tool-call throttle — over the
+    // limit means "reply without tools this turn", not "no reply".
+    const toolLimit = checkRateLimit(`ai-toolcall:${accountId}`, RATE_LIMITS.aiToolCall)
+    const tools = toolLimit.success
+      ? await loadAiTools(db, accountId).catch((err) => {
+          console.error('[ai auto-reply] loadAiTools failed:', err)
+          return []
+        })
+      : []
+
+    const { text, handoff, usage, toolCalls } = await generateReply({
       config,
       systemPrompt,
+      knowledgeBlock,
+      historyBlock,
       messages,
+      tools,
     })
+
+    // Surface every tool the model called in the thread itself, before
+    // the final reply lands — an agent watching the conversation sees
+    // "checked availability" → "booked the slot" → the actual reply, in
+    // order. Best-effort; never blocks the send that follows.
+    if (toolCalls && toolCalls.length > 0) {
+      await persistToolCallMessages(db, conversationId, toolCalls)
+    }
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
@@ -133,6 +175,16 @@ export async function dispatchInboundToAiReply(
     })
 
     if (handoff || !text) {
+      // Debug breadcrumb: a handoff (especially an immediate one, reply
+      // #0) is otherwise a black box from the server logs alone — this
+      // is enough to tell "the model explicitly bailed" from "a tool
+      // call errored and it gave up" from "it answered but the reply
+      // came back empty", without needing DB access.
+      console.warn(
+        `[ai auto-reply] handoff on conversation ${conversationId}: ` +
+          `explicit=${handoff} emptyText=${!text} ` +
+          `tools=${(toolCalls ?? []).map((c) => `${c.toolName}:${c.result.ok ? 'ok' : `error(${c.result.error})`}`).join(',') || 'none'}`,
+      )
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human. We (a) pause the bot here
       // (sticky until re-enabled), (b) route the conversation to the
@@ -147,6 +199,12 @@ export async function dispatchInboundToAiReply(
       const update: Record<string, unknown> = {
         ai_autoreply_disabled: true,
         ai_handoff_summary: summary,
+        // The BOT paused itself (model handoff or reply cap) — not a
+        // human clicking "Take over". Distinguishing the two is what
+        // lets the dormancy-reset cron (src/app/api/ai/cron/route.ts)
+        // safely auto-resume this one after enough quiet time, while
+        // never touching a conversation a human deliberately took over.
+        ai_paused_by_human: false,
       }
       // Only set the assignee when a target is configured AND the thread
       // isn't already owned — never stomp an existing human assignment.

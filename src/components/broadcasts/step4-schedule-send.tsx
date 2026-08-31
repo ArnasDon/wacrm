@@ -113,7 +113,7 @@ export function Step4ScheduleSend({
       </div>
 
       {/* Summary Card */}
-      <div className="rounded-xl border border-border bg-card/50 p-4 space-y-3">
+      <div className="rounded-lg border border-border bg-card/50 p-4 space-y-3">
         <p className="text-sm font-medium text-foreground">{t('scheduleSend.summary')}</p>
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
@@ -199,7 +199,7 @@ export function Step4ScheduleSend({
             <Send className="h-4 w-4" />
             {t('scheduleSend.sendNow')}
           </DialogTrigger>
-          <DialogContent className="border-border bg-popover sm:max-w-md">
+          <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle className="text-popover-foreground">Confirm Broadcast</DialogTitle>
               <DialogDescription className="text-muted-foreground">

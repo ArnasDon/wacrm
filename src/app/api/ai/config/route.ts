@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history, dormancy_reset_hours',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -78,8 +78,8 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'deepseek') {
+      return bad('provider must be "openai", "anthropic", or "deepseek"')
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
@@ -94,6 +94,61 @@ export async function POST(request: Request) {
     let maxPer = Number(body.auto_reply_max_per_conversation)
     if (!Number.isFinite(maxPer)) maxPer = 3
     maxPer = Math.min(20, Math.max(1, Math.floor(maxPer)))
+
+    // Agent tuning (migration 041) — each defaults to the value that
+    // reproduces pre-041 behaviour, so an omitted field never changes
+    // anything for a form that doesn't send it.
+    const handoffSensitivity =
+      body.handoff_sensitivity === 'conservative' || body.handoff_sensitivity === 'assertive'
+        ? body.handoff_sensitivity
+        : 'balanced'
+    if (
+      'handoff_sensitivity' in body &&
+      body.handoff_sensitivity != null &&
+      !['conservative', 'balanced', 'assertive'].includes(body.handoff_sensitivity)
+    ) {
+      return bad('handoff_sensitivity must be "conservative", "balanced", or "assertive"')
+    }
+
+    let temperature: number | null = null
+    if (body.temperature != null) {
+      const t = Number(body.temperature)
+      if (!Number.isFinite(t) || t < 0 || t > 1) {
+        return bad('temperature must be a number between 0 and 1')
+      }
+      temperature = t
+    }
+
+    let knowledgeTopK = Number(body.knowledge_top_k)
+    if (!Number.isFinite(knowledgeTopK)) knowledgeTopK = 5
+    knowledgeTopK = Math.min(10, Math.max(1, Math.floor(knowledgeTopK)))
+
+    let knowledgeMinRelevance: number | null = null
+    if (body.knowledge_min_relevance != null) {
+      const r = Number(body.knowledge_min_relevance)
+      if (!Number.isFinite(r) || r < 0 || r > 1) {
+        return bad('knowledge_min_relevance must be a number between 0 and 1')
+      }
+      knowledgeMinRelevance = r
+    }
+
+    // Conversation history (migration 042) — same "default reproduces
+    // pre-existing behaviour" discipline as the 041 fields above.
+    let contextMessageLimit = Number(body.context_message_limit)
+    if (!Number.isFinite(contextMessageLimit)) contextMessageLimit = 20
+    contextMessageLimit = Math.min(50, Math.max(4, Math.floor(contextMessageLimit)))
+    const summarizeHistory = body.summarize_history === true
+
+    // Dormancy reset (migration 044) — null (default) disables it,
+    // today's sticky-forever pause behaviour.
+    let dormancyResetHours: number | null = null
+    if (body.dormancy_reset_hours != null) {
+      const h = Number(body.dormancy_reset_hours)
+      if (!Number.isFinite(h) || h < 1 || h > 720) {
+        return bad('dormancy_reset_hours must be a number between 1 and 720')
+      }
+      dormancyResetHours = Math.floor(h)
+    }
 
     // Handoff routing target for auto-reply. A non-empty string must be a
     // member of this account (else the conversation would be assigned to a
@@ -167,6 +222,13 @@ export async function POST(request: Request) {
           autoReplyMaxPerConversation: maxPer,
           handoffAgentId: null,
           embeddingsApiKey: null,
+          handoffSensitivity,
+          temperature,
+          knowledgeTopK,
+          knowledgeMinRelevance,
+          contextMessageLimit,
+          summarizeHistory,
+          dormancyResetHours,
         })
       } catch (err) {
         if (err instanceof AiError) {
@@ -205,6 +267,13 @@ export async function POST(request: Request) {
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,
+      handoff_sensitivity: handoffSensitivity,
+      temperature,
+      knowledge_top_k: knowledgeTopK,
+      knowledge_min_relevance: knowledgeMinRelevance,
+      context_message_limit: contextMessageLimit,
+      summarize_history: summarizeHistory,
+      dormancy_reset_hours: dormancyResetHours,
     }
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.

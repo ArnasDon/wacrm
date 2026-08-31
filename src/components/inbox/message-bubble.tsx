@@ -23,6 +23,7 @@ import {
   MediaVideoBubble,
 } from "./message-media";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
+import { ToolCallBlock } from "@/components/agents/tool-call-block";
 import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
@@ -144,8 +145,8 @@ function MessageContent({
             className={cn(
               "mb-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium",
               isAgent
-                ? "bg-primary-foreground/20 text-primary-foreground"
-                : "bg-primary/20 text-primary",
+                ? "bg-primary/15 text-primary"
+                : "bg-muted text-muted-foreground",
             )}
           >
             <LayoutTemplate className="h-3 w-3" />
@@ -206,6 +207,24 @@ function MessageContent({
       );
     }
 
+    case "tool_call": {
+      const payload = message.tool_call_payload;
+      return (
+        <ToolCallBlock
+          onPrimary={isAgent}
+          data={{
+            toolName: payload?.tool_name ?? message.content_text ?? t("unknownTool"),
+            status: payload?.status ?? "success",
+            request: payload?.request,
+            responseStatus: payload?.response.status,
+            responseBody: payload?.response.body_excerpt,
+            errorMessage: payload?.error_message,
+            durationMs: payload?.duration_ms,
+          }}
+        />
+      );
+    }
+
     default:
       return (
         <p className="whitespace-pre-wrap break-words text-sm">
@@ -239,10 +258,13 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
+          // Inbound: white card on the paper canvas. Outbound: soft accent
+          // tint — professional (Intercom/Front-style), not a loud solid
+          // fill (docs/DESIGN.md §1).
+          "relative rounded-lg px-3 py-2",
           isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+            ? "rounded-br-sm border border-primary/20 bg-primary-soft text-foreground"
+            : "rounded-bl-sm border border-border bg-card text-foreground",
         )}
       >
         {reply && (
@@ -265,12 +287,11 @@ export function MessageBubble({
           )}
         >
           {/* AI badge — only on replies the auto-reply bot generated
-              (always outbound, so it sits on the primary fill). Lets
-              agents tell an AI reply from their own / a Flow's at a
-              glance. */}
+              (always outbound). Sits on the tinted outbound surface, so
+              it uses the accent at low weight. */}
           {message.ai_generated && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+              className="inline-flex items-center gap-0.5 rounded-full bg-primary/15 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary"
               title={t("aiBadgeTitle")}
             >
               <Sparkles className="h-2.5 w-2.5" />
@@ -279,12 +300,7 @@ export function MessageBubble({
           )}
           <span
             className={cn(
-              "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              "text-[10px] text-muted-foreground tabular-nums",
             )}
           >
             {time}

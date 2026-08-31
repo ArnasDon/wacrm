@@ -25,17 +25,20 @@ export function EmptyState({
   const defaultTitle = t('title')
   
   return (
+    // Plain centered empty state — no dashed box, no tinted surface.
+    // Whitespace + one line of copy is the whole treatment
+    // (docs/DESIGN.md §5).
     <div
       className={cn(
-        'flex h-full min-h-40 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-card/40 px-4 py-6 text-center',
+        'flex h-full min-h-40 flex-col items-center justify-center gap-2 px-4 py-8 text-center',
         className,
       )}
     >
-      <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
-        <Icon className="h-5 w-5" />
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-muted text-muted-foreground">
+        <Icon className="h-4 w-4" />
       </div>
-      <p className="text-sm font-medium text-muted-foreground">{title || defaultTitle}</p>
-      {hint && <p className="max-w-xs text-xs text-muted-foreground">{hint}</p>}
+      <p className="text-[13px] font-medium text-foreground">{title || defaultTitle}</p>
+      {hint && <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">{hint}</p>}
     </div>
   )
 }

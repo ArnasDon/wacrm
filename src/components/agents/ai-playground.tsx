@@ -5,12 +5,16 @@ import { toast } from 'sonner';
 import { Bot, RotateCcw, Send, Loader2, UserCircle2, ArrowRight } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
+import { ToolCallBlock, type ToolCallBlockData } from './tool-call-block';
 
 interface Turn {
   role: 'user' | 'assistant';
   content: string;
   /** assistant-only: the agent signalled a human handoff on this turn. */
   handoff?: boolean;
+  /** assistant-only: every tool the agent called while producing this
+   *  reply, in order — same data the inbox thread would show. */
+  toolCalls?: ToolCallBlockData[];
 }
 
 export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
@@ -52,6 +56,26 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         setInput(text);
         return;
       }
+      const toolCalls: ToolCallBlockData[] = Array.isArray(data.tool_calls)
+        ? data.tool_calls.map(
+            (c: {
+              tool_name: string;
+              ok: boolean;
+              status: number | null;
+              body: string | null;
+              error: string | null;
+              duration_ms: number;
+            }) => ({
+              toolName: c.tool_name,
+              status: c.ok ? 'success' : 'error',
+              responseStatus: c.status,
+              responseBody: c.body,
+              errorMessage: c.error,
+              durationMs: c.duration_ms,
+            }),
+          )
+        : [];
+
       setTurns([
         ...next,
         {
@@ -61,6 +85,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
               ? data.reply
               : '',
           handoff: Boolean(data.handoff),
+          toolCalls,
         },
       ]);
     } catch {
@@ -80,7 +105,7 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
   };
 
   return (
-    <div className="flex h-[60vh] min-h-[420px] flex-col rounded-xl border border-border bg-card">
+    <div className="flex h-[60vh] min-h-[420px] flex-col rounded-lg border border-border bg-card">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
@@ -125,40 +150,48 @@ export function AiPlayground({ onGoToSetup }: { onGoToSetup?: () => void }) {
         )}
 
         {turns.map((t, i) => (
-          <div
-            key={i}
-            className={cn(
-              'flex gap-2',
-              t.role === 'user' ? 'justify-end' : 'justify-start',
-            )}
-          >
-            {t.role === 'assistant' && (
-              <Bot className="mt-1 h-5 w-5 shrink-0 text-primary" />
+          <div key={i} className="flex flex-col gap-1.5">
+            {t.role === 'assistant' && t.toolCalls && t.toolCalls.length > 0 && (
+              <div className="flex flex-col gap-1.5 pl-7">
+                {t.toolCalls.map((call, j) => (
+                  <ToolCallBlock key={j} data={call} />
+                ))}
+              </div>
             )}
             <div
               className={cn(
-                'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm',
-                t.role === 'user'
-                  ? 'rounded-br-sm bg-primary text-primary-foreground'
-                  : 'rounded-bl-sm bg-muted text-foreground',
+                'flex gap-2',
+                t.role === 'user' ? 'justify-end' : 'justify-start',
               )}
             >
-              {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
-              {t.role === 'assistant' && t.handoff && (
-                <p
-                  className={cn(
-                    'flex items-center gap-1 text-xs text-amber-500',
-                    t.content && 'mt-1.5 border-t border-border/50 pt-1.5',
-                  )}
-                >
-                  <UserCircle2 className="h-3.5 w-3.5" />
-                  Would hand off to a human here
-                </p>
+              {t.role === 'assistant' && (
+                <Bot className="mt-1 h-5 w-5 shrink-0 text-primary" />
+              )}
+              <div
+                className={cn(
+                  'max-w-[80%] rounded-2xl px-3.5 py-2 text-sm',
+                  t.role === 'user'
+                    ? 'rounded-br-sm bg-primary text-primary-foreground'
+                    : 'rounded-bl-sm bg-muted text-foreground',
+                )}
+              >
+                {t.content && <p className="whitespace-pre-wrap">{t.content}</p>}
+                {t.role === 'assistant' && t.handoff && (
+                  <p
+                    className={cn(
+                      'flex items-center gap-1 text-xs text-amber-500',
+                      t.content && 'mt-1.5 border-t border-border/50 pt-1.5',
+                    )}
+                  >
+                    <UserCircle2 className="h-3.5 w-3.5" />
+                    Would hand off to a human here
+                  </p>
+                )}
+              </div>
+              {t.role === 'user' && (
+                <UserCircle2 className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
               )}
             </div>
-            {t.role === 'user' && (
-              <UserCircle2 className="mt-1 h-5 w-5 shrink-0 text-muted-foreground" />
-            )}
           </div>
         ))}
 

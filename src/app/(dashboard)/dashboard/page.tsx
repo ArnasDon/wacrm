@@ -4,12 +4,6 @@ import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
 import { formatCurrency } from '@/lib/currency'
-import {
-  MessageSquare,
-  UserPlus,
-  DollarSign,
-  Send,
-} from 'lucide-react'
 
 import {
   loadActivity,
@@ -122,17 +116,18 @@ export default function DashboardPage() {
   )
 
   return (
-    <div className="space-y-5">
-      {/* Header */}
+    <div className="space-y-4">
+      {/* Page header — single quiet row; the top bar already names the
+          page, so this stays compact (docs/DESIGN.md §4). */}
       <div>
-        <h1 className="text-2xl font-bold text-foreground">{t('title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h1 className="text-base font-semibold tracking-tight text-foreground">{t('title')}</h1>
+        <p className="mt-0.5 text-[13px] text-muted-foreground">
           {t('description')}
         </p>
       </div>
 
       {/* Metric cards */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {metricsLoading || !metrics ? (
           Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)
         ) : (
@@ -140,7 +135,6 @@ export default function DashboardPage() {
             <MetricCard
               title={t('activeConversations')}
               value={metrics.activeConversations.current.toLocaleString()}
-              icon={MessageSquare}
               delta={{
                 sign: metrics.activeConversations.previous,
                 label: deltaLabel(
@@ -153,7 +147,6 @@ export default function DashboardPage() {
             <MetricCard
               title={t('newContactsToday')}
               value={metrics.newContactsToday.current.toLocaleString()}
-              icon={UserPlus}
               delta={{
                 sign:
                   metrics.newContactsToday.current - metrics.newContactsToday.previous,
@@ -167,13 +160,11 @@ export default function DashboardPage() {
             <MetricCard
               title={t('openDealsValue')}
               value={formatCurrency(metrics.openDealsValue, defaultCurrency)}
-              icon={DollarSign}
               subtitle={t('openDeals', { count: metrics.openDealsCount })}
             />
             <MetricCard
               title={t('messagesSentToday')}
               value={metrics.messagesSentToday.current.toLocaleString()}
-              icon={Send}
               delta={{
                 sign:
                   metrics.messagesSentToday.current - metrics.messagesSentToday.previous,
@@ -198,7 +189,7 @@ export default function DashboardPage() {
           stretched height so their rounded borders line up. Without
           this, the pipeline card rendered at its natural (shorter)
           height while the line chart drove the row height. */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-5">
         <div className="h-full lg:col-span-3">
           <ConversationsChart
             series={series}

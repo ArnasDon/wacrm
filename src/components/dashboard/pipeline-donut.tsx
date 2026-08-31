@@ -18,15 +18,15 @@ import { useTranslations } from 'next-intl'
 export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
   const t = useTranslations('Dashboard.pipelineDonut')
   return (
-    <section className="flex h-full flex-col rounded-xl border border-border bg-card">
-      <header className="border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+    <section className="flex h-full flex-col rounded-lg border border-border bg-card">
+      <header className="px-4 pb-3 pt-4">
+        <h2 className="text-[13px] font-semibold text-foreground">{t('title')}</h2>
         <p className="mt-0.5 text-xs text-muted-foreground">
           {t('description')}
         </p>
       </header>
 
-      <div className="flex flex-1 flex-col p-5">
+      <div className="flex flex-1 flex-col px-4 pb-4">
         {loading || !data ? (
           <Skeleton className="h-56 w-full" />
         ) : data.stages.length === 0 ? (
@@ -38,11 +38,11 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
         ) : (
           <>
             <Donut data={data} currency={currency} />
-            <ul className="mt-5 space-y-2">
+            <ul className="mt-4 space-y-1.5">
               {data.stages.map((s) => (
-                <li key={s.id} className="flex items-center gap-3 text-xs">
+                <li key={s.id} className="flex items-center gap-2.5 text-xs">
                   <span
-                    className="h-2.5 w-2.5 flex-shrink-0 rounded-full"
+                    className="h-2 w-2 flex-shrink-0 rounded-full"
                     style={{ background: s.color }}
                     aria-hidden
                   />
@@ -50,7 +50,7 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
                   <span className="text-muted-foreground tabular-nums">
                     {t('dealCount', { count: s.dealCount })}
                   </span>
-                  <span className="w-20 text-right text-muted-foreground tabular-nums">
+                  <span className="w-20 text-right font-medium text-foreground tabular-nums">
                     {formatCurrencyShort(s.totalValue, currency)}
                   </span>
                 </li>
@@ -72,8 +72,8 @@ export function PipelineDonut({ data, loading, currency }: PipelineDonutProps) {
 function Donut({ data, currency }: { data: PipelineDonutData; currency: string }) {
   const t = useTranslations('Dashboard.pipelineDonut')
   const size = 200
-  const r = 80
-  const ringWidth = 18
+  const r = 82
+  const ringWidth = 14
   const cx = size / 2
   const cy = size / 2
 
@@ -116,17 +116,17 @@ function Donut({ data, currency }: { data: PipelineDonutData; currency: string }
         {/* center label */}
         <text
           x={cx}
-          y={cy - 6}
+          y={cy - 7}
           textAnchor="middle"
-          className="fill-muted-foreground text-[11px]"
+          className="fill-muted-foreground text-[10px] font-medium uppercase tracking-wider"
         >
           {t('total')}
         </text>
         <text
           x={cx}
-          y={cy + 14}
+          y={cy + 13}
           textAnchor="middle"
-          className="fill-foreground text-[18px] font-semibold tabular-nums"
+          className="fill-foreground text-[17px] font-semibold tabular-nums"
         >
           {formatCurrencyShort(data.totalValue, currency)}
         </text>

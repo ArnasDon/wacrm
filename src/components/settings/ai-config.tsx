@@ -2,7 +2,16 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Sparkles, CheckCircle2, Trash2, Eye, EyeOff } from 'lucide-react';
+import {
+  Loader2,
+  Sparkles,
+  CheckCircle2,
+  Trash2,
+  Eye,
+  EyeOff,
+  Wand2,
+  Wrench,
+} from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { canEditSettings } from '@/lib/auth/roles';
 import { Button } from '@/components/ui/button';
@@ -24,10 +33,16 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
 import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
-import type { AiProvider } from '@/lib/ai/types';
+import type { AiProvider, HandoffSensitivity } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
@@ -38,14 +53,47 @@ const MASKED_KEY = '••••••••••••••••';
 // unassigned" choice gets a sentinel that maps to null in the payload.
 const HANDOFF_QUEUE = '__queue__';
 
+// Temperature and knowledge-strictness are exposed as a few labeled
+// presets rather than a raw number input — simpler for a non-technical
+// admin, and harder to accidentally set to a value that hurts reply
+// quality. Sentinels map to `null` (today's behaviour: omit the param /
+// no filtering) in the payload.
+const TEMPERATURE_DEFAULT = '__default__';
+const TEMPERATURE_PRESETS: Record<string, number | null> = {
+  [TEMPERATURE_DEFAULT]: null,
+  consistent: 0.3,
+  balanced_temp: 0.6,
+};
+const RELEVANCE_OFF = '__off__';
+const RELEVANCE_PRESETS: Record<string, number | null> = {
+  [RELEVANCE_OFF]: null,
+  normal: 0.3,
+  strict: 0.6,
+};
+const DORMANCY_NEVER = '__never__';
+const DORMANCY_PRESETS: Record<string, number | null> = {
+  [DORMANCY_NEVER]: null,
+  '24': 24,
+  '72': 72,
+  '168': 168, // 7 days
+  '336': 336, // 14 days
+};
+
+// Example snippet keys — the actual text lives in messages/*.json under
+// Settings.aiConfig.promptExample.<key> so it's translated like every
+// other label here, not hardcoded English.
+const PROMPT_EXAMPLE_KEYS = ['persona', 'policies', 'scope'] as const;
+
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  deepseek: 'DeepSeek',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  deepseek: 'sk-...',
 };
 
 export function AiConfig() {
@@ -75,6 +123,17 @@ export function AiConfig() {
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
+
+  // Agent tuning (migration 041) — defaults match pre-041 behaviour.
+  const [handoffSensitivity, setHandoffSensitivity] =
+    useState<HandoffSensitivity>('balanced');
+  const [temperature, setTemperature] = useState<number | null>(null);
+  const [knowledgeTopK, setKnowledgeTopK] = useState(5);
+  const [knowledgeMinRelevance, setKnowledgeMinRelevance] = useState<number | null>(null);
+  const [contextMessageLimit, setContextMessageLimit] = useState(20);
+  const [summarizeHistory, setSummarizeHistory] = useState(false);
+  const [dormancyResetHours, setDormancyResetHours] = useState<number | null>(null);
+  const [toolCount, setToolCount] = useState<number | null>(null);
 
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
@@ -106,6 +165,13 @@ export function AiConfig() {
         setHasStoredEmbeddingsKey(Boolean(data.has_embeddings_key));
         setEmbeddingsKey(data.has_embeddings_key ? MASKED_KEY : '');
         setEmbeddingsKeyEdited(false);
+        setHandoffSensitivity(data.handoff_sensitivity ?? 'balanced');
+        setTemperature(data.temperature ?? null);
+        setKnowledgeTopK(data.knowledge_top_k ?? 5);
+        setKnowledgeMinRelevance(data.knowledge_min_relevance ?? null);
+        setContextMessageLimit(data.context_message_limit ?? 20);
+        setSummarizeHistory(Boolean(data.summarize_history));
+        setDormancyResetHours(data.dormancy_reset_hours ?? null);
       }
     } catch {
       toast.error(t('loadFailed'));
@@ -122,6 +188,16 @@ export function AiConfig() {
     // older deployment without the endpoint the picker just shows the
     // queue option.
     void fetchAccountMembers().then(setMembers);
+    // The "N tools connected" pointer — best-effort, non-blocking; a
+    // failure just leaves the pointer hidden.
+    fetch('/api/ai/tools', { cache: 'no-store' })
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.tools)) {
+          setToolCount(d.tools.filter((tItem: { is_active: boolean }) => tItem.is_active).length);
+        }
+      })
+      .catch(() => {});
   }, [accountId, fetchConfig]);
 
   // Swap the model default when the provider changes, unless the user
@@ -129,9 +205,7 @@ export function AiConfig() {
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
-      model.trim() === '';
+      Object.values(AI_PROVIDER_DEFAULT_MODEL).includes(model) || model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
@@ -151,6 +225,13 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     handoff_agent_id: handoffAgentId || null,
+    handoff_sensitivity: handoffSensitivity,
+    temperature,
+    knowledge_top_k: knowledgeTopK,
+    knowledge_min_relevance: knowledgeMinRelevance,
+    context_message_limit: contextMessageLimit,
+    summarize_history: summarizeHistory,
+    dormancy_reset_hours: dormancyResetHours,
   });
 
   const handleTest = async () => {
@@ -219,6 +300,13 @@ export function AiConfig() {
         setAutoReplyEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setHandoffSensitivity('balanced');
+        setTemperature(null);
+        setKnowledgeTopK(5);
+        setKnowledgeMinRelevance(null);
+        setContextMessageLimit(20);
+        setSummarizeHistory(false);
+        setDormancyResetHours(null);
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -281,6 +369,7 @@ export function AiConfig() {
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
+                    <SelectItem value="deepseek">{PROVIDER_LABEL.deepseek}</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -390,7 +479,33 @@ export function AiConfig() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="ai-prompt">{t('businessContext')}</Label>
+              <div className="flex items-center justify-between">
+                <Label htmlFor="ai-prompt">{t('businessContext')}</Label>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    disabled={disabled}
+                    className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:pointer-events-none disabled:opacity-50"
+                  >
+                    <Wand2 className="h-3 w-3" /> {t('insertExample')}
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {PROMPT_EXAMPLE_KEYS.map((key) => (
+                      <DropdownMenuItem
+                        key={key}
+                        onClick={() =>
+                          setSystemPrompt((prev) =>
+                            prev.trim()
+                              ? `${prev.trim()}\n\n${t(`promptExample.${key}`)}`
+                              : t(`promptExample.${key}`),
+                          )
+                        }
+                      >
+                        {t(`promptExampleLabel.${key}`)}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
               <Textarea
                 id="ai-prompt"
                 value={systemPrompt}
@@ -399,6 +514,20 @@ export function AiConfig() {
                 rows={5}
                 disabled={disabled}
               />
+              <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                  {t('promptCharCount', {
+                    chars: systemPrompt.length,
+                    tokens: Math.ceil(systemPrompt.length / 4),
+                  })}
+                </span>
+                {toolCount !== null && toolCount > 0 && (
+                  <span className="flex items-center gap-1">
+                    <Wrench className="h-3 w-3" />
+                    {t('toolsConnected', { count: toolCount })}
+                  </span>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
@@ -457,6 +586,57 @@ export function AiConfig() {
             </div>
 
             <div className="space-y-2">
+              <Label htmlFor="ai-handoff-sensitivity">{t('handoffSensitivity')}</Label>
+              <p className="text-xs text-muted-foreground">
+                {t(`handoffSensitivityDesc.${handoffSensitivity}`)}
+              </p>
+              <Select
+                value={handoffSensitivity}
+                onValueChange={(v) => setHandoffSensitivity(v as HandoffSensitivity)}
+                disabled={disabled || !autoReplyEnabled}
+              >
+                <SelectTrigger id="ai-handoff-sensitivity">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="conservative">
+                    {t('handoffSensitivityLabel.conservative')}
+                  </SelectItem>
+                  <SelectItem value="balanced">
+                    {t('handoffSensitivityLabel.balanced')}
+                  </SelectItem>
+                  <SelectItem value="assertive">
+                    {t('handoffSensitivityLabel.assertive')}
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-temperature">{t('temperature')}</Label>
+              <p className="text-xs text-muted-foreground">{t('temperatureDesc')}</p>
+              <Select
+                value={
+                  Object.entries(TEMPERATURE_PRESETS).find(([, v]) => v === temperature)?.[0] ??
+                  TEMPERATURE_DEFAULT
+                }
+                onValueChange={(v: string | null) =>
+                  setTemperature(v ? TEMPERATURE_PRESETS[v] ?? null : null)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="ai-temperature">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TEMPERATURE_DEFAULT}>{t('temperatureProviderDefault')}</SelectItem>
+                  <SelectItem value="consistent">{t('temperatureConsistent')}</SelectItem>
+                  <SelectItem value="balanced_temp">{t('temperatureBalanced')}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
               <Label htmlFor="ai-handoff">{t('handoffTo')}</Label>
               <p className="text-xs text-muted-foreground">
                 {t('handoffToDesc')}
@@ -480,6 +660,132 @@ export function AiConfig() {
                       {memberLabel(m)}
                     </SelectItem>
                   ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('knowledgeRetrieval')}</CardTitle>
+            <CardDescription>{t('knowledgeRetrievalDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="ai-kb-topk">{t('knowledgeTopK')}</Label>
+                <p className="text-xs text-muted-foreground">{t('knowledgeTopKDesc')}</p>
+                <Select
+                  value={String(knowledgeTopK)}
+                  onValueChange={(v) => setKnowledgeTopK(Number(v))}
+                  disabled={disabled}
+                >
+                  <SelectTrigger id="ai-kb-topk">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[3, 5, 8, 10].map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="ai-kb-strictness">{t('knowledgeStrictness')}</Label>
+                <p className="text-xs text-muted-foreground">{t('knowledgeStrictnessDesc')}</p>
+                <Select
+                  value={
+                    Object.entries(RELEVANCE_PRESETS).find(
+                      ([, v]) => v === knowledgeMinRelevance,
+                    )?.[0] ?? RELEVANCE_OFF
+                  }
+                  onValueChange={(v: string | null) =>
+                    setKnowledgeMinRelevance(v ? RELEVANCE_PRESETS[v] ?? null : null)
+                  }
+                  disabled={disabled}
+                >
+                  <SelectTrigger id="ai-kb-strictness">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value={RELEVANCE_OFF}>{t('knowledgeStrictnessOff')}</SelectItem>
+                    <SelectItem value="normal">{t('knowledgeStrictnessNormal')}</SelectItem>
+                    <SelectItem value="strict">{t('knowledgeStrictnessStrict')}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('conversationHistory')}</CardTitle>
+            <CardDescription>{t('conversationHistoryDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <Label htmlFor="ai-context-limit">{t('contextMessageLimit')}</Label>
+                <p className="text-xs text-muted-foreground">{t('contextMessageLimitDesc')}</p>
+              </div>
+              <Select
+                value={String(contextMessageLimit)}
+                onValueChange={(v: string | null) => v && setContextMessageLimit(Number(v))}
+                disabled={disabled}
+              >
+                <SelectTrigger id="ai-context-limit" className="w-24">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {[10, 20, 30, 50].map((n) => (
+                    <SelectItem key={n} value={String(n)}>
+                      {n}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">{t('summarizeHistory')}</p>
+                <p className="text-xs text-muted-foreground">{t('summarizeHistoryDesc')}</p>
+              </div>
+              <Switch
+                checked={summarizeHistory}
+                onCheckedChange={setSummarizeHistory}
+                disabled={disabled}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-dormancy-reset">{t('dormancyReset')}</Label>
+              <p className="text-xs text-muted-foreground">{t('dormancyResetDesc')}</p>
+              <Select
+                value={
+                  Object.entries(DORMANCY_PRESETS).find(
+                    ([, v]) => v === dormancyResetHours,
+                  )?.[0] ?? DORMANCY_NEVER
+                }
+                onValueChange={(v: string | null) =>
+                  setDormancyResetHours(v ? DORMANCY_PRESETS[v] ?? null : null)
+                }
+                disabled={disabled}
+              >
+                <SelectTrigger id="ai-dormancy-reset">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={DORMANCY_NEVER}>{t('dormancyResetNever')}</SelectItem>
+                  <SelectItem value="24">{t('dormancyReset24h')}</SelectItem>
+                  <SelectItem value="72">{t('dormancyReset72h')}</SelectItem>
+                  <SelectItem value="168">{t('dormancyReset7d')}</SelectItem>
+                  <SelectItem value="336">{t('dormancyReset14d')}</SelectItem>
                 </SelectContent>
               </Select>
             </div>

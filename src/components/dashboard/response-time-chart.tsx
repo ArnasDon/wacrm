@@ -47,10 +47,10 @@ export function ResponseTimeChart({
     })) ?? []
 
   return (
-    <section className="rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
+    <section className="rounded-lg border border-border bg-card">
+      <header className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">
+          <h2 className="text-[13px] font-semibold text-foreground">
             {t('title')}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
@@ -59,7 +59,8 @@ export function ResponseTimeChart({
         </div>
         <div className="flex items-center gap-3 text-right text-xs">
           {thresholdMinutes > 0 && (
-            <span className="rounded-full border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-300 tabular-nums">
+            // Neutral outline chip — the target is metadata, not an alarm.
+            <span className="rounded-full border border-border bg-muted px-2 py-0.5 font-medium text-muted-foreground tabular-nums">
               {t('target', { minutes: thresholdMinutes })}
             </span>
           )}
@@ -80,7 +81,7 @@ export function ResponseTimeChart({
         </div>
       </header>
 
-      <div className="p-5">
+      <div className="px-4 pb-4">
         {loading || !data ? (
           <Skeleton className="h-[260px] w-full" />
         ) : !hasData ? (
@@ -94,15 +95,15 @@ export function ResponseTimeChart({
             data={chartData}
             index="day"
             categories={[CATEGORY]}
-            // 'violet' maps to Tailwind's `fill-violet-500` — matches
-            // the brand accent the hand-rolled bars used (#7c3aed).
-            colors={['violet']}
+            // 'accent' maps to the theme's primary — stays on-brand for
+            // every accent theme (docs/DESIGN.md §5).
+            colors={['accent']}
             valueFormatter={(value) => `${value.toFixed(1)}m`}
             showLegend={false}
             yAxisWidth={48}
             // Compact height so the chart sits well inside the card
             // without dominating the row alongside the donut + activity feed.
-            className="h-[260px]"
+            className="h-[240px]"
           />
         )}
       </div>

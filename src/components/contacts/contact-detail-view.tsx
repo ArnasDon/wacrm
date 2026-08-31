@@ -24,6 +24,8 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { getAvatarColor } from '@/lib/avatar-color';
+import { cn } from '@/lib/utils';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -392,8 +394,14 @@ export function ContactDetailView({
             {/* Header */}
             <SheetHeader className="p-4 border-b border-border/50">
               <div className="flex items-center gap-3">
-                <Avatar className="size-12 bg-muted border border-border">
-                  <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
+                <Avatar className="size-12 border border-border">
+                  <AvatarFallback
+                    className={cn(
+                      'text-sm font-medium',
+                      getAvatarColor(contact.name || contact.phone).bg,
+                      getAvatarColor(contact.name || contact.phone).text,
+                    )}
+                  >
                     {getInitials(contact.name)}
                   </AvatarFallback>
                 </Avatar>

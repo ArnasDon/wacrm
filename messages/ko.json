@@ -78,7 +78,7 @@
       "newTodayVsYesterday": "어제 대비 신규",
       "vsYesterday": "어제 대비",
       "openDeals": "진행 중인 딜 {count}건",
-      "noChange": "변동 없음 {suffix}"
+      "noChange": "변동 없음 (어제 대비)"
     },
     "quickActions": {
       "newContact": "새 연락처",
@@ -228,7 +228,11 @@
       "downloadFailed": "첨부파일을 다운로드할 수 없습니다",
       "viewImage": "이미지 보기",
       "expandVideo": "동영상 확대",
-      "imageAlt": "공유된 이미지"
+      "imageAlt": "공유된 이미지",
+      "unknownTool": "도구"
+    },
+    "toolCall": {
+      "noBody": "(빈 응답)"
     },
     "mediaViewer": {
       "counter": "{total}개 중 {index}번째",
@@ -1369,13 +1373,11 @@
       "deleteLocallyAria": "로컬에서 템플릿 삭제",
       "deleteMetaLocallyTitle": "Meta와 로컬에서 삭제",
       "deleteLocallyTitle": "로컬에서 삭제",
-
       "dialogEditTitle": "메시지 템플릿 수정",
       "dialogNewTitle": "새 메시지 템플릿",
       "dialogEditDesc": "변경 사항을 저장해 Meta에 재제출하세요. 검토 중에는 상태가 다시 대기 중으로 바뀝니다.",
       "dialogNewDesc": "템플릿을 만들어 Meta 승인을 요청하세요. 승인되면 브로드캐스트와 인박스에서 사용할 수 있습니다.",
       "authWarning": "AUTHENTICATION 템플릿은 본문과 OTP 버튼 형식이 고정되어 있어 별도의 빌더가 필요합니다. 지금은 Meta WhatsApp 관리자에서 만든 뒤 <bold>Meta에서 동기화</bold>로 가져오세요.",
-
       "templateName": "템플릿 이름",
       "namePlaceholder": "예: order_confirmation",
       "nameFixed": "템플릿이 Meta에 존재하면 이름이 고정됩니다 — 변경하려면 새 템플릿을 만드세요.",
@@ -1384,7 +1386,6 @@
       "language": "언어",
       "langFixed": "템플릿이 Meta에 존재하면 언어가 고정됩니다.",
       "langHint": "Meta의 정확한 코드와 일치해야 합니다 — <code>en_US</code>와 <code>en</code>은 다른 코드입니다.",
-
       "header": "헤더",
       "headerNone": "없음",
       "headerText": "텍스트",
@@ -1394,7 +1395,6 @@
       "headerTextPlaceholder": "헤더 텍스트 (최대 60자, {{1}} 선택 가능)",
       "headerSampleAria": "헤더 변수 샘플 값",
       "headerSamplePlaceholder": "{{1}}의 샘플 값 (Meta 검토에 필요)",
-
       "uploadImage": "이미지 업로드",
       "uploadHint": "JPEG 또는 PNG, 5MB 이하",
       "mediaUrlPlaceholder": "https://… (또는 공개 {format} 링크 붙여넣기)",
@@ -1402,17 +1402,14 @@
       "mediaHint": "공개적으로 접근 가능한 HTTPS 링크여야 합니다. Meta가 검토 중 한 번 가져오므로 약 24시간 동안 살아있어야 합니다.",
       "videoHint": " 권장: MP4 / 3GPP, 16MB 이하, 60초 이하.",
       "documentHint": " 권장: PDF, 100MB 이하.",
-
       "bodyText": "본문 텍스트",
       "bodyPlaceholder": "안녕하세요 {{1}}님, 주문 {{2}}이(가) 확정되었습니다.",
       "sampleValues": "샘플 값 (Meta가 템플릿 검토에 사용합니다)",
       "bodyHint": "변수에는 {{1}}, {{2}}를 사용하세요 ({{1}}부터 연속되어야 합니다).",
       "sampleAria": "본문 변수 {var}의 샘플 값",
       "samplePlaceholder": "{var}의 샘플",
-
       "footer": "푸터 (선택)",
       "footerPlaceholder": "선택적 푸터 텍스트 (최대 60자)",
-
       "buttons": "버튼 (선택)",
       "addButton": "버튼 추가",
       "buttonsLimit": "최대 {max}개 버튼. QUICK_REPLY 버튼은 URL / 전화 / 코드 복사 버튼보다 앞에 와야 합니다.",
@@ -1425,19 +1422,16 @@
       "urlSamplePlaceholder": "{{1}}의 예시 값 (URL에 변수가 있을 때 필요)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "예시 코드 (예: SUMMER20)",
-
       "cancel": "취소",
       "saving": "저장 중…",
       "submitting": "제출 중…",
       "saveResubmit": "저장 & 재제출",
       "submitApproval": "승인 요청",
-
       "deleteDialogTitle": "템플릿을 삭제하시겠습니까?",
       "deleteMetaDesc": "\"{name}\"이(가) Meta와 wacrm에서 삭제됩니다. 이 템플릿을 사용하는 활성 브로드캐스트는 다음 전송부터 실패하기 시작합니다. 되돌릴 수 없습니다.",
       "deleteLocalDesc": "\"{name}\"이(가) wacrm에서 삭제됩니다. Meta에 제출된 적이 없으므로 별도의 원격 정리가 필요하지 않습니다.",
       "deleting": "삭제 중…",
       "delete": "삭제",
-
       "toastLoadFailed": "템플릿을 불러오지 못했습니다",
       "toastSubmitFailed": "제출하지 못했습니다",
       "toastSubmitEditSuccess": "수정 사항이 제출되었습니다 — Meta는 보통 24시간 이내에 검토합니다.",
@@ -1583,7 +1577,6 @@
       "profileSaved": "프로필이 저장되었습니다",
       "emailChangeFailed": "이메일 변경 실패: {message}",
       "profileSavedEmailCheck": "프로필이 저장되었습니다 — 이메일 주소 변경을 확인하려면 이메일을 확인하세요",
-
       "passwordTitle": "비밀번호",
       "passwordDesc": "최소 {min}자 이상 사용하세요. 변경 후에도 이 기기에서는 로그인이 유지됩니다.",
       "currentPassword": "현재 비밀번호",
@@ -1597,7 +1590,6 @@
       "currentPasswordIncorrect": "현재 비밀번호가 올바르지 않습니다",
       "passwordUpdateFailed": "비밀번호 업데이트 실패: {message}",
       "passwordUpdated": "비밀번호가 업데이트되었습니다",
-
       "sessionsTitle": "활성 세션",
       "sessionsDesc": "이 기기를 포함해 로그인되어 있는 모든 기기에서 로그아웃합니다. 노트북을 분실했거나 비밀번호를 공유한 경우 유용합니다.",
       "signOutAll": "모든 기기에서 로그아웃",
@@ -1693,15 +1685,66 @@
       "behaviourDesc": "비즈니스에 대해 어시스턴트에게 알려주세요 — 제품, 어조, 약속해도 되는 것과 안 되는 것. 이 맥락은 초안 작성과 자동 응답 모두에 반영됩니다.",
       "businessContext": "비즈니스 맥락 & 지침",
       "promptPlaceholder": "예: 저희는 커피 장비 매장 Acme입니다. 따뜻하고 간결하게 응대해주세요. 가격이나 배송일은 절대 언급하지 말고 사람에게 인계하세요.",
+      "insertExample": "예시 삽입",
+      "promptExampleLabel": {
+        "persona": "페르소나 & 어조",
+        "policies": "비즈니스 정책",
+        "scope": "처리 가능한 범위"
+      },
+      "promptExample": {
+        "persona": "당신은 [비즈니스 이름]의 친절하고 전문적인 고객 지원 어시스턴트입니다. 답변은 짧고 따뜻하게, 친절한 매장 직원의 어조로 작성하세요.",
+        "policies": "영업시간: 월-토 오전 9시-오후 7시. 반품은 영수증 지참 시 14일 이내 가능. 일반 배송은 영업일 기준 3-5일 소요.",
+        "scope": "제품, 가격, 주문 상태에 대해 답변할 수 있습니다. 결제, 환불, 계정 변경에 관한 사항은 사람에게 도움을 받도록 안내하세요."
+      },
+      "promptCharCount": "{chars}자 (약 {tokens} 토큰)",
+      "toolsConnected": "도구 {count}개 연결됨 — Tools에서 관리",
       "enableAssistant": "AI 어시스턴트 활성화",
       "enableAssistantDesc": "마스터 스위치입니다. 인박스의 \"AI로 초안 작성\" 버튼을 켭니다.",
       "autoReply": "수신 메시지 자동 응답",
       "autoReplyDesc": "봇이 새 수신 메시지에 자동으로 응답합니다(플로우가 처리하지 않고 담당 상담원이 없는 경우에만). 도움을 줄 수 없으면 사람에게 인계합니다.",
       "maxAutoReplies": "대화당 최대 자동 응답 횟수",
       "maxAutoRepliesDesc": "한 대화에서 이 횟수만큼 봇이 응답하면 더 이상 응답하지 않습니다.",
+      "handoffSensitivity": "인계 민감도",
+      "handoffSensitivityLabel": {
+        "conservative": "신중함",
+        "balanced": "균형 (기본값)",
+        "assertive": "적극적"
+      },
+      "handoffSensitivityDesc": {
+        "conservative": "완전히 확신이 서지 않으면 항상 인계합니다 — 가장 안전하지만 인계가 가장 잦습니다.",
+        "balanced": "정말로 도움을 줄 수 없을 때만 인계합니다 — 이 설정이 생기기 전과 동일한 기본 동작입니다.",
+        "assertive": "정말로 진행할 수 없을 때만 인계합니다 — 인계는 줄지만 불완전한 답변의 위험이 늘어납니다."
+      },
+      "temperature": "응답 일관성",
+      "temperatureDesc": "값이 낮을수록 응답이 더 일관되고 예측 가능해지며, 값이 높을수록 변화가 늘어납니다.",
+      "temperatureProviderDefault": "제공업체 기본값",
+      "temperatureConsistent": "일관됨",
+      "temperatureBalanced": "균형",
       "handoffTo": "인계 대상",
       "handoffToDesc": "봇이 도움을 줄 수 없거나 응답 한도에 도달하면 일시 중지하고 무슨 일이 있었는지 짧은 메모와 함께 이 대상에게 대화를 넘깁니다.",
       "handoffQueue": "미배정 대기열 (모든 상담원이 처리 가능)",
+      "knowledgeRetrieval": "지식 베이스 검색",
+      "knowledgeRetrievalDesc": "질문당 가져올 발췌 수와 일치로 인정할 관련성 기준을 조정하세요 — 발췌가 적고 관련성이 높을수록 비용이 줄고 불필요한 인계도 줄어듭니다.",
+      "knowledgeTopK": "질문당 발췌 수",
+      "knowledgeTopKDesc": "각 질문에 대해 지식 베이스에서 가져올 발췌 수입니다.",
+      "knowledgeStrictness": "관련성 엄격도",
+      "knowledgeStrictnessDesc": "관련성이 약한 시맨틱 일치를 에이전트에 전달되기 전에 제외합니다. 임베딩 키가 설정된 경우에만 적용됩니다.",
+      "knowledgeStrictnessOff": "끄기 (기본값)",
+      "knowledgeStrictnessNormal": "보통",
+      "knowledgeStrictnessStrict": "엄격",
+      "conversationHistory": "대화 기록",
+      "conversationHistoryDesc": "에이전트가 볼 수 있는 대화의 범위와, 그 범위를 넘어섰을 때의 처리 방식입니다.",
+      "contextMessageLimit": "에이전트에 전달할 메시지 수",
+      "contextMessageLimitDesc": "매 응답마다 원문 그대로 전달할 최근 메시지 수입니다.",
+      "summarizeHistory": "오래된 메시지는 삭제 대신 요약하기",
+      "summarizeHistoryDesc": "대화가 위 한도를 초과하면 이전 메시지를 완전히 잃는 대신 짧게 요약합니다. 실제로 그만큼 길어진 대화에만 약간의 추가 비용이 발생합니다.",
+      "dormancyReset": "다음 시간이 지나면 일시중지된 대화 재개",
+      "dormancyResetDesc": "응답 한도에 도달하거나 봇이 인계하면 상담원이 \"AI 재개\"를 클릭할 때까지 일시중지 상태가 유지됩니다 — 이 설정은 고객이 이 시간만큼 조용했을 때 봇이 스스로 다시 시도하도록 합니다. 상담원이 직접 인계받은 대화는 절대 건드리지 않습니다.",
+      "dormancyResetNever": "사용 안 함 (기본값)",
+      "dormancyReset24h": "24시간",
+      "dormancyReset72h": "3일",
+      "dormancyReset7d": "7일",
+      "dormancyReset14d": "14일",
       "remove": "제거",
       "save": "저장",
       "missingModel": "모델 이름을 입력하세요.",

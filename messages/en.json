@@ -15,7 +15,7 @@
     "createAccount": "Create account"
   },
   "Sidebar": {
-    "title": "CRM Template for WhatsApp",
+    "title": "CRM WhatsApp",
     "dashboard": "Dashboard",
     "inbox": "Inbox",
     "notifications": "Notifications",
@@ -75,10 +75,10 @@
       "newContactsToday": "New Contacts Today",
       "openDealsValue": "Open Deals Value",
       "messagesSentToday": "Messages Sent Today",
-      "newTodayVsYesterday": "new today vs yesterday",
+      "newTodayVsYesterday": "vs yesterday",
       "vsYesterday": "vs yesterday",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
-      "noChange": "No change {suffix}"
+      "noChange": "No change vs yesterday"
     },
     "quickActions": {
       "newContact": "New Contact",
@@ -228,7 +228,11 @@
       "downloadFailed": "Couldn't download the attachment",
       "viewImage": "View image",
       "expandVideo": "Expand video",
-      "imageAlt": "Shared image"
+      "imageAlt": "Shared image",
+      "unknownTool": "a tool"
+    },
+    "toolCall": {
+      "noBody": "(empty response)"
     },
     "mediaViewer": {
       "counter": "{index} of {total}",
@@ -384,9 +388,9 @@
         "custom": "Custom Fields",
         "deals": "Deals",
         "tags": "Tags",
-      "noTags": "No tags",
-      "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+        "noTags": "No tags",
+        "noDeals": "No deals",
+        "addNotePlaceholder": "Add a note..."
       },
       "actions": {
         "edit": "Edit",
@@ -1369,13 +1373,11 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
-      
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-      
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
@@ -1384,7 +1386,6 @@
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
-      
       "header": "Header",
       "headerNone": "None",
       "headerText": "Text",
@@ -1394,7 +1395,6 @@
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
-      
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
@@ -1402,17 +1402,14 @@
       "mediaHint": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
       "videoHint": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
       "documentHint": " Recommended: PDF, ≤100 MB.",
-      
       "bodyText": "Body Text",
       "bodyPlaceholder": "Hello {{1}}, your order {{2}} is confirmed.",
       "bodyHint": "Use {{1}}, {{2}} for variables (must be contiguous starting at {{1}}).",
       "sampleValues": "Sample values (Meta uses these to review your template)",
       "sampleAria": "Sample value for body variable {var}",
       "samplePlaceholder": "Sample for {var}",
-      
       "footer": "Footer (optional)",
       "footerPlaceholder": "Optional footer text (max 60 chars)",
-      
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
       "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
@@ -1425,19 +1422,16 @@
       "urlSamplePlaceholder": "Example value for {{1}} (required when URL has a variable)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "Example code (e.g. SUMMER20)",
-      
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
-      
       "deleteDialogTitle": "Delete template?",
       "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
       "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
-      
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
@@ -1583,7 +1577,6 @@
       "profileSaved": "Profile saved",
       "emailChangeFailed": "Email change failed: {message}",
       "profileSavedEmailCheck": "Profile saved — check your email to confirm the address change",
-      
       "passwordTitle": "Password",
       "passwordDesc": "Use at least {min} characters. You will stay signed in on this device after changing it.",
       "currentPassword": "Current password",
@@ -1597,7 +1590,6 @@
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
       "passwordUpdated": "Password updated",
-      
       "sessionsTitle": "Active sessions",
       "sessionsDesc": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
       "signOutAll": "Sign out of all devices",
@@ -1693,15 +1685,66 @@
       "behaviourDesc": "Tell the assistant about your business — products, tone, what it may and may not promise. This context feeds both drafts and auto-replies.",
       "businessContext": "Business context & instructions",
       "promptPlaceholder": "e.g. We are Acme, a coffee-equipment store. Be warm and concise. Never quote prices or delivery dates — hand off to a human for those.",
+      "insertExample": "Insert example",
+      "promptExampleLabel": {
+        "persona": "Persona & tone",
+        "policies": "Business policies",
+        "scope": "What it can handle"
+      },
+      "promptExample": {
+        "persona": "You are a friendly, professional support assistant for [business name]. Keep replies short and warm, matching a helpful shop assistant's tone.",
+        "policies": "Business hours: Mon-Sat 9am-7pm. Returns accepted within 14 days with a receipt. Standard delivery takes 3-5 business days.",
+        "scope": "You can discuss products, pricing, and order status. For anything about payments, refunds, or account changes, say you'll get a human to help."
+      },
+      "promptCharCount": "{chars} characters (~{tokens} tokens)",
+      "toolsConnected": "{count} {count, plural, =1 {tool} other {tools}} connected — manage in Tools",
       "enableAssistant": "Enable AI assistant",
       "enableAssistantDesc": "Master switch. Turns on the “Draft with AI” button in the inbox.",
       "autoReply": "Auto-reply to inbound messages",
       "autoReplyDesc": "The bot answers new inbound messages automatically (only when no flow handles them and no agent is assigned). Hands off to a human when it can’t help.",
       "maxAutoReplies": "Max auto-replies per conversation",
       "maxAutoRepliesDesc": "After this many bot replies in one thread, the bot goes quiet.",
+      "handoffSensitivity": "Handoff sensitivity",
+      "handoffSensitivityLabel": {
+        "conservative": "Conservative",
+        "balanced": "Balanced (default)",
+        "assertive": "Assertive"
+      },
+      "handoffSensitivityDesc": {
+        "conservative": "Hands off whenever it's not fully sure — safest, but escalates the most.",
+        "balanced": "Hands off when it genuinely can't help — the default, unchanged from before this setting existed.",
+        "assertive": "Only hands off when it truly can't proceed — fewer handoffs, more risk of an imperfect answer."
+      },
+      "temperature": "Response consistency",
+      "temperatureDesc": "Lower values make replies more consistent and predictable; higher values allow more variation.",
+      "temperatureProviderDefault": "Provider default",
+      "temperatureConsistent": "Consistent",
+      "temperatureBalanced": "Balanced",
       "handoffTo": "Hand off to",
       "handoffToDesc": "When the bot can’t help — or hits the reply cap — it pauses and routes the chat here, with a short note on what happened.",
       "handoffQueue": "Unassigned queue (any agent can pick it up)",
+      "knowledgeRetrieval": "Knowledge base retrieval",
+      "knowledgeRetrievalDesc": "Tune how many excerpts the agent pulls per question and how relevant a match must be — fewer, more relevant excerpts cost less and reduce needless handoffs.",
+      "knowledgeTopK": "Excerpts per question",
+      "knowledgeTopKDesc": "How many knowledge-base excerpts to retrieve for each question.",
+      "knowledgeStrictness": "Relevance strictness",
+      "knowledgeStrictnessDesc": "Drops weak semantic matches before they reach the agent. Only applies with an embeddings key set.",
+      "knowledgeStrictnessOff": "Off (default)",
+      "knowledgeStrictnessNormal": "Normal",
+      "knowledgeStrictnessStrict": "Strict",
+      "conversationHistory": "Conversation history",
+      "conversationHistoryDesc": "How much of a conversation the agent sees, and what happens once it grows past that.",
+      "contextMessageLimit": "Messages sent to the agent",
+      "contextMessageLimitDesc": "How many recent messages are sent verbatim on every reply.",
+      "summarizeHistory": "Summarize older messages instead of dropping them",
+      "summarizeHistoryDesc": "Once a conversation exceeds the limit above, condense the earlier messages into a short summary instead of losing them outright. Adds a small extra cost only for conversations that actually grow that long.",
+      "dormancyReset": "Give up on a paused conversation after",
+      "dormancyResetDesc": "Once the reply cap is hit or the bot hands off, it stays paused until an agent clicks \"Resume AI\" — this gives it a fresh try on its own once the customer's been quiet this long. Never touches a conversation an agent deliberately took over.",
+      "dormancyResetNever": "Never (default)",
+      "dormancyReset24h": "24 hours",
+      "dormancyReset72h": "3 days",
+      "dormancyReset7d": "7 days",
+      "dormancyReset14d": "14 days",
       "remove": "Remove",
       "save": "Save",
       "missingModel": "Enter a model name.",

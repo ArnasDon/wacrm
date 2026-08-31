@@ -180,7 +180,7 @@ export function InviteMemberDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="bg-popover border-border sm:max-w-md">
+      <DialogContent className="sm:max-w-md">
         {result ? (
           <>
             <DialogHeader>
@@ -248,7 +248,7 @@ export function InviteMemberDialog({
               </a>
             </div>
 
-            <DialogFooter className="bg-popover border-border">
+            <DialogFooter>
               <Button
                 onClick={() => onOpenChange(false)}
                 className="bg-primary hover:bg-primary/90 text-primary-foreground"
@@ -324,7 +324,7 @@ export function InviteMemberDialog({
               </div>
             </div>
 
-            <DialogFooter className="bg-popover border-border">
+            <DialogFooter>
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}

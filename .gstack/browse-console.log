@@ -1,0 +1,26 @@
+[2026-08-24T04:43:38.824Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-08-24T04:43:38.882Z] [log] [HMR] connected
+[2026-08-24T04:43:53.163Z] [log] [Fast Refresh] rebuilding
+[2026-08-24T04:43:53.164Z] [log] [Fast Refresh] done in 135ms
+[2026-08-24T04:43:54.453Z] [log] [Fast Refresh] rebuilding
+[2026-08-24T04:43:54.461Z] [log] [Fast Refresh] done in 109ms
+[2026-08-24T04:43:56.061Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-08-24T04:43:56.078Z] [log] [HMR] connected
+[2026-08-24T04:43:57.649Z] [info] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold
+[2026-08-24T04:43:57.660Z] [log] [HMR] connected
+[2026-08-24T04:44:12.922Z] [error] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[2026-08-24T04:44:12.994Z] [error] Failed to load resource: the server responded with a status of 500 (Internal Server Error)
+[2026-08-24T04:48:57.132Z] [log] [Fast Refresh] rebuilding
+[2026-08-24T04:48:57.194Z] [log] [Fast Refresh] done in 167ms
+[2026-08-24T04:49:04.884Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:05.886Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:06.888Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:07.889Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:08.893Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:13.896Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:18.911Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:23.921Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:28.955Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:34.027Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:39.094Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED
+[2026-08-24T04:49:44.328Z] [error] WebSocket connection to 'ws://localhost:3000/_next/webpack-hmr?id=hd7kY-a2ChpUclEkkr1ZE' failed: Error in connection establishment: net::ERR_CONNECTION_REFUSED

@@ -6,7 +6,19 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+import type { ToolCallRecord } from './tools/types'
+
+/** DeepSeek's Chat Completions API is OpenAI-compatible (same request/
+ *  response shape, same tool-calling format) — it's handled by
+ *  `providers/deepseek.ts`, a thin wrapper around `generateOpenAi` that
+ *  only overrides the base URL. */
+export type AiProvider = 'openai' | 'anthropic' | 'deepseek'
+
+/** How readily the auto-reply bot escalates to a human. 'balanced' is
+ *  the only level whose prompt wording matches what shipped before this
+ *  setting existed (see `buildSystemPrompt`) — it's the default so an
+ *  account that never touches this sees no change. */
+export type HandoffSensitivity = 'conservative' | 'balanced' | 'assertive'
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by
@@ -29,6 +41,30 @@ export interface AiConfig {
    *  knowledge base is embedded and semantic retrieval turns on; when
    *  null, retrieval falls back to lexical full-text search. */
   embeddingsApiKey: string | null
+  /** Default 'balanced' — see `HandoffSensitivity`. */
+  handoffSensitivity: HandoffSensitivity
+  /** Provider sampling temperature (0–1). Null = omit the param and let
+   *  the provider use its own default — today's behaviour. */
+  temperature: number | null
+  /** How many knowledge-base excerpts to retrieve per question. Default
+   *  5 (the value that was previously hardcoded). */
+  knowledgeTopK: number
+  /** Optional 0–1 relevance floor for semantic KB retrieval — higher is
+   *  stricter. Null = no filtering, today's behaviour. */
+  knowledgeMinRelevance: number | null
+  /** How many recent text messages to send verbatim. Default 20 (matches
+   *  the previous env-only default). */
+  contextMessageLimit: number
+  /** When true, messages older than `contextMessageLimit` are folded
+   *  into a running summary instead of silently dropped. Default false
+   *  — today's behaviour (plain truncation) until an admin opts in. */
+  summarizeHistory: boolean
+  /** Hours of customer inactivity after which a stale reply-cap/handoff
+   *  pause auto-resets (see `src/app/api/ai/cron/route.ts`). Null
+   *  (default) = disabled — a pause stays sticky forever until a human
+   *  clicks "Resume AI", today's behaviour. Never resets a pause a
+   *  human set via "Take over" (`conversations.ai_paused_by_human`). */
+  dormancyResetHours: number | null
 }
 
 /** A single conversation turn in the shape both providers accept. */
@@ -62,6 +98,11 @@ export interface GenerateResult {
   handoff: boolean
   /** Provider token usage for this call, or null when unavailable. */
   usage: AiUsage | null
+  /** Every tool the model invoked while producing this reply, in order.
+   *  Omitted (not an empty array) when no tools were configured or none
+   *  were called — keeps the result shape identical to before tool
+   *  calling existed for every account that isn't using it. */
+  toolCalls?: ToolCallRecord[]
 }
 
 /**

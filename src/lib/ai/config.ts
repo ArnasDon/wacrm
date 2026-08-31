@@ -1,9 +1,9 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import type { AiConfig } from './types'
+import type { AiConfig, AiProvider, HandoffSensitivity } from './types'
 
 interface AiConfigRow {
-  provider: 'openai' | 'anthropic'
+  provider: AiProvider
   model: string
   api_key: string
   system_prompt: string | null
@@ -12,10 +12,17 @@ interface AiConfigRow {
   auto_reply_max_per_conversation: number
   handoff_agent_id: string | null
   embeddings_api_key: string | null
+  handoff_sensitivity: HandoffSensitivity
+  temperature: number | null
+  knowledge_top_k: number
+  knowledge_min_relevance: number | null
+  context_message_limit: number
+  summarize_history: boolean
+  dormancy_reset_hours: number | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, handoff_sensitivity, temperature, knowledge_top_k, knowledge_min_relevance, context_message_limit, summarize_history, dormancy_reset_hours'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -79,6 +86,17 @@ export async function loadAiConfig(
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
+    // Defensive fallbacks matching the column defaults (migration 041) —
+    // the columns are NOT NULL in the DB, but a pre-041 forked deploy
+    // that hasn't applied the migration yet shouldn't crash the reply
+    // path over a couple of missing tuning knobs.
+    handoffSensitivity: row.handoff_sensitivity ?? 'balanced',
+    temperature: row.temperature ?? null,
+    knowledgeTopK: row.knowledge_top_k ?? 5,
+    knowledgeMinRelevance: row.knowledge_min_relevance ?? null,
+    contextMessageLimit: row.context_message_limit ?? 20,
+    summarizeHistory: row.summarize_history ?? false,
+    dormancyResetHours: row.dormancy_reset_hours ?? null,
   }
 }
 

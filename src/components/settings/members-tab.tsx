@@ -572,7 +572,7 @@ export function MembersTab() {
           if (!open) setRemovingMember(null);
         }}
       >
-        <DialogContent className="bg-popover border-border sm:max-w-sm">
+        <DialogContent className="sm:max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-popover-foreground">
               <AlertTriangle className="size-4 text-amber-400" />
@@ -585,18 +585,17 @@ export function MembersTab() {
               })}
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="bg-popover border-border">
+          <DialogFooter>
             <Button
               variant="outline"
               onClick={() => setRemovingMember(null)}
-              className="border-border text-muted-foreground hover:bg-muted"
             >
               {t('cancel')}
             </Button>
             <Button
+              variant="destructive"
               onClick={handleRemove}
               disabled={!!pendingMemberAction}
-              className="bg-red-600 hover:bg-red-700 text-white"
             >
               {pendingMemberAction ? (
                 <>

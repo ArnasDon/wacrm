@@ -14,6 +14,15 @@
 export type ColorUtility = "bg" | "stroke" | "fill" | "text"
 
 export const chartColors = {
+  // 'accent' binds to the active theme's --primary utilities so charts
+  // follow the user's accent theme (docs/DESIGN.md §5) instead of a
+  // hard-coded Tailwind hue.
+  accent: {
+    bg: "bg-primary",
+    stroke: "stroke-primary",
+    fill: "fill-primary",
+    text: "text-primary",
+  },
   blue: {
     bg: "bg-blue-500",
     stroke: "stroke-blue-500",

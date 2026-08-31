@@ -27,9 +27,9 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'deepseek') {
       return NextResponse.json(
-        { error: 'provider must be "openai" or "anthropic"' },
+        { error: 'provider must be "openai", "anthropic", or "deepseek"' },
         { status: 400 },
       )
     }
@@ -73,6 +73,14 @@ export async function POST(request: Request) {
         autoReplyMaxPerConversation: 3,
         handoffAgentId: null,
         embeddingsApiKey: null,
+        // A connectivity ping — these tuning knobs don't apply.
+        handoffSensitivity: 'balanced',
+        temperature: null,
+        knowledgeTopK: 5,
+        knowledgeMinRelevance: null,
+        contextMessageLimit: 20,
+        summarizeHistory: false,
+        dormancyResetHours: null,
       })
     } catch (err) {
       if (err instanceof AiError) {

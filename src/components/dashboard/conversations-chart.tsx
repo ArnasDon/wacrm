@@ -49,22 +49,22 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
   }, [data])
 
   return (
-    <section className="flex h-full flex-col rounded-xl border border-border bg-card">
-      <header className="flex items-center justify-between border-b border-border px-5 py-4">
+    <section className="flex h-full flex-col rounded-lg border border-border bg-card">
+      <header className="flex items-center justify-between gap-3 px-4 pb-3 pt-4">
         <div>
-          <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+          <h2 className="text-[13px] font-semibold text-foreground">{t('title')}</h2>
           <p className="mt-0.5 text-xs text-muted-foreground">{t('description')}</p>
         </div>
-        <div className="flex items-center gap-1 rounded-lg bg-muted/60 p-1">
+        <div className="flex items-center gap-0.5 rounded-md bg-muted p-0.5">
           {[7, 30, 90].map((r) => (
             <button
               key={r}
               type="button"
               onClick={() => onRangeChange(r as RangeDays)}
               className={cn(
-                'rounded-md px-2.5 py-1 text-xs font-medium transition-colors',
+                'rounded-[5px] px-2 py-1 text-xs font-medium transition-colors',
                 range === r
-                  ? 'bg-secondary text-secondary-foreground'
+                  ? 'bg-card text-foreground shadow-sm'
                   : 'text-muted-foreground hover:text-foreground',
               )}
             >
@@ -74,7 +74,7 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
         </div>
       </header>
 
-      <div className="p-5">
+      <div className="px-4 pb-2">
         {loading || !data ? (
           <Skeleton className="h-[240px] w-full" />
         ) : data.every((p) => p.incoming === 0 && p.outgoing === 0) ? (
@@ -88,9 +88,9 @@ export function ConversationsChart({ series, loading, range, onRangeChange }: Co
         )}
       </div>
 
-      <footer className="flex items-center gap-4 border-t border-border px-5 py-3 text-xs text-muted-foreground">
-        <LegendDot color="#3b82f6" label={t('incoming')} />
-        <LegendDot color="#7c3aed" label={t('outgoing')} />
+      <footer className="flex items-center gap-4 px-4 pb-3.5 pt-1 text-xs text-muted-foreground">
+        <LegendDot color="var(--chart-1)" label={t('incoming')} />
+        <LegendDot color="var(--muted-foreground)" label={t('outgoing')} />
       </footer>
     </section>
   )
@@ -213,14 +213,14 @@ function LineSvg({
                 y1={y}
                 y2={y}
                 stroke="var(--border)"
-                strokeDasharray="3 3"
+                strokeOpacity={0.7}
               />
               <text
                 x={PADDING.left - 8}
                 y={y}
                 textAnchor="end"
                 dominantBaseline="middle"
-                className="fill-muted-foreground text-[10px]"
+                className="fill-muted-foreground text-[10px] tabular-nums"
               >
                 {t}
               </text>
@@ -243,21 +243,21 @@ function LineSvg({
           ) : null,
         )}
 
-        {/* Outgoing polyline (violet) */}
+        {/* Outgoing polyline (neutral) */}
         <path
           d={outgoingPath}
           fill="none"
-          stroke="#7c3aed"
-          strokeWidth={2}
+          stroke="var(--muted-foreground)"
+          strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        {/* Incoming polyline (blue) */}
+        {/* Incoming polyline (accent) */}
         <path
           d={incomingPath}
           fill="none"
-          stroke="#3b82f6"
-          strokeWidth={2}
+          stroke="var(--chart-1)"
+          strokeWidth={1.5}
           strokeLinecap="round"
           strokeLinejoin="round"
         />
@@ -271,10 +271,10 @@ function LineSvg({
               y1={PADDING.top}
               y2={PADDING.top + chartH}
               stroke="var(--muted-foreground)"
-              strokeDasharray="3 3"
+              strokeOpacity={0.5}
             />
-            <circle cx={hoverX} cy={yFor(data[hover.idx].incoming)} r={3.5} fill="#3b82f6" />
-            <circle cx={hoverX} cy={yFor(data[hover.idx].outgoing)} r={3.5} fill="#7c3aed" />
+            <circle cx={hoverX} cy={yFor(data[hover.idx].incoming)} r={3} fill="var(--chart-1)" />
+            <circle cx={hoverX} cy={yFor(data[hover.idx].outgoing)} r={3} fill="var(--muted-foreground)" />
           </g>
         )}
       </svg>
@@ -285,17 +285,17 @@ function LineSvg({
           letterboxed viewBox percentage. */}
       {hovered && hover !== null && (
         <div
-          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] shadow-lg"
+          className="pointer-events-none absolute top-0 z-10 -translate-x-1/2 rounded-md border border-border bg-popover px-2.5 py-1.5 text-[11px] shadow-md"
           style={{ left: `${hover.tooltipLeftPx}px` }}
         >
           <div className="font-medium text-popover-foreground">{longDayLabel(hovered.day)}</div>
           <div className="mt-1 flex flex-col gap-0.5">
-            <span className="flex items-center gap-1.5 text-blue-300">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-500" />
+            <span className="flex items-center gap-1.5 text-popover-foreground">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--chart-1)]" />
               {t('tooltipIncoming', { count: hovered.incoming })}
             </span>
-            <span className="flex items-center gap-1.5 text-primary">
-              <span className="inline-block h-1.5 w-1.5 rounded-full bg-primary" />
+            <span className="flex items-center gap-1.5 text-popover-foreground">
+              <span className="inline-block h-1.5 w-1.5 rounded-full bg-[var(--muted-foreground)]" />
               {t('tooltipOutgoing', { count: hovered.outgoing })}
             </span>
           </div>

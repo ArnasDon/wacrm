@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
-import { buildConversationContext } from '@/lib/ai/context'
+import { buildContextWithHistorySummary } from '@/lib/ai/context'
 import { retrieveKnowledge } from '@/lib/ai/knowledge'
 import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
@@ -76,7 +76,12 @@ export async function POST(request: Request) {
       )
     }
 
-    const messages = await buildConversationContext(supabase, conversationId)
+    const { messages, historySummary } = await buildContextWithHistorySummary(
+      supabase,
+      accountId,
+      conversationId,
+      config,
+    )
     // Nothing to draft from — a brand-new thread with no customer text
     // would otherwise produce a nonsensical reply-to-nothing.
     if (messages.length === 0) {
@@ -96,15 +101,23 @@ export async function POST(request: Request) {
       accountId,
       config,
       latestUserMessage(messages),
+      config.knowledgeTopK,
     )
 
-    const systemPrompt = buildSystemPrompt({
+    const { systemPrompt, knowledgeBlock, historyBlock } = buildSystemPrompt({
       userPrompt: config.systemPrompt,
       mode: 'draft',
       knowledge,
+      historySummary,
     })
 
-    const { text, usage } = await generateReply({ config, systemPrompt, messages })
+    const { text, usage } = await generateReply({
+      config,
+      systemPrompt,
+      knowledgeBlock,
+      historyBlock,
+      messages,
+    })
 
     // Record spend on the account's BYO key. Best-effort + via the
     // service role (the log has no `authenticated` INSERT policy). This

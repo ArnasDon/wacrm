@@ -173,6 +173,22 @@ export const RATE_LIMITS = {
    *  capping a stampede; excess inbounds simply don't get an auto-reply
    *  (they still land in the inbox for a human). */
   aiAutoReplyAccount: { limit: 30, windowMs: 60_000 },
+  /** AI tool calling from REAL inbound traffic only (auto-reply), per
+   *  account. Bounds how often the agent is allowed to reach for its
+   *  configured tools across a burst of customer messages — each
+   *  generation can already make up to `MAX_TOOL_ITERATIONS` calls on
+   *  its own (see src/lib/ai/defaults.ts), so this is the outer guard
+   *  against a burst of inbound turning into a burst of outbound HTTP
+   *  calls against the account's own integrations.
+   *
+   *  Deliberately NOT used by the Playground or the Tools tab's "Test
+   *  tool" button — those are admin-triggered testing, not customer
+   *  traffic, and sharing this bucket with them meant active testing
+   *  silently starved real customers of tool access moments later
+   *  (found in production: "works in Playground, not on WhatsApp").
+   *  They have their own limits (`aiDraft` per-user, `adminAction`
+   *  per-user respectively). */
+  aiToolCall: { limit: 30, windowMs: 60_000 },
 } as const;
 
 /** Test-only helper. Clears the in-memory state so unit tests don't

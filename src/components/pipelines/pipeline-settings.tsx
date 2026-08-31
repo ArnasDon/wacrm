@@ -201,7 +201,7 @@ export function PipelineSettings({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-popover border-border max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">{t("managePipeline")}</DialogTitle>
         </DialogHeader>
@@ -223,14 +223,13 @@ export function PipelineSettings({
               <Button
                 variant="outline"
                 onClick={() => setShowDeleteConfirm(false)}
-                className="border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
                 {t("cancel")}
               </Button>
               <Button
+                variant="destructive"
                 onClick={handleDeletePipeline}
                 disabled={deleting}
-                className="bg-red-600 text-white hover:bg-red-700"
               >
                 {deleting ? t("deleting") : t("deletePipelineBtn")}
               </Button>
@@ -337,8 +336,9 @@ export function PipelineSettings({
 
             <DialogFooter className="border-border bg-popover/50">
               <Button
+                variant="destructive"
                 onClick={() => setShowDeleteConfirm(true)}
-                className="mr-auto bg-red-600 text-white hover:bg-red-700"
+                className="mr-auto"
               >
                 {t("deletePipeline")}
               </Button>

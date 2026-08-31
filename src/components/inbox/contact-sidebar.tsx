@@ -4,16 +4,13 @@ import { useState, useEffect, useCallback } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { cn } from "@/lib/utils";
+import { getAvatarColor } from "@/lib/avatar-color";
 import type { Contact, Deal, ContactNote, Tag } from "@/types";
 import {
   Phone,
   Mail,
   Copy,
   Check,
-  User,
-  Tag as TagIcon,
-  DollarSign,
-  StickyNote,
   Plus,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -129,6 +126,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
   const displayName = contact.name || contact.phone;
   const initials = displayName.charAt(0).toUpperCase();
+  const avatarColor = getAvatarColor(contact.name || contact.phone);
 
   return (
     <div className="flex h-full w-70 flex-col border-l border-border bg-card">
@@ -136,18 +134,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
         <div className="p-4">
           {/* Contact Info */}
           <div className="flex flex-col items-center text-center">
-            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted text-lg font-semibold text-foreground">
+            <div
+              className={cn(
+                "flex h-14 w-14 items-center justify-center rounded-full text-base font-medium",
+                contact.avatar_url ? "bg-muted" : [avatarColor.bg, avatarColor.text],
+              )}
+            >
               {contact.avatar_url ? (
                 <img
                   src={contact.avatar_url}
                   alt={displayName}
-                  className="h-16 w-16 rounded-full object-cover"
+                  className="h-14 w-14 rounded-full object-cover"
                 />
               ) : (
                 initials
               )}
             </div>
-            <h3 className="mt-3 text-sm font-semibold text-foreground">
+            <h3 className="mt-3 text-[13px] font-semibold text-foreground">
               {displayName}
             </h3>
             {contact.company && (
@@ -156,23 +159,23 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           </div>
 
           {/* Phone */}
-          <div className="mt-4 space-y-2">
+          <div className="mt-4 space-y-1">
             <button
               onClick={handleCopyPhone}
-              className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-foreground transition-colors hover:bg-muted"
             >
-              <Phone className="h-4 w-4 text-muted-foreground" />
-              <span className="flex-1 text-left">{contact.phone}</span>
+              <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+              <span className="flex-1 text-left tabular-nums">{contact.phone}</span>
               {copied ? (
-                <Check className="h-3 w-3 text-primary" />
+                <Check className="h-3.5 w-3.5 text-emerald-500" />
               ) : (
-                <Copy className="h-3 w-3 text-muted-foreground" />
+                <Copy className="h-3.5 w-3.5 text-muted-foreground" />
               )}
             </button>
 
             {contact.email && (
-              <div className="flex items-center gap-2 rounded-lg px-3 py-2 text-sm text-muted-foreground">
-                <Mail className="h-4 w-4 text-muted-foreground" />
+              <div className="flex items-center gap-2 rounded-md px-2 py-1.5 text-[13px] text-muted-foreground">
+                <Mail className="h-3.5 w-3.5" />
                 <span className="truncate">{contact.email}</span>
               </div>
             )}
@@ -183,10 +186,11 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Tags */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <TagIcon className="h-3 w-3" />
+            {/* Uppercase micro-label — no icon; hierarchy comes from
+                type, not decoration (docs/DESIGN.md §3). */}
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {tSidebar("tags")}
-            </div>
+            </p>
             <div className="mt-2 flex flex-wrap gap-1">
               {tags.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noTags")}</p>
@@ -212,30 +216,29 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Active Deals */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <DollarSign className="h-3 w-3" />
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {tSidebar("deals")}
-            </div>
-            <div className="mt-2 space-y-2">
+            </p>
+            <div className="mt-2 space-y-1.5">
               {deals.length === 0 ? (
                 <p className="px-1 text-xs text-muted-foreground">{tSidebar("noDeals")}</p>
               ) : (
                 deals.map((deal) => (
                   <div
                     key={deal.id}
-                    className="rounded-lg bg-muted px-3 py-2"
+                    className="rounded-md border border-border px-2.5 py-2"
                   >
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="text-[13px] font-medium text-foreground">
                       {deal.title}
                     </p>
-                    <div className="mt-1 flex items-center justify-between text-xs text-muted-foreground">
-                      <span>
+                    <div className="mt-1 flex items-center justify-between text-[11px] text-muted-foreground">
+                      <span className="tabular-nums">
                         {deal.currency ?? "$"}
                         {deal.value.toLocaleString()}
                       </span>
                       {deal.stage && (
                         <span
-                          className="rounded-full px-1.5 py-0.5 text-[10px]"
+                          className="rounded-full px-1.5 py-0.5 text-[10px] font-medium"
                           style={{
                             backgroundColor: `${deal.stage.color}20`,
                             color: deal.stage.color,
@@ -256,39 +259,38 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
 
           {/* Notes */}
           <div>
-            <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-              <StickyNote className="h-3 w-3" />
+            <p className="px-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               {tSidebar("notes")}
-            </div>
+            </p>
             <div className="mt-2">
-              <div className="flex gap-2">
+              <div className="flex gap-1.5">
                 <textarea
                   value={newNote}
                   onChange={(e) => setNewNote(e.target.value)}
                   placeholder={tSidebar("addNotePlaceholder")}
                   rows={2}
-                  className="flex-1 resize-none rounded-lg border border-border bg-muted px-3 py-2 text-xs text-foreground placeholder-muted-foreground outline-none focus:border-primary/50"
+                  className="flex-1 resize-none rounded-md border border-border bg-background px-2.5 py-2 text-xs text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/40"
                 />
                 <Button
                   size="sm"
-                  className="h-auto bg-primary px-2 hover:bg-primary/90"
+                  className="h-auto w-8 shrink-0 bg-primary p-0 hover:bg-primary/90"
                   onClick={handleAddNote}
                   disabled={!newNote.trim() || addingNote}
                 >
-                  <Plus className="h-3 w-3" />
+                  <Plus className="h-3.5 w-3.5" />
                 </Button>
               </div>
 
-              <div className="mt-2 space-y-2">
+              <div className="mt-2 space-y-1.5">
                 {notes.map((note) => (
                   <div
                     key={note.id}
-                    className="rounded-lg bg-muted px-3 py-2"
+                    className="rounded-md border border-border px-2.5 py-2"
                   >
-                    <p className="whitespace-pre-wrap text-xs text-muted-foreground">
+                    <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">
                       {note.note_text}
                     </p>
-                    <p className="mt-1 text-[10px] text-muted-foreground">
+                    <p className="mt-1 text-[10px] text-muted-foreground tabular-nums">
                       {format(new Date(note.created_at), "MMM d, yyyy HH:mm")}
                     </p>
                   </div>

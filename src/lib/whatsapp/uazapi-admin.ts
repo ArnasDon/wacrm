@@ -7,7 +7,7 @@
 // tudo depois. Só as rotas de `/api/whatsapp/connections` chamam isto.
 // ============================================================
 
-const WEBHOOK_EVENTS = ['messages', 'messages_update', 'connection', 'history'];
+const WEBHOOK_EVENTS = ['messages', 'messages_update', 'connection'];
 
 type Json = Record<string, unknown>;
 
@@ -57,13 +57,16 @@ export async function configureWebhook(
   instanceToken: string,
   url: string
 ): Promise<void> {
+  // isGroupYes pula grupos (senão cada grupo vira um contato); fromMeYes pula
+  // tudo que sai do número — o eco dos envios via API e o que o operador digita
+  // no celular. history não é assinado (despeja meses de conversa).
   await call(`${baseUrl}/webhook`, {
     method: 'POST',
     headers: { token: instanceToken },
     body: JSON.stringify({
       url,
       events: WEBHOOK_EVENTS,
-      excludeMessages: ['wasSentByApi'],
+      excludeMessages: ['isGroupYes', 'fromMeYes'],
     }),
   });
 }

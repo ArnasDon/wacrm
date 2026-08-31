@@ -7,8 +7,11 @@ import './globals.css';
 import { ThemeProvider } from '@/hooks/use-theme';
 import { ThemedToaster } from '@/components/themed-toaster';
 import {
+  DEFAULT_FONT_SCALE,
   DEFAULT_MODE,
   DEFAULT_THEME,
+  FONT_SCALE_STORAGE_KEY,
+  FONT_SCALES,
   MODE_STORAGE_KEY,
   MODES,
   STORAGE_KEY,
@@ -65,15 +68,16 @@ export const viewport: Viewport = {
 };
 
 // Inline boot script — runs before React hydrates so the user's
-// chosen accent (data-theme) AND mode (data-mode) are on the <html>
-// element before first paint. Without this every page load flashes
-// the server-rendered defaults for a frame before the React tree
-// mounts and applies the picked values.
+// chosen accent (data-theme), mode (data-mode) AND text size
+// (data-font-scale) are on the <html> element before first paint.
+// Without this every page load flashes the server-rendered defaults
+// for a frame before the React tree mounts and applies the picked
+// values.
 //
 // Kept dependency-free (no imports, no JSX) — must be a string the
 // browser can run as a single <script>. Knowledge of valid ids is
-// sourced from the THEME_IDS / MODES constants so adding one doesn't
-// silently break the boot path.
+// sourced from the THEME_IDS / MODES / FONT_SCALES constants so
+// adding one doesn't silently break the boot path.
 const THEME_BOOT_SCRIPT = `
 (function(){
   var d = document.documentElement;
@@ -89,9 +93,16 @@ const THEME_BOOT_SCRIPT = `
     var MODES = ${JSON.stringify(MODES)};
     var savedMode = localStorage.getItem(MODE_KEY);
     d.dataset.mode = MODES.indexOf(savedMode) !== -1 ? savedMode : MODE_DEFAULT;
+
+    var FS_KEY = ${JSON.stringify(FONT_SCALE_STORAGE_KEY)};
+    var FS_DEFAULT = ${JSON.stringify(DEFAULT_FONT_SCALE)};
+    var FS = ${JSON.stringify(FONT_SCALES)};
+    var savedFs = localStorage.getItem(FS_KEY);
+    d.dataset.fontScale = FS.indexOf(savedFs) !== -1 ? savedFs : FS_DEFAULT;
   } catch (_e) {
     d.dataset.theme = ${JSON.stringify(DEFAULT_THEME)};
     d.dataset.mode = ${JSON.stringify(DEFAULT_MODE)};
+    d.dataset.fontScale = ${JSON.stringify(DEFAULT_FONT_SCALE)};
   }
 })();
 `;
@@ -109,6 +120,7 @@ export default async function RootLayout({
       lang={locale}
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
+      data-font-scale={DEFAULT_FONT_SCALE}
       className={`${appFont.variable} h-full antialiased`}
       // The `theme-boot` script below rewrites `data-theme` and
       // `data-mode` on <html> from localStorage before React hydrates,

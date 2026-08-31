@@ -2286,6 +2286,13 @@
       "signOutFailed": "Sign-out failed: {message}"
     },
     "appearance": {
+      "fontSize": "Text size",
+      "fontSizeHint": "Enlarges everything in the app. Saved to this device.",
+      "fontSizeSm": "Small",
+      "fontSizeMd": "Normal",
+      "fontSizeLg": "Large",
+      "fontSizeXl": "Extra large",
+      "useFontSize": "Use {size} text size",
       "title": "Appearance",
       "description": "Set the mode and accent colour used across the app. Saved to this device — try it, it changes live.",
       "mode": "Mode",

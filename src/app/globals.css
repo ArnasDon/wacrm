@@ -293,6 +293,27 @@ html[data-theme="rose"] {
   --sidebar-ring: oklch(0.645 0.22 16);
 }
 
+/* ---- TEXT SIZE — third axis, orthogonal to MODE + ACCENT ----
+ *
+ * Scales the root font-size as a percentage of the browser's base
+ * (usually 16px), so every rem-based dimension in the app grows or
+ * shrinks together. `md` = 100% (unchanged). Applied via
+ * `data-font-scale` on <html> (see src/lib/themes.ts + the boot
+ * script in layout.tsx). Mobile form controls stay pinned at 16px by
+ * the rule above, so bumping the scale never re-triggers iOS zoom. */
+html[data-font-scale="sm"] {
+  font-size: 93.75%;
+}
+html[data-font-scale="md"] {
+  font-size: 100%;
+}
+html[data-font-scale="lg"] {
+  font-size: 110%;
+}
+html[data-font-scale="xl"] {
+  font-size: 120%;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;

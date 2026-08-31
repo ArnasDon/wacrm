@@ -1,9 +1,16 @@
 "use client";
 
-import { Check, Moon, Palette, SunMoon, Sun } from "lucide-react";
+import { Check, Moon, Palette, SunMoon, Sun, Type } from "lucide-react";
 
 import { useTheme } from "@/hooks/use-theme";
-import { MODES, THEMES, type Mode, type ThemeId } from "@/lib/themes";
+import {
+  FONT_SCALE_META,
+  MODES,
+  THEMES,
+  type FontScale,
+  type Mode,
+  type ThemeId,
+} from "@/lib/themes";
 import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
 import { SettingsPanelHead } from "./settings-panel-head";
@@ -21,7 +28,7 @@ import { SettingsPanelHead } from "./settings-panel-head";
  * loads.
  */
 export function AppearancePanel() {
-  const { theme, setTheme, mode, setMode } = useTheme();
+  const { theme, setTheme, mode, setMode, fontScale, setFontScale } = useTheme();
   const t = useTranslations("Settings.appearance");
 
   return (
@@ -73,7 +80,79 @@ export function AppearancePanel() {
           ))}
         </div>
       </div>
+
+      <div className="mt-8 space-y-4">
+        <div>
+          <h3 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+            <Type className="size-4 text-muted-foreground" />
+            {t("fontSize")}
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {t("fontSizeHint")}
+          </p>
+        </div>
+
+        <div
+          role="radiogroup"
+          aria-label={t("fontSize")}
+          className="grid max-w-md grid-cols-4 gap-2"
+        >
+          {FONT_SCALE_META.map((fs) => (
+            <FontSizeCard
+              key={fs.id}
+              id={fs.id}
+              label={t(fs.labelKey)}
+              preview={fs.preview}
+              isActive={fs.id === fontScale}
+              onPick={() => setFontScale(fs.id)}
+            />
+          ))}
+        </div>
+      </div>
     </section>
+  );
+}
+
+function FontSizeCard({
+  id,
+  label,
+  preview,
+  isActive,
+  onPick,
+}: {
+  id: FontScale;
+  label: string;
+  preview: number;
+  isActive: boolean;
+  onPick: () => void;
+}) {
+  const t = useTranslations("Settings.appearance");
+  return (
+    <button
+      type="button"
+      role="radio"
+      onClick={onPick}
+      aria-checked={isActive}
+      aria-label={t("useFontSize", { size: label })}
+      className={cn(
+        "flex flex-col items-center gap-1.5 rounded-lg border bg-card px-2 py-3 transition-colors",
+        isActive
+          ? "border-primary/60 ring-2 ring-primary/40"
+          : "border-border hover:bg-muted/40",
+      )}
+    >
+      <span
+        aria-hidden
+        className="font-semibold leading-none text-foreground"
+        style={{ fontSize: preview }}
+      >
+        Aa
+      </span>
+      <span className="text-[11px] font-medium text-muted-foreground">
+        {label}
+      </span>
+      <span className="sr-only">Font scale: {id}</span>
+    </button>
   );
 }
 

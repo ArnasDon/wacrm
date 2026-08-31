@@ -27,6 +27,10 @@ import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
   message: Message;
+  /** The conversation's channel. On `whatsapp` the bubbles take the
+   *  familiar WhatsApp green/white fills; Instagram/Facebook keep the
+   *  app's accent fill so the channel stays visually distinct. */
+  channel?: "whatsapp" | "instagram" | "facebook";
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
@@ -221,6 +225,7 @@ function MessageContent({
 
 export function MessageBubble({
   message,
+  channel,
   reply,
   reactions,
   currentUserId,
@@ -232,6 +237,17 @@ export function MessageBubble({
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = timeInZone(message.created_at, timeZone);
+  const isWhatsapp = channel === "whatsapp";
+
+  // Fill + tail colour, per direction and per channel. `--tail-bg` is
+  // read by the `.wa-bubble*` tail pseudo-element (globals.css).
+  const tone = isWhatsapp
+    ? isAgent
+      ? "bg-[var(--wa-out)] text-[var(--wa-out-foreground)] [--tail-bg:var(--wa-out)]"
+      : "bg-[var(--wa-in)] text-[var(--wa-in-foreground)] [--tail-bg:var(--wa-in)]"
+    : isAgent
+      ? "bg-primary text-primary-foreground [--tail-bg:var(--primary)]"
+      : "bg-muted text-foreground [--tail-bg:var(--muted)]";
 
   // Row alignment + width cap are owned by <MessageActions> so its hover
   // group matches the bubble's content area, not the full row.
@@ -244,10 +260,9 @@ export function MessageBubble({
     >
       <div
         className={cn(
-          "relative rounded-2xl px-3 py-2",
-          isAgent
-            ? "rounded-br-md bg-primary text-primary-foreground"
-            : "rounded-bl-md bg-muted text-foreground",
+          "wa-bubble rounded-lg px-2.5 py-1.5 shadow-sm",
+          isAgent ? "wa-bubble-out rounded-br-[3px]" : "wa-bubble-in rounded-bl-[3px]",
+          tone,
         )}
       >
         {reply && (
@@ -275,7 +290,12 @@ export function MessageBubble({
               glance. */}
           {message.ai_generated && (
             <span
-              className="inline-flex items-center gap-0.5 rounded-full bg-primary-foreground/20 px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide text-primary-foreground"
+              className={cn(
+                "inline-flex items-center gap-0.5 rounded-full px-1.5 py-px text-[9px] font-semibold uppercase leading-none tracking-wide",
+                isWhatsapp
+                  ? "text-[var(--wa-meta)]"
+                  : "bg-primary-foreground/20 text-primary-foreground",
+              )}
               title={t("aiBadgeTitle")}
             >
               <Sparkles className="h-2.5 w-2.5" />
@@ -285,11 +305,15 @@ export function MessageBubble({
           <span
             className={cn(
               "text-[10px]",
-              // Outbound bubbles sit on the primary fill, so the
-              // timestamp must read against that (not the neutral
-              // foreground) — otherwise it goes low-contrast in light
-              // mode. Inbound bubbles use the muted surface.
-              isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
+              // WhatsApp keeps the meta (time/ticks) a dim neutral on
+              // both green and white bubbles. For IG/FB the outbound
+              // bubble sits on the accent fill, so the timestamp reads
+              // against that; inbound uses the muted surface.
+              isWhatsapp
+                ? "text-[var(--wa-meta)]"
+                : isAgent
+                  ? "text-primary-foreground/70"
+                  : "text-muted-foreground",
             )}
           >
             {time}

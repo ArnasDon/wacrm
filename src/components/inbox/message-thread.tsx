@@ -996,8 +996,10 @@ export function MessageThread({
     // Issue #257.
     <div className={cn('flex min-w-0 flex-1 flex-col', DOODLE_BG_CLASSES)}>
       {/* Header — solid card surface sits on top of the doodle so the
-          name/avatar/dropdowns stay legible. */}
-      <div className="border-border bg-card flex items-center justify-between gap-2 border-b px-3 py-3 sm:px-4">
+          name/avatar/dropdowns stay legible. `inbox-thread-header` is a
+          CSS hook: on mobile, when the chat runs full-screen, it takes
+          over the notch inset the app header normally carries. */}
+      <div className="inbox-thread-header border-border bg-card flex items-center justify-between gap-2 border-b px-3 py-3 sm:px-4">
         <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           {/* Back-to-list button — mobile only. Hidden on lg+ where the
               conversation list is always visible next to the thread. */}
@@ -1312,6 +1314,7 @@ export function MessageThread({
                       >
                         <MessageBubble
                           message={msg}
+                          channel={conversation.channel}
                           reply={reply}
                           reactions={msgReactions}
                           currentUserId={user?.id}

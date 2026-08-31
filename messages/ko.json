@@ -760,6 +760,11 @@
       "temperatureView": "고객 온도"
     },
     "board": {
+      "move": "이동",
+      "moveTo": "이동 대상",
+      "moveDeal": "{title} 이동",
+      "noDealsInStage": "이 단계에 거래가 없습니다",
+      "stageTabsLabel": "파이프라인 단계",
       "dropDealHere": "여기에 딜을 놓으세요",
       "addDeal": "딜 추가"
     },

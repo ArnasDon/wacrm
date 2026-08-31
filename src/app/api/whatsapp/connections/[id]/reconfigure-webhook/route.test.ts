@@ -18,6 +18,19 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 let callerRole = 'admin';
 // The row loadUazapiConnectionRow() resolves to (null → 404).
 let loadRowResult: Record<string, unknown> | null = null;
+// What the post-UPDATE `.select(SELECT_COLS).single()` resolves to. Default
+// is a persisted row (happy path); a test can flip it to a null/error result
+// to exercise FIX 4's "hash persist failed → 500" branch.
+let postUpdateResult: { data: unknown; error: unknown } = {
+  data: {
+    id: 'conn-1',
+    provider: 'uazapi',
+    status: 'connected',
+    is_primary: false,
+    created_at: '2026-01-01T00:00:00Z',
+  },
+  error: null,
+};
 
 // Every whatsapp_connections UPDATE in call order, with its chained filters.
 const updateCalls: Array<{
@@ -51,7 +64,7 @@ function makeSupabaseMock() {
         case 'whatsapp_connections':
           if (didUpdate) {
             void kind;
-            return { data: null, error: null };
+            return postUpdateResult;
           }
           return connRead();
         default:
@@ -147,6 +160,16 @@ beforeEach(() => {
     uazapi_instance_id: 'inst-1',
   };
   updateCalls.length = 0;
+  postUpdateResult = {
+    data: {
+      id: 'conn-1',
+      provider: 'uazapi',
+      status: 'connected',
+      is_primary: false,
+      created_at: '2026-01-01T00:00:00Z',
+    },
+    error: null,
+  };
   supabaseMock = makeSupabaseMock();
   configureWebhook.mockClear();
   configureWebhook.mockResolvedValue(undefined);
@@ -220,6 +243,28 @@ describe('POST /api/whatsapp/connections/[id]/reconfigure-webhook', () => {
     });
     expect(json.data).not.toHaveProperty('webhook_secret_hash');
     expect(json.data).not.toHaveProperty('credential');
+  });
+
+  it('hash persist failing after configureWebhook succeeded → 500 + last_connection_error written (FIX 4)', async () => {
+    postUpdateResult = { data: null, error: { message: 'update failed' } };
+
+    const res = await POST(reconfigureRequest(), { params });
+
+    expect(res.status).toBe(500);
+    // configureWebhook did run (UAZAPI already re-pointed at the new secret).
+    expect(configureWebhook).toHaveBeenCalledTimes(1);
+    // Two UPDATEs: the (failed) hash persist, then the error-flag write.
+    expect(updateCalls).toHaveLength(2);
+    expect(updateCalls[0].payload).toHaveProperty('webhook_secret_hash');
+    expect(updateCalls[1].payload.last_connection_error).toEqual(
+      'Webhook re-registered but the new secret could not be saved — retry.'
+    );
+    expect(updateCalls[1].filters).toContainEqual(['eq', 'id', 'conn-1']);
+    expect(updateCalls[1].filters).toContainEqual([
+      'eq',
+      'account_id',
+      'acct-1',
+    ]);
   });
 
   it('configureWebhook throwing → last_connection_error written + 502', async () => {

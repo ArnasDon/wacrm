@@ -44,7 +44,7 @@ export async function POST(
       return NextResponse.json({ error: 'Failed to configure webhook' }, { status: 502 });
     }
 
-    const { data: fresh } = await supabase
+    const { data: fresh, error: updErr } = await supabase
       .from('whatsapp_connections')
       .update({ webhook_secret_hash: webhookSecretHash, last_connection_error: null })
       .eq('id', id)
@@ -52,7 +52,26 @@ export async function POST(
       .select(SELECT_COLS)
       .single();
 
-    return NextResponse.json({ data: toConnectionDTO(fresh ?? {}) });
+    if (updErr || !fresh) {
+      // configureWebhook already re-pointed UAZAPI at the NEW secret; if we
+      // fail to persist its hash the DB keeps the OLD hash and every future
+      // delivery 200-ignores forever. Surface it instead of a false success.
+      console.error('[reconfigure-webhook] hash persist failed', updErr);
+      await supabase
+        .from('whatsapp_connections')
+        .update({
+          last_connection_error:
+            'Webhook re-registered but the new secret could not be saved — retry.',
+        })
+        .eq('id', id)
+        .eq('account_id', accountId);
+      return NextResponse.json(
+        { error: 'Failed to persist webhook secret' },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ data: toConnectionDTO(fresh) });
   } catch (err) {
     return toErrorResponse(err);
   }

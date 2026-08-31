@@ -23,6 +23,7 @@ import {
   uazapiMessageToInbound,
   uazapiStatusToInbound,
   eventTypeOf,
+  eventKindOf,
 } from '@/lib/whatsapp/inbound/uazapi-adapter';
 
 export const maxDuration = 60;
@@ -48,6 +49,12 @@ const CONNECTION_STATES = [
 
 type Json = Record<string, unknown>;
 
+/** First value that is a non-blank string; `null` otherwise (so `''` falls through). */
+const firstNonEmpty = (...vals: unknown[]): string | null => {
+  for (const v of vals) if (typeof v === 'string' && v.trim() !== '') return v;
+  return null;
+};
+
 export async function POST(
   request: Request,
   { params }: { params: Promise<{ secret: string }> }
@@ -55,7 +62,11 @@ export async function POST(
   const { secret } = await params;
   const hash = crypto.createHash('sha256').update(secret).digest('hex');
 
-  const payload = (await request.json().catch(() => ({}))) as Json;
+  const parsed = await request.json().catch(() => null);
+  const payload: Json =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Json)
+      : {};
   const db = admin();
 
   const { data: row } = await db
@@ -71,14 +82,17 @@ export async function POST(
     return NextResponse.json({ status: 'ignored' }, { status: 200 });
   }
 
-  // Defesa em profundidade: o instance/token do payload tem que bater.
+  // Defesa em profundidade: quando o payload traz um `instance` id, ele
+  // tem que bater com o da conexão. NÃO usamos `payload.token` aqui — é a
+  // credencial da instância (o segredo, guardado cifrado em
+  // `row.credential`), nunca igual a `row.uazapi_instance_id`. O envelope
+  // achatado `{ EventType, token }` (sem `instance`) segue em frente: a
+  // defesa real é o hash do segredo na URL.
   const payloadInstance =
-    payload.instance ??
-    payload.token ??
-    (payload.data as Json | undefined)?.instance;
+    payload.instance ?? (payload.data as Json | undefined)?.instance;
   if (payloadInstance && payloadInstance !== row.uazapi_instance_id) {
     console.warn(
-      `[uazapi webhook] instance mismatch: payload=${String(payloadInstance)} row=${row.uazapi_instance_id}`
+      '[uazapi webhook] instance mismatch (payload instance does not match connection)'
     );
     return NextResponse.json({ status: 'ignored' }, { status: 200 });
   }
@@ -100,7 +114,6 @@ async function handleUazapiEvent(
   row: Json,
   payload: Json
 ): Promise<void> {
-  const eventType = eventTypeOf(payload);
   const lite = {
     id: row.id as string,
     account_id: row.account_id as string,
@@ -108,18 +121,39 @@ async function handleUazapiEvent(
     uazapi_instance_id: row.uazapi_instance_id as string | null,
   };
 
-  switch (eventType) {
-    case 'messages':
+  switch (eventKindOf(payload)) {
+    case 'message':
       await processInboundMessage(db, uazapiMessageToInbound(payload, lite));
       return;
-    case 'messages_update':
-      await processStatusUpdate(db, uazapiStatusToInbound(payload, lite));
+    case 'status': {
+      const inbound = uazapiStatusToInbound(payload, lite);
+      // Confine status writes to this connection's own messages — the
+      // shared pipeline updates `messages` by `message_id` alone (not
+      // unique, migration 009), and this endpoint's payload is
+      // attacker-controllable. Without this a caller holding one
+      // account's URL secret could flip statuses in other tenants that
+      // share a `message_id`.
+      const { data: owned } = await db
+        .from('messages')
+        .select('id, conversations!inner(connection_id)')
+        .eq('message_id', inbound.providerMessageId)
+        .eq('conversations.connection_id', row.id as string)
+        .limit(1)
+        .maybeSingle();
+      if (!owned) {
+        console.info(
+          '[uazapi webhook] status update for a message not under this connection — ignoring'
+        );
+        return;
+      }
+      await processStatusUpdate(db, inbound);
       return;
+    }
     case 'connection':
       await handleConnectionEvent(db, row, payload);
       return;
     default:
-      console.info('[uazapi webhook] unhandled EventType:', eventType);
+      console.info('[uazapi webhook] unhandled event:', eventTypeOf(payload));
   }
 }
 
@@ -139,11 +173,11 @@ async function handleConnectionEvent(
   }
   const patch: Json = { status };
   if (status === 'connected') {
-    patch.display_phone =
-      (m.phone as string) ??
-      ((m.jid as Json | undefined)?.user as string) ??
-      null;
-    patch.profile_name = (m.profileName as string) ?? (m.pushName as string) ?? null;
+    patch.display_phone = firstNonEmpty(
+      m.phone,
+      (m.jid as Json | undefined)?.user
+    );
+    patch.profile_name = firstNonEmpty(m.profileName, m.pushName);
     patch.last_connection_error = null;
   } else {
     patch.last_connection_error =

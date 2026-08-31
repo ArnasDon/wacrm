@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import {
   eventTypeOf,
+  eventKindOf,
   uazapiMessageToInbound,
   uazapiStatusToInbound,
   type UazapiConnectionRowLite,
@@ -39,6 +40,26 @@ describe('eventTypeOf', () => {
 
   it('is the empty string when neither is present', () => {
     expect(eventTypeOf({ data: {} })).toBe('');
+  });
+});
+
+describe('eventKindOf — singular/plural vocab tolerance', () => {
+  it('maps message vocab', () => {
+    expect(eventKindOf({ event: 'message' })).toBe('message');
+    expect(eventKindOf({ EventType: 'messages' })).toBe('message');
+  });
+
+  it('maps status vocab', () => {
+    expect(eventKindOf({ event: 'status' })).toBe('status');
+    expect(eventKindOf({ EventType: 'messages_update' })).toBe('status');
+  });
+
+  it('maps connection vocab', () => {
+    expect(eventKindOf({ event: 'connection' })).toBe('connection');
+  });
+
+  it('everything else is "other"', () => {
+    expect(eventKindOf({ event: 'presence' })).toBe('other');
   });
 });
 

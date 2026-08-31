@@ -21,6 +21,9 @@ const h = vi.hoisted(() => ({
   state: {
     // Row the whatsapp_connections lookup resolves to (null → no match).
     connectionRow: null as Record<string, unknown> | null,
+    // Row the FIX-5 `messages` ownership lookup resolves to (null → the
+    // status event's messageid is NOT under this connection).
+    ownedMessageRow: null as Record<string, unknown> | null,
     // The value the route passed to .eq('webhook_secret_hash', …).
     lookupHash: undefined as unknown,
     // Callbacks handed to `after()`, drained manually per the runtime.
@@ -47,6 +50,20 @@ vi.mock('next/server', () => ({
 vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from(table: string) {
+      if (table === 'messages') {
+        // FIX 5: route-level ownership guard —
+        //   .select('id, conversations!inner(connection_id)')
+        //   .eq('message_id', …).eq('conversations.connection_id', …)
+        //   .limit(1).maybeSingle()
+        const msgChain: Record<string, unknown> = {
+          select: () => msgChain,
+          eq: () => msgChain,
+          limit: () => msgChain,
+          maybeSingle: () =>
+            Promise.resolve({ data: h.state.ownedMessageRow, error: null }),
+        }
+        return msgChain
+      }
       if (table !== 'whatsapp_connections') {
         throw new Error(`unexpected table: ${table}`)
       }
@@ -116,6 +133,7 @@ let errorSpy: ReturnType<typeof vi.spyOn>
 beforeEach(() => {
   vi.clearAllMocks()
   h.state.connectionRow = connectionRow()
+  h.state.ownedMessageRow = { id: 'm-1' }
   h.state.lookupHash = undefined
   h.state.afterCallbacks = []
   h.state.updateCalls = []
@@ -174,30 +192,31 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — auth by secret hash', (
 
 describe('POST /api/whatsapp/webhook/uazapi/[secret] — instance mismatch guard', () => {
   it('ignores (200) when payload.instance differs from the row instance', async () => {
-    const res = await post({ ...MESSAGE_ENVELOPE, instance: 'someone-else' })
+    const res = await post({ ...MESSAGE_ENVELOPE, instance: 'r99999999999999' })
     await drainAfter()
 
     expect(res).toEqual({ body: { status: 'ignored' }, init: { status: 200 } })
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('instance mismatch')
+    )
+    // The raw payload instance / row id must NOT be interpolated into logs.
+    expect(warnSpy).not.toHaveBeenCalledWith(
+      expect.stringContaining('r99999999999999')
     )
     expect(h.state.afterCallbacks).toHaveLength(0)
     expect(h.processInboundMessage).not.toHaveBeenCalled()
   })
 
-  it('ignores (200) when payload.token differs from the row instance', async () => {
+  it('flat { EventType, token } envelope (no instance field) proceeds — token is NOT the instance id', async () => {
     const res = await post({
       EventType: 'messages',
-      token: 'wrong-token',
+      token: 'inst-token-abc',
       data: MESSAGE_ENVELOPE.data,
     })
     await drainAfter()
 
-    expect(res).toEqual({ body: { status: 'ignored' }, init: { status: 200 } })
-    expect(warnSpy).toHaveBeenCalledWith(
-      expect.stringContaining('instance mismatch')
-    )
-    expect(h.processInboundMessage).not.toHaveBeenCalled()
+    expect(res).toEqual({ body: { status: 'received' }, init: { status: 200 } })
+    expect(h.processInboundMessage).toHaveBeenCalledTimes(1)
   })
 
   it('processes normally when no instance/token is present in the payload', async () => {
@@ -246,7 +265,25 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     expect(h.processStatusUpdate).not.toHaveBeenCalled()
   })
 
+  it('singular event "message" → processInboundMessage (vocab tolerance, FIX 2)', async () => {
+    await post({
+      event: 'message',
+      instance: INSTANCE,
+      data: MESSAGE_ENVELOPE.data,
+    })
+    await drainAfter()
+
+    expect(h.processInboundMessage).toHaveBeenCalledTimes(1)
+    expect(h.processInboundMessage.mock.calls[0][1]).toMatchObject({
+      providerMessageId: 'MID-1',
+      content: { kind: 'text', text: 'hello there' },
+    })
+    expect(h.processStatusUpdate).not.toHaveBeenCalled()
+  })
+
   it('EventType "messages_update" → processStatusUpdate with the adapter envelope', async () => {
+    // FIX 5: the ownership lookup must resolve to a row for this to dispatch.
+    h.state.ownedMessageRow = { id: 'm-1' }
     await post({
       EventType: 'messages_update',
       instance: INSTANCE,
@@ -269,7 +306,41 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     expect(h.processInboundMessage).not.toHaveBeenCalled()
   })
 
-  it('unknown EventType → 200, nothing dispatched, console.info', async () => {
+  it('status event whose messageid is NOT under this connection → not dispatched (FIX 5)', async () => {
+    h.state.ownedMessageRow = null
+
+    const res = await post({
+      EventType: 'messages_update',
+      instance: INSTANCE,
+      data: { messageid: 'MID-OTHER', status: 'Read', messageTimestamp: TS },
+    })
+    await drainAfter()
+
+    expect(res).toEqual({ body: { status: 'received' }, init: { status: 200 } })
+    expect(h.processStatusUpdate).not.toHaveBeenCalled()
+    expect(infoSpy).toHaveBeenCalledWith(
+      '[uazapi webhook] status update for a message not under this connection — ignoring'
+    )
+  })
+
+  it('singular event "status" under this connection → processStatusUpdate once (FIX 2 + 5)', async () => {
+    h.state.ownedMessageRow = { id: 'm-1' }
+
+    await post({
+      event: 'status',
+      instance: INSTANCE,
+      data: { messageid: 'MID-1', status: 'Read', messageTimestamp: TS },
+    })
+    await drainAfter()
+
+    expect(h.processStatusUpdate).toHaveBeenCalledTimes(1)
+    expect(h.processStatusUpdate.mock.calls[0][1]).toMatchObject({
+      providerMessageId: 'MID-1',
+      status: 'read',
+    })
+  })
+
+  it('unknown event → 200, nothing dispatched, console.info', async () => {
     const res = await post({
       EventType: 'presence',
       instance: INSTANCE,
@@ -282,9 +353,18 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     expect(h.processStatusUpdate).not.toHaveBeenCalled()
     expect(h.state.updateCalls).toHaveLength(0)
     expect(infoSpy).toHaveBeenCalledWith(
-      '[uazapi webhook] unhandled EventType:',
+      '[uazapi webhook] unhandled event:',
       'presence'
     )
+  })
+
+  it('literal null body → 200, no throw (FIX 7)', async () => {
+    const res = await post(null)
+    await drainAfter()
+
+    expect(res).toEqual({ body: { status: 'received' }, init: { status: 200 } })
+    expect(h.processInboundMessage).not.toHaveBeenCalled()
+    expect(h.processStatusUpdate).not.toHaveBeenCalled()
   })
 })
 

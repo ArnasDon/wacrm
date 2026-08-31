@@ -40,6 +40,19 @@ export function eventTypeOf(payload: Json): string {
   return String(payload.EventType ?? payload.event ?? '');
 }
 
+/** Canonical event kind, tolerant of UAZAPI's singular/plural vocab. */
+export function eventKindOf(
+  payload: Json
+): 'message' | 'status' | 'connection' | 'other' {
+  const raw = eventTypeOf(payload).toLowerCase();
+  if (raw === 'messages' || raw === 'message') return 'message';
+  if (raw === 'messages_update' || raw === 'status' || raw === 'messages_set')
+    return 'status';
+  if (raw === 'connection' || raw === 'connect' || raw === 'connection_update')
+    return 'connection';
+  return 'other';
+}
+
 const STATUS_MAP: Record<string, string> = {
   Sent: 'sent',
   Delivered: 'delivered',

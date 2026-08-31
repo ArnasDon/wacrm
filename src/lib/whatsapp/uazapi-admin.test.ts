@@ -75,7 +75,7 @@ describe('configureWebhook', () => {
     expect(JSON.parse(init.body)).toEqual({
       url: 'https://crm.example.com/api/whatsapp/webhook/uazapi/sek',
       events: ['messages', 'messages_update', 'connection'],
-      excludeMessages: ['isGroupYes', 'fromMeYes'],
+      excludeMessages: ['isGroupYes', 'wasSentByApi'],
     });
   });
 });

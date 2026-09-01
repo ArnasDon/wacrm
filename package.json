@@ -78,6 +78,7 @@
     "@types/papaparse": "^5.5.2",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/ws": "^8.18.1",
     "@types/xlsx": "^0.0.35",
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
@@ -87,7 +88,8 @@
     "supabase": "^2.109.1",
     "tailwindcss": "^4",
     "typescript": "^6",
-    "vitest": "^4.1.10"
+    "vitest": "^4.1.10",
+    "ws": "^8.18.3"
   },
   "optionalDependencies": {
     "@swc/core-linux-x64-gnu": "^1.15.46",

@@ -38,6 +38,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:rls": "vitest run -c vitest.rls.config.ts",
     "db:status": "supabase migration list",
     "db:push": "supabase db push",
     "db:push:dry": "supabase db push --dry-run"

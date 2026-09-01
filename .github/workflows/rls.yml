@@ -1,0 +1,103 @@
+name: RLS
+
+# Real end-to-end RLS coverage — hardening plan (post-Fase 2 audit).
+# Complements `migrations.yml` (which only proves the schema exists
+# after a clean replay) with a suite that proves the multi-tenant
+# isolation actually holds: two real Auth users, two real accounts,
+# and every assertion made through a signed-in `anon`-key session —
+# never `service_role`. See tests/rls/README.md for the full design
+# and its explicit limits.
+#
+# Separate job, separate workflow, on purpose: this suite is slower
+# (it boots the FULL local Supabase stack — Auth/PostgREST included,
+# not just Postgres, since real JWTs are required) and MUST NEVER be a
+# required check that blocks a PR that doesn't touch anything RLS
+# depends on. It shares no state with `ci.yml`'s fast, mock-only
+# `npm test`.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'tests/rls/**'
+      - 'vitest.rls.config.ts'
+      - '.github/workflows/rls.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'tests/rls/**'
+      - 'vitest.rls.config.ts'
+      - '.github/workflows/rls.yml'
+  # Manual trigger for a one-off run without touching any of the paths
+  # above (e.g. after a dependency bump).
+  workflow_dispatch:
+
+concurrency:
+  group: rls-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rls:
+    name: Real RLS isolation (local Postgres + Auth)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same pin as migrations.yml — a CLI release changing local-stack
+      # behaviour should be a deliberate bump in a PR, never a silent
+      # drift between the two workflows.
+      - name: Install the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.113.0
+
+      # Full stack, not `supabase db start` — this suite needs real
+      # Auth (GoTrue) + PostgREST for genuine per-user JWTs, which
+      # migrations.yml's Postgres-only check does not.
+      - name: Start Supabase (local stack)
+        run: supabase start
+
+      # `start` already applies migrations to a cold volume, but this
+      # guarantees every migration ran, from nothing, in filename
+      # order, on every run — same reasoning as migrations.yml.
+      - name: Replay every migration from scratch
+        run: supabase db reset --local --no-seed
+
+      # The exact key names `-o env` prints were not confirmed against a
+      # real run when this workflow was written (see tests/rls/
+      # README.md's caveat) — this step prints the raw, untouched
+      # output to the job log FIRST, specifically so the first real
+      # failure here is a two-second log read, not a guessing exercise.
+      # `supabase status` itself never prints a secret to a public log
+      # beyond what this job's own service_role key already is — a
+      # fresh, local-only, throwaway key with no access to anything but
+      # this ephemeral runner's own database.
+      - name: Show raw `supabase status -o env` output (diagnostic)
+        run: supabase status -o env
+
+      - name: Export local Supabase connection details
+        id: local-env
+        run: |
+          supabase status -o env \
+            | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' \
+            >> "$GITHUB_ENV"
+
+      - name: Run the real-RLS suite
+        env:
+          RLS_TEST_SUPABASE_URL: ${{ env.API_URL }}
+          RLS_TEST_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
+          RLS_TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
+        run: npm run test:rls
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop

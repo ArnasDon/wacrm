@@ -1575,7 +1575,12 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "imageAlt": "Изображение",
+      "viewImage": "Открыть в полном размере",
+      "expandVideo": "Развернуть видео",
+      "download": "Скачать",
+      "downloadFailed": "Не удалось скачать вложение"
     },
     "actions": {
       "reply": "Reply",

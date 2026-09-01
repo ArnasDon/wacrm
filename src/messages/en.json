@@ -1575,7 +1575,12 @@
       "interactiveReply": "[Interactive reply]",
       "unsupported": "[Unsupported message type]",
       "aiBadge": "AI",
-      "aiBadgeTitle": "Sent automatically by the AI assistant"
+      "aiBadgeTitle": "Sent automatically by the AI assistant",
+      "imageAlt": "Shared image",
+      "viewImage": "View full size",
+      "expandVideo": "Expand video",
+      "download": "Download",
+      "downloadFailed": "Couldn't download the attachment"
     },
     "actions": {
       "reply": "Reply",

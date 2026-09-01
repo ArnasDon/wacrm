@@ -72,24 +72,41 @@ jobs:
       - name: Replay every migration from scratch
         run: supabase db reset --local --no-seed
 
-      # The exact key names `-o env` prints were not confirmed against a
-      # real run when this workflow was written (see tests/rls/
-      # README.md's caveat) — this step prints the raw, untouched
-      # output to the job log FIRST, specifically so the first real
-      # failure here is a two-second log read, not a guessing exercise.
-      # `supabase status` itself never prints a secret to a public log
-      # beyond what this job's own service_role key already is — a
-      # fresh, local-only, throwaway key with no access to anything but
-      # this ephemeral runner's own database.
-      - name: Show raw `supabase status -o env` output (diagnostic)
-        run: supabase status -o env
-
+      # `supabase status -o env` (confirmed by the first real run of this
+      # workflow) prints each value double-quoted — e.g.
+      # `API_URL="http://127.0.0.1:54321"` — not the bare `KEY=value`
+      # this step originally assumed. Piping that line straight into
+      # `$GITHUB_ENV` set the env var to the literal, quote-wrapped
+      # string, which env-guard.ts correctly rejected as "not a valid
+      # URL" (it is not — it is a URL wrapped in `"` characters).
+      #
+      # Fixed with a plain shell loop (no `eval`, nothing executed from
+      # the tool's own output) that strips one leading and one trailing
+      # `"` per value via parameter expansion — a no-op if a future CLI
+      # version ever prints the value bare instead.
       - name: Export local Supabase connection details
         id: local-env
         run: |
-          supabase status -o env \
-            | grep -E '^(API_URL|ANON_KEY|SERVICE_ROLE_KEY)=' \
-            >> "$GITHUB_ENV"
+          while IFS='=' read -r key value; do
+            case "$key" in
+              API_URL|ANON_KEY|SERVICE_ROLE_KEY)
+                value="${value%\"}"
+                value="${value#\"}"
+                echo "${key}=${value}" >> "$GITHUB_ENV"
+                ;;
+            esac
+          done < <(supabase status -o env)
+
+      # Diagnostic — API_URL only. Never ANON_KEY or SERVICE_ROLE_KEY:
+      # even though both are local-only, throwaway credentials with no
+      # access beyond this ephemeral runner's own database, they have
+      # no reason to appear in a public job log, and this step doesn't
+      # need them to be useful — it exists solely to make a future
+      # "does this even look like a URL" failure a one-line log read.
+      - name: Show the resolved local API URL (diagnostic — no keys)
+        run: echo "Resolved API_URL=$API_URL"
+        env:
+          API_URL: ${{ env.API_URL }}
 
       - name: Run the real-RLS suite
         env:

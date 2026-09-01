@@ -6,8 +6,10 @@ import { getIgUserProfile } from '@/lib/instagram/api'
 import {
   handleInboundDmMessage,
   handleOutboundEchoMessage,
+  recordDmReferral,
   markMessageRead,
   toContentType,
+  type DmReferral,
 } from '@/lib/messaging/dm-inbound'
 
 // Same reasoning as src/app/api/whatsapp/webhook/route.ts: the after()
@@ -71,8 +73,16 @@ interface InstagramMessagingEvent {
   sender: { id: string }
   recipient: { id: string }
   timestamp: number
-  message?: InstagramMessage
+  message?: InstagramMessage & { referral?: DmReferral }
   read?: { mid: string }
+  /**
+   * Standalone ad / post referral — Meta sends one (no `message`) the
+   * instant a customer taps a Click-to-Messenger / Click-to-Instagram
+   * ad, just before their first DM. Also arrives inside `postback` for
+   * some entry points.
+   */
+  referral?: DmReferral
+  postback?: { payload?: string; referral?: DmReferral }
 }
 
 interface InstagramWebhookEntry {
@@ -208,29 +218,50 @@ async function processWebhook(body: { entry?: InstagramWebhookEntry[] }) {
         continue
       }
 
+      const referral =
+        event.referral ?? event.postback?.referral ?? event.message?.referral ?? null
+
+      // Nothing to do for an event that's neither a message nor a
+      // customer-side referral (a bare postback / delivery receipt).
+      if (!event.message && !(referral && !isEcho)) continue
+
+      // A single account with a corrupt/rotated `access_token` must not
+      // abort processing of the rest of this batched delivery (Meta
+      // fans several accounts' events into one POST).
+      let accessToken: string
+      try {
+        accessToken = decrypt(config.access_token)
+      } catch (err) {
+        console.error(
+          '[instagram webhook] access_token decrypt failed for ig_account_id:',
+          igAccountId,
+          err instanceof Error ? err.message : err
+        )
+        continue
+      }
+
       if (event.message) {
-        // A single account with a corrupt/rotated `access_token` must
-        // not abort processing of the rest of this batched delivery
-        // (Meta fans several accounts' events into one POST).
-        let accessToken: string
-        try {
-          accessToken = decrypt(config.access_token)
-        } catch (err) {
-          console.error(
-            '[instagram webhook] access_token decrypt failed for ig_account_id:',
-            igAccountId,
-            err instanceof Error ? err.message : err
-          )
-          continue
-        }
         await processMessagingEvent(
           event.message,
           customerIgsid,
           isEcho,
           config.account_id,
           config.user_id,
-          accessToken
+          accessToken,
+          referral
         )
+      } else {
+        // Standalone referral, arriving just before the customer's
+        // first DM — create/find the contact now so the ad attribution
+        // is on record before the message lands.
+        await recordDmReferral(supabaseAdmin(), {
+          channel: 'instagram',
+          accountId: config.account_id,
+          configOwnerUserId: config.user_id,
+          senderId: customerIgsid,
+          referral,
+          resolveProfile: () => getIgUserProfile({ igsid: customerIgsid, accessToken }),
+        })
       }
     }
   }
@@ -242,7 +273,8 @@ async function processMessagingEvent(
   isEcho: boolean,
   accountId: string,
   configOwnerUserId: string,
-  accessToken: string
+  accessToken: string,
+  referral: DmReferral | null = null
 ) {
   const { contentText, mediaUrl, contentType } = parseMessageContent(message)
 
@@ -278,6 +310,7 @@ async function processMessagingEvent(
     contentType,
     interactiveReplyId: message.quick_reply?.payload ?? null,
     replyToMid: message.reply_to?.mid ?? null,
+    referral,
     // Instagram gives no profile name inline on the message event —
     // resolved lazily here (Graph API call, best-effort, never throws)
     // only when findOrCreateContact determines the contact is new.

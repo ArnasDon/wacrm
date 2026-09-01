@@ -126,6 +126,10 @@ export interface Contact {
   company?: string;
   /** Manual commercial qualification. Null/absent means not classified yet. */
   lead_temperature?: LeadTemperature | null;
+  /** First-touch Meta ad/post referral captured on contact creation
+   *  ({source,type,ad_id,ref}). Null for organic / non-Meta contacts
+   *  and any created before migration 098. See `contacts.referral`. */
+  referral?: Record<string, unknown> | null;
   avatar_url?: string;
   created_at: string;
   updated_at: string;

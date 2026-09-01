@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt } from '@/lib/whatsapp/encryption'
 import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
+import { extractZernioReferral } from '@/lib/zernio/webhook-referral'
 import {
   handleInboundDmMessage,
   handleOutboundEchoMessageForZernioConversation,
@@ -172,12 +173,15 @@ async function processZernioEvent(
   // nothing for the Coexistence echo below to attach to.
   if (payload.event === 'conversation.started' && payload.conversation) {
     const conv = payload.conversation
+    const referral = extractZernioReferral(payload)
+    if (referral) console.info('[zernio webhook] conversation.started carried a referral:', referral)
     await ensureZernioConversationStarted(supabaseAdmin(), {
       channel: 'facebook',
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
       participantId: conv.participantId,
       zernioConversationId: conv.id,
+      referral,
       resolveProfile: () =>
         Promise.resolve({ name: conv.participantName, username: conv.participantUsername }),
     })
@@ -227,6 +231,9 @@ async function processZernioEvent(
   }
   if (message.direction !== 'incoming') return
 
+  const referral = extractZernioReferral(payload)
+  if (referral) console.info('[zernio webhook] message.received carried a referral:', referral)
+
   await handleInboundDmMessage(supabaseAdmin(), {
     channel: 'facebook',
     accountId: config.account_id,
@@ -236,6 +243,7 @@ async function processZernioEvent(
     contentText: attachment ? null : message.text,
     mediaUrl: attachment?.url ?? null,
     contentType: attachment ? toContentType(attachment.type) : 'text',
+    referral,
     // Same scope boundary as the Instagram Zernio route: quick-reply
     // taps / postbacks / quote-replies (Zernio's `metadata` field)
     // aren't parsed yet — every inbound message is text/media for now.

@@ -9,6 +9,7 @@ import {
   markMessageRead,
   toContentType,
 } from '@/lib/messaging/dm-inbound'
+import { extractZernioReferral } from '@/lib/zernio/webhook-referral'
 
 // Same reasoning as src/app/api/instagram/webhook/route.ts (the
 // Meta-direct route this mirrors): after() can fan out to several DB
@@ -180,12 +181,15 @@ async function processZernioEvent(
   // to, so it silently never showed up in wacrm.
   if (payload.event === 'conversation.started' && payload.conversation) {
     const conv = payload.conversation
+    const referral = extractZernioReferral(payload)
+    if (referral) console.info('[zernio webhook] conversation.started carried a referral:', referral)
     await ensureZernioConversationStarted(supabaseAdmin(), {
       channel: 'instagram',
       accountId: config.account_id,
       configOwnerUserId: config.user_id,
       participantId: conv.participantId,
       zernioConversationId: conv.id,
+      referral,
       resolveProfile: () =>
         Promise.resolve({ name: conv.participantName, username: conv.participantUsername }),
     })
@@ -250,6 +254,9 @@ async function processZernioEvent(
   }
   if (message.direction !== 'incoming') return
 
+  const referral = extractZernioReferral(payload)
+  if (referral) console.info('[zernio webhook] message.received carried a referral:', referral)
+
   await handleInboundDmMessage(supabaseAdmin(), {
     channel: 'instagram',
     accountId: config.account_id,
@@ -259,6 +266,7 @@ async function processZernioEvent(
     contentText: attachment ? null : message.text,
     mediaUrl: attachment?.url ?? null,
     contentType: attachment ? toContentType(attachment.type) : 'text',
+    referral,
     // Zernio's `metadata` field on message.received (quick-reply taps,
     // postback/button taps, quote-replies) isn't parsed here yet —
     // every Zernio-provider inbound message is treated as plain

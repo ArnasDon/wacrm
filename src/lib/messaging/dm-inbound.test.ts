@@ -36,6 +36,7 @@ function makeDb(fx: {
     upserts: [] as { row: Record<string, unknown>; options: unknown }[],
     conversationUpdates: [] as Record<string, unknown>[],
     conversationInserts: [] as Record<string, unknown>[],
+    contactInserts: [] as Record<string, unknown>[],
   }
 
   const listResult = () => ({
@@ -85,7 +86,10 @@ function makeDb(fx: {
       }
       if (table === 'contacts') {
         return {
-          insert: () => ({ select: () => ({ single: () => Promise.resolve({ data: fx.contact, error: null }) }) }),
+          insert: (row: Record<string, unknown>) => {
+            state.contactInserts.push(row)
+            return { select: () => ({ single: () => Promise.resolve({ data: fx.contact, error: null }) }) }
+          },
         }
       }
       throw new Error(`unexpected table: ${table}`)
@@ -267,6 +271,31 @@ describe('ensureZernioConversationStarted', () => {
     })
     expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'conversation.created', expect.objectContaining({ contact_id: 'contact-new' }))
     expect(dispatchWebhookEvent).toHaveBeenCalledWith(db, 'acct-1', 'contact.created', expect.objectContaining({ contact_id: 'contact-new' }))
+  })
+
+  it('stores a first-touch ad/post referral on the new contact', async () => {
+    const { findExistingInstagramContact } = await import('@/lib/contacts/dedupe')
+    vi.mocked(findExistingInstagramContact).mockResolvedValue(null)
+
+    const { db, state } = makeDb({ conversation: null, contact: { id: 'contact-new' } })
+
+    await ensureZernioConversationStarted(db, {
+      channel: 'instagram',
+      accountId: 'acct-1',
+      configOwnerUserId: 'user-1',
+      participantId: 'igsid-ad',
+      zernioConversationId: 'zconv-ad',
+      referral: { source: 'ADS', type: 'OPEN_THREAD', ad_id: '123', ref: 'promo-julio' },
+      resolveProfile: async () => null,
+    })
+
+    expect(state.contactInserts).toHaveLength(1)
+    expect(state.contactInserts[0].referral).toEqual({
+      source: 'ADS',
+      type: 'OPEN_THREAD',
+      ad_id: '123',
+      ref: 'promo-julio',
+    })
   })
 
   it('reuses an existing contact + conversation without re-dispatching creation webhooks', async () => {

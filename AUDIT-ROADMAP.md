@@ -755,10 +755,70 @@ vulnerabilidades. F2 permanece `RESUELTO / CERRADO END-TO-END`
 permanece sin iniciar. `AUTH-N1`–`AUTH-N6` no fueron tocados.
 
 ## 2.1 Instrucción base / sistema
-PENDIENTE
+AUDITADO — read-only, sin implementación.
+
+Superficie: `src/lib/ai/defaults.ts::buildSystemPromptParts` (bloque
+base — identidad, LANGUAGE RULE, guidelines, anti-inyección, AUTO-REPLY
+MODE), `src/lib/ai/defaults.test.ts`, callers (`auto-reply.ts`,
+`draft/route.ts`, `playground/route.ts`).
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Confirmado por código:**
+- Las 4 reglas base (identidad, LANGUAGE RULE, guidelines anti-invención/anti-revelación, anti-inyección) se aplican incondicionalmente, para cualquier `mode`.
+- El bloque `AUTO-REPLY MODE` (regla de handoff `[[HANDOFF]]`) solo se añade cuando `mode === 'auto_reply'` — `draft/route.ts` pasa `mode: 'draft'` y por tanto **nunca recibe** esta regla.
+- El prompt propio de la cuenta (`config.systemPrompt`) se inserta **después** de las reglas base de plataforma y de las reglas de catálogo, nunca antes.
+- El bloque anti-inyección es idéntico byte-a-byte para los 3 proveedores (mismo `buildSystemPrompt`, sin variación por proveedor).
+
+**RP-2.1-A — Prompt propio de la cuenta sin validación de contenido.**
+`api/ai/config/route.ts` POST solo verifica tipo/no-vacío del
+`system_prompt`, sin chequeo de contenido que pudiera contradecir las
+reglas base. Actor necesario: `admin`+ de esa misma cuenta — no
+alcanzable por un cliente de WhatsApp, otro usuario autenticado, ni un
+atacante externo. **Clasificación: RIESGO POTENCIAL / ARQUITECTÓNICO.**
+
+**RP-2.1-B — Falta de tests directos.** Ningún test en
+`defaults.test.ts` verifica directamente la LANGUAGE RULE, la línea
+anti-inyección, el bloque AUTO-REPLY MODE, ni la posición del prompt
+propio de la cuenta respecto a las reglas base. **Clasificación:
+DEUDA TÉCNICA.**
+
+No se implementó ninguna recomendación de RP-2.1-A ni RP-2.1-B.
 
 ## 2.2 Instrucciones del negocio
-PENDIENTE
+AUDITADO — read-only, sin implementación.
+
+Superficie: `src/lib/ai/config.ts`, `src/lib/ai/defaults.ts` (bloque
+`userPrompt`/"Business context and instructions"), `src/app/api/ai/
+config/route.ts` (GET/POST/DELETE completos) y su test
+(`route.test.ts`), `supabase/migrations/029_ai_reply.sql` (tabla
+`ai_configs` y su RLS).
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Confirmado por código y SQL:**
+- Escritura (`INSERT`/`UPDATE`/`DELETE`) de `system_prompt` requiere `admin`+ — confirmado tanto por `requireRole('admin')` en la ruta como por la política RLS `ai_configs_insert/update/delete USING (is_account_member(account_id, 'admin'))` (migración 029).
+- Lectura requiere `viewer`+ — confirmado por `requireRole('viewer')` y por la política RLS `ai_configs_select USING (is_account_member(account_id))`.
+- Aislamiento cross-tenant **confirmado por tests dedicados** (no solo por código): `route.test.ts` — "saving account acct-1's system_prompt never touches acct-2's row" (escritura) y "GET for acct-1 never returns acct-2's config" (lectura).
+- `system_prompt` nunca se expone vía la API pública `api/v1/` (grep sin resultados).
+- La API key nunca se devuelve junto con `system_prompt` en el mismo GET (`api_key`/`embeddings_api_key` destructurados y excluidos).
+- El contenido del admin se inserta después de las reglas base (2.1) y de las reglas de catálogo — nunca antes.
+
+**RP-2.2-A — `system_prompt` sin límite de longitud.** Columna `text`
+sin `CHECK` de longitud, sin límite en el código. Impacto autoinfligido
+sobre la propia cuenta (costo/calidad de su propio bot), sin ningún
+camino hacia otro tenant, credenciales o acción privilegiada.
+**Clasificación: DEUDA TÉCNICA / INFORMATIVO.**
+
+**RP-2.2-B — Sin delimitación estructural frente a encabezados
+internos.** El contenido del admin se concatena como texto plano, sin
+delimitador que impida que se confunda visualmente con un encabezado
+real de plataforma (p. ej. "KNOWLEDGE BASE —") si el propio admin
+escribiera algo similar por accidente. Actor y potencial afectado son
+la misma cuenta. **Clasificación: RIESGO POTENCIAL / ARQUITECTÓNICO,
+severidad muy baja.**
+
+No se implementó ninguna recomendación de RP-2.2-A ni RP-2.2-B.
 
 ## 2.3 Instrucciones CRM
 PENDIENTE

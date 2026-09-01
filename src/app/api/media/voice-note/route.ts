@@ -203,6 +203,15 @@ export async function POST(request: Request) {
     }
   } catch (error) {
     if (error instanceof TranscoderUnavailableError) {
+      // Logged, not silent: this branch returns before the console.error
+      // below, so a deployment missing the binary produced a 503 the user
+      // saw as a toast and the server never mentioned — leaving the logs
+      // looking healthy while every voice note failed.
+      console.error(
+        '[media/voice-note] ffmpeg not found on PATH — voice notes cannot ' +
+          'be transcoded. Check the runtime image (Dockerfile installs it ' +
+          'in the runner stage; nixpacks.toml lists it under nixPkgs).'
+      );
       return NextResponse.json(
         {
           code: 'transcoder_unavailable',

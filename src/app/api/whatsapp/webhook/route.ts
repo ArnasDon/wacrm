@@ -91,6 +91,18 @@ interface WhatsAppWebhookEntry {
         status: string
         timestamp: string
         recipient_id: string
+        /**
+         * Present only on `status: 'failed'`. Meta's asynchronous
+         * rejection — the send itself returned 200 with a message id,
+         * and this is the delivery attempt failing afterwards. Without
+         * it a failed bubble carries no reason anywhere in the system.
+         */
+        errors?: Array<{
+          code?: number
+          title?: string
+          message?: string
+          error_data?: { details?: string }
+        }>
       }>
     }
     field: string
@@ -369,7 +381,28 @@ async function handleStatusUpdate(status: {
   status: string
   timestamp: string
   recipient_id: string
+  errors?: Array<{
+    code?: number
+    title?: string
+    message?: string
+    error_data?: { details?: string }
+  }>
 }) {
+  // Meta reports an undeliverable message asynchronously: POST /messages
+  // answers 200 with a message id, then this webhook arrives carrying the
+  // real reason. It used to be dropped on the floor, so a bubble could
+  // flip to "failed" with no trace in any log — surface it before the
+  // status is mirrored anywhere.
+  if (status.status === 'failed' && status.errors?.length) {
+    for (const err of status.errors) {
+      console.error(
+        `[webhook] Meta could not deliver ${status.id} to ${status.recipient_id}: ` +
+          `code ${err.code ?? '?'} ${err.title ?? ''} — ` +
+          `${err.error_data?.details ?? err.message ?? 'no detail given'}`
+      )
+    }
+  }
+
   // 1) Mirror onto messages (legacy behavior) — Meta's status values
   //    already match the CHECK constraint on messages.status. No
   //    `.select()`: message_id is NOT unique (migration 009 — Meta ids

@@ -1110,10 +1110,170 @@ ejecutaron migraciones, no se implementó ninguna recomendación. `2.6`
 y las fases siguientes permanecen sin iniciar.
 
 ## 2.6 Prioridades y conflictos entre instrucciones
-PENDIENTE
 
-## 2.6 Prioridades y conflictos entre instrucciones
-PENDIENTE
+**Estado: AUDITADO — read-only, sin implementación.**
+
+**Superficie auditada:** `src/lib/ai/defaults.ts` (función completa
+`buildSystemPromptParts`/`buildSystemPrompt`/`buildSystemPromptBlocks`),
+`src/lib/ai/types.ts` (`ChatMessage`), `src/lib/ai/context.ts` (mapeo
+`sender_type`→`role`), `src/lib/ai/routing.ts`, `src/lib/ai/
+generate.ts`, `src/lib/ai/providers/shared.ts`, `src/lib/ai/providers/
+openai-compatible.ts`, `src/lib/ai/providers/openai.ts`, `src/lib/ai/
+providers/openrouter.ts`, `src/lib/ai/providers/anthropic.ts`,
+`src/lib/ai/catalog/context.ts`, `src/lib/ai/business-profile/
+context.ts`, `src/lib/ai/auto-reply.ts`, `src/app/api/ai/draft/
+route.ts`, `src/app/api/ai/playground/route.ts`, y los tests
+`defaults.test.ts`, `generate.test.ts`.
+
+**Resultado ejecutivo:** no se identificó ninguna vulnerabilidad
+activa. La jerarquía de instrucciones no es solo textual: está
+reforzada estructuralmente por el formato de wire de cada proveedor —
+el `system prompt` es un campo separado de `messages`, `ChatMessage.
+role` es un union cerrado a `'user' | 'assistant'` (nunca `'system'`),
+y los resultados de tools llegan con un rol/tipo de contenido
+estructuralmente distinto (`role: 'tool'` en OpenAI/OpenRouter;
+bloques `tool_result` en Anthropic), nunca como texto libre
+indistinguible de una instrucción. El único vector real de "conflicto
+entre instrucciones" ya está identificado y clasificado: RP-2.1-A (el
+`system_prompt` del admin se inserta después de las reglas base, sin
+validación de contenido) y RP-2.2-B (sin delimitador estructural
+fuerte frente a encabezados internos). Ambos ya existían de auditorías
+previas (2.1/2.2); la evidencia de 2.6 los confirma sin cambiar su
+clasificación.
+
+**Flujo real de construcción del prompt:** `buildSystemPromptParts`
+(única función, reutilizada sin excepción por `auto-reply.ts`,
+`draft/route.ts` y `playground/route.ts`) construye un array ordenado
+de bloques en un orden fijo por código, nunca reordenado por
+contenido: (1) identidad, (2) LANGUAGE RULE, (3) guidelines
+anti-invención/anti-revelación, (4) anti-injection — incondicionales;
+luego, condicionalmente, (5) AUTO-REPLY MODE (solo `mode==='auto_reply'`),
+(6)-(11) bloques de catálogo (solo si `catalogToolsAvailable`), y
+finalmente los bloques dinámicos: contexto de catálogo cross-turn,
+`system_prompt` del admin, hora, Business Profile, Knowledge Base. Ese
+string único se convierte en el campo `system` (Anthropic) o en
+`{role:'system', content: systemPrompt}` como primer elemento de
+`messages` (OpenAI/OpenRouter) — nunca se mezcla con la transcripción
+del cliente.
+
+**Jerarquía/precedencia real por modo:** idéntica en `auto_reply`,
+`draft` y `playground` — los 3 llaman a la misma función. La única
+diferencia entre modos es qué bloques opcionales se incluyen (AUTO-REPLY
+MODE solo en `auto_reply`; bloques de catálogo nunca en `draft`, FASE
+10), nunca el orden de los bloques compartidos.
+
+**Fuentes de instrucciones y nivel de confianza:** reglas base/
+anti-injection/AUTO-REPLY MODE/bloques de catálogo/Business Profile
+RULES — rol `system`, bloque `stable`, controladas exclusivamente por
+la plataforma, confianza máxima. `system_prompt` del admin y datos de
+Business Profile/Knowledge/contexto de catálogo — rol `system`, bloque
+`dynamic`, después de todo lo anterior, controlados por admin+ de esa
+cuenta, confianza media. Mensajes del cliente — rol `user` en
+`messages`, nunca `system`, confianza mínima (tratados como untrusted
+content). Resultados de tools — `role:'tool'` (OpenAI/OpenRouter) o
+bloque `tool_result` (Anthropic), nunca texto libre en `system`,
+confianza mínima/controlada por el allow-list de `whitelist.ts`.
+
+**Comportamiento ante conflictos:** no existe un árbitro en tiempo de
+ejecución que detecte contradicciones — la única defensa es
+arquitectónica (orden fijo de concatenación + separación de roles). No
+se identificó una regla explícita "estas reglas no pueden ser
+sobreescritas" dirigida al propio `system_prompt` del admin — la única
+regla "never override" real (anti-injection) está dirigida al mensaje
+del cliente, no al contenido que el propio admin autoriza sobre su
+cuenta.
+
+**Prompt injection:** vía mensajes del cliente — estructuralmente
+imposible que lleguen a `system` (`ChatMessage.role` cerrado a
+`'user'|'assistant'`, `context.ts` mapea `sender_type==='customer'`
+siempre a `'user'`). Vía `system_prompt`/Business Profile/Knowledge/
+catálogo — controlable solo por el admin+ de la propia cuenta (RLS ya
+verificado en 2.2) o por quien administra el catálogo de esa misma
+cuenta (R2); reafirma R2 y RP-2.2-B sin nueva evidencia que los
+reclasifique. Vía resultados de tools — rol/tipo de contenido dedicado
+en ambos formatos de wire, nunca concatenados en el string `system`.
+
+**Cross-tenant:** sin hallazgo nuevo. La construcción del prompt
+depende exclusivamente de `accountId`/`config` resueltos server-side;
+ningún bloque acepta un id o dato de otra cuenta. R1 se mantiene
+exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`.
+
+**Credenciales/secretos:** ninguna API key ni credencial de proveedor
+aparece en ningún bloque del prompt ni en el payload de ningún
+adaptador.
+
+**Tools:** las 4 tools son de solo lectura, `accountId` capturado por
+closure, resultado pasado por `whitelist.ts`. El rol/tipo de contenido
+con el que el resultado llega al modelo es estructuralmente distinto
+de una instrucción de sistema en ambos formatos de wire — confirmado
+por `generate.test.ts` con aserción explícita `role === 'tool'`.
+
+**Comparación auto-reply/draft/playground:** los 3 modos comparten la
+misma función de construcción del prompt; la única diferencia de
+precedencia observable es que `draft` nunca activa el bloque de reglas
+de catálogo ni el bloque AUTO-REPLY MODE (ya documentado en 2.5).
+
+**Comparación entre proveedores:** OpenAI y OpenRouter comparten el
+mismo código (`generateChatCompletion`) y formato de wire (`role:
+'system'` como primer mensaje, `role:'tool'` para resultados).
+Anthropic usa un campo `system` separado (con `cache_control` para
+FASE 8, sin afectar el contenido) y resultados de tool como bloques
+`tool_result` dentro de un turno `user`. Confirmado por test que el
+string final que ve Anthropic es idéntico al que ven los demás
+proveedores, y que OpenAI/OpenRouter nunca reciben metadata de caché
+de Anthropic.
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Riesgos potenciales/no verificados:** ninguno nuevo. RP-2.1-A y
+RP-2.2-B quedan confirmados por la evidencia de 2.6, sin
+reclasificación. **R1 permanece exactamente `RIESGO POTENCIAL /
+ARQUITECTÓNICO`. R2 permanece exactamente `RIESGO POTENCIAL / NO
+VERIFICADO`.** Ninguno reabierto ni reclasificado.
+
+**Controles existentes:** función única de construcción del prompt
+(sin duplicación de lógica de jerarquía); orden de concatenación fijo
+por código; separación estructural de roles; `ChatMessage.role` como
+union cerrado; rol/tipo de contenido dedicado para resultados de
+tools; regla anti-injection idéntica para los 3 proveedores; allow-list
+de catálogo antes de que cualquier dato externo llegue al prompt.
+
+**Hallazgos descartados:** ninguno nuevo en esta fase.
+
+**Tests existentes:** `defaults.test.ts` (paridad de contenido
+`buildSystemPrompt`/`buildSystemPromptBlocks`, bloque `stable` nunca
+vacío ni con datos dinámicos); `generate.test.ts` (aserción explícita
+de `role==='tool'` en OpenAI, `tool_use`/`tool_result` en Anthropic,
+`'drops a leading assistant turn so the payload starts on the
+customer'`, `'never declares tools on the wire when none are
+attached'`, `MAX_TOOL_TURNS`, y la serie FASE 8 que prueba que el
+contenido final que recibe Anthropic es idéntico al string plano).
+
+**Gaps de cobertura:** ningún test verifica explícitamente que el
+`system_prompt` del admin queda siempre después de las reglas base y
+de catálogo (RP-2.1-B, deuda técnica ya existente). Tampoco existe un
+test que confirme en runtime que `ChatMessage.role` nunca puede ser
+`'system'`.
+
+**Recomendaciones (SIN IMPLEMENTAR):**
+- Considerar un test de regresión en `defaults.test.ts` que fije el
+  orden relativo exacto de los bloques (reglas base → catálogo →
+  contexto dinámico → `system_prompt` del admin → Business Profile →
+  Knowledge), para que un futuro refactor no invierta silenciosamente
+  esa precedencia.
+- Considerar un test que verifique en runtime que ningún mensaje de
+  `buildConversationContext`/`context.ts` puede producir `role:
+  'system'`.
+- No implementar cambios en esta fase: son preventivas y no responden
+  a una vulnerabilidad activa.
+
+**Clasificación final: `2.6 — Prioridades y conflictos entre
+instrucciones: INFORMATIVO / CONTROLES EXISTENTES ADECUADOS`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no hubo cambios en Supabase, no se crearon ni
+ejecutaron migraciones, no se implementó ninguna recomendación. `2.7`
+y las fases siguientes permanecen sin iniciar.
 
 ## 2.7 Herramientas, datos y contexto disponible
 PENDIENTE

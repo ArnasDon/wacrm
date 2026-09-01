@@ -821,12 +821,295 @@ severidad muy baja.**
 No se implementó ninguna recomendación de RP-2.2-A ni RP-2.2-B.
 
 ## 2.3 Instrucciones CRM
-PENDIENTE
+AUDITADO — read-only, sin implementación.
+
+Superficie: `src/lib/ai/context.ts` (`buildConversationContext`,
+completo), `src/lib/ai/context.test.ts` (completo), `auto-reply.ts`/
+`draft/route.ts`/`playground/route.ts` (uso de `contactId`/
+`conversationId`/`messages`), `supabase/migrations/001_initial_schema.sql`
+(tablas `contacts`, `tags`, `messages`), y búsqueda exhaustiva en
+`src/lib/ai/` de `contact.`, `pipeline`, `deal`, `tag`, notas
+internas.
+
+**Resultado ejecutivo:** el Agente IA **no consume datos CRM del
+cliente** — ni `contacts` (nombre/email/empresa), ni `tags`, ni
+`pipelines`/`deals`, ni notas internas de clientes. Confirmado por
+grep exhaustivo en todo `src/lib/ai/`: las únicas coincidencias de
+"pipeline"/"deal"/"tag" son falsos positivos léxicos (p. ej. "pipeline"
+como metáfora de flujo de procesamiento, "tagged" como palabra normal),
+verificados uno por uno.
+
+**El único contenido CRM que llega al modelo es la transcripción de
+mensajes de la conversación**, vía `buildConversationContext` —
+`SELECT sender_type, content_text FROM messages WHERE conversation_id
+= :id AND content_type = 'text'`, mapeado a `role: user` (cliente) /
+`role: assistant` (agente humano o el propio bot). `contactId` se pasa
+como argumento a `auto-reply.ts` pero **nunca se usa para consultar la
+tabla `contacts`** — solo para metadata de envío de media y para
+comparar contra el directorio interno del NEGOCIO (`account_business_contacts`,
+ya auditado en fases anteriores), nunca el contacto CRM del cliente.
+
+**Sin tools CRM.** Las únicas tools jamás adjuntadas al modelo siguen
+siendo las 4 de catálogo (`search_catalog`/`get_product`/
+`get_availability`/`get_product_media`) — no existe ninguna tool que
+lea o escriba `contacts`/`tags`/`pipelines`/`deals`.
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Controles reconfirmados directamente en esta fase (no reutilizados
+de memoria de fases anteriores):**
+- `sender_type TEXT NOT NULL CHECK (sender_type IN ('customer', 'agent', 'bot'))` (migración 001) — estructuralmente imposible que un mensaje de tipo distinto (p. ej. una nota interna) se cuele en la transcripción que lee `buildConversationContext`.
+- RLS de `contacts` (`auth.uid() = user_id`) existe, pero es irrelevante en la práctica porque la tabla nunca se consulta desde `src/lib/ai/`.
+- Los 2 callers reales de `buildConversationContext` (`draft/route.ts`, `auto-reply.ts`) están protegidos por los mismos mecanismos ya documentados bajo R1 (RLS real vía migración 017 en uno; proveniencia server-side del ID en el otro) — reconfirmados, no modificados.
+- `playground/route.ts` **no usa `buildConversationContext`** — recibe el array `messages` directamente del cuerpo de la petición HTTP de un `agent`+/`admin`+ ya autenticado (`requireRole('agent')`), nunca de la tabla `messages`; diferencia de diseño esperada, no un bypass, ya que el actor que controla ese contenido ya es de confianza de esa misma cuenta.
+
+**R1 permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`** — no
+se encontró evidencia nueva que lo cambie, no se reabre ni se
+reclasifica.
+
+**Gaps de cobertura de tests (preventivos, NO vulnerabilidades):**
+- Ningún test en `context.test.ts` inserta un mensaje con `content_type != 'text'` para confirmar explícitamente su exclusión (el filtro existe en el código; el test directo no).
+- Ningún test cubre aislamiento cross-tenant específicamente para `buildConversationContext` — mismo gap ya señalado dentro de R1, no duplicado como hallazgo nuevo.
+
+**Clasificación final: `INFORMATIVO / NO ES VULNERABILIDAD`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no hubo cambios en Supabase, no se crearon ni
+ejecutaron migraciones, no se implementó ninguna recomendación. `2.4`
+y las fases siguientes permanecen sin iniciar.
 
 ## 2.4 Instrucciones WhatsApp
-PENDIENTE
+AUDITADO — read-only, sin implementación.
+
+Superficie: `src/lib/ai/defaults.ts` (grep exhaustivo de "WhatsApp"),
+`src/app/api/whatsapp/webhook/route.ts` (resolución de contacto/
+conversación, `parseMessageContent` completo, `ALLOWED_CONTENT_TYPES`,
+gate de despacho a IA), `supabase/migrations/010_*.sql` (CHECK de
+`messages.content_type`), `src/lib/ai/context.ts::buildConversationContext`
+(reconfirmado), `webhook/route.test.ts`.
+
+**Resultado ejecutivo:** no existen instrucciones específicas de
+WhatsApp separadas de las reglas base ya auditadas en 2.1 — solo
+menciones cosméticas/de formato ("a business that uses a WhatsApp
+CRM", "suitable for WhatsApp", límite de un mensaje de WhatsApp).
+**Vulnerabilidades activas: NINGUNA.**
+
+**Flujo completo confirmado:** WhatsApp/Meta → webhook → `accountId`
+→ conversación/contacto → `parseMessageContent` → `messages` → IA →
+respuesta WhatsApp.
+
+**Validación/autenticación del webhook:** usada como contexto ya
+cerrado en Fase 1 (verificación HMAC) — **no reabierta ni
+re-auditada** en esta fase.
+
+**Aislamiento multi-tenant:** sin evidencia nueva que cambie lo ya
+establecido bajo R1 — `accountId`/`conversationId`/`contactId` siguen
+resueltos server-side, ligados estructuralmente entre sí.
+
+**Qué llega al modelo y qué queda excluido (confirmado por código):**
+- `message.text.body` (`content_type: 'text'`) → **sí llega**.
+- Captions de imagen/video/documento (`content_type: 'image'/'video'/'document'`) → **excluidos** — el `content_type` de BD sigue siendo el del adjunto, no `'text'`, sin importar el caption.
+- Ubicación (`content_type: 'location'`) → **excluida**.
+- Taps de botón/lista (`content_type: 'interactive'`) → **excluidos** del contexto, y además nunca disparan IA (`!interactiveReplyId` como gate explícito de despacho).
+- Sin credenciales ni secretos de WhatsApp en ningún prompt.
+- Sin tools específicas de WhatsApp — las únicas tools jamás adjuntadas al modelo siguen siendo las 4 de catálogo, sin relación con el canal.
+- Solo `auto-reply` recibe inbounds reales de WhatsApp; `draft`/`playground` no tienen relación directa con el webhook (confirmado en 2.3).
+
+**RP-2.4-A — Mensajes de tipo WhatsApp no reconocido producen un
+placeholder que llega al modelo como mensaje de cliente.** Existe un
+camino técnico real: la rama `default:` de `parseMessageContent`
+genera `contentText: \`[Unsupported message type: ${message.type}]\``,
+y la lógica de fallback de `ALLOWED_CONTENT_TYPES` asigna a este caso
+`content_type: 'text'`, por lo que sí pasa el filtro de
+`buildConversationContext`. `message.type` proviene de un conjunto de
+tipos del protocolo de Meta (enum acotado, p. ej. "order", "system",
+"contacts") — **no se demostró que un cliente pueda introducir
+contenido arbitrario en ese campo**, por lo que no se demostró una vía
+de prompt injection efectiva. El impacto demostrado es únicamente que
+el modelo puede recibir un mensaje sintético/genérico en un caso de
+borde poco común. **Clasificación: `INFORMATIVO / NO ES
+VULNERABILIDAD`.**
+
+**Hallazgos descartados:** captions de imagen/video/documento llegando
+al modelo; taps de botones/listas influyendo en el agente; nombre de
+perfil de WhatsApp del cliente (`contact.profile.name`) llegando al
+prompt (solo se usa para `contacts.name`, tabla que 2.3 ya confirmó
+que nunca se consulta desde `src/lib/ai/`); cualquier acceso a
+credenciales mediante el flujo WhatsApp.
+
+**Gap de cobertura (preventivo, NO vulnerabilidad):** ningún test
+cubre explícitamente la rama `default:` de tipo de mensaje no
+soportado.
+
+**Recomendaciones (SIN IMPLEMENTAR):** considerar excluir
+explícitamente el placeholder de `content_type: 'text'`; añadir un
+test específico para la rama `default:`.
+
+**R1 permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`. R2
+permanece exactamente `RIESGO POTENCIAL / NO VERIFICADO`.** Ninguno
+reabierto ni reclasificado.
+
+**Clasificación final: `INFORMATIVO / NO ES VULNERABILIDAD`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no hubo cambios en Supabase, no se crearon ni
+ejecutaron migraciones, no se implementó ninguna recomendación. `2.5`
+y las fases siguientes permanecen sin iniciar.
 
 ## 2.5 Reglas de ventas y atención
+
+**Estado: AUDITADO — read-only, sin implementación.**
+
+**Superficie auditada:** `src/lib/ai/defaults.ts` (bloques PRICE
+SEQUENCE, SEARCH COVERAGE, GROUPING, STOCK-AWARE BROWSING, COMMERCIAL
+BEHAVIOR, EXTERNAL LIMIT REACHED, FACETS), `src/lib/ai/catalog/
+whitelist.ts`, `src/lib/ai/catalog/types.ts`, `src/lib/ai/tools/
+catalog-tools.ts`, `src/lib/ai/catalog/resolver.ts`, `src/lib/ai/
+business-profile/handoff-intent.ts`, `src/lib/ai/auto-reply.ts`,
+`src/app/api/ai/draft/route.ts`, `src/app/api/ai/playground/route.ts`,
+más los tests `catalog-agent-scenarios.test.ts`, `catalog/
+resolver.test.ts`, `tools/catalog-tools.test.ts`, `defaults.test.ts`.
+
+**Resultado ejecutivo:** no se identificó ninguna vulnerabilidad
+activa. Las reglas de precio, stock y comportamiento comercial, junto
+con las 4 catalog tools, están respaldadas por un allow-list
+server-side (`whitelist.ts`) y por `accountId` capturado por closure
+(nunca leído del input del modelo). El único hallazgo de esta fase es
+una asimetría de modo ya documentada en el propio código (`draft`
+nunca adjunta catalog tools — FASE 10), clasificada como INFORMATIVO,
+no como riesgo.
+
+**Flujo real:** mensaje del cliente → `routeAiContext` decide
+`catalogToolsAvailable` → si es true, el modelo está obligado por
+prompt a llamar `search_catalog` (y luego `get_product`/
+`get_availability`/`get_product_media` según haga falta) → el
+resultado pasa por `toToolResultProduct`/`toCatalogProduct` (allow-list)
+antes de llegar al modelo → el modelo responde según PRICE SEQUENCE /
+STOCK-AWARE BROWSING / COMMERCIAL BEHAVIOR.
+
+**Reglas de precio:** `defaults.ts` obliga una secuencia fija —
+resolver el producto/variante exacto, llamar `get_product`/
+`get_availability` por su id exacto, y responder únicamente con lo que
+la tool devolvió — y prohíbe expresamente convertir moneda o adivinar
+una tasa de cambio. `toCatalogProduct` aplica una coerción numérica
+directa (`num(raw.price)`) sin ninguna aritmética de redondeo o
+conversión. Dos variantes del mismo modelo se tratan como precios
+independientes.
+
+**Stock y disponibilidad:** una cantidad de 0 se comunica siempre como
+agotado; si la disponibilidad nunca fue confirmada por una tool, el
+modelo debe decirlo en vez de asumir disponibilidad por defecto.
+`available_only` es opt-in y nunca se fuerza en una consulta sobre un
+producto específico. No existe en el modelo de datos ni en el prompt
+ningún campo o regla de fecha de reposición/promesa de restock.
+
+**Ausencia actual de descuentos/promociones/negociación:** un grep
+dirigido sobre `defaults.ts` y todo `catalog/*.ts` no encontró ninguna
+funcionalidad de descuento, promoción, cupón, negociación o
+financiamiento — las únicas coincidencias fueron falsos positivos sobre
+activación de integraciones de catálogo, sin relación comercial.
+`CatalogProduct` no tiene campo de descuento/precio original/promoción.
+Es una ausencia de funcionalidad, no un control roto: la regla genérica
+de no inventar precios ya cubre estructuralmente un descuento
+inventado.
+
+**Comportamiento y allow-list de las 4 catalog tools:**
+`search_catalog`/`get_product`/`get_availability`/`get_product_media`
+son de solo lectura; `search_catalog` corta antes de tocar el resolver
+con query vacío y aplica un límite duro de 50 independiente de lo que
+pida el modelo; `get_product`/`get_availability`/`get_product_media`
+nunca fabrican un resultado y distinguen explícitamente
+`external_limit_reached` de `not_found`. `toCatalogProduct`/
+`toToolResultProduct` son un allow-list, no un deny-list: IMEI, costo,
+margen y proveedor no tienen ningún camino hacia el modelo.
+
+**Aislamiento por accountId y controles cross-tenant:** todas las
+funciones del resolver están parametrizadas exclusivamente por el
+`accountId` recibido del caller, nunca por el input de la tool —
+confirmado por un test dedicado que ignora explícitamente un
+`account_id` que el modelo intente inyectar. R1 se mantiene sin
+cambios.
+
+**Credenciales y secretos:** ninguna API key ni credencial de
+proveedor aparece en el pipeline de construcción de prompt auditado en
+esta fase.
+
+**Handoff y atención humana:** la intención de compra por sí sola no
+dispara `[[HANDOFF]]` — se trata como señal de navegación
+(STOCK-AWARE BROWSING). Los disparadores de handoff siguen siendo
+únicamente: pedido explícito de un humano, cliente molesto/reclamando,
+o información fuera de catálogo/KB/Business Profile. La resolución de
+departamento/contacto (`detectHandoffIntent`) es determinística y
+corre después de que el modelo ya emitió el sentinel, sin influir en su
+decisión.
+
+**Diferencias entre auto-reply, draft y playground:** `auto-reply.ts`
+y `playground/route.ts` conectan catalog tools reales con `accountId`
+real. `draft/route.ts` tiene `hasCatalog: false` fijo por código (FASE
+10, decisión de producto documentada explícitamente en el propio
+código) — un borrador nunca se fundamenta en el catálogo en vivo, solo
+en la Knowledge Base si existe. El peor caso es un borrador
+potencialmente desactualizado que un humano revisa y edita antes de
+enviar.
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**R1 permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`. R2
+permanece exactamente `RIESGO POTENCIAL / NO VERIFICADO`.** Ninguno
+reabierto ni reclasificado.
+
+**Controles existentes:** allow-list server-side; `accountId` por
+closure con test dedicado; reglas de prompt PRICE SEQUENCE /
+STOCK-AWARE BROWSING / COMMERCIAL BEHAVIOR / EXTERNAL LIMIT REACHED /
+FACETS; regla genérica anti-invención; regla base anti-injection;
+handoff determinístico posterior a la decisión del modelo; aislamiento
+por `accountId` en el resolver con tests de tenant/presupuesto
+externo/facets; `MAX_TOOL_TURNS = 4`; `MAX_SEARCH_LIMIT = 50`.
+
+**Hallazgos descartados:** las coincidencias de "promot-" en
+`integrations.ts`/`integrations.test.ts` — activación de integración de
+catálogo a "primary", sin relación con descuentos comerciales.
+
+**Tests existentes:** `catalog-agent-scenarios.test.ts`, `catalog/
+resolver.test.ts` (aislamiento de tenant, fallback, cache, enrutamiento
+por id, límite externo, facets), `tools/catalog-tools.test.ts`
+(forwarding/clamping, corte en query vacío, facets, honestidad de
+`not_found`/`no_media_available`, `external_limit_reached`, bloqueo de
+`account_id` smuggled), `defaults.test.ts`.
+
+**Gaps de cobertura:** ningún test ejecuta end-to-end el escenario
+adversarial de descripción de catálogo con instrucciones inyectadas
+contra un `generateReply` real (el análisis de R2 fue estático, sin
+cambio respecto a lo ya documentado). Tampoco existe un test dedicado
+que fije que `draft/route.ts` nunca adjunta catalog tools incluso con
+catálogo activo. No existe ningún test de "descuento inventado" —
+consistente con la ausencia total de esa funcionalidad.
+
+**Recomendaciones (SIN IMPLEMENTAR):**
+- Considerar un test de regresión que fije explícitamente que
+  `draft/route.ts` mantiene `hasCatalog: false` incluso cuando la
+  cuenta dispone de catálogo/ERP activo, para evitar que un futuro
+  refactor revierta silenciosamente esta decisión de producto ya
+  documentada.
+- Si en el futuro se incorpora funcionalidad de descuentos,
+  promociones, cupones o negociación, replicar el patrón de
+  `whitelist.ts`: permitir únicamente campos explícitamente autorizados
+  mediante una allow-list server-side y añadir una regla específica de
+  prompt, equivalente a PRICE SEQUENCE, que obligue al modelo a
+  utilizar únicamente valores devueltos por una fuente de autoridad
+  real.
+- No implementar cambios en esta fase: las recomendaciones anteriores
+  son preventivas y no responden a una vulnerabilidad activa.
+
+**Clasificación final: `2.5 — Reglas de ventas y atención: INFORMATIVO
+/ CONTROLES EXISTENTES ADECUADOS`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no hubo cambios en Supabase, no se crearon ni
+ejecutaron migraciones, no se implementó ninguna recomendación. `2.6`
+y las fases siguientes permanecen sin iniciar.
+
+## 2.6 Prioridades y conflictos entre instrucciones
 PENDIENTE
 
 ## 2.6 Prioridades y conflictos entre instrucciones

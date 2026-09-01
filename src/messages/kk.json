@@ -1677,7 +1677,10 @@
       "estimatedRecipients": "олжалды алушылар",
       "selectForEstimate": "Болжамды көру үшін аудитория түрін таңдаңыз.",
       "back": "Артқа",
-      "next": "Келесі"
+      "next": "Келесі",
+      "errorCsvMissingPhone": "CSV файлында «phone» бағаны болуы керек.",
+      "errorCsvParse": "CSV файлын оқу мүмкін болмады.",
+      "csvContactsFound": "CSV ішінен {count} контакт табылды."
     },
     "step3": {
       "title": "Хабарламаны реттеу",

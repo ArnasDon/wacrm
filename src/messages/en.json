@@ -1678,7 +1678,10 @@
       "estimatedRecipients": "estimated recipients",
       "selectForEstimate": "Select an audience type to see the estimate.",
       "back": "Back",
-      "next": "Next"
+      "next": "Next",
+      "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+      "errorCsvParse": "Could not parse CSV file.",
+      "csvContactsFound": "{count} valid contact(s) found in CSV."
     },
     "step3": {
       "title": "Personalize Message",

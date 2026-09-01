@@ -1677,7 +1677,10 @@
       "estimatedRecipients": "предполагаемых получателей",
       "selectForEstimate": "Выберите тип аудитории для расчёта.",
       "back": "Назад",
-      "next": "Далее"
+      "next": "Далее",
+      "errorCsvMissingPhone": "В CSV должен быть столбец «phone».",
+      "errorCsvParse": "Не удалось разобрать CSV-файл.",
+      "csvContactsFound": "В CSV найдено контактов: {count}."
     },
     "step3": {
       "title": "Персонализация сообщения",

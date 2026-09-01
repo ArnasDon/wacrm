@@ -1276,7 +1276,176 @@ ejecutaron migraciones, no se implementó ninguna recomendación. `2.7`
 y las fases siguientes permanecen sin iniciar.
 
 ## 2.7 Herramientas, datos y contexto disponible
-PENDIENTE
+
+**Estado: AUDITADO — read-only, sin implementación.**
+
+**Superficie auditada:** `src/lib/ai/auto-reply.ts` (lectura completa),
+`src/app/api/whatsapp/webhook/route.ts` (punto de origen de
+`accountId`/`conversationId`/`contactId`), `src/lib/ai/config.ts`,
+`src/lib/ai/knowledge.ts`, `src/lib/ai/business-profile/service.ts`,
+`src/lib/ai/context.ts`, `src/lib/ai/catalog/{whitelist,resolver,
+context}.ts`, `src/lib/ai/tools/catalog-tools.ts`, `src/lib/ai/
+usage.ts`, `src/lib/ai/handoff.ts`, `src/lib/ai/business-profile/
+handoff-intent.ts`, y los tests `knowledge.test.ts`, `business-profile/
+service.test.ts`, `catalog/resolver.test.ts`, `tools/
+catalog-tools.test.ts`, `auto-reply.test.ts`.
+
+**Resultado ejecutivo:** no se identificó ninguna vulnerabilidad
+activa. El inventario completo de fuentes de datos que pueden llegar
+al modelo (catálogo, Knowledge Base, Business Profile, `system_prompt`
+del admin, transcripción de conversación, contexto cross-turn de
+catálogo, hora) está, en cada caso, filtrado por `accountId`
+server-side y — para las 5 fuentes con dato real de negocio (catálogo,
+Knowledge, Business Profile, `ai_configs`, y el cache en memoria de
+Knowledge) — respaldado por un test dedicado de aislamiento de tenant.
+Un hallazgo nuevo, menor, no de seguridad: `get_product_media` (una
+tool de solo lectura) tiene, exclusivamente en `auto-reply.ts`, un
+efecto colateral de escritura real (`engineSendMedia`) — el modelo
+puede así causar el envío de una foto real al cliente por WhatsApp,
+aunque nunca controla la URL enviada (siempre proviene de datos de
+catálogo ya filtrados por whitelist). R1, R2, RP-2.1-A y RP-2.2-B se
+reconfirman sin evidencia nueva que obligue a reclasificarlos.
+
+**Flujo real end-to-end:** el webhook resuelve `accountId`/
+`conversationId`/`contactId` server-side (por el `whatsapp_configs`/
+número de teléfono receptor, nunca de un campo arbitrario del payload
+de Meta) → `dispatchInboundToAiReply(args)` recibe esos 3 ids como
+argumentos planos → cada función posterior (`loadAiConfig`,
+`buildConversationContext`, `accountHasKnowledgeBase`,
+`retrieveKnowledge`, `loadBusinessProfileForAgent`,
+`hasActiveCatalogSources`, `executeCatalogTool`) recibe `accountId`
+por closure/argumento, nunca desde datos que el modelo o el cliente
+puedan influir → `routeAiContext` decide qué recursos adjuntar →
+`buildSystemPromptParts` ensambla el prompt final → `generateReply` lo
+envía al proveedor → el resultado se usa para enviar la respuesta,
+actualizar `ai_catalog_context`, y loguear uso.
+
+**Inventario completo de fuentes de datos:**
+- **Cliente (WhatsApp):** transcripción `content_type='text'` vía
+  `buildConversationContext`, siempre `role:'user'`. Nunca CRM, nunca
+  notas internas.
+- **CRM (`contacts`):** reconfirmado que `src/lib/ai/` no consulta esta
+  tabla en ningún punto.
+- **Business Profile:** `service.ts` filtra explícitamente por
+  `accountId` en cada función; RLS (migración 050) como defensa
+  adicional. `notes` de contactos internos excluido deliberadamente.
+- **Knowledge Base:** `retrieveKnowledge`/`accountHasKnowledgeBase`
+  filtran por `account_id`/`p_account_id`; RPCs `SECURITY INVOKER`
+  (RLS real aplicada).
+- **Catálogo/ERP:** parametrizado exclusivamente por `accountId` del
+  caller; pasa por el allow-list de `whitelist.ts`.
+- **Contexto histórico (cross-turn):** `conversations.
+  ai_catalog_context` — estructurado, derivado únicamente de
+  `toolCalls` reales de la misma conversación.
+- **`system_prompt` del admin:** texto libre autorizado por admin+ de
+  la cuenta, insertado después de todas las reglas base (RP-2.1-A).
+- **Hora:** server-side, sin input de usuario.
+
+**Tools:** las 4 tools (`search_catalog`/`get_product`/
+`get_availability`/`get_product_media`) son de solo lectura a nivel de
+`catalog-tools.ts`. Hallazgo: en `auto-reply.ts`,
+`wrapWithMediaSideEffect` envuelve el executor para que un
+`get_product_media` exitoso dispare además `engineSendMedia` (un envío
+real de WhatsApp) — el único punto del pipeline donde una tool de
+"lectura" produce un efecto de escritura observable por el cliente. La
+URL enviada es siempre la ya resuelta y filtrada por `whitelist.ts`
+para esa cuenta — el modelo no puede inyectar una URL propia ni texto
+arbitrario, solo elegir qué producto (ya visto vía `search_catalog` en
+la misma cuenta) fotografiar. `playground/route.ts` deliberadamente no
+usa este wrapper.
+
+**Autorización:** `draft`/`playground` requieren `requireRole('agent')`.
+`auto-reply.ts` corre server-side desde el webhook con el cliente de
+servicio — su única puerta de entrada es la resolución de `accountId`
+en el propio webhook. `ai_configs` exige `admin`+ para escritura,
+`viewer`+ para lectura.
+
+**Aislamiento multi-tenant:** confirmado, con test dedicado, en
+`catalog/resolver.test.ts`, `tools/catalog-tools.test.ts`,
+`business-profile/service.test.ts`, `knowledge.test.ts` ("an account
+with real chunks is never short-circuited by another account's empty
+cache entry"), y `api/ai/config/route.test.ts` (de fases previas).
+
+**Transformaciones:** `toCatalogProduct`/`toToolResultProduct`
+(allow-list) es la única transformación de datos externos antes de
+llegar al modelo. `buildBusinessProfileContext`,
+`catalogContextToPromptText` y los bloques de Knowledge son formateo
+puro, sin I/O ni lógica de negocio.
+
+**Prompt injection:** sin hallazgo nuevo — reafirma R2 (catálogo) y
+RP-2.2-B (`system_prompt`). Los resultados de tools llegan con rol/tipo
+de contenido dedicado, nunca como texto libre indistinguible de
+instrucción.
+
+**Secretos:** ninguna API key/credencial aparece en ningún dato que
+llegue al modelo.
+
+**Modificación de datos:** las únicas escrituras que un turno del
+agente puede producir son `conversations.ai_catalog_context`
+(estructurado, derivado de `toolCalls` reales), `conversations`
+(campos de handoff, ruta determinística ya auditada),
+`claim_ai_reply_slot` (contador atómico), y el envío de WhatsApp (este
+último solo por el side-effect de `get_product_media`). Ninguna tool
+escribe en `catalog`/`ai_knowledge_chunks`/`ai_configs`/CRM.
+
+**Diferencias por modo:** `auto-reply` es el único modo con el
+side-effect de envío de media; `draft` no tiene catálogo en absoluto
+(FASE 10); `playground` tiene catálogo real pero sin side-effects de
+WhatsApp.
+
+**Diferencias por proveedor:** ninguna relevante — el conjunto de
+datos que llega al modelo es idéntico entre proveedores (confirmado en
+2.6); solo cambia el empaquetado de wire.
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Riesgos potenciales/no verificados:** ninguno nuevo. **R1 permanece
+exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`. R2 permanece
+exactamente `RIESGO POTENCIAL / NO VERIFICADO`. RP-2.1-A permanece
+exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`. RP-2.2-B permanece
+exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO, severidad muy baja`.**
+Ninguno reabierto ni reclasificado.
+
+**El hallazgo de `get_product_media`/`wrapWithMediaSideEffect`
+queda clasificado exactamente como: `INFORMATIVO / NO ES
+VULNERABILIDAD`** — efecto acotado a datos ya vetados de la propia
+cuenta; ningún camino hacia texto/URL arbitraria ni hacia otro tenant.
+
+**Controles existentes:** `accountId` como argumento plano server-side
+en cada función de acceso a datos; RLS como defensa adicional en cada
+tabla; allow-list de catálogo; tests dedicados de aislamiento en 4
+módulos distintos; exclusión estructural de CRM/notas internas;
+side-effect de media acotado a URLs ya filtradas.
+
+**Hallazgos descartados:** ninguno nuevo en esta fase.
+
+**Tests existentes:** `knowledge.test.ts` (13 tests, incluyendo
+aislamiento de cache), `business-profile/service.test.ts`
+(aislamiento), `catalog/resolver.test.ts` y `tools/
+catalog-tools.test.ts`, `auto-reply.test.ts` (incluye los tests F2 ya
+cerrados).
+
+**Gaps de cobertura:** ningún test ejercita específicamente
+`wrapWithMediaSideEffect` verificando que la URL enviada por WhatsApp
+es exactamente la del producto resuelto. Tampoco existe un test que
+confirme que `playground/route.ts` nunca importa/usa
+`wrapWithMediaSideEffect`.
+
+**Recomendaciones (SIN IMPLEMENTAR):**
+- Considerar un test dedicado para `wrapWithMediaSideEffect` que
+  confirme que la URL enviada coincide exactamente con la que devolvió
+  `get_product_media`, sin transformación intermedia.
+- Considerar un test que fije que `playground/route.ts` nunca puede
+  disparar un envío real de WhatsApp.
+- No implementar cambios en esta fase.
+
+**Clasificación final: `2.7 — Herramientas, datos y contexto
+disponible: INFORMATIVO / CONTROLES EXISTENTES ADECUADOS`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no hubo cambios en Supabase, no se crearon ni
+ejecutaron migraciones, no se implementó ninguna recomendación. `2.8`
+y las fases siguientes permanecen sin iniciar.
 
 ## 2.8 Pruebas integrales del agente
 PENDIENTE

@@ -1425,16 +1425,24 @@ aislamiento de cache), `business-profile/service.test.ts`
 catalog-tools.test.ts`, `auto-reply.test.ts` (incluye los tests F2 ya
 cerrados).
 
-**Gaps de cobertura:** ningún test ejercita específicamente
-`wrapWithMediaSideEffect` verificando que la URL enviada por WhatsApp
-es exactamente la del producto resuelto. Tampoco existe un test que
-confirme que `playground/route.ts` nunca importa/usa
-`wrapWithMediaSideEffect`.
+**Gaps de cobertura:** **CORRECCIÓN:** el test existente de
+`wrapWithMediaSideEffect` (`auto-reply.test.ts`) ya verificaba que la
+URL enviada a `engineSendMedia` coincide exactamente con
+`primaryImage.url`, y que el resultado visible al modelo no se muta —
+la afirmación original de este párrafo era incorrecta. El gap real,
+más específico, era: (a) nunca se había probado la precedencia de
+`primaryImage` sobre `images[0]` con URLs distintas entre ambos
+campos; (b) `wrapWithMediaSideEffect` nunca se había probado compuesto
+con el `executeCatalogTool` REAL (los tests existentes usaban un
+`base` completamente mockeado). Tampoco existía un test que confirme
+que `playground/route.ts` nunca importa/usa `wrapWithMediaSideEffect`.
 
 **Recomendaciones (SIN IMPLEMENTAR):**
 - Considerar un test dedicado para `wrapWithMediaSideEffect` que
-  confirme que la URL enviada coincide exactamente con la que devolvió
-  `get_product_media`, sin transformación intermedia.
+  confirme la precedencia de `primaryImage` sobre `images[0]` con URLs
+  distintas, y su composición con el `executeCatalogTool` REAL — no la
+  URL exacta de `primaryImage`, que ya estaba verificada (ver
+  corrección arriba).
 - Considerar un test que fije que `playground/route.ts` nunca puede
   disparar un envío real de WhatsApp.
 - No implementar cambios en esta fase.
@@ -1501,10 +1509,14 @@ ambos/ninguno, incluyendo Business Profile sin contaminación cruzada),
 handoff (general/departamento/contacto/fallback a agente por defecto,
 nunca escribe `account_id`), F2 (fallo de proveedor→handoff, doble
 fallo no lanza), facets end-to-end con aislamiento de cuenta explícito
-en la RPC, y `wrapWithMediaSideEffect` (4 tests dedicados). `ai_catalog_
-context` se verifica solo indirectamente (test de facets). `claim_ai_
-reply_slot` solo tiene test en su rama de "pierde la carrera", no en
-su camino feliz.
+en la RPC, y `wrapWithMediaSideEffect` (4 tests dedicados, incluyendo
+la URL exacta de `primaryImage` y la ausencia de mutación del
+resultado — ver corrección en la sección de gaps de esta misma fase).
+`ai_catalog_context` se verifica solo indirectamente (test de facets).
+**CORRECCIÓN:** `claim_ai_reply_slot` SÍ tiene test en su camino feliz
+— `auto-reply.test.ts` verifica el payload exacto
+(`{conversation_id, max_replies}`) enviado a `rpc()`, además de su
+rama de "pierde la carrera".
 
 **Draft:** sin cobertura de test. No existe `src/app/api/ai/draft/
 route.test.ts` ni ningún archivo que importe `draft/route.ts`. Todo lo
@@ -1551,9 +1563,11 @@ dedicado — **GAP DE COBERTURA**.
 
 **Efectos secundarios:** `engineSendText` mockeado y verificado en el
 camino feliz; `engineSendMedia`/`wrapWithMediaSideEffect` con 4 tests
-reales; `ai_catalog_context` solo indirecto; `claim_ai_reply_slot` solo
-su rama de fallo; campos de conversación de handoff cubiertos
-exhaustivamente.
+reales (URL exacta de `primaryImage` y ausencia de mutación incluidas
+— ver corrección arriba); `ai_catalog_context` solo indirecto;
+**CORRECCIÓN:** `claim_ai_reply_slot` tiene test tanto en su camino
+feliz (payload exacto) como en su rama de fallo; campos de
+conversación de handoff cubiertos exhaustivamente.
 
 **Errores y límites:** cobertura real confirmada para tool error/
 infraestructura caída, proveedor caído (401/vacío/error-en-200),
@@ -1579,9 +1593,11 @@ RP-2.2-B permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO,
 severidad muy baja`.** Ninguno reabierto ni reclasificado.
 
 **Deudas técnicas:** ausencia total de test para `draft/route.ts` y
-`playground/route.ts`; `claim_ai_reply_slot` sin verificación de
-payload en su camino feliz; `ai_catalog_context` sin aserción dedicada
-a su valor exacto fuera del escenario de facets.
+`playground/route.ts`; `ai_catalog_context` sin aserción dedicada a su
+valor exacto fuera del escenario de facets. **CORRECCIÓN:**
+`claim_ai_reply_slot` NO es una deuda técnica — su payload exacto en el
+camino feliz ya estaba verificado (ver corrección arriba); se elimina
+de esta lista.
 
 **Gaps de cobertura:** ningún test conecta `dispatchInboundToAiReply`
 con un `generateReply` REAL; cero pruebas adversariales ejecutadas;
@@ -1624,9 +1640,11 @@ archivos/aserciones.
 3. Medio impacto: al menos un test ejecutado de prompt injection
    (mensaje de cliente y descripción de catálogo con instrucciones
    embebidas).
-4. Bajo impacto: test dedicado para el payload exacto de
-   `claim_ai_reply_slot` y para el valor persistido de `ai_catalog_
-   context` fuera del escenario de facets.
+4. Bajo impacto: test dedicado para el valor persistido de
+   `ai_catalog_context` fuera del escenario de facets. **CORRECCIÓN:**
+   se elimina de este punto la referencia a `claim_ai_reply_slot` — su
+   payload exacto en el camino feliz ya estaba verificado (ver
+   corrección en la sección de gaps de esta misma fase).
 5. Bajo impacto: test explícito de "intención de compra sin handoff".
 
 No se implementó ninguna de estas recomendaciones.

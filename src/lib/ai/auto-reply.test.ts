@@ -1,5 +1,10 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { SupabaseClient } from '@supabase/supabase-js'
 import type { AiConfig } from './types'
+import { executeCatalogTool } from './tools/catalog-tools'
+import { updateCatalogContext, type CatalogTurnContext } from './catalog/context'
+import { supabaseAdmin } from './admin-client'
+import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
 // Shared, hoisted mock state so the module mocks can close over it.
 const h = vi.hoisted(() => ({
@@ -175,6 +180,19 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 beforeEach(() => {
+  // The per-account rate limiter (checkRateLimit, RATE_LIMITS
+  // .aiAutoReplyAccount — 30/60s) is a real, module-level, in-memory
+  // Map, never mocked in this file. Every test calls
+  // dispatchInboundToAiReply(ARGS) with the SAME accountId ('acct-1'),
+  // so without this reset, the cumulative count across every test that
+  // has already run in this file eventually crosses the real 30-request
+  // window and starts failing UNRELATED, later tests non-deterministically
+  // (this surfaced only now, once the file's total dispatch count grew
+  // past 30 — hardening plan, Paso 6). Resetting here does not change
+  // what any test asserts; it only makes the real rate limiter's state
+  // deterministic per test, exactly like every other piece of shared
+  // state below.
+  __resetRateLimitForTests()
   h.state.conv = {
     assigned_agent_id: null,
     ai_autoreply_disabled: false,
@@ -787,5 +805,661 @@ describe('wrapWithMediaSideEffect', () => {
     const wrapped = wrapWithMediaSideEffect(base, target)
     const result = await wrapped({ id: 'c4', name: 'get_product_media', input: {} })
     expect(result).toMatchObject({ primaryImage: { url: 'https://x/img.jpg' } })
+  })
+})
+
+// ============================================================
+// SEAM — dispatchInboundToAiReply → generateReply REAL (hardening
+// plan, Paso 3 / Fase 2 audit gap 2.8 §18). Every OTHER describe block
+// in this file mocks `./generate` entirely (`h.generateReply` is a
+// plain `vi.fn()`) — that proves what `auto-reply.ts` DOES with a
+// given AI response, never that the real provider adapter/tool-calling
+// loop (`generate.ts` → `providers/openai-compatible.ts`) actually
+// produces that response correctly from a real dispatch.
+// `catalog-agent-scenarios.test.ts` proves the reverse half (real
+// `generateReply` + real `executeCatalogTool`/resolver, invoked
+// directly, never through `dispatchInboundToAiReply`). Nothing
+// connects both halves in one test — this block closes exactly that
+// gap, and only that gap.
+//
+// `h.generateReply` (from the shared `vi.mock('./generate', ...)` at
+// the top of this file) is given the REAL implementation via
+// `mockImplementation(realGenerateReply)` for every test below —
+// `./generate` itself is never un-mocked (the shared mock declaration
+// can't be removed without breaking every other describe block in this
+// file), but the function every test in this block actually executes
+// IS the genuine `generateReply` → real provider adapter → real
+// tool-calling loop. Only `fetch` (the provider's HTTP call) and the
+// admin-client Supabase double (already shared by the whole file) are
+// mocked.
+//
+// EPISTEMOLOGICAL LIMIT — applies to every test below: scripting
+// `fetch` proves the CODE wires `dispatchInboundToAiReply` →
+// `generateReply` → the real tool-calling loop → `executeCatalogTool`
+// → the resolver → `engineSendText`/`ai_catalog_context`/handoff
+// correctly. It does NOT prove that a real GPT/Claude/OpenRouter model
+// would produce the scripted response, resist a prompt injection,
+// never invent a price/stock value, or always decide correctly when to
+// hand off — `fetch`'s mock fully determines what "the model" appears
+// to say. This test must never be cited as evidence for R2; R2 remains
+// exactly `RIESGO POTENCIAL / NO VERIFICADO`.
+// ============================================================
+describe('dispatchInboundToAiReply — SEAM: real generateReply + real tool-calling loop (hardening, Paso 3)', () => {
+  let realGenerateReply: typeof import('./generate').generateReply
+
+  const SEAM_ACTIVE_DATA_SOURCE = [
+    {
+      id: 'ds-seam',
+      display_name: 'Catálogo de prueba',
+      status: 'active',
+      usage: 'catalog',
+      priority: 100,
+      is_primary: true,
+      fallback_policy: 'fallback_on_not_found',
+    },
+  ]
+
+  function seamProductRow(overrides: Record<string, unknown> = {}) {
+    return {
+      id: 'row-seam-1',
+      source_product_id: 'sku-seam-1',
+      sku: 'SKU-SEAM-1',
+      name: 'Samsung A07 64GB Negro',
+      brand: 'Samsung',
+      model: 'A07',
+      description: null,
+      color: 'Negro',
+      variant_label: null,
+      capacity: '64GB',
+      size: null,
+      price: 7500,
+      currency: 'DOP',
+      available: true,
+      available_quantity: 3,
+      primary_image_url: null,
+      images: null,
+      total_count: 1,
+      ...overrides,
+    }
+  }
+
+  function okFetchResponse(json: unknown): Response {
+    return { ok: true, status: 200, json: async () => json } as unknown as Response
+  }
+
+  function errFetchResponse(status: number, json: unknown): Response {
+    return { ok: false, status, json: async () => json } as unknown as Response
+  }
+
+  beforeEach(async () => {
+    if (!realGenerateReply) {
+      const actual = await vi.importActual<typeof import('./generate')>('./generate')
+      realGenerateReply = actual.generateReply
+    }
+    h.generateReply.mockImplementation(realGenerateReply)
+  })
+
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('main scenario: fetch (tool call) → real generateReply → real executeCatalogTool → real resolver → fetch (final text) → real engineSendText, with the smuggled account_id ignored and ai_catalog_context persisted from the REAL tool result', async () => {
+    h.state.dataSources = SEAM_ACTIVE_DATA_SOURCE
+    h.state.catalogProductRows = [seamProductRow()]
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: '¿Cuánto cuesta el Samsung A07 negro de 64GB?' },
+    ])
+
+    const FINAL_TEXT = 'El Samsung A07 64GB Negro cuesta RD$7,500 y hay 3 disponibles.'
+    const fetchMock = vi
+      .fn()
+      // Turn 1 — the (mocked) provider requests a catalog lookup. The
+      // tool-call arguments smuggle an `account_id` — proving the real
+      // `executeCatalogTool` never reads it (requirement 5).
+      .mockResolvedValueOnce(
+        okFetchResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_1',
+                    type: 'function',
+                    function: {
+                      name: 'search_catalog',
+                      arguments: JSON.stringify({ query: 'A07 negro 64', account_id: 'attacker-account' }),
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      )
+      // Turn 2 — answers using exactly the fixture's real price/stock.
+      .mockResolvedValueOnce(okFetchResponse({ choices: [{ message: { content: FINAL_TEXT } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // fetch → generateReply (REAL) → dispatchInboundToAiReply (REAL) →
+    // engineSendText, with the exact text the second fetch produced.
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: FINAL_TEXT }))
+
+    // accountId used by the resolver/RPC is the real one from ARGS —
+    // never the smuggled tool-call argument.
+    const rpcCall = h.state.rpcCalls.find((c) => c.name === 'search_ai_catalog_products')
+    expect((rpcCall?.args as { p_account_id: string } | undefined)?.p_account_id).toBe('acct-1')
+
+    // The SECOND request sent to the provider actually carries the
+    // REAL tool result (not a value asserted independently of it) —
+    // this is the wire-level proof that the pipeline delivered the
+    // genuine resolver output back to "the model".
+    const secondRequestBody = JSON.parse((fetchMock.mock.calls[1][1] as { body: string }).body)
+    const toolMessage = (secondRequestBody.messages as { role: string; content: string }[]).find(
+      (m) => m.role === 'tool',
+    )
+    expect(toolMessage?.content).toContain('7500')
+    expect(toolMessage?.content).toContain('Samsung A07 64GB Negro')
+
+    // ai_catalog_context persisted after the dispatch corresponds to
+    // the REAL product the tool resolved — not fabricated in the test.
+    expect(h.state.updatePayload).toMatchObject({
+      ai_catalog_context: expect.objectContaining({
+        products: expect.arrayContaining([
+          expect.objectContaining({ price: 7500, name: 'Samsung A07 64GB Negro' }),
+        ]),
+      }),
+    })
+  })
+
+  it('handoff scenario: fetch returns [[HANDOFF]] directly (no tool call) → real generateReply parses it → real detectHandoffIntent resolves the named department', async () => {
+    h.state.departments = [
+      { id: 'd1', account_id: 'acct-1', name: 'Ventas', description: null, active: true, sort_order: 100, created_at: 't', updated_at: 't' },
+    ]
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Quiero hablar con Ventas, por favor.' },
+    ])
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      okFetchResponse({
+        choices: [{ message: { content: 'Ya te comunico con un asesor. [[HANDOFF]]' } }],
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1) // no tools attached — no catalog configured
+    expect(h.engineSendText).not.toHaveBeenCalled() // the sentinel is never customer-visible
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      status: 'pending',
+      ai_handoff_department_id: 'd1', // real detectHandoffIntent resolution
+      ai_handoff_contact_id: null,
+    })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('departamento de Ventas')
+  })
+
+  // ----------------------------------------------------------
+  // Paso 7 — purchase intent without handoff (hardening plan).
+  //
+  // EPISTEMOLOGICAL LIMIT (see the block-level comment above, and
+  // R2 — RIESGO POTENCIAL / NO VERIFICADO, unchanged): `fetch` is
+  // scripted, in this ONE test, to return a normal commercial reply
+  // with no `[[HANDOFF]]` sentinel. This proves ONLY that — given
+  // that specific provider response — the application's own code
+  // does not invent or force a handoff on top of it. It does NOT
+  // prove, and must never be cited as proving, that a real
+  // GPT/Claude/OpenRouter model will always respond this way to
+  // "quiero comprar el Samsung A07 64GB Negro", nor that it will
+  // never decide to emit [[HANDOFF]] for a purchase-intent message.
+  // Whether a real model hands off on purchase intent is entirely a
+  // matter of the real model's own behavior against the prompt text
+  // (STOCK-AWARE BROWSING / COMMERCIAL BEHAVIOR in defaults.ts) — no
+  // code in `auto-reply.ts` special-cases "purchase intent" at all;
+  // it only ever branches on `handoff || !text` from whatever
+  // `generateReply` returned.
+  // ----------------------------------------------------------
+  it('Paso 7 — a commercial reply with NO [[HANDOFF]] never gets turned into a handoff by the application code, even for an explicit purchase-intent message', async () => {
+    h.state.dataSources = SEAM_ACTIVE_DATA_SOURCE
+    h.state.catalogProductRows = [seamProductRow()] // Samsung A07 64GB Negro, price 7500
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Quiero comprar el Samsung A07 64GB Negro.' },
+    ])
+
+    const FINAL_TEXT =
+      'Perfecto, el Samsung A07 64GB Negro cuesta RD$7,500 y tenemos 3 disponibles. ¿Deseas continuar con la compra?'
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        okFetchResponse({
+          choices: [
+            {
+              message: {
+                content: null,
+                tool_calls: [
+                  {
+                    id: 'call_1',
+                    type: 'function',
+                    function: { name: 'search_catalog', arguments: '{"query":"Samsung A07 64GB Negro"}' },
+                  },
+                ],
+              },
+            },
+          ],
+        }),
+      )
+      // A normal commercial reply — no sentinel anywhere in this text.
+      .mockResolvedValueOnce(okFetchResponse({ choices: [{ message: { content: FINAL_TEXT } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    // The application did not invent a handoff: the only conversations
+    // update that happened is the ai_catalog_context write (real tool
+    // result), never the handoff shape (status/ai_autoreply_disabled).
+    // If `handOffToHuman()` had run, it would have made its OWN,
+    // LATER `.update()` call that overwrites `h.state.updatePayload`
+    // with exactly that handoff shape — its absence here is the
+    // observable proof `handOffToHuman` was never invoked.
+    expect(h.state.updatePayload).not.toHaveProperty('status')
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({
+      ai_catalog_context: expect.objectContaining({
+        products: expect.arrayContaining([expect.objectContaining({ price: 7500 })]),
+      }),
+    })
+
+    // The normal commercial flow continued: exactly the provider's
+    // final text was sent to the customer.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(expect.objectContaining({ text: FINAL_TEXT }))
+
+    // The product/price the reply is grounded in is traceable to the
+    // REAL tool result the second request actually carried — not
+    // asserted independently of it.
+    const secondRequestBody = JSON.parse((fetchMock.mock.calls[1][1] as { body: string }).body)
+    const toolMessage = (secondRequestBody.messages as { role: string; content: string }[]).find(
+      (m) => m.role === 'tool',
+    )
+    expect(toolMessage?.content).toContain('7500')
+  })
+
+  it('provider-failure scenario: fetch returns a real 500 → real generateReply throws a real AiError → the existing F2 handoff fires, same as the fully-mocked F2 tests', async () => {
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Hola, necesito ayuda' }])
+
+    const fetchMock = vi.fn().mockResolvedValueOnce(
+      errFetchResponse(500, { error: { message: 'internal server error' } }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, status: 'pending' })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain(
+      'The AI agent could not generate a reply (provider error)',
+    )
+  })
+})
+
+// ============================================================
+// wrapWithMediaSideEffect + executeCatalogTool — REAL composition
+// (hardening plan, Paso 5 / Fase 2 audit 2.8 §18 — "cierra un supuesto
+// hoy solo confirmado por inspección de código"). Every existing test
+// in the `wrapWithMediaSideEffect` describe above wraps a fully-mocked
+// `base` (`vi.fn()`), so the guarantee that the URL sent to
+// `engineSendMedia` actually comes from `executeCatalogTool` → the
+// real `resolver.ts`/`DataSourceCatalogProvider` → the real
+// `whitelist.ts` — never from anything the model's tool-call `input`
+// could influence — was previously proven only by reading the code,
+// not by a test. This block wraps the REAL `executeCatalogTool`
+// (unmocked, same as the SEAM/adversarial-scenarios tests), so the URL
+// asserted below is genuinely traceable to the fake Supabase fixture,
+// through every real layer in between.
+//
+// `engineSendMedia` is the only mock here — it is the real WhatsApp
+// send boundary and is already mocked file-wide (see the
+// `@/lib/flows/meta-send` mock at the top of this file); nothing else
+// is mocked in this describe block.
+// ============================================================
+describe('wrapWithMediaSideEffect + executeCatalogTool — real composition (hardening, Paso 5)', () => {
+  function mediaProductRow(id: string, name: string, over: Partial<Record<string, unknown>> = {}) {
+    return {
+      id,
+      source_product_id: id,
+      sku: null,
+      name,
+      brand: null,
+      model: null,
+      description: null,
+      color: null,
+      variant_label: null,
+      capacity: null,
+      size: null,
+      price: null,
+      currency: 'DOP',
+      available: true,
+      available_quantity: 5,
+      primary_image_url: null,
+      images: [],
+      ...over,
+    }
+  }
+
+  /** Account-aware fake — a data source belonging to a DIFFERENT
+   *  account than the one `executeCatalogTool` is scoped to must never
+   *  resolve, exactly like the resolver's own real account filters. */
+  function fakeMediaCatalogDb(opts: {
+    dataSourceAccountId: string
+    requestedAccountId: string
+    products: Record<string, unknown>[]
+  }): SupabaseClient {
+    const { dataSourceAccountId, requestedAccountId, products } = opts
+    const belongsToRequester = dataSourceAccountId === requestedAccountId
+    const db = {
+      from: (table: string) => {
+        if (table === 'catalog_integrations') {
+          const api = {
+            select: () => api,
+            eq: () => api,
+            order: () => api,
+            then: (resolve: (v: unknown) => void) => resolve({ data: [], error: null }),
+          }
+          return api
+        }
+        if (table === 'ai_data_sources') {
+          return {
+            select: () => ({
+              eq: () => ({
+                eq: () => ({
+                  in: () =>
+                    Promise.resolve({
+                      data: belongsToRequester
+                        ? [
+                            {
+                              id: 'ds-media-1',
+                              display_name: 'Catálogo con fotos',
+                              status: 'active',
+                              usage: 'catalog',
+                              priority: 100,
+                              is_primary: false,
+                              fallback_policy: 'fallback_on_not_found',
+                            },
+                          ]
+                        : [],
+                      error: null,
+                    }),
+                }),
+              }),
+            }),
+          }
+        }
+        if (table === 'ai_catalog_products') {
+          const filters: [string, unknown][] = []
+          const api = {
+            select: () => api,
+            eq: (col: string, val: unknown) => {
+              filters.push([col, val])
+              return api
+            },
+            maybeSingle: () => {
+              const spid = filters.find(([c]) => c === 'source_product_id')?.[1]
+              const match = belongsToRequester ? products.find((p) => p.source_product_id === spid) : undefined
+              return Promise.resolve({ data: match ?? null, error: null })
+            },
+            limit: () => Promise.resolve({ data: belongsToRequester ? products : [], error: null }),
+          }
+          return api
+        }
+        throw new Error(`unexpected table in test double: ${table}`)
+      },
+      rpc: (fn: string, params: Record<string, unknown>) => {
+        if (fn !== 'search_ai_catalog_products') throw new Error(`unexpected rpc: ${fn}`)
+        if (!belongsToRequester || params.p_account_id !== requestedAccountId) {
+          return Promise.resolve({ data: [], error: null })
+        }
+        const query = String(params.p_query ?? '').toLowerCase().trim()
+        const words = query.split(/\s+/).filter(Boolean)
+        const matches = query
+          ? products.filter((p) => words.some((w) => String(p.name).toLowerCase().includes(w)))
+          : products.slice()
+        return Promise.resolve({ data: matches.map((p) => ({ ...p, total_count: matches.length })), error: null })
+      },
+    }
+    return db as unknown as SupabaseClient
+  }
+
+  const target = { accountId: 'acct-1', userId: 'user-1', conversationId: 'conv-1', contactId: 'contact-1' }
+
+  beforeEach(() => h.engineSendMedia.mockClear())
+
+  it('PRUEBA 1 — engineSendMedia receives exactly the URL the REAL executeCatalogTool/resolver/whitelist resolved for acct-1 — never an independently invented one', async () => {
+    const REAL_URL = 'https://cdn.example.com/a07-real.jpg'
+    const db = fakeMediaCatalogDb({
+      dataSourceAccountId: 'acct-1',
+      requestedAccountId: 'acct-1',
+      products: [mediaProductRow('p1', 'Samsung A07 Negro', { price: 9500, primary_image_url: REAL_URL })],
+    })
+    h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'wamid-real' })
+
+    const wrapped = wrapWithMediaSideEffect(executeCatalogTool(db, 'acct-1'), target)
+    const search = (await wrapped({ id: 'c1', name: 'search_catalog', input: { query: 'A07' } })) as {
+      products: { id: string }[]
+    }
+    expect(search.products).toHaveLength(1)
+    const realId = search.products[0].id
+
+    const mediaResult = (await wrapped({ id: 'c2', name: 'get_product_media', input: { id: realId } })) as {
+      primaryImage?: { url: string } | null
+      images: unknown[]
+    }
+
+    // Traceable: the URL came from the fixture, through the real
+    // resolver/whitelist, not asserted independently of it.
+    expect(mediaResult.primaryImage?.url).toBe(REAL_URL)
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(1)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(
+      expect.objectContaining({ accountId: 'acct-1', kind: 'image', link: REAL_URL }),
+    )
+    // The result the model sees is unmutated by the side effect —
+    // exact equality against the real CatalogMedia shape (`productId`
+    // included), not a partial/loose match.
+    expect(mediaResult).toEqual({ productId: realId, primaryImage: { url: REAL_URL }, images: [] })
+  })
+
+  it('PRUEBA 1b — accountId isolation: acct-1\'s executor never resolves or sends acct-2\'s product/image', async () => {
+    const db = fakeMediaCatalogDb({
+      dataSourceAccountId: 'acct-2',
+      requestedAccountId: 'acct-1',
+      products: [mediaProductRow('secret', 'Producto secreto de acct-2', { primary_image_url: 'https://cdn.example.com/secret.jpg' })],
+    })
+
+    const wrapped = wrapWithMediaSideEffect(executeCatalogTool(db, 'acct-1'), target)
+    const search = (await wrapped({ id: 'c1', name: 'search_catalog', input: { query: 'producto' } })) as {
+      products: unknown[]
+    }
+
+    expect(search.products).toHaveLength(0) // acct-1 sees none of acct-2's catalog
+    expect(h.engineSendMedia).not.toHaveBeenCalled()
+  })
+
+  it('PRUEBA 2 — primaryImage takes precedence over images[0] when their URLs are DIFFERENT — never the fallback when a primary exists', async () => {
+    const PRIMARY_URL = 'https://example.com/PRIMARY.jpg'
+    const FALLBACK_URL = 'https://example.com/FALLBACK.jpg'
+    const db = fakeMediaCatalogDb({
+      dataSourceAccountId: 'acct-1',
+      requestedAccountId: 'acct-1',
+      products: [
+        mediaProductRow('p1', 'TV TCL 50', {
+          price: 25000,
+          primary_image_url: PRIMARY_URL,
+          images: [{ url: FALLBACK_URL }],
+        }),
+      ],
+    })
+    h.engineSendMedia.mockResolvedValue({ whatsapp_message_id: 'wamid-precedence' })
+
+    const wrapped = wrapWithMediaSideEffect(executeCatalogTool(db, 'acct-1'), target)
+    const search = (await wrapped({ id: 'c1', name: 'search_catalog', input: { query: 'TCL' } })) as {
+      products: { id: string }[]
+    }
+    const realId = search.products[0].id
+
+    const mediaResult = (await wrapped({ id: 'c2', name: 'get_product_media', input: { id: realId } })) as {
+      primaryImage?: { url: string } | null
+      images: { url: string }[]
+    }
+
+    // Both real, DISTINCT URLs really exist on the resolved product —
+    // this is what makes the precedence assertion below meaningful.
+    expect(mediaResult.primaryImage?.url).toBe(PRIMARY_URL)
+    expect(mediaResult.images).toEqual([{ url: FALLBACK_URL }])
+
+    expect(h.engineSendMedia).toHaveBeenCalledTimes(1)
+    expect(h.engineSendMedia).toHaveBeenCalledWith(expect.objectContaining({ link: PRIMARY_URL }))
+    // Never the fallback, even though it's present and different.
+    expect(h.engineSendMedia).not.toHaveBeenCalledWith(expect.objectContaining({ link: FALLBACK_URL }))
+
+    // Unmutated for the model either way — exact equality against the
+    // real CatalogMedia shape (`productId` included).
+    expect(mediaResult).toEqual({
+      productId: realId,
+      primaryImage: { url: PRIMARY_URL },
+      images: [{ url: FALLBACK_URL }],
+    })
+  })
+})
+
+// ============================================================
+// ai_catalog_context persistence — REAL updateCatalogContext vs. what
+// auto-reply.ts actually persists (hardening plan, Paso 6 / Fase 2
+// audit 2.8 §18 — "sin aserción dedicada a su valor exacto persistido
+// fuera del escenario de facets"). `updateCatalogContext` itself is
+// already unit-tested as a pure function (catalog/context.test.ts);
+// what was NOT tested is the "glue" — that `auto-reply.ts` actually
+// calls `.update({ ai_catalog_context: ... })` with EXACTLY what that
+// pure function computes from the real toolCalls, not some other
+// value.
+//
+// The tool call fed to `generateReply` below is produced by calling
+// the REAL `executeCatalogTool` once, in this test's own setup,
+// against the SAME fake Supabase (`h.state.dataSources`/
+// `catalogProductRows`, via the mocked `./admin-client`) that
+// `dispatchInboundToAiReply` itself will use internally — so the
+// product in the expectation is never a hand-typed duplicate; it's the
+// literal object the real catalog pipeline resolved.
+//
+// This double-checks a real Supabase double, never real Postgres/RLS —
+// same caveat as every other catalog test in this file.
+// ============================================================
+describe('ai_catalog_context persistence — real glue between updateCatalogContext and auto-reply.ts (hardening, Paso 6)', () => {
+  it('conversations.update({ ai_catalog_context }) receives EXACTLY updateCatalogContext(null, toolCalls) — same real toolCalls, field by field', async () => {
+    h.state.dataSources = [
+      {
+        id: 'ds-context-1',
+        display_name: 'Catálogo',
+        status: 'active',
+        usage: 'catalog',
+        priority: 100,
+        is_primary: true,
+        fallback_policy: 'fallback_on_not_found',
+      },
+    ]
+    h.state.catalogProductRows = [
+      {
+        id: 'row-ctx-1',
+        source_product_id: 'sku-ctx-1',
+        sku: 'SKU-CTX-1',
+        name: 'TV Samsung 50" QLED',
+        brand: 'Samsung',
+        model: '50Q60',
+        description: null,
+        color: 'Negro',
+        variant_label: null,
+        capacity: null,
+        size: '50"',
+        price: 25000,
+        currency: 'DOP',
+        available: true,
+        available_quantity: 4,
+        primary_image_url: null,
+        images: null,
+        total_count: 1,
+      },
+    ]
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: '¿Cuánto cuesta el TV Samsung 50?' }])
+
+    // Resolve the REAL tool call once — against the exact same fake
+    // Supabase (via the mocked ./admin-client) dispatchInboundToAiReply
+    // will use internally.
+    const realExecuteTool = executeCatalogTool(supabaseAdmin(), 'acct-1')
+    const realSearchResult = await realExecuteTool({
+      id: 'call_1',
+      name: 'search_catalog',
+      input: { query: 'Samsung 50' },
+    })
+    const toolCalls = [{ name: 'search_catalog', input: { query: 'Samsung 50' }, result: realSearchResult }]
+
+    h.generateReply.mockResolvedValue({
+      text: 'El TV Samsung 50" QLED cuesta RD$25,000.',
+      handoff: false,
+      usage: null,
+      toolCalls,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Expected value computed independently, via the REAL pure
+    // function, from the SAME toolCalls object fed to generateReply
+    // above — never a hand-typed product.
+    const expectedContext = updateCatalogContext(null, toolCalls)
+    expect(expectedContext.products).toHaveLength(1) // sanity: the fixture actually produced a product
+
+    const persisted = h.state.updatePayload?.ai_catalog_context as CatalogTurnContext | undefined
+    expect(persisted).toBeDefined()
+
+    expect(persisted!.lastQuery).toBe(expectedContext.lastQuery)
+    expect(persisted!.products).toEqual(expectedContext.products)
+    // Field-by-field against the actual CatalogContextProduct shape —
+    // not "contains a product", the EXACT product.
+    expect(persisted!.products[0]).toEqual({
+      id: expectedContext.products[0].id,
+      name: expectedContext.products[0].name,
+      brand: expectedContext.products[0].brand,
+      model: expectedContext.products[0].model,
+      color: expectedContext.products[0].color,
+      capacity: expectedContext.products[0].capacity,
+      size: expectedContext.products[0].size,
+      price: expectedContext.products[0].price,
+      currency: expectedContext.products[0].currency,
+      fromQuery: expectedContext.products[0].fromQuery,
+    })
+    // Sanity on the actual values, not just self-consistency against
+    // `expectedContext` — traceable to the fixture above.
+    expect(persisted!.products[0]).toMatchObject({
+      name: 'TV Samsung 50" QLED',
+      brand: 'Samsung',
+      color: 'Negro',
+      capacity: null,
+      size: '50"',
+      price: 25000,
+      currency: 'DOP',
+    })
+
+    // `updatedAt` is `new Date().toISOString()`, computed independently
+    // inside `updateCatalogContext` on each call (once by
+    // auto-reply.ts internally, once here for `expectedContext`) — a
+    // few ms apart. A literal equality on this ONE field would be
+    // flaky by construction, so it is verified deterministically
+    // instead: present, and a genuinely valid ISO-8601 timestamp
+    // (round-trips through `new Date(...).toISOString()` unchanged).
+    // No other field is exempted from exact comparison — see above.
+    expect(typeof persisted!.updatedAt).toBe('string')
+    expect(new Date(persisted!.updatedAt).toISOString()).toBe(persisted!.updatedAt)
   })
 })

@@ -1448,7 +1448,212 @@ ejecutaron migraciones, no se implementó ninguna recomendación. `2.8`
 y las fases siguientes permanecen sin iniciar.
 
 ## 2.8 Pruebas integrales del agente
-PENDIENTE
+
+**Estado: AUDITADO — read-only, sin implementación.**
+
+**Superficie auditada:** los 39 archivos de test bajo `src/lib/ai/**`
+y `src/app/api/ai/**` (ejecutados en esta fase, 582 tests, todos en
+verde), más lectura directa de `auto-reply.test.ts`,
+`catalog-agent-scenarios.test.ts`, `generate.test.ts`,
+`defaults.test.ts`, `knowledge.test.ts`, `business-profile/
+service.test.ts`, `business-profile/handoff-intent.test.ts`,
+`catalog/resolver.test.ts`, `tools/catalog-tools.test.ts`,
+`usage.test.ts`, y verificación exhaustiva (Glob/Grep) de la ausencia
+de test para `draft/route.ts`/`playground/route.ts`.
+
+**Resultado ejecutivo:** no se identificó ninguna vulnerabilidad
+activa ni riesgo nuevo. La cobertura real es sólida pero fragmentada:
+existe un test que ejercita el pipeline de generación/catálogo casi
+end-to-end (`catalog-agent-scenarios.test.ts`, con solo `fetch` y
+Supabase simulados) y existe un test que ejercita
+`dispatchInboundToAiReply` con `generateReply` mockeado por completo
+(`auto-reply.test.ts`). Ningún test único conecta ambos extremos.
+Hallazgo nuevo y significativo: `draft/route.ts` y `playground/
+route.ts` no tienen ningún archivo de test — toda garantía sobre
+ambos es hoy exclusivamente de inspección de código. Los casos
+adversariales (prompt injection, contenido malicioso en KB/Business
+Profile, `system_prompt` conflictivo) no tienen ninguna prueba
+efectiva en todo el repositorio — confirma, con mayor precisión, lo
+que R2 ya había señalado como análisis estático, no ejecutado.
+
+**Flujo end-to-end real:** ningún test cubre la cadena completa
+webhook→accountId/conversationId→config→contexto/catálogo/KB/Business
+Profile→prompt→proveedor real (mockeado a nivel HTTP)→tool calls→
+respuesta→handoff/envío en una sola prueba. Está cubierta por la unión
+de tres suites disjuntas: `auto-reply.test.ts` (con `generateReply`
+mockeado), `catalog-agent-scenarios.test.ts` (prompt→`generateReply`
+real→tool-calling real→resolver real, llamado directamente, sin pasar
+por `dispatchInboundToAiReply`), y `generate.test.ts` (adaptadores
+reales, `fetch` mockeado, argumentos sintéticos).
+
+**Cobertura efectiva del pipeline:** webhook→ids (pipeline, la
+resolución del webhook en sí no tiene test en `src/lib/ai`);
+config/routing/Knowledge/Business Profile (efectiva); construcción del
+prompt (efectiva a nivel unitario); tool-calling real + resolver +
+whitelist (efectiva/pipeline real); wire format por proveedor
+(efectiva, `fetch` mockeado); handoff determinístico (efectiva); envío
+real (efectiva pero mockeada); **`draft`/`playground` completas: nula**;
+**casos adversariales: nula**.
+
+**Auto-reply:** cobertura efectiva confirmada por test real (ejecutado,
+en verde) para elegibilidad (7 gates), routing (Knowledge/catálogo/
+ambos/ninguno, incluyendo Business Profile sin contaminación cruzada),
+handoff (general/departamento/contacto/fallback a agente por defecto,
+nunca escribe `account_id`), F2 (fallo de proveedor→handoff, doble
+fallo no lanza), facets end-to-end con aislamiento de cuenta explícito
+en la RPC, y `wrapWithMediaSideEffect` (4 tests dedicados). `ai_catalog_
+context` se verifica solo indirectamente (test de facets). `claim_ai_
+reply_slot` solo tiene test en su rama de "pierde la carrera", no en
+su camino feliz.
+
+**Draft:** sin cobertura de test. No existe `src/app/api/ai/draft/
+route.test.ts` ni ningún archivo que importe `draft/route.ts`. Todo lo
+documentado en 2.5/2.7 sobre `hasCatalog: false`, la ausencia de
+catalog tools, el comportamiento ante precio/stock, y que nunca envía
+WhatsApp es CONFIRMADO POR CÓDIGO, NO POR TEST.
+
+**Playground:** sin cobertura de test. No existe `src/app/api/ai/
+playground/route.test.ts`. `requireRole('agent')`, el aislamiento por
+`accountId`, el catálogo real, las tools reales, y la ausencia de
+`wrapWithMediaSideEffect` están confirmados únicamente por lectura de
+código.
+
+**Catálogo y tools:** cobertura efectiva y real (ejecutada, en verde):
+`search_catalog` (forwarding, clamping, corte en query vacía, facets),
+`get_product`/`get_availability`/`get_product_media` (variante exacta,
+`not_found`, `no_media_available`), `external_limit_reached`
+distinguido de `not_found`, `MAX_SEARCH_LIMIT`, `MAX_TOOL_TURNS`
+(test dedicado), `accountId` (smuggling ignorado, con test dedicado),
+precio/stock end-to-end trazable en `catalog-agent-scenarios.test.ts`.
+
+**Casos adversariales:** ninguna prueba efectiva encontrada para
+prompt injection (mensaje de cliente o descripción de catálogo — el
+escenario de R2 fue análisis estático, nunca un test ejecutado),
+contenido malicioso en Knowledge Base/Business Profile, `system_
+prompt` conflictivo, ni fabricación explícita de precio/stock/
+atributos como test dedicado. **Clasificación: GAP DE COBERTURA** en
+todos los casos, no vulnerabilidad. Sí existe cobertura real para
+intento de smuggling de `account_id` (tools) y aislamiento de tenant
+(sección siguiente).
+
+**Aislamiento multi-tenant:** existen pruebas — todas unitarias/de
+integración contra un doble de Supabase, ninguna verdaderamente
+end-to-end contra RLS real de Postgres — en `catalog/resolver.test.ts`,
+`tools/catalog-tools.test.ts`, `business-profile/service.test.ts` (4
+tests explícitos), `knowledge.test.ts` (aislamiento de cache). La
+verificación de que la RLS real de Postgres aplica fue hecha en fases
+anteriores por lectura directa de SQL, no por este suite.
+
+**Handoff:** cobertura efectiva fuerte — `handoff-intent.test.ts` (26
+tests unitarios puros) y `auto-reply.test.ts` (integración real).
+Ausencia de handoff cuando solo hay intención de compra: sin test
+dedicado — **GAP DE COBERTURA**.
+
+**Efectos secundarios:** `engineSendText` mockeado y verificado en el
+camino feliz; `engineSendMedia`/`wrapWithMediaSideEffect` con 4 tests
+reales; `ai_catalog_context` solo indirecto; `claim_ai_reply_slot` solo
+su rama de fallo; campos de conversación de handoff cubiertos
+exhaustivamente.
+
+**Errores y límites:** cobertura real confirmada para tool error/
+infraestructura caída, proveedor caído (401/vacío/error-en-200),
+`not_found`/`external_limit_reached`/`no_media_available`, query vacía,
+límite de resultados, exceso de tool turns, F2. Sin test para
+"respuesta incompleta" como categoría propia más allá de `not_found`.
+
+**Cobertura por proveedor:** OpenAI, OpenRouter y Anthropic
+genuinamente probados con `fetch` mockeado a nivel de wire, con
+aserciones explícitas por proveedor (incluyendo que OpenAI/OpenRouter
+nunca reciben metadata de caché de Anthropic) — no es solo inferencia
+por código compartido.
+
+**Vulnerabilidades activas: NINGUNA.**
+
+**Riesgos potenciales/no verificados:** ninguno nuevo. **R1 permanece
+exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`. R2 permanece
+exactamente `RIESGO POTENCIAL / NO VERIFICADO`** — la ausencia total
+de tests de prompt injection ejecutados refuerza, sin reclasificar, su
+clasificación de "análisis estático, no verificado por ejecución`.
+**RP-2.1-A permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO`.
+RP-2.2-B permanece exactamente `RIESGO POTENCIAL / ARQUITECTÓNICO,
+severidad muy baja`.** Ninguno reabierto ni reclasificado.
+
+**Deudas técnicas:** ausencia total de test para `draft/route.ts` y
+`playground/route.ts`; `claim_ai_reply_slot` sin verificación de
+payload en su camino feliz; `ai_catalog_context` sin aserción dedicada
+a su valor exacto fuera del escenario de facets.
+
+**Gaps de cobertura:** ningún test conecta `dispatchInboundToAiReply`
+con un `generateReply` REAL; cero pruebas adversariales ejecutadas;
+sin test de "intención de compra sin handoff"; `draft`/`playground` sin
+cobertura; aislamiento multi-tenant solo unitario, nunca contra RLS
+real ejecutándose.
+
+**Controles existentes:** 582 tests ejecutados y en verde en esta
+fase, cubriendo elegibilidad/routing/handoff/F2 de auto-reply,
+tool-calling real end-to-end para catálogo, wire format y manejo de
+errores por los 3 proveedores, resolución determinística de handoff, y
+side-effects de media completamente cubiertos.
+
+**Hallazgos descartados:** ninguno — todos los hallazgos de esta fase
+son gaps de cobertura reales, confirmados por ausencia verificada de
+archivos/aserciones.
+
+**Tests existentes y qué prueban realmente:**
+- Unitarios (puros, sin I/O): `handoff-intent.test.ts`,
+  `whitelist.test.ts`, `id.test.ts`, `context.test.ts` (catalog),
+  `defaults.test.ts`.
+- Integración (código real + Supabase/fetch simulado):
+  `resolver.test.ts`, `catalog-tools.test.ts`, `knowledge.test.ts`,
+  `business-profile/service.test.ts`, `usage.test.ts`,
+  `auto-reply.test.ts` (con `generateReply` mockeado).
+- Pipeline real casi end-to-end: `catalog-agent-scenarios.test.ts`.
+- Wire-format/proveedor (código real + `fetch` simulado):
+  `generate.test.ts`.
+- Estáticos/solo inspección de código (sin ningún test): la totalidad
+  de `draft/route.ts` y `playground/route.ts`; el flujo webhook→
+  `accountId` real; casos adversariales de prompt injection.
+- End-to-end verdadero (webhook HTTP real → Postgres real → proveedor
+  real): ninguno — no existe en este repositorio para el agente IA.
+
+**Recomendaciones (SIN IMPLEMENTAR), priorizadas por impacto:**
+1. Alto impacto: crear un archivo de test para `draft/route.ts` y otro
+   para `playground/route.ts`.
+2. Alto impacto: un test que conecte `dispatchInboundToAiReply` con un
+   `generateReply` real (mockeando solo `fetch`).
+3. Medio impacto: al menos un test ejecutado de prompt injection
+   (mensaje de cliente y descripción de catálogo con instrucciones
+   embebidas).
+4. Bajo impacto: test dedicado para el payload exacto de
+   `claim_ai_reply_slot` y para el valor persistido de `ai_catalog_
+   context` fuera del escenario de facets.
+5. Bajo impacto: test explícito de "intención de compra sin handoff".
+
+No se implementó ninguna de estas recomendaciones.
+
+**Estado F2/F3/R1/R2/AUTH-N1–N6:** F2 `RESUELTO / CERRADO END-TO-END`
+(commit `db22113fe3903e7749cf7953000ada0e606ad0f5`); F3 `DEUDA TÉCNICA
+SIN URGENCIA`; R1 `RIESGO POTENCIAL / ARQUITECTÓNICO`; R2 `RIESGO
+POTENCIAL / NO VERIFICADO`; AUTH-N1–N5 `CERRADO END-TO-END`; AUTH-N6
+`BLOQUEADO POR PLAN FREE`. Todos sin cambios.
+
+**Integridad Git de esta fase:** antes — working tree limpio, HEAD
+`5b386dfa1e44224ddcbbd719ef8b971f0e16dc2d`; después — idéntico. Se
+ejecutaron los 39 archivos de test existentes bajo `src/lib/ai`/
+`src/app/api/ai` (582 tests, todos en verde) exclusivamente en modo
+lectura, sin crear ni modificar ningún test.
+
+**Estado Supabase/migraciones:** solo lectura de código/tests en esta
+fase; no fue necesaria ninguna consulta SQL nueva; ninguna operación de
+escritura ni migración ejecutada.
+
+**Clasificación final: `2.8 — Pruebas integrales del agente: GAP DE
+COBERTURA / SIN VULNERABILIDAD ACTIVA`.**
+
+**Integridad de esta fase:** 100% read-only — no se modificó código,
+no se modificaron tests, no se crearon tests nuevos, no hubo cambios
+en Supabase, no se crearon ni ejecutaron migraciones, no se implementó
+ninguna recomendación.
 
 ---
 

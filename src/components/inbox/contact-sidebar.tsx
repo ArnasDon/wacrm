@@ -35,6 +35,7 @@ import {
   Pencil,
   X,
   Trash2,
+  Megaphone,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -60,6 +61,17 @@ import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { toast } from 'sonner';
 import { format } from 'date-fns';
 import { useTranslations } from 'next-intl';
+
+/** Short human label for a stored Meta ad/post referral (`contacts.referral`). */
+function referralLabel(referral: Record<string, unknown>): string {
+  const source = String(referral.source ?? '').toUpperCase();
+  const adId = referral.ad_id ? ` · ${referral.ad_id}` : '';
+  if (source.includes('AD')) return `Anuncio${adId}`;
+  if (source === 'POST' || source === 'SHORTLINK') return 'Publicación o enlace';
+  if (source === 'CUSTOMER_CHAT_PLUGIN') return 'Chat del sitio web';
+  const ref = referral.ref ? String(referral.ref) : '';
+  return ref ? `Origen: ${ref}` : `Origen: ${source.toLowerCase() || 'anuncio / publicación'}`;
+}
 
 interface ContactSidebarProps {
   contact: Contact | null;
@@ -704,6 +716,19 @@ export function ContactSidebar({
               <div className="text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-2 text-sm">
                 <Mail className="text-muted-foreground h-4 w-4" />
                 <span className="truncate">{contact.email}</span>
+              </div>
+            )}
+
+            {/* First-touch origin — set when the opening DM came from a
+                Meta ad or a post's "Send message" button (migration
+                098). Read-only. */}
+            {contact.referral && (
+              <div
+                className="text-muted-foreground flex items-center gap-2 rounded-lg px-3 py-2 text-sm"
+                title={JSON.stringify(contact.referral)}
+              >
+                <Megaphone className="text-muted-foreground h-4 w-4 shrink-0" />
+                <span className="truncate">{referralLabel(contact.referral)}</span>
               </div>
             )}
           </div>

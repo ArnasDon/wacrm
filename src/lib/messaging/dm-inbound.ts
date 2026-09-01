@@ -30,6 +30,23 @@ import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 export type DmChannel = 'instagram' | 'facebook'
 
 /**
+ * A Meta ad / post referral that arrived with the opening DM — stored
+ * on `contacts.referral` (migration 098) at contact creation and never
+ * touched again, so it always reflects the true first touch. Meta's own
+ * shape, passed through verbatim; only persisted here, never
+ * interpreted.
+ */
+export interface DmReferral {
+  /** 'ADS' | 'SHORTLINK' | 'POST' | 'CUSTOMER_CHAT_PLUGIN' | … */
+  source?: string
+  type?: string
+  ad_id?: string
+  /** The developer-defined ref payload on the ad / m.me link. */
+  ref?: string
+  [key: string]: unknown
+}
+
+/**
  * Channels accepted by the outbound-echo helpers below. Wider than
  * `DmChannel` because WhatsApp (via Zernio Coexistence) has the same
  * "agent replied from outside wacrm" problem but no contact-creation
@@ -76,6 +93,12 @@ export interface InboundDmMessage {
    */
   zernioConversationId?: string
   /**
+   * First-touch ad / post referral for a brand-new contact — written to
+   * `contacts.referral` at creation, ignored when the contact already
+   * exists. Absent on organic DMs.
+   */
+  referral?: DmReferral | null
+  /**
    * Best-effort profile lookup for contact creation. Never throws —
    * return null on any failure.
    */
@@ -106,6 +129,8 @@ async function findOrCreateContact(
   configOwnerUserId: string,
   senderId: string,
   resolveProfile: () => Promise<{ name?: string; username?: string } | null>,
+  /** First-touch ad/post referral — stored only on the create path. */
+  referral: DmReferral | null = null,
 ): Promise<ContactOutcome | null> {
   const { id: idColumn, username: usernameColumn } = CONTACT_COLUMNS[channel]
 
@@ -125,6 +150,7 @@ async function findOrCreateContact(
       [idColumn]: senderId,
       [usernameColumn]: profile?.username ?? null,
       name: profile?.name || profile?.username || senderId,
+      referral: referral ?? null,
     })
     .select()
     .single()
@@ -255,7 +281,7 @@ export async function markMessageRead(db: SupabaseClient, platformMessageId: str
 export async function handleInboundDmMessage(db: SupabaseClient, msg: InboundDmMessage): Promise<void> {
   const { channel, accountId, configOwnerUserId } = msg
 
-  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, msg.senderId, msg.resolveProfile)
+  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, msg.senderId, msg.resolveProfile, msg.referral ?? null)
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
@@ -442,6 +468,9 @@ export interface ConversationStartedArgs {
   /** The customer's platform-scoped id (IGSID/PSID). */
   participantId: string
   zernioConversationId: string
+  /** First-touch ad/post referral for a brand-new contact — see
+   *  `InboundDmMessage.referral`. */
+  referral?: DmReferral | null
   /** Best-effort profile lookup for contact creation, same contract as
    *  `InboundDmMessage.resolveProfile` — never throws. */
   resolveProfile: () => Promise<{ name?: string; username?: string } | null>
@@ -464,7 +493,7 @@ export interface ConversationStartedArgs {
 export async function ensureZernioConversationStarted(db: SupabaseClient, args: ConversationStartedArgs): Promise<void> {
   const { channel, accountId, configOwnerUserId, participantId, zernioConversationId, resolveProfile } = args
 
-  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, participantId, resolveProfile)
+  const contactOutcome = await findOrCreateContact(db, channel, accountId, configOwnerUserId, participantId, resolveProfile, args.referral ?? null)
   if (!contactOutcome) return
   const contactRecord = contactOutcome.contact
 
@@ -506,6 +535,42 @@ export async function ensureZernioConversationStarted(db: SupabaseClient, args: 
       name: contactRecord.name,
       source: channel,
     })
+  }
+}
+
+/**
+ * Handle a standalone `referral` webhook event — Meta sends one (with
+ * no `message`) the instant a customer taps a Click-to-Messenger /
+ * Click-to-Instagram ad, just before their first DM. Create/find the
+ * contact now so the ad attribution is stored before the message
+ * lands a moment later. Best-effort; never throws.
+ */
+export async function recordDmReferral(
+  db: SupabaseClient,
+  args: {
+    channel: DmChannel
+    accountId: string
+    configOwnerUserId: string
+    senderId: string
+    referral: DmReferral | null
+    resolveProfile: () => Promise<{ name?: string; username?: string } | null>
+  },
+): Promise<void> {
+  try {
+    await findOrCreateContact(
+      db,
+      args.channel,
+      args.accountId,
+      args.configOwnerUserId,
+      args.senderId,
+      args.resolveProfile,
+      args.referral,
+    )
+  } catch (err) {
+    console.error(
+      `[${args.channel} referral] failed to record referral:`,
+      err instanceof Error ? err.message : err,
+    )
   }
 }
 

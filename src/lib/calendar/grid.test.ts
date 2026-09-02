@@ -10,6 +10,11 @@ import {
   isSameDay,
 } from './grid'
 
+// Timed-event strings here carry no UTC offset on purpose: `parseEventDate`
+// (and the calendar UI) read them as the viewer's local wall-clock time, so
+// offset-free values keep these grouping/ordering assertions deterministic
+// regardless of the test runner's timezone (dev machines here are GMT-6, CI
+// is UTC).
 function evt(partial: Partial<CalendarEvent> & Pick<CalendarEvent, 'id' | 'start' | 'end' | 'allDay'>): CalendarEvent {
   return {
     summary: 'Test',
@@ -58,7 +63,7 @@ describe('eventsForDay', () => {
   const sep11 = new Date(2026, 8, 11)
 
   it('includes a timed event on that calendar day', () => {
-    const e = evt({ id: 'a', start: '2026-09-11T16:00:00-06:00', end: '2026-09-11T17:00:00-06:00', allDay: false })
+    const e = evt({ id: 'a', start: '2026-09-11T16:00:00', end: '2026-09-11T17:00:00', allDay: false })
     expect(eventsForDay([e], sep11).map((x) => x.id)).toEqual(['a'])
   })
 
@@ -71,7 +76,7 @@ describe('eventsForDay', () => {
 
   it('includes a multi-day span on an interior day and sorts all-day first', () => {
     const span = evt({ id: 'span', start: '2026-09-10', end: '2026-09-13', allDay: true })
-    const timed = evt({ id: 'timed', start: '2026-09-11T09:00:00-06:00', end: '2026-09-11T10:00:00-06:00', allDay: false })
+    const timed = evt({ id: 'timed', start: '2026-09-11T09:00:00', end: '2026-09-11T10:00:00', allDay: false })
     const out = eventsForDay([timed, span], sep11).map((x) => x.id)
     expect(out).toEqual(['span', 'timed'])
   })
@@ -79,10 +84,10 @@ describe('eventsForDay', () => {
 
 describe('upcomingEvents / groupByDay', () => {
   it('drops events that already ended and groups the rest by day in order', () => {
-    const past = evt({ id: 'past', start: '2026-09-01T09:00:00-06:00', end: '2026-09-01T10:00:00-06:00', allDay: false })
-    const soon = evt({ id: 'soon', start: '2026-09-11T16:00:00-06:00', end: '2026-09-11T17:00:00-06:00', allDay: false })
-    const later = evt({ id: 'later', start: '2026-09-11T18:00:00-06:00', end: '2026-09-11T19:00:00-06:00', allDay: false })
-    const next = evt({ id: 'next', start: '2026-09-12T08:00:00-06:00', end: '2026-09-12T09:00:00-06:00', allDay: false })
+    const past = evt({ id: 'past', start: '2026-09-01T09:00:00', end: '2026-09-01T10:00:00', allDay: false })
+    const soon = evt({ id: 'soon', start: '2026-09-11T16:00:00', end: '2026-09-11T17:00:00', allDay: false })
+    const later = evt({ id: 'later', start: '2026-09-11T18:00:00', end: '2026-09-11T19:00:00', allDay: false })
+    const next = evt({ id: 'next', start: '2026-09-12T08:00:00', end: '2026-09-12T09:00:00', allDay: false })
 
     const from = new Date(2026, 8, 5)
     const upcoming = upcomingEvents([later, past, next, soon], from)

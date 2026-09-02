@@ -9,6 +9,22 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.1] — 2026-09-02
+
+> **Migration required:** apply `supabase/migrations/101_ai_followups_goal.sql`
+> (adds `ai_configs.followups_goal`, default `'reply'`). Existing
+> follow-up sequences keep running until the customer replies or the
+> steps are exhausted; set the goal per account to stop them earlier.
+
+### Added
+
+- **Follow-up conversation goal.** Each account picks what the
+  follow-up sequence is trying to achieve — *just get a reply*, *book
+  an appointment*, *close the sale*, or *send a quote* — and the
+  nudges stop as soon as that happens for the contact (an appointment
+  logged, a deal won, a quote created). A chat that gets assigned to a
+  person or handed off still stops the sequence regardless.
+
 ## [0.9.0] — 2026-09-02
 
 Adds automated follow-up nudges: when a customer goes quiet mid-chat

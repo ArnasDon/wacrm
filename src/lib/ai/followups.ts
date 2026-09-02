@@ -18,6 +18,23 @@ export const FOLLOWUP_MAX_MINUTES = 20_160;
 export const FOLLOWUP_MAX_STEPS = 5;
 export const FOLLOWUP_TEXT_MAXLEN = 1000;
 
+/** Per-account objective for a follow-up sequence. The sweep stops
+ *  nudging a conversation once the goal is reached. See migration 101. */
+export const FOLLOWUP_GOALS = [
+  'reply',
+  'appointment',
+  'deal_won',
+  'quote_sent',
+] as const;
+export type FollowupGoal = (typeof FOLLOWUP_GOALS)[number];
+
+/** Coerce an arbitrary value to a valid goal; unknown / missing → 'reply'. */
+export function normalizeFollowupGoal(raw: unknown): FollowupGoal {
+  return (FOLLOWUP_GOALS as readonly string[]).includes(raw as string)
+    ? (raw as FollowupGoal)
+    : 'reply';
+}
+
 export interface FollowupStep {
   /** Delay before this step fires, measured from the previous anchor:
    *  the customer's last inbound for step 0, the previous follow-up's

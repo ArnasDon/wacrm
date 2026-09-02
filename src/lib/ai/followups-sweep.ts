@@ -26,7 +26,9 @@ import {
   parseFollowupSteps,
   nextDueFollowup,
   renderFollowupText,
+  normalizeFollowupGoal,
   type FollowupStep,
+  type FollowupGoal,
 } from './followups';
 
 const MAX_ACCOUNTS = 200;
@@ -46,6 +48,7 @@ export interface FollowupSweepResult {
 interface AccountCfg {
   account_id: string;
   followups: unknown;
+  followups_goal: string | null;
   followups_business_hours_only: boolean;
   followups_window_start_hour: number;
   followups_window_end_hour: number;
@@ -67,7 +70,7 @@ export async function runFollowupSweep(
   const { data: configs, error } = await admin
     .from('ai_configs')
     .select(
-      'account_id, followups, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, accounts(timezone)',
+      'account_id, followups, followups_goal, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, accounts(timezone)',
     )
     .eq('followups_enabled', true)
     .limit(MAX_ACCOUNTS);
@@ -86,6 +89,7 @@ export async function runFollowupSweep(
 
     const tzField = Array.isArray(cfg.accounts) ? cfg.accounts[0] : cfg.accounts;
     const timeZone = tzField?.timezone || 'America/Guatemala';
+    const goal = normalizeFollowupGoal(cfg.followups_goal);
     res.accounts++;
 
     const { data: convos, error: cErr } = await admin
@@ -117,6 +121,7 @@ export async function runFollowupSweep(
           conversationId: c.id as string,
           contactId: (c.contact_id as string | null) ?? null,
           steps,
+          goal,
           now,
           timeZone,
           businessHoursOnly: cfg.followups_business_hours_only,
@@ -201,11 +206,58 @@ interface EvalArgs {
   conversationId: string;
   contactId: string | null;
   steps: FollowupStep[];
+  goal: FollowupGoal;
   now: Date;
   timeZone: string;
   businessHoursOnly: boolean;
   windowStartHour: number;
   windowEndHour: number;
+}
+
+/**
+ * Has the account's follow-up objective already been reached for this
+ * contact? When true, the sequence stops. `'reply'` has no extra
+ * signal — a customer reply resets the streak on its own — so it is
+ * always "not reached" here.
+ */
+async function goalReached(
+  admin: SupabaseClient,
+  accountId: string,
+  contactId: string,
+  goal: FollowupGoal,
+): Promise<boolean> {
+  if (goal === 'reply') return false;
+
+  if (goal === 'appointment') {
+    const { data } = await admin
+      .from('ai_action_log')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('action', 'schedule_appointment')
+      .eq('target_id', contactId)
+      .limit(1);
+    return !!data?.length;
+  }
+
+  if (goal === 'deal_won') {
+    const { data } = await admin
+      .from('deals')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .or('won_at.not.is.null,status.eq.won')
+      .limit(1);
+    return !!data?.length;
+  }
+
+  // quote_sent
+  const { data } = await admin
+    .from('quotes')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('contact_id', contactId)
+    .limit(1);
+  return !!data?.length;
 }
 
 async function evaluateConversation(
@@ -244,15 +296,10 @@ async function evaluateConversation(
   const lastCustomerAt = new Date(lcRow.created_at as string);
 
   if (args.contactId) {
-    // Demo / appointment already booked for this contact → stop nudging.
-    const { data: appt } = await admin
-      .from('ai_action_log')
-      .select('id')
-      .eq('account_id', args.accountId)
-      .eq('action', 'schedule_appointment')
-      .eq('target_id', args.contactId)
-      .limit(1);
-    if (appt?.length) return null;
+    // The account's objective is already met for this contact → done.
+    if (await goalReached(admin, args.accountId, args.contactId, args.goal)) {
+      return null;
+    }
 
     // A live Flow run owns the conversation — let it drive.
     const { data: fr } = await admin

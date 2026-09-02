@@ -87,6 +87,7 @@ export function AiConfig() {
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   const [unclaimedTimeoutMinutes, setUnclaimedTimeoutMinutes] = useState(10);
   const [followupsEnabled, setFollowupsEnabled] = useState(false);
+  const [followupsGoal, setFollowupsGoal] = useState('reply');
   const [followupsBusinessHoursOnly, setFollowupsBusinessHoursOnly] =
     useState(true);
   const [followupsWindowStart, setFollowupsWindowStart] = useState(8);
@@ -127,6 +128,9 @@ export function AiConfig() {
           data.unclaimed_conversation_timeout_minutes ?? 10
         );
         setFollowupsEnabled(Boolean(data.followups_enabled));
+        setFollowupsGoal(
+          typeof data.followups_goal === 'string' ? data.followups_goal : 'reply'
+        );
         setFollowupsBusinessHoursOnly(
           data.followups_business_hours_only !== false
         );
@@ -206,6 +210,7 @@ export function AiConfig() {
     handoff_agent_id: handoffAgentId || null,
     followups_enabled: followupsEnabled,
     followups: followupSteps,
+    followups_goal: followupsGoal,
     followups_business_hours_only: followupsBusinessHoursOnly,
     followups_window_start_hour: followupsWindowStart,
     followups_window_end_hour: followupsWindowEnd,
@@ -290,6 +295,7 @@ export function AiConfig() {
         setSystemPrompt('');
         setHandoffAgentId('');
         setFollowupsEnabled(false);
+        setFollowupsGoal('reply');
         setFollowupSteps([]);
       } else {
         const data = await readResponseJson(res);
@@ -622,6 +628,8 @@ export function AiConfig() {
         <AiFollowupsCard
           enabled={followupsEnabled}
           onEnabledChange={setFollowupsEnabled}
+          goal={followupsGoal}
+          onGoalChange={setFollowupsGoal}
           businessHoursOnly={followupsBusinessHoursOnly}
           onBusinessHoursOnlyChange={setFollowupsBusinessHoursOnly}
           windowStart={followupsWindowStart}

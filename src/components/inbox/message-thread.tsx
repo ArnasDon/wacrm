@@ -208,9 +208,11 @@ export function MessageThread({
     messageId: string;
   } | null>(null);
 
-  // Profiles are bounded by RLS to rows the current user is allowed to
-  // see — today that's just the current user, but the dropdown keeps the
-  // shape ready for shared-team workspaces without a refactor.
+  // Every profile in the account (RLS bounds the rows to fellow
+  // members). Kept unfiltered because the header label below resolves
+  // the *current* assignee by id — including someone who is no longer
+  // assignable — so filtering here would degrade their name to a bare
+  // “Assigned”.
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -230,6 +232,15 @@ export function MessageThread({
       cancelled = true;
     };
   }, []);
+
+  // Who the Assign dropdown offers. Conversations are sales work, so
+  // only members carrying the `agent` role are assignable — owners and
+  // admins run the account, viewers (dev, warehouse) are read-only.
+  // Promote or demote in Settings → Members to change who appears.
+  const assignableProfiles = useMemo(
+    () => profiles.filter((p) => p.account_role === "agent"),
+    [profiles]
+  );
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
@@ -1028,12 +1039,12 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
-              {profiles.length === 0 ? (
+              {assignableProfiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-muted-foreground">
                   {t("noTeammatesAvailable")}
                 </DropdownMenuItem>
               ) : (
-                profiles.map((p) => {
+                assignableProfiles.map((p) => {
                   const isSelected = p.user_id === assignedAgentId;
                   const presence = getPresence(p.user_id);
                   return (

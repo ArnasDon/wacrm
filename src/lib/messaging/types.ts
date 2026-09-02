@@ -61,6 +61,13 @@ export interface SendMessageParams {
    * templates for this instead.
    */
   humanAgentTag?: boolean;
+  /**
+   * Persisted `messages.sender_type` for the outbound row. Defaults to
+   * `'agent'` (a human/API send). The follow-up sweep passes `'bot'` so
+   * an automated nudge is not mistaken for a teammate's reply. WhatsApp
+   * send core only — the Instagram/Facebook cores ignore it.
+   */
+  senderType?: 'agent' | 'bot';
 }
 
 export interface SendMessageResult {

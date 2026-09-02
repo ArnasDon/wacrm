@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [0.9.0] — 2026-09-02
+
+Adds automated follow-up nudges: when a customer goes quiet mid-chat
+without booking a demo, Chat Sandía can message them again after a delay.
+
+> **Migration required:** apply `supabase/migrations/099_ai_followups.sql`
+> (adds the follow-up settings to `ai_configs` and a new
+> `ai_followup_log` table). Then register the sweep on a schedule with
+> `supabase/migrations/100_schedule_followups_cron.sql` (pg_cron, every
+> ~5 min) and set `FOLLOWUPS_CRON_SECRET` — or reuse
+> `AUTOMATION_CRON_SECRET`, which the endpoint accepts as a fallback.
+> Until the job is registered the `followups_cron` heartbeat reads
+> "never" and the watchdog raises a warning-level alert.
+
+### Added
+
+- **Follow-up messages (Settings → AI).** A per-account toggle plus an
+  ordered list of up to 5 steps, each with its own delay and either a
+  written message (`{{nombre}}` is filled in) or an approved WhatsApp
+  template. A new cron sweep (`/api/ai/followups/cron`) sends the next
+  due step for any open, unassigned, not-handed-off WhatsApp
+  conversation where the customer stopped replying and no appointment
+  is on record. Optional local working-hours window. Written messages
+  are held back past WhatsApp's 24h window (templates still send);
+  every attempt is recorded in `ai_followup_log` so a step fires once
+  and a fresh inbound restarts the sequence.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

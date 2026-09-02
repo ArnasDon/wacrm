@@ -7,6 +7,7 @@ import {
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
+import { parseFollowupSteps } from '@/lib/ai/followups'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
@@ -30,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, auto_schedule_appointments_enabled, ask_customer_tax_info, unclaimed_conversation_timeout_minutes, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, auto_schedule_appointments_enabled, ask_customer_tax_info, unclaimed_conversation_timeout_minutes, handoff_agent_id, followups_enabled, followups, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -124,6 +125,21 @@ export async function POST(request: Request) {
       if (!member) return bad('handoff_agent_id must be a member of this account')
       handoffAgentId = rawHandoff
     }
+
+    // Follow-up nudges (migration 099). The form always sends the whole
+    // block; an API client that omits it leaves the stored settings
+    // untouched (mirrors the handoff-target guard below).
+    const followupsProvided = 'followups_enabled' in body
+    const followupsEnabled = body.followups_enabled === true
+    const parsedFollowups = parseFollowupSteps(body.followups)
+    if (followupsProvided && !parsedFollowups.ok) return bad(parsedFollowups.error)
+    const followupsBusinessHoursOnly = body.followups_business_hours_only !== false
+    let followupsWindowStart = Number(body.followups_window_start_hour)
+    if (!Number.isFinite(followupsWindowStart)) followupsWindowStart = 8
+    followupsWindowStart = Math.min(24, Math.max(0, Math.floor(followupsWindowStart)))
+    let followupsWindowEnd = Number(body.followups_window_end_hour)
+    if (!Number.isFinite(followupsWindowEnd)) followupsWindowEnd = 18
+    followupsWindowEnd = Math.min(24, Math.max(0, Math.floor(followupsWindowEnd)))
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
 
@@ -225,6 +241,15 @@ export async function POST(request: Request) {
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
+    // Same "only if provided" guard for the follow-up block — never wipe
+    // a configured sequence because a caller left the fields out.
+    if (followupsProvided && parsedFollowups.ok) {
+      shared.followups_enabled = followupsEnabled
+      shared.followups = parsedFollowups.steps
+      shared.followups_business_hours_only = followupsBusinessHoursOnly
+      shared.followups_window_start_hour = followupsWindowStart
+      shared.followups_window_end_hour = followupsWindowEnd
+    }
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {

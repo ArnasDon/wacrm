@@ -513,7 +513,7 @@ export async function sendMessageToConversation(
     .from('messages')
     .insert({
       conversation_id: conversationId,
-      sender_type: 'agent',
+      sender_type: params.senderType === 'bot' ? 'bot' : 'agent',
       content_type: messageType,
       content_text: persistedText,
       media_url: mediaUrl || null,

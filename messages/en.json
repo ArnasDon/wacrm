@@ -42,7 +42,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Profile",
     "menuSettings": "Settings",
-    "menuSignOut": "Sign out"
+    "menuSignOut": "Sign out",
+    "calendar": "Calendar"
   },
   "CommandMenu": {
     "placeholder": "Type a command or search…",
@@ -2495,5 +2496,31 @@
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
     }
+  },
+  "Calendar": {
+    "title": "Calendar",
+    "view_agenda": "Agenda",
+    "view_week": "Week",
+    "view_month": "Month",
+    "today": "Today",
+    "previous": "Previous",
+    "next": "Next",
+    "refresh": "Refresh",
+    "connectedAs": "Showing {email}",
+    "notConnectedTitle": "Google Calendar is not connected",
+    "notConnectedBody": "Connect a Google Calendar to see your upcoming appointments here.",
+    "reconnectBody": "The Google Calendar connection expired. Reconnect it to keep seeing your appointments.",
+    "goToSettings": "Go to settings",
+    "errorGeneric": "Could not load the calendar. Try again.",
+    "openGoogleCalendar": "Open Google Calendar",
+    "openInGoogle": "Open in Google Calendar",
+    "joinMeet": "Join with Google Meet",
+    "moreCount": "+{count} more",
+    "allDay": "All day",
+    "agendaEmpty": "No upcoming events in this period.",
+    "rsvpAccepted": "accepted",
+    "rsvpDeclined": "declined",
+    "rsvpTentative": "maybe",
+    "rsvpPending": "no reply"
   }
 }

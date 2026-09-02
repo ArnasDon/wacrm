@@ -73,6 +73,7 @@ describe('configureWebhook', () => {
     expect(init.method).toBe('POST');
     expect(init.headers.token).toBe('inst-tok');
     expect(JSON.parse(init.body)).toEqual({
+      enabled: true,
       url: 'https://crm.example.com/api/whatsapp/webhook/uazapi/sek',
       events: ['messages', 'messages_update', 'connection'],
       excludeMessages: ['isGroupYes', 'wasSentByApi'],

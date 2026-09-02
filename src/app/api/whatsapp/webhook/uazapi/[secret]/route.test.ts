@@ -306,6 +306,28 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     expect(h.processInboundMessage).not.toHaveBeenCalled()
   })
 
+  it('real messages_update with MessageIDs batching 2 ids → processStatusUpdate once per id', async () => {
+    h.state.ownedMessageRow = { id: 'm-1' }
+    await post({
+      EventType: 'messages_update',
+      instance: INSTANCE,
+      event: {
+        MessageIDs: ['MID-A', 'MID-B'],
+        Type: 'Read',
+        Timestamp: TS / 1000,
+      },
+    })
+    await drainAfter()
+
+    expect(h.processStatusUpdate).toHaveBeenCalledTimes(2)
+    expect(
+      h.processStatusUpdate.mock.calls.map((c) => c[1].providerMessageId)
+    ).toEqual(['MID-A', 'MID-B'])
+    for (const call of h.processStatusUpdate.mock.calls) {
+      expect(call[1]).toMatchObject({ status: 'read', timestamp: new Date(TS) })
+    }
+  })
+
   it('status event whose messageid is NOT under this connection → not dispatched (FIX 5)', async () => {
     h.state.ownedMessageRow = null
 

@@ -19,6 +19,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 
 import { processInboundMessage } from '@/lib/whatsapp/inbound/process-inbound-message';
 import { processStatusUpdate } from '@/lib/whatsapp/inbound/process-status-update';
+import type { InboundStatus } from '@/lib/whatsapp/inbound/types';
 import {
   uazapiMessageToInbound,
   uazapiStatusToInbound,
@@ -126,27 +127,12 @@ async function handleUazapiEvent(
       await processInboundMessage(db, uazapiMessageToInbound(payload, lite));
       return;
     case 'status': {
-      const inbound = uazapiStatusToInbound(payload, lite);
-      // Confine status writes to this connection's own messages — the
-      // shared pipeline updates `messages` by `message_id` alone (not
-      // unique, migration 009), and this endpoint's payload is
-      // attacker-controllable. Without this a caller holding one
-      // account's URL secret could flip statuses in other tenants that
-      // share a `message_id`.
-      const { data: owned } = await db
-        .from('messages')
-        .select('id, conversations!inner(connection_id)')
-        .eq('message_id', inbound.providerMessageId)
-        .eq('conversations.connection_id', row.id as string)
-        .limit(1)
-        .maybeSingle();
-      if (!owned) {
-        console.info(
-          '[uazapi webhook] status update for a message not under this connection — ignoring'
-        );
-        return;
+      // UAZAPI can batch more than one id into a single event's
+      // `MessageIDs` (confirmed via 1c-ii smoke) — one InboundStatus
+      // per id, applied independently.
+      for (const inbound of uazapiStatusToInbound(payload, lite)) {
+        await applyStatusUpdate(db, row, inbound);
       }
-      await processStatusUpdate(db, inbound);
       return;
     }
     case 'connection':
@@ -155,6 +141,32 @@ async function handleUazapiEvent(
     default:
       console.info('[uazapi webhook] unhandled event:', eventTypeOf(payload));
   }
+}
+
+// Confine status writes to this connection's own messages — the shared
+// pipeline updates `messages` by `message_id` alone (not unique,
+// migration 009), and this endpoint's payload is attacker-controllable.
+// Without this a caller holding one account's URL secret could flip
+// statuses in other tenants that share a `message_id`.
+async function applyStatusUpdate(
+  db: SupabaseClient,
+  row: Json,
+  inbound: InboundStatus
+): Promise<void> {
+  const { data: owned } = await db
+    .from('messages')
+    .select('id, conversations!inner(connection_id)')
+    .eq('message_id', inbound.providerMessageId)
+    .eq('conversations.connection_id', row.id as string)
+    .limit(1)
+    .maybeSingle();
+  if (!owned) {
+    console.info(
+      '[uazapi webhook] status update for a message not under this connection — ignoring'
+    );
+    return;
+  }
+  await processStatusUpdate(db, inbound);
 }
 
 async function handleConnectionEvent(

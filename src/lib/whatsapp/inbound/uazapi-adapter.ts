@@ -25,12 +25,20 @@ export interface UazapiConnectionRowLite {
 type Json = Record<string, unknown>;
 
 /**
- * Fonte da mensagem: o envelope pode vir como `{ …, data: {msg} }` ou
- * achatado. Aceita as duas (defensivo — a OpenAPI só mostra
- * `{ EventType, token }` num exemplo de log; a spec-mãe diz
- * `{ event, instance, data }`).
+ * Fonte da mensagem. Confirmado no smoke da 1c-ii contra uma instância
+ * real: o evento `messages` aninha a `Message` em `payload.message` —
+ * NEM `data` (a OpenAPI só mostra `{ EventType, token }` num exemplo de
+ * log) NEM achatada (a spec-mãe dizia `{ event, instance, data }`,
+ * também não bateu). Mantém `data` e achatado como fallback defensivo
+ * para o resto do vocabulário de eventos, ainda não confirmado.
  */
 function msgOf(payload: Json): Json {
+  const message = payload.message;
+  if (message && typeof message === 'object') return message as Json;
+  // `messages_update` nests its body under `event`, not `message` —
+  // also confirmed in the 1c-ii smoke (see uazapiStatusToInbound).
+  const event = payload.event;
+  if (event && typeof event === 'object') return event as Json;
   const data = payload.data;
   return data && typeof data === 'object' ? (data as Json) : payload;
 }
@@ -60,14 +68,20 @@ const STATUS_MAP: Record<string, string> = {
   Failed: 'failed',
 };
 
+// Chaves = `messageType` em minúsculas. UAZAPI usa os nomes de struct
+// Go do whatsmeow, não um kind simples como `"image"` — confirmado no
+// smoke da 1c-ii para `ImageMessage`/`AudioMessage`. `VideoMessage` /
+// `DocumentMessage` / `StickerMessage` seguem por inferência da mesma
+// convenção (ainda não observados diretamente); se o nome real
+// divergir, cai em `unsupported` com `rawType` logado — barato de
+// corrigir quando aparecer. Voice-note não é um messageType à parte:
+// vem como `AudioMessage` com `content.PTT: true`.
 const MEDIA_KINDS: Record<string, MediaKind> = {
-  image: 'image',
-  video: 'video',
-  document: 'document',
-  audio: 'audio',
-  // stickers → image (paridade com o adaptador da Meta)
-  sticker: 'image',
-  ptt: 'audio',
+  imagemessage: 'image',
+  audiomessage: 'audio',
+  videomessage: 'video',
+  documentmessage: 'document',
+  stickermessage: 'image',
 };
 
 function phoneFromChatId(chatid: unknown): string {
@@ -133,6 +147,10 @@ export function uazapiContent(m: Json): InboundMessage['content'] {
   if (
     mt === 'text' ||
     mt === 'conversation' ||
+    // Real UAZAPI type for a text message that contains a URL (link
+    // preview) — confirmed via the 1c-ii smoke. `m.text` still holds
+    // the actual body.
+    mt === 'extendedtextmessage' ||
     (!mt && typeof m.text === 'string')
   ) {
     return { kind: 'text', text: (m.text as string) ?? '' };
@@ -140,19 +158,38 @@ export function uazapiContent(m: Json): InboundMessage['content'] {
   return { kind: 'unsupported', rawType: String(m.messageType ?? 'unknown') };
 }
 
+/**
+ * Um `InboundStatus` por id — o `messages_update` real (confirmado via
+ * 1c-ii smoke) pode batchar mais de um `MessageIDs` num único evento
+ * (visto: 2 ids ao mesmo tempo, ambos "Read"). `{ MessageIDs: [...],
+ * Type, Timestamp }` sob `event`, com nomes de campo E unidade
+ * diferentes do formato achatado/`data` adivinhado: `Timestamp` é
+ * SEGUNDOS, ao contrário do `messageTimestamp` (ms) do evento
+ * `messages`.
+ */
 export function uazapiStatusToInbound(
   payload: Json,
   row: UazapiConnectionRowLite
-): InboundStatus {
+): InboundStatus[] {
   const m = msgOf(payload);
-  const raw = String(m.status ?? '');
-  return {
+  const ids = m.MessageIDs;
+  const providerMessageIds =
+    Array.isArray(ids) && ids.length > 0
+      ? ids.map(String)
+      : [String(m.messageid ?? '')];
+  const raw = String(m.Type ?? m.status ?? '');
+  const timestamp =
+    m.Timestamp !== undefined
+      ? new Date(Number(m.Timestamp) * 1000)
+      : new Date(Number(m.messageTimestamp ?? Date.now()));
+  // Valores não mapeados passam crus — o `isValidStatusTransition` da
+  // Onda 1c-i descarta o que não reconhece.
+  const status = STATUS_MAP[raw] ?? raw;
+  return providerMessageIds.map((providerMessageId) => ({
     connectionId: row.id,
     accountId: row.account_id,
-    providerMessageId: String(m.messageid ?? ''),
-    // Valores não mapeados passam crus — o `isValidStatusTransition` da
-    // Onda 1c-i descarta o que não reconhece.
-    status: STATUS_MAP[raw] ?? raw,
-    timestamp: new Date(Number(m.messageTimestamp ?? Date.now())),
-  };
+    providerMessageId,
+    status,
+    timestamp,
+  }));
 }

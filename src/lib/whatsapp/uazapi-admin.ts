@@ -66,10 +66,18 @@ export async function configureWebhook(
   //   this webhook dead. Revisit after the §5 smoke confirms whether
   //   excludeMessages applies to messages_update.
   // history is NOT subscribed (it dumps months of backlog).
+  //
+  // `enabled` is not in the API's `required` list, but omitting it does
+  // NOT mean "keep enabled" — the UAZAPI server defaults a webhook with
+  // no `enabled` field to `enabled: false` (confirmed via GET /webhook
+  // in the 1c-ii smoke: our own registration came back disabled and
+  // silently never fired, with an empty /webhook/errors — it wasn't
+  // even attempting delivery). Must be sent explicitly on every call.
   await call(`${baseUrl}/webhook`, {
     method: 'POST',
     headers: { token: instanceToken },
     body: JSON.stringify({
+      enabled: true,
       url,
       events: WEBHOOK_EVENTS,
       excludeMessages: ['isGroupYes', 'wasSentByApi'],

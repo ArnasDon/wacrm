@@ -27,6 +27,8 @@ const h = vi.hoisted(() => ({
     openDeal: null as { id: string; pipeline_id: string; stage_id: string } | null,
     stages: [] as { id: string; name: string; is_won?: boolean }[],
     aiActionLogInserts: [] as Record<string, unknown>[],
+    /** Prior successful `schedule_appointment` rows the idempotency guard reads back. */
+    priorScheduleBookings: [] as { input: Record<string, unknown> }[],
     pipeline: null as { id: string } | null,
     contact: { lead_temperature: null as string | null, name: 'Juan Pérez', phone: '50255551234', email: null as string | null },
     account: { default_currency: 'USD' } as { default_currency: string; timezone?: string; catalog_delivery_mode?: string },
@@ -177,7 +179,18 @@ vi.mock('./admin-client', () => ({
         return selectManyChain(() => h.state.stages)
       }
       if (table === 'ai_action_log') {
+        // Read path: autoScheduleAppointment's idempotency guard does
+        // .select('input').eq().eq().eq().order().limit(20) → prior
+        // successful schedule_appointment rows for the contact.
+        const readChain = {
+          select: () => readChain,
+          eq: () => readChain,
+          order: () => readChain,
+          limit: () =>
+            Promise.resolve({ data: h.state.priorScheduleBookings ?? [], error: null }),
+        }
         return {
+          ...readChain,
           insert: (payload: Record<string, unknown>) => {
             h.state.aiActionLogInserts.push(payload)
             return Promise.resolve({ data: null, error: null })
@@ -317,6 +330,7 @@ beforeEach(() => {
   h.state.createdDeal = { id: 'new-deal-1', pipeline_id: 'pipe-1', stage_id: 'stage-a' }
   h.state.contactUpdates = []
   h.state.gcalStatus = null
+  h.state.priorScheduleBookings = []
   h.state.quickReplyRow = null
   h.state.products = []
   h.state.messageInserts = []
@@ -1100,6 +1114,36 @@ describe('dispatchInboundToAiReply — autonomous schedule_appointment', () => {
     ])
     await dispatchInboundToAiReply(ARGS)
     expect(h.createEvent).not.toHaveBeenCalled()
+  })
+
+  it('does not re-book or false-alarm when the same slot is already booked for the contact', async () => {
+    // Real incident (2026-09-01): after the customer replied "gracias",
+    // the model emitted the schedule marker again for the SAME slot; the
+    // freebusy re-check then saw the event this flow had just created as
+    // a conflict and handed off with a misleading "slot no longer
+    // available" note. The idempotency guard makes the repeat a no-op.
+    h.state.gcalStatus = 'connected'
+    h.loadAiConfig.mockResolvedValue(aiConfig({ autoScheduleAppointmentsEnabled: true }))
+    const start = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    const end = new Date(start.getTime() + 60 * 60 * 1000)
+    h.state.priorScheduleBookings = [
+      { input: { startTime: start.toISOString(), endTime: end.toISOString(), attendeeEmail: 'ana@example.com' } },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Perfecto, tu cita queda confirmada.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      appointmentProposal: { start: start.toISOString(), end: end.toISOString(), email: 'ana@example.com' },
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.createEvent).not.toHaveBeenCalled()
+    // Only the prompt-time freebusy ran — no pre-booking re-check.
+    expect(h.checkFreeBusy).toHaveBeenCalledTimes(1)
+    // No "couldn't schedule" handoff note left in the thread.
+    expect(h.state.messageInserts).not.toContainEqual(
+      expect.objectContaining({ content_type: 'internal_note' }),
+    )
   })
 
   it('skips booking when the proposed email is invalid', async () => {

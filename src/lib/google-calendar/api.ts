@@ -1,6 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { randomUUID } from 'crypto'
 import { getValidAccessToken, googleFetch, GoogleCalendarError } from './oauth'
+import type { CalendarEvent } from './types'
 
 // ============================================================
 // Google Calendar API calls used by the AI's schedule_appointment
@@ -112,15 +113,116 @@ export async function createEvent(
     const body = await res.text().catch(() => '')
     throw new GoogleCalendarError(`Google Calendar event creation failed: ${body}`, 502)
   }
-  const data = (await res.json()) as {
-    id: string
-    htmlLink?: string
-    hangoutLink?: string
-    conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] }
-  }
-  const meetLink =
-    data.hangoutLink ??
-    data.conferenceData?.entryPoints?.find((e) => e.entryPointType === 'video')?.uri ??
+  const data = (await res.json()) as GoogleEventResource
+  return { eventId: data.id, htmlLink: data.htmlLink ?? null, meetLink: meetLinkOf(data) }
+}
+
+// ============================================================
+// Reading events — powers the in-CRM calendar view
+// (src/app/(dashboard)/calendar). Uses the `calendar.events` scope
+// already granted at connect time (see oauth.ts SCOPES), the same
+// one `createEvent` above relies on — no re-consent needed.
+// ============================================================
+
+interface GoogleEventResource {
+  id: string
+  status?: string
+  summary?: string
+  description?: string
+  location?: string
+  htmlLink?: string
+  hangoutLink?: string
+  start?: { dateTime?: string; date?: string }
+  end?: { dateTime?: string; date?: string }
+  conferenceData?: { entryPoints?: { entryPointType: string; uri: string }[] }
+  organizer?: { email?: string }
+  attendees?: {
+    email?: string
+    displayName?: string
+    responseStatus?: string
+    organizer?: boolean
+    self?: boolean
+  }[]
+}
+
+/** A Meet/Hangouts link off an event resource, from either the flat
+ *  `hangoutLink` or the newer `conferenceData` entry points. */
+function meetLinkOf(e: GoogleEventResource): string | null {
+  return (
+    e.hangoutLink ??
+    e.conferenceData?.entryPoints?.find((p) => p.entryPointType === 'video')?.uri ??
     null
-  return { eventId: data.id, htmlLink: data.htmlLink ?? null, meetLink }
+  )
+}
+
+function normalizeEvent(e: GoogleEventResource): CalendarEvent {
+  const allDay = !e.start?.dateTime
+  return {
+    id: e.id,
+    summary: e.summary?.trim() || '(sin título)',
+    description: e.description ?? null,
+    location: e.location ?? null,
+    // Timed events give an offset-qualified `dateTime`; all-day events
+    // give a bare `date` — the UI branches on `allDay` to render either.
+    start: e.start?.dateTime ?? e.start?.date ?? '',
+    end: e.end?.dateTime ?? e.end?.date ?? '',
+    allDay,
+    status: e.status ?? 'confirmed',
+    htmlLink: e.htmlLink ?? null,
+    meetLink: meetLinkOf(e),
+    organizerEmail: e.organizer?.email ?? null,
+    attendees: (e.attendees ?? [])
+      .filter((a): a is { email: string } & typeof a => Boolean(a.email))
+      .map((a) => ({
+        email: a.email,
+        displayName: a.displayName ?? null,
+        responseStatus: a.responseStatus ?? null,
+        organizer: Boolean(a.organizer),
+        self: Boolean(a.self),
+      })),
+  }
+}
+
+/** One range query's worth of events. A month grid (max ~6 weeks) over
+ *  even a busy calendar stays well under this, and every UI range is
+ *  bounded — so a single page is enough and we don't chase
+ *  `nextPageToken`. */
+const EVENTS_PAGE_SIZE = 250
+
+/**
+ * Events on the connected calendar overlapping [timeMinISO, timeMaxISO),
+ * recurring series expanded into individual instances and ordered by
+ * start. Cancelled instances are dropped. Throws `GoogleCalendarError`
+ * (surfaced by `getValidAccessToken`) when the connection is dead —
+ * the caller decides whether that's a soft "reconnect" state or a hard
+ * failure.
+ */
+export async function listEvents(
+  db: SupabaseClient,
+  accountId: string,
+  timeMinISO: string,
+  timeMaxISO: string,
+): Promise<CalendarEvent[]> {
+  const accessToken = await getValidAccessToken(db, accountId)
+  const calendarId = await loadCalendarId(db, accountId)
+
+  const params = new URLSearchParams({
+    timeMin: timeMinISO,
+    timeMax: timeMaxISO,
+    singleEvents: 'true',
+    orderBy: 'startTime',
+    maxResults: String(EVENTS_PAGE_SIZE),
+  })
+  const res = await googleFetch(
+    `${CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events?${params.toString()}`,
+    { method: 'GET', headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new GoogleCalendarError(`Google Calendar events list failed: ${body}`, 502)
+  }
+  const data = (await res.json()) as { items?: GoogleEventResource[] }
+  return (data.items ?? [])
+    .filter((e) => e.status !== 'cancelled' && (e.start?.dateTime || e.start?.date))
+    .map(normalizeEvent)
 }

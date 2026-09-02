@@ -1175,6 +1175,37 @@ async function autoScheduleAppointment(args: {
     return
   }
 
+  // Idempotency guard against the model re-proposing an appointment it
+  // already booked. Real incident (2026-09-01): the customer replied
+  // "gracias", the model emitted SCHEDULE_APPOINTMENT_SENTINEL_PREFIX
+  // again for the *same slot*, and the freebusy re-check below then saw
+  // the event THIS flow had just created as a conflict — handing the
+  // conversation off with a misleading "el horario ya no estaba
+  // disponible" note even though the appointment was correctly on the
+  // calendar. `ai_action_log` only gets a `schedule_appointment` row on
+  // a real, successful booking (see below + business-actions.ts), so a
+  // row for this contact at the same start instant means "already done"
+  // — make this run a silent no-op rather than re-book or false-alarm.
+  const { data: priorBookings } = await db
+    .from('ai_action_log')
+    .select('input')
+    .eq('account_id', accountId)
+    .eq('action', 'schedule_appointment')
+    .eq('target_id', contactId)
+    .order('created_at', { ascending: false })
+    .limit(20)
+  const alreadyBookedSameSlot = (priorBookings ?? []).some((row) => {
+    const bookedStart = (row.input as { startTime?: string } | null)?.startTime
+    return bookedStart ? new Date(bookedStart).getTime() === start.getTime() : false
+  })
+  if (alreadyBookedSameSlot) {
+    console.info(
+      '[ai auto-reply] autonomous schedule_appointment: this slot is already booked for the contact, skipping re-book:',
+      proposal,
+    )
+    return
+  }
+
   let busy: { start: string; end: string }[]
   try {
     busy = await checkFreeBusy(db, accountId, start.toISOString(), end.toISOString())

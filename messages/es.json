@@ -2494,6 +2494,33 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "calendar": "Calendario"
+  },
+  "Calendar": {
+    "title": "Calendario",
+    "view_agenda": "Agenda",
+    "view_week": "Semana",
+    "view_month": "Mes",
+    "today": "Hoy",
+    "previous": "Anterior",
+    "next": "Siguiente",
+    "refresh": "Actualizar",
+    "connectedAs": "Mostrando {email}",
+    "notConnectedTitle": "Google Calendar no está conectado",
+    "notConnectedBody": "Conecta un Google Calendar para ver aquí tus próximas citas.",
+    "reconnectBody": "La conexión con Google Calendar expiró. Vuelve a conectarla para seguir viendo tus citas.",
+    "goToSettings": "Ir a configuración",
+    "errorGeneric": "No se pudo cargar el calendario. Inténtalo de nuevo.",
+    "openGoogleCalendar": "Abrir Google Calendar",
+    "openInGoogle": "Abrir en Google Calendar",
+    "joinMeet": "Unirse con Google Meet",
+    "moreCount": "+{count} más",
+    "allDay": "Todo el día",
+    "agendaEmpty": "No hay eventos próximos en este periodo.",
+    "rsvpAccepted": "aceptó",
+    "rsvpDeclined": "rechazó",
+    "rsvpTentative": "quizás",
+    "rsvpPending": "sin responder"
   }
 }

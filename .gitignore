@@ -88,3 +88,6 @@ next-env.d.ts
 
 # Temporários da CLI do Supabase (entraram por engano num `git add -A`).
 supabase/.temp/
+
+# Levantamento da migração Kommo (dado de cliente, nunca versionar)
+.kommo-levantamento/

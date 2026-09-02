@@ -16,7 +16,7 @@ Conta Kommo `cbadvogados` (id 34706107), moeda BRL, 7 usuários.
 | Contatos | 12.736 | 116 |
 | Negócios / leads | 12.256 | 112 |
 | Conversas | — | 118 |
-| Funis | 6 (78 etapas) | 4 + 2 de teste (28 etapas) |
+| Funis | 6 (70 etapas) | 4 + 2 de teste (28 etapas) |
 | Tags | 30 em lead, 3 em contato | 9 |
 | Campos personalizados | 35 em lead, 3 em contato | 18 (só em contato) |
 
@@ -123,7 +123,7 @@ própria.
 
 | # | Decisão | Opções |
 | --- | --- | --- |
-| 1 | De‑para dos funis e das 78 etapas | tabela acima, a preencher |
+| 1 | De‑para dos funis e das 70 etapas | tabela acima, a preencher |
 | 2 | Migrar os 5.263 leads já fechados (43%)? | sim, com `status` fechado · só os 170 ganhos · não |
 | 3 | Onde vão as 543 anotações | `deals.notes` concatenado · criar conversa por contato · migration nova |
 | 4 | 5 campos da Kommo sem destino (2.452 valores) | criar no CB CRM · descartar |

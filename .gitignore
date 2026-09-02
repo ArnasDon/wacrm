@@ -42,3 +42,17 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# cloudflare
+# Local D1 / KV / R2 state written by `wrangler dev` and
+# `wrangler d1 migrations apply --local`. Machine-local, often large,
+# never shared.
+.wrangler/
+# Local secrets for `wrangler dev`, the Workers equivalent of .env.local.
+.dev.vars
+!.dev.vars.example
+# Regenerated from wrangler.jsonc by `wrangler types`; 15k lines of
+# runtime typings that would swamp every diff. Run
+# `npx wrangler types --path src/types/cloudflare-env.d.ts` after
+# changing bindings.
+/src/types/cloudflare-env.d.ts

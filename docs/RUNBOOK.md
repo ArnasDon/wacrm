@@ -133,6 +133,7 @@ del job de pg_cron difieren — tabla de equivalencias:
 |---|---|---|---|---|
 | `automations_cron` | `automations-pending-drain` | `/api/automations/cron` | ~5 min | `AUTOMATION_CRON_SECRET` |
 | `flows_cron` | `flows-timeout-sweep` | `/api/flows/cron` | ~5 min | `AUTOMATION_CRON_SECRET` (compartido, por diseño) |
+| `followups_cron` | `ai-followups-sweep` | `/api/ai/followups/cron` | ~5 min | `FOLLOWUPS_CRON_SECRET` / `AUTOMATION_CRON_SECRET` |
 | `conversations_cron` | `conversation-reassign-sweep` | `/api/conversations/cron` | ~5 min | `CONVERSATIONS_CRON_SECRET` / `WEBHOOK_CRON_SECRET` |
 | `webhooks_cron` | `webhook-retry-sweep` | `/api/webhooks/cron` | ~5 min | `WEBHOOK_CRON_SECRET` |
 | `retention_cron` | `data-retention-sweep` | `/api/maintenance/retention/cron?execute=true` | diario 09:20 UTC | `RETENTION_CRON_SECRET` / `WEBHOOK_CRON_SECRET` |
@@ -238,6 +239,7 @@ suya), `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`,
 
 **Crons:** `WEBHOOK_CRON_SECRET` (fallback de varios),
 `AUTOMATION_CRON_SECRET` (automations **y** flows — nombre en singular),
+`FOLLOWUPS_CRON_SECRET` (cae a `AUTOMATION_CRON_SECRET`),
 `CONVERSATIONS_CRON_SECRET`, `RETENTION_CRON_SECRET`,
 `SUBSCRIPTIONS_CRON_SECRET` (sin fallback),
 `HEALTHCHECK_CRON_SECRET` (cae a `WEBHOOK_CRON_SECRET`).

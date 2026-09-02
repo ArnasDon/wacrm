@@ -35,6 +35,7 @@ import {
 } from '@/components/ui/select';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
+import { AiFollowupsCard, type FollowupStepUI } from './ai-followups-card';
 import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
 import type { AiProvider } from '@/lib/ai/types';
 import type { AccountMember } from '@/types';
@@ -85,6 +86,12 @@ export function AiConfig() {
   const [askCustomerTaxInfo, setAskCustomerTaxInfo] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   const [unclaimedTimeoutMinutes, setUnclaimedTimeoutMinutes] = useState(10);
+  const [followupsEnabled, setFollowupsEnabled] = useState(false);
+  const [followupsBusinessHoursOnly, setFollowupsBusinessHoursOnly] =
+    useState(true);
+  const [followupsWindowStart, setFollowupsWindowStart] = useState(8);
+  const [followupsWindowEnd, setFollowupsWindowEnd] = useState(18);
+  const [followupSteps, setFollowupSteps] = useState<FollowupStepUI[]>([]);
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
@@ -118,6 +125,29 @@ export function AiConfig() {
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setUnclaimedTimeoutMinutes(
           data.unclaimed_conversation_timeout_minutes ?? 10
+        );
+        setFollowupsEnabled(Boolean(data.followups_enabled));
+        setFollowupsBusinessHoursOnly(
+          data.followups_business_hours_only !== false
+        );
+        setFollowupsWindowStart(data.followups_window_start_hour ?? 8);
+        setFollowupsWindowEnd(data.followups_window_end_hour ?? 18);
+        setFollowupSteps(
+          Array.isArray(data.followups)
+            ? data.followups.map(
+                (s: Partial<FollowupStepUI> | null): FollowupStepUI => ({
+                  after_minutes: Number(s?.after_minutes) || 60,
+                  type: s?.type === 'template' ? 'template' : 'text',
+                  text: typeof s?.text === 'string' ? s.text : '',
+                  template_name:
+                    typeof s?.template_name === 'string' ? s.template_name : '',
+                  template_language:
+                    typeof s?.template_language === 'string'
+                      ? s.template_language
+                      : '',
+                })
+              )
+            : []
         );
         setHandoffAgentId(data.handoff_agent_id ?? '');
         setHasStoredKey(Boolean(data.has_key));
@@ -174,6 +204,11 @@ export function AiConfig() {
     auto_reply_max_per_conversation: maxPerConversation,
     unclaimed_conversation_timeout_minutes: unclaimedTimeoutMinutes,
     handoff_agent_id: handoffAgentId || null,
+    followups_enabled: followupsEnabled,
+    followups: followupSteps,
+    followups_business_hours_only: followupsBusinessHoursOnly,
+    followups_window_start_hour: followupsWindowStart,
+    followups_window_end_hour: followupsWindowEnd,
   });
 
   const handleTest = async () => {
@@ -205,6 +240,17 @@ export function AiConfig() {
     }
     if (!configured && !keyEdited) {
       toast.error(t('missingApiKey'));
+      return;
+    }
+    if (
+      followupsEnabled &&
+      followupSteps.some(
+        (s) =>
+          (s.type === 'text' && !s.text.trim()) ||
+          (s.type === 'template' && !s.template_name)
+      )
+    ) {
+      toast.error(t('followupsIncomplete'));
       return;
     }
     setSaving(true);
@@ -243,6 +289,8 @@ export function AiConfig() {
         setAutoScheduleAppointmentsEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setFollowupsEnabled(false);
+        setFollowupSteps([]);
       } else {
         const data = await readResponseJson(res);
         toast.error(data.error ?? t('removeFailed'));
@@ -570,6 +618,22 @@ export function AiConfig() {
             </div>
           </CardContent>
         </Card>
+
+        <AiFollowupsCard
+          enabled={followupsEnabled}
+          onEnabledChange={setFollowupsEnabled}
+          businessHoursOnly={followupsBusinessHoursOnly}
+          onBusinessHoursOnlyChange={setFollowupsBusinessHoursOnly}
+          windowStart={followupsWindowStart}
+          windowEnd={followupsWindowEnd}
+          onWindowChange={(s, e) => {
+            setFollowupsWindowStart(s);
+            setFollowupsWindowEnd(e);
+          }}
+          steps={followupSteps}
+          onStepsChange={setFollowupSteps}
+          disabled={disabled}
+        />
 
         <AiKnowledgeCard
           accountId={accountId}

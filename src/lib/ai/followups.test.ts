@@ -4,6 +4,7 @@ import {
   renderFollowupText,
   withinBusinessHours,
   nextDueFollowup,
+  normalizeFollowupGoal,
   FOLLOWUP_MIN_MINUTES,
   FOLLOWUP_MAX_MINUTES,
   type FollowupStep,
@@ -62,6 +63,21 @@ describe('parseFollowupSteps', () => {
     expect(
       parseFollowupSteps([{ after_minutes: 60, type: 'text', text: 'x'.repeat(1001) }]).ok,
     ).toBe(false);
+  });
+});
+
+describe('normalizeFollowupGoal', () => {
+  it('passes through the known goals', () => {
+    for (const g of ['reply', 'appointment', 'deal_won', 'quote_sent']) {
+      expect(normalizeFollowupGoal(g)).toBe(g);
+    }
+  });
+  it('falls back to reply for anything else', () => {
+    expect(normalizeFollowupGoal(undefined)).toBe('reply');
+    expect(normalizeFollowupGoal(null)).toBe('reply');
+    expect(normalizeFollowupGoal('')).toBe('reply');
+    expect(normalizeFollowupGoal('sale')).toBe('reply');
+    expect(normalizeFollowupGoal(42)).toBe('reply');
   });
 });
 

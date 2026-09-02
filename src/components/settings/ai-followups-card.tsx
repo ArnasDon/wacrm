@@ -19,6 +19,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { extractVariableIndices } from '@/lib/whatsapp/template-validators';
 import {
+  FOLLOWUP_GOALS,
   FOLLOWUP_MAX_STEPS,
   FOLLOWUP_MIN_MINUTES,
   FOLLOWUP_TEXT_MAXLEN,
@@ -64,6 +65,8 @@ function toMinutes(value: number, unit: Unit): number {
 interface Props {
   enabled: boolean;
   onEnabledChange: (v: boolean) => void;
+  goal: string;
+  onGoalChange: (v: string) => void;
   businessHoursOnly: boolean;
   onBusinessHoursOnlyChange: (v: boolean) => void;
   windowStart: number;
@@ -77,6 +80,8 @@ interface Props {
 export function AiFollowupsCard({
   enabled,
   onEnabledChange,
+  goal,
+  onGoalChange,
   businessHoursOnly,
   onBusinessHoursOnlyChange,
   windowStart,
@@ -146,6 +151,26 @@ export function AiFollowupsCard({
             onCheckedChange={onEnabledChange}
             disabled={disabled}
           />
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="followups-goal">{t('followupsGoal')}</Label>
+          <select
+            id="followups-goal"
+            value={goal}
+            onChange={(e) => onGoalChange(e.target.value)}
+            disabled={rowDisabled}
+            className={`${SELECT_CLASS} w-full`}
+          >
+            {FOLLOWUP_GOALS.map((g) => (
+              <option key={g} value={g}>
+                {t(`followupsGoal_${g}`)}
+              </option>
+            ))}
+          </select>
+          <p className="text-muted-foreground text-xs">
+            {t('followupsGoalHint')}
+          </p>
         </div>
 
         <div className="border-border flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">

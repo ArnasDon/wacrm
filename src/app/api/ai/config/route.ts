@@ -7,7 +7,7 @@ import {
 import { checkSharedRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
-import { parseFollowupSteps } from '@/lib/ai/followups'
+import { parseFollowupSteps, normalizeFollowupGoal } from '@/lib/ai/followups'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
 
@@ -31,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, auto_schedule_appointments_enabled, ask_customer_tax_info, unclaimed_conversation_timeout_minutes, handoff_agent_id, followups_enabled, followups, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, auto_schedule_appointments_enabled, ask_customer_tax_info, unclaimed_conversation_timeout_minutes, handoff_agent_id, followups_enabled, followups, followups_goal, followups_business_hours_only, followups_window_start_hour, followups_window_end_hour, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -133,6 +133,7 @@ export async function POST(request: Request) {
     const followupsEnabled = body.followups_enabled === true
     const parsedFollowups = parseFollowupSteps(body.followups)
     if (followupsProvided && !parsedFollowups.ok) return bad(parsedFollowups.error)
+    const followupsGoal = normalizeFollowupGoal(body.followups_goal)
     const followupsBusinessHoursOnly = body.followups_business_hours_only !== false
     let followupsWindowStart = Number(body.followups_window_start_hour)
     if (!Number.isFinite(followupsWindowStart)) followupsWindowStart = 8
@@ -246,6 +247,7 @@ export async function POST(request: Request) {
     if (followupsProvided && parsedFollowups.ok) {
       shared.followups_enabled = followupsEnabled
       shared.followups = parsedFollowups.steps
+      shared.followups_goal = followupsGoal
       shared.followups_business_hours_only = followupsBusinessHoursOnly
       shared.followups_window_start_hour = followupsWindowStart
       shared.followups_window_end_hour = followupsWindowEnd

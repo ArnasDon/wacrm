@@ -1,0 +1,43 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "wacrm",
+  "compatibility_date": "2026-09-02",
+
+  // `nodejs_compat` is required: the server code uses node:crypto for
+  // AES-256-GCM (encrypted WhatsApp tokens, webhook secrets, BYO AI
+  // provider keys) and HMAC webhook signature verification. Phase 5
+  // audits the rest of the Node surface.
+  "compatibility_flags": ["nodejs_compat"],
+
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "wacrm",
+      // Populated by `wrangler d1 create wacrm` — see
+      // docs/d1-migration/README.md for first-time setup.
+      "database_id": "REPLACE_WITH_D1_DATABASE_ID",
+      "migrations_dir": "drizzle"
+    }
+  ],
+
+  // Phase 4 bindings. Declared here so the shape of the finished
+  // deployment is visible from the start, commented until the code
+  // that uses them lands — an unbound reference is a deploy-time
+  // error, an unused binding is only noise.
+  //
+  // "r2_buckets": [
+  //   { "binding": "MEDIA", "bucket_name": "wacrm-media" }
+  // ],
+  // "vectorize": [
+  //   { "binding": "KNOWLEDGE", "index_name": "wacrm-knowledge" }
+  // ],
+  // "durable_objects": {
+  //   "bindings": [
+  //     { "name": "ACCOUNT_CHANNEL", "class_name": "AccountChannel" }
+  //   ]
+  // },
+
+  "observability": {
+    "enabled": true
+  }
+}

@@ -200,6 +200,75 @@ Reservar modelo de datos (`invoices`, `tax_documents`) y puntos de extensión, s
 
 ---
 
+## Actualizaciones posteriores al diagnóstico
+
+Cambios de código hechos **después** del corte del 13 de agosto de 2026. El
+cuerpo del diagnóstico (secciones A–P) se mantiene como foto histórica; esta
+sección registra lo que ya cambió.
+
+### 2026-09-02 — Mensajes de seguimiento automáticos ("follow-up sweeper")
+
+**Estado:** PR #33 fusionado a `main` (`1d35e4d`). Migración `099_ai_followups.sql`
+**aplicada a producción**. Falta: desplegar la app, registrar el cron
+(`100_schedule_followups_cron.sql`) y definir `FOLLOWUPS_CRON_SECRET` (cae a
+`AUTOMATION_CRON_SECRET`). Hasta registrar el cron, el heartbeat `followups_cron`
+marca "never" y dispara una alerta de nivel *warning*.
+
+**Qué resuelve.** La IA solo se ejecuta ante un mensaje **entrante**
+(`dispatchInboundToAiReply` se invoca desde los webhooks). Una instrucción en el
+system prompt del tipo "escríbele al cliente una hora después de que dejó de
+responder" nunca podía dispararse: no hay entrante que la active. Ahora un
+barrido programado la ejecuta.
+
+**Cómo funciona.** `GET /api/ai/followups/cron` (cada ~5 min, mismo patrón
+`x-cron-secret` que automations/flows) → `src/lib/ai/followups-sweep.ts`. Para
+cada cuenta con seguimientos activos, recorre sus conversaciones de WhatsApp
+**abiertas, sin asignar, sin handoff, con auto-reply no desactivado**, donde el
+último mensaje es nuestro y hay un entrante real como ancla, y no hay
+`schedule_appointment` en `ai_action_log` para el contacto ni un `flow_run`
+activo. Envía el siguiente paso vencido y registra el intento. Los pasos de
+texto libre se omiten pasada la ventana de 24 h de WhatsApp (las plantillas
+siguen saliendo). Lógica pura y testeada en `src/lib/ai/followups.ts`
+(`nextDueFollowup`, `withinBusinessHours`, `parseFollowupSteps`,
+`renderFollowupText`).
+
+**Dónde se guarda la programación de los mensajes** (la respuesta directa a
+"dónde quedó almacenado para programar los mensajes después de cierto tiempo"):
+
+- **`ai_configs`** (una fila por cuenta) — la configuración editable en
+  Settings → IA → "Mensajes de seguimiento" (`ai-followups-card.tsx`), guardada
+  vía `POST /api/ai/config`:
+  - `followups_enabled` (`boolean`) — interruptor maestro.
+  - `followups` (`jsonb`) — **el arreglo ordenado de pasos**. Cada paso:
+    `{ after_minutes, type: 'text' | 'template', text, template_name, template_language }`.
+    `after_minutes` es la espera **desde el mensaje anterior** (el último
+    entrante para el paso 0; el envío del paso previo para los siguientes).
+    Máx. 5 pasos; `after_minutes` entre 15 y 20 160 (14 días). Validado en
+    `parseFollowupSteps`.
+  - `followups_business_hours_only` (`boolean`) + `followups_window_start_hour` /
+    `followups_window_end_hour` (`smallint`, 0–24, hora local de la cuenta vía
+    `accounts.timezone`) — ventana de horario laboral. Iguales = sin restricción.
+- **`ai_followup_log`** (tabla nueva) — una fila por **intento** (éxito o
+  fallo): `account_id, conversation_id, contact_id, step_index, step_type,
+  message_id, error, since_customer_at, sent_at`. Índice único
+  `(conversation_id, since_customer_at, step_index)`. Es lo que hace que cada
+  paso se dispare **una sola vez** por racha de silencio y que un nuevo entrante
+  del cliente **reinicie** la secuencia (las filas viejas quedan detrás del
+  nuevo `since_customer_at`).
+
+**No hay una fila de "run_at" precalculada** como en Automations
+(`automation_pending_executions`). El "cuándo toca" se calcula en cada tick a
+partir de los timestamps de `messages` y de `ai_followup_log`; solo la
+*definición* de los pasos y sus esperas vive en `ai_configs.followups`.
+
+**Relación con el diagnóstico.** Cubre parcialmente el hueco "seguimiento
+pendiente" mencionado en la sección I.4 / J, pero resuelto **dentro** de SANDÍA
+(no vía n8n) y acotado a WhatsApp. Añade un cron más al modelo de tareas
+diferidas descrito en la sección L (mismo patrón pg_cron + `x-cron-secret`, sin
+cola real).
+
+---
+
 ## Nota final
 
 Este documento es el diagnóstico de referencia para el proyecto SANDÍA: confirma que **no hay que reconstruir el CRM**, identifica con precisión (archivo por archivo, migración por migración) qué ya sirve, qué hay que ajustar y qué falta, y ordena el trabajo en fases con la seguridad y la multi-tenancy primero. Claude Code debe consultar este documento antes de proponer cambios estructurales al proyecto.

@@ -39,6 +39,7 @@ const EVENT_LABELS: Record<string, string> = {
   'contact.lead_temperature_changed': 'Cambio de temperatura del lead',
   'appointment.scheduled': 'Cita agendada',
   'broadcast.completed': 'Difusión finalizada',
+  'contact.brief_ready': 'Requerimientos del prospecto (al registrar el negocio)',
 };
 
 const EXPORT_ENTITIES: { key: string; label: string }[] = [

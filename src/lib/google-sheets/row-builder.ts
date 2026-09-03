@@ -9,13 +9,19 @@ import type { WebhookEvent } from '@/lib/webhooks/events'
 // One `google_sheets_config` has one base `sheet_tab`; each event
 // CATEGORY routes to its own tab so a "deal.won" row and a
 // "quote.created" row never fight over the same columns:
-//   deals        -> <base>
-//   quotes       -> <base> - Cotizaciones
-//   contacts     -> <base> - Leads
-//   appointments -> <base> - Citas
-//   broadcasts   -> <base> - Difusiones
+//   deals         -> <base>
+//   quotes        -> <base> - Cotizaciones
+//   contacts      -> <base> - Leads
+//   appointments  -> <base> - Citas
+//   broadcasts    -> <base> - Difusiones
+//   brief         -> <base> - Requerimientos  (one column per custom field)
 // Every row starts with the event name + an ISO timestamp so a tab is
 // still readable if the operator later points two similar events at it.
+//
+// The "Requerimientos" tab is the one with a variable column set: its
+// header is [base columns, ...one per account custom field], so when
+// the account adds a spec field the header grows — dispatch.ts detects
+// the change and rewrites row 1.
 // ============================================================
 
 export interface SheetRow {
@@ -265,6 +271,73 @@ async function buildBroadcastRow(
 }
 
 /**
+ * The "Requerimientos" (spec brief) row. Fired on `contact.brief_ready`
+ * — i.e. when a deal gets registered for a contact — it snapshots the
+ * contact's captured custom-field values into one wide row, one column
+ * per custom field the account has defined. The column set is the
+ * account's full custom-field list (ordered by name) so every row of
+ * the tab lines up regardless of which fields a given prospect filled.
+ */
+async function buildBriefRow(
+  db: Db,
+  accountId: string,
+  data: Record<string, unknown>,
+  base: string,
+  nowIso: string,
+): Promise<SheetRow | null> {
+  const contactId = typeof data.contact_id === 'string' ? data.contact_id : null
+  if (!contactId) return null
+
+  const [{ data: contact }, { data: fields }, { data: values }] = await Promise.all([
+    db
+      .from('contacts')
+      .select('name, phone, email, company')
+      .eq('account_id', accountId)
+      .eq('id', contactId)
+      .maybeSingle(),
+    db
+      .from('custom_fields')
+      .select('id, field_name')
+      .eq('account_id', accountId)
+      .order('field_name', { ascending: true }),
+    db
+      .from('contact_custom_values')
+      .select('custom_field_id, value')
+      .eq('contact_id', contactId)
+      .order('custom_field_id', { ascending: true }),
+  ])
+  if (!contact) return null
+
+  const fieldList = (fields ?? []) as { id: string; field_name: string }[]
+  const valueByField = new Map<string, string>()
+  for (const v of (values ?? []) as { custom_field_id: string; value: string | null }[]) {
+    valueByField.set(v.custom_field_id, v.value ?? '')
+  }
+
+  return {
+    tab: cat(base, 'Requerimientos'),
+    header: [
+      'Evento',
+      'Fecha',
+      'Cliente',
+      'Teléfono',
+      'Correo',
+      'Empresa',
+      ...fieldList.map((f) => f.field_name),
+    ],
+    values: [
+      'contact.brief_ready',
+      nowIso,
+      (contact.name as string) ?? '',
+      (contact.phone as string) ?? '',
+      (contact.email as string) ?? '',
+      (contact.company as string) ?? '',
+      ...fieldList.map((f) => valueByField.get(f.id) ?? ''),
+    ],
+  }
+}
+
+/**
  * Build the sheet row for `event`. Returns null when the event has no
  * mapping or the referenced entity no longer exists.
  */
@@ -292,6 +365,8 @@ export async function buildRowForEvent(
       return buildAppointmentRow(db, accountId, d, base, nowIso)
     case 'broadcast.completed':
       return buildBroadcastRow(db, accountId, d, base, nowIso)
+    case 'contact.brief_ready':
+      return buildBriefRow(db, accountId, d, base, nowIso)
     default:
       return null
   }

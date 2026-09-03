@@ -3,7 +3,7 @@ import type { WebhookEvent } from '@/lib/webhooks/events'
 import { supabaseAdmin } from './admin-client'
 import { getValidAccessToken } from './oauth'
 import { buildRowForEvent } from './row-builder'
-import { appendRows, ensureTab } from './api'
+import { appendRows, ensureTab, updateHeaderRow } from './api'
 
 // ============================================================
 // `dispatchToGoogleSheets` — called from inside `dispatchWebhookEvent`
@@ -55,15 +55,32 @@ export async function dispatchToGoogleSheets(
 
     await ensureTab(token, config.spreadsheet_id, row.tab)
 
+    // `headers_written[tab]` is `true` for legacy fixed-column tabs, or
+    // the stored header array for tabs written since this change. The
+    // "Requerimientos" tab is the only one whose header can grow (a new
+    // account custom field = a new column) — when it does, rewrite row 1
+    // and keep appending below it.
     const written = (config.headers_written ?? {}) as Record<string, unknown>
-    const needsHeader = written[row.tab] !== true
-    const rows = needsHeader ? [row.header, row.values] : [row.values]
+    const prev = written[row.tab]
+    const headerMatches =
+      prev === true ||
+      (Array.isArray(prev) && JSON.stringify(prev) === JSON.stringify(row.header))
 
-    await appendRows(token, config.spreadsheet_id, row.tab, rows)
+    if (prev === undefined) {
+      await appendRows(token, config.spreadsheet_id, row.tab, [row.header, row.values])
+    } else if (!headerMatches) {
+      await updateHeaderRow(token, config.spreadsheet_id, row.tab, row.header)
+      await appendRows(token, config.spreadsheet_id, row.tab, [row.values])
+    } else {
+      await appendRows(token, config.spreadsheet_id, row.tab, [row.values])
+    }
 
     const patch: Record<string, unknown> = { last_write_at: new Date().toISOString() }
-    if (needsHeader) {
-      patch.headers_written = { ...written, [row.tab]: true }
+    if (prev !== true) {
+      // Migrate the tab's marker to the actual header array so a future
+      // column change is detectable. (Legacy `true` markers are left as
+      // they are — their columns never vary.)
+      patch.headers_written = { ...written, [row.tab]: row.header }
     }
     await db.from('google_sheets_config').update(patch).eq('account_id', accountId)
   } catch (err) {

@@ -615,18 +615,33 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         .select('default_currency')
         .eq('id', args.automation.account_id)
         .maybeSingle()
-      await db.from('deals').insert({
-        // Tenancy + audit, same split as automation_logs above.
-        account_id: args.automation.account_id,
-        user_id: args.automation.user_id,
-        pipeline_id: cfg.pipeline_id,
-        stage_id: cfg.stage_id,
-        contact_id: args.contactId,
-        title: interpolate(cfg.title, args),
-        value: cfg.value ?? 0,
-        currency: acct?.default_currency ?? 'USD',
-        status: 'open',
-      })
+      const { data: newDeal } = await db
+        .from('deals')
+        .insert({
+          // Tenancy + audit, same split as automation_logs above.
+          account_id: args.automation.account_id,
+          user_id: args.automation.user_id,
+          pipeline_id: cfg.pipeline_id,
+          stage_id: cfg.stage_id,
+          contact_id: args.contactId,
+          title: interpolate(cfg.title, args),
+          value: cfg.value ?? 0,
+          currency: acct?.default_currency ?? 'USD',
+          status: 'open',
+        })
+        .select('id')
+        .maybeSingle()
+
+      // "Prospect registered in the CRM" — snapshot its captured
+      // custom-field brief to a connected Google Sheet / webhook
+      // subscribers. No-op unless the account subscribed to it.
+      if (args.contactId) {
+        void dispatchWebhookEvent(db, args.automation.account_id, 'contact.brief_ready', {
+          contact_id: args.contactId,
+          deal_id: newDeal?.id ?? null,
+          source: 'automation',
+        })
+      }
       return 'deal created'
     }
 

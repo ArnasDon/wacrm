@@ -1002,6 +1002,15 @@ async function autoMoveDealStage(args: {
     stage_id: created.stage_id,
     source: 'auto_reply_autonomous',
   })
+
+  // The deal is the "registrado en el CRM" moment — snapshot the
+  // contact's captured spec brief to a connected Google Sheet / webhook
+  // subscribers. No-op unless the account subscribed to it.
+  void dispatchWebhookEvent(db, accountId, 'contact.brief_ready', {
+    contact_id: contactId,
+    deal_id: created.id,
+    source: 'auto_reply_autonomous',
+  })
 }
 
 /**

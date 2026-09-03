@@ -948,10 +948,6 @@ async function processMessage(
     whatsapp_message_id: message.id,
     content_type: contentType,
     text: contentText,
-    // The tapped button / list-row id, when this inbound is an
-    // interactive reply. Lets the CSAT capture hook recognise a survey
-    // rating without re-querying the message row.
-    interactive_reply_id: interactiveReplyId ?? null,
     channel: 'whatsapp',
   })
 }

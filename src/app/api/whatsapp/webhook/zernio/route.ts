@@ -655,10 +655,6 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
     whatsapp_message_id: message.platformMessageId,
     content_type: contentType,
     text: contentText,
-    // Zernio doesn't parse quick-reply/list taps into a stable id yet
-    // (see the file header) — always null here. The CSAT capture hook
-    // falls back to a bare-rating text match for this path.
-    interactive_reply_id: null,
     channel: 'whatsapp',
   })
 }

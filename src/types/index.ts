@@ -126,10 +126,6 @@ export interface Contact {
   company?: string;
   /** Manual commercial qualification. Null/absent means not classified yet. */
   lead_temperature?: LeadTemperature | null;
-  /** When `lead_temperature` last changed (migration 103) — set by the
-   *  manual PATCH, the AI action, and the auto-cool sweep. Null for rows
-   *  classified before 103 whose backfill filled it from `updated_at`. */
-  lead_temperature_updated_at?: string | null;
   /** First-touch Meta ad/post referral captured on contact creation
    *  ({source,type,ad_id,ref}). Null for organic / non-Meta contacts
    *  and any created before migration 098. See `contacts.referral`. */
@@ -849,55 +845,4 @@ export interface QuickReply {
   interactive_payload?: InteractiveMessagePayload | null;
   created_at: string;
   updated_at: string;
-}
-
-// ---------- CSAT (post-sale satisfaction, migration 102) ------------
-
-export type CsatSurveyStatus =
-  | 'pending'
-  | 'sent'
-  | 'responded'
-  | 'failed'
-  | 'skipped';
-
-/** One row per account — the post-sale survey settings edited in
- *  Settings → Satisfacción (CSAT). */
-export interface CsatConfig {
-  account_id: string;
-  enabled: boolean;
-  /** Approved WhatsApp template with quick-reply buttons. */
-  template_name: string | null;
-  template_language: string | null;
-  /** Number of rating buttons (1..scale). */
-  scale: 3 | 5;
-  /** Minutes to wait after `deal.won` before sending (0 = immediate). */
-  delay_minutes: number;
-  /** Don't re-survey the same contact within this many days. */
-  cooldown_days: number;
-  created_by?: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-/** One survey — queued on `deal.won`, sent by the cron, resolved when
- *  the customer taps a rating button. */
-export interface CsatSurvey {
-  id: string;
-  account_id: string;
-  contact_id: string | null;
-  deal_id: string | null;
-  conversation_id: string | null;
-  status: CsatSurveyStatus;
-  /** csat_config.scale snapshotted at send time. */
-  scale: number;
-  /** The tapped rating, 1..scale. Null until `responded`. */
-  score: number | null;
-  comment: string | null;
-  sent_message_id: string | null;
-  error: string | null;
-  skip_reason: string | null;
-  send_after: string;
-  sent_at: string | null;
-  responded_at: string | null;
-  created_at: string;
 }

@@ -39,7 +39,7 @@
 | `src/app/api/billing/subscribe-cancel.test.ts` | Testes das duas rotas acima. |
 | `src/app/api/billing/webhook/asaas/route.ts` | `POST` — sincroniza status a partir do webhook do Asaas. |
 | `src/app/api/billing/webhook/asaas/route.test.ts` | — |
-| `src/app/billing/page.tsx` | Tela de assinatura — status, botão assinar/cancelar. **Fora** do grupo `(dashboard)` de propósito (ver Task 7 Step 2) — senão o próprio redirect de bloqueio cria um loop nela. |
+| `src/app/billing/page.tsx` | Tela de assinatura — status, botão assinar/cancelar. **Fora** do grupo `(dashboard)` de propósito (ver Task 7 Step 3) — senão o próprio redirect de bloqueio cria um loop nela. |
 | `src/app/billing/billing-actions.tsx` | Client component — botões assinar/cancelar (`onClick` não roda em Server Component). |
 
 **Modificados:**
@@ -1122,7 +1122,7 @@ git commit -m "feat(billing): Asaas webhook syncs subscription_status"
 ## Task 7: Gate no layout + tela `/billing`
 
 **Files:**
-- Modify: `src/app/(dashboard)/layout.tsx`, `src/lib/auth/roles.ts`
+- Modify: `src/app/(dashboard)/layout.tsx`, `src/lib/auth/roles.ts`, `src/lib/auth/roles.test.ts`
 - Create: `src/app/billing/page.tsx`, `src/app/billing/billing-actions.tsx`
 - Modify: `messages/en.json`, `messages/ko.json`, `messages/pt-BR.json`
 
@@ -1130,7 +1130,20 @@ git commit -m "feat(billing): Asaas webhook syncs subscription_status"
 - Consumes: `isAccountBlocked` (Task 2), rotas `/api/billing/subscribe` + `/api/billing/cancel` (Task 5).
 - Produces: `canManageBilling(role): boolean` em `roles.ts`.
 
-- [ ] **Step 1: `roles.ts`** — adicionar, perto de `canDeleteAccount`/`canTransferOwnership`:
+- [ ] **Step 1: teste que falha** — em `src/lib/auth/roles.test.ts`, adicionar `canManageBilling` ao bloco de import do topo (junto de `canDeleteAccount`, `canTransferOwnership`, etc.) e este caso de teste, perto de `canDeleteAccount: owner only` / `canTransferOwnership: owner only`:
+
+```ts
+  it("canManageBilling: owner only", () => {
+    expect(canManageBilling("owner")).toBe(true);
+    expect(canManageBilling("admin")).toBe(false);
+    expect(canManageBilling("agent")).toBe(false);
+    expect(canManageBilling("viewer")).toBe(false);
+  });
+```
+
+Rodar `npx vitest run src/lib/auth/roles.test.ts` → falha (`canManageBilling` não existe ainda).
+
+- [ ] **Step 2: `roles.ts`** — adicionar, perto de `canDeleteAccount`/`canTransferOwnership`:
 
 ```ts
 /** Owner only: subscribe/cancel the account's billing. */
@@ -1139,7 +1152,9 @@ export function canManageBilling(role: AccountRole): boolean {
 }
 ```
 
-- [ ] **Step 2: `src/app/(dashboard)/layout.tsx`** — vira async, consulta leve e resiliente (NÃO usa `getCurrentAccount()` — essa lança em conta desvinculada, que já tem um fluxo próprio via `AccountAccessAlert`; aqui só queremos agir quando **sabemos** que está bloqueada):
+Rodar `npx vitest run src/lib/auth/roles.test.ts` → verde (5 casos, incluindo o novo).
+
+- [ ] **Step 3: `src/app/(dashboard)/layout.tsx`** — vira async, consulta leve e resiliente (NÃO usa `getCurrentAccount()` — essa lança em conta desvinculada, que já tem um fluxo próprio via `AccountAccessAlert`; aqui só queremos agir quando **sabemos** que está bloqueada):
 
 ```tsx
 import type { Metadata } from "next";
@@ -1204,9 +1219,9 @@ export default async function DashboardLayout({
 }
 ```
 
-> Nota: a rota `/billing` fica DENTRO de `(dashboard)` (mesmo grupo, mesmo layout) — o `redirect` acima teria que evitar loop nela. Como `redirect()` do Next lança uma exceção especial capturada pelo próprio framework, e a página `/billing` também passaria por este mesmo layout, é preciso a página `/billing` **não** disparar o mesmo redirect. Isso é automático aqui: a checagem só redireciona quando bloqueado, e a página `/billing` é exatamente onde uma conta bloqueada precisa poder ficar — mas como o layout roda ANTES da página, ele redirecionaria `/billing` pra `/billing` (loop inofensivo, mas redundante). Corrigir: checar `headers()`/o pathname atual não é trivial num layout Server Component sem passar por `usePathname` (client-only). Solução mais simples: mover a página `/billing` pra **fora** do grupo `(dashboard)`, como uma rota irmã (`src/app/billing/page.tsx`, seu próprio layout mínimo, sem passar pelo `DashboardLayout` acima). Ajustar Step 3 abaixo para criar em `src/app/billing/page.tsx`, não `src/app/(dashboard)/billing/page.tsx`.
+> Nota: a rota `/billing` fica DENTRO de `(dashboard)` (mesmo grupo, mesmo layout) — o `redirect` acima teria que evitar loop nela. Como `redirect()` do Next lança uma exceção especial capturada pelo próprio framework, e a página `/billing` também passaria por este mesmo layout, é preciso a página `/billing` **não** disparar o mesmo redirect. Isso é automático aqui: a checagem só redireciona quando bloqueado, e a página `/billing` é exatamente onde uma conta bloqueada precisa poder ficar — mas como o layout roda ANTES da página, ele redirecionaria `/billing` pra `/billing` (loop inofensivo, mas redundante). Corrigir: checar `headers()`/o pathname atual não é trivial num layout Server Component sem passar por `usePathname` (client-only). Solução mais simples: mover a página `/billing` pra **fora** do grupo `(dashboard)`, como uma rota irmã (`src/app/billing/page.tsx`, seu próprio layout mínimo, sem passar pelo `DashboardLayout` acima). Ajustar Step 4 abaixo para criar em `src/app/billing/page.tsx`, não `src/app/(dashboard)/billing/page.tsx`.
 
-- [ ] **Step 3: `src/app/billing/page.tsx`** (fora do grupo `(dashboard)`, não passa pelo redirect do Step 2):
+- [ ] **Step 4: `src/app/billing/page.tsx`** (fora do grupo `(dashboard)`, não passa pelo redirect do Step 3):
 
 ```tsx
 import { redirect } from "next/navigation";
@@ -1270,7 +1285,7 @@ export default async function BillingPage() {
 }
 ```
 
-- [ ] **Step 4: `src/app/billing/billing-actions.tsx`** (client component — os botões precisam de `onClick`):
+- [ ] **Step 5: `src/app/billing/billing-actions.tsx`** (client component — os botões precisam de `onClick`):
 
 ```tsx
 "use client";
@@ -1327,7 +1342,7 @@ export function BillingActions({ status }: { status: string }) {
 }
 ```
 
-- [ ] **Step 5: i18n** — adicionar o namespace `Billing` em `messages/en.json`, `messages/ko.json` **e** `messages/pt-BR.json` (os três — `messages.test.ts` exige paridade nos três desde a sessão anterior):
+- [ ] **Step 6: i18n** — adicionar o namespace `Billing` em `messages/en.json`, `messages/ko.json` **e** `messages/pt-BR.json` (os três — `messages.test.ts` exige paridade nos três desde a sessão anterior):
 
 `en.json`:
 ```json
@@ -1394,12 +1409,12 @@ export function BillingActions({ status }: { status: string }) {
 
 Inserir cada bloco como uma chave de topo nova (irmã de `"Settings"`), respeitando a vírgula do JSON.
 
-- [ ] **Step 6:** `npx vitest run src/i18n/` → verde (paridade + ICU). `npm run typecheck && npm run lint && npm run build`. `npx vitest run` (suíte inteira) → 0 falhas.
+- [ ] **Step 7:** `npx vitest run src/i18n/` → verde (paridade + ICU). `npm run typecheck && npm run lint && npm run build`. `npx vitest run` (suíte inteira) → 0 falhas.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
-git add "src/app/(dashboard)/layout.tsx" src/app/billing src/lib/auth/roles.ts messages/en.json messages/ko.json messages/pt-BR.json
+git add "src/app/(dashboard)/layout.tsx" src/app/billing src/lib/auth/roles.ts src/lib/auth/roles.test.ts messages/en.json messages/ko.json messages/pt-BR.json
 git commit -m "feat(billing): dashboard block gate + /billing page"
 ```
 
@@ -1415,7 +1430,7 @@ git commit -m "feat(billing): dashboard block gate + /billing page"
 - §3.5 cancel → T5 ✓
 - §3.6 webhook → T6 ✓
 - §3.7 gate → T4 (API) + T7 (layout) ✓
-- §3.8 tela `/billing` → T7 ✓ (localização corrigida pra `src/app/billing/`, fora do grupo `(dashboard)` — ver nota na T7 Step 2)
+- §3.8 tela `/billing` → T7 ✓ (localização corrigida pra `src/app/billing/`, fora do grupo `(dashboard)` — ver nota na T7 Step 3)
 - §5 "confirmar na prática" → comentários inline em T3 (header `access_token`) e T6 (header do webhook, nomes de evento) ✓
 
 **2. Placeholders:** os itens "confirmar na prática" são forward-refs deliberados (mesmo padrão UAZAPI), cada um com fallback claro (erro lançado com a mensagem do Asaas, evento desconhecido logado e ignorado) — não bloqueiam o smoke, só precisam de confirmação contra o sandbox real.

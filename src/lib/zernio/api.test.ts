@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { sendZernioText, sendZernioMedia, listZernioTemplates } from './api'
+import {
+  sendZernioText,
+  sendZernioMedia,
+  listZernioTemplates,
+  deleteZernioTemplate,
+} from './api'
 import { SendMessageError } from '@/lib/messaging/types'
 
 function okResponse(json: unknown): Response {
@@ -108,6 +113,31 @@ describe('zernioFetch (via sendZernioText)', () => {
     const err = await sendZernioText(args).catch((e) => e)
     expect(err).toBeInstanceOf(SendMessageError)
     expect(err.status).toBe(502)
+  })
+})
+
+describe('deleteZernioTemplate', () => {
+  const delArgs = { apiKey: 'key', accountId: 'acct-1', templateName: '1' }
+
+  it('resolves quietly when Zernio reports the template is already gone (404)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'not found' }),
+    } as unknown as Response)
+    await expect(deleteZernioTemplate(delArgs)).resolves.toBeUndefined()
+  })
+
+  it('raises a SendMessageError (not a bare throw) on a real failure', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 401,
+      json: async () => ({ error: 'invalid api key' }),
+    } as unknown as Response)
+    const err = await deleteZernioTemplate(delArgs).catch((e) => e)
+    expect(err).toBeInstanceOf(SendMessageError)
+    expect(err.status).toBe(401)
+    expect(err.message).toBe('invalid api key')
   })
 })
 

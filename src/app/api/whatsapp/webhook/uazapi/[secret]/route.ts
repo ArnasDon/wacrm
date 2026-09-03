@@ -83,23 +83,23 @@ export async function POST(
     return NextResponse.json({ status: 'ignored' }, { status: 200 });
   }
 
-  // Defesa em profundidade: quando o payload traz um `instance` id, ele
-  // tem que bater com o da conexão. NÃO usamos `payload.token` aqui — é a
-  // credencial da instância (o segredo, guardado cifrado em
-  // `row.credential`), nunca igual a `row.uazapi_instance_id`. O envelope
-  // achatado `{ EventType, token }` (sem `instance`) segue em frente: a
-  // defesa real é o hash do segredo na URL.
-  const payloadInstance =
-    payload.instance ?? (payload.data as Json | undefined)?.instance;
-  if (payloadInstance && payloadInstance !== row.uazapi_instance_id) {
-    // TEMP — confirming the real `connection` event shape (payload
-    // logged only on this rejection path). Remove once confirmed.
+  // Defesa em profundidade: `instanceName` é `wacrm-<account_id>` — o
+  // nome dado à instância na criação (createInstance() em
+  // whatsapp/connections/route.ts) — e aparece no topo de TODO evento
+  // real (confirmado via smoke: messages, messages_update, connection).
+  // Reconstituível a partir de `row.account_id`, sem precisar de coluna
+  // nova. O campo `instance` do evento `connection` é um OBJETO
+  // (`{name, status, qrcode?}`), nunca uma string — a checagem antiga
+  // comparava isso direto com `row.uazapi_instance_id` (string) e por
+  // isso rejeitava 100% dos eventos `connection` reais.
+  const expectedInstanceName = `wacrm-${row.account_id as string}`;
+  const payloadInstanceName = payload.instanceName;
+  if (
+    typeof payloadInstanceName === 'string' &&
+    payloadInstanceName !== expectedInstanceName
+  ) {
     console.warn(
-      '[uazapi webhook] instance mismatch — payload:',
-      JSON.stringify(payload)
-    );
-    console.warn(
-      '[uazapi webhook] instance mismatch (payload instance does not match connection)'
+      '[uazapi webhook] instance mismatch (payload instanceName does not match connection)'
     );
     return NextResponse.json({ status: 'ignored' }, { status: 200 });
   }
@@ -180,7 +180,16 @@ async function handleConnectionEvent(
   row: Json,
   payload: Json
 ): Promise<void> {
-  const m = ((payload.data as Json | undefined) ?? payload) as Json;
+  // Real shape (confirmed via 1c-ii smoke): `payload.instance` is an
+  // OBJECT (`{name, status, qrcode?}`), never a bare id — `m` below is
+  // that object, not `payload.data`/`payload` flattened. The phone once
+  // connected is the top-level `payload.owner`; no evidence yet of a
+  // profileName/reason field on this event (fallbacks kept, harmless if
+  // never populated).
+  const instance = payload.instance;
+  const m = (
+    instance && typeof instance === 'object' ? instance : payload
+  ) as Json;
   const raw = String(m.status ?? m.state ?? '').toLowerCase();
   const status = (CONNECTION_STATES as readonly string[]).includes(raw)
     ? raw
@@ -192,14 +201,17 @@ async function handleConnectionEvent(
   const patch: Json = { status };
   if (status === 'connected') {
     patch.display_phone = firstNonEmpty(
+      payload.owner,
       m.phone,
       (m.jid as Json | undefined)?.user
     );
     patch.profile_name = firstNonEmpty(m.profileName, m.pushName);
     patch.last_connection_error = null;
   } else {
-    patch.last_connection_error =
-      (m.reason as string) ?? (m.lastDisconnectReason as string) ?? null;
+    patch.last_connection_error = firstNonEmpty(
+      m.reason,
+      m.lastDisconnectReason
+    );
   }
   const { error } = await db
     .from('whatsapp_connections')

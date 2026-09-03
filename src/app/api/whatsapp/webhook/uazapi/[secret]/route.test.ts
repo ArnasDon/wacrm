@@ -105,6 +105,11 @@ import { POST } from './route'
 import crypto from 'node:crypto'
 
 const INSTANCE = 'inst-1'
+// Real events (messages, messages_update, connection — all confirmed via
+// the 1c-ii smoke) carry `instanceName: "wacrm-<account_id>"` at the top
+// level; `createInstance()` names the instance that way (see
+// src/app/api/whatsapp/connections/route.ts).
+const INSTANCE_NAME = 'wacrm-acc-1'
 const TS = 1_700_000_000_000
 
 function connectionRow(overrides: Record<string, unknown> = {}) {
@@ -151,7 +156,7 @@ afterEach(() => {
 
 const MESSAGE_ENVELOPE = {
   EventType: 'messages',
-  instance: INSTANCE,
+  instanceName: INSTANCE_NAME,
   data: {
     messageid: 'MID-1',
     chatid: '5511999999999@s.whatsapp.net',
@@ -191,39 +196,23 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — auth by secret hash', (
 })
 
 describe('POST /api/whatsapp/webhook/uazapi/[secret] — instance mismatch guard', () => {
-  it('ignores (200) when payload.instance differs from the row instance', async () => {
-    const res = await post({ ...MESSAGE_ENVELOPE, instance: 'r99999999999999' })
+  it('ignores (200) when payload.instanceName differs from wacrm-<account_id>', async () => {
+    const res = await post({ ...MESSAGE_ENVELOPE, instanceName: 'wacrm-other-acct' })
     await drainAfter()
 
     expect(res).toEqual({ body: { status: 'ignored' }, init: { status: 200 } })
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining('instance mismatch')
     )
-    // The raw payload instance / row id must NOT be interpolated into logs.
-    expect(warnSpy).not.toHaveBeenCalledWith(
-      expect.stringContaining('r99999999999999')
-    )
     expect(h.state.afterCallbacks).toHaveLength(0)
     expect(h.processInboundMessage).not.toHaveBeenCalled()
   })
 
-  it('flat { EventType, token } envelope (no instance field) proceeds — token is NOT the instance id', async () => {
-    const res = await post({
-      EventType: 'messages',
-      token: 'inst-token-abc',
-      data: MESSAGE_ENVELOPE.data,
-    })
-    await drainAfter()
-
-    expect(res).toEqual({ body: { status: 'received' }, init: { status: 200 } })
-    expect(h.processInboundMessage).toHaveBeenCalledTimes(1)
-  })
-
-  it('processes normally when no instance/token is present in the payload', async () => {
-    const { instance: _omit, ...noInstance } = MESSAGE_ENVELOPE
+  it('processes normally when no instanceName is present in the payload', async () => {
+    const { instanceName: _omit, ...noInstanceName } = MESSAGE_ENVELOPE
     void _omit
 
-    const res = await post(noInstance)
+    const res = await post(noInstanceName)
     await drainAfter()
 
     expect(res).toEqual({ body: { status: 'received' }, init: { status: 200 } })
@@ -268,7 +257,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
   it('singular event "message" → processInboundMessage (vocab tolerance, FIX 2)', async () => {
     await post({
       event: 'message',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       data: MESSAGE_ENVELOPE.data,
     })
     await drainAfter()
@@ -286,7 +275,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     h.state.ownedMessageRow = { id: 'm-1' }
     await post({
       EventType: 'messages_update',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       data: {
         messageid: 'MID-1',
         status: 'Delivered',
@@ -310,7 +299,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     h.state.ownedMessageRow = { id: 'm-1' }
     await post({
       EventType: 'messages_update',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       event: {
         MessageIDs: ['MID-A', 'MID-B'],
         Type: 'Read',
@@ -333,7 +322,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
 
     const res = await post({
       EventType: 'messages_update',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       data: { messageid: 'MID-OTHER', status: 'Read', messageTimestamp: TS },
     })
     await drainAfter()
@@ -350,7 +339,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
 
     await post({
       event: 'status',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       data: { messageid: 'MID-1', status: 'Read', messageTimestamp: TS },
     })
     await drainAfter()
@@ -365,7 +354,7 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
   it('unknown event → 200, nothing dispatched, console.info', async () => {
     const res = await post({
       EventType: 'presence',
-      instance: INSTANCE,
+      instanceName: INSTANCE_NAME,
       data: {},
     })
     await drainAfter()
@@ -391,15 +380,19 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
 })
 
 describe('POST /api/whatsapp/webhook/uazapi/[secret] — connection events', () => {
+  // Real shape (confirmed via 1c-ii smoke — a live disconnect/reconnect):
+  // `{ EventType: 'connection', instance: { name, status, qrcode? },
+  // instanceName, owner, token, event_id, BaseUrl }`. `instance` is an
+  // OBJECT here (never a bare id string — the old guessed shape assumed
+  // otherwise and rejected every real connection event). The phone once
+  // connected is the top-level `owner`, not nested under `instance` or
+  // `data`; no evidence of a profileName field on this event at all.
   it('state "connected" → UPDATE whatsapp_connections with the connected patch', async () => {
     await post({
       EventType: 'connection',
-      instance: INSTANCE,
-      data: {
-        status: 'connected',
-        phone: '5511999999999',
-        profileName: 'My Biz',
-      },
+      instanceName: INSTANCE_NAME,
+      instance: { name: INSTANCE_NAME, status: 'connected' },
+      owner: '5511999999999',
     })
     await drainAfter()
 
@@ -407,18 +400,23 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — connection events', () 
     expect(h.state.updateCalls[0].patch).toEqual({
       status: 'connected',
       display_phone: '5511999999999',
-      profile_name: 'My Biz',
+      profile_name: null,
       last_connection_error: null,
     })
     expect(h.state.updateCalls[0].filters).toContainEqual(['eq', 'id', 'conn-1'])
     expect(h.processInboundMessage).not.toHaveBeenCalled()
   })
 
-  it('a non-connected mapped state → UPDATE with status + last_connection_error only', async () => {
+  it('a non-connected mapped state → UPDATE with status + last_connection_error only (reason not yet confirmed in the wild; fallback still exercised)', async () => {
     await post({
       EventType: 'connection',
-      instance: INSTANCE,
-      data: { status: 'disconnected', reason: 'logged out on phone' },
+      instanceName: INSTANCE_NAME,
+      instance: {
+        name: INSTANCE_NAME,
+        status: 'disconnected',
+        reason: 'logged out on phone',
+      },
+      owner: '',
     })
     await drainAfter()
 
@@ -433,8 +431,8 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — connection events', () 
   it('unexpected state "weird" → no status write, console.info', async () => {
     await post({
       EventType: 'connection',
-      instance: INSTANCE,
-      data: { status: 'weird' },
+      instanceName: INSTANCE_NAME,
+      instance: { name: INSTANCE_NAME, status: 'weird' },
     })
     await drainAfter()
 

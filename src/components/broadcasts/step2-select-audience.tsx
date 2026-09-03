@@ -1,8 +1,9 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { CustomField, Tag } from '@/types';
+import { parseContactCsv } from '@/lib/contacts/parse-contact-csv';
 import { Button } from '@/components/ui/button';
 import {
   Users,
@@ -91,6 +92,56 @@ export function Step2SelectAudience({
   const [loadingFields, setLoadingFields] = useState(false);
   const [estimatedCount, setEstimatedCount] = useState<number | null>(null);
   const [loadingCount, setLoadingCount] = useState(false);
+  const [csvError, setCsvError] = useState<string | null>(null);
+  const [csvFileName, setCsvFileName] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
+
+  // Reading a CSV file → { phone, name }[] for the `csv` audience type.
+  // Server side (use-broadcast-sending.ts `upsertCsvContacts`) turns
+  // these raw pairs into real contacts.id rows before inserting
+  // broadcast_recipients.
+  async function handleCsvFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    // Allow re-picking the same file after an error/replace.
+    e.target.value = '';
+    if (!file) return;
+
+    setCsvError(null);
+    setCsvFileName(file.name);
+
+    let text: string;
+    try {
+      text = await file.text();
+    } catch {
+      setCsvError(t('selectAudience.errorCsvParse'));
+      setCsvFileName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      return;
+    }
+
+    const headerCells = (text.split(/\r?\n/)[0] ?? '')
+      .split(',')
+      .map((h) => h.trim().toLowerCase().replace(/["']/g, ''));
+    if (!headerCells.includes('phone')) {
+      setCsvError(t('selectAudience.errorCsvMissingPhone'));
+      setCsvFileName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      return;
+    }
+
+    const { rows } = parseContactCsv(text);
+    if (rows.length === 0) {
+      setCsvError(t('selectAudience.errorCsvParse'));
+      setCsvFileName(null);
+      onUpdate({ ...audience, csvContacts: undefined });
+      return;
+    }
+
+    onUpdate({
+      ...audience,
+      csvContacts: rows.map((r) => ({ phone: r.phone, name: r.name })),
+    });
+  }
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -212,6 +263,15 @@ export function Step2SelectAudience({
   useEffect(() => {
     fetchEstimatedCount();
   }, [fetchEstimatedCount]);
+
+  // Drop the CSV file hint/error when the user leaves the CSV option
+  // (switching away also wipes `audience.csvContacts` in the handler).
+  useEffect(() => {
+    if (audience.type !== 'csv') {
+      setCsvError(null);
+      setCsvFileName(null);
+    }
+  }, [audience.type]);
 
   function toggleTag(tagId: string) {
     const current = audience.tagIds ?? [];
@@ -387,6 +447,48 @@ export function Step2SelectAudience({
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
+          )}
+        </div>
+      )}
+
+      {audience.type === 'csv' && (
+        <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
+          <p className="text-sm font-medium text-foreground">
+            {t('selectAudience.method.csv')}
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {t('selectAudience.csvFormatDesc')}
+          </p>
+
+          <input
+            ref={csvInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            onChange={handleCsvFile}
+            className="hidden"
+          />
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => csvInputRef.current?.click()}
+            className="border-border text-foreground"
+          >
+            <Upload className="h-4 w-4" />
+            {t('selectAudience.uploadCsv')}
+          </Button>
+
+          {csvFileName && (
+            <p className="text-xs text-muted-foreground">{csvFileName}</p>
+          )}
+          {csvError && (
+            <p className="text-xs text-red-400">{csvError}</p>
+          )}
+          {audience.csvContacts && audience.csvContacts.length > 0 && (
+            <p className="text-xs text-primary">
+              {t('selectAudience.csvContactsFound', {
+                count: audience.csvContacts.length,
+              })}
+            </p>
           )}
         </div>
       )}

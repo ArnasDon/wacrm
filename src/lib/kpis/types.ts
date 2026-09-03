@@ -81,6 +81,36 @@ export interface ContactExportRow {
   stage: string | null
 }
 
+/** Operational "trial" metrics — the ones the Plan Pro proposal's
+ *  "Impacto esperado" page lists that the sales KPIs above don't cover.
+ *  All derived from `messages` / `ai_followup_log` / `conversations`,
+ *  no new schema. Measured over conversations/nudges/handoffs that were
+ *  active *within* the window (not "opened in"), which keeps every
+ *  query bounded by the window size. */
+export interface TrialMetrics {
+  /** Conversations with at least one message in the window. */
+  conversationsActive: number
+  /** …of those, how many got an agent/bot reply in the window. */
+  conversationsAnswered: number
+  /** Median minutes from a conversation's first inbound to its first
+   *  outbound, over answered conversations. `null` when none. */
+  medianFirstResponseMin: number | null
+  /** Same for the previous window — feeds the delta. */
+  prevMedianFirstResponseMin: number | null
+  /** Follow-up nudges the sweeper actually sent (error-free) in the window. */
+  followupsSent: number
+  prevFollowupsSent: number
+  /** Distinct conversations where the customer replied after a nudge. */
+  opportunitiesRecovered: number
+  /** Conversations handed to a human in the window. */
+  handoffs: number
+  /** …of those, how many where the contact's deal later advanced/won. */
+  handoffsAdvanced: number
+  /** Share (0–100) of the window's leads that have at least one
+   *  captured custom-field value ("brief started"). `null` with no leads. */
+  briefCompletionPct: number | null
+}
+
 /** Everything the KPIs page needs for one render, bundled so the
  *  page component and the Excel exporter both consume the exact same
  *  shape. */
@@ -95,4 +125,5 @@ export interface KpiDataset {
   temperature: TemperatureDistribution
   spendHistory: SpendEntry[]
   currentPeriodSpend: SpendEntry | null
+  trial: TrialMetrics
 }

@@ -1327,6 +1327,22 @@
       "enterSpendHint": "Ingresa el gasto de este período para calcular el CAC.",
       "saveSuccess": "Gasto guardado.",
       "saveFailed": "No se pudo guardar la cifra de gasto."
+    },
+    "trial": {
+      "title": "Métricas de la prueba",
+      "description": "Señales operativas para la prueba de 15 días, medidas sobre la actividad del período seleccionado.",
+      "firstResponse": "Tiempo de primera respuesta",
+      "firstResponseSub": "{answered} de {active} conversaciones respondidas",
+      "firstResponsePrev": "Período anterior: {mins}",
+      "followupsSent": "Seguimientos enviados",
+      "followupsPrev": "Período anterior: {count}",
+      "recovered": "Oportunidades recuperadas",
+      "recoveredSub": "Conversaciones reactivadas por un recordatorio automático",
+      "handoffs": "Derivadas a un asesor",
+      "handoffsSub": "{advanced} avanzaron después",
+      "briefStarted": "Brief iniciado",
+      "briefSub": "Leads con al menos un campo de especificación capturado",
+      "briefNoLeads": "Sin leads en este período"
     }
   },
   "LoginPage": {

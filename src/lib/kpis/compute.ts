@@ -161,3 +161,121 @@ export function conversionRateSeries(
     value: p.value === 0 ? 0 : ((wonByKey.get(p.key) ?? 0) / p.value) * 100,
   }))
 }
+
+// ============================================================
+// Trial / operational metrics (see TrialMetrics in ./types). Pure —
+// callers in queries.ts do the fetching and hand raw rows in here.
+// ============================================================
+
+/** First inbound + first outbound instant per conversation, from a
+ *  flat message list. "Outbound" is agent or bot. Missing side stays
+ *  null (a conversation with only inbound, or only outbound). */
+export function conversationFirstTimes(
+  rows: { conversation_id: string; sender_type: string; created_at: string }[],
+): Map<string, { firstInMs: number | null; firstOutMs: number | null }> {
+  const out = new Map<string, { firstInMs: number | null; firstOutMs: number | null }>()
+  for (const r of rows) {
+    const ts = new Date(r.created_at).getTime()
+    if (!Number.isFinite(ts)) continue
+    const cur = out.get(r.conversation_id) ?? { firstInMs: null, firstOutMs: null }
+    if (r.sender_type === 'customer') {
+      if (cur.firstInMs === null || ts < cur.firstInMs) cur.firstInMs = ts
+    } else if (r.sender_type === 'agent' || r.sender_type === 'bot') {
+      if (cur.firstOutMs === null || ts < cur.firstOutMs) cur.firstOutMs = ts
+    }
+    out.set(r.conversation_id, cur)
+  }
+  return out
+}
+
+/** Median minutes between first inbound and first outbound, over
+ *  conversations that were actually answered (outbound strictly after
+ *  inbound). `null` when none qualify. */
+export function medianFirstResponseMinutes(
+  firstTimes: Map<string, { firstInMs: number | null; firstOutMs: number | null }>,
+): number | null {
+  const gaps: number[] = []
+  for (const { firstInMs, firstOutMs } of firstTimes.values()) {
+    if (firstInMs === null || firstOutMs === null) continue
+    if (firstOutMs <= firstInMs) continue
+    gaps.push((firstOutMs - firstInMs) / 60_000)
+  }
+  if (gaps.length === 0) return null
+  gaps.sort((a, b) => a - b)
+  const mid = Math.floor(gaps.length / 2)
+  return gaps.length % 2 === 0 ? (gaps[mid - 1] + gaps[mid]) / 2 : gaps[mid]
+}
+
+/** How many conversations got an agent/bot reply after an inbound. */
+export function answeredConversationCount(
+  firstTimes: Map<string, { firstInMs: number | null; firstOutMs: number | null }>,
+): number {
+  let n = 0
+  for (const { firstInMs, firstOutMs } of firstTimes.values()) {
+    if (firstInMs !== null && firstOutMs !== null && firstOutMs > firstInMs) n += 1
+  }
+  return n
+}
+
+/** Distinct conversations where a customer message landed *after* one
+ *  of that conversation's follow-up nudges — i.e. the nudge revived it. */
+export function recoveredConversationCount(
+  followups: { conversation_id: string; sent_at: string }[],
+  customerMessages: { conversation_id: string; created_at: string }[],
+): number {
+  // Earliest nudge per conversation is the bar to clear.
+  const earliestNudge = new Map<string, number>()
+  for (const f of followups) {
+    const ts = new Date(f.sent_at).getTime()
+    if (!Number.isFinite(ts)) continue
+    const cur = earliestNudge.get(f.conversation_id)
+    if (cur === undefined || ts < cur) earliestNudge.set(f.conversation_id, ts)
+  }
+  const recovered = new Set<string>()
+  for (const m of customerMessages) {
+    const nudgeTs = earliestNudge.get(m.conversation_id)
+    if (nudgeTs === undefined) continue
+    if (new Date(m.created_at).getTime() > nudgeTs) recovered.add(m.conversation_id)
+  }
+  return recovered.size
+}
+
+/** Handoffs whose contact has a deal that advanced or was won *after*
+ *  the handoff instant — a proxy for "the derivation led somewhere". */
+export function handoffsAdvancedCount(
+  handoffs: { contact_id: string | null; ai_handoff_at: string }[],
+  deals: { contact_id: string; status: string; won_at: string | null; updated_at: string }[],
+): number {
+  const dealsByContact = new Map<string, typeof deals>()
+  for (const d of deals) {
+    const arr = dealsByContact.get(d.contact_id) ?? []
+    arr.push(d)
+    dealsByContact.set(d.contact_id, arr)
+  }
+  let n = 0
+  for (const h of handoffs) {
+    if (!h.contact_id) continue
+    const handoffTs = new Date(h.ai_handoff_at).getTime()
+    const contactDeals = dealsByContact.get(h.contact_id) ?? []
+    const advanced = contactDeals.some((d) => {
+      if (d.status === 'won') return true
+      const wonTs = d.won_at ? new Date(d.won_at).getTime() : null
+      if (wonTs !== null && wonTs > handoffTs) return true
+      return new Date(d.updated_at).getTime() > handoffTs
+    })
+    if (advanced) n += 1
+  }
+  return n
+}
+
+/** Share (0–100) of `leadIds` that appear in `contactIdsWithValues`.
+ *  `null` when there are no leads to measure. */
+export function briefCompletionPercent(
+  leadIds: string[],
+  contactIdsWithValues: Set<string>,
+): number | null {
+  if (leadIds.length === 0) return null
+  let filled = 0
+  for (const id of leadIds) if (contactIdsWithValues.has(id)) filled += 1
+  return (filled / leadIds.length) * 100
+}

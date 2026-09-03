@@ -218,6 +218,22 @@
       "enterSpendHint": "Enter this period's spend to calculate CAC.",
       "saveSuccess": "Spend saved.",
       "saveFailed": "Couldn't save the spend figure."
+    },
+    "trial": {
+      "title": "Trial metrics",
+      "description": "Operational signals for the 15-day trial, measured over activity in the selected period.",
+      "firstResponse": "First response time",
+      "firstResponseSub": "{answered} of {active} conversations answered",
+      "firstResponsePrev": "Previous period: {mins}",
+      "followupsSent": "Follow-ups sent",
+      "followupsPrev": "Previous period: {count}",
+      "recovered": "Opportunities recovered",
+      "recoveredSub": "Conversations revived by an automatic nudge",
+      "handoffs": "Handed to an advisor",
+      "handoffsSub": "{advanced} advanced afterwards",
+      "briefStarted": "Brief started",
+      "briefSub": "Leads with at least one spec field captured",
+      "briefNoLeads": "No leads in this period"
     }
   },
   "Inbox": {

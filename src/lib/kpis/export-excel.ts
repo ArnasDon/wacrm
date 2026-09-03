@@ -164,6 +164,31 @@ export async function buildKpiWorkbook(
     })
   }
 
+  // --- Trial metrics --------------------------------------------------
+  const t = data.trial
+  const trialSheet = wb.addWorksheet('Trial metrics')
+  trialSheet.columns = [
+    { header: 'Metric', key: 'metric', width: 34 },
+    { header: 'Current', key: 'current', width: 18 },
+    { header: 'Previous period', key: 'previous', width: 18 },
+  ]
+  styleHeaderRow(trialSheet.getRow(1))
+  trialSheet.addRow({
+    metric: 'Median first response (min)',
+    current: t.medianFirstResponseMin != null ? Math.round(t.medianFirstResponseMin * 10) / 10 : '—',
+    previous: t.prevMedianFirstResponseMin != null ? Math.round(t.prevMedianFirstResponseMin * 10) / 10 : '—',
+  })
+  trialSheet.addRow({ metric: 'Conversations answered / active', current: `${t.conversationsAnswered} / ${t.conversationsActive}`, previous: '' })
+  trialSheet.addRow({ metric: 'Follow-ups sent', current: t.followupsSent, previous: t.prevFollowupsSent })
+  trialSheet.addRow({ metric: 'Opportunities recovered', current: t.opportunitiesRecovered, previous: '' })
+  trialSheet.addRow({ metric: 'Handed to an advisor', current: t.handoffs, previous: '' })
+  trialSheet.addRow({ metric: '…of those, advanced afterwards', current: t.handoffsAdvanced, previous: '' })
+  trialSheet.addRow({
+    metric: 'Leads with a spec field captured (%)',
+    current: t.briefCompletionPct != null ? Math.round(t.briefCompletionPct) : '—',
+    previous: '',
+  })
+
   return wb
 }
 

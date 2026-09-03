@@ -218,6 +218,22 @@
       "enterSpendHint": "CAC를 계산하려면 이번 기간의 지출을 입력하세요.",
       "saveSuccess": "지출이 저장되었습니다.",
       "saveFailed": "지출 금액을 저장하지 못했습니다."
+    },
+    "trial": {
+      "title": "체험 지표",
+      "description": "15일 체험을 위한 운영 지표로, 선택한 기간의 활동을 기준으로 측정합니다.",
+      "firstResponse": "첫 응답 시간",
+      "firstResponseSub": "대화 {active}건 중 {answered}건 응답",
+      "firstResponsePrev": "이전 기간: {mins}",
+      "followupsSent": "발송된 후속 메시지",
+      "followupsPrev": "이전 기간: {count}",
+      "recovered": "회복된 기회",
+      "recoveredSub": "자동 알림으로 되살아난 대화",
+      "handoffs": "상담원에게 인계됨",
+      "handoffsSub": "이후 {advanced}건 진전",
+      "briefStarted": "브리프 시작됨",
+      "briefSub": "사양 필드를 하나 이상 수집한 리드",
+      "briefNoLeads": "이 기간에 리드 없음"
     }
   },
   "Inbox": {

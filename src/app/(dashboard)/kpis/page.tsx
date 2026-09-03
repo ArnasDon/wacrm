@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { Download, Flame, Loader2, Percent, UserPlus, Wallet } from 'lucide-react'
+import { Bell, Download, Flame, Loader2, Percent, Repeat2, Timer, UserPlus, UsersRound, Wallet } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
@@ -11,6 +11,7 @@ import { formatCurrency } from '@/lib/currency'
 import {
   daysAgoStart,
   formatDateRangeLabel,
+  formatMinutesLabel,
   granularityForRangeDays,
   startOfLocalDay,
 } from '@/lib/dashboard/date-utils'
@@ -346,6 +347,56 @@ export default function KpisPage() {
             />
           )}
         </ChartSection>
+      </div>
+
+      {/* Métricas operativas de la prueba */}
+      <div className="space-y-3">
+        <div>
+          <h2 className="text-lg font-semibold text-foreground">{t('trial.title')}</h2>
+          <p className="mt-1 text-sm text-muted-foreground">{t('trial.description')}</p>
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {loading || !dataset ? (
+            Array.from({ length: 5 }).map((_, i) => <SkeletonCard key={i} />)
+          ) : (
+            <>
+              <MetricCard
+                title={t('trial.firstResponse')}
+                value={formatMinutesLabel(dataset.trial.medianFirstResponseMin)}
+                icon={Timer}
+                subtitle={
+                  dataset.trial.prevMedianFirstResponseMin != null
+                    ? t('trial.firstResponsePrev', { mins: formatMinutesLabel(dataset.trial.prevMedianFirstResponseMin) })
+                    : t('trial.firstResponseSub', { answered: dataset.trial.conversationsAnswered, active: dataset.trial.conversationsActive })
+                }
+              />
+              <MetricCard
+                title={t('trial.followupsSent')}
+                value={dataset.trial.followupsSent.toLocaleString()}
+                icon={Bell}
+                subtitle={t('trial.followupsPrev', { count: dataset.trial.prevFollowupsSent })}
+              />
+              <MetricCard
+                title={t('trial.recovered')}
+                value={dataset.trial.opportunitiesRecovered.toLocaleString()}
+                icon={Repeat2}
+                subtitle={t('trial.recoveredSub')}
+              />
+              <MetricCard
+                title={t('trial.handoffs')}
+                value={dataset.trial.handoffs.toLocaleString()}
+                icon={UsersRound}
+                subtitle={t('trial.handoffsSub', { advanced: dataset.trial.handoffsAdvanced })}
+              />
+              <MetricCard
+                title={t('trial.briefStarted')}
+                value={dataset.trial.briefCompletionPct == null ? '—' : `${Math.round(dataset.trial.briefCompletionPct)}%`}
+                icon={UserPlus}
+                subtitle={dataset.trial.briefCompletionPct == null ? t('trial.briefNoLeads') : t('trial.briefSub')}
+              />
+            </>
+          )}
+        </div>
       </div>
 
       {/* CAC */}

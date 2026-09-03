@@ -9,6 +9,33 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+> **Migration required:** apply `supabase/migrations/041_peek_invitation_context.sql`
+> (widens the `peek_invitation` RPC's payload with `invited_by`,
+> `invite_label` and `account_named_after_owner`; no schema changes).
+> The join page degrades gracefully until it's applied — it just omits
+> the new lines.
+
+### Fixed
+
+- **"You're invited to <a person's name>" on every invite link.** The
+  join page showed only `accounts.name`, which is seeded from the
+  account owner's own full name at signup and had no UI to change, so
+  every invite an account sent read identically — and looked like it
+  was addressed to the owner rather than sent by them. The page now
+  says "You're invited to **join** <workspace>" — and, while the
+  workspace still carries the owner's name, "join **<Name>'s
+  workspace**" — then names the teammate who created the link and
+  shows the label the admin attached to it, so two invites from the
+  same workspace read differently.
+
+### Added
+
+- **Rename your workspace.** Settings → Team members now has a
+  **Workspace name** field (admin+) with a live preview of the invite
+  headline. `PATCH /api/account` already existed; nothing called it.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

@@ -1328,6 +1328,18 @@
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
       "whatsappMessage": "Join {accountName} on wacrm using this link (valid for {expiresInDays} days): {url}"
     },
+    "workspace": {
+      "title": "Workspace name",
+      "description": "This is the name invitees see on the join page and teammates see across the app. New workspaces are named after whoever created them, so rename it to your team or business name \u2014 otherwise every invite you send reads like a personal one.",
+      "nameLabel": "Workspace name",
+      "placeholder": "e.g. Acme Repairs",
+      "save": "Save",
+      "saving": "Saving...",
+      "saved": "Workspace renamed to {name}",
+      "failed": "Couldn't rename the workspace",
+      "preview": "Invite links will read: \u201cYou're invited to join {name}\u201d",
+      "previewFallback": "your workspace"
+    },
     "tagsAndFields": {
       "title": "Fields & tags",
       "description": "Two ways to organize contacts: colour-coded tags for quick grouping, and custom fields for structured data.",

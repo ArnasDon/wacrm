@@ -87,6 +87,7 @@ import {
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
+import { WorkspaceNameCard } from './workspace-name-card';
 import { ROLE_META } from './role-meta';
 
 interface Member {
@@ -372,6 +373,14 @@ export function MembersTab() {
           </RequireRole>
         }
       />
+
+      {/* Workspace identity — admin+. Sits above the roster because
+          it is what invitees see on the join page ("You're invited to
+          join <name>"), and that string is otherwise invisible from
+          inside the app. */}
+      <RequireRole min="admin">
+        <WorkspaceNameCard />
+      </RequireRole>
 
       {/* Live presence summary across the roster. Updates without a
           full refresh as heartbeats and the local re-derive tick land. */}

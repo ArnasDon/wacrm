@@ -31,6 +31,7 @@ import {
   Loader2,
   MailX,
   ShieldCheck,
+  Tag,
   UsersRound,
 } from 'lucide-react';
 
@@ -57,6 +58,26 @@ interface PeekOk {
   account_name: string;
   role: 'admin' | 'agent' | 'viewer';
   expires_at: string;
+  /**
+   * Who created the link (migration 041). Null when that teammate's
+   * profile is gone, or when the deployment hasn't run 041 yet — the
+   * "Invited by" line is simply omitted in both cases.
+   */
+  invited_by?: string | null;
+  /**
+   * The admin's own note for this invite ("Sara — support team").
+   * Present per-invite, so it is what makes two invites from the
+   * same workspace read differently. Optional for the same
+   * pre-migration reason as `invited_by`.
+   */
+  invite_label?: string | null;
+  /**
+   * True when nobody has renamed the workspace, so `account_name` is
+   * still the owner's own name (migration 041). The heading then reads
+   * "join <Name>'s workspace" rather than the bare "join <Name>",
+   * which looks like the invite is addressed to that person.
+   */
+  account_named_after_owner?: boolean;
 }
 interface PeekFail {
   ok: false;
@@ -322,16 +343,40 @@ export function JoinClient({
   }
 
   // ----- Peek OK -----
+  //
+  // `account_name` is the WORKSPACE you're joining, not you and not
+  // the person who invited you — but it is seeded from the owner's
+  // own name at signup, so on a workspace nobody has renamed it
+  // reads as a personal name. Three guards against the resulting
+  // "You're invited to <some stranger>" confusion:
+  //   - say "invited to join …", never the bare "invited to <name>",
+  //   - possessive the name while it is still the owner's own, so the
+  //     heading names a workspace rather than a person, and
+  //   - print the per-invite context (who sent it, who it was made
+  //     for) underneath, so two invites never read identically.
+  const workspaceName = peek.account_name?.trim() || 'this workspace';
+  const workspaceHeading = peek.account_named_after_owner
+    ? `${workspaceName}’s workspace`
+    : workspaceName;
+  const invitedBy = peek.invited_by?.trim() || null;
+  const inviteLabel = peek.invite_label?.trim() || null;
+
   const inviteHeader = (
     <CardHeader className="items-center text-center">
       <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
         <UsersRound className="h-6 w-6 text-primary" />
       </div>
       <CardTitle className="text-xl text-foreground">
-        You&apos;re invited to{' '}
-        <span className="text-primary">{peek.account_name}</span>
+        You&apos;re invited to join{' '}
+        <span className="text-primary">{workspaceHeading}</span>
       </CardTitle>
       <CardDescription className="text-muted-foreground">
+        {invitedBy && (
+          <>
+            <span className="text-foreground">{invitedBy}</span> sent you this
+            invite.{' '}
+          </>
+        )}
         You&apos;ll join as{' '}
         <span className="inline-flex items-center gap-1 text-foreground">
           <ShieldCheck className="size-3.5 text-primary" />
@@ -345,6 +390,19 @@ export function JoinClient({
         })}
         .
       </CardDescription>
+      {/* The label is the admin's own note for this link ("Sara —
+          support team"). Showing it lets the recipient confirm the
+          link was meant for them before they burn it — a one-time
+          token accepted by the wrong person can't be handed back. */}
+      {inviteLabel && (
+        <p className="mt-2 flex items-center justify-center gap-1.5 text-xs text-muted-foreground">
+          <Tag className="size-3.5 shrink-0" />
+          <span>
+            This link was created for{' '}
+            <span className="text-foreground">{inviteLabel}</span>
+          </span>
+        </p>
+      )}
     </CardHeader>
   );
 
@@ -374,7 +432,7 @@ export function JoinClient({
             </Button>
             <p className="text-center text-xs text-muted-foreground">
               Accepting moves your login into{' '}
-              <span className="text-muted-foreground">{peek.account_name}</span>. Your
+              <span className="text-muted-foreground">{workspaceHeading}</span>. Your
               empty personal account from signup will be cleaned up.
             </p>
           </CardContent>
@@ -394,7 +452,7 @@ export function JoinClient({
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2 text-popover-foreground">
                 <AlertTriangle className="size-4 text-amber-400" />
-                Can&apos;t join {peek.account_name} with this account
+                Can&apos;t join {workspaceHeading} with this account
               </DialogTitle>
               <DialogDescription className="text-muted-foreground">
                 {conflictMessage}
@@ -403,7 +461,7 @@ export function JoinClient({
             <div className="space-y-2 py-2 text-xs text-muted-foreground">
               <p>
                 To join{' '}
-                <span className="text-popover-foreground">{peek.account_name}</span>,
+                <span className="text-popover-foreground">{workspaceHeading}</span>,
                 sign out and sign up again with a different email address.
                 The invite link stays valid as long as it hasn&apos;t
                 expired.

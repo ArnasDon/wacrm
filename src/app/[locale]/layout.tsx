@@ -17,6 +17,11 @@ import {
   STORAGE_KEY,
   THEME_IDS,
 } from "@/lib/themes";
+import {
+  DEFAULT_SIDEBAR_STATE,
+  SIDEBAR_STATES,
+  SIDEBAR_STORAGE_KEY,
+} from "@/lib/sidebar";
 
 const inter = Inter({
   variable: "--font-sans",
@@ -46,8 +51,8 @@ export const viewport: Viewport = {
 };
 
 // Inline boot script — runs before React hydrates so the user's
-// chosen accent (data-theme) AND mode (data-mode) are on the <html>
-// element before first paint.
+// chosen accent (data-theme), mode (data-mode) AND sidebar width
+// (data-sidebar-state) are on the <html> element before first paint.
 const THEME_BOOT_SCRIPT = `
 (function(){
   var d = document.documentElement;
@@ -63,9 +68,17 @@ const THEME_BOOT_SCRIPT = `
     var MODES = ${JSON.stringify(MODES)};
     var savedMode = localStorage.getItem(MODE_KEY);
     d.dataset.mode = MODES.indexOf(savedMode) !== -1 ? savedMode : MODE_DEFAULT;
+
+    var SIDEBAR_KEY = ${JSON.stringify(SIDEBAR_STORAGE_KEY)};
+    var SIDEBAR_DEFAULT = ${JSON.stringify(DEFAULT_SIDEBAR_STATE)};
+    var SIDEBARS = ${JSON.stringify(SIDEBAR_STATES)};
+    var savedSidebar = localStorage.getItem(SIDEBAR_KEY);
+    d.dataset.sidebarState =
+      SIDEBARS.indexOf(savedSidebar) !== -1 ? savedSidebar : SIDEBAR_DEFAULT;
   } catch (_e) {
     d.dataset.theme = ${JSON.stringify(DEFAULT_THEME)};
     d.dataset.mode = ${JSON.stringify(DEFAULT_MODE)};
+    d.dataset.sidebarState = ${JSON.stringify(DEFAULT_SIDEBAR_STATE)};
   }
 })();
 `;
@@ -91,6 +104,7 @@ export default async function LocaleLayout({
       lang={locale}
       data-theme={DEFAULT_THEME}
       data-mode={DEFAULT_MODE}
+      data-sidebar-state={DEFAULT_SIDEBAR_STATE}
       className={`${inter.variable} h-full antialiased`}
       suppressHydrationWarning
     >

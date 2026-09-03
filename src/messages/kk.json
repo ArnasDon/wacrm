@@ -68,6 +68,8 @@
     "brand": "almaCRM Sharapat үшін",
     "profile": "Профиль",
     "signOut": "Шығу",
+    "collapse": "Бүйір панельді жию",
+    "expand": "Бүйір панельді жайу",
     "unreadConversations": "{count} unread {count, plural, =1 {conversation} other {conversations}}",
     "unreadNotifications": "{count} unread {count, plural, =1 {notification} other {notifications}}",
     "title": "CRM Template for WhatsApp",

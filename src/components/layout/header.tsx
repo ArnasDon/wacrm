@@ -4,7 +4,14 @@ import { useTranslations } from "next-intl";
 import { Link } from "@/i18n/navigation";
 import { usePathname } from "@/i18n/navigation";
 import { useAuth } from "@/hooks/use-auth";
-import { LogOut, Menu, Settings as SettingsIcon, User } from "lucide-react";
+import {
+  LogOut,
+  Menu,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Settings as SettingsIcon,
+  User,
+} from "lucide-react";
 import {
   Avatar,
   AvatarFallback,
@@ -41,9 +48,17 @@ function getPageTitleKey(pathname: string): string {
 
 interface HeaderProps {
   onOpenSidebar?: () => void;
+  /** Desktop only — the sidebar is currently an icon rail. */
+  sidebarCollapsed?: boolean;
+  /** Desktop only — collapse/expand the sidebar. */
+  onToggleSidebar?: () => void;
 }
 
-export function Header({ onOpenSidebar }: HeaderProps) {
+export function Header({
+  onOpenSidebar,
+  sidebarCollapsed = false,
+  onToggleSidebar,
+}: HeaderProps) {
   const t = useTranslations();
   const pathname = usePathname();
   const { profile, signOut } = useAuth();
@@ -64,6 +79,28 @@ export function Header({ onOpenSidebar }: HeaderProps) {
           className="flex h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:hidden"
         >
           <Menu className="h-5 w-5" />
+        </button>
+        {/* Desktop counterpart of the mobile drawer button: collapses
+            the sidebar to an icon rail so wide pages (the pipeline
+            kanban above all) get the width back. Same slot as the
+            hamburger so the control never moves between breakpoints. */}
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          aria-label={t(
+            sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse",
+          )}
+          title={`${t(
+            sidebarCollapsed ? "sidebar.expand" : "sidebar.collapse",
+          )} (Ctrl+B)`}
+          aria-expanded={!sidebarCollapsed}
+          className="hidden h-10 w-10 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground lg:flex"
+        >
+          {sidebarCollapsed ? (
+            <PanelLeftOpen className="h-5 w-5" />
+          ) : (
+            <PanelLeftClose className="h-5 w-5" />
+          )}
         </button>
         <h1 className="truncate text-base font-semibold text-foreground sm:text-lg">
           {t(titleKey as string)}

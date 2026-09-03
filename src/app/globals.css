@@ -4,6 +4,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Desktop sidebar rail. The collapsed flag lives on <html>, written by
+   the boot script in src/app/[locale]/layout.tsx before first paint, so
+   the narrow rail is already painted when React hydrates. Always pair
+   this with `lg:` — below that breakpoint the sidebar is a full-width
+   drawer and has to ignore the preference. */
+@custom-variant rail (html[data-sidebar-state="collapsed"] &);
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

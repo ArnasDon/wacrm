@@ -320,6 +320,46 @@ tiempo-de-primera-respuesta a un RPC (hoy el volumen lo permite).
 
 ---
 
+### 2026-09-03 — Paso `create_task` en el motor de automatizaciones
+
+**Estado:** PR #44 fusionado a `main` (`2dff272`). **Sin migración** —
+`automation_steps.step_type` es una columna `TEXT` libre; la tabla `tasks`
+ya existe desde la migración 097.
+
+**Qué resuelve.** La propuesta Plan Pro promete "activa tareas para que la
+oportunidad no quede olvidada". El motor de automatizaciones tenía pasos para
+mover deals, mandar mensajes, webhooks, etc., pero no para **abrir una tarea**.
+Ahora una regla del tipo "brief capturado → crear tarea de seguimiento a las
+24 h" es expresable sin salir del CRM, y con `due_in_hours` la tarea entra al
+cron de recordatorios (Web Push) que ya existía.
+
+**Cómo funciona.** `CreateTaskStepConfig` = `title` + `notes` (ambos
+interpolan `{{ vars.* }}` / `{{ message.text }}`), `assignee` (`''` sin
+asignar / `'author'` = el autor de la automatización / un `user_id` de
+miembro) y `due_in_hours` (`0` o ausente = sin fecha límite, y por tanto sin
+recordatorio). En `engine.ts`, `runStep` resuelve `'author'` al
+`args.automation.user_id`; un `assignee` concreto se valida contra `profiles`
+filtrando por cuenta — si no es miembro, la tarea queda **sin asignar** en vez
+de apuntar a un extraño (mismo guard que `assign_conversation`). El insert a
+`tasks` lleva `account_id` + `created_by` (auditoría) + `contact_id` del
+disparador. La validación de activación (`validate.ts`) exige título y rechaza
+un offset negativo.
+
+**Dónde vive.** `src/types/index.ts` (tipo + unión), `src/lib/automations/`
+(`engine.ts` caso `create_task`, `validate.ts`), `src/components/automations/
+automation-builder.tsx` (tipo de paso nuevo + `TaskAssigneeSelect`),
+`messages/{en,es,ko}.json`.
+
+**Alcance deliberado.** Solo el **paso de automatización**. No se tocó la vía
+"la IA propone una tarea" (`business-actions.ts` / `/api/ai/suggest-action`);
+eso queda como trabajo aparte si se pide.
+
+**Relación con el diagnóstico.** Tercer cierre de hueco del Plan Pro (junto a
+la hoja "Requerimientos" y las métricas de la prueba). Cubre parcialmente
+"seguimiento pendiente" de la sección I.4 / J, resuelto **dentro** de SANDÍA.
+
+---
+
 ## Nota final
 
 Este documento es el diagnóstico de referencia para el proyecto SANDÍA: confirma que **no hay que reconstruir el CRM**, identifica con precisión (archivo por archivo, migración por migración) qué ya sirve, qué hay que ajustar y qué falta, y ordena el trabajo en fases con la seguridad y la multi-tenancy primero. Claude Code debe consultar este documento antes de proponer cambios estructurales al proyecto.

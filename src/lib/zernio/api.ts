@@ -29,7 +29,14 @@ const ZERNIO_API_BASE = 'https://zernio.com/api/v1'
 // fallback. Bounding every call here well under a typical proxy
 // timeout turns that into a clear, fast "Zernio API request timed out"
 // the user actually sees.
+//
+// Two budgets: interactive send calls (a human is watching a spinner,
+// and the response MUST come back before any proxy gives up) get the
+// tighter one; template CRUD / media download / account verification —
+// where nothing is blocked on a toast and Meta itself can be slow —
+// keep the longer one.
 const ZERNIO_TIMEOUT_MS = 20_000
+const ZERNIO_SEND_TIMEOUT_MS = 12_000
 
 export interface ZernioSendResult {
   /** Zernio's own internal message id (not the platform-native message id). */
@@ -40,13 +47,18 @@ interface ZernioErrorResponse {
   error?: string
 }
 
-/** `fetch` to Zernio's API, bounded by `ZERNIO_TIMEOUT_MS` and with
- *  network/timeout failures turned into a clear `Error` instead of a
- *  raw `TypeError`/`DOMException` — every call site below uses this
- *  instead of the bare global `fetch`. */
-async function zernioFetch(url: string, init: RequestInit): Promise<Response> {
+/** `fetch` to Zernio's API, bounded by a timeout (default
+ *  `ZERNIO_TIMEOUT_MS`; send calls pass the tighter
+ *  `ZERNIO_SEND_TIMEOUT_MS`) and with network/timeout failures turned
+ *  into a clear `Error` instead of a raw `TypeError`/`DOMException` —
+ *  every call site below uses this instead of the bare global `fetch`. */
+async function zernioFetch(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number = ZERNIO_TIMEOUT_MS,
+): Promise<Response> {
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(ZERNIO_TIMEOUT_MS) })
+    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
   } catch (err) {
     if (err instanceof DOMException && err.name === 'TimeoutError') {
       throw new Error('Zernio API request timed out.')
@@ -233,7 +245,7 @@ export async function sendZernioText(args: ZernioSendTextArgs): Promise<ZernioSe
       message: text,
       ...(humanAgentTag ? { messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' } : {}),
     }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -282,7 +294,7 @@ export async function sendZernioMedia(args: ZernioSendMediaArgs): Promise<Zernio
       ...(kind === 'document' && filename ? { attachmentName: filename } : {}),
       ...(humanAgentTag ? { messagingType: 'MESSAGE_TAG', messageTag: 'HUMAN_AGENT' } : {}),
     }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -327,7 +339,7 @@ export async function sendZernioQuickReplies(args: ZernioSendQuickRepliesArgs): 
       message: text,
       quickReplies: quickReplies.map((qr) => ({ title: qr.title, payload: qr.payload })),
     }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -380,7 +392,7 @@ export async function sendZernioTemplate(args: ZernioSendTemplateArgs): Promise<
         ],
       },
     }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -419,7 +431,7 @@ export async function sendZernioButtons(args: ZernioSendButtonsArgs): Promise<Ze
       message: text,
       buttons: buttons.map((b) => ({ type: 'postback', title: b.title, payload: b.id })),
     }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -446,7 +458,7 @@ export async function sendZernioInteractive(args: ZernioSendInteractiveArgs): Pr
       Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify({ accountId, interactive }),
-  })
+  }, ZERNIO_SEND_TIMEOUT_MS)
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }

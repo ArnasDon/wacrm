@@ -7,12 +7,13 @@ const H = vi.hoisted(() => ({
   buildRow: vi.fn(),
   ensureTab: vi.fn(),
   appendRows: vi.fn(),
+  updateHeaderRow: vi.fn(),
 }))
 
 vi.mock('./admin-client', () => ({ supabaseAdmin: () => ({ from: H.from }) }))
 vi.mock('./oauth', () => ({ getValidAccessToken: H.token }))
 vi.mock('./row-builder', () => ({ buildRowForEvent: H.buildRow }))
-vi.mock('./api', () => ({ ensureTab: H.ensureTab, appendRows: H.appendRows }))
+vi.mock('./api', () => ({ ensureTab: H.ensureTab, appendRows: H.appendRows, updateHeaderRow: H.updateHeaderRow }))
 
 import { dispatchToGoogleSheets } from './dispatch'
 
@@ -39,6 +40,7 @@ beforeEach(() => {
   H.buildRow.mockReset()
   H.ensureTab.mockReset().mockResolvedValue(undefined)
   H.appendRows.mockReset().mockResolvedValue(undefined)
+  H.updateHeaderRow.mockReset().mockResolvedValue(undefined)
 })
 
 const CONNECTED = {
@@ -83,7 +85,7 @@ describe('dispatchToGoogleSheets — gating', () => {
 })
 
 describe('dispatchToGoogleSheets — append', () => {
-  it('writes header + row and marks the tab header-written on first append', async () => {
+  it('writes header + row and records the tab header on first append', async () => {
     const updates = configReturns(CONNECTED)
     H.buildRow.mockResolvedValue({ tab: 'Ventas', header: ['Evento', 'Fecha'], values: ['deal.won', 'now'] })
 
@@ -94,18 +96,57 @@ describe('dispatchToGoogleSheets — append', () => {
       ['Evento', 'Fecha'],
       ['deal.won', 'now'],
     ])
-    expect(updates.at(-1)).toMatchObject({ headers_written: { Ventas: true } })
+    expect(H.updateHeaderRow).not.toHaveBeenCalled()
+    expect(updates.at(-1)).toMatchObject({ headers_written: { Ventas: ['Evento', 'Fecha'] } })
   })
 
-  it('writes only the data row once the tab header already exists', async () => {
+  it('writes only the data row when the stored header still matches', async () => {
+    configReturns({ ...CONNECTED, headers_written: { Ventas: ['Evento', 'Fecha'] } })
+    H.buildRow.mockResolvedValue({ tab: 'Ventas', header: ['Evento', 'Fecha'], values: ['deal.won', 'now'] })
+
+    await dispatchToGoogleSheets(CALLER, 'a', 'deal.won', { deal_id: 'd1' })
+
+    expect(H.appendRows).toHaveBeenCalledWith('tok', 'sheet-1', 'Ventas', [['deal.won', 'now']])
+    expect(H.updateHeaderRow).not.toHaveBeenCalled()
+  })
+
+  it('leaves a legacy `true` header marker untouched and only appends the row', async () => {
     const updates = configReturns({ ...CONNECTED, headers_written: { Ventas: true } })
     H.buildRow.mockResolvedValue({ tab: 'Ventas', header: ['Evento', 'Fecha'], values: ['deal.won', 'now'] })
 
     await dispatchToGoogleSheets(CALLER, 'a', 'deal.won', { deal_id: 'd1' })
 
     expect(H.appendRows).toHaveBeenCalledWith('tok', 'sheet-1', 'Ventas', [['deal.won', 'now']])
+    expect(H.updateHeaderRow).not.toHaveBeenCalled()
     expect(updates.at(-1)).not.toHaveProperty('headers_written')
     expect(updates.at(-1)).toHaveProperty('last_write_at')
+  })
+
+  it('rewrites row 1 when a dynamic tab header gained a column, then appends', async () => {
+    const cfg = {
+      ...CONNECTED,
+      events: ['contact.brief_ready'],
+      sheet_tab: 'Ventas',
+      headers_written: { 'Ventas - Requerimientos': ['Evento', 'Fecha', 'Cliente', 'Medidas'] },
+    }
+    const updates = configReturns(cfg)
+    H.buildRow.mockResolvedValue({
+      tab: 'Ventas - Requerimientos',
+      header: ['Evento', 'Fecha', 'Cliente', 'Medidas', 'Material'],
+      values: ['contact.brief_ready', 'now', 'Planta VN', '1.80 m', 'Acero'],
+    })
+
+    await dispatchToGoogleSheets(CALLER, 'a', 'contact.brief_ready', { contact_id: 'c1' })
+
+    expect(H.updateHeaderRow).toHaveBeenCalledWith('tok', 'sheet-1', 'Ventas - Requerimientos', [
+      'Evento', 'Fecha', 'Cliente', 'Medidas', 'Material',
+    ])
+    expect(H.appendRows).toHaveBeenCalledWith('tok', 'sheet-1', 'Ventas - Requerimientos', [
+      ['contact.brief_ready', 'now', 'Planta VN', '1.80 m', 'Acero'],
+    ])
+    expect(updates.at(-1)).toMatchObject({
+      headers_written: { 'Ventas - Requerimientos': ['Evento', 'Fecha', 'Cliente', 'Medidas', 'Material'] },
+    })
   })
 
   it('never throws when the Sheets API fails', async () => {

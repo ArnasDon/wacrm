@@ -11,13 +11,20 @@ function makeDb(fixtures: {
   quote?: Record<string, unknown> | null
   quoteItems?: Record<string, unknown>[]
   broadcast?: Record<string, unknown> | null
+  customFields?: Record<string, unknown>[]
+  customValues?: Record<string, unknown>[]
 }): SupabaseClient {
   return {
     from(table: string) {
+      const listByTable: Record<string, unknown[]> = {
+        quote_items: fixtures.quoteItems ?? [],
+        custom_fields: fixtures.customFields ?? [],
+        contact_custom_values: fixtures.customValues ?? [],
+      }
       const chain = {
         select: () => chain,
         eq: () => chain,
-        order: () => Promise.resolve({ data: fixtures.quoteItems ?? [], error: null }),
+        order: () => Promise.resolve({ data: listByTable[table] ?? [], error: null }),
         maybeSingle: () => {
           const map: Record<string, unknown> = {
             deals: fixtures.deal,
@@ -94,5 +101,36 @@ describe('buildRowForEvent', () => {
     expect(row!.tab).toBe('Ventas - Leads')
     expect(row!.values[2]).toBe('Beto')
     expect(row!.values[7]).toBe('whatsapp')
+  })
+
+  it('routes contact.brief_ready to a "<base> - Requerimientos" tab with a column per custom field', async () => {
+    const db = makeDb({
+      contact: { name: 'Planta Villa Nueva', phone: '50255551234', email: 'compras@planta.gt', company: 'Planta VN' },
+      customFields: [
+        { id: 'f_med', field_name: 'Medidas' },
+        { id: 'f_mat', field_name: 'Material' },
+        { id: 'f_plz', field_name: 'Plazo' },
+      ],
+      customValues: [
+        { custom_field_id: 'f_med', value: '1.80 × 0.80 m' },
+        { custom_field_id: 'f_plz', value: '6 semanas' },
+      ],
+    })
+    const row = await buildRowForEvent(db, 'a', 'contact.brief_ready', { contact_id: 'c1', deal_id: 'd1' }, 'Ventas')
+    expect(row).not.toBeNull()
+    expect(row!.tab).toBe('Ventas - Requerimientos')
+    expect(row!.header).toEqual(['Evento', 'Fecha', 'Cliente', 'Teléfono', 'Correo', 'Empresa', 'Medidas', 'Material', 'Plazo'])
+    // [event, date, name, phone, email, company, Medidas, Material, Plazo]
+    expect(row!.values[0]).toBe('contact.brief_ready')
+    expect(row!.values[2]).toBe('Planta Villa Nueva')
+    expect(row!.values[6]).toBe('1.80 × 0.80 m')
+    expect(row!.values[7]).toBe('') // Material not captured for this prospect
+    expect(row!.values[8]).toBe('6 semanas')
+    expect(row!.values.length).toBe(row!.header.length)
+  })
+
+  it('returns null for contact.brief_ready when the contact is gone', async () => {
+    const row = await buildRowForEvent(makeDb({ contact: null }), 'a', 'contact.brief_ready', { contact_id: 'c1' }, 'Ventas')
+    expect(row).toBeNull()
   })
 })

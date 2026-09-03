@@ -267,6 +267,32 @@ pendiente" mencionado en la sección I.4 / J, pero resuelto **dentro** de SANDÍ
 diferidas descrito en la sección L (mismo patrón pg_cron + `x-cron-secret`, sin
 cola real).
 
+### 2026-09-03 — Hoja de "Requerimientos" en Google Sheets
+
+**Estado:** rama `feat/gsheets-requirements-sheet`. **Sin migración.**
+
+**Qué resuelve.** El export a Google Sheets era solo por evento con columnas
+fijas (leads, deals, cotizaciones, citas, difusiones). Ahora, cuando se
+**registra un negocio para un contacto** (paso `create_deal` de una
+automatización, o el `create_deal` autónomo de la IA en `auto-reply.ts`), se
+emite el evento nuevo **`contact.brief_ready`** → `dispatchToGoogleSheets` →
+`buildBriefRow` vuelca los **valores de campos personalizados** del contacto en
+una fila ancha en la pestaña `<base> - Requerimientos`, **una columna por campo
+personalizado** de la cuenta (ordenadas por nombre, para que todas las filas
+alineen). Si la cuenta agrega un campo nuevo, el encabezado crece y
+`dispatch.ts` reescribe la fila 1 vía `updateHeaderRow` (`headers_written`
+ahora guarda el arreglo del encabezado, no solo `true`).
+
+**Config:** Configuración → Google Sheets → activar el evento "Requerimientos
+del prospecto". El implementador arma un Flujo/automatización que captura las
+specs en campos personalizados (Medidas, Material, Acabado, …) y luego crea el
+negocio en el paso "Registro en CRM".
+
+**Relación con el diagnóstico.** Cierra el hueco "estructura los requerimientos
+en una hoja" de la propuesta comercial del Plan Pro. Reutiliza el módulo
+`src/lib/google-sheets/` y el evento saliente de la sección I.4 — es "una
+entrada más", no rediseño.
+
 ---
 
 ## Nota final

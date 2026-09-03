@@ -314,6 +314,12 @@ things happen in your account. **Migration required:** apply
 | `message.received`       | An inbound message arrives from a contact         |
 | `message.status_updated` | A message you sent changed delivery status        |
 | `conversation.created`   | A new conversation is opened for a contact        |
+| `contact.brief_ready`    | A deal is registered for a contact — carries the contact's custom-field values as a spec brief |
+
+(Other events — `contact.created`, `contact.lead_temperature_changed`,
+`deal.stage_changed`, `deal.won`, `quote.created`,
+`appointment.scheduled`, `broadcast.completed`, `conversation.closed` —
+are also emitted; subscribe by name.)
 
 ### Managing endpoints
 
@@ -360,6 +366,8 @@ onto outbound webhooks yet):
 { "conversation_id": "…", "contact_id": "…", "channel": "instagram" }
 // message.status_updated (WhatsApp only)
 { "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered" }
+// contact.brief_ready  (the brief itself is enriched into the connected Google Sheet, not the webhook payload)
+{ "contact_id": "…", "deal_id": "…", "source": "automation" }
 ```
 
 Headers: `X-Wacrm-Event`, `X-Wacrm-Webhook-Id`, and `X-Wacrm-Signature`.

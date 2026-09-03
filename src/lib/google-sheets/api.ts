@@ -55,6 +55,33 @@ export async function ensureTab(
   }
 }
 
+/** Overwrite row 1 of `tab` with `header`. Used when a dynamic-column
+ *  tab (the "Requerimientos" brief sheet) gains a column because the
+ *  account added a custom field — the existing data rows are left
+ *  untouched, only the header line is rewritten. A shorter header than
+ *  before can leave stale trailing header cells; acceptable since
+ *  custom fields are rarely deleted. */
+export async function updateHeaderRow(
+  accessToken: string,
+  spreadsheetId: string,
+  tab: string,
+  header: (string | number | null)[],
+): Promise<void> {
+  const range = `${encodeURIComponent(tab)}!1:1`
+  const res = await googleFetch(
+    `${SHEETS_BASE}/${encodeURIComponent(spreadsheetId)}/values/${range}?valueInputOption=USER_ENTERED`,
+    {
+      method: 'PUT',
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ values: [header] }),
+    },
+  )
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new GoogleSheetsError(`Sheets header update failed (${res.status}): ${body.slice(0, 300)}`, 502)
+  }
+}
+
 /** Append one or more rows to the bottom of `tab`. `values` is an
  *  array of rows; each row an array of cell values. */
 export async function appendRows(

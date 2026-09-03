@@ -39,11 +39,11 @@ async function call(path: string, init: RequestInit): Promise<Json> {
 
 export async function createCustomer(
   name: string,
-  email: string
+  email?: string
 ): Promise<{ customerId: string }> {
   const json = await call("/customers", {
     method: "POST",
-    body: JSON.stringify({ name, email }),
+    body: JSON.stringify(email ? { name, email } : { name }),
   });
   const customerId = json.id as string | undefined;
   if (!customerId) throw new Error("Asaas /customers response missing id");

@@ -38,6 +38,15 @@ describe("createCustomer", () => {
     const { createCustomer } = await import("./asaas");
     await expect(createCustomer("Loja", "bad")).rejects.toThrow("invalid email");
   });
+
+  it("omite o campo email do corpo quando não informado (caminho que a Task 5 usa)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "cus_456" }));
+    const { createCustomer } = await import("./asaas");
+    const out = await createCustomer("Loja Sem Email");
+    expect(out).toEqual({ customerId: "cus_456" });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ name: "Loja Sem Email" });
+  });
 });
 
 describe("createSubscription", () => {

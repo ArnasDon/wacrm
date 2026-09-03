@@ -45,6 +45,18 @@ function makeDataset(overrides: Partial<KpiDataset> = {}): KpiDataset {
     temperature: { cold: 1, warm: 0, hot: 1, unclassified: 0 },
     spendHistory: [{ id: 's1', period_start: '2026-08-01', period_end: '2026-08-03', amount: 100, currency: 'USD' }],
     currentPeriodSpend: { id: 's1', period_start: '2026-08-01', period_end: '2026-08-03', amount: 100, currency: 'USD' },
+    trial: {
+      conversationsActive: 5,
+      conversationsAnswered: 4,
+      medianFirstResponseMin: 12.5,
+      prevMedianFirstResponseMin: 18,
+      followupsSent: 3,
+      prevFollowupsSent: 1,
+      opportunitiesRecovered: 2,
+      handoffs: 3,
+      handoffsAdvanced: 2,
+      briefCompletionPct: 60,
+    },
     ...overrides,
   }
 }
@@ -60,6 +72,7 @@ describe('buildKpiWorkbook', () => {
       'Deals won',
       'Lead temperature',
       'CAC history',
+      'Trial metrics',
     ])
   })
 

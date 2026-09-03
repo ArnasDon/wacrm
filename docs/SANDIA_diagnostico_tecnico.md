@@ -293,6 +293,31 @@ en una hoja" de la propuesta comercial del Plan Pro. Reutiliza el módulo
 `src/lib/google-sheets/` y el evento saliente de la sección I.4 — es "una
 entrada más", no rediseño.
 
+### 2026-09-03 — Métricas operativas de la prueba en `/kpis`
+
+**Estado:** rama `feat/kpis-trial-metrics`. **Sin migración.**
+
+**Qué resuelve.** La página `/kpis` cubría solo las 4 KPIs de venta (leads
+generados/calificados, conversión, CAC). Faltaban las de la página "Impacto
+esperado" de la propuesta. Nueva sección **"Métricas de la prueba"** con:
+tiempo de primera respuesta (mediana, de `messages`: primer entrante vs primer
+saliente por conversación, ventana acotada), seguimientos enviados (de
+`ai_followup_log`), oportunidades recuperadas (nudge seguido de respuesta del
+cliente en la misma conversación), derivadas a asesor + cuántas avanzaron
+después (`conversations.ai_handoff_at` ⋈ `deals`), y "brief iniciado" (% de
+leads con ≥1 `contact_custom_values`).
+
+**Dónde vive.** `src/lib/kpis/` — `loadTrialMetrics()` en `queries.ts` (una
+sola lectura contigua de `messages` que cubre ventana actual + anterior, se
+parte en JS), cálculos puros en `compute.ts`, tipo `TrialMetrics` en
+`types.ts`, tarjetas en la página, hoja "Trial metrics" en el export a Excel,
+i18n en/es/ko. Todo con el cliente RLS del usuario (mismas políticas de
+lectura de miembro que el resto de `/kpis`).
+
+**Relación con el diagnóstico.** Segundo cierre de hueco del Plan Pro. Aditivo
+sobre un módulo ya estructurado; si `messages` crece mucho, mover el
+tiempo-de-primera-respuesta a un RPC (hoy el volumen lo permite).
+
 ---
 
 ## Nota final

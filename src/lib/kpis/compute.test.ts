@@ -133,3 +133,95 @@ describe('conversionRateSeries', () => {
     ])
   })
 })
+
+// ---- trial metrics --------------------------------------------------
+
+import {
+  conversationFirstTimes,
+  medianFirstResponseMinutes,
+  answeredConversationCount,
+  recoveredConversationCount,
+  handoffsAdvancedCount,
+  briefCompletionPercent,
+} from './compute'
+
+describe('conversationFirstTimes + first-response', () => {
+  const rows = [
+    { conversation_id: 'a', sender_type: 'customer', created_at: '2026-09-01T10:00:00Z' },
+    { conversation_id: 'a', sender_type: 'agent', created_at: '2026-09-01T10:06:00Z' },
+    { conversation_id: 'a', sender_type: 'customer', created_at: '2026-09-01T11:00:00Z' },
+    { conversation_id: 'b', sender_type: 'bot', created_at: '2026-09-01T09:00:00Z' }, // outbound first — not answered
+    { conversation_id: 'b', sender_type: 'customer', created_at: '2026-09-01T09:30:00Z' },
+    { conversation_id: 'c', sender_type: 'customer', created_at: '2026-09-01T08:00:00Z' }, // never answered
+  ]
+
+  it('takes the earliest inbound and earliest outbound per conversation', () => {
+    const m = conversationFirstTimes(rows)
+    expect(m.get('a')).toEqual({
+      firstInMs: Date.parse('2026-09-01T10:00:00Z'),
+      firstOutMs: Date.parse('2026-09-01T10:06:00Z'),
+    })
+    expect(m.get('c')!.firstOutMs).toBeNull()
+  })
+
+  it('medians only the answered conversations (outbound after inbound)', () => {
+    const m = conversationFirstTimes(rows)
+    // only "a" qualifies: 6 minutes
+    expect(medianFirstResponseMinutes(m)).toBe(6)
+    expect(answeredConversationCount(m)).toBe(1)
+  })
+
+  it('returns null median when nothing was answered', () => {
+    expect(medianFirstResponseMinutes(conversationFirstTimes([]))).toBeNull()
+  })
+
+  it('averages the two middle values for an even set', () => {
+    const m = conversationFirstTimes([
+      { conversation_id: 'x', sender_type: 'customer', created_at: '2026-09-01T10:00:00Z' },
+      { conversation_id: 'x', sender_type: 'agent', created_at: '2026-09-01T10:02:00Z' },
+      { conversation_id: 'y', sender_type: 'customer', created_at: '2026-09-01T10:00:00Z' },
+      { conversation_id: 'y', sender_type: 'agent', created_at: '2026-09-01T10:08:00Z' },
+    ])
+    expect(medianFirstResponseMinutes(m)).toBe(5) // (2 + 8) / 2
+  })
+})
+
+describe('recoveredConversationCount', () => {
+  it('counts conversations where a customer replied after the nudge', () => {
+    const followups = [
+      { conversation_id: 'a', sent_at: '2026-09-01T12:00:00Z' },
+      { conversation_id: 'b', sent_at: '2026-09-01T12:00:00Z' },
+    ]
+    const msgs = [
+      { conversation_id: 'a', created_at: '2026-09-01T13:30:00Z' }, // after → recovered
+      { conversation_id: 'b', created_at: '2026-09-01T09:00:00Z' }, // before → not
+      { conversation_id: 'c', created_at: '2026-09-01T13:00:00Z' }, // no nudge → ignored
+    ]
+    expect(recoveredConversationCount(followups, msgs)).toBe(1)
+  })
+})
+
+describe('handoffsAdvancedCount', () => {
+  it('counts a handoff whose contact has a deal that moved after it', () => {
+    const handoffs = [
+      { contact_id: 'c1', ai_handoff_at: '2026-09-01T10:00:00Z' },
+      { contact_id: 'c2', ai_handoff_at: '2026-09-01T10:00:00Z' },
+      { contact_id: 'c3', ai_handoff_at: '2026-09-01T10:00:00Z' },
+    ]
+    const deals = [
+      { contact_id: 'c1', status: 'open', won_at: null, updated_at: '2026-09-02T00:00:00Z' }, // advanced
+      { contact_id: 'c2', status: 'won', won_at: '2026-08-01T00:00:00Z', updated_at: '2026-08-01T00:00:00Z' }, // won
+      { contact_id: 'c3', status: 'open', won_at: null, updated_at: '2026-08-15T00:00:00Z' }, // stale, no move
+    ]
+    expect(handoffsAdvancedCount(handoffs, deals)).toBe(2)
+  })
+})
+
+describe('briefCompletionPercent', () => {
+  it('is the share of leads that have any captured value', () => {
+    expect(briefCompletionPercent(['a', 'b', 'c', 'd'], new Set(['a', 'c']))).toBe(50)
+  })
+  it('is null with no leads', () => {
+    expect(briefCompletionPercent([], new Set())).toBeNull()
+  })
+})

@@ -1,6 +1,22 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { temperatureDistribution } from './compute'
-import type { ContactExportRow, DateWindow, KpiDataset, LeadRow, SpendEntry, WonDealRow } from './types'
+import {
+  answeredConversationCount,
+  briefCompletionPercent,
+  conversationFirstTimes,
+  handoffsAdvancedCount,
+  medianFirstResponseMinutes,
+  recoveredConversationCount,
+  temperatureDistribution,
+} from './compute'
+import type {
+  ContactExportRow,
+  DateWindow,
+  KpiDataset,
+  LeadRow,
+  SpendEntry,
+  TrialMetrics,
+  WonDealRow,
+} from './types'
 import type { BucketGranularity } from '@/lib/dashboard/date-utils'
 
 type DB = SupabaseClient
@@ -180,6 +196,114 @@ export async function loadContactExportRows(db: DB, window: DateWindow): Promise
 }
 
 /**
+ * The operational "trial" metrics (see TrialMetrics). Bounded by the
+ * window: everything is measured over messages / nudges / handoffs
+ * that happened inside it, not "entities created in it". `leadIds` is
+ * passed in (already loaded by `loadKpiDataset`) so brief-completion
+ * doesn't re-query contacts.
+ */
+export async function loadTrialMetrics(
+  db: DB,
+  window: DateWindow,
+  previousWindow: DateWindow,
+  leadIds: string[],
+): Promise<TrialMetrics> {
+  const winStartIso = window.start.toISOString()
+  const winEndExcl = endExclusive(window.end)
+
+  const [msgRes, followupRes, handoffRes] = await Promise.all([
+    // One contiguous fetch spanning both windows (previousWindow ends
+    // right before window starts) — split in JS by `winStartIso`.
+    db
+      .from('messages')
+      .select('conversation_id, sender_type, created_at')
+      .gte('created_at', previousWindow.start.toISOString())
+      .lt('created_at', winEndExcl)
+      .limit(50000),
+    db
+      .from('ai_followup_log')
+      .select('conversation_id, sent_at, error')
+      .gte('sent_at', previousWindow.start.toISOString())
+      .lt('sent_at', winEndExcl)
+      .limit(20000),
+    db
+      .from('conversations')
+      .select('contact_id, ai_handoff_at')
+      .not('ai_handoff_at', 'is', null)
+      .gte('ai_handoff_at', winStartIso)
+      .lt('ai_handoff_at', winEndExcl)
+      .limit(20000),
+  ])
+  if (msgRes.error) throw msgRes.error
+  if (followupRes.error) throw followupRes.error
+  if (handoffRes.error) throw handoffRes.error
+
+  type MsgRow = { conversation_id: string; sender_type: string; created_at: string }
+  const allMsgs = (msgRes.data ?? []) as MsgRow[]
+  const curMsgs = allMsgs.filter((m) => m.created_at >= winStartIso)
+  const prevMsgs = allMsgs.filter((m) => m.created_at < winStartIso)
+
+  const curTimes = conversationFirstTimes(curMsgs)
+  const prevTimes = conversationFirstTimes(prevMsgs)
+
+  type FollowupRow = { conversation_id: string; sent_at: string; error: string | null }
+  const allFollowups = (followupRes.data ?? []) as FollowupRow[]
+  const curFollowups = allFollowups.filter((f) => f.sent_at >= winStartIso && !f.error)
+  const prevFollowups = allFollowups.filter((f) => f.sent_at < winStartIso && !f.error)
+
+  const curCustomerMsgs = curMsgs
+    .filter((m) => m.sender_type === 'customer')
+    .map((m) => ({ conversation_id: m.conversation_id, created_at: m.created_at }))
+
+  const handoffs = (handoffRes.data ?? []) as {
+    contact_id: string | null
+    ai_handoff_at: string
+  }[]
+
+  let handoffsAdvanced = 0
+  const handoffContactIds = [...new Set(handoffs.map((h) => h.contact_id).filter((x): x is string => !!x))]
+  if (handoffContactIds.length > 0) {
+    const { data: deals } = await db
+      .from('deals')
+      .select('contact_id, status, won_at, updated_at')
+      .in('contact_id', handoffContactIds)
+    handoffsAdvanced = handoffsAdvancedCount(
+      handoffs,
+      (deals ?? []) as { contact_id: string; status: string; won_at: string | null; updated_at: string }[],
+    )
+  }
+
+  // Brief completion — chunk the .in() so a big lead set stays under
+  // PostgREST's IN-clause cap (same pattern as fetchCustomValueIndex).
+  const withValues = new Set<string>()
+  const PAGE = 400
+  for (let i = 0; i < leadIds.length; i += PAGE) {
+    const slice = leadIds.slice(i, i + PAGE)
+    const { data } = await db
+      .from('contact_custom_values')
+      .select('contact_id')
+      .in('contact_id', slice)
+    for (const row of (data ?? []) as { contact_id: string }[]) withValues.add(row.contact_id)
+  }
+
+  return {
+    conversationsActive: curTimes.size,
+    conversationsAnswered: answeredConversationCount(curTimes),
+    medianFirstResponseMin: medianFirstResponseMinutes(curTimes),
+    prevMedianFirstResponseMin: medianFirstResponseMinutes(prevTimes),
+    followupsSent: curFollowups.length,
+    prevFollowupsSent: prevFollowups.length,
+    opportunitiesRecovered: recoveredConversationCount(
+      curFollowups.map((f) => ({ conversation_id: f.conversation_id, sent_at: f.sent_at })),
+      curCustomerMsgs,
+    ),
+    handoffs: handoffs.length,
+    handoffsAdvanced,
+    briefCompletionPct: briefCompletionPercent(leadIds, withValues),
+  }
+}
+
+/**
  * Fetches everything the KPIs page needs for one render in a single
  * batch — the page component's only query entry point. Individual
  * `load*`/`count*` functions above stay exported for direct reuse
@@ -201,6 +325,14 @@ export async function loadKpiDataset(
       loadSpendForWindow(db, window),
     ])
 
+  // Needs the lead ids from the batch above, so it runs after.
+  const trial = await loadTrialMetrics(
+    db,
+    window,
+    previousWindow,
+    leads.map((l) => l.id),
+  )
+
   return {
     granularity,
     window,
@@ -212,6 +344,7 @@ export async function loadKpiDataset(
     temperature: temperatureDistribution(leads),
     spendHistory,
     currentPeriodSpend,
+    trial,
   }
 }
 

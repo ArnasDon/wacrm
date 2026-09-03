@@ -72,6 +72,21 @@ jobs:
       - name: Replay every migration from scratch
         run: supabase db reset --local --no-seed
 
+      # LOCAL-ONLY CI bootstrap — NOT a migration, never applied to the
+      # hosted project. Root-caused via this workflow's own diagnostics
+      # (now removed, see tests/rls/bootstrap-privileges.sql's header
+      # for the full explanation): the hosted Supabase platform grants
+      # baseline table privileges to service_role/authenticated
+      # automatically at project creation; a fresh local `supabase
+      # start` + `db reset --local` does not replicate that, so both
+      # roles start with ZERO privileges on every table here, RLS and
+      # BYPASSRLS notwithstanding. This grants exactly what
+      # fixtures.ts/*.rls.test.ts need, on the 12 tables this suite
+      # touches, to service_role + authenticated only — never `anon`,
+      # never RLS policies, never table ownership.
+      - name: Bootstrap local-only service_role/authenticated privileges (NOT a migration)
+        run: supabase db query --local --file tests/rls/bootstrap-privileges.sql
+
       # `supabase status -o env` (confirmed by the first real run of this
       # workflow) prints each value double-quoted — e.g.
       # `API_URL="http://127.0.0.1:54321"` — not the bare `KEY=value`
@@ -107,45 +122,6 @@ jobs:
         run: echo "Resolved API_URL=$API_URL"
         env:
           API_URL: ${{ env.API_URL }}
-
-      # TEMPORARY DIAGNOSTIC — decodes ONLY the `role`/`iss`/`ref` claims
-      # of the service_role JWT payload (never the raw key, header, or
-      # signature) to determine whether it actually carries
-      # `role: service_role`. To be removed once the root cause of
-      # "permission denied for table accounts/profiles" is confirmed.
-      - name: 'DIAGNOSTIC: decode service_role JWT claims (no secrets printed)'
-        env:
-          SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
-        run: |
-          payload=$(echo "$SERVICE_ROLE_KEY" | cut -d '.' -f2 | tr '_-' '/+')
-          case $(( ${#payload} % 4 )) in
-            2) payload="${payload}==" ;;
-            3) payload="${payload}=" ;;
-          esac
-          claims=$(echo "$payload" | base64 -d 2>/dev/null)
-          echo "SERVICE_ROLE_JWT_ROLE=$(echo "$claims" | jq -r '.role // "MISSING"')"
-          echo "SERVICE_ROLE_JWT_ISSUER=$(echo "$claims" | jq -r '.iss // "MISSING"')"
-          echo "SERVICE_ROLE_JWT_REF=$(echo "$claims" | jq -r '.ref // "MISSING"')"
-
-      # TEMPORARY DIAGNOSTIC — reads real SQL-level privileges and RLS
-      # status directly from the local Postgres catalog, via the CLI's
-      # own admin connection (never through PostgREST/service_role) —
-      # a single read-only SELECT, nothing granted/revoked/altered. To
-      # be removed once the root cause is confirmed.
-      - name: 'DIAGNOSTIC: real SQL privileges + RLS status for accounts/profiles'
-        run: |
-          supabase db query --local "select
-            has_table_privilege('service_role','public.accounts','SELECT') as accounts_select,
-            has_table_privilege('service_role','public.accounts','INSERT') as accounts_insert,
-            has_table_privilege('service_role','public.accounts','UPDATE') as accounts_update,
-            has_table_privilege('service_role','public.accounts','DELETE') as accounts_delete,
-            has_table_privilege('service_role','public.profiles','SELECT') as profiles_select,
-            has_table_privilege('service_role','public.profiles','INSERT') as profiles_insert,
-            has_table_privilege('service_role','public.profiles','UPDATE') as profiles_update,
-            has_table_privilege('service_role','public.profiles','DELETE') as profiles_delete,
-            (select rolbypassrls from pg_roles where rolname = 'service_role') as service_role_bypassrls,
-            (select relrowsecurity from pg_class where oid = 'public.accounts'::regclass) as accounts_rls,
-            (select relrowsecurity from pg_class where oid = 'public.profiles'::regclass) as profiles_rls;"
 
       - name: Run the real-RLS suite
         env:

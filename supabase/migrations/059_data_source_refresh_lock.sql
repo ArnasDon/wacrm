@@ -1,0 +1,62 @@
+-- ============================================================
+-- 059_data_source_refresh_lock.sql — Punto 5 audit, hallazgo H-5.
+--
+-- PROBLEM: ai_data_sources refresh (src/lib/ai/data-sources/service.ts
+-- ::persistDataSource) inserts the new generation of ai_catalog_products
+-- rows before deleting the previous generation — correct against a
+-- single in-flight refresh, but two CONCURRENT refreshes of the exact
+-- same data_source_id (double-click, two tabs, two admins, a client
+-- retry racing the original request) could interleave their own
+-- insert/delete pairs and leave temporary duplicates or delete rows the
+-- other process just inserted.
+--
+-- FIX, two independent, complementary parts:
+--
+--   1. `ai_data_sources.refresh_started_at` — a claim column.
+--      refreshDataSource() now atomically claims a source via a single
+--      `UPDATE ... WHERE (refresh_started_at IS NULL OR < stale) ...
+--      RETURNING` (application code, not a stored function — see that
+--      module's own comment for why a session-scoped
+--      pg_advisory_lock/unlock pair does not work reliably through
+--      PostgREST's pooled-connection model). A second concurrent
+--      refresh of the SAME source fails this claim and is rejected with
+--      HTTP 409 rather than proceeding destructively. Nullable, defaults
+--      NULL (unclaimed) — every existing row is unaffected until its
+--      next refresh.
+--
+--   2. `UNIQUE(data_source_id, source_product_id)` on
+--      ai_catalog_products — defense in depth, not the primary fix (a
+--      UNIQUE constraint alone cannot stop a concurrent refresh from
+--      deleting rows another one just inserted — only the claim above
+--      does that). Catches any other future bug that would otherwise
+--      silently duplicate a product row within one source.
+--
+--      NOTE ON EXISTING DATA: this statement is intentionally NOT
+--      preceded by an automatic de-duplication step. If duplicate
+--      (data_source_id, source_product_id) pairs already exist in a
+--      real database when this migration runs, `CREATE UNIQUE INDEX`
+--      will fail loudly with a constraint-violation error naming the
+--      conflict — that is the correct, safe outcome. This audit had no
+--      access to a live production/staging database to verify duplicates
+--      don't already exist, and per the review discipline for this
+--      project, data is never silently deleted to force a migration to
+--      apply. Within the code's own normal (non-concurrent, pre-fix)
+--      operation, `toCatalogProductRows` already de-duplicates
+--      source_product_id within a single refresh (falling back to
+--      `row-<index>` on a repeat), so a genuine duplicate could only
+--      have arisen from the exact H-5 race this migration also closes —
+--      if this statement ever fails on real data, that failure itself
+--      is the evidence such a race already occurred, and a targeted,
+--      separately-reviewed clean-up migration should follow instead of
+--      widening this one.
+--
+-- Idempotent — safe to run multiple times (until real duplicates exist,
+-- per the note above, in which case it fails consistently every time
+-- until they're addressed, never partially).
+-- ============================================================
+
+ALTER TABLE ai_data_sources
+  ADD COLUMN IF NOT EXISTS refresh_started_at timestamptz;
+
+CREATE UNIQUE INDEX IF NOT EXISTS ai_catalog_products_source_product_unique_idx
+  ON ai_catalog_products (data_source_id, source_product_id);

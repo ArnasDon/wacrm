@@ -42,8 +42,24 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
     const filters: [string, unknown][] = [];
     let single: 'one' | 'maybe' | null = null;
     let selectedCols: string[] | null = null;
+    // PostgREST `.or('col.is.null,col.lt.<value>')` — the two operators
+    // H-5's refresh-claim query needs (data-sources/service.ts). ANDed
+    // with the plain `.eq()` filters below, matching real PostgREST
+    // semantics: a single `UPDATE ... WHERE ... RETURNING` evaluated
+    // atomically against the current row state.
+    let orClauses: [string, 'is' | 'lt', string][] | null = null;
     const rows = ensure(table);
-    const matches = (row: Record<string, unknown>) => filters.every(([c, v]) => row[c] === v);
+    const matchesOr = (row: Record<string, unknown>) => {
+      if (!orClauses) return true;
+      return orClauses.some(([col, cmpOp, val]) => {
+        const current = row[col];
+        if (cmpOp === 'is') return val === 'null' ? current === null || current === undefined : current === val;
+        if (cmpOp === 'lt') return typeof current === 'string' && current < val;
+        return false;
+      });
+    };
+    const matches = (row: Record<string, unknown>) =>
+      filters.every(([c, v]) => row[c] === v) && matchesOr(row);
 
     function project<T extends Record<string, unknown>>(row: T): T {
       if (!selectedCols) return row;
@@ -92,6 +108,13 @@ function fakeSupabase(seed: Record<string, Record<string, unknown>[]> = {}) {
       },
       eq: (col: string, val: unknown) => {
         filters.push([col, val]);
+        return api;
+      },
+      or: (expr: string) => {
+        orClauses = expr.split(',').map((clause) => {
+          const [col, cmpOp, ...rest] = clause.split('.');
+          return [col, cmpOp as 'is' | 'lt', rest.join('.')];
+        });
         return api;
       },
       order: () => api,
@@ -236,5 +259,45 @@ describe('POST /api/ai/data-sources/[id]/refresh', () => {
 
     const res = await POST(new Request('http://localhost', { method: 'POST' }), params('ds-1'));
     expect(res.status).toBe(422);
+  });
+
+  // H-5 (Punto 5 audit) — a second refresh of a source that already has
+  // a LIVE (non-stale) claim must be rejected with a clear, specific
+  // 409, never a generic/ambiguous error, and must never touch the
+  // source's existing rows.
+  it('H-5: a refresh already in progress (live claim) → 409, and the source is left untouched', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(REAL_CSV, { status: 200 })));
+    const { supabase, tables } = fakeSupabase({
+      ai_data_sources: [
+        ds('ds-1', 'acct-1', { refresh_started_at: new Date().toISOString(), row_count: 5, last_synced_at: 'original' }),
+      ],
+    });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(new Request('http://localhost', { method: 'POST' }), params('ds-1'));
+    const body = (await res.json()) as { error: string };
+    expect(res.status).toBe(409);
+    expect(body.error).toBeTruthy();
+    // Left exactly as it was — no partial write, no status flipped to error.
+    expect(tables.ai_data_sources[0].row_count).toBe(5);
+    expect(tables.ai_data_sources[0].last_synced_at).toBe('original');
+    vi.unstubAllGlobals();
+  });
+
+  // A STALE claim (older than the staleness window) must not be treated
+  // as in-progress — this is what recovers a source after a crashed/
+  // killed serverless invocation never reached its `finally`.
+  it('H-5: a stale claim (older than the staleness window) does not block a refresh', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(REAL_CSV, { status: 200 })));
+    const { supabase } = fakeSupabase({
+      ai_data_sources: [
+        ds('ds-1', 'acct-1', { refresh_started_at: new Date(Date.now() - 10 * 60_000).toISOString() }),
+      ],
+    });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(new Request('http://localhost', { method: 'POST' }), params('ds-1'));
+    expect(res.status).toBe(200);
+    vi.unstubAllGlobals();
   });
 });

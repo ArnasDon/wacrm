@@ -64,6 +64,111 @@ export class DataSourceNotFoundError extends DataSourceError {
   }
 }
 
+/**
+ * Thrown when a second refresh of the SAME data source is attempted
+ * while one is already in progress (Punto 5 audit, H-5). Distinct from
+ * `DataSourceError` so the route can map it to a specific, unambiguous
+ * HTTP 409 rather than the generic 422 a parse/validation failure gets.
+ */
+export class DataSourceRefreshInProgressError extends DataSourceError {
+  constructor() {
+    super('A refresh for this data source is already in progress. Try again in a moment.')
+    this.name = 'DataSourceRefreshInProgressError'
+  }
+}
+
+// ============================================================
+// Refresh mutual exclusion (Punto 5 audit, H-5).
+//
+// PROBLEM: persistDataSource()'s refresh path inserts the new
+// generation of rows before deleting the previous one (Bug #1's own
+// atomicity fix, preserved unchanged below) — correct against a single
+// in-flight refresh, but not against a SECOND, CONCURRENT refresh of
+// the exact same data_source_id (double-click, two tabs, two admins,
+// a client retry racing the original request). Two overlapping runs
+// could each capture the other's freshly-inserted rows as "previous"
+// and delete them, or leave temporary duplicates.
+//
+// WHY NOT A POSTGRES ADVISORY LOCK: pg_advisory_lock/unlock are
+// SESSION-scoped — they only work correctly when the same underlying
+// connection issues both calls. This code runs through Supabase's
+// PostgREST layer, where every `.rpc()`/`.from()` call is its own HTTP
+// request against a pooled connection with no guarantee the same
+// physical session serves the acquire and release (and no way to run
+// this multi-step fetch/parse/insert/delete sequence inside one
+// server-side transaction without rewriting persistDataSource as a
+// single stored procedure — a much larger change than this fix
+// authorizes). A session-scoped advisory lock here would silently do
+// nothing useful.
+//
+// SOLUTION: the same atomic "claim by conditional UPDATE" pattern this
+// codebase already uses for exactly this kind of problem
+// (claim_ai_reply_slot, migration 029) — but expressed as a single
+// PostgREST `UPDATE ... WHERE ... RETURNING` (via `.update().eq()...`)
+// rather than a bespoke SQL function, since no privilege escalation
+// (SECURITY DEFINER) is needed here: the caller is already an
+// authenticated admin of the account, and RLS's existing
+// `ai_data_sources_update` policy already permits this exact write.
+// PostgREST always compiles one `.update()` chain into ONE SQL
+// statement, so the read-current-state-and-write happen atomically at
+// the database level regardless of which pooled connection serves it —
+// the same property a hand-written SQL function would give, without a
+// new SECURITY DEFINER surface. This is safe across multiple
+// serverless instances because the "lock" IS a database row, never
+// server memory.
+//
+// STALENESS FALLBACK: a claim self-expires after
+// REFRESH_CLAIM_STALE_AFTER_MS. Without this, a crashed/killed
+// serverless function (Vercel timeout, cold-start eviction mid-run)
+// that never reaches its `finally` release would deadlock every future
+// refresh of that source forever. 5 minutes comfortably exceeds
+// fetchCsv's own 30s timeout plus parse/embed/insert time, while still
+// recovering quickly from a genuine crash.
+// ============================================================
+
+const REFRESH_CLAIM_STALE_AFTER_MS = 5 * 60_000
+
+/**
+ * Atomically claims the right to refresh `id` — succeeds only if no
+ * refresh is currently claimed for it, or the existing claim is stale.
+ * Throws `DataSourceRefreshInProgressError` when another refresh
+ * already holds a live claim. Scoped to `accountId` for defense in
+ * depth alongside RLS; a caller that already validated `id` belongs to
+ * `accountId` (as `refreshDataSource` does via `getDataSource` first)
+ * cannot fail this check for a cross-account reason.
+ */
+async function claimDataSourceRefresh(db: SupabaseClient, id: string, accountId: string): Promise<void> {
+  const staleThreshold = new Date(Date.now() - REFRESH_CLAIM_STALE_AFTER_MS).toISOString()
+  const { data, error } = await db
+    .from('ai_data_sources')
+    .update({ refresh_started_at: new Date().toISOString() })
+    .eq('id', id)
+    .eq('account_id', accountId)
+    .or(`refresh_started_at.is.null,refresh_started_at.lt.${staleThreshold}`)
+    .select('id')
+    .maybeSingle()
+  if (error) throw error
+  if (!data) throw new DataSourceRefreshInProgressError()
+}
+
+/**
+ * Releases a refresh claim so the next request can proceed immediately
+ * instead of waiting out the staleness window. Best-effort by design:
+ * called from a `finally` after the real result (success or error) is
+ * already decided, so a failure here must never mask or replace that
+ * result — it only means the next refresh waits up to
+ * REFRESH_CLAIM_STALE_AFTER_MS longer than ideal, never that anything
+ * is left inconsistent.
+ */
+async function releaseDataSourceRefreshClaim(db: SupabaseClient, id: string): Promise<void> {
+  try {
+    const { error } = await db.from('ai_data_sources').update({ refresh_started_at: null }).eq('id', id)
+    if (error) console.error('[data-sources] failed to release refresh claim:', error.message)
+  } catch (err) {
+    console.error('[data-sources] failed to release refresh claim:', err)
+  }
+}
+
 // ============================================================
 // SSRF protection (FASE 4 audit, Bug #1) — every server-side fetch this
 // feature makes goes to a URL an account admin supplies (remote_csv /
@@ -818,6 +923,28 @@ export async function refreshDataSource(db: SupabaseClient, input: RefreshInput)
   const existing = await getDataSource(db, input.accountId, input.id)
   if (!existing) throw new DataSourceNotFoundError()
 
+  // H-5 — claim exclusive right to refresh THIS source before doing any
+  // work. Throws DataSourceRefreshInProgressError (→ HTTP 409) if
+  // another refresh already holds a live claim; never blocks/polls (see
+  // the module doc above for why a wait-and-retry strategy was rejected
+  // for this serverless environment).
+  await claimDataSourceRefresh(db, existing.id, input.accountId)
+
+  try {
+    return await doRefreshDataSource(db, input, existing)
+  } finally {
+    // Always released — success, thrown DataSourceError, or any other
+    // failure — so a legitimate retry never has to wait out the
+    // staleness window.
+    await releaseDataSourceRefreshClaim(db, existing.id)
+  }
+}
+
+async function doRefreshDataSource(
+  db: SupabaseClient,
+  input: RefreshInput,
+  existing: DataSourceRow,
+): Promise<RefreshResult> {
   // Re-resolve the account's CURRENT currency on every refresh rather
   // than reusing `existing.currency` verbatim. Root-cause fix: a row
   // created before the account-currency wiring existed (or by any other

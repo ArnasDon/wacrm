@@ -14,6 +14,7 @@ import {
   createDataSourceFromFile,
   createDataSourceFromUrl,
   DataSourceError,
+  DataSourceRefreshInProgressError,
   getDataSourcePreview,
   refreshDataSource,
 } from './service'
@@ -38,6 +39,14 @@ function fakeDb() {
 
   function builder(tableName: string, op: 'select' | 'update' | 'insert' | 'delete', payload?: Record<string, unknown>) {
     const filters: [string, unknown, 'eq' | 'in'][] = []
+    // PostgREST `.or('col.is.null,col.lt.<value>')` — supports exactly
+    // the two operators H-5's claim query needs. ANDed with the plain
+    // `.eq()`/`.in()` filters above, matching real PostgREST semantics
+    // (this is a faithful model of the single atomic `UPDATE ... WHERE
+    // ... RETURNING` PostgREST issues — see the comment on the
+    // concurrency tests below for exactly what this fake can and cannot
+    // prove).
+    let orClauses: [string, 'is' | 'lt', string][] | null = null
     const api = {
       select: () => api,
       eq: (col: string, val: unknown) => {
@@ -48,6 +57,13 @@ function fakeDb() {
         filters.push([col, vals, 'in'])
         return api
       },
+      or: (expr: string) => {
+        orClauses = expr.split(',').map((clause) => {
+          const [col, cmpOp, ...rest] = clause.split('.')
+          return [col, cmpOp as 'is' | 'lt', rest.join('.')]
+        })
+        return api
+      },
       order: () => api,
       limit: () => api,
       single: () => run(true),
@@ -55,8 +71,18 @@ function fakeDb() {
       then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) => run(false).then(resolve, reject),
     }
     const rows = table(tableName)
+    const matchesOr = (row: Record<string, unknown>) => {
+      if (!orClauses) return true
+      return orClauses.some(([col, cmpOp, val]) => {
+        const current = row[col]
+        if (cmpOp === 'is') return val === 'null' ? current === null || current === undefined : current === val
+        if (cmpOp === 'lt') return typeof current === 'string' && current < val
+        return false
+      })
+    }
     const matches = (row: Record<string, unknown>) =>
-      filters.every(([col, val, mode]) => (mode === 'in' ? (val as unknown[]).includes(row[col]) : row[col] === val))
+      filters.every(([col, val, mode]) => (mode === 'in' ? (val as unknown[]).includes(row[col]) : row[col] === val)) &&
+      matchesOr(row)
 
     async function run(singleResult: boolean) {
       if (op === 'select') {
@@ -64,6 +90,12 @@ function fakeDb() {
         return singleResult ? { data: matched[0] ?? null, error: null } : { data: matched, error: null }
       }
       if (op === 'update') {
+        // Real PostgREST evaluates the WHERE clause (all filters, incl.
+        // `.or()`) against the CURRENT row state and applies the SET in
+        // one atomic SQL statement — so the match check must run before
+        // any mutation, exactly once per call, never re-evaluated after
+        // a partial write. This synchronous filter+assign is the
+        // faithful part of that model this in-memory fake CAN provide.
         const matched = rows.filter(matches)
         for (const row of matched) Object.assign(row, payload)
         return singleResult ? { data: matched[0] ?? null, error: null } : { data: matched, error: null }
@@ -476,6 +508,183 @@ describe('refreshDataSource — Bug #1 fix: refresh atomicity', () => {
     // is now non-destructive — a legitimate zero-row result never was,
     // and still isn't, treated as one.
     expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(0)
+  })
+})
+
+// ============================================================
+// H-5 fix (Punto 5 audit) — refresh mutual exclusion. Two concurrent
+// refreshes of the SAME data_source_id used to be able to interleave
+// their own insert-then-delete-previous sequences (the exact mechanism
+// the Bug #1 suite above protects, but for a SINGLE in-flight refresh
+// only) and leave duplicates, or let one process delete rows the other
+// just inserted. refreshDataSource() now atomically claims the source
+// (ai_data_sources.refresh_started_at, via a single PostgREST
+// UPDATE...WHERE...RETURNING) before doing any work, and always
+// releases the claim in a `finally`.
+//
+// EPISTEMOLOGICAL LIMIT — read before citing these tests: fakeDb()'s
+// `.or()`/`run()` model faithfully reproduces PostgREST's single-
+// statement atomicity (the match-and-write happens synchronously within
+// one microtask, never split across an await), which is what lets two
+// racing `refreshDataSource()` calls in this suite genuinely exercise
+// BOTH the claim-succeeds and claim-fails branches of the real code —
+// this is not a mock that assumes its own conclusion. What it CANNOT
+// prove is that PostgreSQL's own MVCC row-locking gives that same
+// atomicity under two genuinely simultaneous network requests against a
+// live database — that guarantee is PostgreSQL's, not something any
+// fake-client test can demonstrate. This sandbox has no Docker/local
+// Supabase available to run that as a real integration test (same
+// constraint documented throughout this engagement's tests/rls/ suite).
+// ============================================================
+describe('refreshDataSource — H-5 fix: refresh mutual exclusion', () => {
+  it('sequential refreshes of the same source both succeed, and the claim is clear afterward', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    expect(table('ai_data_sources').find((r) => r.id === source.id)?.refresh_started_at).toBeNull()
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Otro Producto', '500', '2']]))
+    await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(1)
+  })
+
+  it('two concurrent refreshes of the SAME source: exactly one proceeds, the other is rejected with DataSourceRefreshInProgressError — no duplicates, nothing incorrectly deleted', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Concurrente', '777', '3']]))
+    const outcomes = await Promise.allSettled([
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ])
+
+    const fulfilled = outcomes.filter((o) => o.status === 'fulfilled')
+    const rejected = outcomes.filter((o): o is PromiseRejectedResult => o.status === 'rejected')
+    expect(fulfilled).toHaveLength(1)
+    expect(rejected).toHaveLength(1)
+    expect(rejected[0].reason).toBeInstanceOf(DataSourceRefreshInProgressError)
+
+    // Exactly one generation of rows survives — never duplicated, never
+    // emptied by the loser interfering with the winner's insert/delete.
+    const rows = table('ai_catalog_products').filter((r) => r.data_source_id === source.id)
+    expect(rows).toHaveLength(1)
+    expect(rows[0].name).toBe('Producto Concurrente')
+
+    // The claim is released after the winner finishes — a subsequent
+    // request is never left blocked by this pair.
+    expect(table('ai_data_sources').find((r) => r.id === source.id)?.refresh_started_at).toBeNull()
+  })
+
+  it('concurrent refreshes of TWO DIFFERENT sources never block each other', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const sourceA = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'A', url: 'https://example.com/a.csv', usage: 'catalog',
+    })
+    const sourceB = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'B', url: 'https://example.com/b.csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto', '111', '1']]))
+    const [resultA, resultB] = await Promise.all([
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: sourceA.id }),
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: sourceB.id }),
+    ])
+    expect(resultA.source.id).toBe(sourceA.id)
+    expect(resultB.source.id).toBe(sourceB.id)
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === sourceA.id)).toHaveLength(1)
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === sourceB.id)).toHaveLength(1)
+  })
+
+  it('account isolation holds under concurrency: two different accounts refreshing their own sources at the same time never cross-contaminate', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const sourceAcct1 = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'S1', url: 'https://example.com/s1.csv', usage: 'catalog',
+    })
+    const sourceAcct2 = await createDataSourceFromUrl(db, {
+      accountId: 'acct-2', userId: 'user-2', sourceType: 'remote_csv',
+      displayName: 'S2', url: 'https://example.com/s2.csv', usage: 'catalog',
+    })
+
+    await Promise.all([
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: sourceAcct1.id }),
+      refreshDataSource(db, { accountId: 'acct-2', userId: 'user-2', id: sourceAcct2.id }),
+    ])
+    expect(table('ai_catalog_products').find((r) => r.data_source_id === sourceAcct1.id)?.account_id).toBe('acct-1')
+    expect(table('ai_catalog_products').find((r) => r.data_source_id === sourceAcct2.id)?.account_id).toBe('acct-2')
+  })
+
+  it('a failed refresh still releases the lock — the very next attempt is not blocked', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table, failNextInsertOn } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Nuevo', '999', '1']]))
+    failNextInsertOn('ai_catalog_products')
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).rejects.toBeTruthy()
+    expect(table('ai_data_sources').find((r) => r.id === source.id)?.refresh_started_at).toBeNull()
+
+    // Retry immediately after the failure — must succeed, never rejected
+    // as "already in progress" just because the previous attempt failed.
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Reintentado', '444', '2']]))
+    const result = await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    expect(result.source.status).toBe('active')
+    expect(table('ai_catalog_products').find((r) => r.data_source_id === source.id)?.name).toBe('Producto Reintentado')
+  })
+
+  it('a stale claim (e.g. a crashed/killed serverless invocation that never reached its finally) does not deadlock future refreshes', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+
+    // Simulate an abandoned claim well past the staleness window —
+    // never released, but old enough that a new refresh must recover.
+    const row = table('ai_data_sources').find((r) => r.id === source.id)!
+    row.refresh_started_at = new Date(Date.now() - 10 * 60_000).toISOString() // 10 minutes ago
+
+    stubCsvFetch(csv([['Nombre', 'Precio', 'Stock'], ['Producto Recuperado', '321', '1']]))
+    const result = await refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id })
+    expect(result.source.status).toBe('active')
+    expect(table('ai_catalog_products').find((r) => r.data_source_id === source.id)?.name).toBe('Producto Recuperado')
+  })
+
+  it('a LIVE (non-stale) claim rejects a second refresh with a clear, distinguishable error — never a generic failure, never partial state', async () => {
+    stubCsvFetch(PRODUCTS_CSV)
+    const { db, table } = fakeDb()
+    const source = await createDataSourceFromUrl(db, {
+      accountId: 'acct-1', userId: 'user-1', sourceType: 'remote_csv',
+      displayName: 'Source', url: 'https://example.com/products.csv', usage: 'catalog',
+    })
+    const row = table('ai_data_sources').find((r) => r.id === source.id)!
+    row.refresh_started_at = new Date().toISOString() // claimed just now — still live
+
+    await expect(
+      refreshDataSource(db, { accountId: 'acct-1', userId: 'user-1', id: source.id }),
+    ).rejects.toBeInstanceOf(DataSourceRefreshInProgressError)
+    // Left exactly as it was — no partial/error state written.
+    expect(table('ai_catalog_products').filter((r) => r.data_source_id === source.id)).toHaveLength(1)
   })
 })
 

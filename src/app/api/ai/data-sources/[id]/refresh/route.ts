@@ -1,7 +1,12 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { DataSourceError, DataSourceNotFoundError, refreshDataSource } from '@/lib/ai/data-sources/service'
+import {
+  DataSourceError,
+  DataSourceNotFoundError,
+  DataSourceRefreshInProgressError,
+  refreshDataSource,
+} from '@/lib/ai/data-sources/service'
 
 /**
  * POST /api/ai/data-sources/[id]/refresh  (admin+)
@@ -40,11 +45,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       ...(droppedColumns.length > 0 ? { dropped_columns: droppedColumns } : {}),
     })
   } catch (err) {
-    // Check the more specific subclass first — DataSourceNotFoundError
-    // extends DataSourceError, so the generic check below would also
-    // match it and misreport a missing/foreign id as 422 instead of 404.
+    // Check the more specific subclasses first — both extend
+    // DataSourceError, so the generic check below would also match them
+    // and misreport a missing/foreign id or an in-progress refresh as a
+    // plain 422 instead of their own distinct status.
     if (err instanceof DataSourceNotFoundError) {
       return NextResponse.json({ error: err.message }, { status: 404 })
+    }
+    // H-5 — a second concurrent refresh of the same source. A clear,
+    // specific 409 (never a generic/ambiguous error) so the UI can tell
+    // the admin exactly what happened and that nothing was left
+    // inconsistent — the first refresh in flight is still running normally.
+    if (err instanceof DataSourceRefreshInProgressError) {
+      return NextResponse.json({ error: err.message }, { status: 409 })
     }
     if (err instanceof DataSourceError) {
       return NextResponse.json({ error: err.message }, { status: 422 })

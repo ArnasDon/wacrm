@@ -396,11 +396,29 @@ function buildProductRows(
   return products
 }
 
+/**
+ * Parses a price cell to a plain number, preserving whatever decimal
+ * precision the source actually has (Punto 5 audit, H-4 — this used to
+ * `Math.round()` the result, silently turning $19.99 into $20 before it
+ * ever reached `ai_catalog_products.price`, a `numeric` column that
+ * fully supports the real value). No rounding is applied here — `20.00`
+ * naturally becomes the number `20` (JS has no distinct "20.00"
+ * representation), and a genuinely whole-number price is unaffected
+ * either way. This does not change how a price is DISPLAYED: the
+ * flattened Knowledge Base text this same file builds still goes
+ * through `formatCurrency()`, whose whole-number-only formatting
+ * (`minimumFractionDigits`/`maximumFractionDigits: 0`) is a separate,
+ * pre-existing, intentional convention (src/lib/currency.ts — "deal
+ * values are tracked to the dollar across the app") untouched by this
+ * fix. The catalog tools (search_catalog/get_product), which read
+ * `ai_catalog_products.price` directly, are what actually need the real
+ * value, and now receive it.
+ */
 function parsePrice(raw: string): number | null {
   const cleaned = raw.replace(/[^0-9.,\-]/g, '').trim()
   if (!cleaned) return null
   const num = Number(cleaned.replace(/,/g, ''))
-  return isFinite(num) ? Math.round(num) : null
+  return isFinite(num) ? num : null
 }
 
 function isNumeric(val: string): boolean {

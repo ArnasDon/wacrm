@@ -1765,5 +1765,22 @@
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
       "loading": "Loading…"
     }
+  },
+  "Billing": {
+    "title": "Subscription",
+    "statusLabel": "Status",
+    "status": {
+      "trialing": "Free trial",
+      "active": "Active",
+      "past_due": "Payment overdue",
+      "canceled": "Canceled"
+    },
+    "trialEndsAt": "Trial ends {date}",
+    "ownerOnly": "Only the account owner can manage billing.",
+    "subscribeBtn": "Subscribe now",
+    "cancelBtn": "Cancel subscription",
+    "subscribeError": "Could not start the subscription. Try again.",
+    "cancelSuccess": "Subscription canceled",
+    "cancelError": "Could not cancel. Try again."
   }
 }

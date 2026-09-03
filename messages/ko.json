@@ -1765,5 +1765,22 @@
       "reindexTooltip": "모든 문서를 다시 임베딩합니다 (예: 임베딩 키 추가 후)",
       "loading": "불러오는 중…"
     }
+  },
+  "Billing": {
+    "title": "구독",
+    "statusLabel": "상태",
+    "status": {
+      "trialing": "무료 체험",
+      "active": "활성",
+      "past_due": "결제 연체",
+      "canceled": "취소됨"
+    },
+    "trialEndsAt": "체험 종료일: {date}",
+    "ownerOnly": "계정 소유자만 결제를 관리할 수 있습니다.",
+    "subscribeBtn": "지금 구독하기",
+    "cancelBtn": "구독 취소",
+    "subscribeError": "구독을 시작할 수 없습니다. 다시 시도하세요.",
+    "cancelSuccess": "구독이 취소되었습니다",
+    "cancelError": "취소할 수 없습니다. 다시 시도하세요."
   }
 }

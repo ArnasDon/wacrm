@@ -1765,5 +1765,22 @@
       "reindexTooltip": "Regerar embeddings de todos os documentos (ex.: depois de adicionar uma chave de embeddings)",
       "loading": "Carregando…"
     }
+  },
+  "Billing": {
+    "title": "Assinatura",
+    "statusLabel": "Status",
+    "status": {
+      "trialing": "Teste grátis",
+      "active": "Ativa",
+      "past_due": "Pagamento atrasado",
+      "canceled": "Cancelada"
+    },
+    "trialEndsAt": "O teste acaba em {date}",
+    "ownerOnly": "Só o dono da conta pode gerenciar a assinatura.",
+    "subscribeBtn": "Assinar agora",
+    "cancelBtn": "Cancelar assinatura",
+    "subscribeError": "Não foi possível iniciar a assinatura. Tente de novo.",
+    "cancelSuccess": "Assinatura cancelada",
+    "cancelError": "Não foi possível cancelar. Tente de novo."
   }
 }

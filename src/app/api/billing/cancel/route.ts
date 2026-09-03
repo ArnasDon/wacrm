@@ -20,13 +20,21 @@ export async function POST() {
     }
 
     const db = admin();
-    await db
+    const { error } = await db
       .from("accounts")
       .update({
         subscription_status: "canceled",
         subscription_updated_at: new Date().toISOString(),
       })
       .eq("id", ctx.accountId);
+
+    if (error) {
+      console.error("[POST /api/billing/cancel] update error:", error);
+      return NextResponse.json(
+        { error: "Failed to cancel subscription" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ status: "canceled" });
   } catch (err) {

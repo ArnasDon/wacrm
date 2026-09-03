@@ -113,4 +113,21 @@ describe("POST /api/billing/cancel", () => {
     });
     expect(res.body).toEqual({ status: "canceled" });
   });
+
+  it("does not call Asaas when there is no existing subscription, but still blocks the account", async () => {
+    h.requireRole.mockResolvedValue({
+      accountId: "acc-1",
+      account: { id: "acc-1", asaas_subscription_id: null },
+    });
+
+    const { POST } = await import("./cancel/route");
+    const res = await POST();
+
+    expect(h.cancelSubscription).not.toHaveBeenCalled();
+    expect(h.state.updateCalls[0].patch).toEqual({
+      subscription_status: "canceled",
+      subscription_updated_at: expect.any(String),
+    });
+    expect(res.body).toEqual({ status: "canceled" });
+  });
 });

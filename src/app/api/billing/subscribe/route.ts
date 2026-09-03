@@ -29,7 +29,7 @@ export async function POST() {
     );
 
     const db = admin();
-    await db
+    const { error } = await db
       .from("accounts")
       .update({
         asaas_customer_id: customerId,
@@ -37,6 +37,14 @@ export async function POST() {
         subscription_updated_at: new Date().toISOString(),
       })
       .eq("id", ctx.accountId);
+
+    if (error) {
+      console.error("[POST /api/billing/subscribe] update error:", error);
+      return NextResponse.json(
+        { error: "Failed to save subscription" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({ invoiceUrl });
   } catch (err) {

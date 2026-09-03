@@ -216,6 +216,7 @@ export async function dispatchInboundToAiReply(
       catalogToolsAvailable: routing.useCatalog,
       catalogContextText,
       businessProfileContext,
+      agentBehavior: config.agentBehavior,
     }
     const systemPrompt = buildSystemPrompt(systemPromptArgs)
     // Anthropic-only prompt caching (AI optimization project, FASE 8) —

@@ -134,6 +134,7 @@ export async function POST(request: Request) {
       knowledge,
       businessProfileContext,
       timeContext: getSystemTimeContext(),
+      agentBehavior: config.agentBehavior,
     }
     const systemPrompt = buildSystemPrompt(systemPromptArgs)
     // Anthropic-only prompt caching (FASE 8) — see auto-reply.ts's

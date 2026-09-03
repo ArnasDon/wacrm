@@ -81,6 +81,9 @@ export function AiConfig() {
   const [embeddingsKeyEdited, setEmbeddingsKeyEdited] = useState(false);
   const [hasStoredEmbeddingsKey, setHasStoredEmbeddingsKey] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
+  // Fase 10 — structurally separate from systemPrompt (business facts):
+  // this is the account's own tone/personality/style configuration.
+  const [agentBehavior, setAgentBehavior] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
@@ -111,6 +114,7 @@ export function AiConfig() {
         setProvider(data.provider);
         setModel(data.model);
         setSystemPrompt(data.system_prompt ?? '');
+        setAgentBehavior(data.agent_behavior ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
@@ -182,6 +186,7 @@ export function AiConfig() {
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
+    agent_behavior: agentBehavior.trim() || null,
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
@@ -265,6 +270,7 @@ export function AiConfig() {
     setIsActive(false);
     setAutoReplyEnabled(false);
     setSystemPrompt('');
+    setAgentBehavior('');
     setHandoffAgentId('');
   };
 
@@ -453,6 +459,24 @@ export function AiConfig() {
                 onChange={(e) => setSystemPrompt(e.target.value)}
                 placeholder={t('promptPlaceholder')}
                 rows={5}
+                disabled={disabled}
+              />
+            </div>
+
+            {/* Fase 10 audit — structurally separate from Business
+                context above: this field is HOW the agent talks (tone,
+                personality, style), never business facts. Deliberately
+                labeled and described distinctly so the two never read as
+                the same field. */}
+            <div className="space-y-2">
+              <Label htmlFor="ai-agent-behavior">{t('agentBehavior')}</Label>
+              <p className="text-xs text-muted-foreground">{t('agentBehaviorDesc')}</p>
+              <Textarea
+                id="ai-agent-behavior"
+                value={agentBehavior}
+                onChange={(e) => setAgentBehavior(e.target.value)}
+                placeholder={t('agentBehaviorPlaceholder')}
+                rows={4}
                 disabled={disabled}
               />
             </div>

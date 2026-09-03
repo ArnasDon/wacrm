@@ -210,6 +210,98 @@ describe('POST /api/ai/config — system_prompt persistence', () => {
   });
 });
 
+// ============================================================
+// Fase 10 — agent_behavior, structurally separate from system_prompt.
+// Mirrors the system_prompt describe block above; plus dedicated
+// backward-compatibility and independence tests (TEST 5 / TEST 6 of
+// the Fase 10 authorization).
+// ============================================================
+describe('POST /api/ai/config — agent_behavior persistence (Fase 10)', () => {
+  it('saves agent_behavior on first creation (insert path)', async () => {
+    const { supabase, tables } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(postRequest({ ...BASE_BODY, agent_behavior: 'Sé formal y directo.' }));
+    expect(res.status).toBe(200);
+    expect(tables.ai_configs[0].agent_behavior).toBe('Sé formal y directo.');
+  });
+
+  it('agent_behavior and system_prompt travel independently — changing one never touches the other', async () => {
+    const { supabase, tables } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    await POST(postRequest({ ...BASE_BODY, agent_behavior: 'Comportamiento original.' }));
+    await POST(
+      postRequest({ ...BASE_BODY, api_key: '', agent_behavior: 'Comportamiento actualizado.' }),
+    );
+
+    const row = tables.ai_configs[0];
+    expect(row.agent_behavior).toBe('Comportamiento actualizado.');
+    // BASE_BODY's system_prompt is resent unchanged on every call here,
+    // same "no partial-update contract" reasoning as the system_prompt
+    // test above — confirms the two fields don't alias or overwrite
+    // each other.
+    expect(row.system_prompt).toBe(BASE_BODY.system_prompt);
+  });
+
+  it('an empty agent_behavior clears it to null (same clear-the-field contract as system_prompt)', async () => {
+    const { supabase, tables } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    await POST(postRequest({ ...BASE_BODY, agent_behavior: 'Texto.' }));
+    await POST(postRequest({ ...BASE_BODY, api_key: '', agent_behavior: '' }));
+    expect(tables.ai_configs[0].agent_behavior).toBeNull();
+  });
+
+  it('TEST 5 — a request that never mentions agent_behavior at all (legacy client) still saves system_prompt correctly and stores agent_behavior as null', async () => {
+    const { supabase, tables } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(postRequest(BASE_BODY)); // BASE_BODY has no agent_behavior key
+    expect(res.status).toBe(200);
+    expect(tables.ai_configs[0].system_prompt).toBe(BASE_BODY.system_prompt);
+    expect(tables.ai_configs[0].agent_behavior).toBeNull();
+  });
+
+  it('TEST 5 — GET on a pre-existing row that predates the column (agent_behavior undefined, not just null) does not throw', async () => {
+    const { supabase, tables } = fakeSupabase();
+    tables.ai_configs.push({
+      account_id: 'acct-1', provider: 'openai', model: 'gpt-5.4-mini',
+      system_prompt: 'Instrucciones legacy.', is_active: true, auto_reply_enabled: false,
+      auto_reply_max_per_conversation: 3, handoff_agent_id: null,
+      api_key: 'encrypted-blob', embeddings_api_key: null,
+      // agent_behavior intentionally absent — simulates a row written
+      // before migration 058.
+    });
+    mocks.getCurrentAccount.mockResolvedValue({ supabase, accountId: 'acct-1' });
+
+    const res = await GET();
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.configured).toBe(true);
+    expect(body.system_prompt).toBe('Instrucciones legacy.');
+    expect(body.agent_behavior == null).toBe(true);
+  });
+
+  it('TEST 6 — GET reflects exactly what POST just stored for both fields on a new, fully-configured account', async () => {
+    const { supabase } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+    mocks.getCurrentAccount.mockResolvedValue({ supabase, accountId: 'acct-1' });
+
+    await POST(
+      postRequest({
+        ...BASE_BODY,
+        system_prompt: 'Vendemos electrodomésticos en Santo Domingo.',
+        agent_behavior: 'Sé cálido, profesional, y siempre saluda por el nombre del cliente.',
+      }),
+    );
+    const res = await GET();
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.system_prompt).toBe('Vendemos electrodomésticos en Santo Domingo.');
+    expect(body.agent_behavior).toBe('Sé cálido, profesional, y siempre saluda por el nombre del cliente.');
+  });
+});
+
 describe('DELETE /api/ai/config', () => {
   it('removes the account config and reports success — existing behavior, unchanged', async () => {
     const { supabase, tables } = fakeSupabase();

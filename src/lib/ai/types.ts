@@ -32,6 +32,12 @@ export interface AiConfig {
   model: string
   apiKey: string
   systemPrompt: string | null
+  /** Optional, structurally separate personality/tone/style configuration
+   *  (Fase 10 — Agent Behavior). Distinct from `systemPrompt`, which is
+   *  business facts/instructions: this field is never a second system
+   *  prompt and can never override Core/security/catalog/handoff rules —
+   *  see buildSystemPromptParts's AGENT BEHAVIOR block in defaults.ts. */
+  agentBehavior: string | null
   isActive: boolean
   autoReplyEnabled: boolean
   autoReplyMaxPerConversation: number

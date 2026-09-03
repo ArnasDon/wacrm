@@ -286,3 +286,97 @@ describe('AiConfig — "Business context & instructions" (system_prompt)', () =>
     expect(textarea.value).toBe('Texto que el usuario escribió y no debe perderse.')
   })
 })
+
+// ============================================================
+// "Agent behavior" (ai_configs.agent_behavior) — Fase 10, structurally
+// separate from "Business context & instructions" above. Mirrors that
+// describe block's coverage exactly, plus a dedicated test proving the
+// two fields never collide (TEST 5 / TEST 6 of the Fase 10
+// authorization: backward compatibility + a new, fully-configured
+// account).
+// ============================================================
+describe('AiConfig — "Agent behavior" (agent_behavior), structurally separate from Business context', () => {
+  it('loads the existing agent_behavior from GET into its own textarea', async () => {
+    mockFetchSequence(true, { ...DEFAULT_CONFIG, agent_behavior: 'Sé formal y directo.' })
+    render(<AiConfig />)
+
+    const textarea = (await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement
+    expect(textarea.value).toBe('Sé formal y directo.')
+  })
+
+  it('a legacy config with no agent_behavior at all renders an empty field without error, while Business context still loads normally', async () => {
+    mockFetchSequence(true, DEFAULT_CONFIG) // DEFAULT_CONFIG predates this field entirely
+    render(<AiConfig />)
+
+    const behaviorTextarea = (await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement
+    const contextTextarea = (await screen.findByLabelText('businessContext')) as HTMLTextAreaElement
+    expect(behaviorTextarea.value).toBe('')
+    expect(contextTextarea.value).toBe('Be helpful.')
+  })
+
+  it('editing and saving sends agent_behavior without altering system_prompt — the two fields travel independently', async () => {
+    const backend = mockFetchSequence()
+    render(<AiConfig />)
+
+    const behaviorTextarea = (await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement
+    fireEvent.change(behaviorTextarea, { target: { value: 'Sé cálido y usa emojis con moderación.' } })
+    fireEvent.click(screen.getByText('save'))
+
+    await waitFor(() => expect(backend.posts).toHaveLength(1))
+    expect(backend.posts[0].agent_behavior).toBe('Sé cálido y usa emojis con moderación.')
+    // system_prompt (Business context) travels unchanged in the same
+    // request — the two fields are independent, not aliases of one
+    // another.
+    expect(backend.posts[0].system_prompt).toBe('Be helpful.')
+    expect(backend.getConfig()?.agent_behavior).toBe('Sé cálido y usa emojis con moderación.')
+  })
+
+  it('clearing agent_behavior to empty saves it as null, same clear-the-field contract as Business context', async () => {
+    const backend = mockFetchSequence(true, { ...DEFAULT_CONFIG, agent_behavior: 'Texto previo.' })
+    render(<AiConfig />)
+
+    const textarea = (await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement
+    fireEvent.change(textarea, { target: { value: '' } })
+    fireEvent.click(screen.getByText('save'))
+
+    await waitFor(() => expect(backend.posts).toHaveLength(1))
+    expect(backend.posts[0].agent_behavior).toBeNull()
+    expect(backend.getConfig()?.agent_behavior).toBeNull()
+  })
+
+  it('a brand-new account can configure Business context AND Agent behavior together, each landing in its own field on save', async () => {
+    const backend = mockFetchSequence(true, null) // not configured yet
+    render(<AiConfig />)
+
+    const contextTextarea = (await screen.findByLabelText('businessContext')) as HTMLTextAreaElement
+    const behaviorTextarea = (await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement
+    fireEvent.change(contextTextarea, { target: { value: 'Vendemos electrodomésticos.' } })
+    fireEvent.change(behaviorTextarea, { target: { value: 'Sé breve y profesional.' } })
+
+    // handleSave requires an API key on first configuration.
+    const keyInput = screen.getByLabelText('apiKey') as HTMLInputElement
+    fireEvent.change(keyInput, { target: { value: 'sk-test-key' } })
+    fireEvent.click(screen.getByText('save'))
+
+    await waitFor(() => expect(backend.posts).toHaveLength(1))
+    expect(backend.posts[0].system_prompt).toBe('Vendemos electrodomésticos.')
+    expect(backend.posts[0].agent_behavior).toBe('Sé breve y profesional.')
+  })
+
+  it('removing the AI config clears the agent_behavior field along with the rest', async () => {
+    mockFetchSequence(true, { ...DEFAULT_CONFIG, agent_behavior: 'Texto de comportamiento.' })
+    render(<AiConfig />)
+
+    expect((await screen.findByLabelText('agentBehavior')) as HTMLTextAreaElement).toHaveProperty(
+      'value',
+      'Texto de comportamiento.',
+    )
+    fireEvent.click(await screen.findByText('remove'))
+    fireEvent.click(await screen.findByText('removeConfirmContinue'))
+    fireEvent.click(await screen.findByText('removeCriticalConfirmButton'))
+
+    await waitFor(() =>
+      expect((screen.getByLabelText('agentBehavior') as HTMLTextAreaElement).value).toBe(''),
+    )
+  })
+})

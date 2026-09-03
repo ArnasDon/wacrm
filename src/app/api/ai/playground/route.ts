@@ -142,6 +142,7 @@ export async function POST(request: Request) {
       timeContext: getSystemTimeContext(),
       catalogToolsAvailable: routing.useCatalog,
       catalogContextText: routing.useCatalog ? catalogContextToPromptText(incomingCatalogContext) : null,
+      agentBehavior: config.agentBehavior,
     }
     const systemPrompt = buildSystemPrompt(systemPromptArgs)
     // Anthropic-only prompt caching (FASE 8) — see auto-reply.ts's

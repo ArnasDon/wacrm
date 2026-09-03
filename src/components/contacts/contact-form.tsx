@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
@@ -25,7 +26,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, AlertTriangle } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 
 interface ContactFormProps {
   open: boolean;
@@ -46,7 +46,8 @@ export function ContactForm({
   onSaved,
   onViewExisting,
 }: ContactFormProps) {
-  const t = useTranslations('Contacts.form');
+  const t = useTranslations('contacts');
+  const tCommon = useTranslations('common');
   const supabase = createClient();
   const { accountId } = useAuth();
   const isEdit = !!contact;
@@ -225,19 +226,19 @@ export function ContactForm({
       <DialogContent className="bg-popover border-border text-popover-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">
-            {isEdit ? t('editTitle') : t('addTitle')}
+            <span>{isEdit ? t('form.editContact') : t('form.newContact')}</span>
           </DialogTitle>
           <DialogDescription className="text-muted-foreground">
             {isEdit
-              ? t('editDesc')
-              : t('addDesc')}
+              ? t('form.editDescription')
+              : t('form.createDescription')}
           </DialogDescription>
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="cf-name" className="text-muted-foreground">
-              {t('nameLabel')}
+              {t('form.nameLabel')}
             </Label>
             <Input
               id="cf-name"
@@ -250,7 +251,7 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-phone" className="text-muted-foreground">
-              {t('phoneLabel')} <span className="text-red-400">*</span>
+              {t('form.phoneLabel')} <span className="text-red-400">*</span>
             </Label>
             <Input
               id="cf-phone"
@@ -298,7 +299,7 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-email" className="text-muted-foreground">
-              {t('emailLabel')}
+              {t('form.emailLabel')}
             </Label>
             <Input
               id="cf-email"
@@ -312,7 +313,7 @@ export function ContactForm({
 
           <div className="space-y-2">
             <Label htmlFor="cf-company" className="text-muted-foreground">
-              {t('companyLabel')}
+              {t('form.companyLabel')}
             </Label>
             <Input
               id="cf-company"
@@ -324,15 +325,15 @@ export function ContactForm({
           </div>
 
           <div className="space-y-2">
-            <Label className="text-muted-foreground">{t('tagsLabel')}</Label>
+            <Label className="text-muted-foreground">{t('form.tagsLabel')}</Label>
             {loadingTags ? (
               <div className="flex items-center gap-2 text-muted-foreground text-sm">
                 <Loader2 className="size-3 animate-spin" />
-                {t('loadingTags')}
+                {tCommon('loading')}...
               </div>
             ) : tags.length === 0 ? (
               <p className="text-xs text-muted-foreground">
-                {t('noTagsAvailable')}
+                {t('noTagsYet')}
               </p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
@@ -369,7 +370,7 @@ export function ContactForm({
               onClick={() => onOpenChange(false)}
               className="border-border text-muted-foreground hover:bg-muted"
             >
-              {t('cancel')}
+              {tCommon('cancel')}
             </Button>
             <Button
               type="submit"
@@ -377,7 +378,7 @@ export function ContactForm({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {saving && <Loader2 className="size-4 animate-spin" />}
-              {isEdit ? t('update') : t('create')}
+              <span>{isEdit ? tCommon('save') : tCommon('create')}</span>
             </Button>
           </DialogFooter>
         </form>

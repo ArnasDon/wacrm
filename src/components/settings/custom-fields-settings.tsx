@@ -20,7 +20,7 @@ import { SettingsChip } from './settings-chip';
  * `custom_fields` RLS.
  */
 export function CustomFieldsSettings() {
-  const t = useTranslations('Settings.tagsAndFields');
+  const t = useTranslations('settings.tagsAndFields');
   
   return (
     <Card>

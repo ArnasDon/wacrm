@@ -39,9 +39,9 @@ export function SettingsOverview({
   const { user, profile, accountId, accountRole, defaultCurrency, canManageMembers } =
     useAuth();
   const { mode, theme } = useTheme();
-  const t = useTranslations('Settings.overview');
-  const tRoles = useTranslations('Settings.roles');
-  const tSections = useTranslations('Settings.sections');
+  const t = useTranslations('settings.overview');
+  const tRoles = useTranslations('settings.roles');
+  const tSections = useTranslations('settings.sections');
 
   const [counts, setCounts] = useState<OverviewCounts | null>(null);
   const [countsLoading, setCountsLoading] = useState(true);

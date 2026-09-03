@@ -1,17 +1,47 @@
+# dependencies — let `npm ci` install fresh inside the image
+node_modules
+.pnp
+.pnp.*
+.yarn/cache
+
+# build output
+.next
+out
+build
+dist
+
+# testing
+coverage
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+
+# env files
+.env*
+!.env.example
+!.env.local.example
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# misc
+.DS_Store
+*.pem
 .git
 .github
-.next
-node_modules
+.vercel
+.vscode
+.idea
 docs
 mcp-server
 supabase
-*.md
-!README.md
-.env*
-!.env.local.example
+supabase/.temp
 Dockerfile
 docker-compose*.yml
 .dockerignore
-.vscode
-.idea
-coverage
+*.md
+!README.md

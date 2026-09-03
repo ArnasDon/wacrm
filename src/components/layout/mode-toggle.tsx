@@ -16,7 +16,7 @@ import { useTranslations } from "next-intl";
  * 40×40 hit target to match the header's other touch controls.
  */
 export function ModeToggle({ className }: { className?: string }) {
-  const t = useTranslations("ModeToggle");
+  const t = useTranslations("modeToggle");
   const { mode, toggleMode } = useTheme();
   const goingTo = mode === "dark" ? "light" : "dark";
   const switchLabel = t("switchMode", { mode: goingTo });

@@ -67,7 +67,7 @@ export function MessageReactions({
           )}
         >
           <span className="text-sm leading-none">{g.emoji}</span>
-          {g.count > 1 && <span>{g.count}</span>}
+          {g.count > 1 ? <span>{g.count}</span> : null}
         </button>
       ))}
     </div>

@@ -1,0 +1,10 @@
+# Railway (Nixpacks) build configuration.
+#
+# ffmpeg is a RUNTIME dependency of POST /api/media/voice-note: the inbox
+# voice recorder captures with the browser's native MediaRecorder (WebM/Opus
+# on Chrome, MP4/AAC on Safari), but Meta's Cloud API only renders Ogg/Opus
+# as a playable voice note — so recordings are transcoded server-side before
+# upload. Nixpacks' Node image ships without ffmpeg; listing it here installs
+# it into the deploy image while leaving Node provider detection untouched.
+[phases.setup]
+nixPkgs = ["ffmpeg"]

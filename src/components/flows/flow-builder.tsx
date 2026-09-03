@@ -55,6 +55,7 @@ import {
   nodeColors,
   slugify,
   summarizeNode,
+  useNodeTranslations,
   type BuilderNode,
   type NodeType,
 } from './shared';
@@ -74,7 +75,7 @@ import { useFlowEditor, type BuilderState } from './flow-editor-state';
 // ============================================================
 
 export function FlowBuilder() {
-  const t = useTranslations('Flows.builder');
+  const t = useTranslations('flows.builder');
   const {
     state,
     setState,
@@ -175,7 +176,9 @@ export function FlowBuilder() {
 
         {state.nodes.length === 0 ? (
           <div className="border-border bg-card/50 text-muted-foreground rounded-lg border border-dashed p-8 text-center text-sm">
-            {t.rich('nodesEmpty', { strong: (chunks) => <strong>{chunks}</strong> })}
+            {t.rich('nodesEmpty', {
+              strong: (chunks) => <strong>{chunks}</strong>,
+            })}
           </div>
         ) : (
           state.nodes.map((node) => (
@@ -274,7 +277,9 @@ function TriggerPanel({
 }) {
   return (
     <section className="border-border bg-card rounded-lg border p-4">
-      <h2 className="text-foreground mb-3 text-sm font-semibold">{t('triggerTitle')}</h2>
+      <h2 className="text-foreground mb-3 text-sm font-semibold">
+        {t('triggerTitle')}
+      </h2>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
           <label className="text-muted-foreground mb-1 block text-xs">
@@ -357,7 +362,9 @@ function EntryPicker({
   return (
     <section className="border-border bg-card flex items-center gap-3 rounded-lg border p-3">
       <CornerDownRight className="text-primary h-4 w-4 shrink-0" />
-      <span className="text-muted-foreground text-xs">{t('entryNodeTitle')}</span>
+      <span className="text-muted-foreground text-xs">
+        {t('entryNodeTitle')}
+      </span>
       <NodeKeySelect
         value={state.entry_node_id}
         nodes={state.nodes}
@@ -405,7 +412,7 @@ function NodeCard({
   const meta = NODE_META[node.node_type];
   const c = nodeColors(node.node_type);
   const hasError = issues.some((i) => i.severity === 'error');
-  const tSummary = useTranslations('Flows.summary');
+  const tSummary = useTranslations('flows.summary');
   const preview = summarizeNode(node, tSummary);
   return (
     <div
@@ -579,7 +586,13 @@ function NodeConfigWithAdvanced({
 // Add-node menu
 // ============================================================
 
-function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: ReturnType<typeof useTranslations> }) {
+function AddNodeButton({
+  onAdd,
+  t,
+}: {
+  onAdd: (type: NodeType) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
   const types: NodeType[] = [
     'start',
     'send_buttons',

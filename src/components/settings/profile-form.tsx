@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, Upload, Trash2, Mail, CircleAlert } from 'lucide-react';
 
@@ -15,7 +16,6 @@ import {
   AvatarImage,
 } from '@/components/ui/avatar';
 import { Card, CardContent } from '@/components/ui/card';
-import { useTranslations } from 'next-intl';
 import { SettingsPanelHead } from './settings-panel-head';
 
 const MAX_AVATAR_BYTES = 2 * 1024 * 1024;
@@ -26,13 +26,10 @@ const ALLOWED_MIME = new Set([
   'image/gif',
 ]);
 
-// Rough email shape check — the real validator is Supabase Auth, which
-// rejects anything malformed when we call updateUser({ email }). We
-// just want to stop obvious typos before making a network call.
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function ProfileForm() {
-  const t = useTranslations('Settings.profile');
+  const t = useTranslations('settings.profile');
   const { user, profile, refreshProfile } = useAuth();
   const supabase = createClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -45,14 +42,12 @@ export function ProfileForm() {
   const [saving, setSaving] = useState(false);
   const [emailChangePending, setEmailChangePending] = useState(false);
 
-  // Seed form state once the profile loads.
   useEffect(() => {
     if (!profile) return;
     setFullName(profile.full_name ?? '');
     setEmail(profile.email ?? '');
   }, [profile]);
 
-  // Cleanup object URLs to avoid leaks.
   useEffect(() => {
     return () => {
       if (previewUrl) URL.revokeObjectURL(previewUrl);
@@ -68,7 +63,7 @@ export function ProfileForm() {
 
   const onPickFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    e.target.value = ''; // reset so the same file can be re-picked
+    e.target.value = '';
     if (!file) return;
 
     if (!ALLOWED_MIME.has(file.type)) {
@@ -116,7 +111,6 @@ export function ProfileForm() {
     try {
       let nextAvatarUrl: string | null = profile.avatar_url ?? null;
 
-      // Upload a newly-staged image, if any.
       if (pendingAvatar) {
         const ext =
           pendingAvatar.name.split('.').pop()?.toLowerCase() || 'png';
@@ -139,7 +133,6 @@ export function ProfileForm() {
         nextAvatarUrl = null;
       }
 
-      // Persist name + avatar to profiles.
       const { error: updateError } = await supabase
         .from('profiles')
         .update({
@@ -151,11 +144,6 @@ export function ProfileForm() {
         throw new Error(t('saveFailed', { message: updateError.message }));
       }
 
-      // Email change goes through Supabase Auth, which emails a
-      // confirmation to both the old and new addresses. We don't
-      // touch profiles.email — Supabase will push the change there
-      // after the user clicks the link (handled by the handle_new_user
-      // trigger pattern in production deployments).
       let emailSent = false;
       if (trimmedEmail.toLowerCase() !== profile.email.toLowerCase()) {
         const { error: emailError } = await supabase.auth.updateUser({
@@ -163,7 +151,7 @@ export function ProfileForm() {
         });
         if (emailError) {
           // Partial success: name/avatar saved but email didn't.
-          toast.success(t('profileSaved'));
+          toast.success(t('updated'));
           toast.error(t('emailChangeFailed', { message: emailError.message }));
           setSaving(false);
           await refreshProfile();
@@ -180,8 +168,11 @@ export function ProfileForm() {
 
       toast.success(
         emailSent
-          ? t('profileSavedEmailCheck')
-          : t('profileSaved'),
+          ? t('emailCheckInbox', {
+              oldEmail: profile.email,
+              newEmail: trimmedEmail,
+            })
+          : t('updated'),
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
@@ -204,7 +195,7 @@ export function ProfileForm() {
         month: 'long',
         day: 'numeric',
       })
-    : '—';
+    : '\u2014';
 
   return (
     <section className="max-w-2xl animate-in fade-in-50 duration-200">
@@ -215,7 +206,6 @@ export function ProfileForm() {
       <form onSubmit={onSubmit} className="space-y-4">
         <Card>
           <CardContent className="space-y-6">
-          {/* Avatar row */}
           <div className="flex flex-wrap items-center gap-5">
             <Avatar size="lg" className="size-16">
               {currentAvatar ? (
@@ -256,12 +246,11 @@ export function ProfileForm() {
                 </Button>
               )}
               <p className="w-full text-xs text-muted-foreground">
-                {t('photoHint')}
+                {t('avatarHint')}
               </p>
             </div>
           </div>
 
-          {/* Name */}
           <div className="space-y-2">
             <Label htmlFor="profile-full-name" className="text-foreground">
               {t('displayName')}
@@ -277,7 +266,6 @@ export function ProfileForm() {
             />
           </div>
 
-          {/* Email */}
           <div className="space-y-2">
             <Label htmlFor="profile-email" className="text-foreground">
               {t('email')}
@@ -294,17 +282,16 @@ export function ProfileForm() {
               <p className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
                 <Mail className="mt-0.5 size-3.5 shrink-0" />
                 <span>
-                  {t.rich('emailChangeHint', { 
-                    oldEmail: profile?.email || '', 
+                  {t.rich('emailCheckInbox', {
+                    oldEmail: profile?.email || '',
                     newEmail: email,
-                    bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                    strong: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
                   })}
                 </span>
               </p>
             )}
           </div>
 
-          {/* Read-only block */}
           <div className="rounded-lg border border-border bg-muted p-4">
             <p className="mb-3 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
               {t('accountDetails')}
@@ -323,7 +310,7 @@ export function ProfileForm() {
               <div className="sm:col-span-2">
                 <dt className="text-muted-foreground">{t('userId')}</dt>
                 <dd className="mt-0.5 break-all font-mono text-xs text-muted-foreground">
-                  {user?.id ?? '—'}
+                  {user?.id ?? '\u2014'}
                 </dd>
               </div>
             </dl>
@@ -332,7 +319,7 @@ export function ProfileForm() {
           {!profile && (
             <p className="flex items-center gap-2 text-sm text-muted-foreground">
               <CircleAlert className="size-4" />
-              {t('loading')}
+              {t('loadingProfile')}
             </p>
           )}
 

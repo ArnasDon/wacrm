@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter } from "@/i18n/navigation"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
@@ -620,7 +620,10 @@ function SendTemplateFields({
         })}
         {current && !hasMatch && (
           <option value={current}>
-            {t("templates.unknown", { name: templateName, lang: language || t("templates.unknownLang") })}
+            {t("templates.unknown", {
+              name: templateName,
+              lang: language || t("templates.unknownLang"),
+            })}
           </option>
         )}
       </select>
@@ -634,7 +637,7 @@ function SendTemplateFields({
 
 export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const router = useRouter()
-  const t = useTranslations("Automations.builder")
+  const t = useTranslations("automations.builder")
   const isEditing = !!initial.id
   const [state, setState] = useState<BuilderInitial>(initial)
   const [saving, setSaving] = useState(false)
@@ -1088,7 +1091,7 @@ function StepRenderer({
   scope: ParentScope
   basePath: StepPath
 } & Omit<StepListProps, "steps" | "basePath" | "scope">) {
-  const t = useTranslations("Automations.builder")
+  const t = useTranslations("automations.builder")
   const path = childPath(basePath, scope, index)
   const meta = STEP_META[step.step_type]
   const Icon = meta.icon
@@ -1133,7 +1136,7 @@ function StepRenderer({
             </div>
             <div className="min-w-0 flex-1">
               <div className="text-[11px] uppercase tracking-wide text-muted-foreground">
-                {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
+                <span>{isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}</span>
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
               <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
@@ -1206,7 +1209,7 @@ function ConditionBranches({
   /** The condition's OWN path. Children hang off it, one marker each. */
   path: StepPath
 } & Omit<StepListProps, "steps" | "basePath" | "scope">) {
-  const t = useTranslations("Automations.builder")
+  const t = useTranslations("automations.builder")
   const yes = step.branches?.yes ?? []
   const no = step.branches?.no ?? []
   return (
@@ -1255,7 +1258,7 @@ function BranchColumn({
 }
 
 function AddButton({ onPick }: { onPick: (t: AutomationStepType) => void }) {
-  const t = useTranslations("Automations.builder")
+  const t = useTranslations("automations.builder")
   return (
     <div className="relative flex flex-col items-center">
       <div className="h-4 w-[2px] bg-border" aria-hidden />
@@ -1297,7 +1300,7 @@ function StepEditor({
   step: BuilderStep
   onChange: (s: BuilderStep) => void
 }) {
-  const t = useTranslations("Automations.builder")
+  const t = useTranslations("automations.builder")
   const cfg = step.step_config
   const set = (patch: Record<string, unknown>) =>
     onChange({ ...step, step_config: { ...cfg, ...patch } })

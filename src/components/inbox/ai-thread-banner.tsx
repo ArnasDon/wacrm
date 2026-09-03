@@ -78,7 +78,7 @@ export function AiThreadBanner({
   currentUserId,
   onChange,
 }: AiThreadBannerProps) {
-  const t = useTranslations("Inbox.aiBanner");
+  const t = useTranslations("inbox.aiBanner");
   const { accountId } = useAuth();
   const [autoReplyOn, setAutoReplyOn] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);

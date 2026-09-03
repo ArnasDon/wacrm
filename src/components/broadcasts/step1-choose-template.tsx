@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { MessageTemplate } from '@/types';
 import { Button } from '@/components/ui/button';
 import { Loader2, FileText, ArrowRight } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 
 const categoryColors: Record<string, string> = {
   Marketing: 'bg-purple-500/10 text-purple-400 border-purple-500/20',
@@ -21,7 +21,7 @@ interface Step1Props {
 }
 
 export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack }: Step1Props) {
-  const t = useTranslations('Broadcasts.wizard');
+  const t = useTranslations('broadcasts.step1');
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -42,7 +42,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
         if (fetchError) throw fetchError;
         setTemplates(data ?? []);
       } catch (err) {
-        setError(err instanceof Error ? err.message : t('chooseTemplate.errorLoad'));
+        setError(err instanceof Error ? err.message : t('noTemplates'));
       } finally {
         setLoading(false);
       }
@@ -70,17 +70,17 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{t('chooseTemplate.title')}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t('title')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t('chooseTemplate.subtitle')}
+          {t('description')}
         </p>
       </div>
 
       {templates.length === 0 ? (
         <div className="flex h-48 flex-col items-center justify-center rounded-xl border border-border bg-card/50">
           <FileText className="mb-2 h-8 w-8 text-muted-foreground" />
-          <p className="text-sm text-muted-foreground">{t('chooseTemplate.noTemplates')}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t('chooseTemplate.createFirst')}</p>
+          <p className="text-sm text-muted-foreground">{t('noTemplates')}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t('createTemplateFirst')}</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -108,10 +108,7 @@ export function Step1ChooseTemplate({ selectedTemplate, onSelect, onNext, onBack
                 </div>
                 <p className="line-clamp-3 text-xs text-muted-foreground">{template.body_text}</p>
                 <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
-                  <span>{template.language ?? 'en_US'}</span>
-                  {/* Status is omitted on purpose — every template
-                      shown here is already filtered to APPROVED,
-                      so the chip carried no information. */}
+                  <span><span>{template.language ?? 'en_US'}</span></span>
                 </div>
               </button>
             );

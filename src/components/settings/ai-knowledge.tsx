@@ -42,7 +42,7 @@ export function AiKnowledgeCard({
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
   const loadedAccountIdRef = useRef<string | null>(null);
-  const t = useTranslations('Settings.aiKnowledge');
+  const t = useTranslations('settings.aiKnowledge');
 
   const fetchDocs = useCallback(async () => {
     setLoading(true);

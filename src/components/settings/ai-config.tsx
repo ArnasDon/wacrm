@@ -51,7 +51,7 @@ const KEY_PLACEHOLDER: Record<AiProvider, string> = {
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
   const canEdit = accountRole ? canEditSettings(accountRole) : false;
-  const t = useTranslations('Settings.aiConfig');
+  const t = useTranslations('settings.aiConfig');
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

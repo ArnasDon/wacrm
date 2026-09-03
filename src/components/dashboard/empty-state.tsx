@@ -21,8 +21,8 @@ export function EmptyState({
   icon?: ComponentType<{ className?: string }>
   className?: string
 }) {
-  const t = useTranslations('Dashboard.emptyState')
-  const defaultTitle = t('title')
+  const t = useTranslations('dashboard')
+  const defaultTitle = t('emptyStateTitle')
   
   return (
     <div
@@ -35,7 +35,7 @@ export function EmptyState({
         <Icon className="h-5 w-5" />
       </div>
       <p className="text-sm font-medium text-muted-foreground">{title || defaultTitle}</p>
-      {hint && <p className="max-w-xs text-xs text-muted-foreground">{hint}</p>}
+      {hint ? <p className="max-w-xs text-xs text-muted-foreground">{hint}</p> : null}
     </div>
   )
 }

@@ -6,6 +6,10 @@ runs as a non-root user) and a `docker-compose.yml` with a single
 (or self-hosted) Supabase project via env vars; no database container
 is included.
 
+> **FFmpeg**: inbox voice notes transcode browser recordings to Ogg/Opus
+> server-side (`/api/media/voice-note`). The `Dockerfile` installs FFmpeg
+> in the runtime stage automatically — if you build your own image, add it.
+
 ## Quick start
 
 1. Copy the env template and fill it in:

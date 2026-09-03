@@ -30,6 +30,8 @@ import {
   Workflow,
 } from 'lucide-react';
 
+import { useTranslations } from 'next-intl';
+
 import { cn } from '@/lib/utils';
 
 // ============================================================
@@ -167,6 +169,25 @@ export const NODE_META: Record<
     category: 'flow',
   },
 };
+
+export function useNodeTranslations() {
+  const t = useTranslations('flows.nodeTypes');
+  return {
+    start: { label: t('start'), blurb: t('start_blurb') },
+    send_message: { label: t('send_message'), blurb: t('send_message_blurb') },
+    send_buttons: { label: t('send_buttons'), blurb: t('send_buttons_blurb') },
+    send_list: { label: t('send_list'), blurb: t('send_list_blurb') },
+    send_media: { label: t('send_media'), blurb: t('send_media_blurb') },
+    collect_input: {
+      label: t('collect_input'),
+      blurb: t('collect_input_blurb'),
+    },
+    condition: { label: t('condition'), blurb: t('condition_blurb') },
+    set_tag: { label: t('set_tag'), blurb: t('set_tag_blurb') },
+    handoff: { label: t('handoff'), blurb: t('handoff_blurb') },
+    end: { label: t('end'), blurb: t('end_blurb') },
+  } as Record<NodeType, { label: string; blurb: string }>;
+}
 
 /**
  * Bucket an ordered list of node types by category, preserving both

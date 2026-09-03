@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { CURRENCIES } from "@/lib/currency";
@@ -32,7 +33,6 @@ import {
   Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
 
 interface DealFormProps {
   open: boolean;
@@ -53,7 +53,8 @@ export function DealForm({
   defaultStageId,
   onSaved,
 }: DealFormProps) {
-  const t = useTranslations("Pipelines.form");
+  const t = useTranslations("pipelines.dealForm");
+  const tCommon = useTranslations("common");
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -153,7 +154,7 @@ export function DealForm({
 
   async function handleSave() {
     if (!title.trim() || !contactId || !stageId) {
-      toast.error(t("toastRequired"));
+      toast.error(t("titleContactStageRequired"));
       return;
     }
     setSaving(true);
@@ -176,7 +177,7 @@ export function DealForm({
         .update(payload)
         .eq("id", deal.id);
       if (error) {
-        toast.error(t("toastFailedSave"));
+        toast.error(t("failedToSaveDeal"));
         setSaving(false);
         return;
       }
@@ -186,12 +187,12 @@ export function DealForm({
       } = await supabase.auth.getSession();
       const user = session?.user;
       if (!user) {
-        toast.error(t("toastNotSignedIn"));
+        toast.error(t("notSignedIn"));
         setSaving(false);
         return;
       }
       if (!accountId) {
-        toast.error(t("toastNotLinked"));
+        toast.error(t("profileNotLinked"));
         setSaving(false);
         return;
       }
@@ -199,14 +200,14 @@ export function DealForm({
         .from("deals")
         .insert({ ...payload, user_id: user.id, account_id: accountId, status: "open" });
       if (error) {
-        toast.error(t("toastFailedCreate"));
+        toast.error(t("failedToCreateDeal"));
         setSaving(false);
         return;
       }
     }
 
     setSaving(false);
-    toast.success(deal ? t("toastUpdated") : t("toastCreated"));
+    toast.success(deal ? t("dealUpdated") : t("dealCreated"));
     onOpenChange(false);
     onSaved();
   }
@@ -220,11 +221,11 @@ export function DealForm({
       .eq("id", deal.id);
     setStatusAction(null);
     if (error) {
-      toast.error(t("toastFailedStatus"));
+      toast.error(t("failedToUpdateStatus"));
       return;
     }
     toast.success(
-      status === "won" ? t("toastMarkedWon") : status === "lost" ? t("toastMarkedLost") : t("toastReopened"),
+      status === "won" ? t("markedAsWon") : status === "lost" ? t("markedAsLost") : t("dealReopened"),
     );
     onOpenChange(false);
     onSaved();
@@ -236,10 +237,10 @@ export function DealForm({
     const { error } = await supabase.from("deals").delete().eq("id", deal.id);
     setDeleting(false);
     if (error) {
-      toast.error(t("toastFailedDelete"));
+      toast.error(t("failedToDeleteDeal"));
       return;
     }
-    toast.success(t("toastDeleted"));
+    toast.success(t("dealDeleted"));
     setConfirmDelete(false);
     onOpenChange(false);
     onSaved();
@@ -260,17 +261,17 @@ export function DealForm({
 
           <div className="flex-1 overflow-y-auto p-4 space-y-4">
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("title")}</Label>
+              <Label className="text-muted-foreground">{t("titleLabel")}</Label>
               <Input
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder={t("titlePlaceholder")}
+                placeholder={t("dealTitlePlaceholder")}
                 className="border-border bg-muted text-foreground"
               />
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("contact")}</Label>
+              <Label className="text-muted-foreground">{t("contactLabel")}</Label>
               <select
                 value={contactId}
                 onChange={(e) => setContactId(e.target.value)}
@@ -297,7 +298,7 @@ export function DealForm({
 
             <div className="grid grid-cols-[1fr_110px] gap-3">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("value")}</Label>
+                <Label className="text-muted-foreground">{t("valueLabel")}</Label>
                 <div className="relative">
                   <DollarSign className="absolute left-2 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -310,7 +311,7 @@ export function DealForm({
                 </div>
               </div>
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("currency")}</Label>
+                <Label className="text-muted-foreground">{t("currencyLabel")}</Label>
                 <select
                   value={currency}
                   onChange={(e) => setCurrency(e.target.value)}
@@ -336,7 +337,7 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("stage")}</Label>
+              <Label className="text-muted-foreground">{t("stageLabel")}</Label>
               <select
                 value={stageId}
                 onChange={(e) => setStageId(e.target.value)}
@@ -351,13 +352,13 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("assignedTo")}</Label>
+              <Label className="text-muted-foreground">{t("assignedToLabel")}</Label>
               <select
                 value={assignedTo}
                 onChange={(e) => setAssignedTo(e.target.value)}
                 className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary"
               >
-                <option value="">{t("unassigned")}</option>
+                <option value="">{tCommon("unassigned")}</option>
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.full_name || p.email}
@@ -367,7 +368,7 @@ export function DealForm({
             </div>
 
             <div className="grid gap-2">
-              <Label className="text-muted-foreground">{t("notes")}</Label>
+              <Label className="text-muted-foreground">{t("notesLabel")}</Label>
               <Textarea
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
@@ -379,7 +380,7 @@ export function DealForm({
             {deal && (
               <div className="space-y-2 rounded-lg border border-border bg-muted/50 p-3">
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                  {t("status")}
+                  {t("statusLabel")}
                 </p>
                 <div className="flex gap-2">
                   <Button
@@ -435,7 +436,7 @@ export function DealForm({
                 onClick={() => onOpenChange(false)}
                 className="flex-1 border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                {t("cancel")}
+                {tCommon("cancel")}
               </Button>
               <Button
                 onClick={handleSave}
@@ -449,7 +450,7 @@ export function DealForm({
             {deal &&
               (confirmDelete ? (
                 <div className="mt-3 flex items-center justify-between gap-2 rounded-md border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs">
-                  <span className="text-red-300">{t("deletePrompt")}</span>
+                  <span className="text-red-300">{t("deleteConfirm")}</span>
                   <div className="flex gap-1">
                     <button
                       type="button"
@@ -457,7 +458,7 @@ export function DealForm({
                       disabled={deleting}
                       className="rounded px-2 py-1 text-muted-foreground hover:bg-muted"
                     >
-                      {t("cancel")}
+                      {tCommon("cancel")}
                     </button>
                     <button
                       type="button"
@@ -465,7 +466,7 @@ export function DealForm({
                       disabled={deleting}
                       className="rounded bg-red-600 px-2 py-1 font-medium text-white hover:bg-red-700 disabled:opacity-50"
                     >
-                      {deleting ? t("deleting") : t("confirm")}
+                      {deleting ? t("deleting") : tCommon("confirm")}
                     </button>
                   </div>
                 </div>

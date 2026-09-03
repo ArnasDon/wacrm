@@ -24,18 +24,70 @@ export interface MetaPhoneInfo {
 }
 
 interface MetaErrorResponse {
-  error?: { message?: string; code?: number; type?: string }
+  error?: {
+    message?: string
+    code?: number
+    type?: string
+    error_subcode?: number
+  }
+}
+
+/**
+ * A rejection from Meta, with the machine-readable parts kept alongside
+ * the human-readable message.
+ *
+ * Callers used to get a bare `Error` carrying only `message`, which left
+ * no way to tell "this media expired 30 days ago, as designed" apart from
+ * "our token is broken" — both arrive as the same prose. `code` 100 with
+ * `subcode` 33 is Meta's "object does not exist / no permission", which
+ * media retrieval returns once Meta has deleted the bytes.
+ */
+export class MetaApiError extends Error {
+  /** HTTP status of the Graph API response. */
+  readonly status: number
+  /** Meta's `error.code`, when it sent one. */
+  readonly code: number | null
+  /** Meta's `error.error_subcode`, when it sent one. */
+  readonly subcode: number | null
+
+  constructor(
+    message: string,
+    status: number,
+    code: number | null,
+    subcode: number | null
+  ) {
+    super(message)
+    this.name = 'MetaApiError'
+    this.status = status
+    this.code = code
+    this.subcode = subcode
+  }
+
+  /**
+   * True when Meta says the object is gone or unreadable by this app.
+   * For media that means the bytes aged out of Meta's ~30-day retention
+   * — permanent, and not a fault of ours to retry or 500 over.
+   */
+  get isMissingObject(): boolean {
+    return this.code === 100 || this.status === 404
+  }
 }
 
 async function throwMetaError(response: Response, fallback: string): Promise<never> {
   let message = fallback
+  let code: number | null = null
+  let subcode: number | null = null
   try {
     const data = (await response.json()) as MetaErrorResponse
     if (data.error?.message) message = data.error.message
+    if (typeof data.error?.code === 'number') code = data.error.code
+    if (typeof data.error?.error_subcode === 'number') {
+      subcode = data.error.error_subcode
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }
-  throw new Error(message)
+  throw new MetaApiError(message, response.status, code, subcode)
 }
 
 // ============================================================

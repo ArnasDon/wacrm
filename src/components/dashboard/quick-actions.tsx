@@ -1,10 +1,9 @@
 "use client"
 
-import Link from 'next/link'
+import { Link } from '@/i18n/navigation'
+import { useTranslations } from 'next-intl'
 import { UserPlus, Briefcase, Radio, Zap } from 'lucide-react'
 import type { ComponentType } from 'react'
-
-import { useTranslations } from 'next-intl'
 
 // Quick-action shortcuts. Each navigates to the page that owns the
 // relevant "create" flow. We deliberately don't try to auto-open any
@@ -20,13 +19,13 @@ interface Action {
 const ACTIONS: Action[] = [
   { labelKey: 'newContact', href: '/contacts', icon: UserPlus, tint: 'text-primary' },
   { labelKey: 'newDeal', href: '/pipelines', icon: Briefcase, tint: 'text-blue-400' },
-  { labelKey: 'newBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
+  { labelKey: 'sendBroadcast', href: '/broadcasts/new', icon: Radio, tint: 'text-amber-400' },
   { labelKey: 'newAutomation', href: '/automations/new', icon: Zap, tint: 'text-primary' },
 ]
 
 export function QuickActions() {
-  const t = useTranslations('Dashboard.quickActions')
-  
+  const t = useTranslations('dashboard')
+
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {ACTIONS.map((a) => {
@@ -40,7 +39,7 @@ export function QuickActions() {
             <div className={`flex h-9 w-9 items-center justify-center rounded-lg bg-muted ${a.tint}`}>
               <Icon className="h-4 w-4" />
             </div>
-            <span className="text-sm font-medium text-foreground">{t(a.labelKey as string)}</span>
+            <span className="text-sm font-medium text-foreground">{t(a.labelKey as never)}</span>
           </Link>
         )
       })}

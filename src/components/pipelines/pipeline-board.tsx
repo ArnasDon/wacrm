@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   DndContext,
   DragOverlay,
@@ -20,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useAuth } from "@/hooks/use-auth";
 import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -201,7 +201,7 @@ function StageColumn({
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
 }) {
-  const t = useTranslations("Pipelines.board");
+  const t = useTranslations("pipelines.board");
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
 
   return (

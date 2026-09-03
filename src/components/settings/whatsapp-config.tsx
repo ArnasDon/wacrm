@@ -38,7 +38,7 @@ type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
 export function WhatsAppConfig() {
-  const t = useTranslations('Settings.whatsapp');
+  const t = useTranslations('settings.whatsapp');
   const supabase = createClient();
   // After multi-user, whatsapp_config is one-row-per-account, not
   // one-row-per-user. We pull `accountId` straight off the auth
@@ -484,7 +484,9 @@ export function WhatsAppConfig() {
               <XCircle className="size-4 text-red-500" />
             )}
             <AlertTitle className="text-foreground mb-0">
-              {connectionStatus === 'connected' ? t('credentialsValid') : t('notConnected')}
+              {connectionStatus === 'connected'
+                ? t('credentialsValid')
+                : t('notConnected')}
             </AlertTitle>
           </div>
           <AlertDescription className="text-muted-foreground">

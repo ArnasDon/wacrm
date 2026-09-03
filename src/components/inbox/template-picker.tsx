@@ -79,7 +79,7 @@ export function TemplatePicker({
   onOpenChange,
   onSelect,
 }: TemplatePickerProps) {
-  const t = useTranslations("Inbox.templatePicker");
+  const t = useTranslations("inbox.templatePicker");
 
   const [templates, setTemplates] = useState<MessageTemplate[]>([]);
   const [loading, setLoading] = useState(true);

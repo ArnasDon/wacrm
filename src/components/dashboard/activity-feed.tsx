@@ -1,7 +1,8 @@
 "use client"
 
-import Link from 'next/link'
+import { Link } from '@/i18n/navigation'
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import {
   MessageSquare,
   UserPlus,
@@ -38,10 +39,8 @@ const KIND_THEME: Record<ActivityKind, KindTheme> = {
   automation: { icon: Zap, badge: 'bg-rose-500/10 text-rose-400' },
 }
 
-import { useTranslations } from 'next-intl'
-
 export function ActivityFeed({ items, loading }: ActivityFeedProps) {
-  const t = useTranslations('Dashboard.activityFeed')
+  const t = useTranslations('dashboard')
   // Start at 5 — a quick scan of the most recent events without
   // dominating vertical real estate. User expands explicitly via the
   // footer control when they want deeper history.
@@ -59,7 +58,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
   return (
     <section className="rounded-xl border border-border bg-card">
       <header className="flex items-center justify-between border-b border-border px-5 py-4">
-        <h2 className="text-sm font-semibold text-foreground">{t('title')}</h2>
+        <h2 className="text-sm font-semibold text-foreground">{t('recentActivity')}</h2>
         <Link
           href="/inbox"
           className="text-xs font-medium text-primary hover:text-primary/80"
@@ -78,7 +77,7 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
         <div className="p-5">
           <EmptyState
             icon={Inbox}
-            title={t('noActivity')}
+            title={t('noActivityYet')}
             hint={t('noActivityHint')}
           />
         </div>
@@ -125,7 +124,8 @@ export function ActivityFeed({ items, loading }: ActivityFeedProps) {
           </ul>
           <footer className="flex items-center justify-between border-t border-border px-5 py-3 text-xs">
             <span className="text-muted-foreground tabular-nums">
-              {t('showingOf', { visible: visible.length, totalLoaded, plus: totalLoaded === 50 ? '+' : '' })}
+              {t('showing', { visible: visible.length, total: totalLoaded })}
+              <span>{totalLoaded === 50 ? '+' : ''}</span>
             </span>
             <div className="flex items-center gap-1">
               <span className="mr-1 text-muted-foreground">{t('show')}</span>

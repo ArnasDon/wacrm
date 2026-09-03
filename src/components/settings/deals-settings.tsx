@@ -40,7 +40,7 @@ export function DealsSettings() {
 
   const [selected, setSelected] = useState(defaultCurrency);
   const [saving, setSaving] = useState(false);
-  const t = useTranslations("Settings.deals");
+  const t = useTranslations("settings.deals");
 
   // Keep the select in sync once the profile (and its account default)
   // resolves, and after a save round-trips through refreshProfile.

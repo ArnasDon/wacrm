@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, KeyRound } from 'lucide-react';
 
@@ -16,12 +17,11 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
-import { useTranslations } from 'next-intl';
 
 const MIN_PASSWORD = 8;
 
 export function PasswordForm() {
-  const t = useTranslations('Settings.profile');
+  const t = useTranslations('settings.password');
   const { profile } = useAuth();
   const supabase = createClient();
 
@@ -34,31 +34,27 @@ export function PasswordForm() {
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!profile?.email) {
-      toast.error(t('cannotChangeNoEmail'));
+      toast.error(t('noEmail'));
       return;
     }
     if (next.length < MIN_PASSWORD) {
-      setConfirmError(t('passwordTooShort', { min: MIN_PASSWORD }));
+      setConfirmError(t('tooShort', { min: MIN_PASSWORD }));
       return;
     }
     if (next !== confirm) {
-      setConfirmError(t('passwordMismatch'));
+      setConfirmError(t('mismatch'));
       return;
     }
     setConfirmError(null);
     setSaving(true);
 
     try {
-      // Supabase doesn't expose a "verify password without issuing a
-      // session" API, so we re-authenticate with the provided current
-      // password. If it matches, the session refreshes silently; if it
-      // doesn't, we abort before calling updateUser.
       const { error: signInError } = await supabase.auth.signInWithPassword({
         email: profile.email,
         password: current,
       });
       if (signInError) {
-        toast.error(t('currentPasswordIncorrect'));
+        toast.error(t('incorrectCurrent'));
         return;
       }
 
@@ -66,14 +62,14 @@ export function PasswordForm() {
         password: next,
       });
       if (updateError) {
-        toast.error(t('passwordUpdateFailed', { message: updateError.message }));
+        toast.error(t('failedToUpdate'));
         return;
       }
 
       setCurrent('');
       setNext('');
       setConfirm('');
-      toast.success(t('passwordUpdated'));
+      toast.success(t('updated'));
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';
       toast.error(msg);
@@ -87,10 +83,10 @@ export function PasswordForm() {
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <KeyRound className="size-4 text-primary" />
-          {t('passwordTitle')}
+          {t('title')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">
-          {t('passwordDesc', { min: MIN_PASSWORD })}
+          {t('description', { min: MIN_PASSWORD })}
         </CardDescription>
       </CardHeader>
 
@@ -161,7 +157,7 @@ export function PasswordForm() {
                   {t('updating')}
                 </>
               ) : (
-                t('updatePassword')
+                t('update')
               )}
             </Button>
           </div>

@@ -125,7 +125,7 @@ function emptyButton(type: TemplateButton['type']): TemplateButton {
 }
 
 export function TemplateManager() {
-  const t = useTranslations('Settings.templates');
+  const t = useTranslations('settings.templates');
   const supabase = createClient();
   const { user, loading: authLoading } = useAuth();
 

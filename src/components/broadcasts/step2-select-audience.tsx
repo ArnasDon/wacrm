@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { parseBroadcastCsv } from '@/lib/broadcast-csv';
 import { CustomField, Tag } from '@/types';
@@ -17,7 +18,6 @@ import {
   ArrowLeft,
   X,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 
 type AudienceType = 'all' | 'tags' | 'custom_field' | 'csv';
 type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -49,45 +49,7 @@ export function Step2SelectAudience({
   onNext,
   onBack,
 }: Step2Props) {
-  const t = useTranslations('Broadcasts.wizard');
-
-  const OPERATOR_OPTIONS = useMemo<{ value: CustomFieldOperator; label: string }[]>(() => [
-    { value: 'is', label: t('selectAudience.operatorIs') },
-    { value: 'is_not', label: t('selectAudience.operatorIsNot') },
-    { value: 'contains', label: t('selectAudience.operatorContains') },
-  ], [t]);
-
-  const audienceOptions = useMemo<{
-    type: AudienceType;
-    label: string;
-    description: string;
-    icon: typeof Users;
-  }[]>(() => [
-    {
-      type: 'all',
-      label: t('selectAudience.method.all'),
-      description: t('selectAudience.allDescLoading'),
-      icon: Users,
-    },
-    {
-      type: 'tags',
-      label: t('selectAudience.method.tags'),
-      description: t('selectAudience.tagDesc'),
-      icon: Tags,
-    },
-    {
-      type: 'custom_field',
-      label: t('selectAudience.method.customField'),
-      description: t('selectAudience.customFieldDesc'),
-      icon: Filter,
-    },
-    {
-      type: 'csv',
-      label: t('selectAudience.method.csv'),
-      description: t('selectAudience.csvDesc'),
-      icon: Upload,
-    },
-  ], [t]);
+  const t = useTranslations('broadcasts.step2');
   const [tags, setTags] = useState<Tag[]>([]);
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [loadingTags, setLoadingTags] = useState(false);
@@ -104,6 +66,39 @@ export function Step2SelectAudience({
   // Only meaningful while the rows it produced are still in play —
   // picking another audience type wipes `csvContacts`.
   const csvFileName = csvCount > 0 ? pickedCsvName : null;
+
+  const audienceOptions = [
+    {
+      type: 'all' as AudienceType,
+      label: t('allContacts'),
+      description: t('allContactsDesc'),
+      icon: Users,
+    },
+    {
+      type: 'tags' as AudienceType,
+      label: t('filterByTags'),
+      description: t('filterByTagsDesc'),
+      icon: Tags,
+    },
+    {
+      type: 'custom_field' as AudienceType,
+      label: t('customField'),
+      description: t('customFieldDesc'),
+      icon: Filter,
+    },
+    {
+      type: 'csv' as AudienceType,
+      label: t('uploadCsv'),
+      description: t('uploadCsvDesc'),
+      icon: Upload,
+    },
+  ];
+
+  const OPERATOR_OPTIONS: { value: CustomFieldOperator; label: string }[] = [
+    { value: 'is', label: t('operatorIs') },
+    { value: 'is_not', label: t('operatorIsNot') },
+    { value: 'contains', label: t('operatorContains') },
+  ];
 
   // Tags are used both by the primary "Filter by Tags" audience type
   // AND by the exclude-list below — so always load once on mount.
@@ -235,8 +230,8 @@ export function Step2SelectAudience({
     if (!result.ok) {
       toast.error(
         result.error === 'missing_phone_column'
-          ? t('selectAudience.errorCsvMissingPhone')
-          : t('selectAudience.errorCsvParse'),
+          ? t('errorCsvMissingPhone')
+          : t('errorCsvParse'),
       );
       // Clear the input so re-picking the same corrected file still
       // fires `change` (the browser suppresses it for an identical value).
@@ -288,9 +283,9 @@ export function Step2SelectAudience({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{t('selectAudience.title')}</h2>
+        <h2 className="text-lg font-semibold text-foreground">{t('title')}</h2>
         <p className="mt-1 text-sm text-muted-foreground">
-          {t('selectAudience.subtitle')}
+          {t('description')}
         </p>
       </div>
 
@@ -344,12 +339,12 @@ export function Step2SelectAudience({
 
       {audience.type === 'tags' && (
         <div className="rounded-xl border border-border bg-card/50 p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">{t('selectAudience.selectTags')}</p>
+          <p className="mb-3 text-sm font-medium text-foreground">{t('selectTags')}</p>
           {loadingTags ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : tags.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {t('selectAudience.noTagsFound')}
+              {t('noTags')}
             </p>
           ) : (
             <div className="flex flex-wrap gap-2">
@@ -380,12 +375,12 @@ export function Step2SelectAudience({
 
       {audience.type === 'custom_field' && (
         <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
-          <p className="text-sm font-medium text-foreground">{t('selectAudience.method.customField')}</p>
+          <p className="text-sm font-medium text-foreground">{t('customFieldFilter')}</p>
           {loadingFields ? (
             <Loader2 className="h-5 w-5 animate-spin text-primary" />
           ) : customFields.length === 0 ? (
             <p className="text-xs text-muted-foreground">
-              {t('selectAudience.errorLoadFields')}
+              {t('noCustomFields')}
             </p>
           ) : (
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-[minmax(0,1fr)_140px_minmax(0,1fr)]">
@@ -394,7 +389,7 @@ export function Step2SelectAudience({
                 onChange={(e) => updateCustomField({ fieldId: e.target.value })}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
               >
-                <option value="">{t('selectAudience.selectField')}</option>
+                <option value="">{t('selectFieldPlaceholder')}</option>
                 {customFields.map((f) => (
                   <option key={f.id} value={f.id}>
                     {f.field_name}
@@ -420,7 +415,7 @@ export function Step2SelectAudience({
                 type="text"
                 value={audience.customField?.value ?? ''}
                 onChange={(e) => updateCustomField({ value: e.target.value })}
-                placeholder={t('selectAudience.valuePlaceholder')}
+                placeholder={t('value')}
                 className="h-9 rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none placeholder:text-muted-foreground focus:border-primary focus:ring-1 focus:ring-primary"
               />
             </div>
@@ -432,10 +427,10 @@ export function Step2SelectAudience({
         <div className="space-y-3 rounded-xl border border-border bg-card/50 p-4">
           <div>
             <p className="text-sm font-medium text-foreground">
-              {t('selectAudience.uploadCsv')}
+              {t('uploadCsv')}
             </p>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              {t('selectAudience.csvFormatDesc')}
+              {t('uploadCsvDesc')}
             </p>
           </div>
 
@@ -452,11 +447,11 @@ export function Step2SelectAudience({
               )}
             </div>
             <p className="text-sm text-foreground">
-              {csvFileName ?? t('selectAudience.uploadCsv')}
+              {csvFileName ?? t('uploadCsv')}
             </p>
             {csvCount > 0 && (
               <p className="text-xs text-primary">
-                {t('selectAudience.csvContactsFound', { count: csvCount })}
+                {t('csvContactsFound', { count: csvCount })}
               </p>
             )}
           </button>
@@ -476,11 +471,12 @@ export function Step2SelectAudience({
         <div className="mb-3 flex items-center gap-2">
           <X className="h-4 w-4 text-red-400" />
           <p className="text-sm font-medium text-foreground">
-            {t('selectAudience.excludeTags')}
+            {t('excludeTags')}
           </p>
+          <span className="text-xs text-muted-foreground">{t('excludeOptional')}</span>
         </div>
         {tags.length === 0 ? (
-          <p className="text-xs text-muted-foreground">{t('selectAudience.noTagsFound')}</p>
+          <p className="text-xs text-muted-foreground">{t('noTagsAvailable')}</p>
         ) : (
           <div className="flex flex-wrap gap-2">
             {tags.map((tag) => {
@@ -509,11 +505,11 @@ export function Step2SelectAudience({
 
       {/* Audience Summary */}
       <div className="rounded-xl border border-border bg-card/50 p-4">
-        <p className="mb-2 text-sm font-medium text-foreground">Audience Summary</p>
+        <p className="mb-2 text-sm font-medium text-foreground">{t('audienceSummary')}</p>
         {loadingCount ? (
           <div className="flex items-center gap-2">
             <Loader2 className="h-4 w-4 animate-spin text-primary" />
-            <span className="text-xs text-muted-foreground">Calculating…</span>
+            <span className="text-xs text-muted-foreground">{t('calculating')}</span>
           </div>
         ) : estimatedCount !== null ? (
           <div className="flex items-center gap-2">
@@ -521,11 +517,11 @@ export function Step2SelectAudience({
             <span className="text-sm text-foreground">
               {estimatedCount.toLocaleString()}
             </span>
-            <span className="text-xs text-muted-foreground">estimated recipients</span>
+            <span className="text-xs text-muted-foreground">{t('estimatedRecipients')}</span>
           </div>
         ) : (
           <p className="text-xs text-muted-foreground">
-            Select an audience type to see the estimate.
+            {t('selectForEstimate')}
           </p>
         )}
       </div>

@@ -29,7 +29,7 @@ export function QuickReplyPicker({
   onOpenChange,
   onPick,
 }: QuickReplyPickerProps) {
-  const t = useTranslations("Inbox.composer");
+  const t = useTranslations("inbox.composer");
   const [items, setItems] = useState<QuickReply[]>([]);
   const [loading, setLoading] = useState(false);
 

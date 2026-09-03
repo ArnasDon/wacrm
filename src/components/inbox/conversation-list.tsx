@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
@@ -11,7 +12,6 @@ import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
-import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
@@ -43,8 +43,15 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 };
 
 
-
 type InboxFilter = ConversationStatus | "all" | "unread";
+
+const FILTER_KEYS: { labelKey: string; value: InboxFilter }[] = [
+  { labelKey: "allConversations", value: "all" },
+  { labelKey: "unread", value: "unread" },
+  { labelKey: "open", value: "open" },
+  { labelKey: "pending", value: "pending" },
+  { labelKey: "closed", value: "closed" },
+];
 
 export function ConversationList({
   activeConversationId,
@@ -53,16 +60,7 @@ export function ConversationList({
   onConversationsLoaded,
   resyncToken = 0,
 }: ConversationListProps) {
-  const t = useTranslations("Inbox.conversationList");
-  
-  const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
-    { label: t("filterAll"), value: "all" },
-    { label: t("filterUnread"), value: "unread" },
-    { label: t("filterOpen"), value: "open" },
-    { label: t("filterPending"), value: "pending" },
-    { label: t("filterClosed"), value: "closed" },
-  ], [t]);
-
+  const t = useTranslations("inbox");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
   const [loading, setLoading] = useState(true);
@@ -217,7 +215,7 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
+  const activeFilter = FILTER_KEYS.find((o) => o.value === filter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -239,14 +237,14 @@ export function ConversationList({
         <div className="flex flex-wrap items-center gap-1">
           <DropdownMenu>
             <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-                {activeFilter?.label ?? t("filterAll")}
+                {activeFilter ? t(activeFilter.labelKey as never) : t("allConversations")}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="start"
               className="border-border bg-popover"
             >
-              {FILTER_OPTIONS.map((opt) => (
+              {FILTER_KEYS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => setFilter(opt.value)}
@@ -257,7 +255,7 @@ export function ConversationList({
                       : "text-popover-foreground"
                   )}
                 >
-                  {opt.label}
+                  {t(opt.labelKey as never)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -403,7 +401,7 @@ export function ConversationList({
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+            <p className="text-sm text-muted-foreground">{t("noConversationsFound")}</p>
           </div>
         ) : (
           <div className="flex flex-col">

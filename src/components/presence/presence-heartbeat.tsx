@@ -56,13 +56,33 @@ export function PresenceHeartbeat() {
       const t = Date.now();
       if (t - lastBeatAt < 1_000) return;
       lastBeatAt = t;
-      const { error } = await supabase.rpc("touch_presence", {
-        p_status: currentStatus(),
-      });
-      if (error && !cancelled) {
-        // Non-fatal: presence is best-effort. Log once per failure so a
-        // misconfigured RPC is visible without spamming.
-        console.error("[PresenceHeartbeat] touch_presence failed:", error.message);
+
+      // Presence is best-effort. The `rpc()` call can fail in two
+      // distinct ways and we treat them differently:
+      //
+      //   1. Network-level failure — the fetch never completes and
+      //      throws (`TypeError: Failed to fetch`, an AbortError when a
+      //      beat is cancelled by an HMR reload / navigation, or the tab
+      //      being briefly offline). These are transient and expected;
+      //      the next 30s beat recovers. Swallow them silently so the
+      //      console isn't spammed every reload.
+      //
+      //   2. RPC-level error — the request reached PostgREST and it
+      //      returned an error (e.g. "No account for caller", RLS
+      //      denial). That's a real, actionable misconfiguration, so
+      //      surface it (as a warning — it never breaks the app).
+      try {
+        const { error } = await supabase.rpc("touch_presence", {
+          p_status: currentStatus(),
+        });
+        if (error && !cancelled) {
+          console.warn(
+            "[PresenceHeartbeat] touch_presence rpc error:",
+            error.message,
+          );
+        }
+      } catch {
+        // Transient network/abort failure — ignore. See note above.
       }
     };
 

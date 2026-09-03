@@ -1,9 +1,9 @@
 "use client";
 
 import type { Deal, PipelineStage } from "@/types";
+import { useTranslations } from "next-intl";
 import { Calendar, Check, X } from "lucide-react";
 import { formatCurrency } from "@/lib/currency";
-import { useTranslations } from "next-intl";
 
 interface DealCardProps {
   deal: Deal;
@@ -27,8 +27,12 @@ function initials(name?: string, fallback?: string) {
 }
 
 export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
-  const t = useTranslations("Pipelines.card");
+  const t = useTranslations("pipelines.card");
   const contactLabel = deal.contact?.name || deal.contact?.phone || t("noContact");
+  // Second line only when the name carries the top line — a contact saved
+  // without a name already shows its phone there.
+  const phoneLabel =
+    deal.contact?.phone && deal.contact.phone !== contactLabel ? deal.contact.phone : null;
   const assigneeLabel = deal.assignee?.full_name || null;
 
   return (
@@ -74,10 +78,22 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
 
       {/* Contact row */}
       <div className="mt-2 flex items-center gap-2">
-        <span className="flex h-5 w-5 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-foreground">
           {initials(deal.contact?.name, deal.contact?.phone)}
         </span>
-        <span className="truncate text-xs text-muted-foreground">{contactLabel}</span>
+        <span className="min-w-0 flex-1">
+          <span title={contactLabel} className="block truncate text-xs text-muted-foreground">
+            {contactLabel}
+          </span>
+          {phoneLabel && (
+            <span
+              title={phoneLabel}
+              className="block truncate text-[11px] text-muted-foreground/70"
+            >
+              {phoneLabel}
+            </span>
+          )}
+        </span>
       </div>
 
       <div className="mt-2 flex items-center justify-between">

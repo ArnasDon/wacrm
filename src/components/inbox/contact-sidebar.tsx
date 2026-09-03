@@ -26,8 +26,8 @@ interface ContactSidebarProps {
 }
 
 export function ContactSidebar({ contact }: ContactSidebarProps) {
-  const tSidebar = useTranslations("Inbox.sidebar");
-  const tThread = useTranslations("Inbox.messageThread");
+  const tSidebar = useTranslations("inbox.sidebar");
+  const tThread = useTranslations("inbox.messageThread");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);

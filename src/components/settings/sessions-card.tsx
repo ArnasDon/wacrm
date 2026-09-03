@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { toast } from 'sonner';
 import { Loader2, LogOut } from 'lucide-react';
 
@@ -21,10 +22,9 @@ import {
   DialogDescription,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { useTranslations } from 'next-intl';
 
 export function SessionsCard() {
-  const t = useTranslations('Settings.profile');
+  const t = useTranslations('settings.sessions');
   const supabase = createClient();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -32,9 +32,6 @@ export function SessionsCard() {
   const onConfirm = async () => {
     setSigningOut(true);
     try {
-      // scope: 'global' revokes every refresh token for this user
-      // across all devices; the next auth-state change on this tab
-      // triggers the usual redirect.
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
         toast.error(t('signOutFailed', { message: error.message }));
@@ -55,10 +52,10 @@ export function SessionsCard() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2 text-foreground">
             <LogOut className="size-4 text-primary" />
-            {t('sessionsTitle')}
+            {t('title')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            {t('sessionsDesc')}
+            {t('description')}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -76,9 +73,9 @@ export function SessionsCard() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>{t('signOutConfirmTitle')}</DialogTitle>
+            <DialogTitle>{t('confirmTitle')}</DialogTitle>
             <DialogDescription>
-              {t('signOutConfirmDesc')}
+              {t('confirmDescription')}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -97,7 +94,7 @@ export function SessionsCard() {
                   {t('signingOut')}
                 </>
               ) : (
-                t('signOutEverywhere')
+                t('signOut')
               )}
             </Button>
           </DialogFooter>

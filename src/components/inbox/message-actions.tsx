@@ -34,7 +34,7 @@ export function MessageActions({
   onReact,
   children,
 }: MessageActionsProps) {
-  const t = useTranslations("Inbox.actions");
+  const t = useTranslations("inbox.actions");
 
   // Touch devices have no hover. Long-press fires `contextmenu`; we capture
   // it, suppress the native menu, and pin the toolbar open until the user

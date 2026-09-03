@@ -33,8 +33,8 @@ import {
   Upload,
   X,
 } from "lucide-react";
-import { toast } from "sonner";
 import { useTranslations } from "next-intl";
+import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,7 +63,7 @@ export function NodeConfigForm({
   showAdvanced,
   onUpdateConfig,
 }: NodeConfigFormProps) {
-  const t = useTranslations("Flows.builder.form");
+  const t = useTranslations("flows.forms");
   const cfg = node.config;
   switch (node.node_type) {
     case "start":
@@ -81,7 +81,7 @@ export function NodeConfigForm({
       return (
         <>
           <TextRow
-            label={t("textToCustomer")}
+            label={t("textSentToCustomer")}
             value={(cfg as { text?: string }).text ?? ""}
             onChange={(v) => onUpdateConfig({ text: v })}
           />
@@ -103,7 +103,6 @@ export function NodeConfigForm({
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
           showAdvanced={showAdvanced}
-          t={t}
         />
       );
 
@@ -115,7 +114,6 @@ export function NodeConfigForm({
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
           showAdvanced={showAdvanced}
-          t={t}
         />
       );
 
@@ -126,7 +124,6 @@ export function NodeConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
-          t={t}
         />
       );
 
@@ -134,14 +131,14 @@ export function NodeConfigForm({
       return (
         <>
           <TextRow
-            label={t("promptToCustomer")}
+            label={t("promptSentToCustomer")}
             value={(cfg as { prompt_text?: string }).prompt_text ?? ""}
             onChange={(v) => onUpdateConfig({ prompt_text: v })}
             rows={2}
           />
           <div>
             <label className="mb-1 block text-xs text-muted-foreground">
-              {t("varKeyLabel")}
+              {t("variableKeyLabel")}
             </label>
             <Input
               value={(cfg as { var_key?: string }).var_key ?? ""}
@@ -150,11 +147,11 @@ export function NodeConfigForm({
                   var_key: e.target.value.replace(/[^a-zA-Z0-9_]/g, ""),
                 })
               }
-              placeholder={t("varKeyPlaceholder")}
+              placeholder={t("variableKeyPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
             <p className="mt-1 text-[10px] text-muted-foreground">
-              {t("varKeyHelp")}{" "}
+              {t("variableInterpolateHint")}{" "}
               <code className="rounded bg-muted px-1">
                 {"{{vars."}
                 {(cfg as { var_key?: string }).var_key || "name"}
@@ -168,7 +165,7 @@ export function NodeConfigForm({
             allNodes={allNodes}
             currentKey={node.node_key}
             onChange={(v) => onUpdateConfig({ next_node_key: v })}
-            label={t("advanceAfterCapture")}
+            label={t("afterCapturingAdvanceTo")}
           />
         </>
       );
@@ -180,7 +177,6 @@ export function NodeConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
-          t={t}
         />
       );
 
@@ -191,14 +187,13 @@ export function NodeConfigForm({
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
-          t={t}
         />
       );
 
     case "handoff":
       return (
         <TextRow
-          label={t("internalNote")}
+          label={t("internalNoteLabel")}
           value={(cfg as { note?: string }).note ?? ""}
           onChange={(v) => onUpdateConfig({ note: v })}
           rows={2}
@@ -208,7 +203,7 @@ export function NodeConfigForm({
     case "end":
       return (
         <p className="text-xs text-muted-foreground">
-          {t("endNodeHelp")}
+          {t("terminalNodeHint")}
         </p>
       );
   }
@@ -230,15 +225,14 @@ function SendButtonsForm({
   currentKey,
   onUpdateConfig,
   showAdvanced,
-  t,
 }: {
   cfg: SendButtonsCfg;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   showAdvanced: boolean;
-  t: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.forms");
   const buttons = cfg.buttons ?? [];
   const updateButton = (
     idx: number,
@@ -271,14 +265,14 @@ function SendButtonsForm({
         rows={3}
       />
       <TextRow
-        label={t("footerText")}
+        label={t("footerOptional")}
         value={cfg.footer_text ?? ""}
         onChange={(v) => onUpdateConfig({ footer_text: v })}
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
           <label className="text-xs text-muted-foreground">
-            {t("buttonsHelp")}
+            {t("buttonsLabel")}
           </label>
         </div>
         <div className="flex flex-col gap-3">
@@ -307,7 +301,7 @@ function SendButtonsForm({
               <Input
                 value={b.title}
                 onChange={(e) => updateButton(i, { title: e.target.value })}
-                placeholder={t("optionTitlePlaceholder")}
+                placeholder={t("visibleTitle")}
                 className="bg-muted"
                 maxLength={20}
               />
@@ -316,7 +310,7 @@ function SendButtonsForm({
                 nodes={allNodes}
                 excludeKey={currentKey}
                 onChange={(v) => updateButton(i, { next_node_key: v ?? "" })}
-                placeholder={t("nextNodePlaceholder")}
+                placeholder={t("nextNode")}
               />
               <Button
                 variant="ghost"
@@ -370,15 +364,14 @@ function SendListForm({
   currentKey,
   onUpdateConfig,
   showAdvanced,
-  t,
 }: {
   cfg: SendListCfg;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   showAdvanced: boolean;
-  t: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.forms");
   const sections = cfg.sections ?? [];
   const totalRows = sections.reduce((sum, s) => sum + s.rows.length, 0);
 
@@ -456,7 +449,7 @@ function SendListForm({
   return (
     <>
       <TextRow
-        label="Body text"
+        label={t("bodyText")}
         value={cfg.text ?? ""}
         onChange={(v) => onUpdateConfig({ text: v })}
         rows={3}
@@ -468,7 +461,7 @@ function SendListForm({
           onChange={(v) => onUpdateConfig({ button_label: v })}
         />
         <TextRow
-          label={t("footerText")}
+          label={t("footerOptional")}
           value={cfg.footer_text ?? ""}
           onChange={(v) => onUpdateConfig({ footer_text: v })}
         />
@@ -476,7 +469,7 @@ function SendListForm({
 
       <div className="mt-2">
         <label className="mb-2 block text-xs text-muted-foreground">
-          {t("rowsHelp")}
+          {t("rowsLabel")}
         </label>
         {sections.map((section, sIdx) => (
           <div
@@ -489,7 +482,7 @@ function SendListForm({
                 onChange={(e) =>
                   updateSection(sIdx, { title: e.target.value })
                 }
-                placeholder={t("sectionTitlePlaceholder", { count: sIdx + 1 })}
+                placeholder={t("sectionTitlePlaceholder", { number: sIdx + 1 })}
                 className="bg-muted text-xs"
               />
               {sections.length > 1 && (
@@ -498,7 +491,7 @@ function SendListForm({
                   size="sm"
                   onClick={() => removeSection(sIdx)}
                   className="shrink-0 text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                  aria-label="Remove section"
+                  aria-label={t("removeSection")}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </Button>
@@ -534,7 +527,7 @@ function SendListForm({
                   onChange={(e) =>
                     updateRow(sIdx, rIdx, { title: e.target.value })
                   }
-                  placeholder={t("rowTitlePlaceholder")}
+                  placeholder={t("rowTitle")}
                   className="bg-muted"
                   maxLength={24}
                 />
@@ -545,7 +538,7 @@ function SendListForm({
                   onChange={(v) =>
                     updateRow(sIdx, rIdx, { next_node_key: v ?? "" })
                   }
-                  placeholder={t("nextNodePlaceholder")}
+                  placeholder={t("nextNode")}
                 />
                 <Button
                   variant="ghost"
@@ -570,9 +563,6 @@ function SendListForm({
             )}
           </div>
         ))}
-        {/* WhatsApp's interactive-list spec caps sections at 10. Group rows
-            by category (Billing / Support / Sales etc.) to give customers a
-            scannable menu. */}
         {sections.length < 10 && (
           <Button variant="outline" size="sm" onClick={addSection}>
             <Plus className="h-3.5 w-3.5" />
@@ -608,14 +598,13 @@ function ConditionForm({
   allNodes,
   currentKey,
   onUpdateConfig,
-  t,
 }: {
   cfg: ConditionCfg;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
-  t: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.forms");
   const tags = useUserTags();
 
   const subject = cfg.subject ?? "var";
@@ -657,12 +646,12 @@ function ConditionForm({
               onValueChange={(v) => onUpdateConfig({ subject_key: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
-                {tags.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                {tags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    {tag.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -738,14 +727,14 @@ function ConditionForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ true_next: v })}
-          label={t("ifTrueAdvance")}
+          label={t("ifTrueAdvanceTo")}
         />
         <NextNodeRow
           value={cfg.false_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ false_next: v })}
-          label={t("ifFalseAdvance")}
+          label={t("ifFalseAdvanceTo")}
         />
       </div>
     </>
@@ -767,14 +756,13 @@ function SetTagForm({
   allNodes,
   currentKey,
   onUpdateConfig,
-  t,
 }: {
   cfg: SetTagCfg;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
-  t: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.forms");
   const tags = useUserTags();
 
   return (
@@ -805,12 +793,12 @@ function SetTagForm({
               onValueChange={(v) => onUpdateConfig({ tag_id: v })}
             >
               <SelectTrigger className="bg-muted">
-                <SelectValue placeholder="Pick a tag…" />
+                <SelectValue placeholder={t("pickTag")} />
               </SelectTrigger>
               <SelectContent>
-                {tags.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
+                {tags.map((tag) => (
+                  <SelectItem key={tag.id} value={tag.id}>
+                    {tag.name}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -892,14 +880,13 @@ function SendMediaForm({
   allNodes,
   currentKey,
   onUpdateConfig,
-  t,
 }: {
   cfg: SendMediaCfg;
   allNodes: BuilderNode[];
   currentKey: string;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
-  t: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.forms");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
@@ -913,30 +900,26 @@ function SendMediaForm({
     async (file: File) => {
       if (file.size > MEDIA_MAX_BYTES) {
         toast.error(
-          `File is ${(file.size / 1024 / 1024).toFixed(1)} MB — limit is 16 MB.`,
+          t("fileSizeError", { size: (file.size / 1024 / 1024).toFixed(1) }),
         );
         return;
       }
       setUploading(true);
       try {
-        // Account-scoped upload (path `account-<id>/...`) — see
-        // uploadAccountMedia + migration 020's flow-media RLS policy.
         const { publicUrl } = await uploadAccountMedia(FLOW_MEDIA_BUCKET, file);
-        // Patch all fields in one call so the form doesn't re-render
-        // with a half-uploaded state.
         onUpdateConfig({
           media_url: publicUrl,
           filename: file.name,
         });
-        toast.success("File uploaded.");
+        toast.success(t("fileUploaded"));
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Upload failed.";
+        const msg = err instanceof Error ? err.message : t("uploadFailed");
         toast.error(msg);
       } finally {
         setUploading(false);
       }
     },
-    [onUpdateConfig],
+    [onUpdateConfig, t],
   );
 
   const handleClear = () => {
@@ -946,13 +929,10 @@ function SendMediaForm({
   return (
     <>
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">{t("mediaTypeLabel")}</label>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("mediaType")}</label>
         <Select
           value={mediaType}
           onValueChange={(v) => {
-            // Changing type clears the existing file — the bucket
-            // accepts different MIME sets per type and a previously
-            // uploaded PDF can't be sent as an image.
             onUpdateConfig({
               media_type: v as NonNullable<SendMediaCfg["media_type"]>,
               media_url: "",
@@ -964,10 +944,10 @@ function SendMediaForm({
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="image">{t("imageLabel")}</SelectItem>
-            <SelectItem value="video">{t("videoLabel")}</SelectItem>
+            <SelectItem value="image">{t("imageType")}</SelectItem>
+            <SelectItem value="video">{t("videoType")}</SelectItem>
             <SelectItem value="document">
-              {t("documentLabel")}
+              {t("documentType")}
             </SelectItem>
           </SelectContent>
         </Select>
@@ -1025,14 +1005,13 @@ function SendMediaForm({
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) void handleFile(f);
-            // Reset so picking the same file twice still fires onChange.
             e.target.value = "";
           }}
         />
       </div>
 
       <TextRow
-        label={t("captionLabel")}
+        label={t("captionOptional")}
         value={cfg.caption ?? ""}
         onChange={(v) => onUpdateConfig({ caption: v })}
         rows={2}
@@ -1057,7 +1036,7 @@ function SendMediaForm({
         allNodes={allNodes}
         currentKey={currentKey}
         onChange={(v) => onUpdateConfig({ next_node_key: v })}
-        label={t("advanceAfterSending")}
+        label={t("afterSendingAdvanceTo")}
       />
     </>
   );

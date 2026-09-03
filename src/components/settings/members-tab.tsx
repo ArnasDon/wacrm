@@ -93,7 +93,7 @@ interface Invitation {
   expires_at: string;
 }
 
-// These roles are translated via `useTranslations("Settings.roles")` where they are used.
+// These roles are translated via `useTranslations("roles")` where they are used.
 const EDITABLE_ROLES: { value: AccountRole }[] = [
   { value: 'admin' },
   { value: 'agent' },
@@ -125,8 +125,8 @@ function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, stri
 }
 
 export function MembersTab() {
-  const t = useTranslations('Settings.members');
-  const tRoles = useTranslations('Settings.roles');
+  const t = useTranslations('settings.members');
+  const tRoles = useTranslations('roles');
   const { user, canManageMembers } = useAuth();
   const { getPresence, getRow, now } = usePresence();
 
@@ -579,9 +579,9 @@ export function MembersTab() {
               {t('removeDialogTitle')}
             </DialogTitle>
             <DialogDescription className="text-muted-foreground">
-              {t.rich('removeDialogDesc', { 
+              {t.rich('removeDialogDesc', {
                 name: removingMember?.full_name || t('unnamed'),
-                bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
               })}
             </DialogDescription>
           </DialogHeader>

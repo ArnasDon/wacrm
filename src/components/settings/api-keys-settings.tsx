@@ -71,7 +71,7 @@ function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
 
 export function ApiKeysSettings() {
   const { canEditSettings } = useAuth();
-  const t = useTranslations('Settings.apiKeys');
+  const t = useTranslations('settings.apiKeys');
 
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
@@ -289,7 +289,7 @@ function CreateKeyDialog({
   onOpenChange: (open: boolean) => void;
   onCreated: () => void;
 }) {
-  const t = useTranslations('Settings.apiKeys');
+  const t = useTranslations('settings.apiKeys');
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ApiScope[]>([]);
   const [submitting, setSubmitting] = useState(false);

@@ -22,7 +22,7 @@ import { SettingsPanelHead } from "./settings-panel-head";
  */
 export function AppearancePanel() {
   const { theme, setTheme, mode, setMode } = useTheme();
-  const t = useTranslations("Settings.appearance");
+  const t = useTranslations("settings.appearance");
 
   return (
     <section className="max-w-3xl animate-in fade-in-50 duration-200">
@@ -86,7 +86,7 @@ function ModeCard({
   isActive: boolean;
   onPick: () => void;
 }) {
-  const t = useTranslations("Settings.appearance");
+  const t = useTranslations("settings.appearance");
   const isLight = mode === "light";
   const Icon = isLight ? Sun : Moon;
   return (
@@ -137,7 +137,7 @@ function ThemeCard({
   isActive: boolean;
   onPick: () => void;
 }) {
-  const t = useTranslations("Settings.appearance");
+  const t = useTranslations("settings.appearance");
   return (
     <button
       type="button"

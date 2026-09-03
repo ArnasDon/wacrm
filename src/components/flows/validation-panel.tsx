@@ -24,8 +24,8 @@ import type { ValidationIssue } from "@/lib/flows/validate";
 import { useFlowEditor } from "./flow-editor-state";
 
 export function ValidationPanel() {
+  const t = useTranslations("flows.validation");
   const { issues, requestFlash } = useFlowEditor();
-  const t = useTranslations("Flows.validation");
 
   if (issues.length === 0) {
     // Slate-950 base + emerald accents so the panel stays readable when
@@ -53,11 +53,14 @@ export function ValidationPanel() {
         ) : (
           <CircleAlert className="h-4 w-4 text-amber-400" />
         )}
-        {t("summary", { errorCount: errors.length, warningCount: warnings.length })}
+        <span>
+          {errors.length === 1 ? t("errors", { count: errors.length }) : t("errors_plural", { count: errors.length })},{" "}
+          {warnings.length === 1 ? t("warnings", { count: warnings.length }) : t("warnings_plural", { count: warnings.length })}
+        </span>
       </div>
       <div className="flex flex-col gap-1">
         {issues.map((i, ix) => (
-          <IssueLine key={ix} issue={i} onJump={requestFlash} t={t} />
+          <IssueLine key={ix} issue={i} onJump={requestFlash} />
         ))}
       </div>
     </div>
@@ -73,12 +76,11 @@ export function ValidationPanel() {
 export function IssueLine({
   issue,
   onJump,
-  t,
 }: {
   issue: ValidationIssue;
   onJump?: (key: string) => void;
-  t?: ReturnType<typeof useTranslations>;
 }) {
+  const t = useTranslations("flows.validation");
   const tone =
     issue.severity === "error" ? "text-red-300" : "text-amber-300";
   const iconTone =
@@ -109,7 +111,7 @@ export function IssueLine({
           "flex w-full items-start gap-2 rounded-md px-2 py-1 text-left text-xs transition-colors hover:bg-muted/60",
           tone,
         )}
-        aria-label={t ? t("jumpToNode", { key: issue.node_key! }) : `Jump to node ${issue.node_key}`}
+        aria-label={t("jumpToNode", { key: issue.node_key })}
       >
         {body}
       </button>

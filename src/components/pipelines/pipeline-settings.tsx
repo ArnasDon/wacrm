@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useTranslations } from "next-intl";
 import {
   DndContext,
   PointerSensor,
@@ -35,7 +36,6 @@ import {
   AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
-import { useTranslations } from "next-intl";
 
 const STAGE_COLORS = [
   "#3b82f6",
@@ -69,7 +69,8 @@ export function PipelineSettings({
   onStagesChanged,
   onCreateNewPipeline,
 }: PipelineSettingsProps) {
-  const t = useTranslations("Pipelines.settings");
+  const t = useTranslations("pipelines.settings");
+  const tCommon = useTranslations("common");
   const supabase = createClient();
 
   const [name, setName] = useState(pipeline.name);
@@ -129,14 +130,14 @@ export function PipelineSettings({
     setSaving(false);
 
     if (renameRes.error || stagesRes.error) {
-      toast.error(t("toastFailedSave"));
+      toast.error(t("failedToSavePipeline"));
       return;
     }
 
     onOpenChange(false);
     onPipelinesChanged();
     onStagesChanged();
-    toast.success(t("toastSaved"));
+    toast.success(t("pipelineSaved"));
   }
 
   async function handleAddStage() {
@@ -153,7 +154,7 @@ export function PipelineSettings({
       .select()
       .single();
     if (error || !data) {
-      toast.error(t("toastFailedAddStage"));
+      toast.error(t("failedToAddStage"));
       return;
     }
     setLocalStages([...localStages, data as PipelineStage]);
@@ -168,7 +169,7 @@ export function PipelineSettings({
       .select("id", { count: "exact", head: true })
       .eq("stage_id", stageId);
     if (count && count > 0) {
-      toast.error(t("toastMoveOrDeleteDeals"));
+      toast.error(t("moveOrDeleteDealsFirst"));
       return;
     }
     const { error } = await supabase
@@ -176,7 +177,7 @@ export function PipelineSettings({
       .delete()
       .eq("id", stageId);
     if (error) {
-      toast.error(t("toastFailedDeleteStage"));
+      toast.error(t("failedToDeleteStage"));
       return;
     }
     setLocalStages(localStages.filter((s) => s.id !== stageId));
@@ -191,12 +192,12 @@ export function PipelineSettings({
       .eq("id", pipeline.id);
     setDeleting(false);
     if (error) {
-      toast.error(t("toastFailedDeletePipeline"));
+      toast.error(t("failedToDeletePipeline"));
       return;
     }
     onOpenChange(false);
     onPipelinesChanged();
-    toast.success(t("toastDeleted"));
+    toast.success(t("pipelineDeleted"));
   }
 
   return (
@@ -215,7 +216,7 @@ export function PipelineSettings({
                   {t("deletePipeline")}
                 </p>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  {t("deletePipelineDesc")}
+                  {t("deletePipelineConfirm")}
                 </p>
               </div>
             </div>
@@ -225,14 +226,14 @@ export function PipelineSettings({
                 onClick={() => setShowDeleteConfirm(false)}
                 className="border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                {t("cancel")}
+                {tCommon("cancel")}
               </Button>
               <Button
                 onClick={handleDeletePipeline}
                 disabled={deleting}
                 className="bg-red-600 text-white hover:bg-red-700"
               >
-                {deleting ? t("deleting") : t("deletePipelineBtn")}
+                {deleting ? t("deleting") : t("deletePipeline")}
               </Button>
             </div>
           </div>
@@ -240,7 +241,7 @@ export function PipelineSettings({
           <>
             <div className="grid gap-4 py-2">
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("pipelineName")}</Label>
+                <Label className="text-muted-foreground">{t("pipelineNameLabel")}</Label>
                 <Input
                   value={name}
                   onChange={(e) => setName(e.target.value)}
@@ -249,7 +250,7 @@ export function PipelineSettings({
               </div>
 
               <div className="grid gap-2">
-                <Label className="text-muted-foreground">{t("stages")}</Label>
+                <Label className="text-muted-foreground">{t("stagesLabel")}</Label>
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -320,7 +321,7 @@ export function PipelineSettings({
                     className="shrink-0 border-border bg-transparent text-muted-foreground hover:bg-muted"
                   >
                     <Plus className="mr-1 h-3 w-3" />
-                    {t("add")}
+                    {t("addStage")}
                   </Button>
                 </div>
               </div>
@@ -347,7 +348,7 @@ export function PipelineSettings({
                 onClick={() => onOpenChange(false)}
                 className="border-border bg-transparent text-muted-foreground hover:bg-muted"
               >
-                {t("cancel")}
+                {tCommon("cancel")}
               </Button>
               <Button
                 onClick={handleSave}

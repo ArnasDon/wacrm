@@ -27,8 +27,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { cn } from "@/lib/utils";
 import { useTranslations } from "next-intl";
+import { cn } from "@/lib/utils";
 import { NODE_META, type BuilderNode } from "../shared";
 
 export function TextRow({
@@ -76,6 +76,7 @@ export function NextNodeRow({
   onChange: (v: string) => void;
   label: string;
 }) {
+  const t = useTranslations("flows.forms");
   return (
     <div>
       <label className="mb-1 block text-xs text-muted-foreground">{label}</label>
@@ -84,7 +85,7 @@ export function NextNodeRow({
         nodes={allNodes}
         excludeKey={currentKey}
         onChange={(v) => onChange(v ?? "")}
-        placeholder={useTranslations("Flows.builder.form")("pickNextNode")}
+        placeholder={t("pickNextNode")}
       />
     </div>
   );
@@ -105,7 +106,7 @@ export function NodeKeySelect({
   placeholder?: string;
   className?: string;
 }) {
-  const t = useTranslations("Flows.builder.form");
+  const t = useTranslations("common");
   const options = nodes.filter((n) => n.node_key !== excludeKey);
   return (
     <Select

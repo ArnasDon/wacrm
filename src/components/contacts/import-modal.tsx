@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useRef, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -37,7 +38,6 @@ import {
   AlertTriangle,
   Tag,
 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
 const PREVIEW_LIMIT = 5;
@@ -80,7 +80,7 @@ function ImportPreviewTags({
   tagNames: string[];
   tagColorByKey: Map<string, string>;
 }) {
-  const t = useTranslations('Contacts.importModal');
+  const t = useTranslations('contacts.importModal');
 
   if (tagNames.length === 0) {
     return <span className="text-muted-foreground">—</span>;
@@ -126,7 +126,8 @@ export function ImportModal({
   onOpenChange,
   onImported,
 }: ImportModalProps) {
-  const t = useTranslations('Contacts.importModal');
+  const t = useTranslations('contacts.import');
+  const tCommon = useTranslations('common');
   const supabase = createClient();
   const { accountId, canEditSettings } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -398,17 +399,9 @@ export function ImportModal({
             <DialogTitle className="text-lg text-popover-foreground">
               {t('title')}
             </DialogTitle>
-            <DialogDescription className="leading-relaxed text-muted-foreground"
-              dangerouslySetInnerHTML={{
-                __html: t.markup('desc', {
-                  phoneCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  nameCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  emailCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  companyCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                  tagsCode: (chunks) => `<code class="rounded bg-muted px-1 py-0.5 text-[11px] text-muted-foreground">${chunks}</code>`,
-                })
-              }}
-            />
+            <DialogDescription className="leading-relaxed text-muted-foreground">
+              {t('description')}
+            </DialogDescription>
           </DialogHeader>
 
           <div
@@ -447,10 +440,10 @@ export function ImportModal({
                   <Upload className="size-5 text-muted-foreground group-hover:text-foreground" />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {t('uploadDropzone')}
+                  {t('selectFile')}
                 </p>
                 <p className="text-[11px] text-muted-foreground">
-                  {t('uploadHint')}
+                  {t('dragDrop')}
                 </p>
               </>
             )}
@@ -476,7 +469,9 @@ export function ImportModal({
                   {tagStats.rowsWithTags > 0 && (
                     <span className="inline-flex items-center gap-1 rounded-md bg-muted/90 px-2 py-0.5 text-[11px] text-muted-foreground">
                       <Tag className="text-primary/80 size-3" />
-                      {t('previewTags', { tags: tagStats.unique, contacts: tagStats.rowsWithTags })}
+                      {tagStats.unique} tag{tagStats.unique !== 1 ? 's' : ''} ·{' '}
+                      {tagStats.rowsWithTags} contact
+                      {tagStats.rowsWithTags !== 1 ? 's' : ''}
                     </span>
                   )}
                 </div>
@@ -558,7 +553,8 @@ export function ImportModal({
 
               {parsedRows.length > PREVIEW_LIMIT && (
                 <p className="text-center text-[11px] text-muted-foreground">
-                  {t('moreRows', { count: parsedRows.length - PREVIEW_LIMIT })}
+                  + {parsedRows.length - PREVIEW_LIMIT} more row
+                  {parsedRows.length - PREVIEW_LIMIT !== 1 ? 's' : ''} not shown
                 </p>
               )}
             </div>
@@ -571,25 +567,26 @@ export function ImportModal({
                 {result.imported > 0 && (
                   <div className="text-primary flex items-center gap-1.5 text-sm">
                     <CheckCircle className="size-4 shrink-0" />
-                    {t('resultImported', { count: result.imported })}
+                    {result.imported} imported
                   </div>
                 )}
                 {result.tagsAssigned > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-cyan-400">
                     <CheckCircle className="size-4 shrink-0" />
-                    {t('resultTags', { count: result.tagsAssigned })}
+                    {result.tagsAssigned} tag
+                    {result.tagsAssigned !== 1 ? 's' : ''} assigned
                   </div>
                 )}
                 {result.skipped > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-amber-400">
                     <AlertTriangle className="size-4 shrink-0" />
-                    {t('resultSkipped', { count: result.skipped })}
+                    {result.skipped} skipped
                   </div>
                 )}
                 {result.failed > 0 && (
                   <div className="flex items-center gap-1.5 text-sm text-red-400">
                     <XCircle className="size-4 shrink-0" />
-                    {t('resultFailed', { count: result.failed })}
+                    {result.failed} failed
                   </div>
                 )}
               </div>
@@ -604,7 +601,7 @@ export function ImportModal({
             onClick={() => handleOpenChange(false)}
             className="border-border text-muted-foreground hover:bg-muted"
           >
-            {result ? t('close') : t('cancel')}
+            {result ? tCommon('close') : tCommon('cancel')}
           </Button>
           {!result && (
             <Button
@@ -614,7 +611,7 @@ export function ImportModal({
               className="bg-primary hover:bg-primary/90 text-primary-foreground"
             >
               {importing && <Loader2 className="size-4 animate-spin" />}
-              {parsedRows.length > 0 ? t('importBtn', { count: parsedRows.length }) : t('importBtn', { count: 0 })}
+              {t('importButton')} {parsedRows.length > 0 ? parsedRows.length : ''}
             </Button>
           )}
         </DialogFooter>

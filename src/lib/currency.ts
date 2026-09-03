@@ -36,6 +36,7 @@ export const CURRENCIES: CurrencyOption[] = [
   { code: "CAD", label: "Canadian Dollar", symbol: "C$" },
   { code: "BRL", label: "Brazilian Real", symbol: "R$" },
   { code: "JPY", label: "Japanese Yen", symbol: "¥" },
+  { code: "KZT", label: "Kazakhstani Tenge", symbol: "₸" },
   { code: "CNY", label: "Chinese Yuan", symbol: "¥" },
   { code: "AED", label: "UAE Dirham", symbol: "د.إ" },
   { code: "ZAR", label: "South African Rand", symbol: "R" },

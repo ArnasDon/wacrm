@@ -16,7 +16,7 @@ import { TagManager } from './tag-manager';
  * regardless.
  */
 export function FieldsAndTagsPanel() {
-  const t = useTranslations('Settings.tagsAndFields');
+  const t = useTranslations('settings.tagsAndFields');
   const canEditSettings = useCan('edit-settings');
 
   return (

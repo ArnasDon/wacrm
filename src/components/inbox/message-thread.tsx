@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import { usePresence } from "@/hooks/use-presence";
@@ -29,7 +30,6 @@ import {
   PanelRightClose,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
-import { useTranslations } from "next-intl";
 import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
@@ -131,10 +131,10 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTION_KEYS: { labelKey: string; value: ConversationStatus; color: string }[] = [
+  { labelKey: "open", value: "open", color: "text-primary" },
+  { labelKey: "pending", value: "pending", color: "text-amber-400" },
+  { labelKey: "closed", value: "closed", color: "text-muted-foreground" },
 ];
 
 /**
@@ -164,9 +164,9 @@ export function MessageThread({
   contactPanelOpen,
   onToggleContactPanel,
 }: MessageThreadProps) {
-  const t = useTranslations("Inbox.messageThread");
-  const tTimer = useTranslations("Inbox.sessionTimer");
-  const tQuote = useTranslations("Inbox.replyQuote");
+  const t = useTranslations("inbox.messageThread");
+  const tTimer = useTranslations("inbox.sessionTimer");
+  const tQuote = useTranslations("inbox.replyQuote");
 
   const { user } = useAuth();
   const { getPresence, getRow, now } = usePresence();
@@ -208,9 +208,11 @@ export function MessageThread({
     messageId: string;
   } | null>(null);
 
-  // Profiles are bounded by RLS to rows the current user is allowed to
-  // see — today that's just the current user, but the dropdown keeps the
-  // shape ready for shared-team workspaces without a refactor.
+  // Every profile in the account (RLS bounds the rows to fellow
+  // members). Kept unfiltered because the header label below resolves
+  // the *current* assignee by id — including someone who is no longer
+  // assignable — so filtering here would degrade their name to a bare
+  // “Assigned”.
   useEffect(() => {
     let cancelled = false;
     const supabase = createClient();
@@ -230,6 +232,15 @@ export function MessageThread({
       cancelled = true;
     };
   }, []);
+
+  // Who the Assign dropdown offers. Conversations are sales work, so
+  // only members carrying the `agent` role are assignable — owners and
+  // admins run the account, viewers (dev, warehouse) are read-only.
+  // Promote or demote in Settings → Members to change who appears.
+  const assignableProfiles = useMemo(
+    () => profiles.filter((p) => p.account_role === "agent"),
+    [profiles]
+  );
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
@@ -751,7 +762,7 @@ export function MessageThread({
     return map;
   }, [reactions]);
 
-  const contactDisplayName = contact?.name || contact?.phone || "Customer";
+  const contactDisplayName = contact?.name || contact?.phone || t("customer");
 
   // Author label for a quoted message: "You" when we sent the parent,
   // contact name when the customer sent it.
@@ -759,9 +770,9 @@ export function MessageThread({
     (m: Message): string => {
       const isAgentMsg =
         m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? "You" : contactDisplayName;
+      return isAgentMsg ? t("you") : contactDisplayName;
     },
-    [contactDisplayName],
+    [contactDisplayName, t],
   );
 
   const handleStartReply = useCallback(
@@ -881,7 +892,7 @@ export function MessageThread({
 
   const displayName = contact.name || contact.phone;
   const messageGroups = groupMessagesByDate(messages);
-  const currentStatus = STATUS_OPTIONS.find(
+  const currentStatus = STATUS_OPTION_KEYS.find(
     (s) => s.value === conversation.status
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
@@ -993,20 +1004,20 @@ export function MessageThread({
                   "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
                   currentStatus?.color ?? "text-muted-foreground"
                 )}>
-                {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
+                {currentStatus ? t(currentStatus.labelKey as never) : t("status")}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
             <DropdownMenuContent
               align="end"
               className="border-border bg-popover"
             >
-              {STATUS_OPTIONS.map((opt) => (
+              {STATUS_OPTION_KEYS.map((opt) => (
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
                   className={cn("text-sm", opt.color)}
                 >
-                  {t(`status${opt.label}`)}
+                  {t(opt.labelKey as never)}
                 </DropdownMenuItem>
               ))}
             </DropdownMenuContent>
@@ -1028,12 +1039,12 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
-              {profiles.length === 0 ? (
+              {assignableProfiles.length === 0 ? (
                 <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  {t("noTeammates")}
+                  {t("noTeammatesAvailable")}
                 </DropdownMenuItem>
               ) : (
-                profiles.map((p) => {
+                assignableProfiles.map((p) => {
                   const isSelected = p.user_id === assignedAgentId;
                   const presence = getPresence(p.user_id);
                   return (

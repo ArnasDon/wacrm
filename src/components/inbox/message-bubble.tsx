@@ -223,7 +223,7 @@ export function MessageBubble({
   onToggleReaction,
   onOpenMedia,
 }: MessageBubbleProps) {
-  const t = useTranslations("Inbox.bubble");
+  const t = useTranslations("inbox.bubble");
 
   const isAgent = message.sender_type === "agent" || message.sender_type === "bot";
   const time = format(new Date(message.created_at), "HH:mm");

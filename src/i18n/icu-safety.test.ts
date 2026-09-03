@@ -18,7 +18,7 @@ import { createTranslator } from 'next-intl';
 // `t.rich()` (tag handlers). This test fails when one is wired to plain
 // `t()`. Reported by @Arifuzzamanjoy in #421.
 
-const MESSAGES = join(process.cwd(), 'messages', 'en.json');
+const MESSAGES = join(process.cwd(), 'src', 'messages', 'en.json');
 const SRC = join(process.cwd(), 'src');
 
 /** Leaf keypaths whose value next-intl cannot parse as an ICU message. */

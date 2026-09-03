@@ -27,7 +27,7 @@ export function ReplyQuote({
   onDismiss,
   onPrimary = false,
 }: ReplyQuoteProps) {
-  const t = useTranslations("Inbox.replyQuote");
+  const t = useTranslations("inbox.replyQuote");
   const isChip = !!onDismiss;
   return (
     <div

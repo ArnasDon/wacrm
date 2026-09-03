@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
+import { getMediaUrl, downloadMedia, MetaApiError } from '@/lib/whatsapp/meta-api'
 import { decrypt } from '@/lib/whatsapp/encryption'
 
 export async function GET(
@@ -81,6 +81,26 @@ export async function GET(
       },
     })
   } catch (error) {
+    // Meta deletes inbound media ~30 days after receipt, so a pointer
+    // stored before the inbound mirror shipped (issue #466) eventually
+    // resolves to nothing. That is expected end-of-life, not a server
+    // fault: 410 tells the bubble to render "unavailable", and a single
+    // warn line keeps a decade-old thread from filling the logs with
+    // stack traces every time an agent scrolls past it.
+    if (error instanceof MetaApiError && error.isMissingObject) {
+      const { mediaId } = await params
+      console.warn(
+        `[whatsapp/media] ${mediaId} is no longer available from Meta ` +
+          `(code ${error.code ?? '?'}/${error.subcode ?? '?'})`
+      )
+      return NextResponse.json(
+        {
+          error: 'This attachment is no longer available.',
+          code: 'media_expired',
+        },
+        { status: 410 }
+      )
+    }
     console.error('Error in WhatsApp media GET:', error)
     return NextResponse.json(
       { error: 'Failed to fetch media' },

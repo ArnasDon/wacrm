@@ -43,7 +43,7 @@ const PRESET_COLORS = [
  * dialog since it detaches the tag from every contact.
  */
 export function TagManager() {
-  const t = useTranslations('Settings.tagsAndFields');
+  const t = useTranslations('settings.tagsAndFields');
   const supabase = createClient();
   const { user, accountId, loading: authLoading } = useAuth();
 

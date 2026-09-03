@@ -102,8 +102,11 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
     mockUser = { id: "user-1" };
     refreshedCookies = [ROTATED];
 
+    // Request an already-locale-prefixed path: with next-intl's
+    // localePrefix "always", a bare /dashboard would 307 to /en/dashboard,
+    // so we hit /en/dashboard directly to exercise the genuine pass-through.
     const res = await middleware(
-      new NextRequest("https://app.test/dashboard"),
+      new NextRequest("https://app.test/en/dashboard"),
     );
 
     // No redirect — the normal NextResponse.next() already carries cookies.

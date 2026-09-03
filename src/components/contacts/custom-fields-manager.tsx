@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { toast } from 'sonner';
@@ -15,7 +16,6 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Loader2, Plus, Trash2 } from 'lucide-react';
-import { useTranslations } from 'next-intl';
 
 interface CustomFieldsManagerProps {
   open: boolean;
@@ -32,14 +32,14 @@ export function CustomFieldsManager({
   open,
   onOpenChange,
 }: CustomFieldsManagerProps) {
-  const t = useTranslations('Contacts.customFields');
+  const t = useTranslations('contacts.customFields');
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="border-border bg-popover text-popover-foreground sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="text-popover-foreground">{t('title')}</DialogTitle>
           <DialogDescription className="text-muted-foreground">
-            {t('desc')}
+            {t('description')}
           </DialogDescription>
         </DialogHeader>
         <CustomFieldsPanel />
@@ -55,7 +55,8 @@ export function CustomFieldsManager({
  * `custom_fields` RLS also rejects non-admin writes as defense in depth.
  */
 export function CustomFieldsPanel() {
-  const t = useTranslations('Contacts.customFields');
+  const t = useTranslations('contacts.customFields');
+  const tCommon = useTranslations('common');
   const supabase = createClient();
   const { user, accountId } = useAuth();
 
@@ -185,7 +186,7 @@ export function CustomFieldsPanel() {
               void handleCreate();
             }
           }}
-          placeholder={t('fieldName')}
+          placeholder={t('fieldName') + '…'}
           className="bg-muted text-foreground"
         />
         <Button
@@ -198,7 +199,7 @@ export function CustomFieldsPanel() {
           ) : (
             <Plus className="size-4" />
           )}
-          {t('addField')}
+          {tCommon('add')}
         </Button>
       </div>
 
@@ -207,11 +208,11 @@ export function CustomFieldsPanel() {
         {loading ? (
           <div className="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
             <Loader2 className="size-4 animate-spin" />
-            {t('loading')}
+            {tCommon('loading')}…
           </div>
         ) : fields.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            {t('empty')}
+            {t('noFields')}
           </p>
         ) : (
           <ul className="divide-y divide-border">
@@ -244,7 +245,7 @@ function FieldRow({
   onRename: (field: CustomField, name: string) => Promise<boolean>;
   onDelete: (field: CustomField) => void;
 }) {
-  const t = useTranslations('Contacts.customFields');
+  const t = useTranslations('contacts.customFields');
   const [name, setName] = useState(field.field_name);
 
   async function commit() {

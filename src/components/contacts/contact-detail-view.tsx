@@ -55,7 +55,7 @@ export function ContactDetailView({
   contactId,
   onUpdated,
 }: ContactDetailViewProps) {
-  const t = useTranslations('Contacts.detailView');
+  const t = useTranslations('contacts.detail');
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -360,7 +360,7 @@ export function ContactDetailView({
       toast.success(t('toastTemplateSent', { name: template.name }));
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'network error';
-      toast.error(`Failed to send template: ${reason}`);
+      toast.error(t('toastTemplateFailed', { reason }));
     } finally {
       setSendingTemplate(false);
     }
@@ -399,7 +399,7 @@ export function ContactDetailView({
                 </Avatar>
                 <div className="flex-1 min-w-0">
                   <SheetTitle className="text-popover-foreground truncate">
-                    {contact.name || t('unnamed')}
+                    <span>{contact.name || t('unnamed')}</span>
                   </SheetTitle>
                   <SheetDescription className="text-muted-foreground text-xs mt-0.5">
                     {t('contactDetailsDesc')}

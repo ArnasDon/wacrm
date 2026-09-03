@@ -1,5 +1,6 @@
 "use client"
 
+import { useTranslations } from 'next-intl'
 import { Clock } from 'lucide-react'
 import { DOW_SHORT_MON_FIRST } from '@/lib/dashboard/date-utils'
 import type { ResponseTimeSummary } from '@/lib/dashboard/types'
@@ -19,8 +20,6 @@ interface ResponseTimeChartProps {
   thresholdMinutes?: number
 }
 
-import { useTranslations } from 'next-intl'
-
 // Single category, single colour — the data is "average minutes
 // per weekday". Tremor expects categories as the second tuple in
 // the row object, so we shape the buckets into
@@ -32,7 +31,7 @@ export function ResponseTimeChart({
   loading,
   thresholdMinutes = 5,
 }: ResponseTimeChartProps) {
-  const t = useTranslations('Dashboard.responseTimeChart')
+  const t = useTranslations('dashboard')
   const hasData = data?.buckets.some((b) => b.avgMinutes != null) ?? false
 
   // Map buckets → Tremor rows. Null `avgMinutes` (no samples)
@@ -51,10 +50,10 @@ export function ResponseTimeChart({
       <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-4">
         <div>
           <h2 className="text-sm font-semibold text-foreground">
-            {t('title')}
+            {t('avgFirstResponseTime')}
           </h2>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            {t('description')}
+            {t('avgFirstResponseTimeDesc')}
           </p>
         </div>
         <div className="flex items-center gap-3 text-right text-xs">
@@ -86,7 +85,7 @@ export function ResponseTimeChart({
         ) : !hasData ? (
           <EmptyState
             icon={Clock}
-            title={t('noReplies')}
+            title={t('noRepliesYet')}
             hint={t('noRepliesHint')}
           />
         ) : (

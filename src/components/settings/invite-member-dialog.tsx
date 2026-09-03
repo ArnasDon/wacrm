@@ -74,8 +74,8 @@ export function InviteMemberDialog({
   onOpenChange,
   onCreated,
 }: InviteMemberDialogProps) {
-  const t = useTranslations('Settings.invite');
-  const tRoles = useTranslations('Settings.roles');
+  const t = useTranslations('settings.invite');
+  const tRoles = useTranslations('roles');
   const { account } = useAuth();
   const [role, setRole] = useState<InviteRole>('agent');
   const [expiry, setExpiry] = useState<string>('7');
@@ -192,7 +192,7 @@ export function InviteMemberDialog({
                 {t.rich('inviteCreatedDesc', {
                   role: tRoles(result.role),
                   days: result.expiresInDays,
-                  bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>
+                  bold: (chunks: React.ReactNode) => <strong>{chunks}</strong>,
                 })}
               </DialogDescription>
             </DialogHeader>

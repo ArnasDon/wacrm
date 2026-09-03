@@ -92,6 +92,12 @@ export async function POST(
   const payloadInstance =
     payload.instance ?? (payload.data as Json | undefined)?.instance;
   if (payloadInstance && payloadInstance !== row.uazapi_instance_id) {
+    // TEMP — confirming the real `connection` event shape (payload
+    // logged only on this rejection path). Remove once confirmed.
+    console.warn(
+      '[uazapi webhook] instance mismatch — payload:',
+      JSON.stringify(payload)
+    );
     console.warn(
       '[uazapi webhook] instance mismatch (payload instance does not match connection)'
     );

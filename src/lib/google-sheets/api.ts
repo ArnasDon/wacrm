@@ -112,21 +112,3 @@ export async function clearAndWrite(
     throw new GoogleSheetsError(`Sheets write failed (${res.status}): ${body.slice(0, 300)}`, 502)
   }
 }
-
-/** Read the first row of `tab` — used to decide whether a header still
- *  needs writing when `header_written` is unknown/false. Returns [] on
- *  an empty sheet. */
-export async function readFirstRow(
-  accessToken: string,
-  spreadsheetId: string,
-  tab: string,
-): Promise<string[]> {
-  const range = `${encodeURIComponent(tab)}!1:1`
-  const res = await googleFetch(
-    `${SHEETS_BASE}/${encodeURIComponent(spreadsheetId)}/values/${range}`,
-    { headers: { Authorization: `Bearer ${accessToken}` } },
-  )
-  if (!res.ok) return []
-  const data = (await res.json()) as { values?: string[][] }
-  return data.values?.[0] ?? []
-}

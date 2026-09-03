@@ -92,14 +92,20 @@ export async function sendInstagramMessageToConversation(
   validateInstagramSendParams({ messageType, contentText, mediaUrl });
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
 
-  // Conversation + contact, account-scoped.
-  const { data: conversation, error: convError } = await db
-    .from('conversations')
-    .select('*, contact:contacts(*)')
-    .eq('id', conversationId)
-    .eq('account_id', accountId)
-    .single();
+  // Conversation + contact and the Instagram config are independent
+  // reads (the config is keyed by account) — run them together so the
+  // send path spends one DB round-trip less before it reaches Zernio.
+  const [convRes, configRes] = await Promise.all([
+    db
+      .from('conversations')
+      .select('*, contact:contacts(*)')
+      .eq('id', conversationId)
+      .eq('account_id', accountId)
+      .single(),
+    db.from('instagram_config').select('*').eq('account_id', accountId).single(),
+  ]);
 
+  const { data: conversation, error: convError } = convRes;
   if (convError || !conversation) {
     throw new SendMessageError('not_found', 'Conversation not found', 404);
   }
@@ -109,13 +115,7 @@ export async function sendInstagramMessageToConversation(
     throw new SendMessageError('bad_request', 'Contact has no Instagram identity', 400);
   }
 
-  // Instagram config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('instagram_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
+  const { data: config, error: configError } = configRes;
   if (configError || !config) {
     throw new SendMessageError(
       'instagram_not_configured',

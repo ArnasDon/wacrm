@@ -72,13 +72,20 @@ export async function sendFacebookMessageToConversation(
   validateFacebookSendParams({ messageType, contentText, mediaUrl });
   const isMediaKind = (MEDIA_KINDS as readonly string[]).includes(messageType);
 
-  const { data: conversation, error: convError } = await db
-    .from('conversations')
-    .select('*, contact:contacts(*)')
-    .eq('id', conversationId)
-    .eq('account_id', accountId)
-    .single();
+  // These two reads don't depend on each other (the config is keyed by
+  // account, not by the conversation) — run them together so the send
+  // path spends one DB round-trip less before it reaches Zernio.
+  const [convRes, configRes] = await Promise.all([
+    db
+      .from('conversations')
+      .select('*, contact:contacts(*)')
+      .eq('id', conversationId)
+      .eq('account_id', accountId)
+      .single(),
+    db.from('facebook_config').select('*').eq('account_id', accountId).single(),
+  ]);
 
+  const { data: conversation, error: convError } = convRes;
   if (convError || !conversation) {
     throw new SendMessageError('not_found', 'Conversation not found', 404);
   }
@@ -113,12 +120,7 @@ export async function sendFacebookMessageToConversation(
     }
   }
 
-  const { data: config, error: configError } = await db
-    .from('facebook_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
+  const { data: config, error: configError } = configRes;
   if (configError || !config) {
     throw new SendMessageError(
       'facebook_not_configured',

@@ -26,6 +26,25 @@ describe('zernioFetch (via sendZernioText)', () => {
     await expect(sendZernioText(args)).rejects.toThrow('Zernio API request timed out.')
   })
 
+  it('bounds an interactive send with the tighter (<=12s) budget so a hung Zernio call returns a real error before any proxy 502s', async () => {
+    const spy = vi.spyOn(AbortSignal, 'timeout')
+    vi.mocked(fetch).mockResolvedValueOnce(okResponse({ data: { messageId: 'zmsg-1' } }))
+    await sendZernioText(args)
+    expect(spy).toHaveBeenCalledWith(12_000)
+    spy.mockRestore()
+  })
+
+  it('bounds a media send with the same tighter budget', async () => {
+    const spy = vi.spyOn(AbortSignal, 'timeout')
+    vi.mocked(fetch).mockResolvedValueOnce(okResponse({ data: { messageId: 'zmsg-2' } }))
+    await sendZernioMedia({
+      apiKey: 'key', conversationId: 'conv-1', accountId: 'acct-1',
+      kind: 'image', link: 'https://example.com/x.jpg',
+    })
+    expect(spy).toHaveBeenCalledWith(12_000)
+    spy.mockRestore()
+  })
+
   it('turns any other fetch failure into a clear "could not reach" error', async () => {
     vi.mocked(fetch).mockRejectedValueOnce(new TypeError('fetch failed'))
     await expect(sendZernioText(args)).rejects.toThrow('Could not reach the Zernio API: fetch failed')

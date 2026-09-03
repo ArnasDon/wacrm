@@ -471,6 +471,12 @@ export async function sendMessageToConversation(
 
     if (lastError) throw lastError;
   } catch (err) {
+    // A SendMessageError here is already precise — the Zernio send path
+    // (throwZernioError) and resolve-conversation raise it with the real
+    // upstream message + status. Don't relabel it as a generic
+    // "Meta API error … 502"; that's what buried "template name (1) does
+    // not exist in en_US" behind an opaque HTTP 502 for Zernio accounts.
+    if (err instanceof SendMessageError) throw err;
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);

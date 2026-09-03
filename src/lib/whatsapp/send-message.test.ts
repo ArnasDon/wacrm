@@ -182,6 +182,15 @@ vi.mock('@/lib/whatsapp/encryption', () => ({
   isLegacyFormat: () => false,
 }));
 
+const sendTemplateViaZernio = vi.fn(async () => ({ messageId: 'zmsg.tpl' }));
+vi.mock('@/lib/whatsapp/zernio-send', () => ({
+  sendWhatsAppTextViaZernio: vi.fn(async () => ({ messageId: 'zmsg.text' })),
+  sendWhatsAppMediaViaZernio: vi.fn(async () => ({ messageId: 'zmsg.media' })),
+  sendWhatsAppInteractiveViaZernio: vi.fn(async () => ({ messageId: 'zmsg.int' })),
+  sendWhatsAppTemplateViaZernio: (...a: unknown[]) =>
+    (sendTemplateViaZernio as unknown as (...x: unknown[]) => unknown)(...a),
+}));
+
 vi.mock('@/lib/flows/admin-client', () => ({
   // Only used for the best-effort "pause active flow run" write.
   supabaseAdmin: () => ({
@@ -355,5 +364,70 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     // name rather than inventing a body.
     expect(captured.message?.content_text).toBeNull();
     expect(captured.conversation?.last_message_text).toBe('[template]');
+  });
+});
+
+describe('sendMessageToConversation — Zernio provider error passthrough', () => {
+  function zernioDb(): SupabaseClient {
+    const conversation = {
+      id: 'cv-1',
+      whatsapp_config_id: 'cfg-z',
+      zernio_conversation_id: 'zconv-1',
+      contact: { id: 'ct-1', phone: '+15551234567' },
+    };
+    const config = {
+      id: 'cfg-z',
+      provider: 'zernio',
+      zernio_api_key: 'zk',
+      zernio_account_id: 'za',
+    };
+    return {
+      from(table: string) {
+        const builder: Record<string, unknown> = {
+          select: () => builder,
+          eq: () => builder,
+          order: () => builder,
+          limit: () => builder,
+          insert: () => builder,
+          update: () => builder,
+          maybeSingle: async () => {
+            if (table === 'conversations') return { data: conversation, error: null };
+            if (table === 'whatsapp_config') return { data: config, error: null };
+            return { data: null, error: null };
+          },
+          single: async () => {
+            if (table === 'conversations') return { data: conversation, error: null };
+            if (table === 'whatsapp_config') return { data: config, error: null };
+            if (table === 'messages') return { data: { id: 'msg-1' }, error: null };
+            return { data: null, error: null };
+          },
+          then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
+            resolve({ data: [], error: null }),
+        };
+        return builder;
+      },
+    } as unknown as SupabaseClient;
+  }
+
+  it("surfaces Zernio's real message + status instead of a generic 502", async () => {
+    sendTemplateViaZernio.mockRejectedValueOnce(
+      new SendMessageError(
+        'zernio_error',
+        'template name (1) does not exist in en_US',
+        404
+      )
+    );
+
+    const err = await sendMessageToConversation(zernioDb(), 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'template',
+      templateName: '1',
+      templateLanguage: 'en_US',
+    }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(SendMessageError);
+    // Was relabelled 'Meta API error: …' / 502 before the fix.
+    expect(err.status).toBe(404);
+    expect(err.message).toBe('template name (1) does not exist in en_US');
   });
 });

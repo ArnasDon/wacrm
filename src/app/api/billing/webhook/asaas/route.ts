@@ -5,7 +5,10 @@
 // exato do header de auth (asaas-access-token) e dos nomes de
 // evento — confirmar na prática contra um webhook real do sandbox
 // antes de considerar isto pronto pra produção (mesmo espírito do
-// "confirmar na prática" da integração UAZAPI).
+// "confirmar na prática" da integração UAZAPI). O mapeamento de
+// PAYMENT_DELETED → "canceled" é a melhor aproximação disponível
+// pra "evento de assinatura cancelada/deletada" (spec §3.6.3) até
+// confirmar contra um payload real do sandbox.
 // ============================================================
 
 import { NextResponse } from "next/server";
@@ -24,6 +27,7 @@ const EVENT_TO_STATUS: Record<string, string> = {
   PAYMENT_CONFIRMED: "active",
   PAYMENT_RECEIVED: "active",
   PAYMENT_OVERDUE: "past_due",
+  PAYMENT_DELETED: "canceled",
 };
 
 export async function POST(request: Request) {
@@ -50,13 +54,31 @@ export async function POST(request: Request) {
   }
 
   const db = admin();
+
+  const { data: account, error: findErr } = await db
+    .from("accounts")
+    .select("id")
+    .eq("asaas_subscription_id", subscriptionId)
+    .maybeSingle();
+
+  if (findErr) {
+    console.error("[asaas webhook] account lookup failed:", findErr);
+    return NextResponse.json({ status: "error" }, { status: 500 });
+  }
+
+  if (!account) {
+    console.warn("[asaas webhook] no account found for subscription:", subscriptionId);
+    return NextResponse.json({ status: "ignored" }, { status: 200 });
+  }
+
   const { error } = await db
     .from("accounts")
     .update({ subscription_status: newStatus, subscription_updated_at: new Date().toISOString() })
-    .eq("asaas_subscription_id", subscriptionId);
+    .eq("id", (account as { id: string }).id);
 
   if (error) {
     console.error("[asaas webhook] account UPDATE failed:", error);
+    return NextResponse.json({ status: "error" }, { status: 500 });
   }
 
   return NextResponse.json({ status: "received" }, { status: 200 });

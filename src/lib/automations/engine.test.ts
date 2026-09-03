@@ -6,11 +6,13 @@ const h = vi.hoisted(() => ({
   state: {
     owned: null as { id: string } | null,
     ownedCustomField: null as { id: string } | null,
+    member: null as { user_id: string } | null,
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
     fromCalls: [] as string[],
     updateCalls: [] as { table: string; filters: [string, string, unknown][] }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
+    taskInserts: [] as Record<string, unknown>[],
     logInserts: [] as Record<string, unknown>[],
     logUpdates: [] as Record<string, unknown>[],
   },
@@ -37,6 +39,17 @@ vi.mock("./admin-client", () => {
     if (table === "custom_fields") {
       // account-scoped ownership lookup for a custom field definition
       return { data: state.ownedCustomField, error: null };
+    }
+    if (table === "profiles") {
+      // account-scoped member lookup (create_task assignee resolution)
+      return { data: state.member, error: null };
+    }
+    if (table === "tasks") {
+      if (type === "insert") {
+        state.taskInserts.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: null };
+      }
+      return { data: null, error: null };
     }
     if (table === "contact_custom_values") {
       if (type === "upsert") {
@@ -112,11 +125,13 @@ const ACCOUNT = "acct-1";
 beforeEach(() => {
   h.state.owned = null;
   h.state.ownedCustomField = null;
+  h.state.member = null;
   h.state.automations = [];
   h.state.steps = [];
   h.state.fromCalls = [];
   h.state.updateCalls = [];
   h.state.upsertCalls = [];
+  h.state.taskInserts = [];
   h.state.logInserts = [];
   h.state.logUpdates = [];
 });
@@ -347,6 +362,85 @@ function customStep(field: string, value: string) {
     step_config: { field, value },
   };
 }
+
+describe("create_task", () => {
+  function taskStep(step_config: Record<string, unknown>) {
+    return {
+      id: "s1",
+      automation_id: "a1",
+      step_type: "create_task",
+      position: 0,
+      parent_step_id: null,
+      step_config,
+    };
+  }
+
+  it("inserts a task tied to the contact, with the automation author as audit", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      taskStep({ title: "Dar seguimiento", assignee: "author", due_in_hours: 24 }),
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.taskInserts).toHaveLength(1);
+    const row = h.state.taskInserts[0];
+    expect(row).toMatchObject({
+      account_id: ACCOUNT,
+      created_by: "u1",
+      assigned_to: "u1", // 'author' → the automation's own user_id
+      contact_id: "c1",
+      title: "Dar seguimiento",
+      status: "open",
+    });
+    expect(typeof row.due_at).toBe("string"); // due_in_hours > 0 → a timestamp
+  });
+
+  it("interpolates {{ vars.* }} into the title and leaves due_at null when no offset", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [taskStep({ title: "Cotización {{ vars.folio }}" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { vars: { folio: "A-100" } },
+    });
+
+    expect(h.state.taskInserts).toHaveLength(1);
+    expect(h.state.taskInserts[0]).toMatchObject({
+      title: "Cotización A-100",
+      assigned_to: null,
+      due_at: null,
+    });
+  });
+
+  it("drops an assignee that is not a member of the account (leaves it unassigned)", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.member = null; // account-scoped profiles lookup finds nothing
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      taskStep({ title: "Llamar", assignee: "stranger-uid", due_in_hours: 0 }),
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {},
+    });
+
+    expect(h.state.taskInserts).toHaveLength(1);
+    expect(h.state.taskInserts[0].assigned_to).toBeNull();
+  });
+});
 
 describe("triggerMatches — interactive_reply", () => {
   function automation(reply_ids: string[]): Automation {

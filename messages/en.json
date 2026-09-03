@@ -1322,6 +1322,7 @@
         "update_contact_field": "Update Contact Field",
         "create_deal": "Create Deal",
         "move_deal": "Move Deal",
+        "create_task": "Create Task",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -1476,7 +1477,15 @@
         "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
         "matchExact": "Exact",
         "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
-        "moveDealHint": "Moves the contact's currently open deal to this stage. Does nothing if the contact has no open deal — this never creates one."
+        "moveDealHint": "Moves the contact's currently open deal to this stage. Does nothing if the contact has no open deal — this never creates one.",
+        "taskNotesLabel": "Notes",
+        "taskAssigneeLabel": "Assign to",
+        "taskAssignee": {
+          "unassigned": "Unassigned",
+          "author": "Automation author"
+        },
+        "taskDueLabel": "Due in (hours)",
+        "taskDueHint": "0 = no due date (and no reminder). The task is linked to the contact."
       }
     }
   },

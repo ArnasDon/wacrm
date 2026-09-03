@@ -622,6 +622,7 @@ export type AutomationStepType =
   | 'update_contact_field'
   | 'create_deal'
   | 'move_deal'
+  | 'create_task'
   | 'wait'
   | 'condition'
   | 'send_webhook'
@@ -725,6 +726,21 @@ export interface MoveDealStepConfig {
   stage_id: string;
 }
 
+export interface CreateTaskStepConfig {
+  /** Task title. Supports `{{ vars.* }}` / `{{ message.text }}`. */
+  title: string;
+  /** Optional notes. Same interpolation as `title`. */
+  notes?: string;
+  /**
+   * Who owns the task: `''` / absent = unassigned, `'author'` = the
+   * automation's own author, anything else = a member `user_id`.
+   */
+  assignee?: string;
+  /** Hours from now until the task is due. `0` / absent = no due date
+   *  (and therefore no reminder push). */
+  due_in_hours?: number;
+}
+
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
@@ -768,6 +784,7 @@ export type AutomationStepConfig =
   | UpdateContactFieldStepConfig
   | CreateDealStepConfig
   | MoveDealStepConfig
+  | CreateTaskStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

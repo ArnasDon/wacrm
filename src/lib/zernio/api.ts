@@ -47,24 +47,55 @@ interface ZernioErrorResponse {
   error?: string
 }
 
+const ZERNIO_TIMEOUT_ERROR = 'Zernio API request timed out.'
+
 /** `fetch` to Zernio's API, bounded by a timeout (default
  *  `ZERNIO_TIMEOUT_MS`; send calls pass the tighter
  *  `ZERNIO_SEND_TIMEOUT_MS`) and with network/timeout failures turned
  *  into a clear `Error` instead of a raw `TypeError`/`DOMException` —
- *  every call site below uses this instead of the bare global `fetch`. */
+ *  every call site below uses this instead of the bare global `fetch`.
+ *
+ *  Two layers of timeout on purpose: an `AbortSignal.timeout` that
+ *  tells the runtime to tear the socket down, AND a `Promise.race`
+ *  against a plain timer that GUARANTEES this function's promise
+ *  settles at `timeoutMs` even in the rare case where the abort
+ *  doesn't propagate (a connection wedged in TLS/DNS, an undici edge
+ *  case). Without the second layer a wedged call could still outlast
+ *  the reverse proxy in front of the app, which then answers the
+ *  browser with a bare 502 (no body) before the route's real
+ *  `{ error }` response is ever produced. */
 async function zernioFetch(
   url: string,
   init: RequestInit,
   timeoutMs: number = ZERNIO_TIMEOUT_MS,
 ): Promise<Response> {
+  const controller = new AbortController()
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const hardStop = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      controller.abort()
+      reject(new Error(ZERNIO_TIMEOUT_ERROR))
+    }, timeoutMs)
+    // Don't let the timer keep the event loop alive on its own.
+    timer.unref?.()
+  })
+
   try {
-    return await fetch(url, { ...init, signal: AbortSignal.timeout(timeoutMs) })
+    return await Promise.race([fetch(url, { ...init, signal: controller.signal }), hardStop])
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'TimeoutError') {
-      throw new Error('Zernio API request timed out.')
+    if (err instanceof Error && err.message === ZERNIO_TIMEOUT_ERROR) {
+      throw err
+    }
+    if (
+      err instanceof DOMException &&
+      (err.name === 'TimeoutError' || err.name === 'AbortError')
+    ) {
+      throw new Error(ZERNIO_TIMEOUT_ERROR)
     }
     const message = err instanceof Error ? err.message : String(err)
     throw new Error(`Could not reach the Zernio API: ${message}`)
+  } finally {
+    if (timer) clearTimeout(timer)
   }
 }
 

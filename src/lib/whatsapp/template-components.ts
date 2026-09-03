@@ -153,3 +153,64 @@ export function buildMetaTemplatePayload(
     components,
   };
 }
+
+// ============================================================
+// Meta → Zernio components translation.
+//
+// Zernio proxies Meta's template API, and *returns* the plain uppercase
+// Meta shape on GET — but its `create` (and `edit`) endpoint validates
+// `components` against a discriminated union keyed on the LOWERCASE
+// `type` (`header` | `body` | `footer` | `buttons` | …) and rejects
+// Meta's own uppercase with:
+//   "Invalid discriminator value. Expected 'header' | 'body' | 'footer'
+//    | 'buttons' | 'limited_time_offer' | 'carousel'"
+// Only the enum casing differs — `type` on each component, `type` on
+// each button, and the header `format`. Field names (`text`, `url`,
+// `phone_number`, `example`, `buttons`) are the same on both sides.
+// ============================================================
+
+export interface ZernioComponent {
+  type: 'header' | 'body' | 'footer' | 'buttons';
+  format?: 'text' | 'image' | 'video' | 'document';
+  text?: string;
+  buttons?: ZernioButtonPayload[];
+  example?: MetaComponent['example'];
+}
+
+interface ZernioButtonPayload {
+  type: 'quick_reply' | 'url' | 'phone_number' | 'copy_code';
+  text: string;
+  url?: string;
+  phone_number?: string;
+  example?: string[];
+}
+
+/** Lowercase the `type`/`format` discriminators so Zernio's create/edit
+ *  schema accepts the array `buildMetaTemplatePayload` produces. */
+export function metaComponentsToZernio(
+  components: MetaComponent[],
+): ZernioComponent[] {
+  return components.map((c) => {
+    const out: ZernioComponent = {
+      type: c.type.toLowerCase() as ZernioComponent['type'],
+    };
+    if (c.format) {
+      out.format = c.format.toLowerCase() as ZernioComponent['format'];
+    }
+    if (c.text !== undefined) out.text = c.text;
+    if (c.example !== undefined) out.example = c.example;
+    if (c.buttons) {
+      out.buttons = c.buttons.map((b) => {
+        const btn: ZernioButtonPayload = {
+          type: b.type.toLowerCase() as ZernioButtonPayload['type'],
+          text: b.text,
+        };
+        if (b.url !== undefined) btn.url = b.url;
+        if (b.phone_number !== undefined) btn.phone_number = b.phone_number;
+        if (b.example !== undefined) btn.example = b.example;
+        return btn;
+      });
+    }
+    return out;
+  });
+}

@@ -12,7 +12,10 @@ import {
   validateTemplatePayload,
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
-import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
+import {
+  buildMetaTemplatePayload,
+  metaComponentsToZernio,
+} from '@/lib/whatsapp/template-components'
 import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 
 /**
@@ -171,7 +174,9 @@ export async function PATCH(
             apiKey: decrypt(config.zernio_api_key),
             accountId: config.zernio_account_id,
             templateName: existing.name,
-            components: metaPayload.components ?? [],
+            // Zernio's edit endpoint wants the lowercase-`type`
+            // discriminator, same as its create endpoint.
+            components: metaComponentsToZernio(metaPayload.components ?? []),
           })
         } catch (e) {
           const message = e instanceof Error ? e.message : 'Zernio edit failed.'

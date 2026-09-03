@@ -14,7 +14,10 @@ import {
   validateTemplatePayload,
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
-import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
+import {
+  buildMetaTemplatePayload,
+  metaComponentsToZernio,
+} from '@/lib/whatsapp/template-components'
 import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
@@ -196,7 +199,9 @@ export async function POST(request: Request) {
             // normalised value the direct-Meta path already sends.
             category: metaPayload.category,
             language: payload.language,
-            components: metaPayload.components ?? [],
+            // Zernio's create endpoint validates components with a
+            // lowercase-`type` discriminator, unlike Meta's own API.
+            components: metaComponentsToZernio(metaPayload.components ?? []),
           })
           metaTemplateId = created.id
           metaStatus = created.status

@@ -39,7 +39,8 @@
 | `src/app/api/billing/subscribe-cancel.test.ts` | Testes das duas rotas acima. |
 | `src/app/api/billing/webhook/asaas/route.ts` | `POST` — sincroniza status a partir do webhook do Asaas. |
 | `src/app/api/billing/webhook/asaas/route.test.ts` | — |
-| `src/app/(dashboard)/billing/page.tsx` | Tela de assinatura — status, botão assinar/cancelar. |
+| `src/app/billing/page.tsx` | Tela de assinatura — status, botão assinar/cancelar. **Fora** do grupo `(dashboard)` de propósito (ver Task 7 Step 2) — senão o próprio redirect de bloqueio cria um loop nela. |
+| `src/app/billing/billing-actions.tsx` | Client component — botões assinar/cancelar (`onClick` não roda em Server Component). |
 
 **Modificados:**
 
@@ -59,7 +60,7 @@
 |---|---|---|
 | T1 → T2/T4/T6 | Colunas `subscription_status`/`trial_ends_at` em `accounts` | T2/T4/T6 usam esses nomes de coluna nos tipos/queries; a migração define o CHECK exato (`'trialing'\|'active'\|'past_due'\|'canceled'`). T1 primeiro. |
 | T2 → T4/T7 | `isAccountBlocked({ subscription_status, trial_ends_at }): boolean` | Import direto, sem I/O. T2 antes de T4/T7. |
-| T3 → T5 | `createCustomer`, `createSubscription`, `cancelSubscription` | T5 (rotas subscribe/cancel) chama essas três funções. T3 antes de T5. |
+| T3 → T5 | `createCustomer`, `createSubscription`, `cancelSubscription` | T5 (rotas subscribe/cancel) chama essas três funções. T3 antes de T5. **Ruling:** T5 chama `createCustomer(ctx.account.name, undefined)` sem e-mail — `email` é opcional em `createCustomer`, corpo da requisição omite o campo quando ausente. |
 | T4 → T5 | `requireRole(min, { allowBlocked: true })` | T5 precisa que o gate já aceite a opção — senão a própria rota de assinar fica bloqueada pra quem está bloqueado. T4 antes de T5. |
 | T1 → T5/T6 | Trigger `protect_billing_columns_trigger` | T5/T6 escrevem as colunas de billing via client service-role — o trigger só libera pra esse role. Ordem não é estritamente bloqueante pro código (o trigger só importa em runtime contra um banco real), mas T1 primeiro evita confusão. |
 | T5/T6 → T7 | Rotas `/api/billing/subscribe`, `/api/billing/cancel` existem | O botão da tela `/billing` (T7) chama essas rotas. T5/T6 antes de T7. |
@@ -270,7 +271,7 @@ git commit -m "feat(billing): isAccountBlocked pure function"
 
 **Interfaces:**
 - Consumes: env vars `ASAAS_API_KEY`, `ASAAS_BASE_URL` (default `https://api.asaas.com/v3` — sandbox é `https://sandbox.asaas.com/api/v3`, confirmar exato na doc durante o smoke), `ASAAS_SUBSCRIPTION_PRICE_CENTS`.
-- Produces: `createCustomer(name, email, cpfCnpj?)`, `createSubscription(customerId, description)`, `cancelSubscription(subscriptionId)`.
+- Produces: `createCustomer(name: string, email?: string)` (email é opcional — T5 chama sem e-mail, ver ruling no pre-flight), `createSubscription(customerId, description)`, `cancelSubscription(subscriptionId)`.
 
 - [ ] **Step 1: teste que falha** — `src/lib/billing/asaas.test.ts`
 
@@ -314,6 +315,15 @@ describe("createCustomer", () => {
     fetchMock.mockResolvedValue(jsonResponse({ errors: [{ description: "invalid email" }] }, false, 400));
     const { createCustomer } = await import("./asaas");
     await expect(createCustomer("Loja", "bad")).rejects.toThrow("invalid email");
+  });
+
+  it("omite o campo email do corpo quando não informado (caminho que a Task 5 usa)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ id: "cus_456" }));
+    const { createCustomer } = await import("./asaas");
+    const out = await createCustomer("Loja Sem Email");
+    expect(out).toEqual({ customerId: "cus_456" });
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toEqual({ name: "Loja Sem Email" });
   });
 });
 
@@ -396,11 +406,11 @@ async function call(path: string, init: RequestInit): Promise<Json> {
 
 export async function createCustomer(
   name: string,
-  email: string
+  email?: string
 ): Promise<{ customerId: string }> {
   const json = await call("/customers", {
     method: "POST",
-    body: JSON.stringify({ name, email }),
+    body: JSON.stringify(email ? { name, email } : { name }),
   });
   const customerId = json.id as string | undefined;
   if (!customerId) throw new Error("Asaas /customers response missing id");
@@ -1113,7 +1123,7 @@ git commit -m "feat(billing): Asaas webhook syncs subscription_status"
 
 **Files:**
 - Modify: `src/app/(dashboard)/layout.tsx`, `src/lib/auth/roles.ts`
-- Create: `src/app/(dashboard)/billing/page.tsx`
+- Create: `src/app/billing/page.tsx`, `src/app/billing/billing-actions.tsx`
 - Modify: `messages/en.json`, `messages/ko.json`, `messages/pt-BR.json`
 
 **Interfaces:**
@@ -1389,7 +1399,7 @@ Inserir cada bloco como uma chave de topo nova (irmã de `"Settings"`), respeita
 - [ ] **Step 7: Commit**
 
 ```bash
-git add src/app/\(dashboard\)/layout.tsx src/app/billing src/lib/auth/roles.ts messages/en.json messages/ko.json messages/pt-BR.json
+git add "src/app/(dashboard)/layout.tsx" src/app/billing src/lib/auth/roles.ts messages/en.json messages/ko.json messages/pt-BR.json
 git commit -m "feat(billing): dashboard block gate + /billing page"
 ```
 

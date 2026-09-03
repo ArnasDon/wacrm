@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslations } from 'next-intl'
 import { toast } from 'sonner'
-import { Download, Flame, Loader2, Percent, UserPlus, Wallet } from 'lucide-react'
+import { Download, Flame, Loader2, Percent, Smile, UserPlus, Wallet } from 'lucide-react'
 
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/hooks/use-auth'
@@ -347,6 +347,29 @@ export default function KpisPage() {
           )}
         </ChartSection>
       </div>
+
+      {/* CSAT — post-sale satisfaction */}
+      {dataset && derived && (
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <MetricCard
+            title={t('cards.csat')}
+            value={
+              dataset.csat.avgPercent == null
+                ? '—'
+                : `${Math.round(dataset.csat.avgPercent)}%`
+            }
+            icon={Smile}
+            subtitle={
+              dataset.csat.avgPercent == null
+                ? t('cards.csatNoResponses')
+                : t('cards.csatSubtitle', {
+                    responded: dataset.csat.responded,
+                    delivered: dataset.csat.delivered,
+                  })
+            }
+          />
+        </div>
+      )}
 
       {/* CAC */}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">

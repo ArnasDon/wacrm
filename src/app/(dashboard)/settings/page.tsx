@@ -18,6 +18,7 @@ import { TemplateManager } from '@/components/settings/template-manager';
 import { QuickRepliesManager } from '@/components/settings/quick-replies-manager';
 import { FieldsAndTagsPanel } from '@/components/settings/fields-and-tags-panel';
 import { DealsSettings } from '@/components/settings/deals-settings';
+import { CsatConfig } from '@/components/settings/csat-config';
 import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import { WebhooksSettings } from '@/components/settings/webhooks-settings';
@@ -88,6 +89,7 @@ function SettingsPageInner() {
     'quick-replies': <QuickRepliesManager />,
     fields: <FieldsAndTagsPanel />,
     deals: <DealsSettings />,
+    csat: <CsatConfig />,
     members: <MembersTab />,
     api: <ApiKeysSettings />,
     webhooks: <WebhooksSettings />,

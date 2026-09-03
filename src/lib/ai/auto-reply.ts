@@ -1030,9 +1030,14 @@ async function autoSetLeadTemperature(args: {
     .maybeSingle()
   if (!contact || contact.lead_temperature === temperature) return
 
+  const nowIso = new Date().toISOString()
   const { error } = await db
     .from('contacts')
-    .update({ lead_temperature: temperature, updated_at: new Date().toISOString() })
+    .update({
+      lead_temperature: temperature,
+      lead_temperature_updated_at: nowIso,
+      updated_at: nowIso,
+    })
     .eq('id', contactId)
     .eq('account_id', accountId)
   if (error) {

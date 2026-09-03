@@ -60,6 +60,9 @@ export async function PATCH(
           : null
       updates.lead_temperature = next
       temperatureChanged = next !== (existing.lead_temperature ?? null)
+      // Stamp the change so the auto-cool sweep (migration 103) gives a
+      // freshly (re)classified lead its own full grace period.
+      if (temperatureChanged) updates.lead_temperature_updated_at = new Date().toISOString()
     }
 
     const { data, error } = await supabase

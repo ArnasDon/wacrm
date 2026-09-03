@@ -267,6 +267,48 @@ pendiente" mencionado en la sección I.4 / J, pero resuelto **dentro** de SANDÍ
 diferidas descrito en la sección L (mismo patrón pg_cron + `x-cron-secret`, sin
 cola real).
 
+### 2026-09-02 — CSAT post-venta + enfriamiento automático de leads
+
+**Estado:** rama `feat/csat-and-lead-cooldown`. Migraciones `102`
+(`csat_config` + `csat_surveys`), `103` (`contacts.lead_temperature_updated_at`
++ `accounts.lead_cooldown_enabled/lead_cooldown_days`) y `104` (registro de los
+dos pg_cron). **Falta aplicar las migraciones y registrar los dos cron**
+(`csat-sweep` cada 15 min, `lead-temperature-sweep` cada hora — reutilizan
+`AUTOMATION_CRON_SECRET`). Hasta registrarlos, los heartbeats `csat_cron` y
+`temperature_sweep_cron` marcan "never" (alerta *warning*, esperado — igual que
+`followups_cron`).
+
+**Qué resuelve — sección I.1 / J ("temperatura" + "sembrar evidencia del
+sello").** El diagnóstico decía que la temperatura de lead "no existe"; en
+realidad ya existía desde la migración `047` (manual) + `052` (la IA la marca
+sola). Lo que faltaba de la lista de trabajo:
+
+1. **Encuesta de satisfacción post-venta (CSAT).** Al disparar `deal.won`,
+   `dispatchCsat` (enganchado dentro de `dispatchWebhookEvent`, igual que
+   Google Sheets) encola una fila en `csat_surveys`. El cron `/api/csat/cron`
+   la envía cuando vence `send_after` (config `delay_minutes`, por defecto 1
+   día) usando una **plantilla de WhatsApp con botones** de calificación. El
+   botón que toca el cliente se captura en el webhook de entrada
+   (`message.received` ahora lleva `interactive_reply_id`; para la ruta Zernio,
+   que no parsea taps, se acepta un texto "5"/"★★★★★" mientras haya una
+   encuesta `sent` pendiente para ese contacto) → estado `responded` + evento
+   nuevo `csat.received` (alimenta webhooks + pestaña *Satisfacción* de Google
+   Sheets). Config en Configuración → **Satisfacción (CSAT)**; una tarjeta de
+   promedio en `/kpis`. Cooldown por contacto para no encuestar en cada compra.
+2. **Enfriamiento automático de leads.** Opt-in por cuenta
+   (`accounts.lead_cooldown_enabled`, en Configuración → Negocios y moneda). El
+   cron `/api/contacts/temperature-sweep/cron` baja un nivel (caliente → tibio
+   → frío) los contactos warm/hot cuya conversación lleva `lead_cooldown_days`
+   en silencio **y** cuya temperatura lleva ese mismo tiempo sin cambiar
+   (`lead_temperature_updated_at`, ahora también estampado por el PATCH manual
+   y la acción de IA). Cada cambio emite `contact.lead_temperature_changed`,
+   igual que el control manual del inbox.
+
+**Relación con el diagnóstico.** Añade dos cron más al modelo de la sección L
+(mismo patrón pg_cron + `x-cron-secret`). El catálogo de eventos salientes
+(sección I.4) sube a 12 con `csat.received`. No toca multi-tenancy ni el núcleo
+— todo sobre el patrón `account_id` + RLS ya existente.
+
 ---
 
 ## Nota final

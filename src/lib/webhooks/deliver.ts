@@ -33,6 +33,7 @@ import { buildSignatureHeader } from '@/lib/webhooks/sign';
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import type { WebhookEvent } from '@/lib/webhooks/events';
 import { dispatchToGoogleSheets } from '@/lib/google-sheets/dispatch';
+import { dispatchCsat } from '@/lib/csat/dispatch';
 
 /** Per-endpoint HTTP timeout. Kept short — this runs in `after()`. */
 export const DELIVERY_TIMEOUT_MS = 5000;
@@ -73,6 +74,16 @@ export async function dispatchWebhookEvent(
     // so a slow Sheets append doesn't get abandoned by a serverless
     // freeze, but its own errors are swallowed inside.
     await dispatchToGoogleSheets(db, accountId, event, data);
+
+    // Post-sale CSAT: `deal.won` queues a survey; `message.received`
+    // may carry the customer's rating tap. A captured rating returns a
+    // `csat.received` follow-up to fan out through this same path (so
+    // it reaches Sheets + subscribed endpoints); dispatchCsat can't
+    // call dispatchWebhookEvent itself without an import cycle.
+    const csatFollowUp = await dispatchCsat(db, accountId, event, data);
+    if (csatFollowUp) {
+      void dispatchWebhookEvent(db, accountId, csatFollowUp.event, csatFollowUp.data);
+    }
 
     const { data: rows, error } = await db
       .from('webhook_endpoints')

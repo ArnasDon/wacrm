@@ -51,6 +51,31 @@ export interface TemperatureDistribution {
   unclassified: number
 }
 
+/** One post-sale CSAT survey row (migration 102), as pulled for the
+ *  satisfaction KPI. */
+export interface CsatRow {
+  created_at: string
+  status: 'pending' | 'sent' | 'responded' | 'failed' | 'skipped'
+  score: number | null
+  /** The 1..scale the score is out of (3 or 5). */
+  scale: number
+}
+
+export interface CsatSummary {
+  /** Surveys that actually reached the customer (sent + responded). */
+  delivered: number
+  /** Surveys the customer answered. */
+  responded: number
+  /** Mean of `score / scale` across answered surveys, 0–100. `null`
+   *  when nothing has been answered yet — an empty set has no average,
+   *  not a zero one. Normalising by scale keeps a 3-button and a
+   *  5-button account comparable. */
+  avgPercent: number | null
+  /** `responded / delivered` as a percentage, or `null` when nothing
+   *  was delivered. */
+  responseRate: number | null
+}
+
 /** One saved CAC input — a real spend figure an admin entered for a
  *  period they were viewing (see `kpi_period_spend`, migration 065). */
 export interface SpendEntry {
@@ -95,4 +120,5 @@ export interface KpiDataset {
   temperature: TemperatureDistribution
   spendHistory: SpendEntry[]
   currentPeriodSpend: SpendEntry | null
+  csat: CsatSummary
 }

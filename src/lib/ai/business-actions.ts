@@ -115,8 +115,13 @@ export async function executeBusinessAction(args: {
     if (!temperature || !LEAD_TEMPERATURES.includes(temperature as LeadTemperature)) {
       throw new BusinessActionError('temperature must be one of cold, warm, hot')
     }
+    const nowIso = new Date().toISOString()
     const { data, error } = await db.from('contacts')
-      .update({ lead_temperature: temperature, updated_at: new Date().toISOString() })
+      .update({
+        lead_temperature: temperature,
+        lead_temperature_updated_at: nowIso,
+        updated_at: nowIso,
+      })
       .eq('id', targetId).eq('account_id', accountId)
       .select('id, lead_temperature').maybeSingle()
     if (error) throw new BusinessActionError(error.message, 500)

@@ -45,6 +45,7 @@ function makeDataset(overrides: Partial<KpiDataset> = {}): KpiDataset {
     temperature: { cold: 1, warm: 0, hot: 1, unclassified: 0 },
     spendHistory: [{ id: 's1', period_start: '2026-08-01', period_end: '2026-08-03', amount: 100, currency: 'USD' }],
     currentPeriodSpend: { id: 's1', period_start: '2026-08-01', period_end: '2026-08-03', amount: 100, currency: 'USD' },
+    csat: { delivered: 0, responded: 0, avgPercent: null, responseRate: null },
     ...overrides,
   }
 }

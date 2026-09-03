@@ -14,6 +14,7 @@ const SHEETABLE_EVENTS = [
   'contact.lead_temperature_changed',
   'appointment.scheduled',
   'broadcast.completed',
+  'csat.received',
 ] as const
 
 /** GET — connection + target-sheet status for the caller's account. */

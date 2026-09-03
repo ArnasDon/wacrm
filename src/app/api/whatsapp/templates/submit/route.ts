@@ -190,7 +190,11 @@ export async function POST(request: Request) {
             apiKey: decrypt(config.zernio_api_key),
             accountId: config.zernio_account_id,
             name: payload.name,
-            category: payload.category,
+            // Meta (and Zernio, which proxies it) require the uppercase
+            // enum — MARKETING / UTILITY / AUTHENTICATION. `payload.category`
+            // is the form's title-case label; `metaPayload.category` is the
+            // normalised value the direct-Meta path already sends.
+            category: metaPayload.category,
             language: payload.language,
             components: metaPayload.components ?? [],
           })

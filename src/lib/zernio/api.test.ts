@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { sendZernioText, sendZernioMedia, listZernioTemplates } from './api'
+import { SendMessageError } from '@/lib/messaging/types'
 
 function okResponse(json: unknown): Response {
   return { ok: true, status: 200, json: async () => json } as unknown as Response
@@ -84,6 +85,29 @@ describe('zernioFetch (via sendZernioText)', () => {
       json: async () => ({ error: 'Conversation not found' }),
     } as unknown as Response)
     await expect(sendZernioText(args)).rejects.toThrow('Conversation not found')
+  })
+
+  it('raises a SendMessageError carrying the upstream 4xx status and real message', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'template name (1) does not exist in en_US' }),
+    } as unknown as Response)
+    const err = await sendZernioText(args).catch((e) => e)
+    expect(err).toBeInstanceOf(SendMessageError)
+    expect(err.status).toBe(404)
+    expect(err.message).toBe('template name (1) does not exist in en_US')
+  })
+
+  it('maps an upstream 5xx to 502 (transient, matches the direct-Meta path)', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: 'upstream unavailable' }),
+    } as unknown as Response)
+    const err = await sendZernioText(args).catch((e) => e)
+    expect(err).toBeInstanceOf(SendMessageError)
+    expect(err.status).toBe(502)
   })
 })
 

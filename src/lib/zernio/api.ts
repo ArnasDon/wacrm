@@ -18,6 +18,8 @@
  * Reference: https://docs.zernio.com
  */
 
+import { SendMessageError } from '@/lib/messaging/types'
+
 const ZERNIO_API_BASE = 'https://zernio.com/api/v1'
 
 // No call here previously carried a timeout, so a slow/unresponsive
@@ -121,7 +123,17 @@ async function throwZernioError(response: Response, fallback: string): Promise<n
   } catch {
     // response body wasn't JSON — keep the fallback
   }
-  throw new Error(message)
+  // Surface Zernio's (really Meta's) actual message — e.g. "template
+  // name (1) does not exist in en_US" — instead of a bare
+  // "Zernio API error: 404" that the send route then collapses into an
+  // unhelpful "HTTP 502". A 4xx is a permanent request problem (unknown
+  // template, unknown conversation, bad params) so keep its status: the
+  // client's retry helper won't spin on it, and the send route replies
+  // with that status + this message. 5xx / unrecognised → 502, matching
+  // the direct-Meta path in send-message.ts.
+  const status =
+    response.status >= 400 && response.status < 500 ? response.status : 502
+  throw new SendMessageError('zernio_error', message, status)
 }
 
 // ============================================================

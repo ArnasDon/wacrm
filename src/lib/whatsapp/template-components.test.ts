@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { buildMetaTemplatePayload } from './template-components';
+import {
+  buildMetaTemplatePayload,
+  metaComponentsToZernio,
+} from './template-components';
 import type { TemplatePayload } from './template-validators';
 
 const base: TemplatePayload = {
@@ -121,6 +124,51 @@ describe('buildMetaTemplatePayload', () => {
       'BODY',
       'FOOTER',
       'BUTTONS',
+    ]);
+  });
+});
+
+describe('metaComponentsToZernio', () => {
+  it('lowercases the component + header-format + button discriminators, keeps field names', () => {
+    const meta = buildMetaTemplatePayload({
+      ...base,
+      category: 'Marketing',
+      header_type: 'text',
+      header_content: 'Hola',
+      footer_text: 'Responde STOP para salir',
+      buttons: [
+        { type: 'QUICK_REPLY', text: 'SI' },
+        { type: 'URL', text: 'Ver', url: 'https://example.com' },
+        { type: 'PHONE_NUMBER', text: 'Llamar', phone_number: '+50255550000' },
+        { type: 'COPY_CODE', text: 'Copiar', example: 'ABC123' },
+      ],
+    }).components;
+
+    expect(metaComponentsToZernio(meta)).toEqual([
+      { type: 'header', format: 'text', text: 'Hola' },
+      { type: 'body', text: 'Your order is on its way.' },
+      { type: 'footer', text: 'Responde STOP para salir' },
+      {
+        type: 'buttons',
+        buttons: [
+          { type: 'quick_reply', text: 'SI' },
+          { type: 'url', text: 'Ver', url: 'https://example.com' },
+          { type: 'phone_number', text: 'Llamar', phone_number: '+50255550000' },
+          // buildButtonsComponent wraps a copy_code example string in an array
+          { type: 'copy_code', text: 'Copiar', example: ['ABC123'] },
+        ],
+      },
+    ]);
+  });
+
+  it('preserves a body example object untouched', () => {
+    const meta = buildMetaTemplatePayload({
+      ...base,
+      body_text: 'Hi {{1}}',
+      sample_values: { body: ['John'] },
+    }).components;
+    expect(metaComponentsToZernio(meta)).toEqual([
+      { type: 'body', text: 'Hi {{1}}', example: { body_text: [['John']] } },
     ]);
   });
 });

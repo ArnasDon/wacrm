@@ -10,6 +10,7 @@ import { __resetRateLimitForTests } from '@/lib/rate-limit'
 const h = vi.hoisted(() => ({
   loadAiConfig: vi.fn(),
   buildConversationContext: vi.fn(),
+  latestCustomerMessageId: vi.fn(),
   retrieveKnowledge: vi.fn(),
   accountHasKnowledgeBase: vi.fn(),
   generateReply: vi.fn(),
@@ -43,11 +44,25 @@ const h = vi.hoisted(() => ({
     // → facets chain (never mocked out), unlike every other test in this
     // file which only checks that tools/executeTool were ATTACHED.
     catalogProductRows: [] as Record<string, unknown>[],
+    // H-6 — the AI-processing claim's own events (acquire/release/
+    // release_or_continue), tracked SEPARATELY from `rpcCalls` (which
+    // every pre-H-6 test asserts on exactly, for claim_ai_reply_slot/
+    // search_ai_catalog_products only) so none of those assertions need
+    // to change for a mechanism they were never testing.
+    aiProcessingEvents: [] as string[],
   },
 }))
 
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
-vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
+vi.mock('./context', () => ({
+  buildConversationContext: h.buildConversationContext,
+  // H-6 — the drain loop's "marker" query. A fixed, distinct value is
+  // enough for every pre-H-6 test: they never inspect it, and the fake
+  // conversations.update()/rpc() handlers below don't need it to match
+  // anything real to correctly model "nothing newer arrived" (the
+  // default every one of those tests implicitly relies on).
+  latestCustomerMessageId: h.latestCustomerMessageId,
+}))
 vi.mock('./knowledge', () => ({
   retrieveKnowledge: h.retrieveKnowledge,
   accountHasKnowledgeBase: h.accountHasKnowledgeBase,
@@ -121,7 +136,11 @@ vi.mock('./admin-client', () => ({
       if (table === 'account_business_contacts') {
         return chainable(h.state.contacts)
       }
-      // conversations
+      // conversations. `.select().eq().maybeSingle()` always echoes the
+      // single, mutable h.state.conv — every existing test only exercises
+      // ONE dispatch pass, so re-reading it fresh (as processOneTurn's
+      // H-6 restructuring now does) is behaviorally identical to the old
+      // single upfront read for all of them.
       return {
         select: () => ({
           eq: () => ({
@@ -130,7 +149,56 @@ vi.mock('./admin-client', () => ({
           }),
         }),
         update: (payload: Record<string, unknown>) => {
+          // H-6 — the claim acquire (`{ai_processing_started_at: <iso>}`
+          // + `.or(...)`) and the unconditional safety-net release
+          // (`{ai_processing_started_at: null}`, no `.or()`) both land
+          // here. Modeled as a real conditional UPDATE against the
+          // single mutable h.state.conv, exactly mirroring what
+          // PostgREST does against a real row — tracked into
+          // aiProcessingEvents, NEVER into updatePayload (which every
+          // pre-H-6 test asserts holds exactly the handoff/catalog-
+          // context payload).
+          const isAiProcessingClaim =
+            Object.keys(payload).length === 1 && 'ai_processing_started_at' in payload
+          if (isAiProcessingClaim) {
+            let orExpr: string | null = null
+            const api = {
+              eq: () => api,
+              or: (expr: string) => {
+                orExpr = expr
+                return api
+              },
+              select: () => api,
+              maybeSingle: () => Promise.resolve(evaluateClaim(true)),
+              then: (resolve: (v: unknown) => void, reject?: (e: unknown) => void) =>
+                Promise.resolve(evaluateClaim(false)).then(resolve, reject),
+            }
+            function evaluateClaim(single: boolean) {
+              const current = (h.state.conv?.ai_processing_started_at as string | null | undefined) ?? null
+              const matches =
+                !orExpr ||
+                orExpr.split(',').some((clause) => {
+                  const [col, op, val] = clause.split('.')
+                  if (col !== 'ai_processing_started_at') return false
+                  if (op === 'is') return val === 'null' ? current === null : String(current) === val
+                  if (op === 'lt') return typeof current === 'string' && current < val
+                  return false
+                })
+              if (!matches) return { data: null, error: null }
+              if (h.state.conv) Object.assign(h.state.conv, payload)
+              h.state.aiProcessingEvents.push(
+                payload.ai_processing_started_at === null ? 'release' : 'claim',
+              )
+              const row = { id: 'conv-1' }
+              return { data: single ? row : [row], error: null }
+            }
+            return api
+          }
+
+          // Every other conversations.update() call (handoff, ai_catalog_
+          // context) — unchanged behavior.
           h.state.updatePayload = payload
+          if (h.state.conv) Object.assign(h.state.conv, payload)
           return {
             eq: () =>
               h.state.failHandoffUpdate
@@ -141,6 +209,19 @@ vi.mock('./admin-client', () => ({
       }
     },
     rpc: (name: string, args: unknown) => {
+      // H-6 — release_or_continue_ai_processing is tracked in
+      // aiProcessingEvents, never in rpcCalls (see that field's own
+      // comment). Default: nothing newer arrived — release immediately,
+      // matching every pre-H-6 test's implicit "one pass and done".
+      if (name === 'release_or_continue_ai_processing') {
+        h.state.aiProcessingEvents.push('release_or_continue')
+        if (h.state.conv) h.state.conv.ai_processing_started_at = null
+        // A RETURNS TABLE function's data comes back as an array of rows
+        // (real convention — see insert_inbound_customer_message,
+        // migration 053) — the real code reads `data?.[0]`, never
+        // `.maybeSingle()`.
+        return chainable([{ released: true, latest_message_id: null }])
+      }
       h.state.rpcCalls.push({ name, args })
       // FASE 11 — DataSourceCatalogProvider.searchCatalog() calls this
       // RPC for real (never mocked at the provider level) in the
@@ -148,9 +229,9 @@ vi.mock('./admin-client', () => ({
       // configures an active data source that would reach it, so this
       // branch is inert for them.
       if (name === 'search_ai_catalog_products') {
-        return Promise.resolve({ data: h.state.catalogProductRows, error: null })
+        return chainable(h.state.catalogProductRows)
       }
-      return Promise.resolve({ data: h.state.claim, error: null })
+      return chainable(h.state.claim)
     },
   }),
 }))
@@ -209,6 +290,7 @@ beforeEach(() => {
   h.state.contacts = []
   h.state.catalogProductRows = []
   h.state.failHandoffUpdate = false
+  h.state.aiProcessingEvents = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
   // Not "hi" — that's a real greeting under routing.ts's own vocabulary
   // and would route to 'neither', which is correct behavior but would
@@ -219,6 +301,7 @@ beforeEach(() => {
   // branch instead, which is the closest equivalent to "always attempt
   // everything available" for tests that aren't testing routing itself.
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'Necesito ayuda con mi pedido' }])
+  h.latestCustomerMessageId.mockResolvedValue('msg-1')
   h.retrieveKnowledge.mockResolvedValue([])
   h.accountHasKnowledgeBase.mockResolvedValue(true)
   // toolCalls is a required field on the real GenerateResult (never

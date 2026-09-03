@@ -31,6 +31,7 @@ import {
   CircleSlash,
   AlertTriangle,
   ArrowRightLeft,
+  ClipboardList,
   Zap,
   Loader2,
   ArrowDown,
@@ -153,6 +154,11 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
     icon: ArrowRightLeft,
     border: 'border-l-primary',
   },
+  create_task: {
+    label: 'create_task',
+    icon: ClipboardList,
+    border: 'border-l-primary',
+  },
   wait: { label: 'wait', icon: Hourglass, border: 'border-l-border' },
   condition: {
     label: 'condition',
@@ -195,6 +201,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   'update_contact_field',
   'create_deal',
   'move_deal',
+  'create_task',
   'wait',
   'condition',
   'send_webhook',
@@ -256,6 +263,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { pipeline_id: '', stage_id: '', title: '', value: 0 };
     case 'move_deal':
       return { stage_id: '' };
+    case 'create_task':
+      return { title: '', notes: '', assignee: '', due_in_hours: 24 };
     case 'wait':
       return { amount: 1, unit: 'hours' };
     case 'condition':
@@ -515,6 +524,40 @@ function AgentSelect({
         </option>
       ))}
       {value && !selected && (
+        <option value={value}>{t('agents.unknown', { id: value })}</option>
+      )}
+    </select>
+  );
+}
+
+/** Assignee picker for Create Task — like AgentSelect but with the two
+ *  extra sentinels the engine understands (`''` unassigned, `'author'`
+ *  the automation's own author). */
+function TaskAssigneeSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const { members } = useResources();
+  const selected = members.find((m) => m.user_id === value);
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={SELECT_CLASS}
+    >
+      <option value="">{t('config.taskAssignee.unassigned')}</option>
+      <option value="author">{t('config.taskAssignee.author')}</option>
+      {members.map((m) => (
+        <option key={m.user_id} value={m.user_id}>
+          {m.full_name || m.email || m.user_id}
+        </option>
+      ))}
+      {value && value !== 'author' && !selected && (
         <option value={value}>{t('agents.unknown', { id: value })}</option>
       )}
     </select>
@@ -1592,6 +1635,43 @@ function StepEditor({
           </p>
         </>
       );
+    case 'create_task':
+      return (
+        <>
+          <FieldBlock label={t('config.titleLabel')}>
+            <Input
+              value={(cfg.title as string) ?? ''}
+              onChange={(e) => set({ title: e.target.value })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label={t('config.taskNotesLabel')}>
+            <Textarea
+              value={(cfg.notes as string) ?? ''}
+              onChange={(e) => set({ notes: e.target.value })}
+              rows={2}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <FieldBlock label={t('config.taskAssigneeLabel')}>
+            <TaskAssigneeSelect
+              value={(cfg.assignee as string) ?? ''}
+              onChange={(v) => set({ assignee: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t('config.taskDueLabel')}>
+            <Input
+              type="number"
+              min={0}
+              value={(cfg.due_in_hours as number) ?? 0}
+              onChange={(e) => set({ due_in_hours: Math.max(0, Number(e.target.value)) })}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+          <p className="text-muted-foreground text-xs">{t('config.taskDueHint')}</p>
+        </>
+      );
     case 'wait':
       return (
         <div className="grid grid-cols-2 gap-2">
@@ -1760,6 +1840,8 @@ function previewFor(step: BuilderStep): string {
       );
     case 'send_template':
       return (step.step_config.template_name as string) || 'pick a template';
+    case 'create_task':
+      return (step.step_config.title as string) || 'no title yet';
     case 'wait':
       return `${step.step_config.amount ?? '?'} ${step.step_config.unit ?? ''}`;
     case 'condition':

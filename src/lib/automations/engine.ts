@@ -17,6 +17,7 @@ import type {
   WaitStepConfig,
   CreateDealStepConfig,
   MoveDealStepConfig,
+  CreateTaskStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
@@ -682,6 +683,48 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         source: 'automation',
       })
       return `deal moved to stage ${cfg.stage_id}`
+    }
+
+    case 'create_task': {
+      const cfg = step.step_config as CreateTaskStepConfig
+      const title = interpolate(cfg.title ?? '', args).trim()
+      if (!title) throw new Error('create_task needs a title')
+
+      // Resolve the assignee. 'author' → the automation's own author;
+      // a specific id must be a member of this account (else leave the
+      // task unassigned rather than pointing it at a stranger — same
+      // guard `assign_conversation` applies).
+      let assignedTo: string | null = null
+      if (cfg.assignee === 'author') {
+        assignedTo = args.automation.user_id
+      } else if (cfg.assignee && cfg.assignee !== 'unassigned') {
+        const { data: member } = await db
+          .from('profiles')
+          .select('user_id')
+          .eq('account_id', args.automation.account_id)
+          .eq('user_id', cfg.assignee)
+          .maybeSingle()
+        assignedTo = member ? cfg.assignee : null
+      }
+
+      const hours = Number(cfg.due_in_hours)
+      const dueAt =
+        Number.isFinite(hours) && hours > 0
+          ? new Date(Date.now() + hours * 3_600_000).toISOString()
+          : null
+
+      await db.from('tasks').insert({
+        // Tenancy + audit, same split as automation_logs / create_deal.
+        account_id: args.automation.account_id,
+        created_by: args.automation.user_id,
+        assigned_to: assignedTo,
+        contact_id: args.contactId,
+        title,
+        notes: cfg.notes ? interpolate(cfg.notes, args) : null,
+        due_at: dueAt,
+        status: 'open',
+      })
+      return `task created${assignedTo ? ' (assigned)' : ''}${dueAt ? ' with due date' : ''}`
     }
 
     case 'send_webhook': {

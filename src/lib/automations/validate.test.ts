@@ -134,6 +134,34 @@ describe("validateStepsForActivation", () => {
     expect(ok).toEqual([]);
   });
 
+  it("flags create_task when the title is missing, passes when present", () => {
+    const missing = validateStepsForActivation([
+      { step_type: "create_task", step_config: {} },
+    ]);
+    expect(missing).toEqual([
+      { path: "steps[0].title", message: "task title is required" },
+    ]);
+    const ok = validateStepsForActivation([
+      { step_type: "create_task", step_config: { title: "Dar seguimiento" } },
+    ]);
+    expect(ok).toEqual([]);
+  });
+
+  it("flags create_task when the due offset is negative", () => {
+    const issues = validateStepsForActivation([
+      {
+        step_type: "create_task",
+        step_config: { title: "Llamar", due_in_hours: -3 },
+      },
+    ]);
+    expect(issues).toEqual([
+      {
+        path: "steps[0].due_in_hours",
+        message: "due offset must be 0 or more hours",
+      },
+    ]);
+  });
+
   it("validates send_buttons / send_list interactive payloads", () => {
     const good = validateStepsForActivation([
       {

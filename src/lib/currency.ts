@@ -5,13 +5,13 @@
  * Before this module, ~6 components each defined their own
  * `Intl.NumberFormat(..., { currency: "USD" })` helper with USD
  * baked in. The default currency is now configurable per account
- * (accounts.default_currency, migration 021), so every formatter
- * takes a currency and falls back to DEFAULT_CURRENCY only when
- * nothing is known.
+ * (accounts.default_currency, migrations 021 and 040), so every
+ * formatter takes a currency and falls back to DEFAULT_CURRENCY only
+ * when nothing is known.
  */
 
 /** App-wide fallback when no account/deal currency is available. */
-export const DEFAULT_CURRENCY = "USD";
+export const DEFAULT_CURRENCY = "LKR";
 
 export interface CurrencyOption {
   /** ISO-4217 code, e.g. "USD". Stored verbatim in the DB. */
@@ -28,11 +28,11 @@ export interface CurrencyOption {
  * list to offer more — nothing else needs to change.
  */
 export const CURRENCIES: CurrencyOption[] = [
+  { code: "LKR", label: "Sri Lankan Rupee", symbol: "Rs" },
+  { code: "INR", label: "Indian Rupee", symbol: "₹" },
   { code: "USD", label: "US Dollar", symbol: "$" },
   { code: "EUR", label: "Euro", symbol: "€" },
   { code: "GBP", label: "British Pound", symbol: "£" },
-  { code: "INR", label: "Indian Rupee", symbol: "₹" },
-  { code: "LKR", label: "Sri Lankan Rupee", symbol: "Rs" },
   { code: "AUD", label: "Australian Dollar", symbol: "A$" },
   { code: "CAD", label: "Canadian Dollar", symbol: "C$" },
   { code: "BRL", label: "Brazilian Real", symbol: "R$" },
@@ -48,9 +48,10 @@ export const CURRENCIES: CurrencyOption[] = [
 
 /**
  * Format a deal value as a currency string. Whole-number output
- * (no minor units) — deal values are tracked to the dollar across
- * the app. `currency` defaults to USD so callers with nothing better
- * stay safe, but pass the account/deal currency wherever known.
+ * (no minor units) — deal values are tracked to whole units across
+ * the app. `currency` defaults to DEFAULT_CURRENCY so callers with
+ * nothing better stay safe, but pass the account/deal currency
+ * wherever known.
  *
  * Total by design: `Intl.NumberFormat` throws a RangeError on a
  * structurally invalid currency code, and `deals.currency` carries
@@ -83,7 +84,7 @@ export function formatCurrency(
 
 /**
  * Compact currency for tight spaces (donut center, legend rows):
- * "$1.2M" / "€34.5k" / "₹900". Uses the currency's symbol from
+ * "Rs1.2M" / "₹34.5k" / "$900". Uses the currency's symbol from
  * CURRENCIES, falling back to the code when we don't carry a symbol.
  */
 export function formatCurrencyShort(

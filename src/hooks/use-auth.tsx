@@ -40,8 +40,10 @@ interface Profile {
 interface AccountSummary {
   id: string;
   name: string;
-  /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
-   *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
+  /** Default deal currency (ISO-4217). NOT NULL in the DB, defaulting
+   *  to 'LKR' for rows created after migration 040 (021 added the
+   *  column with a 'USD' default); narrowed to DEFAULT_CURRENCY when
+   *  absent. */
   default_currency: string;
 }
 
@@ -238,7 +240,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const { data: account, error: accountErr } = await supabase
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
-            // USD fallback below for older schemas where it reads null.
+            // DEFAULT_CURRENCY fallback below for older schemas where
+            // it reads null.
             .select("id, name, default_currency")
             .eq("id", data.account_id)
             .maybeSingle();

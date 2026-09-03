@@ -14,7 +14,7 @@ describe("formatCurrency", () => {
     expect(out).not.toContain(".00");
   });
 
-  it("defaults to USD when no currency is given", () => {
+  it("defaults to DEFAULT_CURRENCY when no currency is given", () => {
     expect(formatCurrency(10)).toBe(formatCurrency(10, DEFAULT_CURRENCY));
   });
 
@@ -47,6 +47,21 @@ describe("formatCurrency", () => {
   });
 });
 
+describe("CURRENCIES", () => {
+  it("leads with LKR then INR — the picker renders this order verbatim", () => {
+    expect(CURRENCIES.map((c) => c.code).slice(0, 2)).toEqual(["LKR", "INR"]);
+  });
+
+  it("offers the app default, so the picker can always show it", () => {
+    expect(CURRENCIES.some((c) => c.code === DEFAULT_CURRENCY)).toBe(true);
+  });
+
+  it("has no duplicate codes", () => {
+    const codes = CURRENCIES.map((c) => c.code);
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+});
+
 describe("formatCurrencyShort", () => {
   it("abbreviates millions and thousands with the currency symbol", () => {
     expect(formatCurrencyShort(2_500_000, "USD")).toBe("$2.5M");
@@ -54,9 +69,10 @@ describe("formatCurrencyShort", () => {
     expect(formatCurrencyShort(900, "USD")).toBe("$900");
   });
 
-  it("uses the matching symbol for non-USD currencies", () => {
+  it("uses the matching symbol for each offered currency", () => {
     expect(formatCurrencyShort(1_000, "EUR")).toBe("€1.0k");
     expect(formatCurrencyShort(1_000, "INR")).toBe("₹1.0k");
+    expect(formatCurrencyShort(1_000, "LKR")).toBe("Rs1.0k");
   });
 
   it("falls back to the code prefix for unknown currencies (no throw)", () => {

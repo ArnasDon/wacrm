@@ -254,6 +254,20 @@ describe('POST /api/whatsapp/webhook/uazapi/[secret] — fast ack + routing', ()
     expect(h.processStatusUpdate).not.toHaveBeenCalled()
   })
 
+  it('message with fromMe: true → skipped entirely, never processed as inbound (operator/API echo)', async () => {
+    await post({
+      EventType: 'messages',
+      instanceName: INSTANCE_NAME,
+      data: { ...MESSAGE_ENVELOPE.data, fromMe: true },
+    })
+    await drainAfter()
+
+    expect(h.processInboundMessage).not.toHaveBeenCalled()
+    expect(infoSpy).toHaveBeenCalledWith(
+      expect.stringContaining('fromMe')
+    )
+  })
+
   it('singular event "message" → processInboundMessage (vocab tolerance, FIX 2)', async () => {
     await post({
       event: 'message',

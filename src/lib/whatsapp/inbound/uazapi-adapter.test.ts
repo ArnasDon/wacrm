@@ -3,6 +3,7 @@ import { normalizePhone } from '@/lib/whatsapp/phone-utils';
 import {
   eventTypeOf,
   eventKindOf,
+  isFromMe,
   uazapiMessageToInbound,
   uazapiStatusToInbound,
   type UazapiConnectionRowLite,
@@ -60,6 +61,32 @@ describe('eventKindOf — singular/plural vocab tolerance', () => {
 
   it('everything else is "other"', () => {
     expect(eventKindOf({ event: 'presence' })).toBe('other');
+  });
+});
+
+describe('isFromMe', () => {
+  // Confirmed via 1c-ii smoke in production: a message the operator
+  // types directly on the phone (not via our API — those are already
+  // filtered upstream by excludeMessages: wasSentByApi) still reaches
+  // the webhook with `fromMe: true`. Every message payload we've
+  // captured carries this field. Left unchecked, the adapter treated
+  // these as customer-authored — overwriting the real customer's
+  // contact name with the operator's own WhatsApp profile name and
+  // storing the operator's own words as sender_type 'customer'.
+  it('true when the nested message has fromMe: true', () => {
+    expect(isFromMe({ EventType: 'messages', data: { fromMe: true } })).toBe(
+      true
+    );
+    expect(
+      isFromMe({ EventType: 'messages', message: { fromMe: true } })
+    ).toBe(true);
+  });
+
+  it('false when fromMe is false or absent', () => {
+    expect(isFromMe({ EventType: 'messages', data: { fromMe: false } })).toBe(
+      false
+    );
+    expect(isFromMe({ EventType: 'messages', data: {} })).toBe(false);
   });
 });
 

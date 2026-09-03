@@ -25,6 +25,7 @@ import {
   uazapiStatusToInbound,
   eventTypeOf,
   eventKindOf,
+  isFromMe,
 } from '@/lib/whatsapp/inbound/uazapi-adapter';
 
 export const maxDuration = 60;
@@ -130,6 +131,18 @@ async function handleUazapiEvent(
 
   switch (eventKindOf(payload)) {
     case 'message':
+      // Operator typed it on the phone (or an own-send that slipped
+      // past excludeMessages: wasSentByApi) — confirmed in production
+      // via smoke: these arrive with fromMe: true, unfiltered. Never a
+      // customer message; processing it as one overwrote the real
+      // customer's contact name with the operator's own and stored
+      // the operator's words as sender_type 'customer'.
+      if (isFromMe(payload)) {
+        console.info(
+          '[uazapi webhook] message is fromMe — skipping (operator/API echo, not a customer message)'
+        );
+        return;
+      }
       await processInboundMessage(db, uazapiMessageToInbound(payload, lite));
       return;
     case 'status': {

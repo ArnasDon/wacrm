@@ -48,6 +48,18 @@ export function eventTypeOf(payload: Json): string {
   return String(payload.EventType ?? payload.event ?? '');
 }
 
+/**
+ * A mensagem foi enviada pela PRÓPRIA conexão (o operador digitando no
+ * celular, ou um envio nosso que escapou do filtro `wasSentByApi`) —
+ * confirmado em produção via smoke: `fromMe: true` chega sem filtro
+ * algum. Nunca é a mensagem de um cliente; a rota usa isto pra não
+ * processar como inbound (evita sobrescrever o nome do contato com o
+ * do próprio dono e gravar a fala do operador como se fosse o cliente).
+ */
+export function isFromMe(payload: Json): boolean {
+  return msgOf(payload).fromMe === true;
+}
+
 /** Canonical event kind, tolerant of UAZAPI's singular/plural vocab. */
 export function eventKindOf(
   payload: Json

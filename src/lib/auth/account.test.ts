@@ -66,7 +66,7 @@ vi.mock("@/lib/supabase/server", () => ({
   createClient: () => createClient(),
 }));
 
-const { getCurrentAccount, UnauthorizedError, ForbiddenError } = await import(
+const { getCurrentAccount, UnauthorizedError, ForbiddenError, PaymentRequiredError } = await import(
   "./account"
 );
 
@@ -172,5 +172,54 @@ describe("getCurrentAccount", () => {
     await expect(getCurrentAccount()).rejects.toThrow(
       "Profile is not linked to an account",
     );
+  });
+});
+
+describe("getCurrentAccount — billing gate", () => {
+  it("throws PaymentRequiredError when the account is blocked and allowBlocked is not set", async () => {
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: { data: { account_id: "acc-1", account_role: "owner" }, error: null },
+        accounts: {
+          data: { id: "acc-1", name: "Acme", subscription_status: "past_due", trial_ends_at: null },
+          error: null,
+        },
+      },
+    });
+    createClient.mockReturnValue(client);
+
+    await expect(getCurrentAccount()).rejects.toThrow(PaymentRequiredError);
+  });
+
+  it("does not throw when the account is blocked but allowBlocked is true", async () => {
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: { data: { account_id: "acc-1", account_role: "owner" }, error: null },
+        accounts: {
+          data: { id: "acc-1", name: "Acme", subscription_status: "canceled", trial_ends_at: null },
+          error: null,
+        },
+      },
+    });
+    createClient.mockReturnValue(client);
+
+    const ctx = await getCurrentAccount({ allowBlocked: true });
+    expect(ctx.account.subscription_status).toBe("canceled");
+  });
+
+  it("defaults subscription_status to 'active' (never blocks) when the mock/row omits it — back-compat with every pre-existing test", async () => {
+    const { client } = makeClient({
+      user: { id: "user-1" },
+      byTable: {
+        profiles: { data: { account_id: "acc-1", account_role: "owner" }, error: null },
+        accounts: { data: { id: "acc-1", name: "Acme" }, error: null },
+      },
+    });
+    createClient.mockReturnValue(client);
+
+    const ctx = await getCurrentAccount();
+    expect(ctx.account.subscription_status).toBe("active");
   });
 });

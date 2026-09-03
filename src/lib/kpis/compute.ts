@@ -9,15 +9,7 @@ import {
   bucketRangeKeys,
   type BucketGranularity,
 } from '@/lib/dashboard/date-utils'
-import type {
-  CsatRow,
-  CsatSummary,
-  DateWindow,
-  LeadRow,
-  SeriesPoint,
-  TemperatureDistribution,
-  WonDealRow,
-} from './types'
+import type { DateWindow, LeadRow, SeriesPoint, TemperatureDistribution, WonDealRow } from './types'
 
 /**
  * "Tasa de conversión o cierre" — the article's own formula: total
@@ -77,30 +69,6 @@ export function periodDelta(
  *  the moment they arrived" but is the best signal available. */
 export function countQualifiedLeads(leads: LeadRow[]): number {
   return leads.filter((l) => l.lead_temperature === 'warm' || l.lead_temperature === 'hot').length
-}
-
-/** Post-sale satisfaction over a set of CSAT survey rows. `delivered`
- *  counts surveys that reached the customer (sent or answered);
- *  `avgPercent` normalises each score by its own scale so a 1–3 and a
- *  1–5 account read on the same 0–100 axis. Everything is `null` rather
- *  than a fake 0 when there's nothing to average. */
-export function csatSummary(rows: CsatRow[]): CsatSummary {
-  let delivered = 0
-  let responded = 0
-  let pctSum = 0
-  for (const r of rows) {
-    if (r.status === 'sent' || r.status === 'responded') delivered += 1
-    if (r.status === 'responded' && r.score != null && r.scale > 0) {
-      responded += 1
-      pctSum += (r.score / r.scale) * 100
-    }
-  }
-  return {
-    delivered,
-    responded,
-    avgPercent: responded === 0 ? null : pctSum / responded,
-    responseRate: delivered === 0 ? null : (responded / delivered) * 100,
-  }
 }
 
 export function temperatureDistribution(leads: LeadRow[]): TemperatureDistribution {

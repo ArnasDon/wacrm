@@ -1,14 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { csatSummary, temperatureDistribution } from './compute'
-import type {
-  ContactExportRow,
-  CsatRow,
-  DateWindow,
-  KpiDataset,
-  LeadRow,
-  SpendEntry,
-  WonDealRow,
-} from './types'
+import { temperatureDistribution } from './compute'
+import type { ContactExportRow, DateWindow, KpiDataset, LeadRow, SpendEntry, WonDealRow } from './types'
 import type { BucketGranularity } from '@/lib/dashboard/date-utils'
 
 type DB = SupabaseClient
@@ -62,18 +54,6 @@ export async function loadWonDealsInWindow(db: DB, window: DateWindow): Promise<
 export async function countWonDealsInWindow(db: DB, window: DateWindow): Promise<number> {
   const rows = await loadWonDealsInWindow(db, window)
   return rows.length
-}
-
-/** Every post-sale CSAT survey created within `window` — the row set
- *  behind the satisfaction KPI card. RLS scopes it to the account. */
-export async function loadCsatInWindow(db: DB, window: DateWindow): Promise<CsatRow[]> {
-  const { data, error } = await db
-    .from('csat_surveys')
-    .select('created_at, status, score, scale')
-    .gte('created_at', window.start.toISOString())
-    .lt('created_at', endExclusive(window.end))
-  if (error) throw error
-  return (data ?? []) as CsatRow[]
 }
 
 /** Every saved spend entry, oldest first — feeds the CAC-history
@@ -211,23 +191,15 @@ export async function loadKpiDataset(
   previousWindow: DateWindow,
   granularity: BucketGranularity,
 ): Promise<KpiDataset> {
-  const [
-    leads,
-    previousLeadsCount,
-    wonDeals,
-    previousWonCount,
-    spendHistory,
-    currentPeriodSpend,
-    csatRows,
-  ] = await Promise.all([
-    loadLeadsInWindow(db, window),
-    countLeadsInWindow(db, previousWindow),
-    loadWonDealsInWindow(db, window),
-    countWonDealsInWindow(db, previousWindow),
-    loadSpendHistory(db),
-    loadSpendForWindow(db, window),
-    loadCsatInWindow(db, window),
-  ])
+  const [leads, previousLeadsCount, wonDeals, previousWonCount, spendHistory, currentPeriodSpend] =
+    await Promise.all([
+      loadLeadsInWindow(db, window),
+      countLeadsInWindow(db, previousWindow),
+      loadWonDealsInWindow(db, window),
+      countWonDealsInWindow(db, previousWindow),
+      loadSpendHistory(db),
+      loadSpendForWindow(db, window),
+    ])
 
   return {
     granularity,
@@ -240,7 +212,6 @@ export async function loadKpiDataset(
     temperature: temperatureDistribution(leads),
     spendHistory,
     currentPeriodSpend,
-    csat: csatSummary(csatRows),
   }
 }
 

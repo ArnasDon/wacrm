@@ -14,7 +14,6 @@ import type { WebhookEvent } from '@/lib/webhooks/events'
 //   contacts     -> <base> - Leads
 //   appointments -> <base> - Citas
 //   broadcasts   -> <base> - Difusiones
-//   csat         -> <base> - Satisfacción
 // Every row starts with the event name + an ISO timestamp so a tab is
 // still readable if the operator later points two similar events at it.
 // ============================================================
@@ -265,32 +264,6 @@ async function buildBroadcastRow(
   }
 }
 
-async function buildCsatRow(
-  db: Db,
-  accountId: string,
-  data: Record<string, unknown>,
-  base: string,
-  nowIso: string,
-): Promise<SheetRow | null> {
-  const contactId = typeof data.contact_id === 'string' ? data.contact_id : null
-  const contact = await contactRef(db, accountId, contactId)
-  const score = typeof data.score === 'number' ? data.score : Number(data.score ?? 0)
-  const scale = typeof data.scale === 'number' ? data.scale : Number(data.scale ?? 5)
-  return {
-    tab: cat(base, 'Satisfacción'),
-    header: ['Evento', 'Fecha', 'Cliente', 'Teléfono', 'Puntaje', 'Escala', 'Comentario'],
-    values: [
-      'csat.received',
-      nowIso,
-      contact.name,
-      contact.phone,
-      score || '',
-      scale || '',
-      typeof data.comment === 'string' ? data.comment : '',
-    ],
-  }
-}
-
 /**
  * Build the sheet row for `event`. Returns null when the event has no
  * mapping or the referenced entity no longer exists.
@@ -319,8 +292,6 @@ export async function buildRowForEvent(
       return buildAppointmentRow(db, accountId, d, base, nowIso)
     case 'broadcast.completed':
       return buildBroadcastRow(db, accountId, d, base, nowIso)
-    case 'csat.received':
-      return buildCsatRow(db, accountId, d, base, nowIso)
     default:
       return null
   }

@@ -13,7 +13,6 @@ import { COMMON_TIMEZONES } from '@/lib/timezone';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import {
   Card,
   CardContent,
@@ -158,56 +157,6 @@ export function DealsSettings() {
       return;
     }
     toast.success(t('saveSuccess'));
-  }
-
-  // Lead cooling — same "own its own state, direct accounts update"
-  // pattern as timezone above. The sweep that acts on these lives in
-  // src/lib/contacts/temperature-sweep.ts (migration 103/104).
-  const [cooldownEnabled, setCooldownEnabled] = useState(false);
-  const [cooldownDays, setCooldownDays] = useState(14);
-  const [cooldownLoading, setCooldownLoading] = useState(true);
-  const [cooldownSaving, setCooldownSaving] = useState(false);
-
-  useEffect(() => {
-    if (!accountId) return;
-    let cancelled = false;
-    setCooldownLoading(true);
-    (async () => {
-      try {
-        const { data } = await supabase
-          .from('accounts')
-          .select('lead_cooldown_enabled, lead_cooldown_days')
-          .eq('id', accountId)
-          .maybeSingle();
-        if (cancelled || !data) return;
-        setCooldownEnabled(!!data.lead_cooldown_enabled);
-        setCooldownDays(
-          typeof data.lead_cooldown_days === 'number' ? data.lead_cooldown_days : 14,
-        );
-      } finally {
-        if (!cancelled) setCooldownLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [accountId, supabase]);
-
-  async function handleSaveCooldown() {
-    if (!accountId) return;
-    setCooldownSaving(true);
-    const days = Math.min(365, Math.max(1, Math.floor(cooldownDays || 14)));
-    const { error } = await supabase
-      .from('accounts')
-      .update({ lead_cooldown_enabled: cooldownEnabled, lead_cooldown_days: days })
-      .eq('id', accountId);
-    setCooldownSaving(false);
-    if (error) {
-      toast.error(t('leadCooldownSaveFailed'));
-      return;
-    }
-    setCooldownDays(days);
-    toast.success(t('leadCooldownSaveSuccess'));
   }
 
   return (
@@ -355,77 +304,6 @@ export function DealsSettings() {
               className="bg-primary text-primary-foreground hover:bg-primary/90"
             >
               {timezoneSaving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  {t('saving')}
-                </>
-              ) : (
-                t('save')
-              )}
-            </Button>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle className="text-foreground flex items-center gap-2">
-            <Clock className="text-primary size-4" />
-            {t('leadCooldownTitle')}
-          </CardTitle>
-          <CardDescription className="text-muted-foreground">
-            {t('leadCooldownDesc')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="border-border flex items-center justify-between gap-4 rounded-md border p-3">
-            <div className="min-w-0">
-              <p className="text-foreground text-sm font-medium">
-                {t('leadCooldownEnable')}
-              </p>
-              <p className="text-muted-foreground text-xs">
-                {t('leadCooldownEnableDesc')}
-              </p>
-            </div>
-            <Switch
-              checked={cooldownEnabled}
-              onCheckedChange={setCooldownEnabled}
-              disabled={!canEditSettings || cooldownLoading}
-            />
-          </div>
-
-          <div className="grid gap-2 sm:max-w-xs">
-            <Label className="text-muted-foreground">
-              {t('leadCooldownDaysLabel')}
-            </Label>
-            <Input
-              type="number"
-              min={1}
-              max={365}
-              value={cooldownDays}
-              onChange={(e) =>
-                setCooldownDays(
-                  Math.min(365, Math.max(1, Math.floor(Number(e.target.value) || 0))),
-                )
-              }
-              disabled={!canEditSettings || cooldownLoading || !cooldownEnabled}
-              className="bg-muted border-border text-foreground w-28"
-            />
-            <p className="text-muted-foreground text-xs">
-              {t('leadCooldownDaysHint')}
-            </p>
-            {!canEditSettings && (
-              <p className="text-muted-foreground text-xs">{t('adminOnlyHint')}</p>
-            )}
-          </div>
-
-          {canEditSettings && (
-            <Button
-              onClick={handleSaveCooldown}
-              disabled={cooldownSaving || cooldownLoading}
-              className="bg-primary text-primary-foreground hover:bg-primary/90"
-            >
-              {cooldownSaving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
                   {t('saving')}

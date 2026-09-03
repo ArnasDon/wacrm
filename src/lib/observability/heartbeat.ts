@@ -25,11 +25,6 @@ export const HEARTBEATS = {
   webhooks_cron: { expectedIntervalSeconds: 300 },
   retention_cron: { expectedIntervalSeconds: 86_400 },
   subscriptions_cron: { expectedIntervalSeconds: 86_400 },
-  // Post-sale CSAT survey sends (migration 104: */15). Watchdog
-  // reads "never" until the pg_cron job is registered — expected.
-  csat_cron: { expectedIntervalSeconds: 900 },
-  // Lead-temperature auto-cool sweep (migration 104: hourly).
-  temperature_sweep_cron: { expectedIntervalSeconds: 3_600 },
 } as const;
 
 export type HeartbeatName = keyof typeof HEARTBEATS;

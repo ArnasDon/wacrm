@@ -19,7 +19,6 @@ export const WEBHOOK_EVENTS = [
   'broadcast.completed', // a broadcast campaign reached a terminal status (sent/failed)
   'quote.created', // a quote was created (human or the AI's create_quote action)
   'appointment.scheduled', // a Google Calendar appointment was created for a contact
-  'csat.received', // a customer answered a post-sale satisfaction survey (migration 102)
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -38,7 +37,6 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   'broadcast.completed': 'A broadcast campaign finished sending',
   'quote.created': 'A quote was created for a contact',
   'appointment.scheduled': 'A Google Calendar appointment was scheduled for a contact',
-  'csat.received': 'A customer answered a post-sale satisfaction (CSAT) survey',
 };
 
 /** Type-narrow an unknown value into a valid `WebhookEvent`. */

@@ -101,7 +101,7 @@ describe('processStatusUpdate', () => {
     timestamp: new Date('2026-08-30T12:00:00Z'),
   };
 
-  it('mirrors the status to the messages table unconditionally', async () => {
+  it('mirrors a recognized status to the messages table', async () => {
     const updateSpy = vi.fn();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const db: any = {
@@ -136,6 +136,92 @@ describe('processStatusUpdate', () => {
     await processStatusUpdate(db, baseStatus);
 
     expect(updateSpy).toHaveBeenCalledWith({ status: 'sent' });
+  });
+
+  it('skips the messages-table write for an unrecognized status value (confirmed in production: UAZAPI\'s "FileDownloaded" media-pipeline notice, not a delivery status — writing it crashed with messages_status_check)', async () => {
+    const updateSpy = vi.fn();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db: any = {
+      from(table: string) {
+        if (table === 'messages') {
+          return {
+            update: updateSpy,
+            select: () => ({
+              eq: () => ({
+                limit: () => ({
+                  maybeSingle: () =>
+                    Promise.resolve({ data: null, error: null }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'broadcast_recipients') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () => Promise.resolve({ data: null, error: null }),
+              }),
+            }),
+          };
+        }
+      },
+    };
+
+    await processStatusUpdate(db, { ...baseStatus, status: 'FileDownloaded' });
+
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('does not throw when the timestamp is invalid — writes null instead of crashing on toISOString', async () => {
+    const updateSpy = vi.fn();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const db: any = {
+      from(table: string) {
+        if (table === 'messages') {
+          return {
+            update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+            select: () => ({
+              eq: () => ({
+                limit: () => ({
+                  maybeSingle: () =>
+                    Promise.resolve({ data: null, error: null }),
+                }),
+              }),
+            }),
+          };
+        }
+        if (table === 'broadcast_recipients') {
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({
+                    data: { id: 'rec-1', status: 'sent' },
+                    error: null,
+                  }),
+              }),
+            }),
+            update: updateSpy.mockReturnValue({
+              eq: () => Promise.resolve({ error: null }),
+            }),
+          };
+        }
+      },
+    };
+
+    await expect(
+      processStatusUpdate(db, {
+        ...baseStatus,
+        status: 'delivered',
+        timestamp: new Date(NaN),
+      })
+    ).resolves.toBeUndefined();
+
+    expect(updateSpy).toHaveBeenCalledWith({
+      status: 'delivered',
+      delivered_at: null,
+    });
   });
 
   it('updates broadcast_recipients when valid transition exists', async () => {

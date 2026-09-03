@@ -47,22 +47,38 @@ export function isValidStatusTransition(
   return ii > ci;
 }
 
+// The exact set `messages_status_check` (migration 001) allows. A
+// provider's status vocabulary isn't guaranteed to stay inside it —
+// confirmed in production: UAZAPI sends "FileDownloaded" (a
+// media-pipeline notice, not a delivery status) through this same
+// path. Writing an unrecognized value straight into `messages.status`
+// crashed the whole request on the DB's CHECK constraint.
+const MESSAGE_STATUS_VALUES = new Set([
+  'sending',
+  'sent',
+  'delivered',
+  'read',
+  'failed',
+]);
+
 export async function processStatusUpdate(
   db: SupabaseClient,
   s: InboundStatus
 ): Promise<void> {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await db
-    .from('messages')
-    .update({ status: s.status })
-    .eq('message_id', s.providerMessageId);
+  // 1) Mirror onto messages (legacy behavior). No `.select()`:
+  //    message_id is NOT unique (migration 009 — Meta ids repeat
+  //    across numbers), so this updates 0..N rows and must not assume
+  //    a single row. Skipped entirely for a status value outside the
+  //    CHECK constraint — see MESSAGE_STATUS_VALUES above.
+  if (MESSAGE_STATUS_VALUES.has(s.status)) {
+    const { error: msgErr } = await db
+      .from('messages')
+      .update({ status: s.status })
+      .eq('message_id', s.providerMessageId);
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr);
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr);
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -73,7 +89,15 @@ export async function processStatusUpdate(
   //    (added in migration 003). The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's
   //    sent/delivered/read/failed counts automatically.
-  const tsIso = s.timestamp.toISOString();
+  //    `s.timestamp` isn't guaranteed valid — a malformed/absent
+  //    source field upstream can produce `new Date(NaN)`, and
+  //    `.toISOString()` throws on that (confirmed in production,
+  //    alongside the FileDownloaded case above — same event, both
+  //    fields off). `sent_at`/`delivered_at`/`read_at` are nullable;
+  //    write null rather than crash the request.
+  const tsIso = Number.isNaN(s.timestamp.getTime())
+    ? null
+    : s.timestamp.toISOString();
 
   const { data: recipient, error: recFetchErr } = await db
     .from('broadcast_recipients')

@@ -16,9 +16,11 @@
 --
 -- Additive changes:
 --   1. contacts.lead_temperature_updated_at — stamped whenever the
---      temperature changes (the sweep, the manual PATCH, the AI action).
---      Backfilled for existing classified rows so the first sweep tick
---      doesn't treat them all as "just set".
+--      temperature changes going forward (the sweep, the manual PATCH,
+--      the AI action). Left NULL for existing rows on purpose: the
+--      sweep's stability clock then falls back to last thread activity,
+--      which is a truer "when did this lead go quiet" signal than
+--      contacts.updated_at (bumped by any unrelated edit).
 --   2. accounts.lead_cooldown_enabled / lead_cooldown_days — the
 --      per-account opt-in + grace period (Settings -> Deals & currency).
 --   3. a partial index so the sweep's "warm/hot in this account" scan
@@ -27,17 +29,10 @@
 -- Idempotent — safe to re-run.
 -- ============================================================
 
--- 1. Temperature-change timestamp -----------------------------------
+-- 1. Temperature-change timestamp ----------------------------------
 
 ALTER TABLE public.contacts
   ADD COLUMN IF NOT EXISTS lead_temperature_updated_at TIMESTAMPTZ;
-
--- Existing classified contacts: seed from updated_at (best available
--- proxy for "when it was last touched"), falling back to created_at.
-UPDATE public.contacts
-  SET lead_temperature_updated_at = COALESCE(updated_at, created_at)
-  WHERE lead_temperature IS NOT NULL
-    AND lead_temperature_updated_at IS NULL;
 
 -- 2. Per-account opt-in -------------------------------------------------
 

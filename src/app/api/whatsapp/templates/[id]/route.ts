@@ -6,6 +6,7 @@ import {
   editMessageTemplate,
 } from '@/lib/whatsapp/meta-api'
 import { updateZernioTemplate, deleteZernioTemplate } from '@/lib/zernio/api'
+import { SendMessageError } from '@/lib/messaging/types'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import {
   validateTemplatePayload,
@@ -334,8 +335,21 @@ export async function DELETE(
             templateName: existing.name,
           })
         } catch (e) {
-          const message = e instanceof Error ? e.message : 'Zernio delete failed.'
-          return NextResponse.json({ error: message }, { status: 502 })
+          // Only a real credential rejection should block the delete.
+          // A not-found / timeout / provider hiccup must not strand a
+          // stale local row the user is explicitly removing — Zernio's
+          // own 404 is already treated as success in deleteZernioTemplate,
+          // and anything Meta-side still there re-appears on the next
+          // "Sync from Meta". Log it and fall through to the local delete.
+          const status = e instanceof SendMessageError ? e.status : 0
+          if (status === 401 || status === 403) {
+            const message = e instanceof Error ? e.message : 'Zernio delete failed.'
+            return NextResponse.json({ error: message }, { status: 502 })
+          }
+          console.warn(
+            `[templates DELETE] Zernio delete of "${existing.name}" failed (status ${status || 'unknown'}); removing the local row anyway:`,
+            e instanceof Error ? e.message : e,
+          )
         }
       } else {
         if (!config.waba_id) {

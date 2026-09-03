@@ -32,13 +32,16 @@ const ZERNIO_API_BASE = 'https://zernio.com/api/v1'
 // timeout turns that into a clear, fast "Zernio API request timed out"
 // the user actually sees.
 //
-// Two budgets: interactive send calls (a human is watching a spinner,
-// and the response MUST come back before any proxy gives up) get the
-// tighter one; template CRUD / media download / account verification —
-// where nothing is blocked on a toast and Meta itself can be slow —
-// keep the longer one.
+// Budgets, all under a typical reverse-proxy timeout so a hung Zernio
+// endpoint surfaces as a clean "Zernio API request timed out." rather
+// than the proxy's own bodyless 502:
+//   - send calls + template CRUD: a human is watching a spinner/toast,
+//     so 12s.
+//   - media download / account verification: nothing is blocked on a
+//     toast and the payload can be large, so 20s.
 const ZERNIO_TIMEOUT_MS = 20_000
 const ZERNIO_SEND_TIMEOUT_MS = 12_000
+const ZERNIO_TEMPLATE_TIMEOUT_MS = 12_000
 
 export interface ZernioSendResult {
   /** Zernio's own internal message id (not the platform-native message id). */
@@ -535,7 +538,11 @@ export interface ListZernioTemplatesArgs {
 export async function listZernioTemplates(args: ListZernioTemplatesArgs): Promise<ZernioTemplateInfo[]> {
   const { apiKey, accountId } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates?${new URLSearchParams({ accountId })}`
-  const response = await zernioFetch(url, { headers: { Authorization: `Bearer ${apiKey}` } })
+  const response = await zernioFetch(
+    url,
+    { headers: { Authorization: `Bearer ${apiKey}` } },
+    ZERNIO_TEMPLATE_TIMEOUT_MS,
+  )
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -555,14 +562,18 @@ export interface CreateZernioTemplateArgs {
 export async function createZernioTemplate(args: CreateZernioTemplateArgs): Promise<ZernioTemplateInfo> {
   const { apiKey, accountId, name, category, language, components } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates`
-  const response = await zernioFetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const response = await zernioFetch(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ accountId, name, category, language, components }),
     },
-    body: JSON.stringify({ accountId, name, category, language, components }),
-  })
+    ZERNIO_TEMPLATE_TIMEOUT_MS,
+  )
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -580,14 +591,18 @@ export interface UpdateZernioTemplateArgs {
 export async function updateZernioTemplate(args: UpdateZernioTemplateArgs): Promise<ZernioTemplateInfo> {
   const { apiKey, accountId, templateName, components } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates/${encodeURIComponent(templateName)}`
-  const response = await zernioFetch(url, {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${apiKey}`,
+  const response = await zernioFetch(
+    url,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ accountId, components }),
     },
-    body: JSON.stringify({ accountId, components }),
-  })
+    ZERNIO_TEMPLATE_TIMEOUT_MS,
+  )
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }
@@ -604,11 +619,15 @@ export interface DeleteZernioTemplateArgs {
 export async function deleteZernioTemplate(args: DeleteZernioTemplateArgs): Promise<void> {
   const { apiKey, accountId, templateName } = args
   const url = `${ZERNIO_API_BASE}/whatsapp/templates/${encodeURIComponent(templateName)}?${new URLSearchParams({ accountId })}`
-  const response = await zernioFetch(url, {
-    method: 'DELETE',
-    headers: { Authorization: `Bearer ${apiKey}` },
-  })
-  if (response.status === 404) return
+  const response = await zernioFetch(
+    url,
+    {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${apiKey}` },
+    },
+    ZERNIO_TEMPLATE_TIMEOUT_MS,
+  )
+  if (response.status === 404) return // already gone on Zernio's side — treat as done
   if (!response.ok) {
     await throwZernioError(response, `Zernio API error: ${response.status}`)
   }

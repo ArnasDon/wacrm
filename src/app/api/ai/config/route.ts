@@ -8,7 +8,8 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
-import { AiError, type AiProvider } from '@/lib/ai/types'
+import { AiError, AI_PROVIDERS, isAiProvider } from '@/lib/ai/types'
+import { isAccountMember } from '@/lib/ai/business-profile/service'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -30,7 +31,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, agent_behavior, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -77,9 +78,9 @@ export async function POST(request: Request) {
     const body = await request.json().catch(() => null)
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
-    const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    const provider = body.provider
+    if (!isAiProvider(provider)) {
+      return bad(`provider must be one of: ${AI_PROVIDERS.join(', ')}`)
     }
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
@@ -87,6 +88,12 @@ export async function POST(request: Request) {
     const systemPrompt =
       typeof body.system_prompt === 'string' && body.system_prompt.trim()
         ? body.system_prompt.trim()
+        : null
+    // Agent Behavior (Fase 10) — structurally separate from system_prompt
+    // above (business facts) — same "empty string clears it" contract.
+    const agentBehavior =
+      typeof body.agent_behavior === 'string' && body.agent_behavior.trim()
+        ? body.agent_behavior.trim()
         : null
     const isActive = body.is_active === true
     const autoReplyEnabled = body.auto_reply_enabled === true
@@ -104,13 +111,13 @@ export async function POST(request: Request) {
     const handoffProvided = 'handoff_agent_id' in body
     let handoffAgentId: string | null = null
     if (rawHandoff) {
-      const { data: member } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('account_id', accountId)
-        .eq('user_id', rawHandoff)
-        .maybeSingle()
-      if (!member) return bad('handoff_agent_id must be a member of this account')
+      // Punto 9, H9-1 — reuses the same membership check now shared with
+      // account_business_contacts.linked_user_id (see service.ts's
+      // isAccountMember doc); behavior is unchanged from before this
+      // extraction.
+      if (!(await isAccountMember(supabase, accountId, rawHandoff))) {
+        return bad('handoff_agent_id must be a member of this account')
+      }
       handoffAgentId = rawHandoff
     }
 
@@ -162,6 +169,7 @@ export async function POST(request: Request) {
           model,
           apiKey: apiKeyPlain,
           systemPrompt,
+          agentBehavior: null,
           isActive,
           autoReplyEnabled,
           autoReplyMaxPerConversation: maxPer,
@@ -202,6 +210,7 @@ export async function POST(request: Request) {
       provider,
       model,
       system_prompt: systemPrompt,
+      agent_behavior: agentBehavior,
       is_active: isActive,
       auto_reply_enabled: autoReplyEnabled,
       auto_reply_max_per_conversation: maxPer,

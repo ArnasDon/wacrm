@@ -1,55 +1,74 @@
 # syntax=docker/dockerfile:1
 
-# ---------------------------------------------------------------
-# Stage 1 — install dependencies (cached until package*.json change)
-# ---------------------------------------------------------------
-FROM node:20-alpine AS deps
+# ============================================================
+# wacrm — production image for EasyPanel (Next.js standalone)
+# ============================================================
+# Multi-stage build:
+#   deps    -> install full dependencies
+#   builder -> next build
+#   runner  -> minimal runtime
+#
+# NEXT_PUBLIC_* values are inlined into the client bundle at
+# BUILD time, so they must be passed as --build-arg.
+# Server-only secrets are read at runtime.
+
+ARG NODE_VERSION=22-alpine
+
+# ---------- deps ----------
+FROM node:${NODE_VERSION} AS deps
 WORKDIR /app
+
+# libc compat for some native dependencies
+RUN apk add --no-cache libc6-compat
+
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# ---------------------------------------------------------------
-# Stage 2 — build
-#
-# NEXT_PUBLIC_* values are inlined into the client bundle at build
-# time, so they must be provided as build args (docker-compose.yml
-# forwards them from .env.local). Server-only secrets (service role
-# key, ENCRYPTION_KEY, META_APP_SECRET, ...) are read at runtime and
-# must NOT be baked into the image.
-# ---------------------------------------------------------------
-FROM node:20-alpine AS builder
+# ---------- builder ----------
+FROM node:${NODE_VERSION} AS builder
 WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY . .
 
+# Public build-time variables
 ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_APP_LOCALE=en
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
-    NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
-    NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
-    NEXT_PUBLIC_APP_LOCALE=$NEXT_PUBLIC_APP_LOCALE \
-    NEXT_TELEMETRY_DISABLED=1
+
+ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
+ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+ENV NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL
+ENV NEXT_PUBLIC_APP_LOCALE=$NEXT_PUBLIC_APP_LOCALE
+
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 
 RUN npm run build
 
-# ---------------------------------------------------------------
-# Stage 3 — minimal runtime (standalone output)
-# ---------------------------------------------------------------
-FROM node:20-alpine AS runner
+# ---------- runner ----------
+FROM node:${NODE_VERSION} AS runner
 WORKDIR /app
-ENV NODE_ENV=production \
-    NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3000 \
-    HOSTNAME=0.0.0.0
 
-RUN addgroup -S nextjs && adduser -S nextjs -G nextjs
+ENV NODE_ENV=production
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV PORT=3000
+ENV HOSTNAME=0.0.0.0
 
-COPY --from=builder --chown=nextjs:nextjs /app/.next/standalone ./
-COPY --from=builder --chown=nextjs:nextjs /app/.next/static ./.next/static
-COPY --from=builder --chown=nextjs:nextjs /app/public ./public
+# Run as an unprivileged user
+RUN addgroup --system --gid 1001 nodejs \
+  && adduser --system --uid 1001 nextjs
+
+# Static assets
+COPY --from=builder /app/public ./public
+
+# Standalone server + traced node_modules
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
 
 USER nextjs
+
 EXPOSE 3000
+
 CMD ["node", "server.js"]

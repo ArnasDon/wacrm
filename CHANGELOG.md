@@ -9,6 +9,59 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+> **Migration required:** apply `supabase/migrations/037_ai_provider_openrouter.sql`
+> (widens the `provider` CHECK constraint on `ai_configs` and
+> `ai_usage_log` to accept `'openrouter'`). Widening a CHECK touches no
+> existing rows.
+
+> **Migration required:** apply `supabase/migrations/059_data_source_refresh_lock.sql`
+> (adds `ai_data_sources.refresh_started_at`, nullable, defaults to
+> unclaimed — and a `UNIQUE (data_source_id, source_product_id)` index
+> on `ai_catalog_products`). If that index fails to apply because
+> duplicate rows already exist for some source, that failure itself is
+> the signal to investigate before re-running the migration — see the
+> file's own header for why this deliberately does not auto-delete
+> anything.
+
+### Fixed
+
+- **Catalog prices from Google Sheets/CSV/Excel lost their cents.** A
+  price like `19.99` in the source file was silently rounded to `20`
+  before it ever reached the catalog the AI agent reads from —
+  `ai_catalog_products.price` fully supports decimals, but the parser
+  rounded to a whole number regardless. Prices now keep the exact
+  numeric value the source has; a whole-number price is unaffected.
+  Budun ERP prices were never affected by this.
+- **Two refreshes of the same Data Source running at the same time
+  could produce duplicate or missing catalog rows.** Refreshing replaces
+  a source's products by inserting the new set before deleting the
+  previous one — safe against a single refresh failing partway, but not
+  against a second refresh of the *same* source starting before the
+  first finished (a double-click, two admins, a client retry). A
+  refresh now claims its source first; a second, concurrent refresh of
+  the same source is rejected immediately with a clear "already in
+  progress" response instead of racing the first one. Refreshing two
+  *different* sources at the same time is unaffected — they never wait
+  on each other. A crashed or timed-out refresh releases its claim
+  automatically after a few minutes, so it can never permanently block
+  future refreshes of that source.
+
+### Added
+
+- **OpenRouter as an AI provider.** Settings → AI Agents → Setup now
+  offers OpenRouter alongside OpenAI and Anthropic. It's a gateway
+  rather than a single lab: one `sk-or-v1-…` key reaches its entire
+  catalogue, and the existing Model field picks which one by id
+  (`vendor/model-id`, e.g. `anthropic/claude-sonnet-4.5`). The field
+  stays free text — so a model works the day it ships — but now offers
+  the live catalogue as type-to-search suggestions. Drafts, the
+  auto-reply bot, the Playground and usage logging all work unchanged.
+  Embeddings for semantic knowledge-base search still go to OpenAI
+  directly (no other provider serves that endpoint), so on OpenRouter
+  the optional embeddings key must be a separate OpenAI key.
+
 ## [0.8.1] — 2026-07-10
 
 Fixes inbound chats fragmenting into multiple threads for the same

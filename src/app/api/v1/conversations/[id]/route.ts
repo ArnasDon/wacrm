@@ -3,8 +3,8 @@
 // (scope: conversations:read). Account-scoped: a foreign id → 404.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
 import {
   CONVERSATION_SELECT,
   normalizeConversation,
@@ -16,8 +16,7 @@ export async function GET(
   request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  try {
-    const ctx = await requireApiKey(request, 'conversations:read');
+  return withApiKey(request, 'conversations:read', async (ctx) => {
     const { id } = await params;
 
     const { data, error } = await ctx.supabase
@@ -33,8 +32,8 @@ export async function GET(
     }
     if (!data) return fail('not_found', 'Conversation not found', 404);
 
-    return ok(serializeConversation(normalizeConversation(data as Conversation)));
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+    return ok(
+      serializeConversation(normalizeConversation(data as Conversation))
+    );
+  });
 }

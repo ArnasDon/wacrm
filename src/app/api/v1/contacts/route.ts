@@ -8,8 +8,8 @@
 // `created: false`; a new row returns 201 with `created: true`.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { ok, okList, fail } from '@/lib/api/v1/respond';
 import {
   parseListParams,
   keysetFilter,
@@ -33,8 +33,7 @@ function sanitizeSearch(raw: string): string {
 }
 
 export async function GET(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:read');
+  return withApiKey(request, 'contacts:read', async (ctx) => {
     const { limit, cursor } = parseListParams(request);
     const url = new URL(request.url);
     const search = sanitizeSearch(url.searchParams.get('search') ?? '');
@@ -88,62 +87,60 @@ export async function GET(request: Request) {
       items.map((r) => serializeContact(r as Record<string, unknown>)),
       nextCursor
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }
 
 export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:write');
-
-    const body = (await request.json().catch(() => null)) as Record<
-      string,
-      unknown
-    > | null;
-    if (!body || typeof body !== 'object') {
-      return fail('bad_request', 'Request body must be a JSON object', 400);
-    }
-
-    const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
-    if (!phone) {
-      return fail('bad_request', "'phone' is required", 400);
-    }
-
-    const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
-
-    const { id, created } = await findOrCreateContact(
-      ctx.supabase,
-      ctx.accountId,
-      auditUserId,
-      {
-        phone,
-        name: typeof body.name === 'string' ? body.name : undefined,
-        email: typeof body.email === 'string' ? body.email : undefined,
-        company: typeof body.company === 'string' ? body.company : undefined,
+  return withApiKey(request, 'contacts:write', async (ctx) => {
+    try {
+      const body = (await request.json().catch(() => null)) as Record<
+        string,
+        unknown
+      > | null;
+      if (!body || typeof body !== 'object') {
+        return fail('bad_request', 'Request body must be a JSON object', 400);
       }
-    );
 
-    if (Array.isArray(body.tags)) {
-      await setContactTags(
+      const phone = typeof body.phone === 'string' ? body.phone.trim() : '';
+      if (!phone) {
+        return fail('bad_request', "'phone' is required", 400);
+      }
+
+      const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
+
+      const { id, created } = await findOrCreateContact(
         ctx.supabase,
         ctx.accountId,
         auditUserId,
-        id,
-        body.tags.filter((t): t is string => typeof t === 'string')
+        {
+          phone,
+          name: typeof body.name === 'string' ? body.name : undefined,
+          email: typeof body.email === 'string' ? body.email : undefined,
+          company: typeof body.company === 'string' ? body.company : undefined,
+        }
       );
-    }
 
-    const contact = await getContactById(ctx.supabase, ctx.accountId, id);
-    return ok(contact, created ? 201 : 200);
-  } catch (err) {
-    if (err instanceof ContactError) {
-      return fail(
-        err.status === 400 ? 'bad_request' : 'internal',
-        err.message,
-        err.status
-      );
+      if (Array.isArray(body.tags)) {
+        await setContactTags(
+          ctx.supabase,
+          ctx.accountId,
+          auditUserId,
+          id,
+          body.tags.filter((t): t is string => typeof t === 'string')
+        );
+      }
+
+      const contact = await getContactById(ctx.supabase, ctx.accountId, id);
+      return ok(contact, created ? 201 : 200);
+    } catch (err) {
+      if (err instanceof ContactError) {
+        return fail(
+          err.status === 400 ? 'bad_request' : 'internal',
+          err.message,
+          err.status
+        );
+      }
+      throw err;
     }
-    return toApiErrorResponse(err);
-  }
+  });
 }

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   __resetRateLimitForTests,
+  checkCatalogExternalBudget,
   checkRateLimit,
+  RATE_LIMITS,
   rateLimitResponse,
 } from "./rate-limit";
 
@@ -110,6 +112,60 @@ describe("RATE_LIMITS presets", () => {
     // per minute. Sized below that, every batch past the cap comes back
     // 429 and its recipients are written off as failed (issue #472).
     expect(RATE_LIMITS.broadcast.limit).toBeGreaterThanOrEqual(45);
+  });
+});
+
+// ============================================================
+// checkCatalogExternalBudget — external catalog provider (Budun) rate
+// limiting, next phase after FASE 6. Reuses checkRateLimit verbatim
+// (same fixed-window Map, same single-instance caveat already
+// documented at the top of this file) — these tests cover the
+// account-isolation + within/over-budget scenarios (1-3 of the mandatory
+// matrix); scenarios that need real resolver/provider wiring (4, 6, 7,
+// 9, 10) live in catalog/resolver.test.ts and tools/catalog-tools.test.ts
+// instead.
+// ============================================================
+describe("checkCatalogExternalBudget", () => {
+  beforeEach(() => {
+    __resetRateLimitForTests();
+  });
+
+  it("1. a cuenta puede realizar llamadas externas dentro del límite", () => {
+    for (let i = 0; i < RATE_LIMITS.catalogExternalAccount.limit; i++) {
+      expect(checkCatalogExternalBudget("acct-1")).toBe(true);
+    }
+  });
+
+  it("2. una cuenta es bloqueada al superar el límite", () => {
+    for (let i = 0; i < RATE_LIMITS.catalogExternalAccount.limit; i++) {
+      checkCatalogExternalBudget("acct-1");
+    }
+    expect(checkCatalogExternalBudget("acct-1")).toBe(false);
+  });
+
+  it("3. la cuenta B conserva su propio presupuesto aunque la cuenta A haya agotado el suyo", () => {
+    for (let i = 0; i < RATE_LIMITS.catalogExternalAccount.limit; i++) {
+      checkCatalogExternalBudget("acct-A");
+    }
+    expect(checkCatalogExternalBudget("acct-A")).toBe(false);
+    expect(checkCatalogExternalBudget("acct-B")).toBe(true);
+  });
+
+  it("opens a fresh window after windowMs elapses, same as the generic limiter", () => {
+    vi.useFakeTimers();
+    try {
+      const t0 = new Date("2026-05-01T00:00:00Z").getTime();
+      vi.setSystemTime(t0);
+      __resetRateLimitForTests();
+      for (let i = 0; i < RATE_LIMITS.catalogExternalAccount.limit; i++) {
+        checkCatalogExternalBudget("acct-1");
+      }
+      expect(checkCatalogExternalBudget("acct-1")).toBe(false);
+      vi.setSystemTime(t0 + RATE_LIMITS.catalogExternalAccount.windowMs + 1);
+      expect(checkCatalogExternalBudget("acct-1")).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -21,6 +21,11 @@ let callerRole: string = 'admin'
 // the shared send core re-loads the conversation (with its contact) from
 // just the id, so the mock must model insert-then-select-by-id.
 let createdConversation: Record<string, unknown> | null = null
+// Punto 10, F-P10-4 — when true, the `messages` insert fails AFTER
+// sendTemplateMessage has already "succeeded" (mocked above), modeling
+// exactly the externalEffectOccurred scenario: Meta accepted the send,
+// the local write did not.
+let messageInsertShouldFail = false
 
 const CONTACT = {
   id: 'contact-1',
@@ -80,7 +85,9 @@ function makeSupabaseMock() {
             error: null,
           }
         case 'messages':
-          return { data: { id: 'msg-1' }, error: null }
+          return messageInsertShouldFail
+            ? { data: null, error: { message: 'insert failed (simulated)' } }
+            : { data: { id: 'msg-1' }, error: null }
         default:
           return { data: null, error: null }
       }
@@ -188,6 +195,7 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
     createdConversation = null
     contactRow = CONTACT
     callerRole = 'admin'
+    messageInsertShouldFail = false
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })
@@ -229,6 +237,20 @@ describe('POST /api/whatsapp/send — contact_id template path', () => {
       template_name: 'order_update',
       sender_type: 'agent',
     })
+  })
+
+  it('Punto 10, F-P10-4: a message-insert failure after a successful Meta send surfaces whatsapp_message_id in the error response', async () => {
+    messageInsertShouldFail = true
+    const res = await postContactTemplate()
+    const json = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(json.error).toContain('sent to Meta but failed to save to DB')
+    // The evidence the agent (or a future reconciliation UI) needs —
+    // this is the internal `{ error }` shape, free to carry it (see
+    // route.ts's own comment distinguishing it from the versioned
+    // public v1 envelope).
+    expect(json.whatsapp_message_id).toBe('wamid-1')
   })
 
   it('reuses an existing conversation instead of creating a duplicate', async () => {
@@ -282,6 +304,7 @@ describe('POST /api/whatsapp/send — role enforcement', () => {
     createdConversation = null
     contactRow = CONTACT
     callerRole = 'admin'
+    messageInsertShouldFail = false
     supabaseMock = makeSupabaseMock()
     sendTemplateMessage.mockClear()
   })

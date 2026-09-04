@@ -48,6 +48,47 @@ export async function GET(
       )
     }
 
+    // Punto 10, F-P10-3 — mediaId is an arbitrary, client-supplied path
+    // param. Before ever spending a call to Meta (and handing back
+    // bytes), confirm this exact mediaId actually belongs to a message
+    // in a conversation of THIS caller's own account — never trust the
+    // caller's own access_token/Meta's response alone to enforce that
+    // boundary. Scoped to `accountId` (resolved above, exclusively from
+    // the caller's own profile — never client-supplied) via the
+    // RLS-scoped `supabase` client, so this can only ever confirm
+    // ownership within rows the caller could already see; it can't be
+    // used to probe another account's data. A miss (mediaId belongs to
+    // no message at all, OR belongs to a message of a different
+    // account) returns the SAME 404 either way — never revealing which
+    // case it was. Mirrors the exact `conversations!inner(account_id)`
+    // scoping pattern already used by the webhook's own
+    // handleStatusUpdate() for the identical class of problem (a
+    // Meta-side id that isn't guaranteed unique/scoped across tenants).
+    const proxyPath = `/api/whatsapp/media/${mediaId}`
+    const { data: ownedMessage, error: ownershipError } = await supabase
+      .from('messages')
+      .select('id, conversations!inner(account_id)')
+      .eq('media_url', proxyPath)
+      .eq('conversations.account_id', accountId)
+      .limit(1)
+      .maybeSingle()
+
+    if (ownershipError) {
+      console.error('[whatsapp/media] ownership check failed:', ownershipError)
+      return NextResponse.json(
+        { error: 'Failed to fetch media' },
+        { status: 500 }
+      )
+    }
+    if (!ownedMessage) {
+      // Never distinguishes "doesn't exist" from "belongs to another
+      // account" — both are indistinguishable 404s to the caller.
+      return NextResponse.json(
+        { error: 'Media not found' },
+        { status: 404 }
+      )
+    }
+
     // Fetch and decrypt WhatsApp config
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')

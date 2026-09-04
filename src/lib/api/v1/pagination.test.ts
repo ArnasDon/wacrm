@@ -78,6 +78,66 @@ describe('encode/decodeCursor round-trip', () => {
     ).toString('base64url');
     expect(decodeCursor(bad)).toBeNull();
   });
+
+  // ------------------------------------------------------------
+  // Filter-injection guard, `createdAt` half (API Pública v1 audit).
+  // The guard above already covered `id` via UUID_RE. `createdAt` was
+  // only checked with `Date.parse()`, which is far more permissive
+  // than "an ISO-8601 timestamp our own encodeCursor would ever emit"
+  // — it also accepts RFC-1123 strings and `Date.prototype.toString()`
+  // output, both of which contain raw commas/parentheses: exactly the
+  // PostgREST `.or()` filter-grammar characters this decoder exists to
+  // keep out of `keysetFilter`'s raw string interpolation.
+  // ------------------------------------------------------------
+  it('rejects an RFC-1123 createdAt even though Date.parse() accepts it', () => {
+    const rfc1123 = 'Thu, 01 Jan 1970 00:00:00 GMT';
+    // Prerequisite the test itself documents: this is a real gap in
+    // Date.parse(), not a strawman — the string legitimately parses.
+    expect(Number.isNaN(Date.parse(rfc1123))).toBe(false);
+
+    const evil = Buffer.from(
+      `${rfc1123}|11111111-1111-4111-8111-111111111111`,
+      'utf8'
+    ).toString('base64url');
+    expect(decodeCursor(evil)).toBeNull();
+  });
+
+  it('rejects a Date.prototype.toString()-style createdAt (contains parentheses)', () => {
+    const toStringStyle = 'Wed Dec 31 1969 19:30:00 GMT-0430 (Some Timezone)';
+    expect(Number.isNaN(Date.parse(toStringStyle))).toBe(false);
+
+    const evil = Buffer.from(
+      `${toStringStyle}|11111111-1111-4111-8111-111111111111`,
+      'utf8'
+    ).toString('base64url');
+    expect(decodeCursor(evil)).toBeNull();
+  });
+
+  it('still accepts every legitimate ISO-8601 shape a real cursor is minted from', () => {
+    for (const createdAt of [
+      '2026-01-01T00:00:00Z',
+      '2026-06-30T12:00:00.123Z',
+      '2026-08-27T10:15:30.123456+00:00',
+      '2026-08-27T10:15:30-04:00',
+    ]) {
+      const c = Buffer.from(
+        `${createdAt}|11111111-1111-4111-8111-111111111111`,
+        'utf8'
+      ).toString('base64url');
+      expect(decodeCursor(c)).toEqual({
+        createdAt,
+        id: '11111111-1111-4111-8111-111111111111',
+      });
+    }
+  });
+
+  it('a legitimate cursor decoded end-to-end still feeds keysetFilter identically (no regression)', () => {
+    const row = { created_at: '2026-06-30T12:00:00.123Z', id: 'abcdef01-2345-4678-8abc-def012345678' };
+    const cursor = decodeCursor(encodeCursor(row));
+    expect(keysetFilter(cursor)).toBe(
+      'created_at.lt.2026-06-30T12:00:00.123Z,and(created_at.eq.2026-06-30T12:00:00.123Z,id.lt.abcdef01-2345-4678-8abc-def012345678)'
+    );
+  });
 });
 
 describe('keysetFilter', () => {

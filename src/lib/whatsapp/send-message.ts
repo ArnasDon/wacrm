@@ -35,6 +35,7 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { isAccountMember } from '@/lib/ai/business-profile/service';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -61,15 +62,33 @@ export const VALID_MESSAGE_TYPES = [
  * Typed failure with a machine `code` and a suggested HTTP `status`.
  * Callers map it to their own response shape (`toErrorResponse` for
  * the dashboard route, the v1 envelope for the public endpoint).
+ *
+ * Punto 10, F-P10-4 — `externalEffectOccurred` is true ONLY for the
+ * one error thrown AFTER Meta already accepted a send (a real message
+ * went out) and a later step (persisting it locally) failed. This is
+ * the one case where treating the error as "safe to retry" is wrong —
+ * see `src/lib/api/v1/idempotency.ts`'s own doc for how it's consumed.
+ * `waMessageId` is carried alongside it, when known, purely as
+ * evidence for logs/future reconciliation — never required for the
+ * idempotency fix itself to work.
  */
 export class SendMessageError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  readonly externalEffectOccurred: boolean;
+  readonly waMessageId?: string;
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    opts?: { externalEffectOccurred?: boolean; waMessageId?: string }
+  ) {
     super(message);
     this.name = 'SendMessageError';
     this.code = code;
     this.status = status;
+    this.externalEffectOccurred = opts?.externalEffectOccurred ?? false;
+    this.waMessageId = opts?.waMessageId;
   }
 }
 
@@ -88,6 +107,26 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /**
+   * Punto 10, F-P10-2 — the id of the REAL, currently-authenticated
+   * human agent sending this message, when one exists. Set ONLY by a
+   * caller that actually has one (the dashboard's `/api/whatsapp/send`
+   * route, via `requireRole('agent')`) — never invented. The public
+   * `/api/v1/messages` endpoint authenticates via an API key
+   * (`ApiKeyContext` has no live human identity — `createdBy` is an
+   * audit trail of who minted the key, not who is sending THIS
+   * message) and deliberately leaves this unset, so a business's own
+   * automated integration sending through the public API is never
+   * mistaken for a human taking over the thread.
+   *
+   * When set (and verified as a member of this account), the send core
+   * marks the conversation as human-owned the same way the inbox's
+   * "Take over" action already does — see `sendMessageToConversation`'s
+   * own comment below for exactly what that means and why AI-initiated
+   * and automation-initiated sends (which share this same module's
+   * sibling files) must never set this.
+   */
+  humanAgentUserId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -201,6 +240,7 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    humanAgentUserId,
   } = params;
 
   if (!conversationId) {
@@ -488,10 +528,15 @@ export async function sendMessageToConversation(
 
   if (msgError) {
     console.error('[send-message] error inserting sent message:', msgError);
+    // Punto 10, F-P10-4 — Meta already accepted this send (waMessageId
+    // is real) before this INSERT failed. `externalEffectOccurred`
+    // marks that for withIdempotency() so a caller retrying with the
+    // same Idempotency-Key can never cause a second real send.
     throw new SendMessageError(
       'db_error',
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
-      500
+      500,
+      { externalEffectOccurred: true, waMessageId }
     );
   }
 
@@ -530,6 +575,51 @@ export async function sendMessageToConversation(
       '[flows] pause-on-agent-send threw:',
       err instanceof Error ? err.message : err
     );
+  }
+
+  // Punto 10, F-P10-2 — a REAL human agent replying manually is treated
+  // exactly like the inbox's dedicated "Take over" action
+  // (/api/ai/autoreply/[id], Punto 9): the AI auto-reply bot is paused
+  // (`ai_autoreply_disabled`) and the thread is assigned to them, so
+  // the customer's next message doesn't also get an AI reply on top of
+  // what the human just said. Deliberately does NOT touch `status` —
+  // "Take over" doesn't either, and this mirrors that exact behavior
+  // for consistency between the two entry points.
+  //
+  // Only runs when `humanAgentUserId` was actually provided (never
+  // invented here) AND re-verified as a member of this account —
+  // same defense-in-depth discipline as handOffToHuman() (Punto 9,
+  // H9-1): a value that fails the check is silently skipped, never
+  // assigned. Never stomps an existing assignment (a prior "Take over"
+  // or a previous manual reply from a different teammate keeps
+  // ownership) — mirrors handOffToHuman()'s own "never stomp" rule.
+  if (humanAgentUserId) {
+    try {
+      if (
+        !conversation.assigned_agent_id &&
+        (await isAccountMember(db, accountId, humanAgentUserId))
+      ) {
+        const { error: takeOverErr } = await db
+          .from('conversations')
+          .update({
+            assigned_agent_id: humanAgentUserId,
+            ai_autoreply_disabled: true,
+          })
+          .eq('id', conversationId)
+          .eq('account_id', accountId);
+        if (takeOverErr) {
+          console.error(
+            '[send-message] pause-AI-on-manual-send failed:',
+            takeOverErr.message
+          );
+        }
+      }
+    } catch (err) {
+      console.error(
+        '[send-message] pause-AI-on-manual-send threw:',
+        err instanceof Error ? err.message : err
+      );
+    }
   }
 
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };

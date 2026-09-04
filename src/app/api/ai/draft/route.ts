@@ -3,11 +3,14 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { loadAiConfig } from '@/lib/ai/config'
 import { buildConversationContext } from '@/lib/ai/context'
-import { retrieveKnowledge } from '@/lib/ai/knowledge'
+import { retrieveKnowledge, accountHasKnowledgeBase } from '@/lib/ai/knowledge'
+import { loadBusinessProfileForAgent } from '@/lib/ai/business-profile/service'
+import { buildBusinessProfileContext } from '@/lib/ai/business-profile/context'
 import { generateReply } from '@/lib/ai/generate'
-import { buildSystemPrompt } from '@/lib/ai/defaults'
+import { buildSystemPrompt, buildSystemPromptBlocks, getSystemTimeContext } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
-import { logAiUsage } from '@/lib/ai/usage'
+import { routeAiContext } from '@/lib/ai/routing'
+import { logAiUsage, classifyGenerateFailure } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
 
@@ -89,22 +92,89 @@ export async function POST(request: Request) {
       )
     }
 
-    // Ground the draft in the account's knowledge base (best-effort —
-    // returns [] when there's no KB or retrieval fails).
-    const knowledge = await retrieveKnowledge(
-      supabase,
-      accountId,
-      config,
-      latestUserMessage(messages),
-    )
-
-    const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'draft',
-      knowledge,
+    // Routing (FASE 5) — this route has no catalog capability at all
+    // (hasCatalog: false, always — see the FASE 10 note below), so its
+    // only real question is whether THIS message needs Knowledge.
+    // Conservative by construction (routing.ts): anything not a clear
+    // greeting/ack, or with no signal either way, still resolves to
+    // "use Knowledge" — draft has nothing else to fall back on, so
+    // "in doubt → include the one resource this route has" applies.
+    const latestMessage = latestUserMessage(messages)
+    const knowledgeAvailable = await accountHasKnowledgeBase(supabase, accountId)
+    const routing = routeAiContext({
+      message: latestMessage,
+      hasCatalog: false,
+      hasKnowledge: knowledgeAvailable,
     })
 
-    const { text, usage } = await generateReply({ config, systemPrompt, messages })
+    // Ground the draft in the account's knowledge base — only when
+    // routing decided this message needs it (best-effort either way:
+    // returns [] when there's no KB or retrieval fails).
+    const knowledge = routing.useKnowledge
+      ? await retrieveKnowledge(supabase, accountId, config, latestMessage)
+      : []
+
+    // Business Profile (FASE 6) — piggybacks on the same routing gate as
+    // Knowledge (see routing.ts's rationale): the class of question it
+    // answers (horario, dirección, delivery, pagos, contacto) is exactly
+    // what already routes to useKnowledge, so this never becomes a
+    // separate "fifth route". No handoff-intent detection here — draft
+    // mode never emits [[HANDOFF]] (it hands text back to an agent to
+    // edit, it never auto-sends or auto-transitions the conversation).
+    const businessProfile = routing.useKnowledge
+      ? await loadBusinessProfileForAgent(supabase, accountId)
+      : null
+    const businessProfileContext = businessProfile
+      ? buildBusinessProfileContext(businessProfile.profile, businessProfile.departments, businessProfile.contacts)
+      : null
+
+    const systemPromptArgs = {
+      userPrompt: config.systemPrompt,
+      mode: 'draft' as const,
+      knowledge,
+      businessProfileContext,
+      timeContext: getSystemTimeContext(),
+      agentBehavior: config.agentBehavior,
+    }
+    const systemPrompt = buildSystemPrompt(systemPromptArgs)
+    // Anthropic-only prompt caching (FASE 8) — see auto-reply.ts's
+    // identical comment; OpenAI/OpenRouter never read this field.
+    const systemPromptBlocks = buildSystemPromptBlocks(systemPromptArgs)
+
+    const generateStartedAt = Date.now()
+    let text: string
+    let usage: Awaited<ReturnType<typeof generateReply>>['usage']
+    let finishReason: string | undefined
+    let toolTurnsExhausted: boolean | undefined
+    try {
+      ;({ text, usage, finishReason, toolTurnsExhausted } = await generateReply({
+        config,
+        systemPrompt,
+        systemPromptBlocks,
+        messages,
+      }))
+    } catch (err) {
+      // Punto 8, H8-2 — same discipline as auto-reply.ts: a failed
+      // attempt still gets exactly one row, with every token column
+      // NULL (never 0). Re-thrown UNCHANGED right after so the existing
+      // outer catch below keeps handling the HTTP response exactly as
+      // it always has — this only adds a log write, it never changes
+      // what the caller of this route sees.
+      const failure = classifyGenerateFailure(err)
+      void logAiUsage(supabaseAdmin(), {
+        accountId,
+        conversationId,
+        mode: 'draft',
+        provider: config.provider,
+        model: config.model,
+        usage: null,
+        latencyMs: Date.now() - generateStartedAt,
+        errorCode: failure.code,
+        errorMessage: failure.message,
+      })
+      throw err
+    }
+    const latencyMs = Date.now() - generateStartedAt
 
     // Record spend on the account's BYO key. Best-effort + via the
     // service role (the log has no `authenticated` INSERT policy). This
@@ -121,6 +191,20 @@ export async function POST(request: Request) {
         provider: config.provider,
         model: config.model,
         usage,
+        // No catalog tools on this route today (see FASE 10 — a
+        // deliberate, documented decision, not an oversight) — logged
+        // explicitly as false/0 rather than omitted, so a report can
+        // tell "draft never had catalog" apart from "unknown".
+        toolCallCount: 0,
+        catalogAttached: false,
+        catalogUsed: false,
+        knowledgeRetrieved: knowledge.length > 0,
+        knowledgeChars: knowledge.reduce((sum, chunk) => sum + chunk.length, 0),
+        routingDecision: routing.decision,
+        knowledgeSkippedByRouting: knowledgeAvailable && !routing.useKnowledge,
+        latencyMs,
+        finishReason,
+        toolTurnsExhausted,
       })
     } catch (logErr) {
       console.error('[ai/draft] usage log skipped:', logErr)

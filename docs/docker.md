@@ -72,3 +72,13 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
   deployment, sending the shared secret in the `x-cron-secret` header
   (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
   503 until that variable is set.
+- To keep a free/idle Supabase project from pausing due to
+  inactivity, point a scheduler at `GET /api/internal/heartbeat`
+  (also accepts `POST`) — every 6-12 hours is plenty. It runs one
+  minimal read-only query and nothing else; it has no CRM
+  functionality. Send the shared secret as `Authorization: Bearer
+  <secret>` (`HEARTBEAT_SECRET`, see `.env.local.example`). Returns
+  503 until that variable is set, 401 on a missing/wrong secret. See
+  [docs/heartbeat.md](./heartbeat.md) for the Vercel Cron config
+  (already wired via `vercel.json`) vs. external-scheduler options,
+  and how to verify it's actually running.

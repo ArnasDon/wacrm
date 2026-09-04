@@ -6,8 +6,8 @@
 // tags via the shared CONVERSATION_SELECT.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { withApiKey } from '@/lib/auth/api-context';
+import { okList, fail } from '@/lib/api/v1/respond';
 import {
   parseListParams,
   keysetFilter,
@@ -21,8 +21,7 @@ import { serializeConversation } from '@/lib/api/v1/conversations';
 import type { Conversation } from '@/types';
 
 export async function GET(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'conversations:read');
+  return withApiKey(request, 'conversations:read', async (ctx) => {
     const { limit, cursor } = parseListParams(request);
     const url = new URL(request.url);
     const status = url.searchParams.get('status');
@@ -60,7 +59,5 @@ export async function GET(request: Request) {
       ),
       nextCursor
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
+  });
 }

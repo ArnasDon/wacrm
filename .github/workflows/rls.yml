@@ -1,0 +1,135 @@
+name: RLS
+
+# Real end-to-end RLS coverage — hardening plan (post-Fase 2 audit).
+# Complements `migrations.yml` (which only proves the schema exists
+# after a clean replay) with a suite that proves the multi-tenant
+# isolation actually holds: two real Auth users, two real accounts,
+# and every assertion made through a signed-in `anon`-key session —
+# never `service_role`. See tests/rls/README.md for the full design
+# and its explicit limits.
+#
+# Separate job, separate workflow, on purpose: this suite is slower
+# (it boots the FULL local Supabase stack — Auth/PostgREST included,
+# not just Postgres, since real JWTs are required) and MUST NEVER be a
+# required check that blocks a PR that doesn't touch anything RLS
+# depends on. It shares no state with `ci.yml`'s fast, mock-only
+# `npm test`.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/**'
+      - 'tests/rls/**'
+      - 'vitest.rls.config.ts'
+      - '.github/workflows/rls.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'supabase/**'
+      - 'tests/rls/**'
+      - 'vitest.rls.config.ts'
+      - '.github/workflows/rls.yml'
+  # Manual trigger for a one-off run without touching any of the paths
+  # above (e.g. after a dependency bump).
+  workflow_dispatch:
+
+concurrency:
+  group: rls-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rls:
+    name: Real RLS isolation (local Postgres + Auth)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Same pin as migrations.yml — a CLI release changing local-stack
+      # behaviour should be a deliberate bump in a PR, never a silent
+      # drift between the two workflows.
+      - name: Install the Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: 2.113.0
+
+      # Full stack, not `supabase db start` — this suite needs real
+      # Auth (GoTrue) + PostgREST for genuine per-user JWTs, which
+      # migrations.yml's Postgres-only check does not.
+      - name: Start Supabase (local stack)
+        run: supabase start
+
+      # `start` already applies migrations to a cold volume, but this
+      # guarantees every migration ran, from nothing, in filename
+      # order, on every run — same reasoning as migrations.yml.
+      - name: Replay every migration from scratch
+        run: supabase db reset --local --no-seed
+
+      # LOCAL-ONLY CI bootstrap — NOT a migration, never applied to the
+      # hosted project. Root-caused via this workflow's own diagnostics
+      # (now removed, see tests/rls/bootstrap-privileges.sql's header
+      # for the full explanation): the hosted Supabase platform grants
+      # baseline table privileges to service_role/authenticated
+      # automatically at project creation; a fresh local `supabase
+      # start` + `db reset --local` does not replicate that, so both
+      # roles start with ZERO privileges on every table here, RLS and
+      # BYPASSRLS notwithstanding. This grants exactly what
+      # fixtures.ts/*.rls.test.ts need, on the 12 tables this suite
+      # touches, to service_role + authenticated only — never `anon`,
+      # never RLS policies, never table ownership.
+      - name: Bootstrap local-only service_role/authenticated privileges (NOT a migration)
+        run: supabase db query --local --file tests/rls/bootstrap-privileges.sql
+
+      # `supabase status -o env` (confirmed by the first real run of this
+      # workflow) prints each value double-quoted — e.g.
+      # `API_URL="http://127.0.0.1:54321"` — not the bare `KEY=value`
+      # this step originally assumed. Piping that line straight into
+      # `$GITHUB_ENV` set the env var to the literal, quote-wrapped
+      # string, which env-guard.ts correctly rejected as "not a valid
+      # URL" (it is not — it is a URL wrapped in `"` characters).
+      #
+      # Fixed with a plain shell loop (no `eval`, nothing executed from
+      # the tool's own output) that strips one leading and one trailing
+      # `"` per value via parameter expansion — a no-op if a future CLI
+      # version ever prints the value bare instead.
+      - name: Export local Supabase connection details
+        id: local-env
+        run: |
+          while IFS='=' read -r key value; do
+            case "$key" in
+              API_URL|ANON_KEY|SERVICE_ROLE_KEY)
+                value="${value%\"}"
+                value="${value#\"}"
+                echo "${key}=${value}" >> "$GITHUB_ENV"
+                ;;
+            esac
+          done < <(supabase status -o env)
+
+      # Diagnostic — API_URL only. Never ANON_KEY or SERVICE_ROLE_KEY:
+      # even though both are local-only, throwaway credentials with no
+      # access beyond this ephemeral runner's own database, they have
+      # no reason to appear in a public job log, and this step doesn't
+      # need them to be useful — it exists solely to make a future
+      # "does this even look like a URL" failure a one-line log read.
+      - name: Show the resolved local API URL (diagnostic — no keys)
+        run: echo "Resolved API_URL=$API_URL"
+        env:
+          API_URL: ${{ env.API_URL }}
+
+      - name: Run the real-RLS suite
+        env:
+          RLS_TEST_SUPABASE_URL: ${{ env.API_URL }}
+          RLS_TEST_SUPABASE_ANON_KEY: ${{ env.ANON_KEY }}
+          RLS_TEST_SUPABASE_SERVICE_ROLE_KEY: ${{ env.SERVICE_ROLE_KEY }}
+        run: npm run test:rls
+
+      - name: Stop Supabase
+        if: always()
+        run: supabase stop

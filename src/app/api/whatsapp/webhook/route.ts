@@ -245,18 +245,31 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
       }
 
       const value = change.value
+      // Every change carries the receiving number's phone_number_id in
+      // its metadata. Resolve it once up front so the statuses branch
+      // below can scope its queries to the owning account — `message_id`
+      // (`status.id`) alone is NOT a safe scoping key: migration 037
+      // documents it as NOT globally unique across phone numbers, so two
+      // different accounts' numbers can share the same Meta message id.
+      const phoneNumberId = value.metadata.phone_number_id
 
       // Handle status updates
       if (value.statuses) {
-        for (const status of value.statuses) {
-          await handleStatusUpdate(status)
+        const statusAccountId = await resolveAccountIdForPhoneNumber(phoneNumberId)
+        if (statusAccountId) {
+          for (const status of value.statuses) {
+            await handleStatusUpdate(status, statusAccountId)
+          }
+        } else {
+          console.error(
+            '[webhook] dropping status update(s) — could not resolve a single owning account for phone_number_id:',
+            phoneNumberId,
+          )
         }
       }
 
       // Handle incoming messages
       if (!value.messages || !value.contacts) continue
-
-      const phoneNumberId = value.metadata.phone_number_id
 
       // Find user's config by phone_number_id. `.single()` returns
       // PGRST116 for both 0 rows AND ≥2 rows — distinguish them so
@@ -364,24 +377,90 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
-async function handleStatusUpdate(status: {
-  id: string
-  status: string
-  timestamp: string
-  recipient_id: string
-}) {
-  // 1) Mirror onto messages (legacy behavior) — Meta's status values
-  //    already match the CHECK constraint on messages.status. No
-  //    `.select()`: message_id is NOT unique (migration 009 — Meta ids
-  //    repeat across numbers), so this updates 0..N rows and must not
-  //    assume a single row.
-  const { error: msgErr } = await supabaseAdmin()
-    .from('messages')
-    .update({ status: status.status })
-    .eq('message_id', status.id)
+/**
+ * Resolve the single account that owns `phoneNumberId`. Shared by the
+ * statuses branch above so `handleStatusUpdate` never has to fall back
+ * to matching by `message_id` alone (see the caller's comment for why
+ * that's unsafe). Mirrors the inbound-message branch's own
+ * `whatsapp_config` lookup and its 0-row / ≥2-row handling — an
+ * unresolved or ambiguous owner means "drop, don't guess."
+ */
+async function resolveAccountIdForPhoneNumber(
+  phoneNumberId: string,
+): Promise<string | null> {
+  const { data: configRows, error } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('account_id')
+    .eq('phone_number_id', phoneNumberId)
 
-  if (msgErr) {
-    console.error('Error updating message status:', msgErr)
+  if (error) {
+    console.error(
+      'Error resolving account for phone_number_id (status update):',
+      phoneNumberId,
+      error,
+    )
+    return null
+  }
+  if (!configRows || configRows.length === 0) {
+    console.error(
+      'No config found for phone_number_id (status update):',
+      phoneNumberId,
+    )
+    return null
+  }
+  if (configRows.length > 1) {
+    console.error(
+      `Multiple configs (${configRows.length}) found for phone_number_id (status update):`,
+      phoneNumberId,
+      '— resolve duplicates so each number maps to a single account.',
+    )
+    return null
+  }
+  return (configRows[0] as { account_id: string }).account_id
+}
+
+async function handleStatusUpdate(
+  status: {
+    id: string
+    status: string
+    timestamp: string
+    recipient_id: string
+  },
+  // The account that owns the phone_number_id this status arrived on
+  // (resolved by the caller via resolveAccountIdForPhoneNumber). Every
+  // query below is scoped to THIS account in addition to matching
+  // `status.id` — migration 037 documents `message_id` as NOT globally
+  // unique across phone numbers, so two different accounts can each
+  // have a row that matches `status.id`. Without this scope, a status
+  // meant for one tenant could flip another tenant's message/recipient
+  // status, or leak that tenant's data into the wrong account's public
+  // webhook.
+  accountId: string,
+) {
+  // 1) Mirror onto messages (legacy behavior) — Meta's status values
+  //    already match the CHECK constraint on messages.status.
+  //    `messages` has no `account_id` column of its own (only
+  //    `conversation_id`), so resolve the matching row ids scoped to
+  //    THIS account's conversations first, then update only those —
+  //    never a bare `.eq('message_id', ...)` across every tenant. Still
+  //    0..N rows within the account, exactly as before.
+  const { data: ownMessages, error: ownMsgLookupErr } = await supabaseAdmin()
+    .from('messages')
+    .select('id, conversations!inner(account_id)')
+    .eq('message_id', status.id)
+    .eq('conversations.account_id', accountId)
+
+  if (ownMsgLookupErr) {
+    console.error('Error resolving messages for status update:', ownMsgLookupErr)
+  } else if (ownMessages && ownMessages.length > 0) {
+    const { error: msgErr } = await supabaseAdmin()
+      .from('messages')
+      .update({ status: status.status })
+      .in('id', ownMessages.map((m: { id: string }) => m.id))
+
+    if (msgErr) {
+      console.error('Error updating message status:', msgErr)
+    }
   }
 
   // Webhook fan-out for this status change happens at the END of this
@@ -389,15 +468,18 @@ async function handleStatusUpdate(status: {
   // endpoint can't delay the broadcast_recipients update.
 
   // 2) Mirror onto broadcast_recipients via whatsapp_message_id
-  //    (added in migration 003). The aggregate trigger on
+  //    (added in migration 003), scoped to THIS account's own
+  //    broadcasts — `broadcast_recipients` likewise has no `account_id`
+  //    column of its own, only `broadcast_id`. The aggregate trigger on
   //    broadcast_recipients re-derives the parent broadcast's
   //    sent/delivered/read/failed counts automatically.
   const tsIso = new Date(parseInt(status.timestamp) * 1000).toISOString()
 
   const { data: recipient, error: recFetchErr } = await supabaseAdmin()
     .from('broadcast_recipients')
-    .select('id, status')
+    .select('id, status, broadcasts!inner(account_id)')
     .eq('whatsapp_message_id', status.id)
+    .eq('broadcasts.account_id', accountId)
     .maybeSingle()
 
   if (recFetchErr) {
@@ -425,30 +507,30 @@ async function handleStatusUpdate(status: {
 
   // 3) Webhook fan-out for messages we store (inbox / API sends).
   //    Runs last so a slow subscriber can't delay the mirrors above.
-  //    Bounded to one row (message_id isn't unique) purely to resolve
-  //    the owning account for delivery.
+  //    Scoped to THIS account (the one that actually received the
+  //    status) so a message_id collision can never resolve to — and
+  //    notify — a different tenant's public webhook endpoint. `accountId`
+  //    is already trusted (resolved from phone_number_id by the caller),
+  //    so it's used directly rather than re-derived from the join.
   const { data: msgRow } = await supabaseAdmin()
     .from('messages')
-    .select('conversation_id, conversations(account_id)')
+    .select('conversation_id, conversations!inner(account_id)')
     .eq('message_id', status.id)
+    .eq('conversations.account_id', accountId)
     .limit(1)
     .maybeSingle()
 
   if (msgRow) {
-    const conv = msgRow.conversations as { account_id: string } | null
-    const accountId = conv?.account_id
-    if (accountId) {
-      await dispatchWebhookEvent(
-        supabaseAdmin(),
-        accountId,
-        'message.status_updated',
-        {
-          whatsapp_message_id: status.id,
-          conversation_id: msgRow.conversation_id,
-          status: status.status,
-        }
-      )
-    }
+    await dispatchWebhookEvent(
+      supabaseAdmin(),
+      accountId,
+      'message.status_updated',
+      {
+        whatsapp_message_id: status.id,
+        conversation_id: msgRow.conversation_id,
+        status: status.status,
+      }
+    )
   }
 }
 
@@ -676,62 +758,69 @@ async function processMessage(
         ? 'interactive' // template quick-reply tap (issue #478)
         : 'text'        // reaction, unknown → text fallback
 
-  // Determine whether this is the contact's very first inbound message
-  // BEFORE we insert, so the count is accurate. Covers the case where
-  // the contact row already exists (manual add / CSV import) but they've
-  // never messaged us before — which new_contact_created wouldn't catch.
-  const { count: priorCustomerMsgCount } = await supabaseAdmin()
-    .from('messages')
-    .select('id', { count: 'exact', head: true })
-    .eq('conversation_id', conversation.id)
-    .eq('sender_type', 'customer')
-  const isFirstInboundMessage = (priorCustomerMsgCount ?? 0) === 0
-
-  // Idempotent insert. Meta retries webhook deliveries (a slow ack, a
-  // transient 5xx), and each retry replays the exact same message.id. The
-  // unique index on (conversation_id, message_id) added in migration 037
-  // makes a replay conflict; `ignoreDuplicates` turns that into an ON
-  // CONFLICT DO NOTHING, and the `.select()` then returns the inserted row
-  // ONLY on a genuine first insert — an empty result means this delivery
-  // was a replay. This is the single idempotency boundary that must sit
-  // BEFORE the unread bump and all downstream fan-out below (issue #367).
-  const { data: insertedRows, error: msgError } = await supabaseAdmin()
-    .from('messages')
-    .upsert(
-      {
-        conversation_id: conversation.id,
-        sender_type: 'customer',
-        content_type: contentType,
-        content_text: contentText,
-        media_url: mediaUrl,
-        // Meta's MIME type for the attachment (migration 039). Was
-        // discarded before, which forced the download path to guess an
-        // extension from the fetched blob — impossible to do until the
-        // bytes had already been fetched successfully.
-        media_type: mediaType,
-        message_id: message.id,
-        status: 'delivered',
-        created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
-        reply_to_message_id: replyToInternalId,
-        // Only populated for content_type='interactive'. Migration 010 added
-        // the column; null for every other content_type so existing inserts
-        // behave identically.
-        interactive_reply_id: interactiveReplyId,
-      },
-      { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
-    )
-    .select('id')
+  // Atomic insert + first-message check (BUG B1 fix). Meta retries
+  // webhook deliveries (a slow ack, a transient 5xx) — each retry
+  // replays the exact same message.id — and TWO DIFFERENT messages
+  // from the same brand-new contact can also arrive as two separate
+  // webhook deliveries processed concurrently (each in its own
+  // `after()` invocation). The previous code computed "is this the
+  // contact's first message" via a plain SELECT COUNT before
+  // inserting: two such concurrent deliveries could both read count=0
+  // before either had inserted, so BOTH concluded
+  // isFirstInboundMessage=true and both fired the
+  // `first_inbound_message` automation trigger.
+  //
+  // `insert_inbound_customer_message` (migration 053) closes that
+  // window: it takes a row lock on the conversation BEFORE counting
+  // prior customer messages, so a concurrent call for the SAME
+  // conversation blocks until this one commits — there is no window
+  // left in which two callers can both observe the pre-insert count.
+  // It also folds in the exact same ON CONFLICT (conversation_id,
+  // message_id) DO NOTHING idempotency (migration 037, issue #367) and
+  // the exact same unread-count bump (bump_conversation_on_inbound,
+  // migration 037, issue #369 — now called from inside this function)
+  // that used to be two separate round-trips here.
+  const { data: insertResultRows, error: msgError } = await supabaseAdmin().rpc(
+    'insert_inbound_customer_message',
+    {
+      p_conversation_id: conversation.id,
+      p_message_id: message.id,
+      p_content_type: contentType,
+      p_content_text: contentText,
+      p_media_url: mediaUrl,
+      // Meta's MIME type for the attachment (migration 039). Was
+      // discarded before, which forced the download path to guess an
+      // extension from the fetched blob — impossible to do until the
+      // bytes had already been fetched successfully.
+      p_media_type: mediaType,
+      p_created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+      p_reply_to_message_id: replyToInternalId,
+      // Only populated for content_type='interactive'. Migration 010 added
+      // the column; null for every other content_type so existing inserts
+      // behave identically.
+      p_interactive_reply_id: interactiveReplyId,
+      p_last_message_text: contentText || `[${message.type}]`,
+    }
+  )
 
   if (msgError) {
     console.error('Error inserting message:', msgError)
     return
   }
 
+  const insertResult = insertResultRows?.[0] as
+    | {
+        message_id: string | null
+        was_inserted: boolean
+        is_first_customer_message: boolean
+      }
+    | undefined
+
   // Replayed delivery: the message already exists, so acknowledge it as a
   // no-op. Returning here is what keeps a retry from double-bumping unread,
   // re-advancing flows, re-firing automations, re-invoking AI handling, and
   // re-dispatching public webhooks (issue #367).
-  if (!insertedRows || insertedRows.length === 0) {
+  if (!insertResult || !insertResult.was_inserted) {
     console.info(
       '[webhook] duplicate inbound message ignored (idempotent replay):',
       message.id
@@ -739,24 +828,13 @@ async function processMessage(
     return
   }
 
-  // Update conversation. The unread bump is done DB-side (migration 037's
-  // bump_conversation_on_inbound) rather than as a read-modify-write of the
-  // snapshot loaded above: two inbound messages for the same conversation
-  // can process concurrently, and computing `snapshot + 1` in the app let
-  // both reads see the same value and write the same increment, losing one
-  // (issue #369). The RPC increments in a single UPDATE and refreshes the
-  // last-message summary in the same statement.
-  const { error: convError } = await supabaseAdmin().rpc(
-    'bump_conversation_on_inbound',
-    {
-      p_conversation_id: conversation.id,
-      p_last_message_text: contentText || `[${message.type}]`,
-    }
-  )
-
-  if (convError) {
-    console.error('Error updating conversation:', convError)
-  }
+  // Race-free per-conversation "is this the very first customer
+  // message" answer, computed atomically inside
+  // insert_inbound_customer_message while holding the conversation's
+  // row lock — see the comment above. Feeds the exact same downstream
+  // consumers (Flows' entry-trigger check, the automations dispatch
+  // below) that the old count-based flag fed.
+  const isFirstInboundMessage = insertResult.is_first_customer_message
 
   // A customer writing again re-opens the thread (issue #409). Kept as a
   // separate conditional statement rather than a `status` field on the

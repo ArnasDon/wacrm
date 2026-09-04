@@ -1,17 +1,36 @@
+# Dependencies — reinstalled inside the image
+node_modules
+npm-debug.log*
+
+# Build output
+.next
+out
+build
+dist
+
+# Local env & secrets — never bake into the image
+.env
+.env.*
+!.env.example
+!.env.local.example
+
+# Version control
 .git
 .github
-.next
-node_modules
-docs
-mcp-server
-supabase
-*.md
-!README.md
-.env*
-!.env.local.example
-Dockerfile
-docker-compose*.yml
-.dockerignore
+.gitignore
+
+# Editor / OS noise
 .vscode
 .idea
+
+# Test / coverage
 coverage
+
+# Docker files
+Dockerfile
+docker-compose*.yml
+
+# Do NOT exclude application source/config directories
+# docs
+# mcp-server
+# supabase

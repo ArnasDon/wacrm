@@ -51,25 +51,36 @@ export async function POST() {
     }
 
     let reindexed = 0
+    // One bad document (e.g. a mid-run embeddings rate-limit) must not
+    // abort the whole batch — collected here and reported together at
+    // the end, so every other document still gets its turn. (Previously
+    // this `return`ed from inside the loop on the first failure, which
+    // silently skipped every document after it — see FASE 3 audit.)
+    const failures: { id: string; error: string }[] = []
     for (const doc of docs ?? []) {
       try {
         await ingestDocument(supabase, accountId, { embeddingsApiKey }, doc.id, doc.content)
         reindexed += 1
       } catch (err) {
-        // One bad document (e.g. a mid-run embeddings rate-limit) should
-        // not abort the whole batch.
         const message = err instanceof AiError ? err.message : String(err)
         console.error(`[ai/knowledge/reindex] doc ${doc.id} failed:`, message)
-        return NextResponse.json(
-          {
-            success: false,
-            reindexed,
-            total: (docs ?? []).length,
-            error: `Reindexed ${reindexed}, then hit an error: ${message}`,
-          },
-          { status: 200 },
-        )
+        failures.push({ id: doc.id, error: message })
       }
+    }
+
+    const total = (docs ?? []).length
+    if (failures.length > 0) {
+      return NextResponse.json(
+        {
+          success: false,
+          reindexed,
+          total,
+          failed: failures.length,
+          error: `Reindexed ${reindexed} of ${total}; ${failures.length} document(s) failed.`,
+          failures,
+        },
+        { status: 200 },
+      )
     }
 
     return NextResponse.json({ success: true, reindexed })

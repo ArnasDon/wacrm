@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen } from 'lucide-react';
+import {
+  Loader2, Plus, Trash2, Pencil, RefreshCw, BookOpen, FileText,
+} from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -14,12 +16,15 @@ import {
   CardTitle,
   CardDescription,
 } from '@/components/ui/card';
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { useTranslations } from 'next-intl';
 
 interface DocSummary {
   id: string;
   title: string;
   updated_at: string;
+  type: string;
+  metadata: Record<string, unknown> | null;
 }
 
 /** Editor target: 'new' when creating, a doc id when editing, null when closed. */
@@ -37,10 +42,13 @@ export function AiKnowledgeCard({
   const [docs, setDocs] = useState<DocSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<EditTarget>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DocSummary | null>(null);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [saving, setSaving] = useState(false);
   const [reindexing, setReindexing] = useState(false);
+  const [uploadingPdf, setUploadingPdf] = useState(false);
+  const pdfInputRef = useRef<HTMLInputElement>(null);
   const loadedAccountIdRef = useRef<string | null>(null);
   const t = useTranslations('Settings.aiKnowledge');
 
@@ -125,18 +133,46 @@ export function AiKnowledgeCard({
     }
   };
 
+  // The actual delete, run only from DestructiveConfirmDialog's confirm
+  // button below — never directly from the row's trash icon. Throws on
+  // failure so the dialog stays open and shows the error rather than
+  // silently pretending the document was removed.
   const remove = async (id: string) => {
+    let res: Response;
     try {
-      const res = await fetch(`/api/ai/knowledge/${id}`, { method: 'DELETE' });
+      res = await fetch(`/api/ai/knowledge/${id}`, { method: 'DELETE' });
+    } catch {
+      throw new Error(t('removeFailed'));
+    }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? t('removeFailed'));
+    }
+    toast.success(t('removeSuccess'));
+    setDocs((d) => d.filter((x) => x.id !== id));
+  };
+
+  const uploadPdf = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingPdf(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const res = await fetch('/api/ai/knowledge/upload-pdf', { method: 'POST', body: fd });
+      const data = await res.json();
       if (res.ok) {
-        toast.success(t('removeSuccess'));
-        setDocs((d) => d.filter((x) => x.id !== id));
+        if (data.warning) toast.warning(data.warning);
+        else toast.success(t('uploadPdfSuccess'));
+        await fetchDocs();
       } else {
-        const data = await res.json();
-        toast.error(data.error ?? t('removeFailed'));
+        toast.error(data.error ?? t('uploadPdfFailed'));
       }
     } catch {
-      toast.error(t('removeFailed'));
+      toast.error(t('uploadPdfFailed'));
+    } finally {
+      setUploadingPdf(false);
+      if (pdfInputRef.current) pdfInputRef.current.value = '';
     }
   };
 
@@ -207,7 +243,7 @@ export function AiKnowledgeCard({
                           variant="ghost"
                           size="sm"
                           className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                          onClick={() => void remove(doc.id)}
+                          onClick={() => setDeleteTarget(doc)}
                           title="Delete"
                         >
                           <Trash2 className="h-4 w-4" />
@@ -255,9 +291,22 @@ export function AiKnowledgeCard({
             ) : (
               canEdit && (
                 <div className="flex items-center justify-between">
-                  <Button variant="outline" size="sm" onClick={openNew}>
-                    <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button variant="outline" size="sm" onClick={openNew}>
+                      <Plus className="mr-2 h-4 w-4" /> {t('addDoc')}
+                    </Button>
+                    <Button variant="outline" size="sm" onClick={() => pdfInputRef.current?.click()} disabled={uploadingPdf} className="text-xs">
+                      {uploadingPdf ? <Loader2 className="mr-1 h-4 w-4 animate-spin" /> : <FileText className="mr-1 h-4 w-4" />}
+                      {t('uploadPdf')}
+                    </Button>
+                    <input
+                      ref={pdfInputRef}
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={uploadPdf}
+                    />
+                  </div>
                   {hasEmbeddingsKey && docs.length > 0 && (
                     <Button
                       variant="ghost"
@@ -280,6 +329,19 @@ export function AiKnowledgeCard({
           </>
         )}
       </CardContent>
+
+      <DestructiveConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(next) => { if (!next) setDeleteTarget(null); }}
+        title={t('deleteDocConfirmTitle')}
+        description={t('deleteDocConfirmDescription', { title: deleteTarget?.title ?? '' })}
+        cancelLabel={t('deleteDocConfirmCancel')}
+        confirmLabel={t('deleteDocConfirmButton')}
+        errorFallback={t('removeFailed')}
+        onConfirm={async () => {
+          if (deleteTarget) await remove(deleteTarget.id);
+        }}
+      />
     </Card>
   );
 }

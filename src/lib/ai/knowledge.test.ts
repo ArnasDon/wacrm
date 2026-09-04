@@ -7,7 +7,7 @@ vi.mock('./embeddings', () => ({
   toVectorLiteral: (v: number[]) => `[${v.join(',')}]`,
 }))
 
-import { retrieveKnowledge, ingestDocument } from './knowledge'
+import { retrieveKnowledge, ingestDocument, resetKnowledgeEmptyCache } from './knowledge'
 
 interface FakeState {
   semantic: { id: string; content: string }[]
@@ -61,6 +61,10 @@ beforeEach(() => {
   h.embedTexts.mockImplementation(async (_key: string, inputs: string[]) =>
     inputs.map((_, i) => [i, i]),
   )
+  // Every case in this file shares account id 'acct' — without this,
+  // the FASE 4 negative cache (module-level, keyed by accountId) would
+  // leak "empty" from one test into the next real one.
+  resetKnowledgeEmptyCache()
 })
 
 describe('retrieveKnowledge', () => {
@@ -100,6 +104,33 @@ describe('retrieveKnowledge', () => {
     expect(h.embedTexts).toHaveBeenCalledTimes(1)
     // Enough semantic hits → no FTS top-up.
     expect(state.rpcCalls).toEqual(['match_ai_knowledge_semantic'])
+  })
+
+  it('remembers an empty KB across calls — a second call skips the count query too (FASE 4)', async () => {
+    const { db, state } = makeDb()
+    state.chunkCount = 0
+    expect(await retrieveKnowledge(db, 'acct', { embeddingsApiKey: 'sk-x' }, 'q')).toEqual([])
+    expect(state.rpcCalls).toEqual([])
+
+    // Flip the fake DB to "has chunks" — if the guard re-queried, this
+    // would find content; the assertion below proves it didn't even ask.
+    state.chunkCount = 5
+    state.fts = [{ id: 'f1', content: 'F1' }]
+    const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, 'q')
+    expect(out).toEqual([])
+    expect(state.rpcCalls).toEqual([])
+  })
+
+  it('an account with real chunks is never short-circuited by another account\'s empty cache entry', async () => {
+    const empty = makeDb()
+    empty.state.chunkCount = 0
+    await retrieveKnowledge(empty.db, 'acct-empty', { embeddingsApiKey: null }, 'q')
+
+    const other = makeDb()
+    other.state.fts = [{ id: 'f1', content: 'F1' }]
+    const out = await retrieveKnowledge(other.db, 'acct-other', { embeddingsApiKey: null }, 'q')
+    expect(out).toEqual(['F1'])
+    expect(other.state.rpcCalls).toEqual(['match_ai_knowledge_fts'])
   })
 
   it('tops up with FTS and dedupes when semantic is short', async () => {
@@ -145,6 +176,24 @@ describe('ingestDocument', () => {
     expect(state.deletedFor).toBe('doc-1')
     expect(state.inserted).toBeNull()
     expect(h.embedTexts).not.toHaveBeenCalled()
+  })
+
+  it('clears a cached "empty KB" mark for the account, so the next retrieveKnowledge re-checks (FASE 4)', async () => {
+    const { db, state } = makeDb()
+    state.chunkCount = 0
+    expect(await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, 'q')).toEqual([])
+    expect(state.rpcCalls).toEqual([])
+
+    // New content arrives for the same account — ingest must forget the
+    // "empty" mark, even though this fake DB's count mock still says 0
+    // (the ingest and the count-check are independent tables here);
+    // once real content lands, a fresh retrieveKnowledge call is
+    // expected to ask again rather than trust the stale mark.
+    await ingestDocument(db, 'acct', { embeddingsApiKey: null }, 'doc-1', 'hello world')
+    state.chunkCount = 3
+    state.fts = [{ id: 'f1', content: 'F1' }]
+    const out = await retrieveKnowledge(db, 'acct', { embeddingsApiKey: null }, 'q')
+    expect(out).toEqual(['F1'])
   })
 
   it('still stores lexical chunks when embedding fails, then rethrows', async () => {

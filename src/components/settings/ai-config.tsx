@@ -24,10 +24,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { DestructiveConfirmDialog } from '@/components/ui/destructive-confirm-dialog';
 import { SettingsPanelHead } from './settings-panel-head';
 import { AiKnowledgeCard } from './ai-knowledge';
-import { AI_PROVIDER_DEFAULT_MODEL } from '@/lib/ai/defaults';
-import type { AiProvider } from '@/lib/ai/types';
+import { BusinessProfileSettings } from './business-profile-settings';
+import { DataSourcesSettings } from './data-sources-settings';
+import { CatalogIntegrationsSettings } from './catalog-integrations-settings';
+import { AI_PROVIDER_DEFAULT_MODEL, AI_DEFAULT_MODELS } from '@/lib/ai/defaults';
+import { AI_PROVIDERS, type AiProvider } from '@/lib/ai/types';
+import type { OpenRouterModelOption } from '@/app/api/ai/openrouter/models/route';
 import type { AccountMember } from '@/types';
 import { fetchAccountMembers, memberLabel } from '@/lib/account/members';
 import { useTranslations } from 'next-intl';
@@ -41,12 +46,19 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  openrouter: 'OpenRouter (any model)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  openrouter: 'sk-or-v1-...',
 };
+
+// The <datalist> is a suggestion list, not a constraint — the Model
+// field stays free text so a brand-new OpenRouter id works the moment
+// it ships, before it shows up in the fetched catalogue.
+const OPENROUTER_MODELS_LIST_ID = 'openrouter-models';
 
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
@@ -56,7 +68,7 @@ export function AiConfig() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
-  const [removing, setRemoving] = useState(false);
+  const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
 
   const [configured, setConfigured] = useState(false);
   const [provider, setProvider] = useState<AiProvider>('openai');
@@ -69,12 +81,18 @@ export function AiConfig() {
   const [embeddingsKeyEdited, setEmbeddingsKeyEdited] = useState(false);
   const [hasStoredEmbeddingsKey, setHasStoredEmbeddingsKey] = useState(false);
   const [systemPrompt, setSystemPrompt] = useState('');
+  // Fase 10 — structurally separate from systemPrompt (business facts):
+  // this is the account's own tone/personality/style configuration.
+  const [agentBehavior, setAgentBehavior] = useState('');
   const [isActive, setIsActive] = useState(false);
   const [autoReplyEnabled, setAutoReplyEnabled] = useState(false);
   const [maxPerConversation, setMaxPerConversation] = useState(3);
   // Empty string = leave unassigned (shared queue).
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
+  const [openRouterModels, setOpenRouterModels] = useState<OpenRouterModelOption[]>(
+    [],
+  );
 
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
@@ -96,6 +114,7 @@ export function AiConfig() {
         setProvider(data.provider);
         setModel(data.model);
         setSystemPrompt(data.system_prompt ?? '');
+        setAgentBehavior(data.agent_behavior ?? '');
         setIsActive(data.is_active);
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
@@ -124,14 +143,34 @@ export function AiConfig() {
     void fetchAccountMembers().then(setMembers);
   }, [accountId, fetchConfig]);
 
+  // OpenRouter's catalogue backs the Model field's suggestion list.
+  // Fetched lazily (only once the provider is actually OpenRouter) and
+  // best-effort — on failure the list is empty and the field is still
+  // plain free text.
+  useEffect(() => {
+    if (provider !== 'openrouter' || openRouterModels.length > 0) return;
+    let cancelled = false;
+    void fetch('/api/ai/openrouter/models')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.models)) {
+          setOpenRouterModels(data.models);
+        }
+      })
+      .catch(() => {
+        /* Suggestions are optional — stay silent. */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [provider, openRouterModels.length]);
+
   // Swap the model default when the provider changes, unless the user
   // typed a custom model.
   const handleProviderChange = (next: AiProvider) => {
     setProvider(next);
     const isDefaultModel =
-      model === AI_PROVIDER_DEFAULT_MODEL.openai ||
-      model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
-      model.trim() === '';
+      AI_DEFAULT_MODELS.includes(model) || model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
@@ -147,6 +186,7 @@ export function AiConfig() {
     api_key: keyPayload(),
     embeddings_api_key: embeddingsKeyPayload(),
     system_prompt: systemPrompt.trim() || null,
+    agent_behavior: agentBehavior.trim() || null,
     is_active: isActive,
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
@@ -205,36 +245,39 @@ export function AiConfig() {
     }
   };
 
+  // The actual destructive operation, run only from the second step of
+  // the confirmation dialog below — never from the trigger button
+  // itself. Throws on failure (network or API error) so the dialog
+  // keeps itself open and shows the error instead of pretending the
+  // config was removed; only resolves (and only then does the dialog
+  // close) once the DELETE genuinely succeeded.
   const handleRemove = async () => {
-    setRemoving(true);
+    let res: Response;
     try {
-      const res = await fetch('/api/ai/config', { method: 'DELETE' });
-      if (res.ok) {
-        toast.success(t('removeSuccess'));
-        setConfigured(false);
-        setHasStoredKey(false);
-        setApiKey('');
-        setKeyEdited(false);
-        setIsActive(false);
-        setAutoReplyEnabled(false);
-        setSystemPrompt('');
-        setHandoffAgentId('');
-      } else {
-        const data = await res.json();
-        toast.error(data.error ?? t('removeFailed'));
-      }
+      res = await fetch('/api/ai/config', { method: 'DELETE' });
     } catch {
-      toast.error(t('removeFailed'));
-    } finally {
-      setRemoving(false);
+      throw new Error(t('removeFailed'));
     }
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? t('removeFailed'));
+    }
+    toast.success(t('removeSuccess'));
+    setConfigured(false);
+    setHasStoredKey(false);
+    setApiKey('');
+    setKeyEdited(false);
+    setIsActive(false);
+    setAutoReplyEnabled(false);
+    setSystemPrompt('');
+    setAgentBehavior('');
+    setHandoffAgentId('');
   };
 
   if (loading || profileLoading) {
     return (
       <div className="flex items-center justify-center py-16 text-muted-foreground">
-        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loadFailed')} {/* Re-using label or a global one, wait, loading is better. Let's use useTranslations from overview or just hardcode Loading... actually I should add loading to aiConfig */}
-        {/* Wait, I didn't add loading to aiConfig. I'll just use loading. */}
+        <Loader2 className="mr-2 h-4 w-4 animate-spin" /> {t('loading')}
       </div>
     );
   }
@@ -277,10 +320,11 @@ export function AiConfig() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="openai">{PROVIDER_LABEL.openai}</SelectItem>
-                    <SelectItem value="anthropic">
-                      {PROVIDER_LABEL.anthropic}
-                    </SelectItem>
+                    {AI_PROVIDERS.map((p) => (
+                      <SelectItem key={p} value={p}>
+                        {PROVIDER_LABEL[p]}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -293,7 +337,25 @@ export function AiConfig() {
                   onChange={(e) => setModel(e.target.value)}
                   placeholder={AI_PROVIDER_DEFAULT_MODEL[provider]}
                   disabled={disabled}
+                  list={
+                    provider === 'openrouter' ? OPENROUTER_MODELS_LIST_ID : undefined
+                  }
+                  autoComplete="off"
                 />
+                {provider === 'openrouter' && (
+                  <>
+                    <datalist id={OPENROUTER_MODELS_LIST_ID}>
+                      {openRouterModels.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name}
+                        </option>
+                      ))}
+                    </datalist>
+                    <p className="text-xs text-muted-foreground">
+                      {t('openRouterModelHint')}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -401,6 +463,24 @@ export function AiConfig() {
               />
             </div>
 
+            {/* Fase 10 audit — structurally separate from Business
+                context above: this field is HOW the agent talks (tone,
+                personality, style), never business facts. Deliberately
+                labeled and described distinctly so the two never read as
+                the same field. */}
+            <div className="space-y-2">
+              <Label htmlFor="ai-agent-behavior">{t('agentBehavior')}</Label>
+              <p className="text-xs text-muted-foreground">{t('agentBehaviorDesc')}</p>
+              <Textarea
+                id="ai-agent-behavior"
+                value={agentBehavior}
+                onChange={(e) => setAgentBehavior(e.target.value)}
+                placeholder={t('agentBehaviorPlaceholder')}
+                rows={4}
+                disabled={disabled}
+              />
+            </div>
+
             <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
               <div>
                 <p className="text-sm font-medium text-foreground">
@@ -486,6 +566,15 @@ export function AiConfig() {
           </CardContent>
         </Card>
 
+        {/* Business Profile (AI optimization project, FASE 6) — structured
+            identity/contact/location/hours/delivery/payment/policy info
+            + the department/contact directory the agent reads via
+            buildBusinessProfileContext(). Placed right after Behaviour,
+            before Knowledge, since it's official structured business
+            data — a distinct source from the Knowledge Base's document
+            retrieval (see auto-reply.ts's routing integration). */}
+        <BusinessProfileSettings />
+
         <AiKnowledgeCard
           accountId={accountId}
           canEdit={canEdit}
@@ -496,19 +585,23 @@ export function AiConfig() {
           }
         />
 
+        {/* Data Sources + Integrations — moved here from Settings
+            (AI_Catalog_Fix_Kit FASE 3): every source the agent itself
+            consults belongs under AI Agents → Setup, not scattered
+            across Configuración. Same components, just remounted —
+            see settings-sections.ts for the removal from the rail. */}
+        <DataSourcesSettings />
+        <CatalogIntegrationsSettings />
+
         <div className="flex items-center justify-between">
           {configured ? (
             <Button
               variant="ghost"
-              onClick={handleRemove}
-              disabled={!canEdit || removing}
+              onClick={() => setRemoveConfirmOpen(true)}
+              disabled={!canEdit}
               className="text-destructive hover:text-destructive"
             >
-              {removing ? (
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="mr-2 h-4 w-4" />
-              )}
+              <Trash2 className="mr-2 h-4 w-4" />
               {t('remove')}
             </Button>
           ) : (
@@ -521,6 +614,33 @@ export function AiConfig() {
           </Button>
         </div>
       </div>
+
+      <DestructiveConfirmDialog
+        open={removeConfirmOpen}
+        onOpenChange={setRemoveConfirmOpen}
+        title={t('removeConfirmTitle')}
+        description={t('removeConfirmDescription')}
+        cancelLabel={t('removeConfirmCancel')}
+        confirmLabel={t('removeConfirmContinue')}
+        errorFallback={t('removeFailed')}
+        onConfirm={handleRemove}
+        critical={{
+          title: t('removeCriticalTitle'),
+          confirmLabel: t('removeCriticalConfirmButton'),
+          description: (
+            <>
+              <p>{t('removeCriticalIntro')}</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>{t('removeCriticalItemProviderModel')}</li>
+                <li>{t('removeCriticalItemApiKey')}</li>
+                {hasStoredEmbeddingsKey && <li>{t('removeCriticalItemEmbeddingsKey')}</li>}
+                <li>{t('removeCriticalItemBehavior')}</li>
+              </ul>
+              <p className="mt-2">{t('removeCriticalIrreversible')}</p>
+            </>
+          ),
+        }}
+      />
     </div>
   );
 }

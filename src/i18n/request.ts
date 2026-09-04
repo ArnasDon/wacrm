@@ -1,8 +1,19 @@
 import { getRequestConfig } from 'next-intl/server';
+import { cookies } from 'next/headers';
 
 export default getRequestConfig(async () => {
-  // Read the locale from the environment, defaulting to 'en'
-  const locale = process.env.NEXT_PUBLIC_APP_LOCALE || 'en';
+  // Locale priority: cookie → env var → 'en'
+  // The cookie is set by the LanguageSwitcher component so the
+  // user's choice persists across SSR renders without a DB call.
+  let locale: string;
+  try {
+    const cookieStore = await cookies();
+    locale = cookieStore.get('NEXT_LOCALE')?.value
+      || process.env.NEXT_PUBLIC_APP_LOCALE
+      || 'en';
+  } catch {
+    locale = process.env.NEXT_PUBLIC_APP_LOCALE || 'en';
+  }
 
   let messages;
   try {

@@ -1,0 +1,18 @@
+# CHECKLIST
+- Auditar primero.
+- Unificar Data Sources + Integrations en AI Agents → Setup.
+- Aplicar i18n.
+- Conservar detección de columnas y preview.
+- Un solo pipeline de inventario.
+- Sheets/CSV/Excel → ai_data_sources → ai_catalog_products.
+- Normalizar: 50" = 50 pulgadas.
+- Tolerar abreviaturas y typos.
+- Mantener contexto multi-turn.
+- Tools son autoridad para precio/stock.
+- No mezclar variantes ni fuentes.
+- KB sigue funcionando.
+- Budun sigue aislado.
+- No inventar datos.
+- Probar Playground multi-turn.
+- Ejecutar typecheck, lint, tests y build.
+- No push/deploy sin autorización.

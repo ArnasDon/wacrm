@@ -165,6 +165,13 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        // Punto 10, F-P10-2 — this route is the one place a real,
+        // currently-authenticated human agent sends through this core
+        // (requireRole('agent') above guarantees `userId` is a real
+        // signed-in teammate of THIS account) — see
+        // send-message.ts's own doc for why the public v1 endpoint
+        // deliberately never passes this.
+        humanAgentUserId: userId,
       })
 
       return NextResponse.json({

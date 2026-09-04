@@ -346,3 +346,142 @@ describe('sendMessageToConversation — template persistence (#483)', () => {
     expect(captured.conversation?.last_message_text).toBe('[template]');
   });
 });
+
+// ============================================================
+// Punto 10, F-P10-2 — a manual send from a REAL, currently-authenticated
+// human agent (`humanAgentUserId`) pauses the AI auto-reply bot the
+// same way the inbox's "Take over" action already does. Dedicated fake
+// DB (rather than reusing sendPathDb/CapturedWrites above) because
+// isAccountMember() — never mocked in this file, it runs for real —
+// needs a `profiles` table the shared fake doesn't model, and this
+// path can issue a SECOND `conversations` update that the shared fake's
+// single-slot `captured.conversation` would silently overwrite.
+// ============================================================
+function sendPathDbWithMembership(opts: {
+  accountMembers: Set<string>;
+  initialAssignedAgentId?: string | null;
+}): { db: SupabaseClient; conversationUpdates: Record<string, unknown>[] } {
+  const conversation = {
+    id: 'cv-1',
+    account_id: 'acct-1',
+    assigned_agent_id: opts.initialAssignedAgentId ?? null,
+    contact: { id: 'ct-1', phone: '+15551234567' },
+  };
+  const config = { id: 'cfg-1', phone_number_id: 'pn-1', access_token: 'token' };
+  const conversationUpdates: Record<string, unknown>[] = [];
+
+  const db = {
+    from(table: string) {
+      // isAccountMember()'s `.select('user_id').eq('account_id', X)
+      // .eq('user_id', Y).maybeSingle()` — same fake shape already
+      // established in src/lib/ai/auto-reply.test.ts for the same helper.
+      if (table === 'profiles') {
+        const filters: Record<string, string> = {};
+        const api = {
+          select: () => api,
+          eq: (col: string, val: string) => {
+            filters[col] = val;
+            return api;
+          },
+          maybeSingle: async () => {
+            const userId = filters.user_id;
+            const isMember = !!userId && opts.accountMembers.has(userId);
+            return { data: isMember ? { user_id: userId } : null, error: null };
+          },
+        };
+        return api;
+      }
+      const builder: Record<string, unknown> = {
+        select: () => builder,
+        eq: () => builder,
+        insert: () => builder,
+        update: (row: Record<string, unknown>) => {
+          if (table === 'conversations') conversationUpdates.push(row);
+          return builder;
+        },
+        maybeSingle: async () => ({ data: null, error: null }),
+        single: async () => {
+          if (table === 'conversations') return { data: conversation, error: null };
+          if (table === 'whatsapp_config') return { data: config, error: null };
+          if (table === 'messages') return { data: { id: 'msg-1' }, error: null };
+          return { data: null, error: null };
+        },
+        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
+          resolve({ data: [], error: null }),
+      };
+      return builder;
+    },
+  } as unknown as SupabaseClient;
+
+  return { db, conversationUpdates };
+}
+
+describe('sendMessageToConversation — F-P10-2: human-agent takeover on manual send', () => {
+  it('a valid same-account humanAgentUserId gets assigned and disables auto-reply', async () => {
+    const { db, conversationUpdates } = sendPathDbWithMembership({
+      accountMembers: new Set(['agent-1']),
+    });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'On my way!',
+      humanAgentUserId: 'agent-1',
+    });
+    const takeOverUpdate = conversationUpdates.find((u) => 'assigned_agent_id' in u);
+    expect(takeOverUpdate).toEqual({
+      assigned_agent_id: 'agent-1',
+      ai_autoreply_disabled: true,
+    });
+  });
+
+  it('isolation: a humanAgentUserId that is NOT a member of this account is never assigned', async () => {
+    const { db, conversationUpdates } = sendPathDbWithMembership({
+      accountMembers: new Set(), // 'agent-1' is a real user, but of a different account
+    });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'On my way!',
+      humanAgentUserId: 'agent-1',
+    });
+    for (const update of conversationUpdates) {
+      expect(update).not.toHaveProperty('assigned_agent_id');
+      expect(update).not.toHaveProperty('ai_autoreply_disabled');
+    }
+  });
+
+  it('never stomps an existing assignment', async () => {
+    const { db, conversationUpdates } = sendPathDbWithMembership({
+      accountMembers: new Set(['agent-1']),
+      initialAssignedAgentId: 'agent-already-owns-this',
+    });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'On my way!',
+      humanAgentUserId: 'agent-1',
+    });
+    for (const update of conversationUpdates) {
+      expect(update).not.toHaveProperty('assigned_agent_id');
+      expect(update).not.toHaveProperty('ai_autoreply_disabled');
+    }
+  });
+
+  it('the public API path (no humanAgentUserId) never touches assigned_agent_id or ai_autoreply_disabled', async () => {
+    const { db, conversationUpdates } = sendPathDbWithMembership({
+      accountMembers: new Set(['agent-1']),
+    });
+    await sendMessageToConversation(db, 'acct-1', {
+      conversationId: 'cv-1',
+      messageType: 'text',
+      contentText: 'Your order shipped!',
+      // humanAgentUserId intentionally omitted — this is what
+      // /api/v1/messages does today (an API key has no live human
+      // identity to pass).
+    });
+    for (const update of conversationUpdates) {
+      expect(update).not.toHaveProperty('assigned_agent_id');
+      expect(update).not.toHaveProperty('ai_autoreply_disabled');
+    }
+  });
+});

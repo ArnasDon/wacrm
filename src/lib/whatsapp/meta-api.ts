@@ -12,6 +12,55 @@
 const META_API_VERSION = 'v21.0'
 const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
 
+// ============================================================
+// Punto 10, F-P10-1 — every call to Meta goes through this, so none of
+// them can hang indefinitely and eat the caller's execution budget
+// (the webhook route's `after()` callback has `maxDuration = 60`, and
+// inbound processing can fan out to several of these per message).
+//
+// `DEFAULT_TIMEOUT_MS` covers every plain JSON request/response call
+// (sending a message, verifying a phone number, fetching a media
+// URL, template management, …) — comfortably short so a single call
+// can never approach the 60s ceiling even in the worst case (a
+// message with several attachments, each needing getMediaUrl +
+// downloadMedia sequentially).
+//
+// `MEDIA_TRANSFER_TIMEOUT_MS` is used ONLY for the two calls that
+// move an actual file's bytes (`downloadMedia`, and the byte-upload
+// step of `uploadResumableMedia`) — larger than the default because a
+// legitimate transfer (an inbound photo, a template header upload)
+// can genuinely take longer than a small JSON round-trip, but still
+// far short of 60s.
+//
+// A timeout surfaces as a plain `Error` (never a raw `AbortError`),
+// specifically so every existing caller's error handling — the
+// webhook's `verifyAndBuildUrl` try/catch, `mirrorInboundMedia`'s own
+// try/catch — treats it exactly like any other failed Meta call it
+// already knows how to recover from (log + fall back), never as a
+// new, unhandled failure mode.
+// ============================================================
+const DEFAULT_TIMEOUT_MS = 10_000
+const MEDIA_TRANSFER_TIMEOUT_MS = 20_000
+
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit = {},
+  timeoutMs: number = DEFAULT_TIMEOUT_MS,
+): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    return await fetch(url, { ...init, signal: controller.signal })
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Meta API request timed out after ${timeoutMs}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
 export interface MetaSendResult {
   messageId: string
 }
@@ -56,7 +105,7 @@ export async function verifyPhoneNumber(
 ): Promise<MetaPhoneInfo> {
   const { phoneNumberId, accessToken } = args
   const url = `${META_API_BASE}/${phoneNumberId}?fields=id,display_phone_number,verified_name,quality_rating`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
@@ -125,7 +174,7 @@ export async function registerPhoneNumber(
 ): Promise<RegisterPhoneNumberResult> {
   const { phoneNumberId, accessToken, pin } = args
   const url = `${META_API_BASE}/${phoneNumberId}/register`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -169,7 +218,7 @@ export async function subscribeWabaToApp(
 ): Promise<void> {
   const { wabaId, accessToken } = args
   const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -201,7 +250,7 @@ export async function getSubscribedApps(
 ): Promise<SubscribedApp[]> {
   const { wabaId, accessToken } = args
   const url = `${META_API_BASE}/${wabaId}/subscribed_apps`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
@@ -244,7 +293,7 @@ export async function sendTextMessage(
   if (contextMessageId) {
     body.context = { message_id: contextMessageId }
   }
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -310,7 +359,7 @@ export async function sendMediaMessage(
   }
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -428,7 +477,7 @@ export async function sendTemplateMessage(
     body.context = { message_id: contextMessageId }
   }
 
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -486,7 +535,7 @@ export async function uploadResumableMedia(
     file_type: mimeType,
     access_token: accessToken,
   })
-  const startRes = await fetch(
+  const startRes = await fetchWithTimeout(
     `${META_API_BASE}/${appId}/uploads?${startParams.toString()}`,
     { method: 'POST' },
   )
@@ -500,16 +549,20 @@ export async function uploadResumableMedia(
 
   // Step 2 — upload the bytes. Note the `OAuth` auth scheme (not Bearer)
   // and the file_offset header, both required by this endpoint.
-  const uploadRes = await fetch(`${META_API_BASE}/${startData.id}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `OAuth ${accessToken}`,
-      file_offset: '0',
+  const uploadRes = await fetchWithTimeout(
+    `${META_API_BASE}/${startData.id}`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `OAuth ${accessToken}`,
+        file_offset: '0',
+      },
+      // Uint8Array is a valid BodyInit at runtime; cast around the
+      // lib.dom ArrayBufferLike-vs-ArrayBuffer generic mismatch.
+      body: bytes as unknown as BodyInit,
     },
-    // Uint8Array is a valid BodyInit at runtime; cast around the
-    // lib.dom ArrayBufferLike-vs-ArrayBuffer generic mismatch.
-    body: bytes as unknown as BodyInit,
-  })
+    MEDIA_TRANSFER_TIMEOUT_MS,
+  )
   if (!uploadRes.ok) {
     await throwMetaError(uploadRes, `Resumable upload failed: ${uploadRes.status}`)
   }
@@ -556,7 +609,7 @@ export async function submitMessageTemplate(
 ): Promise<SubmitMessageTemplateResult> {
   const { wabaId, accessToken, payload } = args
   const url = `${META_API_BASE}/${wabaId}/message_templates`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -608,7 +661,7 @@ export async function editMessageTemplate(
   const { metaTemplateId, accessToken, components, category } = args
   const body: Record<string, unknown> = { components }
   if (category) body.category = category
-  const response = await fetch(`${META_API_BASE}/${metaTemplateId}`, {
+  const response = await fetchWithTimeout(`${META_API_BASE}/${metaTemplateId}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -647,7 +700,7 @@ export async function deleteMessageTemplate(
   const params = new URLSearchParams({ name })
   if (metaTemplateId) params.set('hsm_id', metaTemplateId)
   const url = `${META_API_BASE}/${wabaId}/message_templates?${params.toString()}`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'DELETE',
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -682,7 +735,7 @@ export async function sendReactionMessage(
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, targetMessageId, emoji } = args
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -818,7 +871,7 @@ export async function sendInteractiveButtons(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -950,7 +1003,7 @@ export async function sendInteractiveList(
   if (contextMessageId) body.context = { message_id: contextMessageId }
 
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
-  const response = await fetch(url, {
+  const response = await fetchWithTimeout(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -1013,7 +1066,7 @@ export async function getMediaUrl(
   args: GetMediaUrlArgs
 ): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const { mediaId, accessToken } = args
-  const response = await fetch(`${META_API_BASE}/${mediaId}`, {
+  const response = await fetchWithTimeout(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
@@ -1044,9 +1097,11 @@ export async function downloadMedia(
   args: DownloadMediaArgs
 ): Promise<{ buffer: Buffer; contentType: string }> {
   const { downloadUrl, accessToken } = args
-  const response = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  })
+  const response = await fetchWithTimeout(
+    downloadUrl,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+    MEDIA_TRANSFER_TIMEOUT_MS,
+  )
   if (!response.ok) {
     throw new Error(`Media download failed: ${response.status}`)
   }

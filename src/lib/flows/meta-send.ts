@@ -30,6 +30,20 @@ import { supabaseAdmin } from './admin-client'
 // PR #1 ships this in isolation: callers don't exist yet. PR #2
 // brings the flow runner online and wires it up. Shipping it now
 // keeps the foundation PR self-contained and unit-testable.
+//
+// Punto 10, F-P10-2 — this module NEVER pauses the AI auto-reply bot
+// (never touches `assigned_agent_id` / `ai_autoreply_disabled`).
+// This matters even more here than in automations/meta-send.ts:
+// `engineSendText`/`engineSendMedia` are called by TWO non-human
+// senders that share this exact file — the deterministic Flow runner
+// AND the AI auto-reply bot itself (src/lib/ai/auto-reply.ts imports
+// these same functions to deliver its own generated replies). Pausing
+// AI here would mean the bot disabled itself the instant it
+// successfully sent its own reply. The only send path that pauses AI
+// is src/lib/whatsapp/send-message.ts's `humanAgentUserId` parameter,
+// populated exclusively by the dashboard's manual-send route where a
+// real, currently-authenticated human agent is provably behind the
+// request.
 // ------------------------------------------------------------
 
 interface SendTextEngineArgs {

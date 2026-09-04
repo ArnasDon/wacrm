@@ -302,6 +302,63 @@ describe("send_webhook — SSRF guard (GHSA-8jqh-598v-rfxc)", () => {
 
     vi.unstubAllGlobals();
   });
+
+  it("interpolates {{ contact.phone }} and {{ message.text }} into webhook body_template", async () => {
+    let capturedBody = "";
+    const fetchSpy = vi.fn(async (_url: string, init?: RequestInit) => {
+      capturedBody = String(init?.body ?? "");
+      return { ok: true, status: 200 };
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    h.state.owned = {
+      id: "c1",
+      phone: "+919876543210",
+      name: "Rahul Sharma",
+      email: "rahul@example.com",
+    } as unknown as { id: string };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      {
+        id: "s1",
+        automation_id: "a1",
+        step_type: "send_webhook",
+        position: 0,
+        parent_step_id: null,
+        step_config: {
+          url: "https://example.com/api/incoming",
+          headers: {},
+          body_template: JSON.stringify({
+            sender_phone: "{{ contact.phone }}",
+            sender_name: "{{ contact.name }}",
+            full_message: "{{ message.text }}",
+            conversation_id: "{{ conversation.id }}",
+          }),
+        },
+      },
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: {
+        message_text: "Hello I need product info",
+        conversation_id: "conv_123",
+      },
+    });
+
+    expect(fetchSpy).toHaveBeenCalled();
+    const parsed = JSON.parse(capturedBody);
+    expect(parsed).toEqual({
+      sender_phone: "+919876543210",
+      sender_name: "Rahul Sharma",
+      full_message: "Hello I need product info",
+      conversation_id: "conv_123",
+    });
+
+    vi.unstubAllGlobals();
+  });
 });
 
 function webhookStep(url: string) {

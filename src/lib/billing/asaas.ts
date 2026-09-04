@@ -42,11 +42,16 @@ async function call(path: string, init: RequestInit): Promise<Json> {
 
 export async function createCustomer(
   name: string,
+  cpfCnpj: string,
   email?: string
 ): Promise<{ customerId: string }> {
+  // cpfCnpj é obrigatório: sem ele o cliente é criado normalmente,
+  // mas createSubscription falha depois com "Para criar esta
+  // cobrança é necessário preencher o CPF ou CNPJ do cliente."
+  // (descoberto no smoke test contra o sandbox real).
   const json = await call("/customers", {
     method: "POST",
-    body: JSON.stringify(email ? { name, email } : { name }),
+    body: JSON.stringify(email ? { name, cpfCnpj, email } : { name, cpfCnpj }),
   });
   const customerId = json.id as string | undefined;
   if (!customerId) throw new Error("Asaas /customers response missing id");

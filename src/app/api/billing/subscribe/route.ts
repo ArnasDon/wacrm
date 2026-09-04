@@ -9,6 +9,7 @@ import {
   toErrorResponse,
 } from "@/lib/auth/account";
 import { cancelSubscription, createCustomer, createSubscription } from "@/lib/billing/asaas";
+import { normalizeCpfCnpj } from "@/lib/billing/cpf-cnpj";
 
 function admin(): SupabaseClient {
   return createClient(
@@ -27,11 +28,21 @@ function firstChargeDate(trialEndsAt: string | null): string {
   return (trialEnd > tomorrow ? trialEnd : tomorrow).toISOString().slice(0, 10);
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   try {
     // allowBlocked: quem já está bloqueado precisa conseguir assinar
     // pra se desbloquear — senão fica trancado sem saída.
     const ctx = await requireRole("owner", { allowBlocked: true });
+
+    // O Asaas exige CPF/CNPJ do cliente pra gerar a cobrança —
+    // descoberto no smoke test contra o sandbox real (a criação do
+    // cliente em si não exige, mas createSubscription falha depois
+    // sem isso). A tela /billing sempre manda esse campo.
+    const body = (await request.json().catch(() => ({}))) as { cpfCnpj?: unknown };
+    const cpfCnpj = normalizeCpfCnpj(String(body.cpfCnpj ?? ""));
+    if (!cpfCnpj) {
+      return NextResponse.json({ error: "cpf_cnpj_required" }, { status: 400 });
+    }
 
     // Já existe uma assinatura no Asaas pra essa conta? Cancela antes
     // de criar outra — sem isso, clicar em "Assinar agora" de novo
@@ -43,7 +54,7 @@ export async function POST() {
 
     let customerId = ctx.account.asaas_customer_id;
     if (!customerId) {
-      const created = await createCustomer(ctx.account.name, undefined);
+      const created = await createCustomer(ctx.account.name, cpfCnpj, undefined);
       customerId = created.customerId;
     }
 
@@ -59,6 +70,7 @@ export async function POST() {
       .update({
         asaas_customer_id: customerId,
         asaas_subscription_id: subscriptionId,
+        cpf_cnpj: cpfCnpj,
         subscription_updated_at: new Date().toISOString(),
       })
       .eq("id", ctx.accountId);

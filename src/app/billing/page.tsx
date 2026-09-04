@@ -24,7 +24,7 @@ export default async function BillingPage() {
 
   const { data: account } = await supabase
     .from("accounts")
-    .select("name, subscription_status, trial_ends_at")
+    .select("name, subscription_status, trial_ends_at, cpf_cnpj")
     .eq("id", profile.account_id)
     .maybeSingle();
   if (!account) redirect("/dashboard");
@@ -50,7 +50,7 @@ export default async function BillingPage() {
         ) : null}
       </div>
       {canManage ? (
-        <BillingActions status={account.subscription_status} />
+        <BillingActions status={account.subscription_status} initialCpfCnpj={account.cpf_cnpj ?? ""} />
       ) : (
         <p className="text-muted-foreground text-sm">{t("ownerOnly")}</p>
       )}

@@ -21,31 +21,43 @@ function jsonResponse(body: unknown, ok = true, status = 200) {
 }
 
 describe("createCustomer", () => {
-  it("POSTa /customers com access_token e devolve o id", async () => {
+  it("POSTa /customers com access_token, cpfCnpj e devolve o id", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ id: "cus_123" }));
     const { createCustomer } = await import("./asaas");
-    const out = await createCustomer("Loja Exemplo", "dono@exemplo.com");
+    const out = await createCustomer("Loja Exemplo", "12345678901", "dono@exemplo.com");
     expect(out).toEqual({ customerId: "cus_123" });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://sandbox.asaas.com/api/v3/customers");
     expect(init.method).toBe("POST");
     expect(init.headers.access_token).toBe("test-asaas-key");
-    expect(JSON.parse(init.body)).toEqual({ name: "Loja Exemplo", email: "dono@exemplo.com" });
+    expect(JSON.parse(init.body)).toEqual({
+      name: "Loja Exemplo",
+      cpfCnpj: "12345678901",
+      email: "dono@exemplo.com",
+    });
   });
 
-  it("lança quando a resposta não é ok", async () => {
-    fetchMock.mockResolvedValue(jsonResponse({ errors: [{ description: "invalid email" }] }, false, 400));
+  it("lança quando a resposta não é ok (ex.: CPF/CNPJ faltando ou inválido)", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse(
+        { errors: [{ description: "Para criar esta cobrança é necessário preencher o CPF ou CNPJ do cliente." }] },
+        false,
+        400
+      )
+    );
     const { createCustomer } = await import("./asaas");
-    await expect(createCustomer("Loja", "bad")).rejects.toThrow("invalid email");
+    await expect(createCustomer("Loja", "bad")).rejects.toThrow(
+      "Para criar esta cobrança é necessário preencher o CPF ou CNPJ do cliente."
+    );
   });
 
-  it("omite o campo email do corpo quando não informado (caminho que a Task 5 usa)", async () => {
+  it("omite o campo email do corpo quando não informado (caminho que a rota subscribe usa)", async () => {
     fetchMock.mockResolvedValue(jsonResponse({ id: "cus_456" }));
     const { createCustomer } = await import("./asaas");
-    const out = await createCustomer("Loja Sem Email");
+    const out = await createCustomer("Loja Sem Email", "12345678901");
     expect(out).toEqual({ customerId: "cus_456" });
     const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse(init.body)).toEqual({ name: "Loja Sem Email" });
+    expect(JSON.parse(init.body)).toEqual({ name: "Loja Sem Email", cpfCnpj: "12345678901" });
   });
 });
 

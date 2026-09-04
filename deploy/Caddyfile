@@ -1,0 +1,53 @@
+# ONE platform, one hostname.
+#
+# The email engine (listmonk) runs inside this stack but is NOT
+# exposed to the internet at all. The CRM talks to it over the
+# private Docker network, and everything an operator needs — SMTP
+# credentials, campaigns, lists, subscribers — is a native page in
+# the CRM at /email. There is no second admin panel and no second
+# login.
+#
+# The one thing that must stay public is the recipient-facing set of
+# routes: the unsubscribe link at the foot of every campaign, the
+# open/click trackers, and the hosted archive. Those are proxied
+# under this same domain below, so your recipients only ever see
+# your brand.
+#
+# Those paths do not collide with the CRM: wacrm owns /api, /inbox,
+# /contacts, /email and friends, none of which appear here.
+
+{$DOMAIN} {
+	encode zstd gzip
+
+	# Recipient-facing endpoints served by the email engine. These
+	# MUST remain reachable — a dead unsubscribe link is a
+	# spam-complaint magnet and, under CAN-SPAM and GDPR, a legal
+	# problem.
+	handle /subscription/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /link/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /campaign/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /archive* {
+		reverse_proxy listmonk:9000
+	}
+	# Static assets and uploaded media referenced by the pages above.
+	handle /public/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /uploads/* {
+		reverse_proxy listmonk:9000
+	}
+
+	# The engine's own admin UI is deliberately NOT routed. It is
+	# unreachable from the internet; the CRM is the only way in.
+
+	# Everything else is the CRM.
+	handle {
+		reverse_proxy wacrm:3000
+	}
+}

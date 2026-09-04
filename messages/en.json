@@ -22,6 +22,7 @@
     "contacts": "Contacts",
     "pipelines": "Pipelines",
     "broadcasts": "Broadcasts",
+    "email": "Email",
     "automations": "Automations",
     "flows": "Flows",
     "aiAgents": "AI Agents",
@@ -384,9 +385,9 @@
         "custom": "Custom Fields",
         "deals": "Deals",
         "tags": "Tags",
-      "noTags": "No tags",
-      "noDeals": "No deals",
-      "addNotePlaceholder": "Add a note..."
+        "noTags": "No tags",
+        "noDeals": "No deals",
+        "addNotePlaceholder": "Add a note..."
       },
       "actions": {
         "edit": "Edit",
@@ -803,6 +804,234 @@
       }
     }
   },
+  "Email": {
+    "nav": {
+      "campaigns": "Campaigns",
+      "lists": "Lists",
+      "subscribers": "Subscribers",
+      "settings": "Settings",
+      "templates": "Templates"
+    },
+    "page": {
+      "title": "Email",
+      "subtitle": "Newsletters and email campaigns, sent to the same people you talk to on WhatsApp.",
+      "newCampaign": "New Campaign",
+      "noCampaigns": "No campaigns yet",
+      "createFirst": "Create your first email campaign to get started",
+      "statusChanged": "Campaign {status}",
+      "table": {
+        "name": "Campaign",
+        "lists": "Lists",
+        "sent": "Sent",
+        "opens": "Opens",
+        "clicks": "Clicks",
+        "status": "Status",
+        "actions": "Actions"
+      },
+      "actions": {
+        "start": "Start sending",
+        "pause": "Pause",
+        "cancel": "Cancel"
+      }
+    },
+    "campaignStatus": {
+      "draft": "Draft",
+      "scheduled": "Scheduled",
+      "running": "Sending",
+      "paused": "Paused",
+      "finished": "Finished",
+      "cancelled": "Cancelled"
+    },
+    "status": {
+      "notConfiguredTitle": "Email is not set up yet",
+      "notConfiguredBody": "The email engine runs as a separate service. Set these environment variables on this deployment, then restart it.",
+      "unreachableTitle": "Cannot reach the email service",
+      "unreachableBody": "Check that the email service is running and that the URL and API token are correct."
+    },
+    "composer": {
+      "title": "New campaign",
+      "subtitle": "Compose an email and send it to one or more lists.",
+      "nameLabel": "Campaign name",
+      "namePlaceholder": "October newsletter",
+      "nameHelp": "Internal only — recipients never see this.",
+      "subjectLabel": "Subject line",
+      "subjectPlaceholder": "What's new this month",
+      "bodyLabel": "Message",
+      "bodyPlaceholder": "Write your email here. HTML is allowed.",
+      "bodyHelp": "Supports HTML, plus listmonk template tags for personalisation such as the subscriber's first name.",
+      "listsLabel": "Send to",
+      "noLists": "No lists yet — create one first.",
+      "templateLabel": "Template",
+      "saveDraft": "Save as draft",
+      "sendNow": "Send now",
+      "readOnly": "Your role cannot send campaigns.",
+      "loadFailed": "Could not load lists and templates",
+      "nameSubjectRequired": "Name and subject are required",
+      "pickList": "Pick at least one list",
+      "createFailed": "Could not create the campaign",
+      "savedButNotStarted": "Draft saved, but sending did not start: {error}",
+      "started": "Campaign is sending",
+      "savedDraft": "Draft saved"
+    },
+    "lists": {
+      "title": "Mailing lists",
+      "subtitle": "Groups of subscribers you can send a campaign to.",
+      "syncContacts": "Sync contacts",
+      "newList": "New list",
+      "noLists": "No mailing lists yet",
+      "created": "List created",
+      "managedHere": "From CRM",
+      "newListHelp": "Lists created here are tagged so you can tell them apart from ones made directly in the email service.",
+      "newListPlaceholder": "Newsletter subscribers",
+      "cancel": "Cancel",
+      "create": "Create",
+      "syncTitle": "Sync contacts to a list",
+      "syncHelp": "Copies your CRM contacts into this mailing list as subscribers. Contacts without an email address are skipped.",
+      "syncTarget": "Target list",
+      "resultCreated": "Created",
+      "resultUpdated": "Updated",
+      "resultNoEmail": "No email address",
+      "resultSkipped": "Skipped (invalid email)",
+      "resultFailed": "Failed",
+      "close": "Close",
+      "runSync": "Run sync",
+      "syncDone": "Synced — {created} created, {updated} updated",
+      "table": {
+        "name": "Name",
+        "type": "Type",
+        "optin": "Opt-in",
+        "subscribers": "Subscribers"
+      }
+    },
+    "subscribers": {
+      "title": "Subscribers",
+      "subtitle": "Everyone who can receive an email campaign.",
+      "searchPlaceholder": "Search name or email",
+      "none": "No subscribers found",
+      "noneHelp": "Sync your contacts from the Lists tab to populate this.",
+      "fromCrm": "Also a CRM contact",
+      "countLabel": "{total} subscribers",
+      "prev": "Previous",
+      "next": "Next",
+      "table": {
+        "name": "Name",
+        "email": "Email",
+        "phone": "Phone",
+        "status": "Status",
+        "lists": "Lists"
+      }
+    },
+    "settings": {
+      "title": "Email settings",
+      "subtitle": "Where your campaigns are sent from. Configured here — there is no second admin panel.",
+      "smtpHeading": "SMTP server",
+      "smtpHelp": "Credentials from your email provider (Amazon SES, Postmark, Mailgun, Resend, or your own server). Nothing sends until this is set.",
+      "host": "Host",
+      "port": "Port",
+      "username": "Username",
+      "password": "Password",
+      "passwordHelp": "Leave the dots untouched to keep the stored password.",
+      "encryption": "Encryption",
+      "authProtocol": "Authentication",
+      "skipVerify": "Skip TLS certificate verification (not recommended)",
+      "senderHeading": "Sender identity",
+      "fromEmail": "From address",
+      "fromHelp": "Appears as the sender on every campaign. The domain should match your SMTP provider's verified domain.",
+      "rootUrl": "Public URL",
+      "rootUrlHelp": "Used to build unsubscribe and tracking links inside your emails. Must be reachable by recipients.",
+      "testHeading": "Send a test",
+      "testHelp": "Sends one message using the settings above, without saving them.",
+      "sendTest": "Send test email",
+      "testEmailRequired": "Enter an address to send the test to",
+      "testSent": "Test email sent to {email}",
+      "save": "Save settings",
+      "saved": "Saved. The email engine is restarting — give it a few seconds.",
+      "readOnly": "Your role cannot change email settings."
+    },
+    "editor": {
+      "untitled": "Untitled campaign",
+      "statusLine": "Status: {status}",
+      "lockedNotice": "This campaign has already been sent, so its content is locked. Duplicate it if you want to send something similar.",
+      "nameLabel": "Campaign name",
+      "subjectLabel": "Subject line",
+      "bodyLabel": "Message",
+      "bodyPlaceholder": "Write your email here. HTML is allowed.",
+      "bodyHelp": "Write HTML directly, or paste from your designer. Use Preview to see exactly what recipients get.",
+      "write": "Write",
+      "preview": "Preview",
+      "previewFailed": "Could not render the preview",
+      "listsLabel": "Send to",
+      "templateLabel": "Template",
+      "mergeTagsLabel": "Personalisation",
+      "mergeTagsHelp": "Click to insert. Each is replaced per recipient when the email is sent.",
+      "testHeading": "Send a test",
+      "testHelp": "Saves your changes, then sends this campaign to one address so you can read it in a real inbox.",
+      "sendTest": "Send test",
+      "testAddressRequired": "Enter an address to send the test to",
+      "testSent": "Test sent to {email}",
+      "testFailed": "Could not send the test",
+      "save": "Save draft",
+      "saved": "Saved",
+      "saveFailed": "Could not save",
+      "saveAndSend": "Save and send",
+      "started": "Campaign is sending",
+      "startFailed": "Could not start sending",
+      "loadFailed": "Could not load the campaign"
+    },
+    "templates": {
+      "title": "Email templates",
+      "subtitle": "Reusable designs for automated emails and newsletters.",
+      "newAutomationTemplate": "New automation email",
+      "newCampaignTemplate": "New newsletter layout",
+      "txHeading": "Automation emails",
+      "txHelp": "Complete emails with their own subject line. Pick one in an automation or flow step — it goes out to a single contact, personalised with their details.",
+      "txEmpty": "No automation emails yet.",
+      "campaignHeading": "Newsletter layouts",
+      "campaignHelp": "Wrappers around a campaign's body — header, footer, branding. Chosen when composing a campaign.",
+      "campaignEmpty": "No layouts beyond the defaults.",
+      "kindTx": "Automation email",
+      "kindCampaign": "Newsletter layout",
+      "kindVisual": "Visual layout",
+      "table": {
+        "name": "Name",
+        "kind": "Kind",
+        "default": "Default"
+      }
+    },
+    "templateEditor": {
+      "newTitle": "New template",
+      "untitled": "Untitled template",
+      "txExplainer": "A complete email sent by automations and flows. Contact details are filled in per recipient.",
+      "campaignExplainer": "A layout that wraps each newsletter's body. Must keep the content placeholder.",
+      "nameLabel": "Name",
+      "txNamePlaceholder": "Welcome email",
+      "campaignNamePlaceholder": "Branded newsletter",
+      "kindLabel": "Kind",
+      "kindTx": "Automation email",
+      "kindCampaign": "Newsletter layout",
+      "subjectLabel": "Subject line",
+      "subjectPlaceholder": "Welcome aboard, first name here",
+      "subjectHelp": "Placeholders work here too.",
+      "bodyLabel": "HTML",
+      "write": "Write",
+      "preview": "Preview",
+      "varsHeading": "Placeholders",
+      "varsTxHelp": "Filled in from the CRM contact and any flow variables.",
+      "varsCampaignHelp": "Available in newsletter layouts.",
+      "save": "Save template",
+      "saved": "Template saved",
+      "saveFailed": "Could not save the template",
+      "delete": "Delete template",
+      "deleted": "Template deleted",
+      "deleteFailed": "Could not delete the template",
+      "confirmDelete": "Delete this template? Automations that use it will fail until you pick another.",
+      "nameRequired": "Name is required",
+      "subjectRequired": "Automation emails need a subject line",
+      "previewFailed": "Could not render the preview",
+      "loadFailed": "Could not load the template",
+      "readOnly": "Your role cannot edit templates."
+    }
+  },
   "Automations": {
     "list": {
       "title": "Automations",
@@ -870,7 +1099,9 @@
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
-        "close_conversation": "Close Conversation"
+        "close_conversation": "Close Conversation",
+        "send_email": "Send Email",
+        "add_to_mailing_list": "Add to Mailing List"
       },
       "triggers": {
         "new_message_received": {
@@ -1010,7 +1241,16 @@
         "matchWord": "Whole word",
         "matchWordHint": "Matches the keyword only as a standalone word, so \"k\" no longer fires on \"thanks\". Best for short keywords in space-separated languages; use Contains for languages written without spaces.",
         "matchExact": "Exact",
-        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed."
+        "closeConversationHint": "Sets the conversation status to \"closed\". No configuration needed.",
+        "emailTemplateLabel": "Email template",
+        "emailSubjectLabel": "Subject override (optional)",
+        "emailSubjectPlaceholder": "Leave blank to use the template's subject",
+        "emailSubjectHint": "Supports the same placeholders as messages, e.g. vars.name.",
+        "pickEmailTemplate": "Pick a template…",
+        "noEmailTemplates": "No email templates yet. Create one under Email → Templates (Automation email).",
+        "mailingListLabel": "Mailing list",
+        "pickMailingList": "Pick a list…",
+        "noMailingLists": "No mailing lists yet. Create one under Email → Lists."
       }
     }
   },
@@ -1155,7 +1395,13 @@
         "filenamePlaceholder": "invoice.pdf",
         "advanceAfterSending": "After sending, advance to",
         "pickNextNode": "Pick a next node…",
-        "none": "— None —"
+        "none": "— None —",
+        "emailTemplateLabel": "Email template",
+        "pickEmailTemplate": "Pick a template…",
+        "noEmailTemplates": "No email templates yet. Create one under Email → Templates (Automation email).",
+        "emailSubjectLabel": "Subject override (optional)",
+        "emailSubjectPlaceholder": "Leave blank to use the template's subject",
+        "emailSubjectHelp": "Supports vars placeholders, e.g. vars.name."
       },
       "categories": {
         "messaging": "Messaging",
@@ -1202,6 +1448,10 @@
         "end": {
           "label": "End",
           "blurb": "Ends the flow"
+        },
+        "send_email": {
+          "label": "Send email",
+          "blurb": "Emails the contact a saved template"
         }
       }
     },
@@ -1233,7 +1483,9 @@
       "modeAdd": "Add",
       "modeRemove": "Remove",
       "tagPicked": "{mode} tag {tag}…",
-      "tagNone": "{mode} tag (none picked)"
+      "tagNone": "{mode} tag (none picked)",
+      "emailTemplate": "template #{id}",
+      "emailNone": "no template picked"
     }
   },
   "Settings": {
@@ -1369,13 +1621,11 @@
       "deleteLocallyAria": "Delete template locally",
       "deleteMetaLocallyTitle": "Delete from Meta and locally",
       "deleteLocallyTitle": "Delete locally",
-      
       "dialogEditTitle": "Edit Message Template",
       "dialogNewTitle": "New Message Template",
       "dialogEditDesc": "Save your changes to re-submit to Meta. Status will flip back to PENDING during review.",
       "dialogNewDesc": "Build a template and submit it to Meta for approval. Once approved, you can use it in broadcasts and the inbox.",
       "authWarning": "AUTHENTICATION templates have a fixed body + OTP button shape that needs a different builder. Create them in Meta WhatsApp Manager for now and use <bold>Sync from Meta</bold> to bring them in.",
-      
       "templateName": "Template Name",
       "namePlaceholder": "e.g. order_confirmation",
       "nameFixed": "Name is fixed once a template exists on Meta — create a new template to change it.",
@@ -1384,7 +1634,6 @@
       "language": "Language",
       "langFixed": "Language is fixed once a template exists on Meta.",
       "langHint": "Must match the exact code on Meta — <code>en_US</code> and <code>en</code> are distinct.",
-      
       "header": "Header",
       "headerNone": "None",
       "headerText": "Text",
@@ -1394,7 +1643,6 @@
       "headerTextPlaceholder": "Header text (max 60 chars, optional {{1}})",
       "headerSampleAria": "Sample value for header variable",
       "headerSamplePlaceholder": "Sample value for {{1}} (required for Meta review)",
-      
       "uploadImage": "Upload image",
       "uploadHint": "JPEG or PNG, ≤5 MB",
       "mediaUrlPlaceholder": "https://… (or paste a public {format} link)",
@@ -1402,17 +1650,14 @@
       "mediaHint": "Must be a publicly accessible HTTPS link. Meta fetches it once during review, so it needs to stay live for ~24 hrs.",
       "videoHint": " Recommended: MP4 / 3GPP, ≤16 MB, ≤60 seconds.",
       "documentHint": " Recommended: PDF, ≤100 MB.",
-      
       "bodyText": "Body Text",
       "bodyPlaceholder": "Hello {{1}}, your order {{2}} is confirmed.",
       "bodyHint": "Use {{1}}, {{2}} for variables (must be contiguous starting at {{1}}).",
       "sampleValues": "Sample values (Meta uses these to review your template)",
       "sampleAria": "Sample value for body variable {var}",
       "samplePlaceholder": "Sample for {var}",
-      
       "footer": "Footer (optional)",
       "footerPlaceholder": "Optional footer text (max 60 chars)",
-      
       "buttons": "Buttons (optional)",
       "addButton": "Add Button",
       "buttonsLimit": "Up to {max} buttons. QUICK_REPLY buttons must come before URL / phone / copy-code buttons.",
@@ -1425,19 +1670,16 @@
       "urlSamplePlaceholder": "Example value for {{1}} (required when URL has a variable)",
       "phonePlaceholder": "+15551234567",
       "codePlaceholder": "Example code (e.g. SUMMER20)",
-      
       "cancel": "Cancel",
       "saving": "Saving…",
       "submitting": "Submitting…",
       "saveResubmit": "Save & Resubmit",
       "submitApproval": "Submit for Approval",
-      
       "deleteDialogTitle": "Delete template?",
       "deleteMetaDesc": "\"{name}\" will be deleted from Meta and from wacrm. Active broadcasts using this template will start failing on their next send. This can't be undone.",
       "deleteLocalDesc": "\"{name}\" will be deleted from wacrm. It was never submitted to Meta, so no remote cleanup is needed.",
       "deleting": "Deleting…",
       "delete": "Delete",
-      
       "toastLoadFailed": "Failed to load templates",
       "toastSubmitFailed": "Failed to submit",
       "toastSubmitEditSuccess": "Edit submitted — Meta typically reviews within 24 hours.",
@@ -1583,7 +1825,6 @@
       "profileSaved": "Profile saved",
       "emailChangeFailed": "Email change failed: {message}",
       "profileSavedEmailCheck": "Profile saved — check your email to confirm the address change",
-      
       "passwordTitle": "Password",
       "passwordDesc": "Use at least {min} characters. You will stay signed in on this device after changing it.",
       "currentPassword": "Current password",
@@ -1597,7 +1838,6 @@
       "currentPasswordIncorrect": "Current password is incorrect",
       "passwordUpdateFailed": "Password update failed: {message}",
       "passwordUpdated": "Password updated",
-      
       "sessionsTitle": "Active sessions",
       "sessionsDesc": "Sign out of every device where you're logged in — including this one. Useful if you lost a laptop or shared your password.",
       "signOutAll": "Sign out of all devices",

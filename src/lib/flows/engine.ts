@@ -43,6 +43,11 @@ import { decideFallback, resolveFallbackPolicy } from "./fallback";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
+  NoEmailAddressError,
+  sendEmailToContact,
+  type EmailableContact,
+} from "@/lib/listmonk/send-step";
+import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
   type DispatchInboundInput,
@@ -55,6 +60,7 @@ import {
   type SendListNodeConfig,
   type SendMediaNodeConfig,
   type SendMessageNodeConfig,
+  type SendEmailNodeConfig,
   type SetTagNodeConfig,
   type StartNodeConfig,
   type KeywordTriggerConfig,
@@ -104,7 +110,9 @@ export function matchesKeywordTrigger(
   for (const raw of cfg.keywords) {
     if (!raw) continue;
     const needle = cfg.case_sensitive ? raw : raw.toLowerCase();
-    if (matchType === "exact" ? haystack === needle : haystack.includes(needle)) {
+    if (
+      matchType === "exact" ? haystack === needle : haystack.includes(needle)
+    ) {
       return true;
     }
   }
@@ -139,6 +147,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "start" ||
     node_type === "send_message" ||
     node_type === "send_media" ||
+    node_type === "send_email" ||
     node_type === "condition" ||
     node_type === "set_tag"
   );
@@ -366,7 +375,10 @@ async function findEntryFlow(
       if (candidates.some((text) => matchesKeywordTrigger(text, cfg))) {
         return flow;
       }
-    } else if (flow.trigger_type === "first_inbound_message" && isFirstInbound) {
+    } else if (
+      flow.trigger_type === "first_inbound_message" &&
+      isFirstInbound
+    ) {
       // Also reachable by a tap now: a broadcast template with a
       // quick-reply button can genuinely be what prompts a contact's
       // first-ever inbound. The automations dispatcher has always
@@ -508,7 +520,8 @@ async function evaluateConditionNode(
   let subjectValue: string | undefined;
   if (cfg.subject === "var") {
     const v = run.vars[cfg.subject_key];
-    subjectValue = typeof v === "string" ? v : v === undefined ? undefined : String(v);
+    subjectValue =
+      typeof v === "string" ? v : v === undefined ? undefined : String(v);
   } else if (cfg.subject === "tag") {
     const { count } = await db
       .from("contact_tags")
@@ -547,7 +560,10 @@ async function evaluateConditionNode(
  * ("Thanks {{vars.name}}, what's your email?"). Missing vars render as
  * empty string — the same behavior as the automations engine.
  */
-function interpolateVars(template: string, vars: Record<string, unknown>): string {
+function interpolateVars(
+  template: string,
+  vars: Record<string, unknown>,
+): string {
   if (!template) return "";
   return template.replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
     const v = vars[key];
@@ -616,7 +632,7 @@ async function advanceFromNodeKey(
       try {
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.text, run.vars),
@@ -641,7 +657,7 @@ async function advanceFromNodeKey(
       try {
         const { whatsapp_message_id } = await engineSendMedia({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           kind: cfg.media_type,
@@ -674,7 +690,7 @@ async function advanceFromNodeKey(
       try {
         const { whatsapp_message_id } = await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),
@@ -719,9 +735,7 @@ async function advanceFromNodeKey(
       const cfg = node.config as unknown as ConditionNodeConfig;
       let branch: "true" | "false";
       try {
-        branch = (await evaluateConditionNode(db, run, cfg))
-          ? "true"
-          : "false";
+        branch = (await evaluateConditionNode(db, run, cfg)) ? "true" : "false";
       } catch (err) {
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "condition_evaluation_failed",
@@ -730,8 +744,7 @@ async function advanceFromNodeKey(
         await endRun(db, run.id, "failed", "condition_evaluation_failed");
         return { outcome: "completed" };
       }
-      currentKey =
-        branch === "true" ? cfg.true_next : cfg.false_next;
+      currentKey = branch === "true" ? cfg.true_next : cfg.false_next;
       await logEvent(db, run.id, "node_entered", node.node_key, {
         condition_result: branch,
         advancing_to: currentKey,
@@ -764,6 +777,44 @@ async function advanceFromNodeKey(
         // strand the customer mid-flow.
         await logEvent(db, run.id, "error", node.node_key, {
           reason: "set_tag_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
+    if (node.node_type === "send_email") {
+      const cfg = node.config as unknown as SendEmailNodeConfig;
+      try {
+        const { data: contact, error } = await db
+          .from("contacts")
+          .select("id, name, email, phone, company")
+          .eq("id", run.contact_id)
+          .eq("account_id", run.account_id)
+          .maybeSingle();
+        if (error) throw new Error(error.message);
+        if (!contact) throw new Error("contact not found");
+        const detail = await sendEmailToContact({
+          contact: contact as EmailableContact,
+          templateId: Number(cfg.template_id),
+          subject: cfg.subject
+            ? interpolateVars(cfg.subject, run.vars)
+            : undefined,
+          vars: run.vars,
+        });
+        await logEvent(db, run.id, "message_sent", node.node_key, {
+          channel: "email",
+          detail,
+        });
+      } catch (err) {
+        // Same policy as set_tag: non-fatal. A WhatsApp-only contact
+        // (NoEmailAddressError) or a broken SMTP config must not
+        // strand the customer mid-flow — log it and advance.
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason:
+            err instanceof NoEmailAddressError
+              ? "send_email_skipped_no_address"
+              : "send_email_failed",
           detail: err instanceof Error ? err.message : String(err),
         });
       }
@@ -1054,7 +1105,7 @@ async function handleReplyForActiveRun(
       try {
         await engineSendText({
           accountId: run.account_id,
-    userId: run.user_id,
+          userId: run.user_id,
           conversationId: run.conversation_id!,
           contactId: run.contact_id!,
           text: interpolateVars(cfg.prompt_text, run.vars),

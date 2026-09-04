@@ -136,11 +136,7 @@ export interface CollectInputNodeConfig {
   next_node_key: string;
 }
 
-export type ConditionOperator =
-  | "equals"
-  | "contains"
-  | "present"
-  | "absent";
+export type ConditionOperator = "equals" | "contains" | "present" | "absent";
 
 export type ConditionSubject = "var" | "tag" | "contact_field";
 
@@ -173,6 +169,23 @@ export interface SetTagNodeConfig {
   next_node_key: string;
 }
 
+/**
+ * Sends a transactional email to the contact through the email engine
+ * (listmonk's tx API), then advances. Auto-advancing and non-fatal:
+ * an email failure is logged as a run event and the flow continues,
+ * the same policy as set_tag — a broken SMTP config must not strand a
+ * customer mid-conversation on WhatsApp.
+ *
+ * Contacts without an email address are skipped (logged, not failed).
+ */
+export interface SendEmailNodeConfig {
+  /** listmonk `tx` template id — carries its own subject. */
+  template_id: number;
+  /** Optional subject override; `{{vars.x}}` interpolation applies. */
+  subject?: string;
+  next_node_key: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -190,6 +203,7 @@ export type FlowNodeConfig =
   | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
   | { node_type: "send_list"; config: SendListNodeConfig }
   | { node_type: "send_media"; config: SendMediaNodeConfig }
+  | { node_type: "send_email"; config: SendEmailNodeConfig }
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
@@ -235,7 +249,8 @@ export interface FlowRow {
   description: string | null;
   status: "draft" | "active" | "archived";
   trigger_type: "keyword" | "first_inbound_message" | "manual";
-  trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
+  trigger_config:
+    KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;

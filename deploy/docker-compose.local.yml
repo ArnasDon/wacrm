@@ -1,0 +1,105 @@
+# ============================================================
+# Combined stack, local variant — one command, one URL.
+#
+#   http://localhost:8090            the CRM
+#   http://localhost:8090/email-admin listmonk's own admin
+#
+# Differences from docker-compose.yml (the VPS one):
+#   - plain HTTP on 8090 (override with HOST_PORT); no domain, no TLS
+#   - points at the local Supabase started by `npx supabase start`,
+#     addressed by LAN IP so the browser AND the containers can both
+#     reach it (localhost inside a container is the container)
+#   - the email engine is not published at all; the CRM is the only
+#     way to reach it, exactly as in production
+#
+# Usage:
+#   docker compose -f docker-compose.local.yml up -d --build
+# ============================================================
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      # 8080 is commonly taken (Docker Desktop, ddev, other stacks).
+      # Override with HOST_PORT in .env if 8090 clashes too.
+      - '${HOST_PORT:-8090}:80'
+    volumes:
+      - ./Caddyfile.local:/etc/caddy/Caddyfile:ro
+      - caddy-local-data:/data
+      - caddy-local-config:/config
+    depends_on:
+      - wacrm
+
+  wacrm:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        # Inlined into the client bundle at build time — must be an
+        # address the BROWSER can reach, which rules out both
+        # `localhost` (would mean the container) and
+        # `host.docker.internal` (does not resolve in a browser).
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-http://localhost:8090}
+        NEXT_PUBLIC_APP_LOCALE: ${NEXT_PUBLIC_APP_LOCALE:-en}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 3000
+      LISTMONK_URL: http://listmonk:9000
+    expose:
+      - '3000'
+    depends_on:
+      listmonk:
+        condition: service_started
+
+  listmonk:
+    image: listmonk/listmonk:v6.2.0
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk"
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__host: listmonk-db
+      LISTMONK_db__port: 5432
+      LISTMONK_db__user: listmonk
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:?}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:?}
+      TZ: ${TZ:-Etc/UTC}
+    # Deliberately NOT published. The CRM reaches it over the private
+    # network; nothing else needs to. A host-side `npm run dev` should
+    # point LISTMONK_URL at http://127.0.0.1:9000 only if you
+    # temporarily re-add a port mapping here for debugging.
+    volumes:
+      - listmonk-local-uploads:/listmonk/uploads
+    depends_on:
+      listmonk-db:
+        condition: service_healthy
+
+  listmonk-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listmonk
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:?}
+      POSTGRES_DB: listmonk
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U listmonk']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - listmonk-local-data:/var/lib/postgresql/data
+
+volumes:
+  caddy-local-data:
+  caddy-local-config:
+  listmonk-local-data:
+  listmonk-local-uploads:

@@ -12,6 +12,8 @@ import type {
   SendListStepConfig,
   SendTemplateStepConfig,
   SendWebhookStepConfig,
+  SendEmailStepConfig,
+  AddToMailingListStepConfig,
   TagStepConfig,
   UpdateContactFieldStepConfig,
   WaitStepConfig,
@@ -21,9 +23,19 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
-import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import {
+  engineSendText,
+  engineSendTemplate,
+  engineSendInteractive,
+} from './meta-send'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
+import {
+  NoEmailAddressError,
+  sendEmailToContact,
+  type EmailableContact,
+} from '@/lib/listmonk/send-step'
+import { syncContact } from '@/lib/listmonk/sync'
 
 // ------------------------------------------------------------
 // Public API
@@ -64,7 +76,9 @@ export interface DispatchInput {
  * All errors are caught and logged; per-automation failures are
  * recorded into automation_logs with status='failed'.
  */
-export async function runAutomationsForTrigger(input: DispatchInput): Promise<void> {
+export async function runAutomationsForTrigger(
+  input: DispatchInput,
+): Promise<void> {
   try {
     const db = supabaseAdmin()
 
@@ -87,7 +101,10 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
         return
       }
       if (!owned) {
-        console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
+        console.warn(
+          '[automations] contact not in account, refusing dispatch',
+          input.contactId,
+        )
         return
       }
     }
@@ -146,7 +163,11 @@ export async function resumePendingExecution(pending: {
     .single()
 
   if (error || !automation) {
-    console.error('[automations] resume: missing automation', pending.automation_id, error)
+    console.error(
+      '[automations] resume: missing automation',
+      pending.automation_id,
+      error,
+    )
     await markPending(pending.id, 'failed')
     return
   }
@@ -222,9 +243,12 @@ async function executeAutomation(automation: Automation, input: DispatchInput) {
   // Doing this with a client-side read-modify-write raced when the
   // same automation fired for two contacts simultaneously — both
   // would read N and both write N+1, losing one count permanently.
-  const { error: rpcErr } = await db.rpc('increment_automation_execution_count', {
-    p_automation_id: automation.id,
-  })
+  const { error: rpcErr } = await db.rpc(
+    'increment_automation_execution_count',
+    {
+      p_automation_id: automation.id,
+    },
+  )
   if (rpcErr) {
     console.error('[automations] increment counter failed:', rpcErr)
   }
@@ -254,7 +278,9 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   const scoped =
     args.parentStepId === null
       ? baseQuery.is('parent_step_id', null)
-      : baseQuery.eq('parent_step_id', args.parentStepId).eq('branch', args.branch ?? 'yes')
+      : baseQuery
+          .eq('parent_step_id', args.parentStepId)
+          .eq('branch', args.branch ?? 'yes')
 
   const { data: steps, error: stepsErr } = await scoped
 
@@ -355,7 +381,10 @@ async function executeStepsFrom(args: ExecuteArgs): Promise<void> {
   }
 }
 
-async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string> {
+async function runStep(
+  step: AutomationStep,
+  args: ExecuteArgs,
+): Promise<string> {
   const db = supabaseAdmin()
 
   switch (step.step_type) {
@@ -377,7 +406,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'send_buttons':
     case 'send_list': {
-      const payload = step.step_config as SendButtonsStepConfig | SendListStepConfig
+      const payload = step.step_config as
+        SendButtonsStepConfig | SendListStepConfig
       if (!args.contactId) throw new Error(`${step.step_type} needs a contact`)
       // Validate against Meta's limits before the network call so a bad
       // payload surfaces as a clear failed-step detail rather than a raw
@@ -398,7 +428,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_template': {
       const cfg = step.step_config as SendTemplateStepConfig
       if (!args.contactId) throw new Error('send_template needs a contact')
-      if (!cfg.template_name) throw new Error('send_template needs template_name')
+      if (!cfg.template_name)
+        throw new Error('send_template needs template_name')
       const conversationId = await resolveConversationId(args)
       // Meta templates use positional {{1}}, {{2}}, … placeholders, so
       // we MUST emit params in strict numeric order. Lexicographic sort
@@ -432,7 +463,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'add_tag': {
       const cfg = step.step_config as TagStepConfig
-      if (!args.contactId || !cfg.tag_id) throw new Error('add_tag needs contact + tag_id')
+      if (!args.contactId || !cfg.tag_id)
+        throw new Error('add_tag needs contact + tag_id')
       const added = await addContactTagIfAbsent(db, {
         accountId: args.automation.account_id,
         contactId: args.contactId,
@@ -471,7 +503,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       // See add_tag: tenant scoping relies on the runAutomationsForTrigger
       // ownership guard, since contact_tags carries no account_id.
       const cfg = step.step_config as TagStepConfig
-      if (!args.contactId || !cfg.tag_id) throw new Error('remove_tag needs contact + tag_id')
+      if (!args.contactId || !cfg.tag_id)
+        throw new Error('remove_tag needs contact + tag_id')
       await db
         .from('contact_tags')
         .delete()
@@ -482,7 +515,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'assign_conversation': {
       const cfg = step.step_config as AssignConversationStepConfig
-      if (!args.contactId) throw new Error('assign_conversation needs a contact')
+      if (!args.contactId)
+        throw new Error('assign_conversation needs a contact')
       let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
         // Pick any member of the account. The existing implementation
@@ -506,7 +540,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'update_contact_field': {
       const cfg = step.step_config as UpdateContactFieldStepConfig
-      if (!args.contactId) throw new Error('update_contact_field needs a contact')
+      if (!args.contactId)
+        throw new Error('update_contact_field needs a contact')
       // Resolve workflow variables ({{ vars.* }}, {{ message.text }}) so custom
       // values can be populated dynamically from the triggering context.
       const value = interpolate(cfg.value, args)
@@ -532,12 +567,14 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         // Upsert on the table's UNIQUE(contact_id, custom_field_id) so repeated
         // runs overwrite rather than duplicate. Tenancy is enforced above and,
         // for the contact side, by the entry-point ownership guard.
-        await db
-          .from('contact_custom_values')
-          .upsert(
-            { contact_id: args.contactId, custom_field_id: customFieldId, value },
-            { onConflict: 'contact_id,custom_field_id' },
-          )
+        await db.from('contact_custom_values').upsert(
+          {
+            contact_id: args.contactId,
+            custom_field_id: customFieldId,
+            value,
+          },
+          { onConflict: 'contact_id,custom_field_id' },
+        )
         return `custom field updated`
       }
 
@@ -558,7 +595,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 
     case 'create_deal': {
       const cfg = step.step_config as CreateDealStepConfig
-      if (!cfg.pipeline_id || !cfg.stage_id) throw new Error('create_deal needs pipeline + stage')
+      if (!cfg.pipeline_id || !cfg.stage_id)
+        throw new Error('create_deal needs pipeline + stage')
       // Match the account's configured default currency rather than
       // the static `deals.currency` DB default — keeps automation-
       // created deals consistent with the one-currency-per-account
@@ -594,7 +632,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!(await isDeliverableUrl(cfg.url))) {
         throw new Error('send_webhook: destination not allowed')
       }
-      const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
+      const body = cfg.body_template
+        ? interpolate(cfg.body_template, args)
+        : JSON.stringify(args.context)
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
@@ -607,6 +647,46 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       })
       if (!res.ok) throw new Error(`webhook returned ${res.status}`)
       return `webhook ${res.status}`
+    }
+
+    case 'send_email': {
+      const cfg = step.step_config as SendEmailStepConfig
+      if (!args.contactId) throw new Error('send_email needs a contact')
+      const contact = await loadEmailableContact(args)
+      try {
+        return await sendEmailToContact({
+          contact,
+          templateId: Number(cfg.template_id),
+          subject: cfg.subject ? interpolate(cfg.subject, args) : undefined,
+          vars: args.context.vars,
+          messageText: args.context.message_text,
+        })
+      } catch (err) {
+        // A WhatsApp-only contact reaching an email step is expected,
+        // not a broken automation. Record it and let the run continue
+        // (returning, not throwing, keeps the step status 'success').
+        if (err instanceof NoEmailAddressError) {
+          return 'skipped: contact has no email address'
+        }
+        throw err
+      }
+    }
+
+    case 'add_to_mailing_list': {
+      const cfg = step.step_config as AddToMailingListStepConfig
+      if (!args.contactId)
+        throw new Error('add_to_mailing_list needs a contact')
+      const listId = Number(cfg.list_id)
+      if (!Number.isInteger(listId) || listId < 1) {
+        throw new Error('add_to_mailing_list needs a list')
+      }
+      const contact = await loadEmailableContact(args)
+      const outcome = await syncContact(contact, args.automation.account_id, [
+        listId,
+      ])
+      return outcome === 'skipped'
+        ? 'skipped: contact has no email address'
+        : `subscriber ${outcome} on list ${listId}`
     }
 
     case 'close_conversation': {
@@ -629,6 +709,25 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 // ------------------------------------------------------------
 
 /**
+ * Load the fields the email steps need, scoped to the automation's
+ * account so the service-role client can't become a cross-tenant
+ * read oracle (same discipline as the contact_field condition).
+ */
+async function loadEmailableContact(
+  args: ExecuteArgs,
+): Promise<EmailableContact> {
+  const { data, error } = await supabaseAdmin()
+    .from('contacts')
+    .select('id, name, email, phone, company')
+    .eq('id', args.contactId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle()
+  if (error) throw new Error(`contact lookup failed: ${error.message}`)
+  if (!data) throw new Error('contact not found in this account')
+  return data as EmailableContact
+}
+
+/**
  * Pick the conversation a send-type step should use. Prefer the id the
  * webhook handed us (it's the one that just got the inbound message);
  * fall back to the contact's conversation for resumed/wait paths and
@@ -638,7 +737,8 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
 async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id
   if (fromCtx) return fromCtx
-  if (!args.contactId) throw new Error('cannot resolve conversation: no contact')
+  if (!args.contactId)
+    throw new Error('cannot resolve conversation: no contact')
   const { data, error } = await supabaseAdmin()
     .from('conversations')
     .select('id')
@@ -647,9 +747,10 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     .maybeSingle()
   if (error) throw new Error(`conversation lookup failed: ${error.message}`)
   if (!data?.id) {
-    const prefix = args.triggerEvent === 'tag_added'
-      ? 'tag_added automation cannot send'
-      : 'cannot send'
+    const prefix =
+      args.triggerEvent === 'tag_added'
+        ? 'tag_added automation cannot send'
+        : 'cannot send'
     throw new Error(`${prefix}: contact has no existing conversation`)
   }
   return data.id as string
@@ -694,7 +795,10 @@ export function matchesWholeWord(
   return pattern.test(text)
 }
 
-export function triggerMatches(automation: Automation, ctx: AutomationContext | undefined): boolean {
+export function triggerMatches(
+  automation: Automation,
+  ctx: AutomationContext | undefined,
+): boolean {
   if (automation.trigger_type === 'keyword_match') {
     const cfg = automation.trigger_config as KeywordMatchTriggerConfig
     if (!cfg?.keywords || cfg.keywords.length === 0) return false
@@ -718,7 +822,11 @@ export function triggerMatches(automation: Automation, ctx: AutomationContext | 
   if (automation.trigger_type === 'interactive_reply') {
     const cfg = automation.trigger_config as InteractiveReplyTriggerConfig
     const replyId = ctx?.interactive_reply_id
-    if (!replyId || !Array.isArray(cfg?.reply_ids) || cfg.reply_ids.length === 0) {
+    if (
+      !replyId ||
+      !Array.isArray(cfg?.reply_ids) ||
+      cfg.reply_ids.length === 0
+    ) {
       return false
     }
     return cfg.reply_ids.includes(replyId)
@@ -733,7 +841,10 @@ export function triggerMatches(automation: Automation, ctx: AutomationContext | 
   return true
 }
 
-async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): Promise<boolean> {
+async function evaluateCondition(
+  cfg: ConditionStepConfig,
+  args: ExecuteArgs,
+): Promise<boolean> {
   const db = supabaseAdmin()
   switch (cfg.subject) {
     case 'tag_presence': {
@@ -786,14 +897,16 @@ async function evaluateCondition(cfg: ConditionStepConfig, args: ExecuteArgs): P
 }
 
 function waitMs(cfg: WaitStepConfig): number {
-  const unitMs = cfg.unit === 'days' ? 86_400_000 : cfg.unit === 'hours' ? 3_600_000 : 60_000
+  const unitMs =
+    cfg.unit === 'days' ? 86_400_000 : cfg.unit === 'hours' ? 3_600_000 : 60_000
   return Math.max(1_000, cfg.amount * unitMs)
 }
 
 function interpolate(s: string, args: ExecuteArgs): string {
   return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
     const [ns, prop] = String(key).split('.')
-    if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
+    if (ns === 'message' && prop === 'text')
+      return String(args.context.message_text ?? '')
     if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
     return ''
   })
@@ -813,7 +926,8 @@ async function appendResults(
     .eq('id', logId)
     .single()
   const merged = [
-    ...((existing?.steps_executed as AutomationLogStepResult[] | undefined) ?? []),
+    ...((existing?.steps_executed as AutomationLogStepResult[] | undefined) ??
+      []),
     ...newItems,
   ]
   const update: Record<string, unknown> = { steps_executed: merged }

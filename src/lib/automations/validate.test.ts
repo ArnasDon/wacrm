@@ -298,3 +298,36 @@ describe("validateTriggerForActivation", () => {
     expect(validateTriggerForActivation("some_future_trigger", {})).toEqual([]);
   });
 });
+
+describe("email steps", () => {
+  it("requires a template for send_email", () => {
+    const missing = validateStepsForActivation([
+      { step_type: "send_email", step_config: {} },
+    ]);
+    expect(missing.map((i) => i.message)).toContain(
+      "send_email needs an email template",
+    );
+    const zero = validateStepsForActivation([
+      { step_type: "send_email", step_config: { template_id: 0 } },
+    ]);
+    expect(zero).toHaveLength(1);
+    const good = validateStepsForActivation([
+      { step_type: "send_email", step_config: { template_id: 3, subject: "Hi" } },
+    ]);
+    expect(good).toEqual([]);
+  });
+
+  it("requires a list for add_to_mailing_list", () => {
+    const missing = validateStepsForActivation([
+      { step_type: "add_to_mailing_list", step_config: {} },
+    ]);
+    expect(missing.map((i) => i.message)).toContain(
+      "add_to_mailing_list needs a mailing list",
+    );
+    expect(
+      validateStepsForActivation([
+        { step_type: "add_to_mailing_list", step_config: { list_id: 2 } },
+      ]),
+    ).toEqual([]);
+  });
+});

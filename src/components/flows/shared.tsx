@@ -22,6 +22,7 @@ import {
   Inbox,
   ListChecks,
   ListPlus,
+  Mail,
   MessageCircle,
   Paperclip,
   PlayCircle,
@@ -46,6 +47,7 @@ export type NodeType =
   | 'send_buttons'
   | 'send_list'
   | 'send_media'
+  | 'send_email'
   | 'collect_input'
   | 'condition'
   | 'set_tag'
@@ -131,6 +133,13 @@ export const NODE_META: Record<
     blurb: 'Sends an image, video, or document',
     category: 'messaging',
   },
+  send_email: {
+    label: 'Send email',
+    icon: Mail,
+    color: 'text-orange-400',
+    blurb: 'Emails the contact a saved template',
+    category: 'messaging',
+  },
   collect_input: {
     label: 'Collect input',
     icon: Inbox,
@@ -202,6 +211,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   send_buttons: { l: 0.62, c: 0.16, h: 254 }, // cobalt
   send_list: { l: 0.62, c: 0.15, h: 277 }, // indigo
   send_media: { l: 0.65, c: 0.12, h: 210 }, // sky
+  send_email: { l: 0.7, c: 0.16, h: 45 }, // orange — the other channel
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
@@ -350,7 +360,10 @@ export function summarizeNode(
       }
       return rowCount > 0
         ? t
-          ? t('optionsAcrossSections', { rowCount, sectionCount: sections.length })
+          ? t('optionsAcrossSections', {
+              rowCount,
+              sectionCount: sections.length,
+            })
           : `${rowCount} option${rowCount === 1 ? '' : 's'} across ${sections.length} section${sections.length === 1 ? '' : 's'}`
         : null;
     }
@@ -361,9 +374,15 @@ export function summarizeNode(
       const url = typeof cfg.media_url === 'string' ? cfg.media_url : '';
       const caption = typeof cfg.caption === 'string' ? cfg.caption : '';
       const label = mediaType
-        ? t ? t(mediaType) || (mediaType.charAt(0).toUpperCase() + mediaType.slice(1)) : mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
-        : t ? t('media') : 'Media';
-      if (!url) return t ? t('noFile', { label }) : `${label} (no file uploaded)`;
+        ? t
+          ? t(mediaType) ||
+            mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
+          : mediaType.charAt(0).toUpperCase() + mediaType.slice(1)
+        : t
+          ? t('media')
+          : 'Media';
+      if (!url)
+        return t ? t('noFile', { label }) : `${label} (no file uploaded)`;
       const name = filename || url.split('/').pop() || 'file';
       return caption
         ? `${label}: ${truncate(name, 30)} · ${truncate(caption, 40)}`
@@ -391,17 +410,25 @@ export function summarizeNode(
             : 'var';
       const subjectStr =
         subject === 'tag'
-          ? t ? t('hasTag', { tag: truncate(subjectKey, 24) }) : `has tag ${truncate(subjectKey, 24)}`
+          ? t
+            ? t('hasTag', { tag: truncate(subjectKey, 24) })
+            : `has tag ${truncate(subjectKey, 24)}`
           : `${subject}.${subjectKey}`;
       const op =
         cfg.operator === 'equals'
           ? '=='
           : cfg.operator === 'contains'
-            ? t ? t('opContains') : 'contains'
+            ? t
+              ? t('opContains')
+              : 'contains'
             : cfg.operator === 'present'
-              ? t ? t('opExists') : 'exists'
+              ? t
+                ? t('opExists')
+                : 'exists'
               : cfg.operator === 'absent'
-                ? t ? t('opMissing') : 'missing'
+                ? t
+                  ? t('opMissing')
+                  : 'missing'
                 : '';
       const value = typeof cfg.value === 'string' ? cfg.value : '';
       const valStr =
@@ -411,14 +438,37 @@ export function summarizeNode(
       return subject === 'tag' ? subjectStr : `${subjectStr} ${op}${valStr}`;
     }
     case 'set_tag': {
-      const mode = cfg.mode === 'remove' ? (t ? t('modeRemove') : 'Remove') : (t ? t('modeAdd') : 'Add');
+      const mode =
+        cfg.mode === 'remove'
+          ? t
+            ? t('modeRemove')
+            : 'Remove'
+          : t
+            ? t('modeAdd')
+            : 'Add';
       const tagId = typeof cfg.tag_id === 'string' ? cfg.tag_id : '';
       // No tag name available without an async lookup here; show a
       // short prefix of the UUID so users can disambiguate between
       // multiple set_tag nodes at a glance.
       return tagId
-        ? t ? t('tagPicked', { mode, tag: tagId.slice(0, 8) }) : `${mode} tag ${tagId.slice(0, 8)}…`
-        : t ? t('tagNone', { mode }) : `${mode} tag (none picked)`;
+        ? t
+          ? t('tagPicked', { mode, tag: tagId.slice(0, 8) })
+          : `${mode} tag ${tagId.slice(0, 8)}…`
+        : t
+          ? t('tagNone', { mode })
+          : `${mode} tag (none picked)`;
+    }
+    case 'send_email': {
+      const tid = Number(cfg.template_id);
+      const subject = typeof cfg.subject === 'string' ? cfg.subject : '';
+      if (!Number.isInteger(tid) || tid < 1) {
+        return t ? t('emailNone') : 'no template picked';
+      }
+      return subject
+        ? truncate(subject, 32)
+        : t
+          ? t('emailTemplate', { id: tid })
+          : `template #${tid}`;
     }
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';

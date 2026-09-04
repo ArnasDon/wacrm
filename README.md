@@ -54,6 +54,13 @@ clone or fork it to run your own CRM.
   assistants over the [Model Context Protocol](https://modelcontextprotocol.io).
   Read-only by default, opt-in writes. See [docs/mcp.md](./docs/mcp.md)
   (server in [`mcp-server/`](./mcp-server)).
+- **Email campaigns** — newsletters and bulk email to the same people
+  you talk to on WhatsApp, composed and sent from the CRM UI.
+  Contacts sync into mailing lists as subscribers, carrying the
+  contact id and phone number so you can segment on CRM facts.
+  Powered by [listmonk](https://listmonk.app) running as a separate
+  service; see [deploy/README.md](./deploy/README.md) for the combined
+  one-domain stack.
 
 ## Why fork this?
 

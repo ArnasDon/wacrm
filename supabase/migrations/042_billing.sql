@@ -28,21 +28,37 @@ ALTER TABLE accounts
 -- direto do navegador e setar subscription_status = 'active' nele
 -- mesmo, contornando o Asaas inteiro.
 -- ============================================================
+-- `current_user = 'authenticated'` is the reliable discriminator
+-- (same reasoning as 034_fix_profiles_update_rls.sql): every
+-- sanctioned writer to these columns is either the service-role
+-- client from the billing routes/webhook (runs as `service_role`)
+-- or, in the future, a SECURITY DEFINER RPC owned by `postgres` —
+-- neither is `authenticated`. Only PostgREST's browser/session
+-- clients run as `authenticated`. RAISE EXCEPTION (not a silent
+-- revert) so a mistaken or malicious write fails loudly instead of
+-- looking like it succeeded.
 CREATE OR REPLACE FUNCTION protect_billing_columns()
 RETURNS TRIGGER
 LANGUAGE plpgsql
+SET search_path = public
 AS $$
 BEGIN
-  IF auth.role() IS DISTINCT FROM 'service_role' THEN
-    NEW.subscription_status      := OLD.subscription_status;
-    NEW.trial_ends_at            := OLD.trial_ends_at;
-    NEW.asaas_customer_id        := OLD.asaas_customer_id;
-    NEW.asaas_subscription_id    := OLD.asaas_subscription_id;
-    NEW.subscription_updated_at  := OLD.subscription_updated_at;
+  IF (NEW.subscription_status        IS DISTINCT FROM OLD.subscription_status
+      OR NEW.trial_ends_at           IS DISTINCT FROM OLD.trial_ends_at
+      OR NEW.asaas_customer_id       IS DISTINCT FROM OLD.asaas_customer_id
+      OR NEW.asaas_subscription_id   IS DISTINCT FROM OLD.asaas_subscription_id
+      OR NEW.subscription_updated_at IS DISTINCT FROM OLD.subscription_updated_at)
+     AND current_user = 'authenticated'
+  THEN
+    RAISE EXCEPTION
+      'billing columns cannot be changed directly; use the billing subscribe/cancel/webhook routes'
+      USING ERRCODE = 'insufficient_privilege';
   END IF;
   RETURN NEW;
 END;
 $$;
+
+ALTER FUNCTION protect_billing_columns() OWNER TO postgres;
 
 DROP TRIGGER IF EXISTS protect_billing_columns_trigger ON accounts;
 CREATE TRIGGER protect_billing_columns_trigger
@@ -87,3 +103,20 @@ END;
 $$;
 
 ALTER FUNCTION public.handle_new_user() OWNER TO postgres;
+
+-- ============================================================
+-- Manual validation (run against a live instance — no automated
+-- SQL test harness exists in this repo):
+--
+--   1. As an `authenticated` JWT via PostgREST, this must return
+--      42501 (insufficient_privilege):
+--        PATCH /rest/v1/accounts?id=eq.<self> { "subscription_status": "active" }
+--   2. A self-service edit that leaves all 5 billing columns alone
+--      must still succeed:
+--        PATCH /rest/v1/accounts?id=eq.<self> { "name": "New Name" }
+--   3. The billing routes (subscribe/cancel/webhook), which use the
+--      service-role client, must still be able to write all 5 columns.
+--   4. A direct `UPDATE accounts SET subscription_status = ...` run
+--      as `postgres` (e.g. the Supabase SQL editor) must succeed —
+--      this is the manual escape hatch for a stuck webhook.
+-- ============================================================

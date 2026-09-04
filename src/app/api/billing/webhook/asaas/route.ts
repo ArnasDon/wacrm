@@ -11,6 +11,8 @@
 // confirmar contra um payload real do sandbox.
 // ============================================================
 
+import { timingSafeEqual } from "node:crypto";
+
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
@@ -31,8 +33,22 @@ const EVENT_TO_STATUS: Record<string, string> = {
 };
 
 export async function POST(request: Request) {
-  const token = request.headers.get("asaas-access-token");
-  if (!token || token !== process.env.ASAAS_WEBHOOK_TOKEN) {
+  const expected = process.env.ASAAS_WEBHOOK_TOKEN;
+  if (!expected) {
+    return NextResponse.json({ status: "not configured" }, { status: 503 });
+  }
+  // Constant-time compare so an attacker who can hit this endpoint
+  // can't recover the token byte-by-byte from response-time deltas
+  // (same pattern as src/app/api/flows/cron/route.ts). Length
+  // pre-check is required by timingSafeEqual (throws otherwise) and
+  // leaks only the length itself, which isn't sensitive.
+  const supplied = request.headers.get("asaas-access-token") ?? "";
+  const suppliedBuf = Buffer.from(supplied);
+  const expectedBuf = Buffer.from(expected);
+  if (
+    suppliedBuf.length !== expectedBuf.length ||
+    !timingSafeEqual(suppliedBuf, expectedBuf)
+  ) {
     console.warn("[asaas webhook] invalid or missing token");
     return NextResponse.json({ status: "unauthorized" }, { status: 401 });
   }

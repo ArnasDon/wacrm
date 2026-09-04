@@ -67,6 +67,16 @@ afterEach(() => {
 });
 
 describe("POST /api/billing/webhook/asaas", () => {
+  it("ASAAS_WEBHOOK_TOKEN not configured → 503, nothing written", async () => {
+    delete process.env.ASAAS_WEBHOOK_TOKEN;
+    const { POST } = await import("./route");
+    const res = (await POST(
+      post({ event: "PAYMENT_CONFIRMED", payment: { subscription: "sub_1" } })
+    )) as unknown as { init: { status: number } };
+    expect(res.init.status).toBe(503);
+    expect(h.state.updateCalls).toHaveLength(0);
+  });
+
   it("wrong token → 401, nothing written", async () => {
     const { POST } = await import("./route");
     const res = (await POST(post({ event: "PAYMENT_CONFIRMED" }, "wrong"))) as unknown as {

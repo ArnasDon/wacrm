@@ -68,6 +68,16 @@ describe("createSubscription", () => {
       nextDueDate: expect.any(String),
     });
   });
+
+  it("usa o nextDueDate fornecido em vez do padrão (amanhã) quando informado", async () => {
+    fetchMock.mockResolvedValue(
+      jsonResponse({ id: "sub_789", invoiceUrl: "https://sandbox.asaas.com/i/sub_789" })
+    );
+    const { createSubscription } = await import("./asaas");
+    await createSubscription("cus_123", "Assinatura wacrm", "2026-09-20");
+    const [, init] = fetchMock.mock.calls[0];
+    expect(JSON.parse(init.body)).toMatchObject({ nextDueDate: "2026-09-20" });
+  });
 });
 
 describe("cancelSubscription", () => {
@@ -78,5 +88,17 @@ describe("cancelSubscription", () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe("https://sandbox.asaas.com/api/v3/subscriptions/sub_456");
     expect(init.method).toBe("DELETE");
+  });
+
+  it("trata 404 (assinatura já não existe no Asaas) como sucesso", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ errors: [{ description: "not found" }] }, false, 404));
+    const { cancelSubscription } = await import("./asaas");
+    await expect(cancelSubscription("sub_gone")).resolves.toBeUndefined();
+  });
+
+  it("continua lançando em outros erros (não-404)", async () => {
+    fetchMock.mockResolvedValue(jsonResponse({ errors: [{ description: "server error" }] }, false, 500));
+    const { cancelSubscription } = await import("./asaas");
+    await expect(cancelSubscription("sub_1")).rejects.toThrow("server error");
   });
 });

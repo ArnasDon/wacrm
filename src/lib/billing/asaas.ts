@@ -32,7 +32,10 @@ async function call(path: string, init: RequestInit): Promise<Json> {
   if (!res.ok) {
     const errors = json.errors as Array<{ description?: string }> | undefined;
     const msg = errors?.[0]?.description || `Asaas ${path} failed (${res.status})`;
-    throw new Error(msg);
+    // Attach the HTTP status so callers can distinguish "not found"
+    // from other failures (see cancelSubscription below) without
+    // re-parsing the message string.
+    throw Object.assign(new Error(msg), { status: res.status });
   }
   return json;
 }
@@ -56,7 +59,7 @@ function priceReais(): number {
   return Number(cents) / 100;
 }
 
-/** Amanhã, formato YYYY-MM-DD — primeira cobrança da assinatura. */
+/** Amanhã, formato YYYY-MM-DD — primeira cobrança padrão da assinatura. */
 function tomorrowDateStr(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
@@ -65,17 +68,21 @@ function tomorrowDateStr(): string {
 
 export async function createSubscription(
   customerId: string,
-  description: string
+  description: string,
+  nextDueDate?: string
 ): Promise<{ subscriptionId: string; invoiceUrl: string }> {
   const json = await call("/subscriptions", {
     method: "POST",
     body: JSON.stringify({
       customer: customerId,
-      billingType: "UNDEFINED", // PIX + cartão + boleto no checkout hospedado
+      // PIX + cartão + boleto no checkout hospedado — suposição-chave
+      // que motivou escolher o Asaas, ainda NÃO confirmada contra o
+      // sandbox real (item aberto, spec §5).
+      billingType: "UNDEFINED",
       cycle: "MONTHLY",
       value: priceReais(),
       description,
-      nextDueDate: tomorrowDateStr(),
+      nextDueDate: nextDueDate ?? tomorrowDateStr(),
     }),
   });
   const subscriptionId = json.id as string | undefined;
@@ -87,5 +94,16 @@ export async function createSubscription(
 }
 
 export async function cancelSubscription(subscriptionId: string): Promise<void> {
-  await call(`/subscriptions/${subscriptionId}`, { method: "DELETE" });
+  try {
+    await call(`/subscriptions/${subscriptionId}`, { method: "DELETE" });
+  } catch (err) {
+    // Already gone at Asaas (canceled from their own portal, or a
+    // retry of an earlier successful cancel) — treat as success so
+    // callers (e.g. our own cancel route, or subscribe's
+    // cancel-before-recreate) don't get stuck unable to proceed.
+    if (err instanceof Error && (err as { status?: number }).status === 404) {
+      return;
+    }
+    throw err;
+  }
 }

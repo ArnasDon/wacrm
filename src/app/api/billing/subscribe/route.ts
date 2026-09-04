@@ -1,8 +1,14 @@
 import { NextResponse } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
-import { createCustomer, createSubscription } from "@/lib/billing/asaas";
+import {
+  ForbiddenError,
+  PaymentRequiredError,
+  UnauthorizedError,
+  requireRole,
+  toErrorResponse,
+} from "@/lib/auth/account";
+import { cancelSubscription, createCustomer, createSubscription } from "@/lib/billing/asaas";
 
 function admin(): SupabaseClient {
   return createClient(
@@ -11,11 +17,29 @@ function admin(): SupabaseClient {
   );
 }
 
+/** Amanhã, ou o fim do trial se ele terminar depois — nunca cobra
+ * antes do trial grátis de 7 dias acabar (spec §1). */
+function firstChargeDate(trialEndsAt: string | null): string {
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  if (!trialEndsAt) return tomorrow.toISOString().slice(0, 10);
+  const trialEnd = new Date(trialEndsAt);
+  return (trialEnd > tomorrow ? trialEnd : tomorrow).toISOString().slice(0, 10);
+}
+
 export async function POST() {
   try {
     // allowBlocked: quem já está bloqueado precisa conseguir assinar
     // pra se desbloquear — senão fica trancado sem saída.
     const ctx = await requireRole("owner", { allowBlocked: true });
+
+    // Já existe uma assinatura no Asaas pra essa conta? Cancela antes
+    // de criar outra — sem isso, clicar em "Assinar agora" de novo
+    // (ex.: depois de past_due) cria uma SEGUNDA assinatura no Asaas,
+    // que nunca é cancelada e cobra o cliente duas vezes pra sempre.
+    if (ctx.account.asaas_subscription_id) {
+      await cancelSubscription(ctx.account.asaas_subscription_id);
+    }
 
     let customerId = ctx.account.asaas_customer_id;
     if (!customerId) {
@@ -25,7 +49,8 @@ export async function POST() {
 
     const { subscriptionId, invoiceUrl } = await createSubscription(
       customerId,
-      `Assinatura wacrm — ${ctx.account.name}`
+      `Assinatura wacrm — ${ctx.account.name}`,
+      firstChargeDate(ctx.account.trial_ends_at)
     );
 
     const db = admin();
@@ -48,10 +73,17 @@ export async function POST() {
 
     return NextResponse.json({ invoiceUrl });
   } catch (err) {
-    if (err instanceof Error && !("status" in err)) {
-      console.error("[billing subscribe] failed", err);
-      return NextResponse.json({ error: err.message }, { status: 502 });
+    if (
+      err instanceof UnauthorizedError ||
+      err instanceof ForbiddenError ||
+      err instanceof PaymentRequiredError
+    ) {
+      return toErrorResponse(err);
     }
-    return toErrorResponse(err);
+    // Anything else (Asaas call failed, config missing, etc.) — log
+    // the real detail server-side, but never put it on the wire (same
+    // rule as toErrorResponse's own uncategorized-error branch).
+    console.error("[billing subscribe] failed", err);
+    return NextResponse.json({ error: "Failed to start subscription" }, { status: 502 });
   }
 }

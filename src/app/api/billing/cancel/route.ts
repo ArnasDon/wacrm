@@ -24,6 +24,11 @@ export async function POST() {
       .from("accounts")
       .update({
         subscription_status: "canceled",
+        // Zera o id da assinatura: sem isso, um webhook atrasado (um
+        // PIX/boleto que compensa segundos depois do cancelamento, ou
+        // um retry do Asaas de uma entrega antiga) ainda acha essa
+        // conta por asaas_subscription_id e reativa o acesso sozinho.
+        asaas_subscription_id: null,
         subscription_updated_at: new Date().toISOString(),
       })
       .eq("id", ctx.accountId);

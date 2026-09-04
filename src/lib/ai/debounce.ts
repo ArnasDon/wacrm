@@ -23,9 +23,16 @@
 // shared rate limiter (src/lib/rate-limit.ts): correct for this app's
 // current single-instance deployment; a future multi-instance
 // deployment would need a shared store (e.g. Redis) instead.
+//
+// The default quiet period is a full minute (see `aiDebounceMs` in
+// defaults.ts) — long enough for a customer typing across several
+// bubbles at their own pace to finish before the bot answers what
+// might otherwise be a half-finished thought. Every inbound message
+// still lands in the inbox immediately either way; this only delays
+// the *bot's* reply, never the human view of the conversation.
 // ============================================================
 
-const DEBOUNCE_MS = 6000
+import { aiDebounceMs } from './defaults'
 
 const latestToken = new Map<string, symbol>()
 
@@ -36,7 +43,7 @@ const latestToken = new Map<string, symbol>()
  */
 export async function waitForQuietPeriod(
   conversationId: string,
-  delayMs: number = DEBOUNCE_MS,
+  delayMs: number = aiDebounceMs(),
 ): Promise<boolean> {
   const token = Symbol()
   latestToken.set(conversationId, token)

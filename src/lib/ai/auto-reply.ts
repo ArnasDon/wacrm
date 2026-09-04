@@ -154,6 +154,21 @@ export async function dispatchInboundToAiReply(
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
+    // The debounce above (waitForQuietPeriod) should guarantee this
+    // dispatch is the only one running for this burst, but the two
+    // aren't perfectly atomic: a second dispatch can still read the
+    // conversation's history *after* an earlier one already inserted
+    // its own reply to the very message that triggered this call. That
+    // reply is then the newest row, so the transcript ends on
+    // `assistant` — Anthropic flatly rejects that shape (400, not
+    // transient — confirmed live 2026-09-03/04) and the retry that
+    // follows fails identically, needlessly handing a working
+    // conversation to a human. Detect the same signal here and just
+    // stand down: whatever this dispatch would have answered has
+    // already been answered. (Regenerating instead of standing down
+    // would risk the opposite, previously-fixed bug — a duplicate
+    // reply to the same customer message; see debounce.ts.)
+    if (messages[messages.length - 1].role !== 'user') return
 
     // Angel's explicit product decision (2026-08-19): the AI must never
     // go quiet because of a message-level automation (`new_message_received`

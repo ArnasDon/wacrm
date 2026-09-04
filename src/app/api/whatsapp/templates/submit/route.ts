@@ -10,6 +10,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
 import { submitMessageTemplate } from '@/lib/whatsapp/meta-api'
 import { createZernioTemplate } from '@/lib/zernio/api'
+import { SendMessageError } from '@/lib/messaging/types'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -216,7 +217,27 @@ export async function POST(request: Request) {
               whatsappConfigId: resolvedConfigId,
             }),
           )
-          return NextResponse.json({ error: message }, { status: 502 })
+          // A `SendMessageError` is a real rejection Zernio/Meta sent
+          // back — surface its actual message (never "[object Object]",
+          // which the old string coercion produced for a nested error
+          // body). Anything else (a plain Error from `zernioFetch`: the
+          // 12s timeout or a network blip) means Meta may still be
+          // creating the template behind a slow response — say so
+          // instead of leaking a bare 502.
+          const clientMessage =
+            e instanceof SendMessageError
+              ? message
+              : 'La solicitud se envió pero Meta está tardando en responder. Espera unos minutos y usa "Sincronizar desde Meta"; si no aparece, vuelve a intentarlo.'
+          const clientStatus =
+            e instanceof SendMessageError &&
+            e.status >= 400 &&
+            e.status < 600
+              ? e.status
+              : 502
+          return NextResponse.json(
+            { error: clientMessage },
+            { status: clientStatus },
+          )
         }
       } else {
         if (!config.waba_id) {

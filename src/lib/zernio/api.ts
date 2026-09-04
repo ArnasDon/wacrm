@@ -118,11 +118,45 @@ export class ZernioVerifyError extends Error {
   }
 }
 
+/**
+ * Pull a human-readable string out of whatever shape Zernio's error
+ * body takes — a plain `{ error: "msg" }`, a nested `{ error: { message
+ * } }` / Meta's `{ error: { error_user_msg } }`, or a top-level
+ * `{ message }`. Never returns `"[object Object]"`: if there's no
+ * string anywhere it falls back to the JSON of the error blob so the
+ * real reason is at least legible.
+ */
+function zernioErrorText(data: unknown): string {
+  if (typeof data === 'string') return data.trim()
+  if (!data || typeof data !== 'object') return ''
+  const d = data as Record<string, unknown>
+  const err = d.error
+  const errObj = err && typeof err === 'object' ? (err as Record<string, unknown>) : null
+  const candidates = [
+    typeof err === 'string' ? err : undefined,
+    typeof d.message === 'string' ? d.message : undefined,
+    typeof d.detail === 'string' ? d.detail : undefined,
+    errObj && typeof errObj.message === 'string' ? errObj.message : undefined,
+    errObj && typeof errObj.error_user_msg === 'string' ? errObj.error_user_msg : undefined,
+    errObj && typeof errObj.error_user_title === 'string' ? errObj.error_user_title : undefined,
+  ]
+  for (const c of candidates) {
+    if (c && c.trim()) return c.trim()
+  }
+  try {
+    const json = JSON.stringify(err ?? d)
+    if (json && json !== '{}' && json !== 'null') return json.slice(0, 500)
+  } catch {
+    // circular / unserialisable — fall through
+  }
+  return ''
+}
+
 async function throwZernioError(response: Response, fallback: string): Promise<never> {
   let message = fallback
   try {
-    const data = (await response.json()) as ZernioErrorResponse
-    if (data.error) message = data.error
+    const data: unknown = await response.json()
+    message = zernioErrorText(data) || fallback
   } catch {
     // response body wasn't JSON — keep the fallback
   }

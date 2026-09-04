@@ -15,6 +15,7 @@ import {
   Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
 
 interface PendingAction {
@@ -35,6 +36,7 @@ const ACTION_LABELS: Record<string, string> = {
   set_lead_temperature: 'Change lead temperature',
   create_quote: 'Create a quote',
   schedule_appointment: 'Schedule a real appointment',
+  create_task: 'Create a task / reminder',
   create_automation_rule: 'Create a new automation rule (draft)',
 };
 
@@ -56,6 +58,7 @@ function detailEntries(input: Record<string, unknown>): [string, string][] {
 }
 
 export function AiAssistant() {
+  const { user } = useAuth();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -152,6 +155,36 @@ export function AiAssistant() {
         }
         toast.success(
           'Rule saved as a draft in Automations — review and activate it there.'
+        );
+      } else if (action === 'create_task') {
+        const hours = Number(actionInput.dueInHours);
+        const dueAt =
+          Number.isFinite(hours) && hours > 0
+            ? new Date(Date.now() + hours * 3_600_000).toISOString()
+            : null;
+        const res = await fetch('/api/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title: actionInput.title,
+            notes: actionInput.notes,
+            due_at: dueAt,
+            assigned_to: user?.id ?? null,
+            contact_id:
+              typeof actionInput.linkContactId === 'string'
+                ? actionInput.linkContactId
+                : null,
+          }),
+        });
+        const data = await readResponseJson(res).catch(() => ({}));
+        if (!res.ok) {
+          toast.error(data.error ?? 'Could not create the task.');
+          return;
+        }
+        toast.success(
+          dueAt
+            ? 'Task created — you\'ll get a reminder when it\'s due.'
+            : 'Task created.'
         );
       } else {
         const payload = { action, ...actionInput };

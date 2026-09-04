@@ -94,6 +94,28 @@ export interface ProviderResult {
   text: string
   usage: AiUsage | null
   toolCalls?: ToolCallLogEntry[]
+  /** Punto 8, H8-1 — the RAW value the provider itself reported for the
+   *  LAST turn actually executed (OpenAI/OpenRouter's `finish_reason`,
+   *  Anthropic's `stop_reason`) — e.g. `'stop'`/`'length'`/`'tool_calls'`
+   *  for OpenAI-compatible, `'end_turn'`/`'max_tokens'`/`'tool_use'` for
+   *  Anthropic. Deliberately NOT normalized into one shared taxonomy —
+   *  the two providers' vocabularies don't map cleanly onto each other,
+   *  and `provider` (already logged alongside this) is what tells a
+   *  reader how to interpret it. Undefined when the provider didn't
+   *  report one. Purely diagnostic — never read by any behavior in this
+   *  codebase. */
+  finishReason?: string
+  /** Punto 8, H8-1 — true ONLY when the tool-calling loop stopped
+   *  because MAX_TOOL_TURNS was reached WHILE the model still wanted to
+   *  call another tool (as opposed to the model naturally deciding to
+   *  answer in text). Computed by the adapter itself — the provider has
+   *  no way to know about our own turn cap, so this is never derivable
+   *  from `finishReason` alone (a provider reporting `'tool_calls'`/
+   *  `'tool_use'` on that same turn looks identical whether we honored
+   *  the request or not). Purely diagnostic — the existing fallback
+   *  behavior (`generate.ts`'s "Un momento, permíteme confirmar..."
+   *  text) is completely unchanged by this field's presence. */
+  toolTurnsExhausted?: boolean
 }
 
 /** One completed tool call from a provider's internal tool-calling loop
@@ -148,6 +170,11 @@ export interface GenerateResult {
    *  when no `tools` were passed to `generateReply` or the model didn't
    *  use any. */
   toolCalls: ToolCallLogEntry[]
+  /** Punto 8, H8-1 — see `ProviderResult.finishReason`. Passed straight
+   *  through by `parseGeneration`, unchanged. */
+  finishReason?: string
+  /** Punto 8, H8-1 — see `ProviderResult.toolTurnsExhausted`. */
+  toolTurnsExhausted?: boolean
 }
 
 /**

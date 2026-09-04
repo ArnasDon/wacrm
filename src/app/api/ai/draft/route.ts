@@ -10,7 +10,7 @@ import { generateReply } from '@/lib/ai/generate'
 import { buildSystemPrompt, buildSystemPromptBlocks, getSystemTimeContext } from '@/lib/ai/defaults'
 import { latestUserMessage } from '@/lib/ai/query'
 import { routeAiContext } from '@/lib/ai/routing'
-import { logAiUsage } from '@/lib/ai/usage'
+import { logAiUsage, classifyGenerateFailure } from '@/lib/ai/usage'
 import { supabaseAdmin } from '@/lib/ai/admin-client'
 import { AiError } from '@/lib/ai/types'
 
@@ -142,7 +142,38 @@ export async function POST(request: Request) {
     const systemPromptBlocks = buildSystemPromptBlocks(systemPromptArgs)
 
     const generateStartedAt = Date.now()
-    const { text, usage } = await generateReply({ config, systemPrompt, systemPromptBlocks, messages })
+    let text: string
+    let usage: Awaited<ReturnType<typeof generateReply>>['usage']
+    let finishReason: string | undefined
+    let toolTurnsExhausted: boolean | undefined
+    try {
+      ;({ text, usage, finishReason, toolTurnsExhausted } = await generateReply({
+        config,
+        systemPrompt,
+        systemPromptBlocks,
+        messages,
+      }))
+    } catch (err) {
+      // Punto 8, H8-2 — same discipline as auto-reply.ts: a failed
+      // attempt still gets exactly one row, with every token column
+      // NULL (never 0). Re-thrown UNCHANGED right after so the existing
+      // outer catch below keeps handling the HTTP response exactly as
+      // it always has — this only adds a log write, it never changes
+      // what the caller of this route sees.
+      const failure = classifyGenerateFailure(err)
+      void logAiUsage(supabaseAdmin(), {
+        accountId,
+        conversationId,
+        mode: 'draft',
+        provider: config.provider,
+        model: config.model,
+        usage: null,
+        latencyMs: Date.now() - generateStartedAt,
+        errorCode: failure.code,
+        errorMessage: failure.message,
+      })
+      throw err
+    }
     const latencyMs = Date.now() - generateStartedAt
 
     // Record spend on the account's BYO key. Best-effort + via the
@@ -172,6 +203,8 @@ export async function POST(request: Request) {
         routingDecision: routing.decision,
         knowledgeSkippedByRouting: knowledgeAvailable && !routing.useKnowledge,
         latencyMs,
+        finishReason,
+        toolTurnsExhausted,
       })
     } catch (logErr) {
       console.error('[ai/draft] usage log skipped:', logErr)

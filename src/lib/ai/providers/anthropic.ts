@@ -117,6 +117,10 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
 
   const wireMessages = normalizeForAnthropic(messages)
   const aggregatedUsage = { prompt: 0, completion: 0, cacheCreation: 0, cacheRead: 0 }
+  // Punto 8, H8-1 — the raw stop_reason of the LAST turn actually
+  // executed (overwritten every iteration, so the final value reflects
+  // whatever turn's response is ultimately returned below).
+  let lastStopReason: string | undefined
   // Tracked separately from the running sums above: a turn that never
   // reports cache fields at all (caching not configured for this call)
   // must leave the final AiUsage without these keys entirely — summing
@@ -162,6 +166,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
 
     const data = (await res.json().catch(() => null)) as AnthropicResponse | null
     const blocks = data?.content ?? []
+    lastStopReason = data?.stop_reason
 
     aggregatedUsage.prompt += data?.usage?.input_tokens ?? 0
     aggregatedUsage.completion += data?.usage?.output_tokens ?? 0
@@ -175,6 +180,12 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
     }
 
     const toolUseBlocks = blocks.filter((b): b is Extract<AnthropicContentBlock, { type: 'tool_use' }> => b.type === 'tool_use')
+    // Punto 8, H8-1 — true only on the exact turn where the model still
+    // wants a tool but MAX_TOOL_TURNS forbids honoring it. Never true
+    // when `!executeTool` (no tools were ever attached this call) or
+    // when the model itself stopped requesting tools — this is
+    // specifically "we cut it off", not "it finished naturally".
+    const toolTurnsExhausted = toolUseBlocks.length > 0 && Boolean(executeTool) && turn >= maxTurns
 
     if (toolUseBlocks.length > 0 && executeTool && turn < maxTurns) {
       wireMessages.push({ role: 'assistant', content: blocks })
@@ -211,11 +222,13 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
           text: 'Un momento, permíteme confirmar esa información.',
           usage,
           toolCalls: toolCallLog,
+          finishReason: lastStopReason,
+          toolTurnsExhausted,
         }
       }
       throw new AiError('Anthropic returned an empty response.', { code: 'empty_response' })
     }
 
-    return { text, usage, toolCalls: toolCallLog }
+    return { text, usage, toolCalls: toolCallLog, finishReason: lastStopReason, toolTurnsExhausted }
   }
 }

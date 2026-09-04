@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest'
-import { logAiUsage, deriveCatalogExternalFlags } from './usage'
+import { logAiUsage, deriveCatalogExternalFlags, classifyGenerateFailure } from './usage'
 import type { SupabaseClient } from '@supabase/supabase-js'
-import type { ToolCallLogEntry } from './types'
+import { AiError, type ToolCallLogEntry } from './types'
 
 function fakeDb() {
   const insert = vi.fn().mockResolvedValue({ error: null })
@@ -46,6 +46,11 @@ describe('logAiUsage', () => {
       latency_ms: null,
       catalog_external_used: null,
       catalog_external_blocked: null,
+      // Punto 8 (H8-1/H8-2) — same NULL-when-not-computed discipline.
+      finish_reason: null,
+      tool_turns_exhausted: null,
+      error_code: null,
+      error_message: null,
     })
   })
 
@@ -261,5 +266,135 @@ describe('deriveCatalogExternalFlags', () => {
   it('never crashes on a malformed/non-object tool result', () => {
     expect(() => deriveCatalogExternalFlags([toolCall(null), toolCall('oops'), toolCall(undefined)])).not.toThrow()
     expect(deriveCatalogExternalFlags([toolCall(null)])).toEqual({ catalogExternalUsed: undefined, catalogExternalBlocked: undefined })
+  })
+})
+
+// ============================================================
+// Punto 8, H8-2 — classifyGenerateFailure() reuses the EXISTING
+// AiError.code taxonomy verbatim (no new categories invented) and
+// never returns anything beyond a length-capped message — never the
+// raw exception, never anything that could embed an API key/header.
+// ============================================================
+describe('classifyGenerateFailure', () => {
+  it('an invalid_key AiError → { code: "invalid_key", message: <its own message> }', () => {
+    const err = new AiError('OpenAI rejected the API key', { code: 'invalid_key', status: 401 })
+    expect(classifyGenerateFailure(err)).toEqual({ code: 'invalid_key', message: 'OpenAI rejected the API key' })
+  })
+
+  it('a rate_limited AiError', () => {
+    const err = new AiError('Anthropic rate limit reached', { code: 'rate_limited', status: 429 })
+    expect(classifyGenerateFailure(err)).toEqual({ code: 'rate_limited', message: 'Anthropic rate limit reached' })
+  })
+
+  it('a timeout AiError', () => {
+    const err = new AiError('The AI provider took too long to respond.', { code: 'timeout', status: 504 })
+    expect(classifyGenerateFailure(err)).toEqual({ code: 'timeout', message: 'The AI provider took too long to respond.' })
+  })
+
+  it('a network_error AiError', () => {
+    const err = new AiError('Could not reach the AI provider: fetch failed', { code: 'network_error', status: 502 })
+    expect(classifyGenerateFailure(err)).toEqual({ code: 'network_error', message: 'Could not reach the AI provider: fetch failed' })
+  })
+
+  it('a provider_error AiError (generic upstream failure)', () => {
+    const err = new AiError('OpenRouter API error (500)', { code: 'provider_error', status: 502 })
+    expect(classifyGenerateFailure(err)).toEqual({ code: 'provider_error', message: 'OpenRouter API error (500)' })
+  })
+
+  it('a non-AiError exception gets the safe, generic unknown_error code — never an invented category', () => {
+    expect(classifyGenerateFailure(new Error('unexpected crash'))).toEqual({
+      code: 'unknown_error',
+      message: 'unexpected crash',
+    })
+  })
+
+  it('a non-Error thrown value (e.g. a string) still returns a safe, generic result — never throws itself', () => {
+    expect(classifyGenerateFailure('a raw string was thrown')).toEqual({
+      code: 'unknown_error',
+      message: 'Unknown error',
+    })
+  })
+
+  it('an unusually long error message is truncated, never stored unbounded', () => {
+    const longMessage = 'x'.repeat(2000)
+    const { message } = classifyGenerateFailure(new AiError(longMessage, { code: 'provider_error' }))
+    expect(message.length).toBeLessThanOrEqual(501) // 500 chars + the truncation marker
+    expect(message.endsWith('…')).toBe(true)
+  })
+})
+
+// ============================================================
+// Punto 8, H8-2 — logAiUsage() now also accepts (and writes) a FAILED
+// attempt: usage is null, but errorCode is set. Confirms the relaxed
+// guard (`!args.usage && !args.errorCode`) without weakening the
+// pre-existing "usage:null and no error → skip entirely" behavior.
+// ============================================================
+describe('logAiUsage — H8-2 failed-attempt rows', () => {
+  it('writes a row with every token column NULL when usage is null but errorCode is set', async () => {
+    const { db, insert } = fakeDb()
+    await logAiUsage(db, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      mode: 'auto_reply',
+      provider: 'openai',
+      model: 'gpt-test',
+      usage: null,
+      errorCode: 'rate_limited',
+      errorMessage: 'OpenAI rate limit reached',
+      latencyMs: 1234,
+    })
+    expect(insert).toHaveBeenCalledTimes(1)
+    const row = insert.mock.calls[0][0] as Record<string, unknown>
+    expect(row.prompt_tokens).toBeNull()
+    expect(row.completion_tokens).toBeNull()
+    expect(row.total_tokens).toBeNull()
+    expect(row.error_code).toBe('rate_limited')
+    expect(row.error_message).toBe('OpenAI rate limit reached')
+    expect(row.latency_ms).toBe(1234)
+  })
+
+  it('still skips entirely when there is neither usage NOR an error to report (unchanged pre-existing behavior)', async () => {
+    const { db, insert } = fakeDb()
+    await logAiUsage(db, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      mode: 'auto_reply',
+      provider: 'openai',
+      model: 'gpt-test',
+      usage: null,
+    })
+    expect(insert).not.toHaveBeenCalled()
+  })
+
+  it('a successful row never carries error_code/error_message (both NULL)', async () => {
+    const { db, insert } = fakeDb()
+    await logAiUsage(db, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      mode: 'auto_reply',
+      provider: 'anthropic',
+      model: 'claude-x',
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+    })
+    const row = insert.mock.calls[0][0] as Record<string, unknown>
+    expect(row.error_code).toBeNull()
+    expect(row.error_message).toBeNull()
+  })
+
+  it('writes finish_reason and tool_turns_exhausted when the caller computes them (H8-1)', async () => {
+    const { db, insert } = fakeDb()
+    await logAiUsage(db, {
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      mode: 'auto_reply',
+      provider: 'anthropic',
+      model: 'claude-x',
+      usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
+      finishReason: 'max_tokens',
+      toolTurnsExhausted: true,
+    })
+    const row = insert.mock.calls[0][0] as Record<string, unknown>
+    expect(row.finish_reason).toBe('max_tokens')
+    expect(row.tool_turns_exhausted).toBe(true)
   })
 })

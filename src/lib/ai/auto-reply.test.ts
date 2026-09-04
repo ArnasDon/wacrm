@@ -50,6 +50,10 @@ const h = vi.hoisted(() => ({
     // search_ai_catalog_products only) so none of those assertions need
     // to change for a mechanism they were never testing.
     aiProcessingEvents: [] as string[],
+    // Punto 8 — every row logAiUsage actually attempted to insert into
+    // ai_usage_log (real code, not mocked — see the `from('ai_usage_log')`
+    // branch below).
+    usageLogInserts: [] as Record<string, unknown>[],
   },
 }))
 
@@ -118,6 +122,23 @@ vi.mock('./admin-client', () => ({
       }
       if (table === 'catalog_integrations') {
         return chainable([])
+      }
+      // ai_usage_log (Punto 8) — usage.ts itself is never mocked in
+      // this file (logAiUsage runs for real against this fake), so
+      // recording what it actually inserted is what lets the H8-2 tests
+      // below assert on it, without touching any pre-existing test's
+      // behavior (every insert attempt here previously fell through to
+      // the generic `conversations` branch further down, which has no
+      // `.insert()` — silently thrown-and-swallowed inside logAiUsage's
+      // own try/catch, exactly as it still is for every OTHER table not
+      // listed here).
+      if (table === 'ai_usage_log') {
+        return {
+          insert: (row: Record<string, unknown>) => {
+            h.state.usageLogInserts.push(row)
+            return Promise.resolve({ error: null })
+          },
+        }
       }
       if (table === 'ai_data_sources') {
         return chainable(h.state.dataSources)
@@ -291,6 +312,7 @@ beforeEach(() => {
   h.state.catalogProductRows = []
   h.state.failHandoffUpdate = false
   h.state.aiProcessingEvents = []
+  h.state.usageLogInserts = []
   h.loadAiConfig.mockResolvedValue(aiConfig())
   // Not "hi" — that's a real greeting under routing.ts's own vocabulary
   // and would route to 'neither', which is correct behavior but would
@@ -807,6 +829,44 @@ describe('dispatchInboundToAiReply — F2: provider failure', () => {
       ai_autoreply_disabled: true,
       status: 'pending',
     })
+  })
+
+  // Punto 8, H8-2 — a failed generateReply() now writes exactly one
+  // ai_usage_log row (usage:null, real AiError.code/message) IN ADDITION
+  // to the existing handoff behavior above — never in place of it, never
+  // duplicated.
+  it('H8-2: logs exactly one ai_usage_log row with usage:null and the real error code/message on an AiError failure', async () => {
+    const { AiError } = await import('./types')
+    h.generateReply.mockRejectedValue(
+      new AiError('OpenAI rate limit reached', { code: 'rate_limited', status: 429 }),
+    )
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.usageLogInserts).toHaveLength(1)
+    expect(h.state.usageLogInserts[0]).toMatchObject({
+      account_id: 'acct-1',
+      conversation_id: 'conv-1',
+      mode: 'auto_reply',
+    })
+    expect(h.state.usageLogInserts[0].prompt_tokens).toBeNull()
+    expect(h.state.usageLogInserts[0].total_tokens).toBeNull()
+    expect(h.state.usageLogInserts[0].error_code).toBe('rate_limited')
+    expect(h.state.usageLogInserts[0].error_message).toBe('OpenAI rate limit reached')
+    expect(typeof h.state.usageLogInserts[0].latency_ms).toBe('number')
+    // Still exactly the same handoff behavior as before — unaffected by
+    // the new logging call.
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, status: 'pending' })
+  })
+
+  it('H8-2: a non-AiError exception logs the safe, generic unknown_error code', async () => {
+    h.generateReply.mockRejectedValue(new Error('unexpected crash'))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.state.usageLogInserts).toHaveLength(1)
+    expect(h.state.usageLogInserts[0].error_code).toBe('unknown_error')
+    expect(h.state.usageLogInserts[0].error_message).toBe('unexpected crash')
   })
 
   it("still resolves a department from the customer's own message on a provider failure, same deterministic resolution a model-requested handoff uses", async () => {

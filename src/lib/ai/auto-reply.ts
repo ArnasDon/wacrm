@@ -5,7 +5,7 @@ import { retrieveKnowledge, accountHasKnowledgeBase } from './knowledge'
 import { generateReply } from './generate'
 import { buildSystemPrompt, buildSystemPromptBlocks, getSystemTimeContext } from './defaults'
 import { buildHandoffSummary } from './handoff'
-import { logAiUsage, deriveCatalogExternalFlags } from './usage'
+import { logAiUsage, deriveCatalogExternalFlags, classifyGenerateFailure } from './usage'
 import { latestUserMessage } from './query'
 import { routeAiContext } from './routing'
 import { loadBusinessProfileForAgent, type BusinessProfileForAgent } from './business-profile/service'
@@ -481,6 +481,23 @@ async function processOneTurn(ctx: {
     // avoid. Escalate to a human instead, via the exact same
     // deterministic route a model-requested handoff already uses.
     console.error('[ai auto-reply] generateReply failed — handing off to a human instead of leaving the inbound unanswered:', err)
+    // Punto 8, H8-2 — a failed attempt gets exactly one row too (never
+    // duplicated: this is the ONLY logAiUsage call on this path, and the
+    // success path below is unreachable once we're here). `usage` is
+    // necessarily null — the provider never returned one — so every
+    // token column is written as NULL, never a misleading 0.
+    const failure = classifyGenerateFailure(err)
+    void logAiUsage(db, {
+      accountId,
+      conversationId,
+      mode: 'auto_reply',
+      provider: config.provider,
+      model: config.model,
+      usage: null,
+      latencyMs: Date.now() - generateStartedAt,
+      errorCode: failure.code,
+      errorMessage: failure.message,
+    })
     try {
       await handOffToHuman(
         '🤖 The AI agent could not generate a reply (provider error) — a human needs to take over this conversation.',
@@ -492,7 +509,7 @@ async function processOneTurn(ctx: {
     }
     return { continueDraining: false }
   }
-  const { text, handoff, usage, toolCalls } = generated
+  const { text, handoff, usage, toolCalls, finishReason, toolTurnsExhausted } = generated
   const latencyMs = Date.now() - generateStartedAt
 
   // Fold this turn's tool results into the cross-turn catalog context
@@ -553,6 +570,8 @@ async function processOneTurn(ctx: {
     latencyMs,
     catalogExternalUsed,
     catalogExternalBlocked,
+    finishReason,
+    toolTurnsExhausted,
   })
 
   if (handoff || !text) {

@@ -54,7 +54,13 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
     maxToolTurns,
   }
 
-  let result: { text: string; usage: AiUsage | null; toolCalls?: GenerateResult['toolCalls'] }
+  let result: {
+    text: string
+    usage: AiUsage | null
+    toolCalls?: GenerateResult['toolCalls']
+    finishReason?: string
+    toolTurnsExhausted?: boolean
+  }
   switch (config.provider) {
     case 'openai':
       result = await generateOpenAi(providerArgs)
@@ -72,7 +78,7 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       })
   }
 
-  return parseGeneration(result.text, result.usage, result.toolCalls)
+  return parseGeneration(result.text, result.usage, result.toolCalls, result.finishReason, result.toolTurnsExhausted)
 }
 
 /**
@@ -86,8 +92,10 @@ export function parseGeneration(
   raw: string,
   usage: AiUsage | null = null,
   toolCalls: GenerateResult['toolCalls'] = [],
+  finishReason?: string,
+  toolTurnsExhausted?: boolean,
 ): GenerateResult {
   const handoff = raw.includes(HANDOFF_SENTINEL)
   const text = raw.split(HANDOFF_SENTINEL).join('').trim()
-  return { text, handoff, usage, toolCalls }
+  return { text, handoff, usage, toolCalls, finishReason, toolTurnsExhausted }
 }

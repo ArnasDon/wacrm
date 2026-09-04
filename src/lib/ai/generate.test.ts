@@ -96,6 +96,11 @@ describe('generateReply — OpenAI', () => {
       handoff: false,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
       toolCalls: [],
+      // Punto 8, H8-1 — the mocked response has no finish_reason and no
+      // tools were attached, so both are the natural "nothing to report"
+      // values.
+      finishReason: undefined,
+      toolTurnsExhausted: false,
     })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.openai.com')
@@ -326,6 +331,10 @@ describe('generateReply — Anthropic', () => {
       handoff: false,
       toolCalls: [],
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
+      // Punto 8, H8-1 — no stop_reason in the mocked response, no tools
+      // attached.
+      finishReason: undefined,
+      toolTurnsExhausted: false,
     })
     const [url, opts] = fetchMock.mock.calls[0]
     expect(url).toContain('api.anthropic.com')
@@ -786,5 +795,202 @@ describe('generateReply — Anthropic prompt caching (FASE 8)', () => {
     const firstSystem = JSON.parse(fetchMock.mock.calls[0][1].body).system
     const secondSystem = JSON.parse(fetchMock.mock.calls[1][1].body).system
     expect(secondSystem).toEqual(firstSystem)
+  })
+})
+
+// ============================================================
+// Punto 8 — H8-1 (finish_reason/stop_reason capture, tool-turns-
+// exhausted) and F-2 (OpenAI/OpenRouter automatic prompt-cache
+// `cached_tokens`). Purely diagnostic additions — none of this changes
+// MAX_TOOL_TURNS/MAX_OUTPUT_TOKENS behavior, the existing fallback
+// text, or any wire request field; only what generateReply() RETURNS.
+// ============================================================
+describe('generateReply — Punto 8, H8-1: finish_reason / stop_reason', () => {
+  it('OpenAI: a normal text reply surfaces finish_reason verbatim, and toolTurnsExhausted is false (no tools attached)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ choices: [{ message: { content: 'Hola!' }, finish_reason: 'stop' }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.finishReason).toBe('stop')
+    expect(res.toolTurnsExhausted).toBe(false)
+  })
+
+  it('OpenAI: a length-truncated reply (finish_reason: "length") is surfaced verbatim, never normalized/invented', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ choices: [{ message: { content: 'Esta respuesta se cortó a la mit' }, finish_reason: 'length' }] }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.finishReason).toBe('length')
+    // The existing text-return behavior is completely unchanged — this
+    // is purely an added diagnostic field, not a new truncation guard.
+    expect(res.text).toBe('Esta respuesta se cortó a la mit')
+  })
+
+  it('OpenAI: toolTurnsExhausted is true on the exact turn MAX_TOOL_TURNS cuts off a model that keeps requesting tools — finishReason still whatever the provider reported for THAT turn', async () => {
+    const toolCallResponse = okResponse({
+      choices: [
+        {
+          message: { content: null, tool_calls: [{ id: 'call_x', type: 'function', function: { name: 'search_catalog', arguments: '{}' } }] },
+          finish_reason: 'tool_calls',
+        },
+      ],
+    })
+    const fetchMock = vi.fn().mockResolvedValue(toolCallResponse)
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: TOOL_SPECS,
+      executeTool: vi.fn().mockResolvedValue({ products: [] }),
+      maxToolTurns: 2,
+    })
+    expect(res.toolTurnsExhausted).toBe(true)
+    expect(res.finishReason).toBe('tool_calls')
+    // Existing fallback behavior (Un momento...) is completely
+    // unaffected — this is an additive diagnostic field only.
+    expect(res.text).toBeTruthy()
+  })
+
+  it('OpenAI: a response with no finish_reason at all leaves it undefined — never a fabricated default', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(okResponse({ choices: [{ message: { content: 'Hi!' } }] }))
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.finishReason).toBeUndefined()
+  })
+
+  it('Anthropic: a normal text reply surfaces stop_reason verbatim', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ content: [{ type: 'text', text: 'Hola!' }], stop_reason: 'end_turn' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'anthropic' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.finishReason).toBe('end_turn')
+    expect(res.toolTurnsExhausted).toBe(false)
+  })
+
+  it('Anthropic: a max_tokens-truncated reply is surfaced verbatim as its own distinct value — never confused with OpenAI\'s "length"', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({ content: [{ type: 'text', text: 'Esta respuesta se cortó' }], stop_reason: 'max_tokens' }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'anthropic' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.finishReason).toBe('max_tokens')
+  })
+
+  it('Anthropic: toolTurnsExhausted is true on the exact turn MAX_TOOL_TURNS cuts off a model that keeps requesting tools', async () => {
+    const toolCallResponse = okResponse({
+      content: [{ type: 'tool_use', id: 'toolu_x', name: 'search_catalog', input: {} }],
+      stop_reason: 'tool_use',
+    })
+    const fetchMock = vi.fn().mockResolvedValue(toolCallResponse)
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({
+      config: config({ provider: 'anthropic' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: TOOL_SPECS,
+      executeTool: vi.fn().mockResolvedValue({ products: [] }),
+      maxToolTurns: 2,
+    })
+    expect(res.toolTurnsExhausted).toBe(true)
+    expect(res.finishReason).toBe('tool_use')
+    expect(res.text).toBeTruthy()
+  })
+})
+
+describe('generateReply — Punto 8, F-2: OpenAI/OpenRouter automatic prompt-cache cached_tokens', () => {
+  it('OpenAI: cached_tokens present → surfaced as cacheReadInputTokens, without touching prompt/completion/total', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hi!' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 1200, completion_tokens: 10, total_tokens: 1210, prompt_tokens_details: { cached_tokens: 1024 } },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.usage).toEqual({
+      promptTokens: 1200,
+      completionTokens: 10,
+      totalTokens: 1210,
+      cacheReadInputTokens: 1024,
+    })
+  })
+
+  it('OpenAI: no prompt_tokens_details at all → cacheReadInputTokens is absent (never a fabricated 0), everything else unaffected', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hi!' }, finish_reason: 'stop' }],
+        usage: { prompt_tokens: 42, completion_tokens: 8, total_tokens: 50 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.usage).toEqual({ promptTokens: 42, completionTokens: 8, totalTokens: 50 })
+    expect(res.usage).not.toHaveProperty('cacheReadInputTokens')
+  })
+
+  it('OpenAI: prompt_tokens_details present but WITHOUT cached_tokens → still absent, defensive optional chaining holds', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hi!' } }],
+        usage: { prompt_tokens: 42, completion_tokens: 8, total_tokens: 50, prompt_tokens_details: {} },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'openai' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.usage).not.toHaveProperty('cacheReadInputTokens')
+  })
+
+  it('OpenRouter: the same shared adapter surfaces cached_tokens identically when an upstream model reports it — never assumed absent just because it is a gateway', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hi!' } }],
+        usage: { prompt_tokens: 1500, completion_tokens: 12, total_tokens: 1512, prompt_tokens_details: { cached_tokens: 1400 } },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({
+      config: config({ provider: 'openrouter', model: 'openai/gpt-4o-mini' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    expect(res.usage?.cacheReadInputTokens).toBe(1400)
+  })
+
+  it('OpenRouter: an upstream model that never reports prompt_tokens_details (e.g. most non-OpenAI models) never fabricates the field', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        choices: [{ message: { content: 'Hi!' } }],
+        usage: { prompt_tokens: 30, completion_tokens: 6, total_tokens: 36 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({
+      config: config({ provider: 'openrouter', model: 'anthropic/claude-haiku-4.5' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'hi' }],
+    })
+    expect(res.usage).not.toHaveProperty('cacheReadInputTokens')
+  })
+
+  it('does not disturb Anthropic\'s own cache accounting (cacheCreationInputTokens/cacheReadInputTokens still exact — regression guard)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      okResponse({
+        content: [{ type: 'text', text: 'Hi!' }],
+        usage: { input_tokens: 100, output_tokens: 10, cache_creation_input_tokens: 900, cache_read_input_tokens: 0 },
+      }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const res = await generateReply({ config: config({ provider: 'anthropic' }), systemPrompt: 'sys', messages: [{ role: 'user', content: 'hi' }] })
+    expect(res.usage).toEqual({
+      promptTokens: 100,
+      completionTokens: 10,
+      totalTokens: 110,
+      cacheCreationInputTokens: 900,
+      cacheReadInputTokens: 0,
+    })
   })
 })

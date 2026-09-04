@@ -64,7 +64,13 @@ vi.mock('@/lib/ai/business-profile/service', () => ({
   loadBusinessProfileForAgent: h.loadBusinessProfileForAgent,
 }))
 vi.mock('@/lib/ai/generate', () => ({ generateReply: h.generateReply }))
-vi.mock('@/lib/ai/usage', () => ({ logAiUsage: h.logAiUsage }))
+// classifyGenerateFailure (Punto 8, H8-2) is real/pure — only logAiUsage
+// itself is mocked (see the comment below on why supabaseAdmin() also
+// needs a mock for it to ever be reached).
+vi.mock('@/lib/ai/usage', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/lib/ai/usage')>()
+  return { ...actual, logAiUsage: h.logAiUsage }
+})
 // route.ts constructs this client itself (`supabaseAdmin()`) to hand to
 // the (mocked) `logAiUsage` above — without this mock, the real
 // `supabaseAdmin()` throws (no service-role key in the test env) before
@@ -255,6 +261,42 @@ describe('POST /api/ai/draft — validation', () => {
     expect(res.status).toBe(502)
     expect(body.code).toBe('empty_response')
     expect(body.error).toBe('OpenAI returned an empty response.')
+  })
+
+  // Punto 8, H8-2 — a failed generateReply() now gets exactly one
+  // logAiUsage row (usage: null, the real AiError.code/message), and the
+  // HTTP response above is completely unaffected by it.
+  it('H8-2: a generateReply failure logs exactly one usage row with usage:null and the real error code/message, never a second row', async () => {
+    requireRoleOk()
+    h.generateReply.mockRejectedValue(
+      new AiError('OpenAI rate limit reached', { code: 'rate_limited', status: 429 }),
+    )
+
+    await POST(postRequest({ conversation_id: 'conv-1' }))
+
+    expect(h.logAiUsage).toHaveBeenCalledTimes(1)
+    expect(h.logAiUsage.mock.calls[0][1]).toMatchObject({
+      mode: 'draft',
+      usage: null,
+      errorCode: 'rate_limited',
+      errorMessage: 'OpenAI rate limit reached',
+    })
+    expect(typeof h.logAiUsage.mock.calls[0][1].latencyMs).toBe('number')
+  })
+
+  it('H8-2: a non-AiError exception from generateReply logs the safe, generic unknown_error code — never invented, never the raw error object', async () => {
+    requireRoleOk()
+    h.generateReply.mockRejectedValue(new Error('unexpected crash'))
+
+    const res = await POST(postRequest({ conversation_id: 'conv-1' }))
+
+    expect(res.status).toBe(500) // unchanged — the outer catch's existing generic mapping
+    expect(h.logAiUsage).toHaveBeenCalledTimes(1)
+    expect(h.logAiUsage.mock.calls[0][1]).toMatchObject({
+      usage: null,
+      errorCode: 'unknown_error',
+      errorMessage: 'unexpected crash',
+    })
   })
 })
 

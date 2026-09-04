@@ -156,6 +156,21 @@ describe('SendMessageError', () => {
     expect(e.status).toBe(502);
     expect(e).toBeInstanceOf(Error);
   });
+
+  it('Punto 10, F-P10-4: defaults externalEffectOccurred to false and waMessageId to undefined when omitted', () => {
+    const e = new SendMessageError('meta_error', 'boom', 502);
+    expect(e.externalEffectOccurred).toBe(false);
+    expect(e.waMessageId).toBeUndefined();
+  });
+
+  it('Punto 10, F-P10-4: carries externalEffectOccurred + waMessageId when provided', () => {
+    const e = new SendMessageError('db_error', 'sent but not saved', 500, {
+      externalEffectOccurred: true,
+      waMessageId: 'wamid.123',
+    });
+    expect(e.externalEffectOccurred).toBe(true);
+    expect(e.waMessageId).toBe('wamid.123');
+  });
 });
 
 // ============================================================
@@ -483,5 +498,55 @@ describe('sendMessageToConversation — F-P10-2: human-agent takeover on manual 
       expect(update).not.toHaveProperty('assigned_agent_id');
       expect(update).not.toHaveProperty('ai_autoreply_disabled');
     }
+  });
+});
+
+// ============================================================
+// Punto 10, F-P10-4 — the actual throw site: Meta already accepted the
+// send (sendTextMessage's mock above returns 'wamid.text') before the
+// messages.insert() below fails. Proves the real code path attaches
+// the evidence withIdempotency() (and any future caller) needs to
+// avoid re-sending on retry — not just that SendMessageError's
+// constructor can carry it in isolation (covered above).
+// ============================================================
+describe('sendMessageToConversation — F-P10-4: externalEffectOccurred evidence at the real throw site', () => {
+  it('a messages.insert() failure AFTER a successful Meta send throws SendMessageError with externalEffectOccurred + the real waMessageId', async () => {
+    const conversation = { id: 'cv-1', contact: { id: 'ct-1', phone: '+15551234567' } };
+    const config = { id: 'cfg-1', phone_number_id: 'pn-1', access_token: 'token' };
+    const db = {
+      from(table: string) {
+        const builder: Record<string, unknown> = {
+          select: () => builder,
+          eq: () => builder,
+          insert: () => builder,
+          maybeSingle: async () => ({ data: null, error: null }),
+          single: async () => {
+            if (table === 'conversations') return { data: conversation, error: null };
+            if (table === 'whatsapp_config') return { data: config, error: null };
+            if (table === 'messages') return { data: null, error: { message: 'insert failed' } };
+            return { data: null, error: null };
+          },
+        };
+        return builder;
+      },
+    } as unknown as SupabaseClient;
+
+    let caught: SendMessageError | null = null;
+    try {
+      await sendMessageToConversation(db, 'acct-1', {
+        conversationId: 'cv-1',
+        messageType: 'text',
+        contentText: 'hello',
+      });
+      throw new Error('expected sendMessageToConversation to throw');
+    } catch (err) {
+      caught = err as SendMessageError;
+    }
+
+    expect(caught).toBeInstanceOf(SendMessageError);
+    expect(caught!.status).toBe(500);
+    expect(caught!.externalEffectOccurred).toBe(true);
+    expect(caught!.waMessageId).toBe('wamid.text'); // real id from the mocked sendTextMessage
+    expect(caught!.message).toContain('sent to Meta but failed to save to DB');
   });
 });

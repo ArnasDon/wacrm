@@ -62,15 +62,33 @@ export const VALID_MESSAGE_TYPES = [
  * Typed failure with a machine `code` and a suggested HTTP `status`.
  * Callers map it to their own response shape (`toErrorResponse` for
  * the dashboard route, the v1 envelope for the public endpoint).
+ *
+ * Punto 10, F-P10-4 — `externalEffectOccurred` is true ONLY for the
+ * one error thrown AFTER Meta already accepted a send (a real message
+ * went out) and a later step (persisting it locally) failed. This is
+ * the one case where treating the error as "safe to retry" is wrong —
+ * see `src/lib/api/v1/idempotency.ts`'s own doc for how it's consumed.
+ * `waMessageId` is carried alongside it, when known, purely as
+ * evidence for logs/future reconciliation — never required for the
+ * idempotency fix itself to work.
  */
 export class SendMessageError extends Error {
   readonly code: string;
   readonly status: number;
-  constructor(code: string, message: string, status: number) {
+  readonly externalEffectOccurred: boolean;
+  readonly waMessageId?: string;
+  constructor(
+    code: string,
+    message: string,
+    status: number,
+    opts?: { externalEffectOccurred?: boolean; waMessageId?: string }
+  ) {
     super(message);
     this.name = 'SendMessageError';
     this.code = code;
     this.status = status;
+    this.externalEffectOccurred = opts?.externalEffectOccurred ?? false;
+    this.waMessageId = opts?.waMessageId;
   }
 }
 
@@ -510,10 +528,15 @@ export async function sendMessageToConversation(
 
   if (msgError) {
     console.error('[send-message] error inserting sent message:', msgError);
+    // Punto 10, F-P10-4 — Meta already accepted this send (waMessageId
+    // is real) before this INSERT failed. `externalEffectOccurred`
+    // marks that for withIdempotency() so a caller retrying with the
+    // same Idempotency-Key can never cause a second real send.
     throw new SendMessageError(
       'db_error',
       `Message sent to Meta but failed to save to DB: ${msgError.message}`,
-      500
+      500,
+      { externalEffectOccurred: true, waMessageId }
     );
   }
 

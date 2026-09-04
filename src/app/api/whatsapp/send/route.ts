@@ -181,8 +181,23 @@ export async function POST(request: Request) {
       })
     } catch (err) {
       if (err instanceof SendMessageError) {
+        // Punto 10, F-P10-4 — this dashboard route has no Idempotency-Key
+        // mechanism to protect (unlike /api/v1/messages), so the fix
+        // here is deliberately minimal: err.message already says
+        // explicitly "Message sent to Meta but failed to save to DB"
+        // (never a generic "failed") — message-thread.tsx's existing
+        // send handler already surfaces this exact text via its own
+        // toast (`Failed to send: ${reason}`), so the agent is not
+        // misled into believing the message definitely never went out.
+        // whatsapp_message_id is included, when known, as additional
+        // evidence for a future reconciliation UI — this internal
+        // `{ error }` shape (distinct from the versioned public v1
+        // envelope) is free to carry it.
         return NextResponse.json(
-          { error: err.message },
+          {
+            error: err.message,
+            ...(err.waMessageId ? { whatsapp_message_id: err.waMessageId } : {}),
+          },
           { status: err.status }
         )
       }

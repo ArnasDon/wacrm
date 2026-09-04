@@ -52,6 +52,7 @@ vi.mock('@/lib/whatsapp/send-message', async (importOriginal) => {
 
 import { POST } from './route';
 import { unauthorized } from '@/lib/api/v1/respond';
+import { SendMessageError } from '@/lib/whatsapp/send-message';
 
 /** Fake `.rpc()` surface for the idempotency RPCs — mirrors the one in
  *  idempotency.test.ts. `calls` records every RPC invocation so a test
@@ -216,6 +217,77 @@ describe('POST /api/v1/messages', () => {
       const res = await POST(postRequest({ to: '', text: 'hi' }, 'key-abc'));
 
       expect(res.status).toBe(400);
+      expect(calls.some((c) => c.name === 'fail_idempotent_request')).toBe(
+        true
+      );
+      expect(calls.some((c) => c.name === 'complete_idempotent_request')).toBe(
+        false
+      );
+    });
+
+    // ============================================================
+    // Punto 10, F-P10-4 — Meta already accepted the send (a real
+    // SendMessageError with externalEffectOccurred:true) before the
+    // local persistence failed. The route must let this propagate
+    // UNCAUGHT to withIdempotency() rather than mapping it to a
+    // response itself — that's what lets the idempotency layer
+    // COMPLETE (not fail) the claim, so a retry with the same key can
+    // never send this message to Meta a second time.
+    // ============================================================
+    it('a SendMessageError with externalEffectOccurred COMPLETES the idempotency claim (never fails it) — the actual fix for the duplicate-send bug', async () => {
+      const { supabase, calls } = fakeIdempotencySupabase({
+        outcome: 'proceed',
+      });
+      mocks.requireApiKey.mockResolvedValue({ supabase, accountId: 'acct-1' });
+      mocks.resolveConversationByPhone.mockResolvedValue({
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        contactCreated: false,
+      });
+      mocks.sendMessageToConversation.mockRejectedValue(
+        new SendMessageError(
+          'db_error',
+          'Message sent to Meta but failed to save to DB: boom',
+          500,
+          { externalEffectOccurred: true, waMessageId: 'wamid-real' }
+        )
+      );
+
+      const res = await POST(
+        postRequest({ to: '+15550001111', text: 'hi' }, 'key-abc')
+      );
+      const body = (await res.json()) as { error: { code: string; message: string } };
+
+      expect(res.status).toBe(500);
+      expect(body.error.code).toBe('db_error');
+      expect(body.error.message).toContain('sent to Meta');
+      expect(calls.some((c) => c.name === 'complete_idempotent_request')).toBe(
+        true
+      );
+      expect(calls.some((c) => c.name === 'fail_idempotent_request')).toBe(
+        false
+      );
+    });
+
+    it('a plain (non-external-effect) SendMessageError still releases the claim exactly as before — regression guard', async () => {
+      const { supabase, calls } = fakeIdempotencySupabase({
+        outcome: 'proceed',
+      });
+      mocks.requireApiKey.mockResolvedValue({ supabase, accountId: 'acct-1' });
+      mocks.resolveConversationByPhone.mockResolvedValue({
+        conversationId: 'conv-1',
+        contactId: 'contact-1',
+        contactCreated: false,
+      });
+      mocks.sendMessageToConversation.mockRejectedValue(
+        new SendMessageError('meta_error', 'Meta API error: 400', 502)
+      );
+
+      const res = await POST(
+        postRequest({ to: '+15550001111', text: 'hi' }, 'key-abc')
+      );
+
+      expect(res.status).toBe(502);
       expect(calls.some((c) => c.name === 'fail_idempotent_request')).toBe(
         true
       );

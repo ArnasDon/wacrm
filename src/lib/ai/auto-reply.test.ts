@@ -379,6 +379,23 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     )
   })
 
+  it('Punto 10, F-P10-4: engineSendText failing after claiming a reply slot hands off to a human instead of silently stranding the conversation', async () => {
+    h.engineSendText.mockRejectedValueOnce(
+      new Error('sent to Meta but DB insert failed: boom'),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    // The reply slot claim still happened (already spent, deliberately
+    // not compensated — see the implementation's own comment) but the
+    // conversation is no longer silently unassigned/unflagged: the
+    // exact same deterministic handoff shape F2 (provider failure)
+    // already uses.
+    expect(h.state.rpcCalls).toEqual([
+      { name: 'claim_ai_reply_slot', args: { conversation_id: 'conv-1', max_replies: 3 } },
+    ])
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true, status: 'pending' })
+    expect(h.state.updatePayload?.ai_handoff_summary).toContain('may have sent a reply')
+  })
+
   it('grounds the reply in retrieved knowledge', async () => {
     h.retrieveKnowledge.mockResolvedValue(['Returns accepted within 30 days.'])
     await dispatchInboundToAiReply(ARGS)

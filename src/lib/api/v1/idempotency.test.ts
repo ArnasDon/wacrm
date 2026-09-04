@@ -304,6 +304,89 @@ describe('withIdempotency', () => {
     expect(calls).toContain('fail_idempotent_request');
   });
 
+  // ============================================================
+  // Punto 10, F-P10-4 — the external-effect-already-happened case. A
+  // retry under the SAME Idempotency-Key must never re-run the
+  // handler (and re-send to Meta) once evidence exists that the real
+  // side effect already occurred.
+  // ============================================================
+  it('an externalEffectOccurred exception COMPLETES (never fails) the idempotency record, and maps to the same error response a retry will replay', async () => {
+    const calls: string[] = [];
+    const completedArgs: Record<string, unknown>[] = [];
+    const supabase = fakeSupabase((name, args) => {
+      calls.push(name);
+      if (name === 'begin_idempotent_request') {
+        return {
+          data: { outcome: 'proceed', cached_status: null, cached_body: null },
+          error: null,
+        };
+      }
+      if (name === 'complete_idempotent_request') completedArgs.push(args);
+      return { data: null, error: null };
+    });
+    const handler = vi.fn(async () => {
+      throw Object.assign(
+        new Error('Message sent to Meta but failed to save to DB: boom'),
+        { code: 'db_error', status: 500, externalEffectOccurred: true }
+      );
+    });
+
+    const res = await withIdempotency(
+      reqWithKey('key-1'),
+      supabase,
+      'acct-1',
+      'messages:send',
+      { to: '+1' },
+      handler
+    );
+
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe('db_error');
+    expect(body.error.message).toContain('sent to Meta');
+    // The actual proof this closes the duplicate-send bug: completed,
+    // never failed — see the pre-existing "outcome 'replay': NEVER
+    // calls the handler" test above for what a completed record does
+    // on the next request with the same key.
+    expect(calls).toContain('complete_idempotent_request');
+    expect(calls).not.toContain('fail_idempotent_request');
+    expect(completedArgs[0]?.p_response_status).toBe(500);
+  });
+
+  it('a plain thrown error that merely LOOKS similar (has code/status, but no externalEffectOccurred marker) still releases the claim exactly as before — regression guard against over-matching', async () => {
+    const calls: string[] = [];
+    const supabase = fakeSupabase((name) => {
+      calls.push(name);
+      if (name === 'begin_idempotent_request') {
+        return {
+          data: { outcome: 'proceed', cached_status: null, cached_body: null },
+          error: null,
+        };
+      }
+      return { data: null, error: null };
+    });
+    const handler = vi.fn(async () => {
+      throw Object.assign(new Error('bad phone number'), {
+        code: 'bad_request',
+        status: 400,
+        // externalEffectOccurred intentionally omitted.
+      });
+    });
+
+    await expect(
+      withIdempotency(
+        reqWithKey('key-1'),
+        supabase,
+        'acct-1',
+        'messages:send',
+        { to: 'bad' },
+        handler
+      )
+    ).rejects.toThrow('bad phone number');
+    expect(calls).toContain('fail_idempotent_request');
+    expect(calls).not.toContain('complete_idempotent_request');
+  });
+
   it('isolation: the account_id passed to the RPC is always the authenticated one, never mixed up across calls', async () => {
     const seenAccounts: string[] = [];
     const supabase = fakeSupabase((name, args) => {

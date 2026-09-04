@@ -645,14 +645,40 @@ async function processOneTurn(ctx: {
   }
   if (claimed !== true) return { continueDraining: false } // lost the per-conversation cap race
 
-  await engineSendText({
-    accountId,
-    userId: configOwnerUserId,
-    conversationId,
-    contactId,
-    text,
-    aiGenerated: true,
-  })
+  try {
+    await engineSendText({
+      accountId,
+      userId: configOwnerUserId,
+      conversationId,
+      contactId,
+      text,
+      aiGenerated: true,
+    })
+  } catch (err) {
+    // Punto 10, F-P10-4 — engineSendText only throws AFTER Meta already
+    // accepted the send, when the subsequent messages.insert() fails —
+    // meaning the customer may have received this reply while the CRM
+    // has no record of it, and the reply-slot claimed above is spent
+    // either way (no compensating decrement exists — a residual,
+    // deliberately accepted limitation, not fixed here per this
+    // phase's own minimal-scope authorization). Left unhandled, this
+    // would silently strand the conversation with no record, no
+    // assignment, and no notification. Escalate to a human via the
+    // exact same deterministic route a generation failure (F2) already
+    // uses, rather than inventing a new fallback shape.
+    console.error(
+      '[ai auto-reply] engineSendText failed after claiming a reply slot — handing off to a human:',
+      err,
+    )
+    try {
+      await handOffToHuman(
+        '🤖 The AI agent may have sent a reply but could not record it — a human should verify this conversation.',
+      )
+    } catch (handoffErr) {
+      console.error('[ai auto-reply] handoff fallback after a send failure ALSO failed:', handoffErr)
+    }
+    return { continueDraining: false }
+  }
 
   return { continueDraining: true }
 }

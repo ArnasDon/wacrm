@@ -161,6 +161,15 @@ async function sendMessage(
     );
   } catch (err) {
     if (err instanceof SendMessageError) {
+      // Punto 10, F-P10-4 — an error carrying externalEffectOccurred
+      // means Meta already accepted this send before something else
+      // failed. It must propagate UNCAUGHT here so withIdempotency()'s
+      // own catch (in the caller above) can complete — not fail — the
+      // idempotency claim, so a retry under the same Idempotency-Key
+      // can never send this message to Meta a second time. Every other
+      // SendMessageError (validation, Meta rejected it outright, etc.)
+      // is still mapped to the envelope here exactly as before.
+      if (err.externalEffectOccurred) throw err;
       return fail(err.code, err.message, err.status);
     }
     throw err;

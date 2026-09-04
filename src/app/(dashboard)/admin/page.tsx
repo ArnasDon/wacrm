@@ -37,6 +37,7 @@ import {
   CompanyMasterDetail,
   type PlatformCompany,
 } from '@/components/admin/company-master-detail';
+import { AiDemo } from '@/components/admin/ai-demo';
 
 type Company = PlatformCompany;
 
@@ -606,6 +607,8 @@ export default function PlatformAdminPage() {
           void saveCompanyBilling(company, amount, currency)
         }
       />
+
+      <AiDemo />
 
       {/* Legacy company table retained as a rollback reference while the
           master-detail view above carries every existing action. */}

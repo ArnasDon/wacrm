@@ -464,6 +464,22 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
     expect(h.generateReply).not.toHaveBeenCalled()
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
+
+  it('stands down without calling the model when a racing dispatch already answered (2026-09-03/04 incident)', async () => {
+    // The newest message is the bot's own reply, not the customer's —
+    // the signal that an earlier debounced dispatch for this same
+    // burst already ran and answered. Regenerating here risks a
+    // duplicate reply; erroring risks an unnecessary handoff (Anthropic
+    // 400s a transcript that doesn't end on `user`, unretryable).
+    h.buildConversationContext.mockResolvedValue([
+      { role: 'user', content: 'Se dedica a dar créditos' },
+      { role: 'assistant', content: '¡Buenos días! Contame más...' },
+    ])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    expect(h.state.updatePayload).toBeNull()
+  })
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {

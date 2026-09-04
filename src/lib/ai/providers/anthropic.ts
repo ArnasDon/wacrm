@@ -18,15 +18,29 @@ interface AnthropicResponse {
 
 /**
  * Anthropic's Messages API requires strictly alternating roles that
- * begin with `user`. Merge consecutive turns, then drop any leading
- * assistant turns (an agent greeting before the customer said anything)
- * so the transcript always starts on the customer. Guarantees a valid,
- * non-empty payload.
+ * begin AND end with `user` — it rejects a transcript ending on
+ * `assistant` outright ("This model does not support assistant message
+ * prefill. The conversation must end with a user message"), not with a
+ * retryable/transient error. `buildConversationContext` (context.ts)
+ * just returns the account's most recent messages in order, so its
+ * last entry is whoever sent the newest one — normally the customer,
+ * but a race between two overlapping auto-reply dispatches for the
+ * same rapid-fire burst can read the context *after* an earlier
+ * dispatch already inserted its own reply, landing here with a
+ * trailing assistant turn (confirmed live 2026-09-03/04 — see
+ * `ai_generate_error` alerts). Merge consecutive turns, then drop any
+ * leading OR trailing assistant turns (a greeting before the customer
+ * spoke; an answer already given) so the transcript always starts and
+ * ends on the customer. Guarantees a valid payload — never guarantees
+ * a non-empty one, callers must still handle `[]`.
  */
 function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
   const merged = mergeConsecutive(messages)
   while (merged.length > 0 && merged[0].role === 'assistant') {
     merged.shift()
+  }
+  while (merged.length > 0 && merged[merged.length - 1].role === 'assistant') {
+    merged.pop()
   }
   if (merged.length === 0) {
     return [{ role: 'user', content: '(The customer has not sent a message yet.)' }]

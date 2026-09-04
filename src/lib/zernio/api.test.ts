@@ -114,6 +114,30 @@ describe('zernioFetch (via sendZernioText)', () => {
     expect(err).toBeInstanceOf(SendMessageError)
     expect(err.status).toBe(502)
   })
+
+  it('digs a string out of a nested error object instead of "[object Object]"', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({
+        error: { message: 'Invalid parameter', error_user_msg: 'El nombre ya existe' },
+      }),
+    } as unknown as Response)
+    const err = await sendZernioText(args).catch((e) => e)
+    expect(err.message).toBe('Invalid parameter')
+    expect(err.message).not.toContain('[object Object]')
+  })
+
+  it('falls back to the JSON of the error blob when it has no string field', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: false,
+      status: 400,
+      json: async () => ({ error: { fields: ['a', 'b'], code: 42 } }),
+    } as unknown as Response)
+    const err = await sendZernioText(args).catch((e) => e)
+    expect(err.message).not.toContain('[object Object]')
+    expect(err.message).toContain('fields')
+  })
 })
 
 describe('deleteZernioTemplate', () => {

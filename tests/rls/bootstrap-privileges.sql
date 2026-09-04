@@ -62,3 +62,29 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
   public.account_business_contacts,
   public.ai_configs
 TO service_role, authenticated;
+
+-- ------------------------------------------------------------
+-- Punto 9, H9-1 — tests/rls/notifications.rls.test.ts (new) is the
+-- first test in this suite to touch `public.notifications` at all, via
+-- service_role fixture-style inserts — same missing-baseline-privilege
+-- gap as every table above, now surfaced for this one.
+--
+-- UPDATE is granted to service_role only, NOT blanket to
+-- `authenticated` like the tables above: migration 027 deliberately
+-- narrows `authenticated`'s UPDATE on this table to the `read_at`
+-- column alone (`REVOKE UPDATE ... FROM authenticated; GRANT UPDATE
+-- (read_at) ... TO authenticated;`), applied during "Replay every
+-- migration from scratch" — which runs BEFORE this file. A blanket
+-- `GRANT UPDATE ON TABLE ... TO authenticated` here would silently
+-- re-widen that back to every column for the rest of the local CI run,
+-- which is exactly the kind of real-security change this file must
+-- never make (see this file's own header). SELECT/INSERT/DELETE carry
+-- no such column-level narrowing for `authenticated` — safe to mirror
+-- the same baseline pattern as every other table (RLS still gates
+-- every actual row: this table's own policies grant `authenticated`
+-- no INSERT/DELETE policy at all, and SELECT/UPDATE both require
+-- auth.uid() = user_id AND is_account_member(account_id), migrations
+-- 027/062).
+-- ------------------------------------------------------------
+GRANT SELECT, INSERT, DELETE ON TABLE public.notifications TO service_role, authenticated;
+GRANT UPDATE ON TABLE public.notifications TO service_role;

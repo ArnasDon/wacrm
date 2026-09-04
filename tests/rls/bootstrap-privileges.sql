@@ -91,4 +91,21 @@ BEGIN
 
   EXECUTE 'GRANT SELECT, INSERT, DELETE ON TABLE public.notifications TO service_role, authenticated';
   EXECUTE 'GRANT UPDATE ON TABLE public.notifications TO service_role';
+
+  -- Punto 11, G2 — tests/rls/idempotency.rls.test.ts (new) is the first
+  -- test in this suite to touch `public.api_idempotency_keys` at all.
+  -- Its RPC calls (begin_/complete_/fail_idempotent_request, migration
+  -- 056) are SECURITY DEFINER and already GRANTed EXECUTE to
+  -- service_role in that migration, so they don't depend on this file —
+  -- but TEST A also runs one direct SELECT against the table itself
+  -- (to confirm the concurrent race left exactly one row), which hits
+  -- the same missing-baseline-privilege gap as every table above.
+  --
+  -- service_role ONLY — never authenticated, and never anon. Migration
+  -- 056 states plainly that "no client, human or API key, ever
+  -- reads/writes them directly": the table's own RLS is enabled with
+  -- zero policies, so even granting authenticated the bare table
+  -- privilege here would be pure dead weight at best, and a needless
+  -- widening of this local-only bootstrap's surface at worst.
+  EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.api_idempotency_keys TO service_role';
 END $$;

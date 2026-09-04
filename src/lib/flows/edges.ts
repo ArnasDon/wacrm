@@ -47,6 +47,7 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "start":
       case "send_message":
       case "send_media":
+      case "send_email":
       case "collect_input":
       case "set_tag": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
@@ -86,10 +87,8 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       }
 
       case "send_buttons": {
-        const buttons = Array.isArray(
-          (cfg as { buttons?: unknown }).buttons,
-        )
-          ? ((cfg as { buttons: Array<Record<string, unknown>> }).buttons)
+        const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
+          ? (cfg as { buttons: Array<Record<string, unknown>> }).buttons
           : [];
         for (const btn of buttons) {
           const replyId =
@@ -110,10 +109,8 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       }
 
       case "send_list": {
-        const sections = Array.isArray(
-          (cfg as { sections?: unknown }).sections,
-        )
-          ? ((cfg as { sections: Array<Record<string, unknown>> }).sections)
+        const sections = Array.isArray((cfg as { sections?: unknown }).sections)
+          ? (cfg as { sections: Array<Record<string, unknown>> }).sections
           : [];
         for (const section of sections) {
           const rows = Array.isArray(section.rows)
@@ -177,6 +174,7 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "start":
     case "send_message":
     case "send_media":
+    case "send_email":
     case "collect_input":
     case "set_tag":
       return [{ id: "next", label: "Next" }];
@@ -189,7 +187,7 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
 
     case "send_buttons": {
       const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
-        ? ((cfg as { buttons: Array<Record<string, unknown>> }).buttons)
+        ? (cfg as { buttons: Array<Record<string, unknown>> }).buttons
         : [];
       return buttons
         .filter((b) => typeof b.reply_id === "string" && b.reply_id)
@@ -205,7 +203,7 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
 
     case "send_list": {
       const sections = Array.isArray((cfg as { sections?: unknown }).sections)
-        ? ((cfg as { sections: Array<Record<string, unknown>> }).sections)
+        ? (cfg as { sections: Array<Record<string, unknown>> }).sections
         : [];
       const slots: OutgoingSlot[] = [];
       for (const section of sections) {
@@ -251,6 +249,7 @@ export function applyEdgeConnection(
     case "start":
     case "send_message":
     case "send_media":
+    case "send_email":
     case "collect_input":
     case "set_tag":
       if (sourceHandle === "next") return { next_node_key: targetKey };
@@ -267,9 +266,11 @@ export function applyEdgeConnection(
       const buttons = Array.isArray(
         (node.config as { buttons?: unknown }).buttons,
       )
-        ? (node.config as {
-            buttons: Array<Record<string, unknown>>;
-          }).buttons
+        ? (
+            node.config as {
+              buttons: Array<Record<string, unknown>>;
+            }
+          ).buttons
         : [];
       // No matching button → no-op (caller should have surfaced a
       // missing slot before letting the user drag).
@@ -287,9 +288,11 @@ export function applyEdgeConnection(
       const sections = Array.isArray(
         (node.config as { sections?: unknown }).sections,
       )
-        ? (node.config as {
-            sections: Array<Record<string, unknown>>;
-          }).sections
+        ? (
+            node.config as {
+              sections: Array<Record<string, unknown>>;
+            }
+          ).sections
         : [];
       let matched = false;
       const next = sections.map((s) => {
@@ -345,6 +348,7 @@ function patchedConfigWithoutKey(
     case "start":
     case "send_message":
     case "send_media":
+    case "send_email":
     case "collect_input":
     case "set_tag": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
@@ -366,9 +370,11 @@ function patchedConfigWithoutKey(
 
     case "send_buttons": {
       const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
-        ? (cfg as {
-            buttons: Array<Record<string, unknown>>;
-          }).buttons
+        ? (
+            cfg as {
+              buttons: Array<Record<string, unknown>>;
+            }
+          ).buttons
         : [];
       if (!buttons.some((b) => b.next_node_key === deletedKey)) return null;
       return {
@@ -381,9 +387,11 @@ function patchedConfigWithoutKey(
 
     case "send_list": {
       const sections = Array.isArray((cfg as { sections?: unknown }).sections)
-        ? (cfg as {
-            sections: Array<Record<string, unknown>>;
-          }).sections
+        ? (
+            cfg as {
+              sections: Array<Record<string, unknown>>;
+            }
+          ).sections
         : [];
       let dirty = false;
       const next = sections.map((s) => {
@@ -409,4 +417,3 @@ function patchedConfigWithoutKey(
       return null;
   }
 }
-

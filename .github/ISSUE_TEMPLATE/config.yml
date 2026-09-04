@@ -1,11 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Security vulnerability (private)
-    url: https://github.com/ArnasDon/wacrm/security/advisories/new
+    url: https://github.com/onlypromarketer/wacrm/security/advisories/new
     about: Do not file security issues in public. Follow the private disclosure flow.
   - name: Setup / "how do I..." questions
-    url: https://github.com/ArnasDon/wacrm/blob/main/docs/README.md
+    url: https://github.com/onlypromarketer/wacrm/blob/main/docs/README.md
     about: Check the docs first — setup, deploy, troubleshooting are all covered.
   - name: Using this as a template (forking)
-    url: https://github.com/ArnasDon/wacrm/blob/main/CONTRIBUTING.md
+    url: https://github.com/onlypromarketer/wacrm/blob/main/CONTRIBUTING.md
     about: This is a template. Most changes belong in your fork, not an upstream issue — here's how that works.

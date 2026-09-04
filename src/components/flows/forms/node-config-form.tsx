@@ -25,14 +25,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import {
-  Loader2,
-  Paperclip,
-  Plus,
-  Trash2,
-  Upload,
-  X,
-} from "lucide-react";
+import { Loader2, Paperclip, Plus, Trash2, Upload, X } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 
@@ -46,7 +39,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
+import {
+  uploadAccountMedia,
+  MEDIA_MAX_BYTES,
+} from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
 
@@ -140,7 +136,7 @@ export function NodeConfigForm({
             rows={2}
           />
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">
+            <label className="text-muted-foreground mb-1 block text-xs">
               {t("varKeyLabel")}
             </label>
             <Input
@@ -153,9 +149,9 @@ export function NodeConfigForm({
               placeholder={t("varKeyPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
-            <p className="mt-1 text-[10px] text-muted-foreground">
+            <p className="text-muted-foreground mt-1 text-[10px]">
               {t("varKeyHelp")}{" "}
-              <code className="rounded bg-muted px-1">
+              <code className="bg-muted rounded px-1">
                 {"{{vars."}
                 {(cfg as { var_key?: string }).var_key || "name"}
                 {"}}"}
@@ -177,6 +173,17 @@ export function NodeConfigForm({
       return (
         <ConditionForm
           cfg={cfg as ConditionCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
+    case "send_email":
+      return (
+        <SendEmailForm
+          cfg={cfg as SendEmailCfg}
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
@@ -207,9 +214,7 @@ export function NodeConfigForm({
 
     case "end":
       return (
-        <p className="text-xs text-muted-foreground">
-          {t("endNodeHelp")}
-        </p>
+        <p className="text-muted-foreground text-xs">{t("endNodeHelp")}</p>
       );
   }
 }
@@ -277,7 +282,7 @@ function SendButtonsForm({
       />
       <div>
         <div className="mb-2 flex items-center justify-between">
-          <label className="text-xs text-muted-foreground">
+          <label className="text-muted-foreground text-xs">
             {t("buttonsHelp")}
           </label>
         </div>
@@ -286,7 +291,7 @@ function SendButtonsForm({
             <div
               key={i}
               className={cn(
-                "grid grid-cols-1 gap-2 rounded-md border border-border bg-muted/40 p-3",
+                "border-border bg-muted/40 grid grid-cols-1 gap-2 rounded-md border p-3",
                 showAdvanced
                   ? "md:grid-cols-[1fr_2fr_2fr_auto]"
                   : "md:grid-cols-[2fr_2fr_auto]",
@@ -387,9 +392,7 @@ function SendListForm({
     patch: Partial<NonNullable<SendListCfg["sections"]>[number]>,
   ) => {
     onUpdateConfig({
-      sections: sections.map((s, i) =>
-        i === sIdx ? { ...s, ...patch } : s,
-      ),
+      sections: sections.map((s, i) => (i === sIdx ? { ...s, ...patch } : s)),
     });
   };
   const addSection = () =>
@@ -475,20 +478,18 @@ function SendListForm({
       </div>
 
       <div className="mt-2">
-        <label className="mb-2 block text-xs text-muted-foreground">
+        <label className="text-muted-foreground mb-2 block text-xs">
           {t("rowsHelp")}
         </label>
         {sections.map((section, sIdx) => (
           <div
             key={sIdx}
-            className="mb-3 rounded-md border border-border bg-muted/40 p-3"
+            className="border-border bg-muted/40 mb-3 rounded-md border p-3"
           >
             <div className="mb-2 flex items-center gap-2">
               <Input
                 value={section.title ?? ""}
-                onChange={(e) =>
-                  updateSection(sIdx, { title: e.target.value })
-                }
+                onChange={(e) => updateSection(sIdx, { title: e.target.value })}
                 placeholder={t("sectionTitlePlaceholder", { count: sIdx + 1 })}
                 className="bg-muted text-xs"
               />
@@ -519,10 +520,7 @@ function SendListForm({
                     value={row.reply_id}
                     onChange={(e) =>
                       updateRow(sIdx, rIdx, {
-                        reply_id: slugify(
-                          e.target.value,
-                          `row_${rIdx + 1}`,
-                        ),
+                        reply_id: slugify(e.target.value, `row_${rIdx + 1}`),
                       })
                     }
                     placeholder="reply_id"
@@ -626,7 +624,9 @@ function ConditionForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("ifLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("ifLabel")}
+          </label>
           <Select
             value={subject}
             onValueChange={(v) =>
@@ -644,7 +644,7 @@ function ConditionForm({
           </Select>
         </div>
         <div className="md:col-span-2">
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="text-muted-foreground mb-1 block text-xs">
             {subject === "var"
               ? t("varName")
               : subject === "tag"
@@ -685,10 +685,12 @@ function ConditionForm({
           ) : (
             <Input
               value={cfg.subject_key ?? ""}
-              onChange={(e) =>
-                onUpdateConfig({ subject_key: e.target.value })
+              onChange={(e) => onUpdateConfig({ subject_key: e.target.value })}
+              placeholder={
+                subject === "var"
+                  ? t("varKeyPlaceholder")
+                  : t("tagUuidPlaceholder")
               }
-              placeholder={subject === "var" ? t("varKeyPlaceholder") : t("tagUuidPlaceholder")}
               className="bg-muted font-mono text-xs"
             />
           )}
@@ -702,7 +704,9 @@ function ConditionForm({
         )}
       >
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("operatorLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("operatorLabel")}
+          </label>
           <Select
             value={operator}
             onValueChange={(v) =>
@@ -722,7 +726,9 @@ function ConditionForm({
         </div>
         {showValue && (
           <div>
-            <label className="mb-1 block text-xs text-muted-foreground">{t("valueLabel")}</label>
+            <label className="text-muted-foreground mb-1 block text-xs">
+              {t("valueLabel")}
+            </label>
             <Input
               value={cfg.value ?? ""}
               onChange={(e) => onUpdateConfig({ value: e.target.value })}
@@ -748,6 +754,122 @@ function ConditionForm({
           label={t("ifFalseAdvance")}
         />
       </div>
+    </>
+  );
+}
+
+// ============================================================
+// send_email
+// ============================================================
+
+interface SendEmailCfg {
+  template_id?: number;
+  subject?: string;
+  next_node_key?: string;
+}
+
+interface EmailTemplateOption {
+  id: number;
+  name: string;
+  subject?: string;
+}
+
+/**
+ * Transactional email templates from the email engine, via the CRM's
+ * own API (never the engine directly — the browser has no credentials
+ * for it). Empty when email isn't configured; the form then explains
+ * rather than offering a picker with nothing in it.
+ */
+function useEmailTemplates(): {
+  templates: EmailTemplateOption[];
+  loaded: boolean;
+} {
+  const [templates, setTemplates] = useState<EmailTemplateOption[]>([]);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/email/templates?type=tx", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : { templates: [] }))
+      .then((d: { templates?: EmailTemplateOption[] }) => {
+        if (!cancelled) setTemplates(d.templates ?? []);
+      })
+      .catch(() => {
+        /* email not configured — picker shows guidance */
+      })
+      .finally(() => {
+        if (!cancelled) setLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return { templates, loaded };
+}
+
+function SendEmailForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: SendEmailCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const { templates, loaded } = useEmailTemplates();
+
+  return (
+    <>
+      <div>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("emailTemplateLabel")}
+        </label>
+        {templates.length > 0 ? (
+          <Select
+            value={cfg.template_id ? String(cfg.template_id) : ""}
+            onValueChange={(v) => onUpdateConfig({ template_id: Number(v) })}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue placeholder={t("pickEmailTemplate")} />
+            </SelectTrigger>
+            <SelectContent>
+              {templates.map((tpl) => (
+                <SelectItem key={tpl.id} value={String(tpl.id)}>
+                  {tpl.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        ) : (
+          <p className="border-border bg-muted/40 text-muted-foreground rounded-md border border-dashed px-3 py-2 text-xs">
+            {loaded ? t("noEmailTemplates") : "…"}
+          </p>
+        )}
+      </div>
+      <div>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("emailSubjectLabel")}
+        </label>
+        <Input
+          value={cfg.subject ?? ""}
+          onChange={(e) => onUpdateConfig({ subject: e.target.value })}
+          placeholder={t("emailSubjectPlaceholder")}
+          className="bg-muted"
+        />
+        <p className="text-muted-foreground mt-1 text-[10px]">
+          {t("emailSubjectHelp")}
+        </p>
+      </div>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("advancesTo")}
+      />
     </>
   );
 }
@@ -781,7 +903,9 @@ function SetTagForm({
     <>
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("actionLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("actionLabel")}
+          </label>
           <Select
             value={cfg.mode ?? "add"}
             onValueChange={(v) =>
@@ -798,7 +922,9 @@ function SetTagForm({
           </Select>
         </div>
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("tagLabel")}</label>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t("tagLabel")}
+          </label>
           {tags.length > 0 ? (
             <Select
               value={cfg.tag_id ?? ""}
@@ -907,7 +1033,7 @@ function SendMediaForm({
   const isDocument = mediaType === "document";
   const displayName =
     cfg.filename ||
-    (cfg.media_url ? cfg.media_url.split("/").pop() ?? "" : "");
+    (cfg.media_url ? (cfg.media_url.split("/").pop() ?? "") : "");
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -946,7 +1072,9 @@ function SendMediaForm({
   return (
     <>
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">{t("mediaTypeLabel")}</label>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("mediaTypeLabel")}
+        </label>
         <Select
           value={mediaType}
           onValueChange={(v) => {
@@ -966,23 +1094,23 @@ function SendMediaForm({
           <SelectContent>
             <SelectItem value="image">{t("imageLabel")}</SelectItem>
             <SelectItem value="video">{t("videoLabel")}</SelectItem>
-            <SelectItem value="document">
-              {t("documentLabel")}
-            </SelectItem>
+            <SelectItem value="document">{t("documentLabel")}</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       <div>
-        <label className="mb-1 block text-xs text-muted-foreground">{t("fileLabel")}</label>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t("fileLabel")}
+        </label>
         {cfg.media_url ? (
-          <div className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-xs">
+          <div className="border-border bg-muted flex items-center gap-2 rounded-md border px-3 py-2 text-xs">
             <Paperclip className="h-3.5 w-3.5 shrink-0 text-cyan-400" />
             <a
               href={cfg.media_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="min-w-0 flex-1 truncate text-foreground hover:text-cyan-300"
+              className="text-foreground min-w-0 flex-1 truncate hover:text-cyan-300"
               title={displayName || cfg.media_url}
             >
               {displayName || cfg.media_url}
@@ -990,7 +1118,7 @@ function SendMediaForm({
             <button
               type="button"
               onClick={handleClear}
-              className="rounded p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+              className="text-muted-foreground hover:bg-muted hover:text-foreground rounded p-1"
               aria-label={t("removeFile")}
               disabled={uploading}
             >
@@ -1002,7 +1130,7 @@ function SendMediaForm({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading}
-            className="flex w-full items-center justify-center gap-2 rounded-md border border-dashed border-border bg-card px-3 py-4 text-xs text-muted-foreground transition-colors hover:border-border hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+            className="border-border bg-card text-muted-foreground hover:border-border hover:bg-muted hover:text-foreground flex w-full items-center justify-center gap-2 rounded-md border border-dashed px-3 py-4 text-xs transition-colors disabled:cursor-not-allowed disabled:opacity-60"
           >
             {uploading ? (
               <>
@@ -1040,7 +1168,7 @@ function SendMediaForm({
 
       {isDocument && (
         <div>
-          <label className="mb-1 block text-xs text-muted-foreground">
+          <label className="text-muted-foreground mb-1 block text-xs">
             {t("filenameLabel")}
           </label>
           <Input

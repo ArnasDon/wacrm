@@ -547,3 +547,47 @@ describe("reachableFromEntry", () => {
     expect(set).toEqual(new Set(["a", "b"]));
   });
 });
+
+describe("validateFlowForActivation — send_email", () => {
+  const withEmail = [
+    { node_key: "start", node_type: "start", config: { next_node_key: "mail" } },
+    {
+      node_key: "mail",
+      node_type: "send_email",
+      config: { template_id: 5, subject: "", next_node_key: "ho" },
+    },
+    { node_key: "ho", node_type: "handoff", config: {} },
+  ];
+
+  it("accepts a well-formed send_email node", () => {
+    expect(validateFlowForActivation(validFlow, withEmail)).toEqual([]);
+  });
+
+  it("flags a missing template", () => {
+    const nodes = withEmail.map((n) =>
+      n.node_key === "mail" ? { ...n, config: { ...n.config, template_id: 0 } } : n,
+    );
+    expect(validateFlowForActivation(validFlow, nodes)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ node_key: "mail", field: "template_id" }),
+      ]),
+    );
+  });
+
+  it("flags a dangling next node", () => {
+    const nodes = withEmail.map((n) =>
+      n.node_key === "mail" ? { ...n, config: { ...n.config, next_node_key: "nope" } } : n,
+    );
+    expect(validateFlowForActivation(validFlow, nodes)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ node_key: "mail", field: "next_node_key" }),
+      ]),
+    );
+  });
+
+  // send_email must count as an outgoing edge, or the node after it is
+  // reported unreachable and activation refuses a perfectly good flow.
+  it("treats next_node_key as an edge for reachability", () => {
+    expect(reachableFromEntry("start", withEmail)).toContain("ho");
+  });
+});

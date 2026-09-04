@@ -25,7 +25,7 @@ export const metadata: Metadata = {
     default: "wacrm",
     template: "%s — wacrm",
   },
-  description: "Self-hostable CRM template for WhatsApp.",
+  description: "Self-hosted WhatsApp + email marketing platform — shared inbox, CRM, campaigns, automations.",
   robots: {
     index: false,
     follow: false,

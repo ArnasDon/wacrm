@@ -258,7 +258,8 @@ function validateNode(
           scope: "node",
           node_key: node.node_key,
           field: "media_type",
-          message: "Send-media node needs a media type (image, video, or document).",
+          message:
+            "Send-media node needs a media type (image, video, or document).",
         });
       }
       if (!cfg.media_url?.trim()) {
@@ -267,12 +268,16 @@ function validateNode(
           scope: "node",
           node_key: node.node_key,
           field: "media_url",
-          message: "Send-media node needs a file (upload one before activating).",
+          message:
+            "Send-media node needs a file (upload one before activating).",
         });
       }
       // Caption cap mirrors Meta's interactive body cap; documented as a
       // hard limit in the WhatsApp Cloud API media-message reference.
-      if (cfg.caption && cfg.caption.length > INTERACTIVE_LIMITS.bodyMaxLength) {
+      if (
+        cfg.caption &&
+        cfg.caption.length > INTERACTIVE_LIMITS.bodyMaxLength
+      ) {
         issues.push({
           severity: "error",
           scope: "node",
@@ -593,7 +598,10 @@ function validateNode(
         true_next?: string;
         false_next?: string;
       };
-      if (!cfg.subject || !["var", "tag", "contact_field"].includes(cfg.subject)) {
+      if (
+        !cfg.subject ||
+        !["var", "tag", "contact_field"].includes(cfg.subject)
+      ) {
         issues.push({
           severity: "error",
           scope: "node",
@@ -608,7 +616,8 @@ function validateNode(
           scope: "node",
           node_key: node.node_key,
           field: "subject_key",
-          message: "Condition needs a subject_key (var name, tag id, or field name).",
+          message:
+            "Condition needs a subject_key (var name, tag id, or field name).",
         });
       }
       if (
@@ -701,6 +710,41 @@ function validateNode(
       break;
     }
 
+    case "send_email": {
+      const cfg = node.config as {
+        template_id?: number | string;
+        next_node_key?: string;
+      };
+      const tid = Number(cfg.template_id);
+      if (!Number.isInteger(tid) || tid < 1) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "template_id",
+          message: "Send-email needs an email template.",
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: "Send-email must point to a next node.",
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: `Send-email points to non-existent node "${cfg.next_node_key}".`,
+        });
+      }
+      break;
+    }
+
     case "handoff":
     case "end":
       // Terminal nodes have no outgoing edges; nothing to validate
@@ -750,6 +794,7 @@ function outgoingEdges(node: NodeInput): string[] {
     case "start":
     case "send_message":
     case "send_media":
+    case "send_email":
     case "collect_input":
     case "set_tag": {
       const cfg = node.config as { next_node_key?: string };

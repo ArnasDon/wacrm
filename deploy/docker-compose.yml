@@ -1,0 +1,116 @@
+# ============================================================
+# wacrm + listmonk — one product, one domain, one login.
+#
+#   Caddy ──┬─▶ wacrm      (Next.js)  — the only UI
+#           └─▶ listmonk   (Go)       — email engine, headless
+#                   └─▶ listmonk-db   (Postgres)
+#
+# Supabase is NOT in this file. Point wacrm at a Supabase project
+# (cloud free tier is fine, or self-hosted elsewhere) — it supplies
+# the CRM database, auth, storage and realtime.
+#
+# WHY TWO SERVICES AND NOT ONE:
+#   listmonk is a compiled Go binary with its own Vue frontend; wacrm
+#   is a Next.js app. There is no process to merge them into. Keeping
+#   listmonk as an UNMODIFIED upstream image also keeps its AGPL-3.0
+#   licence scoped to listmonk itself, leaving your wacrm fork MIT.
+#   Vendoring its source into your repo would not.
+#
+# Usage:
+#   cp .env.example .env && $EDITOR .env
+#   docker compose up -d
+# ============================================================
+
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp' # HTTP/3
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data # ACME account + certificates
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+    depends_on:
+      - wacrm
+
+  wacrm:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        # NEXT_PUBLIC_* are inlined into the client bundle at BUILD
+        # time, so they must be build args, not just runtime env.
+        # Change one → rebuild (`docker compose up -d --build`).
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL:?}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY:?}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-}
+        NEXT_PUBLIC_APP_LOCALE: ${NEXT_PUBLIC_APP_LOCALE:-en}
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      PORT: 3000
+      # Internal service name — listmonk is never exposed publicly.
+      LISTMONK_URL: http://listmonk:9000
+    expose:
+      - '3000'
+    depends_on:
+      listmonk:
+        condition: service_started
+
+  listmonk:
+    # Pinned, not :latest — an unattended major bump on restart is not
+    # something your mailing list should discover for you.
+    image: listmonk/listmonk:v6.2.0
+    restart: unless-stopped
+    command:
+      - sh
+      - -c
+      - "./listmonk --install --idempotent --yes --config '' && ./listmonk --upgrade --yes --config '' && ./listmonk"
+    environment:
+      LISTMONK_app__address: 0.0.0.0:9000
+      LISTMONK_db__host: listmonk-db
+      LISTMONK_db__port: 5432
+      LISTMONK_db__user: listmonk
+      LISTMONK_db__password: ${LISTMONK_DB_PASSWORD:?set LISTMONK_DB_PASSWORD in .env}
+      LISTMONK_db__database: listmonk
+      LISTMONK_db__ssl_mode: disable
+      LISTMONK_ADMIN_USER: ${LISTMONK_ADMIN_USER:-admin}
+      LISTMONK_ADMIN_PASSWORD: ${LISTMONK_ADMIN_PASSWORD:?set LISTMONK_ADMIN_PASSWORD in .env}
+      TZ: ${TZ:-Etc/UTC}
+    # NOT published to the host. The only routes in are wacrm's API
+    # calls and Caddy's /email-admin path (see Caddyfile).
+    expose:
+      - '9000'
+    volumes:
+      - listmonk-uploads:/listmonk/uploads
+    depends_on:
+      listmonk-db:
+        condition: service_healthy
+
+  listmonk-db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: listmonk
+      POSTGRES_PASSWORD: ${LISTMONK_DB_PASSWORD:?}
+      POSTGRES_DB: listmonk
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U listmonk']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+    # Never published. Reach it with:
+    #   docker compose exec listmonk-db psql -U listmonk
+    volumes:
+      - listmonk-data:/var/lib/postgresql/data
+
+volumes:
+  caddy-data:
+  caddy-config:
+  listmonk-data:
+  listmonk-uploads:

@@ -63,7 +63,7 @@ import {
 //
 //   When `ALLOWED_INVITE_HOSTS` is set (comma-separated hostnames),
 //   we validate the derived host against the list. Anything not
-//   on the list falls through to the wacrm.tech fallback with a
+//   on the list falls through to the last-resort fallback with a
 //   loud console.warn. Operators who care about this attack
 //   surface should set this to their canonical hostnames; everyone
 //   else gets today's permissive behavior.
@@ -128,10 +128,17 @@ function getBaseUrl(request: Request): string {
     );
   } else {
     console.warn(
-      "[POST /api/account/invitations] could not derive base URL from request; falling back to marketing domain",
+      "[POST /api/account/invitations] could not derive base URL from request; falling back to NEXT_PUBLIC_SITE_URL / local origin",
     );
   }
-  return "https://wacrm.tech";
+  // Last resort. Never a third party's domain: an invite link that
+  // points somewhere we don't control is a broken invite at best and a
+  // phishing vector at worst. Prefer the operator's configured site
+  // URL; in its absence assume local development.
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, "") ||
+    "http://localhost:3000"
+  );
 }
 
 const MAX_LABEL_LEN = 80;

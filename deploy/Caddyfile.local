@@ -1,0 +1,31 @@
+# Local variant of ./Caddyfile — same single-origin routing, plain
+# HTTP on the port published by docker-compose.local.yml.
+
+:80 {
+	encode zstd gzip
+
+	# Recipient-facing routes served by the email engine.
+	handle /subscription/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /link/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /campaign/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /archive* {
+		reverse_proxy listmonk:9000
+	}
+	handle /public/* {
+		reverse_proxy listmonk:9000
+	}
+	handle /uploads/* {
+		reverse_proxy listmonk:9000
+	}
+
+	# Everything else is the CRM. The engine's admin UI is not routed.
+	handle {
+		reverse_proxy wacrm:3000
+	}
+}

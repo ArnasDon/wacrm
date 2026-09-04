@@ -1,175 +1,165 @@
-# wacrm — CRM Template for WhatsApp
+# wacrm — WhatsApp + Email marketing platform
 
-> Self-hostable CRM template for WhatsApp® — shared inbox, contacts,
-> sales pipelines, broadcasts, and no-code automations. Fork it, brand
-> it, host it.
-
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="900">
-  </a>
-</p>
+> One self-hosted platform for talking to your customers: a shared
+> WhatsApp inbox, a CRM, email newsletters, and automations and flows
+> that mix both channels. Your servers, your data, one login.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-violet.svg)](./LICENSE)
-[![CI](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/ArnasDon/wacrm/actions/workflows/ci.yml)
+[![CI](https://github.com/onlypromarketer/wacrm/actions/workflows/ci.yml/badge.svg)](https://github.com/onlypromarketer/wacrm/actions/workflows/ci.yml)
 [![Next.js 16](https://img.shields.io/badge/Next.js-16-black?logo=nextdotjs)](https://nextjs.org)
 [![Supabase](https://img.shields.io/badge/Supabase-Postgres%20%2B%20Auth-3ecf8e?logo=supabase)](https://supabase.com)
-[![Stars](https://img.shields.io/github/stars/ArnasDon/wacrm?style=social)](https://github.com/ArnasDon/wacrm/stargazers)
 
-The marketing site and self-host docs live in a separate repo:
-[ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)
-([wacrm.tech](https://wacrm.tech)). This repo is the product —
-clone or fork it to run your own CRM.
+Maintained by [ProMarketer](https://github.com/onlypromarketer). Built on
+the open-source [wacrm](https://github.com/ArnasDon/wacrm) CRM (MIT) and
+the [listmonk](https://listmonk.app) email engine (AGPL-3.0, run as a
+separate, unmodified service) — see [Credits](#credits).
 
-## What you get out of the box
+## What it does
 
-- **Shared inbox** on the official WhatsApp Business API — multiple
-  agents working one number, per-conversation assignment, status, and
-  notes.
-- **Contacts + tags + custom fields**, CSV import, deduplication.
+**WhatsApp**
+
+- **Shared inbox** on the official WhatsApp Business API — a whole team
+  on one number, with assignment, status, notes, voice notes and media.
+- **Broadcasts** with Meta-approved templates, delivery and read
+  tracking, per-recipient variables.
+- **AI reply assistant** — bring your own OpenAI or Anthropic key,
+  drafted replies, optional auto-reply bot, knowledge base.
+
+**CRM**
+
+- **Contacts** with tags, custom fields, CSV import, phone dedup.
 - **Sales pipelines** (Kanban) with deals linked to conversations.
-- **Broadcasts** with Meta-approved templates, delivery + read
-  tracking, per-recipient variable substitution.
-- **No-code automations** — triggers on inbound messages, new
-  contacts, keywords, or schedule; conditional branches, waits,
-  tags, webhooks. Visual builder.
-- **AI reply assistant** — bring your own OpenAI or Anthropic key
-  (stored encrypted; no per-seat AI fee, your data stays yours).
-  One-click AI-drafted replies in the inbox, plus an optional
-  auto-reply bot with a per-conversation cap and clean human handoff.
-  Add a **knowledge base** (FAQs, policies, product docs) and it
-  answers from your own content — hybrid retrieval (Postgres full-text,
-  or semantic pgvector when an embeddings key is set).
-- **Real-time dashboard** — response times, daily volume, pipeline
-  value, cross-module activity feed.
-- **Team accounts** — invite teammates by link, role-based access
-  (owner / admin / agent / viewer), ownership transfer. Every install
-  is account-scoped, so one shared inbox can be staffed by a whole
-  team. Solo use stays single-user with zero setup.
-- **Account management** — email, password, avatar, global sign-out.
-- **Public REST API** (`/api/v1`) with scoped, revocable API keys —
-  build your own automations on top of your CRM. See
-  [docs/public-api.md](./docs/public-api.md).
-- **MCP server** — drive your CRM from Claude, Cursor, and other AI
-  assistants over the [Model Context Protocol](https://modelcontextprotocol.io).
-  Read-only by default, opt-in writes. See [docs/mcp.md](./docs/mcp.md)
-  (server in [`mcp-server/`](./mcp-server)).
+- **Team accounts** — invite by link, roles (owner / admin / agent /
+  viewer), ownership transfer.
+- **Real-time dashboard**, public REST API with scoped keys, and an MCP
+  server for AI assistants.
 
-## Why fork this?
+**Email**
 
-This is a **template**, not a product. Forking means you get:
+- **Campaigns** — compose, preview, test-send, send, track opens and
+  clicks.
+- **Mailing lists** — and a one-click **sync** that copies CRM contacts
+  in as subscribers, carrying their WhatsApp number with them.
+- **Templates** — reusable automation emails and newsletter layouts,
+  with live preview.
+- **SMTP settings** live in the app; there is no second admin panel.
 
-- **Full ownership** — your code, your Supabase project, your domain,
-  your data. No SaaS lock-in, no seat pricing, no trust dance.
-- **Full customisation** — add the fields your team needs, remove the
-  modules you don't, redesign anything. The stack is boring on
-  purpose (Next.js + Supabase + Tailwind) so the learning curve is
-  short.
-- **Zero ops to start** — [Hostinger](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST)
-  Managed Node.js deploys a fork in a few clicks. No Docker, no
-  Kubernetes, no infra team needed.
-  ([See below ↓](#-deploy-on-hostinger-recommended))
-- **Real security primitives** — token encryption (AES-256-GCM), RLS
-  on every table, HMAC-verified webhooks, CSP, rate limiting, CI
-  typecheck/build on every PR.
+**Automations & flows — across both channels**
 
-Not a framework. Not an SDK. A concrete, working CRM you can stand up
-in an afternoon and make yours.
+The visual builders have WhatsApp steps *and* email steps side by side,
+so one journey can do:
 
-## Quick start
+```
+Trigger: new contact
+  → Send WhatsApp message    "Thanks for reaching out!"
+  → Add to Mailing List      Newsletter
+  → Wait                     1 day
+  → Send Email               "Your brochure" — personalised
+```
+
+Contacts without an email address are skipped, not failed.
+
+## Quick start (local)
+
+Prerequisites: Node 20+, Docker Desktop.
 
 ```bash
-# Fork on GitHub first: https://github.com/ArnasDon/wacrm → Fork
-git clone https://github.com/<your-username>/wacrm.git
+git clone https://github.com/onlypromarketer/wacrm.git
 cd wacrm
 npm install
-cp .env.local.example .env.local   # fill in Supabase + Meta creds
+
+# Local database, auth, storage and a mail catcher — all in Docker.
+npx supabase start          # first run pulls images (a few minutes)
+
+cp .env.local.example .env.local
+# Paste the API URL, anon key and service_role key that `supabase start`
+# printed, and generate ENCRYPTION_KEY as the file describes.
+
 npm run dev
 ```
 
-Open <http://localhost:3000>. You'll be redirected to `/login` (or
-`/dashboard` if already signed in).
+Open <http://localhost:3000>, sign up, and you're in.
 
-Prefer containers? See [docs/docker.md](./docs/docker.md) for the
-Dockerfile + Docker Compose setup.
+For the **complete platform** — CRM plus the email engine — use the
+Docker stack instead:
 
-## 🚀 Deploy on Hostinger (recommended)
+```bash
+cd deploy
+cp .env.example .env         # fill in
+docker compose -f docker-compose.local.yml up -d --build
+COMPOSE_FILE=docker-compose.local.yml sh setup-api-user.sh
+docker compose -f docker-compose.local.yml up -d
+```
 
-<p align="center">
-  <a href="https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST">
-    <img src="./.github/assets/hostinger-deploy.png" alt="Ship your Node.js app in one click — Deploy to Hostinger" width="1000">
-  </a>
-</p>
-<p align="center">
-  <a href="https://wacrm.tech/docs/deployment-hostinger">
-    <img src="https://img.shields.io/badge/Step--by--step_guide-wacrm.tech%2Fdocs-111?style=for-the-badge" alt="Step-by-step guide" height="44">
-  </a>
-</p>
+Open <http://localhost:8090>. Full instructions, including how to test
+email delivery locally without a real mail provider, are in
+[`deploy/README.md`](./deploy/README.md).
 
-**wacrm is built to run on [Hostinger](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST).**
-It's the path we test, document, and recommend — and the fastest way
-to get a production-grade CRM live without owning a VPS or a
-Kubernetes cluster.
+## Deploying to a server
 
-### Why Hostinger?
+One VPS, one domain, one command. `deploy/docker-compose.yml` runs the
+CRM, the email engine and a Caddy front door with automatic HTTPS;
+Supabase is external (cloud free tier works).
 
-| | |
-|---|---|
-| **One-click Git deploy** | Connect your fork, push to `main`, Hostinger builds and ships it. No SSH, no Docker, no CI to wire up — this repo's own `main` deploys this way. |
-| **Managed Node.js** | Next.js 16 (App Router, server actions, ISR) runs out of the box on [Premium, Business, and Cloud](https://www.hostinger.com/web-apps-hosting?REFERRALCODE=WACRMHOST) shared plans. You don't manage Node versions, processes, or reverse proxies. |
-| **Free SSL + free domain** | Automatic Let's Encrypt on your custom domain (or a free one included with annual plans). HTTPS is on by default — required for the WhatsApp Business webhook. |
-| **Global CDN + LiteSpeed** | Static assets cached at the edge, dynamic routes served from LiteSpeed. Snappy dashboards out of the box, no Cloudflare setup required. |
-| **Env vars + logs in hPanel** | Set `SUPABASE_*`, `WHATSAPP_*`, and `ENCRYPTION_KEY` from the panel — no `.env` on the server. Live application logs in the same UI. |
-| **DDoS protection + daily backups** | Built-in, no add-ons. The webhook endpoint is a public target — having protection at the edge matters. |
-| **Cheaper than a VPS** | Plans start at a few dollars a month — order-of-magnitude less than a comparable managed Node.js host, and you don't pay extra for the database (that's Supabase). |
-| **24/7 human support** | Live chat support in 20+ languages — useful when your CRM is the thing your team relies on to talk to customers. |
+Step-by-step: [`deploy/README.md`](./deploy/README.md).
 
-### The 60-second version
+What you need before going live:
 
-1. **Fork** this repo on GitHub.
-2. In **hPanel → Websites → Create**, pick **Node.js** and connect
-   your fork.
-3. Paste your Supabase + Meta env vars into hPanel.
-4. Push to `main`. Hostinger builds and serves it. Done.
-
-Full walkthrough with screenshots:
-**[wacrm.tech/docs/deployment-hostinger](https://wacrm.tech/docs/deployment-hostinger)**.
-
-> _Note: wacrm is MIT-licensed and runs anywhere Node.js does
-> (Vercel, Railway, your own VPS). Hostinger is recommended, not
-> required._
-
-## Documentation
-
-Full self-host documentation — Supabase migrations, WhatsApp Business
-API config, and production deploy — lives at
-**[wacrm.tech/docs](https://wacrm.tech/docs)**
-(source: [ArnasDon/wacrm-site](https://github.com/ArnasDon/wacrm-site)).
-
-Key pages:
-- [Getting started](https://wacrm.tech/docs/getting-started)
-- [Supabase setup](https://wacrm.tech/docs/supabase-setup)
-- [WhatsApp setup](https://wacrm.tech/docs/whatsapp-setup)
-- [Environment variables](https://wacrm.tech/docs/environment-variables)
-- [Deploy on Hostinger](https://wacrm.tech/docs/deployment-hostinger)
-- [Architecture](https://wacrm.tech/docs/architecture)
-- [Troubleshooting](https://wacrm.tech/docs/troubleshooting)
+1. A Supabase project with the migrations applied (`supabase db push`).
+2. A Meta for Developers app with a WhatsApp Business number, and its
+   app secret. The webhook URL is
+   `https://<your-domain>/api/whatsapp/webhook`.
+3. An email provider's SMTP credentials (Amazon SES, Postmark, Mailgun,
+   Resend, …), entered under **Email → Settings**.
+4. SPF, DKIM and DMARC records for your sending domain — the single most
+   common reason email lands in spam.
 
 ## Stack
 
 - **App** — Next.js 16 (App Router), React 19, TypeScript, Tailwind v4.
-- **Data** — Supabase (Postgres + Auth + Storage + RLS).
+- **Data** — Supabase (Postgres + Auth + Storage + Realtime + RLS).
 - **WhatsApp** — Meta Cloud API (official WhatsApp Business API).
+- **Email** — listmonk, headless, driven over its REST API.
 
-## Contributing
+## Architecture in one paragraph
 
-This is a template, not a collaborative product — the expected flow is
-fork → customise → deploy, **not** upstream contribution. Bug reports
-and security issues are welcome; feature PRs often belong in your fork
-rather than here. Details in
-[`CONTRIBUTING.md`](./CONTRIBUTING.md) and
+The CRM is the only user-facing application. The email engine runs as
+a separate process on a private network and is never exposed publicly;
+every email feature you see is a native CRM page or builder step that
+calls the engine through the CRM's own API routes. Security lives in the
+database — row-level security on every table, keyed to the signed-in
+user's account — so the app cannot leak across tenants even if a UI
+check is missed. See
+[`deploy/README.md`](./deploy/README.md#why-two-services-instead-of-one-merged-app)
+for why the engine is a separate service rather than merged code.
+
+## Documentation
+
+- [`deploy/README.md`](./deploy/README.md) — running and hosting the
+  full platform
+- [`docs/docker.md`](./docs/docker.md) — CRM-only container
+- [`docs/public-api.md`](./docs/public-api.md) — REST API and API keys
+- [`docs/mcp.md`](./docs/mcp.md) — MCP server for AI assistants
+- [`CHANGELOG.md`](./CHANGELOG.md) — what changed, and any migrations to
+  apply when updating
+
+## Contributing and security
+
+Bug reports and pull requests are welcome — see
+[`CONTRIBUTING.md`](./CONTRIBUTING.md). Please report security issues
+privately as described in
 [`.github/SECURITY.md`](./.github/SECURITY.md).
+
+## Credits
+
+- The CRM began as a fork of [ArnasDon/wacrm](https://github.com/ArnasDon/wacrm)
+  by Arnas Donauskas, released under the MIT licence. That licence and
+  copyright notice are retained in [`LICENSE`](./LICENSE).
+- Email sending is powered by [listmonk](https://listmonk.app) by
+  Kailash Nadh and contributors, AGPL-3.0. It runs as an unmodified
+  upstream Docker image alongside this app and is not part of this
+  repository's source.
 
 ## License
 
-[MIT](./LICENSE). Fork it, brand it, host it.
+This repository is [MIT](./LICENSE).

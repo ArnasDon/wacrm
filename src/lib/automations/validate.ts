@@ -27,7 +27,9 @@ interface StepLike {
   branches?: { yes?: StepLike[]; no?: StepLike[] }
 }
 
-export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[] {
+export function validateStepsForActivation(
+  steps: StepLike[],
+): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   if (!Array.isArray(steps) || steps.length === 0) {
     issues.push({
@@ -40,7 +42,11 @@ export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[]
   return issues
 }
 
-function walk(steps: StepLike[], prefix: string, issues: ValidationIssue[]): void {
+function walk(
+  steps: StepLike[],
+  prefix: string,
+  issues: ValidationIssue[],
+): void {
   steps.forEach((s, i) => {
     const path = `${prefix}steps[${i}]`
     validateOne(s, path, issues)
@@ -51,12 +57,19 @@ function walk(steps: StepLike[], prefix: string, issues: ValidationIssue[]): voi
   })
 }
 
-function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): void {
+function validateOne(
+  step: StepLike,
+  path: string,
+  issues: ValidationIssue[],
+): void {
   const c = step.step_config ?? {}
   switch (step.step_type) {
     case 'send_message':
       if (!nonEmpty(c.text)) {
-        issues.push({ path: `${path}.text`, message: 'message text is required' })
+        issues.push({
+          path: `${path}.text`,
+          message: 'message text is required',
+        })
       }
       break
     case 'send_buttons':
@@ -71,7 +84,10 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
     }
     case 'send_template':
       if (!nonEmpty(c.template_name)) {
-        issues.push({ path: `${path}.template_name`, message: 'template name is required' })
+        issues.push({
+          path: `${path}.template_name`,
+          message: 'template name is required',
+        })
       }
       break
     case 'add_tag':
@@ -90,15 +106,24 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       break
     case 'update_contact_field':
       if (!nonEmpty(c.field)) {
-        issues.push({ path: `${path}.field`, message: 'field name is required' })
+        issues.push({
+          path: `${path}.field`,
+          message: 'field name is required',
+        })
       }
       if (c.value === undefined || c.value === null || c.value === '') {
-        issues.push({ path: `${path}.value`, message: 'field value is required' })
+        issues.push({
+          path: `${path}.value`,
+          message: 'field value is required',
+        })
       }
       break
     case 'create_deal':
       if (!nonEmpty(c.pipeline_id)) {
-        issues.push({ path: `${path}.pipeline_id`, message: 'pipeline is required' })
+        issues.push({
+          path: `${path}.pipeline_id`,
+          message: 'pipeline is required',
+        })
       }
       if (!nonEmpty(c.stage_id)) {
         issues.push({ path: `${path}.stage_id`, message: 'stage is required' })
@@ -108,8 +133,15 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       }
       break
     case 'wait':
-      if (typeof c.amount !== 'number' || !Number.isFinite(c.amount) || c.amount <= 0) {
-        issues.push({ path: `${path}.amount`, message: 'wait amount must be greater than 0' })
+      if (
+        typeof c.amount !== 'number' ||
+        !Number.isFinite(c.amount) ||
+        c.amount <= 0
+      ) {
+        issues.push({
+          path: `${path}.amount`,
+          message: 'wait amount must be greater than 0',
+        })
       }
       if (!['minutes', 'hours', 'days'].includes(String(c.unit))) {
         issues.push({
@@ -120,15 +152,24 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
       break
     case 'condition':
       if (!nonEmpty(c.subject)) {
-        issues.push({ path: `${path}.subject`, message: 'condition subject is required' })
+        issues.push({
+          path: `${path}.subject`,
+          message: 'condition subject is required',
+        })
       }
       if (!nonEmpty(c.operand)) {
-        issues.push({ path: `${path}.operand`, message: 'condition operand is required' })
+        issues.push({
+          path: `${path}.operand`,
+          message: 'condition operand is required',
+        })
       }
       break
     case 'send_webhook':
       if (!nonEmpty(c.url)) {
-        issues.push({ path: `${path}.url`, message: 'webhook URL is required' })
+        issues.push({
+          path: `${path}.url`,
+          message: 'webhook URL is required',
+        })
         break
       }
       try {
@@ -140,9 +181,32 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
           })
         }
       } catch {
-        issues.push({ path: `${path}.url`, message: 'webhook URL is not a valid URL' })
+        issues.push({
+          path: `${path}.url`,
+          message: 'webhook URL is not a valid URL',
+        })
       }
       break
+    case 'send_email': {
+      const id = Number(c.template_id)
+      if (!Number.isInteger(id) || id < 1) {
+        issues.push({
+          path: `${path}.template_id`,
+          message: 'send_email needs an email template',
+        })
+      }
+      break
+    }
+    case 'add_to_mailing_list': {
+      const id = Number(c.list_id)
+      if (!Number.isInteger(id) || id < 1) {
+        issues.push({
+          path: `${path}.list_id`,
+          message: 'add_to_mailing_list needs a mailing list',
+        })
+      }
+      break
+    }
     case 'close_conversation':
       // No config required.
       break
@@ -161,9 +225,15 @@ export function validateTriggerForActivation(
   if (triggerType === 'keyword_match') {
     const k = cfg.keywords
     if (!Array.isArray(k) || k.length === 0) {
-      issues.push({ path: 'trigger.keywords', message: 'at least one keyword is required' })
+      issues.push({
+        path: 'trigger.keywords',
+        message: 'at least one keyword is required',
+      })
     } else if (k.some((v) => typeof v !== 'string' || v.trim() === '')) {
-      issues.push({ path: 'trigger.keywords', message: 'keywords cannot be empty strings' })
+      issues.push({
+        path: 'trigger.keywords',
+        message: 'keywords cannot be empty strings',
+      })
     }
     // A missing match_type defaults to "contains" at runtime (see
     // automations/engine.ts and flows/engine.ts, which both read
@@ -184,7 +254,10 @@ export function validateTriggerForActivation(
     }
   } else if (triggerType === 'time_based') {
     if (!nonEmpty(cfg.schedule)) {
-      issues.push({ path: 'trigger.schedule', message: 'schedule is required' })
+      issues.push({
+        path: 'trigger.schedule',
+        message: 'schedule is required',
+      })
     }
   } else if (triggerType === 'tag_added') {
     if (!nonEmpty(cfg.tag_id)) {

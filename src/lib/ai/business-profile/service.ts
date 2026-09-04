@@ -385,6 +385,48 @@ export async function deleteContact(db: SupabaseClient, accountId: string, id: s
 }
 
 // ------------------------------------------------------------
+// Punto 9, H9-1 — cross-tenant handoff-assignment guard.
+//
+// `account_business_contacts.linked_user_id` (this module) and
+// `ai_configs.handoff_agent_id` (src/app/api/ai/config/route.ts) are
+// both, eventually, candidates for `conversations.assigned_agent_id`
+// (via auto-reply.ts's handOffToHuman()) — and neither column has any
+// structural link to the CONTACT's/CONFIG's own account_id. Without an
+// explicit check, a mistyped or malicious linked_user_id/handoff_agent_id
+// could silently route a handoff — and the `on_conversation_assigned`
+// notification it triggers — to a user who has nothing to do with this
+// account. This helper is the one place that check is made, reused by
+// every write path that sets one of those columns (contacts create/
+// update, ai_configs save, and handOffToHuman()'s own last-line-of-
+// defense re-check before it ever writes assigned_agent_id).
+//
+// Deliberately no role floor (any account_role qualifies) — this
+// mirrors the exact, pre-existing inline check `ai_configs`'s route
+// already performed for `handoff_agent_id` before this helper existed;
+// it does not invent a new authorization rule.
+// ------------------------------------------------------------
+export async function isAccountMember(
+  db: SupabaseClient,
+  accountId: string,
+  userId: string,
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('profiles')
+    .select('user_id')
+    .eq('account_id', accountId)
+    .eq('user_id', userId)
+    .maybeSingle()
+  if (error) {
+    // Fail closed — an unconfirmed membership must never be treated as
+    // a pass. Every caller of this helper falls back to "leave
+    // unassigned" (or rejects the write) on false, never to a guess.
+    console.error('[business-profile] isAccountMember check failed:', error)
+    return false
+  }
+  return data != null
+}
+
+// ------------------------------------------------------------
 // Agent-facing loader
 // ------------------------------------------------------------
 

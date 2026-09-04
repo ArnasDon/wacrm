@@ -54,6 +54,14 @@ const h = vi.hoisted(() => ({
     // ai_usage_log (real code, not mocked — see the `from('ai_usage_log')`
     // branch below).
     usageLogInserts: [] as Record<string, unknown>[],
+    // Punto 9, H9-1 — business-profile/service.ts's isAccountMember is
+    // never mocked in this file (same reasoning as loadBusinessProfileForAgent
+    // below: it runs for real against this fake `profiles` table).
+    // Membership defaults to true for ANY user_id, matching today's
+    // pre-H9-1 behavior for every pre-existing test — a test only needs
+    // to populate this when it specifically wants a candidate to fail
+    // the membership check.
+    nonMemberUserIds: new Set<string>() as Set<string>,
   },
 }))
 
@@ -156,6 +164,27 @@ vi.mock('./admin-client', () => ({
       }
       if (table === 'account_business_contacts') {
         return chainable(h.state.contacts)
+      }
+      // Punto 9, H9-1 — isAccountMember()'s `.select('user_id')
+      // .eq('account_id', X).eq('user_id', Y).maybeSingle()`. Captures
+      // both .eq() filters (order-independent) and resolves "member"
+      // unless the queried user_id was explicitly added to
+      // h.state.nonMemberUserIds — see that field's own comment.
+      if (table === 'profiles') {
+        const filters: Record<string, unknown> = {}
+        const api = {
+          select: () => api,
+          eq: (col: string, val: unknown) => {
+            filters[col] = val
+            return api
+          },
+          maybeSingle: () => {
+            const userId = filters.user_id as string | undefined
+            const isMember = !!userId && !h.state.nonMemberUserIds.has(userId)
+            return Promise.resolve({ data: isMember ? { user_id: userId } : null, error: null })
+          },
+        }
+        return api
       }
       // conversations. `.select().eq().maybeSingle()` always echoes the
       // single, mutable h.state.conv — every existing test only exercises
@@ -313,6 +342,7 @@ beforeEach(() => {
   h.state.failHandoffUpdate = false
   h.state.aiProcessingEvents = []
   h.state.usageLogInserts = []
+  h.state.nonMemberUserIds = new Set<string>()
   h.loadAiConfig.mockResolvedValue(aiConfig())
   // Not "hi" — that's a real greeting under routing.ts's own vocabulary
   // and would route to 'neither', which is correct behavior but would
@@ -650,6 +680,99 @@ describe('dispatchInboundToAiReply — handoff (26-30)', () => {
     h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con recursos humanos' }])
     await dispatchInboundToAiReply(ARGS)
     expect(h.state.updatePayload).toMatchObject({ ai_handoff_department_id: null, ai_handoff_contact_id: null })
+  })
+})
+
+// ============================================================
+// Punto 9, H9-1 — cross-tenant handoff-assignment guard. handOffToHuman()
+// now re-verifies (via the real, unmocked isAccountMember() against the
+// fake `profiles` table above) that a contact's linked_user_id / the
+// account's configured handoffAgentId is still a member of THIS account
+// before ever writing it to assigned_agent_id — a last line of defense
+// on top of the create/update-time checks in the contacts/config routes
+// (covered by their own test files), for the case a value was valid
+// when saved but has since gone stale (removed from the account) or,
+// pre-fix, was never checked at all.
+// ============================================================
+describe('dispatchInboundToAiReply — handoff (H9-1: cross-tenant assignment guard)', () => {
+  it('7. a contact whose linked_user_id is NOT a member of this account is never assigned, and the department/contact match is still recorded', async () => {
+    h.state.nonMemberUserIds.add('user-outsider')
+    h.state.contacts = [
+      {
+        id: 'c1', account_id: 'acct-1', department_id: null, name: 'Carlos Pérez', role_title: null,
+        phone: null, whatsapp: null, email: null, notes: null, active: true, sort_order: 100,
+        linked_user_id: 'user-outsider', created_at: 't', updated_at: 't',
+      },
+    ]
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con Carlos' }])
+    await dispatchInboundToAiReply(ARGS)
+    // The intent match itself is unaffected (still a real, useful note
+    // for the human who picks this up) — only the ASSIGNMENT is refused.
+    expect(h.state.updatePayload).toMatchObject({ ai_handoff_contact_id: 'c1' })
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+  })
+
+  it('8. an invalid contact linked_user_id falls back to a VALID configured handoff agent, never to the invalid contact', async () => {
+    h.state.nonMemberUserIds.add('user-outsider')
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-default' }))
+    h.state.contacts = [
+      {
+        id: 'c1', account_id: 'acct-1', department_id: null, name: 'Carlos Pérez', role_title: null,
+        phone: null, whatsapp: null, email: null, notes: null, active: true, sort_order: 100,
+        linked_user_id: 'user-outsider', created_at: 't', updated_at: 't',
+      },
+    ]
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con Carlos' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ assigned_agent_id: 'agent-default', ai_handoff_contact_id: 'c1' })
+  })
+
+  it('9. both the contact\'s linked_user_id AND the configured handoff agent are invalid — assigned_agent_id stays unset, status stays pending, never a guess', async () => {
+    h.state.nonMemberUserIds.add('user-outsider')
+    h.state.nonMemberUserIds.add('agent-stale')
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-stale' }))
+    h.state.contacts = [
+      {
+        id: 'c1', account_id: 'acct-1', department_id: null, name: 'Carlos Pérez', role_title: null,
+        phone: null, whatsapp: null, email: null, notes: null, active: true, sort_order: 100,
+        linked_user_id: 'user-outsider', created_at: 't', updated_at: 't',
+      },
+    ]
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con Carlos' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toMatchObject({ status: 'pending' })
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+  })
+
+  it("a stale (since-removed) configured handoff agent — no contact match at all — leaves the conversation unassigned in the shared queue rather than assigning a non-member", async () => {
+    h.state.nonMemberUserIds.add('agent-stale')
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffAgentId: 'agent-stale' }))
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con una persona' }])
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+  })
+
+  it('13. retry: a second dispatch after the conversation is already handed off never reaches handOffToHuman again — no cross-tenant (or any) re-assignment on retry', async () => {
+    h.state.nonMemberUserIds.add('user-outsider')
+    h.state.contacts = [
+      {
+        id: 'c1', account_id: 'acct-1', department_id: null, name: 'Carlos Pérez', role_title: null,
+        phone: null, whatsapp: null, email: null, notes: null, active: true, sort_order: 100,
+        linked_user_id: 'user-outsider', created_at: 't', updated_at: 't',
+      },
+    ]
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, usage: null, toolCalls: [] })
+    h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'quiero hablar con Carlos' }])
+    await dispatchInboundToAiReply(ARGS) // first handoff — ai_autoreply_disabled is now true
+    h.state.updatePayload = null
+    await dispatchInboundToAiReply(ARGS) // "retry" — a fresh dispatch for the same conversation
+    // The sticky gate (fresh-read, see processOneTurn) stops this second
+    // dispatch before it ever reconsiders assignment.
+    expect(h.state.updatePayload).toBeNull()
   })
 })
 

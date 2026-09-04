@@ -211,6 +211,47 @@ describe('POST /api/ai/config — system_prompt persistence', () => {
 });
 
 // ============================================================
+// Punto 9, H9-1 — handoff_agent_id now goes through the shared
+// business-profile/service.ts::isAccountMember() helper instead of its
+// own inline query (E: "reutilizar una función existente de forma
+// mínima"). This is the first test coverage this validation path has
+// ever had — confirming the refactor preserves the exact pre-existing
+// behavior (member accepted, non-member/ghost rejected with the same
+// error message).
+// ============================================================
+describe('POST /api/ai/config — handoff_agent_id membership (Punto 9, H9-1)', () => {
+  it('accepts a handoff_agent_id that is a member of the caller\'s account', async () => {
+    const { supabase, tables } = fakeSupabase();
+    tables.profiles.push({ account_id: 'acct-1', user_id: 'agent-1' });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(postRequest({ ...BASE_BODY, handoff_agent_id: 'agent-1' }));
+    expect(res.status).toBe(200);
+    expect(tables.ai_configs[0].handoff_agent_id).toBe('agent-1');
+  });
+
+  it('rejects a handoff_agent_id belonging to a DIFFERENT account, unchanged from the pre-refactor behavior', async () => {
+    const { supabase, tables } = fakeSupabase();
+    tables.profiles.push({ account_id: 'acct-2', user_id: 'agent-1' });
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(postRequest({ ...BASE_BODY, handoff_agent_id: 'agent-1' }));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toBe('handoff_agent_id must be a member of this account');
+    expect(tables.ai_configs).toHaveLength(0);
+  });
+
+  it('rejects a handoff_agent_id with no matching profile at all', async () => {
+    const { supabase } = fakeSupabase();
+    mocks.requireRole.mockResolvedValue({ supabase, accountId: 'acct-1', userId: 'user-1' });
+
+    const res = await POST(postRequest({ ...BASE_BODY, handoff_agent_id: 'ghost-user' }));
+    expect(res.status).toBe(400);
+  });
+});
+
+// ============================================================
 // Fase 10 — agent_behavior, structurally separate from system_prompt.
 // Mirrors the system_prompt describe block above; plus dedicated
 // backward-compatibility and independence tests (TEST 5 / TEST 6 of

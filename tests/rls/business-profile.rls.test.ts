@@ -86,4 +86,33 @@ describe('RLS — Business Profile (profiles / departments / contacts)', () => {
       .maybeSingle()
     expect(contactStillThere.data?.id).toBe(fixtures.b.contactId)
   })
+
+  // Punto 9, H9-1 — structural defense (migration 062): a business
+  // contact's linked_user_id can never point at a user outside the
+  // contact's own account, at the database layer, regardless of which
+  // code path attempts the write.
+  it('H9-1: linking A\'s own contact to B\'s user is rejected by the linked_user_id FK', async () => {
+    const crossTenant = await asA
+      .from('account_business_contacts')
+      .update({ linked_user_id: fixtures.b.userId })
+      .eq('id', fixtures.a.contactId)
+    expect(crossTenant.error).not.toBeNull()
+
+    const stillUnlinked = await asA
+      .from('account_business_contacts')
+      .select('linked_user_id')
+      .eq('id', fixtures.a.contactId)
+      .single()
+    expect(stillUnlinked.data?.linked_user_id).toBeNull()
+  })
+
+  it('H9-1: A CAN link its own contact to A\'s own user (same-account linking keeps working)', async () => {
+    const sameAccount = await asA
+      .from('account_business_contacts')
+      .update({ linked_user_id: fixtures.a.userId })
+      .eq('id', fixtures.a.contactId)
+      .select('id')
+    expect(sameAccount.error).toBeNull()
+    expect(sameAccount.data).toHaveLength(1)
+  })
 })

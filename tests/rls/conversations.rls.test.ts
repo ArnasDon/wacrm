@@ -76,4 +76,34 @@ describe('RLS — conversations / ai_catalog_context', () => {
     expect(smuggled.error).toBeNull()
     expect(smuggled.data).toEqual([])
   })
+
+  // Punto 9, H9-1 — the structural defense (migration 062): a
+  // conversation can never be assigned to a user outside its own
+  // account, at the database layer, regardless of which code path
+  // attempts the write. A's own conversation, A's own (permitted)
+  // UPDATE — the only thing making this fail is the cross-tenant target.
+  it('H9-1: assigning A\'s conversation to B\'s user is rejected by the assigned_agent_id FK', async () => {
+    const crossTenant = await asA
+      .from('conversations')
+      .update({ assigned_agent_id: fixtures.b.userId })
+      .eq('id', fixtures.a.conversationId)
+    expect(crossTenant.error).not.toBeNull()
+
+    const stillUnassigned = await asA
+      .from('conversations')
+      .select('assigned_agent_id')
+      .eq('id', fixtures.a.conversationId)
+      .single()
+    expect(stillUnassigned.data?.assigned_agent_id).toBeNull()
+  })
+
+  it('H9-1: A CAN assign its own conversation to A\'s own user (same-account assignment keeps working)', async () => {
+    const sameAccount = await asA
+      .from('conversations')
+      .update({ assigned_agent_id: fixtures.a.userId })
+      .eq('id', fixtures.a.conversationId)
+      .select('id')
+    expect(sameAccount.error).toBeNull()
+    expect(sameAccount.data).toHaveLength(1)
+  })
 })

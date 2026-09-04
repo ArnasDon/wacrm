@@ -8,7 +8,7 @@ import { buildHandoffSummary } from './handoff'
 import { logAiUsage, deriveCatalogExternalFlags, classifyGenerateFailure } from './usage'
 import { latestUserMessage } from './query'
 import { routeAiContext } from './routing'
-import { loadBusinessProfileForAgent, type BusinessProfileForAgent } from './business-profile/service'
+import { loadBusinessProfileForAgent, isAccountMember, type BusinessProfileForAgent } from './business-profile/service'
 import { buildBusinessProfileContext } from './business-profile/context'
 import { detectHandoffIntent, describeHandoffIntent } from './business-profile/handoff-intent'
 import { engineSendMedia, engineSendText } from '@/lib/flows/meta-send'
@@ -452,7 +452,28 @@ async function processOneTurn(ctx: {
     // A contact's OWN optional linked_user_id (migration 050) is the
     // most specific match and wins over the account's generic default
     // handoff agent when both are available.
-    const resolvedAssignee = intent.contact?.linkedUserId ?? config.handoffAgentId
+    //
+    // Punto 9, H9-1 — last line of defense: both candidates are
+    // re-verified as members of THIS account right before they're ever
+    // written to assigned_agent_id, even though each is already
+    // validated at save time (contacts route / ai_configs route, see
+    // service.ts's isAccountMember doc). This also self-heals the case
+    // those save-time checks can't catch — a linked contact or a
+    // configured handoff agent who was a valid member when saved but has
+    // since been removed from the account. Never assigns a candidate
+    // that fails the check; falls through to the next one, or to the
+    // shared queue (assigned_agent_id left as-is / null) if none pass —
+    // never a guess, never a cross-tenant write.
+    let resolvedAssignee: string | null = null
+    const contactCandidate = intent.contact?.linkedUserId ?? null
+    if (contactCandidate && (await isAccountMember(db, accountId, contactCandidate))) {
+      resolvedAssignee = contactCandidate
+    } else {
+      const configCandidate = config.handoffAgentId ?? null
+      if (configCandidate && (await isAccountMember(db, accountId, configCandidate))) {
+        resolvedAssignee = configCandidate
+      }
+    }
     if (resolvedAssignee && !convState.assigned_agent_id) {
       update.assigned_agent_id = resolvedAssignee
     }

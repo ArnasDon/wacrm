@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
-import { listContacts, createContact } from '@/lib/ai/business-profile/service'
+import { listContacts, createContact, isAccountMember } from '@/lib/ai/business-profile/service'
+
+function bad(message: string) {
+  return NextResponse.json({ error: message }, { status: 400 })
+}
 
 /**
  * GET /api/ai/business-profile/contacts  (viewer+)
@@ -36,6 +40,21 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'name is required.' }, { status: 400 })
     }
 
+    // Punto 9, H9-1 — a non-empty linked_user_id must be a member of
+    // THIS account (else a handoff routed to this contact would assign
+    // — and notify — a stranger; see handOffToHuman() in auto-reply.ts
+    // and service.ts's isAccountMember doc). An empty/absent value
+    // means "no CRM login linked" — the existing, legitimate default.
+    const rawLinkedUserId =
+      typeof body.linked_user_id === 'string' ? body.linked_user_id.trim() : ''
+    let linkedUserId: string | null = null
+    if (rawLinkedUserId) {
+      if (!(await isAccountMember(supabase, accountId, rawLinkedUserId))) {
+        return bad('linked_user_id must be a member of this account')
+      }
+      linkedUserId = rawLinkedUserId
+    }
+
     const contact = await createContact(supabase, accountId, {
       name,
       departmentId: typeof body.department_id === 'string' ? body.department_id : null,
@@ -46,7 +65,7 @@ export async function POST(request: Request) {
       notes: typeof body.notes === 'string' ? body.notes : null,
       active: typeof body.active === 'boolean' ? body.active : undefined,
       sortOrder: typeof body.sort_order === 'number' ? body.sort_order : undefined,
-      linkedUserId: typeof body.linked_user_id === 'string' ? body.linked_user_id : null,
+      linkedUserId,
     })
     return NextResponse.json({ success: true, contact })
   } catch (err) {

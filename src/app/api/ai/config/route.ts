@@ -9,6 +9,7 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, AI_PROVIDERS, isAiProvider } from '@/lib/ai/types'
+import { isAccountMember } from '@/lib/ai/business-profile/service'
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -110,13 +111,13 @@ export async function POST(request: Request) {
     const handoffProvided = 'handoff_agent_id' in body
     let handoffAgentId: string | null = null
     if (rawHandoff) {
-      const { data: member } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('account_id', accountId)
-        .eq('user_id', rawHandoff)
-        .maybeSingle()
-      if (!member) return bad('handoff_agent_id must be a member of this account')
+      // Punto 9, H9-1 — reuses the same membership check now shared with
+      // account_business_contacts.linked_user_id (see service.ts's
+      // isAccountMember doc); behavior is unchanged from before this
+      // extraction.
+      if (!(await isAccountMember(supabase, accountId, rawHandoff))) {
+        return bad('handoff_agent_id must be a member of this account')
+      }
       handoffAgentId = rawHandoff
     }
 

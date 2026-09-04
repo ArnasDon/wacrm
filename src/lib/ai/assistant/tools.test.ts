@@ -3,9 +3,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 
 const h = vi.hoisted(() => ({
   loadBusinessMetrics: vi.fn(),
+  loadAssistantReport: vi.fn(),
 }))
 
 vi.mock('@/lib/ai/business-metrics', () => ({ loadBusinessMetrics: h.loadBusinessMetrics }))
+vi.mock('@/lib/ai/report', () => ({ loadAssistantReport: h.loadAssistantReport }))
 vi.mock('@/lib/google-calendar/api', () => ({
   checkFreeBusy: vi.fn(),
   APPOINTMENT_LOOKAHEAD_MS: 7 * 24 * 60 * 60 * 1000,
@@ -38,19 +40,21 @@ describe('ASSISTANT_TOOLS classification', () => {
     expect(new Set(names).size).toBe(names.length)
   })
 
-  it('flags the six business actions plus create_automation_rule as write tools', () => {
+  it('flags every write tool, including create_task and create_automation_rule', () => {
     const expected = [
       'close_conversation', 'mark_deal_won', 'move_deal', 'set_lead_temperature',
-      'create_quote', 'schedule_appointment', 'create_automation_rule',
+      'create_quote', 'schedule_appointment', 'create_task', 'create_automation_rule',
     ]
     for (const name of expected) expect(isWriteTool(name)).toBe(true)
     expect(isWriteTool('get_business_metrics')).toBe(false)
+    expect(isWriteTool('generate_report')).toBe(false)
     expect(isWriteTool('search_deals')).toBe(false)
   })
 
-  it('excludes create_automation_rule from isBusinessActionTool (it has its own confirm path)', () => {
+  it('excludes create_automation_rule AND create_task from isBusinessActionTool (own confirm paths)', () => {
     expect(isBusinessActionTool('move_deal')).toBe(true)
     expect(isBusinessActionTool('create_automation_rule')).toBe(false)
+    expect(isBusinessActionTool('create_task')).toBe(false)
   })
 })
 
@@ -61,6 +65,22 @@ describe('executeReadTool', () => {
     const result = await executeReadTool(db, 'acct-1', 'get_business_metrics', {})
     expect(h.loadBusinessMetrics).toHaveBeenCalledWith(db, 'acct-1')
     expect(result).toEqual({ generatedAt: 'now', contacts: {}, conversations: {}, deals: {} })
+  })
+
+  it('generate_report delegates to loadAssistantReport with the clamped period', async () => {
+    h.loadAssistantReport.mockResolvedValueOnce({ period_days: 30, leads_generated: 5 })
+    const db = {} as SupabaseClient
+    const result = await executeReadTool(db, 'acct-1', 'generate_report', { periodDays: 30 })
+    expect(h.loadAssistantReport).toHaveBeenCalledWith(db, 30)
+    expect(result).toEqual({ period_days: 30, leads_generated: 5 })
+  })
+
+  it('generate_report falls back to 30 days when periodDays is missing or invalid', async () => {
+    h.loadAssistantReport.mockResolvedValue({ period_days: 30 })
+    const db = {} as SupabaseClient
+    await executeReadTool(db, 'acct-1', 'generate_report', {})
+    await executeReadTool(db, 'acct-1', 'generate_report', { periodDays: 'x' })
+    expect(h.loadAssistantReport).toHaveBeenLastCalledWith(db, 30)
   })
 
   it('search_contacts scopes to account_id and returns rows', async () => {

@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { loadBusinessMetrics, type BusinessMetrics } from '@/lib/ai/business-metrics'
+import { loadAssistantReport } from '@/lib/ai/report'
 import { checkFreeBusy, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 import { formatWithOffset } from '@/lib/timezone'
 import type { BusinessAction } from '@/lib/ai/business-actions'
@@ -39,6 +40,23 @@ const READ_TOOLS: ToolSchema[] = [
     description:
       "Get this account's current business snapshot: contacts by lead temperature, conversations by status, and deals (open/won/lost counts + total won value). Use this to answer any question about sales, pipeline health, or to ground a recommendation in real numbers.",
     input_schema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'generate_report',
+    description:
+      "Build a period report for this account: leads generated / qualified (with the previous period for comparison), qualification and conversion rates, deals won and their total value, median first-response time, follow-ups sent, opportunities recovered, human hand-offs and how many advanced, brief-completion rate, and the lead-temperature split. Use this when the owner asks for a report, a summary, 'how did we do', weekly/monthly numbers, etc. Present it as a short readable summary, calling out what moved vs. the previous period; do not dump raw JSON.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        periodDays: {
+          type: 'integer',
+          minimum: 7,
+          maximum: 365,
+          default: 30,
+          description: 'How many days back the report covers. Default 30.',
+        },
+      },
+    },
   },
   {
     name: 'search_deals',
@@ -184,6 +202,24 @@ const WRITE_TOOLS: ToolSchema[] = [
     },
   },
   {
+    name: 'create_task',
+    description:
+      "Propose creating a task / reminder for the owner. Use this whenever the owner says \"recuérdame\", \"anota que\", \"crea una tarea\", \"pendiente\", etc. The task is always assigned to the owner and, when `dueInHours` is set, they get a reminder notification when it comes due. `linkContactId` optionally ties it to a contact — resolve the name with search_contacts first, never invent an id. Nothing is created until the owner confirms it.",
+    input_schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short imperative title, e.g. "Llamar a Juan para confirmar medidas".' },
+        notes: { type: 'string', description: 'Optional extra context.' },
+        dueInHours: {
+          type: 'number',
+          description: 'Hours from now until it is due. Omit or 0 = no due date (and no reminder).',
+        },
+        linkContactId: { type: 'string', description: 'Optional contact id to attach the task to.' },
+      },
+      required: ['title'],
+    },
+  },
+  {
     name: 'create_automation_rule',
     description:
       "Propose a new lead-handling rule (automation) built from the owner's instructions in plain language. Always created as a DRAFT (inactive) — the owner reviews it in Automations and activates it separately, it never starts firing on real customers from this chat. Steps run in order. Every step_type you emit MUST be exactly one of the values listed in that field's enum below and nothing else, even if it's close to what the owner asked for — never invent one. move_deal (step_config: {\"stage_id\": \"...\"}) moves the CONTACT'S CURRENTLY OPEN DEAL to that stage when the automation fires; it does nothing if the contact has no open deal (it never creates one) and takes no deal id — resolve the stage id with list_pipelines_and_stages first, never invent it. condition branches the rule in two: step_config is {\"subject\": \"message_count\"|\"time_of_day\", \"operand\": ..., \"value\": ...} — for \"message_count\" (total messages exchanged in the conversation so far, either direction), operand is one of \">\" \">=\" \"<\" \"<=\" \"==\" and value is the number as a string (e.g. subject message_count, operand \">=\", value \"6\" for \"6 or more messages\"); for \"time_of_day\", operand is a \"HH:mm-HH:mm\" window (24h, account's local time) and value is unused. Only use these two subjects — tag_presence and contact_field also exist in the system but need a real tag/field id you have no tool to look up here, so never propose them (tell the owner to add that condition manually in the Automations builder instead). A condition step ALSO needs a sibling `branches` property alongside step_type/step_config: {\"yes\": [...steps], \"no\": [...steps]}, each an array of steps in this exact same shape (a branch step can itself be a condition, but keep it to one level of nesting unless the owner explicitly asks for more — deeply nested conditions are hard for the owner to review at a glance). If the owner asks for something no step type or condition subject here covers, say so plainly instead of approximating it with the wrong one.",
@@ -236,10 +272,16 @@ export function isWriteTool(name: string): boolean {
   return WRITE_TOOL_NAMES.has(name)
 }
 
-/** Business-action write tools (excludes create_automation_rule, which
- *  has its own confirm path — see route.ts). */
+/** Business-action write tools — the ones that go through
+ *  `POST /api/ai/actions` on confirm. Excludes `create_automation_rule`
+ *  and `create_task`, which have their own confirm endpoints (see
+ *  `ai-assistant.tsx`). */
 export function isBusinessActionTool(name: string): name is BusinessAction {
-  return WRITE_TOOL_NAMES.has(name) && name !== 'create_automation_rule'
+  return (
+    WRITE_TOOL_NAMES.has(name) &&
+    name !== 'create_automation_rule' &&
+    name !== 'create_task'
+  )
 }
 
 const MAX_LIMIT = 25
@@ -266,6 +308,11 @@ export async function executeReadTool(
   switch (name) {
     case 'get_business_metrics':
       return await loadBusinessMetrics(db, accountId) satisfies BusinessMetrics
+
+    case 'generate_report': {
+      const days = Number(input.periodDays)
+      return await loadAssistantReport(db, Number.isFinite(days) ? days : 30)
+    }
 
     case 'search_deals': {
       const limit = clampLimit(input.limit)

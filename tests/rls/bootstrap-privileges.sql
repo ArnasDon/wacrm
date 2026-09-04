@@ -48,29 +48,13 @@
 -- only inside a disposable local CI database.
 -- ============================================================
 
-GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE
-  public.accounts,
-  public.profiles,
-  public.contacts,
-  public.conversations,
-  public.ai_data_sources,
-  public.ai_catalog_products,
-  public.ai_knowledge_documents,
-  public.ai_knowledge_chunks,
-  public.account_business_profiles,
-  public.account_business_departments,
-  public.account_business_contacts,
-  public.ai_configs
-TO service_role, authenticated;
-
--- ------------------------------------------------------------
 -- Punto 9, H9-1 — tests/rls/notifications.rls.test.ts (new) is the
 -- first test in this suite to touch `public.notifications` at all, via
 -- service_role fixture-style inserts — same missing-baseline-privilege
--- gap as every table above, now surfaced for this one.
+-- gap as every table below, now surfaced for this one.
 --
--- UPDATE is granted to service_role only, NOT blanket to
--- `authenticated` like the tables above: migration 027 deliberately
+-- UPDATE on notifications is granted to service_role only, NOT blanket
+-- to `authenticated` like the tables below: migration 027 deliberately
 -- narrows `authenticated`'s UPDATE on this table to the `read_at`
 -- column alone (`REVOKE UPDATE ... FROM authenticated; GRANT UPDATE
 -- (read_at) ... TO authenticated;`), applied during "Replay every
@@ -85,6 +69,26 @@ TO service_role, authenticated;
 -- no INSERT/DELETE policy at all, and SELECT/UPDATE both require
 -- auth.uid() = user_id AND is_account_member(account_id), migrations
 -- 027/062).
--- ------------------------------------------------------------
-GRANT SELECT, INSERT, DELETE ON TABLE public.notifications TO service_role, authenticated;
-GRANT UPDATE ON TABLE public.notifications TO service_role;
+--
+-- Wrapped in a single DO block, rather than separate top-level GRANT
+-- statements, because `supabase db query --file` (how this file is
+-- executed — see .github/workflows/rls.yml) sends the whole file as
+-- ONE prepared statement: a second top-level statement fails with
+-- "cannot insert multiple commands into a prepared statement" — the
+-- exact same constraint supabase/ci/verify-schema.sql's own header
+-- already documents for the identical mechanism. GRANT is DDL, so each
+-- one runs via EXECUTE inside the block (PL/pgSQL cannot call it
+-- directly); the block itself is still exactly one top-level statement
+-- from the file's point of view.
+DO $$
+BEGIN
+  EXECUTE 'GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE '
+    || 'public.accounts, public.profiles, public.contacts, public.conversations, '
+    || 'public.ai_data_sources, public.ai_catalog_products, public.ai_knowledge_documents, '
+    || 'public.ai_knowledge_chunks, public.account_business_profiles, '
+    || 'public.account_business_departments, public.account_business_contacts, '
+    || 'public.ai_configs TO service_role, authenticated';
+
+  EXECUTE 'GRANT SELECT, INSERT, DELETE ON TABLE public.notifications TO service_role, authenticated';
+  EXECUTE 'GRANT UPDATE ON TABLE public.notifications TO service_role';
+END $$;

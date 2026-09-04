@@ -1,14 +1,14 @@
 {
   "name": "wacrm-mcp",
   "version": "0.1.1",
-  "mcpName": "io.github.ArnasDon/wacrm-mcp",
-  "description": "Model Context Protocol (MCP) server for wacrm — drive your self-hosted WhatsApp CRM from Claude, Cursor, and other MCP clients.",
+  "mcpName": "io.github.onlypromarketer/wacrm-mcp",
+  "description": "Model Context Protocol (MCP) server for wacrm — drive your self-hosted WhatsApp + email CRM from Claude, Cursor, and other MCP clients.",
   "license": "MIT",
-  "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/wacrm",
+  "author": "ProMarketer <info@promarketer.ca>",
+  "homepage": "https://github.com/onlypromarketer/wacrm",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArnasDon/wacrm.git",
+    "url": "git+https://github.com/onlypromarketer/wacrm.git",
     "directory": "mcp-server"
   },
   "keywords": [

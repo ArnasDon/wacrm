@@ -11,7 +11,7 @@ that standard.
 If you witness or experience behaviour that violates the Code, please
 report it privately to the project maintainer:
 
-- Email: **a.donauskas@hostinger.com** with `[CRM template conduct]` in
+- Email: **info@promarketer.ca** with `[wacrm conduct]` in
   the subject.
 
 Reports are handled confidentially. Expect an acknowledgement within

@@ -10,7 +10,7 @@ body:
         can land a fix.
 
         **Not a bug in the code?** If this is a security issue, close this
-        form and follow [SECURITY.md](https://github.com/ArnasDon/wacrm/blob/main/.github/SECURITY.md)
+        form and follow [SECURITY.md](https://github.com/onlypromarketer/wacrm/blob/main/.github/SECURITY.md)
         instead.
 
   - type: textarea
@@ -59,8 +59,8 @@ body:
       label: Where is it running?
       options:
         - Local dev (npm run dev)
-        - Hostinger Managed Node.js
-        - Hostinger VPS
+        - Docker (deploy/ stack)
+        - VPS
         - Vercel
         - Other Node host
     validations:

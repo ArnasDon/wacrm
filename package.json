@@ -1,17 +1,17 @@
 {
   "name": "wacrm",
-  "version": "0.8.0",
+  "version": "1.0.0",
   "private": true,
-  "description": "Self-hostable CRM template for WhatsApp built on Next.js and Supabase — shared inbox, contacts, sales pipelines, broadcasts, and no-code automations.",
+  "description": "Self-hosted WhatsApp + email marketing platform built on Next.js and Supabase \u2014 shared WhatsApp inbox, CRM, email campaigns, and automations and flows that mix both channels.",
   "license": "MIT",
-  "author": "Arnas Donauskas",
-  "homepage": "https://github.com/ArnasDon/wacrm",
+  "author": "ProMarketer <info@promarketer.ca>",
+  "homepage": "https://github.com/onlypromarketer/wacrm",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ArnasDon/wacrm.git"
+    "url": "git+https://github.com/onlypromarketer/wacrm.git"
   },
   "bugs": {
-    "url": "https://github.com/ArnasDon/wacrm/issues"
+    "url": "https://github.com/onlypromarketer/wacrm/issues"
   },
   "keywords": [
     "crm",
@@ -22,7 +22,10 @@
     "automation",
     "broadcast",
     "self-hosted",
-    "template"
+    "email-marketing",
+    "newsletter",
+    "marketing-automation",
+    "listmonk"
   ],
   "engines": {
     "node": ">=20.0.0"

@@ -9,7 +9,7 @@ updates:
       day: monday
     open-pull-requests-limit: 5
     reviewers:
-      - ArnasDon
+      - onlypromarketer
     labels:
       - dependencies
     groups:
@@ -47,7 +47,7 @@ updates:
       day: monday
     open-pull-requests-limit: 3
     reviewers:
-      - ArnasDon
+      - onlypromarketer
     labels:
       - dependencies
       - github-actions

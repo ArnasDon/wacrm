@@ -1,8 +1,7 @@
-# Everyone who opens a PR against this repo gets Arnas as a required
-# reviewer. Paired with a branch-protection rule on `main` that
-# requires Code Owner approval, this ensures every change is reviewed
-# before merge.
+# Every PR against this repo gets the maintainer as a required reviewer.
+# Pair with a branch-protection rule on `main` requiring Code Owner
+# approval so nothing merges unreviewed.
 #
 # Syntax: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-security/customizing-your-repository/about-code-owners
 
-* @ArnasDon
+* @onlypromarketer

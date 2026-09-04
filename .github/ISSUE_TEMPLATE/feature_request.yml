@@ -23,7 +23,7 @@ body:
 
         If the feature is really for your own deployment, fork and
         build it there — see
-        [CONTRIBUTING.md](https://github.com/ArnasDon/wacrm/blob/main/CONTRIBUTING.md).
+        [CONTRIBUTING.md](https://github.com/onlypromarketer/wacrm/blob/main/CONTRIBUTING.md).
 
   - type: textarea
     id: problem

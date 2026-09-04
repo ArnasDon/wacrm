@@ -6,8 +6,64 @@ matching SQL files from `supabase/migrations/` against your Supabase
 project before restarting the app.
 
 Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
-Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
-and polish.
+
+Entries up to 0.8.1 are inherited from the upstream project this
+repository was forked from ([ArnasDon/wacrm](https://github.com/ArnasDon/wacrm));
+their issue and PR links point there.
+
+## [1.0.0] — 2026-09-04
+
+The CRM becomes a WhatsApp **and email** marketing platform. Email is
+powered by [listmonk](https://listmonk.app), run as a separate,
+unmodified service behind the CRM's API — nothing of it is merged into
+this codebase, and users never see it.
+
+**Migration required:** apply `supabase/migrations/040_email_steps.sql`
+(widens the `flow_nodes.node_type` check to allow `send_email`).
+
+**New environment variables:** `LISTMONK_URL`, `LISTMONK_API_USER`,
+`LISTMONK_API_TOKEN` (optional — the Email section explains how to set
+them up when absent). See `.env.local.example` and `deploy/README.md`.
+
+### Added
+
+- **Email section** in the sidebar with native pages for Campaigns
+  (compose, edit, preview, test-send, send, open/click tracking), Lists
+  (with a one-click sync of CRM contacts into a mailing list — the
+  contact id and WhatsApp number ride along as subscriber attributes),
+  Subscribers, Templates (transactional emails and newsletter layouts,
+  with live preview) and Settings (SMTP and sender identity, with a
+  test-send button).
+- **Automations:** `send_email` and `add_to_mailing_list` steps,
+  alongside the existing WhatsApp steps.
+- **Flows:** `send_email` node on the canvas, with validation, edge
+  handling and engine support.
+- `deploy/` — Docker Compose for a VPS (single hostname, Caddy with
+  automatic HTTPS, email engine sealed off from the internet, recipient-
+  facing unsubscribe/tracking routes proxied under the CRM domain), a
+  localhost variant, an API-user bootstrap script and a full guide.
+- Public REST and MCP metadata now point at this repository.
+
+### Changed
+
+- Product identity: this is ProMarketer's platform, not the upstream
+  template. README, package metadata, GitHub templates, contact
+  addresses and the in-app title reflect that. Upstream is credited in
+  `README.md` and its MIT notice is retained in `LICENSE`.
+- Invite links no longer fall back to the upstream project's website
+  when the deployment URL cannot be derived; they fall back to
+  `NEXT_PUBLIC_SITE_URL`, then to the local dev origin.
+- Removed the upstream hosting-partner promotion from the README.
+
+### Behaviour worth knowing
+
+- Email steps read the contact's email address. A contact without one is
+  **skipped, not failed**; the run continues and the log says so.
+- One WhatsApp number per account (`whatsapp_config` is unique per
+  account). Inbound messages for an unconfigured number are dropped with
+  a `No config found for phone_number_id` log line.
+- Saving email settings restarts the email engine to rebuild its SMTP
+  pool; expect a few seconds of unavailability.
 
 ## [0.8.1] — 2026-07-10
 

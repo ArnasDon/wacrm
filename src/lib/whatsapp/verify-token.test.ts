@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it } from 'vitest';
 
-import { decrypt, encrypt } from './encryption'
-import { resolveVerifyTokenForSave } from './verify-token'
+import { decrypt, encrypt } from './encryption';
+import { resolveVerifyTokenForSave } from './verify-token';
 
 /**
  * Regression cover for the settings page silently dropping the webhook
@@ -20,29 +20,29 @@ import { resolveVerifyTokenForSave } from './verify-token'
  * wipes the whole row for that.
  */
 describe('resolveVerifyTokenForSave', () => {
-  const stored = encrypt('old-token')
+  const stored = encrypt('old-token');
 
   it('a non-empty incoming token replaces the stored one, re-encrypted', () => {
-    const out = resolveVerifyTokenForSave('new-token', stored)
-    expect(out).not.toBeNull()
-    expect(out).not.toBe(stored)
-    expect(decrypt(out!)).toBe('new-token')
-  })
+    const out = resolveVerifyTokenForSave('new-token', stored);
+    expect(out).not.toBeNull();
+    expect(out).not.toBe(stored);
+    expect(decrypt(out!)).toBe('new-token');
+  });
 
   it.each([undefined, null, '', '   '])(
     'incoming %j keeps the stored encrypted token untouched',
     (incoming) => {
-      expect(resolveVerifyTokenForSave(incoming, stored)).toBe(stored)
-    },
-  )
+      expect(resolveVerifyTokenForSave(incoming, stored)).toBe(stored);
+    }
+  );
 
   it('nothing incoming and nothing stored stays null', () => {
-    expect(resolveVerifyTokenForSave(undefined, null)).toBeNull()
-    expect(resolveVerifyTokenForSave('', null)).toBeNull()
-  })
+    expect(resolveVerifyTokenForSave(undefined, null)).toBeNull();
+    expect(resolveVerifyTokenForSave('', null)).toBeNull();
+  });
 
   it('trims surrounding whitespace before encrypting', () => {
-    const out = resolveVerifyTokenForSave('  padded  ', null)
-    expect(decrypt(out!)).toBe('padded')
-  })
-})
+    const out = resolveVerifyTokenForSave('  padded  ', null);
+    expect(decrypt(out!)).toBe('padded');
+  });
+});

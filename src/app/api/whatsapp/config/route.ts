@@ -7,6 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { resolveVerifyTokenForSave } from '@/lib/whatsapp/verify-token'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -251,12 +252,27 @@ export async function POST(request: Request) {
       )
     }
 
+    // Look up any pre-existing row for this account. Two reasons: we need
+    // to know whether this number is already registered with Meta (so we
+    // can skip /register when the user didn't provide a PIN this time
+    // around), and we need the stored verify_token — the settings form
+    // never shows it, so a save that leaves the field blank must keep it
+    // rather than null it out.
+    const { data: existing } = await supabase
+      .from('whatsapp_config')
+      .select('id, registered_at, phone_number_id, verify_token')
+      .eq('account_id', accountId)
+      .maybeSingle()
+
     // Encrypt sensitive tokens before storing
     let encryptedAccessToken: string
     let encryptedVerifyToken: string | null
     try {
       encryptedAccessToken = encrypt(access_token)
-      encryptedVerifyToken = verify_token ? encrypt(verify_token) : null
+      encryptedVerifyToken = resolveVerifyTokenForSave(
+        verify_token,
+        existing?.verify_token ?? null
+      )
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Unknown encryption error'
       console.error('Encryption failed:', message)
@@ -268,15 +284,6 @@ export async function POST(request: Request) {
         { status: 500 }
       )
     }
-
-    // Look up any pre-existing row for this account so we know whether
-    // this number is already registered with Meta — if so we can skip
-    // /register when the user didn't provide a PIN this time around.
-    const { data: existing } = await supabase
-      .from('whatsapp_config')
-      .select('id, registered_at, phone_number_id')
-      .eq('account_id', accountId)
-      .maybeSingle()
 
     const sameNumber =
       existing?.phone_number_id === phone_number_id &&

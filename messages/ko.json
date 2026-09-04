@@ -1497,6 +1497,7 @@
       "webhookVerifyToken": "웹훅 인증 토큰",
       "webhookVerifyTokenPlaceholder": "사용자 지정 인증 토큰을 만드세요",
       "webhookVerifyTokenHint": "직접 만드는 문자열입니다. Meta 웹훅 설정에 지정한 토큰과 일치해야 합니다.",
+      "webhookVerifyTokenSaved": "저장되어 있습니다. 유지하려면 그대로 두고, 교체하려면 새 값을 입력하세요.",
       "twoStepPin": "2단계 인증 PIN",
       "optional": "(선택)",
       "pinPlaceholder": "Meta WhatsApp 관리자에서 발급받은 6자리 PIN",

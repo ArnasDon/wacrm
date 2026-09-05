@@ -9,6 +9,7 @@
 // ============================================================
 
 import { useState } from 'react';
+import dynamic from 'next/dynamic';
 import { ShieldCheck } from 'lucide-react';
 import { useAuth } from '@/hooks/use-auth';
 import { Button } from '@/components/ui/button';
@@ -20,7 +21,23 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
-import { AiAssistant } from './ai-assistant';
+
+// Code-split: `<Header>` mounts this launcher on every dashboard page
+// for every signed-in user, but the assistant chat itself is owner-
+// only and only ever needed once someone actually opens the dialog.
+// A static import would ship its whole bundle (chat state, business-
+// action rendering, etc.) to agents/viewers who can never open it.
+const AiAssistant = dynamic(
+  () => import('./ai-assistant').then((m) => m.AiAssistant),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex items-center justify-center py-12">
+        <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      </div>
+    ),
+  }
+);
 
 export function AssistantLauncher() {
   const { isOwner } = useAuth();

@@ -1080,6 +1080,8 @@
       "me": " (yo)",
       "noMessagesYet": "Aún no hay mensajes",
       "sendTemplateHint": "Envía una plantilla para iniciar la conversación",
+      "loadOlderMessages": "Cargar mensajes anteriores",
+      "loadingOlderMessages": "Cargando mensajes anteriores…",
       "selectConversation": "Selecciona una conversación",
       "selectConversationHint": "Elige una conversación de la izquierda para empezar a escribir",
       "today": "Hoy",

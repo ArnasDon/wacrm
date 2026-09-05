@@ -285,6 +285,8 @@
       "me": " (me)",
       "noMessagesYet": "No messages yet",
       "sendTemplateHint": "Send a template to start the conversation",
+      "loadOlderMessages": "Load older messages",
+      "loadingOlderMessages": "Loading older messages…",
       "selectConversation": "Select a conversation",
       "selectConversationHint": "Choose a conversation from the left to start messaging",
       "today": "Today",

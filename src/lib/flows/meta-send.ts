@@ -494,12 +494,23 @@ async function sendInteractiveViaMeta(
       input.kind === 'buttons'
         ? input.buttons.map((b) => ({ title: b.title, payload: b.id }))
         : input.sections.flatMap((s) => s.rows.map((r) => ({ title: r.title, payload: r.id })))
+    // Spell the options out as a numbered list in the body too. The
+    // quick-reply chips still ride along, but they don't always render
+    // (client/provider dependent — the exact gap that had a Messenger
+    // customer see the prompt with no way to pick), and the flow engine
+    // now accepts a typed "1" / "2" / label reply
+    // (`matchTypedOption`) — so the menu stays usable even when the
+    // chips are invisible. WhatsApp keeps its clean body + native
+    // buttons (that branch is untouched below).
+    const numberedBody = `${input.bodyText}\n\n${options
+      .map((o, i) => `${i + 1}. ${o.title}`)
+      .join('\n')}`
     const sendArgs = {
       accountId: input.accountId,
       userId: input.userId,
       conversationId: input.conversationId,
       contactId: input.contactId,
-      bodyText: input.bodyText,
+      bodyText: numberedBody,
       options,
     }
     return engineChannel === 'instagram'

@@ -9,6 +9,22 @@ Versions follow [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Pre-1.0, `MINOR` bumps cover new modules; `PATCH` bumps cover bug fixes
 and polish.
 
+## [Unreleased]
+
+### Fixed
+
+- **Flow menus now work on Instagram, Facebook and WhatsApp-via-Zernio.**
+  A `Send buttons` / `Send list` step could reach a dead end on every
+  Zernio-backed channel: the customer's tap arrives as plain text (the
+  option label), which the flow runner only ever matched as a native
+  interactive reply, so the run just re-prompted and handed off. The
+  runner now also advances on a typed reply — the option number
+  (`1`, `2)`, `#3`), the exact label, or the option id. On
+  Instagram/Facebook the options are additionally written into the
+  message body as a numbered list, so the menu stays usable even when
+  the quick-reply chips don't render on the customer's client. WhatsApp
+  keeps its clean body with native reply buttons.
+
 ## [0.9.1] — 2026-09-02
 
 > **Migration required:** apply `supabase/migrations/101_ai_followups_goal.sql`

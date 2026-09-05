@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest';
 
 const MESSAGES_DIR = join(process.cwd(), 'messages');
 const SOURCE_LOCALE = 'en';
-const TRANSLATED_LOCALES = ['ko'];
+const TRANSLATED_LOCALES = ['ko', 'pt-BR'];
 
 function loadKeys(locale: string): Set<string> {
   const raw = readFileSync(join(MESSAGES_DIR, `${locale}.json`), 'utf8');

@@ -136,9 +136,11 @@ export async function POST() {
     const { supabase, accountId, userId } = await requireRole('admin')
 
     const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
+      .from('whatsapp_connections')
       .select('*')
       .eq('account_id', accountId)
+      .eq('provider', 'meta')
+      .is('archived_at', null)
       .single()
 
     if (configError || !config) {
@@ -161,7 +163,7 @@ export async function POST() {
       )
     }
 
-    const accessToken = decrypt(config.access_token)
+    const accessToken = decrypt(config.credential)
 
     const metaTemplates: MetaTemplate[] = []
     let nextUrl:

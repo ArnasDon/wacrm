@@ -17,8 +17,26 @@ BEGIN
   IF to_regclass('public.messages') IS NULL THEN
     RAISE EXCEPTION 'public.messages is missing — migrations did not apply';
   END IF;
-  IF to_regclass('public.whatsapp_config') IS NULL THEN
-    RAISE EXCEPTION 'public.whatsapp_config is missing — migrations did not apply';
+  IF to_regclass('public.whatsapp_connections') IS NULL THEN
+    RAISE EXCEPTION 'public.whatsapp_connections is missing — migrations did not apply';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'whatsapp_connections_status_check'
+  ) THEN
+    RAISE EXCEPTION 'the 040 status CHECK (whatsapp_connections_status_check) was not installed';
+  END IF;
+  -- 040 replaces 036's (account_id, contact_id) unique index with a
+  -- (account_id, contact_id, connection_id) one. connection_id is
+  -- nullable until 1b/1c, so the index MUST be NULLS NOT DISTINCT or
+  -- the duplicate-conversation race guard from 036 is silently lost.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_index i
+    JOIN pg_class c ON c.oid = i.indexrelid
+    WHERE c.relname = 'idx_conversations_account_contact_connection'
+      AND i.indnullsnotdistinct
+  ) THEN
+    RAISE EXCEPTION 'idx_conversations_account_contact_connection missing or not NULLS NOT DISTINCT — 036 dedup guard would be lost';
   END IF;
 
   -- Supabase provides the storage schema; migrations 016/020/023 write
@@ -40,6 +58,29 @@ BEGIN
   -- Account scoping (017) is load-bearing for every RLS policy.
   IF to_regclass('public.accounts') IS NULL THEN
     RAISE EXCEPTION 'public.accounts is missing — migration 017 did not apply';
+  END IF;
+
+  -- 041: conversations.connection_id NOT NULL
+  IF (SELECT is_nullable FROM information_schema.columns
+      WHERE table_name = 'conversations' AND column_name = 'connection_id') <> 'NO' THEN
+    RAISE EXCEPTION 'verify-schema: conversations.connection_id is nullable';
+  END IF;
+
+  -- 041: FK ON DELETE RESTRICT
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'conversations_connection_id_fkey' AND confdeltype = 'r'
+  ) THEN
+    RAISE EXCEPTION 'verify-schema: conversations FK is not ON DELETE RESTRICT';
+  END IF;
+
+  -- 041: is_primary EXCLUDE constraint, deferível
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname = 'whatsapp_connections_one_primary'
+      AND contype = 'x' AND condeferrable
+  ) THEN
+    RAISE EXCEPTION 'verify-schema: one_primary is not a deferrable exclusion constraint';
   END IF;
 
   RAISE NOTICE 'schema verification passed';

@@ -80,7 +80,7 @@ async function upsertTemplateRow(
 /**
  * Submit a template to Meta for approval AND persist it locally.
  *
- * Auth → fetch whatsapp_config → validate → (DRY_RUN short-circuit) →
+ * Auth → fetch whatsapp_connections → validate → (DRY_RUN short-circuit) →
  * POST to Meta → upsert local row by (user_id, name, language) with
  * status, meta_template_id, sample_values, last_submitted_at.
  *
@@ -139,9 +139,11 @@ export async function POST(request: Request) {
       metaStatus = 'PENDING'
     } else {
       const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .select('*')
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -162,7 +164,7 @@ export async function POST(request: Request) {
         )
       }
 
-      const accessToken = decrypt(config.access_token)
+      const accessToken = decrypt(config.credential)
 
       // Image headers need a Resumable-Upload handle (Meta rejects a
       // plain URL at creation). Derive it from header_media_url before

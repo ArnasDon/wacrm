@@ -38,7 +38,7 @@ export async function GET() {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
-  // whatsapp_config is one-row-per-account post-017. Resolve the
+  // whatsapp_connections is one-row-per-account post-017. Resolve the
   // caller's account_id so a teammate who joined an existing account
   // sees the same registration state as the admin who set it up.
   const { data: profile } = await supabase
@@ -56,9 +56,11 @@ export async function GET() {
   }
 
   const { data: config } = await supabase
-    .from('whatsapp_config')
+    .from('whatsapp_connections')
     .select('*')
     .eq('account_id', accountId)
+    .eq('provider', 'meta')
+    .is('archived_at', null)
     .maybeSingle()
 
   if (!config) {
@@ -71,7 +73,7 @@ export async function GET() {
 
   let accessToken: string
   try {
-    accessToken = decrypt(config.access_token)
+    accessToken = decrypt(config.credential)
   } catch {
     return NextResponse.json({
       live: false,

@@ -69,3 +69,7 @@ jobs:
       # just the absence of an error.
       - name: Verify the resulting schema
         run: supabase db query --local --file supabase/ci/verify-schema.sql
+
+# 2026-08-30: re-run after GitHub Actions was enabled — validates migration 041
+# (001->041 replay) for the first time; this workflow never ran while Actions
+# was off. Safe to revert this comment once green.

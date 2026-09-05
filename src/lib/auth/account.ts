@@ -30,6 +30,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { createClient } from "@/lib/supabase/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
+import { isAccountBlocked, type SubscriptionStatus } from "@/lib/billing/access";
 
 // ------------------------------------------------------------
 // Errors
@@ -54,6 +55,14 @@ export class ForbiddenError extends Error {
   }
 }
 
+export class PaymentRequiredError extends Error {
+  readonly status = 402 as const;
+  constructor(message = "Subscription required") {
+    super(message);
+    this.name = "PaymentRequiredError";
+  }
+}
+
 /**
  * Convert one of the typed errors above (or anything else) into a
  * `NextResponse`. Routes can do:
@@ -67,7 +76,7 @@ export class ForbiddenError extends Error {
  * server internals out of the wire.
  */
 export function toErrorResponse(err: unknown): NextResponse {
-  if (err instanceof UnauthorizedError || err instanceof ForbiddenError) {
+  if (err instanceof UnauthorizedError || err instanceof ForbiddenError || err instanceof PaymentRequiredError) {
     return NextResponse.json({ error: err.message }, { status: err.status });
   }
   console.error("[toErrorResponse] uncategorized error:", err);
@@ -87,8 +96,15 @@ export interface AccountContext {
   accountId: string;
   /** Caller's role within their account. */
   role: AccountRole;
-  /** Lightweight account meta — id + name. */
-  account: { id: string; name: string };
+  /** Lightweight account meta — id + name + billing fields. */
+  account: {
+    id: string;
+    name: string;
+    subscription_status: SubscriptionStatus;
+    trial_ends_at: string | null;
+    asaas_customer_id: string | null;
+    asaas_subscription_id: string | null;
+  };
 }
 
 /**
@@ -103,7 +119,9 @@ export interface AccountContext {
  * Use `requireRole(min)` instead when the route also needs a
  * minimum-role check — it's a thin wrapper over this.
  */
-export async function getCurrentAccount(): Promise<AccountContext> {
+export async function getCurrentAccount(
+  opts: { allowBlocked?: boolean } = {}
+): Promise<AccountContext> {
   const supabase = await createClient();
 
   const {
@@ -149,7 +167,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   // RLS, so it stays robust against cache staleness and older schemas.
   const { data: account, error: accountErr } = await supabase
     .from("accounts")
-    .select("id, name")
+    .select("id, name, subscription_status, trial_ends_at, asaas_customer_id, asaas_subscription_id")
     .eq("id", data.account_id)
     .maybeSingle();
 
@@ -163,12 +181,26 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     throw new ForbiddenError("Profile is not linked to an account");
   }
 
+  const subscriptionStatus = (account.subscription_status as SubscriptionStatus) ?? "active";
+  const trialEndsAt = (account.trial_ends_at as string | null) ?? null;
+
+  if (!opts.allowBlocked && isAccountBlocked({ subscription_status: subscriptionStatus, trial_ends_at: trialEndsAt })) {
+    throw new PaymentRequiredError();
+  }
+
   return {
     supabase,
     userId: user.id,
     accountId: data.account_id,
     role: data.account_role,
-    account: { id: account.id, name: account.name },
+    account: {
+      id: account.id,
+      name: account.name,
+      subscription_status: subscriptionStatus,
+      trial_ends_at: trialEndsAt,
+      asaas_customer_id: (account.asaas_customer_id as string | null) ?? null,
+      asaas_subscription_id: (account.asaas_subscription_id as string | null) ?? null,
+    },
   };
 }
 
@@ -179,8 +211,11 @@ export async function getCurrentAccount(): Promise<AccountContext> {
  * `getCurrentAccount`, plus `ForbiddenError("Insufficient role")`
  * when the caller is below `min`.
  */
-export async function requireRole(min: AccountRole): Promise<AccountContext> {
-  const ctx = await getCurrentAccount();
+export async function requireRole(
+  min: AccountRole,
+  opts: { allowBlocked?: boolean } = {}
+): Promise<AccountContext> {
+  const ctx = await getCurrentAccount(opts);
   if (!hasMinRole(ctx.role, min)) {
     throw new ForbiddenError(
       `This action requires the '${min}' role or higher`,

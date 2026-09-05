@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  processStatusUpdate: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -19,7 +20,7 @@ const h = vi.hoisted(() => ({
     afterCallbacks: [] as (() => Promise<void> | void)[],
     automationStarted: 0,
     automationCompleted: 0,
-    /** whatsapp_config.mirror_inbound_media for the matched row (#466). */
+    /** whatsapp_connections.mirror_inbound_media for the matched row (#466). */
     mirrorInboundMedia: true as boolean | undefined,
     /** Objects the inbound-media mirror pushed into chat-media. */
     storageUploads: [] as {
@@ -45,40 +46,53 @@ vi.mock('@supabase/supabase-js', () => ({
   createClient: () => ({
     from(table: string) {
       switch (table) {
-        case 'whatsapp_config':
-          return {
-            select: () => ({
-              eq: () =>
-                Promise.resolve({
-                  data: [
-                    {
-                      account_id: 'acc-1',
-                      user_id: 'user-1',
-                      access_token: 'enc',
-                      mirror_inbound_media: h.state.mirrorInboundMedia,
-                    },
-                  ],
-                  error: null,
-                }),
-            }),
+        case 'whatsapp_connections': {
+          // Chain-aware: the envelope adapter awaits the builder after
+          // `.eq('provider','meta').is('archived_at', null)` (array
+          // result), and processInboundMessage's media path re-loads the
+          // row by id with `.single()`. A single well-formed row backs
+          // both — enough for `createTransport` in the media path.
+          const row = {
+            id: 'conn-1',
+            account_id: 'acc-1',
+            user_id: 'user-1',
+            credential: 'enc',
+            provider: 'meta',
+            phone_number_id: 'pn-1',
+            mirror_inbound_media: h.state.mirrorInboundMedia,
+            uazapi_base_url: null,
           }
-        case 'conversations':
-          // findOrCreateConversation: select().eq().eq().order().limit()
-          return {
-            select: () => ({
-              eq: () => ({
-                eq: () => ({
-                  order: () => ({
-                    limit: () =>
-                      Promise.resolve({
-                        data: [h.state.conversation],
-                        error: null,
-                      }),
-                  }),
-                }),
-              }),
-            }),
+          const chain: Record<string, unknown> = {
+            eq: () => chain,
+            is: () => chain,
+            single: () => Promise.resolve({ data: row, error: null }),
+            maybeSingle: () => Promise.resolve({ data: row, error: null }),
+            then: (
+              onFulfilled: (v: { data: unknown; error: null }) => unknown,
+              onRejected?: (r: unknown) => unknown,
+            ) =>
+              Promise.resolve({ data: [row], error: null }).then(
+                onFulfilled,
+                onRejected,
+              ),
           }
+          return {
+            select: () => chain,
+          }
+        }
+        case 'conversations': {
+          // findOrCreateConnectionAwareConversation:
+          //   select().eq('account_id').eq('contact_id').eq('connection_id')
+          //          .order().limit()
+          // Chain-aware so any number of `.eq()` resolves to the same builder.
+          const cchain: Record<string, unknown> = {
+            eq: () => cchain,
+            order: () => cchain,
+            limit: () =>
+              Promise.resolve({ data: [h.state.conversation], error: null }),
+          }
+          return { select: () => cchain }
+        }
         case 'broadcast_recipients':
           // flagBroadcastReplyIfAny: select().eq().eq().in().order().limit()
           return {
@@ -201,6 +215,9 @@ vi.mock('@/lib/ai/auto-reply', () => ({
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
+vi.mock('@/lib/whatsapp/inbound/process-status-update', () => ({
+  processStatusUpdate: h.processStatusUpdate,
+}))
 
 import { POST } from './route'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
@@ -272,6 +289,7 @@ beforeEach(() => {
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.processStatusUpdate.mockResolvedValue(undefined)
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<void>((resolve) => {
@@ -536,5 +554,59 @@ describe('inbound webhook: after() awaits automations (#368)', () => {
     // If the dispatches were fire-and-forget, completed would still be 0
     // here — the callback would have resolved before the timers fired.
     expect(h.state.automationCompleted).toBe(3)
+  })
+})
+
+describe('status webhook: processed regardless of a matching connection', () => {
+  // A delivery / read receipt for an already-sent message can trail in
+  // from Meta after the account was reset / archived / disconnected, so
+  // no whatsapp_connections row resolves for its phone_number_id.
+  // processStatusUpdate resolves the owning account from the stored
+  // message itself, so it MUST still run — regressing this freezes
+  // messages.status and every broadcast's delivered/read/failed counts.
+  function statusRequest(phoneNumberId: string) {
+    const body = {
+      entry: [
+        {
+          changes: [
+            {
+              field: 'messages',
+              value: {
+                metadata: { phone_number_id: phoneNumberId },
+                statuses: [
+                  {
+                    id: 'wamid.SENT1',
+                    status: 'read',
+                    timestamp: '1700000123',
+                    recipient_id: '15551230000',
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    }
+    return {
+      text: async () => JSON.stringify(body),
+      headers: { get: () => 'sha256=stub' },
+    } as unknown as Request
+  }
+
+  it('runs processStatusUpdate for a status-only webhook whose number has no config', async () => {
+    const res = await POST(statusRequest('pn-unknown-after-reset'))
+    for (const cb of h.state.afterCallbacks) await cb()
+
+    expect(res).toBeDefined()
+    expect(h.processStatusUpdate).toHaveBeenCalledTimes(1)
+    // Normalized from the raw Meta status envelope — timestamp in ms.
+    expect(h.processStatusUpdate.mock.calls[0][1]).toMatchObject({
+      providerMessageId: 'wamid.SENT1',
+      status: 'read',
+      timestamp: new Date(1700000123 * 1000),
+    })
+    // The inbound-message path never ran (no contacts / messages).
+    expect(h.state.upsertCalls).toHaveLength(0)
+    expect(h.dispatchInboundToFlows).not.toHaveBeenCalled()
   })
 })

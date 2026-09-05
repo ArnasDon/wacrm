@@ -1,6 +1,13 @@
 "use client";
 
-import { Suspense, useState, useCallback, useEffect, useRef } from "react";
+import {
+  Suspense,
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
 import { createClient } from "@/lib/supabase/client";
@@ -10,7 +17,10 @@ import {
 } from "@/lib/inbox/conversations";
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
-import { ConversationList } from "@/components/inbox/conversation-list";
+import {
+  ConversationList,
+  countActiveChannels,
+} from "@/components/inbox/conversation-list";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { toast } from "sonner";
@@ -183,7 +193,7 @@ function InboxPageInner() {
 
       if (!user) return;
 
-      // whatsapp_config is one-row-per-account post-multi-user, so
+      // whatsapp_connections is one-row-per-account post-multi-user, so
       // the previous `.eq('user_id', user.id)` would miss the row
       // for any teammate who didn't personally save the config —
       // the "WhatsApp not connected" banner would show in the
@@ -201,9 +211,11 @@ function InboxPageInner() {
       }
 
       const { data } = await supabase
-        .from("whatsapp_config")
+        .from("whatsapp_connections")
         .select("status")
         .eq("account_id", accountId)
+        .eq("provider", "meta")
+        .is("archived_at", null)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");
@@ -502,6 +514,14 @@ function InboxPageInner() {
   }, [router]);
 
 
+  // Distinct channel providers across the loaded conversations. Drives the
+  // conversation-list channel badge and the thread header's "via <number>"
+  // line — both only render once the account runs more than one channel.
+  const activeChannelCount = useMemo(
+    () => countActiveChannels(conversations),
+    [conversations],
+  );
+
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
   }, []);
@@ -623,6 +643,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             contactPanelOpen={contactPanelOpen}
             onToggleContactPanel={handleToggleContactPanel}
+            activeChannelCount={activeChannelCount}
           />
         </div>
 

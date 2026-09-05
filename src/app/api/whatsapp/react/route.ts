@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
-import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import { resolveConnection } from '@/lib/whatsapp/resolve-connection';
+import { SendMessageError } from '@/lib/whatsapp/send-error';
+import {
+  createTransport,
+  type TransportConnection,
+} from '@/lib/whatsapp/providers';
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
 import {
   checkRateLimit,
@@ -40,7 +44,7 @@ export async function POST(request: Request) {
     if (!message_id || typeof emoji !== 'string') {
       return NextResponse.json(
         { error: 'message_id and emoji are required' },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -59,8 +63,10 @@ export async function POST(request: Request) {
       // No Meta ID yet — usually a sending/failed agent message. We can't
       // tell Meta to react to a message it never received.
       return NextResponse.json(
-        { error: 'Cannot react to a message that has not been sent to WhatsApp' },
-        { status: 400 },
+        {
+          error: 'Cannot react to a message that has not been sent to WhatsApp',
+        },
+        { status: 400 }
       );
     }
 
@@ -74,7 +80,7 @@ export async function POST(request: Request) {
     if (convError || !conversation) {
       return NextResponse.json(
         { error: 'Conversation not found' },
-        { status: 404 },
+        { status: 404 }
       );
     }
 
@@ -84,33 +90,45 @@ export async function POST(request: Request) {
     if (!contact?.phone) {
       return NextResponse.json(
         { error: 'Contact phone number not found' },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
-
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured.' },
-        { status: 400 },
-      );
+    // Conexão + transporte. A reação não passa pelo núcleo de envio:
+    // ela grava em `message_reactions`, não em `messages`. O
+    // `createTransport` fica no try do envio: uma credencial sem
+    // `phone_number_id` cai no mesmo 502 que uma falha de rede, e um
+    // erro cru de `decrypt` (credencial corrompida) sobe pro handler
+    // externo como 500, não vira "não configurado".
+    let connection: TransportConnection;
+    try {
+      // Passa a conversa de origem para que a reação respeite a conexão
+      // daquela conversa (nível 1 do resolveConnection) em vez de sempre
+      // cair na primária. Broadcast fica de fora desta wave (fan-out não
+      // tem conversa única) — ver spec §7.
+      connection = await resolveConnection(supabase, accountId, {
+        conversationId: conversation.id,
+      });
+    } catch (err) {
+      if (
+        err instanceof SendMessageError &&
+        err.code === 'whatsapp_not_configured'
+      ) {
+        return NextResponse.json(
+          { error: 'WhatsApp not configured.' },
+          { status: 400 }
+        );
+      }
+      throw err;
     }
 
-    const accessToken = decrypt(config.access_token);
     const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
 
     try {
-      await sendReactionMessage({
-        phoneNumberId: config.phone_number_id,
-        accessToken,
+      const transport = createTransport(connection);
+      await transport.sendReaction({
         to: sanitizedPhone,
-        targetMessageId: targetMessage.message_id,
+        targetProviderMessageId: targetMessage.message_id,
         emoji,
       });
     } catch (err) {
@@ -119,7 +137,7 @@ export async function POST(request: Request) {
       console.error('[whatsapp/react] Meta send failed:', message);
       return NextResponse.json(
         { error: `Meta API error: ${message}` },
-        { status: 502 },
+        { status: 502 }
       );
     }
 
@@ -136,28 +154,33 @@ export async function POST(request: Request) {
         console.error('[whatsapp/react] DB delete failed:', delError.message);
         return NextResponse.json(
           { error: 'Reaction sent to Meta but DB delete failed' },
-          { status: 500 },
+          { status: 500 }
         );
       }
     } else {
       // Upsert. The unique constraint (message_id, actor_type, actor_id)
       // lets us swap emoji in a single statement.
-      const { error: upsertError } = await supabase.from('message_reactions').upsert(
-        {
-          message_id: targetMessage.id,
-          conversation_id: targetMessage.conversation_id,
-          actor_type: 'agent',
-          actor_id: userId,
-          emoji,
-        },
-        { onConflict: 'message_id,actor_type,actor_id' },
-      );
+      const { error: upsertError } = await supabase
+        .from('message_reactions')
+        .upsert(
+          {
+            message_id: targetMessage.id,
+            conversation_id: targetMessage.conversation_id,
+            actor_type: 'agent',
+            actor_id: userId,
+            emoji,
+          },
+          { onConflict: 'message_id,actor_type,actor_id' }
+        );
 
       if (upsertError) {
-        console.error('[whatsapp/react] DB upsert failed:', upsertError.message);
+        console.error(
+          '[whatsapp/react] DB upsert failed:',
+          upsertError.message
+        );
         return NextResponse.json(
           { error: 'Reaction sent to Meta but DB upsert failed' },
-          { status: 500 },
+          { status: 500 }
         );
       }
     }

@@ -42,7 +42,38 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
   closed: "bg-muted-foreground",
 };
 
+/**
+ * Short channel label for a conversation's owning connection, or `null`
+ * when there's nothing worth showing. Pure — safe to unit-test.
+ *
+ * Returns `null` when the account has at most one active channel
+ * (`activeChannelCount <= 1`) or the row carries no embedded `connection`.
+ * Otherwise: `'Meta'` for the Meta Cloud API, `'QR'` for a UAZAPI (QR)
+ * connection.
+ */
+export function channelBadge(
+  conversation: Pick<Conversation, "connection">,
+  activeChannelCount: number,
+): "Meta" | "QR" | null {
+  if (activeChannelCount <= 1) return null;
+  const provider = conversation.connection?.provider;
+  if (provider === "meta") return "Meta";
+  if (provider === "uazapi") return "QR";
+  return null;
+}
 
+/**
+ * Number of distinct channel providers across the loaded conversations.
+ * Heuristic (no extra query — Ruling PF-D): drives whether the channel
+ * badge / "via <number>" affordances render at all.
+ */
+export function countActiveChannels(conversations: Conversation[]): number {
+  const providers = new Set<string>();
+  for (const c of conversations) {
+    if (c.connection?.provider) providers.add(c.connection.provider);
+  }
+  return providers.size;
+}
 
 type InboxFilter = ConversationStatus | "all" | "unread";
 
@@ -157,6 +188,14 @@ export function ConversationList({
     for (const t of tags) m.set(t.id, t);
     return m;
   }, [tags]);
+
+  // Distinct channel providers across the loaded conversations. When the
+  // account only has one active channel this is 0 or 1 and the per-item
+  // channel badge stays hidden.
+  const activeChannelCount = useMemo(
+    () => countActiveChannels(conversations),
+    [conversations],
+  );
 
   const filtered = useMemo(() => {
     let result = conversations;
@@ -413,6 +452,7 @@ export function ConversationList({
                 conversation={conv}
                 isActive={conv.id === activeConversationId}
                 onSelect={handleSelect}
+                activeChannelCount={activeChannelCount}
                 t={t}
               />
             ))}
@@ -427,6 +467,8 @@ interface ConversationItemProps {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (conversation: Conversation) => void;
+  /** Distinct channel providers across the list — see {@link channelBadge}. */
+  activeChannelCount: number;
   t: ReturnType<typeof useTranslations>;
 }
 
@@ -434,11 +476,13 @@ function ConversationItem({
   conversation,
   isActive,
   onSelect,
+  activeChannelCount,
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
   const displayName = contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
+  const badge = channelBadge(conversation, activeChannelCount);
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -474,8 +518,15 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
-            {displayName}
+          <span className="flex min-w-0 items-center gap-1.5">
+            <span className="truncate text-sm font-medium text-foreground">
+              {displayName}
+            </span>
+            {badge && (
+              <span className="shrink-0 rounded bg-muted px-1 text-[9px] font-semibold uppercase tracking-wide text-muted-foreground">
+                {badge === "Meta" ? t("channelMeta") : t("channelQr")}
+              </span>
+            )}
           </span>
           <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
         </div>

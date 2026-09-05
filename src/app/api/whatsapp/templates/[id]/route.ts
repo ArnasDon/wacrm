@@ -65,7 +65,7 @@ export async function PATCH(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Resolve the caller's account_id so template + whatsapp_config
+    // Resolve the caller's account_id so template + whatsapp_connections
     // lookups work for teammates who didn't author the row.
     const { data: profile } = await supabase
       .from('profiles')
@@ -139,9 +139,11 @@ export async function PATCH(
 
     if (!isDryRun()) {
       const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .select('*')
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .single()
       if (configError || !config) {
         return NextResponse.json(
@@ -149,7 +151,7 @@ export async function PATCH(
           { status: 400 },
         )
       }
-      const accessToken = decrypt(config.access_token)
+      const accessToken = decrypt(config.credential)
 
       // Image headers need a fresh Resumable-Upload handle on every edit
       // (Meta replaces components wholesale). Derive from header_media_url.
@@ -253,7 +255,7 @@ export async function DELETE(
 
     // Same account-scoping rationale as the PATCH handler above —
     // teammates need to be able to operate on shared templates +
-    // the shared whatsapp_config.
+    // the shared whatsapp_connections.
     const { data: profile } = await supabase
       .from('profiles')
       .select('account_id')
@@ -279,9 +281,11 @@ export async function DELETE(
 
     if (existing.meta_template_id && !isDryRun()) {
       const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
+        .from('whatsapp_connections')
         .select('*')
         .eq('account_id', accountId)
+        .eq('provider', 'meta')
+        .is('archived_at', null)
         .single()
       if (configError || !config || !config.waba_id) {
         return NextResponse.json(
@@ -289,7 +293,7 @@ export async function DELETE(
           { status: 400 },
         )
       }
-      const accessToken = decrypt(config.access_token)
+      const accessToken = decrypt(config.credential)
       try {
         await deleteMessageTemplate({
           wabaId: config.waba_id,

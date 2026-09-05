@@ -23,15 +23,25 @@ const USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo'
 
 // Deliberately narrow: calendar.events (create/read events) +
 // calendar.freebusy (availability only, can't read event details) +
-// userinfo.email (show which Google account is connected in Settings).
-// All three sit in Google's "sensitive" verification tier, not
-// "restricted" — the full `calendar` scope would pull in a heavier
-// CASA security-assessment requirement once this account moves past
-// Google's 100-test-user cap, which isn't needed for what this feature
-// actually does.
+// tasks (mirrors CRM tasks/reminders into Google Tasks — see
+// src/lib/google-calendar/tasks-api.ts) + userinfo.email (show which
+// Google account is connected in Settings). All four sit in Google's
+// "sensitive" verification tier, not "restricted" — the full
+// `calendar` scope would pull in a heavier CASA security-assessment
+// requirement once this account moves past Google's 100-test-user
+// cap, which isn't needed for what this feature actually does.
+//
+// `tasks` was added after `calendar.events`/`calendar.freebusy` were
+// already in production use — Google does not retroactively grant a
+// new scope to an existing refresh_token, so any account that
+// connected before this change must reconnect (Settings → Google
+// Calendar → Reconnect) before Google Tasks sync starts working for
+// them; every Google Tasks call below fails soft (best-effort) until
+// then, it never blocks the underlying CRM task/event action.
 const SCOPES = [
   'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/calendar.freebusy',
+  'https://www.googleapis.com/auth/tasks',
   'https://www.googleapis.com/auth/userinfo.email',
 ]
 

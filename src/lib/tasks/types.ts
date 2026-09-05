@@ -17,6 +17,11 @@ export interface Task {
   status: TaskStatus;
   completed_at: string | null;
   reminder_sent_at: string | null;
+  /** Set once this task is mirrored into Google Tasks (migration 103)
+   *  — both null if the account has no Google Calendar connection, or
+   *  the mirror attempt failed. See src/lib/tasks/google-sync.ts. */
+  google_task_id: string | null;
+  google_task_list_id: string | null;
   created_at: string;
   updated_at: string;
 }

@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { MAX_TASK_NOTES, MAX_TASK_TITLE, isTaskStatus } from '@/lib/tasks/types';
+import { syncNewTaskToGoogle } from '@/lib/tasks/google-sync';
 
 // Follow-up tasks (migration 097). GET lists the account's tasks
 // (filterable by contact / assignee / status); POST creates one.
@@ -73,7 +74,8 @@ export async function POST(request: Request) {
     typeof body.contact_id === 'string' && body.contact_id ? body.contact_id : null;
   const dealId = typeof body.deal_id === 'string' && body.deal_id ? body.deal_id : null;
 
-  const { data, error } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { data, error } = await db
     .from('tasks')
     .insert({
       account_id: ctx.accountId,
@@ -88,5 +90,10 @@ export async function POST(request: Request) {
     .select('*')
     .single();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  // Best-effort mirror into Google Tasks — never blocks the response,
+  // and does nothing if the account has no Google Calendar connected.
+  void syncNewTaskToGoogle(db, ctx.accountId, data.id, { title, notes, dueISO: dueAt });
+
   return NextResponse.json({ task: data }, { status: 201 });
 }

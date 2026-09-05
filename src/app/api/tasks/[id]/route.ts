@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { MAX_TASK_NOTES, MAX_TASK_TITLE, isTaskStatus } from '@/lib/tasks/types';
+import { syncDeletedTaskToGoogle, syncUpdatedTaskToGoogle } from '@/lib/tasks/google-sync';
 
 interface Ctx {
   params: Promise<{ id: string }>;
@@ -61,7 +62,8 @@ export async function PATCH(request: Request, { params }: Ctx) {
     return NextResponse.json({ error: 'nothing to update' }, { status: 400 });
   }
 
-  const { data, error } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { data, error } = await db
     .from('tasks')
     .update(patch)
     .eq('id', id)
@@ -70,6 +72,17 @@ export async function PATCH(request: Request, { params }: Ctx) {
     .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   if (!data) return NextResponse.json({ error: 'not found' }, { status: 404 });
+
+  // Mirror only the fields this request actually touched — `patch`
+  // above already carries the exact same "provided vs. omitted"
+  // shape syncUpdatedTaskToGoogle expects.
+  void syncUpdatedTaskToGoogle(db, ctx.accountId, data, {
+    ...('title' in patch ? { title: patch.title as string } : {}),
+    ...('notes' in patch ? { notes: patch.notes as string | null } : {}),
+    ...('due_at' in patch ? { dueISO: patch.due_at as string | null } : {}),
+    ...('status' in patch ? { done: patch.status === 'done' } : {}),
+  });
+
   return NextResponse.json({ task: data });
 }
 
@@ -82,11 +95,17 @@ export async function DELETE(_request: Request, { params }: Ctx) {
   }
   const { id } = await params;
 
-  const { error } = await supabaseAdmin()
+  const db = supabaseAdmin();
+  const { data, error } = await db
     .from('tasks')
     .delete()
     .eq('id', id)
-    .eq('account_id', ctx.accountId);
+    .eq('account_id', ctx.accountId)
+    .select('google_task_id, google_task_list_id')
+    .maybeSingle();
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  if (data) void syncDeletedTaskToGoogle(db, ctx.accountId, data);
+
   return NextResponse.json({ ok: true });
 }

@@ -89,6 +89,81 @@ export function matchReplyId(
   return null;
 }
 
+/** One selectable option of a send_buttons / send_list node, flattened
+ *  in the order the customer sees it. */
+interface OrderedOption {
+  reply_id: string;
+  title: string;
+  next_node_key: string;
+}
+
+function orderedOptions(node: {
+  node_type: string;
+  config: Record<string, unknown>;
+}): OrderedOption[] {
+  if (node.node_type === "send_buttons") {
+    const cfg = node.config as unknown as SendButtonsNodeConfig;
+    return (cfg.buttons ?? []).map((b) => ({
+      reply_id: b.reply_id ?? "",
+      title: b.title ?? "",
+      next_node_key: b.next_node_key,
+    }));
+  }
+  if (node.node_type === "send_list") {
+    const cfg = node.config as unknown as SendListNodeConfig;
+    return (cfg.sections ?? []).flatMap((s) =>
+      (s.rows ?? []).map((r) => ({
+        reply_id: r.reply_id ?? "",
+        title: r.title ?? "",
+        next_node_key: r.next_node_key,
+      })),
+    );
+  }
+  return [];
+}
+
+/**
+ * Advance a suspended send_buttons / send_list node from a *typed* (or
+ * tapped-then-delivered-as-text) reply.
+ *
+ * A native tap only reaches the engine as `kind: 'interactive_reply'`
+ * on the direct Meta Cloud API webhook. Every Zernio channel — WhatsApp
+ * Coexistence, Instagram, Facebook — forwards a button/chip tap as an
+ * ordinary inbound *text* equal to the visible label, and a customer
+ * may simply type the option number instead. This matches any of: the
+ * 1-based position (`"1"`, `"2)"`, `"3."`), the option title
+ * (case-insensitive, trimmed), or the stable reply_id.
+ *
+ * Returns the matched option's next_node_key, or null when nothing
+ * matches (the caller then falls back to the flow's reprompt policy).
+ */
+export function matchTypedOption(
+  node: { node_type: string; config: Record<string, unknown> },
+  text: string,
+): string | null {
+  const options = orderedOptions(node);
+  if (options.length === 0) return null;
+
+  const raw = text.trim();
+  if (!raw) return null;
+
+  // Whole-message number → 1-based index. Tolerates a leading "#" and a
+  // trailing ")" / "." / ":" / "-" ("#2", "3.", " 1 )"). Deliberately
+  // NOT a loose scan: "quiero 2 sillas" must not select option 2.
+  const asIndex = raw.match(/^#?\s*([1-9][0-9]?)\s*[).:-]?$/);
+  if (asIndex) {
+    const idx = Number.parseInt(asIndex[1], 10) - 1;
+    if (idx >= 0 && idx < options.length) return options[idx].next_node_key;
+  }
+
+  const norm = raw.toLowerCase();
+  for (const o of options) {
+    if (o.title.trim().toLowerCase() === norm) return o.next_node_key;
+    if (o.reply_id && o.reply_id.toLowerCase() === norm) return o.next_node_key;
+  }
+  return null;
+}
+
 /**
  * Case-insensitive contains/exact match against a list of keywords.
  * Used by the trigger evaluator. Stable enough that the v3 builder
@@ -956,9 +1031,13 @@ async function handleReplyForActiveRun(
     return { consumed: true, flow_run_id: run.id, outcome: "no_match" };
   }
 
-  // Two ways a reply can advance:
-  //   1. Interactive button/list tap on a send_buttons/send_list node.
-  //   2. Text reply on a collect_input node — capture into vars.
+  // Ways a reply can advance:
+  //   1. Interactive button/list tap on a send_buttons/send_list node
+  //      (native `interactive_reply`, direct Meta Cloud API only).
+  //   2. Text reply on a send_buttons/send_list node — the customer
+  //      typed the option number/label, or a Zernio channel delivered
+  //      their tap as plain text. See `matchTypedOption`.
+  //   3. Text reply on a collect_input node — capture into vars.
   //
   // Everything else falls through to the fallback policy below.
   let matched: string | null = null;
@@ -968,6 +1047,12 @@ async function handleReplyForActiveRun(
       currentNode.node_type === "send_list")
   ) {
     matched = matchReplyId(currentNode, message.reply_id);
+  } else if (
+    message.kind === "text" &&
+    (currentNode.node_type === "send_buttons" ||
+      currentNode.node_type === "send_list")
+  ) {
+    matched = matchTypedOption(currentNode, message.text);
   } else if (
     message.kind === "text" &&
     currentNode.node_type === "collect_input"

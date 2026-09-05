@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   matchReplyId,
+  matchTypedOption,
   matchesKeywordTrigger,
   isAutoAdvancing,
   isSuspending,
@@ -94,6 +95,83 @@ describe("matchReplyId", () => {
         "x",
       ),
     ).toBeNull();
+  });
+});
+
+describe("matchTypedOption", () => {
+  const buttonsNode = {
+    node_type: "send_buttons",
+    config: {
+      text: "¿Qué necesitas?",
+      buttons: [
+        { reply_id: "quote", title: "Cotizar servicios", next_node_key: "to_quote" },
+        { reply_id: "support", title: "Soporte", next_node_key: "to_support" },
+        { reply_id: "faq", title: "Preguntas frecuentes", next_node_key: "to_faq" },
+      ],
+    },
+  };
+
+  it("matches a bare 1-based index", () => {
+    expect(matchTypedOption(buttonsNode, "1")).toBe("to_quote");
+    expect(matchTypedOption(buttonsNode, "2")).toBe("to_support");
+    expect(matchTypedOption(buttonsNode, "3")).toBe("to_faq");
+  });
+
+  it("tolerates punctuation / whitespace / a leading # around the index", () => {
+    expect(matchTypedOption(buttonsNode, " 2 ")).toBe("to_support");
+    expect(matchTypedOption(buttonsNode, "3.")).toBe("to_faq");
+    expect(matchTypedOption(buttonsNode, "1)")).toBe("to_quote");
+    expect(matchTypedOption(buttonsNode, "#2")).toBe("to_support");
+  });
+
+  it("does not treat a number embedded in a sentence as a selection", () => {
+    expect(matchTypedOption(buttonsNode, "quiero 2 cotizaciones")).toBeNull();
+  });
+
+  it("matches the option title case-insensitively (a tap delivered as text)", () => {
+    expect(matchTypedOption(buttonsNode, "Cotizar servicios")).toBe("to_quote");
+    expect(matchTypedOption(buttonsNode, "  soporte  ")).toBe("to_support");
+  });
+
+  it("matches the stable reply_id", () => {
+    expect(matchTypedOption(buttonsNode, "faq")).toBe("to_faq");
+  });
+
+  it("returns null for an out-of-range index or an unknown reply", () => {
+    expect(matchTypedOption(buttonsNode, "4")).toBeNull();
+    expect(matchTypedOption(buttonsNode, "0")).toBeNull();
+    expect(matchTypedOption(buttonsNode, "hola")).toBeNull();
+    expect(matchTypedOption(buttonsNode, "")).toBeNull();
+  });
+
+  it("flattens send_list rows across sections in display order for indexing", () => {
+    const listNode = {
+      node_type: "send_list",
+      config: {
+        text: "Elige",
+        button_label: "Ver",
+        sections: [
+          { title: "A", rows: [{ reply_id: "r1", title: "Uno", next_node_key: "n1" }] },
+          {
+            title: "B",
+            rows: [
+              { reply_id: "r2", title: "Dos", next_node_key: "n2" },
+              { reply_id: "r3", title: "Tres", next_node_key: "n3" },
+            ],
+          },
+        ],
+      },
+    };
+    expect(matchTypedOption(listNode, "1")).toBe("n1");
+    expect(matchTypedOption(listNode, "3")).toBe("n3");
+    expect(matchTypedOption(listNode, "Dos")).toBe("n2");
+  });
+
+  it("returns null for node types that carry no options", () => {
+    expect(
+      matchTypedOption({ node_type: "collect_input", config: { var_key: "x" } }, "1"),
+    ).toBeNull();
+    expect(matchTypedOption({ node_type: "send_buttons", config: {} }, "1")).toBeNull();
   });
 });
 

@@ -55,9 +55,15 @@ select {
   }
 }
 
-@media (max-width: 1023.98px) and (display-mode: standalone) {
+@media (max-width: 1023.98px) {
   /* The app header normally carries the notch inset — hand it to the
-   * thread header while the app header is hidden. */
+   * thread header while the app header is hidden. Applied outside of
+   * standalone mode too: iOS Safari exposes the safe area to page
+   * content (not just installed PWAs) once its own chrome collapses
+   * on scroll, so a standalone-only rule left the thread header
+   * sliding a few pixels under the notch/dynamic island in the
+   * regular browser tab. env() resolves to 0 with no inset, so this
+   * is a no-op everywhere else. */
   html[data-mobile-chat] .inbox-thread-header {
     padding-top: env(safe-area-inset-top);
   }
@@ -85,15 +91,18 @@ select {
   clip-path: polygon(100% 0, 0 100%, 100% 100%);
 }
 
-@media (display-mode: standalone) {
-  .app-header {
-    padding-top: env(safe-area-inset-top);
-  }
+/* Same reasoning as the thread-header rule above: not gated to
+ * standalone-only, so the header/sidebar never slide under a notch or
+ * the iOS dynamic island once Safari's own chrome collapses on
+ * scroll. env() is 0 with no safe area, so this is a no-op on
+ * everything else (desktop, non-notch phones, Android). */
+.app-header {
+  padding-top: env(safe-area-inset-top);
+}
 
-  .app-sidebar {
-    padding-top: env(safe-area-inset-top);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
+.app-sidebar {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 @media (prefers-reduced-motion: reduce) {

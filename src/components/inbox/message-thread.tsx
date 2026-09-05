@@ -3,7 +3,7 @@
 import { readResponseJson } from '@/lib/http/response-json';
 import { postJsonWithRetry } from '@/lib/http/fetch-with-retry';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, useMemo } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { usePresence } from '@/hooks/use-presence';
@@ -81,6 +81,12 @@ interface MessageThreadProps {
   contact: Contact | null;
   messages: Message[];
   onMessagesLoaded: (messages: Message[]) => void;
+  /**
+   * Fired when a page of older history is fetched (scrolling to the
+   * top of the thread). The parent owns `messages` and is responsible
+   * for prepending these without duplicating anything already loaded.
+   */
+  onOlderMessagesLoaded?: (messages: Message[]) => void;
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
   onStatusChange: (conversationId: string, status: ConversationStatus) => void;
@@ -171,6 +177,29 @@ function groupMessagesByDate(messages: Message[], timeZone?: string | null) {
   return groups;
 }
 
+// Folds a freshly-fetched page of the most recent messages into
+// whatever's already loaded (which may include older history paged in
+// by scrolling up) — updating any row that already exists in place
+// (status flips, edits) and appending genuinely new ones at the end.
+// Used for realtime-resync refetches, which must never blow away
+// older history the agent scrolled up to read (a plain replace would).
+function mergeIncomingMessages(
+  existing: Message[],
+  incoming: Message[]
+): Message[] {
+  const indexById = new Map(existing.map((m, i) => [m.id, i]));
+  const merged = existing.slice();
+  for (const msg of incoming) {
+    const i = indexById.get(msg.id);
+    if (i !== undefined) {
+      merged[i] = msg;
+    } else {
+      merged.push(msg);
+    }
+  }
+  return merged;
+}
+
 const STATUS_OPTIONS: {
   label: string;
   value: ConversationStatus;
@@ -193,11 +222,20 @@ const STATUS_OPTIONS: {
 const DOODLE_BG_CLASSES =
   "bg-background bg-[url('/inbox-doodle.svg')] bg-repeat";
 
+// How many messages a single fetch pulls — both the initial "open this
+// conversation" load and each "scroll to top" page of older history.
+// A years-old customer thread can carry thousands of rows; loading all
+// of them up front was the single biggest contributor to a slow inbox
+// (issue: opening an old conversation could take seconds and re-fetch
+// the same huge payload on every realtime resync).
+const MESSAGES_PAGE_SIZE = 50;
+
 export function MessageThread({
   conversation,
   contact,
   messages,
   onMessagesLoaded,
+  onOlderMessagesLoaded,
   onNewMessage,
   onUpdateMessage,
   onStatusChange,
@@ -289,21 +327,124 @@ export function MessageThread({
     };
   }, [accountId]);
 
-  // 24-hour session timer
-  const sessionInfo = useMemo(() => {
-    if (!messages.length) return { expired: false, remaining: '' };
+  // Store latest callback in a ref so fetchMessages doesn't need to
+  // depend on `onMessagesLoaded` — otherwise parent re-renders cause
+  // fetchMessages to change → useEffect re-fires → refetch → realtime
+  // UPDATE on conversations.unread_count → parent re-renders → LOOP.
+  // The ref is written inside an effect so the mutation doesn't happen
+  // during render (React 19 refs rule); consumers only read `.current`
+  // inside the async fetch completion, which runs after the render.
+  const onMessagesLoadedRef = useRef(onMessagesLoaded);
+  useEffect(() => {
+    onMessagesLoadedRef.current = onMessagesLoaded;
+  });
+  const onOlderMessagesLoadedRef = useRef(onOlderMessagesLoaded);
+  useEffect(() => {
+    onOlderMessagesLoadedRef.current = onOlderMessagesLoaded;
+  });
 
-    // Find last customer message
-    const lastCustomerMsg = [...messages]
+  // Pagination over history. `messages` is owned by the parent, so a
+  // ref mirrors it for the load-more callback below (same reasoning as
+  // onMessagesLoadedRef — reading it directly would force the callback
+  // to change identity, and thus the scroll listener, on every message).
+  const messagesRef = useRef(messages);
+  useEffect(() => {
+    messagesRef.current = messages;
+  });
+  const [hasMoreOlder, setHasMoreOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const hasMoreOlderRef = useRef(false);
+  const loadingOlderRef = useRef(false);
+  // Set right before an older-history fetch resolves; tells the
+  // auto-scroll effect below to preserve the reading position instead
+  // of jumping to the bottom like it does for the initial load / new
+  // incoming messages.
+  const isPrependingOlderRef = useRef(false);
+  const prependScrollAnchorRef = useRef<{
+    scrollHeight: number;
+    scrollTop: number;
+  } | null>(null);
+  // Distinguishes "the selected conversation changed" from "the same
+  // conversation's fetch re-ran because resyncToken bumped" inside the
+  // effect below — the two need very different treatment (full replace
+  // vs. merge-in-place, see there).
+  const lastConversationIdRef = useRef<string | undefined>(undefined);
+
+  const conversationId = conversation?.id;
+  const hasUnread = (conversation?.unread_count ?? 0) > 0;
+
+  // The 24h session timer below needs the true last customer message,
+  // which is NOT necessarily in the loaded `messages` window now that
+  // it's paginated — a long run of agent-only follow-ups can easily
+  // push the last customer message past the most recent
+  // MESSAGES_PAGE_SIZE rows. Fetched separately (cheap: one row) so
+  // the timer stays correct regardless of how much history is loaded.
+  const [lastCustomerMessageAt, setLastCustomerMessageAt] = useState<
+    string | null
+  >(null);
+  const [lastCustomerMessageLoaded, setLastCustomerMessageLoaded] =
+    useState(false);
+  useEffect(() => {
+    if (!conversationId) {
+      setLastCustomerMessageAt(null);
+      setLastCustomerMessageLoaded(false);
+      return;
+    }
+    let cancelled = false;
+    setLastCustomerMessageLoaded(false);
+    const supabase = createClient();
+    supabase
+      .from('messages')
+      .select('created_at')
+      .eq('conversation_id', conversationId)
+      .eq('sender_type', 'customer')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .then(({ data, error }) => {
+        if (cancelled) return;
+        if (error) {
+          console.error('Failed to fetch last customer message:', error);
+        } else {
+          setLastCustomerMessageAt(
+            (data as { created_at: string }[] | null)?.[0]?.created_at ?? null
+          );
+        }
+        setLastCustomerMessageLoaded(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, resyncToken]);
+
+  // Keeps the timer live for a customer message that arrives over
+  // realtime while the thread is open — those land straight in
+  // `messages` via onNewMessage and never go through the dedicated
+  // fetch above. Only ever moves the timestamp forward: the loaded
+  // window can lag behind the authoritative single-row fetch (e.g.
+  // right after opening a thread with 50+ agent-only messages after
+  // the last customer one), and this must never regress that.
+  useEffect(() => {
+    const latestCustomerMsg = [...messages]
       .reverse()
       .find((m) => m.sender_type === 'customer');
+    if (!latestCustomerMsg) return;
+    setLastCustomerMessageAt((prev) =>
+      !prev || new Date(latestCustomerMsg.created_at) > new Date(prev)
+        ? latestCustomerMsg.created_at
+        : prev
+    );
+  }, [messages]);
 
-    if (!lastCustomerMsg)
+  // 24-hour session timer
+  const sessionInfo = useMemo(() => {
+    if (!lastCustomerMessageLoaded) return { expired: false, remaining: '' };
+
+    if (!lastCustomerMessageAt)
       return { expired: true, remaining: 'No customer messages' };
 
     const hoursSince = differenceInHours(
       new Date(),
-      new Date(lastCustomerMsg.created_at)
+      new Date(lastCustomerMessageAt)
     );
     const expired = hoursSince >= 24;
 
@@ -318,22 +459,7 @@ export function MessageThread({
         : tTimer('xmRemaining', { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
-
-  // Store latest callback in a ref so fetchMessages doesn't need to
-  // depend on `onMessagesLoaded` — otherwise parent re-renders cause
-  // fetchMessages to change → useEffect re-fires → refetch → realtime
-  // UPDATE on conversations.unread_count → parent re-renders → LOOP.
-  // The ref is written inside an effect so the mutation doesn't happen
-  // during render (React 19 refs rule); consumers only read `.current`
-  // inside the async fetch completion, which runs after the render.
-  const onMessagesLoadedRef = useRef(onMessagesLoaded);
-  useEffect(() => {
-    onMessagesLoadedRef.current = onMessagesLoaded;
-  });
-
-  const conversationId = conversation?.id;
-  const hasUnread = (conversation?.unread_count ?? 0) > 0;
+  }, [lastCustomerMessageAt, lastCustomerMessageLoaded, tTimer]);
 
   const mediaMessageId =
     openMedia && openMedia.conversationId === conversationId
@@ -355,24 +481,53 @@ export function MessageThread({
   useEffect(() => {
     if (!conversationId) return;
 
+    // A genuine conversation switch resets pagination and fully
+    // replaces `messages`; a resync of the SAME conversation (realtime
+    // reconnect / tab refocus bumping resyncToken) must not — the agent
+    // may have scrolled up and paged in hundreds of older messages, and
+    // a plain replace-with-latest-50 would silently discard all of it.
+    const isNewConversation = lastConversationIdRef.current !== conversationId;
+    lastConversationIdRef.current = conversationId;
+    if (isNewConversation) {
+      isPrependingOlderRef.current = false;
+      prependScrollAnchorRef.current = null;
+      hasMoreOlderRef.current = false;
+      setHasMoreOlder(false);
+    }
+
     const supabase = createClient();
     let cancelled = false;
 
     (async () => {
       setLoading(true);
 
+      // Only the most recent page loads up front — a long-lived
+      // customer thread can carry thousands of rows, and the agent
+      // almost always wants to see (and reply to) the latest ones
+      // first. Older history loads on demand as the agent scrolls up.
       const { data, error } = await supabase
         .from('messages')
         .select('*')
         .eq('conversation_id', conversationId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .limit(MESSAGES_PAGE_SIZE);
 
       if (cancelled) return;
 
       if (error) {
         console.error('Failed to fetch messages:', error);
       } else {
-        onMessagesLoadedRef.current(data ?? []);
+        const page = data ?? [];
+        const freshLatest = page.slice().reverse();
+        if (isNewConversation) {
+          onMessagesLoadedRef.current(freshLatest);
+          hasMoreOlderRef.current = page.length === MESSAGES_PAGE_SIZE;
+          setHasMoreOlder(hasMoreOlderRef.current);
+        } else {
+          onMessagesLoadedRef.current(
+            mergeIncomingMessages(messagesRef.current, freshLatest)
+          );
+        }
       }
 
       if (!cancelled) setLoading(false);
@@ -386,6 +541,61 @@ export function MessageThread({
     // realtime is best-effort and any message events sent while the WS
     // was disconnected or throttled are otherwise lost.
   }, [conversationId, resyncToken]);
+
+  // Fetches the next page of older messages (scrolling up). Stable
+  // identity — reads everything mutable through refs — so the scroll
+  // listener effect doesn't need to resubscribe on every new message.
+  const loadOlderMessages = useCallback(async () => {
+    if (!conversationId) return;
+    if (loadingOlderRef.current || !hasMoreOlderRef.current) return;
+    const oldest = messagesRef.current[0]?.created_at;
+    if (!oldest) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+
+    const supabase = createClient();
+    const { data, error } = await supabase
+      .from('messages')
+      .select('*')
+      .eq('conversation_id', conversationId)
+      .lt('created_at', oldest)
+      .order('created_at', { ascending: false })
+      .limit(MESSAGES_PAGE_SIZE);
+
+    loadingOlderRef.current = false;
+    setLoadingOlder(false);
+
+    if (error) {
+      console.error('Failed to fetch older messages:', error);
+      return;
+    }
+
+    const older = (data ?? []).slice().reverse();
+    hasMoreOlderRef.current = older.length === MESSAGES_PAGE_SIZE;
+    setHasMoreOlder(hasMoreOlderRef.current);
+    if (older.length === 0) return;
+
+    const el = scrollRef.current;
+    prependScrollAnchorRef.current = el
+      ? { scrollHeight: el.scrollHeight, scrollTop: el.scrollTop }
+      : null;
+    isPrependingOlderRef.current = true;
+    onOlderMessagesLoadedRef.current?.(older);
+  }, [conversationId]);
+
+  // Scrolling near the top of the thread pages in the next batch of
+  // history. Passive + a generous threshold (120px) so it fires before
+  // the user hits the literal top and sees a stutter.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const handleScroll = () => {
+      if (el.scrollTop < 120) void loadOlderMessages();
+    };
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [conversationId, loadOlderMessages]);
 
   // Reactions fetch — pulls the current state from the DB. Kept separate
   // from the channel subscription below so a `resyncToken` bump just
@@ -517,12 +727,27 @@ export function MessageThread({
       });
   }, [conversationId, hasUnread]);
 
-  // Auto-scroll to bottom on new messages
-  useEffect(() => {
-    if (scrollRef.current) {
-      const el = scrollRef.current;
-      el.scrollTop = el.scrollHeight;
+  // Auto-scroll to bottom on new messages — except right after paging
+  // in older history, where jumping to the bottom would undo the very
+  // scroll-up the agent just did. That case instead re-anchors the
+  // viewport on the message that was on screen before the prepend, by
+  // the exact height the newly-inserted content added above it.
+  // useLayoutEffect avoids a visible flash of the wrong scroll offset.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+
+    if (isPrependingOlderRef.current) {
+      const anchor = prependScrollAnchorRef.current;
+      isPrependingOlderRef.current = false;
+      prependScrollAnchorRef.current = null;
+      if (anchor) {
+        el.scrollTop = el.scrollHeight - anchor.scrollHeight + anchor.scrollTop;
+      }
+      return;
     }
+
+    el.scrollTop = el.scrollHeight;
   }, [messages]);
 
   const handleSend = useCallback(
@@ -1249,6 +1474,24 @@ export function MessageThread({
           </div>
         ) : (
           <div className="space-y-4">
+            {(hasMoreOlder || loadingOlder) && (
+              <div className="flex items-center justify-center pb-2">
+                {loadingOlder ? (
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+                    {t('loadingOlderMessages')}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void loadOlderMessages()}
+                    className="text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                  >
+                    {t('loadOlderMessages')}
+                  </button>
+                )}
+              </div>
+            )}
             {messageGroups.map((group) => (
               <div key={group.date}>
                 {/* Date separator */}

@@ -15,6 +15,7 @@ import { MessageThread } from "@/components/inbox/message-thread";
 import { ContactSidebar } from "@/components/inbox/contact-sidebar";
 import { WifiOff } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 
 // Remembers the agent's show/hide choice for the desktop contact panel
 // across reloads and sessions (device-scoped, like the theme prefs).
@@ -124,6 +125,15 @@ function InboxPageInner() {
   // back to the deep-linked conversation if they've already clicked
   // elsewhere.
   const autoSelectedForDeepLinkRef = useRef<string | null>(null);
+
+  // Whether we pushed a real history entry for the currently-open
+  // thread (mobile only — see handleSelectConversation). Lets
+  // handleCloseConversation pop it with router.back() instead of
+  // guessing, and lets the popstate-sync effect below tell "the user
+  // pressed our in-app back arrow" apart from "the phone's hardware
+  // back/edge-swipe fired" without double-handling either.
+  const pushedThreadHistoryRef = useRef(false);
+  const isDesktop = useIsDesktop();
 
   // Tracks conversations whose hydrate fetch is currently in flight. The
   // conv-INSERT and the first-message-INSERT events both call into
@@ -516,6 +526,7 @@ function InboxPageInner() {
       // when conversationId changes — so messages would stay empty until
       // the user navigated away and back. Bail out early instead.
       if (activeConversation?.id === conv.id) return;
+      const openingFromList = !activeConversation?.id;
       setActiveConversation(conv);
       setActiveContact(conv.contact ?? null);
       setMessages([]);
@@ -544,16 +555,35 @@ function InboxPageInner() {
       // clobbers the messages MessageThread just fetched.
       autoSelectedForDeepLinkRef.current = conv.id;
       // Reflect the selection in the URL so a refresh lands the user
-      // back in the same thread, and so copy-paste links work. Use
-      // replace() to avoid polluting browser history with every click.
-      router.replace(`/inbox?c=${conv.id}`, { scroll: false });
+      // back in the same thread, and so copy-paste links work.
+      //
+      // On mobile, opening a thread takes over the whole screen
+      // (data-mobile-chat hides the list) — push a real history entry
+      // so the phone's back button / edge-swipe closes the thread
+      // instead of leaving the inbox page entirely (it used to jump
+      // straight back to wherever the agent was before /inbox, since
+      // replace() never gave the OS back gesture a "list" state to
+      // land on). Switching directly between threads can't happen on
+      // mobile — the list is hidden while one is open — so this only
+      // ever fires on the list → thread transition. Desktop shows list
+      // + thread side by side and keeps the original replace()
+      // behaviour so clicking through conversations doesn't pile up
+      // history entries.
+      if (!isDesktop && openingFromList) {
+        pushedThreadHistoryRef.current = true;
+        router.push(`/inbox?c=${conv.id}`, { scroll: false });
+      } else {
+        router.replace(`/inbox?c=${conv.id}`, { scroll: false });
+      }
     },
-    [activeConversation?.id, router]
+    [activeConversation?.id, isDesktop, router]
   );
 
-  // Mobile "back" — deselect the conversation so the list pane comes
-  // back. Also clears the ?c= param so a refresh lands on the list
-  // instead of re-opening the thread the user just backed out of.
+  // Mobile "back" (in-app arrow) — deselect the conversation so the
+  // list pane comes back. If opening this thread pushed a history
+  // entry (see handleSelectConversation), pop it with back() instead
+  // of replacing — that keeps the browser's own back button in sync
+  // with the in-app one rather than piling up an extra state each time.
   const handleCloseConversation = useCallback(() => {
     setActiveConversation(null);
     setActiveContact(null);
@@ -561,12 +591,48 @@ function InboxPageInner() {
     // Clearing the ref lets the deep-link auto-selector fire again if
     // the user later visits /inbox?c=<same-id> — desirable UX.
     autoSelectedForDeepLinkRef.current = null;
-    router.replace("/inbox", { scroll: false });
+    if (pushedThreadHistoryRef.current) {
+      pushedThreadHistoryRef.current = false;
+      router.back();
+    } else {
+      router.replace("/inbox", { scroll: false });
+    }
   }, [router]);
+
+  // Syncs local state when the URL's ?c= param disappears WITHOUT
+  // handleCloseConversation having run — i.e. the phone's hardware
+  // back button or an edge-swipe drove a real popstate rather than an
+  // in-app click. Without this, that gesture changes the address bar
+  // but leaves the full-screen thread on screen until something else
+  // happens to re-render it.
+  const prevDeepLinkConvIdRef = useRef(deepLinkConvId);
+  useEffect(() => {
+    const prev = prevDeepLinkConvIdRef.current;
+    prevDeepLinkConvIdRef.current = deepLinkConvId;
+    if (deepLinkConvId === null && prev !== null && activeConversation) {
+      setActiveConversation(null);
+      setActiveContact(null);
+      setMessages([]);
+      autoSelectedForDeepLinkRef.current = null;
+      pushedThreadHistoryRef.current = false;
+    }
+  }, [deepLinkConvId, activeConversation]);
 
 
   const handleMessagesLoaded = useCallback((loaded: Message[]) => {
     setMessages(loaded);
+  }, []);
+
+  // Older history paged in by scrolling up gets prepended, not
+  // replaced — and de-duplicated in case a page overlaps something
+  // already loaded (e.g. a realtime insert landed between fetches).
+  const handleOlderMessagesLoaded = useCallback((older: Message[]) => {
+    setMessages((prev) => {
+      const existingIds = new Set(prev.map((m) => m.id));
+      const deduped = older.filter((m) => !existingIds.has(m.id));
+      if (deduped.length === 0) return prev;
+      return [...deduped, ...prev];
+    });
   }, []);
 
   const handleNewMessage = useCallback((msg: Message) => {
@@ -697,6 +763,7 @@ function InboxPageInner() {
             contact={activeContact}
             messages={messages}
             onMessagesLoaded={handleMessagesLoaded}
+            onOlderMessagesLoaded={handleOlderMessagesLoaded}
             onNewMessage={handleNewMessage}
             onUpdateMessage={handleUpdateMessage}
             onStatusChange={handleStatusChange}

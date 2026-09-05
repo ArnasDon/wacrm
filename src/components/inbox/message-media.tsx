@@ -147,6 +147,8 @@ export function MediaImageBubble({
     <img
       src={src}
       alt={t("imageAlt")}
+      loading="lazy"
+      decoding="async"
       className={cn(MEDIA_BOX, "rounded-lg object-contain")}
       onError={() => setBroken(true)}
     />

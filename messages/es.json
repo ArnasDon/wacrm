@@ -2430,6 +2430,7 @@
       "description": "La moneda usada para nuevos negocios y para los totales del pipeline y el panel.",
       "companyNameTitle": "Nombre de la empresa",
       "companyNameDesc": "Se muestra en todo el panel y en los mensajes enviados en nombre de esta cuenta.",
+      "industryLine": "Industria: {vertical} — la define el operador de la plataforma.",
       "companyNameLabel": "Nombre de la empresa",
       "companyNameSaveFailed": "No se pudo guardar el nombre de la empresa",
       "companyNameSaveSuccess": "Nombre de la empresa actualizado",

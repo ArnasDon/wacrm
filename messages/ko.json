@@ -2459,6 +2459,7 @@
       "description": "새 딜과 파이프라인, 대시보드 합계에 사용되는 통화입니다.",
       "companyNameTitle": "회사 이름",
       "companyNameDesc": "대시보드 전체와 이 계정 명의로 발송되는 메시지에 표시됩니다.",
+      "industryLine": "업종: {vertical} — 플랫폼 운영자가 설정합니다.",
       "companyNameLabel": "회사 이름",
       "companyNameSaveFailed": "회사 이름을 저장하지 못했습니다",
       "companyNameSaveSuccess": "회사 이름이 업데이트되었습니다",

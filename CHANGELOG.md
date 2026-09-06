@@ -15,9 +15,26 @@ and polish.
 > (changes the `flows.fallback_policy` column default so *new* flows send
 > an off-menu reply to the AI instead of a human). Existing flows keep
 > their current policy — change it per flow in the builder.
+>
+> **Migration required:** apply `supabase/migrations/105_account_industry_vertical.sql`
+> (adds `accounts.industry_vertical`, default `'generic'`, and
+> `vertical_applied_at`). Every existing account defaults to `'generic'`
+> = today's behaviour, unchanged.
 
 ### Added
 
+- **Company industry verticals (platform admin).** Each company now
+  carries an *industry* (`generic` or `hotel`). From **Plataforma → the
+  company detail**, the operator picks the vertical and clicks **"Aplicar
+  kit de arranque"** to seed the right starting config idempotently — for
+  `hotel`: a *Reservas* pipeline, reservation custom fields, a welcome
+  flow, "Tarifas" / "Políticas y horarios" knowledge-base scaffolds,
+  `catalog_delivery_mode = photos`, a restrictive AI prompt, and the
+  relevant Google-Sheets events. `generic` is a no-op kit; existing
+  accounts are untouched. The vertical also lightly trims the sidebar
+  (via `src/lib/verticals`) and shows a read-only line in Settings →
+  Negocios. Per-date room pricing for the hotel vertical is a separate
+  follow-up.
 - **Flow menus: choose what happens on an off-menu reply.** When a
   customer answers a menu step with something that isn't one of the
   options, a flow can now hand the conversation to the AI auto-reply

@@ -27,6 +27,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CURRENCIES, formatCurrency } from '@/lib/currency';
+import { listVerticals } from '@/lib/verticals';
 import { cn } from '@/lib/utils';
 
 export interface PlatformCompany {
@@ -43,6 +44,8 @@ export interface PlatformCompany {
   lastMarkedPaidAt: string | null;
   subscriptionAmount: number | null;
   subscriptionCurrency: string;
+  industryVertical: string;
+  verticalAppliedAt: string | null;
   owner: { name: string | null; email: string } | null;
   usage30d: { messages: number; conversations: number; aiTokens: number };
   handoffs30d: {
@@ -94,6 +97,7 @@ interface Props {
     seat: string | null;
     number: string | null;
     billing: string | null;
+    vertical: string | null;
   };
   onSuspend(company: PlatformCompany): void;
   onMarkPaid(company: PlatformCompany): void;
@@ -105,6 +109,10 @@ interface Props {
     amount: number | null,
     currency: string
   ): void;
+  /** Relabel only — does not seed. */
+  onSetVertical(company: PlatformCompany, vertical: string): void;
+  /** Set the vertical AND seed its starter kit (idempotent). */
+  onApplyVerticalKit(company: PlatformCompany, vertical: string): void;
 }
 
 export function CompanyMasterDetail({
@@ -117,6 +125,8 @@ export function CompanyMasterDetail({
   onAddNumber,
   onDueDate,
   onBilling,
+  onSetVertical,
+  onApplyVerticalKit,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -126,12 +136,14 @@ export function CompanyMasterDetail({
     null;
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('GTQ');
+  const [vertical, setVertical] = useState('generic');
 
   useEffect(() => {
     if (!selected) return;
     // Reset the editable draft when the operator selects another company.
     setAmount(selected.subscriptionAmount?.toString() ?? '');
     setCurrency(selected.subscriptionCurrency || 'GTQ');
+    setVertical(selected.industryVertical || 'generic');
     // Narrow deps on purpose: re-sync the draft only when the selected
     // company or its subscription fields change, not on every re-render
     // that produces a fresh `selected` object.
@@ -140,6 +152,7 @@ export function CompanyMasterDetail({
     selected?.id,
     selected?.subscriptionAmount,
     selected?.subscriptionCurrency,
+    selected?.industryVertical,
   ]);
 
   const filtered = useMemo(() => {
@@ -423,6 +436,58 @@ export function CompanyMasterDetail({
                     </Button>
                   </div>
                 </div>
+              </div>
+
+              <div className="border-border rounded-xl border p-4">
+                <h3 className="flex items-center gap-2 font-semibold">
+                  <Building2 className="text-primary size-4" />
+                  Industria
+                </h3>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Define qué configuración de arranque recibe la empresa. &quot;Aplicar kit&quot;
+                  crea pipeline, campos, flujos y documentos — no borra nada existente y se
+                  puede volver a ejecutar.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <select
+                    id={`vertical-${selected.id}`}
+                    value={vertical}
+                    onChange={(e) => setVertical(e.target.value)}
+                    disabled={busyIds.vertical === selected.id}
+                    className="border-input bg-background h-8 rounded-lg border px-2 text-sm"
+                  >
+                    {listVerticals().map((v) => (
+                      <option key={v.slug} value={v.slug}>
+                        {v.label}
+                      </option>
+                    ))}
+                  </select>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={
+                      busyIds.vertical === selected.id ||
+                      vertical === selected.industryVertical
+                    }
+                    onClick={() => onSetVertical(selected, vertical)}
+                  >
+                    Solo cambiar etiqueta
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busyIds.vertical === selected.id}
+                    onClick={() => onApplyVerticalKit(selected, vertical)}
+                  >
+                    {busyIds.vertical === selected.id
+                      ? 'Aplicando...'
+                      : 'Aplicar kit de arranque'}
+                  </Button>
+                </div>
+                <p className="text-muted-foreground mt-2 text-xs">
+                  {selected.verticalAppliedAt
+                    ? `Kit aplicado por última vez: ${new Date(selected.verticalAppliedAt).toLocaleString('es-GT')}`
+                    : 'Kit no aplicado todavía'}
+                </p>
               </div>
 
               {selected.suspendedReason ? (

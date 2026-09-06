@@ -286,6 +286,49 @@ const LEAD_CAPTURE: FlowTemplate = {
 };
 
 // ============================================================
+// 4. Hotel welcome — vertical starter kit (src/lib/verticals)
+// ============================================================
+const HOTEL_WELCOME: FlowTemplate = {
+  slug: "hotel_welcome",
+  name: "Bienvenida hotel",
+  description:
+    "Recibe al huésped, ofrece un menú (reservar, spa y actividades, paquetes, otra consulta) y transfiere al área correcta. Los mensajes fuera del menú pasan a la IA.",
+  icon: "MessageSquare",
+  trigger_type: "first_inbound_message",
+  trigger_config: {},
+  entry_node_id: "start",
+  nodes: [
+    { node_key: "start", node_type: "start", config: { next_node_key: "welcome" } },
+    {
+      node_key: "welcome",
+      node_type: "send_buttons",
+      config: {
+        text: "¡Hola! Gracias por escribir. ¿Con qué te podemos ayudar hoy?",
+        buttons: [
+          { reply_id: "reservar", title: "Reservar habitación", next_node_key: "handoff_reservas" },
+          { reply_id: "spa", title: "Spa y actividades", next_node_key: "handoff_spa" },
+          { reply_id: "paquetes", title: "Paquetes", next_node_key: "handoff_reservas" },
+        ],
+      } as SendButtonsNodeConfig,
+    },
+    {
+      node_key: "handoff_reservas",
+      node_type: "handoff",
+      config: {
+        note: "El huésped quiere reservar / cotizar un paquete. Confirma disponibilidad contra el calendario de habitaciones y responde con la tarifa según las fechas.",
+      } as HandoffNodeConfig,
+    },
+    {
+      node_key: "handoff_spa",
+      node_type: "handoff",
+      config: {
+        note: "El huésped pregunta por spa o actividades. Indaga fecha y número de personas y confirma horario.",
+      } as HandoffNodeConfig,
+    },
+  ],
+};
+
+// ============================================================
 // Registry
 // ============================================================
 
@@ -293,6 +336,7 @@ const TEMPLATES: Record<string, FlowTemplate> = {
   welcome_menu: WELCOME_MENU,
   faq_bot: FAQ_BOT,
   lead_capture: LEAD_CAPTURE,
+  hotel_welcome: HOTEL_WELCOME,
 };
 
 export function getFlowTemplate(slug: string): FlowTemplate | null {

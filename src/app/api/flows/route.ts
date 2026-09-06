@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { getFlowTemplate } from '@/lib/flows/templates'
+import { cloneFlowTemplate } from '@/lib/flows/clone-template'
 
 /**
  * GET /api/flows — list the caller's flows.
@@ -100,53 +100,24 @@ export async function POST(request: Request) {
 
   // -------- Template clone path --------
   if (body.template_slug) {
-    const template = getFlowTemplate(body.template_slug)
-    if (!template) {
+    const result = await cloneFlowTemplate(admin, {
+      accountId,
+      userId,
+      templateSlug: body.template_slug,
+      name: body.name,
+    })
+    if (!result.ok) {
+      const unknown = result.error?.startsWith('Unknown flow template')
       return NextResponse.json(
-        { error: `Unknown template_slug "${body.template_slug}"` },
-        { status: 400 },
+        { error: result.error },
+        { status: unknown ? 400 : 500 },
       )
     }
-    const { data: flow, error: flowErr } = await admin
+    const { data: flow } = await admin
       .from('flows')
-      .insert({
-        user_id: userId,
-        account_id: accountId,
-        name: body.name?.trim() || template.name,
-        description: template.description,
-        status: 'draft',
-        trigger_type: template.trigger_type,
-        trigger_config: template.trigger_config,
-        entry_node_id: template.entry_node_id,
-      })
-      .select()
+      .select('*')
+      .eq('id', result.flowId!)
       .single()
-    if (flowErr || !flow) {
-      return NextResponse.json(
-        { error: flowErr?.message ?? 'flow insert failed' },
-        { status: 500 },
-      )
-    }
-    if (template.nodes.length > 0) {
-      const { error: nodesErr } = await admin.from('flow_nodes').insert(
-        template.nodes.map((n) => ({
-          flow_id: flow.id,
-          node_key: n.node_key,
-          node_type: n.node_type,
-          config: n.config,
-        })),
-      )
-      if (nodesErr) {
-        // Roll back the parent flow so a half-cloned template doesn't
-        // sit as an empty draft. CASCADE on flow_id removes the
-        // (probably zero) nodes too.
-        await admin.from('flows').delete().eq('id', flow.id)
-        return NextResponse.json(
-          { error: nodesErr.message },
-          { status: 500 },
-        )
-      }
-    }
     return NextResponse.json({ flow }, { status: 201 })
   }
 

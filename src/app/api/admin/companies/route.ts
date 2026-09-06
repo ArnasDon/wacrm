@@ -36,7 +36,7 @@ export async function GET() {
       admin
         .from('accounts')
         .select(
-          'id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at, subscription_amount, subscription_currency, seat_limit, whatsapp_number_limit'
+          'id, name, owner_user_id, created_at, suspended_at, suspended_reason, next_payment_due_at, last_marked_paid_at, subscription_amount, subscription_currency, seat_limit, whatsapp_number_limit, industry_vertical, vertical_applied_at'
         )
         .order('created_at', { ascending: false }),
       admin
@@ -143,6 +143,8 @@ export async function GET() {
               ? null
               : Number(account.subscription_amount),
           subscriptionCurrency: account.subscription_currency ?? 'GTQ',
+          industryVertical: account.industry_vertical ?? 'generic',
+          verticalAppliedAt: account.vertical_applied_at ?? null,
           owner: owner ? { name: owner.full_name, email: owner.email } : null,
           usage30d: {
             messages: messages.count ?? 0,

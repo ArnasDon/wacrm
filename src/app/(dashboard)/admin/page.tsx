@@ -93,6 +93,9 @@ export default function PlatformAdminPage() {
   const [markingPaidId, setMarkingPaidId] = useState<string | null>(null);
   const [savingDueDateId, setSavingDueDateId] = useState<string | null>(null);
   const [addingSeatId, setAddingSeatId] = useState<string | null>(null);
+  const [changingVerticalId, setChangingVerticalId] = useState<string | null>(
+    null
+  );
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
   const [savingBillingId, setSavingBillingId] = useState<string | null>(null);
 
@@ -363,6 +366,61 @@ export default function PlatformAdminPage() {
     }
   };
 
+  const setCompanyVertical = async (company: Company, vertical: string) => {
+    setChangingVerticalId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ set_vertical: vertical }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo cambiar la industria');
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudo cambiar la industria'
+      );
+    } finally {
+      setChangingVerticalId(null);
+    }
+  };
+
+  const applyCompanyVerticalKit = async (company: Company, vertical: string) => {
+    if (
+      !window.confirm(
+        `¿Aplicar el kit de arranque "${vertical}" a ${company.name}? Crea pipeline, campos, flujos y documentos. No borra nada y se puede repetir.`
+      )
+    )
+      return;
+    setChangingVerticalId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/companies/${company.id}/apply-vertical`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ vertical }),
+        }
+      );
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo aplicar el kit');
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo aplicar el kit'
+      );
+    } finally {
+      setChangingVerticalId(null);
+    }
+  };
+
   const addWhatsAppNumber = async (company: Company) => {
     if (
       !window.confirm(
@@ -597,6 +655,7 @@ export default function PlatformAdminPage() {
           seat: addingSeatId,
           number: addingNumberId,
           billing: savingBillingId,
+          vertical: changingVerticalId,
         }}
         onSuspend={(company) => void changeSuspension(company)}
         onMarkPaid={(company) => void markPaid(company)}
@@ -605,6 +664,12 @@ export default function PlatformAdminPage() {
         onDueDate={(company, value) => void changeDueDate(company, value)}
         onBilling={(company, amount, currency) =>
           void saveCompanyBilling(company, amount, currency)
+        }
+        onSetVertical={(company, vertical) =>
+          void setCompanyVertical(company, vertical)
+        }
+        onApplyVerticalKit={(company, vertical) =>
+          void applyCompanyVerticalKit(company, vertical)
         }
       />
 

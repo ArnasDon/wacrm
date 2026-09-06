@@ -163,6 +163,8 @@ export function FlowBuilder() {
         t={t}
       />
 
+      <FallbackPanel state={state} setState={setState} t={t} />
+
       <EntryPicker state={state} setState={setState} t={t} />
 
       <section className="flex flex-col gap-3">
@@ -342,6 +344,125 @@ function TriggerPanel({
           ))}
         </div>
       )}
+    </section>
+  );
+}
+
+// ============================================================
+// Fallback policy — what happens on a reply that matches no menu option
+// ============================================================
+
+function FallbackPanel({
+  state,
+  setState,
+  t,
+}: {
+  state: BuilderState;
+  setState: React.Dispatch<React.SetStateAction<BuilderState>>;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const policy = state.fallback_policy;
+  const patch = (p: Partial<BuilderState['fallback_policy']>) =>
+    setState((s) => ({ ...s, fallback_policy: { ...s.fallback_policy, ...p } }));
+
+  const unknownItems = {
+    ai: t('fallbackOptAi'),
+    reprompt: t('fallbackOptReprompt'),
+    handoff: t('fallbackOptHandoff'),
+    ignore: t('fallbackOptIgnore'),
+  };
+  const exhaustItems = {
+    ai: t('fallbackExhaustAi'),
+    handoff: t('fallbackExhaustHandoff'),
+    end: t('fallbackExhaustEnd'),
+  };
+
+  return (
+    <section className="border-border bg-card rounded-lg border p-4">
+      <h2 className="text-foreground mb-1 text-sm font-semibold">
+        {t('fallbackTitle')}
+      </h2>
+      <p className="text-muted-foreground mb-3 text-xs">{t('fallbackHelp')}</p>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div>
+          <label className="text-muted-foreground mb-1 block text-xs">
+            {t('fallbackWhenUnknown')}
+          </label>
+          <Select
+            value={policy.on_unknown_reply}
+            onValueChange={(v) =>
+              v &&
+              patch({
+                on_unknown_reply:
+                  v as BuilderState['fallback_policy']['on_unknown_reply'],
+              })
+            }
+            items={unknownItems}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {Object.entries(unknownItems).map(([value, label]) => (
+                <SelectItem key={value} value={value}>
+                  {label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        {policy.on_unknown_reply === 'reprompt' && (
+          <>
+            <div>
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {t('fallbackMaxReprompts')}
+              </label>
+              <Input
+                type="number"
+                min={0}
+                max={5}
+                value={policy.max_reprompts}
+                onChange={(e) => {
+                  const n = Math.max(
+                    0,
+                    Math.min(5, Math.floor(Number(e.target.value) || 0))
+                  );
+                  patch({ max_reprompts: n });
+                }}
+                className="bg-muted"
+              />
+            </div>
+            <div>
+              <label className="text-muted-foreground mb-1 block text-xs">
+                {t('fallbackThen')}
+              </label>
+              <Select
+                value={policy.on_exhaust}
+                onValueChange={(v) =>
+                  v &&
+                  patch({
+                    on_exhaust:
+                      v as BuilderState['fallback_policy']['on_exhaust'],
+                  })
+                }
+                items={exhaustItems}
+              >
+                <SelectTrigger className="bg-muted">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(exhaustItems).map(([value, label]) => (
+                    <SelectItem key={value} value={value}>
+                      {label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </>
+        )}
+      </div>
     </section>
   );
 }

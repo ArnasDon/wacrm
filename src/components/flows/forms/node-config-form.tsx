@@ -195,11 +195,10 @@ export function NodeConfigForm({
 
     case 'handoff':
       return (
-        <TextRow
-          label={t('internalNote')}
-          value={(cfg as { note?: string }).note ?? ''}
-          onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
+        <HandoffForm
+          cfg={cfg as { note?: string; assign_to?: string }}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
 
@@ -873,6 +872,95 @@ function useUserTags(): UserTag[] {
     };
   }, []);
   return tags;
+}
+
+// ============================================================
+// handoff — internal note + which teammate to assign to
+// ============================================================
+
+interface FlowMember {
+  user_id: string;
+  full_name: string | null;
+  email: string | null;
+}
+
+/** Account roster for the "assign to" picker. Empty on an older
+ *  deployment / fresh account → the picker just offers "shared queue". */
+function useAccountMembers(): FlowMember[] {
+  const [members, setMembers] = useState<FlowMember[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/account/members', {
+          cache: 'no-store',
+        }).catch(() => null);
+        if (!res || !res.ok) return;
+        const json = await readResponseJson<{ members?: FlowMember[] }>(res);
+        if (!cancelled) setMembers(json.members ?? []);
+      } catch {
+        // Members endpoint absent — picker falls back to "shared queue" only.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return members;
+}
+
+function HandoffForm({
+  cfg,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: { note?: string; assign_to?: string };
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const members = useAccountMembers();
+  const assignTo = cfg.assign_to ?? '';
+  const known = members.some((m) => m.user_id === assignTo);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <div>
+        <label className="text-muted-foreground mb-1 block text-xs">
+          {t('handoffAssignLabel')}
+        </label>
+        <Select
+          value={assignTo || 'queue'}
+          onValueChange={(v) =>
+            onUpdateConfig({ assign_to: v === 'queue' ? '' : v })
+          }
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="queue">{t('handoffAssignQueue')}</SelectItem>
+            {members.map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.full_name || m.email || m.user_id}
+              </SelectItem>
+            ))}
+            {assignTo && !known && (
+              <SelectItem value={assignTo}>{assignTo}</SelectItem>
+            )}
+          </SelectContent>
+        </Select>
+        <p className="text-muted-foreground mt-1 text-[10px]">
+          {t('handoffAssignHelp')}
+        </p>
+      </div>
+      <TextRow
+        label={t('internalNote')}
+        value={cfg.note ?? ''}
+        onChange={(v) => onUpdateConfig({ note: v })}
+        rows={2}
+      />
+    </div>
+  );
 }
 
 // ============================================================

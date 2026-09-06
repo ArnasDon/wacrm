@@ -2459,6 +2459,7 @@
       "description": "The currency used for new deals and for pipeline and dashboard totals.",
       "companyNameTitle": "Company name",
       "companyNameDesc": "Shown across the dashboard and in messages sent on this account's behalf.",
+      "industryLine": "Industry: {vertical} — set by the platform operator.",
       "companyNameLabel": "Company name",
       "companyNameSaveFailed": "Failed to save the company name",
       "companyNameSaveSuccess": "Company name updated",

@@ -60,6 +60,11 @@ interface AccountSummary {
    *  only for rows predating 063 / while loading — callers fall back
    *  to the viewer's own zone. */
   timezone: string | null;
+  /** Company industry vertical (migration 105) — `'generic'` (default,
+   *  today's CRM) or `'hotel'`. Drives light panel adaptation and which
+   *  starter kit the platform admin seeds. Narrowed to `'generic'` when
+   *  absent (older schema / mid-load). */
+  industry_vertical: string;
 }
 
 /**
@@ -263,7 +268,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // USD fallback below for older schemas where it reads null);
             // enforce_single_session added in migration 067.
             .select(
-              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session, timezone'
+              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session, timezone, industry_vertical'
             )
             .eq('id', data.account_id)
             .maybeSingle();
@@ -283,6 +288,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               suspended_reason: account.suspended_reason ?? null,
               enforce_single_session: account.enforce_single_session !== false,
               timezone: account.timezone ?? null,
+              industry_vertical: account.industry_vertical ?? 'generic',
             };
           }
         }

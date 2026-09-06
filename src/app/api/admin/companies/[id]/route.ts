@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requirePlatformAdmin, toErrorResponse } from '@/lib/auth/account';
 import { platformAdminClient } from '@/lib/platform/admin-client';
 import { markAccountPaid } from '@/lib/admin/subscriptions';
+import { isVerticalSlug } from '@/lib/verticals';
 
 export async function PATCH(
   request: Request,
@@ -19,6 +20,7 @@ export async function PATCH(
       add_whatsapp_numbers?: unknown;
       subscription_amount?: unknown;
       subscription_currency?: unknown;
+      set_vertical?: unknown;
     };
 
     if (body.mark_paid === true) {
@@ -125,6 +127,29 @@ export async function PATCH(
         .update({ next_payment_due_at: value })
         .eq('id', id)
         .select('id, next_payment_due_at')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data)
+        return NextResponse.json(
+          { error: 'Empresa no encontrada' },
+          { status: 404 }
+        );
+      return NextResponse.json({ company: data });
+    }
+
+    if ('set_vertical' in body) {
+      // Relabel only — does NOT seed. Use POST .../apply-vertical to seed.
+      if (!isVerticalSlug(body.set_vertical)) {
+        return NextResponse.json(
+          { error: "El vertical debe ser 'generic' o 'hotel'" },
+          { status: 400 }
+        );
+      }
+      const { data, error } = await platformAdminClient()
+        .from('accounts')
+        .update({ industry_vertical: body.set_vertical })
+        .eq('id', id)
+        .select('id, industry_vertical')
         .maybeSingle();
       if (error) throw error;
       if (!data)

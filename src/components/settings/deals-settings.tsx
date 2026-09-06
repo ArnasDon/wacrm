@@ -207,6 +207,12 @@ export function DealsSettings() {
               )}
             </Button>
           )}
+
+          {account?.industry_vertical && account.industry_vertical !== 'generic' && (
+            <p className="text-muted-foreground border-border border-t pt-3 text-xs">
+              {t('industryLine', { vertical: account.industry_vertical })}
+            </p>
+          )}
         </CardContent>
       </Card>
 

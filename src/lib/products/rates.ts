@@ -124,6 +124,34 @@ export function quoteStay(
   return { nights, total, missing }
 }
 
+/**
+ * One-line human summary of a product's always-on rates (seasonal rows
+ * are ignored — they add noise in a catalog listing). `fmt` formats a
+ * money amount (so callers control currency/locale). Empty string when
+ * there are no always-on rates.
+ *
+ * e.g. "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950"
+ */
+export function summarizeRates(
+  rates: Pick<ProductRate, 'weekday_group' | 'occupancy' | 'price' | 'date_from' | 'date_to'>[],
+  fmt: (amount: number) => string,
+): string {
+  const always = rates.filter((r) => !r.date_from && !r.date_to)
+  if (always.length === 0) return ''
+  return always
+    .slice()
+    .sort(
+      (a, b) =>
+        Number(a.occupancy === 'couple') - Number(b.occupancy === 'couple') ||
+        Number(a.weekday_group === 'weekend') - Number(b.weekday_group === 'weekend'),
+    )
+    .map(
+      (r) =>
+        `${r.occupancy === 'couple' ? 'pareja ' : ''}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'} ${fmt(r.price)}`,
+    )
+    .join(' · ')
+}
+
 // ------------------------------------------------------------
 // Request-body validation — sibling of parsePriceOptions in
 // price-options.ts. Used by POST /api/products and PATCH /api/products/[id].

@@ -9,7 +9,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useCan } from '@/hooks/use-can';
 import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
-import type { Product, Quote } from '@/types';
+import type { Product, ProductCategory, Quote } from '@/types';
 import { GatedButton } from '@/components/ui/gated-button';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -78,6 +78,7 @@ export default function ProductsPage() {
 
   // Products
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
@@ -93,15 +94,22 @@ export default function ProductsPage() {
 
   const fetchProducts = useCallback(async () => {
     setLoadingProducts(true);
-    const supabase = createClient();
-    const { data, error } = await supabase
-      .from('products')
-      .select('*')
-      .order('created_at', { ascending: false });
-    if (error) {
+    // Via the API so each product carries its `rates` + `price_options`
+    // (migrations 075 / 106) — the export needs them.
+    try {
+      const [pRes, cRes] = await Promise.all([
+        fetch('/api/products', { cache: 'no-store' }),
+        fetch('/api/product-categories', { cache: 'no-store' }),
+      ]);
+      if (!pRes.ok) throw new Error('products');
+      const pData = await readResponseJson<{ products?: Product[] }>(pRes);
+      setProducts(pData.products ?? []);
+      if (cRes.ok) {
+        const cData = await readResponseJson<{ categories?: ProductCategory[] }>(cRes);
+        setCategories(cData.categories ?? []);
+      }
+    } catch {
       toast.error(t('toastFailedLoadProducts'));
-    } else {
-      setProducts((data as Product[]) ?? []);
     }
     setLoadingProducts(false);
   }, [t]);
@@ -188,7 +196,12 @@ export default function ProductsPage() {
   }
 
   async function handleExport() {
-    await downloadProductsExcel(products.map(toProductExportRow));
+    const nameById = new Map(categories.map((c) => [c.id, c.name]));
+    await downloadProductsExcel(
+      products.map((p) =>
+        toProductExportRow(p, p.category_id ? nameById.get(p.category_id) : null)
+      )
+    );
   }
 
   return (

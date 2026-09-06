@@ -973,6 +973,7 @@
       "chooseFile": "Choose file",
       "previewTitle": "Preview",
       "validRows": "{count} valid",
+      "ratesCount": "{count, plural, one {# rate} other {# rates}}",
       "errorRows": "{count} with errors (will be skipped)",
       "confirmBtn": "Import {count} products",
       "cancel": "Cancel",

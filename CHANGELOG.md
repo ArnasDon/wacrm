@@ -54,6 +54,13 @@ and polish.
   weekday/weekend rule (and any season), shown as one line with the
   nights and dates. It flags any night that has no rate. Other products
   are added as before.
+- **Public catalog + Excel: room rates (hotel vertical).** The public
+  browse catalog shows a room's rate summary (`Lun–Jue Q800 · Vie–Dom
+  Q1200 …`) and per-night breakdown, with a "consultar disponibilidad"
+  path instead of add-to-cart (a stay needs dates + a person). The
+  products Excel export/import gains `category` and `rate_weekday` /
+  `rate_weekend` / `rate_weekday_couple` / `rate_weekend_couple` columns
+  — an import creates any new category by name and attaches the rates.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

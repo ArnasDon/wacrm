@@ -33,6 +33,14 @@ and polish.
   owner — a password-reset link when they already have an account (the
   usual case, e.g. the first invite link was consumed or expired), or a
   fresh invite otherwise. `POST /api/admin/companies/[id]/resend-invite`.
+- **Platform admin: "Eliminar empresa" (danger zone).** A button on the
+  company detail permanently deletes a company and everything tied to
+  it — every tenant table (via the `accounts` `ON DELETE CASCADE` FKs),
+  its storage objects (`account-<id>/` in every bucket), its onboarding
+  invitation and support tickets, and each member's `auth.users`
+  account. Requires typing the company name to confirm; refuses to
+  delete the account the admin is signed in under.
+  `POST /api/admin/companies/[id]/delete`.
 - **Catalog: categories + per-date room rates (backend).** New
   `product_categories` (a per-account grouping) and `product_rates`
   (weekday vs weekend price, standard vs couple, optional seasonal

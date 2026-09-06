@@ -97,6 +97,7 @@ export default function PlatformAdminPage() {
     null
   );
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
+  const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
   const [savingBillingId, setSavingBillingId] = useState<string | null>(null);
 
@@ -398,6 +399,51 @@ export default function PlatformAdminPage() {
     }
   };
 
+  const deleteCompany = async (company: Company) => {
+    const typed = window.prompt(
+      `Esto elimina PERMANENTEMENTE a "${company.name}" y todos sus datos (contactos, conversaciones, negocios, productos, flujos, integraciones, archivos y las cuentas de sus usuarios). No se puede deshacer.\n\nEscribe el nombre de la empresa para confirmar:`
+    );
+    if (typed === null) return;
+    if (typed.trim().toLowerCase() !== company.name.trim().toLowerCase()) {
+      setError('El nombre no coincide — no se eliminó nada.');
+      return;
+    }
+    setDeletingCompanyId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/companies/${company.id}/delete`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ confirm_name: typed.trim() }),
+        }
+      );
+      const body = await readResponseJson<{
+        error?: string;
+        deleted?: { members?: number };
+        warnings?: string[];
+      }>(response);
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo eliminar la empresa');
+      const warn = body.warnings?.length
+        ? `\n\nAvisos:\n- ${body.warnings.join('\n- ')}`
+        : '';
+      window.alert(
+        `"${company.name}" eliminada. Cuentas de usuario borradas: ${body.deleted?.members ?? 0}.${warn}`
+      );
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudo eliminar la empresa'
+      );
+    } finally {
+      setDeletingCompanyId(null);
+    }
+  };
+
   const setCompanyVertical = async (company: Company, vertical: string) => {
     setChangingVerticalId(company.id);
     setError(null);
@@ -689,9 +735,11 @@ export default function PlatformAdminPage() {
           billing: savingBillingId,
           vertical: changingVerticalId,
           resendInvite: resendingInviteId,
+          deleteCompany: deletingCompanyId,
         }}
         onSuspend={(company) => void changeSuspension(company)}
         onResendInvite={(company) => void resendInvite(company)}
+        onDeleteCompany={(company) => void deleteCompany(company)}
         onMarkPaid={(company) => void markPaid(company)}
         onAddSeat={(company) => void addSeat(company)}
         onAddNumber={(company) => void addWhatsAppNumber(company)}

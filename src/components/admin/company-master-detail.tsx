@@ -13,6 +13,7 @@ import {
   MessageSquare,
   Phone,
   Search,
+  Trash2,
   UserRound,
   Users,
 } from 'lucide-react';
@@ -99,10 +100,13 @@ interface Props {
     billing: string | null;
     vertical: string | null;
     resendInvite: string | null;
+    deleteCompany: string | null;
   };
   onSuspend(company: PlatformCompany): void;
   /** Re-send an access / password-reset email to the company owner. */
   onResendInvite(company: PlatformCompany): void;
+  /** Permanently delete the company and everything tied to it. */
+  onDeleteCompany(company: PlatformCompany): void;
   onMarkPaid(company: PlatformCompany): void;
   onAddSeat(company: PlatformCompany): void;
   onAddNumber(company: PlatformCompany): void;
@@ -131,6 +135,7 @@ export function CompanyMasterDetail({
   onSetVertical,
   onApplyVerticalKit,
   onResendInvite,
+  onDeleteCompany,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -515,6 +520,30 @@ export function CompanyMasterDetail({
                 <Clock3 className="size-4" />
                 Las métricas de uso y transferencias corresponden a los últimos
                 30 días.
+              </div>
+
+              <div className="border-destructive/30 bg-destructive/5 rounded-xl border p-4">
+                <h3 className="text-destructive flex items-center gap-2 font-semibold">
+                  <Trash2 className="size-4" />
+                  Zona de peligro
+                </h3>
+                <p className="text-muted-foreground mt-1 text-xs">
+                  Elimina la empresa y <strong>todos</strong> sus datos —
+                  contactos, conversaciones, negocios, productos, flujos,
+                  integraciones, archivos y las cuentas de sus usuarios. No se
+                  puede deshacer.
+                </p>
+                <Button
+                  size="sm"
+                  variant="destructive"
+                  className="mt-3"
+                  disabled={busyIds.deleteCompany === selected.id}
+                  onClick={() => onDeleteCompany(selected)}
+                >
+                  {busyIds.deleteCompany === selected.id
+                    ? 'Eliminando...'
+                    : 'Eliminar empresa'}
+                </Button>
               </div>
             </section>
           ) : (

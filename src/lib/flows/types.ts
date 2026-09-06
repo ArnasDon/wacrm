@@ -286,18 +286,27 @@ export interface FlowRunRow {
 // ============================================================
 
 export interface FlowFallbackPolicy {
-  /** What to do when the customer reply doesn't match any option. */
-  on_unknown_reply: "reprompt" | "handoff" | "ignore";
+  /**
+   * What to do when the customer reply doesn't match any option:
+   *   - `reprompt` — re-send the prompt up to `max_reprompts`, then `on_exhaust`.
+   *   - `handoff`  — end the run, flip the conversation to a human.
+   *   - `ai`       — end the run and let the AI auto-reply take the
+   *                  conversation over (a later trigger can still start a
+   *                  fresh run).
+   *   - `ignore`   — do nothing, keep the run waiting at the same node.
+   */
+  on_unknown_reply: "reprompt" | "handoff" | "ignore" | "ai";
   /** Max reprompts before applying `on_exhaust`. */
   max_reprompts: number;
   /** Stale-run sweep cutoff. */
   on_timeout_hours: number;
-  /** What to do once max_reprompts has been hit. */
-  on_exhaust: "handoff" | "end";
+  /** What to do once max_reprompts has been hit. `ai` releases the
+   *  conversation to the AI auto-reply, same as `on_unknown_reply: 'ai'`. */
+  on_exhaust: "handoff" | "end" | "ai";
 }
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
-  on_unknown_reply: "reprompt",
+  on_unknown_reply: "ai",
   max_reprompts: 2,
   on_timeout_hours: 24,
   on_exhaust: "handoff",

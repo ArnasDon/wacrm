@@ -35,6 +35,18 @@ describe("resolveFallbackPolicy", () => {
     ).toEqual(DEFAULT_FALLBACK_POLICY);
   });
 
+  it("keeps 'ai' for on_unknown_reply and on_exhaust", () => {
+    expect(
+      resolveFallbackPolicy({ on_unknown_reply: "ai" }).on_unknown_reply,
+    ).toBe("ai");
+    expect(resolveFallbackPolicy({ on_exhaust: "ai" }).on_exhaust).toBe("ai");
+  });
+
+  it("defaults on_unknown_reply to 'ai' (the new-flow default)", () => {
+    expect(DEFAULT_FALLBACK_POLICY.on_unknown_reply).toBe("ai");
+    expect(resolveFallbackPolicy({}).on_unknown_reply).toBe("ai");
+  });
+
   it("rejects negative or NaN max_reprompts", () => {
     expect(resolveFallbackPolicy({ max_reprompts: -1 })).toEqual(
       DEFAULT_FALLBACK_POLICY,
@@ -82,6 +94,28 @@ describe("decideFallback", () => {
         reprompt_count: 1,
       }),
     ).toEqual({ type: "handoff" });
+  });
+
+  it("returns ai immediately when on_unknown_reply is 'ai'", () => {
+    expect(
+      decideFallback({
+        policy: { ...POLICY_REPROMPT_2_HANDOFF, on_unknown_reply: "ai" },
+        reprompt_count: 1,
+      }),
+    ).toEqual({ type: "ai" });
+  });
+
+  it("escalates to ai once max_reprompts is exceeded with on_exhaust='ai'", () => {
+    const policy: FlowFallbackPolicy = {
+      ...POLICY_REPROMPT_2_HANDOFF,
+      on_exhaust: "ai",
+    };
+    expect(decideFallback({ policy, reprompt_count: 2 })).toEqual({
+      type: "reprompt",
+    });
+    expect(decideFallback({ policy, reprompt_count: 3 })).toEqual({
+      type: "ai",
+    });
   });
 
   it("reprompts up to max_reprompts", () => {

@@ -61,6 +61,13 @@ and polish.
   products Excel export/import gains `category` and `rate_weekday` /
   `rate_weekend` / `rate_weekday_couple` / `rate_weekend_couple` columns
   — an import creates any new category by name and attaches the rates.
+- **Google Sheets: deal rows carry the reservation fields (hotel
+  vertical).** For a `hotel` company, a `deal.won` / `deal.stage_changed`
+  row now appends the contact's custom fields (Fecha de entrada / salida,
+  Habitación, Ocupación, Paquete…), so the deals tab doubles as a
+  reservations ledger — filter by the date columns to see which rooms
+  are booked. This fires on a manual stage move (the admin confirming),
+  unlike `contact.brief_ready` which only the AI / an automation emits.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

@@ -13,6 +13,7 @@ function makeDb(fixtures: {
   broadcast?: Record<string, unknown> | null
   customFields?: Record<string, unknown>[]
   customValues?: Record<string, unknown>[]
+  account?: Record<string, unknown> | null
 }): SupabaseClient {
   return {
     from(table: string) {
@@ -33,6 +34,7 @@ function makeDb(fixtures: {
             profiles: fixtures.profile,
             quotes: fixtures.quote,
             broadcasts: fixtures.broadcast,
+            accounts: fixtures.account ?? { industry_vertical: 'generic' },
           }
           return Promise.resolve({ data: map[table] ?? null, error: null })
         },
@@ -74,6 +76,35 @@ describe('buildRowForEvent', () => {
     expect(row!.values[8]).toBe('Vendedor Uno')
     expect(row!.values[11]).toBe('human')
     expect(row!.values[12]).toBe('d1')
+    // no extra columns for a generic account
+    expect(row!.header).toHaveLength(13)
+  })
+
+  it('appends the contact reservation fields to the deal row for a hotel account', async () => {
+    const db = makeDb({
+      account: { industry_vertical: 'hotel' },
+      deal: { id: 'd1', title: 'David Duran', value: 3200, currency: 'GTQ', stage_id: 's1', contact_id: 'c1', assigned_to: null, status: 'won', won_at: '' },
+      stage: { name: 'Confirmada' },
+      contact: { name: 'David Duran', phone: '50255' },
+      customFields: [
+        { id: 'f_in', field_name: 'Fecha de entrada' },
+        { id: 'f_out', field_name: 'Fecha de salida' },
+        { id: 'f_room', field_name: 'Habitación' },
+      ],
+      customValues: [
+        { custom_field_id: 'f_in', value: '2026-03-05' },
+        { custom_field_id: 'f_out', value: '2026-03-08' },
+        { custom_field_id: 'f_room', value: 'Hab 101' },
+      ],
+    })
+    const row = await buildRowForEvent(db, 'a', 'deal.won', { deal_id: 'd1' }, 'Ventas')
+    expect(row!.header).toEqual([
+      'Evento', 'Fecha', 'Negociación', 'Monto', 'Moneda', 'Etapa',
+      'Cliente', 'Teléfono', 'Vendedor', 'Estado', 'Ganada el', 'Origen', 'Deal ID',
+      'Fecha de entrada', 'Fecha de salida', 'Habitación',
+    ])
+    expect(row!.values.slice(13)).toEqual(['2026-03-05', '2026-03-08', 'Hab 101'])
+    expect(row!.values.length).toBe(row!.header.length)
   })
 
   it('routes quote.created to a "<base> - Cotizaciones" tab with an items summary', async () => {

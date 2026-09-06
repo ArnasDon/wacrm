@@ -69,6 +69,50 @@ async function agentName(
   return (data?.full_name as string) || (data?.email as string) || ''
 }
 
+/**
+ * A contact's custom-field values as `{ header, values }`, one entry per
+ * account custom field (ordered by name so every row lines up). Shared
+ * by the "Requerimientos" brief row and — for the hotel vertical — the
+ * deal row, so a reservation's dates / room / package land in the sheet
+ * even when a person (not the AI) registered it.
+ */
+async function contactCustomFieldColumns(
+  db: Db,
+  accountId: string,
+  contactId: string,
+): Promise<{ header: string[]; values: string[] }> {
+  const [{ data: fields }, { data: values }] = await Promise.all([
+    db
+      .from('custom_fields')
+      .select('id, field_name')
+      .eq('account_id', accountId)
+      .order('field_name', { ascending: true }),
+    db
+      .from('contact_custom_values')
+      .select('custom_field_id, value')
+      .eq('contact_id', contactId)
+      .order('custom_field_id', { ascending: true }),
+  ])
+  const fieldList = (fields ?? []) as { id: string; field_name: string }[]
+  const valueByField = new Map<string, string>()
+  for (const v of (values ?? []) as { custom_field_id: string; value: string | null }[]) {
+    valueByField.set(v.custom_field_id, v.value ?? '')
+  }
+  return {
+    header: fieldList.map((f) => f.field_name),
+    values: fieldList.map((f) => valueByField.get(f.id) ?? ''),
+  }
+}
+
+async function accountVertical(db: Db, accountId: string): Promise<string> {
+  const { data } = await db
+    .from('accounts')
+    .select('industry_vertical')
+    .eq('id', accountId)
+    .maybeSingle()
+  return (data?.industry_vertical as string) ?? 'generic'
+}
+
 async function buildDealRow(
   db: Db,
   accountId: string,
@@ -99,11 +143,26 @@ async function buildDealRow(
   const contact = await contactRef(db, accountId, deal.contact_id as string | null)
   const agent = await agentName(db, accountId, deal.assigned_to as string | null)
 
+  // Hotel vertical: append the contact's reservation custom fields
+  // (Fecha de entrada / salida, Habitación, Ocupación, Paquete…) so the
+  // deals tab doubles as a reservations ledger — filter by the date
+  // columns to see which rooms are booked for a range. Works on a
+  // manual stage move (the admin confirming), unlike contact.brief_ready
+  // which only the AI / an automation fires.
+  let extraHeader: string[] = []
+  let extraValues: string[] = []
+  if ((await accountVertical(db, accountId)) === 'hotel' && deal.contact_id) {
+    const extra = await contactCustomFieldColumns(db, accountId, deal.contact_id as string)
+    extraHeader = extra.header
+    extraValues = extra.values
+  }
+
   return {
     tab: base,
     header: [
       'Evento', 'Fecha', 'Negociación', 'Monto', 'Moneda', 'Etapa',
       'Cliente', 'Teléfono', 'Vendedor', 'Estado', 'Ganada el', 'Origen', 'Deal ID',
+      ...extraHeader,
     ],
     values: [
       event,
@@ -119,6 +178,7 @@ async function buildDealRow(
       (deal.won_at as string) ?? '',
       typeof data.source === 'string' ? data.source : '',
       deal.id as string,
+      ...extraValues,
     ],
   }
 }
@@ -288,31 +348,16 @@ async function buildBriefRow(
   const contactId = typeof data.contact_id === 'string' ? data.contact_id : null
   if (!contactId) return null
 
-  const [{ data: contact }, { data: fields }, { data: values }] = await Promise.all([
+  const [{ data: contact }, custom] = await Promise.all([
     db
       .from('contacts')
       .select('name, phone, email, company')
       .eq('account_id', accountId)
       .eq('id', contactId)
       .maybeSingle(),
-    db
-      .from('custom_fields')
-      .select('id, field_name')
-      .eq('account_id', accountId)
-      .order('field_name', { ascending: true }),
-    db
-      .from('contact_custom_values')
-      .select('custom_field_id, value')
-      .eq('contact_id', contactId)
-      .order('custom_field_id', { ascending: true }),
+    contactCustomFieldColumns(db, accountId, contactId),
   ])
   if (!contact) return null
-
-  const fieldList = (fields ?? []) as { id: string; field_name: string }[]
-  const valueByField = new Map<string, string>()
-  for (const v of (values ?? []) as { custom_field_id: string; value: string | null }[]) {
-    valueByField.set(v.custom_field_id, v.value ?? '')
-  }
 
   return {
     tab: cat(base, 'Requerimientos'),
@@ -323,7 +368,7 @@ async function buildBriefRow(
       'Teléfono',
       'Correo',
       'Empresa',
-      ...fieldList.map((f) => f.field_name),
+      ...custom.header,
     ],
     values: [
       'contact.brief_ready',
@@ -332,7 +377,7 @@ async function buildBriefRow(
       (contact.phone as string) ?? '',
       (contact.email as string) ?? '',
       (contact.company as string) ?? '',
-      ...fieldList.map((f) => valueByField.get(f.id) ?? ''),
+      ...custom.values,
     ],
   }
 }

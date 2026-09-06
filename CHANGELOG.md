@@ -28,6 +28,11 @@ and polish.
 
 ### Added
 
+- **Platform admin: "Reenviar acceso" for a company.** A button on the
+  company detail in **Plataforma** re-sends an access email to the
+  owner — a password-reset link when they already have an account (the
+  usual case, e.g. the first invite link was consumed or expired), or a
+  fresh invite otherwise. `POST /api/admin/companies/[id]/resend-invite`.
 - **Catalog: categories + per-date room rates (backend).** New
   `product_categories` (a per-account grouping) and `product_rates`
   (weekday vs weekend price, standard vs couple, optional seasonal

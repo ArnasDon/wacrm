@@ -111,3 +111,16 @@ export function resolveBaseUrl(request: Request): string {
   }
   return "https://wacrm.tech";
 }
+
+/**
+ * The `redirectTo` a platform company invite (or a resent access link)
+ * should carry. Goes through `/auth/callback` — Supabase's invite /
+ * recovery email carries a PKCE `code` that must be exchanged for a
+ * session before the recipient can do anything, and `/login` has no
+ * form to set an initial password. Shared by
+ * `POST /api/admin/companies` and
+ * `POST /api/admin/companies/[id]/resend-invite`.
+ */
+export function platformInviteRedirectUrl(request: Request): string {
+  return `${resolveBaseUrl(request)}/auth/callback?next=/reset-password`;
+}

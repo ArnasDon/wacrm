@@ -98,8 +98,11 @@ interface Props {
     number: string | null;
     billing: string | null;
     vertical: string | null;
+    resendInvite: string | null;
   };
   onSuspend(company: PlatformCompany): void;
+  /** Re-send an access / password-reset email to the company owner. */
+  onResendInvite(company: PlatformCompany): void;
   onMarkPaid(company: PlatformCompany): void;
   onAddSeat(company: PlatformCompany): void;
   onAddNumber(company: PlatformCompany): void;
@@ -127,6 +130,7 @@ export function CompanyMasterDetail({
   onBilling,
   onSetVertical,
   onApplyVerticalKit,
+  onResendInvite,
 }: Props) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [search, setSearch] = useState('');
@@ -302,12 +306,24 @@ export function CompanyMasterDetail({
                     Empresa y capacidad
                   </h3>
                   <div className="mt-4 space-y-3 text-sm">
-                    <div className="text-muted-foreground flex items-center gap-2">
-                      <Mail className="size-4" />
-                      <span className="truncate">
-                        {selected.owner?.name || 'Sin nombre'} ·{' '}
-                        {selected.owner?.email || 'Sin correo'}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="text-muted-foreground flex min-w-0 items-center gap-2">
+                        <Mail className="size-4 shrink-0" />
+                        <span className="truncate">
+                          {selected.owner?.name || 'Sin nombre'} ·{' '}
+                          {selected.owner?.email || 'Sin correo'}
+                        </span>
                       </span>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busyIds.resendInvite === selected.id}
+                        onClick={() => onResendInvite(selected)}
+                      >
+                        {busyIds.resendInvite === selected.id
+                          ? 'Enviando...'
+                          : 'Reenviar acceso'}
+                      </Button>
                     </div>
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span>

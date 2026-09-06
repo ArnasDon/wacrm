@@ -16,7 +16,12 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { cloneFlowTemplate } from '@/lib/flows/clone-template'
 import { ingestDocument } from '@/lib/ai/knowledge'
-import { getVertical, type VerticalDefinition, type VerticalSlug } from './index'
+import {
+  getVertical,
+  NAV_SECTION_KEYS,
+  type VerticalDefinition,
+  type VerticalSlug,
+} from './index'
 
 export interface ApplyVerticalResult {
   vertical: VerticalSlug
@@ -273,6 +278,13 @@ async function applyAccountSettings(
   const patch: Record<string, unknown> = {}
   if (def.accountSettings.catalog_delivery_mode) {
     patch.catalog_delivery_mode = def.accountSettings.catalog_delivery_mode
+  }
+  // Seed the sidebar-section visibility from the kit when it declares
+  // one (migration 107). A platform admin can override it afterward
+  // from /admin; re-running the kit resets it to the kit default.
+  if (def.hiddenNavKeys) {
+    const allowed = new Set<string>(NAV_SECTION_KEYS)
+    patch.hidden_nav_keys = def.hiddenNavKeys.filter((k) => allowed.has(k))
   }
   if (Object.keys(patch).length === 0) return
   const { error } = await db.from('accounts').update(patch).eq('id', accountId)

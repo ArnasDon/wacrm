@@ -65,6 +65,11 @@ interface AccountSummary {
    *  starter kit the platform admin seeds. Narrowed to `'generic'` when
    *  absent (older schema / mid-load). */
   industry_vertical: string;
+  /** Sidebar section `labelKey`s hidden for this company (migration
+   *  107). `null` = use the vertical default (`hiddenNavKeysFor`). A
+   *  non-null array (even empty) is an explicit per-company choice set
+   *  in /admin. */
+  hidden_nav_keys: string[] | null;
 }
 
 /**
@@ -268,7 +273,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             // USD fallback below for older schemas where it reads null);
             // enforce_single_session added in migration 067.
             .select(
-              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session, timezone, industry_vertical'
+              'id, name, default_currency, suspended_at, suspended_reason, enforce_single_session, timezone, industry_vertical, hidden_nav_keys'
             )
             .eq('id', data.account_id)
             .maybeSingle();
@@ -289,6 +294,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               enforce_single_session: account.enforce_single_session !== false,
               timezone: account.timezone ?? null,
               industry_vertical: account.industry_vertical ?? 'generic',
+              hidden_nav_keys: Array.isArray(account.hidden_nav_keys)
+                ? (account.hidden_nav_keys as string[])
+                : null,
             };
           }
         }

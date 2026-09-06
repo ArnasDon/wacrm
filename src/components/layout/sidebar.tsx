@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { hiddenNavKeysFor } from "@/lib/verticals";
+import { resolveHiddenNavKeys } from "@/lib/verticals";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
 import {
@@ -129,9 +129,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const t = useTranslations("Sidebar");
   const pathname = usePathname();
   const { profile, profileLoading, account, accountRole, isPlatformAdmin, signOut } = useAuth();
-  // Per-vertical nav trimming (migration 105). No-op unless the account's
-  // vertical declares `hiddenNavKeys` — see src/lib/verticals.
-  const hiddenNav = hiddenNavKeysFor(account?.industry_vertical ?? "generic");
+  // Per-company / per-vertical nav trimming (migrations 105 + 107). The
+  // company's own `hidden_nav_keys` wins; else the vertical default.
+  const hiddenNav = resolveHiddenNavKeys(account);
   const [reportOpen, setReportOpen] = useState(false);
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();

@@ -122,6 +122,47 @@ Qué NO haces:
 
 Tono: cálido, breve, servicial.`
 
+/**
+ * The "hotelería" kit. Applying it (seed.ts) stamps
+ * `accounts.industry_vertical = 'hotel'`, and THAT flag is what turns on
+ * every hotel-specific behaviour across the app. The full list of
+ * touchpoints keyed off `industry_vertical === 'hotel'` — so a future
+ * editor knows what "packaged into the kit" covers:
+ *
+ *  - Catalog / rooms:
+ *      · `src/components/products/product-form.tsx` — swaps the flat
+ *        price + price-options block for the per-date RateGrid
+ *        (Lun–Jue / Vie–Dom, pareja, season overrides) + a category
+ *        picker (`product_categories`, migration 106).
+ *      · `src/lib/products/rates.ts` — `quoteStay` / `resolveNightlyRate`
+ *        pure engine (weekday = Mon–Thu, weekend = Fri–Sun).
+ *      · `src/components/products/quote-builder.tsx` — room lines ask
+ *        check-in / check-out / ocupación and price the stay night by
+ *        night into `quote_items.unit_price`.
+ *      · `src/app/catalog/[accountId]` + `src/app/api/public/catalog` —
+ *        public catalog shows the rate summary + "Consultar
+ *        disponibilidad" instead of a cart for rooms.
+ *      · `src/lib/products/export-excel.ts` /
+ *        `parse-products-excel.ts` / `api/products/bulk` — round-trip
+ *        `category` + `rate_*` columns.
+ *  - AI:
+ *      · `src/lib/ai/catalog-context.ts` — renders each room with its
+ *        rate structure so the assistant quotes from real numbers and
+ *        never invents a price or confirms availability.
+ *      · `aiSystemPromptScaffold` below — seeded only when the prompt is
+ *        empty.
+ *  - Google Sheets:
+ *      · `src/lib/google-sheets/row-builder.ts` — `buildDealRow` appends
+ *        the contact's reservation custom fields so the deals tab
+ *        doubles as an occupancy ledger.
+ *  - Panel:
+ *      · `hiddenNavKeys` (below, currently none) → `accounts.hidden_nav_keys`
+ *        via seed.ts; a platform admin can override per company in /admin.
+ *
+ * Everything above is gated by the flag alone — re-running or removing
+ * the kit's seeded rows (pipeline, custom fields, KB docs) does not turn
+ * the behaviours off; only `industry_vertical` does.
+ */
 const HOTEL: VerticalDefinition = {
   slug: 'hotel',
   label: 'Hotel',
@@ -177,6 +218,45 @@ export function isVerticalSlug(v: unknown): v is VerticalSlug {
 /** Sidebar `labelKey`s hidden for a vertical (empty for unknown/generic). */
 export function hiddenNavKeysFor(slug: string): string[] {
   return getVertical(slug)?.hiddenNavKeys ?? []
+}
+
+/**
+ * Every sidebar section `labelKey` that can be toggled per company /
+ * per kit. Order = display order. Keep in sync with `navItems` in
+ * `src/components/layout/sidebar.tsx` (and the `NAV` list in
+ * `command-menu.tsx`). `dashboard` and `settings` are intentionally
+ * omitted — they're always reachable.
+ */
+export const NAV_SECTION_KEYS = [
+  'kpis',
+  'inbox',
+  'notifications',
+  'contacts',
+  'pipelines',
+  'calendar',
+  'products',
+  'broadcasts',
+  'automations',
+  'flows',
+  'aiAgents',
+] as const
+
+/**
+ * The sidebar sections a company should NOT see. An explicit
+ * per-company choice (`account.hidden_nav_keys`, migration 107) wins;
+ * otherwise the company's vertical default. Unknown keys are dropped so
+ * a stale value can't hide a renamed section by accident.
+ */
+export function resolveHiddenNavKeys(account: {
+  hidden_nav_keys?: string[] | null
+  industry_vertical?: string | null
+} | null | undefined): string[] {
+  const raw =
+    account?.hidden_nav_keys != null
+      ? account.hidden_nav_keys
+      : hiddenNavKeysFor(account?.industry_vertical ?? 'generic')
+  const allowed = new Set<string>(NAV_SECTION_KEYS)
+  return raw.filter((k) => allowed.has(k))
 }
 
 /** Settings section ids hidden for a vertical. */

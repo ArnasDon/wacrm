@@ -98,6 +98,7 @@ export default function PlatformAdminPage() {
   );
   const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
   const [deletingCompanyId, setDeletingCompanyId] = useState<string | null>(null);
+  const [savingHiddenNavId, setSavingHiddenNavId] = useState<string | null>(null);
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
   const [savingBillingId, setSavingBillingId] = useState<string | null>(null);
 
@@ -499,6 +500,35 @@ export default function PlatformAdminPage() {
     }
   };
 
+  const setCompanyHiddenNav = async (
+    company: Company,
+    keys: string[] | null
+  ) => {
+    setSavingHiddenNavId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/companies/${company.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ set_hidden_nav: keys }),
+      });
+      const body = await readResponseJson<{ error?: string }>(response);
+      if (!response.ok)
+        throw new Error(
+          body.error ?? 'No se pudieron guardar las secciones del panel'
+        );
+      await load();
+    } catch (cause) {
+      setError(
+        cause instanceof Error
+          ? cause.message
+          : 'No se pudieron guardar las secciones del panel'
+      );
+    } finally {
+      setSavingHiddenNavId(null);
+    }
+  };
+
   const addWhatsAppNumber = async (company: Company) => {
     if (
       !window.confirm(
@@ -734,6 +764,7 @@ export default function PlatformAdminPage() {
           number: addingNumberId,
           billing: savingBillingId,
           vertical: changingVerticalId,
+          hiddenNav: savingHiddenNavId,
           resendInvite: resendingInviteId,
           deleteCompany: deletingCompanyId,
         }}
@@ -752,6 +783,9 @@ export default function PlatformAdminPage() {
         }
         onApplyVerticalKit={(company, vertical) =>
           void applyCompanyVerticalKit(company, vertical)
+        }
+        onSetHiddenNav={(company, keys) =>
+          void setCompanyHiddenNav(company, keys)
         }
       />
 

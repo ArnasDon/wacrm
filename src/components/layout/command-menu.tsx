@@ -27,6 +27,7 @@ import {
 
 import { useAuth } from "@/hooks/use-auth";
 import { useTheme } from "@/hooks/use-theme";
+import { resolveHiddenNavKeys } from "@/lib/verticals";
 import {
   CommandDialog,
   CommandEmpty,
@@ -81,9 +82,11 @@ export function CommandMenu() {
   const router = useRouter();
   const tNav = useTranslations("Sidebar");
   const t = useTranslations("CommandMenu");
-  const { isPlatformAdmin, signOut } = useAuth();
+  const { isPlatformAdmin, signOut, account } = useAuth();
   const { mode, toggleMode } = useTheme();
   const [open, setOpen] = useState(false);
+  const hiddenNav = resolveHiddenNavKeys(account);
+  const navItems = NAV.filter((item) => !hiddenNav.includes(item.labelKey));
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -115,7 +118,7 @@ export function CommandMenu() {
         <CommandEmpty>{t("empty")}</CommandEmpty>
 
         <CommandGroup heading={t("goTo")}>
-          {NAV.map((item) => (
+          {navItems.map((item) => (
             <CommandItem
               key={item.href}
               value={`${tNav(item.labelKey)} ${item.href}`}

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { requirePlatformAdmin, toErrorResponse } from '@/lib/auth/account';
 import { platformAdminClient } from '@/lib/platform/admin-client';
 import { markAccountPaid } from '@/lib/admin/subscriptions';
-import { isVerticalSlug } from '@/lib/verticals';
+import { isVerticalSlug, NAV_SECTION_KEYS } from '@/lib/verticals';
 
 export async function PATCH(
   request: Request,
@@ -21,6 +21,7 @@ export async function PATCH(
       subscription_amount?: unknown;
       subscription_currency?: unknown;
       set_vertical?: unknown;
+      set_hidden_nav?: unknown;
     };
 
     if (body.mark_paid === true) {
@@ -150,6 +151,43 @@ export async function PATCH(
         .update({ industry_vertical: body.set_vertical })
         .eq('id', id)
         .select('id, industry_vertical')
+        .maybeSingle();
+      if (error) throw error;
+      if (!data)
+        return NextResponse.json(
+          { error: 'Empresa no encontrada' },
+          { status: 404 }
+        );
+      return NextResponse.json({ company: data });
+    }
+
+    if ('set_hidden_nav' in body) {
+      // Per-company sidebar-section visibility (migration 107). The
+      // array lists the section `labelKey`s to HIDE. `null` clears the
+      // override so the company falls back to its vertical default.
+      const raw = body.set_hidden_nav;
+      let value: string[] | null;
+      if (raw === null) {
+        value = null;
+      } else if (
+        Array.isArray(raw) &&
+        raw.every((k) => typeof k === 'string')
+      ) {
+        const allowed = new Set<string>(NAV_SECTION_KEYS);
+        value = Array.from(
+          new Set((raw as string[]).filter((k) => allowed.has(k)))
+        );
+      } else {
+        return NextResponse.json(
+          { error: 'La lista de secciones ocultas es inválida' },
+          { status: 400 }
+        );
+      }
+      const { data, error } = await platformAdminClient()
+        .from('accounts')
+        .update({ hidden_nav_keys: value })
+        .eq('id', id)
+        .select('id, hidden_nav_keys')
         .maybeSingle();
       if (error) throw error;
       if (!data)

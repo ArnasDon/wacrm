@@ -28,8 +28,35 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CURRENCIES, formatCurrency } from '@/lib/currency';
-import { listVerticals } from '@/lib/verticals';
+import {
+  listVerticals,
+  resolveHiddenNavKeys,
+  NAV_SECTION_KEYS,
+} from '@/lib/verticals';
 import { cn } from '@/lib/utils';
+
+/** Spanish labels for the toggleable sidebar sections (keys = `labelKey`s
+ *  in `src/components/layout/sidebar.tsx`). Order = display order. */
+const NAV_SECTION_LABELS: Record<string, string> = {
+  kpis: 'KPIs',
+  inbox: 'Bandeja de entrada',
+  notifications: 'Notificaciones',
+  contacts: 'Contactos',
+  pipelines: 'Pipelines',
+  calendar: 'Calendario',
+  products: 'Productos',
+  broadcasts: 'Difusiones',
+  automations: 'Automatizaciones',
+  flows: 'Flujos',
+  aiAgents: 'Agentes de IA',
+};
+
+/** Same two arrays compare equal regardless of order. */
+function sameKeys(a: string[], b: string[]) {
+  if (a.length !== b.length) return false;
+  const set = new Set(a);
+  return b.every((k) => set.has(k));
+}
 
 export interface PlatformCompany {
   id: string;
@@ -47,6 +74,9 @@ export interface PlatformCompany {
   subscriptionCurrency: string;
   industryVertical: string;
   verticalAppliedAt: string | null;
+  /** Explicit per-company sidebar-section override (migration 107).
+   *  `null` = inherit the vertical default. */
+  hiddenNavKeys: string[] | null;
   owner: { name: string | null; email: string } | null;
   usage30d: { messages: number; conversations: number; aiTokens: number };
   handoffs30d: {
@@ -99,6 +129,7 @@ interface Props {
     number: string | null;
     billing: string | null;
     vertical: string | null;
+    hiddenNav: string | null;
     resendInvite: string | null;
     deleteCompany: string | null;
   };
@@ -120,6 +151,9 @@ interface Props {
   onSetVertical(company: PlatformCompany, vertical: string): void;
   /** Set the vertical AND seed its starter kit (idempotent). */
   onApplyVerticalKit(company: PlatformCompany, vertical: string): void;
+  /** Set the per-company hidden sidebar sections. `null` clears the
+   *  override so the company inherits its vertical default. */
+  onSetHiddenNav(company: PlatformCompany, keys: string[] | null): void;
 }
 
 export function CompanyMasterDetail({
@@ -134,6 +168,7 @@ export function CompanyMasterDetail({
   onBilling,
   onSetVertical,
   onApplyVerticalKit,
+  onSetHiddenNav,
   onResendInvite,
   onDeleteCompany,
 }: Props) {
@@ -146,6 +181,8 @@ export function CompanyMasterDetail({
   const [amount, setAmount] = useState('');
   const [currency, setCurrency] = useState('GTQ');
   const [vertical, setVertical] = useState('generic');
+  // Draft set of HIDDEN sidebar sections for the selected company.
+  const [hiddenDraft, setHiddenDraft] = useState<string[]>([]);
 
   useEffect(() => {
     if (!selected) return;
@@ -153,6 +190,12 @@ export function CompanyMasterDetail({
     setAmount(selected.subscriptionAmount?.toString() ?? '');
     setCurrency(selected.subscriptionCurrency || 'GTQ');
     setVertical(selected.industryVertical || 'generic');
+    setHiddenDraft(
+      resolveHiddenNavKeys({
+        hidden_nav_keys: selected.hiddenNavKeys,
+        industry_vertical: selected.industryVertical,
+      })
+    );
     // Narrow deps on purpose: re-sync the draft only when the selected
     // company or its subscription fields change, not on every re-render
     // that produces a fresh `selected` object.
@@ -162,6 +205,7 @@ export function CompanyMasterDetail({
     selected?.subscriptionAmount,
     selected?.subscriptionCurrency,
     selected?.industryVertical,
+    selected?.hiddenNavKeys,
   ]);
 
   const filtered = useMemo(() => {
@@ -510,6 +554,85 @@ export function CompanyMasterDetail({
                     : 'Kit no aplicado todavía'}
                 </p>
               </div>
+
+              {(() => {
+                const busy = busyIds.hiddenNav === selected.id;
+                const kitDefault = resolveHiddenNavKeys({
+                  hidden_nav_keys: null,
+                  industry_vertical: selected.industryVertical,
+                });
+                const isExplicit = selected.hiddenNavKeys != null;
+                const dirty = !sameKeys(
+                  hiddenDraft,
+                  resolveHiddenNavKeys({
+                    hidden_nav_keys: selected.hiddenNavKeys,
+                    industry_vertical: selected.industryVertical,
+                  })
+                );
+                const toggle = (key: string) =>
+                  setHiddenDraft((prev) =>
+                    prev.includes(key)
+                      ? prev.filter((k) => k !== key)
+                      : [...prev, key]
+                  );
+                return (
+                  <div className="border-border rounded-xl border p-4">
+                    <h3 className="flex items-center gap-2 font-semibold">
+                      <Building2 className="text-primary size-4" />
+                      Secciones del panel
+                    </h3>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      Marca las secciones que esta empresa <strong>sí</strong> ve en
+                      el menú lateral. Al guardar se fija una configuración propia
+                      de la empresa; &quot;Usar el valor del kit&quot; la vuelve a
+                      dejar heredando de su industria.
+                    </p>
+                    <p className="text-muted-foreground mt-1 text-xs">
+                      {isExplicit
+                        ? 'Configuración propia de esta empresa.'
+                        : kitDefault.length === 0
+                          ? 'Heredando del kit: todas las secciones visibles.'
+                          : `Heredando del kit: oculta ${kitDefault
+                              .map((k) => NAV_SECTION_LABELS[k] ?? k)
+                              .join(', ')}.`}
+                    </p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {NAV_SECTION_KEYS.map((key) => (
+                        <label
+                          key={key}
+                          className="flex items-center gap-2 text-sm"
+                        >
+                          <input
+                            type="checkbox"
+                            className="size-4"
+                            disabled={busy}
+                            checked={!hiddenDraft.includes(key)}
+                            onChange={() => toggle(key)}
+                          />
+                          {NAV_SECTION_LABELS[key] ?? key}
+                        </label>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button
+                        size="sm"
+                        disabled={busy || !dirty}
+                        onClick={() => onSetHiddenNav(selected, hiddenDraft)}
+                      >
+                        {busy ? 'Guardando...' : 'Guardar secciones'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !isExplicit}
+                        onClick={() => onSetHiddenNav(selected, null)}
+                      >
+                        Usar el valor del kit
+                      </Button>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {selected.suspendedReason ? (
                 <div className="border-destructive/20 bg-destructive/5 text-destructive rounded-xl border p-3 text-sm">

@@ -5,6 +5,8 @@ import {
   isVerticalSlug,
   hiddenNavKeysFor,
   hiddenSettingsSectionsFor,
+  resolveHiddenNavKeys,
+  NAV_SECTION_KEYS,
   VERTICAL_SLUGS,
 } from './index'
 import { getFlowTemplate } from '@/lib/flows/templates'
@@ -90,5 +92,45 @@ describe('vertical registry', () => {
     expect(hiddenNavKeysFor('hotel')).toEqual([])
     expect(hiddenNavKeysFor('bogus')).toEqual([])
     expect(hiddenSettingsSectionsFor('hotel')).toEqual([])
+  })
+
+  describe('resolveHiddenNavKeys', () => {
+    it('falls back to the vertical default when no per-company override', () => {
+      expect(
+        resolveHiddenNavKeys({ hidden_nav_keys: null, industry_vertical: 'hotel' }),
+      ).toEqual([])
+      expect(resolveHiddenNavKeys(null)).toEqual([])
+      expect(resolveHiddenNavKeys(undefined)).toEqual([])
+    })
+
+    it('an explicit per-company array wins over the vertical default', () => {
+      expect(
+        resolveHiddenNavKeys({
+          hidden_nav_keys: ['broadcasts', 'flows'],
+          industry_vertical: 'hotel',
+        }),
+      ).toEqual(['broadcasts', 'flows'])
+    })
+
+    it('an explicit empty array is honoured (shows everything)', () => {
+      expect(
+        resolveHiddenNavKeys({ hidden_nav_keys: [], industry_vertical: 'hotel' }),
+      ).toEqual([])
+    })
+
+    it('drops unknown keys so a stale value cannot hide a renamed section', () => {
+      expect(
+        resolveHiddenNavKeys({
+          hidden_nav_keys: ['flows', 'dashboard', 'bogus', 'settings'],
+          industry_vertical: 'generic',
+        }),
+      ).toEqual(['flows'])
+    })
+
+    it('every NAV_SECTION_KEYS entry is a real, toggleable key', () => {
+      expect(NAV_SECTION_KEYS).not.toContain('dashboard')
+      expect(NAV_SECTION_KEYS).not.toContain('settings')
+      expect(new Set(NAV_SECTION_KEYS).size).toBe(NAV_SECTION_KEYS.length)
+    })
   })
 })

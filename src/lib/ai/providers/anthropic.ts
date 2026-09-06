@@ -48,6 +48,32 @@ function normalizeForAnthropic(messages: ChatMessage[]): ChatMessage[] {
   return merged
 }
 
+type AnthropicBlock =
+  | { type: 'text'; text: string }
+  | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }
+
+/**
+ * Wire shape for the Messages API. A plain turn stays `content: string`
+ * (unchanged — keeps every existing transcript byte-identical); a turn
+ * that carries customer photos becomes a text block followed by one
+ * `image` block per photo.
+ */
+function toAnthropicMessages(
+  messages: ChatMessage[],
+): { role: 'user' | 'assistant'; content: string | AnthropicBlock[] }[] {
+  return messages.map((m) => {
+    if (!m.images?.length) return { role: m.role, content: m.content }
+    const blocks: AnthropicBlock[] = [{ type: 'text', text: m.content }]
+    for (const img of m.images) {
+      blocks.push({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.dataBase64 },
+      })
+    }
+    return { role: m.role, content: blocks }
+  })
+}
+
 /**
  * Call Anthropic's Messages endpoint with the caller's own key.
  * Returns the raw assistant text + token usage (handoff parsing happens
@@ -69,7 +95,7 @@ export async function generateAnthropic(args: ProviderArgs): Promise<ProviderRes
         model,
         system: systemPrompt,
         max_tokens: MAX_OUTPUT_TOKENS,
-        messages: normalizeForAnthropic(messages),
+        messages: toAnthropicMessages(normalizeForAnthropic(messages)),
       }),
       signal: AbortSignal.timeout(timeoutMs),
     })

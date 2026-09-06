@@ -1,5 +1,6 @@
-import { AiError, type ProviderResult } from '../types'
+import { AiError, type ChatMessage, type ProviderResult } from '../types'
 import { MAX_OUTPUT_TOKENS } from '../defaults'
+import { providerSupportsVision } from '../inbound-image'
 import {
   mergeConsecutive,
   normalizeUsage,
@@ -9,6 +10,29 @@ import {
 } from './shared'
 
 const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+
+type OpenAiPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string } }
+
+/** A plain turn stays `content: string`; a turn with customer photos
+ *  becomes a parts array (text + one `image_url` data URI per photo) —
+ *  only when `model` is a vision-capable line, otherwise the photos are
+ *  dropped and the text still goes through. */
+function toOpenAiMessages(messages: ChatMessage[], model: string) {
+  const vision = providerSupportsVision('openai', model)
+  return messages.map((m) => {
+    if (!vision || !m.images?.length) return { role: m.role, content: m.content }
+    const parts: OpenAiPart[] = [{ type: 'text', text: m.content }]
+    for (const img of m.images) {
+      parts.push({
+        type: 'image_url',
+        image_url: { url: `data:${img.mimeType};base64,${img.dataBase64}` },
+      })
+    }
+    return { role: m.role, content: parts }
+  })
+}
 
 interface OpenAiResponse {
   choices?: { message?: { content?: string } }[]
@@ -39,7 +63,7 @@ export async function generateOpenAi(args: ProviderArgs): Promise<ProviderResult
         model,
         messages: [
           { role: 'system', content: systemPrompt },
-          ...mergeConsecutive(messages),
+          ...toOpenAiMessages(mergeConsecutive(messages), model),
         ],
         max_completion_tokens: MAX_OUTPUT_TOKENS,
       }),

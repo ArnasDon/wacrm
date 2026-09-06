@@ -101,8 +101,11 @@ export function mergeConsecutive(messages: ChatMessage[]): ChatMessage[] {
     const last = out[out.length - 1]
     if (last && last.role === m.role) {
       last.content = `${last.content}\n\n${m.content}`
+      if (m.images?.length) {
+        last.images = [...(last.images ?? []), ...m.images]
+      }
     } else {
-      out.push({ role: m.role, content: m.content })
+      out.push({ role: m.role, content: m.content, ...(m.images?.length ? { images: m.images } : {}) })
     }
   }
   return out

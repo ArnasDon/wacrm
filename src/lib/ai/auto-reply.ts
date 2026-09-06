@@ -3,6 +3,7 @@ import { supabaseAdmin } from './admin-client'
 import { waitForQuietPeriod } from './debounce'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
+import { makeInboundImageResolver, providerSupportsVision } from './inbound-image'
 import { retrieveKnowledge } from './knowledge'
 import { loadCatalogContext } from './catalog-context'
 import { loadQuickReplyContext } from './quick-reply-context'
@@ -152,7 +153,19 @@ export async function dispatchInboundToAiReply(
       return
     }
 
-    const messages = await buildConversationContext(db, conversationId)
+    // Let the model see photos the customer sent (auto-reply only) when
+    // its model line supports vision — downloaded server-side with the
+    // account's own WhatsApp creds, using the same BYO AI key. Degrades
+    // to text-only on any download/format problem.
+    const imageResolver = providerSupportsVision(config.provider, config.model)
+      ? makeInboundImageResolver(db, accountId)
+      : null
+    const messages = await buildConversationContext(
+      db,
+      conversationId,
+      undefined,
+      imageResolver,
+    )
     if (messages.length === 0) return
     // The debounce above (waitForQuietPeriod) should guarantee this
     // dispatch is the only one running for this burst, but the two

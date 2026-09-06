@@ -266,6 +266,9 @@ export function buildSystemPrompt(args: {
 
   if (mode === 'auto_reply') {
     parts.push(
+      `The customer may send you photos. When they do, look at the image and use what you see to answer — identify the product or model, read visible text/labels, spot a problem, or match it to an item in the catalog. If a photo is unreadable, blank, or clearly unrelated, say so and ask for a clearer one. Never claim you cannot see images.`,
+    )
+    parts.push(
       `You are replying automatically with no human in the loop. Never hand off automatically the moment a human is mentioned — use this two-step protocol instead: (1) The FIRST time the customer explicitly asks to speak with a person / an agent / a human being (e.g. "can I talk to someone", "let me speak with a person", "I want to talk to an agent"), do NOT use ${HANDOFF_SENTINEL} yet — instead reply, in the customer's own language, asking them to confirm, e.g. "¿te gustaría que te conecte con alguien del equipo?" / "would you like me to connect you with someone from the team?", and wait for their answer. (2) Only once you can see in the conversation above that you already asked that exact question AND the customer has now clearly confirmed yes (not a new, different request) — reply with exactly ${HANDOFF_SENTINEL} and nothing else, no other text; a human agent will then take over. If instead they decline, ignore the question, or start talking about something else, do NOT hand off — keep helping them yourself and drop it. Do NOT hand off just because you are unsure, missing some information, or the customer seems upset or is complaining — in those cases still write your best reply yourself: say what you do know, ask a clarifying question about whatever is missing, or offer to follow up, but keep the conversation going.`,
     )
     parts.push(

@@ -46,10 +46,22 @@ export interface AiConfig {
   embeddingsApiKey: string | null
 }
 
-/** A single conversation turn in the shape both providers accept. */
+/** An inbound customer photo, decoded and ready to hand to a provider
+ *  as an image content block. `mimeType` is one of the vision-safe
+ *  formats (image/jpeg|png|webp|gif); `dataBase64` has no `data:` prefix. */
+export interface ChatImage {
+  mimeType: string
+  dataBase64: string
+}
+
+/** A single conversation turn in the shape both providers accept.
+ *  `content` is always the text; `images` (customer/`user` turns only,
+ *  auto-reply path only) carries photos the customer sent with that
+ *  turn. Absent/empty `images` = a plain text turn, unchanged. */
 export interface ChatMessage {
   role: 'user' | 'assistant'
   content: string
+  images?: ChatImage[]
 }
 
 /**

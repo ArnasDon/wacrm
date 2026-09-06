@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { buildConversationContext } from './context'
 
@@ -72,5 +72,78 @@ describe('buildConversationContext', () => {
       'conv-1',
     )
     expect(out).toEqual([{ role: 'user', content: 'real' }])
+  })
+
+  describe('inbound customer photos (with an image resolver)', () => {
+    const img = { mimeType: 'image/jpeg', dataBase64: 'AAAA' }
+
+    it('without a resolver, image rows are excluded (unchanged behaviour)', async () => {
+      const filters: { includedTypes?: string[] } = {}
+      const out = await buildConversationContext(
+        fakeDb(
+          [
+            { sender_type: 'customer', content_type: 'image', content_text: 'mira', media_url: '/api/whatsapp/media/x' },
+            { sender_type: 'customer', content_type: 'text', content_text: 'hola' },
+          ],
+          filters,
+        ),
+        'conv-1',
+      )
+      expect(filters.includedTypes).toEqual(['text', 'template'])
+      expect(out).toEqual([{ role: 'user', content: 'hola' }])
+    })
+
+    it('attaches a downloaded photo to the turn and keeps the caption as text', async () => {
+      const filters: { includedTypes?: string[] } = {}
+      const resolver = async () => img
+      const out = await buildConversationContext(
+        fakeDb(
+          [{ sender_type: 'customer', content_type: 'image', content_text: 'este modelo', media_url: '/api/whatsapp/media/x', media_type: 'image/jpeg' }],
+          filters,
+        ),
+        'conv-1',
+        undefined,
+        resolver,
+      )
+      expect(filters.includedTypes).toEqual(['text', 'template', 'image'])
+      expect(out).toEqual([{ role: 'user', content: 'este modelo', images: [img] }])
+    })
+
+    it('uses a placeholder when the photo had no caption', async () => {
+      const out = await buildConversationContext(
+        fakeDb([{ sender_type: 'customer', content_type: 'image', content_text: null, media_url: '/api/whatsapp/media/x' }]),
+        'conv-1',
+        undefined,
+        async () => img,
+      )
+      expect(out).toEqual([
+        { role: 'user', content: '(El cliente envió una foto.)', images: [img] },
+      ])
+    })
+
+    it('drops an image row entirely when the download fails', async () => {
+      const out = await buildConversationContext(
+        fakeDb([
+          { sender_type: 'customer', content_type: 'image', content_text: null, media_url: '/api/whatsapp/media/x' },
+          { sender_type: 'customer', content_type: 'text', content_text: 'seguime ayudando' },
+        ]),
+        'conv-1',
+        undefined,
+        async () => null,
+      )
+      expect(out).toEqual([{ role: 'user', content: 'seguime ayudando' }])
+    })
+
+    it('never attaches a bot/agent image as a customer photo', async () => {
+      const resolver = vi.fn(async () => img)
+      const out = await buildConversationContext(
+        fakeDb([{ sender_type: 'bot', content_type: 'image', content_text: 'aquí tienes', media_url: '/api/whatsapp/media/x' }]),
+        'conv-1',
+        undefined,
+        resolver,
+      )
+      expect(resolver).not.toHaveBeenCalled()
+      expect(out).toEqual([])
+    })
   })
 })

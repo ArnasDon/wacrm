@@ -47,7 +47,13 @@ and polish.
   (`Hab 101: Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 …`)
   instead of a single base price, so it informs tariffs and computes a
   stay correctly. Products with no rates (spa, activities) keep showing
-  their base price. The human quote builder is the last follow-up.
+  their base price.
+- **Quote builder: room stays priced by night (hotel vertical).** Adding
+  a room (a product with rates) to a quote now asks for check-in,
+  check-out and occupancy and prices the stay night-by-night across the
+  weekday/weekend rule (and any season), shown as one line with the
+  nights and dates. It flags any night that has no rate. Other products
+  are added as before.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

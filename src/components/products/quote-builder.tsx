@@ -8,6 +8,7 @@ import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { formatCurrency } from '@/lib/currency';
 import { useAuth } from '@/hooks/use-auth';
+import { nightsBetween, quoteStay } from '@/lib/products/rates';
 import type { Contact, Product } from '@/types';
 import {
   Dialog,
@@ -57,7 +58,8 @@ export function QuoteBuilder({
   onSaved,
 }: QuoteBuilderProps) {
   const t = useTranslations('Products.quoteBuilder');
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, account } = useAuth();
+  const isHotel = account?.industry_vertical === 'hotel';
 
   const [selectedContact, setSelectedContact] = useState<Contact | null>(null);
   const [contactSearch, setContactSearch] = useState('');
@@ -68,6 +70,10 @@ export function QuoteBuilder({
   const [items, setItems] = useState<LineItem[]>([]);
   const [pickProductId, setPickProductId] = useState('');
   const [pickQuantity, setPickQuantity] = useState('1');
+  // Hotel vertical: a room line prices per night from product_rates.
+  const [stayCheckIn, setStayCheckIn] = useState('');
+  const [stayCheckOut, setStayCheckOut] = useState('');
+  const [stayOccupancy, setStayOccupancy] = useState<'standard' | 'couple'>('standard');
   const [freeDescription, setFreeDescription] = useState('');
   const [freePrice, setFreePrice] = useState('');
   const [freeQuantity, setFreeQuantity] = useState('1');
@@ -94,13 +100,17 @@ export function QuoteBuilder({
     setCustomerPhone(contact?.phone ?? '');
     setCustomerAddress('');
 
-    const supabase = createClient();
-    supabase
-      .from('products')
-      .select('*')
-      .eq('is_active', true)
-      .order('name')
-      .then(({ data }) => setProducts((data as Product[]) ?? []));
+    setStayCheckIn('');
+    setStayCheckOut('');
+    setStayOccupancy('standard');
+
+    // Via the API so each product carries its `rates` (migration 106).
+    fetch('/api/products', { cache: 'no-store' })
+      .then((res) => (res.ok ? readResponseJson<{ products?: Product[] }>(res) : { products: [] }))
+      .then((data) =>
+        setProducts((data.products ?? []).filter((p) => p.is_active)),
+      )
+      .catch(() => setProducts([]));
   }, [open, contact]);
 
   const searchContacts = useCallback(async (term: string) => {
@@ -120,9 +130,60 @@ export function QuoteBuilder({
     setSearchingContacts(false);
   }, []);
 
+  const pickedProduct = products.find((p) => p.id === pickProductId) ?? null;
+  const pickedIsRoom = isHotel && (pickedProduct?.rates?.length ?? 0) > 0;
+
   function addCatalogItem() {
     const product = products.find((p) => p.id === pickProductId);
     if (!product) return;
+
+    // Hotel room: price the stay night-by-night from product_rates and
+    // add it as one line (the server prices free-form lines by the
+    // unit_price we send; a product line would use products.price).
+    if (isHotel && (product.rates?.length ?? 0) > 0) {
+      if (!stayCheckIn || !stayCheckOut) {
+        toast.error(t('toastStayDatesRequired'));
+        return;
+      }
+      const nights = nightsBetween(stayCheckIn, stayCheckOut);
+      if (nights.length === 0) {
+        toast.error(t('toastStayDatesOrder'));
+        return;
+      }
+      const stay = quoteStay(
+        (product.rates ?? []).map((r) => ({
+          weekday_group: r.weekday_group,
+          occupancy: r.occupancy,
+          price: r.price,
+          date_from: r.date_from,
+          date_to: r.date_to,
+        })),
+        stayCheckIn,
+        stayCheckOut,
+        stayOccupancy,
+      );
+      if (stay.missing.length > 0) {
+        toast.error(t('toastStayMissingRate', { dates: stay.missing.join(', ') }));
+        return;
+      }
+      const occLabel = stayOccupancy === 'couple' ? t('stayCouple') : t('stayStandard');
+      setItems((prev) => [
+        ...prev,
+        {
+          key: crypto.randomUUID(),
+          product_id: null,
+          description: `${product.name} · ${nights.length} ${t('stayNights')} (${stayCheckIn} → ${stayCheckOut}) · ${occLabel}`,
+          unit_price: stay.total,
+          quantity: 1,
+        },
+      ]);
+      setPickProductId('');
+      setStayCheckIn('');
+      setStayCheckOut('');
+      setStayOccupancy('standard');
+      return;
+    }
+
     const quantity = Number(pickQuantity);
     if (!Number.isFinite(quantity) || quantity <= 0) {
       toast.error(t('toastQuantityInvalid'));
@@ -385,18 +446,20 @@ export function QuoteBuilder({
                   </SelectContent>
                 </Select>
               </div>
-              <div className="w-20 space-y-1">
-                <Label className="text-muted-foreground text-xs">
-                  {t('quantityLabel')}
-                </Label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={pickQuantity}
-                  onChange={(e) => setPickQuantity(e.target.value)}
-                  className="bg-muted border-border text-foreground"
-                />
-              </div>
+              {!pickedIsRoom && (
+                <div className="w-20 space-y-1">
+                  <Label className="text-muted-foreground text-xs">
+                    {t('quantityLabel')}
+                  </Label>
+                  <Input
+                    type="number"
+                    min={1}
+                    value={pickQuantity}
+                    onChange={(e) => setPickQuantity(e.target.value)}
+                    className="bg-muted border-border text-foreground"
+                  />
+                </div>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -407,6 +470,69 @@ export function QuoteBuilder({
                 <Plus className="size-4" />
               </Button>
             </div>
+
+            {pickedIsRoom && (
+              <div className="border-border grid grid-cols-3 gap-2 rounded-md border p-2">
+                <div className="space-y-1">
+                  <Label className="text-muted-foreground text-xs">
+                    {t('stayCheckIn')}
+                  </Label>
+                  <Input
+                    type="date"
+                    value={stayCheckIn}
+                    onChange={(e) => setStayCheckIn(e.target.value)}
+                    className="bg-muted border-border text-foreground"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-muted-foreground text-xs">
+                    {t('stayCheckOut')}
+                  </Label>
+                  <Input
+                    type="date"
+                    value={stayCheckOut}
+                    onChange={(e) => setStayCheckOut(e.target.value)}
+                    className="bg-muted border-border text-foreground"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-muted-foreground text-xs">
+                    {t('stayOccupancy')}
+                  </Label>
+                  <select
+                    value={stayOccupancy}
+                    onChange={(e) =>
+                      setStayOccupancy(e.target.value === 'couple' ? 'couple' : 'standard')
+                    }
+                    className="border-border bg-muted text-foreground h-9 w-full rounded-md border px-2 text-sm"
+                  >
+                    <option value="standard">{t('stayStandard')}</option>
+                    <option value="couple">{t('stayCouple')}</option>
+                  </select>
+                </div>
+                {stayCheckIn && stayCheckOut && nightsBetween(stayCheckIn, stayCheckOut).length > 0 && (
+                  <p className="text-muted-foreground col-span-3 text-xs">
+                    {(() => {
+                      const stay = quoteStay(
+                        (pickedProduct?.rates ?? []).map((r) => ({
+                          weekday_group: r.weekday_group,
+                          occupancy: r.occupancy,
+                          price: r.price,
+                          date_from: r.date_from,
+                          date_to: r.date_to,
+                        })),
+                        stayCheckIn,
+                        stayCheckOut,
+                        stayOccupancy,
+                      );
+                      return stay.missing.length > 0
+                        ? t('toastStayMissingRate', { dates: stay.missing.join(', ') })
+                        : `${nightsBetween(stayCheckIn, stayCheckOut).length} ${t('stayNights')} · ${formatCurrency(stay.total, defaultCurrency)}`;
+                    })()}
+                  </p>
+                )}
+              </div>
+            )}
 
             {/* Free item — human only, never available to the AI's create_quote action */}
             <details className="border-border rounded-md border p-2">

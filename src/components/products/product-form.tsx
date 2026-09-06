@@ -54,8 +54,10 @@ function emptyPriceOptionDraft(): PriceOptionDraft {
 interface RateBlockDraft {
   weekdayStandard: string;
   weekdayCouple: string;
+  weekdayGroup: string;
   weekendStandard: string;
   weekendCouple: string;
+  weekendGroup: string;
 }
 interface SeasonDraft extends RateBlockDraft {
   dateFrom: string;
@@ -63,16 +65,34 @@ interface SeasonDraft extends RateBlockDraft {
 }
 
 function emptyRateBlock(): RateBlockDraft {
-  return { weekdayStandard: '', weekdayCouple: '', weekendStandard: '', weekendCouple: '' };
+  return {
+    weekdayStandard: '',
+    weekdayCouple: '',
+    weekdayGroup: '',
+    weekendStandard: '',
+    weekendCouple: '',
+    weekendGroup: '',
+  };
 }
+
+type RateOccupancy = 'standard' | 'couple' | 'group';
 
 type RateRowShape = {
   weekday_group: 'weekday' | 'weekend';
-  occupancy: 'standard' | 'couple';
+  occupancy: RateOccupancy;
   price: number;
   date_from: string | null;
   date_to: string | null;
 };
+
+/** Form-field name for a (group × occupancy) rate cell. */
+function rateField(
+  weekday_group: 'weekday' | 'weekend',
+  occupancy: RateOccupancy,
+): keyof RateBlockDraft {
+  const occ = occupancy === 'couple' ? 'Couple' : occupancy === 'group' ? 'Group' : 'Standard';
+  return `${weekday_group === 'weekend' ? 'weekend' : 'weekday'}${occ}` as keyof RateBlockDraft;
+}
 
 /** Turn a form block into product_rates rows — one per non-empty price. */
 function blockToRows(
@@ -83,7 +103,7 @@ function blockToRows(
   const rows: RateRowShape[] = [];
   const push = (
     weekday_group: 'weekday' | 'weekend',
-    occupancy: 'standard' | 'couple',
+    occupancy: RateOccupancy,
     raw: string,
   ) => {
     if (raw.trim() === '') return;
@@ -92,10 +112,11 @@ function blockToRows(
       rows.push({ weekday_group, occupancy, price, date_from: dateFrom, date_to: dateTo });
     }
   };
-  push('weekday', 'standard', block.weekdayStandard);
-  push('weekday', 'couple', block.weekdayCouple);
-  push('weekend', 'standard', block.weekendStandard);
-  push('weekend', 'couple', block.weekendCouple);
+  for (const wg of ['weekday', 'weekend'] as const) {
+    for (const occ of ['standard', 'couple', 'group'] as const) {
+      push(wg, occ, block[rateField(wg, occ)]);
+    }
+  }
   return rows;
 }
 
@@ -117,15 +138,13 @@ function rowsToBlocks(rows: Product['rates']): {
             return seasonMap.get(key)!;
           })()
         : base;
-    const field =
-      `${r.weekday_group === 'weekend' ? 'weekend' : 'weekday'}${r.occupancy === 'couple' ? 'Couple' : 'Standard'}` as keyof RateBlockDraft;
-    target[field] = String(r.price);
+    target[rateField(r.weekday_group, r.occupancy)] = String(r.price);
   }
   return { base, seasons: [...seasonMap.values()] };
 }
 
-/** 2×2 price grid (weekday/weekend × standard/couple) reused by the
- *  "always" block and each seasonal block. */
+/** 2×3 price grid (weekday/weekend × standard/couple/group) reused by
+ *  the "always" block and each seasonal block. */
 function RateGrid({
   block,
   onChange,
@@ -159,6 +178,8 @@ function RateGrid({
       {cell('weekendStandard', t('rateWeekendStandard'))}
       {cell('weekdayCouple', t('rateWeekdayCouple'))}
       {cell('weekendCouple', t('rateWeekendCouple'))}
+      {cell('weekdayGroup', t('rateWeekdayGroup'))}
+      {cell('weekendGroup', t('rateWeekendGroup'))}
     </div>
   );
 }

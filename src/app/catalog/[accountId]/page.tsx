@@ -62,7 +62,11 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/currency';
-import { summarizeRates } from '@/lib/products/rates';
+import {
+  summarizeRates,
+  rateSortKey,
+  OCCUPANCY_LABEL_ES,
+} from '@/lib/products/rates';
 
 interface CatalogPriceOption {
   id: string;
@@ -74,7 +78,7 @@ interface CatalogPriceOption {
 
 interface CatalogRate {
   weekday_group: 'weekday' | 'weekend';
-  occupancy: 'standard' | 'couple';
+  occupancy: 'standard' | 'couple' | 'group';
   price: number;
   date_from: string | null;
   date_to: string | null;
@@ -260,15 +264,34 @@ function PublicCatalogPageInner() {
   );
   const totalCount = selectedItems.reduce((sum, i) => sum + i.quantity, 0);
   const featuredProduct = data?.products.find((product) => product.image_url);
+
+  // Category chips — only the categories that actually have at least one
+  // visible product, in the order the account arranged them. Selecting
+  // one narrows the grid; `null` = show everything.
+  const [activeCategory, setActiveCategory] = useState<string | null>(null);
+  const categoryChips = useMemo(() => {
+    if (!data) return [];
+    const withProducts = new Set(
+      data.products.map((p) => p.category).filter((c): c is string => !!c)
+    );
+    return data.categories.map((c) => c.name).filter((name) => withProducts.has(name));
+  }, [data]);
+
   const visibleProducts = useMemo(() => {
     const query = search.trim().toLocaleLowerCase('es');
-    if (!query) return data?.products ?? [];
-    return (data?.products ?? []).filter((product) =>
-      `${product.name} ${product.description ?? ''}`
-        .toLocaleLowerCase('es')
-        .includes(query)
-    );
-  }, [data, search]);
+    let list = data?.products ?? [];
+    if (activeCategory) {
+      list = list.filter((product) => product.category === activeCategory);
+    }
+    if (query) {
+      list = list.filter((product) =>
+        `${product.name} ${product.description ?? ''}`
+          .toLocaleLowerCase('es')
+          .includes(query)
+      );
+    }
+    return list;
+  }, [data, search, activeCategory]);
 
   const selectedOption = selectedProduct
     ? (selectedProduct.price_options.find((o) => o.id === selectedOptionId) ??
@@ -520,6 +543,39 @@ function PublicCatalogPageInner() {
             personalizada.
           </p>
         </div>
+
+        {categoryChips.length > 0 && (
+          <div className="app-scroll mb-8 flex items-center gap-2 overflow-x-auto pb-1 sm:mb-10 sm:flex-wrap sm:justify-center">
+            <button
+              type="button"
+              onClick={() => setActiveCategory(null)}
+              className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold tracking-[0.1em] uppercase transition ${
+                activeCategory === null
+                  ? 'border-[#062f38] bg-[#062f38] text-white'
+                  : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
+              }`}
+            >
+              Todo
+            </button>
+            {categoryChips.map((name) => (
+              <button
+                key={name}
+                type="button"
+                onClick={() =>
+                  setActiveCategory((cur) => (cur === name ? null : name))
+                }
+                className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold tracking-[0.1em] uppercase transition ${
+                  activeCategory === name
+                    ? 'border-[#062f38] bg-[#062f38] text-white'
+                    : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
+                }`}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {data.products.length === 0 ? (
           <div className="flex flex-col items-center gap-3 py-16 text-center">
             <PackageX className="size-10 text-gray-400" />
@@ -531,7 +587,9 @@ function PublicCatalogPageInner() {
           <div className="py-16 text-center">
             <Search className="mx-auto size-8 text-[#082f38]/30" />
             <p className="mt-3 text-sm text-[#284d53]/65">
-              No encontramos productos para “{search}”.
+              {search.trim()
+                ? `No encontramos productos para “${search}”.`
+                : 'No hay productos en esta categoría.'}
             </p>
           </div>
         ) : (
@@ -706,19 +764,19 @@ function PublicCatalogPageInner() {
                   <div className="mt-6 space-y-1.5">
                     {selectedProduct.rates
                       .filter((r) => !r.date_from && !r.date_to)
-                      .sort(
-                        (a, b) =>
-                          Number(a.occupancy === 'couple') - Number(b.occupancy === 'couple') ||
-                          Number(a.weekday_group === 'weekend') -
-                            Number(b.weekday_group === 'weekend'),
-                      )
-                      .map((r, i) => (
+                      .sort((a, b) => rateSortKey(a) - rateSortKey(b))
+                      .map((r, i) => {
+                        const occ = OCCUPANCY_LABEL_ES[r.occupancy];
+                        const occLabel = occ
+                          ? `${occ.trim().charAt(0).toUpperCase()}${occ.trim().slice(1)} · `
+                          : '';
+                        return (
                         <div
                           key={i}
                           className="flex items-baseline justify-between gap-4 text-[#062f38]"
                         >
                           <span className="text-sm text-[#284d53]/75">
-                            {(r.occupancy === 'couple' ? 'Pareja · ' : '') +
+                            {occLabel +
                               (r.weekday_group === 'weekend'
                                 ? 'Vie–Dom'
                                 : 'Lun–Jue')}
@@ -728,7 +786,8 @@ function PublicCatalogPageInner() {
                             <span className="text-xs text-[#284d53]/60">/ noche</span>
                           </span>
                         </div>
-                      ))}
+                        );
+                      })}
                     {selectedProduct.rates.some((r) => r.date_from && r.date_to) && (
                       <p className="pt-1 text-xs text-[#284d53]/60">
                         Aplican tarifas de temporada en ciertas fechas.

@@ -124,7 +124,7 @@ export async function POST(request: Request) {
         const p = Number(r.price)
         if (
           (group === 'weekday' || group === 'weekend') &&
-          (occupancy === 'standard' || occupancy === 'couple') &&
+          (occupancy === 'standard' || occupancy === 'couple' || occupancy === 'group') &&
           Number.isFinite(p) &&
           p >= 0
         ) {

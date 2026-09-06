@@ -6,13 +6,19 @@
 //   - src/lib/ai/catalog-context.ts   (rate structure shown to the AI)
 //
 // The rule Villa San Ricardo asked for: Mon–Thu ("weekday") is cheaper
-// than Fri–Sun ("weekend"); a couple rate can differ from the standard
-// rate; an optional date range gives a seasonal override that wins for
-// the nights inside it.
+// than Fri–Sun ("weekend"); a couple (2 guests) rate and a group (3+
+// guests) rate can each differ from the standard rate; an optional date
+// range gives a seasonal override that wins for the nights inside it.
 // ============================================================
 
 export type WeekdayGroup = 'weekday' | 'weekend'
-export type Occupancy = 'standard' | 'couple'
+/** standard = base / 1 guest · couple = 2 guests · group = 3+ guests.
+ *  `couple` and `group` are optional tiers — a missing one falls back
+ *  to the standard rate. */
+export type Occupancy = 'standard' | 'couple' | 'group'
+
+/** Display order for the occupancy tiers (used by every rate summary). */
+export const OCCUPANCY_ORDER: Occupancy[] = ['standard', 'couple', 'group']
 
 /** A row of `product_rates`, request-body or DB shape (only the fields
  *  the resolver needs). */
@@ -26,7 +32,7 @@ export interface ProductRate {
   date_to: string | null
 }
 
-export const MAX_PRODUCT_RATES = 12 // 2 groups × 2 occupancies × up to 3 seasons
+export const MAX_PRODUCT_RATES = 18 // 2 groups × 3 occupancies × up to 3 seasons
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
@@ -69,8 +75,8 @@ function seasonContains(rate: ProductRate, nightISO: string): boolean {
  * Resolution order:
  *   1. exact occupancy + weekday group, seasonal row covering the night
  *   2. exact occupancy + weekday group, always-on row
- *   3. (occupancy 'couple' only) fall back to the 'standard' rate for
- *      the same group — a couple rate is optional
+ *   3. (occupancy 'couple' / 'group' only) fall back to the 'standard'
+ *      rate for the same group — the couple and group rates are optional
  *
  * Returns `null` when nothing matches (the caller surfaces it as a gap).
  */
@@ -90,7 +96,7 @@ export function resolveNightlyRate(
 
   const exact = tryOccupancy(occupancy)
   if (exact !== null) return exact
-  if (occupancy === 'couple') return tryOccupancy('standard')
+  if (occupancy === 'couple' || occupancy === 'group') return tryOccupancy('standard')
   return null
 }
 
@@ -130,8 +136,20 @@ export function quoteStay(
  * money amount (so callers control currency/locale). Empty string when
  * there are no always-on rates.
  *
- * e.g. "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950"
+ * e.g. "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · grupo Vie–Dom Q1600"
  */
+export const OCCUPANCY_LABEL_ES: Record<Occupancy, string> = {
+  standard: '',
+  couple: 'pareja ',
+  group: 'grupo ',
+}
+
+/** Rank a rate for display: standard → couple → group, weekday before
+ *  weekend within each tier. */
+export function rateSortKey(r: Pick<ProductRate, 'weekday_group' | 'occupancy'>): number {
+  return OCCUPANCY_ORDER.indexOf(r.occupancy) * 2 + (r.weekday_group === 'weekend' ? 1 : 0)
+}
+
 export function summarizeRates(
   rates: Pick<ProductRate, 'weekday_group' | 'occupancy' | 'price' | 'date_from' | 'date_to'>[],
   fmt: (amount: number) => string,
@@ -140,14 +158,10 @@ export function summarizeRates(
   if (always.length === 0) return ''
   return always
     .slice()
-    .sort(
-      (a, b) =>
-        Number(a.occupancy === 'couple') - Number(b.occupancy === 'couple') ||
-        Number(a.weekday_group === 'weekend') - Number(b.weekday_group === 'weekend'),
-    )
+    .sort((a, b) => rateSortKey(a) - rateSortKey(b))
     .map(
       (r) =>
-        `${r.occupancy === 'couple' ? 'pareja ' : ''}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'} ${fmt(r.price)}`,
+        `${OCCUPANCY_LABEL_ES[r.occupancy]}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'} ${fmt(r.price)}`,
     )
     .join(' · ')
 }
@@ -189,8 +203,8 @@ export function parseRates(raw: unknown): ParseRatesResult {
       return { ok: false, error: `rates[${i}].weekday_group must be 'weekday' or 'weekend'` }
     }
     const occupancy = row.occupancy ?? 'standard'
-    if (occupancy !== 'standard' && occupancy !== 'couple') {
-      return { ok: false, error: `rates[${i}].occupancy must be 'standard' or 'couple'` }
+    if (occupancy !== 'standard' && occupancy !== 'couple' && occupancy !== 'group') {
+      return { ok: false, error: `rates[${i}].occupancy must be 'standard', 'couple' or 'group'` }
     }
     const price = Number(row.price)
     if (!Number.isFinite(price) || price < 0) {

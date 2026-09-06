@@ -73,7 +73,9 @@ export function QuoteBuilder({
   // Hotel vertical: a room line prices per night from product_rates.
   const [stayCheckIn, setStayCheckIn] = useState('');
   const [stayCheckOut, setStayCheckOut] = useState('');
-  const [stayOccupancy, setStayOccupancy] = useState<'standard' | 'couple'>('standard');
+  const [stayOccupancy, setStayOccupancy] = useState<'standard' | 'couple' | 'group'>(
+    'standard',
+  );
   const [freeDescription, setFreeDescription] = useState('');
   const [freePrice, setFreePrice] = useState('');
   const [freeQuantity, setFreeQuantity] = useState('1');
@@ -166,7 +168,12 @@ export function QuoteBuilder({
         toast.error(t('toastStayMissingRate', { dates: stay.missing.join(', ') }));
         return;
       }
-      const occLabel = stayOccupancy === 'couple' ? t('stayCouple') : t('stayStandard');
+      const occLabel =
+        stayOccupancy === 'couple'
+          ? t('stayCouple')
+          : stayOccupancy === 'group'
+            ? t('stayGroup')
+            : t('stayStandard');
       setItems((prev) => [
         ...prev,
         {
@@ -501,13 +508,17 @@ export function QuoteBuilder({
                   </Label>
                   <select
                     value={stayOccupancy}
-                    onChange={(e) =>
-                      setStayOccupancy(e.target.value === 'couple' ? 'couple' : 'standard')
-                    }
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setStayOccupancy(
+                        v === 'couple' || v === 'group' ? v : 'standard',
+                      );
+                    }}
                     className="border-border bg-muted text-foreground h-9 w-full rounded-md border px-2 text-sm"
                   >
                     <option value="standard">{t('stayStandard')}</option>
                     <option value="couple">{t('stayCouple')}</option>
+                    <option value="group">{t('stayGroup')}</option>
                   </select>
                 </div>
                 {stayCheckIn && stayCheckOut && nightsBetween(stayCheckIn, stayCheckOut).length > 0 && (

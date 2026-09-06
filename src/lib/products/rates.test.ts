@@ -70,6 +70,17 @@ describe('resolveNightlyRate', () => {
     expect(resolveNightlyRate(noCouple, '2026-03-06', 'couple')).toBe(1200)
   })
 
+  it('uses an explicit group (3+) rate, and falls back to standard when absent', () => {
+    const withGroup: ProductRate[] = [
+      ...RATES,
+      { weekday_group: 'weekday', occupancy: 'group', price: 1100, date_from: null, date_to: null },
+    ]
+    expect(resolveNightlyRate(withGroup, '2026-03-05', 'group')).toBe(1100) // Thu, explicit
+    expect(resolveNightlyRate(withGroup, '2026-03-06', 'group')).toBe(1200) // Fri, no group → standard
+    // group never borrows the couple rate
+    expect(resolveNightlyRate(RATES, '2026-03-05', 'group')).toBe(800)
+  })
+
   it('a seasonal override wins for nights inside its range', () => {
     const withHoliday: ProductRate[] = [
       ...RATES,
@@ -113,6 +124,15 @@ describe('summarizeRates', () => {
   it('lists always-on rates, standard first then couple, weekday before weekend', () => {
     expect(summarizeRates(RATES, fmt)).toBe(
       'Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · pareja Vie–Dom Q1400',
+    )
+  })
+  it('orders standard → couple → group', () => {
+    const withGroup: ProductRate[] = [
+      ...RATES,
+      { weekday_group: 'weekend', occupancy: 'group', price: 1600, date_from: null, date_to: null },
+    ]
+    expect(summarizeRates(withGroup, fmt)).toBe(
+      'Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · pareja Vie–Dom Q1400 · grupo Vie–Dom Q1600',
     )
   })
   it('ignores seasonal rows', () => {
@@ -159,6 +179,12 @@ describe('parseRates', () => {
     expect(parseRates([{ weekday_group: 'weekday', price: 'abc' }]).ok).toBe(false)
   })
 
+  it("accepts occupancy 'group'", () => {
+    const res = parseRates([{ weekday_group: 'weekend', occupancy: 'group', price: 1600 }])
+    expect(res.ok).toBe(true)
+    if (res.ok) expect(res.rates[0]).toMatchObject({ occupancy: 'group', price: 1600 })
+  })
+
   it('requires both dates or neither, and date_to >= date_from', () => {
     expect(parseRates([{ weekday_group: 'weekday', price: 1, date_from: '2026-12-24' }]).ok).toBe(false)
     expect(
@@ -168,7 +194,7 @@ describe('parseRates', () => {
   })
 
   it('caps the number of rates', () => {
-    const many = Array.from({ length: 13 }, () => ({ weekday_group: 'weekday' as const, price: 1 }))
+    const many = Array.from({ length: 19 }, () => ({ weekday_group: 'weekday' as const, price: 1 }))
     expect(parseRates(many).ok).toBe(false)
   })
 

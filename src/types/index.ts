@@ -479,7 +479,8 @@ export interface ProductRateRow {
   account_id: string;
   product_id: string;
   weekday_group: 'weekday' | 'weekend';
-  occupancy: 'standard' | 'couple';
+  /** standard = base · couple = 2 guests · group = 3+ guests (migration 108). */
+  occupancy: 'standard' | 'couple' | 'group';
   price: number;
   date_from: string | null;
   date_to: string | null;

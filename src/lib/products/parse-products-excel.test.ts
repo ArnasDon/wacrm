@@ -35,6 +35,7 @@ describe('parseProductsWorkbook', () => {
         rate_weekday: 800,
         rate_weekend: 1200,
         rate_weekday_couple: 950,
+        rate_weekend_group: 1600,
       },
     ]
     const result = await parseProductsWorkbook(await workbookBuffer(buildProductsWorkbook(rows)))
@@ -46,6 +47,7 @@ describe('parseProductsWorkbook', () => {
         { weekday_group: 'weekday', occupancy: 'standard', price: 800 },
         { weekday_group: 'weekend', occupancy: 'standard', price: 1200 },
         { weekday_group: 'weekday', occupancy: 'couple', price: 950 },
+        { weekday_group: 'weekend', occupancy: 'group', price: 1600 },
       ],
     })
   })

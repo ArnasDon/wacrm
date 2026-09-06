@@ -29,6 +29,8 @@ describe('toProductExportRow', () => {
       rate_weekend: '',
       rate_weekday_couple: '',
       rate_weekend_couple: '',
+      rate_weekday_group: '',
+      rate_weekend_group: '',
     })
   })
 
@@ -81,6 +83,8 @@ describe('buildProductsWorkbook', () => {
       'Cama baja de madera',
       350,
       'TRUE',
+      '',
+      '',
       '',
       '',
       '',

@@ -14,17 +14,20 @@ export interface ProductExportRow {
   is_active: boolean
   /** Catalog category name (migration 106) — blank when uncategorised. */
   category?: string
-  /** Always-on room rates (migration 106) — blank for non-room products. */
+  /** Always-on room rates (migrations 106 + 108) — blank for non-room
+   *  products. `_couple` = 2 guests, `_group` = 3+ guests. */
   rate_weekday?: number | ''
   rate_weekend?: number | ''
   rate_weekday_couple?: number | ''
   rate_weekend_couple?: number | ''
+  rate_weekday_group?: number | ''
+  rate_weekend_group?: number | ''
 }
 
 function alwaysRate(
   product: Product,
   group: 'weekday' | 'weekend',
-  occupancy: 'standard' | 'couple',
+  occupancy: 'standard' | 'couple' | 'group',
 ): number | '' {
   const hit = (product.rates ?? []).find(
     (r) =>
@@ -54,6 +57,8 @@ export function toProductExportRow(
     rate_weekend: alwaysRate(product, 'weekend', 'standard'),
     rate_weekday_couple: alwaysRate(product, 'weekday', 'couple'),
     rate_weekend_couple: alwaysRate(product, 'weekend', 'couple'),
+    rate_weekday_group: alwaysRate(product, 'weekday', 'group'),
+    rate_weekend_group: alwaysRate(product, 'weekend', 'group'),
   }
 }
 
@@ -76,6 +81,8 @@ export function buildProductsWorkbook(rows: ProductExportRow[]): ExcelJS.Workboo
     { header: 'rate_weekend', key: 'rate_weekend', width: 14 },
     { header: 'rate_weekday_couple', key: 'rate_weekday_couple', width: 18 },
     { header: 'rate_weekend_couple', key: 'rate_weekend_couple', width: 18 },
+    { header: 'rate_weekday_group', key: 'rate_weekday_group', width: 18 },
+    { header: 'rate_weekend_group', key: 'rate_weekend_group', width: 18 },
   ]
   sheet.getRow(1).eachCell((cell) => {
     cell.fill = HEADER_FILL
@@ -94,6 +101,8 @@ export function buildProductsWorkbook(rows: ProductExportRow[]): ExcelJS.Workboo
       rate_weekend: row.rate_weekend ?? '',
       rate_weekday_couple: row.rate_weekday_couple ?? '',
       rate_weekend_couple: row.rate_weekend_couple ?? '',
+      rate_weekday_group: row.rate_weekday_group ?? '',
+      rate_weekend_group: row.rate_weekend_group ?? '',
     })
   }
 

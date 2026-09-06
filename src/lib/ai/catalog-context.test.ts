@@ -95,6 +95,7 @@ describe('loadCatalogContext', () => {
             { product_id: 'r1', weekday_group: 'weekday', occupancy: 'standard', price: 800, date_from: null, date_to: null },
             { product_id: 'r1', weekday_group: 'weekend', occupancy: 'standard', price: 1200, date_from: null, date_to: null },
             { product_id: 'r1', weekday_group: 'weekday', occupancy: 'couple', price: 950, date_from: null, date_to: null },
+            { product_id: 'r1', weekday_group: 'weekend', occupancy: 'group', price: 1600, date_from: null, date_to: null },
           ],
         },
       ),
@@ -106,6 +107,7 @@ describe('loadCatalogContext', () => {
     expect(res![0]).toMatch(/Lun–Jue .*800/)
     expect(res![0]).toMatch(/Vie–Dom .*1.?200/)
     expect(res![0]).toMatch(/pareja Lun–Jue .*950/)
+    expect(res![0]).toMatch(/grupo Vie–Dom .*1.?600/)
     expect(res![0]).toContain('— Vista jardín')
   })
 

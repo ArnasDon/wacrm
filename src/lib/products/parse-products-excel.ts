@@ -11,7 +11,7 @@ import ExcelJS from 'exceljs'
 
 export interface ParsedRate {
   weekday_group: 'weekday' | 'weekend'
-  occupancy: 'standard' | 'couple'
+  occupancy: 'standard' | 'couple' | 'group'
   price: number
 }
 
@@ -95,11 +95,17 @@ export async function parseProductsWorkbook(buffer: ArrayBuffer): Promise<ParseP
   const descriptionCol = columnByName.get('description')
   const isActiveCol = columnByName.get('is_active')
   const categoryCol = columnByName.get('category')
-  const rateCols: { key: string; group: 'weekday' | 'weekend'; occupancy: 'standard' | 'couple' }[] = [
+  const rateCols: {
+    key: string
+    group: 'weekday' | 'weekend'
+    occupancy: 'standard' | 'couple' | 'group'
+  }[] = [
     { key: 'rate_weekday', group: 'weekday', occupancy: 'standard' },
     { key: 'rate_weekend', group: 'weekend', occupancy: 'standard' },
     { key: 'rate_weekday_couple', group: 'weekday', occupancy: 'couple' },
     { key: 'rate_weekend_couple', group: 'weekend', occupancy: 'couple' },
+    { key: 'rate_weekday_group', group: 'weekday', occupancy: 'group' },
+    { key: 'rate_weekend_group', group: 'weekend', occupancy: 'group' },
   ]
 
   const rows: ParsedProductRow[] = []

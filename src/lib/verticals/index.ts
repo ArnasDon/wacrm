@@ -78,7 +78,9 @@ const HOTEL_TARIFAS_DOC = `TARIFAS DE HABITACIONES
 - Lunes a jueves: tarifa económica (el precio base de cada habitación en el catálogo).
 - Viernes, sábado y domingo: tarifa alta.
 - Si la estancia cruza días de semana y fin de semana, cobra cada noche a su tarifa correspondiente.
+- Tarifas por número de huéspedes: estándar (1 persona), pareja (2), grupo (3 o más). Cada habitación puede tener las tres.
 - Tarifa en pareja / paquete romántico: [[precio pareja]].
+- Tarifa de grupo (3+): [[precio grupo]].
 - Persona adicional: [[Q__ por noche]].
 - Check-in: [[15:00]] · Check-out: [[12:00]].
 - Anticipo para confirmar la reserva: [[50%]].
@@ -132,8 +134,8 @@ Tono: cálido, breve, servicial.`
  *  - Catalog / rooms:
  *      · `src/components/products/product-form.tsx` — swaps the flat
  *        price + price-options block for the per-date RateGrid
- *        (Lun–Jue / Vie–Dom, pareja, season overrides) + a category
- *        picker (`product_categories`, migration 106).
+ *        (Lun–Jue / Vie–Dom × estándar/pareja/grupo, season overrides;
+ *        migrations 106 + 108) + a category picker (`product_categories`).
  *      · `src/lib/products/rates.ts` — `quoteStay` / `resolveNightlyRate`
  *        pure engine (weekday = Mon–Thu, weekend = Fri–Sun).
  *      · `src/components/products/quote-builder.tsx` — room lines ask

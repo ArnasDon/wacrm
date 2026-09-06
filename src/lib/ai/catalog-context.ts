@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatCurrency } from '@/lib/currency'
+import { OCCUPANCY_LABEL_ES, rateSortKey } from '@/lib/products/rates'
 
 // Bounds how much of the catalog reaches the prompt — plenty for a
 // small/medium product list, keeps token spend predictable for
@@ -24,7 +25,7 @@ interface CatalogProductRow {
 interface RateRow {
   product_id: string
   weekday_group: 'weekday' | 'weekend'
-  occupancy: 'standard' | 'couple'
+  occupancy: 'standard' | 'couple' | 'group'
   price: number
   date_from: string | null
   date_to: string | null
@@ -87,18 +88,14 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
   return map
 }
 
-/** "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · pareja Vie–Dom Q1400
+/** "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · grupo Vie–Dom Q1600
  *  (temporada 24/12–31/12: Q1500)". Compact enough for the prompt. */
 function formatRateSummary(rates: RateRow[], currency: string): string {
   const always = rates.filter((r) => !r.date_from && !r.date_to)
   const label = (r: RateRow) =>
-    `${r.occupancy === 'couple' ? 'pareja ' : ''}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'}`
+    `${OCCUPANCY_LABEL_ES[r.occupancy]}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'}`
   const parts = always
-    .sort(
-      (a, b) =>
-        Number(a.occupancy === 'couple') - Number(b.occupancy === 'couple') ||
-        Number(a.weekday_group === 'weekend') - Number(b.weekday_group === 'weekend'),
-    )
+    .sort((a, b) => rateSortKey(a) - rateSortKey(b))
     .map((r) => `${label(r)} ${formatCurrency(r.price, currency)}`)
 
   const seasons = rates.filter((r) => r.date_from && r.date_to)

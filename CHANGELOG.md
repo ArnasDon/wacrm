@@ -20,8 +20,22 @@ and polish.
 > (adds `accounts.industry_vertical`, default `'generic'`, and
 > `vertical_applied_at`). Every existing account defaults to `'generic'`
 > = today's behaviour, unchanged.
+>
+> **Migration required:** apply `supabase/migrations/106_product_rates_and_categories.sql`
+> (adds `product_categories` + `products.category_id`, and a
+> `product_rates` table for per-date room pricing on the hotel vertical).
+> No effect until a product actually has rates or a category.
 
 ### Added
+
+- **Catalog: categories + per-date room rates (backend).** New
+  `product_categories` (a per-account grouping) and `product_rates`
+  (weekday vs weekend price, standard vs couple, optional seasonal
+  date range). `POST/PATCH /api/products` now accept `category_id` and
+  `rates[]`; new `/api/product-categories` CRUD. A pure rate engine
+  (`src/lib/products/rates.ts` — `quoteStay` splits a stay night-by-night
+  across the weekday/weekend rule). Editing UI, the quote builder and the
+  AI catalog context land in follow-ups. Generic accounts are unaffected.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

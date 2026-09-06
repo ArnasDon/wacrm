@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { parsePriceOptions, parseInstallationCost } from '@/lib/products/price-options'
+import { parseRates } from '@/lib/products/rates'
+import { resolveCategoryId } from '@/lib/products/categories'
 
 // Product catalog — account-shared, no inventory tracking. GET lists;
 // POST creates. Mirrors the quick-replies route: RLS-scoped read via
@@ -12,16 +14,26 @@ export async function GET() {
     const { supabase, accountId } = await getCurrentAccount()
     // RLS (products_select / product_price_options_select) scopes both
     // queries to the caller's account.
-    const [{ data, error }, { data: priceOptions, error: optionsError }] = await Promise.all([
+    const [
+      { data, error },
+      { data: priceOptions, error: optionsError },
+      { data: rates, error: ratesError },
+    ] = await Promise.all([
       supabase.from('products').select('*').order('created_at', { ascending: false }),
       supabase
         .from('product_price_options')
         .select('*')
         .eq('account_id', accountId)
         .order('position'),
+      supabase
+        .from('product_rates')
+        .select('*')
+        .eq('account_id', accountId)
+        .order('position'),
     ])
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
     if (optionsError) return NextResponse.json({ error: optionsError.message }, { status: 500 })
+    if (ratesError) return NextResponse.json({ error: ratesError.message }, { status: 500 })
 
     const optionsByProduct = new Map<string, typeof priceOptions>()
     for (const option of priceOptions ?? []) {
@@ -29,10 +41,17 @@ export async function GET() {
       list.push(option)
       optionsByProduct.set(option.product_id as string, list)
     }
+    const ratesByProduct = new Map<string, typeof rates>()
+    for (const rate of rates ?? []) {
+      const list = ratesByProduct.get(rate.product_id as string) ?? []
+      list.push(rate)
+      ratesByProduct.set(rate.product_id as string, list)
+    }
 
     const products = (data ?? []).map((product) => ({
       ...product,
       price_options: optionsByProduct.get(product.id as string) ?? [],
+      rates: ratesByProduct.get(product.id as string) ?? [],
     }))
     return NextResponse.json({ products })
   } catch (err) {
@@ -73,7 +92,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: parsedOptions.error }, { status: 400 })
   }
 
+  const parsedRates = parseRates(body.rates)
+  if (!parsedRates.ok) {
+    return NextResponse.json({ error: parsedRates.error }, { status: 400 })
+  }
+
   const admin = supabaseAdmin()
+
+  const category = await resolveCategoryId(admin, ctx.accountId, body.category_id)
+  if (!category.ok) {
+    return NextResponse.json({ error: category.error }, { status: 400 })
+  }
+
   const { data, error } = await admin
     .from('products')
     .insert({
@@ -85,11 +115,28 @@ export async function POST(request: Request) {
       installation_cost: installationCost.value,
       image_url: imageUrl,
       is_active: isActive,
+      category_id: category.value,
     })
     .select()
     .single()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  if (parsedRates.rates.length > 0) {
+    const { error: ratesError } = await admin.from('product_rates').insert(
+      parsedRates.rates.map((r) => ({
+        account_id: ctx.accountId,
+        product_id: data.id,
+        weekday_group: r.weekday_group,
+        occupancy: r.occupancy,
+        price: r.price,
+        date_from: r.date_from,
+        date_to: r.date_to,
+        position: r.position,
+      })),
+    )
+    if (ratesError) return NextResponse.json({ error: ratesError.message }, { status: 500 })
+  }
 
   let priceOptions: unknown[] = []
   if (parsedOptions.options.length > 0) {
@@ -111,5 +158,14 @@ export async function POST(request: Request) {
     priceOptions = insertedOptions ?? []
   }
 
-  return NextResponse.json({ product: { ...data, price_options: priceOptions } }, { status: 201 })
+  const { data: rates } = await admin
+    .from('product_rates')
+    .select('*')
+    .eq('product_id', data.id)
+    .order('position')
+
+  return NextResponse.json(
+    { product: { ...data, price_options: priceOptions, rates: rates ?? [] } },
+    { status: 201 },
+  )
 }

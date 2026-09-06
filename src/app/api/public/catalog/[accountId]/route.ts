@@ -43,22 +43,35 @@ export async function GET(
 
   const db = supabaseAdmin()
 
-  const [{ data: account }, { data: products, error: productsError }, { data: whatsapp }] =
-    await Promise.all([
-      db.from('accounts').select('name, default_currency').eq('id', accountId).maybeSingle(),
-      db
-        .from('products')
-        .select('id, name, description, price, installation_cost, image_url')
-        .eq('account_id', accountId)
-        .eq('is_active', true)
-        .order('name'),
-      db
-        .from('whatsapp_config')
-        .select('public_phone_number')
-        .eq('account_id', accountId)
-        .eq('is_default', true)
-        .maybeSingle(),
-    ])
+  const [
+    { data: account },
+    { data: products, error: productsError },
+    { data: whatsapp },
+    { data: categories },
+  ] = await Promise.all([
+    db
+      .from('accounts')
+      .select('name, default_currency, industry_vertical')
+      .eq('id', accountId)
+      .maybeSingle(),
+    db
+      .from('products')
+      .select('id, name, description, price, installation_cost, image_url, category_id')
+      .eq('account_id', accountId)
+      .eq('is_active', true)
+      .order('name'),
+    db
+      .from('whatsapp_config')
+      .select('public_phone_number')
+      .eq('account_id', accountId)
+      .eq('is_default', true)
+      .maybeSingle(),
+    db
+      .from('product_categories')
+      .select('id, name, position')
+      .eq('account_id', accountId)
+      .order('position'),
+  ])
 
   if (!account) {
     return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -91,13 +104,41 @@ export async function GET(
     }
   }
 
+  // Per-date room rates (migration 106) — only meaningful for the hotel
+  // vertical. Same batch-then-merge pattern; the public page shows them
+  // as a rate summary instead of a single "add to cart" price.
+  const ratesByProduct = new Map<string, unknown[]>()
+  if (productIds.length > 0 && account.industry_vertical === 'hotel') {
+    const { data: rates } = await db
+      .from('product_rates')
+      .select('product_id, weekday_group, occupancy, price, date_from, date_to')
+      .in('product_id', productIds)
+      .order('position')
+    for (const rate of rates ?? []) {
+      const list = ratesByProduct.get(rate.product_id as string) ?? []
+      list.push(rate)
+      ratesByProduct.set(rate.product_id as string, list)
+    }
+  }
+
+  const categoryNameById = new Map(
+    (categories ?? []).map((c) => [c.id as string, c.name as string]),
+  )
+
   return NextResponse.json({
     account_name: account.name,
     currency: account.default_currency ?? 'USD',
+    industry_vertical: account.industry_vertical ?? 'generic',
     whatsapp_number: whatsapp?.public_phone_number ?? null,
+    categories: (categories ?? []).map((c) => ({ id: c.id, name: c.name })),
     products: (products ?? []).map((product) => ({
       ...product,
       price_options: priceOptionsByProduct.get(product.id as string) ?? [],
+      rates: ratesByProduct.get(product.id as string) ?? [],
+      category:
+        product.category_id != null
+          ? (categoryNameById.get(product.category_id as string) ?? null)
+          : null,
     })),
   })
 }

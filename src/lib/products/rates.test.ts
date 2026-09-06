@@ -5,6 +5,7 @@ import {
   resolveNightlyRate,
   quoteStay,
   parseRates,
+  summarizeRates,
   type ProductRate,
 } from './rates'
 
@@ -104,6 +105,31 @@ describe('quoteStay', () => {
 
   it('empty for a bad range', () => {
     expect(quoteStay(RATES, '2026-03-08', '2026-03-05').nights).toEqual([])
+  })
+})
+
+describe('summarizeRates', () => {
+  const fmt = (n: number) => `Q${n}`
+  it('lists always-on rates, standard first then couple, weekday before weekend', () => {
+    expect(summarizeRates(RATES, fmt)).toBe(
+      'Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · pareja Vie–Dom Q1400',
+    )
+  })
+  it('ignores seasonal rows', () => {
+    const withSeason: ProductRate[] = [
+      { weekday_group: 'weekday', occupancy: 'standard', price: 800, date_from: null, date_to: null },
+      { weekday_group: 'weekday', occupancy: 'standard', price: 1500, date_from: '2026-12-24', date_to: '2026-12-31' },
+    ]
+    expect(summarizeRates(withSeason, fmt)).toBe('Lun–Jue Q800')
+  })
+  it('empty when there are no always-on rates', () => {
+    expect(summarizeRates([], fmt)).toBe('')
+    expect(
+      summarizeRates(
+        [{ weekday_group: 'weekday', occupancy: 'standard', price: 1, date_from: '2026-01-01', date_to: '2026-01-02' }],
+        fmt,
+      ),
+    ).toBe('')
   })
 })
 

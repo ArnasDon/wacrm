@@ -1622,6 +1622,7 @@
       "chooseFile": "Elegir archivo",
       "previewTitle": "Vista previa",
       "validRows": "{count} válidas",
+      "ratesCount": "{count, plural, one {# tarifa} other {# tarifas}}",
       "errorRows": "{count} con errores (se omitirán)",
       "confirmBtn": "Importar {count} productos",
       "cancel": "Cancelar",

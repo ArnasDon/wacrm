@@ -973,6 +973,7 @@
       "chooseFile": "파일 선택",
       "previewTitle": "미리보기",
       "validRows": "유효한 행 {count}개",
+      "ratesCount": "요금 {count}개",
       "errorRows": "오류가 있는 행 {count}개 (건너뜁니다)",
       "confirmBtn": "제품 {count}개 가져오기",
       "cancel": "취소",

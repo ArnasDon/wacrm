@@ -62,6 +62,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/currency';
+import { summarizeRates } from '@/lib/products/rates';
 
 interface CatalogPriceOption {
   id: string;
@@ -69,6 +70,14 @@ interface CatalogPriceOption {
   price: number;
   installation_cost: number | null;
   image_urls: string[];
+}
+
+interface CatalogRate {
+  weekday_group: 'weekday' | 'weekend';
+  occupancy: 'standard' | 'couple';
+  price: number;
+  date_from: string | null;
+  date_to: string | null;
 }
 
 interface CatalogProduct {
@@ -79,13 +88,25 @@ interface CatalogProduct {
   installation_cost: number | null;
   image_url: string | null;
   price_options: CatalogPriceOption[];
+  /** Per-date room rates (hotel vertical). When present, the product is
+   *  shown with a rate summary and is not add-to-cart — a stay needs
+   *  dates + an availability check by a person. */
+  rates: CatalogRate[];
+  category: string | null;
 }
 
 interface CatalogData {
   account_name: string;
   currency: string;
+  industry_vertical: string;
   whatsapp_number: string | null;
+  categories: { id: string; name: string }[];
   products: CatalogProduct[];
+}
+
+/** A room (has per-date rates) is browse-only in the public catalog. */
+function isRoom(p: CatalogProduct): boolean {
+  return (p.rates?.length ?? 0) > 0;
 }
 
 /** Cart line identity: a product at its base price, or at one of its
@@ -269,6 +290,7 @@ function PublicCatalogPageInner() {
     ? lineKey(selectedProduct.id, selectedOptionId)
     : null;
   const detailQty = detailLineKey ? (quantities[detailLineKey] ?? 0) : 0;
+  const selectedIsRoom = selectedProduct ? isRoom(selectedProduct) : false;
 
   async function handleSubmit() {
     if (!accountId) return;
@@ -555,39 +577,57 @@ function PublicCatalogPageInner() {
                         </p>
                       )}
                       <p className="mt-1 text-sm font-semibold text-[#062f38] sm:text-base">
-                        {product.price_options.length > 0
-                          ? `Desde ${formatCurrency(Math.min(product.price, ...product.price_options.map((o) => o.price)), data.currency)}`
-                          : formatCurrency(product.price, data.currency)}
+                        {isRoom(product)
+                          ? summarizeRates(product.rates, (n) =>
+                              formatCurrency(n, data.currency),
+                            ) || formatCurrency(product.price, data.currency)
+                          : product.price_options.length > 0
+                            ? `Desde ${formatCurrency(Math.min(product.price, ...product.price_options.map((o) => o.price)), data.currency)}`
+                            : formatCurrency(product.price, data.currency)}
                       </p>
                     </div>
                   </button>
                   <div className="pt-3">
-                    <div className="flex h-12 items-center justify-between rounded-xl border border-[#082f38]/20 bg-[#fffefa] sm:h-10 sm:rounded-none">
-                      <Button
+                    {isRoom(product) ? (
+                      <button
                         type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
-                        onClick={() =>
-                          setQuantity(product.id, null, Math.max(0, qty - 1))
-                        }
-                        disabled={qty === 0}
+                        onClick={() => {
+                          setSelectedOptionId(null);
+                          setDetailImageIndex(0);
+                          setSelectedProduct(product);
+                        }}
+                        className="flex h-12 w-full items-center justify-center rounded-xl border border-[#082f38]/20 bg-[#fffefa] text-sm font-medium text-[#082f38] sm:h-10 sm:rounded-none"
                       >
-                        <Minus className="size-3.5" />
-                      </Button>
-                      <span className="w-8 text-center text-sm font-semibold text-[#082f38]">
-                        {qty}
-                      </span>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
-                        onClick={() => setQuantity(product.id, null, qty + 1)}
-                      >
-                        <Plus className="size-3.5" />
-                      </Button>
-                    </div>
+                        Consultar disponibilidad
+                      </button>
+                    ) : (
+                      <div className="flex h-12 items-center justify-between rounded-xl border border-[#082f38]/20 bg-[#fffefa] sm:h-10 sm:rounded-none">
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
+                          onClick={() =>
+                            setQuantity(product.id, null, Math.max(0, qty - 1))
+                          }
+                          disabled={qty === 0}
+                        >
+                          <Minus className="size-3.5" />
+                        </Button>
+                        <span className="w-8 text-center text-sm font-semibold text-[#082f38]">
+                          {qty}
+                        </span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="icon"
+                          className="size-11 rounded-xl border-0 bg-transparent text-[#082f38] shadow-none active:bg-[#e7ebe5] sm:size-9 sm:rounded-none sm:hover:bg-[#e7ebe5]"
+                          onClick={() => setQuantity(product.id, null, qty + 1)}
+                        >
+                          <Plus className="size-3.5" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -662,16 +702,53 @@ function PublicCatalogPageInner() {
                   </DialogDescription>
                 </DialogHeader>
 
-                <p className="mt-6 font-serif text-3xl text-[#062f38]">
-                  {formatCurrency(detailPrice ?? 0, data.currency)}
-                </p>
-                {detailInstallationCost ? (
-                  <p className="mt-1 flex items-center gap-1.5 text-xs text-[#284d53]/70">
-                    <Wrench className="size-3.5" />+{' '}
-                    {formatCurrency(detailInstallationCost, data.currency)} de
-                    instalación
-                  </p>
-                ) : null}
+                {selectedIsRoom ? (
+                  <div className="mt-6 space-y-1.5">
+                    {selectedProduct.rates
+                      .filter((r) => !r.date_from && !r.date_to)
+                      .sort(
+                        (a, b) =>
+                          Number(a.occupancy === 'couple') - Number(b.occupancy === 'couple') ||
+                          Number(a.weekday_group === 'weekend') -
+                            Number(b.weekday_group === 'weekend'),
+                      )
+                      .map((r, i) => (
+                        <div
+                          key={i}
+                          className="flex items-baseline justify-between gap-4 text-[#062f38]"
+                        >
+                          <span className="text-sm text-[#284d53]/75">
+                            {(r.occupancy === 'couple' ? 'Pareja · ' : '') +
+                              (r.weekday_group === 'weekend'
+                                ? 'Vie–Dom'
+                                : 'Lun–Jue')}
+                          </span>
+                          <span className="font-serif text-xl">
+                            {formatCurrency(r.price, data.currency)}{' '}
+                            <span className="text-xs text-[#284d53]/60">/ noche</span>
+                          </span>
+                        </div>
+                      ))}
+                    {selectedProduct.rates.some((r) => r.date_from && r.date_to) && (
+                      <p className="pt-1 text-xs text-[#284d53]/60">
+                        Aplican tarifas de temporada en ciertas fechas.
+                      </p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    <p className="mt-6 font-serif text-3xl text-[#062f38]">
+                      {formatCurrency(detailPrice ?? 0, data.currency)}
+                    </p>
+                    {detailInstallationCost ? (
+                      <p className="mt-1 flex items-center gap-1.5 text-xs text-[#284d53]/70">
+                        <Wrench className="size-3.5" />+{' '}
+                        {formatCurrency(detailInstallationCost, data.currency)} de
+                        instalación
+                      </p>
+                    ) : null}
+                  </>
+                )}
                 <div className="my-7 h-px bg-[#082f38]/12" />
 
                 <p className="text-sm leading-7 whitespace-pre-wrap text-[#284d53]/75 sm:text-base">
@@ -721,61 +798,71 @@ function PublicCatalogPageInner() {
                   </div>
                 )}
 
-                <div className="mt-8">
-                  <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
-                    Cantidad
+                {selectedIsRoom ? (
+                  <p className="mt-8 rounded-xl border border-[#082f38]/15 bg-[#f4f6f2] p-4 text-sm leading-6 text-[#284d53]/80 sm:rounded-none">
+                    Para reservar, escríbenos con tus fechas de entrada y salida y
+                    el número de personas — confirmamos disponibilidad y el precio
+                    de tu estancia.
                   </p>
-                  <div className="flex h-12 w-36 items-center justify-between border border-[#082f38]/25">
-                    <button
-                      type="button"
-                      className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5] disabled:opacity-30"
-                      onClick={() =>
-                        setQuantity(
-                          selectedProduct.id,
-                          selectedOptionId,
-                          Math.max(0, detailQty - 1)
-                        )
-                      }
-                      disabled={detailQty === 0}
-                      aria-label="Reducir cantidad"
-                    >
-                      <Minus className="size-4" />
-                    </button>
-                    <span className="w-10 text-center text-sm font-semibold">
-                      {detailQty}
-                    </span>
-                    <button
-                      type="button"
-                      className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5]"
-                      onClick={() =>
-                        setQuantity(
-                          selectedProduct.id,
-                          selectedOptionId,
-                          detailQty + 1
-                        )
-                      }
-                      aria-label="Aumentar cantidad"
-                    >
-                      <Plus className="size-4" />
-                    </button>
-                  </div>
-                </div>
+                ) : (
+                  <>
+                    <div className="mt-8">
+                      <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
+                        Cantidad
+                      </p>
+                      <div className="flex h-12 w-36 items-center justify-between border border-[#082f38]/25">
+                        <button
+                          type="button"
+                          className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5] disabled:opacity-30"
+                          onClick={() =>
+                            setQuantity(
+                              selectedProduct.id,
+                              selectedOptionId,
+                              Math.max(0, detailQty - 1)
+                            )
+                          }
+                          disabled={detailQty === 0}
+                          aria-label="Reducir cantidad"
+                        >
+                          <Minus className="size-4" />
+                        </button>
+                        <span className="w-10 text-center text-sm font-semibold">
+                          {detailQty}
+                        </span>
+                        <button
+                          type="button"
+                          className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5]"
+                          onClick={() =>
+                            setQuantity(
+                              selectedProduct.id,
+                              selectedOptionId,
+                              detailQty + 1
+                            )
+                          }
+                          aria-label="Aumentar cantidad"
+                        >
+                          <Plus className="size-4" />
+                        </button>
+                      </div>
+                    </div>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setQuantity(
-                      selectedProduct.id,
-                      selectedOptionId,
-                      Math.max(1, detailQty + 1)
-                    );
-                    setSelectedProduct(null);
-                    setSelectedOptionId(null);
-                  }}
-                  className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition active:scale-[0.98] sm:rounded-none sm:hover:bg-[#1e7774]"
-                >
-                  Agregar a mi selección <ShoppingCart className="size-4" />
-                </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuantity(
+                          selectedProduct.id,
+                          selectedOptionId,
+                          Math.max(1, detailQty + 1)
+                        );
+                        setSelectedProduct(null);
+                        setSelectedOptionId(null);
+                      }}
+                      className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition active:scale-[0.98] sm:rounded-none sm:hover:bg-[#1e7774]"
+                    >
+                      Agregar a mi selección <ShoppingCart className="size-4" />
+                    </button>
+                  </>
+                )}
 
                 <div className="mt-8 grid grid-cols-2 gap-3 border-t border-[#082f38]/12 pt-6 text-[10px] font-bold tracking-[0.12em] uppercase">
                   <span>✓ Cotización personalizada</span>

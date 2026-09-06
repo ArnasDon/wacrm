@@ -9,11 +9,23 @@ import ExcelJS from 'exceljs'
  * ignored.
  */
 
+export interface ParsedRate {
+  weekday_group: 'weekday' | 'weekend'
+  occupancy: 'standard' | 'couple'
+  price: number
+}
+
 export interface ParsedProductRow {
   name: string
   description: string | null
   price: number
   is_active: boolean
+  /** Catalog category name (migration 106) — null when the column is
+   *  absent/blank. Resolved to an id by the bulk-import route. */
+  category: string | null
+  /** Always-on room rates from the rate_* columns (migration 106) —
+   *  empty for a normal product. */
+  rates: ParsedRate[]
 }
 
 export interface ProductRowError {
@@ -82,6 +94,13 @@ export async function parseProductsWorkbook(buffer: ArrayBuffer): Promise<ParseP
   const priceCol = columnByName.get('price')!
   const descriptionCol = columnByName.get('description')
   const isActiveCol = columnByName.get('is_active')
+  const categoryCol = columnByName.get('category')
+  const rateCols: { key: string; group: 'weekday' | 'weekend'; occupancy: 'standard' | 'couple' }[] = [
+    { key: 'rate_weekday', group: 'weekday', occupancy: 'standard' },
+    { key: 'rate_weekend', group: 'weekend', occupancy: 'standard' },
+    { key: 'rate_weekday_couple', group: 'weekday', occupancy: 'couple' },
+    { key: 'rate_weekend_couple', group: 'weekend', occupancy: 'couple' },
+  ]
 
   const rows: ParsedProductRow[] = []
   const errors: ProductRowError[] = []
@@ -108,8 +127,30 @@ export async function parseProductsWorkbook(buffer: ArrayBuffer): Promise<ParseP
 
     const description = descriptionCol ? cellToString(row.getCell(descriptionCol).value).trim() || null : null
     const isActive = isActiveCol ? parseBool(row.getCell(isActiveCol).value, true) : true
+    const category = categoryCol
+      ? cellToString(row.getCell(categoryCol).value).trim() || null
+      : null
 
-    rows.push({ name, description, price, is_active: isActive })
+    const rates: ParsedRate[] = []
+    let badRate = false
+    for (const rc of rateCols) {
+      const col = columnByName.get(rc.key)
+      if (!col) continue
+      const raw = cellToString(row.getCell(col).value).trim()
+      if (raw === '') continue
+      const value = Number(raw)
+      if (!Number.isFinite(value) || value < 0) {
+        badRate = true
+        break
+      }
+      rates.push({ weekday_group: rc.group, occupancy: rc.occupancy, price: value })
+    }
+    if (badRate) {
+      errors.push({ row: rowNumber, message: 'a rate_* value must be a non-negative number' })
+      continue
+    }
+
+    rows.push({ name, description, price, is_active: isActive, category, rates })
   }
 
   return { rows, errors }

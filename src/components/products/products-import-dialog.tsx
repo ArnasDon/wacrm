@@ -170,9 +170,14 @@ export function ProductsImportDialog({
                         >
                           <td className="text-popover-foreground px-2 py-1.5">
                             {row.name}
+                            {row.category ? (
+                              <span className="text-muted-foreground"> · {row.category}</span>
+                            ) : null}
                           </td>
                           <td className="text-muted-foreground px-2 py-1.5 text-right">
-                            {formatCurrency(row.price, defaultCurrency)}
+                            {row.rates.length > 0
+                              ? t('ratesCount', { count: row.rates.length })
+                              : formatCurrency(row.price, defaultCurrency)}
                           </td>
                         </tr>
                       ))}

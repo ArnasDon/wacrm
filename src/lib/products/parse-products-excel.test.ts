@@ -19,9 +19,48 @@ describe('parseProductsWorkbook', () => {
 
     expect(result.errors).toEqual([])
     expect(result.rows).toEqual([
-      { name: 'Cama Montessori', description: 'Cama baja de madera', price: 350, is_active: true },
-      { name: 'Silla', description: null, price: 75.5, is_active: false },
+      { name: 'Cama Montessori', description: 'Cama baja de madera', price: 350, is_active: true, category: null, rates: [] },
+      { name: 'Silla', description: null, price: 75.5, is_active: false, category: null, rates: [] },
     ])
+  })
+
+  it('round-trips category + room rate columns', async () => {
+    const rows: ProductExportRow[] = [
+      {
+        name: 'Hab 101',
+        description: 'Vista jardín',
+        price: 0,
+        is_active: true,
+        category: 'Habitaciones',
+        rate_weekday: 800,
+        rate_weekend: 1200,
+        rate_weekday_couple: 950,
+      },
+    ]
+    const result = await parseProductsWorkbook(await workbookBuffer(buildProductsWorkbook(rows)))
+    expect(result.errors).toEqual([])
+    expect(result.rows[0]).toMatchObject({
+      name: 'Hab 101',
+      category: 'Habitaciones',
+      rates: [
+        { weekday_group: 'weekday', occupancy: 'standard', price: 800 },
+        { weekday_group: 'weekend', occupancy: 'standard', price: 1200 },
+        { weekday_group: 'weekday', occupancy: 'couple', price: 950 },
+      ],
+    })
+  })
+
+  it('reports a bad rate_* value and skips the row', async () => {
+    const wb = new ExcelJS.Workbook()
+    const sheet = wb.addWorksheet('Products')
+    sheet.addRow(['name', 'price', 'rate_weekday'])
+    sheet.addRow(['Hab', 0, -5])
+    sheet.addRow(['Fine', 10, ''])
+    const result = await parseProductsWorkbook(await workbookBuffer(wb))
+    expect(result.errors).toEqual([
+      { row: 2, message: 'a rate_* value must be a non-negative number' },
+    ])
+    expect(result.rows).toHaveLength(1)
   })
 
   it('reports a row with a missing name and skips it, keeping the rest', async () => {
@@ -33,7 +72,7 @@ describe('parseProductsWorkbook', () => {
     const result = await parseProductsWorkbook(await workbookBuffer(wb))
 
     expect(result.errors).toEqual([{ row: 2, message: 'name is required' }])
-    expect(result.rows).toEqual([{ name: 'Valid product', description: 'ok', price: 20, is_active: true }])
+    expect(result.rows).toEqual([{ name: 'Valid product', description: 'ok', price: 20, is_active: true, category: null, rates: [] }])
   })
 
   it('reports a row with a negative or non-numeric price and skips it', async () => {
@@ -49,7 +88,7 @@ describe('parseProductsWorkbook', () => {
       { row: 2, message: 'price must be a non-negative number' },
       { row: 3, message: 'price must be a non-negative number' },
     ])
-    expect(result.rows).toEqual([{ name: 'Fine', description: null, price: 10, is_active: true }])
+    expect(result.rows).toEqual([{ name: 'Fine', description: null, price: 10, is_active: true, category: null, rates: [] }])
   })
 
   it('defaults is_active to true when the column is absent', async () => {
@@ -59,7 +98,7 @@ describe('parseProductsWorkbook', () => {
     sheet.addRow(['Product', 10])
     const result = await parseProductsWorkbook(await workbookBuffer(wb))
 
-    expect(result.rows).toEqual([{ name: 'Product', description: null, price: 10, is_active: true }])
+    expect(result.rows).toEqual([{ name: 'Product', description: null, price: 10, is_active: true, category: null, rates: [] }])
   })
 
   it('skips fully blank trailing rows without reporting an error', async () => {

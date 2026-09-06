@@ -41,8 +41,13 @@ and polish.
   and couple, plus optional dated seasons. Rooms with no rates fall back
   to the base price, so the same form still works for spa / activities /
   packages. The hotel starter kit now also seeds four categories
-  (Habitaciones, Spa, Actividades al aire libre, Paquetes). The quote
-  builder and AI catalog context are the last follow-up.
+  (Habitaciones, Spa, Actividades al aire libre, Paquetes).
+- **AI sees room rates (hotel vertical).** For a `hotel` company, the
+  catalog block in the AI's prompt now shows each room's rate structure
+  (`Hab 101: Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 …`)
+  instead of a single base price, so it informs tariffs and computes a
+  stay correctly. Products with no rates (spa, activities) keep showing
+  their base price. The human quote builder is the last follow-up.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

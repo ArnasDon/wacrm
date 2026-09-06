@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { requirePlatformAdmin, toErrorResponse } from '@/lib/auth/account';
 import { platformAdminClient } from '@/lib/platform/admin-client';
 import { platformInviteRedirectUrl } from '@/lib/http/base-url';
+import { mapInviteError } from '@/lib/admin/invite-errors';
 
 /**
  * POST /api/admin/companies/[id]/resend-invite
@@ -79,10 +80,8 @@ export async function POST(
       const { error } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
       if (error) {
         console.error('[resend-invite] resetPasswordForEmail failed:', error.message);
-        return NextResponse.json(
-          { error: 'No se pudo enviar el correo de acceso' },
-          { status: 502 },
-        );
+        const mapped = mapInviteError(error);
+        return NextResponse.json({ error: mapped.message }, { status: mapped.status });
       }
       return NextResponse.json({ ok: true, mode: 'recovery', email });
     }
@@ -94,16 +93,19 @@ export async function POST(
     if (!inviteErr) {
       return NextResponse.json({ ok: true, mode: 'invite', email });
     }
+    // A rate limit here should not be retried as recovery — surface it.
+    const mappedInvite = mapInviteError(inviteErr);
+    if (mappedInvite.status === 429) {
+      return NextResponse.json({ error: mappedInvite.message }, { status: 429 });
+    }
 
     // The user row already exists but isn't confirmed — a recovery link
     // both confirms the email and lets them set a password.
     const { error: recErr } = await admin.auth.resetPasswordForEmail(email, { redirectTo });
     if (recErr) {
       console.error('[resend-invite] fallback recovery failed:', recErr.message);
-      return NextResponse.json(
-        { error: 'No se pudo reenviar la invitación' },
-        { status: 502 },
-      );
+      const mapped = mapInviteError(recErr);
+      return NextResponse.json({ error: mapped.message }, { status: mapped.status });
     }
     return NextResponse.json({ ok: true, mode: 'recovery', email });
   } catch (error) {

@@ -3,6 +3,7 @@ import { requirePlatformAdmin, toErrorResponse } from '@/lib/auth/account';
 import { platformAdminClient } from '@/lib/platform/admin-client';
 import { platformInviteRedirectUrl } from '@/lib/http/base-url';
 import { computeCompanyHandoffMetrics } from '@/lib/admin/company-metrics';
+import { mapInviteError } from '@/lib/admin/invite-errors';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -207,15 +208,10 @@ export async function POST(request: Request) {
         .delete()
         .eq('id', invitationId);
       invitationId = null;
-      const conflict = /already|registered|exists/i.test(inviteError.message);
-      return NextResponse.json(
-        {
-          error: conflict
-            ? 'Este correo ya pertenece a un usuario'
-            : 'No se pudo enviar la invitación',
-        },
-        { status: conflict ? 409 : 502 }
-      );
+      // A clear JSON error the operator can act on — never a 5xx, which
+      // EasyPanel's proxy replaces with an HTML page.
+      const mapped = mapInviteError(inviteError);
+      return NextResponse.json({ error: mapped.message }, { status: mapped.status });
     }
 
     return NextResponse.json({ ok: true }, { status: 201 });

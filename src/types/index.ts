@@ -459,12 +459,43 @@ export interface Product {
   installation_cost?: number | null;
   image_url?: string | null;
   is_active: boolean;
+  /** Catalog category (migration 106) — null for uncategorised / generic
+   *  accounts. */
+  category_id?: string | null;
   created_at: string;
   updated_at: string;
   /** Up to 2 additional priced options (migration 075) — e.g. a
    *  size/color that costs more than the base price. Not present on
    *  every fetch; routes that don't need them omit the join. */
   price_options?: ProductPriceOption[];
+  /** Per-date room rates (migration 106) — only the `hotel` vertical
+   *  populates these. Absent on fetches that don't join them. */
+  rates?: ProductRateRow[];
+}
+
+/** A row of `product_rates` (migration 106). */
+export interface ProductRateRow {
+  id: string;
+  account_id: string;
+  product_id: string;
+  weekday_group: 'weekday' | 'weekend';
+  occupancy: 'standard' | 'couple';
+  price: number;
+  date_from: string | null;
+  date_to: string | null;
+  position: number;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A catalog category (migration 106). */
+export interface ProductCategory {
+  id: string;
+  account_id: string;
+  name: string;
+  position: number;
+  created_at: string;
+  updated_at: string;
 }
 
 /**

@@ -96,6 +96,7 @@ export default function PlatformAdminPage() {
   const [changingVerticalId, setChangingVerticalId] = useState<string | null>(
     null
   );
+  const [resendingInviteId, setResendingInviteId] = useState<string | null>(null);
   const [addingNumberId, setAddingNumberId] = useState<string | null>(null);
   const [savingBillingId, setSavingBillingId] = useState<string | null>(null);
 
@@ -363,6 +364,37 @@ export default function PlatformAdminPage() {
       );
     } finally {
       setAddingSeatId(null);
+    }
+  };
+
+  const resendInvite = async (company: Company) => {
+    if (
+      !window.confirm(
+        `¿Reenviar el correo de acceso a ${company.name}? Se enviará un enlace para restablecer la contraseña al correo del propietario.`
+      )
+    )
+      return;
+    setResendingInviteId(company.id);
+    setError(null);
+    try {
+      const response = await fetch(
+        `/api/admin/companies/${company.id}/resend-invite`,
+        { method: 'POST' }
+      );
+      const body = await readResponseJson<{ error?: string; email?: string }>(
+        response
+      );
+      if (!response.ok)
+        throw new Error(body.error ?? 'No se pudo reenviar el acceso');
+      window.alert(
+        `Correo de acceso enviado a ${body.email ?? 'el propietario'}.`
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : 'No se pudo reenviar el acceso'
+      );
+    } finally {
+      setResendingInviteId(null);
     }
   };
 
@@ -656,8 +688,10 @@ export default function PlatformAdminPage() {
           number: addingNumberId,
           billing: savingBillingId,
           vertical: changingVerticalId,
+          resendInvite: resendingInviteId,
         }}
         onSuspend={(company) => void changeSuspension(company)}
+        onResendInvite={(company) => void resendInvite(company)}
         onMarkPaid={(company) => void markPaid(company)}
         onAddSeat={(company) => void addSeat(company)}
         onAddNumber={(company) => void addWhatsAppNumber(company)}

@@ -34,6 +34,7 @@ import {
   type ZernioSendContext,
 } from '@/lib/whatsapp/zernio-send'
 import { resolveWhatsAppConfig } from '@/lib/whatsapp/resolve-config'
+import { appendNumberedOptions } from './channel-render'
 
 /** `conversations.zernio_conversation_id` for a WhatsApp-via-Zernio send. */
 async function loadZernioConversationId(
@@ -501,10 +502,9 @@ async function sendInteractiveViaMeta(
     // now accepts a typed "1" / "2" / label reply
     // (`matchTypedOption`) — so the menu stays usable even when the
     // chips are invisible. WhatsApp keeps its clean body + native
-    // buttons (that branch is untouched below).
-    const numberedBody = `${input.bodyText}\n\n${options
-      .map((o, i) => `${i + 1}. ${o.title}`)
-      .join('\n')}`
+    // buttons (that branch is untouched below). Shared with the
+    // builder's channel preview via `channel-render.ts`.
+    const numberedBody = appendNumberedOptions(input.bodyText, options)
     const sendArgs = {
       accountId: input.accountId,
       userId: input.userId,

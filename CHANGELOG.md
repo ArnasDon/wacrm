@@ -23,7 +23,17 @@ and polish.
   options, a flow can now hand the conversation to the AI auto-reply
   (the flow run ends; a later trigger can still start a fresh one),
   alongside the existing reprompt / hand-to-a-human / ignore options.
-  This is the default for newly created flows.
+  This is the default for newly created flows. Editable in the flow
+  builder's new **"If the reply isn't one of the options"** panel.
+- **Flow builder: channel preview.** A new *Preview* view shows how each
+  message the bot sends will look on WhatsApp (clean body + native reply
+  buttons / list) versus Instagram & Facebook (options spelled into the
+  body as a numbered list + quick-reply chips). One editable flow
+  underneath; the view is read-only.
+- **Flow builder: pick who a Handoff goes to.** The Handoff node now has
+  an *Assign to* picker (any teammate, or the shared queue) in addition
+  to its internal note. The engine already routed on this field — it was
+  just not editable.
 
 ### Fixed
 

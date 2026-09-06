@@ -21,6 +21,11 @@ export type FallbackAction =
   | { type: "reprompt" }
   /** End the run with status='handed_off', flip conversation to pending. */
   | { type: "handoff" }
+  /**
+   * End the run with status='completed' and let the message fall through
+   * to the AI auto-reply (the engine returns `consumed: false`).
+   */
+  | { type: "ai" }
   /** End the run with status='completed' (the `end` exhaust option). */
   | { type: "end" }
   /** Do nothing — the message wasn't for us. */
@@ -41,7 +46,8 @@ export function resolveFallbackPolicy(
     on_unknown_reply:
       r.on_unknown_reply === "handoff" ||
       r.on_unknown_reply === "ignore" ||
-      r.on_unknown_reply === "reprompt"
+      r.on_unknown_reply === "reprompt" ||
+      r.on_unknown_reply === "ai"
         ? r.on_unknown_reply
         : DEFAULT_FALLBACK_POLICY.on_unknown_reply,
     max_reprompts:
@@ -53,7 +59,9 @@ export function resolveFallbackPolicy(
         ? r.on_timeout_hours
         : DEFAULT_FALLBACK_POLICY.on_timeout_hours,
     on_exhaust:
-      r.on_exhaust === "handoff" || r.on_exhaust === "end"
+      r.on_exhaust === "handoff" ||
+      r.on_exhaust === "end" ||
+      r.on_exhaust === "ai"
         ? r.on_exhaust
         : DEFAULT_FALLBACK_POLICY.on_exhaust,
   };
@@ -67,9 +75,11 @@ export function resolveFallbackPolicy(
  * - `on_unknown_reply: 'ignore'` → always ignore. Useful for a flow
  *   that should keep running even if the customer types something
  *   off-script in between taps (rare; default is reprompt).
- * - `on_unknown_reply: 'handoff'` → immediately escalate. No retries.
+ * - `on_unknown_reply: 'handoff'` → immediately escalate to a human.
+ * - `on_unknown_reply: 'ai'` → immediately end the run and let the AI
+ *   auto-reply take over. This is the default for new flows.
  * - `on_unknown_reply: 'reprompt'` → re-send the prompt up to
- *   `max_reprompts` times, then apply `on_exhaust`.
+ *   `max_reprompts` times, then apply `on_exhaust` (`handoff` | `end` | `ai`).
  */
 export function decideFallback(args: {
   policy: FlowFallbackPolicy;
@@ -80,12 +90,13 @@ export function decideFallback(args: {
 
   if (policy.on_unknown_reply === "ignore") return { type: "ignore" };
   if (policy.on_unknown_reply === "handoff") return { type: "handoff" };
+  if (policy.on_unknown_reply === "ai") return { type: "ai" };
 
   // 'reprompt' — guarded by max_reprompts.
   if (reprompt_count <= policy.max_reprompts) {
     return { type: "reprompt" };
   }
-  return policy.on_exhaust === "end"
-    ? { type: "end" }
-    : { type: "handoff" };
+  if (policy.on_exhaust === "end") return { type: "end" };
+  if (policy.on_exhaust === "ai") return { type: "ai" };
+  return { type: "handoff" };
 }

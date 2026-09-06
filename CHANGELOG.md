@@ -11,6 +11,20 @@ and polish.
 
 ## [Unreleased]
 
+> **Migration required:** apply `supabase/migrations/104_flow_fallback_default_ai.sql`
+> (changes the `flows.fallback_policy` column default so *new* flows send
+> an off-menu reply to the AI instead of a human). Existing flows keep
+> their current policy — change it per flow in the builder.
+
+### Added
+
+- **Flow menus: choose what happens on an off-menu reply.** When a
+  customer answers a menu step with something that isn't one of the
+  options, a flow can now hand the conversation to the AI auto-reply
+  (the flow run ends; a later trigger can still start a fresh one),
+  alongside the existing reprompt / hand-to-a-human / ignore options.
+  This is the default for newly created flows.
+
 ### Fixed
 
 - **Flow menus now work on Instagram, Facebook and WhatsApp-via-Zernio.**

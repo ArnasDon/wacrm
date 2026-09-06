@@ -1126,6 +1126,17 @@ async function handleReplyForActiveRun(
     // Don't consume — let automations have a shot at it.
     return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
   }
+  if (action.type === "ai") {
+    // Release the conversation to the AI auto-reply. End the run (frees
+    // `idx_one_active_run_per_contact` so a later trigger can start a
+    // fresh one) and return NOT consumed — the webhook then calls
+    // `dispatchInboundToAiReply` for this same inbound.
+    await logEvent(db, run.id, "completed", run.current_node_key, {
+      reason: "released_to_ai",
+    });
+    await endRun(db, run.id, "completed", "released_to_ai");
+    return { consumed: false, flow_run_id: run.id, outcome: "no_match" };
+  }
   if (action.type === "reprompt") {
     // Re-send the same prompt. Same node, no current_node_key change.
     if (currentNode.node_type === "send_buttons") {

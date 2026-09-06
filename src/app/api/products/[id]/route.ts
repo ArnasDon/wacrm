@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { parsePriceOptions, parseInstallationCost } from '@/lib/products/price-options'
+import { parseRates } from '@/lib/products/rates'
+import { resolveCategoryId } from '@/lib/products/categories'
 
 // Update / delete a single product. Products are account-shared, so
 // every mutation is scoped by `account_id` (the service-role client
@@ -55,6 +57,14 @@ export async function PATCH(
 
   const admin = supabaseAdmin()
 
+  if ('category_id' in body) {
+    const category = await resolveCategoryId(admin, ctx.accountId, body.category_id)
+    if (!category.ok) {
+      return NextResponse.json({ error: category.error }, { status: 400 })
+    }
+    update.category_id = category.value
+  }
+
   if (Object.keys(update).length > 0) {
     const { error } = await admin
       .from('products')
@@ -90,6 +100,38 @@ export async function PATCH(
           installation_cost: option.installation_cost,
           image_urls: option.image_urls,
           position: index,
+        })),
+      )
+      if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })
+    }
+  }
+
+  // Same full-replace treatment as price_options — the form always
+  // sends the complete desired rate set.
+  if ('rates' in body) {
+    const parsedRates = parseRates(body.rates)
+    if (!parsedRates.ok) {
+      return NextResponse.json({ error: parsedRates.error }, { status: 400 })
+    }
+
+    const { error: deleteError } = await admin
+      .from('product_rates')
+      .delete()
+      .eq('product_id', id)
+      .eq('account_id', ctx.accountId)
+    if (deleteError) return NextResponse.json({ error: deleteError.message }, { status: 500 })
+
+    if (parsedRates.rates.length > 0) {
+      const { error: insertError } = await admin.from('product_rates').insert(
+        parsedRates.rates.map((r) => ({
+          account_id: ctx.accountId,
+          product_id: id,
+          weekday_group: r.weekday_group,
+          occupancy: r.occupancy,
+          price: r.price,
+          date_from: r.date_from,
+          date_to: r.date_to,
+          position: r.position,
         })),
       )
       if (insertError) return NextResponse.json({ error: insertError.message }, { status: 500 })

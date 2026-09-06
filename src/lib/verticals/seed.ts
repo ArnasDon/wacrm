@@ -22,6 +22,7 @@ export interface ApplyVerticalResult {
   vertical: VerticalSlug
   created: {
     customFields: string[]
+    productCategories: string[]
     pipeline: string | null
     flows: string[]
     knowledgeDocs: string[]
@@ -46,12 +47,19 @@ export async function applyVerticalKit(args: ApplyVerticalArgs): Promise<ApplyVe
 
   const result: ApplyVerticalResult = {
     vertical,
-    created: { customFields: [], pipeline: null, flows: [], knowledgeDocs: [] },
+    created: {
+      customFields: [],
+      productCategories: [],
+      pipeline: null,
+      flows: [],
+      knowledgeDocs: [],
+    },
     skipped: [],
     warnings: [],
   }
 
   await seedCustomFields(db, accountId, actingUserId, def, result)
+  await seedProductCategories(db, accountId, def, result)
   await seedPipeline(db, accountId, actingUserId, def, result)
   await seedFlows(db, accountId, actingUserId, def, result)
   await seedKnowledgeDocs(db, accountId, actingUserId, def, result)
@@ -104,6 +112,37 @@ async function seedCustomFields(
     return
   }
   result.created.customFields = toCreate
+}
+
+async function seedProductCategories(
+  db: SupabaseClient,
+  accountId: string,
+  def: VerticalDefinition,
+  result: ApplyVerticalResult,
+) {
+  if (def.productCategories.length === 0) return
+  const { data: existing } = await db
+    .from('product_categories')
+    .select('name')
+    .eq('account_id', accountId)
+  const have = new Set((existing ?? []).map((r) => String(r.name).trim().toLowerCase()))
+  const toCreate = def.productCategories.filter((n) => !have.has(n.trim().toLowerCase()))
+  if (toCreate.length === 0) {
+    result.skipped.push('product categories (all already exist)')
+    return
+  }
+  const { error } = await db.from('product_categories').insert(
+    toCreate.map((name, i) => ({
+      account_id: accountId,
+      name,
+      position: (have.size ?? 0) + i,
+    })),
+  )
+  if (error) {
+    result.warnings.push(`product categories: ${error.message}`)
+    return
+  }
+  result.created.productCategories = toCreate
 }
 
 async function seedPipeline(

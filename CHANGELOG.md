@@ -34,8 +34,15 @@ and polish.
   date range). `POST/PATCH /api/products` now accept `category_id` and
   `rates[]`; new `/api/product-categories` CRUD. A pure rate engine
   (`src/lib/products/rates.ts` — `quoteStay` splits a stay night-by-night
-  across the weekday/weekend rule). Editing UI, the quote builder and the
-  AI catalog context land in follow-ups. Generic accounts are unaffected.
+  across the weekday/weekend rule). Generic accounts are unaffected.
+- **Product form: room rates + category (hotel vertical).** For a `hotel`
+  company, the add/edit-product dialog gains a **Category** picker and a
+  **"Rates by date (rooms)"** block: Mon–Thu / Fri–Sun prices, standard
+  and couple, plus optional dated seasons. Rooms with no rates fall back
+  to the base price, so the same form still works for spa / activities /
+  packages. The hotel starter kit now also seeds four categories
+  (Habitaciones, Spa, Actividades al aire libre, Paquetes). The quote
+  builder and AI catalog context are the last follow-up.
 
 - **Company industry verticals (platform admin).** Each company now
   carries an *industry* (`generic` or `hotel`). From **Plataforma → the

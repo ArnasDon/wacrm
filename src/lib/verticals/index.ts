@@ -38,6 +38,8 @@ export interface VerticalDefinition {
   label: string
   /** Contact custom-field names to create (always `field_type: 'text'`). */
   customFields: string[]
+  /** Catalog category names to create (migration 106). */
+  productCategories: string[]
   /** Pipeline to create when the account has none of this name yet.
    *  `null` = don't create one (generic relies on the lazy client seed). */
   pipeline: { name: string; stages: VerticalPipelineStage[] } | null
@@ -63,6 +65,7 @@ const GENERIC: VerticalDefinition = {
   slug: 'generic',
   label: 'Genérico',
   customFields: [],
+  productCategories: [],
   pipeline: null,
   flowTemplateSlugs: [],
   automationTemplateSlugs: [],
@@ -132,6 +135,7 @@ const HOTEL: VerticalDefinition = {
     'Paquete',
     'Servicios adicionales',
   ],
+  productCategories: ['Habitaciones', 'Spa', 'Actividades al aire libre', 'Paquetes'],
   pipeline: {
     name: 'Reservas',
     stages: [

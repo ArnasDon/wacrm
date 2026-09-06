@@ -13,6 +13,7 @@ import {
   ArrowUp,
   ArrowDown,
   ExternalLink,
+  MessageSquareText,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -29,6 +30,7 @@ import {
 import { SettingsPanelHead } from "@/components/settings/settings-panel-head";
 
 type CatalogMode = "digital" | "pdf" | "photos";
+type QuoteMode = "pdf" | "message";
 
 const MAX_CATALOG_FILE_BYTES = 10 * 1024 * 1024; // matches the catalog-media bucket cap (migration 068)
 
@@ -36,6 +38,7 @@ interface CatalogRow {
   catalog_delivery_mode: CatalogMode;
   catalog_pdf_url: string | null;
   catalog_photo_urls: string[] | null;
+  quote_delivery_mode: QuoteMode;
 }
 
 /**
@@ -53,14 +56,21 @@ export function CatalogDeliverySettings() {
 
   const [loading, setLoading] = useState(true);
   const [mode, setMode] = useState<CatalogMode>("digital");
+  const [quoteMode, setQuoteMode] = useState<QuoteMode>("pdf");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [photoUrls, setPhotoUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Original values, to know whether Save has anything to do.
-  const [original, setOriginal] = useState<{ mode: CatalogMode; pdfUrl: string | null; photoUrls: string[] }>({
+  const [original, setOriginal] = useState<{
+    mode: CatalogMode;
+    quoteMode: QuoteMode;
+    pdfUrl: string | null;
+    photoUrls: string[];
+  }>({
     mode: "digital",
+    quoteMode: "pdf",
     pdfUrl: null,
     photoUrls: [],
   });
@@ -72,17 +82,19 @@ export function CatalogDeliverySettings() {
     (async () => {
       const { data } = await supabase
         .from("accounts")
-        .select("catalog_delivery_mode, catalog_pdf_url, catalog_photo_urls")
+        .select("catalog_delivery_mode, catalog_pdf_url, catalog_photo_urls, quote_delivery_mode")
         .eq("id", accountId)
         .maybeSingle<CatalogRow>();
       if (cancelled) return;
       const loadedMode = data?.catalog_delivery_mode ?? "digital";
+      const loadedQuoteMode = data?.quote_delivery_mode ?? "pdf";
       const loadedPdf = data?.catalog_pdf_url ?? null;
       const loadedPhotos = data?.catalog_photo_urls ?? [];
       setMode(loadedMode);
+      setQuoteMode(loadedQuoteMode);
       setPdfUrl(loadedPdf);
       setPhotoUrls(loadedPhotos);
-      setOriginal({ mode: loadedMode, pdfUrl: loadedPdf, photoUrls: loadedPhotos });
+      setOriginal({ mode: loadedMode, quoteMode: loadedQuoteMode, pdfUrl: loadedPdf, photoUrls: loadedPhotos });
       setLoading(false);
     })();
     return () => {
@@ -92,6 +104,7 @@ export function CatalogDeliverySettings() {
 
   const dirty =
     mode !== original.mode ||
+    quoteMode !== original.quoteMode ||
     pdfUrl !== original.pdfUrl ||
     photoUrls.length !== original.photoUrls.length ||
     photoUrls.some((u, i) => u !== original.photoUrls[i]);
@@ -167,13 +180,14 @@ export function CatalogDeliverySettings() {
           catalog_delivery_mode: mode,
           catalog_pdf_url: pdfUrl,
           catalog_photo_urls: photoUrls,
+          quote_delivery_mode: quoteMode,
         })
         .eq("id", accountId);
       if (error) {
         toast.error(t("saveFailed"));
         return;
       }
-      setOriginal({ mode, pdfUrl, photoUrls });
+      setOriginal({ mode, quoteMode, pdfUrl, photoUrls });
       toast.success(t("saveSuccess"));
     } finally {
       setSaving(false);
@@ -186,6 +200,21 @@ export function CatalogDeliverySettings() {
     { value: "digital", label: t("modeDigital"), icon: Globe },
     { value: "pdf", label: t("modePdf"), icon: FileText },
     { value: "photos", label: t("modePhotos"), icon: ImageIcon },
+  ];
+
+  const QUOTE_MODES: {
+    value: QuoteMode;
+    label: string;
+    hint: string;
+    icon: typeof Globe;
+  }[] = [
+    { value: "pdf", label: t("quoteModePdf"), hint: t("quoteModePdfHint"), icon: FileText },
+    {
+      value: "message",
+      label: t("quoteModeMessage"),
+      hint: t("quoteModeMessageHint"),
+      icon: MessageSquareText,
+    },
   ];
 
   return (
@@ -336,20 +365,57 @@ export function CatalogDeliverySettings() {
             </div>
           )}
 
-          {canEditSettings && (
-            <Button onClick={handleSave} disabled={saving || !dirty || disabled} className="bg-primary text-primary-foreground hover:bg-primary/90">
-              {saving ? (
-                <>
-                  <Loader2 className="size-4 animate-spin" />
-                  {t("saving")}
-                </>
-              ) : (
-                t("save")
-              )}
-            </Button>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-foreground">{t("quoteModeLabel")}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            {QUOTE_MODES.map(({ value, label, hint, icon: Icon }) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setQuoteMode(value)}
+                disabled={disabled}
+                className={`flex flex-col gap-1 rounded-lg border p-3 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+                  quoteMode === value
+                    ? "border-primary bg-primary/5"
+                    : "border-border hover:bg-muted"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Icon className="size-4 text-primary shrink-0" />
+                  <span className="text-sm font-medium text-foreground">{label}</span>
+                </span>
+                <span className="text-xs text-muted-foreground">{hint}</span>
+              </button>
+            ))}
+          </div>
+          {!canEditSettings && (
+            <p className="text-xs text-muted-foreground">{t("adminOnlyHint")}</p>
           )}
         </CardContent>
       </Card>
+
+      {canEditSettings && (
+        <Button
+          onClick={handleSave}
+          disabled={saving || !dirty || disabled}
+          className="bg-primary text-primary-foreground hover:bg-primary/90"
+        >
+          {saving ? (
+            <>
+              <Loader2 className="size-4 animate-spin" />
+              {t("saving")}
+            </>
+          ) : (
+            t("save")
+          )}
+        </Button>
+      )}
 
       <p className="text-xs text-muted-foreground">{t("productsNote")}</p>
     </section>

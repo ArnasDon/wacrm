@@ -19,6 +19,7 @@ const h = vi.hoisted(() => ({
   createQuote: vi.fn(),
   sendQuoteAsText: vi.fn(),
   sendQuoteToConversation: vi.fn(),
+  sendQuoteByAccountPreference: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     claim: true as boolean,
@@ -82,6 +83,7 @@ vi.mock('@/lib/quotes/create-quote', () => ({
 vi.mock('@/lib/quotes/send-quote', () => ({
   sendQuoteAsText: h.sendQuoteAsText,
   sendQuoteToConversation: h.sendQuoteToConversation,
+  sendQuoteByAccountPreference: h.sendQuoteByAccountPreference,
   SendQuoteError: class SendQuoteError extends Error {
     status: number
     constructor(message: string, status = 400) {
@@ -337,6 +339,7 @@ beforeEach(() => {
   h.createQuote.mockReset()
   h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
   h.sendQuoteToConversation.mockReset().mockResolvedValue(undefined)
+  h.sendQuoteByAccountPreference.mockReset().mockResolvedValue({ mode: 'message', pdfUrl: null })
   h.checkFreeBusy.mockReset().mockResolvedValue([])
   h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
   h.waitForQuietPeriod.mockReset().mockResolvedValue(true)
@@ -1356,7 +1359,13 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
         allowFreeItems: false,
       }),
     )
-    expect(h.sendQuoteAsText).toHaveBeenCalledWith(expect.anything(), 'acct-1', 'quote-1', 'conv-1')
+    expect(h.sendQuoteByAccountPreference).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      'quote-1',
+      'conv-1',
+      true, // proposal.format === 'text' forces a text quote
+    )
     // A successful quote must never also trip the silent-failure handoff.
     expect(h.state.updatePayload).toBeNull()
   })
@@ -1378,7 +1387,7 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
 
     await dispatchInboundToAiReply(ARGS)
 
-    expect(h.sendQuoteAsText).not.toHaveBeenCalled()
+    expect(h.sendQuoteByAccountPreference).not.toHaveBeenCalled()
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain('no se pudo crear la cotización')
   })
@@ -1387,7 +1396,7 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
     h.state.products = [{ id: 'p1', name: 'Montessori Oslo Imperial' }]
     h.createQuote.mockResolvedValue({ quote: { id: 'quote-1', total: 2250 }, items: [] })
     const { SendQuoteError } = await import('@/lib/quotes/send-quote')
-    h.sendQuoteAsText.mockRejectedValue(new SendQuoteError('messaging window is closed'))
+    h.sendQuoteByAccountPreference.mockRejectedValue(new SendQuoteError('messaging window is closed'))
 
     await dispatchInboundToAiReply(ARGS)
 

@@ -15,6 +15,55 @@ export class SendQuoteError extends Error {
   }
 }
 
+export type QuoteDeliveryMode = 'pdf' | 'message'
+
+/**
+ * The account's configured quote-delivery preference
+ * (`accounts.quote_delivery_mode`, migration 109). Anything other than
+ * an explicit `'message'` resolves to `'pdf'` — the safe historical
+ * default for a missing column / null / unknown value.
+ */
+export async function resolveQuoteDeliveryMode(
+  db: SupabaseClient,
+  accountId: string,
+): Promise<QuoteDeliveryMode> {
+  const { data } = await db
+    .from('accounts')
+    .select('quote_delivery_mode')
+    .eq('id', accountId)
+    .maybeSingle()
+  return data?.quote_delivery_mode === 'message' ? 'message' : 'pdf'
+}
+
+/**
+ * Send a quote using the account's configured delivery mode — a PDF
+ * document (`sendQuoteToConversation`) or a plain-text breakdown
+ * (`sendQuoteAsText`). The single entry point every deterministic send
+ * path should call so the owner's Products → catalog setting is
+ * honoured everywhere. Returns which mode ran and the PDF URL when one
+ * was produced.
+ */
+export async function sendQuoteByAccountPreference(
+  db: SupabaseClient,
+  accountId: string,
+  quoteId: string,
+  conversationId: string,
+  /** Force text delivery regardless of the account setting — used by
+   *  the AI path when the model itself asked for a text quote. */
+  forceMessage = false,
+): Promise<{ mode: QuoteDeliveryMode; pdfUrl: string | null }> {
+  const mode: QuoteDeliveryMode =
+    forceMessage || (await resolveQuoteDeliveryMode(db, accountId)) === 'message'
+      ? 'message'
+      : 'pdf'
+  if (mode === 'message') {
+    await sendQuoteAsText(db, accountId, quoteId, conversationId)
+    return { mode, pdfUrl: null }
+  }
+  const { pdfUrl } = await sendQuoteToConversation(db, accountId, quoteId, conversationId)
+  return { mode, pdfUrl }
+}
+
 /**
  * The contact's most recently active conversation for this account, on
  * any channel — "most recent wins," same rule the human quote-send

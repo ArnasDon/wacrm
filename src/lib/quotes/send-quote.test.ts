@@ -20,6 +20,8 @@ import {
   isWithinMessagingWindow,
   sendQuoteToConversation,
   sendQuoteAsText,
+  sendQuoteByAccountPreference,
+  resolveQuoteDeliveryMode,
   SendQuoteError,
 } from './send-quote'
 
@@ -29,7 +31,7 @@ const sentMessage = { messageId: 'msg-1', whatsappMessageId: 'wamid-1' }
 function makeSendDb(opts: {
   quote: Record<string, unknown> | null
   items?: Record<string, unknown>[]
-  account?: { name: string } | null
+  account?: Record<string, unknown> | null
 }) {
   const updates: { table: string; payload: Record<string, unknown> }[] = []
   const db = {
@@ -183,6 +185,51 @@ describe('sendQuoteAsText', () => {
       status: 502,
       message: 'down',
     })
+  })
+})
+
+describe('resolveQuoteDeliveryMode / sendQuoteByAccountPreference', () => {
+  it("resolves 'message' only for an explicit 'message' setting", async () => {
+    const msg = makeSendDb({ quote: { id: 'q1' }, account: { quote_delivery_mode: 'message' } })
+    expect(await resolveQuoteDeliveryMode(msg.db, 'acct-1')).toBe('message')
+
+    const pdf = makeSendDb({ quote: { id: 'q1' }, account: { quote_delivery_mode: 'pdf' } })
+    expect(await resolveQuoteDeliveryMode(pdf.db, 'acct-1')).toBe('pdf')
+
+    const missing = makeSendDb({ quote: { id: 'q1' }, account: null })
+    expect(await resolveQuoteDeliveryMode(missing.db, 'acct-1')).toBe('pdf')
+  })
+
+  it("'message' account → text path, no PDF work", async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', currency: 'GTQ', total: 100 },
+      items: [{ id: 'i1', description: 'Widget', quantity: 1, unit_price: 100, line_total: 100 }],
+      account: { quote_delivery_mode: 'message' },
+    })
+    const res = await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1')
+    expect(res).toEqual({ mode: 'message', pdfUrl: null })
+    expect(h.renderQuotePdf).not.toHaveBeenCalled()
+  })
+
+  it("'pdf' account → document path", async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' },
+      account: { quote_delivery_mode: 'pdf' },
+    })
+    const res = await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1')
+    expect(res.mode).toBe('pdf')
+    expect(res.pdfUrl).toBe('https://existing.example.com/q.pdf')
+  })
+
+  it('forceMessage overrides a pdf account setting', async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', currency: 'GTQ', total: 100 },
+      items: [],
+      account: { quote_delivery_mode: 'pdf' },
+    })
+    const res = await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1', true)
+    expect(res.mode).toBe('message')
+    expect(h.renderQuotePdf).not.toHaveBeenCalled()
   })
 })
 

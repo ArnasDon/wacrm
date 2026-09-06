@@ -20,7 +20,7 @@ import { sendCatalogToConversation, SendCatalogError } from '@/lib/products/send
 import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 import { formatWithOffset } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
-import { sendQuoteToConversation, sendQuoteAsText, SendQuoteError } from '@/lib/quotes/send-quote'
+import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 import type { LeadTemperature } from '@/types'
 import type { GenerateResult } from './types'
@@ -1382,11 +1382,15 @@ async function autoCreateQuoteFromChat(args: {
   }
 
   try {
-    if (proposal.format === 'text') {
-      await sendQuoteAsText(db, accountId, created.quote.id, conversationId)
-    } else {
-      await sendQuoteToConversation(db, accountId, created.quote.id, conversationId)
-    }
+    // Account setting wins; the model's own `format: 'text'` request
+    // still forces a text quote even when the account default is PDF.
+    await sendQuoteByAccountPreference(
+      db,
+      accountId,
+      created.quote.id,
+      conversationId,
+      proposal.format === 'text',
+    )
   } catch (err) {
     if (err instanceof SendQuoteError) {
       console.error('[ai auto-reply] create_quote_chat: send failed:', err.message)

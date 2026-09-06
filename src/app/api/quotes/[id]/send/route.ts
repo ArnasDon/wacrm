@@ -1,17 +1,18 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
-import { sendQuoteToConversation, SendQuoteError } from '@/lib/quotes/send-quote'
+import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
 
 /**
  * POST /api/quotes/[id]/send  (agent+)
  *
  * Body: { conversation_id? } — targets that conversation, or (if
  * omitted) the contact's most recently active conversation on any
- * channel. Ensures the quote has a PDF (generates one if missing),
- * then sends it as a document through the existing channel-agnostic
- * send core, which already branches on `conversation.channel` toward
- * WhatsApp/Instagram/Facebook — no per-channel dispatch needed here.
+ * channel. Delivers the quote per the account's
+ * `quote_delivery_mode` (migration 109) — a rendered PDF document or a
+ * plain-text breakdown — through the existing channel-agnostic send
+ * core, which already branches on `conversation.channel` toward
+ * WhatsApp/Instagram/Facebook.
  */
 export async function POST(
   request: Request,
@@ -66,8 +67,13 @@ export async function POST(
     }
 
     try {
-      const { pdfUrl } = await sendQuoteToConversation(db, ctx.accountId, id, conversationId)
-      return NextResponse.json({ ok: true, pdf_url: pdfUrl })
+      const { mode, pdfUrl } = await sendQuoteByAccountPreference(
+        db,
+        ctx.accountId,
+        id,
+        conversationId,
+      )
+      return NextResponse.json({ ok: true, mode, pdf_url: pdfUrl })
     } catch (err) {
       if (err instanceof SendQuoteError) {
         return NextResponse.json({ error: err.message }, { status: err.status })

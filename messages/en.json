@@ -965,7 +965,12 @@
       "invalidImage": "Please choose a PNG, JPEG, or WEBP image",
       "fileTooLarge": "File is too large (max 10 MB)",
       "productsNote": "Keep your Products list (the \"Products\" tab) up to date — that's what your team and the AI use to answer price/detail questions when a customer mentions an item by name, even though what actually gets sent above is the PDF/photos, not a digital catalog page.",
-      "adminOnlyHint": "Only account admins can change catalog delivery settings."
+      "adminOnlyHint": "Only account admins can change catalog delivery settings.",
+      "quoteModeLabel": "Quote delivery",
+      "quoteModePdf": "As a PDF",
+      "quoteModePdfHint": "A PDF document with the line items and total is rendered and sent.",
+      "quoteModeMessage": "As a message",
+      "quoteModeMessageHint": "The line items and total are sent as a plain text message, no file attached."
     },
     "import": {
       "title": "Import products",

@@ -965,7 +965,12 @@
       "invalidImage": "PNG, JPEG 또는 WEBP 이미지를 선택하세요",
       "fileTooLarge": "파일이 너무 큽니다 (최대 10MB)",
       "productsNote": "\"Products\" 탭의 제품 목록을 최신 상태로 유지하세요 — 위에서 실제로 보내는 것은 PDF/사진이지만, 고객이 제품을 이름으로 언급했을 때 팀과 AI가 가격/상세 질문에 답하는 데 이 목록을 사용합니다.",
-      "adminOnlyHint": "계정 관리자만 카탈로그 전달 설정을 변경할 수 있습니다."
+      "adminOnlyHint": "계정 관리자만 카탈로그 전달 설정을 변경할 수 있습니다.",
+      "quoteModeLabel": "견적서 전송 방식",
+      "quoteModePdf": "PDF로",
+      "quoteModePdfHint": "항목과 합계가 포함된 PDF 문서를 생성하여 전송합니다.",
+      "quoteModeMessage": "메시지로",
+      "quoteModeMessageHint": "항목과 합계를 첨부 파일 없이 일반 텍스트 메시지로 전송합니다."
     },
     "import": {
       "title": "제품 가져오기",

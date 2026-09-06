@@ -39,7 +39,7 @@ import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes
 import {
   findRecentConversation,
   isWithinMessagingWindow,
-  sendQuoteToConversation,
+  sendQuoteByAccountPreference,
 } from '@/lib/quotes/send-quote'
 import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 import { verifyCatalogConversation } from '@/lib/products/catalog-link-token'
@@ -208,12 +208,14 @@ export async function POST(
     // wasn't one (a cold/organic visitor who never came from a tracked
     // conversation).
     let delivered = false
+    let deliveryMode: 'pdf' | 'message' = 'pdf'
     const conversation: { id: string } | null = conversationContactVerified
       ? { id: requestedConversationId! }
       : await findRecentConversation(db, accountId, contactId)
     if (conversation && (await isWithinMessagingWindow(db, conversation.id))) {
       try {
-        await sendQuoteToConversation(db, accountId, quote.id, conversation.id)
+        const sent = await sendQuoteByAccountPreference(db, accountId, quote.id, conversation.id)
+        deliveryMode = sent.mode
         delivered = true
       } catch (err) {
         // Falls through to the wa.me path below — a failed instant
@@ -252,7 +254,8 @@ export async function POST(
         // Spell out exactly what was selected so the message that lands
         // in the inbox already tells the agent/AI what to quote — the
         // visitor shouldn't have to retype their order once they're in
-        // the chat. Once they send this, the webhook auto-sends the PDF.
+        // the chat. Once they send this, the webhook auto-sends the
+        // quote (PDF or text, per the account's quote_delivery_mode).
         const itemsSummary = quoteItems
           .map((item) => `${item.quantity}x ${item.description}`)
           .join(', ')
@@ -261,7 +264,13 @@ export async function POST(
       }
     }
 
-    return NextResponse.json({ ok: true, quote_id: quote.id, delivered, whatsapp_url: whatsappUrl })
+    return NextResponse.json({
+      ok: true,
+      quote_id: quote.id,
+      delivered,
+      delivery_mode: deliveryMode,
+      whatsapp_url: whatsappUrl,
+    })
   } catch (err) {
     if (err instanceof ContactError || err instanceof CreateQuoteError) {
       return NextResponse.json({ error: err.message }, { status: err.status })

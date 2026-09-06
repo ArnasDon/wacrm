@@ -10,7 +10,7 @@ import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
-import { sendQuoteToConversation } from '@/lib/quotes/send-quote'
+import { sendQuoteByAccountPreference } from '@/lib/quotes/send-quote'
 import {
   handleTemplateWebhookChange,
   isTemplateWebhookField,
@@ -810,7 +810,7 @@ async function processMessage(
       .eq('auto_send_pending', true)
       .is('sent_at', null)
     for (const pending of pendingQuotes ?? []) {
-      await sendQuoteToConversation(supabaseAdmin(), accountId, pending.id as string, conversation.id)
+      await sendQuoteByAccountPreference(supabaseAdmin(), accountId, pending.id as string, conversation.id)
     }
   } catch (err) {
     console.error('[webhook] auto-send pending quote failed:', err)

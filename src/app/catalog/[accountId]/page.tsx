@@ -62,11 +62,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/currency';
-import {
-  summarizeRates,
-  rateSortKey,
-  OCCUPANCY_LABEL_ES,
-} from '@/lib/products/rates';
+import { rateSortKey, OCCUPANCY_LABEL_ES } from '@/lib/products/rates';
 
 interface CatalogPriceOption {
   id: string;
@@ -170,6 +166,7 @@ function PublicCatalogPageInner() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{
     delivered: boolean;
+    deliveryMode: 'pdf' | 'message';
     whatsappUrl: string | null;
   } | null>(null);
 
@@ -346,11 +343,13 @@ function PublicCatalogPageInner() {
       const payload = await readResponseJson<{
         error?: string;
         delivered?: boolean;
+        delivery_mode?: 'pdf' | 'message';
         whatsapp_url?: string | null;
       }>(res).catch(
         (): {
           error?: string;
           delivered?: boolean;
+          delivery_mode?: 'pdf' | 'message';
           whatsapp_url?: string | null;
         } => ({})
       );
@@ -361,6 +360,7 @@ function PublicCatalogPageInner() {
       }
       setResult({
         delivered: !!payload.delivered,
+        deliveryMode: payload.delivery_mode === 'message' ? 'message' : 'pdf',
         whatsappUrl: payload.whatsapp_url ?? null,
       });
     } catch (err) {
@@ -387,12 +387,12 @@ function PublicCatalogPageInner() {
 
   if (loadError) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 bg-gray-50 px-4 text-center">
-        <PackageX className="size-10 text-gray-400" />
-        <p className="text-lg font-medium text-gray-900">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-[#f7f6f1] px-6 text-center text-[#082f38]">
+        <PackageX className="size-9 text-[#082f38]/30" />
+        <p className="font-serif text-2xl tracking-tight text-[#062f38]">
           Catálogo no disponible
         </p>
-        <p className="max-w-sm text-sm text-gray-500">
+        <p className="max-w-sm text-sm leading-6 text-[#284d53]/70">
           Este enlace no es válido o la empresa aún no tiene un catálogo
           público.
         </p>
@@ -402,8 +402,8 @@ function PublicCatalogPageInner() {
 
   if (!data) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50">
-        <Loader2 className="size-6 animate-spin text-emerald-600" />
+      <div className="flex min-h-screen items-center justify-center bg-[#f7f6f1]">
+        <Loader2 className="size-6 animate-spin text-[#1e7774]" />
       </div>
     );
   }
@@ -454,12 +454,9 @@ function PublicCatalogPageInner() {
             </button>
           </div>
         </div>
-        <nav className="app-scroll mx-auto flex max-w-7xl items-center justify-start gap-7 overflow-x-auto px-4 pb-3 text-[10px] font-bold tracking-[0.14em] whitespace-nowrap uppercase sm:justify-center sm:gap-8 sm:pb-4 sm:text-[11px] sm:tracking-[0.16em]">
+        <nav className="mx-auto flex max-w-7xl items-center justify-center gap-8 px-4 pb-3 text-[11px] font-semibold tracking-[0.14em] whitespace-nowrap uppercase text-[#082f38]/55 sm:pb-4">
           <a href="#productos" className="transition hover:text-[#1e7774]">
             Productos
-          </a>
-          <a href="#seleccion" className="transition hover:text-[#1e7774]">
-            Tu selección
           </a>
           {data.whatsapp_number && (
             <a
@@ -545,47 +542,39 @@ function PublicCatalogPageInner() {
         </div>
 
         {categoryChips.length > 0 && (
-          <div className="app-scroll mb-8 flex items-center gap-2 overflow-x-auto pb-1 sm:mb-10 sm:flex-wrap sm:justify-center">
-            <button
-              type="button"
-              onClick={() => setActiveCategory(null)}
-              className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold tracking-[0.1em] uppercase transition ${
-                activeCategory === null
-                  ? 'border-[#062f38] bg-[#062f38] text-white'
-                  : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
-              }`}
-            >
-              Todo
-            </button>
-            {categoryChips.map((name) => (
-              <button
-                key={name}
-                type="button"
-                onClick={() =>
-                  setActiveCategory((cur) => (cur === name ? null : name))
-                }
-                className={`shrink-0 rounded-full border px-4 py-2 text-xs font-bold tracking-[0.1em] uppercase transition ${
-                  activeCategory === name
-                    ? 'border-[#062f38] bg-[#062f38] text-white'
-                    : 'border-[#082f38]/25 text-[#082f38] hover:bg-[#e7ebe5]'
-                }`}
-              >
-                {name}
-              </button>
-            ))}
+          <div className="app-scroll mb-9 flex items-center gap-2.5 overflow-x-auto pb-1 sm:mb-12 sm:flex-wrap sm:justify-center">
+            {[null, ...categoryChips].map((name) => {
+              const active = activeCategory === name;
+              return (
+                <button
+                  key={name ?? '__all__'}
+                  type="button"
+                  onClick={() =>
+                    setActiveCategory((cur) => (cur === name ? null : name))
+                  }
+                  className={`shrink-0 rounded-full border px-4 py-1.5 text-[11px] font-semibold tracking-[0.12em] uppercase transition ${
+                    active
+                      ? 'border-[#062f38] bg-[#062f38] text-[#fffefa]'
+                      : 'border-[#082f38]/15 text-[#082f38]/70 hover:border-[#082f38]/40 hover:text-[#082f38]'
+                  }`}
+                >
+                  {name ?? 'Todo'}
+                </button>
+              );
+            })}
           </div>
         )}
 
         {data.products.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center">
-            <PackageX className="size-10 text-gray-400" />
-            <p className="text-sm text-gray-500">
+          <div className="flex flex-col items-center gap-3 py-20 text-center">
+            <PackageX className="size-9 text-[#082f38]/25" />
+            <p className="text-sm text-[#284d53]/65">
               Todavía no hay productos publicados.
             </p>
           </div>
         ) : visibleProducts.length === 0 ? (
-          <div className="py-16 text-center">
-            <Search className="mx-auto size-8 text-[#082f38]/30" />
+          <div className="py-20 text-center">
+            <Search className="mx-auto size-8 text-[#082f38]/25" />
             <p className="mt-3 text-sm text-[#284d53]/65">
               {search.trim()
                 ? `No encontramos productos para “${search}”.`
@@ -621,7 +610,7 @@ function PublicCatalogPageInner() {
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center">
-                          <ShoppingCart className="size-8 text-gray-300" />
+                          <ShoppingCart className="size-8 text-[#082f38]/15" />
                         </div>
                       )}
                     </div>
@@ -636,12 +625,23 @@ function PublicCatalogPageInner() {
                       )}
                       <p className="mt-1 text-sm font-semibold text-[#062f38] sm:text-base">
                         {isRoom(product)
-                          ? summarizeRates(product.rates, (n) =>
-                              formatCurrency(n, data.currency),
-                            ) || formatCurrency(product.price, data.currency)
+                          ? (() => {
+                              const nightly = product.rates
+                                .filter((r) => !r.date_from && !r.date_to)
+                                .map((r) => r.price);
+                              return nightly.length > 0
+                                ? `Desde ${formatCurrency(Math.min(...nightly), data.currency)}`
+                                : formatCurrency(product.price, data.currency);
+                            })()
                           : product.price_options.length > 0
                             ? `Desde ${formatCurrency(Math.min(product.price, ...product.price_options.map((o) => o.price)), data.currency)}`
                             : formatCurrency(product.price, data.currency)}
+                        {isRoom(product) && (
+                          <span className="text-xs font-normal text-[#284d53]/55">
+                            {' '}
+                            / noche
+                          </span>
+                        )}
                       </p>
                     </div>
                   </button>
@@ -869,7 +869,7 @@ function PublicCatalogPageInner() {
                       <p className="mb-3 text-[10px] font-bold tracking-[0.16em] uppercase">
                         Cantidad
                       </p>
-                      <div className="flex h-12 w-36 items-center justify-between border border-[#082f38]/25">
+                      <div className="flex h-12 w-36 items-center justify-between rounded-xl border border-[#082f38]/25 sm:rounded-none">
                         <button
                           type="button"
                           className="flex h-full w-12 items-center justify-center transition hover:bg-[#e7ebe5] disabled:opacity-30"
@@ -923,19 +923,9 @@ function PublicCatalogPageInner() {
                   </>
                 )}
 
-                <div className="mt-8 grid grid-cols-2 gap-3 border-t border-[#082f38]/12 pt-6 text-[10px] font-bold tracking-[0.12em] uppercase">
+                <div className="mt-auto grid grid-cols-2 gap-3 border-t border-[#082f38]/12 pt-6 text-[10px] font-semibold tracking-[0.12em] text-[#284d53]/70 uppercase">
                   <span>✓ Cotización personalizada</span>
                   <span>✓ Atención por WhatsApp</span>
-                </div>
-
-                <div className="mt-auto pt-10">
-                  <h3 className="border-b border-[#082f38]/15 pb-3 font-serif text-xl">
-                    Descripción
-                  </h3>
-                  <p className="pt-4 text-sm leading-6 text-[#284d53]/70">
-                    Consulta disponibilidad, acabados y opciones adicionales al
-                    solicitar tu cotización.
-                  </p>
                 </div>
               </div>
             </div>
@@ -950,10 +940,10 @@ function PublicCatalogPageInner() {
         >
           <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-8">
             <div>
-              <p className="text-xs text-gray-500">
+              <p className="text-[11px] font-medium tracking-wide text-[#284d53]/65 uppercase">
                 {totalCount} {totalCount === 1 ? 'producto' : 'productos'}
               </p>
-              <p className="text-base font-semibold text-gray-900">
+              <p className="font-serif text-lg text-[#062f38]">
                 {formatCurrency(total, data.currency)}
               </p>
             </div>
@@ -1086,9 +1076,11 @@ function PublicCatalogPageInner() {
                 </DialogTitle>
                 <DialogDescription className="text-[#284d53]/70">
                   {result.delivered
-                    ? 'Ya te enviamos el PDF de tu cotización — revisa el chat donde nos escribiste.'
+                    ? result.deliveryMode === 'message'
+                      ? 'Ya te enviamos tu cotización por mensaje — revisa el chat donde nos escribiste.'
+                      : 'Ya te enviamos el PDF de tu cotización — revisa el chat donde nos escribiste.'
                     : result.whatsappUrl
-                      ? 'Tu cotización fue creada. Continúa por WhatsApp para recibir el PDF.'
+                      ? 'Tu cotización fue creada. Continúa por WhatsApp para recibirla.'
                       : 'Tu cotización fue creada. Pronto se pondrán en contacto contigo.'}
                 </DialogDescription>
               </DialogHeader>

@@ -1614,7 +1614,12 @@
       "invalidImage": "Por favor elige una imagen PNG, JPEG o WEBP",
       "fileTooLarge": "El archivo es demasiado grande (máx. 10 MB)",
       "productsNote": "Mantén actualizada tu lista de Productos (la pestaña \"Productos\") — eso es lo que tu equipo y la IA usan para responder preguntas de precio/detalle cuando un cliente menciona un artículo por nombre, aunque lo que realmente se envía arriba sea el PDF/fotos y no una página de catálogo digital.",
-      "adminOnlyHint": "Solo los administradores de la cuenta pueden cambiar la configuración de entrega del catálogo."
+      "adminOnlyHint": "Solo los administradores de la cuenta pueden cambiar la configuración de entrega del catálogo.",
+      "quoteModeLabel": "Envío de cotizaciones",
+      "quoteModePdf": "Como PDF",
+      "quoteModePdfHint": "Se genera y se envía un documento PDF con el detalle y el total.",
+      "quoteModeMessage": "Como mensaje",
+      "quoteModeMessageHint": "Se envía el detalle y el total como un mensaje de texto, sin archivo adjunto."
     },
     "import": {
       "title": "Importar productos",

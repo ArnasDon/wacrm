@@ -3,6 +3,12 @@ import { createClient } from '@/lib/supabase/server'
 import { resolveBaseUrl } from '@/lib/http/base-url'
 
 /**
+ * LEGACY landing route for Supabase Auth email links that still use
+ * `{{ .ConfirmationURL }}`. New links go through `/auth/confirm`
+ * instead — a bot-safe page that doesn't spend the one-time token on a
+ * GET (see the comment there). This route is kept working for links
+ * already in flight and for any email template not yet swapped.
+ *
  * Lands here from a Supabase Auth email link (password recovery,
  * platform company invite — see `resetPasswordForEmail` in
  * `forgot-password/page.tsx` and `inviteUserByEmail` in

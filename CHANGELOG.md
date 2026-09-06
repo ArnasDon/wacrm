@@ -113,6 +113,21 @@ and polish.
 
 ### Fixed
 
+- **Invite / password links no longer die before the recipient clicks.**
+  A new owner (or anyone resetting a password) often landed on _"That
+  link has expired or was already used"_ because link-preview and
+  security scanners (WhatsApp, Gmail, Outlook Safe Links, antivirus
+  proxies) fetch the URL to build a preview, and the old link pointed
+  straight at Supabase's `/auth/v1/verify`, which consumes the one-time
+  token on any GET. Auth e-mail links now land on a new **`/auth/confirm`**
+  page — a plain button, no JavaScript, no verification on load — and the
+  token is only spent when a human clicks "Confirmar y continuar" (POST →
+  `verifyOtp`). `/auth/callback` stays as the path for links already in
+  flight. **Manual step (once):** in Supabase → Authentication → Email
+  Templates, change the link in **Invite user** and **Reset Password** to
+  `{{ .SiteURL }}/auth/confirm?token_hash={{ .TokenHash }}&type=invite&next=/reset-password`
+  (use `type=recovery` for the reset template).
+
 - **Flow menus now work on Instagram, Facebook and WhatsApp-via-Zernio.**
   A `Send buttons` / `Send list` step could reach a dead end on every
   Zernio-backed channel: the customer's tap arrives as plain text (the

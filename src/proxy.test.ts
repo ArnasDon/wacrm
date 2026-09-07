@@ -41,11 +41,15 @@ const { proxy } = await import('./proxy');
 beforeEach(() => {
   process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'anon-key';
+  delete process.env.NEXT_PUBLIC_SITE_URL;
   mockUser = null;
   refreshedCookies = [];
 });
 
-afterEach(() => vi.clearAllMocks());
+afterEach(() => {
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  vi.clearAllMocks();
+});
 
 const ROTATED = {
   name: 'sb-test-auth-token',
@@ -103,5 +107,59 @@ describe('proxy — refreshed auth cookies survive redirects', () => {
     // No redirect — the normal NextResponse.next() already carries cookies.
     expect(res.headers.get('location')).toBeNull();
     expect(res.cookies.get(ROTATED.name)?.value).toBe(ROTATED.value);
+  });
+});
+
+describe('proxy — canonical host redirect', () => {
+  it('307s a browser request on a non-canonical host to the same path on NEXT_PUBLIC_SITE_URL', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(
+      new NextRequest('https://sandia-sandia-crm.kmencc.easypanel.host/admin?tab=x'),
+    );
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('https://chatsandia.com/admin?tab=x');
+  });
+
+  it('honours X-Forwarded-Host over the raw request host', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(
+      new NextRequest('http://0.0.0.0/dashboard', {
+        headers: { 'x-forwarded-host': 'sandia-sandia-crm.kmencc.easypanel.host' },
+      }),
+    );
+
+    expect(res.status).toBe(307);
+    expect(res.headers.get('location')).toBe('https://chatsandia.com/dashboard');
+  });
+
+  it('does not redirect when already on the canonical host', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+    mockUser = { id: 'user-1' };
+
+    const res = await proxy(new NextRequest('https://chatsandia.com/dashboard'));
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('never redirects /api/* (webhooks, cron) even on a non-canonical host', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(
+      new NextRequest(
+        'https://sandia-sandia-crm.kmencc.easypanel.host/api/whatsapp/webhook',
+      ),
+    );
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('is inert when NEXT_PUBLIC_SITE_URL is unset', async () => {
+    // `/` is not a protected path, so nothing else in the proxy redirects it.
+    const res = await proxy(new NextRequest('https://whatever.example/'));
+
+    expect(res.headers.get('location')).toBeNull();
   });
 });

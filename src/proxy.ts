@@ -2,6 +2,35 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
+  // Canonical host. EasyPanel serves the app on every attached domain
+  // (the *.easypanel.host fallback included) and does not redirect the
+  // extras to the primary one, so an old bookmark keeps the address bar
+  // on `sandia-sandia-crm.kmencc.easypanel.host`. When NEXT_PUBLIC_SITE_URL
+  // is set, send any browser request on a different host to the same
+  // path on the canonical domain.
+  //
+  // `/api/*` is never redirected: Meta and Zernio webhooks (and the cron
+  // endpoints) are registered against whatever URL was configured with
+  // them, and most senders drop the body on a 3xx to a POST. A 307 keeps
+  // this reversible — no permanent-redirect caching in browsers while the
+  // domain move settles.
+  const canonicalUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '');
+  if (canonicalUrl && !request.nextUrl.pathname.startsWith('/api/')) {
+    const canonicalHost = new URL(canonicalUrl).host;
+    const currentHost =
+      request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ||
+      request.nextUrl.host;
+    if (currentHost && currentHost !== canonicalHost) {
+      return NextResponse.redirect(
+        new URL(
+          request.nextUrl.pathname + request.nextUrl.search,
+          canonicalUrl,
+        ),
+        307,
+      );
+    }
+  }
+
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(

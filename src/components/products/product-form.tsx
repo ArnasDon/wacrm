@@ -80,7 +80,8 @@ type RateRowShape = {
   date_to: string | null;
 };
 
-/** Turn a form block into product_rates rows — one per non-empty price. */
+/** Turn a form block into product_rates rows — one per priced cell. A
+ *  blank or 0 cell is "no rate for that day/tier", not a free night. */
 function blockToRows(
   block: RateBlockDraft,
   dateFrom: string | null,
@@ -92,7 +93,7 @@ function blockToRows(
       const raw = block[day][occ].trim();
       if (raw === '') continue;
       const price = Number(raw);
-      if (Number.isFinite(price) && price >= 0) {
+      if (Number.isFinite(price) && price > 0) {
         rows.push({ day_of_week: day, occupancy: occ, price, date_from: dateFrom, date_to: dateTo });
       }
     }

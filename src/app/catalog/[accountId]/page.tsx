@@ -655,7 +655,7 @@ function PublicCatalogPageInner() {
                         {isRoom(product)
                           ? (() => {
                               const nightly = product.rates
-                                .filter((r) => !r.date_from && !r.date_to)
+                                .filter((r) => !r.date_from && !r.date_to && r.price > 0)
                                 .map((r) => r.price);
                               return nightly.length > 0
                                 ? `Desde ${formatCurrency(Math.min(...nightly), data.currency)}`

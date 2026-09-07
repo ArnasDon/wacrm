@@ -167,6 +167,14 @@ describe('summarizeRates', () => {
   it('empty when there are no always-on rates', () => {
     expect(summarizeRates([], fmt)).toBe('')
   })
+
+  it('ignores a 0 / negative price (blank cell), not a free night', () => {
+    const rates: ProductRate[] = [
+      { day_of_week: 'mon', occupancy: 'standard', price: 300, date_from: null, date_to: null },
+      { day_of_week: 'mon', occupancy: 'group', price: 0, date_from: null, date_to: null },
+    ]
+    expect(summarizeRates(rates, fmt)).toBe('Lun Q300')
+  })
 })
 
 describe('parseRates', () => {

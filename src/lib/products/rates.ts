@@ -217,7 +217,8 @@ export function summarizeRates(
   rates: Pick<ProductRate, 'day_of_week' | 'occupancy' | 'price' | 'date_from' | 'date_to'>[],
   fmt: (amount: number) => string,
 ): string {
-  const always = rates.filter((r) => !r.date_from && !r.date_to)
+  // A 0 / negative price is "no rate for that day/tier", not a free night.
+  const always = rates.filter((r) => !r.date_from && !r.date_to && r.price > 0)
   if (always.length === 0) return ''
   return OCCUPANCY_ORDER.flatMap((occ) => {
     const forOcc = always
@@ -244,7 +245,7 @@ export function summarizeRates(
 type RoomRateLite = Pick<ProductRate, 'day_of_week' | 'occupancy' | 'price' | 'date_from' | 'date_to'>
 
 export function formatRoomRatesCell(rates: RoomRateLite[]): string {
-  const always = rates.filter((r) => !r.date_from && !r.date_to)
+  const always = rates.filter((r) => !r.date_from && !r.date_to && r.price > 0)
   if (always.length === 0) return ''
   const parts: string[] = []
   for (const day of DAY_ORDER) {

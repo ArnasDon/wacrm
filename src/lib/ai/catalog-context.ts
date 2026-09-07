@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { formatCurrency } from '@/lib/currency'
-import { OCCUPANCY_LABEL_ES, rateSortKey } from '@/lib/products/rates'
+import { summarizeRates, type DayOfWeek } from '@/lib/products/rates'
 
 // Bounds how much of the catalog reaches the prompt — plenty for a
 // small/medium product list, keeps token spend predictable for
@@ -24,7 +24,7 @@ interface CatalogProductRow {
 
 interface RateRow {
   product_id: string
-  weekday_group: 'weekday' | 'weekend'
+  day_of_week: DayOfWeek
   occupancy: 'standard' | 'couple' | 'group'
   price: number
   date_from: string | null
@@ -61,7 +61,7 @@ export async function loadCatalogContext(
   if (account?.industry_vertical === 'hotel') {
     const { data: rates } = await db
       .from('product_rates')
-      .select('product_id, weekday_group, occupancy, price, date_from, date_to')
+      .select('product_id, day_of_week, occupancy, price, date_from, date_to')
       .eq('account_id', accountId)
       .in('product_id', typed.map((p) => p.id))
     ratesByProduct = groupBy((rates as RateRow[] | null) ?? [], (r) => r.product_id)
@@ -88,21 +88,19 @@ function groupBy<T, K>(rows: T[], key: (row: T) => K): Map<K, T[]> {
   return map
 }
 
-/** "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · grupo Vie–Dom Q1600
- *  (temporada 24/12–31/12: Q1500)". Compact enough for the prompt. */
+/** "Lun–Jue Q800 · Vie Q1000 · Sáb–Dom Q1200 · pareja Lun–Dom Q1400
+ *  (temporada 2026-12-24–2026-12-31: Q1500)". Compact enough for the prompt. */
 function formatRateSummary(rates: RateRow[], currency: string): string {
-  const always = rates.filter((r) => !r.date_from && !r.date_to)
-  const label = (r: RateRow) =>
-    `${OCCUPANCY_LABEL_ES[r.occupancy]}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'}`
-  const parts = always
-    .sort((a, b) => rateSortKey(a) - rateSortKey(b))
-    .map((r) => `${label(r)} ${formatCurrency(r.price, currency)}`)
+  const fmt = (n: number) => formatCurrency(n, currency)
+  const parts: string[] = []
+  const always = summarizeRates(rates, fmt)
+  if (always) parts.push(always)
 
   const seasons = rates.filter((r) => r.date_from && r.date_to)
   if (seasons.length > 0) {
     const from = seasons[0].date_from!
     const to = seasons[0].date_to!
-    const prices = [...new Set(seasons.map((r) => formatCurrency(r.price, currency)))]
+    const prices = [...new Set(seasons.map((r) => fmt(r.price)))]
     parts.push(`temporada ${from}–${to}: ${prices.join(' / ')}`)
   }
   return parts.join(' · ')

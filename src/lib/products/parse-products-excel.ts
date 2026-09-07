@@ -1,4 +1,5 @@
 import ExcelJS from 'exceljs'
+import { parseRoomRatesCell } from '@/lib/products/rates'
 
 /**
  * .xlsx parsing for the products import dialog. Expects the same
@@ -10,7 +11,7 @@ import ExcelJS from 'exceljs'
  */
 
 export interface ParsedRate {
-  weekday_group: 'weekday' | 'weekend'
+  day_of_week: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
   occupancy: 'standard' | 'couple' | 'group'
   price: number
 }
@@ -23,7 +24,7 @@ export interface ParsedProductRow {
   /** Catalog category name (migration 106) — null when the column is
    *  absent/blank. Resolved to an id by the bulk-import route. */
   category: string | null
-  /** Always-on room rates from the rate_* columns (migration 106) —
+  /** Always-on room rates from the `room_rates` cell (migration 111) —
    *  empty for a normal product. */
   rates: ParsedRate[]
 }
@@ -95,18 +96,7 @@ export async function parseProductsWorkbook(buffer: ArrayBuffer): Promise<ParseP
   const descriptionCol = columnByName.get('description')
   const isActiveCol = columnByName.get('is_active')
   const categoryCol = columnByName.get('category')
-  const rateCols: {
-    key: string
-    group: 'weekday' | 'weekend'
-    occupancy: 'standard' | 'couple' | 'group'
-  }[] = [
-    { key: 'rate_weekday', group: 'weekday', occupancy: 'standard' },
-    { key: 'rate_weekend', group: 'weekend', occupancy: 'standard' },
-    { key: 'rate_weekday_couple', group: 'weekday', occupancy: 'couple' },
-    { key: 'rate_weekend_couple', group: 'weekend', occupancy: 'couple' },
-    { key: 'rate_weekday_group', group: 'weekday', occupancy: 'group' },
-    { key: 'rate_weekend_group', group: 'weekend', occupancy: 'group' },
-  ]
+  const roomRatesCol = columnByName.get('room_rates')
 
   const rows: ParsedProductRow[] = []
   const errors: ProductRowError[] = []
@@ -137,23 +127,18 @@ export async function parseProductsWorkbook(buffer: ArrayBuffer): Promise<ParseP
       ? cellToString(row.getCell(categoryCol).value).trim() || null
       : null
 
-    const rates: ParsedRate[] = []
-    let badRate = false
-    for (const rc of rateCols) {
-      const col = columnByName.get(rc.key)
-      if (!col) continue
-      const raw = cellToString(row.getCell(col).value).trim()
-      if (raw === '') continue
-      const value = Number(raw)
-      if (!Number.isFinite(value) || value < 0) {
-        badRate = true
-        break
+    let rates: ParsedRate[] = []
+    if (roomRatesCol) {
+      const parsed = parseRoomRatesCell(cellToString(row.getCell(roomRatesCol).value))
+      if (parsed === null) {
+        errors.push({
+          row: rowNumber,
+          message:
+            'room_rates must look like "mon=800/950/1600;fri=1200" (day=standard[/couple[/group]])',
+        })
+        continue
       }
-      rates.push({ weekday_group: rc.group, occupancy: rc.occupancy, price: value })
-    }
-    if (badRate) {
-      errors.push({ row: rowNumber, message: 'a rate_* value must be a non-negative number' })
-      continue
+      rates = parsed
     }
 
     rows.push({ name, description, price, is_active: isActive, category, rates })

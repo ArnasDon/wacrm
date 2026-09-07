@@ -24,7 +24,7 @@ describe('parseProductsWorkbook', () => {
     ])
   })
 
-  it('round-trips category + room rate columns', async () => {
+  it('round-trips category + the room_rates cell', async () => {
     const rows: ProductExportRow[] = [
       {
         name: 'Hab 101',
@@ -32,10 +32,7 @@ describe('parseProductsWorkbook', () => {
         price: 0,
         is_active: true,
         category: 'Habitaciones',
-        rate_weekday: 800,
-        rate_weekend: 1200,
-        rate_weekday_couple: 950,
-        rate_weekend_group: 1600,
+        room_rates: 'mon=800/950;fri=1200//1600',
       },
     ]
     const result = await parseProductsWorkbook(await workbookBuffer(buildProductsWorkbook(rows)))
@@ -44,24 +41,23 @@ describe('parseProductsWorkbook', () => {
       name: 'Hab 101',
       category: 'Habitaciones',
       rates: [
-        { weekday_group: 'weekday', occupancy: 'standard', price: 800 },
-        { weekday_group: 'weekend', occupancy: 'standard', price: 1200 },
-        { weekday_group: 'weekday', occupancy: 'couple', price: 950 },
-        { weekday_group: 'weekend', occupancy: 'group', price: 1600 },
+        { day_of_week: 'mon', occupancy: 'standard', price: 800 },
+        { day_of_week: 'mon', occupancy: 'couple', price: 950 },
+        { day_of_week: 'fri', occupancy: 'standard', price: 1200 },
+        { day_of_week: 'fri', occupancy: 'group', price: 1600 },
       ],
     })
   })
 
-  it('reports a bad rate_* value and skips the row', async () => {
+  it('reports a malformed room_rates cell and skips the row', async () => {
     const wb = new ExcelJS.Workbook()
     const sheet = wb.addWorksheet('Products')
-    sheet.addRow(['name', 'price', 'rate_weekday'])
-    sheet.addRow(['Hab', 0, -5])
+    sheet.addRow(['name', 'price', 'room_rates'])
+    sheet.addRow(['Hab', 0, 'funday=800'])
     sheet.addRow(['Fine', 10, ''])
     const result = await parseProductsWorkbook(await workbookBuffer(wb))
-    expect(result.errors).toEqual([
-      { row: 2, message: 'a rate_* value must be a non-negative number' },
-    ])
+    expect(result.errors).toHaveLength(1)
+    expect(result.errors[0].row).toBe(2)
     expect(result.rows).toHaveLength(1)
   })
 

@@ -12,6 +12,7 @@ import {
   MEDIA_MAX_BYTES_BY_KIND,
 } from '@/lib/storage/upload-media';
 import { MAX_PRICE_OPTIONS } from '@/lib/products/price-options';
+import { DAY_ORDER, DAY_LABEL_ES, type DayOfWeek } from '@/lib/products/rates';
 import {
   Dialog,
   DialogContent,
@@ -46,53 +47,38 @@ function emptyPriceOptionDraft(): PriceOptionDraft {
 }
 
 // ------------------------------------------------------------
-// Hotel vertical: per-date room rates (migration 106). Modeled in the
-// form as one "always" block plus optional seasonal blocks, each with
-// four price fields; flattened to product_rates rows on save.
+// Hotel vertical: per-day room rates (migrations 106 + 108 + 111).
+// Modeled in the form as one "always" block plus optional seasonal
+// blocks; each block is a 7 (day) × 3 (guest tier) price grid,
+// flattened to product_rates rows on save.
 // ------------------------------------------------------------
 
-interface RateBlockDraft {
-  weekdayStandard: string;
-  weekdayCouple: string;
-  weekdayGroup: string;
-  weekendStandard: string;
-  weekendCouple: string;
-  weekendGroup: string;
-}
-interface SeasonDraft extends RateBlockDraft {
+type RateOccupancy = 'standard' | 'couple' | 'group';
+const RATE_OCCUPANCIES: RateOccupancy[] = ['standard', 'couple', 'group'];
+
+type DayRates = Record<RateOccupancy, string>;
+type RateBlockDraft = Record<DayOfWeek, DayRates>;
+interface SeasonDraft {
+  block: RateBlockDraft;
   dateFrom: string;
   dateTo: string;
 }
 
-function emptyRateBlock(): RateBlockDraft {
-  return {
-    weekdayStandard: '',
-    weekdayCouple: '',
-    weekdayGroup: '',
-    weekendStandard: '',
-    weekendCouple: '',
-    weekendGroup: '',
-  };
+function emptyDayRates(): DayRates {
+  return { standard: '', couple: '', group: '' };
 }
-
-type RateOccupancy = 'standard' | 'couple' | 'group';
-
+function emptyRateBlock(): RateBlockDraft {
+  return Object.fromEntries(
+    DAY_ORDER.map((d) => [d, emptyDayRates()]),
+  ) as RateBlockDraft;
+}
 type RateRowShape = {
-  weekday_group: 'weekday' | 'weekend';
+  day_of_week: DayOfWeek;
   occupancy: RateOccupancy;
   price: number;
   date_from: string | null;
   date_to: string | null;
 };
-
-/** Form-field name for a (group × occupancy) rate cell. */
-function rateField(
-  weekday_group: 'weekday' | 'weekend',
-  occupancy: RateOccupancy,
-): keyof RateBlockDraft {
-  const occ = occupancy === 'couple' ? 'Couple' : occupancy === 'group' ? 'Group' : 'Standard';
-  return `${weekday_group === 'weekend' ? 'weekend' : 'weekday'}${occ}` as keyof RateBlockDraft;
-}
 
 /** Turn a form block into product_rates rows — one per non-empty price. */
 function blockToRows(
@@ -101,20 +87,14 @@ function blockToRows(
   dateTo: string | null,
 ): RateRowShape[] {
   const rows: RateRowShape[] = [];
-  const push = (
-    weekday_group: 'weekday' | 'weekend',
-    occupancy: RateOccupancy,
-    raw: string,
-  ) => {
-    if (raw.trim() === '') return;
-    const price = Number(raw);
-    if (Number.isFinite(price) && price >= 0) {
-      rows.push({ weekday_group, occupancy, price, date_from: dateFrom, date_to: dateTo });
-    }
-  };
-  for (const wg of ['weekday', 'weekend'] as const) {
-    for (const occ of ['standard', 'couple', 'group'] as const) {
-      push(wg, occ, block[rateField(wg, occ)]);
+  for (const day of DAY_ORDER) {
+    for (const occ of RATE_OCCUPANCIES) {
+      const raw = block[day][occ].trim();
+      if (raw === '') continue;
+      const price = Number(raw);
+      if (Number.isFinite(price) && price >= 0) {
+        rows.push({ day_of_week: day, occupancy: occ, price, date_from: dateFrom, date_to: dateTo });
+      }
     }
   }
   return rows;
@@ -128,23 +108,23 @@ function rowsToBlocks(rows: Product['rates']): {
   const base = emptyRateBlock();
   const seasonMap = new Map<string, SeasonDraft>();
   for (const r of rows ?? []) {
-    const target: RateBlockDraft =
-      r.date_from && r.date_to
-        ? (() => {
-            const key = `${r.date_from}|${r.date_to}`;
-            if (!seasonMap.has(key)) {
-              seasonMap.set(key, { ...emptyRateBlock(), dateFrom: r.date_from, dateTo: r.date_to });
-            }
-            return seasonMap.get(key)!;
-          })()
-        : base;
-    target[rateField(r.weekday_group, r.occupancy)] = String(r.price);
+    let target: RateBlockDraft;
+    if (r.date_from && r.date_to) {
+      const key = `${r.date_from}|${r.date_to}`;
+      if (!seasonMap.has(key)) {
+        seasonMap.set(key, { block: emptyRateBlock(), dateFrom: r.date_from, dateTo: r.date_to });
+      }
+      target = seasonMap.get(key)!.block;
+    } else {
+      target = base;
+    }
+    target[r.day_of_week][r.occupancy] = String(r.price);
   }
   return { base, seasons: [...seasonMap.values()] };
 }
 
-/** 2×3 price grid (weekday/weekend × standard/couple/group) reused by
- *  the "always" block and each seasonal block. */
+/** 7 (Mon…Sun) × 3 (1 / 2 / 3+ guests) price grid with a "fill every
+ *  day" shortcut. Reused by the "always" block and each seasonal block. */
 function RateGrid({
   block,
   onChange,
@@ -154,32 +134,63 @@ function RateGrid({
   onChange: (patch: Partial<RateBlockDraft>) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
-  const cell = (
-    key: keyof RateBlockDraft,
-    label: string,
-  ) => (
-    <div className="space-y-1">
-      <Label className="text-muted-foreground text-xs">{label}</Label>
-      <Input
-        type="number"
-        min="0"
-        step="0.01"
-        inputMode="decimal"
-        value={block[key]}
-        onChange={(e) => onChange({ [key]: e.target.value })}
-        placeholder="0.00"
-        className="bg-muted border-border text-foreground"
-      />
-    </div>
+  const [fill, setFill] = useState<DayRates>(emptyDayRates());
+
+  const cellInput = (value: string, onValue: (v: string) => void) => (
+    <Input
+      type="number"
+      min="0"
+      step="0.01"
+      inputMode="decimal"
+      value={value}
+      onChange={(e) => onValue(e.target.value)}
+      placeholder="0.00"
+      className="bg-muted border-border text-foreground h-8"
+    />
   );
+
   return (
-    <div className="grid grid-cols-2 gap-2">
-      {cell('weekdayStandard', t('rateWeekdayStandard'))}
-      {cell('weekendStandard', t('rateWeekendStandard'))}
-      {cell('weekdayCouple', t('rateWeekdayCouple'))}
-      {cell('weekendCouple', t('rateWeekendCouple'))}
-      {cell('weekdayGroup', t('rateWeekdayGroup'))}
-      {cell('weekendGroup', t('rateWeekendGroup'))}
+    <div className="space-y-1.5">
+      <div className="grid grid-cols-[2.75rem_1fr_1fr_1fr] items-end gap-1.5">
+        <span />
+        <Label className="text-muted-foreground text-[11px]">{t('rateCol1')}</Label>
+        <Label className="text-muted-foreground text-[11px]">{t('rateCol2')}</Label>
+        <Label className="text-muted-foreground text-[11px]">{t('rateCol3')}</Label>
+      </div>
+
+      <div className="grid grid-cols-[2.75rem_1fr_1fr_1fr] items-center gap-1.5">
+        <span className="text-muted-foreground text-[11px]">{t('rateAllDays')}</span>
+        {cellInput(fill.standard, (v) => setFill((p) => ({ ...p, standard: v })))}
+        {cellInput(fill.couple, (v) => setFill((p) => ({ ...p, couple: v })))}
+        {cellInput(fill.group, (v) => setFill((p) => ({ ...p, group: v })))}
+      </div>
+      <Button
+        type="button"
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          const patch: Partial<RateBlockDraft> = {};
+          for (const d of DAY_ORDER) patch[d] = { ...fill };
+          onChange(patch);
+        }}
+        className="text-primary hover:text-primary/80 h-6 px-1 text-xs"
+      >
+        {t('rateCopyToAll')}
+      </Button>
+
+      {DAY_ORDER.map((day) => (
+        <div
+          key={day}
+          className="grid grid-cols-[2.75rem_1fr_1fr_1fr] items-center gap-1.5"
+        >
+          <span className="text-muted-foreground text-xs">{DAY_LABEL_ES[day]}</span>
+          {RATE_OCCUPANCIES.map((occ) =>
+            cellInput(block[day][occ], (v) =>
+              onChange({ [day]: { ...block[day], [occ]: v } }),
+            ),
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -198,6 +209,9 @@ export function ProductForm({
 
   const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [categoryId, setCategoryId] = useState<string>('');
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [savingCategory, setSavingCategory] = useState(false);
   const [baseRates, setBaseRates] = useState<RateBlockDraft>(emptyRateBlock());
   const [seasons, setSeasons] = useState<SeasonDraft[]>([]);
 
@@ -269,13 +283,44 @@ export function ProductForm({
     setBaseRates((prev) => ({ ...prev, ...patch }));
   }
   function addSeason() {
-    setSeasons((prev) => [...prev, { ...emptyRateBlock(), dateFrom: '', dateTo: '' }]);
+    setSeasons((prev) => [...prev, { block: emptyRateBlock(), dateFrom: '', dateTo: '' }]);
   }
   function removeSeason(index: number) {
     setSeasons((prev) => prev.filter((_, i) => i !== index));
   }
-  function updateSeason(index: number, patch: Partial<SeasonDraft>) {
+  function updateSeasonDates(index: number, patch: { dateFrom?: string; dateTo?: string }) {
     setSeasons((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+  }
+  function updateSeasonBlock(index: number, patch: Partial<RateBlockDraft>) {
+    setSeasons((prev) =>
+      prev.map((s, i) => (i === index ? { ...s, block: { ...s.block, ...patch } } : s)),
+    );
+  }
+
+  async function handleCreateCategory() {
+    const trimmed = newCategoryName.trim();
+    if (!trimmed) return;
+    setSavingCategory(true);
+    try {
+      const res = await fetch('/api/product-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: trimmed }),
+      });
+      const data = await readResponseJson<{ category?: ProductCategory; error?: string }>(
+        res,
+      ).catch(() => ({}) as { category?: ProductCategory; error?: string });
+      if (!res.ok || !data.category) {
+        toast.error(data.error ?? t('toastCategoryFailed'));
+        return;
+      }
+      setCategories((prev) => [...prev, data.category!]);
+      setCategoryId(data.category.id);
+      setNewCategoryName('');
+      setAddingCategory(false);
+    } finally {
+      setSavingCategory(false);
+    }
   }
 
   function addPriceOption() {
@@ -405,7 +450,7 @@ export function ProductForm({
     if (isHotel) {
       resolvedRates = blockToRows(baseRates, null, null);
       for (const season of seasons) {
-        const rows = blockToRows(season, season.dateFrom || null, season.dateTo || null);
+        const rows = blockToRows(season.block, season.dateFrom || null, season.dateTo || null);
         if (rows.length === 0) continue;
         if (!season.dateFrom || !season.dateTo) {
           toast.error(t('toastSeasonDatesRequired'));
@@ -572,18 +617,71 @@ export function ProductForm({
             <>
               <div className="space-y-1.5">
                 <Label className="text-muted-foreground">{t('categoryLabel')}</Label>
-                <select
-                  value={categoryId}
-                  onChange={(e) => setCategoryId(e.target.value)}
-                  className="border-border bg-muted text-foreground h-9 w-full rounded-md border px-2 text-sm"
-                >
-                  <option value="">{t('categoryNone')}</option>
-                  {categories.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-                </select>
+                <div className="flex items-center gap-2">
+                  <select
+                    value={categoryId}
+                    onChange={(e) => setCategoryId(e.target.value)}
+                    className="border-border bg-muted text-foreground h-9 flex-1 rounded-md border px-2 text-sm"
+                  >
+                    <option value="">{t('categoryNone')}</option>
+                    {categories.map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  {!addingCategory && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setAddingCategory(true)}
+                      className="border-border text-muted-foreground hover:bg-muted shrink-0"
+                    >
+                      <Plus className="h-3.5 w-3.5" />
+                      {t('categoryAddBtn')}
+                    </Button>
+                  )}
+                </div>
+                {addingCategory && (
+                  <div className="flex items-center gap-2">
+                    <Input
+                      autoFocus
+                      value={newCategoryName}
+                      onChange={(e) => setNewCategoryName(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleCreateCategory();
+                        }
+                      }}
+                      placeholder={t('categoryNewPlaceholder')}
+                      className="bg-muted border-border text-foreground h-9"
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={savingCategory || !newCategoryName.trim()}
+                      onClick={() => void handleCreateCategory()}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground shrink-0"
+                    >
+                      {savingCategory && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      {t('categorySaveBtn')}
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setAddingCategory(false);
+                        setNewCategoryName('');
+                      }}
+                      className="text-muted-foreground hover:text-foreground shrink-0 px-1"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                )}
               </div>
 
               <div className="border-border space-y-3 rounded-md border p-3">
@@ -617,7 +715,7 @@ export function ProductForm({
                         <Input
                           type="date"
                           value={season.dateFrom}
-                          onChange={(e) => updateSeason(i, { dateFrom: e.target.value })}
+                          onChange={(e) => updateSeasonDates(i, { dateFrom: e.target.value })}
                           className="bg-muted border-border text-foreground"
                         />
                       </div>
@@ -628,14 +726,14 @@ export function ProductForm({
                         <Input
                           type="date"
                           value={season.dateTo}
-                          onChange={(e) => updateSeason(i, { dateTo: e.target.value })}
+                          onChange={(e) => updateSeasonDates(i, { dateTo: e.target.value })}
                           className="bg-muted border-border text-foreground"
                         />
                       </div>
                     </div>
                     <RateGrid
-                      block={season}
-                      onChange={(patch) => updateSeason(i, patch)}
+                      block={season.block}
+                      onChange={(patch) => updateSeasonBlock(i, patch)}
                       t={t}
                     />
                   </div>

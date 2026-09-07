@@ -127,7 +127,7 @@ export async function POST(request: Request) {
       parsedRates.rates.map((r) => ({
         account_id: ctx.accountId,
         product_id: data.id,
-        weekday_group: r.weekday_group,
+        day_of_week: r.day_of_week,
         occupancy: r.occupancy,
         price: r.price,
         date_from: r.date_from,

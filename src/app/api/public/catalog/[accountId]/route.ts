@@ -111,7 +111,7 @@ export async function GET(
   if (productIds.length > 0 && account.industry_vertical === 'hotel') {
     const { data: rates } = await db
       .from('product_rates')
-      .select('product_id, weekday_group, occupancy, price, date_from, date_to')
+      .select('product_id, day_of_week, occupancy, price, date_from, date_to')
       .in('product_id', productIds)
       .order('position')
     for (const rate of rates ?? []) {

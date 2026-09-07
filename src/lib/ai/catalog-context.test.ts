@@ -92,10 +92,11 @@ describe('loadCatalogContext', () => {
         {
           vertical: 'hotel',
           rates: [
-            { product_id: 'r1', weekday_group: 'weekday', occupancy: 'standard', price: 800, date_from: null, date_to: null },
-            { product_id: 'r1', weekday_group: 'weekend', occupancy: 'standard', price: 1200, date_from: null, date_to: null },
-            { product_id: 'r1', weekday_group: 'weekday', occupancy: 'couple', price: 950, date_from: null, date_to: null },
-            { product_id: 'r1', weekday_group: 'weekend', occupancy: 'group', price: 1600, date_from: null, date_to: null },
+            { product_id: 'r1', day_of_week: 'mon', occupancy: 'standard', price: 800, date_from: null, date_to: null },
+            { product_id: 'r1', day_of_week: 'tue', occupancy: 'standard', price: 800, date_from: null, date_to: null },
+            { product_id: 'r1', day_of_week: 'fri', occupancy: 'standard', price: 1200, date_from: null, date_to: null },
+            { product_id: 'r1', day_of_week: 'mon', occupancy: 'couple', price: 950, date_from: null, date_to: null },
+            { product_id: 'r1', day_of_week: 'fri', occupancy: 'group', price: 1600, date_from: null, date_to: null },
           ],
         },
       ),
@@ -104,10 +105,10 @@ describe('loadCatalogContext', () => {
     expect(res).toHaveLength(1)
     expect(res![0]).toContain('Hab 101:')
     // comma/space in "1,200" varies by runtime locale — match loosely
-    expect(res![0]).toMatch(/Lun–Jue .*800/)
-    expect(res![0]).toMatch(/Vie–Dom .*1.?200/)
-    expect(res![0]).toMatch(/pareja Lun–Jue .*950/)
-    expect(res![0]).toMatch(/grupo Vie–Dom .*1.?600/)
+    expect(res![0]).toMatch(/Lun–Mar .*800/)
+    expect(res![0]).toMatch(/Vie .*1.?200/)
+    expect(res![0]).toMatch(/pareja Lun .*950/)
+    expect(res![0]).toMatch(/grupo Vie .*1.?600/)
     expect(res![0]).toContain('— Vista jardín')
   })
 

@@ -25,8 +25,30 @@ and polish.
 > (adds `product_categories` + `products.category_id`, and a
 > `product_rates` table for per-date room pricing on the hotel vertical).
 > No effect until a product actually has rates or a category.
+>
+> **Migration required:** apply `supabase/migrations/111_product_rates_per_day.sql`
+> (renames `product_rates.weekday_group` → `day_of_week` and swaps the
+> CHECK to the seven day codes `mon`…`sun`). `product_rates` has no rows
+> in any environment, so this is a pure schema swap — no data migration.
 
 ### Added
+
+- **Hotel rooms priced per day of the week.** The room-rate editor
+  (hotel vertical) now takes a distinct price for **every day** — Mon,
+  Tue, … Sun — instead of a Mon–Thu / Fri–Sun split, still crossed with
+  the 1 / 2 / 3+ guest tiers and optional seasonal date ranges. A "fill
+  every day" shortcut seeds all seven rows from one line. The public
+  catalog gains a **"Cotiza tu estadía"** panel: the visitor picks
+  check-in, check-out and number of guests and the nightly rates price
+  the stay client-side (night-by-night breakdown + total), with a
+  WhatsApp button that prefills the request. The AI catalog context and
+  the products Excel export/import move to the same per-day model — the
+  six `rate_weekday*` / `rate_weekend*` columns collapse to one compact
+  `room_rates` cell (`mon=800/950/1600;fri=1200//1700`).
+- **"New category" button in the product form.** For a hotel company,
+  the category picker in the add/edit-product dialog gains an inline
+  field to create a category on the spot (`POST /api/product-categories`)
+  without leaving the form.
 
 - **Platform admin: "Reenviar acceso" for a company.** A button on the
   company detail in **Plataforma** re-sends an access email to the

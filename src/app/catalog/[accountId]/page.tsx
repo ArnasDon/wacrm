@@ -62,7 +62,13 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { formatCurrency } from '@/lib/currency';
-import { rateSortKey, OCCUPANCY_LABEL_ES } from '@/lib/products/rates';
+import {
+  summarizeRates,
+  quoteStay,
+  occupancyForGuests,
+  DAY_LABEL_ES,
+  type ProductRate,
+} from '@/lib/products/rates';
 
 interface CatalogPriceOption {
   id: string;
@@ -73,7 +79,7 @@ interface CatalogPriceOption {
 }
 
 interface CatalogRate {
-  weekday_group: 'weekday' | 'weekend';
+  day_of_week: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
   occupancy: 'standard' | 'couple' | 'group';
   price: number;
   date_from: string | null;
@@ -311,6 +317,28 @@ function PublicCatalogPageInner() {
     : null;
   const detailQty = detailLineKey ? (quantities[detailLineKey] ?? 0) : 0;
   const selectedIsRoom = selectedProduct ? isRoom(selectedProduct) : false;
+
+  // Room stay calculator (hotel vertical). Visitor picks dates + guests
+  // and the nightly rates from the catalog price the stay client-side;
+  // the "write to us" button prefills a WhatsApp message with the result.
+  const [stayCheckIn, setStayCheckIn] = useState('');
+  const [stayCheckOut, setStayCheckOut] = useState('');
+  const [stayGuests, setStayGuests] = useState(2);
+  useEffect(() => {
+    setStayCheckIn('');
+    setStayCheckOut('');
+    setStayGuests(2);
+  }, [selectedProduct?.id]);
+
+  const stayQuote =
+    selectedIsRoom && stayCheckIn && stayCheckOut
+      ? quoteStay(
+          (selectedProduct?.rates ?? []) as ProductRate[],
+          stayCheckIn,
+          stayCheckOut,
+          occupancyForGuests(stayGuests),
+        )
+      : null;
 
   async function handleSubmit() {
     if (!accountId) return;
@@ -762,32 +790,18 @@ function PublicCatalogPageInner() {
 
                 {selectedIsRoom ? (
                   <div className="mt-6 space-y-1.5">
-                    {selectedProduct.rates
-                      .filter((r) => !r.date_from && !r.date_to)
-                      .sort((a, b) => rateSortKey(a) - rateSortKey(b))
-                      .map((r, i) => {
-                        const occ = OCCUPANCY_LABEL_ES[r.occupancy];
-                        const occLabel = occ
-                          ? `${occ.trim().charAt(0).toUpperCase()}${occ.trim().slice(1)} · `
-                          : '';
-                        return (
-                        <div
-                          key={i}
-                          className="flex items-baseline justify-between gap-4 text-[#062f38]"
-                        >
-                          <span className="text-sm text-[#284d53]/75">
-                            {occLabel +
-                              (r.weekday_group === 'weekend'
-                                ? 'Vie–Dom'
-                                : 'Lun–Jue')}
-                          </span>
-                          <span className="font-serif text-xl">
-                            {formatCurrency(r.price, data.currency)}{' '}
-                            <span className="text-xs text-[#284d53]/60">/ noche</span>
-                          </span>
-                        </div>
-                        );
-                      })}
+                    {(() => {
+                      const summary = summarizeRates(
+                        selectedProduct.rates as ProductRate[],
+                        (n) => formatCurrency(n, data.currency),
+                      );
+                      return summary ? (
+                        <p className="text-sm leading-6 text-[#284d53]/80">
+                          {summary}{' '}
+                          <span className="text-xs text-[#284d53]/55">/ noche</span>
+                        </p>
+                      ) : null;
+                    })()}
                     {selectedProduct.rates.some((r) => r.date_from && r.date_to) && (
                       <p className="pt-1 text-xs text-[#284d53]/60">
                         Aplican tarifas de temporada en ciertas fechas.
@@ -858,11 +872,110 @@ function PublicCatalogPageInner() {
                 )}
 
                 {selectedIsRoom ? (
-                  <p className="mt-8 rounded-xl border border-[#082f38]/15 bg-[#f4f6f2] p-4 text-sm leading-6 text-[#284d53]/80 sm:rounded-none">
-                    Para reservar, escríbenos con tus fechas de entrada y salida y
-                    el número de personas — confirmamos disponibilidad y el precio
-                    de tu estancia.
-                  </p>
+                  <div className="mt-8 rounded-xl border border-[#082f38]/15 bg-[#f4f6f2] p-4 sm:rounded-none">
+                    <p className="mb-3 text-[10px] font-bold tracking-[0.16em] text-[#082f38] uppercase">
+                      Cotiza tu estadía
+                    </p>
+                    <div className="grid grid-cols-2 gap-3">
+                      <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                        Entrada
+                        <input
+                          type="date"
+                          value={stayCheckIn}
+                          onChange={(e) => setStayCheckIn(e.target.value)}
+                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                        />
+                      </label>
+                      <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                        Salida
+                        <input
+                          type="date"
+                          value={stayCheckOut}
+                          min={stayCheckIn || undefined}
+                          onChange={(e) => setStayCheckOut(e.target.value)}
+                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                        />
+                      </label>
+                      <label className="col-span-2 flex flex-col gap-1 text-xs text-[#284d53]/75">
+                        Personas
+                        <input
+                          type="number"
+                          min={1}
+                          max={20}
+                          value={stayGuests}
+                          onChange={(e) =>
+                            setStayGuests(
+                              Math.max(1, Math.min(20, Number(e.target.value) || 1)),
+                            )
+                          }
+                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                        />
+                      </label>
+                    </div>
+
+                    {stayQuote && stayQuote.nights.length > 0 && (
+                      <div className="mt-4 space-y-1.5 border-t border-[#082f38]/12 pt-3">
+                        {stayQuote.nights.map((n) => (
+                          <div
+                            key={n.date}
+                            className="flex items-baseline justify-between gap-3 text-sm text-[#284d53]/80"
+                          >
+                            <span>
+                              {DAY_LABEL_ES[n.day_of_week]} {n.date}
+                            </span>
+                            <span className="font-serif">
+                              {n.price === null
+                                ? 'a consultar'
+                                : formatCurrency(n.price, data.currency)}
+                            </span>
+                          </div>
+                        ))}
+                        <div className="flex items-baseline justify-between gap-3 border-t border-[#082f38]/12 pt-2 text-[#062f38]">
+                          <span className="text-sm font-semibold">
+                            {stayQuote.nights.length}{' '}
+                            {stayQuote.nights.length === 1 ? 'noche' : 'noches'} ·{' '}
+                            {stayGuests}{' '}
+                            {stayGuests === 1 ? 'persona' : 'personas'}
+                          </span>
+                          <span className="font-serif text-xl">
+                            {formatCurrency(stayQuote.total, data.currency)}
+                          </span>
+                        </div>
+                        {stayQuote.missing.length > 0 && (
+                          <p className="pt-1 text-xs text-[#284d53]/60">
+                            Algunas noches ({stayQuote.missing.join(', ')}) no tienen
+                            tarifa publicada — te confirmamos ese precio al escribir.
+                          </p>
+                        )}
+                      </div>
+                    )}
+
+                    {data.whatsapp_number ? (
+                      <a
+                        href={`https://wa.me/${data.whatsapp_number.replace(/\D/g, '')}?text=${encodeURIComponent(
+                          `Hola, quiero cotizar "${selectedProduct.name}"` +
+                            (stayCheckIn && stayCheckOut
+                              ? ` del ${stayCheckIn} al ${stayCheckOut} para ${stayGuests} ${
+                                  stayGuests === 1 ? 'persona' : 'personas'
+                                }` +
+                                (stayQuote && stayQuote.missing.length === 0
+                                  ? ` (total estimado ${formatCurrency(stayQuote.total, data.currency)})`
+                                  : '')
+                              : '') +
+                            '.',
+                        )}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-[#062f38] text-sm font-medium text-white sm:h-11 sm:rounded-none"
+                      >
+                        Escríbenos por esta estadía
+                      </a>
+                    ) : (
+                      <p className="mt-3 text-xs leading-5 text-[#284d53]/70">
+                        Escríbenos con estas fechas para confirmar disponibilidad.
+                      </p>
+                    )}
+                  </div>
                 ) : (
                   <>
                     <div className="mt-8">

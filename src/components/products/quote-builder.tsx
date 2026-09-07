@@ -154,7 +154,7 @@ export function QuoteBuilder({
       }
       const stay = quoteStay(
         (product.rates ?? []).map((r) => ({
-          weekday_group: r.weekday_group,
+          day_of_week: r.day_of_week,
           occupancy: r.occupancy,
           price: r.price,
           date_from: r.date_from,
@@ -526,7 +526,7 @@ export function QuoteBuilder({
                     {(() => {
                       const stay = quoteStay(
                         (pickedProduct?.rates ?? []).map((r) => ({
-                          weekday_group: r.weekday_group,
+                          day_of_week: r.day_of_week,
                           occupancy: r.occupancy,
                           price: r.price,
                           date_from: r.date_from,

@@ -473,12 +473,13 @@ export interface Product {
   rates?: ProductRateRow[];
 }
 
-/** A row of `product_rates` (migration 106). */
+/** A row of `product_rates` (migrations 106 + 108 + 111). */
 export interface ProductRateRow {
   id: string;
   account_id: string;
   product_id: string;
-  weekday_group: 'weekday' | 'weekend';
+  /** Which day of the week this price applies to (migration 111). */
+  day_of_week: 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun';
   /** standard = base · couple = 2 guests · group = 3+ guests (migration 108). */
   occupancy: 'standard' | 'couple' | 'group';
   price: number;

@@ -1,17 +1,35 @@
 // ============================================================
-// Per-date room rates for the `hotel` industry vertical (migration
-// 106). Pure — no I/O, fully unit-tested. Shared by:
+// Per-day room rates for the `hotel` industry vertical (migrations 106
+// + 108 + 111). Pure — no I/O, fully unit-tested. Shared by:
 //   - POST/PATCH /api/products        (validation: parseRates)
 //   - the quote builder               (quoteStay)
+//   - the public catalog stay quote   (quoteStay)
 //   - src/lib/ai/catalog-context.ts   (rate structure shown to the AI)
 //
-// The rule Villa San Ricardo asked for: Mon–Thu ("weekday") is cheaper
-// than Fri–Sun ("weekend"); a couple (2 guests) rate and a group (3+
-// guests) rate can each differ from the standard rate; an optional date
-// range gives a seasonal override that wins for the nights inside it.
+// A room's nightly price is a distinct number for every day of the
+// week (Mon…Sun), crossed with a guest tier — standard (1 guest),
+// couple (2), group (3+) — where couple/group are optional and fall
+// back to standard. An optional date range gives a seasonal override
+// that wins for the nights inside it.
 // ============================================================
 
-export type WeekdayGroup = 'weekday' | 'weekend'
+export type DayOfWeek = 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun'
+
+/** Mon→Sun display / iteration order. */
+export const DAY_ORDER: DayOfWeek[] = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+const DAY_CODES = new Set<string>(DAY_ORDER)
+
+export const DAY_LABEL_ES: Record<DayOfWeek, string> = {
+  mon: 'Lun',
+  tue: 'Mar',
+  wed: 'Mié',
+  thu: 'Jue',
+  fri: 'Vie',
+  sat: 'Sáb',
+  sun: 'Dom',
+}
+
 /** standard = base / 1 guest · couple = 2 guests · group = 3+ guests.
  *  `couple` and `group` are optional tiers — a missing one falls back
  *  to the standard rate. */
@@ -23,7 +41,7 @@ export const OCCUPANCY_ORDER: Occupancy[] = ['standard', 'couple', 'group']
 /** A row of `product_rates`, request-body or DB shape (only the fields
  *  the resolver needs). */
 export interface ProductRate {
-  weekday_group: WeekdayGroup
+  day_of_week: DayOfWeek
   occupancy: Occupancy
   price: number
   /** ISO `YYYY-MM-DD`. Both null = the always-on rate; both set = a
@@ -32,14 +50,16 @@ export interface ProductRate {
   date_to: string | null
 }
 
-export const MAX_PRODUCT_RATES = 18 // 2 groups × 3 occupancies × up to 3 seasons
+export const MAX_PRODUCT_RATES = 63 // 7 days × 3 occupancies × up to 3 seasons
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 
-/** Fri / Sat / Sun are the weekend; Mon–Thu the weekday. */
-export function weekdayGroupOf(dateISO: string): WeekdayGroup {
+const JS_DAY_TO_CODE: DayOfWeek[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+
+/** The day-of-week code for an ISO date. */
+export function dayOfWeekOf(dateISO: string): DayOfWeek {
   const day = new Date(`${dateISO}T12:00:00Z`).getUTCDay() // 0 = Sun … 6 = Sat
-  return day === 0 || day === 5 || day === 6 ? 'weekend' : 'weekday'
+  return JS_DAY_TO_CODE[day]
 }
 
 /**
@@ -73,10 +93,10 @@ function seasonContains(rate: ProductRate, nightISO: string): boolean {
  * The price for one night, given all of a product's rates.
  *
  * Resolution order:
- *   1. exact occupancy + weekday group, seasonal row covering the night
- *   2. exact occupancy + weekday group, always-on row
+ *   1. exact occupancy + day of week, seasonal row covering the night
+ *   2. exact occupancy + day of week, always-on row
  *   3. (occupancy 'couple' / 'group' only) fall back to the 'standard'
- *      rate for the same group — the couple and group rates are optional
+ *      rate for the same day — the couple and group rates are optional
  *
  * Returns `null` when nothing matches (the caller surfaces it as a gap).
  */
@@ -85,12 +105,12 @@ export function resolveNightlyRate(
   nightISO: string,
   occupancy: Occupancy,
 ): number | null {
-  const group = weekdayGroupOf(nightISO)
+  const day = dayOfWeekOf(nightISO)
   const tryOccupancy = (occ: Occupancy): number | null => {
-    const forGroup = rates.filter((r) => r.weekday_group === group && r.occupancy === occ)
-    const seasonal = forGroup.find((r) => seasonContains(r, nightISO))
+    const forDay = rates.filter((r) => r.day_of_week === day && r.occupancy === occ)
+    const seasonal = forDay.find((r) => seasonContains(r, nightISO))
     if (seasonal) return seasonal.price
-    const always = forGroup.find((r) => !r.date_from && !r.date_to)
+    const always = forDay.find((r) => !r.date_from && !r.date_to)
     return always ? always.price : null
   }
 
@@ -100,9 +120,16 @@ export function resolveNightlyRate(
   return null
 }
 
+/** Map a guest count to an occupancy tier: 1 → standard, 2 → couple, 3+ → group. */
+export function occupancyForGuests(guests: number): Occupancy {
+  if (guests >= 3) return 'group'
+  if (guests === 2) return 'couple'
+  return 'standard'
+}
+
 export interface StayNight {
   date: string
-  weekday_group: WeekdayGroup
+  day_of_week: DayOfWeek
   price: number | null
 }
 
@@ -123,47 +150,143 @@ export function quoteStay(
 ): StayQuote {
   const nights = nightsBetween(checkInISO, checkOutISO).map((date): StayNight => {
     const price = resolveNightlyRate(rates, date, occupancy)
-    return { date, weekday_group: weekdayGroupOf(date), price }
+    return { date, day_of_week: dayOfWeekOf(date), price }
   })
   const total = nights.reduce((sum, n) => sum + (n.price ?? 0), 0)
   const missing = nights.filter((n) => n.price === null).map((n) => n.date)
   return { nights, total, missing }
 }
 
-/**
- * One-line human summary of a product's always-on rates (seasonal rows
- * are ignored — they add noise in a catalog listing). `fmt` formats a
- * money amount (so callers control currency/locale). Empty string when
- * there are no always-on rates.
- *
- * e.g. "Lun–Jue Q800 · Vie–Dom Q1200 · pareja Lun–Jue Q950 · grupo Vie–Dom Q1600"
- */
+// ------------------------------------------------------------
+// One-line human summary of a product's always-on rates
+// ------------------------------------------------------------
+
 export const OCCUPANCY_LABEL_ES: Record<Occupancy, string> = {
   standard: '',
   couple: 'pareja ',
   group: 'grupo ',
 }
 
-/** Rank a rate for display: standard → couple → group, weekday before
- *  weekend within each tier. */
-export function rateSortKey(r: Pick<ProductRate, 'weekday_group' | 'occupancy'>): number {
-  return OCCUPANCY_ORDER.indexOf(r.occupancy) * 2 + (r.weekday_group === 'weekend' ? 1 : 0)
+/** Rank a rate for display: standard → couple → group, Mon→Sun within
+ *  each tier. */
+export function rateSortKey(r: Pick<ProductRate, 'day_of_week' | 'occupancy'>): number {
+  return OCCUPANCY_ORDER.indexOf(r.occupancy) * 7 + DAY_ORDER.indexOf(r.day_of_week)
 }
 
+/** Collapse a run of consecutive same-priced days into "Lun–Jue Q800",
+ *  a single day into "Vie Q1000". `days` must be in Mon→Sun order. */
+function collapseDayRuns(
+  entries: { day: DayOfWeek; price: number }[],
+  fmt: (n: number) => string,
+): string {
+  const byDay = new Map(entries.map((e) => [e.day, e.price]))
+  const runs: string[] = []
+  let i = 0
+  const present = DAY_ORDER.filter((d) => byDay.has(d))
+  while (i < present.length) {
+    const startDay = present[i]
+    const price = byDay.get(startDay)!
+    let j = i
+    // Extend while the next present day is the immediate next weekday and
+    // carries the same price.
+    while (
+      j + 1 < present.length &&
+      DAY_ORDER.indexOf(present[j + 1]) === DAY_ORDER.indexOf(present[j]) + 1 &&
+      byDay.get(present[j + 1]) === price
+    ) {
+      j += 1
+    }
+    const label =
+      i === j
+        ? DAY_LABEL_ES[startDay]
+        : `${DAY_LABEL_ES[startDay]}–${DAY_LABEL_ES[present[j]]}`
+    runs.push(`${label} ${fmt(price)}`)
+    i = j + 1
+  }
+  return runs.join(' · ')
+}
+
+/**
+ * One-line human summary of a product's always-on rates (seasonal rows
+ * are ignored — they add noise in a catalog listing). `fmt` formats a
+ * money amount. Empty string when there are no always-on rates.
+ *
+ * e.g. "Lun–Jue Q800 · Vie Q1000 · Sáb–Dom Q1200 · pareja Lun–Dom Q1400"
+ */
 export function summarizeRates(
-  rates: Pick<ProductRate, 'weekday_group' | 'occupancy' | 'price' | 'date_from' | 'date_to'>[],
+  rates: Pick<ProductRate, 'day_of_week' | 'occupancy' | 'price' | 'date_from' | 'date_to'>[],
   fmt: (amount: number) => string,
 ): string {
   const always = rates.filter((r) => !r.date_from && !r.date_to)
   if (always.length === 0) return ''
-  return always
-    .slice()
-    .sort((a, b) => rateSortKey(a) - rateSortKey(b))
-    .map(
-      (r) =>
-        `${OCCUPANCY_LABEL_ES[r.occupancy]}${r.weekday_group === 'weekend' ? 'Vie–Dom' : 'Lun–Jue'} ${fmt(r.price)}`,
-    )
-    .join(' · ')
+  return OCCUPANCY_ORDER.flatMap((occ) => {
+    const forOcc = always
+      .filter((r) => r.occupancy === occ)
+      .map((r) => ({ day: r.day_of_week, price: r.price }))
+    if (forOcc.length === 0) return []
+    const body = collapseDayRuns(forOcc, fmt)
+    return body ? [`${OCCUPANCY_LABEL_ES[occ]}${body}`] : []
+  }).join(' · ')
+}
+
+// ------------------------------------------------------------
+// Compact single-cell encoding for the products Excel export/import.
+// One `room_rates` column instead of 21 rate_* columns. Always-on
+// rates only — seasonal overrides are not round-tripped via Excel.
+//
+//   "mon=800/950/1600;fri=1200;sat=1400//1700"
+//
+// entry = `<day>=<standard>[/<couple>[/<group>]]`; a skipped middle
+// tier is an empty slot ("1400//1700" = standard 1400, no couple,
+// group 1700).
+// ------------------------------------------------------------
+
+type RoomRateLite = Pick<ProductRate, 'day_of_week' | 'occupancy' | 'price' | 'date_from' | 'date_to'>
+
+export function formatRoomRatesCell(rates: RoomRateLite[]): string {
+  const always = rates.filter((r) => !r.date_from && !r.date_to)
+  if (always.length === 0) return ''
+  const parts: string[] = []
+  for (const day of DAY_ORDER) {
+    const slots = OCCUPANCY_ORDER.map((occ) => {
+      const hit = always.find((r) => r.day_of_week === day && r.occupancy === occ)
+      return hit ? String(hit.price) : ''
+    })
+    // Drop trailing empties.
+    while (slots.length > 0 && slots[slots.length - 1] === '') slots.pop()
+    if (slots.length === 0) continue
+    parts.push(`${day}=${slots.join('/')}`)
+  }
+  return parts.join(';')
+}
+
+/** Parse a `room_rates` cell into rate rows (always-on). Returns `null`
+ *  when the cell can't be read as the format (so the caller can flag the
+ *  Excel row); an empty/blank cell yields `[]`. */
+export function parseRoomRatesCell(
+  raw: string,
+): { day_of_week: DayOfWeek; occupancy: Occupancy; price: number }[] | null {
+  const text = raw.trim()
+  if (text === '') return []
+  const out: { day_of_week: DayOfWeek; occupancy: Occupancy; price: number }[] = []
+  for (const entry of text.split(';')) {
+    const chunk = entry.trim()
+    if (chunk === '') continue
+    const eq = chunk.indexOf('=')
+    if (eq < 1) return null
+    const day = chunk.slice(0, eq).trim().toLowerCase()
+    if (!DAY_CODES.has(day)) return null
+    const slots = chunk.slice(eq + 1).split('/')
+    if (slots.length > OCCUPANCY_ORDER.length) return null
+    for (let i = 0; i < slots.length; i += 1) {
+      const v = slots[i].trim()
+      if (v === '') continue
+      const price = Number(v)
+      if (!Number.isFinite(price) || price < 0) return null
+      out.push({ day_of_week: day as DayOfWeek, occupancy: OCCUPANCY_ORDER[i], price })
+    }
+  }
+  return out
 }
 
 // ------------------------------------------------------------
@@ -172,7 +295,7 @@ export function summarizeRates(
 // ------------------------------------------------------------
 
 export interface ParsedRate {
-  weekday_group: WeekdayGroup
+  day_of_week: DayOfWeek
   occupancy: Occupancy
   price: number
   date_from: string | null
@@ -198,9 +321,12 @@ export function parseRates(raw: unknown): ParseRatesResult {
     }
     const row = entry as Record<string, unknown>
 
-    const group = row.weekday_group
-    if (group !== 'weekday' && group !== 'weekend') {
-      return { ok: false, error: `rates[${i}].weekday_group must be 'weekday' or 'weekend'` }
+    const day = row.day_of_week
+    if (typeof day !== 'string' || !DAY_CODES.has(day)) {
+      return {
+        ok: false,
+        error: `rates[${i}].day_of_week must be one of mon,tue,wed,thu,fri,sat,sun`,
+      }
     }
     const occupancy = row.occupancy ?? 'standard'
     if (occupancy !== 'standard' && occupancy !== 'couple' && occupancy !== 'group') {
@@ -232,7 +358,7 @@ export function parseRates(raw: unknown): ParseRatesResult {
     }
 
     rates.push({
-      weekday_group: group,
+      day_of_week: day as DayOfWeek,
       occupancy,
       price,
       date_from: dateFrom,

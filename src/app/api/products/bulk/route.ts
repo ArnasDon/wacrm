@@ -13,10 +13,12 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 const MAX_ROWS = 500
 
 interface RawRate {
-  weekday_group?: unknown
+  day_of_week?: unknown
   occupancy?: unknown
   price?: unknown
 }
+
+const DAY_CODES = new Set(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
 
 interface RawRow {
   name?: unknown
@@ -91,7 +93,7 @@ export async function POST(request: Request) {
       is_active: boolean
       category_id: string | null
     }
-    rates: { weekday_group: string; occupancy: string; price: number }[]
+    rates: { day_of_week: string; occupancy: string; price: number }[]
   }
   const prepared: PreparedRow[] = []
   const errors: { row: number; message: string }[] = []
@@ -119,16 +121,17 @@ export async function POST(request: Request) {
     const rates: PreparedRow['rates'] = []
     if (Array.isArray(raw.rates)) {
       for (const r of raw.rates as RawRate[]) {
-        const group = r.weekday_group
+        const day = r.day_of_week
         const occupancy = r.occupancy ?? 'standard'
         const p = Number(r.price)
         if (
-          (group === 'weekday' || group === 'weekend') &&
+          typeof day === 'string' &&
+          DAY_CODES.has(day) &&
           (occupancy === 'standard' || occupancy === 'couple' || occupancy === 'group') &&
           Number.isFinite(p) &&
           p >= 0
         ) {
-          rates.push({ weekday_group: group, occupancy, price: p })
+          rates.push({ day_of_week: day, occupancy, price: p })
         }
       }
     }
@@ -162,7 +165,7 @@ export async function POST(request: Request) {
   const rateRows: {
     account_id: string
     product_id: string
-    weekday_group: string
+    day_of_week: string
     occupancy: string
     price: number
     position: number
@@ -172,7 +175,7 @@ export async function POST(request: Request) {
       rateRows.push({
         account_id: ctx.accountId,
         product_id: row.id as string,
-        weekday_group: r.weekday_group,
+        day_of_week: r.day_of_week,
         occupancy: r.occupancy,
         price: r.price,
         position,

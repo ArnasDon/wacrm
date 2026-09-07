@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildProductsWorkbook, toProductExportRow, type ProductExportRow } from './export-excel'
-import type { Product } from '@/types'
+import type { Product, ProductRateRow } from '@/types'
 
 function makeProduct(overrides: Partial<Product> = {}): Product {
   return {
@@ -17,6 +17,23 @@ function makeProduct(overrides: Partial<Product> = {}): Product {
   }
 }
 
+function rate(overrides: Partial<ProductRateRow>): ProductRateRow {
+  return {
+    id: 'r',
+    account_id: 'a1',
+    product_id: 'p1',
+    day_of_week: 'mon',
+    occupancy: 'standard',
+    price: 0,
+    date_from: null,
+    date_to: null,
+    position: 0,
+    created_at: '',
+    updated_at: '',
+    ...overrides,
+  }
+}
+
 describe('toProductExportRow', () => {
   it('maps a product to an export row', () => {
     expect(toProductExportRow(makeProduct(), 'Camas')).toEqual({
@@ -25,12 +42,7 @@ describe('toProductExportRow', () => {
       price: 350,
       is_active: true,
       category: 'Camas',
-      rate_weekday: '',
-      rate_weekend: '',
-      rate_weekday_couple: '',
-      rate_weekend_couple: '',
-      rate_weekday_group: '',
-      rate_weekend_group: '',
+      room_rates: '',
     })
   })
 
@@ -40,27 +52,25 @@ describe('toProductExportRow', () => {
     expect(row.category).toBe('')
   })
 
-  it('pulls always-on room rates from product.rates', () => {
+  it('encodes always-on room rates into the room_rates cell, ignoring seasonal rows', () => {
     const row = toProductExportRow(
       makeProduct({
         rates: [
-          {
-            id: 'r1', account_id: 'a1', product_id: 'p1',
-            weekday_group: 'weekday', occupancy: 'standard', price: 800,
-            date_from: null, date_to: null, position: 0,
-            created_at: '', updated_at: '',
-          },
-          {
-            id: 'r2', account_id: 'a1', product_id: 'p1',
-            weekday_group: 'weekday', occupancy: 'standard', price: 1500,
-            date_from: '2026-12-24', date_to: '2026-12-31', position: 1,
-            created_at: '', updated_at: '',
-          },
+          rate({ id: 'r1', day_of_week: 'mon', occupancy: 'standard', price: 800 }),
+          rate({ id: 'r2', day_of_week: 'fri', occupancy: 'standard', price: 1200 }),
+          rate({ id: 'r3', day_of_week: 'fri', occupancy: 'group', price: 1700 }),
+          rate({
+            id: 'r4',
+            day_of_week: 'mon',
+            occupancy: 'standard',
+            price: 1500,
+            date_from: '2026-12-24',
+            date_to: '2026-12-31',
+          }),
         ],
       }),
     )
-    expect(row.rate_weekday).toBe(800) // always-on, not the seasonal 1500
-    expect(row.rate_weekend).toBe('')
+    expect(row.room_rates).toBe('mon=800;fri=1200//1700')
   })
 })
 
@@ -83,11 +93,6 @@ describe('buildProductsWorkbook', () => {
       'Cama baja de madera',
       350,
       'TRUE',
-      '',
-      '',
-      '',
-      '',
-      '',
       '',
       '',
     ])

@@ -133,20 +133,21 @@ Tono: cálido, breve, servicial.`
  *
  *  - Catalog / rooms:
  *      · `src/components/products/product-form.tsx` — swaps the flat
- *        price + price-options block for the per-date RateGrid
- *        (Lun–Jue / Vie–Dom × estándar/pareja/grupo, season overrides;
- *        migrations 106 + 108) + a category picker (`product_categories`).
+ *        price + price-options block for the per-day RateGrid
+ *        (7 days × 1 / 2 / 3+ guests, season overrides; migrations
+ *        106 + 108 + 111) + a category picker (`product_categories`)
+ *        with an inline "new category" button.
  *      · `src/lib/products/rates.ts` — `quoteStay` / `resolveNightlyRate`
- *        pure engine (weekday = Mon–Thu, weekend = Fri–Sun).
+ *        pure engine (a price per `dayOfWeekOf(date)`).
  *      · `src/components/products/quote-builder.tsx` — room lines ask
  *        check-in / check-out / ocupación and price the stay night by
  *        night into `quote_items.unit_price`.
  *      · `src/app/catalog/[accountId]` + `src/app/api/public/catalog` —
- *        public catalog shows the rate summary + "Consultar
- *        disponibilidad" instead of a cart for rooms.
+ *        public catalog shows the rate summary + a "Cotiza tu estadía"
+ *        panel (dates + guests → total) instead of a cart for rooms.
  *      · `src/lib/products/export-excel.ts` /
  *        `parse-products-excel.ts` / `api/products/bulk` — round-trip
- *        `category` + `rate_*` columns.
+ *        `category` + a compact `room_rates` column.
  *  - AI:
  *      · `src/lib/ai/catalog-context.ts` — renders each room with its
  *        rate structure so the assistant quotes from real numbers and

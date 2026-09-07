@@ -1,5 +1,6 @@
 import ExcelJS from 'exceljs'
 import type { Product } from '@/types'
+import { formatRoomRatesCell } from '@/lib/products/rates'
 
 // Fixed English labels, same convention as src/lib/contacts/export-excel.ts
 // and src/lib/kpis/export-excel.ts.
@@ -14,29 +15,11 @@ export interface ProductExportRow {
   is_active: boolean
   /** Catalog category name (migration 106) — blank when uncategorised. */
   category?: string
-  /** Always-on room rates (migrations 106 + 108) — blank for non-room
-   *  products. `_couple` = 2 guests, `_group` = 3+ guests. */
-  rate_weekday?: number | ''
-  rate_weekend?: number | ''
-  rate_weekday_couple?: number | ''
-  rate_weekend_couple?: number | ''
-  rate_weekday_group?: number | ''
-  rate_weekend_group?: number | ''
-}
-
-function alwaysRate(
-  product: Product,
-  group: 'weekday' | 'weekend',
-  occupancy: 'standard' | 'couple' | 'group',
-): number | '' {
-  const hit = (product.rates ?? []).find(
-    (r) =>
-      r.weekday_group === group &&
-      r.occupancy === occupancy &&
-      !r.date_from &&
-      !r.date_to,
-  )
-  return hit ? hit.price : ''
+  /** Always-on room rates (migrations 106 + 108 + 111) as one compact
+   *  cell — blank for non-room products. Format:
+   *  `mon=800/950/1600;fri=1200;sat=1400//1700` (day=standard[/couple[/group]]).
+   *  Seasonal overrides are not round-tripped via Excel. */
+  room_rates?: string
 }
 
 /** Shapes a raw product into the row the export sheet writes — same
@@ -53,12 +36,7 @@ export function toProductExportRow(
     price: product.price,
     is_active: product.is_active,
     category: categoryName ?? '',
-    rate_weekday: alwaysRate(product, 'weekday', 'standard'),
-    rate_weekend: alwaysRate(product, 'weekend', 'standard'),
-    rate_weekday_couple: alwaysRate(product, 'weekday', 'couple'),
-    rate_weekend_couple: alwaysRate(product, 'weekend', 'couple'),
-    rate_weekday_group: alwaysRate(product, 'weekday', 'group'),
-    rate_weekend_group: alwaysRate(product, 'weekend', 'group'),
+    room_rates: formatRoomRatesCell(product.rates ?? []),
   }
 }
 
@@ -77,12 +55,7 @@ export function buildProductsWorkbook(rows: ProductExportRow[]): ExcelJS.Workboo
     { header: 'price', key: 'price', width: 12 },
     { header: 'is_active', key: 'is_active', width: 10 },
     { header: 'category', key: 'category', width: 20 },
-    { header: 'rate_weekday', key: 'rate_weekday', width: 14 },
-    { header: 'rate_weekend', key: 'rate_weekend', width: 14 },
-    { header: 'rate_weekday_couple', key: 'rate_weekday_couple', width: 18 },
-    { header: 'rate_weekend_couple', key: 'rate_weekend_couple', width: 18 },
-    { header: 'rate_weekday_group', key: 'rate_weekday_group', width: 18 },
-    { header: 'rate_weekend_group', key: 'rate_weekend_group', width: 18 },
+    { header: 'room_rates', key: 'room_rates', width: 40 },
   ]
   sheet.getRow(1).eachCell((cell) => {
     cell.fill = HEADER_FILL
@@ -97,12 +70,7 @@ export function buildProductsWorkbook(rows: ProductExportRow[]): ExcelJS.Workboo
       price: row.price,
       is_active: row.is_active ? 'TRUE' : 'FALSE',
       category: row.category ?? '',
-      rate_weekday: row.rate_weekday ?? '',
-      rate_weekend: row.rate_weekend ?? '',
-      rate_weekday_couple: row.rate_weekday_couple ?? '',
-      rate_weekend_couple: row.rate_weekend_couple ?? '',
-      rate_weekday_group: row.rate_weekday_group ?? '',
-      rate_weekend_group: row.rate_weekend_group ?? '',
+      room_rates: row.room_rates ?? '',
     })
   }
 

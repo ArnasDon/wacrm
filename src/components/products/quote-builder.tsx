@@ -9,7 +9,32 @@ import { createClient } from '@/lib/supabase/client';
 import { formatCurrency } from '@/lib/currency';
 import { useAuth } from '@/hooks/use-auth';
 import { nightsBetween, quoteStay } from '@/lib/products/rates';
-import type { Contact, Product } from '@/types';
+import type { Contact, Product, ProductCategory } from '@/types';
+
+type ReservationSlug = 'habitaciones' | 'spa' | 'actividades' | 'paquetes' | 'eventos';
+
+/** Client mirror of `categorySlugFromName` in `@/lib/reservations/upsert`
+ *  (that module pulls server-only deps). */
+function reservationSlugFromName(name: string | null): ReservationSlug | null {
+  const n = (name ?? '').trim().toLowerCase();
+  if (!n) return null;
+  if (/habitac|room|cuarto/.test(n)) return 'habitaciones';
+  if (/\bspa\b|masaj/.test(n)) return 'spa';
+  if (/actividad|activit|tour|excursi/.test(n)) return 'actividades';
+  if (/paquete|package|combo/.test(n)) return 'paquetes';
+  if (/evento|event|sal[oó]n|boda|banquete/.test(n)) return 'eventos';
+  return null;
+}
+
+interface LineReservation {
+  category: ReservationSlug;
+  product_id: string;
+  service_name: string;
+  guests: number;
+  check_in: string;
+  check_out: string;
+  estimated_price: number;
+}
 import {
   Dialog,
   DialogContent,
@@ -36,6 +61,9 @@ interface LineItem {
   description: string;
   unit_price: number;
   quantity: number;
+  /** Hotel vertical: structured stay data for a room/package line, sent
+   *  alongside the quote so a `reservation_requests` row is logged. */
+  reservation?: LineReservation;
 }
 
 interface QuoteBuilderProps {
@@ -67,6 +95,7 @@ export function QuoteBuilder({
   const [searchingContacts, setSearchingContacts] = useState(false);
 
   const [products, setProducts] = useState<Product[]>([]);
+  const [categories, setCategories] = useState<ProductCategory[]>([]);
   const [items, setItems] = useState<LineItem[]>([]);
   const [pickProductId, setPickProductId] = useState('');
   const [pickQuantity, setPickQuantity] = useState('1');
@@ -113,7 +142,16 @@ export function QuoteBuilder({
         setProducts((data.products ?? []).filter((p) => p.is_active)),
       )
       .catch(() => setProducts([]));
-  }, [open, contact]);
+
+    if (isHotel) {
+      fetch('/api/product-categories', { cache: 'no-store' })
+        .then((res) =>
+          res.ok ? readResponseJson<{ categories?: ProductCategory[] }>(res) : { categories: [] },
+        )
+        .then((data) => setCategories(data.categories ?? []))
+        .catch(() => setCategories([]));
+    }
+  }, [open, contact, isHotel]);
 
   const searchContacts = useCallback(async (term: string) => {
     if (!term.trim()) {
@@ -174,6 +212,12 @@ export function QuoteBuilder({
           : stayOccupancy === 'group'
             ? t('stayGroup')
             : t('stayStandard');
+      const catName =
+        categories.find((c) => c.id === product.category_id)?.name ?? null;
+      const reservationCategory =
+        reservationSlugFromName(catName) ?? 'habitaciones';
+      const reservationGuests =
+        stayOccupancy === 'group' ? 3 : stayOccupancy === 'couple' ? 2 : 1;
       setItems((prev) => [
         ...prev,
         {
@@ -182,6 +226,15 @@ export function QuoteBuilder({
           description: `${product.name} · ${nights.length} ${t('stayNights')} (${stayCheckIn} → ${stayCheckOut}) · ${occLabel}`,
           unit_price: stay.total,
           quantity: 1,
+          reservation: {
+            category: reservationCategory,
+            product_id: product.id,
+            service_name: product.name,
+            guests: reservationGuests,
+            check_in: stayCheckIn,
+            check_out: stayCheckOut,
+            estimated_price: stay.total,
+          },
         },
       ]);
       setPickProductId('');
@@ -284,6 +337,9 @@ export function QuoteBuilder({
             description: i.product_id ? undefined : i.description,
             unit_price: i.product_id ? undefined : i.unit_price,
           })),
+          reservations: items
+            .map((i) => i.reservation)
+            .filter((r): r is LineReservation => !!r),
         }),
       });
       const data = await readResponseJson(res).catch(() => ({}));

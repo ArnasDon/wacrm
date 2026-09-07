@@ -41,6 +41,14 @@ and polish.
 
 ### Added
 
+- **Hotel: a CRM quote logs its room lines as reservation requests.** When
+  a `hotel` account's quote builder adds a room/package stay line, the
+  quote submit now also files a `reservation_requests` row per line
+  (category, room, guests, check-in/out, estimated total), linked to the
+  quote, `source` `quote_builder` — so every room a staff member quotes
+  shows up in the category's Google Sheet tab alongside the ones the AI
+  and the public catalog recorded. `POST /api/quotes` takes an optional
+  `reservations[]`; non-hotel accounts are unaffected.
 - **Hotel: the public catalog takes a service request per category.** For
   a `hotel` account, the catalog detail panel now asks the fields that
   category needs — rooms & packages: check-in / check-out / guests (and

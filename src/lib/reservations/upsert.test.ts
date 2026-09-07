@@ -4,7 +4,53 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 const dispatch = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: dispatch }))
 
-import { upsertReservationRequest, categorySlugFromName } from './upsert'
+import {
+  upsertReservationRequest,
+  categorySlugFromName,
+  parseQuoteReservations,
+} from './upsert'
+
+describe('parseQuoteReservations', () => {
+  it('maps a well-formed quote-builder entry, forcing source quote_builder', () => {
+    const out = parseQuoteReservations([
+      {
+        category: 'habitaciones',
+        product_id: 'p1',
+        service_name: 'Suite',
+        guests: '2',
+        check_in: '2026-03-13',
+        check_out: '2026-03-16',
+        estimated_price: 2700,
+      },
+    ])
+    expect(out).toEqual([
+      {
+        category: 'habitaciones',
+        source: 'quote_builder',
+        product_id: 'p1',
+        service_name: 'Suite',
+        guests: 2,
+        check_in: '2026-03-13',
+        check_out: '2026-03-16',
+        estimated_price: 2700,
+      },
+    ])
+  })
+
+  it('drops entries with a bad / missing category and bad dates', () => {
+    const out = parseQuoteReservations([
+      { category: 'golf', guests: 2 },
+      { service_name: 'no category' },
+      { category: 'spa', check_in: 'nope', guests: -1 },
+    ])
+    expect(out).toEqual([{ category: 'spa', source: 'quote_builder' }])
+  })
+
+  it('returns [] for a non-array', () => {
+    expect(parseQuoteReservations(undefined)).toEqual([])
+    expect(parseQuoteReservations({})).toEqual([])
+  })
+})
 
 describe('categorySlugFromName', () => {
   it('maps the hotel kit category names', () => {

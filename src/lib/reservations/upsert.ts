@@ -84,6 +84,59 @@ const SETTABLE_KEYS = [
   'notes',
 ] as const
 
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Validate the `reservations[]` a quote-builder submit attaches to
+ * `POST /api/quotes` — one per hotel line the builder captured stay /
+ * service details for. Silently drops entries with a bad category (a
+ * non-hotel line shouldn't produce one anyway).
+ */
+export function parseQuoteReservations(raw: unknown): ReservationInput[] {
+  if (!Array.isArray(raw)) return []
+  const out: ReservationInput[] = []
+  for (const entry of raw) {
+    if (!entry || typeof entry !== 'object') continue
+    const e = entry as Record<string, unknown>
+    const category = e.category
+    if (
+      typeof category !== 'string' ||
+      !RESERVATION_CATEGORIES.includes(category as ReservationCategory)
+    ) {
+      continue
+    }
+    const num = (v: unknown): number | undefined => {
+      if (v === undefined || v === null || v === '') return undefined
+      const n = Number(v)
+      return Number.isFinite(n) && n >= 0 ? n : undefined
+    }
+    const date = (v: unknown): string | undefined =>
+      typeof v === 'string' && ISO_DATE.test(v) ? v : undefined
+
+    const input: ReservationInput = {
+      category: category as ReservationCategory,
+      source: 'quote_builder',
+    }
+    if (typeof e.product_id === 'string' && e.product_id) input.product_id = e.product_id
+    if (typeof e.service_name === 'string' && e.service_name) input.service_name = e.service_name
+    const guests = num(e.guests)
+    if (guests !== undefined) input.guests = Math.round(guests)
+    const minutes = num(e.duration_minutes)
+    if (minutes !== undefined) input.duration_minutes = Math.round(minutes)
+    const price = num(e.estimated_price)
+    if (price !== undefined) input.estimated_price = price
+    const checkIn = date(e.check_in)
+    if (checkIn) input.check_in = checkIn
+    const checkOut = date(e.check_out)
+    if (checkOut) input.check_out = checkOut
+    const useDate = date(e.use_date)
+    if (useDate) input.use_date = useDate
+
+    out.push(input)
+  }
+  return out
+}
+
 /**
  * Upsert a reservation request and fire `reservation.updated`.
  *

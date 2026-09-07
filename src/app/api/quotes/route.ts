@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
+import { parseQuoteReservations, upsertReservationRequest } from '@/lib/reservations/upsert'
 
 // Quotes — combine the product catalog with a customer's billing info
 // (NIT/email/phone/address) into a PDF-able quote, auto-linked to a
@@ -46,9 +47,11 @@ export async function POST(request: Request) {
       }))
     : []
 
+  const admin = supabaseAdmin()
+
   try {
     const { quote, items: createdItems } = await createQuote({
-      db: supabaseAdmin(),
+      db: admin,
       accountId: ctx.accountId,
       userId: ctx.userId,
       contactId,
@@ -59,6 +62,34 @@ export async function POST(request: Request) {
       items,
       allowFreeItems: true,
     })
+
+    // Hotel vertical: the quote builder attaches a `reservations[]` for
+    // each room/service line it captured stay details on — log each as a
+    // `reservation_requests` row (→ its Google Sheet tab). Best-effort:
+    // a Sheets/DB hiccup here must not fail the quote itself.
+    const reservations = parseQuoteReservations(body.reservations)
+    if (reservations.length > 0) {
+      const { data: account } = await admin
+        .from('accounts')
+        .select('industry_vertical')
+        .eq('id', ctx.accountId)
+        .maybeSingle()
+      if (account?.industry_vertical === 'hotel') {
+        for (const r of reservations) {
+          try {
+            await upsertReservationRequest(admin, ctx.accountId, {
+              ...r,
+              contact_id: contactId,
+              quote_id: quote.id,
+              source: 'quote_builder',
+            })
+          } catch (err) {
+            console.error('[quotes] reservation upsert failed:', err)
+          }
+        }
+      }
+    }
+
     return NextResponse.json({ quote: { ...quote, items: createdItems } }, { status: 201 })
   } catch (err) {
     if (err instanceof CreateQuoteError) {

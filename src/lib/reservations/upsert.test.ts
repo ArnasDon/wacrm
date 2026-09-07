@@ -4,7 +4,30 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 const dispatch = vi.hoisted(() => vi.fn())
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: dispatch }))
 
-import { upsertReservationRequest } from './upsert'
+import { upsertReservationRequest, categorySlugFromName } from './upsert'
+
+describe('categorySlugFromName', () => {
+  it('maps the hotel kit category names', () => {
+    expect(categorySlugFromName('Habitaciones')).toBe('habitaciones')
+    expect(categorySlugFromName('Spa')).toBe('spa')
+    expect(categorySlugFromName('Actividades al aire libre')).toBe('actividades')
+    expect(categorySlugFromName('Paquetes')).toBe('paquetes')
+    expect(categorySlugFromName('Eventos')).toBe('eventos')
+  })
+
+  it('is fuzzy (renames / synonyms / other language)', () => {
+    expect(categorySlugFromName('Rooms')).toBe('habitaciones')
+    expect(categorySlugFromName('Tours y excursiones')).toBe('actividades')
+    expect(categorySlugFromName('Salón de bodas')).toBe('eventos')
+    expect(categorySlugFromName('Packages')).toBe('paquetes')
+  })
+
+  it('returns null for a non-hotel / empty / unknown category', () => {
+    expect(categorySlugFromName(null)).toBeNull()
+    expect(categorySlugFromName('')).toBeNull()
+    expect(categorySlugFromName('Muebles')).toBeNull()
+  })
+})
 
 beforeEach(() => dispatch.mockReset().mockResolvedValue(undefined))
 

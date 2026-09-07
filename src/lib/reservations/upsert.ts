@@ -23,6 +23,24 @@ export const RESERVATION_CATEGORIES: ReservationCategory[] = [
   'eventos',
 ]
 
+/**
+ * Map a catalog category *name* (as seeded by the hotel kit — "Habitaciones",
+ * "Spa", "Actividades al aire libre", "Paquetes", "Eventos", or a rename
+ * that still reads the same) to a reservation slug. `null` when it isn't
+ * one of the five hotel service kinds (a generic-account category, an
+ * uncategorised product).
+ */
+export function categorySlugFromName(name: string | null | undefined): ReservationCategory | null {
+  const n = (name ?? '').trim().toLowerCase()
+  if (!n) return null
+  if (/habitac|room|cuarto/.test(n)) return 'habitaciones'
+  if (/\bspa\b|masaj/.test(n)) return 'spa'
+  if (/actividad|activit|tour|excursi/.test(n)) return 'actividades'
+  if (/paquete|package|combo/.test(n)) return 'paquetes'
+  if (/evento|event|sal[oó]n|boda|banquete/.test(n)) return 'eventos'
+  return null
+}
+
 export type ReservationStatus = 'pending' | 'approved' | 'denied'
 export type ReservationSource = 'manual' | 'catalog' | 'ai_chat' | 'quote_builder'
 

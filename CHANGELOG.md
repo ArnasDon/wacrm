@@ -41,6 +41,17 @@ and polish.
 
 ### Added
 
+- **Hotel: the public catalog takes a service request per category.** For
+  a `hotel` account, the catalog detail panel now asks the fields that
+  category needs — rooms & packages: check-in / check-out / guests (and
+  prices the stay from the per-day rates); spa & activities: date /
+  people / minutes; events: date / people — plus the visitor's name and
+  phone. Submitting posts a `reservation_requests` row
+  (`POST /api/public/catalog/[id]/reservation`, source `catalog`) that
+  lands in the category's Google Sheet tab, and shows an on-page recap
+  with the estimated total. When the catalog link carries a signed
+  `?c=<conversationId>`, the request attaches to that conversation so it
+  and the AI chat share one row.
 - **Hotel: the AI fills a reservation request from chat.** On a `hotel`
   account, as the guest asks about a room / spa / activity / package /
   event, the auto-reply bot logs each detail it learns — guest count,

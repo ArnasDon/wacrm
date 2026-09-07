@@ -115,6 +115,22 @@ function isRoom(p: CatalogProduct): boolean {
   return (p.rates?.length ?? 0) > 0;
 }
 
+type ReservationSlug = 'habitaciones' | 'spa' | 'actividades' | 'paquetes' | 'eventos';
+
+/** Client mirror of `categorySlugFromName` in `@/lib/reservations/upsert`
+ *  (kept inline — that module pulls server-only deps). Maps a catalog
+ *  category name to a hotel reservation kind, or null. */
+function reservationSlugFromName(name: string | null): ReservationSlug | null {
+  const n = (name ?? '').trim().toLowerCase();
+  if (!n) return null;
+  if (/habitac|room|cuarto/.test(n)) return 'habitaciones';
+  if (/\bspa\b|masaj/.test(n)) return 'spa';
+  if (/actividad|activit|tour|excursi/.test(n)) return 'actividades';
+  if (/paquete|package|combo/.test(n)) return 'paquetes';
+  if (/evento|event|sal[oó]n|boda|banquete/.test(n)) return 'eventos';
+  return null;
+}
+
 /** Cart line identity: a product at its base price, or at one of its
  *  priced options — each tracked as an independent quantity. */
 function lineKey(productId: string, optionId: string | null): string {
@@ -318,20 +334,36 @@ function PublicCatalogPageInner() {
   const detailQty = detailLineKey ? (quantities[detailLineKey] ?? 0) : 0;
   const selectedIsRoom = selectedProduct ? isRoom(selectedProduct) : false;
 
-  // Room stay calculator (hotel vertical). Visitor picks dates + guests
-  // and the nightly rates from the catalog price the stay client-side;
-  // the "write to us" button prefills a WhatsApp message with the result.
+  // Hotel service request (habitaciones / spa / actividades / paquetes /
+  // eventos). The visitor picks the fields that category needs; on submit
+  // we POST a `reservation_requests` row that feeds the category's Google
+  // Sheet tab. A room/package with dates is also priced client-side here.
+  const selectedHotelCategory =
+    data?.industry_vertical === 'hotel' && selectedProduct
+      ? reservationSlugFromName(selectedProduct.category)
+      : null;
+
   const [stayCheckIn, setStayCheckIn] = useState('');
   const [stayCheckOut, setStayCheckOut] = useState('');
   const [stayGuests, setStayGuests] = useState(2);
+  const [resvUseDate, setResvUseDate] = useState('');
+  const [resvMinutes, setResvMinutes] = useState('');
+  const [resvSubmitting, setResvSubmitting] = useState(false);
+  const [resvResult, setResvResult] = useState<string | null>(null);
   useEffect(() => {
     setStayCheckIn('');
     setStayCheckOut('');
     setStayGuests(2);
+    setResvUseDate('');
+    setResvMinutes('');
+    setResvResult(null);
   }, [selectedProduct?.id]);
 
   const stayQuote =
-    selectedIsRoom && stayCheckIn && stayCheckOut
+    (selectedHotelCategory === 'habitaciones' || selectedHotelCategory === 'paquetes') &&
+    stayCheckIn &&
+    stayCheckOut &&
+    (selectedProduct?.rates?.length ?? 0) > 0
       ? quoteStay(
           (selectedProduct?.rates ?? []) as ProductRate[],
           stayCheckIn,
@@ -339,6 +371,52 @@ function PublicCatalogPageInner() {
           occupancyForGuests(stayGuests),
         )
       : null;
+
+  const usesStayDates =
+    selectedHotelCategory === 'habitaciones' || selectedHotelCategory === 'paquetes';
+  const usesMinutes =
+    selectedHotelCategory === 'spa' || selectedHotelCategory === 'actividades';
+
+  async function handleReservationSubmit() {
+    if (!accountId || !selectedProduct || !selectedHotelCategory) return;
+    if (!name.trim() || !phone.trim()) {
+      toast.error('Tu nombre y teléfono son requeridos');
+      return;
+    }
+    setResvSubmitting(true);
+    try {
+      const res = await fetch(
+        `/api/public/catalog/${encodeURIComponent(accountId)}/reservation`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_id: selectedProduct.id,
+            name: name.trim(),
+            phone: phone.trim(),
+            guests: stayGuests,
+            check_in: usesStayDates ? stayCheckIn || undefined : undefined,
+            check_out: usesStayDates ? stayCheckOut || undefined : undefined,
+            use_date: !usesStayDates ? resvUseDate || undefined : undefined,
+            duration_minutes: usesMinutes && resvMinutes ? Number(resvMinutes) : undefined,
+            conversation_id: conversationId || undefined,
+          }),
+        },
+      );
+      const payload = await res
+        .json()
+        .catch(() => ({}) as { summary?: string; error?: string });
+      if (!res.ok) {
+        toast.error(payload.error || 'No se pudo enviar la solicitud');
+        return;
+      }
+      setResvResult(payload.summary ?? 'Registramos tu solicitud. Te contactamos pronto.');
+    } catch {
+      toast.error('No se pudo enviar la solicitud');
+    } finally {
+      setResvSubmitting(false);
+    }
+  }
 
   async function handleSubmit() {
     if (!accountId) return;
@@ -871,109 +949,172 @@ function PublicCatalogPageInner() {
                   </div>
                 )}
 
-                {selectedIsRoom ? (
+                {selectedHotelCategory ? (
                   <div className="mt-8 rounded-xl border border-[#082f38]/15 bg-[#f4f6f2] p-4 sm:rounded-none">
                     <p className="mb-3 text-[10px] font-bold tracking-[0.16em] text-[#082f38] uppercase">
-                      Cotiza tu estadía
+                      {usesStayDates ? 'Cotiza tu estadía' : 'Solicita este servicio'}
                     </p>
-                    <div className="grid grid-cols-2 gap-3">
-                      <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
-                        Entrada
-                        <input
-                          type="date"
-                          value={stayCheckIn}
-                          onChange={(e) => setStayCheckIn(e.target.value)}
-                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
-                        />
-                      </label>
-                      <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
-                        Salida
-                        <input
-                          type="date"
-                          value={stayCheckOut}
-                          min={stayCheckIn || undefined}
-                          onChange={(e) => setStayCheckOut(e.target.value)}
-                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
-                        />
-                      </label>
-                      <label className="col-span-2 flex flex-col gap-1 text-xs text-[#284d53]/75">
-                        Personas
-                        <input
-                          type="number"
-                          min={1}
-                          max={20}
-                          value={stayGuests}
-                          onChange={(e) =>
-                            setStayGuests(
-                              Math.max(1, Math.min(20, Number(e.target.value) || 1)),
-                            )
-                          }
-                          className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
-                        />
-                      </label>
-                    </div>
 
-                    {stayQuote && stayQuote.nights.length > 0 && (
-                      <div className="mt-4 space-y-1.5 border-t border-[#082f38]/12 pt-3">
-                        {stayQuote.nights.map((n) => (
-                          <div
-                            key={n.date}
-                            className="flex items-baseline justify-between gap-3 text-sm text-[#284d53]/80"
-                          >
-                            <span>
-                              {DAY_LABEL_ES[n.day_of_week]} {n.date}
-                            </span>
-                            <span className="font-serif">
-                              {n.price === null
-                                ? 'a consultar'
-                                : formatCurrency(n.price, data.currency)}
-                            </span>
-                          </div>
-                        ))}
-                        <div className="flex items-baseline justify-between gap-3 border-t border-[#082f38]/12 pt-2 text-[#062f38]">
-                          <span className="text-sm font-semibold">
-                            {stayQuote.nights.length}{' '}
-                            {stayQuote.nights.length === 1 ? 'noche' : 'noches'} ·{' '}
-                            {stayGuests}{' '}
-                            {stayGuests === 1 ? 'persona' : 'personas'}
-                          </span>
-                          <span className="font-serif text-xl">
-                            {formatCurrency(stayQuote.total, data.currency)}
-                          </span>
-                        </div>
-                        {stayQuote.missing.length > 0 && (
-                          <p className="pt-1 text-xs text-[#284d53]/60">
-                            Algunas noches ({stayQuote.missing.join(', ')}) no tienen
-                            tarifa publicada — te confirmamos ese precio al escribir.
-                          </p>
-                        )}
-                      </div>
-                    )}
-
-                    {data.whatsapp_number ? (
-                      <a
-                        href={`https://wa.me/${data.whatsapp_number.replace(/\D/g, '')}?text=${encodeURIComponent(
-                          `Hola, quiero cotizar "${selectedProduct.name}"` +
-                            (stayCheckIn && stayCheckOut
-                              ? ` del ${stayCheckIn} al ${stayCheckOut} para ${stayGuests} ${
-                                  stayGuests === 1 ? 'persona' : 'personas'
-                                }` +
-                                (stayQuote && stayQuote.missing.length === 0
-                                  ? ` (total estimado ${formatCurrency(stayQuote.total, data.currency)})`
-                                  : '')
-                              : '') +
-                            '.',
-                        )}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="mt-4 flex h-12 w-full items-center justify-center rounded-xl bg-[#062f38] text-sm font-medium text-white sm:h-11 sm:rounded-none"
-                      >
-                        Escríbenos por esta estadía
-                      </a>
+                    {resvResult ? (
+                      <p className="text-sm leading-6 text-[#284d53]/85">{resvResult}</p>
                     ) : (
-                      <p className="mt-3 text-xs leading-5 text-[#284d53]/70">
-                        Escríbenos con estas fechas para confirmar disponibilidad.
-                      </p>
+                      <>
+                        <div className="grid grid-cols-2 gap-3">
+                          {usesStayDates ? (
+                            <>
+                              <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                                Entrada
+                                <input
+                                  type="date"
+                                  value={stayCheckIn}
+                                  onChange={(e) => setStayCheckIn(e.target.value)}
+                                  className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                                />
+                              </label>
+                              <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                                Salida
+                                <input
+                                  type="date"
+                                  value={stayCheckOut}
+                                  min={stayCheckIn || undefined}
+                                  onChange={(e) => setStayCheckOut(e.target.value)}
+                                  className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                                />
+                              </label>
+                            </>
+                          ) : (
+                            <label className="col-span-2 flex flex-col gap-1 text-xs text-[#284d53]/75">
+                              {selectedHotelCategory === 'eventos'
+                                ? 'Fecha del evento'
+                                : 'Fecha de uso'}
+                              <input
+                                type="date"
+                                value={resvUseDate}
+                                onChange={(e) => setResvUseDate(e.target.value)}
+                                className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                              />
+                            </label>
+                          )}
+                          <label
+                            className={`flex flex-col gap-1 text-xs text-[#284d53]/75 ${usesMinutes ? '' : 'col-span-2'}`}
+                          >
+                            Personas
+                            <input
+                              type="number"
+                              min={1}
+                              max={200}
+                              value={stayGuests}
+                              onChange={(e) =>
+                                setStayGuests(
+                                  Math.max(1, Math.min(200, Number(e.target.value) || 1)),
+                                )
+                              }
+                              className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                            />
+                          </label>
+                          {usesMinutes && (
+                            <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                              Minutos
+                              <input
+                                type="number"
+                                min={0}
+                                step={15}
+                                value={resvMinutes}
+                                onChange={(e) => setResvMinutes(e.target.value)}
+                                placeholder="60"
+                                className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                              />
+                            </label>
+                          )}
+                          <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                            Tu nombre
+                            <input
+                              type="text"
+                              value={name}
+                              onChange={(e) => setName(e.target.value)}
+                              autoComplete="name"
+                              className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                            />
+                          </label>
+                          <label className="flex flex-col gap-1 text-xs text-[#284d53]/75">
+                            Tu teléfono
+                            <input
+                              type="tel"
+                              inputMode="tel"
+                              value={phone}
+                              onChange={(e) => setPhone(e.target.value)}
+                              autoComplete="tel"
+                              placeholder="+502 5555 5555"
+                              className="h-10 rounded-lg border border-[#082f38]/25 bg-white px-2 text-sm text-[#062f38] sm:rounded-none"
+                            />
+                          </label>
+                        </div>
+
+                        {stayQuote && stayQuote.nights.length > 0 && (
+                          <div className="mt-4 space-y-1.5 border-t border-[#082f38]/12 pt-3">
+                            {stayQuote.nights.map((n) => (
+                              <div
+                                key={n.date}
+                                className="flex items-baseline justify-between gap-3 text-sm text-[#284d53]/80"
+                              >
+                                <span>
+                                  {DAY_LABEL_ES[n.day_of_week]} {n.date}
+                                </span>
+                                <span className="font-serif">
+                                  {n.price === null
+                                    ? 'a consultar'
+                                    : formatCurrency(n.price, data.currency)}
+                                </span>
+                              </div>
+                            ))}
+                            <div className="flex items-baseline justify-between gap-3 border-t border-[#082f38]/12 pt-2 text-[#062f38]">
+                              <span className="text-sm font-semibold">
+                                {stayQuote.nights.length}{' '}
+                                {stayQuote.nights.length === 1 ? 'noche' : 'noches'} ·{' '}
+                                {stayGuests}{' '}
+                                {stayGuests === 1 ? 'persona' : 'personas'}
+                              </span>
+                              <span className="font-serif text-xl">
+                                {formatCurrency(stayQuote.total, data.currency)}
+                              </span>
+                            </div>
+                            {stayQuote.missing.length > 0 && (
+                              <p className="pt-1 text-xs text-[#284d53]/60">
+                                Algunas noches ({stayQuote.missing.join(', ')}) no tienen
+                                tarifa publicada — te confirmamos ese precio al escribir.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <button
+                          type="button"
+                          onClick={handleReservationSubmit}
+                          disabled={resvSubmitting}
+                          className="mt-4 flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#062f38] text-sm font-medium text-white disabled:opacity-60 sm:h-11 sm:rounded-none"
+                        >
+                          {resvSubmitting ? (
+                            <>
+                              <Loader2 className="size-4 animate-spin" />
+                              Enviando…
+                            </>
+                          ) : (
+                            'Enviar solicitud'
+                          )}
+                        </button>
+                        {data.whatsapp_number && (
+                          <a
+                            href={`https://wa.me/${data.whatsapp_number.replace(/\D/g, '')}?text=${encodeURIComponent(
+                              `Hola, quiero información sobre "${selectedProduct.name}".`,
+                            )}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-2 block text-center text-xs text-[#1e7774] underline"
+                          >
+                            o escríbenos por WhatsApp
+                          </a>
+                        )}
+                      </>
                     )}
                   </div>
                 ) : (

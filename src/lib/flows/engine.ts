@@ -100,6 +100,34 @@ export function matchReplyId(
 }
 
 /**
+ * Checks a collect_input capture against its configured `validation`.
+ * "any" / unset always passes (the v1.5 default). "phone" requires at
+ * least 10 digits so free text like "I can't drag down the data" can't
+ * flow into a phone-shaped var (e.g. the order-lookup node's
+ * mobile_var) and produce a misleading "order not found".
+ */
+export function isCapturedValueValid(
+  text: string,
+  cfg: { validation?: "any" | "email" | "phone" | "regex"; regex?: string },
+): boolean {
+  switch (cfg.validation) {
+    case "email":
+      return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(text);
+    case "phone":
+      return text.replace(/\D/g, "").length >= 10;
+    case "regex":
+      if (!cfg.regex) return true;
+      try {
+        return new RegExp(cfg.regex).test(text);
+      } catch {
+        return true;
+      }
+    default:
+      return true;
+  }
+}
+
+/**
  * Flatten a send_buttons/send_list node's options into the shape the
  * AI intent classifier needs. Mirrors the shapes `matchReplyId` reads.
  */
@@ -1077,7 +1105,11 @@ async function handleReplyForActiveRun(
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
-    if (captured.length > 0 && cfg.var_key) {
+    if (
+      captured.length > 0 &&
+      cfg.var_key &&
+      isCapturedValueValid(captured, cfg)
+    ) {
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       const { error: capErr } = await db

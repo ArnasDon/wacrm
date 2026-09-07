@@ -126,10 +126,10 @@ export interface HandoffNodeConfig {
  * Captures the customer's next free-text reply into
  * `flow_runs.vars[var_key]`, then advances.
  *
- * v1.5 ships without runtime validation (`validation` is accepted on
- * the config for forward compat but ignored by the runner); the
- * builder still surfaces the field so users can author flows that
- * v2 will start enforcing.
+ * `validation` is enforced by the runner (see `isCapturedValueValid`
+ * in engine.ts): a reply that fails validation is treated like an
+ * empty reply — it's not captured and the node's normal
+ * reprompt/fallback policy kicks in instead of advancing.
  */
 export interface CollectInputNodeConfig {
   /** Prompt text sent to the customer before they reply. */
@@ -141,8 +141,8 @@ export interface CollectInputNodeConfig {
    */
   var_key: string;
   /**
-   * Reserved for v2. Accepted on the config but ignored by the v1.5
-   * runner — captures any non-empty text.
+   * Reply shape required before the value is captured. "any" (or
+   * unset) accepts any non-empty text — the historical default.
    */
   validation?: "any" | "email" | "phone" | "regex";
   /** Used only when `validation === 'regex'`. */

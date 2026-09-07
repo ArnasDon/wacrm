@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
-import { Loader2, Search, Send, ExternalLink, IndianRupee } from "lucide-react";
+import {
+  Loader2,
+  Search,
+  Send,
+  ExternalLink,
+  IndianRupee,
+  Image as ImageIcon,
+  Sparkles,
+  X,
+} from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -16,6 +25,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
+import {
+  uploadAccountMedia,
+  deleteAccountMedia,
+  MEDIA_MAX_BYTES_BY_KIND,
+} from "@/lib/storage/upload-media";
+import { CHAT_MEDIA_BUCKET } from "./message-composer";
+
+/** Canned reply for a resolved order — fills in the payment ID so the
+ *  agent doesn't have to retype the re-download instructions by hand. */
+function buildOrderFoundMessage(paymentId: string): string {
+  return `✅ We found your order!\n\nYour Payment ID:\n${paymentId}\n\nGo back to the website where you purchased your biodata and open the Download/Support section there. Paste this Payment ID exactly as shown above (including "pay_") to re-download your biodata.`;
+}
 
 interface OrderSearchResult {
   id: number;
@@ -70,21 +91,45 @@ export function OrderSearchDialog({
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [attachedImage, setAttachedImage] = useState<{ url: string; path: string } | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const requestIdRef = useRef(0);
 
-  // Reset to a clean slate every time the dialog opens, and autofocus
-  // the search box so the shortcut goes straight to typing.
+  // Mirror of `attachedImage` for the close/unmount cleanup below, which
+  // can't read render state.
+  const attachedImageRef = useRef<{ url: string; path: string } | null>(null);
   useEffect(() => {
-    if (!open) return;
+    attachedImageRef.current = attachedImage;
+  }, [attachedImage]);
+
+  // Reset to a clean slate every time the dialog opens, and autofocus
+  // the search box so the shortcut goes straight to typing. On close,
+  // GC any staged-but-unsent image so it doesn't orphan in the bucket.
+  useEffect(() => {
+    if (!open) {
+      const staged = attachedImageRef.current;
+      if (staged) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
+      setAttachedImage(null);
+      return;
+    }
     setQuery("");
     setResults([]);
     setSearched(false);
     setSelected(null);
     setMessage("");
+    setAttachedImage(null);
     requestAnimationFrame(() => inputRef.current?.focus());
   }, [open]);
+
+  useEffect(() => {
+    return () => {
+      const staged = attachedImageRef.current;
+      if (staged) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
+    };
+  }, []);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -119,42 +164,88 @@ export function OrderSearchDialog({
     };
   }, [query, t]);
 
-  const handleSend = useCallback(async () => {
-    if (!selected?.mobile || !message.trim() || sending) return;
-    setSending(true);
-    try {
-      // Opened from an active thread: send straight into that
-      // conversation rather than re-resolving one from the order's
-      // mobile number, which could match a different contact than the
-      // one the agent is actually looking at.
-      if (activeConversationId) {
-        const res = await fetch("/api/whatsapp/send", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            conversation_id: activeConversationId,
-            message_type: "text",
-            content_text: message.trim(),
-          }),
-        });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) {
-          toast.error(data.error ?? t("sendError"));
-          return;
-        }
-        toast.success(t("sendSuccess"));
-        onOpenChange(false);
+  // Resolves the thread to send into: the conversation already open
+  // behind this dialog, or — when opened from the global order search —
+  // find-or-create one from the order's mobile number.
+  const resolveTargetConversationId = useCallback(async (): Promise<string | null> => {
+    if (activeConversationId) return activeConversationId;
+    if (!selected?.mobile) return null;
+    const res = await fetch("/api/orders/resolve-conversation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mobile: selected.mobile, name: selected.personName }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      toast.error(data.error ?? t("openError"));
+      return null;
+    }
+    return data.conversation_id as string;
+  }, [activeConversationId, selected, t]);
+
+  const handleImageChange = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (!file) return;
+      const max = MEDIA_MAX_BYTES_BY_KIND.image;
+      if (file.size > max) {
+        toast.error(t("imageTooLarge", { max: Math.round(max / 1024 / 1024) }));
         return;
       }
+      setUploadingImage(true);
+      try {
+        const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
+        // Replacing a previously staged image — GC the one being dropped.
+        if (attachedImageRef.current) {
+          void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImageRef.current.path).catch(() => {});
+        }
+        setAttachedImage({ url: publicUrl, path });
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : t("imageUploadError"));
+      } finally {
+        setUploadingImage(false);
+      }
+    },
+    [t],
+  );
 
-      const res = await fetch("/api/orders/quick-send", {
+  const removeAttachedImage = useCallback(() => {
+    if (attachedImage) void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImage.path).catch(() => {});
+    setAttachedImage(null);
+  }, [attachedImage]);
+
+  const applyFoundTemplate = useCallback(() => {
+    if (!selected) return;
+    const paymentId = selected.transactionId || selected.utr || "";
+    setMessage(buildOrderFoundMessage(paymentId));
+  }, [selected]);
+
+  const handleSend = useCallback(async () => {
+    const trimmed = message.trim();
+    if (!selected?.mobile || (!trimmed && !attachedImage) || sending) return;
+    setSending(true);
+    try {
+      const conversationId = await resolveTargetConversationId();
+      if (!conversationId) return;
+
+      const res = await fetch("/api/whatsapp/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mobile: selected.mobile,
-          message: message.trim(),
-          name: selected.personName,
-        }),
+        body: JSON.stringify(
+          attachedImage
+            ? {
+                conversation_id: conversationId,
+                message_type: "image",
+                media_url: attachedImage.url,
+                content_text: trimmed || undefined,
+              }
+            : {
+                conversation_id: conversationId,
+                message_type: "text",
+                content_text: trimmed,
+              },
+        ),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -162,14 +253,25 @@ export function OrderSearchDialog({
         return;
       }
       toast.success(t("sendSuccess"));
-      onOpenConversation(data.conversation_id);
+      setAttachedImage(null);
+      if (!activeConversationId) onOpenConversation(conversationId);
       onOpenChange(false);
     } catch {
       toast.error(t("sendError"));
     } finally {
       setSending(false);
     }
-  }, [selected, message, sending, activeConversationId, onOpenConversation, onOpenChange, t]);
+  }, [
+    selected,
+    message,
+    attachedImage,
+    sending,
+    activeConversationId,
+    resolveTargetConversationId,
+    onOpenConversation,
+    onOpenChange,
+    t,
+  ]);
 
   const handleOpenConversation = useCallback(async () => {
     if (!selected?.mobile || opening) return;
@@ -308,6 +410,15 @@ export function OrderSearchDialog({
               </dl>
             </div>
 
+            <button
+              type="button"
+              onClick={applyFoundTemplate}
+              className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-primary hover:bg-primary/10"
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {t("useFoundTemplate")}
+            </button>
+
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
@@ -318,9 +429,50 @@ export function OrderSearchDialog({
                 }
               }}
               placeholder={t("messagePlaceholder")}
-              rows={3}
+              rows={5}
               className="w-full resize-none rounded-xl border border-border bg-muted px-3 py-2 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50"
             />
+
+            <input
+              ref={imageInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp"
+              className="hidden"
+              onChange={handleImageChange}
+            />
+
+            {attachedImage ? (
+              <div className="relative inline-block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={attachedImage.url}
+                  alt=""
+                  className="h-20 w-20 rounded-lg object-cover"
+                />
+                <button
+                  type="button"
+                  onClick={removeAttachedImage}
+                  aria-label={t("removeAttachment")}
+                  className="absolute -right-1.5 -top-1.5 rounded-full bg-background/90 p-0.5 text-muted-foreground shadow hover:bg-background hover:text-foreground"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => imageInputRef.current?.click()}
+                disabled={uploadingImage}
+                className="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-muted hover:text-foreground disabled:opacity-50"
+              >
+                {uploadingImage ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <ImageIcon className="h-3.5 w-3.5" />
+                )}
+                {t("attachImage")}
+              </button>
+            )}
 
             <div className="flex items-center justify-end gap-2">
               {!activeConversationId && (
@@ -341,7 +493,7 @@ export function OrderSearchDialog({
               )}
               <Button
                 size="sm"
-                disabled={!message.trim() || sending}
+                disabled={(!message.trim() && !attachedImage) || sending || uploadingImage}
                 onClick={handleSend}
                 className="gap-1.5"
               >

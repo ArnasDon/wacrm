@@ -23,6 +23,11 @@ import { formatWithOffset } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
+import {
+  upsertReservationRequest,
+  type ReservationCategory,
+  type ReservationInput,
+} from '@/lib/reservations/upsert'
 import type { LeadTemperature } from '@/types'
 import type { GenerateResult } from './types'
 
@@ -242,10 +247,11 @@ export async function dispatchInboundToAiReply(
     // own self-service quote cart, so this only turns on for pdf/photos.
     const { data: catalogModeRow } = await db
       .from('accounts')
-      .select('catalog_delivery_mode')
+      .select('catalog_delivery_mode, industry_vertical')
       .eq('id', accountId)
       .maybeSingle()
     const catalogDeliveryMode = (catalogModeRow?.catalog_delivery_mode as 'digital' | 'pdf' | 'photos' | undefined) ?? 'digital'
+    const isHotel = (catalogModeRow?.industry_vertical as string | undefined) === 'hotel'
 
     // Autonomous appointment scheduling — only ever offered to the
     // model when the account explicitly opted in AND has a connected
@@ -265,6 +271,7 @@ export async function dispatchInboundToAiReply(
       catalogDeliveryMode,
       quickReplies,
       askCustomerTaxInfo: config.askCustomerTaxInfo,
+      hotelReservations: isHotel,
     })
 
     let generation: GenerateResult
@@ -288,7 +295,7 @@ export async function dispatchInboundToAiReply(
       return
     }
     const {
-      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, usage,
+      text, handoff, markDealWon, moveToStageName, sendCatalog, leadTemperature, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, reservationProposal, usage,
     } = generation
 
     // The provider call succeeded, so the key is valid again — clear any
@@ -560,6 +567,19 @@ export async function dispatchInboundToAiReply(
         })
       } catch (err) {
         console.error('[ai auto-reply] autonomous create_quote_chat failed:', err)
+      }
+    }
+
+    // Defense in depth, same reasoning as the checks above: the marker
+    // is only ever taught to a `hotel` account, but re-verify here so a
+    // stray marker on a non-hotel account never writes a row.
+    if (reservationProposal && isHotel) {
+      try {
+        await autoRecordReservation({
+          db, accountId, contactId, conversationId, configOwnerUserId, proposal: reservationProposal,
+        })
+      } catch (err) {
+        console.error('[ai auto-reply] autonomous record_reservation failed:', err)
       }
     }
   } catch (err) {
@@ -1050,6 +1070,77 @@ async function autoMoveDealStage(args: {
  * hasn't changed, so this can safely run on every reply without
  * spamming `ai_action_log` or the webhook with no-op updates.
  */
+const RESERVATION_ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
+
+/**
+ * Logs a hotel reservation/service detail the model surfaced this turn
+ * (`RECORD_RESERVATION_SENTINEL_PREFIX`, hotel accounts only) into
+ * `reservation_requests` via the shared upsert — one row per
+ * (conversation, category), extended field by field across the chat.
+ * `upsertReservationRequest` fires `reservation.updated` itself so the
+ * Google Sheet row is (re)written. Best-effort; only the fields the
+ * model actually gave are written (a sparse later turn never blanks an
+ * earlier one).
+ */
+async function autoRecordReservation(args: {
+  db: SupabaseClient
+  accountId: string
+  contactId: string
+  conversationId: string
+  configOwnerUserId: string
+  proposal: NonNullable<GenerateResult['reservationProposal']>
+}): Promise<void> {
+  const { db, accountId, contactId, conversationId, configOwnerUserId, proposal } = args
+  const f = proposal.fields
+
+  const toInt = (v?: string): number | undefined => {
+    if (v == null) return undefined
+    const n = Number(v)
+    return Number.isFinite(n) && n >= 0 ? Math.round(n) : undefined
+  }
+  const toNum = (v?: string): number | undefined => {
+    if (v == null) return undefined
+    const n = Number(v)
+    return Number.isFinite(n) && n >= 0 ? n : undefined
+  }
+  const toDate = (v?: string): string | undefined =>
+    v && RESERVATION_ISO_DATE.test(v) ? v : undefined
+
+  const input: ReservationInput = {
+    category: proposal.category as ReservationCategory,
+    conversation_id: conversationId,
+    contact_id: contactId,
+    source: 'ai_chat',
+  }
+  if (f.servicio) input.service_name = f.servicio
+  const guests = toInt(f.personas)
+  if (guests !== undefined) input.guests = guests
+  const checkIn = toDate(f.entrada)
+  if (checkIn) input.check_in = checkIn
+  const checkOut = toDate(f.salida)
+  if (checkOut) input.check_out = checkOut
+  const useDate = toDate(f.fecha)
+  if (useDate) input.use_date = useDate
+  const minutes = toInt(f.minutos)
+  if (minutes !== undefined) input.duration_minutes = minutes
+  if (f.salon) input.hall = f.salon
+  if (f.decoracion) input.decoration = f.decoracion
+  const price = toNum(f.precio)
+  if (price !== undefined) input.estimated_price = price
+
+  const id = await upsertReservationRequest(db, accountId, input)
+  if (!id) return
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'record_reservation',
+    target_id: id,
+    input: { category: proposal.category, fields: f, source: 'auto_reply_autonomous' },
+    result: { reservation_id: id },
+  })
+}
+
 async function autoSetLeadTemperature(args: {
   db: SupabaseClient
   accountId: string

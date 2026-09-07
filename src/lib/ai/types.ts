@@ -135,6 +135,16 @@ export interface GenerateResult {
    *  conversation's persisted history (and therefore the model's own
    *  context on the next turn) reflects exactly what was actually sent. */
   quickReplyId: string | null
+  /** A hotel reservation/service detail the model logged this turn
+   *  (auto-reply mode, `hotel` vertical only) — see
+   *  `RECORD_RESERVATION_SENTINEL_PREFIX`. `fields` is a partial,
+   *  Spanish-keyed bag (`servicio`, `personas`, `entrada`, `salida`,
+   *  `fecha`, `minutos`, `salon`, `decoracion`, `precio`);
+   *  `auto-reply.ts` maps and upserts it into `reservation_requests`. */
+  reservationProposal: {
+    category: 'habitaciones' | 'spa' | 'actividades' | 'paquetes' | 'eventos'
+    fields: Record<string, string>
+  } | null
   /** True when `parseGeneration`'s last-resort safety net had to
    *  force-strip a `[[...]]`-shaped marker that no named sentinel
    *  recognized (real incident, 2026-08-25 — a create_quote_chat

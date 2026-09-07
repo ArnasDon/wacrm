@@ -53,6 +53,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -69,6 +70,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
     expect(parseGeneration('Let me get a human [[HANDOFF]]')).toEqual({
@@ -82,6 +84,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -98,6 +101,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -121,6 +125,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -152,6 +157,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -177,6 +183,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: null,
     })
   })
@@ -214,6 +221,7 @@ describe('parseGeneration', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage,
     })
   })
@@ -327,6 +335,41 @@ describe('parseGeneration', () => {
     expect(res.quoteProposal).toBeNull()
   })
 
+  it('detects + strips the record-reservation sentinel, capturing category + partial fields', () => {
+    const res = parseGeneration(
+      'Perfecto, te confirmo disponibilidad en un momento. [[ACTION:record_reservation:habitaciones|servicio=Suite Deluxe;personas=2;entrada=2026-05-01;salida=2026-05-04]]',
+    )
+    expect(res.reservationProposal).toEqual({
+      category: 'habitaciones',
+      fields: {
+        servicio: 'Suite Deluxe',
+        personas: '2',
+        entrada: '2026-05-01',
+        salida: '2026-05-04',
+      },
+    })
+    expect(res.text).toBe('Perfecto, te confirmo disponibilidad en un momento.')
+  })
+
+  it('accepts a reservation marker with just the category (bare interest)', () => {
+    const res = parseGeneration('¿Para cuántas personas sería el spa? [[ACTION:record_reservation:spa|]]')
+    expect(res.reservationProposal).toEqual({ category: 'spa', fields: {} })
+  })
+
+  it('ignores a reservation marker with an unknown category', () => {
+    expect(parseGeneration('ok [[ACTION:record_reservation:golf|personas=4]]').reservationProposal).toBeNull()
+  })
+
+  it('allows a reservation marker alongside the temperature marker', () => {
+    const res = parseGeneration(
+      'Con gusto. [[ACTION:set_temperature:warm]] [[ACTION:record_reservation:eventos|servicio=Boda;fecha=2026-06-20;personas=120]]',
+    )
+    expect(res.leadTemperature).toBe('warm')
+    expect(res.reservationProposal?.category).toBe('eventos')
+    expect(res.reservationProposal?.fields).toMatchObject({ servicio: 'Boda', fecha: '2026-06-20', personas: '120' })
+    expect(res.text).toBe('Con gusto.')
+  })
+
   it('detects + strips the quick-reply sentinel, capturing the id', () => {
     const res = parseGeneration('[[QUICK_REPLY:qr-123]]')
     expect(res.quickReplyId).toBe('qr-123')
@@ -391,6 +434,7 @@ describe('generateReply — OpenAI', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: { promptTokens: 42, completionTokens: 8, totalTokens: 50 },
     })
     const [url, opts] = fetchMock.mock.calls[0]
@@ -458,6 +502,7 @@ describe('generateReply — Anthropic', () => {
       quoteProposal: null,
       sentinelLeakDetected: false,
       quickReplyId: null,
+      reservationProposal: null,
       usage: { promptTokens: 30, completionTokens: 6, totalTokens: 36 },
     })
     const [url, opts] = fetchMock.mock.calls[0]

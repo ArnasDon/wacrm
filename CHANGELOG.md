@@ -35,8 +35,23 @@ and polish.
 > (new `reservation_requests` table for the hotel vertical — per-category
 > service requests that feed a Google Sheet). Empty until a request is
 > made; no effect on other verticals.
+>
+> **Migration required:** apply `supabase/migrations/113_ai_record_reservation.sql`
+> (widens the `ai_action_log` action CHECK to allow `record_reservation`).
 
 ### Added
+
+- **Hotel: the AI fills a reservation request from chat.** On a `hotel`
+  account, as the guest asks about a room / spa / activity / package /
+  event, the auto-reply bot logs each detail it learns — guest count,
+  check-in / check-out, a spa duration, an event date — into that
+  conversation's `reservation_requests` row (one per category), which
+  keeps its Google Sheet row up to date. It records partial data and
+  keeps the conversation going instead of handing off or closing when a
+  field is still missing. New `RECORD_RESERVATION_SENTINEL_PREFIX`
+  marker (taught only to hotel accounts, auto-reply mode) +
+  `record_reservation` audit action; the hotel AI prompt scaffold now
+  spells out which fields to collect per category.
 
 - **Hotel: reservation/service requests → one Google Sheet tab per
   category (backend).** New `reservation_requests` entity: a per-category

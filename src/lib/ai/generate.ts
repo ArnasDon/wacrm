@@ -19,6 +19,9 @@ import {
   CREATE_QUOTE_SENTINEL_SUFFIX,
   QUICK_REPLY_SENTINEL_PREFIX,
   QUICK_REPLY_SENTINEL_SUFFIX,
+  RECORD_RESERVATION_SENTINEL_PREFIX,
+  RECORD_RESERVATION_SENTINEL_SUFFIX,
+  RESERVATION_MARKER_CATEGORIES,
   aiRequestTimeoutMs,
 } from './defaults'
 import type { LeadTemperature } from '@/types'
@@ -185,6 +188,34 @@ export function parseGeneration(
   )
   const quickReplyId = quickReplyMatch ? quickReplyMatch[1].trim() : null
 
+  const reservationMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(RECORD_RESERVATION_SENTINEL_PREFIX)}(.+?)${escapeRegExp(RECORD_RESERVATION_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  let reservationProposal: GenerateResult['reservationProposal'] = null
+  if (reservationMatch) {
+    const [catRaw, ...restParts] = reservationMatch[1].split('|')
+    const category = (catRaw ?? '').trim().toLowerCase()
+    if ((RESERVATION_MARKER_CATEGORIES as readonly string[]).includes(category)) {
+      const fields: Record<string, string> = {}
+      for (const pair of restParts.join('|').split(';')) {
+        const eq = pair.indexOf('=')
+        if (eq < 1) continue
+        const key = pair.slice(0, eq).trim().toLowerCase()
+        const val = pair.slice(eq + 1).trim()
+        if (key && val) fields[key] = val
+      }
+      // A category with nothing else is still worth recording (a bare
+      // "guest is asking about a room") — but only if the model gave us
+      // at least the category cleanly.
+      reservationProposal = {
+        category: category as NonNullable<GenerateResult['reservationProposal']>['category'],
+        fields,
+      }
+    }
+  }
+
   let text = raw
     .split(HANDOFF_SENTINEL)
     .join('')
@@ -197,6 +228,7 @@ export function parseGeneration(
     .replace(appointmentMatch ? appointmentMatch[0] : '', '')
     .replace(quoteMatch ? quoteMatch[0] : '', '')
     .replace(quickReplyMatch ? quickReplyMatch[0] : '', '')
+    .replace(reservationMatch ? reservationMatch[0] : '', '')
     .trim()
 
   // Defense in depth: every marker above is stripped by name, but a
@@ -224,6 +256,7 @@ export function parseGeneration(
     sentinelLeakDetected,
     quoteProposal,
     quickReplyId,
+    reservationProposal,
     usage,
   }
 }

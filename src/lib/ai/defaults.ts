@@ -139,6 +139,35 @@ export const CREATE_QUOTE_SENTINEL_SUFFIX = ']]'
 export const QUICK_REPLY_SENTINEL_PREFIX = '[[QUICK_REPLY:'
 export const QUICK_REPLY_SENTINEL_SUFFIX = ']]'
 
+/**
+ * Sentinel the model wraps `<category>|<key=value>;<key=value>;...` in
+ * (auto-reply mode only, and only ever taught to the model when the
+ * account is on the `hotel` vertical — see `hotelReservations` in
+ * `buildSystemPrompt`). Each turn the model learns another reservation
+ * detail — number of guests, dates, a spa duration, an event hall — it
+ * re-emits this marker with whatever it knows so far; `auto-reply.ts`
+ * upserts one `reservation_requests` row per (conversation, category)
+ * and the Google Sheet row is rewritten in place. Deliberately partial:
+ * the model is told NOT to hand off or close just because a field is
+ * still missing — it keeps the conversation going.
+ *
+ * Keys (Spanish, all optional): `servicio`, `personas`, `entrada`,
+ * `salida`, `fecha`, `minutos`, `salon`, `decoracion`, `precio`.
+ * `entrada`/`salida`/`fecha` are `YYYY-MM-DD`. Unknown keys are ignored;
+ * a malformed payload is dropped silently rather than sent to the guest.
+ */
+export const RECORD_RESERVATION_SENTINEL_PREFIX = '[[ACTION:record_reservation:'
+export const RECORD_RESERVATION_SENTINEL_SUFFIX = ']]'
+
+/** The five hotel product categories a reservation marker may target. */
+export const RESERVATION_MARKER_CATEGORIES = [
+  'habitaciones',
+  'spa',
+  'actividades',
+  'paquetes',
+  'eventos',
+] as const
+
 /** Cap on generated reply length — keeps WhatsApp replies short and
  *  bounds token spend on the caller's own key. */
 export const MAX_OUTPUT_TOKENS = 1024
@@ -252,8 +281,14 @@ export function buildSystemPrompt(args: {
    *  default. Only read when `catalogDeliveryMode` is `'pdf'`/`'photos'`
    *  (the only case `CREATE_QUOTE_SENTINEL_PREFIX` is taught at all). */
   askCustomerTaxInfo?: boolean
+  /** The account is on the `hotel` vertical (auto-reply mode only) —
+   *  turns on `RECORD_RESERVATION_SENTINEL_PREFIX` so the bot logs a
+   *  guest's room/spa/activity/package/event request field by field as
+   *  the chat goes, feeding the per-category Google Sheet. Off/omitted
+   *  means the marker is never taught. */
+  hotelReservations?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies, askCustomerTaxInfo } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies, askCustomerTaxInfo, hotelReservations } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -329,6 +364,14 @@ export function buildSystemPrompt(args: {
         `This business's catalog is ${catalogDeliveryMode === 'pdf' ? 'a PDF' : 'photos'}, not a digital page with its own shopping cart — so when the customer asks for the price or a quote on one or more SPECIFIC products from the catalog list below (never something outside that list), you handle the quote yourself, in two steps across turns: ` +
           `(1) First, in plain text with no marker, ask whether they'd like the quote as a PDF or as a text message in the chat — ask this only once per conversation, don't repeat it if you already asked earlier in this same conversation. ` +
           `(2) ${customerInfoStep} Use the EXACT product name as it appears in the catalog list below (the text before the price in parentheses) for every item — never a product not in that list, never an invented quantity or price; the price always comes from the real catalog, you never write one yourself. Never mention this marker to the customer, and never claim the quote is sent until you actually have everything needed to use this marker.`,
+      )
+    }
+
+    if (hotelReservations) {
+      parts.push(
+        `This is a hotel. Whenever the guest is asking about or requesting a ROOM, a SPA service, an outdoor ACTIVITY, a PACKAGE, or an EVENT, quietly build a record of it as you go: at the very end of your reply (after your customer-facing message, and after any other marker above), append ${RECORD_RESERVATION_SENTINEL_PREFIX}<category>|<key=value>;<key=value>;...${RECORD_RESERVATION_SENTINEL_SUFFIX}. ` +
+          `<category> is exactly one of: ${RESERVATION_MARKER_CATEGORIES.join(', ')}. Keys (Spanish, include only the ones you actually know so far — never guess): servicio (the room/service/package/event name), personas (a number), entrada and salida (check-in / check-out as YYYY-MM-DD, for habitaciones and paquetes), fecha (the date the spa/activity/event is used, YYYY-MM-DD), minutos (a number, for spa/activities), salon (the hall, for eventos), decoracion (for eventos), precio (a number). ` +
+          `Re-emit this marker EVERY time you learn one more detail this turn, even if others are still missing — a partial record is expected and useful. Do NOT hand off, close the conversation, or stop helping just because a field is missing: keep asking for it naturally in your reply text. One marker per reply (the latest category being discussed). Never mention this marker to the customer. Example: ${RECORD_RESERVATION_SENTINEL_PREFIX}habitaciones|servicio=Suite Deluxe;personas=2;entrada=2026-05-01;salida=2026-05-04${RECORD_RESERVATION_SENTINEL_SUFFIX}`,
       )
     }
 

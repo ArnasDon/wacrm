@@ -31,6 +31,11 @@ export interface SheetRow {
   header: string[]
   /** The row itself, aligned to `header`. */
   values: (string | number | null)[]
+  /** Present for events that UPDATE an existing row in place rather than
+   *  append a new one (`reservation.updated`): the entity id whose
+   *  `sheet_row` pointer dispatch.ts reads/sets. The final column (the
+   *  hotel-filled "Aprobación") is never overwritten on an update. */
+  rowRef?: { table: 'reservation_requests'; id: string }
 }
 
 type Db = SupabaseClient
@@ -382,6 +387,97 @@ async function buildBriefRow(
   }
 }
 
+// ------------------------------------------------------------
+// Hotel: one tab per product category, each with its own column set.
+// The row is UPDATED in place as the AI / catalog / quote fills fields
+// (dispatch.ts tracks `reservation_requests.sheet_row`). "Aprobación"
+// is always the last column and the hotel fills it by hand — dispatch
+// never rewrites it.
+// ------------------------------------------------------------
+
+const RESERVATION_TAB_LABEL: Record<string, string> = {
+  habitaciones: 'Habitaciones',
+  spa: 'Spa',
+  actividades: 'Actividades al aire libre',
+  paquetes: 'Paquetes',
+  eventos: 'Eventos',
+}
+
+const RESERVATION_STATUS_LABEL: Record<string, string> = {
+  pending: '',
+  approved: 'Aprobado',
+  denied: 'Negado',
+}
+
+interface ReservationRow {
+  id: string
+  category: string
+  service_name: string | null
+  guests: number | null
+  check_in: string | null
+  check_out: string | null
+  use_date: string | null
+  duration_minutes: number | null
+  hall: string | null
+  decoration: string | null
+  estimated_price: number | null
+  status: string
+  contact_id: string | null
+}
+
+async function buildReservationRow(
+  db: Db,
+  accountId: string,
+  data: Record<string, unknown>,
+  base: string,
+  nowIso: string,
+): Promise<SheetRow | null> {
+  const id = typeof data.reservation_id === 'string' ? data.reservation_id : null
+  if (!id) return null
+  const { data: r } = await db
+    .from('reservation_requests')
+    .select(
+      'id, category, service_name, guests, check_in, check_out, use_date, duration_minutes, hall, decoration, estimated_price, status, contact_id',
+    )
+    .eq('account_id', accountId)
+    .eq('id', id)
+    .maybeSingle<ReservationRow>()
+  if (!r) return null
+
+  const contact = await contactRef(db, accountId, r.contact_id)
+  const tab = cat(base, RESERVATION_TAB_LABEL[r.category] ?? 'Solicitudes')
+  const price =
+    r.estimated_price != null && Number.isFinite(Number(r.estimated_price))
+      ? Number(r.estimated_price)
+      : ''
+  const approval = RESERVATION_STATUS_LABEL[r.status] ?? ''
+
+  let header: string[]
+  let values: (string | number | null)[]
+  switch (r.category) {
+    case 'spa':
+    case 'actividades':
+      header = ['Registrado', 'Servicio', 'Cliente', 'Contacto', 'Personas', 'Fecha de uso', 'Minutos', 'Precio estimado', 'Aprobación']
+      values = [nowIso, r.service_name ?? '', contact.name, contact.phone, r.guests ?? '', r.use_date ?? '', r.duration_minutes ?? '', price, approval]
+      break
+    case 'paquetes':
+      header = ['Registrado', 'Paquete', 'Cliente', 'Contacto', 'Personas', 'Fecha de uso', 'Check-in', 'Check-out', 'Precio estimado', 'Aprobación']
+      values = [nowIso, r.service_name ?? '', contact.name, contact.phone, r.guests ?? '', r.use_date ?? '', r.check_in ?? '', r.check_out ?? '', price, approval]
+      break
+    case 'eventos':
+      header = ['Registrado', 'Tipo de evento', 'Cliente', 'Contacto', 'Fecha del evento', 'Personas', 'Salón', 'Decoración', 'Precio estimado', 'Aprobación']
+      values = [nowIso, r.service_name ?? '', contact.name, contact.phone, r.use_date ?? '', r.guests ?? '', r.hall ?? '', r.decoration ?? '', price, approval]
+      break
+    case 'habitaciones':
+    default:
+      header = ['Registrado', 'Habitación', 'Cliente', 'Contacto', 'Huéspedes', 'Check-in', 'Check-out', 'Precio estimado', 'Aprobación']
+      values = [nowIso, r.service_name ?? '', contact.name, contact.phone, r.guests ?? '', r.check_in ?? '', r.check_out ?? '', price, approval]
+      break
+  }
+
+  return { tab, header, values, rowRef: { table: 'reservation_requests', id: r.id } }
+}
+
 /**
  * Build the sheet row for `event`. Returns null when the event has no
  * mapping or the referenced entity no longer exists.
@@ -412,6 +508,8 @@ export async function buildRowForEvent(
       return buildBroadcastRow(db, accountId, d, base, nowIso)
     case 'contact.brief_ready':
       return buildBriefRow(db, accountId, d, base, nowIso)
+    case 'reservation.updated':
+      return buildReservationRow(db, accountId, d, base, nowIso)
     default:
       return null
   }

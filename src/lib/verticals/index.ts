@@ -179,7 +179,13 @@ const HOTEL: VerticalDefinition = {
     'Paquete',
     'Servicios adicionales',
   ],
-  productCategories: ['Habitaciones', 'Spa', 'Actividades al aire libre', 'Paquetes'],
+  productCategories: [
+    'Habitaciones',
+    'Spa',
+    'Actividades al aire libre',
+    'Paquetes',
+    'Eventos',
+  ],
   pipeline: {
     name: 'Reservas',
     stages: [
@@ -196,7 +202,7 @@ const HOTEL: VerticalDefinition = {
     { title: 'Tarifas', content: HOTEL_TARIFAS_DOC },
     { title: 'Políticas y horarios', content: HOTEL_POLITICAS_DOC },
   ],
-  googleSheetsEvents: ['deal.won', 'contact.brief_ready', 'quote.created'],
+  googleSheetsEvents: ['deal.won', 'contact.brief_ready', 'quote.created', 'reservation.updated'],
   accountSettings: { catalog_delivery_mode: 'photos' },
   aiSystemPromptScaffold: HOTEL_AI_PROMPT,
 }

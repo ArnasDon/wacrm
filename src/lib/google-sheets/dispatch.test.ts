@@ -8,12 +8,22 @@ const H = vi.hoisted(() => ({
   ensureTab: vi.fn(),
   appendRows: vi.fn(),
   updateHeaderRow: vi.fn(),
+  writeRow: vi.fn(),
 }))
 
 vi.mock('./admin-client', () => ({ supabaseAdmin: () => ({ from: H.from }) }))
 vi.mock('./oauth', () => ({ getValidAccessToken: H.token }))
 vi.mock('./row-builder', () => ({ buildRowForEvent: H.buildRow }))
-vi.mock('./api', () => ({ ensureTab: H.ensureTab, appendRows: H.appendRows, updateHeaderRow: H.updateHeaderRow }))
+vi.mock('./api', async () => {
+  const actual = await vi.importActual<typeof import('./api')>('./api')
+  return {
+    ensureTab: H.ensureTab,
+    appendRows: H.appendRows,
+    updateHeaderRow: H.updateHeaderRow,
+    writeRow: H.writeRow,
+    lastRowOfRange: actual.lastRowOfRange,
+  }
+})
 
 import { dispatchToGoogleSheets } from './dispatch'
 
@@ -41,6 +51,7 @@ beforeEach(() => {
   H.ensureTab.mockReset().mockResolvedValue(undefined)
   H.appendRows.mockReset().mockResolvedValue(undefined)
   H.updateHeaderRow.mockReset().mockResolvedValue(undefined)
+  H.writeRow.mockReset().mockResolvedValue(undefined)
 })
 
 const CONNECTED = {
@@ -154,5 +165,73 @@ describe('dispatchToGoogleSheets — append', () => {
     H.buildRow.mockResolvedValue({ tab: 'Ventas', header: ['a'], values: ['b'] })
     H.appendRows.mockRejectedValue(new Error('Sheets append failed (502)'))
     await expect(dispatchToGoogleSheets(CALLER, 'a', 'deal.won', { deal_id: 'd1' })).resolves.toBeUndefined()
+  })
+})
+
+describe('dispatchToGoogleSheets — reservation.updated (update in place)', () => {
+  const RES_ROW = {
+    tab: 'Ventas - Habitaciones',
+    header: ['Registrado', 'Habitación', 'Cliente', 'Contacto', 'Huéspedes', 'Check-in', 'Check-out', 'Precio estimado', 'Aprobación'],
+    values: ['now', 'Suite', 'Ana', '502', 2, '2026-03-13', '2026-03-16', 900, ''],
+    rowRef: { table: 'reservation_requests' as const, id: 'r1' },
+  }
+
+  // `from` mock that serves both tables and records writes.
+  function reservationConfig(sheetRow: number | null) {
+    const cfg = { ...CONNECTED, events: ['reservation.updated'], headers_written: {} as Record<string, unknown> }
+    const calls = { configUpdates: [] as Record<string, unknown>[], resUpdates: [] as Record<string, unknown>[] }
+    H.from.mockImplementation((table: string) => {
+      if (table === 'google_sheets_config') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: cfg, error: null }) }) }),
+          update: (p: Record<string, unknown>) => {
+            calls.configUpdates.push(p)
+            return { eq: () => Promise.resolve({ error: null }) }
+          },
+        }
+      }
+      if (table === 'reservation_requests') {
+        return {
+          select: () => ({ eq: () => ({ maybeSingle: () => Promise.resolve({ data: { sheet_row: sheetRow }, error: null }) }) }),
+          update: (p: Record<string, unknown>) => {
+            calls.resUpdates.push(p)
+            return { eq: () => Promise.resolve({ error: null }) }
+          },
+        }
+      }
+      throw new Error('unexpected table ' + table)
+    })
+    return calls
+  }
+
+  it('first write: appends header + row and stores the returned sheet_row', async () => {
+    const calls = reservationConfig(null)
+    H.buildRow.mockResolvedValue(RES_ROW)
+    H.appendRows.mockResolvedValue('Ventas - Habitaciones!A1:I2')
+
+    await dispatchToGoogleSheets(CALLER, 'a', 'reservation.updated', { reservation_id: 'r1' })
+
+    expect(H.appendRows).toHaveBeenCalledWith('tok', 'sheet-1', 'Ventas - Habitaciones', [RES_ROW.header, RES_ROW.values])
+    expect(calls.resUpdates).toContainEqual({ sheet_row: 2 })
+    expect(calls.configUpdates.at(-1)).toMatchObject({
+      headers_written: { 'Ventas - Habitaciones': RES_ROW.header },
+    })
+    expect(H.writeRow).not.toHaveBeenCalled()
+  })
+
+  it('later write: overwrites the stored row WITHOUT the trailing Aprobación column', async () => {
+    reservationConfig(2)
+    H.buildRow.mockResolvedValue(RES_ROW)
+
+    await dispatchToGoogleSheets(CALLER, 'a', 'reservation.updated', { reservation_id: 'r1' })
+
+    expect(H.appendRows).not.toHaveBeenCalled()
+    expect(H.writeRow).toHaveBeenCalledWith(
+      'tok',
+      'sheet-1',
+      'Ventas - Habitaciones',
+      2,
+      RES_ROW.values.slice(0, -1),
+    )
   })
 })

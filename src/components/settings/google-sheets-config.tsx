@@ -40,6 +40,7 @@ const EVENT_LABELS: Record<string, string> = {
   'appointment.scheduled': 'Cita agendada',
   'broadcast.completed': 'Difusión finalizada',
   'contact.brief_ready': 'Requerimientos del prospecto (al registrar el negocio)',
+  'reservation.updated': 'Solicitud de reserva/servicio (hotel — una pestaña por categoría)',
 };
 
 const EXPORT_ENTITIES: { key: string; label: string }[] = [

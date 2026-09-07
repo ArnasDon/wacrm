@@ -30,8 +30,30 @@ and polish.
 > (renames `product_rates.weekday_group` → `day_of_week` and swaps the
 > CHECK to the seven day codes `mon`…`sun`). `product_rates` has no rows
 > in any environment, so this is a pure schema swap — no data migration.
+>
+> **Migration required:** apply `supabase/migrations/112_reservation_requests.sql`
+> (new `reservation_requests` table for the hotel vertical — per-category
+> service requests that feed a Google Sheet). Empty until a request is
+> made; no effect on other verticals.
 
 ### Added
+
+- **Hotel: reservation/service requests → one Google Sheet tab per
+  category (backend).** New `reservation_requests` entity: a per-category
+  "solicitud" (habitaciones, spa, actividades, paquetes, eventos) that
+  gets filled in over time and mirrored to its own sheet tab
+  (`<base> - Habitaciones`, `<base> - Spa`, …). Each category has its own
+  columns (rooms: room / guest / check-in / check-out; spa & activities:
+  service / people / date / minutes; packages: package / people / dates;
+  events: event type / date / people / hall / decoration) plus a trailing
+  **"Aprobación"** column the hotel fills by hand — the dispatch rewrites
+  the row in place as fields come in but never touches that last column.
+  New `reservation.updated` webhook event; `/api/reservations` +
+  `/api/reservations/[id]` CRUD (agent+); shared
+  `upsertReservationRequest` helper. The hotel starter kit now seeds an
+  **Eventos** category and pre-selects `reservation.updated` for Google
+  Sheets. The AI tool that fills these from chat, the public-catalog form
+  and the quote-builder hook are follow-ups.
 
 - **Hotel rooms priced per day of the week.** The room-rate editor
   (hotel vertical) now takes a distinct price for **every day** — Mon,

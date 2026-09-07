@@ -20,6 +20,7 @@ export const WEBHOOK_EVENTS = [
   'quote.created', // a quote was created (human or the AI's create_quote action)
   'appointment.scheduled', // a Google Calendar appointment was created for a contact
   'contact.brief_ready', // a deal was registered for a contact — snapshot its custom-field "brief"
+  'reservation.updated', // a hotel reservation/service request was created or a field changed
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
@@ -40,6 +41,8 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   'appointment.scheduled': 'A Google Calendar appointment was scheduled for a contact',
   'contact.brief_ready':
     "A deal was registered for a contact — carries the contact's custom-field values as a spec brief",
+  'reservation.updated':
+    'A hotel reservation/service request was created or one of its fields changed (rooms, spa, activities, packages, events)',
 };
 
 /** Type-narrow an unknown value into a valid `WebhookEvent`. */

@@ -14,6 +14,7 @@ function makeDb(fixtures: {
   customFields?: Record<string, unknown>[]
   customValues?: Record<string, unknown>[]
   account?: Record<string, unknown> | null
+  reservation?: Record<string, unknown> | null
 }): SupabaseClient {
   return {
     from(table: string) {
@@ -35,6 +36,7 @@ function makeDb(fixtures: {
             quotes: fixtures.quote,
             broadcasts: fixtures.broadcast,
             accounts: fixtures.account ?? { industry_vertical: 'generic' },
+            reservation_requests: fixtures.reservation,
           }
           return Promise.resolve({ data: map[table] ?? null, error: null })
         },
@@ -162,6 +164,49 @@ describe('buildRowForEvent', () => {
 
   it('returns null for contact.brief_ready when the contact is gone', async () => {
     const row = await buildRowForEvent(makeDb({ contact: null }), 'a', 'contact.brief_ready', { contact_id: 'c1' }, 'Ventas')
+    expect(row).toBeNull()
+  })
+
+  it('routes reservation.updated (habitaciones) to its own tab with a rowRef', async () => {
+    const db = makeDb({
+      contact: { name: 'Ana', phone: '502111' },
+      reservation: {
+        id: 'r1', category: 'habitaciones', service_name: 'Master Suite',
+        guests: 2, check_in: '2026-03-13', check_out: '2026-03-16',
+        use_date: null, duration_minutes: null, hall: null, decoration: null,
+        estimated_price: 900, status: 'pending', contact_id: 'c1',
+      },
+    })
+    const row = await buildRowForEvent(db, 'a', 'reservation.updated', { reservation_id: 'r1' }, 'Ventas')
+    expect(row!.tab).toBe('Ventas - Habitaciones')
+    expect(row!.rowRef).toEqual({ table: 'reservation_requests', id: 'r1' })
+    expect(row!.header).toEqual([
+      'Registrado', 'Habitación', 'Cliente', 'Contacto', 'Huéspedes', 'Check-in', 'Check-out', 'Precio estimado', 'Aprobación',
+    ])
+    expect(row!.values.slice(1)).toEqual(['Master Suite', 'Ana', '502111', 2, '2026-03-13', '2026-03-16', 900, ''])
+    expect(row!.values.length).toBe(row!.header.length)
+  })
+
+  it('routes reservation.updated (eventos) with salón + decoración columns; status → Aprobación', async () => {
+    const db = makeDb({
+      contact: { name: 'Beto', phone: '502222' },
+      reservation: {
+        id: 'r2', category: 'eventos', service_name: 'Boda',
+        guests: 80, check_in: null, check_out: null, use_date: '2026-05-01',
+        duration_minutes: null, hall: 'Salón Jardín', decoration: 'Rústica',
+        estimated_price: 15000, status: 'approved', contact_id: 'c2',
+      },
+    })
+    const row = await buildRowForEvent(db, 'a', 'reservation.updated', { reservation_id: 'r2' }, 'Ventas')
+    expect(row!.tab).toBe('Ventas - Eventos')
+    expect(row!.header).toContain('Salón')
+    expect(row!.header).toContain('Decoración')
+    expect(row!.values.at(-1)).toBe('Aprobado')
+    expect(row!.values.slice(1)).toEqual(['Boda', 'Beto', '502222', '2026-05-01', 80, 'Salón Jardín', 'Rústica', 15000, 'Aprobado'])
+  })
+
+  it('returns null for reservation.updated when the reservation is gone', async () => {
+    const row = await buildRowForEvent(makeDb({ reservation: null }), 'a', 'reservation.updated', { reservation_id: 'x' }, 'Ventas')
     expect(row).toBeNull()
   })
 })

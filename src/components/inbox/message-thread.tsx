@@ -875,6 +875,15 @@ export function MessageThread({
   }
 
   const displayName = contact.name || contact.whatsapp_username || 'WhatsApp user';
+  // Older username contacts may have the literal legacy sentinel "hidden"
+  // rather than a SQL NULL. Neither is a deliverable phone number.
+  const phoneIsHidden =
+    !contact.phone || contact.phone.trim().toLowerCase() === 'hidden';
+  const contactIdentityLabel = phoneIsHidden
+    ? contact.whatsapp_user_id
+      ? `BSUID: ${contact.whatsapp_user_id}`
+      : 'Phone hidden'
+    : contact.phone;
   const provider = conversation.whatsapp_config?.provider ?? 'meta';
   const lineLabel =
     conversation.whatsapp_config?.sender_phone ||
@@ -924,7 +933,7 @@ export function MessageThread({
               {displayName}
             </h2>
             <p className="text-muted-foreground truncate text-xs">
-              {contact.phone || (contact.whatsapp_username ? `@${contact.whatsapp_username}` : 'Phone hidden')}
+              {contactIdentityLabel}
             </p>
             <p className="text-muted-foreground truncate text-[10px] uppercase">
               {provider} · {lineLabel}

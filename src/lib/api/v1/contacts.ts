@@ -192,12 +192,23 @@ export async function setContactTags(
   const toRemove = [...existing].filter((id) => !desired.has(id));
 
   if (toRemove.length > 0) {
-    const { error } = await db
+    const { data: removed, error } = await db
       .from('contact_tags')
       .delete()
       .eq('contact_id', contactId)
-      .in('tag_id', toRemove);
+      .in('tag_id', toRemove)
+      .select('tag_id');
     if (error) throw new ContactError('Failed to update contact tags', 500);
+
+    // PostgREST can return a successful delete with no affected rows.  Do
+    // not report a successful replacement unless every stale join was
+    // actually removed.
+    const removedIds = new Set(
+      (removed ?? []).map((row) => row.tag_id as string),
+    );
+    if (toRemove.some((tagId) => !removedIds.has(tagId))) {
+      throw new ContactError('Failed to replace contact tags', 500);
+    }
   }
   if (toAdd.length > 0) {
     for (const tagId of toAdd) {
@@ -213,6 +224,15 @@ export async function setContactTags(
         throw new ContactError('Failed to update contact tags', 500);
       }
     }
+  }
+
+  if (toRemove.length > 0 || toAdd.length > 0) {
+    const { error } = await db
+      .from('contacts')
+      .update({ updated_at: new Date().toISOString() })
+      .eq('id', contactId)
+      .eq('account_id', accountId);
+    if (error) throw new ContactError('Failed to update contact timestamp', 500);
   }
 }
 

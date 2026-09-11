@@ -874,7 +874,7 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contact.phone;
+  const displayName = contact.name || contact.whatsapp_username || 'WhatsApp user';
   const provider = conversation.whatsapp_config?.provider ?? 'meta';
   const lineLabel =
     conversation.whatsapp_config?.sender_phone ||
@@ -924,7 +924,7 @@ export function MessageThread({
               {displayName}
             </h2>
             <p className="text-muted-foreground truncate text-xs">
-              {contact.phone}
+              {contact.phone || (contact.whatsapp_username ? `@${contact.whatsapp_username}` : 'Phone hidden')}
             </p>
             <p className="text-muted-foreground truncate text-[10px] uppercase">
               {provider} · {lineLabel}

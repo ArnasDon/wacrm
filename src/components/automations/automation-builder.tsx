@@ -5,7 +5,6 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react"
@@ -35,8 +34,6 @@ import {
   ArrowUp,
   MousePointerClick,
   List,
-  Focus,
-  PanelRightClose,
   X,
 } from "lucide-react"
 
@@ -82,6 +79,8 @@ import {
   type ServerStepNode,
   type StepContext,
 } from "./automation-tree"
+
+import { AutomationCanvas } from "./automation-canvas"
 
 export type { BuilderStep, ServerStepNode } from "./automation-tree"
 
@@ -699,21 +698,10 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const [state, setState] = useState<BuilderInitial>(initial)
   const [saving, setSaving] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const canvasRef = useRef<HTMLDivElement>(null)
   const selected = useMemo(
     () => (selectedId ? findStepContextByCid(state.steps, selectedId) : null),
     [selectedId, state.steps]
   )
-
-  useEffect(() => {
-    if (!selectedId) return
-    const frame = requestAnimationFrame(() => {
-      canvasRef.current
-        ?.querySelector<HTMLElement>(`[data-automation-node="${selectedId}"]`)
-        ?.scrollIntoView({ block: "nearest", inline: "nearest" })
-    })
-    return () => cancelAnimationFrame(frame)
-  }, [selectedId])
 
   function patchTop<K extends keyof BuilderInitial>(
     key: K,
@@ -779,15 +767,8 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     })
   }
 
-  function focusSelected() {
-    if (!selectedId) return
-    canvasRef.current
-      ?.querySelector<HTMLElement>(`[data-automation-node="${selectedId}"]`)
-      ?.scrollIntoView({
-        behavior: "smooth",
-        block: "center",
-        inline: "center",
-      })
+  function updateStepPosition(cid: string, x: number, y: number) {
+    updateStep(cid, (step) => ({ ...step, position: { x, y } }))
   }
 
   async function save() {
@@ -879,37 +860,23 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
 
       <ResourcesProvider>
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          {/* The graph owns both axes. Its inner surface grows with nested
-              branches instead of squeezing them into the viewport width. */}
-          <div
-            ref={canvasRef}
-            className="relative min-w-0 flex-1 overflow-auto overscroll-contain bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] [background-size:20px_20px]"
-          >
-            <div className="border-border bg-card/95 sticky top-3 right-3 z-30 ml-auto flex w-fit gap-1 rounded-lg border p-1 shadow-lg backdrop-blur">
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={!selectedId}
-                onClick={focusSelected}
-                aria-label={t("canvas.focusSelected")}
-                title={t("canvas.focusSelected")}
-              >
-                <Focus className="h-4 w-4" />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon"
-                disabled={!selectedId}
-                onClick={() => setSelectedId(null)}
-                aria-label={t("canvas.closeInspector")}
-                title={t("canvas.closeInspector")}
-              >
-                <PanelRightClose className="h-4 w-4" />
-              </Button>
+          <aside className="border-border bg-card hidden w-80 shrink-0 overflow-x-hidden overflow-y-auto border-r p-4 lg:block">
+            <div className="mb-5 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-foreground text-sm font-semibold">
+                  Workflow setup
+                </p>
+                <p className="text-muted-foreground mt-0.5 text-xs">
+                  Add a step, then configure it on the canvas.
+                </p>
+              </div>
+              <AddButton
+                onPick={(type) =>
+                  addStepAt({ kind: "root" }, state.steps.length, type)
+                }
+              />
             </div>
-            <div className="relative mx-auto flex min-h-full w-max min-w-[720px] flex-col items-center px-12 py-10">
+            <div className="border-border bg-muted/20 rounded-xl border p-3">
               <TriggerCard
                 type={state.trigger_type}
                 config={state.trigger_config}
@@ -917,15 +884,25 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
                 onConfigChange={(c) => patchTop("trigger_config", c)}
                 t={t}
               />
-              <StepList
-                steps={state.steps}
-                target={{ kind: "root" }}
-                selectedId={selectedId}
-                onSelect={setSelectedId}
-                addStepAt={addStepAt}
+            </div>
+          </aside>
+
+          <main className="relative min-w-0 flex-1">
+            <div className="absolute top-3 left-3 z-10 lg:hidden">
+              <AddButton
+                onPick={(type) =>
+                  addStepAt({ kind: "root" }, state.steps.length, type)
+                }
               />
             </div>
-          </div>
+            <AutomationCanvas
+              steps={state.steps}
+              selectedCid={selectedId}
+              onSelectStep={setSelectedId}
+              onDeleteStep={deleteStep}
+              onUpdateStepPosition={updateStepPosition}
+            />
+          </main>
 
           {selected && (
             <AutomationInspector
@@ -961,9 +938,10 @@ function TriggerCard({
 }) {
   const [open, setOpen] = useState(false)
   return (
-    // Card width: full on mobile, fixed 320px on sm+. The canvas wrapper
-    // (max-w-2xl + px-4) keeps this tidy on tablet/desktop.
-    <div className="z-10 w-full max-w-[320px] sm:w-80">
+    // The trigger lives in both the canvas and its narrower configuration
+    // rail. It must shrink with its parent rather than force a 320px card
+    // into an inner, padded column and get clipped.
+    <div className="z-10 w-full min-w-0">
       <div className="border-border bg-card rounded-lg border border-l-4 border-l-blue-500 shadow-lg">
         <button
           type="button"

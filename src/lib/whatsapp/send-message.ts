@@ -39,11 +39,13 @@ import {
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
-  sanitizePhoneForMeta,
-  isValidE164,
   phoneVariants,
   isRecipientNotAllowedError,
 } from '@/lib/whatsapp/phone-utils';
+import {
+  resolveWhatsAppRecipient,
+  type WhatsAppRecipient,
+} from '@/lib/whatsapp/recipient';
 import type { MessageTemplate } from '@/types';
 import { isMessageTemplate } from '@/lib/whatsapp/template-row-guard';
 import {
@@ -103,6 +105,8 @@ export interface SendMessageParams {
   replyToMessageId?: string | null;
   /** Internal callers use `bot`; dashboard/public API sends default to agent. */
   senderType?: 'agent' | 'bot';
+  /** Only AI auto-replies set this; deterministic flows/automations do not. */
+  aiGenerated?: boolean;
 }
 
 export interface SendMessageResult {
@@ -236,6 +240,7 @@ export async function sendMessageToConversation(
     interactivePayload,
     replyToMessageId,
     senderType = 'agent',
+    aiGenerated = false,
   } = params;
 
   if (!conversationId) {
@@ -269,19 +274,23 @@ export async function sendMessageToConversation(
   }
 
   const contact = conversation.contact;
-  if (!contact?.phone) {
+  const contactRecipient = contact
+    ? resolveWhatsAppRecipient(contact)
+    : null;
+  const conversationRecipient =
+    conversation.whatsapp_recipient_id &&
+    (conversation.whatsapp_recipient_type === 'phone' ||
+      conversation.whatsapp_recipient_type === 'bsuid')
+      ? ({
+          type: conversation.whatsapp_recipient_type,
+          value: conversation.whatsapp_recipient_id,
+        } as WhatsAppRecipient)
+      : null;
+  const recipient = contactRecipient ?? conversationRecipient;
+  if (!recipient) {
     throw new SendMessageError(
       'bad_request',
-      'Contact phone number not found',
-      400
-    );
-  }
-
-  const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-  if (!isValidE164(sanitizedPhone)) {
-    throw new SendMessageError(
-      'bad_request',
-      'Invalid phone number format',
+      'Contact has no valid WhatsApp recipient identifier',
       400
     );
   }
@@ -311,6 +320,13 @@ export async function sendMessageToConversation(
   }
 
   const provider = config.provider === 'twilio' ? 'twilio' : 'meta';
+  if (provider === 'twilio' && recipient.type === 'bsuid') {
+    throw new SendMessageError(
+      'twilio_bsuid_unsupported',
+      'This Twilio WhatsApp integration cannot send to a WhatsApp BSUID.',
+      400
+    );
+  }
   if (provider === 'twilio' && messageType === 'template') {
     throw new SendMessageError(
       'twilio_templates_unsupported',
@@ -430,6 +446,19 @@ export async function sendMessageToConversation(
       );
     }
     templateRow = data ?? null;
+    // Meta does not allow phone-number-dependent authentication templates
+    // (including copy-code) to target a BSUID. Do not silently fall back to
+    // a missing phone; make the unsupported capability explicit.
+    if (
+      recipient.type === 'bsuid' &&
+      templateRow?.buttons?.some((button) => button.type === 'COPY_CODE')
+    ) {
+      throw new SendMessageError(
+        'bsuid_template_unsupported',
+        'This authentication template requires a WhatsApp phone number.',
+        400
+      );
+    }
   }
 
   const templateHeaderMediaUrl =
@@ -440,7 +469,7 @@ export async function sendMessageToConversation(
       : null;
   let templateHeaderMediaId = templateMessageParams?.headerMediaId;
 
-  const attempt = async (phone: string): Promise<string> => {
+  const attempt = async (target: WhatsAppRecipient): Promise<string> => {
     if (provider === 'twilio') {
       if (!config.sender_phone) {
         throw new TwilioProviderError(
@@ -451,7 +480,7 @@ export async function sendMessageToConversation(
         db,
         accountId,
         from: config.sender_phone,
-        to: phone,
+        to: target.value,
         body:
           messageType === 'interactive'
             ? interactivePayload!.body
@@ -481,7 +510,9 @@ export async function sendMessageToConversation(
       const result = await sendTemplateMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
-        to: phone,
+        ...(target.type === 'bsuid'
+          ? { recipient: target.value }
+          : { to: target.value }),
         templateName: templateName!,
         language: templateLanguage || 'en_US',
         template: templateRow ?? undefined,
@@ -501,7 +532,9 @@ export async function sendMessageToConversation(
       const result = await sendMediaMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
-        to: phone,
+        ...(target.type === 'bsuid'
+          ? { recipient: target.value }
+          : { to: target.value }),
         kind: messageType as MediaKind,
         link: mediaUrl!,
         caption: contentText || undefined,
@@ -516,7 +549,9 @@ export async function sendMessageToConversation(
         const result = await sendInteractiveButtons({
           phoneNumberId: config.phone_number_id,
           accessToken,
-          to: phone,
+          ...(target.type === 'bsuid'
+            ? { recipient: target.value }
+            : { to: target.value }),
           bodyText: p.body,
           headerText: p.header || undefined,
           footerText: p.footer || undefined,
@@ -528,7 +563,9 @@ export async function sendMessageToConversation(
       const result = await sendInteractiveList({
         phoneNumberId: config.phone_number_id,
         accessToken,
-        to: phone,
+        ...(target.type === 'bsuid'
+          ? { recipient: target.value }
+          : { to: target.value }),
         bodyText: p.body,
         buttonLabel: p.button_label,
         headerText: p.header || undefined,
@@ -541,7 +578,9 @@ export async function sendMessageToConversation(
     const result = await sendTextMessage({
       phoneNumberId: config.phone_number_id,
       accessToken,
-      to: phone,
+      ...(target.type === 'bsuid'
+        ? { recipient: target.value }
+        : { to: target.value }),
       text: contentText!,
       contextMessageId,
     });
@@ -553,16 +592,20 @@ export async function sendMessageToConversation(
   // with "recipient not in allowed list"; persist a working variant
   // back to the contact so the next send goes straight through.
   let waMessageId = '';
-  let workingPhone = sanitizedPhone;
+  let workingRecipient = recipient;
   try {
     const variants =
-      provider === 'meta' ? phoneVariants(sanitizedPhone) : [sanitizedPhone];
+      provider === 'meta' && recipient.type === 'phone'
+        ? phoneVariants(recipient.value).map(
+            (value): WhatsAppRecipient => ({ type: 'phone', value })
+          )
+        : [recipient];
     let lastError: unknown = null;
 
     for (const variant of variants) {
       try {
         waMessageId = await attempt(variant);
-        workingPhone = variant;
+        workingRecipient = variant;
         lastError = null;
         break;
       } catch (err) {
@@ -572,7 +615,7 @@ export async function sendMessageToConversation(
         }
         lastError = err;
         console.warn(
-          `[send-message] variant "${variant}" rejected by Meta, trying next…`
+          `[send-message] phone recipient variant rejected by Meta, trying next…`
         );
       }
     }
@@ -603,15 +646,30 @@ export async function sendMessageToConversation(
     throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
   }
 
-  if (workingPhone !== sanitizedPhone) {
+  if (
+    recipient.type === 'phone' &&
+    workingRecipient.type === 'phone' &&
+    workingRecipient.value !== recipient.value
+  ) {
     console.log(
-      `[send-message] Auto-corrected contact phone: ${sanitizedPhone} → ${workingPhone}`
+      '[send-message] Auto-corrected a contact phone recipient variant'
     );
     await db
       .from('contacts')
-      .update({ phone: workingPhone })
+      .update({ phone: workingRecipient.value })
       .eq('id', contact.id);
   }
+
+  // Keep the conversation-level identity current. This protects active
+  // threads if a contact is later edited without a phone number.
+  await db
+    .from('conversations')
+    .update({
+      whatsapp_recipient_id: recipient.value,
+      whatsapp_recipient_type: recipient.type,
+    })
+    .eq('id', conversationId);
+  console.info(`[send-message] WhatsApp recipient resolved as ${recipient.type}`);
 
   // Persist the sent message. Field names MUST match the messages
   // schema (see 001_initial_schema.sql).
@@ -635,6 +693,7 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      ai_generated: aiGenerated,
     })
     .select()
     .single();

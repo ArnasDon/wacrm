@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
 import { decrypt } from '@/lib/whatsapp/encryption';
-import { sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils';
+import { resolveWhatsAppRecipient } from '@/lib/whatsapp/recipient';
 import {
   checkRateLimit,
   rateLimitResponse,
@@ -88,7 +88,7 @@ export async function POST(request: Request) {
 
     const { data: conversation, error: convError } = await supabase
       .from('conversations')
-      .select('id, account_id, whatsapp_config_id, contact:contacts(phone)')
+      .select('id, account_id, whatsapp_config_id, contact:contacts(phone, whatsapp_user_id)')
       .eq('id', targetMessage.conversation_id)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -103,9 +103,10 @@ export async function POST(request: Request) {
     const contact = Array.isArray(conversation.contact)
       ? conversation.contact[0]
       : conversation.contact;
-    if (!contact?.phone) {
+    const recipient = contact ? resolveWhatsAppRecipient(contact) : null;
+    if (!recipient) {
       return NextResponse.json(
-        { error: 'Contact phone number not found' },
+        { error: 'Contact has no valid WhatsApp recipient identifier' },
         { status: 400 }
       );
     }
@@ -133,13 +134,13 @@ export async function POST(request: Request) {
     }
 
     const accessToken = decrypt(config.access_token);
-    const sanitizedPhone = sanitizePhoneForMeta(contact.phone);
-
     try {
       await sendReactionMessage({
         phoneNumberId: config.phone_number_id,
         accessToken,
-        to: sanitizedPhone,
+        ...(recipient.type === 'bsuid'
+          ? { recipient: recipient.value }
+          : { to: recipient.value }),
         targetMessageId: targetMessage.message_id,
         emoji,
       });

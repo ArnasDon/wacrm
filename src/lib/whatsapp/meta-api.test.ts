@@ -139,6 +139,20 @@ describe("sendInteractiveButtons — validation", () => {
       },
     });
   });
+
+  it('uses Meta\'s recipient field for a BSUID instead of the phone-only to field', async () => {
+    let captured: Record<string, unknown> | null = null;
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      captured = JSON.parse(String(init.body));
+      return new Response(JSON.stringify({ messages: [{ id: 'wamid.BSUID' }] }), { status: 200 });
+    }));
+    await sendInteractiveButtons({
+      phoneNumberId: 'test-phone', accessToken: 'test-token', recipient: 'DO.ABC123',
+      bodyText: 'Body text', buttons: [{ id: 'yes', title: 'Yes' }],
+    });
+    expect(captured).toMatchObject({ recipient: 'DO.ABC123' });
+    expect(captured).not.toHaveProperty('to');
+  });
 });
 
 describe("sendInteractiveList — validation", () => {

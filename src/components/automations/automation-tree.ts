@@ -6,6 +6,8 @@ export interface BuilderStep {
   step_type: AutomationStepType
   step_config: Record<string, unknown>
   branches?: { yes: BuilderStep[]; no: BuilderStep[] }
+  /** Optional visual-canvas position — backward-compatible; legacy flows render with defaults. */
+  position?: { x: number; y: number }
 }
 
 export type BranchTarget =
@@ -192,7 +194,9 @@ interface ApiStep {
 export function toApiSteps(steps: BuilderStep[]): ApiStep[] {
   return steps.map((step) => ({
     step_type: step.step_type,
-    step_config: step.step_config,
+    step_config: step.position
+      ? { ...step.step_config, __canvas: step.position }
+      : step.step_config,
     branches: step.branches
       ? {
           yes: toApiSteps(step.branches.yes),
@@ -213,16 +217,137 @@ export function fromServerSteps(
   nodes: ServerStepNode[],
   createCid: () => string
 ): BuilderStep[] {
-  return nodes.map((node) => ({
-    cid: createCid(),
-    step_type: node.step_type as AutomationStepType,
-    step_config: node.step_config ?? {},
-    branches:
-      node.step_type === "condition"
-        ? {
-            yes: fromServerSteps(node.branches?.yes ?? [], createCid),
-            no: fromServerSteps(node.branches?.no ?? [], createCid),
-          }
-        : undefined,
-  }))
+  return nodes.map((node) => {
+    const config = node.step_config ?? {}
+    const storedPosition = config.__canvas
+    const position = isCanvasPosition(storedPosition)
+      ? storedPosition
+      : undefined
+    const { __canvas: _canvas, ...stepConfig } = config
+    return {
+      cid: createCid(),
+      step_type: node.step_type as AutomationStepType,
+      step_config: stepConfig,
+      position,
+      branches:
+        node.step_type === "condition"
+          ? {
+              yes: fromServerSteps(node.branches?.yes ?? [], createCid),
+              no: fromServerSteps(node.branches?.no ?? [], createCid),
+            }
+          : undefined,
+    }
+  })
+}
+
+function isCanvasPosition(value: unknown): value is CanvasPosition {
+  return (
+    !!value &&
+    typeof value === "object" &&
+    typeof (value as CanvasPosition).x === "number" &&
+    typeof (value as CanvasPosition).y === "number"
+  )
+}
+
+// ------------------------------------------------------------
+// Visual-canvas helpers — backward-compatible default positioning
+// ------------------------------------------------------------
+
+export interface CanvasPosition {
+  x: number
+  y: number
+}
+
+/** Assign sensible default positions to legacy steps that have no saved position. Keeps root-level nodes vertically stacked with a 250px gap and branches offset to the right. */
+export function defaultPositionsForSteps(
+  steps: BuilderStep[],
+  startX: number = 50,
+  startY: number = 50,
+  yStep: number = 150,
+  xBranchOffset: number = 300
+): Map<string, CanvasPosition> {
+  const positions = new Map<string, CanvasPosition>()
+  function visit(list: BuilderStep[], x: number, y: number, depth: number) {
+    list.forEach((step, idx) => {
+      positions.set(step.cid, { x, y: y + idx * yStep })
+      if (step.branches) {
+        const yesY = y + idx * yStep + 40
+        visit(step.branches.yes, x + xBranchOffset, yesY, depth + 1)
+        visit(step.branches.no, x + xBranchOffset, yesY + 120, depth + 1)
+      }
+    })
+  }
+  visit(steps, startX, startY, 0)
+  return positions
+}
+
+/** Derive connection references from step_config for canvas edge rendering (backward-compatible with existing step_config shapes). */
+export function connectionRefsFromStep(
+  step: BuilderStep
+): Record<string, string | null> {
+  const cfg = step.step_config ?? {}
+  const refs: Record<string, string | null> = {}
+  switch (step.step_type) {
+    case "send_message":
+    case "send_buttons":
+    case "send_list":
+    case "send_template":
+    case "add_tag":
+    case "remove_tag":
+    case "assign_conversation":
+    case "update_contact_field":
+    case "create_deal":
+    case "wait":
+    case "send_webhook":
+    case "close_conversation":
+      refs.next = (cfg.next_node_key as string) ?? null
+      break
+    case "condition":
+      refs.true = (cfg.true_next as string) ?? null
+      refs.false = (cfg.false_next as string) ?? null
+      break
+    default:
+      refs.next = (cfg.next_node_key as string) ?? null
+      break
+  }
+  return refs
+}
+
+export interface CanvasConnection {
+  source: string
+  target: string
+  sourceHandle: "next" | "yes" | "no"
+}
+
+/** Every visual line is derived from the execution tree, never a separate
+ * display-only graph. This keeps the canvas truthful to engine behavior. */
+export function executionConnections(steps: BuilderStep[]): CanvasConnection[] {
+  const edges: CanvasConnection[] = []
+  function visit(list: BuilderStep[]) {
+    list.forEach((step, index) => {
+      const next = list[index + 1]
+      if (step.branches) {
+        const yes = step.branches.yes[0]
+        const no = step.branches.no[0]
+        if (yes)
+          edges.push({
+            source: step.cid,
+            target: yes.cid,
+            sourceHandle: "yes",
+          })
+        if (no)
+          edges.push({ source: step.cid, target: no.cid, sourceHandle: "no" })
+        visit(step.branches.yes)
+        visit(step.branches.no)
+      }
+      if (next)
+        edges.push({
+          source: step.cid,
+          target: next.cid,
+          sourceHandle: "next",
+        })
+    })
+  }
+  visit(steps)
+  return edges
 }

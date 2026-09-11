@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest"
 import {
   findStepByCid,
   findStepContextByCid,
+  executionConnections,
+  fromServerSteps,
   insertStep,
   moveStepByCid,
   removeStepByCid,
@@ -132,5 +134,35 @@ describe("automation tree mutations", () => {
     )
     expect(removed.changed).toBe(true)
     expect(findStepByCid(removed.steps, "bulk-25")).toBeNull()
+  })
+
+  it("derives canvas edges from the executable step and branch order", () => {
+    const edges = executionConnections(nestedTree())
+
+    expect(edges).toEqual([
+      { source: "condition-1", target: "condition-2", sourceHandle: "yes" },
+      { source: "condition-2", target: "deep-a", sourceHandle: "yes" },
+      { source: "deep-a", target: "deep-b", sourceHandle: "next" },
+    ])
+  })
+
+  it("round-trips visual positions in configuration without changing legacy steps", () => {
+    const [step] = fromServerSteps(
+      [
+        {
+          id: "server-id",
+          step_type: "send_message",
+          step_config: { text: "hello", __canvas: { x: 120, y: 240 } },
+          branches: { yes: [], no: [] },
+        },
+      ],
+      () => "client-id"
+    )
+
+    expect(step).toMatchObject({
+      cid: "client-id",
+      position: { x: 120, y: 240 },
+      step_config: { text: "hello" },
+    })
   })
 })

@@ -3988,6 +3988,7 @@
     "fixTitle": "Needs fixing",
     "fixNone": "Nothing to fix right now.",
     "fixIncomplete": "{count, plural, =1 {1 check didn't answer — something may be missing here} other {{count} checks didn't answer — something may be missing here}}",
+    "fixCountAtLeast": "at least {count}",
     "fixSchedulerDown": "The scheduler is down — nothing runs on its own",
     "fixChannelsDown": "{count, plural, =1 {1 connection is down} other {{count} connections are down}}",
     "fixScheduledFailed": "{count, plural, =1 {1 scheduled message failed} other {{count} scheduled messages failed}}",

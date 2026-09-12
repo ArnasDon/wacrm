@@ -49,23 +49,20 @@ export async function GET() {
     const db = supabaseAdmin();
     const agoraISO = new Date().toISOString();
 
-    // ⚠️ `cb_webhook_eventos` NÃO tem `account_id` próprio — a conta entra
-    // pelo webhook dono (FK composta `(webhook_id, account_id)`). Sem o
-    // `!inner`, o embed não recorta nada e a contagem seria da instalação
-    // inteira.
     const [calendly, webhooks, agendamentos] = await Promise.all([
       db
         .from('cb_calendly_eventos')
         .select('id', { count: 'exact', head: true })
         .eq('account_id', ctx.accountId)
         .in('resultado', NAO_PROCESSADAS),
+      // `cb_webhook_eventos` tem `account_id` PRÓPRIO (982), além da FK
+      // composta com o webhook — o recorte é direto, como a rota
+      // `/api/cb/webhooks` já faz. Sem embed: filtro em recurso embutido é
+      // a armadilha de `filtros.ts`, e aqui nem seria preciso.
       db
         .from('cb_webhook_eventos')
-        .select('id, webhook:cb_webhooks!inner(account_id)', {
-          count: 'exact',
-          head: true,
-        })
-        .eq('webhook.account_id', ctx.accountId)
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', ctx.accountId)
         .in('resultado', NAO_PROCESSADAS),
       db
         .from('cb_calendly_eventos')

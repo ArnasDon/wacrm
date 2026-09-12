@@ -137,7 +137,23 @@ export function BlocoDeCorrecoes({
           />
         }
         titulo={t('fixTitle')}
-        direita={<De escopo="escritorio" />}
+        direita={
+          <span className="flex items-center gap-2 text-sm">
+            {/* ⚠️ O total só aparece quando é CONFIÁVEL: com uma fonte ainda
+                em voo ou que falhou, o número seria um parcial com cara de
+                fechado — e a lista abaixo já mostra o que se sabe. */}
+            {resumo.situacao === 'temProblema' &&
+              resumo.conferindo.length === 0 &&
+              resumo.naoConferidas.length === 0 && (
+                <span className="text-destructive font-medium tabular-nums">
+                  {resumo.aoMenos
+                    ? t('fixCountAtLeast', { count: resumo.total })
+                    : resumo.total}
+                </span>
+              )}
+            <De escopo="escritorio" />
+          </span>
+        }
       />
 
       {resumo.situacao === 'conferindo' && (

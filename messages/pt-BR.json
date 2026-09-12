@@ -3988,6 +3988,7 @@
     "fixTitle": "O que precisa ser corrigido",
     "fixNone": "Nada a corrigir agora.",
     "fixIncomplete": "{count, plural, =1 {1 verificação não respondeu — pode haver algo que não apareceu aqui} other {{count} verificações não responderam — pode haver algo que não apareceu aqui}}",
+    "fixCountAtLeast": "pelo menos {count}",
     "fixSchedulerDown": "O agendador está parado — nada dispara sozinho",
     "fixChannelsDown": "{count, plural, =1 {1 conexão fora do ar} other {{count} conexões fora do ar}}",
     "fixScheduledFailed": "{count, plural, =1 {1 mensagem agendada falhou} other {{count} mensagens agendadas falharam}}",

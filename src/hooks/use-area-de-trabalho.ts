@@ -346,37 +346,41 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
       };
     });
 
-    carregar('negocios', async () => {
-      // Sem o perfil resolvido não há como perguntar "meus" — e responder
-      // zero seria a mentira do bloco vazio.
-      if (!profileId) throw new Error('perfil ainda não resolvido');
-      const [meus, orfas] = await Promise.all([
-        supabase
-          .from('deals')
-          .select(SELECT_DE_NEGOCIO, { count: 'exact' })
-          .eq('account_id', accountId)
-          .eq('assigned_to', profileId)
-          .eq('status', 'open')
-          .limit(TETO_DE_LINHAS),
-        supabase
-          .from('deals')
-          .select('id', { count: 'exact', head: true })
-          .eq('account_id', accountId)
-          .is('assigned_to', null)
-          .eq('status', 'open'),
-      ]);
-      if (meus.error) throw new Error(meus.error.message);
-      if (orfas.error) throw new Error(orfas.error.message);
-      const lista = linhas<NegocioDoBloco>(meus.data);
-      const grupos = agruparPorEtapa(lista, ctx);
-      return {
-        grupos,
-        meus: grupos.reduce((s, g) => s + g.quantidade, 0),
-        valor: grupos.reduce((s, g) => s + g.valor, 0),
-        semResponsavel: orfas.count ?? 0,
-        truncada: (meus.count ?? lista.length) > lista.length,
-      };
-    });
+    // ⚠️ Sem o perfil resolvido não há como perguntar "meus", e as duas
+    // respostas possíveis seriam erradas: zero é a mentira do bloco vazio, e
+    // "falhou" pisca vermelho sobre algo que não falhou — nada foi
+    // perguntado ainda. O bloco fica no estado inicial (carregando) e o
+    // efeito roda de novo quando o perfil chega, porque `profileId` entra na
+    // chave do pedido.
+    if (profileId)
+      carregar('negocios', async () => {
+        const [meus, orfas] = await Promise.all([
+          supabase
+            .from('deals')
+            .select(SELECT_DE_NEGOCIO, { count: 'exact' })
+            .eq('account_id', accountId)
+            .eq('assigned_to', profileId)
+            .eq('status', 'open')
+            .limit(TETO_DE_LINHAS),
+          supabase
+            .from('deals')
+            .select('id', { count: 'exact', head: true })
+            .eq('account_id', accountId)
+            .is('assigned_to', null)
+            .eq('status', 'open'),
+        ]);
+        if (meus.error) throw new Error(meus.error.message);
+        if (orfas.error) throw new Error(orfas.error.message);
+        const lista = linhas<NegocioDoBloco>(meus.data);
+        const grupos = agruparPorEtapa(lista, ctx);
+        return {
+          grupos,
+          meus: grupos.reduce((s, g) => s + g.quantidade, 0),
+          valor: grupos.reduce((s, g) => s + g.valor, 0),
+          semResponsavel: orfas.count ?? 0,
+          truncada: (meus.count ?? lista.length) > lista.length,
+        };
+      });
 
     carregar('agenda', async () => {
       // Hoje e amanhã: a reunião de amanhã cedo precisa aparecer para quem

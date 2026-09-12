@@ -3,11 +3,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // ============================================================
-// `cb_asaas_config` (991) guarda a chave da API do Asaas CIFRADA — a
+// `cb_asaas_config` (992) guarda a chave da API do Asaas CIFRADA — a
 // credencial que lê as cobranças do escritório inteiro. Ela não dá NADA a
 // `authenticated`: a tela lê pela rota, com service role. RLS fica ligada
 // para que um GRANT dado por engano no futuro não abra a tabela para
-// qualquer usuário autenticado da instalação. A conferência DENTRO da 991
+// qualquer usuário autenticado da instalação. A conferência DENTRO da 992
 // testa GRANT; este teste roda no job `verificar`, que é portão. Mesmo
 // racional do `rls-das-tabelas-do-calendly.test.ts` ao lado.
 //
@@ -21,14 +21,14 @@ import path from 'node:path';
 
 const TABELAS = ['cb_asaas_config'] as const;
 
-const sql = fs.readFileSync(path.join(__dirname, '991_cb_asaas_config.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '992_cb_asaas_config.sql'), 'utf8');
 
 const semComentarios = sql
   .split('\n')
   .map((linha) => linha.replace(/--.*$/, ''))
   .join('\n');
 
-describe('991 — RLS da config do Asaas', () => {
+describe('992 — RLS da config do Asaas', () => {
   it.each(TABELAS)('%s tem ENABLE ROW LEVEL SECURITY', (tabela) => {
     const padrao = new RegExp(`ALTER\\s+TABLE\\s+${tabela}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i');
     expect(padrao.test(semComentarios)).toBe(true);

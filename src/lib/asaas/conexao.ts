@@ -10,7 +10,7 @@ import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas 
  * a devolve, nem mascarada.
  *
  * ⚠️ **Só produção.** `conectarAsaas` grava sempre `ambiente = 'producao'`,
- * e a coluna existe para outras instalações. O motivo está na 991 e na §3.7
+ * e a coluna existe para outras instalações. O motivo está na 992 e na §3.7
  * do plano: aqui o ambiente LOCAL e a produção usam o MESMO projeto
  * Supabase, e a config é uma linha por conta — conectar o sandbox na tela
  * local TROCARIA a conexão da produção, e o cron da VPS passaria a procurar

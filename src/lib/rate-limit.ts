@@ -193,7 +193,7 @@ export const RATE_LIMITS = {
    *  novo umas vezes" e barra um script com a sessão. A carga sem ping
    *  (`?ping=0`) continua no `adminAction`, porque só lê o banco. */
   integracoesPing: { limit: 6, windowMs: 60_000 },
-  /** Levantamento do Asaas (991), por usuário. Um clique varre a conta
+  /** Levantamento do Asaas (992), por usuário. Um clique varre a conta
    *  INTEIRA do Asaas — clientes e cobranças vencidas, uma página de 100
    *  por pedido — e a cota de 25.000/12 h é da CONTA do Asaas, dividida com
    *  qualquer outro sistema do escritório. 3/min cobre "rodei, li, rodei de

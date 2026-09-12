@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { SettingsChip } from "./settings-chip";
 
 /**
- * O cartão "Asaas" da aba Integrações (991). Faz DUAS coisas, e só elas:
+ * O cartão "Asaas" da aba Integrações (992). Faz DUAS coisas, e só elas:
  * guarda a chave da API (testada e cifrada pela rota) e roda o LEVANTAMENTO
  * da conta, que é só leitura e não grava nada.
  *

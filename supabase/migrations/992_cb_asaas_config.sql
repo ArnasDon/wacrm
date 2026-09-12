@@ -1,4 +1,4 @@
--- 991_cb_asaas_config.sql
+-- 992_cb_asaas_config.sql
 --
 -- Asaas — a CONEXÃO, e só ela (docs/PLANO-integracao-asaas.md, Fase 1a).
 --
@@ -55,6 +55,13 @@
 --     última listagem completa das vencidas e a última listagem completa de
 --     clientes. Sem escritor até a sincronização existir.
 --
+-- ⚠️ Ela NASCEU como `991` e COLIDIU com a `991_cb_janela_da_meta_na_conversa`,
+-- de outra branch — a QUINTA colisão de branches em paralelo deste projeto
+-- (depois da 906, 963, 966 e 989). A da janela da Meta foi aplicada primeiro,
+-- em 12/09/2026, então ela ficou com o número e o ARQUIVO desta foi
+-- renumerado: migration aplicada não se renumera. O `git merge` NÃO reporta
+-- isso (são nomes de arquivo diferentes); quem pega é o replay do CI, depois.
+--
 -- `anon` sem nada (931). `service_role` com tudo, POR ESCRITO — em banco
 -- novo não existe default privilege que o conceda. Idempotente.
 
@@ -88,28 +95,28 @@ BEGIN
     SELECT 1 FROM information_schema.tables
     WHERE table_schema = 'public' AND table_name = 'cb_asaas_config'
   ) THEN
-    RAISE EXCEPTION '991: tabela cb_asaas_config ausente';
+    RAISE EXCEPTION '992: tabela cb_asaas_config ausente';
   END IF;
 
   IF NOT EXISTS (
     SELECT 1 FROM pg_class WHERE oid = 'public.cb_asaas_config'::regclass AND relrowsecurity
   ) THEN
-    RAISE EXCEPTION '991: RLS desligada em cb_asaas_config';
+    RAISE EXCEPTION '992: RLS desligada em cb_asaas_config';
   END IF;
 
   -- Fechada: a chave cifrada não passa pelo PostgREST, nem para ler.
   IF has_table_privilege('anon', 'public.cb_asaas_config', 'SELECT')
      OR has_table_privilege('anon', 'public.cb_asaas_config', 'INSERT') THEN
-    RAISE EXCEPTION '991: anon ainda alcança cb_asaas_config';
+    RAISE EXCEPTION '992: anon ainda alcança cb_asaas_config';
   END IF;
   IF has_table_privilege('authenticated', 'public.cb_asaas_config', 'SELECT')
      OR has_table_privilege('authenticated', 'public.cb_asaas_config', 'INSERT')
      OR has_table_privilege('authenticated', 'public.cb_asaas_config', 'UPDATE')
      OR has_table_privilege('authenticated', 'public.cb_asaas_config', 'DELETE') THEN
-    RAISE EXCEPTION '991: authenticated alcança cb_asaas_config — tudo passa pela rota';
+    RAISE EXCEPTION '992: authenticated alcança cb_asaas_config — tudo passa pela rota';
   END IF;
   IF NOT has_table_privilege('service_role', 'public.cb_asaas_config', 'INSERT')
      OR NOT has_table_privilege('service_role', 'public.cb_asaas_config', 'SELECT') THEN
-    RAISE EXCEPTION '991: service_role sem acesso a cb_asaas_config';
+    RAISE EXCEPTION '992: service_role sem acesso a cb_asaas_config';
   END IF;
 END $$;

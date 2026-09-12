@@ -3,11 +3,21 @@
 // ============================================================
 // A porta de entrada: o Meu dia NO LUGAR do app, até o "Continuar".
 //
-// Não é um Dialog por cima do app, de propósito. O app montado por trás
-// teria efeitos antes da confirmação: um link `/inbox?c=X` abriria o fio e
-// zeraria as não lidas daquela conversa para a conta inteira, e o heartbeat
-// publicaria presença. Aqui o layout inteiro (menu, cabeçalho, página,
-// heartbeat) só monta depois do clique.
+// Não é um Dialog do projeto, de propósito (aquele fecha com Esc e com
+// clique fora, e tem X). Mas também não é uma tela chapada: o que fica
+// ATRÁS é o app de verdade — menu e cabeçalho —, desfocado e inerte, a
+// pedido do operador (12/09/2026).
+//
+// ⚠️ O que NÃO monta atrás: a PÁGINA e o `PresenceHeartbeat`. É por isso
+// que `children` é uma FUNÇÃO — a porta diz ao shell "estou pendente" e o
+// shell devolve o layout sem a página e sem o heartbeat. Montar a página
+// devolveria os efeitos que a porta existe para segurar: um link
+// `/inbox?c=X` abriria o fio e zeraria as não lidas daquela conversa para a
+// conta inteira, e a presença seria publicada antes da confirmação.
+//
+// ⚠️ O fundo leva `inert` (React 19) + `aria-hidden`: sem isso o Tab
+// alcançaria o menu atrás do cartão e o leitor de tela leria as duas
+// camadas.
 //
 // ⚠️ TRAVA DE MÃO ÚNICA. A decisão "mostra?" é tomada UMA vez por carga de
 // página, no inicializador do estado, e só FECHA — nunca reabre por evento
@@ -107,7 +117,8 @@ export function PortaDeEntrada({
   children,
 }: {
   userId: string;
-  children: ReactNode;
+  /** Recebe "a entrada está pendente?" e devolve o layout do app. */
+  children: (entradaPendente: boolean) => ReactNode;
 }) {
   const { sessionId, accountStatus, accountId, profile, perfilDeAcesso } =
     useAuth();
@@ -202,21 +213,27 @@ export function PortaDeEntrada({
     [papel, perfilDeAcesso]
   );
 
-  if (!decisao.pendente || !accountId) return <>{children}</>;
+  const app = children(false);
+  if (!decisao.pendente || !accountId) return <>{app}</>;
 
   return (
-    <LimiteDeErro fallback={children}>
-      <ResumoDoDia
-        userId={userId}
-        accountId={accountId}
-        ctx={ctx}
-        primeiroNome={profile?.full_name?.trim().split(/\s+/)[0] || null}
-        agoraMs={decisao.agoraMs}
-        desdeMs={decisao.desdeMs}
-        temConfirmacaoAnterior={decisao.daConfirmacao}
-        onContinuar={confirmar}
-        onSair={sair}
-      />
+    <LimiteDeErro fallback={app}>
+      <div inert aria-hidden>
+        {children(true)}
+      </div>
+      <div className="bg-background/70 fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 backdrop-blur-md sm:items-center sm:p-8">
+        <ResumoDoDia
+          userId={userId}
+          accountId={accountId}
+          ctx={ctx}
+          primeiroNome={profile?.full_name?.trim().split(/\s+/)[0] || null}
+          agoraMs={decisao.agoraMs}
+          desdeMs={decisao.desdeMs}
+          temConfirmacaoAnterior={decisao.daConfirmacao}
+          onContinuar={confirmar}
+          onSair={sair}
+        />
+      </div>
     </LimiteDeErro>
   );
 }

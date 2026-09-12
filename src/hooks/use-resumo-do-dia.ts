@@ -64,6 +64,9 @@ import {
   conversasEsperando,
   resumirConversas,
   resumirFila,
+  resumirNovidades,
+  type AvisoDoResumo,
+  type Novidades as NovidadesPuras,
   type ResumoDaFila,
   type ResumoDasConversas,
 } from '@/lib/resumo-do-dia/contagens';
@@ -76,15 +79,9 @@ export type Bloco<T> =
   | { status: 'falhou' }
   | { status: 'pronto'; dados: T };
 
-/** Avisos recebidos depois da última confirmação, por tipo — COUNT exato. */
-export interface Novidades {
-  /** `note_mention` — a pessoa foi citada numa anotação interna. */
-  mencoes: number;
-  /** `task_assigned` + `task_reply` — tarefa encaminhada ou respondida. */
-  tarefas: number;
-  /** `conversation_assigned`. */
-  conversas: number;
-  total: number;
+export interface Novidades extends NovidadesPuras {
+  /** A consulta bateu no teto: os números são PELO MENOS os mostrados. */
+  truncada: boolean;
 }
 
 export type TarefaDoResumo = Task & { contact: ContatoDaTarefa | null };
@@ -234,29 +231,46 @@ export function useResumoDoDia(pedido: PedidoDoResumo): ResumoDoDia {
     };
 
     carregar('novidades', async () => {
-      // Três COUNTs (`head: true`): número exato, nenhuma linha, sem teto.
-      // `gt` (estrito): o aviso do próprio instante da confirmação já estava
-      // na tela quando ela foi confirmada.
-      const contar = (tipos: string[]) =>
-        supabase
-          .from('notifications')
-          .select('id', { count: 'exact', head: true })
-          .eq('user_id', userId)
+      // ⚠️ Traz as LINHAS (tipo + conversa), não três COUNTs: o recorte por
+      // conexão do perfil é feito em JS, como no resto do Meu dia — filtrar
+      // `conversations` por canal na consulta apaga os grupos (o canal deles
+      // mora em `cb_groups`). `gt` (estrito): o aviso do próprio instante da
+      // confirmação já estava na tela quando ela foi confirmada.
+      const { data, error, count } = await supabase
+        .from('notifications')
+        .select('type, conversation_id', { count: 'exact' })
+        .eq('user_id', userId)
+        .eq('account_id', accountId)
+        .gt('created_at', desdeISO)
+        .order('created_at', { ascending: false })
+        .limit(TETO_DE_LINHAS);
+      if (error) throw new Error(error.message);
+      const avisos = (data ?? []) as unknown as AvisoDoResumo[];
+
+      // As conversas dos avisos que têm uma (menção e atribuição; tarefa é
+      // nula de propósito), só para perguntar "está no meu escopo?".
+      const ids = [
+        ...new Set(
+          avisos
+            .map((a) => a.conversation_id)
+            .filter((id): id is string => !!id)
+        ),
+      ];
+      const conversasPorId = new Map<string, Conversation>();
+      if (ids.length > 0) {
+        const { data: linhas, error: erroConversas } = await supabase
+          .from('conversations')
+          .select(SELECT_DE_CONVERSA)
           .eq('account_id', accountId)
-          .gt('created_at', desdeISO)
-          .in('type', tipos);
-      const [mencoes, tarefas, conversas] = await Promise.all([
-        contar(['note_mention']),
-        contar(['task_assigned', 'task_reply']),
-        contar(['conversation_assigned']),
-      ]);
-      for (const r of [mencoes, tarefas, conversas]) {
-        if (r.error) throw new Error(r.error.message);
+          .in('id', ids);
+        if (erroConversas) throw new Error(erroConversas.message);
+        for (const c of conversasDe(linhas)) conversasPorId.set(c.id, c);
       }
-      const m = mencoes.count ?? 0;
-      const t = tarefas.count ?? 0;
-      const c = conversas.count ?? 0;
-      return { mencoes: m, tarefas: t, conversas: c, total: m + t + c };
+
+      return {
+        ...resumirNovidades(avisos, conversasPorId, ctx),
+        truncada: total(count, avisos.length) > avisos.length,
+      };
     });
 
     carregar('tarefas', async () => {

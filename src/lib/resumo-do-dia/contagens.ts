@@ -9,6 +9,78 @@
 // hook — o dia, nunca a hora). As novidades (avisos por tipo) são COUNT no
 // banco, sem linha nenhuma — número exato, sem teto.
 //
+// ------------------------------------------------------------
+// Novidades desde a última entrada
+// ------------------------------------------------------------
+
+export interface Novidades {
+  /** `note_mention` — a pessoa foi citada numa anotação interna. */
+  mencoes: number;
+  /** `task_assigned` + `task_reply` — tarefa encaminhada ou respondida. */
+  tarefas: number;
+  /** `conversation_assigned`. */
+  conversas: number;
+  total: number;
+  /**
+   * Avisos de conversas em conexões FORA do perfil da pessoa — contados à
+   * parte e NUNCA somados ao total (a régua da D8: o número aparece, o
+   * conteúdo não). Pedido do operador em 12/09/2026: "um advogado do
+   * trabalhista não precisa ter a tela poluída com notificações da conexão
+   * bancária".
+   */
+  foraDoPerfil: number;
+}
+
+export interface AvisoDoResumo {
+  type: NotificationType;
+  /**
+   * A conversa do aviso. `note_mention` e `conversation_assigned` a trazem
+   * (919 e o gatilho da 027); `task_assigned`/`task_reply` são NULAS de
+   * propósito — o destino delas é a tarefa, e tarefa não tem conexão
+   * nenhuma (`cb_tasks` guarda só o contato). Por isso aviso de tarefa
+   * NUNCA é recortado por conexão.
+   */
+  conversation_id?: string | null;
+}
+
+/**
+ * As novidades por tipo, com o recorte de conexão do perfil.
+ *
+ * ⚠️ Aviso cuja conversa não está no mapa CONTA como dentro do escopo. O
+ * mapa pode não ter a linha por teto de consulta ou por corrida, e esconder
+ * por ignorância é pior que mostrar de mais — é a mesma escolha de
+ * `conversaNoEscopo`, que deixa passar a conversa sem canal carimbado.
+ */
+export function resumirNovidades(
+  avisos: readonly AvisoDoResumo[],
+  conversasPorId: ReadonlyMap<string, Conversation>,
+  ctx: ContextoDeAcesso
+): Novidades {
+  const saida: Novidades = {
+    mencoes: 0,
+    tarefas: 0,
+    conversas: 0,
+    total: 0,
+    foraDoPerfil: 0,
+  };
+  for (const a of avisos) {
+    const conversa = a.conversation_id
+      ? conversasPorId.get(a.conversation_id)
+      : undefined;
+    if (conversa && !conversaNoEscopo(ctx, conversa)) {
+      saida.foraDoPerfil++;
+      continue;
+    }
+    if (a.type === 'note_mention') saida.mencoes++;
+    else if (a.type === 'task_assigned' || a.type === 'task_reply')
+      saida.tarefas++;
+    else if (a.type === 'conversation_assigned') saida.conversas++;
+    else continue;
+    saida.total++;
+  }
+  return saida;
+}
+
 // ⚠️ "Sem responsável" é ACERVO, não a urgência do dia: medido em 12/09/2026,
 // 235 conversas sem responsável esperavam há mais de 10 min, 234 delas há
 // mais de 30. Um "235" fixo toda manhã é o número que o olho aprende a
@@ -20,7 +92,7 @@
 import { atrasoDeResposta, type Atraso } from '@/lib/inbox/atraso';
 import { conversaNoEscopo } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
-import type { Conversation } from '@/types';
+import type { Conversation, NotificationType } from '@/types';
 
 /** Quantos itens cada bloco lista antes do "e mais N". */
 export const TETO_DE_ITENS = 5;

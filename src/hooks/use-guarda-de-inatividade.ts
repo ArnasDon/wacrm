@@ -19,14 +19,16 @@
 // (pego pela revisão fria: 12 h simuladas, zero expirações).
 //
 // ⚠️ CONFERE ANTES DE GRAVAR, e o gesto que descobre a expiração leva
-// `stopPropagation()`: o ouvinte está em `window` na fase de captura, antes
-// do container onde o React pendura os seus, então os handlers do React
-// para ESSES cinco eventos não rodam — o Enter não chega ao `onKeyDown` do
-// compositor, o `pointerdown` não chega ao botão. A ação padrão do
-// navegador continua (o caractere entra no campo; o `click` que segue o
-// `pointerdown` é outro evento), e é a reabertura do Meu dia, que desmonta
-// o app em seguida, que impede o resto. (`passive` só desliga o
-// `preventDefault`; o `stopPropagation` funciona.)
+// `stopPropagation()` E `preventDefault()`: o ouvinte está em `window` na
+// fase de captura, antes do container onde o React pendura os seus, então
+// os handlers do React para ESSES eventos não rodam — o Enter não chega ao
+// `onKeyDown` do compositor, o `pointerdown` não chega ao botão. E a AÇÃO
+// PADRÃO também é cancelada nos dois eventos canceláveis (`keydown` e
+// `pointerdown`, registrados SEM `passive`): sem isso, o Enter que acorda a
+// tela sobre um botão ou link focado ativava o clique sintetizado pelo
+// navegador antes de o React desmontar o app (Codex, PR #198) — enviava,
+// navegava, acionava. `wheel`, `touchstart` e `mousemove` seguem passivos
+// (o padrão deles é rolar, e cancelar rolagem em captura trava a tela).
 //
 // ⚠️ Gesto lê o storage no máximo uma vez por segundo (`LER_A_CADA_MS`):
 // `mousemove` dispara dezenas de vezes por segundo, e arrastar um card no
@@ -88,6 +90,7 @@ export function useGuardaDeInatividade({
       });
       if (passo.expirar) {
         evento?.stopPropagation();
+        if (evento?.cancelable) evento.preventDefault();
         aoExpirarRef.current();
       }
       if (passo.gravar) gravarAtividadeNoNavegador(userId, sessionId, agoraMs);
@@ -114,8 +117,13 @@ export function useGuardaDeInatividade({
     };
 
     const opcoes: AddEventListenerOptions = { capture: true, passive: true };
-    window.addEventListener('pointerdown', aoGesto, opcoes);
-    window.addEventListener('keydown', aoGesto, opcoes);
+    // Canceláveis: precisam do `preventDefault` no gesto que expira.
+    const cancelaveis: AddEventListenerOptions = {
+      capture: true,
+      passive: false,
+    };
+    window.addEventListener('pointerdown', aoGesto, cancelaveis);
+    window.addEventListener('keydown', aoGesto, cancelaveis);
     window.addEventListener('wheel', aoGesto, opcoes);
     window.addEventListener('touchstart', aoGesto, opcoes);
     window.addEventListener('mousemove', aoMover, opcoes);
@@ -129,8 +137,8 @@ export function useGuardaDeInatividade({
     const inicial = setTimeout(() => conferir(Date.now(), false), 0);
 
     return () => {
-      window.removeEventListener('pointerdown', aoGesto, opcoes);
-      window.removeEventListener('keydown', aoGesto, opcoes);
+      window.removeEventListener('pointerdown', aoGesto, cancelaveis);
+      window.removeEventListener('keydown', aoGesto, cancelaveis);
       window.removeEventListener('wheel', aoGesto, opcoes);
       window.removeEventListener('touchstart', aoGesto, opcoes);
       window.removeEventListener('mousemove', aoMover, opcoes);

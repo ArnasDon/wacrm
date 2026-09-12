@@ -4,10 +4,10 @@ import type { ContextoDeAcesso, PerfilDeAcesso } from '@/lib/perfis/tipos';
 import type { Conversation } from '@/types';
 import {
   TETO_DE_ITENS,
+  conversasEsperando,
   limitar,
   resumirConversas,
   resumirFila,
-  resumirNovidades,
 } from './contagens';
 
 const AGORA = Date.parse('2026-09-12T12:00:00Z');
@@ -31,7 +31,9 @@ function ctxComCanais(channel_ids: string[]): ContextoDeAcesso {
 const DONO: ContextoDeAcesso = { papel: 'owner', perfil: null };
 
 let seq = 0;
-function conversa(extra: Partial<Conversation> & { esperaMin?: number | null }): Conversation {
+function conversa(
+  extra: Partial<Conversation> & { esperaMin?: number | null }
+): Conversation {
   const { esperaMin, ...resto } = extra;
   seq++;
   return {
@@ -50,30 +52,6 @@ function conversa(extra: Partial<Conversation> & { esperaMin?: number | null }):
   } as Conversation;
 }
 
-describe('resumirNovidades', () => {
-  it('conta por tipo e só o que chegou DEPOIS do instante (estrito)', () => {
-    const desde = Date.parse('2026-09-11T18:42:00Z');
-    const em = (iso: string) => ({ created_at: iso });
-    const r = resumirNovidades(
-      [
-        { type: 'note_mention', ...em('2026-09-11T18:42:00Z') }, // no instante: já estava na tela
-        { type: 'note_mention', ...em('2026-09-11T19:00:00Z') },
-        { type: 'task_assigned', ...em('2026-09-12T08:00:00Z') },
-        { type: 'task_reply', ...em('2026-09-12T09:00:00Z') },
-        { type: 'conversation_assigned', ...em('2026-09-12T10:00:00Z') },
-        { type: 'conversation_assigned', ...em('2026-09-10T10:00:00Z') }, // antes
-        { type: 'conversation_assigned', created_at: 'lixo' },
-      ],
-      desde,
-    );
-    expect(r).toEqual({ mencoes: 1, tarefas: 2, conversas: 1, total: 4 });
-  });
-
-  it('lista vazia é zero em tudo', () => {
-    expect(resumirNovidades([], AGORA)).toEqual({ mencoes: 0, tarefas: 0, conversas: 0, total: 0 });
-  });
-});
-
 describe('resumirConversas (as atribuídas à pessoa)', () => {
   it('9 min não conta, 10 conta, 30 é crítico; encerrada e sem espera ficam fora de "esperando"', () => {
     const r = resumirConversas(
@@ -85,11 +63,13 @@ describe('resumirConversas (as atribuídas à pessoa)', () => {
         conversa({ esperaMin: null }),
       ],
       DONO,
-      AGORA,
+      AGORA
     );
     expect(r.atribuidas).toBe(4);
     expect(r.foraDoPerfil).toBe(0);
-    expect(r.esperando.map((e) => [e.atraso.n, e.atraso.unidade, e.atraso.critico])).toEqual([
+    expect(
+      r.esperando.map((e) => [e.atraso.n, e.atraso.unidade, e.atraso.critico])
+    ).toEqual([
       [30, 'min', true],
       [10, 'min', false],
     ]);
@@ -99,9 +79,12 @@ describe('resumirConversas (as atribuídas à pessoa)', () => {
 
   it('grupo entra no total mas nunca em "esperando" (a régua da caixa de entrada)', () => {
     const r = resumirConversas(
-      [conversa({ group_id: 'g1', contact_id: null, esperaMin: 60 }), conversa({ esperaMin: 60 })],
+      [
+        conversa({ group_id: 'g1', contact_id: null, esperaMin: 60 }),
+        conversa({ esperaMin: 60 }),
+      ],
       DONO,
-      AGORA,
+      AGORA
     );
     expect(r.atribuidas).toBe(2);
     expect(r.esperando).toHaveLength(1);
@@ -117,11 +100,14 @@ describe('resumirConversas (as atribuídas à pessoa)', () => {
         conversa({ channel_id: null, esperaMin: 20 }), // sem carimbo: passa (conversaNoEscopo)
       ],
       ctx,
-      AGORA,
+      AGORA
     );
     expect(r.atribuidas).toBe(2);
     expect(r.foraDoPerfil).toBe(1);
-    expect(r.esperando.map((e) => e.conversa.channel_id)).toEqual(['canal-A', null]);
+    expect(r.esperando.map((e) => e.conversa.channel_id)).toEqual([
+      'canal-A',
+      null,
+    ]);
   });
 
   it('grupo é recortado pelo canal do GRUPO (cb_groups.channel_id), nunca pela coluna da conversa', () => {
@@ -144,6 +130,33 @@ describe('resumirConversas (as atribuídas à pessoa)', () => {
   });
 });
 
+describe('conversasEsperando (a consulta própria das "esperando")', () => {
+  it('só o escopo, só quem espera 10 min ou mais, mais antiga primeiro; encerrada e grupo fora', () => {
+    const ctx = ctxComCanais(['canal-A']);
+    const r = conversasEsperando(
+      [
+        conversa({ channel_id: 'canal-A', esperaMin: 12 }),
+        conversa({ channel_id: 'canal-A', esperaMin: 90 }),
+        conversa({ channel_id: 'canal-B', esperaMin: 90 }),
+        conversa({ channel_id: 'canal-A', esperaMin: 90, status: 'closed' }),
+        conversa({
+          group_id: 'g',
+          contact_id: null,
+          channel_id: null,
+          esperaMin: 90,
+        }),
+        conversa({ channel_id: 'canal-A', esperaMin: 4 }),
+      ],
+      ctx,
+      AGORA
+    );
+    expect(r.map((e) => [e.atraso.n, e.atraso.unidade])).toEqual([
+      [1, 'h'],
+      [12, 'min'],
+    ]);
+  });
+});
+
 describe('resumirFila (sem responsável)', () => {
   const desde = AGORA - min(120);
 
@@ -161,7 +174,7 @@ describe('resumirFila (sem responsável)', () => {
       ],
       DONO,
       AGORA,
-      desde,
+      desde
     );
     expect(r.novas.map((e) => e.atraso.n)).toEqual([1, 15]); // 1 h, depois 15 min: mais antiga primeiro
     expect(r.novas.map((e) => e.atraso.unidade)).toEqual(['h', 'min']);
@@ -179,7 +192,7 @@ describe('resumirFila (sem responsável)', () => {
       ],
       ctx,
       AGORA,
-      desde,
+      desde
     );
     expect(r.novas).toHaveLength(1);
     expect(r.antigas).toBe(0);
@@ -187,13 +200,20 @@ describe('resumirFila (sem responsável)', () => {
   });
 
   it('fila vazia: nada e sem espera mais longa', () => {
-    expect(resumirFila([], DONO, AGORA, desde)).toEqual({ novas: [], antigas: 0, maisAntiga: null });
+    expect(resumirFila([], DONO, AGORA, desde)).toEqual({
+      novas: [],
+      antigas: 0,
+      maisAntiga: null,
+    });
   });
 });
 
 describe('limitar', () => {
   it('corta no teto e conta o resto', () => {
-    expect(limitar([1, 2, 3, 4, 5, 6, 7])).toEqual({ itens: [1, 2, 3, 4, 5], restantes: 2 });
+    expect(limitar([1, 2, 3, 4, 5, 6, 7])).toEqual({
+      itens: [1, 2, 3, 4, 5],
+      restantes: 2,
+    });
     expect(limitar([1, 2], 5)).toEqual({ itens: [1, 2], restantes: 0 });
     expect(limitar([])).toEqual({ itens: [], restantes: 0 });
     expect(TETO_DE_ITENS).toBe(5);

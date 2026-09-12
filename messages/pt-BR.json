@@ -3960,7 +3960,12 @@
     "loadingYourDay": "Carregando o seu dia…",
     "queueNew24h": "{count, plural, =0 {Ninguém começou a esperar nas últimas 24 horas} =1 {1 cliente começou a esperar nas últimas 24 horas} other {{count} clientes começaram a esperar nas últimas 24 horas}}",
     "queueOlderAtLeast": "mais de {count} esperam há mais tempo",
-    "yoursAndMore": "{count, plural, =1 {e mais 1 sua} other {e mais {count} suas}}"
+    "yoursAndMore": "{count, plural, =1 {e mais 1 sua} other {e mais {count} suas}}",
+    "waitingYoursAtLeast": "mais de {count} seus",
+    "assignedToYouAtLeast": "mais de {count} conversas atribuídas a você",
+    "waitingQueueNewAtLeast": "mais de {count} novos sem responsável",
+    "queueNewAtLeast": "mais de {count} clientes começaram a esperar desde a sua última entrada",
+    "queueNew24hAtLeast": "mais de {count} clientes começaram a esperar nas últimas 24 horas"
   },
   "DashboardShell": {
     "loading": "Carregando…"

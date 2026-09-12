@@ -6,7 +6,8 @@
 // resumo e o número da tela discordam: conversas pela régua da caixa de
 // entrada (`atrasoDeResposta`, 10 min) e pelo recorte do perfil
 // (`conversaNoEscopo`); tarefas por `agruparPorPrazo` (chamado direto pelo
-// hook — o dia, nunca a hora); novidades por tipo de aviso.
+// hook — o dia, nunca a hora). As novidades (avisos por tipo) são COUNT no
+// banco, sem linha nenhuma — número exato, sem teto.
 //
 // ⚠️ "Sem responsável" é ACERVO, não a urgência do dia: medido em 12/09/2026,
 // 235 conversas sem responsável esperavam há mais de 10 min, 234 delas há
@@ -19,51 +20,19 @@
 import { atrasoDeResposta, type Atraso } from '@/lib/inbox/atraso';
 import { conversaNoEscopo } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
-import type { Conversation, Notification } from '@/types';
+import type { Conversation } from '@/types';
 
 /** Quantos itens cada bloco lista antes do "e mais N". */
 export const TETO_DE_ITENS = 5;
 
 export function limitar<T>(
   itens: readonly T[],
-  teto: number = TETO_DE_ITENS,
+  teto: number = TETO_DE_ITENS
 ): { itens: T[]; restantes: number } {
-  return { itens: itens.slice(0, teto), restantes: Math.max(0, itens.length - teto) };
-}
-
-// ------------------------------------------------------------
-// Novidades desde a última entrada
-// ------------------------------------------------------------
-
-export interface Novidades {
-  /** `note_mention` — a pessoa foi citada numa anotação interna. */
-  mencoes: number;
-  /** `task_assigned` + `task_reply` — tarefa encaminhada ou respondida. */
-  tarefas: number;
-  /** `conversation_assigned`. */
-  conversas: number;
-  total: number;
-}
-
-/**
- * Só o que chegou DEPOIS de `desdeMs` (estrito: o aviso do próprio instante
- * da confirmação já estava na tela quando ela foi confirmada).
- */
-export function resumirNovidades(
-  avisos: ReadonlyArray<Pick<Notification, 'type' | 'created_at'>>,
-  desdeMs: number,
-): Novidades {
-  const saida: Novidades = { mencoes: 0, tarefas: 0, conversas: 0, total: 0 };
-  for (const a of avisos) {
-    const em = Date.parse(a.created_at);
-    if (Number.isNaN(em) || em <= desdeMs) continue;
-    if (a.type === 'note_mention') saida.mencoes++;
-    else if (a.type === 'task_assigned' || a.type === 'task_reply') saida.tarefas++;
-    else if (a.type === 'conversation_assigned') saida.conversas++;
-    else continue;
-    saida.total++;
-  }
-  return saida;
+  return {
+    itens: itens.slice(0, teto),
+    restantes: Math.max(0, itens.length - teto),
+  };
 }
 
 // ------------------------------------------------------------
@@ -76,13 +45,40 @@ export interface ConversaEsperando {
 }
 
 /** Mais antiga primeiro: quem espera há mais tempo é quem a pessoa vê primeiro. */
-function porEsperaMaisLonga(a: ConversaEsperando, b: ConversaEsperando): number {
-  return Date.parse(a.conversa.aguardando_desde!) - Date.parse(b.conversa.aguardando_desde!);
+function porEsperaMaisLonga(
+  a: ConversaEsperando,
+  b: ConversaEsperando
+): number {
+  return (
+    Date.parse(a.conversa.aguardando_desde!) -
+    Date.parse(b.conversa.aguardando_desde!)
+  );
 }
 
 function esperando(c: Conversation, agoraMs: number): ConversaEsperando | null {
   const atraso = atrasoDeResposta(c, agoraMs);
   return atraso ? { conversa: c, atraso } : null;
+}
+
+/**
+ * As conversas do escopo com cliente esperando há 10 min ou mais, mais antiga
+ * primeiro. Exportada porque o hook a chama sobre uma consulta PRÓPRIA (só as
+ * que têm `aguardando_desde`): assim o sinal de truncamento das "esperando"
+ * é delas, e não da lista de todas as atribuídas — com mil atribuídas e
+ * nenhuma esperando, a tela dizia "mais de 0 seus" (Codex, PR #197).
+ */
+export function conversasEsperando(
+  conversas: readonly Conversation[],
+  ctx: ContextoDeAcesso,
+  agoraMs: number
+): ConversaEsperando[] {
+  const saida: ConversaEsperando[] = [];
+  for (const c of conversas) {
+    if (c.status === 'closed' || !conversaNoEscopo(ctx, c)) continue;
+    const e = esperando(c, agoraMs);
+    if (e) saida.push(e);
+  }
+  return saida.sort(porEsperaMaisLonga);
 }
 
 export interface ResumoDasConversas {
@@ -101,20 +97,18 @@ export interface ResumoDasConversas {
 export function resumirConversas(
   conversas: readonly Conversation[],
   ctx: ContextoDeAcesso,
-  agoraMs: number,
+  agoraMs: number
 ): ResumoDasConversas {
-  const saida: ResumoDasConversas = { atribuidas: 0, foraDoPerfil: 0, esperando: [] };
+  const saida: ResumoDasConversas = {
+    atribuidas: 0,
+    foraDoPerfil: 0,
+    esperando: conversasEsperando(conversas, ctx, agoraMs),
+  };
   for (const c of conversas) {
     if (c.status === 'closed') continue;
-    if (!conversaNoEscopo(ctx, c)) {
-      saida.foraDoPerfil++;
-      continue;
-    }
-    saida.atribuidas++;
-    const e = esperando(c, agoraMs);
-    if (e) saida.esperando.push(e);
+    if (!conversaNoEscopo(ctx, c)) saida.foraDoPerfil++;
+    else saida.atribuidas++;
   }
-  saida.esperando.sort(porEsperaMaisLonga);
   return saida;
 }
 
@@ -135,7 +129,7 @@ export function resumirFila(
   conversas: readonly Conversation[],
   ctx: ContextoDeAcesso,
   agoraMs: number,
-  desdeMs: number,
+  desdeMs: number
 ): ResumoDaFila {
   const todas: ConversaEsperando[] = [];
   for (const c of conversas) {
@@ -145,7 +139,9 @@ export function resumirFila(
     if (e) todas.push(e);
   }
   todas.sort(porEsperaMaisLonga);
-  const novas = todas.filter((e) => Date.parse(e.conversa.aguardando_desde!) >= desdeMs);
+  const novas = todas.filter(
+    (e) => Date.parse(e.conversa.aguardando_desde!) >= desdeMs
+  );
   return {
     novas,
     antigas: todas.length - novas.length,

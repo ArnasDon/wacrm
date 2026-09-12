@@ -40,20 +40,18 @@ import { Button } from '@/components/ui/button';
 import {
   useResumoDoDia,
   type Bloco,
+  type Conversas as DadosDeConversas,
   type Fila,
+  type Novidades as DadosDeNovidades,
   type TarefaDoResumo,
+  type Tarefas as DadosDeTarefas,
 } from '@/hooks/use-resumo-do-dia';
 import { nomeDoContato } from '@/lib/contacts/identidade';
 import type { Atraso } from '@/lib/inbox/atraso';
 import { urlDoInbox } from '@/lib/inbox/url';
 import { podeVerTela } from '@/lib/perfis/visibilidade';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
-import {
-  limitar,
-  type ConversaEsperando,
-  type Novidades as DadosDeNovidades,
-  type ResumoDasConversas,
-} from '@/lib/resumo-do-dia/contagens';
+import { limitar, type ConversaEsperando } from '@/lib/resumo-do-dia/contagens';
 import { dataParaExibir, diaLocal, horaParaExibir } from '@/lib/tasks/prazo';
 import { cn } from '@/lib/utils';
 
@@ -195,16 +193,16 @@ export function ResumoDoDia({
                 <span className="text-sm">
                   <span
                     className={cn(
-                      resumo.tarefas.dados.vencidas.length > 0 &&
+                      resumo.tarefas.dados.totais.vencidas > 0 &&
                         'text-destructive'
                     )}
                   >
                     {t('tasksOverdue', {
-                      count: resumo.tarefas.dados.vencidas.length,
+                      count: resumo.tarefas.dados.totais.vencidas,
                     })}
                   </span>
                   {' · '}
-                  {t('tasksToday', { count: resumo.tarefas.dados.hoje.length })}
+                  {t('tasksToday', { count: resumo.tarefas.dados.totais.hoje })}
                 </span>
               ) : null
             }
@@ -230,16 +228,26 @@ export function ResumoDoDia({
               resumo.fila.status === 'pronto' ? (
                 <span className="text-sm">
                   {resumo.conversas.status === 'pronto' &&
-                    t('waitingYours', {
-                      count: resumo.conversas.dados.esperando.length,
-                    })}
+                    t(
+                      resumo.conversas.dados.truncadaEsperando
+                        ? 'waitingYoursAtLeast'
+                        : 'waitingYours',
+                      {
+                        count: resumo.conversas.dados.esperando.length,
+                      }
+                    )}
                   {resumo.conversas.status === 'pronto' &&
                     resumo.fila.status === 'pronto' &&
                     ' · '}
                   {resumo.fila.status === 'pronto' &&
-                    t('waitingQueueNew', {
-                      count: resumo.fila.dados.novas.length,
-                    })}
+                    t(
+                      resumo.fila.dados.truncadaNovas
+                        ? 'waitingQueueNewAtLeast'
+                        : 'waitingQueueNew',
+                      {
+                        count: resumo.fila.dados.novas.length,
+                      }
+                    )}
                 </span>
               ) : null
             }
@@ -412,7 +420,7 @@ function Tarefas({
   veContatos,
   onContinuar,
 }: {
-  bloco: Bloco<{ vencidas: TarefaDoResumo[]; hoje: TarefaDoResumo[] }>;
+  bloco: Bloco<DadosDeTarefas>;
   /** `YYYY-MM-DD` de hoje no fuso de quem lê. */
   hoje: string;
   veTarefas: boolean;
@@ -421,14 +429,16 @@ function Tarefas({
 }) {
   const t = useTranslations('ResumoDoDia');
   if (bloco.status !== 'pronto') return <EstadoDoBloco bloco={bloco} />;
-  const { vencidas, hoje: deHoje } = bloco.dados;
-  if (vencidas.length + deHoje.length === 0) {
+  const { vencidas, hoje: deHoje, totais } = bloco.dados;
+  if (totais.vencidas + totais.hoje === 0) {
     return (
       <p className="text-muted-foreground mt-2 text-sm">{t('tasksNone')}</p>
     );
   }
   // Vencidas primeiro (o grupo que grita), depois as de hoje, no teto de 5.
-  const { itens, restantes } = limitar([...vencidas, ...deHoje]);
+  // O "e mais N" sai dos TOTAIS do banco, não do que a lista carregou.
+  const { itens } = limitar([...vencidas, ...deHoje]);
+  const restantes = Math.max(0, totais.vencidas + totais.hoje - itens.length);
 
   const prazo = (
     tarefa: TarefaDoResumo
@@ -566,7 +576,7 @@ function Conversas({
   veInbox,
   onContinuar,
 }: {
-  conversas: Bloco<ResumoDasConversas>;
+  conversas: Bloco<DadosDeConversas>;
   fila: Bloco<Fila>;
   temConfirmacaoAnterior: boolean;
   veInbox: boolean;
@@ -610,7 +620,14 @@ function Conversas({
             })()
           )}
           <p className="text-muted-foreground mt-1.5 text-xs">
-            {t('assignedToYou', { count: conversas.dados.atribuidas })}
+            {t(
+              conversas.dados.truncada
+                ? 'assignedToYouAtLeast'
+                : 'assignedToYou',
+              {
+                count: conversas.dados.atribuidas,
+              }
+            )}
             {conversas.dados.foraDoPerfil > 0 &&
               ` · ${t('outOfProfile', { count: conversas.dados.foraDoPerfil })}`}
           </p>
@@ -639,12 +656,21 @@ function Conversas({
           )}
           <p className="text-muted-foreground mt-1.5 text-xs">
             {temConfirmacaoAnterior
-              ? t('queueNew', { count: fila.dados.novas.length })
-              : t('queueNew24h', { count: fila.dados.novas.length })}
+              ? t(fila.dados.truncadaNovas ? 'queueNewAtLeast' : 'queueNew', {
+                  count: fila.dados.novas.length,
+                })
+              : t(
+                  fila.dados.truncadaNovas
+                    ? 'queueNew24hAtLeast'
+                    : 'queueNew24h',
+                  {
+                    count: fila.dados.novas.length,
+                  }
+                )}
             {fila.dados.antigas > 0 && fila.dados.maisAntiga && (
               <>
                 {' · '}
-                {fila.dados.truncada
+                {fila.dados.truncadaAntigas
                   ? t('queueOlderAtLeast', { count: fila.dados.antigas })
                   : t('queueOlder', { count: fila.dados.antigas })}{' '}
                 {t('oldestWait', {

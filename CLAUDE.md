@@ -3784,6 +3784,15 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   `notifications` guardam `auth.users.id`, e em duas delas a RLS deixa a
   conta inteira ler tudo. O id errado devolve ZERO sem erro — "nada
   pendente" para quem tem 9 tarefas vencidas.
+- ⚠️⚠️ **Nenhum número que a tela afirma como exato sai de uma lista com
+  teto** (Codex, PR #196: com mil tarefas vencidas, a de hoje ficava fora do
+  teto de 1000 do PostgREST e a tela dizia "0 vencem hoje"). As novidades
+  são três COUNTs (`head: true`, sem linha, sem teto); as tarefas vêm em
+  DUAS consultas (vencidas / hoje), cada uma com `count: 'exact'` — a tela
+  afirma os totais do banco e lista só o começo; as listas que passam por
+  recorte em JS (conversas atribuídas, as duas partições da fila) carregam o
+  seu PRÓPRIO sinal `truncada`, e a tela escreve "mais de N" na partição que
+  bateu no teto — nunca um número menor com cara de certo.
 - ⚠️ **Estado por BLOCO (carregando / falhou / pronto), nunca "0" sem
   resposta** — é a armadilha "lista vazia virando afirmação": um bloco que
   dissesse "0 vencidas" durante a carga liberaria o Continuar com uma

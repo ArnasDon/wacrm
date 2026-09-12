@@ -708,3 +708,12 @@ Um revisor independente, sem ter visto o trabalho, leu o diff inteiro e devolveu
 15. **`session_id` na renovação.** Medido (§13): não muda.
 
 Confirmados pelo revisor sem mudança: as 40 mensagens ICU parseiam nos dois dicionários; `sessionId` sai no mesmo callback que `user`; `perfilDeAcesso`/`profile`/`profileLoading` assentam no mesmo commit (o `ctx` não chega vazio); a porta não renderiza no servidor; a troca de usuário recarrega a página (o `Set` não vaza entre pessoas); o select enxuto traz o que `canalDaConversa` exige.
+
+### Acompanhamento: revisão do Codex no PR #196 (12/09/2026)
+
+Dois achados P2, aplicados no PR seguinte (`fix/meu-dia-teto-das-consultas`):
+
+1. **Teto silencioso nas outras consultas.** Notificações, tarefas e conversas atribuídas tratavam a lista de 1000 linhas como completa; ordenando as tarefas por prazo, mil vencidas empurrariam as de hoje para fora e a tela diria "0 vencem hoje". Agora: novidades por três `COUNT` (`head: true`, sem teto); tarefas em duas consultas (vencidas / hoje), cada uma com `count: 'exact'` — os totais afirmados vêm do banco, a lista traz até 50 de cada grupo; conversas atribuídas com `count: 'exact'` e sinal `truncada` ("mais de N").
+2. **Sinal de truncamento misturado na fila.** `truncadaNovas` e `truncadaAntigas` separados; "mais de N" só na partição que bateu no teto.
+
+`resumirNovidades` saiu de `contagens.ts` (as novidades não passam mais por linha nenhuma); cinco chaves novas ("mais de N") nos dois dicionários.

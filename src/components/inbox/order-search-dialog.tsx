@@ -38,6 +38,11 @@ function buildOrderFoundMessage(paymentId: string): string {
   return `✅ We found your order!\n\nYour Payment ID:\n${paymentId}\n\nGo back to the website where you purchased your biodata and open the Download/Support section there. Paste this Payment ID exactly as shown above (including "pay_") to re-download your biodata.`;
 }
 
+/** Same support-page screenshot the "Biodata Support Bot" flow attaches
+ *  on its own order-found step, so agents send the identical template. */
+const ORDER_FOUND_TEMPLATE_IMAGE_URL =
+  "https://iywfneckeyuluzucnaut.supabase.co/storage/v1/object/public/flow-media/account-4167268b-0207-4912-87ac-23c9cf476371/1785951591780-support-page-guide.jpg";
+
 interface OrderSearchResult {
   id: number;
   transactionId: string | null;
@@ -91,7 +96,9 @@ export function OrderSearchDialog({
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [opening, setOpening] = useState(false);
-  const [attachedImage, setAttachedImage] = useState<{ url: string; path: string } | null>(null);
+  // `path` is null for the fixed order-found template image (nothing to
+  // GC — it lives permanently in the flow-media bucket, not staged by us).
+  const [attachedImage, setAttachedImage] = useState<{ url: string; path: string | null } | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -100,7 +107,7 @@ export function OrderSearchDialog({
 
   // Mirror of `attachedImage` for the close/unmount cleanup below, which
   // can't read render state.
-  const attachedImageRef = useRef<{ url: string; path: string } | null>(null);
+  const attachedImageRef = useRef<{ url: string; path: string | null } | null>(null);
   useEffect(() => {
     attachedImageRef.current = attachedImage;
   }, [attachedImage]);
@@ -111,7 +118,7 @@ export function OrderSearchDialog({
   useEffect(() => {
     if (!open) {
       const staged = attachedImageRef.current;
-      if (staged) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
+      if (staged?.path) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
       setAttachedImage(null);
       return;
     }
@@ -127,7 +134,7 @@ export function OrderSearchDialog({
   useEffect(() => {
     return () => {
       const staged = attachedImageRef.current;
-      if (staged) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
+      if (staged?.path) void deleteAccountMedia(CHAT_MEDIA_BUCKET, staged.path).catch(() => {});
     };
   }, []);
 
@@ -197,7 +204,7 @@ export function OrderSearchDialog({
       try {
         const { publicUrl, path } = await uploadAccountMedia(CHAT_MEDIA_BUCKET, file);
         // Replacing a previously staged image — GC the one being dropped.
-        if (attachedImageRef.current) {
+        if (attachedImageRef.current?.path) {
           void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImageRef.current.path).catch(() => {});
         }
         setAttachedImage({ url: publicUrl, path });
@@ -211,7 +218,7 @@ export function OrderSearchDialog({
   );
 
   const removeAttachedImage = useCallback(() => {
-    if (attachedImage) void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImage.path).catch(() => {});
+    if (attachedImage?.path) void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImage.path).catch(() => {});
     setAttachedImage(null);
   }, [attachedImage]);
 
@@ -219,6 +226,11 @@ export function OrderSearchDialog({
     if (!selected) return;
     const paymentId = selected.transactionId || selected.utr || "";
     setMessage(buildOrderFoundMessage(paymentId));
+    // Replacing a previously staged (user-uploaded) image — GC it.
+    if (attachedImageRef.current?.path) {
+      void deleteAccountMedia(CHAT_MEDIA_BUCKET, attachedImageRef.current.path).catch(() => {});
+    }
+    setAttachedImage({ url: ORDER_FOUND_TEMPLATE_IMAGE_URL, path: null });
   }, [selected]);
 
   const handleSend = useCallback(async () => {

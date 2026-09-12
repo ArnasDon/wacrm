@@ -132,12 +132,25 @@ function porNome(a: { nome: string }, b: { nome: string }): number {
   return a.nome.localeCompare(b.nome, "pt-BR") || a.nome.localeCompare(b.nome);
 }
 
+export interface ExtrasDoResumo {
+  /**
+   * Cobranças do espelho com status que `classificar` não conhece, CONTADAS
+   * no banco. ⚠️ Não dá para contá-las a partir de `cobrancas`: a leitura
+   * que alimenta as listas traz só as DEVIDAS (vencida/negativada), então um
+   * status novo que a reconciliação gravou nunca chegaria aqui — e o aviso
+   * do cartão, que existe para dizer "o CRM precisa aprender um status novo",
+   * ficaria em zero para sempre (achado do Codex no PR #201).
+   */
+  statusDesconhecidos?: number;
+}
+
 export function montarListas(
   clientes: readonly ClienteDoEspelho[],
   cobrancas: readonly ParcelaDoEspelho[],
   fichas: ReadonlyMap<string, FichaResumida>,
   agora: Date,
   vencidasListadasEm: string | null,
+  extras: ExtrasDoResumo = {},
 ): ListasDoEspelho {
   const porCliente = new Map<string, ParcelaDoEspelho[]>();
   let statusDesconhecidos = 0;
@@ -230,9 +243,13 @@ export function montarListas(
       });
     }
   }
-  for (const c of cobrancas) {
-    if (!c.deleted && classificarDesconhecida(c.status)) statusDesconhecidos++;
-  }
+  // Sem a contagem do banco, conta entre as linhas recebidas (os testes e
+  // quem chamar com o espelho inteiro em mãos).
+  if (extras.statusDesconhecidos === undefined) {
+    for (const c of cobrancas) {
+      if (!c.deleted && classificarDesconhecida(c.status)) statusDesconhecidos++;
+    }
+  } else statusDesconhecidos = extras.statusDesconhecidos;
   resumo.statusDesconhecidos = statusDesconhecidos;
 
   listas.confirmar.sort(porNome);
@@ -244,7 +261,7 @@ export function montarListas(
   return listas;
 }
 
-const STATUS_CONHECIDOS = new Set([
+export const STATUS_CONHECIDOS = new Set([
   "PENDING",
   "RECEIVED",
   "CONFIRMED",

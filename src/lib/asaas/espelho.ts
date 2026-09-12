@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ParcelaDoEspelho } from "./inadimplencia";
-import { montarListas, type ClienteDoEspelho, type FichaResumida, type ListasDoEspelho } from "./listas";
+import { montarListas, STATUS_CONHECIDOS, type ClienteDoEspelho, type FichaResumida, type ListasDoEspelho } from "./listas";
 import type { Candidato } from "./vinculo";
 
 /**
@@ -141,6 +141,22 @@ export async function lerCobrancasDevidas(admin: SupabaseClient, accountId: stri
   return linhas.map(lerParcela);
 }
 
+/**
+ * Quantas cobranças do espelho têm status que o CRM não conhece — contadas
+ * no banco, porque a leitura das devidas já filtra por status e nunca as
+ * traria (achado do Codex no PR #201). `null` = a contagem falhou.
+ */
+export async function contarStatusDesconhecidos(admin: SupabaseClient, accountId: string): Promise<number | null> {
+  const { count, error } = await admin
+    .from("cb_asaas_cobrancas")
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId)
+    .eq("deleted", false)
+    .not("status", "in", `(${[...STATUS_CONHECIDOS].join(",")})`);
+  if (error) return null;
+  return count ?? 0;
+}
+
 /** As fichas de uma lista de ids, em lotes — nome e telefone, e só. */
 export async function lerFichas(admin: SupabaseClient, accountId: string, ids: Iterable<string>): Promise<Map<string, FichaResumida>> {
   const mapa = new Map<string, FichaResumida>();
@@ -155,7 +171,11 @@ export async function lerFichas(admin: SupabaseClient, accountId: string, ids: I
 
 export async function lerEspelho(admin: SupabaseClient, accountId: string, agora: Date = new Date()): Promise<Espelho> {
   const config = await lerConfigDoEspelho(admin, accountId);
-  const [clientes, cobrancas] = await Promise.all([lerClientes(admin, accountId), lerCobrancasDevidas(admin, accountId)]);
+  const [clientes, cobrancas, desconhecidos] = await Promise.all([
+    lerClientes(admin, accountId),
+    lerCobrancasDevidas(admin, accountId),
+    contarStatusDesconhecidos(admin, accountId),
+  ]);
   const ids = new Set<string>();
   for (const c of clientes) {
     if (c.contact_id) ids.add(c.contact_id);
@@ -166,6 +186,8 @@ export async function lerEspelho(admin: SupabaseClient, accountId: string, agora
     conectado: config !== null,
     config,
     leituraFresca: leituraFresca(config, agora),
-    listas: montarListas(clientes, cobrancas, fichas, agora, config?.vencidas_listadas_em ?? null),
+    listas: montarListas(clientes, cobrancas, fichas, agora, config?.vencidas_listadas_em ?? null, {
+      statusDesconhecidos: desconhecidos ?? undefined,
+    }),
   };
 }

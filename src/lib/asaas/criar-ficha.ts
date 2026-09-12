@@ -52,7 +52,7 @@ export interface ContextoDaFicha {
 }
 
 export type ResultadoDaFicha =
-  | { ok: true; contactId: string; criou: boolean }
+  | { ok: true; contactId: string; criou: boolean; /** a etiqueta `asaas` ficou gravada? (só faz sentido quando `criou`) */ etiquetada: boolean }
   /** o sufixo bate com OUTRO número: vai para "Para confirmar" com o candidato */
   | { ok: false; codigo: "sufixo"; candidatoId: string }
   | { ok: false; codigo: "db_error" | "sem_dono" };
@@ -69,17 +69,79 @@ async function donoDaConta(admin: SupabaseClient, accountId: string): Promise<st
   return typeof data?.owner_user_id === "string" ? data.owner_user_id : null;
 }
 
-async function etiquetar(admin: SupabaseClient, accountId: string, dono: string, contactId: string, contexto: ContextoDaFicha): Promise<void> {
+/**
+ * Põe a etiqueta `asaas` numa ficha. Devolve se ficou gravada.
+ * ⚠️ O Supabase NÃO lança em erro de banco — devolve `{ error }` — então o
+ * retorno do upsert é conferido; sem isso a ficha ficava sem etiqueta para
+ * sempre com cara de sucesso (achado do Codex no PR #201). Quem chama guarda
+ * a pendência: `etiquetarFichasCriadas` refaz no ciclo seguinte.
+ */
+export async function etiquetar(admin: SupabaseClient, accountId: string, dono: string, contactId: string, contexto: ContextoDaFicha): Promise<boolean> {
   try {
     if (contexto.tagId === undefined) {
       const { tagIdByKey } = await resolveImportTagIds(admin, { accountId, userId: dono, tagNames: [ETIQUETA_DA_FICHA], canCreateTags: true });
       contexto.tagId = tagIdByKey.get(ETIQUETA_DA_FICHA) ?? null;
     }
-    if (!contexto.tagId) return;
-    await admin.from("contact_tags").upsert({ contact_id: contactId, tag_id: contexto.tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+    if (!contexto.tagId) return false;
+    const { error } = await admin
+      .from("contact_tags")
+      .upsert({ contact_id: contactId, tag_id: contexto.tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+    if (error) {
+      console.warn(`[asaas] etiqueta na ficha ${contactId} falhou: ${error.message}`);
+      return false;
+    }
+    return true;
   } catch (e) {
     console.warn(`[asaas] etiqueta na ficha ${contactId} falhou:`, e instanceof Error ? e.message : e);
+    return false;
   }
+}
+
+/**
+ * As fichas que o CRM criou e ainda estão SEM a etiqueta `asaas` (o upsert
+ * falhou naquele ciclo) ganham a etiqueta agora. Duas leituras e um upsert
+ * em lote por ciclo — barato, e é o caminho de retentativa que a criação
+ * sozinha não tem: a ficha já existe e o ciclo seguinte a vê como ligada.
+ */
+export async function etiquetarFichasCriadas(
+  admin: SupabaseClient,
+  accountId: string,
+  contactIds: readonly string[],
+  contexto: ContextoDaFicha,
+): Promise<number> {
+  if (contactIds.length === 0) return 0;
+  if (contexto.dono === undefined) contexto.dono = await donoDaConta(admin, accountId);
+  if (!contexto.dono) return 0;
+  if (contexto.tagId === undefined) {
+    try {
+      const { tagIdByKey } = await resolveImportTagIds(admin, { accountId, userId: contexto.dono, tagNames: [ETIQUETA_DA_FICHA], canCreateTags: true });
+      contexto.tagId = tagIdByKey.get(ETIQUETA_DA_FICHA) ?? null;
+    } catch {
+      return 0;
+    }
+  }
+  const tagId = contexto.tagId;
+  if (!tagId) return 0;
+  const jaTem = new Set<string>();
+  for (let i = 0; i < contactIds.length; i += 200) {
+    const { data, error } = await admin
+      .from("contact_tags")
+      .select("contact_id")
+      .eq("tag_id", tagId)
+      .in("contact_id", contactIds.slice(i, i + 200));
+    if (error) return 0;
+    for (const l of (data ?? []) as { contact_id: string }[]) jaTem.add(l.contact_id);
+  }
+  const faltam = contactIds.filter((id) => !jaTem.has(id));
+  if (faltam.length === 0) return 0;
+  const { error } = await admin
+    .from("contact_tags")
+    .upsert(faltam.map((contact_id) => ({ contact_id, tag_id: tagId })), { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+  if (error) {
+    console.warn(`[asaas] reetiquetar ${faltam.length} ficha(s) falhou: ${error.message}`);
+    return 0;
+  }
+  return faltam.length;
 }
 
 export async function criarFichaDoAsaas(
@@ -93,7 +155,7 @@ export async function criarFichaDoAsaas(
   if (busca.falhou) return { ok: false, codigo: "db_error" };
   if (busca.contato) {
     return mesmoNumero(busca.contato.phone, cliente.telefone)
-      ? { ok: true, contactId: busca.contato.id, criou: false }
+      ? { ok: true, contactId: busca.contato.id, criou: false, etiquetada: false }
       : { ok: false, codigo: "sufixo", candidatoId: busca.contato.id };
   }
 
@@ -114,11 +176,11 @@ export async function criarFichaDoAsaas(
     const deNovo = await findExistingContact(admin, accountId, cliente.telefone);
     if (deNovo.falhou || !deNovo.contato) return { ok: false, codigo: "db_error" };
     return mesmoNumero(deNovo.contato.phone, cliente.telefone)
-      ? { ok: true, contactId: deNovo.contato.id, criou: false }
+      ? { ok: true, contactId: deNovo.contato.id, criou: false, etiquetada: false }
       : { ok: false, codigo: "sufixo", candidatoId: deNovo.contato.id };
   }
 
   const contactId = criado.id as string;
-  await etiquetar(admin, accountId, dono, contactId, contexto);
-  return { ok: true, contactId, criou: true };
+  const etiquetada = await etiquetar(admin, accountId, dono, contactId, contexto);
+  return { ok: true, contactId, criou: true, etiquetada };
 }

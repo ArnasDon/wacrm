@@ -250,6 +250,31 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(estado.tabelas.cb_asaas_clientes[0]).toMatchObject({ contact_id: null, vinculo_origem: "manual" });
   });
 
+  it("vínculo manual feito entre a foto do ciclo e a criação: a ficha NÃO nasce (reconferência)", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [
+          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "João Pedro Souza", cpf_cnpj: "1", celular: "5584999990000", contact_id: null, vinculo_origem: null, contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const respostas: RespostasDoAsaas = { listas: { [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: { "/customers/cus_B": clienteAsaas("cus_B", "João Pedro Souza") } };
+    const admin = dubleDoSupabase(estado);
+    // O administrador ignora o cliente DEPOIS de o ciclo ler a lista: o dublê
+    // muda a linha na primeira leitura de `contacts` (a busca da criação).
+    const original = admin.from.bind(admin);
+    let lidas = 0;
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      if (t === "contacts" && ++lidas === 1) estado.tabelas.cb_asaas_clientes[0].vinculo_origem = "desvinculado";
+      return original(t);
+    };
+    const r = await sincronizarAsaas(admin, CONTA, { agora: AGORA, cliente: () => dubleDoAsaas(respostas) });
+    expect(r).toMatchObject({ ok: true, fichasCriadas: 0 });
+    expect(estado.tabelas.contacts).toHaveLength(0);
+    expect(estado.tabelas.cb_asaas_clientes[0]).toMatchObject({ contact_id: null, vinculo_origem: "desvinculado" });
+  });
+
   it("chave ilegível marca o erro e não chama o Asaas", async () => {
     const estado = estadoInicial({}, { api_key: "lixo" });
     const { resultado, registro } = rodar(estado, { listas: {}, recursos: {} });

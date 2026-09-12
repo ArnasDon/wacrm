@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 
 import { aplicarCobranca, aplicarCobrancas } from "./aplicar";
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
-import { criarFichaDoAsaas, type ContextoDaFicha } from "./criar-ficha";
+import { criarFichaDoAsaas, etiquetarFichasCriadas, type ContextoDaFicha } from "./criar-ficha";
 import { inteiro, lerCliente, lerCobranca, type ClienteDoAsaas, type CobrancaDoAsaas } from "./leitura";
 import {
   decidir,
@@ -377,6 +377,24 @@ async function lerTelefonesDasConexoes(admin: SupabaseClient, accountId: string)
   return ((data ?? []) as { display_phone: string | null }[]).map((c) => c.display_phone ?? "").filter((t) => t !== "");
 }
 
+/**
+ * O cliente AINDA está elegível para a regra? Relido no banco, no instante
+ * — a lista do ciclo é uma foto, e entre ela e a criação da ficha cabe um
+ * "Ligar" ou "Ignorar" do administrador (achado do Codex no PR #201).
+ */
+async function aindaElegivel(admin: SupabaseClient, accountId: string, linhaId: string): Promise<boolean> {
+  const { data, error } = await admin
+    .from("cb_asaas_clientes")
+    .select("id")
+    .eq("id", linhaId)
+    .eq("account_id", accountId)
+    .is("contact_id", null)
+    .or("vinculo_origem.is.null,vinculo_origem.in.(telefone,cpf,email,criada)")
+    .limit(1);
+  if (error) return false;
+  return (data?.length ?? 0) > 0;
+}
+
 /** O UPDATE do vínculo automático, cercado pela elegibilidade: gente que ligou no meio vence. */
 async function gravarVinculo(
   admin: SupabaseClient,
@@ -413,6 +431,7 @@ async function vincular(
   const idx: IndicesDoVinculo = montarIndices(fichas, calendly, conexoes, clientes.filter((c) => c.contact_id !== null));
   // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
   const contextoDaFicha: ContextoDaFicha = {};
+  const semEtiqueta: string[] = [];
 
   const registrarLigado = (c: LinhaDeCliente, contactId: string) => {
     if (c.cpf_cnpj && !idx.contatoPorDocumento.has(c.cpf_cnpj)) idx.contatoPorDocumento.set(c.cpf_cnpj, contactId);
@@ -451,6 +470,8 @@ async function vincular(
       contagem.adiadas++;
       continue;
     }
+    // A criação é irreversível e a foto do ciclo pode estar velha: reconfere.
+    if (!(await aindaElegivel(admin, accountId, c.id))) continue;
     const ficha = await criarFichaDoAsaas(admin, accountId, { nome: c.nome, telefone: decisao.telefone }, contextoDaFicha);
     if (!ficha.ok) {
       if (ficha.codigo === "sufixo") await gravarCandidatos(c, [{ contact_id: ficha.candidatoId, motivo: "sufixo" }]);
@@ -475,8 +496,10 @@ async function vincular(
       updated_at: vistoEm,
     });
     if (gravou) {
-      if (ficha.criou) contagem.fichasCriadas++;
-      else contagem.ligados++;
+      if (ficha.criou) {
+        contagem.fichasCriadas++;
+        if (!ficha.etiquetada) semEtiqueta.push(ficha.contactId);
+      } else contagem.ligados++;
       registrarLigado(c, ficha.contactId);
       // A ficha nova entra nos índices: o próximo cliente com o mesmo número
       // (a empresa dele) cai em "contato já ligado", não em outra ficha.
@@ -484,8 +507,18 @@ async function vincular(
       const atual = idx.porTelefone.get(decisao.telefone);
       if (atual) atual.add(ficha.contactId);
       else idx.porTelefone.set(decisao.telefone, new Set([ficha.contactId]));
+    } else if (ficha.criou) {
+      // Perdeu a corrida para gente entre a reconferência e o vínculo: a
+      // ficha que ACABOU de nascer aqui não tem conversa, mensagem nem
+      // negócio — apagá-la é desfazer o próprio passo, não apagar contato.
+      const { error } = await admin.from("contacts").delete().eq("id", ficha.contactId).eq("account_id", accountId);
+      if (error) console.warn(`[asaas] ficha órfã ${ficha.contactId} não pôde ser desfeita: ${error.message}`);
     }
   }
+  // A etiqueta que falhou num ciclo anterior (o upsert devolveu erro) é
+  // refeita aqui: as fichas criadas pelo CRM que ainda não a têm.
+  const criadas = clientes.filter((c) => c.vinculo_origem === "criada" && c.contact_id !== null).map((c) => c.contact_id as string);
+  await etiquetarFichasCriadas(admin, accountId, [...new Set([...criadas, ...semEtiqueta])], contextoDaFicha);
   return contagem;
 }
 

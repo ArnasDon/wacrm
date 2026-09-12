@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { criarFichaDoAsaas, ETIQUETA_DA_FICHA, mesmoNumero } from "./criar-ficha";
+import { criarFichaDoAsaas, ETIQUETA_DA_FICHA, etiquetarFichasCriadas, mesmoNumero } from "./criar-ficha";
 import { dubleDoSupabase, type EstadoDoDuble } from "./duble.test-helper";
 
 const CONTA = "conta-1";
@@ -39,7 +39,7 @@ describe("criarFichaDoAsaas", () => {
   it("ficha com o MESMO número (irmã do 9) já existe: liga a ela, não cria", async () => {
     const e = estado([{ id: "c1", account_id: CONTA, user_id: DONO, phone: "558499990000", name: "João" }]);
     const r = await criarFichaDoAsaas(dubleDoSupabase(e), CONTA, { nome: "João Pedro", telefone: "5584999990000" });
-    expect(r).toEqual({ ok: true, contactId: "c1", criou: false });
+    expect(r).toEqual({ ok: true, contactId: "c1", criou: false, etiquetada: false });
     expect(e.tabelas.contacts).toHaveLength(1);
   });
 
@@ -70,6 +70,36 @@ describe("criarFichaDoAsaas", () => {
     expect(e.escritas.filter((w) => w.tabela === "tags")).toHaveLength(1);
   });
 
+  it("o erro do upsert da etiqueta NÃO é engolido: a ficha nasce, `etiquetada` volta false", async () => {
+    const e = estado();
+    const admin = dubleDoSupabase(e);
+    const original = admin.from.bind(admin);
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      if (t !== "contact_tags") return original(t);
+      // O Supabase devolve `{ error }` em erro de banco — não lança.
+      const q: Record<string, unknown> = { upsert: () => q, then: (r: (x: unknown) => unknown) => r({ data: null, error: { message: "boom" } }) };
+      return q;
+    };
+    const r = await criarFichaDoAsaas(admin, CONTA, { nome: "A", telefone: "5584999990001" });
+    expect(r).toMatchObject({ ok: true, criou: true, etiquetada: false });
+    expect(e.tabelas.contacts).toHaveLength(1);
+  });
+
+  it("etiquetarFichasCriadas põe a etiqueta só em quem não a tem, num upsert só", async () => {
+    const e = estado([
+      { id: "c1", account_id: CONTA, user_id: DONO, phone: "5584999990001", name: "A" },
+      { id: "c2", account_id: CONTA, user_id: DONO, phone: "5584999990002", name: "B" },
+    ]);
+    const admin = dubleDoSupabase(e);
+    const contexto = {};
+    await criarFichaDoAsaas(admin, CONTA, { nome: "C", telefone: "5584999990003" }, contexto);
+    const c3 = e.tabelas.contacts[2].id as string;
+    const n = await etiquetarFichasCriadas(admin, CONTA, ["c1", "c2", c3], contexto);
+    expect(n).toBe(2);
+    expect(e.tabelas.contact_tags.map((t) => t.contact_id).sort()).toEqual(["c1", "c2", c3].sort());
+    expect(await etiquetarFichasCriadas(admin, CONTA, ["c1", "c2", c3], contexto)).toBe(0);
+  });
+
   it("corrida: o índice único recusa o insert e a ficha vencedora é reaproveitada", async () => {
     const e = estado();
     const admin = dubleDoSupabase(e);
@@ -90,7 +120,7 @@ describe("criarFichaDoAsaas", () => {
       return q;
     };
     const r = await criarFichaDoAsaas(admin, CONTA, { nome: "João", telefone: "5584999990000" });
-    expect(r).toEqual({ ok: true, contactId: "corrida", criou: false });
+    expect(r).toEqual({ ok: true, contactId: "corrida", criou: false, etiquetada: false });
     expect(e.tabelas.contacts).toHaveLength(1);
   });
 });

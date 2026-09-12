@@ -117,6 +117,12 @@ describe("montarListas", () => {
     expect(listas.inadimplentes[0].faixa).toBe("mais_de_30");
   });
 
+  it("a contagem de status desconhecidos vinda do banco vence a contagem local (a leitura das devidas nunca os traz)", () => {
+    const listas = montarListas([], [parcela({ status: "NOVO" })], fichas, AGORA, LISTAGEM, { statusDesconhecidos: 7 });
+    expect(listas.resumo.statusDesconhecidos).toBe(7);
+    expect(montarListas([], [parcela({ status: "NOVO" })], fichas, AGORA, LISTAGEM).resumo.statusDesconhecidos).toBe(1);
+  });
+
   it("origem `criada` e `manual` sem ficha ganham as marcas, e vão para as listas certas", () => {
     const listas = montarListas(
       [cliente({ id: "l1", vinculo_origem: "criada" }), cliente({ id: "l2", asaas_customer_id: "cus_2", vinculo_origem: "manual" })],

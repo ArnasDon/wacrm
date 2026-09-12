@@ -3776,9 +3776,11 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   navegador — relógio compartilhado em `cb-atividade:<userId>`, régua pura
   em `src/lib/auth/inatividade.ts`, encanamento em
   `src/hooks/use-guarda-de-inatividade.ts`. O gesto que descobre a expiração
-  leva `stopPropagation()` (ouvinte em `window`, fase de captura, antes do
-  container do React): o Enter ou o clique que acorda a tela NÃO chega ao
-  app. `scroll` não conta como atividade (o fio escreve `scrollTop`
+  leva `stopPropagation()` E `preventDefault()` (ouvinte em `window`, fase
+  de captura, antes do container do React; `keydown` e `pointerdown`
+  registrados SEM `passive` para o `preventDefault` valer): o Enter ou o
+  clique que acorda a tela NÃO chega ao app nem ativa o botão/link focado
+  (Codex, PR #198). `scroll` não conta como atividade (o fio escreve `scrollTop`
   sozinho); registro de OUTRA sessão ou ausente nunca expira (senão o
   carimbo de ontem derrubaria o login de hoje); confere ANTES de gravar
   (mexer o mouse às 4h05 não ressuscita); storage que não grava ou

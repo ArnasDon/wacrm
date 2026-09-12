@@ -35,7 +35,7 @@
 | --- | --- | --- | --- | --- |
 | **0** | Levantamento SÓ LEITURA da conta real: volume, formatos, simulação do vínculo, custo dos avisos e as perguntas que a doc não responde (§3.1) | ✅ **feito em 12/09** — os números estão na §2.5 e mudaram D2, D5, D10 e D11 | — | (junto da 1a-conexão) |
 | **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento | ✅ feito (12/09) · **migration aplicada em produção** | `992_cb_asaas_config` ✅ | `feat/asaas-conexao` |
-| **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático, tela de revisão e lista de inadimplentes | 🟡 pronta para desenhar — **espera só a D2** (criar ou não a ficha de quem não tem) | `9xx_cb_asaas` (as duas tabelas restantes) | — |
+| **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | 🟢 **liberada em 12/09** — nada mais a espera | `9xx_cb_asaas` (as duas tabelas restantes) | — |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | 💤 | — | — |
 | **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 💤 | `9xx_cb_asaas_webhook` | — |
 | **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 💤 | `9xx_cb_asaas_regua` | — |
@@ -85,22 +85,25 @@ da Fase 0); as que o operador decide reaparecem em linguagem simples na §9.
 | # | Decisão | Recomendação | Por quê |
 | --- | --- | --- | --- |
 | **D1** ⏳ | Primeiro contato: conta de produção ou sandbox do Asaas? | **Produção.** A Fase 0 usa uma chave SÓ DE LEITURA. As Fases 1a–3 leem Clientes, Cobranças e Parcelamentos, e só escrevem em duas coisas: o aviso automático (webhook, D7) e os avisos de atraso do próprio Asaas (D10) — nunca em cliente nem em cobrança. O teste da régua usa uma cobrança real de poucos reais para o contato de teste autorizado | o vínculo só se mede com os clientes reais, e o sandbox não tem os 588 contatos do escritório. ⚠️ E o sandbox não pode ser conectado aqui: o ambiente local grava no MESMO banco da produção (§3.7) |
-| **D2** ⏳ | Cliente do Asaas que não tem ficha no CRM | **MUDOU com a medição (12/09): recomendo CRIAR a ficha** (nome + telefone do Asaas, dono durável da conta), como o Calendly passou a fazer em 08/09. A que ficar sem telefone (85) continua só listada | a recomendação antiga era "só listar", e ela supunha que a maioria já tivesse ficha. Medido: **79,5% não tem**, e dos 92 devedores só 31 têm. Só listar entrega o aviso e a régua para um terço da inadimplência e deixa 264 clientes COM telefone fora, sem nada que os traga para dentro — o cliente que assinou contrato e nunca escreveu no WhatsApp nunca vai escrever sozinho. ⚠️ Criar ficha é criar conversa: 264 conversas novas na caixa de entrada de uma vez. Por isso a ficha nasce SEM conversa aberta na caixa — a conversa nasce no primeiro envio da régua (é o que o roteador de funil já faz) |
+| **D2** ✅ | Cliente do Asaas que não tem ficha no CRM | **O CRM CRIA a ficha** (decisão do operador, 12/09) — só o contato, sem conversa; a conversa nasce no primeiro envio ou quando o cliente escrever. Quem não tem telefone nenhum (85) fica listado, com candidatos por nome aproximado (D5) | medido: **79,5% não tem ficha**, e dos 92 devedores só 31 têm. Só listar entregaria o aviso e a régua para um terço da inadimplência. ⚠️ O operador avisou que os clientes fechados que hoje estão no **Atlas** vão ser importados para o CRM — a base de fichas vai crescer bastante. O desenho já conta com isso (§3.3): o vínculo roda a cada ciclo para quem ainda não ligou, e a importação tem de passar por `findExistingContact` para não duplicar a ficha que o Asaas criou |
 | **D3** ⏳ | CPF/CNPJ vindo do Asaas | **Guardado na tabela da integração, que é FECHADA ao navegador (todas as do Asaas são); só a rota do administrador o devolve, mascarado (`***.456.789-**`).** Não entra em `contacts` | ⚠️ o CRM não tem o CPF de ninguém (§2.1), então o CPF não liga cliente a contato: serve para achar cadastro repetido no Asaas e para conferência humana. Pôr CPF na ficha é outra decisão (§8) |
 | **D4** ⏳ | Quem vê o aviso; quem liga e desliga clientes | **Aviso: todo membro que vê a conversa, visualizador incluído. Ligar, desligar e as listas do cartão: só administrador** | quem responde ao cliente precisa saber que ele deve. Ligar errado mostraria a dívida de um cliente na conversa de outro. Como toda leitura passa por rota (§3.2), mudar isso depois é trocar o papel mínimo de uma rota, sem migration |
-| **D5** ✅ | Telefone que só bate pelos ÚLTIMOS 8 DÍGITOS | **Vira sugestão, nunca vínculo automático** — mantida, e agora de graça | MEDIDO em 12/09: **zero** clientes caem nesse degrau, e zero caem no de nome. A decisão deixou de ter custo: a régua frouxa não liga ninguém que a régua exata já não ligue. Fica escrita porque o dado muda (cliente novo, telefone corrigido) |
+| **D5** ✅ | Telefone que só bate pelos ÚLTIMOS 8 DÍGITOS — e, desde 12/09, **nome aproximado** | **Os dois viram SUGESTÃO, nunca vínculo automático.** O nome aproximado entra a pedido do operador, para quem não tem e-mail nem telefone (85 clientes): a tela mostra "parece ser…" e uma pessoa confirma | sufixo e nome exato deram **zero** na medição; o aproximado é a única régua que alcança os 85 sem telefone, e é a mais frouxa de todas — push name do WhatsApp contra nome legal, e 203 das 705 fichas têm o NÚMERO como nome. Ligar errado mostra a dívida de um na conversa de outro (D4). Sugestão pontuada, decisão de gente |
 | **D6** ⏳ | Cobrança negativada no Serasa (`DUNNING_REQUESTED`) | **Conta como inadimplência no aviso, com a marca "negativada"; fica FORA da régua automática** | o cliente continua devendo e o atendente precisa saber; mas com negativação em curso, uma mensagem amigável de "1 dia de atraso" é incoerente |
 | **D7** | Quem cria o aviso automático (webhook) no Asaas | **O CRM, pela API**, com a permissão Webhooks em leitura e escrita. Plano B: o operador cadastra à mão com a URL e o token que o cartão mostra | o CRM gera o token de autenticação, reaproveita o webhook que já existe, confere e religa a fila, e o apaga ao desconectar (§3.4). A permissão é editável depois: decidir antes da Fase 2 |
 | **D8** | Corpo do webhook: dado ou aviso? | **Aviso.** De evento de cobrança lê só o id e relê a cobrança na API; de evento de chave lê só `accessToken.name` | a releitura devolve o estado ATUAL, então a ordem de chegada deixa de importar: sem guarda de ordem, e com envio NÃO sequencial (um evento preso não segura a fila). Custa um GET por evento |
 | **D9** | Escrever no Asaas | **Nunca em cliente nem em cobrança** (`externalReference` incluído). As únicas escritas são o webhook (D7) e os avisos de atraso (D10) | o vínculo mora no CRM e sobrevive sem isso; e o `externalReference` pode estar em uso por outro sistema (a Fase 0 mede) |
-| **D10** ❌ | Avisos NATIVOS de atraso do Asaas | **O CRM NÃO escreve nada em notificação — o mecanismo não funcionaria.** A duplicação se resolve com UM interruptor no painel do Asaas, do operador. A permissão Notificações sai da chave da Fase 3 | MEDIDO em 12/09: a configuração por cliente tem só e-mail ligado, com **zero** em WhatsApp, SMS e ligação — e mesmo assim a conta paga ~600 avisos de WhatsApp por mês (R$ 0,55 cada). O WhatsApp do Asaas é interruptor DA CONTA e não passa pela API de notificação por cliente, então `PUT /notifications/batch` em centenas de clientes não apagaria uma única mensagem. O custo do que se sobrepõe à régua é **R$ 92/mês** (fatia de atraso de ~R$ 403/mês); a ligação de robô, o pior risco do plano, custou **R$ 3,85 em seis meses**. Some do plano toda a máquina de desligar-e-religar |
+| **D10** ❌ | Avisos NATIVOS de atraso do Asaas | **O CRM NÃO escreve nada em notificação — o mecanismo não funcionaria.** A duplicação se resolve com UM interruptor no painel do Asaas, do operador. A permissão Notificações sai da chave da Fase 3 | MEDIDO em 12/09: a configuração por cliente tem só e-mail ligado, com **zero** em WhatsApp, SMS e ligação — e mesmo assim a conta paga ~600 avisos de WhatsApp por mês (R$ 0,55 cada). O WhatsApp do Asaas é interruptor DA CONTA e não passa pela API de notificação por cliente, então `PUT /notifications/batch` em centenas de clientes não apagaria uma única mensagem. O custo do que se sobrepõe à régua é **R$ 92/mês** (fatia de atraso de ~R$ 403/mês); a ligação de robô, o pior risco do plano, custou **R$ 3,85 em seis meses**. Some do plano toda a máquina de desligar-e-religar **Decisão do operador (12/09): os avisos do Asaas FICAM ligados** — "pelos números, não vale a pena desabilitar". Consequência escrita: no dia do vencimento e nos marcos de atraso o cliente recebe a mensagem do Asaas E a do escritório, de números diferentes. O texto da régua tem de soar como o escritório falando, não como um segundo lembrete automático |
 | **D11** ⏳ | Régua: uma mensagem por parcela ou por cliente | **Uma mensagem por CLIENTE, listando TODAS as parcelas vencidas dele** — não só as que cruzam o marco. Quem está há cinco meses em atraso recebe UMA mensagem com as cinco parcelas, nunca cinco mensagens | regra do operador (12/09). E a medição a torna a regra principal, não um detalhe: **40 dos 92 devedores têm mais de 3 parcelas vencidas** e 29 têm 6 ou mais — por parcela, o pior caso manda 6+ mensagens seguidas ao mesmo cliente. Clientes do Asaas diferentes ligados ao mesmo contato (a pessoa e a empresa dela) continuam com mensagens separadas, cada uma com o seu nome — nunca parcelas de CPFs diferentes juntas (1 caso na base) |
 | **D12** | Horário da régua | **Sai no dia-alvo, entre `hora_envio` (09:00 por padrão; aceita de 08:00 a 17:00) e 18:00, só em dia útil: sábado, domingo e feriado nacional de data fixa passam para o dia útil seguinte.** Agendador parado até as 18:00 = marco perdido naquele dia | cobrança de madrugada, no domingo ou no Natal é o erro que ninguém perdoa; perder um marco é melhor. Feriado de data móvel (Carnaval, Sexta-feira Santa, Corpus Christi) fica fora da v1 |
 | **D13** | Cobrança já vencida quando a régua foi ligada | **Nada automático**: a régua só dispara no marco que a parcela cruzar DEPOIS de ligada. O atrasado antigo aparece no aviso, no filtro e na lista de inadimplentes, e a equipe cobra à mão | ligar a régua não pode despejar 100 mensagens de uma vez. E o texto de "1 dia de atraso" mentiria para quem deve há três meses |
 | **D14** ❌ | Acordo com o cliente | **Fora da v1** (decisão do operador, 12/09): "acordo não pausa a cobrança, pois pra isso precisaremos inserir uma forma de registrar o acordo" | pausar por data exigiria antes um lugar onde o acordo é REGISTRADO (valor, prazo, quem fechou) — senão a pausa é um campo solto que ninguém sabe explicar depois. `cb_asaas_pausas` sai da Fase 3 inteira; volta junto com o registro de acordo. Ver §8 |
 | **D15** | A mensagem da régua e a IA | **Aceitar e documentar**: a mensagem da cobrança fica em `messages` como mensagem do robô, e por isso entra no transcrito do Radar (nas conexões com o Radar ligado) e no histórico que a resposta automática lê | é o mesmo tipo de dado que já está nas conversas, e a IA precisa saber que houve cobrança para responder coerente a um "já paguei". Nenhuma TABELA do Asaas vai a provedor de IA |
-| **D16** ⏳ | A mensagem da régua e o estado da conversa | **Não reabre conversa encerrada, não zera o contador de espera e não mexe em não lidas.** A régua sai SEMPRE pelo caminho do robô (`engineSendText`), nunca por `sendMessageToConversation` — com teste estrutural default-deny cobrando isso | regra do operador (12/09). Conferido no código em 12/09, e as três saem de graça pelo mesmo lugar: `engineSendText` grava `sender_type: 'bot'`, e o gatilho da 972 só limpa `aguardando_desde` em `sender_type='agent'` COM `sender_id` ou `from_device`; `unread_count` só sobe na entrada, nenhum caminho de envio o toca; e quem reabre é o núcleo de envio, que o robô não usa. ⚠️ É a MESMA razão pela qual broadcast e automação não reabrem — e o teste existe porque "reusar o núcleo de envio" parece limpeza de código e traz as três regressões juntas |
-| **D17** ⏳ | Lembrete no DIA DO VENCIMENTO | **Escopo novo, pedido em 12/09**: todo dia às 8h o robô avisa quem tem parcela vencendo NAQUELE dia. Gatilho próprio (`asaas_cobranca_vence_hoje`), mensagem própria, sem marco e sem trava por dias de atraso | "a gente faz uma cobrança ativa na data do vencimento". Muda o espelho: hoje ele guarda só o que o CRM já viu VENCIDO, e passa a precisar do que VENCE hoje (`PENDING` com `dueDate` = hoje). Medido: 0 vencendo hoje e 98 nos próximos 30 dias, então o volume diário é de unidades. ⚠️ O Asaas JÁ manda aviso no dia do vencimento — 620 em 180 dias, R$ 341 — e é o mesmo interruptor da D10: se o escritório quer o lembrete pelo WhatsApp do CRM, o do Asaas tem de ser desligado no painel, senão o cliente recebe dois |
+| **D16** ✅ | A mensagem da régua e o estado da conversa | **Não reabre conversa encerrada, não zera o contador de espera e não mexe em não lidas.** A régua sai SEMPRE pelo caminho do robô (`engineSendText`), nunca por `sendMessageToConversation` — com teste estrutural default-deny cobrando isso | regra do operador (12/09). Conferido no código em 12/09, e as três saem de graça pelo mesmo lugar: `engineSendText` grava `sender_type: 'bot'`, e o gatilho da 972 só limpa `aguardando_desde` em `sender_type='agent'` COM `sender_id` ou `from_device`; `unread_count` só sobe na entrada, nenhum caminho de envio o toca; e quem reabre é o núcleo de envio, que o robô não usa. ⚠️ É a MESMA razão pela qual broadcast e automação não reabrem — e o teste existe porque "reusar o núcleo de envio" parece limpeza de código e traz as três regressões juntas |
+| **D17** ✅ | Lembrete no DIA DO VENCIMENTO | **Escopo novo, pedido em 12/09**: todo dia às 8h o robô avisa quem tem parcela vencendo NAQUELE dia. Gatilho próprio (`asaas_cobranca_vence_hoje`), mensagem própria, sem marco e sem trava por dias de atraso | "a gente faz uma cobrança ativa na data do vencimento". Muda o espelho: hoje ele guarda só o que o CRM já viu VENCIDO, e passa a precisar do que VENCE hoje (`PENDING` com `dueDate` = hoje). Medido: 0 vencendo hoje e 98 nos próximos 30 dias, então o volume diário é de unidades. ⚠️ O Asaas JÁ manda aviso no dia do vencimento — 620 em 180 dias, R$ 341 — e é o mesmo interruptor da D10: se o escritório quer o lembrete pelo WhatsApp do CRM, o do Asaas tem de ser desligado no painel, senão o cliente recebe dois |
+| **D18** ✅ | Assinatura das mensagens do robô de cobrança | **`automations.assinatura_personalizada`** (texto livre — "Carol - financeiro"), campo "Assinar como" no construtor, valendo para todo `send_message` daquela automação; vazio = o nome do escritório, como hoje | pedido do operador (12/09). Hoje `engineSendText` assina SEMPRE com o nome automático do escritório (P1.5: mensagem sem gente não leva nome de gente), e a assinatura é PREFIXO gravado no `content_text` (923). A personalizada passa por `saneiaNome` (tira `*_~`; "Carol - financeiro" sai limpo) e continua sob o interruptor `assinatura_ativa` da conta: desligado, nada assina. ⚠️ Mora na AUTOMAÇÃO, não no passo nem num catálogo: uma régua são 3–4 automações e a mesma pessoa assina todas; catálogo seria tabela nova para meia dúzia de linhas. Não é usuário: "Carol" não precisa de login. Vale para qualquer automação, não só a régua |
+| **D19** ✅ | Conexão de saída e os tempos da régua | **Cada mensagem escolhe a conexão** pelo seletor que o passo `send_message` JÁ tem (`step_config.channel_id`, 903); **cada marco é uma automação** com o seu `dias_de_atraso` — 5, 6, 8, quantos forem. "Criar régua padrão" só semeia 1/5/30 | pedido do operador (12/09). ⚠️ Na régua o canal escolhido **falha FECHADO**: `resolveEngineChannelPreferring` cai no padrão em silêncio quando o id não resolve, e numa cobrança isso é o link de pagamento saindo de um número com que o cliente nunca falou (a mesma regra do `send_to_number`). A conversa da ficha criada pelo Asaas NASCE nesse primeiro envio, com o canal do passo e sem pino |
+| **D20** ✅ | Ligar e desligar os avisos do financeiro | **Um interruptor só, no cartão do Asaas: "Cobrança automática"** (`cb_asaas_config.regua_ativa`, nasce DESLIGADO). Desligado, a varredura não seleciona candidata nenhuma — nem lembrete do vencimento, nem marco de atraso — e cada automação continua com o seu liga/desliga por baixo | pedido do operador (12/09): "tem de ser uma funcionalidade que a gente ative e desative". Sem o interruptor, desligar a régua seria caçar 4 ou 5 automações uma a uma, e esquecer uma é uma cobrança saindo. É o portão de cima; o `is_active` de cada automação é o de baixo — e os dois têm de estar ligados para sair mensagem. Ligar não é retroativo (D13): quem já estava atrasado não recebe nada por ter ligado |
 
 ---
 
@@ -605,6 +608,59 @@ os clientes sem vínculo). Toda escrita passa por
 `PUT/DELETE /api/cb/asaas/clientes/[id]/vinculo` (administrador), confere o
 contato contra a conta, carimba o nome de quem fez e confere o ROWCOUNT.
 
+**Criar a ficha (D2, decidida em 12/09).** Para o cliente do Asaas SEM
+ficha e COM telefone, o ciclo cria o contato — e só o contato:
+
+- `findExistingContact` primeiro (últimos 8 dígitos, tolerante a tronco),
+  como `resolverDestinatario` faz; 23505 na corrida = reler e ligar.
+- `contacts.user_id` = `accounts.owner_user_id` (dono durável; a função
+  entra na allowlist de `dono-duravel.test.ts`), `name` = o nome do Asaas,
+  `phone` = `digitosDoTelefone(mobilePhone ?? phone)` — que ganha o 55,
+  porque o Asaas devolve sem DDI (C1).
+- `vinculo_origem = 'criada'` na linha de `cb_asaas_clientes` (valor novo do
+  CHECK): é a marca de "esta ficha nasceu do Asaas". `contacts` não tem
+  coluna de origem e não ganha uma por carona.
+- **SEM conversa.** 264 conversas vazias de uma vez iriam para o fim da caixa
+  (`last_message_at` nulo) como ruído; a ficha em `/contatos` já tem a aba
+  Cobranças e a lista de inadimplentes já a lista. A conversa nasce no
+  primeiro envio da régua — com o canal do passo (D19) — ou quando o cliente
+  escrever.
+- Sem telefone nenhum (85): fica listado, com os candidatos por nome
+  aproximado.
+- ⚠️ **O nome legal não sobrevive à primeira mensagem do cliente:**
+  `inbound-store` sobrescreve `contacts.name` com o push name do WhatsApp
+  (nota da 977). É por isso que a régua usa `cliente_nome` do Asaas, nunca
+  `{{contact.name}}`.
+
+**Nome aproximado (pedido em 12/09) — SUGESTÃO, nunca vínculo automático.**
+`src/lib/asaas/nome-aproximado.ts` (puro, com teste): normaliza (NFD, sem
+acento, minúsculas, sem pontuação), tira partículas (`de da do dos das e`),
+tokeniza. Candidato quando o **primeiro token é igual** E pelo menos dois
+tokens coincidem — ou o nome mais curto (2+ tokens) está inteiro contido no
+mais longo. Pontuação = tokens em comum ÷ tokens do menor. Fichas de nome
+numérico (203 de 705) ficam fora, e nome de um token só nunca casa. Entra em
+`candidatos` com `motivo: 'nome_aproximado'` e a pontuação; a tela mostra
+"parece ser Maria Silva (…5316)" com Vincular e Ignorar. Roda só para quem
+não casou por telefone nem por e-mail. Custo: 85 × 705 comparações em
+memória, nada no banco.
+
+**⚠️ A importação do Atlas (avisada em 12/09, sem data).** Os clientes
+fechados que hoje vivem no Atlas vão para o CRM, e a base de fichas cresce
+bastante. O que o desenho de hoje já garante, e o que aquela importação vai
+ter de respeitar:
+
+1. O vínculo automático roda **a cada ciclo** para todo cliente com
+   `vinculo_origem IS NULL` — ficha que chegar do Atlas depois liga sozinha
+   no ciclo seguinte, sem botão.
+2. A importação passa por `findExistingContact` (como o CSV já faz, pelo
+   `phone_normalized` da 022): senão ela duplica a ficha que o Asaas criou,
+   e a dívida fica numa e a conversa noutra. A marca `vinculo_origem =
+   'criada'` diz quais são essas.
+3. Se ela trouxer CPF ou e-mail para `contacts` (hoje §8), a régua por CPF
+   que este plano descartou por falta de dado passa a funcionar sem
+   migration: `cb_asaas_clientes.cpf_cnpj` já está guardado, 100%
+   preenchido.
+
 ### 3.4 Sincronização
 
 **Cliente HTTP (`src/lib/asaas/cliente.ts`, molde `src/lib/tldv/cliente.ts`).**
@@ -941,8 +997,10 @@ com a D10: aquele campo cala TODOS os avisos daquele cliente; o WhatsApp que
 a conta paga não passa por ele nem pela configuração por cliente — é
 interruptor do painel.
 
-**A varredura** (`src/lib/asaas/varrer-regua.ts`), para cada automação
-ligada deste gatilho:
+**A varredura** (`src/lib/asaas/varrer-regua.ts`) — **só com
+`cb_asaas_config.regua_ativa` ligado** (D20; desligado, ela não lê candidata
+nenhuma, e o cartão diz "Cobrança automática desligada") — para cada
+automação ligada deste gatilho:
 
 1. **Recolhe travas órfãs.** `reservado` há mais de 10 minutos SEM linha em
    `automation_logs` daquela automação e contato criada depois da trava =
@@ -1555,32 +1613,18 @@ levantamento foi feito na conta real), a 5 (o sufixo de 8 não liga ninguém:
 zero casos) e a 9 (o CRM não desliga aviso nenhum — o mecanismo não
 funcionaria; ver a nova 3 abaixo).
 
-**A que trava a próxima fase:**
-
-1. ⚠️ **Cliente que está no Asaas e não tem ficha no CRM: o CRM cria a ficha
-   ou só lista para você?** A recomendação MUDOU com a medição. São **349 de
-   439 clientes (79,5%)** sem ficha, e **61 dos 92 devedores**. Se ficar só
-   listando, o aviso na conversa e a cobrança automática valem para um terço
-   da inadimplência, e os outros 264 que TÊM telefone nunca entram — quem
-   assinou contrato e nunca escreveu no WhatsApp não vai escrever sozinho.
-   **Recomendo criar a ficha** (nome e telefone do Asaas), como o Calendly
-   passou a fazer. A ficha nasce sem conversa na caixa de entrada; a conversa
-   nasce no primeiro envio. Os 85 sem telefone nenhum continuam só listados.
-   (D2)
+**Respondidas em 12/09, à tarde:** a D2 (**o CRM cria a ficha**) e o
+interruptor do WhatsApp do Asaas (**fica ligado**: "pelos números, não vale a
+pena desabilitar"). Nada trava mais a Fase 1a-espelho.
 
 **As que decidem a cobrança, e podem esperar a Fase 3:**
 
 2. **A cobrança automática sai a partir das 9h (e o lembrete do vencimento
    às 8h), só em dia útil, e nunca depois das 18h nem em feriado nacional?**
    Recomendo que sim. (D12/D17)
-3. ⚠️ **O WhatsApp de cobrança do próprio Asaas vai ser desligado no painel?**
-   Não é mais coisa que o CRM faça — medido: a configuração por cliente já
-   está com WhatsApp desligado e as mensagens saem assim mesmo, então o
-   interruptor é da CONTA, na tela do Asaas. Hoje a conta gasta **~R$ 403/mês**
-   em avisos, dos quais **~R$ 92/mês** são os de atraso e ~R$ 341 em 180 dias
-   são os do dia do vencimento. Se ele ficar ligado, o cliente recebe DUAS
-   mensagens pela mesma parcela — a do Asaas e a do escritório. É decisão
-   sua, e o plano segue nos dois casos. (D10/D17)
+3. ~~O WhatsApp de cobrança do próprio Asaas vai ser desligado no painel?~~
+   **Respondida em 12/09: fica ligado.** O cliente recebe a do Asaas e a do
+   escritório; o texto da régua é escrito sabendo disso. (D10)
 4. **Quem já estava atrasado quando a cobrança automática for ligada fica de
    fora dela?** Recomendo que sim: aparece no aviso e na lista, e a equipe
    cobra à mão. ⚠️ Pesa mais do que parecia: são **92 devedores, 405
@@ -1688,6 +1732,12 @@ mudou por causa deles e das quatro regras que ele fixou no mesmo dia:
 | 8 | **D17 (nova)**: lembrete no dia do vencimento, às 8h | escopo novo. Muda o espelho, que passa a guardar também o que vence HOJE — e só isso do futuro |
 | 9 | **D5 virou barata** | zero clientes casam só pelo sufixo de 8, e zero por nome: as duas réguas frouxas não ligam ninguém que a exata já não ligue |
 | 10 | **C1, C2, C4, C12 e C14 respondidas** na §2.5; C3 medida em parte | o levantamento fazia isso |
+| 11 | **D2 decidida: o CRM cria a ficha** (só o contato, sem conversa); a importação do Atlas, avisada no mesmo dia, entra como restrição escrita na §3.3 | decisão do operador à tarde |
+| 12 | **D10 fechada ao contrário do que o custo sugeria: os avisos do Asaas ficam ligados** | decisão do operador: "pelos números, não vale a pena desabilitar" |
+| 13 | **D18 (nova): assinatura personalizada por automação** ("Carol - financeiro"), sob o interruptor da conta | pedido do operador; hoje o robô assina sempre com o nome automático do escritório |
+| 14 | **D19 (nova): conexão por mensagem e um marco por automação**, com o canal da régua falhando fechado | pedido do operador; o seletor de conexão do passo já existia (903) — o que faltava era a régua não cair no padrão em silêncio |
+| 15 | **D5 ganhou o nome aproximado** como sugestão para os 85 sem telefone | pedido do operador; o nome exato deu zero |
+| 16 | **D20 (nova): interruptor único "Cobrança automática" no cartão**, portão de cima das automações da régua | pedido do operador: "tem de ser uma funcionalidade que a gente ative e desative" |
 
 **Pendências que nasceram aqui, e são do operador:**
 

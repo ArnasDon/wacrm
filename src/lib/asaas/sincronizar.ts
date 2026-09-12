@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 
 import { aplicarCobranca, aplicarCobrancas } from "./aplicar";
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
-import { criarFichaDoAsaas, etiquetarFichasCriadas, type ContextoDaFicha } from "./criar-ficha";
+import { criarFichaDoAsaas, etiquetar, etiquetarFichasCriadas, type ContextoDaFicha } from "./criar-ficha";
 import { inteiro, lerCliente, lerCobranca, type ClienteDoAsaas, type CobrancaDoAsaas } from "./leitura";
 import {
   decidir,
@@ -522,6 +522,14 @@ async function vincular(
       // limpeza de ciclo. Ela é um contato válido do escritório, com a
       // etiqueta `asaas`; o log diz o que houve (Codex, PR #201, 2ª rodada).
       console.warn(`[asaas] ficha ${ficha.contactId} criada para ${c.asaas_customer_id}, mas o cliente foi ligado/ignorado por gente no meio do ciclo — ficha mantida sem vínculo`);
+      // ⚠️ Sem o vínculo, a ficha sai do alcance de `etiquetarFichasCriadas`
+      // (que varre pelas linhas `criada`): se a etiqueta falhou na criação,
+      // esta é a última chance de pô-la antes de perder a associação
+      // (Codex, PR #201, 3ª rodada). O dono já está no contexto.
+      if (!ficha.etiquetada && contextoDaFicha.dono) {
+        const agora = await etiquetar(admin, accountId, contextoDaFicha.dono, ficha.contactId, contextoDaFicha);
+        if (!agora) console.warn(`[asaas] ficha ${ficha.contactId} ficou SEM a etiqueta asaas — pôr à mão em Contatos`);
+      }
     }
   }
   return contagem;

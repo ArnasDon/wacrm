@@ -38,15 +38,17 @@
 | Fase | Escopo | Estado | Migration | PR |
 | --- | --- | --- | --- | --- |
 | **0** | Levantamento SÓ LEITURA da conta real: volume, formatos, simulação do vínculo, custo dos avisos e as perguntas que a doc não responde (§3.1) | ✅ **feito em 12/09** — os números estão na §2.5 e mudaram D2, D5, D10 e D11 | — | (junto da 1a-conexão) |
-| **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento | 🟡 código pronto em `feat/asaas-conexao` (4 commits sobre `main`), **PR ainda não aberto** — nada disso está em produção; **a migration 992, sim** (aditiva: nada em produção a lê até o deploy) | `992_cb_asaas_config` ✅ aplicada | — (a abrir a partir de `feat/asaas-conexao`) |
-| **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | 🟢 **liberada em 12/09** — nada mais a espera | `9xx_cb_asaas` (as duas tabelas restantes) | — |
+| **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento | ✅ código em `feat/asaas-conexao`, no MESMO PR do espelho (12/09 à noite) | `992_cb_asaas_config` ✅ aplicada | o PR da Fase 1a (conexão + espelho) |
+| **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | ✅ **construída em 12/09 à noite** e MEDIDA no primeiro ciclo real (§6): 439 clientes, 405 vencidas, 86 ligados pela regra (84 telefone, 2 CPF), 32 fichas criadas no primeiro ciclo de 60 s e o resto nos seguintes, 7 para confirmar (6 "nome diferente", 1 "contato já ligado"), 85 sem telefone com 9 sugestões por nome | `994_cb_asaas_espelho` ✅ aplicada em 12/09 (histórico `20260912225955`) | o PR da Fase 1a |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | 💤 | — | — |
 | **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 💤 | `9xx_cb_asaas_webhook` | — |
 | **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 💤 | `9xx_cb_asaas_regua` | — |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
-- **Número das migrations:** a última hoje é a **992** (a config do Asaas,
-  aplicada em 12/09 e registrada como `20260912144829`).
+- **Número das migrations:** a última hoje é a **994** (o espelho do Asaas,
+  aplicada em 12/09 à noite e registrada como `20260912225955`; a 993 é a
+  janela da Meta por número, de outra branch, e a 992 é a config do Asaas,
+  `20260912144829`).
   ⚠️ Ela nasceu 991 e colidiu com a `991_cb_janela_da_meta_na_conversa`, de
   outra branch, aplicada primeiro em 12/09 — a quinta colisão do projeto. Conferir
   `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de
@@ -1478,10 +1480,11 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 - Tocados: `integracoes-panel.tsx`, `src/lib/rate-limit.ts` (balde
   `asaasLevantamento`), `messages/{en,pt-BR}.json`.
 
-**Fase 1a-espelho — cron, vínculo, listas**
+**Fase 1a-espelho — cron, vínculo, listas** ✅ (12/09, à noite; no mesmo PR da conexão)
 
-- `supabase/migrations/9xx_cb_asaas.sql` — `cb_asaas_clientes` e
+- `supabase/migrations/994_cb_asaas_espelho.sql` — `cb_asaas_clientes` e
   `cb_asaas_cobrancas` (§3.2), com a forma ajustada pelos números da Fase 0.
+  As duas entraram em `rls-da-config-do-asaas.test.ts`.
 - `src/lib/asaas/aplicar.ts` (+ teste com dublê do admin) —
   `aplicarCobranca`, a função única do cron e do webhook.
 - `src/lib/asaas/vinculo.ts` (+ teste) — a decisão de produção (§3.3), com
@@ -1496,18 +1499,36 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
   aproximado (D5) e o sinal negativo da cerca do telefone; nunca devolve
   "liga".
 - `src/lib/asaas/inadimplencia.ts` (+ teste) — a régua (§3.5).
+- `src/lib/asaas/listas.ts` (+ teste) — puro: o resumo e as cinco listas a
+  partir das linhas do espelho, com o CPF só mascarado; `espelho.ts` — a
+  leitura em service role (paginada) que as duas rotas do cartão usam, e
+  `leituraFresca` (duas voltas do laço lento).
 - `src/lib/asaas/sincronizar.ts` (+ teste com dublê do admin e cliente
   falso) — o ciclo (§3.4), carimbo ANTES do trabalho, prazo por
-  `Date.now()`.
+  `Date.now()`. ⚠️ Ganhou um passo que o plano não tinha: a PROVA DE
+  IDENTIDADE no começo (relê até dois `cus_…` conhecidos; 404 nos dois =
+  `conta_trocada`, sem gravar nada) — sem ela o 404 de um cliente
+  legitimamente apagado seria indistinguível da chave de outra conta.
+- `src/lib/asaas/duble.test-helper.ts` — o Supabase em memória (PostgREST
+  mínimo: filtros, `or()`, upsert que só escreve as colunas presentes,
+  23505) e o cliente falso do Asaas, para os testes de I/O.
 - `src/lib/asaas/aviso.ts` — o evento global `cb:asaas-mudou`, fora dos
   hooks.
-- `src/app/api/cb/asaas/sync/route.ts` (POST, 202), `cron/route.ts` (GET,
-  `x-cron-secret`), `clientes/route.ts` (GET, as cinco listas, CPF
-  mascarado), `clientes/[id]/vinculo/route.ts` (PUT/DELETE).
-- Tocados: `asaas-card.tsx` (as listas), `docker-stack.yml` (`cb/asaas` no
-  laço lento e no banner), `messages/{en,pt-BR}.json`, e a doc de quem
-  instala (`docs/INSTALACAO.md`: onde criar a chave, que permissões, e o
-  `docker stack deploy`).
+- `src/app/api/cb/asaas/sync/route.ts` (POST, 202, `{ completa }`),
+  `cron/route.ts` (GET, `x-cron-secret`, rodízio por
+  `last_sync_attempt_at`), `clientes/route.ts` (GET, as cinco listas
+  paginadas em memória, CPF mascarado, busca e faixa de dias),
+  `clientes/[id]/vinculo/route.ts` (PUT com `acao`: ligar, desligar,
+  ignorar, reconsiderar — nome carimbado, ROWCOUNT conferido).
+- Tocados: `asaas-card.tsx` (resumo, Sincronizar/Sincronizar tudo, as
+  listas em `asaas-listas.tsx`, "desconectar e apagar os dados"),
+  `cartao.ts` (`conta_trocada`, `ORIGENS_DO_VINCULO`, as datas do ciclo),
+  `conexao.ts` (a prova de identidade ao conectar com espelho existente; o
+  `apagarEspelho`), a rota GET (o resumo), a PUT da config (a primeira
+  sincronização em `after()`), `docker-stack.yml` (`cb/asaas` no laço lento
+  e no banner), `messages/{en,pt-BR}.json`, `dono-duravel.test.ts`
+  (`criar-ficha.ts` no manifesto) e a doc de quem instala
+  (`docs/INSTALACAO.md`, §11).
 
 **Fase 1b — o aviso**
 
@@ -1667,34 +1688,50 @@ reprova, e é assim que tem de ser.
       "Chave do outro ambiente"; chave certa → "Conectado"; o levantamento
       pelo botão bate com o relatório da §2.5.
 
-**Fase 1a-espelho**
+**Fase 1a-espelho** (medida em 12/09 à noite, no preview contra a conta real)
 
-- [ ] Migration das DUAS tabelas aplicada via conector antes do merge;
-      conferências verdes; `authenticated` sem privilégio nenhum nas duas.
-- [ ] Chave de outra conta com espelho existente → recusada.
-- [ ] Contagens do cartão batem com a §2.5; a lista de inadimplentes bate com
-      o painel do Asaas.
-- [ ] **Criação da ficha (D2):** cliente do Asaas com telefone e sem ficha →
-      depois do ciclo existe `contacts` com `user_id = accounts.owner_user_id`,
-      `phone` com o 55, etiqueta `asaas`, SEM conversa, e a linha do Asaas
-      com `vinculo_origem = 'criada'`; rodar o ciclo de novo não duplica
-      (`findExistingContact`); ficha cujo sufixo de 8 bate com OUTRO número
-      NÃO é ligada nem duplicada — vai para "Para confirmar"; apagar a ficha
-      criada não a recria, e a linha volta para "Sem ficha". Medido no banco.
-- [ ] **Nome aproximado (D5):** cliente sem telefone e sem e-mail com nome
-      parecido ao de uma ficha → "parece ser …" com a pontuação em "Sem
-      ficha"; depois de N ciclos `contact_id` continua nulo (só o clique
-      liga); nome de um token só e ficha de nome numérico nunca são sugeridos.
-- [ ] Ligar e desligar à mão persistem (ROWCOUNT), com o nome carimbado;
-      desligado não religa no ciclo seguinte; contato recém-criado pela Nova
-      conversa é ligado no ciclo seguinte; dois clientes de CPFs diferentes
-      com o mesmo celular vão para "Para confirmar".
-- [ ] Durante a carga e depois de um 500, nenhuma lista diz "nenhum" e os
-      números do resumo somem.
+- [x] Migration 994 aplicada em produção pela Management API (histórico
+      `20260912225955`), ANTES do merge; conferida por consulta: RLS ligada
+      nas duas, `anon` e `authenticated` sem SELECT, `service_role` com INSERT.
+- [x] Chave de outra conta com espelho existente → recusada
+      (`conta_trocada`): coberto por teste (`conexao` relê até dois
+      `cus_…` conhecidos; o ciclo faz a mesma prova no começo). Não provocado
+      contra o Asaas real — exigiria uma segunda conta.
+- [x] Contagens do cartão batem com a §2.5: **405 vencidas, 92
+      inadimplentes, R$ 499.963,94, 40 com mais de 3 parcelas** — os mesmos
+      números do levantamento.
+- [x] **Criação da ficha (D2):** medido no banco depois do primeiro ciclo:
+      as fichas criadas têm `user_id = accounts.owner_user_id`, `phone` com o
+      55, nome do Asaas, a etiqueta `asaas` e ZERO conversas; a linha do
+      Asaas fica `vinculo_origem = 'criada'`. O ciclo seguinte não duplicou
+      (a ficha criada é reencontrada por `findExistingContact`). Ficha cujo
+      sufixo bate com OUTRO número indo para "Para confirmar" e a ficha
+      criada apagada NÃO sendo recriada: cobertos por teste (não havia caso
+      real na conta).
+- [x] **Nome aproximado (D5):** 9 dos 85 sem telefone ganharam sugestão
+      ("parece ser …" com a pontuação); `contact_id` continua nulo — só o
+      clique liga. Ficha de nome numérico e nome de um token: cobertos por
+      teste.
+- [x] **O vínculo real, ciclo 1:** 86 ligados pela regra (84 pelo telefone,
+      2 pelo CPF — dois cadastros duplicados no Asaas), 7 "Para confirmar"
+      (6 pela cerca do nome diferente, 1 pelo contato já ligado a outro
+      documento), 0 ambíguos.
+- [x] Ligar/desligar/ignorar/reconsiderar à mão: rota com ROWCOUNT e nome
+      carimbado (teste de tela: ignorar e reconsiderar num cliente sem
+      telefone). Desligado não religa nem pela criação — coberto por teste
+      (o número é o mesmo, e o índice único de `contacts` impede outra ficha).
+- [x] Durante a carga nenhuma lista diz "nenhum" (`{ chave, pagina }` com
+      `carregando` derivado) e os números do resumo só aparecem com a
+      resposta resolvida.
 - [ ] `docker stack deploy` feito com o `crm.env` carregado e o
-      `CRM_IMAGE` fixado (§7); banner do agendador cita `cb/asaas`; `curl`
-      sem segredo → 401, não 503.
-- [ ] Log `[asaas] ciclo:` sem chave nem CPF.
+      `CRM_IMAGE` fixado (§7) — DEPOIS do merge; banner do agendador cita
+      `cb/asaas`; `curl` sem segredo → 401, não 503.
+- [x] Log `[asaas] …` sem chave nem CPF (ids e contagens, só).
+- [x] **Medido e corrigido na hora:** o primeiro ciclo criou 32 fichas em
+      60 s — cinco idas ao banco por ficha. O dono da conta e o id da
+      etiqueta passaram a ser resolvidos UMA vez por ciclo
+      (`ContextoDaFicha`), e a sincronização manual ganhou o mesmo orçamento
+      de 90 s do cron.
 
 **Fase 1b**
 
@@ -1798,8 +1835,9 @@ não há conexão. Rotacionar também o PAT do Supabase.
 
 6. Não ligar a lista de IPs da conta sem antes conferir os outros sistemas
    (§3.7).
-7. Autorizar a aplicação da migration das duas tabelas do espelho, antes do
-   merge.
+7. ~~Autorizar a aplicação da migration das duas tabelas do espelho, antes do
+   merge.~~ Feita em 12/09 à noite pela Management API, dentro do "faça
+   tudo" do operador (994, `20260912225955`).
 8. Depois do merge, o `docker stack deploy` (o CI não relê o agendador),
    feito na sessão, com autorização, como no tl;dv — sempre as três linhas:
 
@@ -2007,6 +2045,7 @@ mudou por causa deles e das regras que ele fixou no mesmo dia:
 | 14 | **D19 (nova): conexão por mensagem e um marco por automação**, com o canal da régua falhando fechado | pedido do operador; o seletor de conexão do passo já existia (903) — o que faltava era a régua não cair no padrão em silêncio |
 | 15 | **D5 ganhou o nome aproximado** como sugestão para os 85 sem telefone | pedido do operador; o nome exato deu zero |
 | 16 | **D20 (nova): interruptor único "Cobrança automática" no cartão**, portão de cima das automações da régua | pedido do operador: "tem de ser uma funcionalidade que a gente ative e desative" |
+| 18 | **Fase 1a-espelho construída e medida (12/09, à noite)**: migration 994 em produção; primeiro ciclo real com 439 clientes, 405 vencidas, 86 ligados pela regra, 32 fichas criadas em 60 s (o resto nos ciclos seguintes), 7 para confirmar, 9 sugestões por nome; três ajustes que a medição pediu — a PROVA DE IDENTIDADE da chave no começo do ciclo (404 de cliente apagado ≠ chave de outra conta), o cache do dono e da etiqueta por ciclo (cinco idas ao banco por ficha) e o orçamento de 90 s na sincronização manual | o desenho previa a recusa da chave de outra conta só ao CONECTAR; no ciclo, o único sinal era o 404 da reconciliação, que também é o de uma cobrança apagada com o cliente junto |
 | 17 | **Revisão final de 12/09 à noite** (seis lentes, 183 achados, ~45 aplicados): restos da pausa e da D10 em seis seções; a conversa que o motor NÃO cria para a ficha da D2 (a varredura cria, e passa canal e conversa no `context`); o CHECK sem `'criada'`; a trava do lembrete numa coluna `integer` (virou `tipo` + `marco`); D18/D20 sem coluna nem arquivo; a reserva de `RateLimit` que a conta não devolve; o remetente real do robô (`automations/meta-send.ts`); a cerca contra o telefone de outra pessoa; dois marcos do mesmo cliente no mesmo dia (`absorvida`); o interruptor reconferido na trava; `vista_vencida_em` contra `regua_ativada_em`; o lembrete em fim de semana; o boleto pago no caixa; `cb_channels` sem `instance_state`; a etiqueta `asaas` na ficha criada; as listas do cartão com estado de carga | o plano tinha sido editado por partes ao longo do dia, e cada parte deixou uma seção vizinha para trás |
 
 **Pendências que nasceram aqui, e são do operador:**

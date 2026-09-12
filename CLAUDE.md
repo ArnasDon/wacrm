@@ -3416,6 +3416,83 @@ do painel da conversa no inbox (`src/components/transcricoes/`). Plano vivo em
   armadilha do efeito passivo, na sexta aparição; a guarda é a mesma dos
   campos personalizados (`{ de, mapa }`).
 
+⚠️ **Asaas → vínculo dos clientes e espelho das cobranças (992/994): o
+Asaas é a fonte, o CRM só lê.** `src/lib/asaas/` — `cliente` (HTTP),
+`leitura`, `inadimplencia`, `vinculo`, `nome-aproximado`, `listas`,
+`aplicar`, `criar-ficha`, `sincronizar`, `espelho`, `conexao`, `cartao`;
+rotas em `/api/cb/asaas/*`, cartão em Integrações (`asaas-card.tsx` +
+`asaas-listas.tsx`). Plano vivo em `docs/PLANO-integracao-asaas.md` (as
+decisões D1–D20 e os números da conta real). O que morde código novo:
+
+- ⚠️⚠️ **TODAS as tabelas do Asaas são FECHADAS ao navegador** (RLS ligada,
+  zero policies, `REVOKE` de `anon` e `authenticated`), e é assim que tem de
+  ser: a chave cifrada, o CPF/CNPJ (só sai MASCARADO, pela rota do admin) e a
+  dívida de quem nem tem ficha moram lá. Toda tela lê por rota em service
+  role, que devolve também o que o membro não enxergaria sozinho — se está
+  conectado e se a leitura é FRESCA (`leituraFresca`, duas voltas do laço
+  lento). Sem isso "em dia" seria afirmação sobre dado parado.
+- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito.** É a PRIMEIRA vez que o
+  espelho viu a cobrança vencida, carimbada num UPDATE cercado por `IS NULL`
+  — fora do upsert, de propósito. É o que a régua de cobrança (Fase 3) vai
+  usar como dia-alvo quando o Asaas marca vencida tarde, e o que faz "ligar
+  a régua não é retroativo" valer. "Está vencida" é o `status` do Asaas,
+  nunca `vencimento < hoje` (C7: o instante da virada não é documentado).
+- ⚠️ **O upsert de clientes leva SÓ metadados** — nunca `contact_id`,
+  `vinculo_origem`, `contatos_recusados` nem `candidatos` (a lição do tl;dv:
+  o que já é conhecido mantém o que tem). O upsert das cobranças, idem: o
+  PostgREST só escreve as colunas presentes, e o dublê de teste imita isso.
+- ⚠️ **A elegibilidade da regra automática é `contact_id IS NULL AND
+  (vinculo_origem IS NULL OR IN ('telefone','cpf','email','criada'))`,
+  nunca `<> 'desvinculado'`**: com a coluna nula (todo cliente novo) a
+  comparação dá NULL e exclui o cliente sem erro nenhum. O UPDATE do vínculo
+  é cercado pelas MESMAS condições — gente que ligou no meio do ciclo vence.
+  `manual` órfão (contato apagado) e `desvinculado` são de gente: a regra
+  não toca.
+- ⚠️ **Só telefone (com a irmã do nono dígito), CPF já ligado e e-mail
+  LIGAM.** Sufixo de 8 e nome aproximado só SUGEREM (`candidatos`, D5) —
+  medidos na conta real: zero casos cada um como vínculo, e ligar errado
+  mostra a dívida de um na conversa de outro. As cercas: contato já ligado a
+  outro cliente de documento DIFERENTE, nome de gente sem nenhum token em
+  comum (a esposa que paga a conta do marido), telefone igual ao de uma
+  conexão da própria conta, e `contatos_recusados` (desligado por gente
+  nunca volta — nem pela CRIAÇÃO da ficha: o número é o mesmo e o índice
+  único de `contacts` impede outra).
+- ⚠️⚠️ **O CRM CRIA a ficha do cliente com telefone e sem contato (D2,
+  decisão do operador em 12/09/2026)** — só o contato, SEM conversa, com
+  `user_id = accounts.owner_user_id` (`criar-ficha.ts` está no manifesto de
+  `dono-duravel.test.ts`), o nome do Asaas, e a etiqueta `asaas` por INSERT
+  DIRETO em `contact_tags` — nunca por `tag-events.ts`, que dispararia o
+  gatilho `tag_added` das automações 264 vezes de uma vez. Medido em
+  12/09/2026: 79,5% dos clientes do Asaas não tinham ficha. ⚠️ A ficha
+  criada é contato como outro qualquer (entra em "todos os contatos" do
+  disparo); a etiqueta é o que deixa excluí-la. `findExistingContact` é o
+  PORTÃO anti-duplicata, não o vínculo: ficha cujo número só bate pelo
+  sufixo vai para "Para confirmar".
+- ⚠️ **O ciclo PROVA A IDENTIDADE da chave antes de gravar** (relê até dois
+  `cus_…` conhecidos; 404 nos dois = `conta_trocada`) e `conectarAsaas`
+  faz o mesmo com espelho existente. Sem isso, a chave de outro CNPJ zeraria
+  o aviso de todo mundo no ciclo seguinte. O 404 de UMA cobrança na
+  reconciliação só vira `deleted` com o cliente dela respondendo 200.
+- ⚠️ **Sandbox NUNCA neste banco**: o `.env.local` aponta para o MESMO
+  projeto Supabase da produção e a config é uma linha por conta — conectar
+  o sandbox no preview trocaria a conexão da produção. `ehChaveDeSandbox`
+  recusa `$aact_hmlg_`; o sandbox só se testa com `fetchFn` falso.
+- ⚠️ **A chave vai no cabeçalho `access_token` (não é Bearer), nunca na
+  URL; `User-Agent` é obrigatório e passa por `agente()` (ASCII); GET com
+  corpo é 403; 404 também significa "id de outra conta"; a cota é da CONTA
+  do Asaas, sem cabeçalho `RateLimit-*` (medido) — o 429 encerra o ciclo
+  sem retentar.** Toda mensagem de erro passa por `semSegredo()`.
+- ⚠️ **`cb/asaas` está no laço LENTO do `docker-stack.yml`, e o CI não relê
+  o `command` do agendador**: só vale depois de `docker stack deploy` manual
+  na VPS, com o `crm.env` carregado (as três linhas). Até lá, o botão
+  "Sincronizar" do cartão é o único ciclo. O rodízio é por
+  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho.
+- **Toda leitura do banco PAGINA** (`contacts` já passa de 700; a importação
+  do Atlas, avisada pelo operador, passa disso). As listas do cartão são
+  montadas em memória por `listas.ts` (puro) e paginadas na rota — a
+  situação de cada cliente (`ligado`/`confirmar`/`sem_ficha`/`ignorado`) é
+  DERIVADA da linha, nunca coluna própria.
+
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
 `escutamEsteWebhook` de `processar.ts` são puros e testados; `claim.ts` e
@@ -4291,6 +4368,20 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     de deriva por consulta ao histórico, feita ANTES de aplicar; renumerado o
     arquivo que ainda não estava aplicado (este). `ls` sozinho não pegaria:
     a 992 do Asaas não existia em branch nenhuma — só no banco.
+
+  - **992_cb_asaas_config** — a CONEXÃO do Asaas: a chave da API cifrada,
+    o nome dela e a validade opcional, FECHADA ao navegador. Aplicada em
+    12/09/2026 pela Management API (histórico `20260912144829`), ANTES do
+    merge. Nasceu 991 e colidiu com a `991_cb_janela_da_meta_na_conversa` —
+    a quinta colisão de branches em paralelo.
+  - **994_cb_asaas_espelho** — `cb_asaas_clientes` (o vínculo com a ficha,
+    `candidatos`, `contatos_recusados`, origem com o valor `criada` da D2)
+    e `cb_asaas_cobrancas` (toda cobrança já vista vencida, mais a que vence
+    hoje). As duas FECHADAS ao navegador (o CPF só sai mascarado, pela rota
+    do administrador). Aplicada em 12/09/2026 à noite pela Management API
+    (histórico `20260912225955`), ANTES do merge, dentro do "faça tudo" do
+    operador; conferida por consulta (RLS, `anon`/`authenticated` sem SELECT,
+    `service_role` com INSERT). Aditiva: nada em produção a lê até o deploy.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

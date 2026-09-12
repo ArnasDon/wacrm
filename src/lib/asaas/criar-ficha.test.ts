@@ -57,6 +57,19 @@ describe("criarFichaDoAsaas", () => {
     expect(e.tabelas.contacts).toHaveLength(0);
   });
 
+  it("o contexto compartilhado resolve o dono e a etiqueta UMA vez para várias fichas", async () => {
+    const e = estado();
+    const admin = dubleDoSupabase(e);
+    const contexto = {};
+    await criarFichaDoAsaas(admin, CONTA, { nome: "A", telefone: "5584999990001" }, contexto);
+    await criarFichaDoAsaas(admin, CONTA, { nome: "B", telefone: "5584999990002" }, contexto);
+    expect(contexto).toEqual({ dono: DONO, tagId: e.tabelas.tags[0].id });
+    expect(e.tabelas.tags).toHaveLength(1);
+    expect(e.tabelas.contact_tags).toHaveLength(2);
+    // a segunda ficha não releu o catálogo: um upsert de tags só, no total
+    expect(e.escritas.filter((w) => w.tabela === "tags")).toHaveLength(1);
+  });
+
   it("corrida: o índice único recusa o insert e a ficha vencedora é reaproveitada", async () => {
     const e = estado();
     const admin = dubleDoSupabase(e);

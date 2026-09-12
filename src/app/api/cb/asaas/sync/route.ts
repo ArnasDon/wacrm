@@ -14,6 +14,8 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
  * apertado porque cada clique varre a conta do Asaas, cuja cota é da CONTA,
  * dividida com qualquer outro sistema do escritório.
  */
+const ORCAMENTO_MS = 90_000;
+
 export async function POST(request: Request) {
   try {
     const ctx = await requireRole("admin");
@@ -24,7 +26,9 @@ export async function POST(request: Request) {
     const completa = corpo?.completa === true;
 
     after(async () => {
-      const r = await sincronizarAsaas(supabaseAdmin(), ctx.accountId, { completa });
+      // O mesmo orçamento do cron: em produção não há corte de duração de
+      // rota, e o primeiro ciclo tem centenas de fichas para criar.
+      const r = await sincronizarAsaas(supabaseAdmin(), ctx.accountId, { completa, prazoMs: Date.now() + ORCAMENTO_MS });
       if (r.ok) {
         console.log(
           `[asaas] sincronização manual da conta ${ctx.accountId}: ${r.clientesListados} clientes listados, ${r.cobrancasGravadas} cobranças, ${r.reconciliadas} reconciliadas, ${r.ligados} ligados, ${r.fichasCriadas} fichas criadas, ${r.adiadas} adiadas`,

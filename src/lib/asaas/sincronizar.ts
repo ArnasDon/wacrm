@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 
 import { aplicarCobranca, aplicarCobrancas } from "./aplicar";
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
-import { criarFichaDoAsaas } from "./criar-ficha";
+import { criarFichaDoAsaas, type ContextoDaFicha } from "./criar-ficha";
 import { inteiro, lerCliente, lerCobranca, type ClienteDoAsaas, type CobrancaDoAsaas } from "./leitura";
 import {
   decidir,
@@ -411,6 +411,8 @@ async function vincular(
 
   const [fichas, calendly, conexoes] = await Promise.all([lerFichas(admin, accountId), lerEmailsDoCalendly(admin, accountId), lerTelefonesDasConexoes(admin, accountId)]);
   const idx: IndicesDoVinculo = montarIndices(fichas, calendly, conexoes, clientes.filter((c) => c.contact_id !== null));
+  // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
+  const contextoDaFicha: ContextoDaFicha = {};
 
   const registrarLigado = (c: LinhaDeCliente, contactId: string) => {
     if (c.cpf_cnpj && !idx.contatoPorDocumento.has(c.cpf_cnpj)) idx.contatoPorDocumento.set(c.cpf_cnpj, contactId);
@@ -449,7 +451,7 @@ async function vincular(
       contagem.adiadas++;
       continue;
     }
-    const ficha = await criarFichaDoAsaas(admin, accountId, { nome: c.nome, telefone: decisao.telefone });
+    const ficha = await criarFichaDoAsaas(admin, accountId, { nome: c.nome, telefone: decisao.telefone }, contextoDaFicha);
     if (!ficha.ok) {
       if (ficha.codigo === "sufixo") await gravarCandidatos(c, [{ contact_id: ficha.candidatoId, motivo: "sufixo" }]);
       else console.warn(`[asaas] ficha do cliente ${c.asaas_customer_id} não criada: ${ficha.codigo}`);

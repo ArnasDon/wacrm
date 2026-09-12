@@ -40,6 +40,17 @@ import { variantesDoNonoDigito } from "@/lib/contacts/telefone";
 
 export const ETIQUETA_DA_FICHA = "asaas";
 
+/**
+ * O que o ciclo resolve UMA vez e reaproveita em cada ficha: o dono da conta
+ * e o id da etiqueta `asaas`. Medido no primeiro ciclo real (12/09/2026):
+ * sem o cache eram cinco idas ao banco por ficha (~1,4 s cada), e 231 das
+ * 264 fichas não couberam no prazo de um ciclo.
+ */
+export interface ContextoDaFicha {
+  dono?: string | null;
+  tagId?: string | null;
+}
+
 export type ResultadoDaFicha =
   | { ok: true; contactId: string; criou: boolean }
   /** o sufixo bate com OUTRO número: vai para "Para confirmar" com o candidato */
@@ -58,12 +69,14 @@ async function donoDaConta(admin: SupabaseClient, accountId: string): Promise<st
   return typeof data?.owner_user_id === "string" ? data.owner_user_id : null;
 }
 
-async function etiquetar(admin: SupabaseClient, accountId: string, dono: string, contactId: string): Promise<void> {
+async function etiquetar(admin: SupabaseClient, accountId: string, dono: string, contactId: string, contexto: ContextoDaFicha): Promise<void> {
   try {
-    const { tagIdByKey } = await resolveImportTagIds(admin, { accountId, userId: dono, tagNames: [ETIQUETA_DA_FICHA], canCreateTags: true });
-    const tagId = tagIdByKey.get(ETIQUETA_DA_FICHA);
-    if (!tagId) return;
-    await admin.from("contact_tags").upsert({ contact_id: contactId, tag_id: tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+    if (contexto.tagId === undefined) {
+      const { tagIdByKey } = await resolveImportTagIds(admin, { accountId, userId: dono, tagNames: [ETIQUETA_DA_FICHA], canCreateTags: true });
+      contexto.tagId = tagIdByKey.get(ETIQUETA_DA_FICHA) ?? null;
+    }
+    if (!contexto.tagId) return;
+    await admin.from("contact_tags").upsert({ contact_id: contactId, tag_id: contexto.tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
   } catch (e) {
     console.warn(`[asaas] etiqueta na ficha ${contactId} falhou:`, e instanceof Error ? e.message : e);
   }
@@ -73,6 +86,7 @@ export async function criarFichaDoAsaas(
   admin: SupabaseClient,
   accountId: string,
   cliente: { nome: string; telefone: string },
+  contexto: ContextoDaFicha = {},
 ): Promise<ResultadoDaFicha> {
   const busca = await findExistingContact(admin, accountId, cliente.telefone);
   // ⚠️ Erro de banco NÃO é "não achei": criar agora duplicaria a ficha.
@@ -83,7 +97,8 @@ export async function criarFichaDoAsaas(
       : { ok: false, codigo: "sufixo", candidatoId: busca.contato.id };
   }
 
-  const dono = await donoDaConta(admin, accountId);
+  if (contexto.dono === undefined) contexto.dono = await donoDaConta(admin, accountId);
+  const dono = contexto.dono;
   if (!dono) return { ok: false, codigo: "sem_dono" };
 
   const nome = cliente.nome.trim() || cliente.telefone;
@@ -104,6 +119,6 @@ export async function criarFichaDoAsaas(
   }
 
   const contactId = criado.id as string;
-  await etiquetar(admin, accountId, dono, contactId);
+  await etiquetar(admin, accountId, dono, contactId, contexto);
   return { ok: true, contactId, criou: true };
 }

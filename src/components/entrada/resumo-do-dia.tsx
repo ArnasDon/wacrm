@@ -426,6 +426,13 @@ function Novidades({
   // eles estiverem fora do perfil, "Nada de novo" seria dito sobre uma
   // menção mais antiga que ficou de fora. É a armadilha "lista vazia
   // virando afirmação", aqui com a lista cheia e o recorte esvaziando-a.
+  //
+  // ⚠️ E o truncado diz "PELO MENOS N" (≥), nunca "mais de N" (>): o
+  // `truncada` prova que ALGUM aviso ficou de fora, não que ficou de fora
+  // um aviso DESTE tipo. Com 3 menções na janela e só tarefas no que foi
+  // cortado, "mais de 3 menções" seria falso — são exatamente 3 (Codex,
+  // PR #200). As chaves da fila e das conversas dizem "mais de" porque lá
+  // o número exibido É o teto, e aí a desigualdade estrita é verdadeira.
   if (total === 0) {
     return (
       <>

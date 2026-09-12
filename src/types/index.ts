@@ -434,15 +434,15 @@ export interface Conversation {
    */
   aguardando_desde?: string | null;
   /**
-   * A janela de 24h da Meta (migration 991): quando chegou a última mensagem
-   * do CLIENTE pela API oficial, e por qual número. Mantidas por gatilho, só
-   * avançam. A lista lê pela régua de `src/lib/inbox/selo-da-janela.ts`.
-   * `janela_meta_canal_id` nulo com a data preenchida = mensagem da Meta sem
-   * carimbo (histórico, carimbo que falhou, conexão apagada): conta para
-   * qualquer número oficial de saída, como no fio.
+   * A janela de 24h da Meta POR NÚMERO (migration 993): mapa id-da-conexão →
+   * instante ISO da última mensagem do CLIENTE por aquele número oficial,
+   * mais a chave `sem_carimbo` (a mensagem da Meta sem carimbo: histórico,
+   * carimbo que falhou, conexão apagada — conta para qualquer número oficial,
+   * como no fio). Mantido por gatilho; cada chave só avança. `{}` = o cliente
+   * nunca escreveu pelo oficial. A lista lê pela régua de
+   * `src/lib/inbox/selo-da-janela.ts`.
    */
-  janela_meta_desde?: string | null;
-  janela_meta_canal_id?: string | null;
+  janela_meta?: Record<string, string> | null;
 }
 
 // ============================================================

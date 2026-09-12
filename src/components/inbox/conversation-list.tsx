@@ -1121,8 +1121,8 @@ function ConversationItem({
 
   // O selo da janela de 24h da Meta (991): só a ampulheta, que expande no
   // hover com o que resta. A régua é pura (`src/lib/inbox/selo-da-janela.ts`)
-  // e ESPELHA a do fio; o fato vem do banco (`janela_meta_desde`, gatilho da
-  // 991). Cor por tempo restante, decisão do operador (10/09/2026): padrão de
+  // e ESPELHA a do fio; o fato vem do banco (`janela_meta`, o mapa por número
+  // da 993). Cor por tempo restante, decisão do operador (10/09/2026): padrão de
   // 24h a 12h, âmbar de 12h a 3h, vermelha abaixo de 3h. Fora das Encerradas;
   // só WhatsApp oficial.
   const selo = seloDaJanela(conversation, canalDeSaidaDaLinha, agora);

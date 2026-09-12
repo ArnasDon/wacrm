@@ -1283,10 +1283,11 @@ referência" Chatguru).** Quatro mudanças pequenas com um motivo cada:
   é comparada contra a prop do render atual (`de === conversationId`) — a
   armadilha do efeito passivo, de novo.
 
-⚠️ **Selo da janela de 24h na lista (991, 12/09/2026): a ampulheta lê o
-BANCO, e o banco espelha o fio.** `conversations.janela_meta_desde` +
-`janela_meta_canal_id` (gatilho na 991), `src/lib/inbox/selo-da-janela.ts`
-(puro, testado) e a ampulheta em `conversation-list.tsx`. Decisões do
+⚠️ **Selo da janela de 24h na lista (991/993, 12/09/2026): a ampulheta lê o
+BANCO, e o banco espelha o fio.** `conversations.janela_meta` (993: mapa
+número → instante, mais a chave `sem_carimbo`; gatilho em `messages` e a
+dobra na exclusão de conexão), `src/lib/inbox/selo-da-janela.ts` (puro,
+testado) e a ampulheta em `conversation-list.tsx`. Decisões do
 operador (10/09/2026): só a ampulheta, expandindo no hover; cor padrão de
 24h a 12h, âmbar de 12h a 3h, vermelha abaixo de 3h; fora das Encerradas; só
 WhatsApp oficial (não Instagram); sem filtro "janela aberta". O que morde
@@ -1294,22 +1295,25 @@ código novo:
 
 - ⚠️⚠️ **O gatilho é ESPELHO de `contaParaOCanal` (`janela-24h.ts`), e há
   teste lendo o SQL.** Mensagem do CLIENTE carimbada com conexão `meta`
-  avança as duas colunas; SEM carimbo, só se o id for `wamid.` — aí
-  `janela_meta_canal_id` fica NULO ("número oficial, qual não se sabe") e
-  conta para qualquer número oficial de saída, como no fio. Mensagem pelo QR
-  Code ou pelo Instagram não toca nas colunas. Mudou a regra num lado, muda
-  no outro: `selo-da-janela.test.ts` compara o `restante` da lista com o
-  `minutosRestantes` do fio sobre a mesma mensagem — com UM número oficial
-  de saída. ⚠️ **Duas divergências ESCRITAS, as duas para o lado sem selo:**
-  conta SEM canal nenhum (o fio conta o fio inteiro; a lista cala, porque não
-  sabe por qual número responde) e DOIS números oficiais na mesma conta (o
-  banco guarda UM par por conversa — a mensagem oficial mais recente, de
-  qualquer número — e o fio conta por número: cliente que escreveu aos dois
-  com a conversa FIXADA no mais antigo tem o fio "aberta" e a lista sem
-  ampulheta). A segunda foi aceita em 12/09/2026 porque a conta tem um
-  oficial; o conserto, se um segundo for conectado, é guardar a janela POR
-  número (mapa canal→instante). Há teste pinando a divergência, para ninguém
-  a "consertar" de um lado só.
+  avança a chave DO NÚMERO; SEM carimbo, só se o id for `wamid.` — aí entra
+  na chave `sem_carimbo` ("número oficial, qual não se sabe"), que conta
+  para qualquer número oficial de saída, como no fio. Mensagem pelo QR Code
+  ou pelo Instagram não toca no mapa. Para o número de saída, a lista fica
+  com a mais recente entre a chave dele e a `sem_carimbo` — a "última
+  mensagem do cliente que conta para este número" do fio. Mudou a regra num
+  lado, muda no outro: `selo-da-janela.test.ts` compara o `restante` da
+  lista com o `minutosRestantes` do fio sobre as mesmas mensagens, inclusive
+  com DOIS oficiais. ⚠️ A 991 guardava UM par por conversa (a mensagem
+  oficial mais recente, de qualquer número) e DIVERGIA do fio com dois
+  oficiais + conversa fixada no mais antigo (achado da revisão e do Codex no
+  PR #194) — a 993 trocou o par pelo mapa no mesmo dia. ⚠️ **UMA divergência
+  ESCRITA, para o lado sem selo:** a conta SEM canal nenhum (o fio conta o
+  fio inteiro; a lista cala, porque não sabe por qual número responde).
+- ⚠️ **Conexão oficial APAGADA: a chave dela é DOBRADA em `sem_carimbo`**
+  (gatilho AFTER DELETE em `cb_channels`, ficando a mais recente das duas).
+  É o espelho do `ON DELETE SET NULL` da 902 nas mensagens: o fio passa a
+  contá-las como sem carimbo, e sem a dobra a lista esconderia a janela que
+  o fio mostra. Conexão por QR Code ou Instagram apagada não mexe no mapa.
 - ⚠️ **Só AVANÇA, e mensagem apagada continua contando.** A janela da Meta
   abre com o que o cliente MANDOU; "apagar para todos" não a fecha do lado
   da Meta, e o fio também não olha `deleted_at`. Replay do webhook com
@@ -4225,8 +4229,24 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     migrations`, o mesmo endpoint do `apply_migration` do conector, que
     registra no histórico), com o access token digitado pelo operador num
     `read` silencioso no terminal dele — a CLI 2.75 não tem comando de SQL e
-    guarda o token codificado no Keychain. Conferida pelo preview contra a
-    produção (a ampulheta apareceu), não por consulta.
+    guarda o token codificado no Keychain. Conferida por consulta REST feita
+    pelo navegador logado do preview (1 conversa carimbada; nenhuma dentro
+    das 24h). ⚠️ SUBSTITUÍDA pela 993 no mesmo dia: as duas colunas foram
+    REMOVIDAS. Não "corrigir" o app para lê-las de volta.
+  - **993_cb_janela_da_meta_por_numero** — `conversations.janela_meta jsonb`
+    (mapa número → instante + `sem_carimbo`), a função do gatilho da 991
+    reescrita para gravar na chave do número, o gatilho de dobra na exclusão
+    de conexão oficial, acervo refeito de `messages` e a remoção das colunas
+    da 991. Corrige a divergência lista×fio com dois números oficiais
+    (revisão + Codex no PR #194). Aditiva para o app anterior (lê `select *`,
+    degrada sem ampulheta) — aplicada ANTES do merge, como as outras. ⚠️
+    NASCEU como `992` e COLIDIU com a `992_cb_asaas_config`, que OUTRA
+    sessão aplicou em produção no mesmo dia (histórico `20260912144829`)
+    antes de o arquivo dela chegar a qualquer branch remota — o QUINTO caso
+    de duas branches em paralelo (906, 963, 966, 989). Pego pela conferência
+    de deriva por consulta ao histórico, feita ANTES de aplicar; renumerado o
+    arquivo que ainda não estava aplicado (este). `ls` sozinho não pegaria:
+    a 992 do Asaas não existia em branch nenhuma — só no banco.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

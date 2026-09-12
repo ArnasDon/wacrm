@@ -29,7 +29,7 @@ export async function GET() {
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from("cb_asaas_config")
-      .select("chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, last_error, created_at")
+      .select("chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error, created_at")
       .eq("account_id", ctx.accountId)
       .maybeSingle();
     if (error) return NextResponse.json({ error: "Não foi possível ler a integração." }, { status: 500 });

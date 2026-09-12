@@ -45,10 +45,10 @@
 | **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 💤 | `9xx_cb_asaas_regua` | — |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
-- **Número das migrations:** a última hoje é a **994** (o espelho do Asaas,
-  aplicada em 12/09 à noite e registrada como `20260912225955`; a 993 é a
-  janela da Meta por número, de outra branch, e a 992 é a config do Asaas,
-  `20260912144829`).
+- **Número das migrations:** a última hoje é a **995** (o cadeado do ciclo e
+  a etiqueta pendente, `20260912234246`; a 994 é o espelho, `20260912225955`;
+  a 993 é a janela da Meta por número, de outra branch; a 992 é a config do
+  Asaas, `20260912144829`).
   ⚠️ Ela nasceu 991 e colidiu com a `991_cb_janela_da_meta_na_conversa`, de
   outra branch, aplicada primeiro em 12/09 — a quinta colisão do projeto. Conferir
   `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de
@@ -1485,6 +1485,13 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 - `supabase/migrations/994_cb_asaas_espelho.sql` — `cb_asaas_clientes` e
   `cb_asaas_cobrancas` (§3.2), com a forma ajustada pelos números da Fase 0.
   As duas entraram em `rls-da-config-do-asaas.test.ts`.
+- `supabase/migrations/995_cb_asaas_ciclo_e_etiqueta.sql` — as duas colunas
+  que a revisão do PR #201 pediu: `cb_asaas_config.sincronizando_desde` (o
+  CADEADO do ciclo, no molde do Calendly: `UPDATE … RETURNING` cercado,
+  recolhimento em 10 min, posse nas escritas de fim de ciclo) e
+  `cb_asaas_clientes.etiqueta_pendente` (a etiqueta `asaas` que não ficou
+  gravada na criação é refeita no ciclo seguinte — SÓ ela, nunca a que uma
+  pessoa tirou).
 - `src/lib/asaas/aplicar.ts` (+ teste com dublê do admin) —
   `aplicarCobranca`, a função única do cron e do webhook.
 - `src/lib/asaas/vinculo.ts` (+ teste) — a decisão de produção (§3.3), com
@@ -2045,6 +2052,7 @@ mudou por causa deles e das regras que ele fixou no mesmo dia:
 | 14 | **D19 (nova): conexão por mensagem e um marco por automação**, com o canal da régua falhando fechado | pedido do operador; o seletor de conexão do passo já existia (903) — o que faltava era a régua não cair no padrão em silêncio |
 | 15 | **D5 ganhou o nome aproximado** como sugestão para os 85 sem telefone | pedido do operador; o nome exato deu zero |
 | 16 | **D20 (nova): interruptor único "Cobrança automática" no cartão**, portão de cima das automações da régua | pedido do operador: "tem de ser uma funcionalidade que a gente ative e desative" |
+| 19 | **A revisão do PR #201 (Codex, quatro rodadas, e um revisor independente)** — 13 achados aplicados: o CADEADO do ciclo (995) — cron, "Sincronizar" e a primeira sincronização podiam correr juntos e se atropelar na varredura de clientes; o PISO da varredura de "cliente que sumiu" (uma listagem vazia marcaria os 439 como apagados e desarmaria a prova de identidade); a ficha APAGADA pelo administrador não é recriada em origem nenhuma (`criar` só com `vinculo_origem IS NULL`); a etiqueta refeita só quando PENDENTE (flag da 995), nunca a que uma pessoa tirou; sondas de identidade pelos clientes mais recentes com a listagem como prova final; parcelas "em conferência" contadas no cartão; 403 em Parcelamentos para o passo (um pedido por ciclo) e 404 vira sentinela 0; dedupe por chave nos lotes (21000); `statusDesconhecidos` contado no banco e a falha derrubando a leitura; erro do upsert da etiqueta conferido; elegibilidade reconferida antes de criar a ficha, e a ficha que perde a corrida FICA (o `delete` cascatearia a conversa); "Anterior/Próxima" pela página confirmada; a recarga que falha esconde os números e pinta o chip | o revisor independente reproduziu cada cenário contra o código; o Codex fechou a quarta rodada sem achados ("Breezy") |
 | 18 | **Fase 1a-espelho construída e medida (12/09, à noite)**: migration 994 em produção; primeiro ciclo real com 439 clientes, 405 vencidas, 86 ligados pela regra, 32 fichas criadas em 60 s (o resto nos ciclos seguintes), 7 para confirmar, 9 sugestões por nome; três ajustes que a medição pediu — a PROVA DE IDENTIDADE da chave no começo do ciclo (404 de cliente apagado ≠ chave de outra conta), o cache do dono e da etiqueta por ciclo (cinco idas ao banco por ficha) e o orçamento de 90 s na sincronização manual | o desenho previa a recusa da chave de outra conta só ao CONECTAR; no ciclo, o único sinal era o 404 da reconciliação, que também é o de uma cobrança apagada com o cliente junto |
 | 17 | **Revisão final de 12/09 à noite** (seis lentes, 183 achados, ~45 aplicados): restos da pausa e da D10 em seis seções; a conversa que o motor NÃO cria para a ficha da D2 (a varredura cria, e passa canal e conversa no `context`); o CHECK sem `'criada'`; a trava do lembrete numa coluna `integer` (virou `tipo` + `marco`); D18/D20 sem coluna nem arquivo; a reserva de `RateLimit` que a conta não devolve; o remetente real do robô (`automations/meta-send.ts`); a cerca contra o telefone de outra pessoa; dois marcos do mesmo cliente no mesmo dia (`absorvida`); o interruptor reconferido na trava; `vista_vencida_em` contra `regua_ativada_em`; o lembrete em fim de semana; o boleto pago no caixa; `cb_channels` sem `instance_state`; a etiqueta `asaas` na ficha criada; as listas do cartão com estado de carga | o plano tinha sido editado por partes ao longo do dia, e cada parte deixou uma seção vizinha para trás |
 

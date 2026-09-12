@@ -156,6 +156,13 @@ describe("decidir — sugestões e criação", () => {
     expect(decidir(cliente({ celular: "5584900001111", vinculo_origem: "criada" }), indices())).toEqual({ acao: "sem_ficha", candidatos: [] });
   });
 
+  it("origem 'telefone'/'cpf'/'email' com a ficha APAGADA também não recria: a decisão de gente foi tirar", () => {
+    expect(decidir(cliente({ celular: "5584900001111", vinculo_origem: "telefone" }), indices())).toEqual({ acao: "sem_ficha", candidatos: [] });
+    expect(decidir(cliente({ celular: "5584900001111", vinculo_origem: "email" }), indices())).toEqual({ acao: "sem_ficha", candidatos: [] });
+    // e a sugestão por nome também não volta para ela
+    expect(decidir(cliente({ nome: "Maria Aparecida Silva", vinculo_origem: "cpf" }), indices())).toEqual({ acao: "sem_ficha", candidatos: [] });
+  });
+
   it("origem 'criada' ainda liga pelo telefone à ficha sobrevivente (fusão)", () => {
     expect(decidir(cliente({ celular: "5583988745316", vinculo_origem: "criada" }), indices())).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
   });

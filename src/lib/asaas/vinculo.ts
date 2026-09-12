@@ -228,13 +228,18 @@ export function decidir(cliente: ClienteParaVincular, idx: IndicesDoVinculo): De
   const sufixos = semRecusados(porSufixo);
   if (sufixos.size > 0) return { acao: "confirmar", candidatos: [...sufixos].map((contact_id) => ({ contact_id, motivo: "sufixo" })) };
 
-  // D2: com telefone e sem ninguém parecido, a ficha nasce — MENOS quando a
-  // origem já é `criada`: a ficha que o CRM criou foi apagada por decisão de
-  // gente (981), e recriá-la desfaria a decisão. Vai para "Sem ficha".
-  if (telefones.length > 0 && cliente.vinculo_origem !== "criada") return { acao: "criar", telefone: telefones[0] };
+  // D2: com telefone e sem ninguém parecido, a ficha nasce — SÓ quando a
+  // regra nunca ligou este cliente (`vinculo_origem IS NULL`). Origem
+  // `criada`, `telefone`, `cpf` ou `email` com `contact_id` nulo quer dizer
+  // que a ficha ligada foi APAGADA por decisão de gente (981, `ON DELETE SET
+  // NULL`): recriá-la desfaria a decisão, a cada ciclo. Vai para "Sem ficha"
+  // (a tela diz por quê). A regra ainda RELIGA pelo telefone à ficha
+  // sobrevivente de uma fusão — isso é o passo 1, acima.
+  if (telefones.length > 0 && cliente.vinculo_origem === null) return { acao: "criar", telefone: telefones[0] };
 
-  // 5) sem telefone: só o nome aproximado, e só como sugestão
-  const porNome = cliente.vinculo_origem === "criada" ? [] : sugerirPorNome(cliente.nome, idx.fichas.values());
+  // 5) sem telefone: só o nome aproximado, e só como sugestão (não para a
+  // ficha apagada: a decisão de gente foi tirar, não trocar)
+  const porNome = cliente.vinculo_origem === null ? sugerirPorNome(cliente.nome, idx.fichas.values()) : [];
   return {
     acao: "sem_ficha",
     candidatos: porNome.filter((s) => !recusados.has(s.contactId)).map((s) => ({ contact_id: s.contactId, motivo: "nome_aproximado", pontuacao: s.pontuacao })),

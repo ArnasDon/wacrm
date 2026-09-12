@@ -94,13 +94,19 @@ export async function aplicarCobrancas(
   cobrancas: readonly CobrancaDoAsaas[],
   vistoEm: string,
 ): Promise<ResultadoDaAplicacao> {
-  const linhas: LinhaDeCobranca[] = [];
+  // ⚠️ Deduplicada por chave: a listagem do Asaas é paginada por `offset`
+  // sobre um conjunto que muda (o escritório emite cobrança enquanto o ciclo
+  // roda), e a mesma cobrança pode vir em duas páginas. Duas ocorrências no
+  // MESMO lote fazem o Postgres recusar o upsert inteiro (21000, "cannot
+  // affect row a second time"). A última ocorrência vence — é a mais nova.
+  const porChave = new Map<string, LinhaDeCobranca>();
   let descartadas = 0;
   for (const c of cobrancas) {
     const linha = linhaDaCobranca(accountId, c, vistoEm);
-    if (linha) linhas.push(linha);
+    if (linha) porChave.set(linha.asaas_payment_id, linha);
     else descartadas++;
   }
+  const linhas = [...porChave.values()];
   for (let i = 0; i < linhas.length; i += LOTE) {
     const lote = linhas.slice(i, i + LOTE);
     const { error } = await admin.from("cb_asaas_cobrancas").upsert(lote, { onConflict: "account_id,asaas_payment_id" });

@@ -5,7 +5,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 
 import { aplicarCobranca, aplicarCobrancas } from "./aplicar";
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
-import { criarFichaDoAsaas, etiquetar, etiquetarFichasCriadas, type ContextoDaFicha } from "./criar-ficha";
+import { criarFichaDoAsaas, etiquetar, etiquetarPendentes, type ContextoDaFicha, type EtiquetaPendente } from "./criar-ficha";
 import { inteiro, lerCliente, lerCobranca, type ClienteDoAsaas, type CobrancaDoAsaas } from "./leitura";
 import {
   decidir,
@@ -61,6 +61,22 @@ export const FICHAS_POR_CICLO = 150;
 export const PARCELAMENTOS_POR_CICLO = 30;
 /** A partir de que hora local a listagem diária de clientes é devida. */
 export const HORA_DA_LISTAGEM_DIARIA = 3;
+/**
+ * Depois de quanto tempo um ciclo que não terminou é considerado morto e o
+ * cadeado, recolhido. ⚠️ MAIOR que o teto real do ciclo (90 s de orçamento
+ * + o timeout de 20 s de um pedido ao Asaas): recolher um ciclo VIVO faria
+ * dois rodarem juntos — o que o cadeado existe para impedir.
+ */
+export const RECOLHER_CICLO_MS = 10 * 60_000;
+/**
+ * A varredura de "cliente que sumiu da listagem" tem PISO: mais que isto (ou
+ * 20% das linhas vivas) num ciclo só é listagem incompleta, não clientes
+ * apagados — e a varredura é pulada. Uma listagem VAZIA marcaria os 439
+ * como apagados e ainda desarmaria a prova de identidade do ciclo
+ * seguinte (achado da revisão do PR #201).
+ */
+export const SUMICO_MAX_ABSOLUTO = 5;
+export const SUMICO_MAX_FRACAO = 0.2;
 const PRAZO_PADRAO_MS = 60_000;
 const PAGINA_DO_BANCO = 1000;
 const LOTE_DE_IDS = 200;
@@ -119,8 +135,39 @@ async function lerConfig(admin: SupabaseClient, accountId: string): Promise<Conf
   }
 }
 
-async function marcarErro(admin: SupabaseClient, accountId: string, codigo: string): Promise<void> {
-  await admin.from("cb_asaas_config").update({ status: "erro", last_error: codigo, updated_at: new Date().toISOString() }).eq("account_id", accountId);
+/**
+ * Marca o erro. Com `posse` (o carimbo do próprio claim), SOLTA o cadeado —
+ * e só se ainda for nosso: um ciclo recolhido não pode soltar o cadeado
+ * vivo do seguinte. Sem posse (chave ilegível, antes do claim), só o erro.
+ */
+async function marcarErro(admin: SupabaseClient, accountId: string, codigo: string, posse?: string): Promise<void> {
+  const patch: Record<string, unknown> = { status: "erro", last_error: codigo, updated_at: new Date().toISOString() };
+  if (posse) patch.sincronizando_desde = null;
+  let q = admin.from("cb_asaas_config").update(patch).eq("account_id", accountId);
+  if (posse) q = q.eq("sincronizando_desde", posse);
+  await q;
+}
+
+/**
+ * O CADEADO do ciclo (995): reivindica a conta num `UPDATE … RETURNING`
+ * cercado — só quem acha `sincronizando_desde` nulo (ou velho o bastante
+ * para ser recolhido) leva. Cron, "Sincronizar" do cartão e a primeira
+ * sincronização depois de conectar podiam correr juntos, e no deploy
+ * `start-first` há dois processos Node vivos; dois ciclos com `visto_em`
+ * diferentes se atropelam na varredura de clientes. O molde é o claim do
+ * Calendly (980). Carimba `last_sync_attempt_at` na mesma escrita: é o
+ * rodízio do cron.
+ */
+async function reivindicarCiclo(admin: SupabaseClient, accountId: string, vistoEm: string): Promise<"ok" | "em_curso" | "db_error"> {
+  const recolhimento = new Date(Date.now() - RECOLHER_CICLO_MS).toISOString();
+  const { data, error } = await admin
+    .from("cb_asaas_config")
+    .update({ sincronizando_desde: vistoEm, last_sync_attempt_at: vistoEm })
+    .eq("account_id", accountId)
+    .or(`sincronizando_desde.is.null,sincronizando_desde.lt.${recolhimento}`)
+    .select("account_id");
+  if (error) return "db_error";
+  return (data?.length ?? 0) > 0 ? "ok" : "em_curso";
 }
 
 /** Uma listagem paginada do banco, até fechar — o PostgREST corta em 1000 sem avisar. */
@@ -146,9 +193,12 @@ export function listagemDiariaDevida(lastFullSyncAt: string | null, agora: Date,
 
 interface LinhaDeCliente extends ClienteParaVincular {
   id: string;
+  visto_em: string;
+  etiqueta_pendente: boolean;
 }
 
-const COLUNAS_DO_CLIENTE = "id, asaas_customer_id, nome, cpf_cnpj, email, celular, telefone, contact_id, vinculo_origem, contatos_recusados, candidatos, deleted";
+const COLUNAS_DO_CLIENTE =
+  "id, asaas_customer_id, nome, cpf_cnpj, email, celular, telefone, contact_id, vinculo_origem, contatos_recusados, candidatos, deleted, visto_em, etiqueta_pendente";
 
 async function lerClientesDoEspelho(admin: SupabaseClient, accountId: string): Promise<LinhaDeCliente[]> {
   const linhas = await lerTudo<Record<string, unknown>>(
@@ -168,6 +218,8 @@ async function lerClientesDoEspelho(admin: SupabaseClient, accountId: string): P
     contatos_recusados: Array.isArray(l.contatos_recusados) ? (l.contatos_recusados as string[]) : [],
     candidatos: Array.isArray(l.candidatos) ? (l.candidatos as Candidato[]) : [],
     deleted: l.deleted === true,
+    visto_em: (l.visto_em as string | null) ?? "",
+    etiqueta_pendente: l.etiqueta_pendente === true,
   }));
 }
 
@@ -189,19 +241,43 @@ function linhaDoCliente(accountId: string, c: ClienteDoAsaas, vistoEm: string): 
 
 /** Upsert de METADADOS dos clientes — nunca o vínculo. */
 async function gravarClientes(admin: SupabaseClient, accountId: string, clientes: readonly ClienteDoAsaas[], vistoEm: string): Promise<void> {
-  for (let i = 0; i < clientes.length; i += 100) {
-    const lote = clientes.slice(i, i + 100).map((c) => linhaDoCliente(accountId, c, vistoEm));
+  // Deduplicado por id: paginação por `offset` sobre conjunto que muda pode
+  // repetir um cliente, e dois iguais no mesmo lote derrubam o upsert (21000).
+  const unicos = [...new Map(clientes.map((c) => [c.id, c])).values()];
+  for (let i = 0; i < unicos.length; i += 100) {
+    const lote = unicos.slice(i, i + 100).map((c) => linhaDoCliente(accountId, c, vistoEm));
     const { error } = await admin.from("cb_asaas_clientes").upsert(lote, { onConflict: "account_id,asaas_customer_id" });
     if (error) throw new Error(`clientes: ${error.message}`);
   }
 }
 
-/** A listagem completa de clientes: grava todos e marca `deleted` quem não voltou. */
+/**
+ * A listagem completa de clientes: grava todos e marca `deleted` quem não
+ * voltou (C2: o Asaas não lista os apagados) — COM PISO: se "sumiram" mais
+ * que `SUMICO_MAX_ABSOLUTO` ou 20% das linhas vivas, a listagem é que veio
+ * curta; nada é marcado e `last_full_sync_at` NÃO é carimbado, para o
+ * ciclo seguinte relistar. O carimbo leva a cerca de posse do cadeado.
+ */
 async function listarClientes(admin: SupabaseClient, accountId: string, cliente: ClienteAsaas, vistoEm: string): Promise<number> {
   const brutos = await cliente.listarTudo<unknown>("/customers", { limit: 100 });
   const clientes = brutos.map(lerCliente).filter((c): c is ClienteDoAsaas => c !== null);
   await gravarClientes(admin, accountId, clientes, vistoEm);
-  // Quem não voltou na listagem completa (C2: o Asaas não lista os apagados).
+  const contar = (q: ReturnType<typeof admin.from>) => q;
+  const { count: vivos, error: erroVivos } = await contar(admin.from("cb_asaas_clientes"))
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId)
+    .eq("deleted", false);
+  const { count: sumiram, error: erroSumiram } = await contar(admin.from("cb_asaas_clientes"))
+    .select("id", { count: "exact", head: true })
+    .eq("account_id", accountId)
+    .eq("deleted", false)
+    .lt("visto_em", vistoEm);
+  if (erroVivos || erroSumiram) throw new Error(`contagem de clientes: ${(erroVivos ?? erroSumiram)?.message}`);
+  const teto = Math.max(SUMICO_MAX_ABSOLUTO, Math.ceil((vivos ?? 0) * SUMICO_MAX_FRACAO));
+  if ((sumiram ?? 0) > teto) {
+    console.warn(`[asaas] listagem de clientes suspeita (conta ${accountId}): ${clientes.length} listados, ${sumiram} sumiriam de ${vivos} — varredura pulada`);
+    return clientes.length;
+  }
   const { error } = await admin
     .from("cb_asaas_clientes")
     .update({ deleted: true, updated_at: vistoEm })
@@ -209,7 +285,11 @@ async function listarClientes(admin: SupabaseClient, accountId: string, cliente:
     .eq("deleted", false)
     .lt("visto_em", vistoEm);
   if (error) throw new Error(`clientes apagados: ${error.message}`);
-  const { error: erroConfig } = await admin.from("cb_asaas_config").update({ last_full_sync_at: vistoEm }).eq("account_id", accountId);
+  const { error: erroConfig } = await admin
+    .from("cb_asaas_config")
+    .update({ last_full_sync_at: vistoEm })
+    .eq("account_id", accountId)
+    .eq("sincronizando_desde", vistoEm);
   if (erroConfig) throw new Error(`last_full_sync_at: ${erroConfig.message}`);
   return clientes.length;
 }
@@ -328,12 +408,19 @@ async function completarParcelamentos(admin: SupabaseClient, accountId: string, 
     if (Date.now() > prazoMs) return;
     try {
       const bruto = await cliente.obter<{ installmentCount?: unknown }>(`/installments/${id}`);
-      const total = inteiro(bruto?.installmentCount);
-      if (total === null) continue;
+      // 404 (ou corpo sem o total): a SENTINELA 0 grava "não há total" e o
+      // ciclo não insiste no mesmo GET para sempre — a tela mostra "parcela N".
+      const total = inteiro(bruto?.installmentCount) ?? 0;
       await admin.from("cb_asaas_cobrancas").update({ parcela_total: total }).eq("account_id", accountId).eq("parcelamento_id", id);
     } catch (e) {
       // Cota e chave param o ciclo; o resto (um parcelamento estranho) não.
       if (e instanceof AsaasError && (e.codigo === "limite" || e.codigo === "chave_invalida" || e.codigo === "rede")) throw e;
+      // Sem a permissão Parcelamentos na chave, TODOS dariam 403: um pedido
+      // por ciclo basta para saber — e se cura sozinho quando a permissão entrar.
+      if (e instanceof AsaasError && e.codigo === "sem_permissao") {
+        console.warn(`[asaas] a chave não tem a permissão Parcelamentos (conta ${accountId}) — totais das parcelas ficam sem preencher`);
+        return;
+      }
     }
   }
 }
@@ -427,13 +514,14 @@ async function vincular(
   // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
   const contextoDaFicha: ContextoDaFicha = {};
 
-  // A etiqueta que falhou num ciclo anterior (o upsert devolveu erro) é
-  // refeita ANTES de qualquer recorte: as fichas criadas pelo CRM que ainda
-  // não a têm. ⚠️ Fora do `if (elegiveis...)` de propósito — com a
-  // importação terminada ninguém está elegível, e era justamente aí que a
-  // retentativa ficava inalcançável (Codex, PR #201, 2ª rodada).
-  const criadas = clientes.filter((c) => c.vinculo_origem === "criada" && c.contact_id !== null).map((c) => c.contact_id as string);
-  await etiquetarFichasCriadas(admin, accountId, criadas, contextoDaFicha);
+  // A etiqueta que falhou num ciclo anterior (`etiqueta_pendente`, 995) é
+  // refeita ANTES de qualquer recorte. ⚠️ Fora do `if (elegiveis...)` de
+  // propósito — com a importação terminada ninguém está elegível, e era
+  // justamente aí que a retentativa ficava inalcançável (Codex, PR #201).
+  const pendentes: EtiquetaPendente[] = clientes
+    .filter((c) => c.etiqueta_pendente && c.contact_id !== null)
+    .map((c) => ({ linhaId: c.id, contactId: c.contact_id as string }));
+  await etiquetarPendentes(admin, accountId, pendentes, contextoDaFicha);
 
   const elegiveis = clientes.filter((c) => elegivel(c));
   if (elegiveis.length === 0) return contagem;
@@ -501,6 +589,8 @@ async function vincular(
       vinculado_por_nome: null,
       vinculado_em: vistoEm,
       candidatos: [],
+      // a etiqueta que não ficou gravada vira pendência DURÁVEL (995)
+      etiqueta_pendente: ficha.criou && !ficha.etiquetada,
       updated_at: vistoEm,
     });
     if (gravou) {
@@ -543,12 +633,27 @@ export class SyncError extends Error {
   }
 }
 
-/** Com espelho existente, a chave tem de enxergar um cliente conhecido. */
+/**
+ * Com espelho existente, a chave tem de enxergar um cliente conhecido. As
+ * sondas são os clientes vistos mais RECENTEMENTE (vieram da última
+ * listagem — existem), três deles; se nenhum responder, a prova final é a
+ * própria listagem: uma página de `/customers` da chave tem de cruzar com
+ * algum id do espelho. Sondas fixas (o primeiro id da tabela) travariam a
+ * integração para sempre se aqueles dois clientes fossem apagados no
+ * Asaas (achado da revisão do PR #201).
+ */
 async function provarIdentidade(cliente: ClienteAsaas, conhecidos: readonly LinhaDeCliente[]): Promise<void> {
-  const sondas = conhecidos.filter((c) => !c.deleted).slice(0, 2);
-  if (sondas.length === 0) return;
+  const vivos = conhecidos.filter((c) => !c.deleted);
+  if (vivos.length === 0) return;
+  const sondas = [...vivos].sort((a, b) => (a.visto_em < b.visto_em ? 1 : a.visto_em > b.visto_em ? -1 : 0)).slice(0, 3);
   for (const s of sondas) {
     if ((await cliente.obter<unknown>(`/customers/${s.asaas_customer_id}`)) !== null) return;
+  }
+  const ids = new Set(vivos.map((c) => c.asaas_customer_id));
+  const pagina = await cliente.listar<unknown>("/customers", { limit: 100 });
+  for (const bruto of pagina.data) {
+    const lido = lerCliente(bruto);
+    if (lido && ids.has(lido.id)) return;
   }
   throw new SyncError("conta_trocada");
 }
@@ -565,9 +670,11 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
 
   const config = await lerConfig(admin, accountId);
   if (!config.ok) return { ok: false, codigo: config.codigo };
-  // ⚠️ A TENTATIVA é carimbada ANTES de qualquer trabalho, dê certo ou errado:
-  // é por esta coluna que o cron ordena as contas (o rodízio da 988).
-  await admin.from("cb_asaas_config").update({ last_sync_attempt_at: vistoEm }).eq("account_id", accountId);
+  // ⚠️ O CADEADO, que também carimba a TENTATIVA antes de qualquer trabalho
+  // (o rodízio da 988). `em_curso` não é erro: outro processo está no meio
+  // do ciclo — o cron conta como adiada, o cartão mostra "sincronizando".
+  const claim = await reivindicarCiclo(admin, accountId, vistoEm);
+  if (claim !== "ok") return { ok: false, codigo: claim };
   const cliente = (opcoes.cliente ?? criarPadrao)(config.chave, config.ambiente);
 
   const contagem: ContagemDoCiclo = { clientesListados: 0, cobrancasGravadas: 0, reconciliadas: 0, ligados: 0, fichasCriadas: 0, candidatosAtualizados: 0, adiadas: 0 };
@@ -605,7 +712,11 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
       // e o carimbo abaixo mandaria as cobranças dele para "em conferência".
       console.warn(`[asaas] ${semLinha.size} cliente(s) de cobrança vencida sem linha no Asaas (conta ${accountId})`);
     }
-    const { error: erroListagem } = await admin.from("cb_asaas_config").update({ vencidas_listadas_em: vistoEm }).eq("account_id", accountId);
+    const { error: erroListagem } = await admin
+      .from("cb_asaas_config")
+      .update({ vencidas_listadas_em: vistoEm })
+      .eq("account_id", accountId)
+      .eq("sincronizando_desde", vistoEm);
     if (erroListagem) throw new Error(`vencidas_listadas_em: ${erroListagem.message}`);
 
     // 5) reconciliação
@@ -625,17 +736,18 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     contagem.candidatosAtualizados = v.candidatosAtualizados;
     contagem.adiadas += v.adiadas;
 
-    // 8) sucesso
+    // 8) sucesso — e o cadeado é solto, com a cerca de posse
     const { error: erroFim } = await admin
       .from("cb_asaas_config")
-      .update({ status: "conectado", last_sync_at: vistoEm, last_error: null, updated_at: vistoEm })
-      .eq("account_id", accountId);
+      .update({ status: "conectado", last_sync_at: vistoEm, last_error: null, sincronizando_desde: null, updated_at: vistoEm })
+      .eq("account_id", accountId)
+      .eq("sincronizando_desde", vistoEm);
     if (erroFim) throw new Error(`fim do ciclo: ${erroFim.message}`);
     return { ok: true, ...contagem };
   } catch (e) {
     const codigo = e instanceof AsaasError ? e.codigo : e instanceof SyncError ? e.codigo : "db_error";
     console.error(`[asaas] sincronização da conta ${accountId} falhou (${codigo}):`, e instanceof Error ? e.message : e);
-    await marcarErro(admin, accountId, codigo);
+    await marcarErro(admin, accountId, codigo, vistoEm);
     return { ok: false, codigo };
   }
 }

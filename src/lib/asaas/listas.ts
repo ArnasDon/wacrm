@@ -69,6 +69,8 @@ export interface ItemDaLista {
   vinculadoEm: string | null;
   /** origem `criada` sem ficha: a ficha que o CRM criou foi apagada */
   fichaCriadaApagada: boolean;
+  /** origem `telefone`/`cpf`/`email` sem ficha: a ficha ligada pela regra foi apagada — a regra não recria */
+  fichaApagada: boolean;
   /** origem `manual` sem ficha: o contato ligado à mão foi apagado */
   manualOrfao: boolean;
   contato: ContatoNaLista | null;
@@ -99,6 +101,14 @@ export interface ResumoDoEspelho {
   /** parcelas devidas (vencidas + negativadas) vistas na última listagem */
   parcelasVencidas: number;
   valorVencido: number;
+  /**
+   * Devidas que NÃO voltaram na última listagem completa e ainda não foram
+   * relidas ("em conferência", §3.4): fora do total de propósito — podem
+   * ter sido pagas. ⚠️ Enquanto for > 0 o total não é afirmação, e o cartão
+   * diz isso (achado da revisão do PR #201).
+   */
+  parcelasEmConferencia: number;
+  valorEmConferencia: number;
   /** cobranças com status que `classificar` não conhece — o cartão conta */
   statusDesconhecidos: number;
   /** clientes com mais de 3 parcelas vencidas (planejamento futuro, §8) */
@@ -171,6 +181,8 @@ export function montarListas(
     inadimplentesSemFicha: 0,
     parcelasVencidas: 0,
     valorVencido: 0,
+    parcelasEmConferencia: 0,
+    valorEmConferencia: 0,
     statusDesconhecidos: 0,
     comMaisDeTresParcelas: 0,
   };
@@ -205,6 +217,7 @@ export function montarListas(
       vinculadoPorNome: c.vinculado_por_nome,
       vinculadoEm: c.vinculado_em,
       fichaCriadaApagada: c.contact_id === null && c.vinculo_origem === "criada",
+      fichaApagada: c.contact_id === null && (c.vinculo_origem === "telefone" || c.vinculo_origem === "cpf" || c.vinculo_origem === "email"),
       manualOrfao: c.contact_id === null && c.vinculo_origem === "manual",
       contato: contatoNaLista(c.contact_id, fichas),
       candidatos: c.candidatos.map((k) => ({ ...(contatoNaLista(k.contact_id, fichas) as ContatoNaLista), motivo: k.motivo, pontuacao: k.pontuacao ?? null })),
@@ -224,6 +237,10 @@ export function montarListas(
     } else {
       resumo.semFicha++;
       listas.sem_ficha.push(item);
+    }
+    if (divida.emConferencia.length > 0) {
+      resumo.parcelasEmConferencia += divida.emConferencia.length;
+      resumo.valorEmConferencia = Math.round((resumo.valorEmConferencia + divida.emConferencia.reduce((s, p) => s + p.valor, 0)) * 100) / 100;
     }
     if (dividaNaLista) {
       resumo.inadimplentes++;

@@ -29,7 +29,10 @@ import { SettingsChip } from "./settings-chip";
  *
  * ⚠️ Os NÚMEROS do resumo somem enquanto a carga corre ou falha (a regra da
  * tela de agendadas): "Inadimplentes: 0" por um segundo, ou depois de um
- * 500, afirmaria o contrário do que a conta tem.
+ * 500, afirmaria o contrário do que a conta tem. Quando uma RECARGA falha,
+ * a resposta anterior fica em memória (o formulário e os botões continuam
+ * de pé), mas o resumo é ESCONDIDO e o chip vira vermelho — número velho
+ * com cara de número atual é o mesmo erro (achado da revisão do PR #201).
  *
  * Só admin chega aqui (a aba inteira é admin). Nenhuma chave volta da rota;
  * o campo nasce vazio sempre.
@@ -219,7 +222,7 @@ export function AsaasCard() {
   const [variante, rotuloDoChip] =
     cartao === null && !falhou
       ? (["muted", t("chipConferindo")] as const)
-      : falhou && !cartao
+      : falhou
         ? (["err", t("chipErro")] as const)
         : estado === "conectado"
           ? (["ok", t("chipOk")] as const)
@@ -304,11 +307,11 @@ export function AsaasCard() {
                   {cartao.conectadoEm ? ` · ${t("asaas.conectadoEm", { quando: new Date(cartao.conectadoEm).toLocaleDateString(undefined) })}` : ""}
                 </div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => void sincronizar(false)} disabled={sincronizando}>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void sincronizar(false)} disabled={sincronizando || !!cartao.sincronizandoDesde}>
                     <RefreshCw className={cn("size-4", sincronizando && "animate-spin")} />
                     {sincronizando ? t("asaas.sincronizando") : t("asaas.sincronizar")}
                   </Button>
-                  <Button type="button" variant="ghost" size="sm" onClick={() => void sincronizar(true)} disabled={sincronizando} title={t("asaas.sincronizarTudoDica")}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void sincronizar(true)} disabled={sincronizando || !!cartao.sincronizandoDesde} title={t("asaas.sincronizarTudoDica")}>
                     {t("asaas.sincronizarTudo")}
                   </Button>
                   <Button type="button" variant="outline" size="sm" onClick={() => void desconectar(false)} disabled={desconectando}>
@@ -318,6 +321,7 @@ export function AsaasCard() {
               </div>
 
               <p className="text-xs text-muted-foreground">
+                {cartao.sincronizandoDesde ? `${t("asaas.sincronizandoDesde", { quando: quando(cartao.sincronizandoDesde) })} · ` : ""}
                 {cartao.ultimaSync ? t("asaas.ultimaSync", { quando: quando(cartao.ultimaSync) }) : t("asaas.nuncaSincronizado")}
                 {cartao.ultimaTentativa && cartao.ultimaTentativa !== cartao.ultimaSync ? ` · ${t("asaas.ultimaTentativa", { quando: quando(cartao.ultimaTentativa) })}` : ""}
                 {cartao.vencidasListadasEm && !dados?.leituraFresca ? ` · ${t("asaas.leituraAntiga", { quando: quando(cartao.vencidasListadasEm) })}` : ""}
@@ -332,7 +336,8 @@ export function AsaasCard() {
               {cartao.erro && <p className="text-xs text-destructive">{t("falha", { motivo: motivo(cartao.erro) })}</p>}
               {erro && <p className="text-xs text-destructive">{t("falha", { motivo: erro })}</p>}
 
-              {resumo && (
+              {falhou && <p className="text-xs text-destructive">{t("recarregarFalhou")}</p>}
+              {resumo && !falhou && (
                 <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
                   <p className="text-foreground">
                     {t("asaas.resumo.clientes", { n: resumo.clientes })}
@@ -355,6 +360,9 @@ export function AsaasCard() {
                       ? ` (${t("asaas.resumo.inadimplentesDetalhe", { valor: formatCurrency(resumo.valorVencido), parcelas: resumo.parcelasVencidas, semFicha: resumo.inadimplentesSemFicha })})`
                       : ""}
                     {resumo.comMaisDeTresParcelas > 0 ? ` · ${t("asaas.resumo.maisDeTres", { n: resumo.comMaisDeTresParcelas })}` : ""}
+                    {resumo.parcelasEmConferencia > 0 ? (
+                      <span className="text-amber-600 dark:text-amber-400">{` · ${t("asaas.resumo.emConferencia", { n: resumo.parcelasEmConferencia, valor: formatCurrency(resumo.valorEmConferencia) })}`}</span>
+                    ) : ""}
                     {resumo.statusDesconhecidos > 0 ? ` · ${t("asaas.resumo.desconhecidos", { n: resumo.statusDesconhecidos })}` : ""}
                   </p>
                   <div className="mt-2 flex flex-wrap items-center gap-2">

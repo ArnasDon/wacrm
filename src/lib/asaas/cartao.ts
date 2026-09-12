@@ -21,6 +21,7 @@ export const CODIGOS_DO_ASAAS = [
   "chave_ilegivel",
   "nao_conectado",
   "conta_trocada",
+  "em_curso",
 ] as const;
 
 export type CodigoDoAsaas = (typeof CODIGOS_DO_ASAAS)[number];
@@ -41,6 +42,8 @@ export interface ConfigDoAsaas {
   last_sync_attempt_at: string | null;
   vencidas_listadas_em: string | null;
   last_full_sync_at: string | null;
+  /** o cadeado do ciclo (995): preenchido enquanto um ciclo roda */
+  sincronizando_desde?: string | null;
   last_error: string | null;
   created_at: string | null;
 }
@@ -62,6 +65,8 @@ export interface CartaoDoAsaas {
   vencidasListadasEm: string | null;
   /** já houve alguma sincronização (o espelho tem de onde vir)? */
   nuncaSincronizado: boolean;
+  /** um ciclo está rodando agora (o cadeado da 995), desde quando */
+  sincronizandoDesde: string | null;
   /** código do último erro (a tela traduz) */
   erro: string | null;
   conectadoEm: string | null;
@@ -94,6 +99,7 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
       ultimaTentativa: null,
       vencidasListadasEm: null,
       nuncaSincronizado: true,
+      sincronizandoDesde: null,
       erro: null,
       conectadoEm: null,
     };
@@ -108,6 +114,7 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
     ultimaTentativa: config.last_sync_attempt_at ?? null,
     vencidasListadasEm: config.vencidas_listadas_em ?? null,
     nuncaSincronizado: !config.last_sync_at && !config.vencidas_listadas_em,
+    sincronizandoDesde: config.sincronizando_desde ?? null,
     erro: config.status === "erro" ? config.last_error : null,
     conectadoEm: config.created_at,
   };

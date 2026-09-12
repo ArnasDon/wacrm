@@ -110,10 +110,15 @@ export interface ParcelaDoEspelho {
   visto_em: string;
 }
 
-/** "3/12"; "parcela 3" sem o total; a descrição quando a cobrança é avulsa. */
+/**
+ * "3/12"; "parcela 3" sem o total; a descrição quando a cobrança é avulsa.
+ * ⚠️ `parcela_total` 0 é a SENTINELA de "o Asaas não informa o total deste
+ * parcelamento" (404 na leitura) — vale como ausente, e evita que o ciclo
+ * insista no mesmo GET para sempre.
+ */
 export function rotuloDaParcela(p: Pick<ParcelaDoEspelho, "parcela_numero" | "parcela_total" | "descricao">): string {
   if (p.parcela_numero !== null) {
-    return p.parcela_total !== null ? `${p.parcela_numero}/${p.parcela_total}` : `parcela ${p.parcela_numero}`;
+    return p.parcela_total !== null && p.parcela_total > 0 ? `${p.parcela_numero}/${p.parcela_total}` : `parcela ${p.parcela_numero}`;
   }
   const descricao = p.descricao?.trim();
   return descricao && descricao !== "" ? descricao : "cobrança";

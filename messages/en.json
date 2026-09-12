@@ -2789,7 +2789,8 @@
           "db_error": "could not save",
           "chave_ilegivel": "the stored key could not be read — connect again",
           "nao_conectado": "Asaas is not connected",
-          "conta_trocada": "this key belongs to ANOTHER Asaas account — to switch accounts, disconnect deleting the stored data"
+          "conta_trocada": "this key belongs to ANOTHER Asaas account — to switch accounts, disconnect deleting the stored data",
+          "em_curso": "a sync is already running"
         },
         "confirmarApagar": "Disconnect AND delete the Asaas data stored in the CRM ({clientes} customers and {cobrancas} charges)? Links and ignored customers are lost. Contacts that were created stay. Use this to switch Asaas accounts.",
         "desconectarEApagar": "Disconnect and delete the Asaas data",
@@ -2813,7 +2814,8 @@
           "inadimplentes": "{n} overdue",
           "inadimplentesDetalhe": "{valor} in {parcelas} installments; {semFicha} without a CRM contact",
           "maisDeTres": "{n} with more than 3 overdue installments",
-          "desconhecidos": "{n} charges with a status the CRM does not know"
+          "desconhecidos": "{n} charges with a status the CRM does not know",
+          "emConferencia": "{n} installment(s) under review ({valor}) left out of the total — not re-read in Asaas yet"
         },
         "verListas": "Show lists",
         "esconderListas": "Hide lists",
@@ -2880,7 +2882,9 @@
         "parcelasResumo": "{n} installment(s): {rotulos}",
         "totalDesde": "{valor} · since {dia} ({dias} days)",
         "atualizado": "{valor} with interest and fine",
-        "negativada": "reported to credit bureau"
+        "negativada": "reported to credit bureau",
+        "sincronizandoDesde": "syncing since {quando}",
+        "fichaApagada": "The contact that was linked to this customer was deleted. Sync will not create another one: link to a contact or ignore."
       }
     },
     "groups": {

@@ -69,7 +69,8 @@ export async function GET(request: Request) {
       console.log(
         `[asaas] ciclo da conta ${conta.account_id}: ${r.clientesListados} clientes listados, ${r.cobrancasGravadas} cobranças, ${r.reconciliadas} reconciliadas, ${r.ligados} ligados, ${r.fichasCriadas} fichas criadas, ${r.adiadas} adiadas`,
       );
-    } else falhas++;
+    } else if (r.codigo === "em_curso") adiadas++;
+    else falhas++;
   }
   if (ok || falhas || adiadas) {
     console.log(`[asaas] ciclo: ${ok} ok, ${falhas} falha(s), ${adiadas} adiada(s)`);

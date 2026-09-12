@@ -56,6 +56,14 @@ describe("aplicarCobrancas", () => {
     expect(e.escritas.filter((w) => w.op === "upsert")).toHaveLength(3);
   });
 
+  it("a mesma cobrança duas vezes na listagem (paginação por offset) vira UMA linha — a última vence", async () => {
+    const e = estado();
+    const r = await aplicarCobrancas(dubleDoSupabase(e), CONTA, [cobranca({ value: 100 }), cobranca({ value: 120 })], "2026-09-12T10:00:00Z");
+    expect(r.gravadas).toBe(1);
+    expect(e.tabelas.cb_asaas_cobrancas).toHaveLength(1);
+    expect(e.tabelas.cb_asaas_cobrancas[0].valor).toBe(120);
+  });
+
   it("a paga NÃO recebe carimbo", async () => {
     const e = estado();
     await aplicarCobranca(dubleDoSupabase(e), CONTA, cobranca({ status: "RECEIVED" }), "2026-09-12T10:00:00Z");

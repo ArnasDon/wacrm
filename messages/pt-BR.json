@@ -2782,7 +2782,8 @@
           "db_error": "não foi possível gravar",
           "chave_ilegivel": "a chave guardada não pôde ser lida — conecte de novo",
           "nao_conectado": "o Asaas não está conectado",
-          "conta_trocada": "esta chave é de OUTRA conta do Asaas — para trocar de conta, desconecte apagando os dados guardados"
+          "conta_trocada": "esta chave é de OUTRA conta do Asaas — para trocar de conta, desconecte apagando os dados guardados",
+          "em_curso": "já há uma sincronização em curso"
         },
         "confirmarApagar": "Desconectar E apagar os dados do Asaas guardados no CRM ({clientes} clientes e {cobrancas} cobranças)? Os vínculos e os ignorados são perdidos. As fichas de contato criadas ficam. Use isto para trocar de conta do Asaas.",
         "desconectarEApagar": "Desconectar e apagar os dados do Asaas",
@@ -2806,7 +2807,8 @@
           "inadimplentes": "{n} inadimplentes",
           "inadimplentesDetalhe": "{valor} em {parcelas} parcelas; {semFicha} sem ficha no CRM",
           "maisDeTres": "{n} com mais de 3 parcelas vencidas",
-          "desconhecidos": "{n} cobranças com status que o CRM não conhece"
+          "desconhecidos": "{n} cobranças com status que o CRM não conhece",
+          "emConferencia": "{n} parcela(s) em conferência ({valor}) fora do total — ainda não relidas no Asaas"
         },
         "verListas": "Ver as listas",
         "esconderListas": "Esconder as listas",
@@ -2873,7 +2875,9 @@
         "parcelasResumo": "{n} parcela(s): {rotulos}",
         "totalDesde": "{valor} · desde {dia} ({dias} dias)",
         "atualizado": "{valor} com juros e multa",
-        "negativada": "negativada no Serasa"
+        "negativada": "negativada no Serasa",
+        "sincronizandoDesde": "sincronizando desde {quando}",
+        "fichaApagada": "A ficha que estava ligada a este cliente foi apagada. A sincronização não cria outra: vincule a uma ficha ou ignore."
       }
     },
     "groups": {

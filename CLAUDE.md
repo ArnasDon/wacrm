@@ -3468,11 +3468,48 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   disparo); a etiqueta é o que deixa excluí-la. `findExistingContact` é o
   PORTÃO anti-duplicata, não o vínculo: ficha cujo número só bate pelo
   sufixo vai para "Para confirmar".
-- ⚠️ **O ciclo PROVA A IDENTIDADE da chave antes de gravar** (relê até dois
-  `cus_…` conhecidos; 404 nos dois = `conta_trocada`) e `conectarAsaas`
-  faz o mesmo com espelho existente. Sem isso, a chave de outro CNPJ zeraria
-  o aviso de todo mundo no ciclo seguinte. O 404 de UMA cobrança na
-  reconciliação só vira `deleted` com o cliente dela respondendo 200.
+- ⚠️ **O ciclo PROVA A IDENTIDADE da chave antes de gravar** (relê os três
+  `cus_…` vistos mais RECENTEMENTE e, se todos derem 404, cruza uma página
+  de `/customers` com o espelho; nada cruzando = `conta_trocada`) e
+  `conectarAsaas` faz o mesmo com espelho existente. Sem isso, a chave de
+  outro CNPJ zeraria o aviso de todo mundo no ciclo seguinte. Sondas FIXAS
+  (o primeiro id da tabela) travariam a integração para sempre se aqueles
+  clientes fossem apagados no Asaas. O 404 de UMA cobrança na reconciliação
+  só vira `deleted` com o cliente dela respondendo 200.
+- ⚠️⚠️ **O ciclo tem CADEADO (`cb_asaas_config.sincronizando_desde`, 995),
+  no molde do claim do Calendly**: cron, "Sincronizar" do cartão e a
+  primeira sincronização depois de conectar podiam correr JUNTOS (e no
+  deploy `start-first` há dois processos Node vivos) — dois ciclos com
+  `visto_em` diferentes se atropelam na varredura de clientes. Reivindicar é
+  `UPDATE … RETURNING` cercado; recolhimento em 10 min (MAIOR que o teto do
+  ciclo); cerca de posse (`.eq('sincronizando_desde', vistoEm)`) nas
+  escritas de fim de ciclo; `em_curso` não é erro (o cron conta como
+  adiada, o cartão mostra "sincronizando desde").
+- ⚠️⚠️ **A varredura de "cliente que sumiu da listagem" tem PISO**
+  (`SUMICO_MAX_ABSOLUTO` = 5 ou 20% das linhas vivas): acima disso a
+  listagem é que veio curta — nada é marcado `deleted` e
+  `last_full_sync_at` NÃO é carimbado, para o ciclo seguinte relistar. Sem o
+  piso, uma listagem VAZIA (soluço do Asaas) marcaria os 439 como apagados,
+  o cartão diria "0 clientes" e a prova de identidade do ciclo seguinte
+  (que só sonda clientes vivos) ficaria desarmada.
+- ⚠️⚠️ **Ficha APAGADA pelo administrador não é recriada em origem
+  NENHUMA**: `criar` só quando `vinculo_origem IS NULL`. A FK é `ON DELETE
+  SET NULL (contact_id)` e a origem sobrevive — com a guarda só em
+  `criada`, o cliente de origem `telefone` cujo contato foi apagado
+  (inclusive por pedido de exclusão LGPD) ganhava ficha nova 15 minutos
+  depois, para sempre. A regra ainda RELIGA pelo telefone à ficha
+  sobrevivente de uma fusão.
+- ⚠️ **A etiqueta refeita é só a PENDENTE** (`etiqueta_pendente`, gravada
+  quando o upsert de `contact_tags` devolveu `{ error }` — o Supabase NÃO
+  lança). Derivar "faltou etiquetar" da ausência em `contact_tags` devolvia
+  a cada ciclo a etiqueta que uma pessoa tirou de propósito — e ela existe
+  justamente para o operador excluir essas fichas de um disparo.
+- ⚠️ **A ficha que perde a corrida para gente FICA.** Entre a reconferência
+  de elegibilidade e o vínculo cercado cabe um "Ligar"/"Ignorar" do
+  administrador; a primeira versão apagava a ficha recém-criada, e
+  `conversations.contact_id` é CASCADE — uma mensagem do cliente naquela
+  janela iria junto. Fica um contato a mais (com a etiqueta), nunca um a
+  menos; o log diz o que houve.
 - ⚠️ **Sandbox NUNCA neste banco**: o `.env.local` aponta para o MESMO
   projeto Supabase da produção e a config é uma linha por conta — conectar
   o sandbox no preview trocaria a conexão da produção. `ehChaveDeSandbox`
@@ -4382,6 +4419,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     (histórico `20260912225955`), ANTES do merge, dentro do "faça tudo" do
     operador; conferida por consulta (RLS, `anon`/`authenticated` sem SELECT,
     `service_role` com INSERT). Aditiva: nada em produção a lê até o deploy.
+  - **995_cb_asaas_ciclo_e_etiqueta** — `cb_asaas_config.sincronizando_desde`
+    (o CADEADO do ciclo) e `cb_asaas_clientes.etiqueta_pendente` (a etiqueta
+    `asaas` que não ficou gravada na criação), as duas pedidas pela revisão
+    do PR #201. Aplicada em 12/09/2026 à noite pela Management API
+    (histórico `20260912234246`), ANTES do merge; aditiva.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

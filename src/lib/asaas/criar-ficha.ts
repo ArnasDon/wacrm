@@ -97,19 +97,30 @@ export async function etiquetar(admin: SupabaseClient, accountId: string, dono: 
   }
 }
 
+export interface EtiquetaPendente {
+  /** a linha de `cb_asaas_clientes` com `etiqueta_pendente = true` */
+  linhaId: string;
+  contactId: string;
+}
+
 /**
- * As fichas que o CRM criou e ainda estão SEM a etiqueta `asaas` (o upsert
- * falhou naquele ciclo) ganham a etiqueta agora. Duas leituras e um upsert
- * em lote por ciclo — barato, e é o caminho de retentativa que a criação
- * sozinha não tem: a ficha já existe e o ciclo seguinte a vê como ligada.
+ * As fichas que o CRM criou e cuja etiqueta `asaas` NÃO ficou gravada (o
+ * upsert devolveu erro naquele ciclo, e a linha do cliente ficou com
+ * `etiqueta_pendente = true`, 995) ganham a etiqueta agora, num upsert só;
+ * a pendência é limpa no sucesso.
+ *
+ * ⚠️ A pendência é uma FLAG gravada, nunca derivada da ausência em
+ * `contact_tags`: derivada, a retentativa devolvia a cada ciclo a etiqueta
+ * que uma pessoa tirou de propósito — e a etiqueta existe justamente para o
+ * operador excluir essas fichas de um disparo (achado da revisão do PR #201).
  */
-export async function etiquetarFichasCriadas(
+export async function etiquetarPendentes(
   admin: SupabaseClient,
   accountId: string,
-  contactIds: readonly string[],
+  pendentes: readonly EtiquetaPendente[],
   contexto: ContextoDaFicha,
 ): Promise<number> {
-  if (contactIds.length === 0) return 0;
+  if (pendentes.length === 0) return 0;
   if (contexto.dono === undefined) contexto.dono = await donoDaConta(admin, accountId);
   if (!contexto.dono) return 0;
   if (contexto.tagId === undefined) {
@@ -122,26 +133,20 @@ export async function etiquetarFichasCriadas(
   }
   const tagId = contexto.tagId;
   if (!tagId) return 0;
-  const jaTem = new Set<string>();
-  for (let i = 0; i < contactIds.length; i += 200) {
-    const { data, error } = await admin
-      .from("contact_tags")
-      .select("contact_id")
-      .eq("tag_id", tagId)
-      .in("contact_id", contactIds.slice(i, i + 200));
-    if (error) return 0;
-    for (const l of (data ?? []) as { contact_id: string }[]) jaTem.add(l.contact_id);
-  }
-  const faltam = contactIds.filter((id) => !jaTem.has(id));
-  if (faltam.length === 0) return 0;
   const { error } = await admin
     .from("contact_tags")
-    .upsert(faltam.map((contact_id) => ({ contact_id, tag_id: tagId })), { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+    .upsert(pendentes.map((p) => ({ contact_id: p.contactId, tag_id: tagId })), { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
   if (error) {
-    console.warn(`[asaas] reetiquetar ${faltam.length} ficha(s) falhou: ${error.message}`);
+    console.warn(`[asaas] reetiquetar ${pendentes.length} ficha(s) falhou: ${error.message}`);
     return 0;
   }
-  return faltam.length;
+  const { error: erroFlag } = await admin
+    .from("cb_asaas_clientes")
+    .update({ etiqueta_pendente: false })
+    .eq("account_id", accountId)
+    .in("id", pendentes.map((p) => p.linhaId));
+  if (erroFlag) console.warn(`[asaas] limpar etiqueta_pendente falhou: ${erroFlag.message}`);
+  return pendentes.length;
 }
 
 export async function criarFichaDoAsaas(

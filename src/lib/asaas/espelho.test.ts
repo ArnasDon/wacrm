@@ -5,7 +5,7 @@ import { LEITURA_FRESCA_MS, leituraFresca, lerEspelho, lerParcela } from "./espe
 
 describe("leituraFresca", () => {
   const agora = new Date("2026-09-12T15:00:00Z");
-  const base = { status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, last_error: null };
+  const base = { status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, last_error: null };
 
   it("fresca só conectado, sem erro, e com a última listagem completa dentro de duas voltas do laço lento", () => {
     expect(leituraFresca(base, agora)).toBe(true);
@@ -31,7 +31,7 @@ describe("lerEspelho", () => {
   function estado(): EstadoDoDuble {
     return {
       tabelas: {
-        cb_asaas_config: [{ account_id: CONTA, status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, last_error: null }],
+        cb_asaas_config: [{ account_id: CONTA, status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, last_error: null }],
         cb_asaas_clientes: [],
         cb_asaas_cobrancas: [{ id: "p", account_id: CONTA, asaas_payment_id: "pay", asaas_customer_id: "cus", status: "NOVO_STATUS", deleted: false, valor: 1, vencimento: "2026-09-01", visto_em: "2026-09-12T14:50:00Z" }],
         contacts: [],

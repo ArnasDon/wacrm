@@ -4,7 +4,7 @@ import { encrypt } from "@/lib/whatsapp/encryption";
 
 import { AsaasError } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
-import { FICHAS_POR_CICLO, listagemDiariaDevida, sincronizarAsaas } from "./sincronizar";
+import { FICHAS_POR_CICLO, listagemDiariaDevida, RECOLHER_CICLO_MS, sincronizarAsaas } from "./sincronizar";
 
 const CONTA = "conta-1";
 const DONO = "dono-1";
@@ -275,12 +275,12 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(estado.tabelas.cb_asaas_clientes[0]).toMatchObject({ contact_id: null, vinculo_origem: "desvinculado" });
   });
 
-  it("com ninguém elegível, a etiqueta que faltou numa ficha criada ainda é refeita", async () => {
+  it("com ninguém elegível, a etiqueta PENDENTE de uma ficha criada ainda é refeita", async () => {
     const estado = estadoInicial(
       {
         contacts: [{ id: "c-joao", account_id: CONTA, user_id: DONO, name: "João", phone: "5584999990000", email: null }],
         cb_asaas_clientes: [
-          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "João Pedro Souza", cpf_cnpj: "1", celular: "5584999990000", contact_id: "c-joao", vinculo_origem: "criada", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "João Pedro Souza", cpf_cnpj: "1", celular: "5584999990000", contact_id: "c-joao", vinculo_origem: "criada", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z", etiqueta_pendente: true },
         ],
       },
       { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
@@ -290,6 +290,7 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(r).toMatchObject({ ok: true, ligados: 0, fichasCriadas: 0 });
     expect(estado.tabelas.tags.map((t) => t.name)).toEqual(["asaas"]);
     expect(estado.tabelas.contact_tags).toEqual([expect.objectContaining({ contact_id: "c-joao" })]);
+    expect(estado.tabelas.cb_asaas_clientes[0].etiqueta_pendente).toBe(false);
   });
 
   it("ficha criada que perde a corrida para gente FICA — nunca é apagada pelo ciclo", async () => {
@@ -363,6 +364,159 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(estado.tabelas.contacts).toHaveLength(1);
     expect(upsertsDeEtiqueta).toBe(2);
     expect(estado.tabelas.contact_tags).toEqual([expect.objectContaining({ contact_id: estado.tabelas.contacts[0].id })]);
+  });
+
+  it("o CADEADO: com um ciclo em curso, o segundo volta `em_curso` sem tocar em nada; recolhido depois de 10 min", async () => {
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    const emCurso = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - 60_000).toISOString() });
+    const { resultado, registro } = rodar(emCurso, respostas);
+    expect(await resultado).toEqual({ ok: false, codigo: "em_curso" });
+    expect(registro.pedidos).toHaveLength(0);
+    expect(emCurso.tabelas.cb_asaas_config[0].status).toBe("conectado");
+    // cadeado velho (processo morto) é recolhido
+    const morto = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - RECOLHER_CICLO_MS - 1000).toISOString() });
+    const r = await rodar(morto, respostas).resultado;
+    expect(r).toMatchObject({ ok: true });
+    expect(morto.tabelas.cb_asaas_config[0].sincronizando_desde).toBeNull();
+  });
+
+  it("o cadeado é solto no erro também", async () => {
+    const estado = estadoInicial();
+    const respostas: RespostasDoAsaas = { listas: {}, recursos: {}, erro: new AsaasError("limite", "429") };
+    await rodar(estado, respostas).resultado;
+    expect(estado.tabelas.cb_asaas_config[0]).toMatchObject({ status: "erro", last_error: "limite", sincronizando_desde: null });
+  });
+
+  it("listagem de clientes VAZIA (ou curta) não marca ninguém como apagado nem carimba a listagem diária", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: Array.from({ length: 10 }, (_, i) => ({ id: `l-${i}`, account_id: CONTA, asaas_customer_id: `cus_${i}`, nome: `Cliente ${i}`, contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-13T06:00:00Z" })),
+      },
+      { last_full_sync_at: "2026-09-13T06:00:00Z", vencidas_listadas_em: "2026-09-13T06:00:00Z" },
+    );
+    const respostas: RespostasDoAsaas = {
+      listas: { "/customers": [], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] },
+      recursos: { "/customers/cus_0": clienteAsaas("cus_0", "Cliente 0") },
+    };
+    const r = await rodar(estado, respostas).resultado;
+    expect(r).toMatchObject({ ok: true, clientesListados: 0 });
+    expect(estado.tabelas.cb_asaas_clientes.filter((c) => c.deleted)).toHaveLength(0);
+    expect(estado.tabelas.cb_asaas_config[0].last_full_sync_at).toBe("2026-09-13T06:00:00Z");
+    // uma sumida entre dez é aceitável: só ela vira apagada
+    const respostas2: RespostasDoAsaas = {
+      listas: { "/customers": Array.from({ length: 9 }, (_, i) => clienteAsaas(`cus_${i}`, `Cliente ${i}`)), [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] },
+      recursos: { "/customers/cus_0": clienteAsaas("cus_0", "Cliente 0") },
+    };
+    const estado2 = estadoInicial(
+      {
+        cb_asaas_clientes: Array.from({ length: 10 }, (_, i) => ({ id: `l-${i}`, account_id: CONTA, asaas_customer_id: `cus_${i}`, nome: `Cliente ${i}`, contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-13T06:00:00Z" })),
+      },
+      { last_full_sync_at: "2026-09-13T06:00:00Z", vencidas_listadas_em: "2026-09-13T06:00:00Z" },
+    );
+    await rodar(estado2, respostas2).resultado;
+    expect(estado2.tabelas.cb_asaas_clientes.filter((c) => c.deleted).map((c) => c.asaas_customer_id)).toEqual(["cus_9"]);
+    expect(estado2.tabelas.cb_asaas_config[0].last_full_sync_at).toBe(AGORA.toISOString());
+  });
+
+  it("a prova de identidade usa os clientes mais recentes e, se todos derem 404, a listagem da chave", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [
+          { id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "A", contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-13T06:00:00Z" },
+          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "B", contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-12T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    // os dois clientes apagados no Asaas (404), mas a listagem da chave traz cus_A: é a mesma conta
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    const { resultado, registro } = rodar(estado, respostas);
+    expect(await resultado).toMatchObject({ ok: true });
+    expect(registro.pedidos.slice(0, 3)).toEqual(["/customers/cus_A", "/customers/cus_B", "/customers"]);
+    // e a mesma situação com uma listagem de OUTRA conta é conta_trocada
+    const estado2 = estadoInicial({ cb_asaas_clientes: [...estado.tabelas.cb_asaas_clientes] }, { last_full_sync_at: "2026-09-14T06:00:00Z" });
+    const r2 = await rodar(estado2, { listas: { "/customers": [clienteAsaas("cus_X", "X")] }, recursos: {} }).resultado;
+    expect(r2).toEqual({ ok: false, codigo: "conta_trocada" });
+  });
+
+  it("sem a permissão Parcelamentos, o passo dos totais para no PRIMEIRO 403; parcelamento sem total (404) ganha a sentinela 0", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [{ id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "A", contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-14T06:00:00Z" }],
+        cb_asaas_cobrancas: [
+          { id: "p1", account_id: CONTA, asaas_payment_id: "pay_1", asaas_customer_id: "cus_A", status: "OVERDUE", deleted: false, valor: 1, vencimento: "2026-09-01", parcelamento_id: "ins_1", parcela_numero: 1, parcela_total: null, visto_em: "2026-09-14T06:00:00Z" },
+          { id: "p2", account_id: CONTA, asaas_payment_id: "pay_2", asaas_customer_id: "cus_A", status: "OVERDUE", deleted: false, valor: 1, vencimento: "2026-09-01", parcelamento_id: "ins_2", parcela_numero: 1, parcela_total: null, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const base: RespostasDoAsaas = {
+      listas: { [LISTA_VENCIDAS]: [cobranca("pay_1", "cus_A", { installment: "ins_1", installmentNumber: 1 }), cobranca("pay_2", "cus_A", { installment: "ins_2", installmentNumber: 1 })], [LISTA_VENCE_HOJE]: [] },
+      recursos: { "/customers/cus_A": clienteAsaas("cus_A", "A") },
+    };
+    // 404 no primeiro parcelamento → sentinela; o segundo traz o total
+    const r = await rodar(estado, { ...base, recursos: { ...base.recursos, "/installments/ins_2": { installmentCount: 6 } } }).resultado;
+    expect(r).toMatchObject({ ok: true });
+    const totais = Object.fromEntries(estado.tabelas.cb_asaas_cobrancas.map((c) => [c.asaas_payment_id, c.parcela_total]));
+    expect(totais).toEqual({ pay_1: 0, pay_2: 6 });
+    // 403 → um pedido só, e o ciclo segue ok
+    const estado2 = estadoInicial(
+      { cb_asaas_clientes: [...estado.tabelas.cb_asaas_clientes], cb_asaas_cobrancas: estado.tabelas.cb_asaas_cobrancas.map((c) => ({ ...c, parcela_total: null })) },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const registro: PedidosAoAsaas = { pedidos: [] };
+    const asaas = dubleDoAsaas(base, registro);
+    const obter = asaas.obter.bind(asaas);
+    asaas.obter = async (caminho: string) => {
+      if (caminho.startsWith("/installments/")) {
+        registro.pedidos.push(caminho);
+        throw new AsaasError("sem_permissao", "403", "insufficient_permission", 403);
+      }
+      return obter(caminho);
+    };
+    const r2 = await sincronizarAsaas(dubleDoSupabase(estado2), CONTA, { agora: AGORA, cliente: () => asaas });
+    expect(r2).toMatchObject({ ok: true });
+    expect(registro.pedidos.filter((p) => p.startsWith("/installments/"))).toHaveLength(1);
+    expect(estado2.tabelas.cb_asaas_cobrancas.every((c) => c.parcela_total === null)).toBe(true);
+  });
+
+  it("a etiqueta que falha na criação vira `etiqueta_pendente` e é refeita no ciclo seguinte — só ela", async () => {
+    const estado = estadoInicial({
+      contacts: [{ id: "c-tirou", account_id: CONTA, user_id: DONO, name: "Tirou", phone: "5584999990009", email: null }],
+      cb_asaas_clientes: [
+        // ficha criada antes cuja etiqueta a PESSOA tirou: não é pendência, não volta
+        { id: "l-t", account_id: CONTA, asaas_customer_id: "cus_T", nome: "Tirou", cpf_cnpj: "9", celular: "5584999990009", contact_id: "c-tirou", vinculo_origem: "criada", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-13T06:00:00Z", etiqueta_pendente: false },
+      ],
+    });
+    const respostas: RespostasDoAsaas = {
+      listas: { "/customers": [clienteAsaas("cus_T", "Tirou", { mobilePhone: "84999990009" }), clienteAsaas("cus_N", "Novo Cliente", { mobilePhone: "84999990010" })], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] },
+      recursos: {},
+    };
+    const admin = dubleDoSupabase(estado);
+    const original = admin.from.bind(admin);
+    let upserts = 0;
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = original(t) as unknown as Record<string, unknown> & { upsert: (...a: unknown[]) => unknown };
+      if (t === "contact_tags") {
+        const upsert = q.upsert;
+        q.upsert = (...a: unknown[]) => {
+          // o primeiro upsert (a criação) falha; os seguintes passam
+          if (++upserts === 1) return { then: (r: (x: unknown) => unknown) => r({ data: null, error: { message: "boom" } }) };
+          return upsert.apply(q, a);
+        };
+      }
+      return q;
+    };
+    const r1 = await sincronizarAsaas(admin, CONTA, { agora: AGORA, cliente: () => dubleDoAsaas(respostas) });
+    expect(r1).toMatchObject({ ok: true, fichasCriadas: 1 });
+    const novo = estado.tabelas.cb_asaas_clientes.find((c) => c.asaas_customer_id === "cus_N")!;
+    expect(novo).toMatchObject({ vinculo_origem: "criada", etiqueta_pendente: true });
+    expect(estado.tabelas.contact_tags).toHaveLength(0);
+    // ciclo seguinte: só a pendente ganha a etiqueta; a do "Tirou" continua sem
+    const r2 = await sincronizarAsaas(admin, CONTA, { agora: new Date(AGORA.getTime() + 15 * 60_000), cliente: () => dubleDoAsaas(respostas) });
+    expect(r2).toMatchObject({ ok: true });
+    expect(estado.tabelas.contact_tags.map((t) => t.contact_id)).toEqual([novo.contact_id]);
+    expect(estado.tabelas.cb_asaas_clientes.find((c) => c.asaas_customer_id === "cus_N")!.etiqueta_pendente).toBe(false);
   });
 
   it("chave ilegível marca o erro e não chama o Asaas", async () => {

@@ -102,6 +102,7 @@ describe('cartaoDoAsaas', () => {
     last_sync_attempt_at: null,
     vencidas_listadas_em: null,
     last_full_sync_at: null,
+    sincronizando_desde: null,
     last_error: null,
     created_at: '2026-09-12T10:00:00Z',
   }
@@ -135,6 +136,11 @@ describe('cartaoDoAsaas', () => {
     expect(cartaoDoAsaas({ ...base, last_sync_attempt_at: '2026-09-12T11:00:00Z' }).nuncaSincronizado).toBe(true)
     expect(cartaoDoAsaas({ ...base, vencidas_listadas_em: '2026-09-12T11:00:00Z' }).nuncaSincronizado).toBe(false)
     expect(cartaoDoAsaas(null).nuncaSincronizado).toBe(true)
+  })
+
+  it('o cadeado do ciclo (995) aparece como "sincronizando desde"', () => {
+    expect(cartaoDoAsaas(base).sincronizandoDesde).toBeNull()
+    expect(cartaoDoAsaas({ ...base, sincronizando_desde: '2026-09-12T11:00:00Z' }).sincronizandoDesde).toBe('2026-09-12T11:00:00Z')
   })
 
   it('conta os dias até a validade que o operador digitou', () => {

@@ -233,8 +233,9 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
                     </p>
                   )}
                   {item.fichaCriadaApagada && <p className="text-amber-600 dark:text-amber-400">{t("asaas.fichaCriadaApagada")}</p>}
+                  {item.fichaApagada && <p className="text-amber-600 dark:text-amber-400">{t("asaas.fichaApagada")}</p>}
                   {item.manualOrfao && <p className="text-amber-600 dark:text-amber-400">{t("asaas.manualOrfao")}</p>}
-                  {item.situacao === "sem_ficha" && !item.telefone && !item.fichaCriadaApagada && (
+                  {item.situacao === "sem_ficha" && !item.telefone && !item.fichaCriadaApagada && !item.fichaApagada && (
                     <p className="text-muted-foreground">{t("asaas.semTelefoneNoAsaas")}</p>
                   )}
 
@@ -289,11 +290,14 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
 
       {pag && pag.total > 0 && !carregando && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-          <Button type="button" size="sm" variant="ghost" disabled={pag.pagina <= 1} onClick={() => setPagina((p) => Math.max(1, p - 1))}>
+          {/* Navega a partir da página CONFIRMADA pela rota (ela clampa quando a
+              lista encolhe depois de um "Ligar"), nunca do estado local — senão
+              o primeiro clique em "Anterior" não fazia nada. */}
+          <Button type="button" size="sm" variant="ghost" disabled={pag.pagina <= 1} onClick={() => setPagina(Math.max(1, pag.pagina - 1))}>
             {t("asaas.anterior")}
           </Button>
           <span>{t("asaas.paginacao", { pagina: pag.pagina, paginas: pag.paginas, total: pag.total })}</span>
-          <Button type="button" size="sm" variant="ghost" disabled={pag.pagina >= pag.paginas} onClick={() => setPagina((p) => p + 1)}>
+          <Button type="button" size="sm" variant="ghost" disabled={pag.pagina >= pag.paginas} onClick={() => setPagina(pag.pagina + 1)}>
             {t("asaas.proxima")}
           </Button>
         </div>

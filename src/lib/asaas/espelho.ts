@@ -24,6 +24,7 @@ export interface ConfigDoEspelho {
   last_sync_attempt_at: string | null;
   vencidas_listadas_em: string | null;
   last_full_sync_at: string | null;
+  sincronizando_desde: string | null;
   last_error: string | null;
 }
 
@@ -78,7 +79,7 @@ export function lerParcela(l: Record<string, unknown>): ParcelaDoEspelho {
 export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: string): Promise<ConfigDoEspelho | null> {
   const { data, error } = await admin
     .from("cb_asaas_config")
-    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, last_error")
+    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error")
     .eq("account_id", accountId)
     .maybeSingle();
   if (error) throw new Error(`config: ${error.message}`);

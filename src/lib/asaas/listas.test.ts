@@ -135,10 +135,16 @@ describe("montarListas", () => {
     expect(listas.confirmar[0]).toMatchObject({ id: "l2", fichaCriadaApagada: false, manualOrfao: true });
   });
 
-  it("parcela que não voltou na última listagem fica fora da dívida", () => {
-    const listas = montarListas([cliente({ contact_id: "c-maria", vinculo_origem: "telefone" })], [parcela({ visto_em: "2026-09-11T10:00:00Z" })], fichas, AGORA, LISTAGEM);
+  it("parcela que não voltou na última listagem fica fora da dívida — e CONTADA como 'em conferência'", () => {
+    const listas = montarListas([cliente({ contact_id: "c-maria", vinculo_origem: "telefone" })], [parcela({ visto_em: "2026-09-11T10:00:00Z", valor: 350 })], fichas, AGORA, LISTAGEM);
     expect(listas.resumo.inadimplentes).toBe(0);
     expect(listas.ligados[0].divida).toBeNull();
+    expect(listas.resumo).toMatchObject({ parcelasEmConferencia: 1, valorEmConferencia: 350 });
+  });
+
+  it("a ficha apagada de origem telefone/cpf/email ganha a marca `fichaApagada` e vai para 'Sem ficha'", () => {
+    const listas = montarListas([cliente({ id: "l1", vinculo_origem: "telefone" })], [], fichas, AGORA, LISTAGEM);
+    expect(listas.sem_ficha[0]).toMatchObject({ id: "l1", fichaApagada: true, fichaCriadaApagada: false });
   });
 });
 

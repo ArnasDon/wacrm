@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { criarFichaDoAsaas, ETIQUETA_DA_FICHA, etiquetarFichasCriadas, mesmoNumero } from "./criar-ficha";
+import { criarFichaDoAsaas, ETIQUETA_DA_FICHA, etiquetarPendentes, mesmoNumero } from "./criar-ficha";
 import { dubleDoSupabase, type EstadoDoDuble } from "./duble.test-helper";
 
 const CONTA = "conta-1";
@@ -85,19 +85,23 @@ describe("criarFichaDoAsaas", () => {
     expect(e.tabelas.contacts).toHaveLength(1);
   });
 
-  it("etiquetarFichasCriadas põe a etiqueta só em quem não a tem, num upsert só", async () => {
+  it("etiquetarPendentes põe a etiqueta nas PENDENTES (a flag gravada) e limpa a pendência — nunca varre pela ausência", async () => {
     const e = estado([
       { id: "c1", account_id: CONTA, user_id: DONO, phone: "5584999990001", name: "A" },
       { id: "c2", account_id: CONTA, user_id: DONO, phone: "5584999990002", name: "B" },
     ]);
+    e.tabelas.cb_asaas_clientes = [
+      { id: "l1", account_id: CONTA, asaas_customer_id: "cus_1", contact_id: "c1", vinculo_origem: "criada", etiqueta_pendente: true },
+      // c2: a pessoa TIROU a etiqueta de propósito — sem pendência, fica sem
+      { id: "l2", account_id: CONTA, asaas_customer_id: "cus_2", contact_id: "c2", vinculo_origem: "criada", etiqueta_pendente: false },
+    ];
     const admin = dubleDoSupabase(e);
     const contexto = {};
-    await criarFichaDoAsaas(admin, CONTA, { nome: "C", telefone: "5584999990003" }, contexto);
-    const c3 = e.tabelas.contacts[2].id as string;
-    const n = await etiquetarFichasCriadas(admin, CONTA, ["c1", "c2", c3], contexto);
-    expect(n).toBe(2);
-    expect(e.tabelas.contact_tags.map((t) => t.contact_id).sort()).toEqual(["c1", "c2", c3].sort());
-    expect(await etiquetarFichasCriadas(admin, CONTA, ["c1", "c2", c3], contexto)).toBe(0);
+    const n = await etiquetarPendentes(admin, CONTA, [{ linhaId: "l1", contactId: "c1" }], contexto);
+    expect(n).toBe(1);
+    expect(e.tabelas.contact_tags.map((t) => t.contact_id)).toEqual(["c1"]);
+    expect(e.tabelas.cb_asaas_clientes[0].etiqueta_pendente).toBe(false);
+    expect(await etiquetarPendentes(admin, CONTA, [], contexto)).toBe(0);
   });
 
   it("corrida: o índice único recusa o insert e a ficha vencedora é reaproveitada", async () => {

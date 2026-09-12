@@ -3881,14 +3881,82 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   produção — as reuniões vivem no Calendly. Código para tabela vazia é código
   para futuro hipotético; entra quando a agenda for usada ou quando o
   Calendly gravar nela.
-- **`/meu-dia` (F3, 12/09/2026) é a MESMA tela em `modo="pagina"`**, FORA do
-  catálogo de perfis (`telaDoCaminho` devolve null; o filtro do menu e a
-  guarda do shell deixam passar) — uma tela nova no catálogo nasceria
-  invisível para todo perfil já gravado. Não vira tela de chegada (D15).
-  Está em `protectedPaths` e no `pageTitles`; o pino
+- **`/meu-dia` está FORA do catálogo de perfis** (`telaDoCaminho` devolve
+  null; o filtro do menu e a guarda do shell deixam passar) — uma tela nova
+  no catálogo nasceria invisível para todo perfil já gravado. Não vira tela
+  de chegada (D15). Está em `protectedPaths` e no `pageTitles`; o pino
   `src/components/layout/rotulo-do-menu.test.ts` cobra `Sidebar.<labelKey>`
   e `Header.<título>` nos dois dicionários (chave montada, fora do alcance
   do portão do CI).
+
+⚠️ **A ABA `/meu-dia` é uma ÁREA DE TRABALHO, não o cartão da entrada em
+outro tamanho (F5, 12/09/2026).** `src/lib/meu-dia/{correcoes,negocios}.ts`
+(puros, com teste), `src/hooks/use-area-de-trabalho.ts`,
+`src/components/meu-dia/{blocos-pessoais,blocos-de-operacao}.tsx`, a rota
+`/api/cb/meu-dia/pendencias` e o namespace `MeuDia`. Até aqui a aba montava
+o MESMO componente em `modo="pagina"`, e o operador devolveu: "parece só uma
+miniatura idêntica da que aparece no modal". Hoje são sete blocos num grid;
+o cartão da entrada ficou com os números e UM botão que leva à aba. O que
+morde código novo:
+
+- ⚠️⚠️ **"Tudo em ordem" é uma AFIRMAÇÃO, e exige TODAS as fontes
+  respondidas.** `resumirCorrecoes` tem um estado PRÓPRIO para zero-com-falha
+  (`incompleto`), distinto de `limpo`: o bloco existe para avisar que algo
+  quebrou, e um selo verde sobre consulta que falhou faz a pessoa fechar a
+  aba tranquila enquanto a mensagem do cliente não saiu. Fonte AUSENTE do
+  mapa conta como "carregando", nunca como zero — senão a aba nasce verde e
+  vai escurecendo, e o primeiro quadro é o que a pessoa olha.
+- ⚠️⚠️ **`deals.assigned_to` guarda `profiles.id`, NÃO `auth.users.id`** — a
+  exceção à regra do Meu dia (`cb_tasks`, `conversations` e `notifications`
+  guardam o id do LOGIN). `user.id` ali devolve ZERO linhas sem erro nenhum:
+  quem tem trinta cards abertos vê o bloco vazio e conclui que não tem
+  negócio. Por isso `PedidoDaArea` carrega `profileId` separado de `userId`,
+  e o bloco ESPERA em vez de afirmar zero enquanto o perfil não resolve.
+- ⚠️⚠️ **`automation_logs.status` NÃO responde "falhou?"** — ele nasce
+  `'failed'` no INSERT, antes do primeiro passo (985). O bloco filtra por
+  `desfecho = 'falhou'` com `finalizado_em` no dia; por `status` ele pintaria
+  de vermelho toda automação que apenas COMEÇOU, inclusive as paradas num
+  "Aguardar".
+- ⚠️⚠️ **Agendada `failed` e `entrega_incerta` são contadas SEPARADAS e
+  DISJUNTAS.** A incerta vem sempre junto de `failed` (926), então somar as
+  duas cruas conta a mesma linha duas vezes — e a separação não é estética:
+  são ações opostas. Reenviar o que falhou é seguro; reenviar o incerto manda
+  a mesma mensagem duas vezes ao cliente.
+- ⚠️⚠️ **"Mensagens enviadas hoje" é número DO ESCRITÓRIO, e isso não é
+  preguiça.** A régua de resposta humana é `sender_id` OU `from_device`, e o
+  celular pareado grava `from_device` com `sender_id` NULO — 948 contra 8,
+  medido. Não há autor a quem creditar a maior parte do trabalho real;
+  creditar por pessoa mostraria um dia quase vazio a quem trabalhou o dia
+  inteiro. Pela mesma família: **não existe `cb_tasks.concluida_por`** (o
+  rótulo é "tarefas SUAS concluídas", nunca "que você concluiu") e **não
+  existe carimbo de quem encerrou conversa nem quando** (`closed_at`/
+  `closed_by` não existem, `updated_at` é tocado por qualquer UPDATE e
+  encerrar ZERA `assigned_agent_id`) — por isso não há bloco de conversas
+  encerradas, e qualquer número desses seria inventado.
+- ⚠️ **Ganho do dia sai de `cb_lead_events` (`to_status='won'`), do
+  ESCRITÓRIO**: ganho carimbado por automação ou pelo gatilho da etapa (950)
+  tem `actor_user_id` NULO, então "ganhos por mim" subcontaria em silêncio
+  justamente quando a operação funciona. E o ganho é nomeado pelo CONTATO:
+  `cb_lead_events.deal_id` não tem FK (912), então o PostgREST não embute
+  `deals`.
+- ⚠️ **`cb_calendly_eventos` e `cb_webhook_eventos` são fechadas ao
+  navegador** — do cliente devolvem 0 linhas com `error: null`, bloco
+  zerado com cara de resposta certa. Vêm pela rota
+  `/api/cb/meu-dia/pendencias`, que é de QUALQUER membro porque devolve
+  CONTAGENS (as rotas de log dessas tabelas são de admin porque devolvem o
+  registro inteiro: telefone, respostas do formulário, payload do Typebot).
+  Erro lá vira 500, nunca `{}` com zeros.
+- ⚠️ **`messages` não tem `account_id`** — a conta entra pelo embed
+  `conversations!inner`, senão a contagem é de todas as contas de que a
+  pessoa é membro.
+- ⚠️ **O recorte por conexão vai NA CONSULTA em `cb_scheduled_messages`**
+  (a linha carrega o próprio `channel_id`, fixado no agendamento) e em JS
+  nas conversas. Em `deals` o recorte é por FUNIL (`funilNoEscopo`), em JS.
+  Conexão fora do ar também é recortada pelo perfil: o aviso que não é seu
+  é o que ensina a ignorar o bloco.
+- ⚠️ **Chave de i18n LITERAL por fonte de correção**, nunca
+  uma chave montada com o nome da fonte: chave montada escapa do portão do CI, que só as
+  CONTA. É a lição de `Settings.sections.webhooks` aparecendo cru na tela.
 
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e

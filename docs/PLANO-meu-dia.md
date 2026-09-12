@@ -744,3 +744,97 @@ Dois achados P2, aplicados no PR seguinte (`fix/meu-dia-teto-das-consultas`):
 3. **O fundo da tela de entrada é o app real, desfocado** (pedido do operador). O filho da porta virou uma função: com a entrada pendente, o shell desenha o layout SEM a página e SEM o `PresenceHeartbeat`, dentro de um `div inert aria-hidden`, e o cartão vem num overlay com `backdrop-blur`.
 
 **Próxima fase (F5), decidida pelo operador em 12/09/2026:** a aba `/meu-dia` deixa de ser o mesmo cartão e vira uma ÁREA DE TRABALHO, com seis blocos — novidades, tarefas, clientes esperando, **o que precisa ser corrigido** (agendadas com falha, automações que falharam, Calendly e webhooks não processados, conexões fora do ar, agendador parado), **o que você fez hoje** (conversas respondidas, tarefas concluídas, negócios ganhos, mensagens enviadas), **meus negócios no funil** e **agenda/reuniões**. Escopo misto: blocos pessoais e blocos de operação do escritório, cada um dizendo de quem é o número. O cartão da entrada fica ENXUTO, com um botão "abrir Meu dia" no lugar dos links soltos.
+
+---
+
+## 17. Registro da F5 — a aba `/meu-dia` como área de trabalho (12/09/2026)
+
+**Decisões do operador (AskUserQuestion):** os quatro blocos novos; escopo
+MISTO (o que é seu + o que é do escritório, cada bloco dizendo de quem é o
+número); cartão da entrada ENXUTO, com um botão que leva à aba.
+
+### O que a medição do repositório mudou no desenho
+
+Um levantamento de fontes de dados achou quatro coisas que o pedido supunha
+existir e não existem. Nenhuma se resolve com esforço — são dados que o banco
+não guarda:
+
+1. **Não existe carimbo de quem encerrou a conversa, nem quando.**
+   `conversations` não tem `closed_at`/`closed_by`; `updated_at` é tocado por
+   qualquer UPDATE; encerrar ainda ZERA `assigned_agent_id`; `cb_lead_events`
+   só cobre negócio e etiqueta. → "conversas que encerrei hoje" saiu do bloco.
+2. **97% das mensagens da equipe não têm autor.** A régua da casa é
+   `sender_id` OU `from_device`, e o celular pareado grava `from_device` com
+   `sender_id` NULO — 948 contra 8, medido em produção. → "mensagens
+   enviadas" é número DO ESCRITÓRIO, marcado como tal; por pessoa seria um
+   dia de trabalho quase vazio para quem trabalhou o dia inteiro.
+3. **A agendada sai com o `sender_id` de quem a criou dias antes** — excluí-la
+   exigiria a consulta de `cb_scheduled_messages.message_id` em fatias, cara
+   para uma tela de entrada. Mais uma razão para o número ser do escritório.
+4. **`cb_tasks` não tem `concluida_por`**, e criador e admin também dão baixa.
+   → o rótulo é "tarefas SUAS concluídas hoje", nunca "que você concluiu".
+
+Mais duas que mudaram a implementação:
+
+5. **`deals.assigned_to` guarda `profiles.id`**, não `auth.users.id` — ao
+   contrário de `cb_tasks`/`conversations`/`notifications`, que o Meu dia
+   filtra por `user.id`. O id errado devolve ZERO sem erro nenhum.
+6. **`cb_calendly_eventos` e `cb_webhook_eventos` são fechadas ao navegador**
+   (`REVOKE ALL FROM authenticated`, RLS ligada, zero policies): do cliente
+   devolvem 0 linhas com `error: null` — bloco permanentemente zerado com
+   cara de resposta certa. → rota nova, service-role, só contagens.
+
+### Os sete blocos
+
+| # | bloco | de quem | fonte |
+|---|---|---|---|
+| 1 | Novidades | seu | `notifications` (o mesmo hook do cartão) |
+| 2 | Tarefas | seu | `cb_tasks` |
+| 3 | Clientes esperando | seu + fila do escritório | `conversations` |
+| 4 | O que precisa ser corrigido | escritório | seis fontes |
+| 5 | O dia até agora | misto, linha a linha | mensagens, tarefas, ganhos |
+| 6 | Negócios no funil | seu + sem responsável | `deals` |
+| 7 | Agenda e reuniões | seu + escritório | `cb_meetings` + Calendly |
+
+**As seis fontes do bloco 4**, na ordem de gravidade: agendador parado (com
+ele, NADA dispara — e as outras cinco passam a contar consequências dele),
+conexões fora do ar, agendadas que falharam, agendadas com entrega incerta,
+automações que falharam hoje, entradas de Calendly/webhook que não viraram
+atendimento. O Radar ficou de fora: a tela dele já resgata a análise `failed`
+com o botão de reanalisar, e repetir aqui não acrescenta ação nenhuma.
+
+**Por que "O dia até agora" e não "O que você fez hoje":** pelos itens 2–4
+acima, o que o banco sabe atribuir a uma pessoa é pouco. As três linhas
+aparecem com a marca de quem é o número.
+
+**O que ficou de fora do bloco 6:** "parado há N dias numa etapa". A resposta
+exige a RPC de trajetórias, que pagina até 25 vezes — caro demais para uma
+tela que abre a cada entrada.
+
+### Regras que valem para a aba inteira
+
+- **"Tudo em ordem" é uma AFIRMAÇÃO**, e só pode ser feita com TODAS as
+  fontes respondidas. `resumirCorrecoes` tem um estado próprio para isso —
+  `incompleto` —, distinto de `limpo`: um selo verde sobre uma consulta que
+  falhou faz a pessoa fechar a aba tranquila enquanto a mensagem do cliente
+  não saiu.
+- **A LENTE** (`acesso`), nunca o contexto real: a aba vive dentro do app.
+- **Nenhum número exato sai de lista com teto**; quase tudo aqui é
+  `count: 'exact', head: true`, e o `error` é conferido ANTES do `count`.
+- Todo bloco que aponta para tela fora do perfil mostra o número SEM link.
+
+### O que foi construído
+
+- `src/lib/meu-dia/correcoes.ts` (+ teste, 10 casos) — a régua do bloco 4
+- `src/lib/meu-dia/negocios.ts` (+ teste, 9 casos) — recorte por funil e
+  agrupamento por etapa
+- `src/hooks/use-area-de-trabalho.ts` — os blocos 4–7
+- `src/app/api/cb/meu-dia/pendencias/route.ts` — as contagens fechadas ao
+  navegador, para QUALQUER membro (as rotas de log dessas tabelas são de
+  admin porque devolvem o registro inteiro; aqui saem contagens)
+- `src/components/meu-dia/blocos-pessoais.tsx` — os renderers de lista, que
+  saíram do cartão da entrada
+- `src/components/meu-dia/blocos-de-operacao.tsx` — os quatro blocos novos
+- `src/app/(dashboard)/meu-dia/page.tsx` — reescrita, grid de 6 colunas
+- `src/components/entrada/resumo-do-dia.tsx` — cartão enxuto, com o botão
+- namespace `MeuDia` nos dois dicionários (33 chaves)

@@ -1,7 +1,13 @@
 'use client';
 
 // ============================================================
-// A tela do Meu dia: o que está com a pessoa hoje, antes de o app abrir.
+// O cartão da ENTRADA: o que está com a pessoa hoje, antes de o app abrir.
+//
+// ⚠️ Ele é ENXUTO de propósito (F5, pedido do operador em 12/09): números do
+// dia e UM caminho para a frente — o botão que abre a aba /meu-dia, que é
+// onde se trabalha. Antes, o cartão listava tarefas e conversas com link em
+// cada item, e a aba era uma cópia dele; agora as listas vivem em
+// `components/meu-dia/blocos-pessoais.tsx`, montadas pela aba.
 //
 // Só APRESENTA. Os números vêm de `useResumoDoDia`, a regra de "aparece ou
 // não" mora na porta (`porta-de-entrada.tsx`) e as contagens em
@@ -9,50 +15,27 @@
 // carregando (traço), falhou (aviso) ou pronto — nunca "0" sem resposta, e a
 // falha de um bloco NÃO apaga o que o vizinho já carregou.
 //
-// ⚠️ Todo link CONFIRMA antes de navegar (`onContinuar` no clique): a porta
-// fica acima da página roteada, então navegar sem confirmar trocaria a URL e
-// deixaria a tela do resumo na frente da conversa que a pessoa pediu.
+// ⚠️ O botão "Abrir Meu dia" CONFIRMA antes de navegar (`onContinuar` no
+// clique), como qualquer link daqui: a porta fica acima da página roteada,
+// então navegar sem confirmar trocaria a URL e deixaria esta tela na frente
+// da aba que a pessoa pediu.
 //
-// ⚠️ Tela fora do perfil (D8 do plano): o número aparece SEM link, com o
-// aviso. Esconder o bloco calaria uma obrigação atribuída à pessoa. O item
-// é gateado pela tela para onde ELE leva (a ficha do cliente), não pela tela
-// do bloco — um perfil com Tarefas e sem Contatos cairia na TelaBloqueada.
-//
-// ⚠️ O relógio da tela (saudação, data, "venceu há N dias") é o instante da
-// DECISÃO da porta, passado por prop — não o das consultas, que só existe
-// depois de a primeira responder (a saudação diria "boa tarde" às 8h com a
-// rede lenta).
+// ⚠️ O relógio da tela (saudação, data) é o instante da DECISÃO da porta,
+// passado por prop — não o das consultas, que só existe depois de a primeira
+// responder (a saudação diria "boa tarde" às 8h com a rede lenta).
 // ============================================================
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import {
-  AtSign,
-  ListTodo,
-  LogOut,
-  MessageCircle,
-  UserPlus,
-} from 'lucide-react';
+import { LogOut, Sunrise } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Button } from '@/components/ui/button';
-import {
-  useResumoDoDia,
-  type Bloco,
-  type Conversas as DadosDeConversas,
-  type Fila,
-  type Novidades as DadosDeNovidades,
-  type TarefaDoResumo,
-  type Tarefas as DadosDeTarefas,
-} from '@/hooks/use-resumo-do-dia';
-import { nomeDoContato } from '@/lib/contacts/identidade';
-import type { Atraso } from '@/lib/inbox/atraso';
-import { urlDoInbox } from '@/lib/inbox/url';
+import { Novidades } from '@/components/meu-dia/blocos-pessoais';
+import { useResumoDoDia } from '@/hooks/use-resumo-do-dia';
 import { podeVerTela } from '@/lib/perfis/visibilidade';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
-import { limitar, type ConversaEsperando } from '@/lib/resumo-do-dia/contagens';
-import { dataParaExibir, diaLocal, horaParaExibir } from '@/lib/tasks/prazo';
 import { cn } from '@/lib/utils';
 
 /** Quanto tempo o botão espera pelas consultas antes de liberar de qualquer jeito. */
@@ -76,14 +59,6 @@ interface Props {
   onContinuar: () => void;
   /** Sai deste aparelho; devolve a mensagem de erro, ou null com sucesso. */
   onSair: () => Promise<string | null>;
-  /**
-   * `entrada` (padrão): tela cheia no lugar do app, com "Continuar" e "Sair".
-   * `pagina`: a rota /meu-dia, dentro do shell, com "Atualizar" no lugar.
-   */
-  modo?: 'entrada' | 'pagina';
-  /** Muda para consultar de novo (o "Atualizar"). */
-  versao?: number;
-  onAtualizar?: () => void;
 }
 
 export function ResumoDoDia({
@@ -96,14 +71,12 @@ export function ResumoDoDia({
   temConfirmacaoAnterior,
   onContinuar,
   onSair,
-  modo = 'entrada',
-  versao,
-  onAtualizar,
 }: Props) {
   const t = useTranslations('ResumoDoDia');
   // O erro do "Sair" é UMA chave, compartilhada com o "Sair" do menu (use-auth).
   const tShell = useTranslations('DashboardShell');
-  const resumo = useResumoDoDia({ userId, accountId, ctx, desdeMs, versao });
+  const router = useRouter();
+  const resumo = useResumoDoDia({ userId, accountId, ctx, desdeMs });
 
   // O botão espera as consultas — senão "Continuar" sobre zeros de carga
   // afirmaria "nada pendente" — mas não para sempre: sem rede, a pessoa
@@ -125,9 +98,8 @@ export function ResumoDoDia({
   // leitor de tela continuam "na página anterior", que já não existe.
   const cartaoRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    // Só na entrada: na página, roubar o foco a cada navegação seria ruído.
-    if (modo === 'entrada') cartaoRef.current?.focus();
-  }, [modo]);
+    cartaoRef.current?.focus();
+  }, []);
 
   const [saindo, setSaindo] = useState(false);
   const sair = async () => {
@@ -139,9 +111,6 @@ export function ResumoDoDia({
     }
   };
 
-  const veTarefas = podeVerTela(ctx, 'tarefas');
-  const veContatos = podeVerTela(ctx, 'contacts');
-  const veInbox = podeVerTela(ctx, 'inbox');
   const veNotificacoes = podeVerTela(ctx, 'notifications');
 
   const agora = new Date(agoraMs);
@@ -166,17 +135,19 @@ export function ResumoDoDia({
       : { weekday: 'short', hour: '2-digit', minute: '2-digit' }
   );
 
+  // A aba é a MESMA tela protegida do menu; ela não está no catálogo de
+  // perfis (`telaDoCaminho` devolve null), então não há gate a consultar.
+  const abrirMeuDia = () => {
+    onContinuar();
+    router.push('/meu-dia');
+  };
+
   return (
     <div className="w-full">
       <div
         ref={cartaoRef}
         tabIndex={-1}
-        className={cn(
-          'border-border bg-card mx-auto w-full max-w-lg rounded-xl border p-5 outline-none sm:p-6',
-          // Na entrada o cartão flutua sobre o app desfocado: sombra forte
-          // para ele se descolar do fundo, em vez do `shadow-sm` da página.
-          modo === 'entrada' ? 'shadow-xl' : 'shadow-sm'
-        )}
+        className="border-border bg-card mx-auto w-full max-w-lg rounded-xl border p-5 shadow-xl outline-none sm:p-6"
       >
         <p className="text-muted-foreground text-xs">
           {agora.toLocaleDateString(undefined, {
@@ -188,9 +159,7 @@ export function ResumoDoDia({
         <h1 className="text-foreground mt-1 text-xl font-semibold">
           {saudacao}
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">
-          {modo === 'pagina' ? t('introPage') : t('intro')}
-        </p>
+        <p className="text-muted-foreground mt-1 text-sm">{t('intro')}</p>
 
         {/* ---------------- Novidades ---------------- */}
         <section className="mt-5">
@@ -201,17 +170,18 @@ export function ResumoDoDia({
             bloco={resumo.novidades}
             veNotificacoes={veNotificacoes}
             onContinuar={onContinuar}
+            comLink={false}
           />
         </section>
 
-        {/* ---------------- Tarefas ---------------- */}
-        <section className="border-border mt-5 border-t pt-4">
-          <Cabecalho
-            icone={<ListTodo className="size-4" aria-hidden />}
-            titulo={t('tasksTitle')}
-            direita={
+        {/* ---------------- Os números do dia ---------------- */}
+        <dl className="border-border mt-5 space-y-2 border-t pt-4 text-sm">
+          <Linha
+            rotulo={t('tasksTitle')}
+            estado={resumo.tarefas}
+            valor={
               resumo.tarefas.status === 'pronto' ? (
-                <span className="text-sm">
+                <>
                   <span
                     className={cn(
                       resumo.tarefas.dados.totais.vencidas > 0 &&
@@ -224,38 +194,29 @@ export function ResumoDoDia({
                   </span>
                   {' · '}
                   {t('tasksToday', { count: resumo.tarefas.dados.totais.hoje })}
-                </span>
+                </>
               ) : null
             }
           />
-          <Tarefas
-            bloco={resumo.tarefas}
-            hoje={diaLocal(agora)}
-            veTarefas={veTarefas}
-            veContatos={veContatos}
-            onContinuar={onContinuar}
-          />
-        </section>
-
-        {/* ---------------- Conversas ---------------- */}
-        <section className="border-border mt-5 border-t pt-4">
-          <Cabecalho
-            icone={<MessageCircle className="size-4" aria-hidden />}
-            titulo={t('conversationsTitle')}
-            direita={
-              // Cada metade com o PRÓPRIO estado: a fila falhando não apaga
-              // o "3 seus" que já carregou.
+          {/* Cada metade com o PRÓPRIO estado: a fila falhando não apaga o
+              "3 seus" que já carregou. */}
+          <Linha
+            rotulo={t('conversationsTitle')}
+            estado={
+              resumo.conversas.status === 'pronto'
+                ? resumo.conversas
+                : resumo.fila
+            }
+            valor={
               resumo.conversas.status === 'pronto' ||
               resumo.fila.status === 'pronto' ? (
-                <span className="text-sm">
+                <>
                   {resumo.conversas.status === 'pronto' &&
                     t(
                       resumo.conversas.dados.truncadaEsperando
                         ? 'waitingYoursAtLeast'
                         : 'waitingYours',
-                      {
-                        count: resumo.conversas.dados.esperando.length,
-                      }
+                      { count: resumo.conversas.dados.esperando.length }
                     )}
                   {resumo.conversas.status === 'pronto' &&
                     resumo.fila.status === 'pronto' &&
@@ -265,506 +226,86 @@ export function ResumoDoDia({
                       resumo.fila.dados.truncadaNovas
                         ? 'waitingQueueNewAtLeast'
                         : 'waitingQueueNew',
-                      {
-                        count: resumo.fila.dados.novas.length,
-                      }
+                      { count: resumo.fila.dados.novas.length }
                     )}
-                </span>
+                </>
               ) : null
             }
           />
-          <Conversas
-            conversas={resumo.conversas}
-            fila={resumo.fila}
-            temConfirmacaoAnterior={temConfirmacaoAnterior}
-            veInbox={veInbox}
-            onContinuar={onContinuar}
-          />
-        </section>
+        </dl>
+
+        <Button
+          variant="outline"
+          onClick={abrirMeuDia}
+          className="mt-4 w-full justify-center"
+        >
+          <Sunrise className="size-4" aria-hidden />
+          {t('openMyDay')}
+        </Button>
 
         {/* ---------------- Rodapé ---------------- */}
-        {modo === 'pagina' ? (
-          <div className="border-border mt-6 flex items-center justify-end gap-3 border-t pt-4">
-            {carregando && (
+        <div className="border-border mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+          <button
+            type="button"
+            onClick={sair}
+            disabled={saindo}
+            className="text-muted-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline disabled:opacity-50"
+          >
+            <LogOut className="size-3.5" aria-hidden />
+            {t('notYou')} {t('signOut')}
+          </button>
+          <div className="flex items-center gap-3">
+            {!podeContinuar && (
               <span role="status" className="text-muted-foreground text-xs">
                 {t('loadingYourDay')}
               </span>
             )}
             <Button
-              variant="outline"
-              onClick={onAtualizar}
-              disabled={carregando}
-              aria-busy={carregando}
+              onClick={onContinuar}
+              disabled={!podeContinuar}
+              aria-busy={!podeContinuar}
+              size="lg"
             >
-              {t('refresh')}
+              {t('continue')}
             </Button>
           </div>
-        ) : (
-          <div className="border-border mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-            <button
-              type="button"
-              onClick={sair}
-              disabled={saindo}
-              className="text-muted-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline disabled:opacity-50"
-            >
-              <LogOut className="size-3.5" aria-hidden />
-              {t('notYou')} {t('signOut')}
-            </button>
-            <div className="flex items-center gap-3">
-              {!podeContinuar && (
-                <span role="status" className="text-muted-foreground text-xs">
-                  {t('loadingYourDay')}
-                </span>
-              )}
-              <Button
-                onClick={onContinuar}
-                disabled={!podeContinuar}
-                aria-busy={!podeContinuar}
-                size="lg"
-              >
-                {t('continue')}
-              </Button>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
 }
 
-// ------------------------------------------------------------
-// Peças
-// ------------------------------------------------------------
-
-// `flex-wrap` + título `shrink-0`: no celular o resumo à direita desce para
-// a linha de baixo em vez de espremer o título em três linhas (medido a
-// 375px, "Clientes esperando resposta" quebrava em três).
-function Cabecalho({
-  icone,
-  titulo,
-  direita,
+/**
+ * Uma linha do resumo: rótulo à esquerda, número à direita.
+ *
+ * ⚠️ Enquanto o bloco não responde, a direita é um TRAÇO — nunca um zero.
+ * É a mesma regra dos blocos: "0 vencidas" durante a carga liberaria a
+ * entrada com uma afirmação que ninguém conferiu.
+ */
+function Linha({
+  rotulo,
+  estado,
+  valor,
 }: {
-  icone: React.ReactNode;
-  titulo: string;
-  direita: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-      <h2 className="text-foreground flex shrink-0 items-center gap-1.5 text-sm font-semibold">
-        {icone}
-        {titulo}
-      </h2>
-      <div className="text-muted-foreground min-w-0 text-right">{direita}</div>
-    </div>
-  );
-}
-
-function EstadoDoBloco({ bloco }: { bloco: Bloco<unknown> }) {
-  const t = useTranslations('ResumoDoDia');
-  if (bloco.status === 'carregando') {
-    return <p className="text-muted-foreground mt-2 text-sm">{t('loading')}</p>;
-  }
-  if (bloco.status === 'falhou') {
-    return <p className="text-destructive mt-2 text-sm">{t('failed')}</p>;
-  }
-  return null;
-}
-
-function ForaDoPerfil() {
-  const t = useTranslations('ResumoDoDia');
-  return (
-    <p className="text-muted-foreground mt-2 text-xs">
-      {t('outOfYourProfile')}
-    </p>
-  );
-}
-
-function LinkDoBloco({
-  href,
-  texto,
-  onContinuar,
-}: {
-  href: string;
-  texto: string;
-  onContinuar: () => void;
-}) {
-  return (
-    <Link
-      href={href}
-      onClick={onContinuar}
-      className="text-primary mt-2 inline-block text-sm hover:underline"
-    >
-      {texto}
-    </Link>
-  );
-}
-
-function Novidades({
-  bloco,
-  veNotificacoes,
-  onContinuar,
-}: {
-  bloco: Bloco<DadosDeNovidades>;
-  veNotificacoes: boolean;
-  onContinuar: () => void;
+  rotulo: string;
+  estado: { status: 'carregando' | 'falhou' | 'pronto' };
+  valor: React.ReactNode;
 }) {
   const t = useTranslations('ResumoDoDia');
-  if (bloco.status !== 'pronto') return <EstadoDoBloco bloco={bloco} />;
-  const { mencoes, tarefas, conversas, total, foraDoPerfil, truncada } =
-    bloco.dados;
-  // A régua da D8 também aqui: o número aparece, o conteúdo não.
-  const fora =
-    foraDoPerfil > 0 ? (
-      <p className="text-muted-foreground mt-2 text-xs">
-        {t(truncada ? 'outOfProfileAtLeast' : 'outOfProfile', {
-          count: foraDoPerfil,
-        })}
-      </p>
-    ) : null;
-  // ⚠️ Consulta TRUNCADA não afirma número nem ausência (Codex, PR #199).
-  // Passando do teto, o hook devolve só os avisos mais NOVOS — e se todos
-  // eles estiverem fora do perfil, "Nada de novo" seria dito sobre uma
-  // menção mais antiga que ficou de fora. É a armadilha "lista vazia
-  // virando afirmação", aqui com a lista cheia e o recorte esvaziando-a.
-  //
-  // ⚠️ E o truncado diz "PELO MENOS N" (≥), nunca "mais de N" (>): o
-  // `truncada` prova que ALGUM aviso ficou de fora, não que ficou de fora
-  // um aviso DESTE tipo. Com 3 menções na janela e só tarefas no que foi
-  // cortado, "mais de 3 menções" seria falso — são exatamente 3 (Codex,
-  // PR #200). As chaves da fila e das conversas dizem "mais de" porque lá
-  // o número exibido É o teto, e aí a desigualdade estrita é verdadeira.
-  if (total === 0) {
-    return (
-      <>
-        <p className="text-muted-foreground mt-2 text-sm">
-          {t(truncada ? 'newsTooMany' : 'newsNone')}
-        </p>
-        {fora}
-      </>
-    );
-  }
-  const chip = 'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs';
   return (
-    <div className="mt-2">
-      <div className="flex flex-wrap gap-2">
-        {mencoes > 0 && (
-          <span className={cn(chip, 'bg-primary/10 text-primary')}>
-            <AtSign className="size-3.5" aria-hidden />
-            {t(truncada ? 'newsMentionsAtLeast' : 'newsMentions', {
-              count: mencoes,
-            })}
-          </span>
-        )}
-        {tarefas > 0 && (
-          <span className={cn(chip, 'bg-muted text-foreground')}>
-            <ListTodo className="size-3.5" aria-hidden />
-            {t(truncada ? 'newsTasksAtLeast' : 'newsTasks', {
-              count: tarefas,
-            })}
-          </span>
-        )}
-        {conversas > 0 && (
-          <span className={cn(chip, 'bg-muted text-foreground')}>
-            <UserPlus className="size-3.5" aria-hidden />
-            {t(truncada ? 'newsConversationsAtLeast' : 'newsConversations', {
-              count: conversas,
-            })}
-          </span>
-        )}
-      </div>
-      {fora}
-      {veNotificacoes ? (
-        <LinkDoBloco
-          href="/notifications"
-          texto={t('openNotifications')}
-          onContinuar={onContinuar}
-        />
-      ) : (
-        <ForaDoPerfil />
-      )}
-    </div>
-  );
-}
-
-function Tarefas({
-  bloco,
-  hoje,
-  veTarefas,
-  veContatos,
-  onContinuar,
-}: {
-  bloco: Bloco<DadosDeTarefas>;
-  /** `YYYY-MM-DD` de hoje no fuso de quem lê. */
-  hoje: string;
-  veTarefas: boolean;
-  veContatos: boolean;
-  onContinuar: () => void;
-}) {
-  const t = useTranslations('ResumoDoDia');
-  if (bloco.status !== 'pronto') return <EstadoDoBloco bloco={bloco} />;
-  const { vencidas, hoje: deHoje, totais } = bloco.dados;
-  if (totais.vencidas + totais.hoje === 0) {
-    return (
-      <p className="text-muted-foreground mt-2 text-sm">{t('tasksNone')}</p>
-    );
-  }
-  // Vencidas primeiro (o grupo que grita), depois as de hoje, no teto de 5.
-  // O "e mais N" sai dos TOTAIS do banco, não do que a lista carregou.
-  const { itens } = limitar([...vencidas, ...deHoje]);
-  const restantes = Math.max(0, totais.vencidas + totais.hoje - itens.length);
-
-  const prazo = (
-    tarefa: TarefaDoResumo
-  ): { texto: string; vencida: boolean } => {
-    if (tarefa.vence_em < hoje) {
-      const dias = Math.round(
-        (dataParaExibir(hoje).getTime() -
-          dataParaExibir(tarefa.vence_em).getTime()) /
-          86_400_000
-      );
-      return { texto: t('overdueDays', { days: dias }), vencida: true };
-    }
-    const hora = horaParaExibir(tarefa.vence_as);
-    return {
-      texto: hora ? t('dueTodayAt', { hora }) : t('dueToday'),
-      vencida: false,
-    };
-  };
-
-  return (
-    <div className="mt-2">
-      <ul className="space-y-1.5">
-        {itens.map((tarefa) => {
-          const p = prazo(tarefa);
-          const nome = nomeDoContato(tarefa.contact, t('unknownContact'));
-          const conteudo = (
-            <>
-              <span className="min-w-0 flex-1 truncate">
-                {tarefa.titulo}
-                <span className="text-muted-foreground"> · {nome}</span>
-              </span>
-              <span
-                className={cn(
-                  'shrink-0 text-xs',
-                  p.vencida ? 'text-destructive' : 'text-muted-foreground'
-                )}
-              >
-                {p.texto}
-              </span>
-            </>
-          );
-          const classes = 'flex items-baseline justify-between gap-3 text-sm';
-          return (
-            <li key={tarefa.id}>
-              {veContatos ? (
-                <Link
-                  href={`/contacts?contact=${encodeURIComponent(tarefa.contact_id)}`}
-                  onClick={onContinuar}
-                  className={cn(classes, 'hover:bg-muted/60 rounded-md')}
-                >
-                  {conteudo}
-                </Link>
-              ) : (
-                <div className={classes}>{conteudo}</div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {veTarefas ? (
-        <LinkDoBloco
-          href="/tarefas"
-          texto={
-            restantes > 0
-              ? `${t('andMore', { count: restantes })} · ${t('openTasks')}`
-              : t('openTasks')
-          }
-          onContinuar={onContinuar}
-        />
-      ) : (
-        <ForaDoPerfil />
-      )}
-    </div>
-  );
-}
-
-/** "há 42 min" / "há 3 h" / "há 2 dias" — três chamadas literais, porque o portão de i18n só enxerga chave literal. */
-function textoDaEspera(
-  t: ReturnType<typeof useTranslations<'ResumoDoDia'>>,
-  atraso: Atraso
-): string {
-  if (atraso.unidade === 'min') return t('waitMin', { n: atraso.n });
-  if (atraso.unidade === 'h') return t('waitHours', { n: atraso.n });
-  return t('waitDays', { n: atraso.n });
-}
-
-function ItemDeConversa({
-  item,
-  veInbox,
-  onContinuar,
-}: {
-  item: ConversaEsperando;
-  veInbox: boolean;
-  onContinuar: () => void;
-}) {
-  const t = useTranslations('ResumoDoDia');
-  const nome = nomeDoContato(item.conversa.contact, t('unknownContact'));
-  const classes = 'flex items-baseline justify-between gap-3 text-sm';
-  const conteudo = (
-    <>
-      <span className="min-w-0 flex-1 truncate">{nome}</span>
-      <span
+    <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+      <dt className="text-foreground shrink-0 font-medium">{rotulo}</dt>
+      <dd
         className={cn(
-          'shrink-0 text-xs',
-          item.atraso.critico
+          'min-w-0 text-right',
+          estado.status === 'falhou'
             ? 'text-destructive'
-            : 'text-amber-700 dark:text-amber-300'
+            : 'text-muted-foreground'
         )}
       >
-        {textoDaEspera(t, item.atraso)}
-      </span>
-    </>
-  );
-  return (
-    <li>
-      {veInbox ? (
-        <Link
-          href={urlDoInbox({ c: item.conversa.id })}
-          onClick={onContinuar}
-          className={cn(classes, 'hover:bg-muted/60 rounded-md')}
-        >
-          {conteudo}
-        </Link>
-      ) : (
-        <div className={classes}>{conteudo}</div>
-      )}
-    </li>
-  );
-}
-
-function Conversas({
-  conversas,
-  fila,
-  temConfirmacaoAnterior,
-  veInbox,
-  onContinuar,
-}: {
-  conversas: Bloco<DadosDeConversas>;
-  fila: Bloco<Fila>;
-  temConfirmacaoAnterior: boolean;
-  veInbox: boolean;
-  onContinuar: () => void;
-}) {
-  const t = useTranslations('ResumoDoDia');
-  const algumPronto = conversas.status === 'pronto' || fila.status === 'pronto';
-  return (
-    <div className="mt-2 space-y-3">
-      {/* As suas */}
-      {conversas.status !== 'pronto' ? (
-        <EstadoDoBloco bloco={conversas} />
-      ) : (
-        <div>
-          {conversas.dados.esperando.length === 0 ? (
-            <p className="text-muted-foreground text-sm">
-              {t('waitingNoneYours')}
-            </p>
-          ) : (
-            (() => {
-              const { itens, restantes } = limitar(conversas.dados.esperando);
-              return (
-                <>
-                  <ul className="space-y-1.5">
-                    {itens.map((item) => (
-                      <ItemDeConversa
-                        key={item.conversa.id}
-                        item={item}
-                        veInbox={veInbox}
-                        onContinuar={onContinuar}
-                      />
-                    ))}
-                  </ul>
-                  {restantes > 0 && (
-                    <p className="text-muted-foreground mt-1 text-xs">
-                      {t('yoursAndMore', { count: restantes })}
-                    </p>
-                  )}
-                </>
-              );
-            })()
-          )}
-          <p className="text-muted-foreground mt-1.5 text-xs">
-            {t(
-              conversas.dados.truncada
-                ? 'assignedToYouAtLeast'
-                : 'assignedToYou',
-              {
-                count: conversas.dados.atribuidas,
-              }
-            )}
-            {conversas.dados.foraDoPerfil > 0 &&
-              ` · ${t('outOfProfile', { count: conversas.dados.foraDoPerfil })}`}
-          </p>
-        </div>
-      )}
-
-      {/* A fila sem responsável */}
-      {fila.status !== 'pronto' ? (
-        <EstadoDoBloco bloco={fila} />
-      ) : (
-        <div>
-          <p className="text-muted-foreground text-xs font-medium">
-            {t('queueTitle')}
-          </p>
-          {fila.dados.novas.length > 0 && (
-            <ul className="mt-1 space-y-1.5">
-              {limitar(fila.dados.novas).itens.map((item) => (
-                <ItemDeConversa
-                  key={item.conversa.id}
-                  item={item}
-                  veInbox={veInbox}
-                  onContinuar={onContinuar}
-                />
-              ))}
-            </ul>
-          )}
-          <p className="text-muted-foreground mt-1.5 text-xs">
-            {temConfirmacaoAnterior
-              ? t(fila.dados.truncadaNovas ? 'queueNewAtLeast' : 'queueNew', {
-                  count: fila.dados.novas.length,
-                })
-              : t(
-                  fila.dados.truncadaNovas
-                    ? 'queueNew24hAtLeast'
-                    : 'queueNew24h',
-                  {
-                    count: fila.dados.novas.length,
-                  }
-                )}
-            {fila.dados.antigas > 0 && fila.dados.maisAntiga && (
-              <>
-                {' · '}
-                {fila.dados.truncadaAntigas
-                  ? t('queueOlderAtLeast', { count: fila.dados.antigas })
-                  : t('queueOlder', { count: fila.dados.antigas })}{' '}
-                {t('oldestWait', {
-                  espera: textoDaEspera(t, fila.dados.maisAntiga),
-                })}
-              </>
-            )}
-          </p>
-        </div>
-      )}
-
-      {algumPronto &&
-        (veInbox ? (
-          <LinkDoBloco
-            href="/inbox"
-            texto={t('openInbox')}
-            onContinuar={onContinuar}
-          />
-        ) : (
-          <ForaDoPerfil />
-        ))}
+        {valor ??
+          (estado.status === 'falhou' ? t('failedShort') : t('loadingShort'))}
+      </dd>
     </div>
   );
 }

@@ -40,9 +40,29 @@ DynamoDB excluded from the table: unusable for ad-hoc/custom analytical reports 
 2. **Rows-scanned billing** punishes any un-rolled-up query — a custom report builder running ad-hoc scans is a cost landmine. Must constrain the builder to rollup tables or cap scan ranges.
 3. **SQLite analytics ceiling** — weaker/limited window functions, no materialized views, lower write concurrency than Postgres. A "strong reporting" product leans on exactly these.
 
+## Cheaper AWS options the first pass missed (verified 2026-09-12)
+
+The first table compared only Aurora SLv2 / RDS / DynamoDB. For a **rollup-based reporting** workload, analytics-native AWS services are materially cheaper — and, critically, some are HTTP APIs that reach Cloudflare Workers **without Hyperdrive** (Postgres-wire services — RDS/Aurora/Aurora DSQL — need Hyperdrive for TCP pooling from Workers; DynamoDB + Athena do not).
+
+| Service | Price | Fit for this workload | Workers connectivity |
+|---|---|---|---|
+| **S3 + Athena (Parquet)** | Athena **$5/TB scanned** (10MB min); S3 **$0.023/GB-mo** | **Cheapest for deep history + ad-hoc/custom builder.** Parquet columnar + date/account partitioning → a dashboard query scans MBs, ~fractions of a cent. Storage ~30× cheaper than D1. | HTTP API — **no Hyperdrive**. But query latency sub-sec–seconds → NOT the 150ms hot path. |
+| **DynamoDB on-demand** | $0.25/M RRU · $1.25/M WRU · $0.25/GB-mo (25GB free) | **Cheapest hot-KPI/rollup read store** — rollup tables tiny → cents, often free-tier. No joins / no ad-hoc aggregation. | HTTP API — **no Hyperdrive**. Workers-friendly. |
+| **Aurora DSQL** | **$8/M DPU** (compute+I/O) · $0.33/GB-mo · **scale-to-zero, free tier 100k DPU + 1GB/mo permanent** | Cheapest AWS **relational** at low/spiky load — cheaper than Aurora SLv2 (no 0.5-ACU floor). Real Postgres SQL for the builder. | Postgres wire → **needs Hyperdrive** from Workers. |
+| **Redshift Serverless** | 4-RPU min ≈ **$1.50/hr active** (~$0.375/RPU-hr) | Only worth it for heavy BI/large scans; overkill + pricier here. | needs Hyperdrive. **Ruled out** at this scale. |
+
+**Cheapest concrete stack for a reporting USP (if AWS is on the table):**
+- Hot dashboard reads (150ms budget): rollup tables in **DynamoDB on-demand** (HTTP, ~free at rollup volume) — or keep rollups in the operational DB.
+- Deep history + ad-hoc/custom builder + exports: **S3 + Athena (Parquet)** — near-free storage, pennies/query. Replaces the need for a big always-on analytical DB.
+- If one relational engine is wanted instead: **Aurora DSQL** (scale-to-zero) beats Aurora SLv2/RDS on cost.
+
+This tier (DynamoDB rollups + S3/Athena history) undercuts **every** line in the first table at medium/large scale and is cheaper than D1 on storage (S3 $0.023 vs D1 $0.75/GB), while sidestepping D1's rows-scanned trap and 10GB/DB wall.
+
+**Caveats (don't over-rotate to AWS):** (1) adds AWS coupling + **egress** — S3→Cloudflare data-transfer is billed, unlike staying in-network; (2) two-system ETL (write Parquet, Glue catalog) adds ops; (3) fights the Cloudflare-first + single-provider posture. The **Cloudflare-native equivalent** avoids egress: R2 (Parquet, $0.015/GB, **$0 egress**) + Workers **Analytics Engine** (cheap time-series) for the analytics tier — functionally the S3+Athena pattern without leaving the network. If the goal is purely lowest cost + simplest from Workers, that beats AWS here; AWS Athena/DynamoDB is the answer only if an AWS mandate exists.
+
 ## Verdict / recommendation
 - **On raw cost, D1 wins decisively (5–10×) at every scale — but only with disciplined rollups**, and it hits a per-DB size + concurrency wall that a reporting-heavy product feels first.
 - Because **reporting is the USP** (ad-hoc/custom builder, deep history, complex aggregation), the analytical path wants a real analytical engine. **Recommend Postgres for the reporting/analytical path — Neon preferred over AWS Aurora** (cheaper for spiky load, Cloudflare-adjacent, no per-DB wall, materialized views + window functions). AWS Aurora/RDS only if an AWS mandate exists; DynamoDB not for this.
 - **Either way, serve reporting from pre-aggregated rollups behind the `DatabaseProvider`** (`reporting/TRD.md`). This keeps D1 viable-and-cheap for the operational store while the analytical engine choice stays swappable. Confirm with the DB benchmark: run the analytical rollup + ad-hoc queries on D1 and Neon; if D1's rows-scanned cost or SQLite analytics limits fail the reporting acceptance, the reporting path goes Postgres even if the operational store stays D1.
 
-Sources: [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/) · [Aurora Serverless v2 guide](https://www.usage.ai/blogs/aws/rds/aurora-serverless-v2/) · [DynamoDB pricing 2026](https://www.bytebase.com/blog/understanding-dynamodb-pricing/)
+Sources: [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/) · [Aurora Serverless v2 guide](https://www.usage.ai/blogs/aws/rds/aurora-serverless-v2/) · [DynamoDB pricing 2026](https://www.bytebase.com/blog/understanding-dynamodb-pricing/) · [Athena pricing 2026](https://cloudburn.io/blog/amazon-athena-pricing) · [Aurora DSQL pricing](https://www.usage.ai/blogs/aws/database-savings-plans/aurora/dsql-pricing/) · [Redshift Serverless 4-RPU min](https://aws.amazon.com/about-aws/whats-new/2025/06/amazon-redshift-serverless-4-rpu-capacity-option)

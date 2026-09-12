@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { AI_PROVIDER_DEFAULT_MODEL, AI_PROVIDER_MODELS } from '@/lib/ai/defaults';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
+import { AsaasCard } from './asaas-card';
 import { MetaAdsCard } from './meta-ads-card';
 import { CalendlyCard } from './calendly-card';
 import { TldvCard } from './tldv-card';
@@ -288,6 +289,10 @@ function Conteudo() {
       {/* tl;dv (987): mesmo desenho — rota própria (`GET /api/cb/tldv`), a
           chave nunca chega ao navegador. */}
       <TldvCard />
+      {/* Asaas (991): mesmo desenho. Por enquanto guarda a chave e roda o
+          levantamento da conta (só leitura) — o espelho das cobranças e a
+          régua de cobrança dependem dos números dele. */}
+      <AsaasCard />
     </div>
   );
 }

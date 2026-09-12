@@ -33,19 +33,22 @@
 
 | Fase | Escopo | Estado | Migration | PR |
 | --- | --- | --- | --- | --- |
-| **0** | Levantamento SÓ LEITURA com a chave do operador: volume, formatos, simulação do vínculo com os contatos do CRM, e as respostas que a doc não dá (§3.1). Script fora do repo; nada é gravado | ⏳ espera a chave e a resposta da D1 | — | — |
-| **1a** | Conexão (cartão em Integrações), espelho das cobranças vencidas pelo cron, vínculo automático, tela de revisão e lista de inadimplentes | 💤 | `9xx_cb_asaas` | — |
+| **0** | Levantamento SÓ LEITURA: volume, formatos, simulação do vínculo com os contatos do CRM, e as respostas que a doc não dá (§3.1). Nada é gravado | ⏳ espera o operador colar a chave no cartão | — | (junto da 1a-conexão) |
+| **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento da Fase 0 contra a conta real | ✅ feito (12/09) | `991_cb_asaas_config` | `feat/asaas-conexao` |
+| **1a-espelho** | Espelho das cobranças vencidas pelo cron, vínculo automático, tela de revisão e lista de inadimplentes | 💤 espera os números da Fase 0 | `9xx_cb_asaas` (as duas tabelas restantes) | — |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | 💤 | — | — |
 | **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 💤 | `9xx_cb_asaas_webhook` | — |
 | **3** | Régua de cobrança: gatilho "cobrança vencida há N dias", trava por marco com prova de envio, reconfirmação no Asaas, pausa por acordo, e os avisos de atraso do próprio Asaas desligados nos clientes que a régua alcança | 💤 | `9xx_cb_asaas_regua` | — |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
-- **Número das migrations:** a última hoje é a **990**. Conferir
+- **Número das migrations:** a última hoje é a **991** (a config do Asaas). Conferir
   `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de
   criar cada arquivo — quatro colisões já aconteceram com branches em
   paralelo.
-- **Tamanho estimado:** Fase 0, uma sessão e zero arquivos no repo · Fase 1a,
-  1 PR (~25 arquivos novos, metade deles testes; ~5 tocados; 1 migration) ·
+- **Tamanho estimado:** Fase 0, uma sessão e zero arquivos no repo ·
+  Fase 1a-conexão, 1 PR (11 arquivos novos, 5 deles testes; 3 tocados; 1
+  migration) — FEITO · Fase 1a-espelho, 1 PR (~14 novos; ~4 tocados; 1
+  migration) ·
   Fase 1b, 1 PR (~6 novos, ~9 tocados) · Fase 2, 1 PR (~4 novos, ~7
   tocados, 1 migration) · Fase 3, 1–2 PRs (~10 novos, ~14 tocados, 1
   migration).
@@ -244,16 +247,36 @@ scratchpad da sessão) roda com a chave do operador e responde:
    para onde apontam, com que eventos.
 
 Saída: um relatório com CONTAGENS e exemplos mascarados (primeiro nome +
-quatro últimos dígitos), mostrado ao operador. Nada é gravado no banco e
-nada é enviado ao Asaas além de GET. As contagens viram a §2.5.
+quatro últimos dígitos), mostrado no próprio cartão e copiável num clique.
+As contagens viram a §2.5.
 
-**A chave não passa pelo chat.** O operador cria a chave "CRM —
-levantamento" (§7) e a cola numa linha do `.env.local`
-(`ASAAS_CHAVE_LEVANTAMENTO=…`, arquivo que o git ignora). ⚠️ O script lê a
-linha CRUA: o carregador de variáveis do Next expande `$nome`, e a chave
-começa com `$`. Se a conta já tiver lista de IPs ligada, a primeira chamada
-volta 403 "Acesso negado", e o script para e reporta. A linha é apagada
-quando a chave de produção for para o cartão, na Fase 1a.
+⚠️ O que o levantamento **ainda não responde** e ficou para a Fase 2, por
+não ter como ser medido só com GET: C7 (em que instante `PENDING` vira
+`OVERDUE`), C9 (vencida com o vencimento empurrado para a frente) e C11
+(cobrança removida: 404 ou `deleted: true`? — exigiria um id sabidamente
+removido). A sonda de C12 (negativadas) e a de C3 (status múltiplo) estão
+lá.
+
+**A chave não passa pelo chat — e desde 12/09 também não passa por
+arquivo nenhum.** O desenho original mandava o operador colar a chave numa
+linha do `.env.local` para um script solto ler. Ele pediu, com razão, um
+lugar SEGURO para a chave, e a saída foi adiantar a metade da Fase 1a que
+resolve isso: o cartão em Integrações existe primeiro, a chave entra por ele
+(cifrada, como as outras quatro integrações), e o levantamento roda DENTRO do
+CRM com a chave já guardada — `POST /api/cb/asaas/levantamento`, botão
+"Rodar levantamento" no cartão. Some, junto, a armadilha do `$` inicial da
+chave, que o carregador de variáveis do Next expandiria.
+
+⚠️ O levantamento **não grava nada**, nem no Asaas (só GET) nem no banco: o
+relatório volta na resposta, é lido e some. E **nada identificável sai
+inteiro** — nome vira primeiro nome, telefone vira os 4 últimos dígitos, e
+CPF/CNPJ nunca aparece, só a contagem por tamanho: o relatório é lido por
+gente e pode acabar colado num chat.
+
+Se a conta já tiver lista de IPs ligada, a primeira chamada volta 403 e o
+cartão diz isso em português (o mesmo código `sem_permissao` cobre a
+permissão que falta e o IP fora da lista — é o que o Asaas devolve nos
+dois).
 
 ### 3.2 Banco — Fase 1 (`9xx_cb_asaas.sql`)
 
@@ -1004,46 +1027,59 @@ GRANT ALL ON TABLE cb_asaas_regua_envios TO service_role;
 
 ## 4. Arquivos por fase
 
-**Fase 1a — conexão, espelho, vínculo, cartão**
+**Fase 1a-conexão — a chave num lugar seguro e o levantamento** ✅ (12/09)
 
-- `supabase/migrations/9xx_cb_asaas.sql` — as três tabelas (§3.2).
-- `supabase/migrations/rls-das-tabelas-do-asaas.test.ts` — cópia do teste do
+- `supabase/migrations/991_cb_asaas_config.sql` — SÓ `cb_asaas_config`
+  (§3.2). ⚠️ As outras duas tabelas ficaram de fora de propósito: a forma
+  delas é o que o levantamento pode mudar (D2, D5, D9), e migration aplicada
+  não se reescreve.
+- `supabase/migrations/rls-da-config-do-asaas.test.ts` — cópia do teste do
   Calendly: RLS ligada, `REVOKE` das três metades, nada para `anon` nem para
-  `authenticated`, `GRANT ALL` a `service_role`, nenhuma `CREATE POLICY`, os
-  UNIQUE e as FKs.
+  `authenticated`, `GRANT ALL` a `service_role`, nenhuma `CREATE POLICY`.
 - `src/lib/asaas/cliente.ts` (+ teste) — `criarClienteAsaas`, `AsaasError`,
-  `doAsaas`, `codigoDoErro`, `semSegredo`, reserva de cota, paginação com
-  teto.
-- `src/lib/asaas/leitura.ts` (+ teste) — parse tolerante de cliente,
-  cobrança e parcelamento; campo novo ignorado; `installmentNumber` em
-  texto ou número.
+  `doAsaas`, `codigoDoErro`, `semSegredo`, `lerErro`, paginação com teto que
+  ESTOURA, e os cabeçalhos `RateLimit-*` guardados (C14).
+- `src/lib/asaas/leitura.ts` (+ teste) — parse tolerante de cliente e
+  cobrança; campo novo ignorado; `installmentNumber` em texto ou número;
+  `diaParaData` contra a armadilha do DATE em UTC.
+- `src/lib/asaas/conexao.ts` — `conectarAsaas` (só produção),
+  `desconectarAsaas`, `clienteDaConta`.
+- `src/lib/asaas/cartao.ts` (+ teste) — `cartaoDoAsaas` e a lista exportada
+  `CODIGOS_DO_ASAAS`; o teste cobra `Settings.integracoes.asaas.motivo.<codigo>`
+  e `…asaas.vinculoMotivo.<motivo>` nos dois dicionários (o buraco que o
+  cartão do tl;dv deixou, porque lá a lista mora no componente).
+- `src/lib/asaas/levantamento.ts` (+ teste) — o levantamento da Fase 0
+  (§3.1): índices do CRM, `decidirVinculo`, as contagens e as sondas.
+- `src/app/api/cb/asaas/route.ts` (GET, admin — o cartão),
+  `config/route.ts` (PUT/DELETE), `levantamento/route.ts` (POST).
+- `src/components/settings/asaas-card.tsx` — o cartão, montado em
+  `integracoes-panel.tsx` ao lado do tl;dv. O chip não afirma "não
+  conectado" durante a carga; "Sandbox" em âmbar.
+- Tocados: `integracoes-panel.tsx`, `src/lib/rate-limit.ts` (balde
+  `asaasLevantamento`), `messages/{en,pt-BR}.json`.
+
+**Fase 1a-espelho — cron, vínculo, listas**
+
+- `supabase/migrations/9xx_cb_asaas.sql` — `cb_asaas_clientes` e
+  `cb_asaas_cobrancas` (§3.2), com a forma ajustada pelos números da Fase 0.
 - `src/lib/asaas/aplicar.ts` (+ teste com dublê do admin) —
   `aplicarCobranca`, a função única do cron e do webhook.
-- `src/lib/asaas/vinculo.ts` (+ teste) — índices e decisão (§3.3), com uma
-  linha de `vinculo_origem` nula no teste.
+- `src/lib/asaas/vinculo.ts` (+ teste) — a decisão de produção (§3.3), com
+  uma linha de `vinculo_origem` nula no teste. O `decidirVinculo` do
+  levantamento é o ensaio dela.
 - `src/lib/asaas/inadimplencia.ts` (+ teste) — a régua (§3.5).
 - `src/lib/asaas/sincronizar.ts` (+ teste com dublê do admin e cliente
   falso) — o ciclo (§3.4), carimbo ANTES do trabalho, prazo por
   `Date.now()`.
-- `src/lib/asaas/conexao.ts` — `conectarAsaas` (com a checagem de outra
-  conta), `desconectarAsaas`.
-- `src/lib/asaas/cartao.ts` (+ teste) — `cartaoDoAsaas` e a lista exportada
-  `CODIGOS_DO_ASAAS`; o teste cobra `Settings.integracoes.asaas.motivo.<codigo>`
-  nos dois dicionários (o buraco que o cartão do tl;dv deixou, porque lá a
-  lista mora no componente).
 - `src/lib/asaas/aviso.ts` — o evento global `cb:asaas-mudou`, fora dos
   hooks.
-- `src/app/api/cb/asaas/route.ts` (GET, admin — o cartão),
-  `config/route.ts` (PUT/DELETE), `sync/route.ts` (POST, 202),
-  `cron/route.ts` (GET, `x-cron-secret`), `clientes/route.ts` (GET, as cinco
-  listas, CPF mascarado), `clientes/[id]/vinculo/route.ts` (PUT/DELETE).
-- `src/components/settings/asaas-card.tsx` — o cartão (§3.3), montado em
-  `integracoes-panel.tsx` ao lado do tl;dv. O chip não afirma "não
-  conectado" durante a carga; "Sandbox" em âmbar.
-- Tocados: `integracoes-panel.tsx`, `src/lib/rate-limit.ts` (baldes
-  `cb:asaas:*`), `docker-stack.yml` (`cb/asaas` no laço lento e no banner),
-  `messages/{en,pt-BR}.json`, e a doc de quem instala (`docs/INSTALACAO.md`:
-  onde criar a chave, que permissões, e o `docker stack deploy`).
+- `src/app/api/cb/asaas/sync/route.ts` (POST, 202), `cron/route.ts` (GET,
+  `x-cron-secret`), `clientes/route.ts` (GET, as cinco listas, CPF
+  mascarado), `clientes/[id]/vinculo/route.ts` (PUT/DELETE).
+- Tocados: `asaas-card.tsx` (as listas), `docker-stack.yml` (`cb/asaas` no
+  laço lento e no banner), `messages/{en,pt-BR}.json`, e a doc de quem
+  instala (`docs/INSTALACAO.md`: onde criar a chave, que permissões, e o
+  `docker stack deploy`).
 
 **Fase 1b — o aviso**
 
@@ -1227,27 +1263,35 @@ chama `dispararAutomacoes`, que não é vigiado).
 
 ## 7. Passos do operador
 
-**Antes da Fase 0**
+**Fase 1a-conexão + Fase 0** (a mesma sessão: a chave entra no cartão e o
+levantamento roda a partir dele)
 
-1. Responder à pergunta 1 da §9 (as outras podem vir com o relatório na
-   mão).
-2. No Asaas (Integrações → Chaves de API), criar a chave **"CRM —
+1. No Asaas (Integrações → Chaves de API), criar a chave **"CRM —
    levantamento"**: leitura em Clientes, Cobranças, Parcelamentos,
    Notificações e Webhooks; **sem** Negativação; validade de 7 dias. A chave
-   aparece uma vez só.
-3. Colar a chave no `.env.local` do projeto, numa linha
-   `ASAAS_CHAVE_LEVANTAMENTO=` — nunca no chat.
+   aparece uma vez só. ⚠️ Escolher as permissões uma a uma e conferir a
+   lista antes de salvar.
+2. Autorizar a aplicação da migration `991_cb_asaas_config` pelo conector,
+   antes do merge.
+3. Colar a chave no cartão (Configurações → Integrações → Asaas), com o
+   NOME que ela tem na tela do Asaas e a validade, se houver, e clicar em
+   **Rodar levantamento**. ⚠️ A chave nunca vai para o chat nem para
+   arquivo nenhum.
 4. Olhar no painel do Asaas se há um ajuste da conta para os avisos dos
    clientes novos (C13).
+5. Com o relatório na mão, responder às perguntas da §9.
 
-**Fase 1a**
+**Fase 1a-espelho**
 
-5. Criar a chave **"CRM — produção"**: leitura em Clientes, Cobranças e
-   Parcelamentos; **sem data de validade** (§3.7). ⚠️ Escolher as
-   permissões uma a uma e conferir a lista antes de salvar. Não ligar a
-   lista de IPs da conta sem antes conferir os outros sistemas (§3.7).
-6. Autorizar a aplicação da migration pelo conector, antes do merge.
-7. Depois do merge, o `docker stack deploy` (o CI não relê o agendador),
+6. Criar a chave **"CRM — produção"**: leitura em Clientes, Cobranças e
+   Parcelamentos; **sem data de validade** (§3.7). No cartão, **Desconectar**
+   e conectar de novo com ela — trocar a chave é isso, porque o campo só
+   aparece quando não há conexão (e a de levantamento expira em 7 dias). Não
+   ligar a lista de IPs da conta sem antes conferir os outros sistemas
+   (§3.7).
+7. Autorizar a aplicação da migration das duas tabelas do espelho, antes do
+   merge.
+8. Depois do merge, o `docker stack deploy` (o CI não relê o agendador),
    feito na sessão, com autorização, como no tl;dv — sempre as três linhas:
 
    ```bash
@@ -1258,18 +1302,17 @@ chama `dispararAutomacoes`, que não é vigiado).
 
    Depois, dentro do contêiner, `printenv SUPABASE_SERVICE_ROLE_KEY | wc -c`
    diferente de 0, e o cron sem segredo respondendo 401.
-8. Colar a chave no cartão (Configurações → Integrações → Asaas) e revisar
-   as listas "Para confirmar" e "Sem ficha".
+9. Revisar as listas "Para confirmar" e "Sem ficha" do cartão.
 
 **Fase 2**
 
-9. Acrescentar Webhooks em leitura e escrita à chave de produção, e
-   informar no cartão o nome da chave e o e-mail que recebe os alertas do
-   Asaas.
+10. Acrescentar Webhooks em leitura e escrita à chave de produção, e
+    informar no cartão o nome da chave e o e-mail que recebe os alertas do
+    Asaas.
 
 **Fase 3**
 
-10. Acrescentar Notificações em leitura e escrita à chave de produção
+11. Acrescentar Notificações em leitura e escrita à chave de produção
     (D10).
 11. Escrever ou aceitar os textos dos marcos e ligar as automações uma a
     uma.

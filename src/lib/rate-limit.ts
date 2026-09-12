@@ -193,6 +193,12 @@ export const RATE_LIMITS = {
    *  novo umas vezes" e barra um script com a sessão. A carga sem ping
    *  (`?ping=0`) continua no `adminAction`, porque só lê o banco. */
   integracoesPing: { limit: 6, windowMs: 60_000 },
+  /** Levantamento do Asaas (991), por usuário. Um clique varre a conta
+   *  INTEIRA do Asaas — clientes e cobranças vencidas, uma página de 100
+   *  por pedido — e a cota de 25.000/12 h é da CONTA do Asaas, dividida com
+   *  qualquer outro sistema do escritório. 3/min cobre "rodei, li, rodei de
+   *  novo depois de arrumar a permissão" e barra um laço com a sessão. */
+  asaasLevantamento: { limit: 3, windowMs: 60_000 },
   /** Ações de execução na conversa (955): executar/parar automação ou robô.
    *  Mais apertado que o `send` porque UMA execução pode desdobrar em vários
    *  envios ao cliente (a automação manda o que quiser); mais largo que o

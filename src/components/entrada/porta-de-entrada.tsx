@@ -221,18 +221,29 @@ export function PortaDeEntrada({
       <div inert aria-hidden>
         {children(true)}
       </div>
-      <div className="bg-background/70 fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-4 backdrop-blur-md sm:items-center sm:p-8">
-        <ResumoDoDia
-          userId={userId}
-          accountId={accountId}
-          ctx={ctx}
-          primeiroNome={profile?.full_name?.trim().split(/\s+/)[0] || null}
-          agoraMs={decisao.agoraMs}
-          desdeMs={decisao.desdeMs}
-          temConfirmacaoAnterior={decisao.daConfirmacao}
-          onContinuar={confirmar}
-          onSair={sair}
-        />
+      {/*
+        ⚠️ A centralização mora no wrapper INTERNO com `min-h-full`, nunca no
+        contêiner que rola. `items-center` direto no `overflow-y-auto` põe o
+        topo do cartão alto ACIMA da origem de rolagem — e o que fica acima
+        de `scrollTop: 0` é inalcançável: com zoom, ou com tarefas e
+        conversas listadas numa janela baixa, a saudação e as novidades
+        somem sem barra que as alcance (Codex, PR #199). Com o wrapper, o
+        cartão curto centraliza e o alto cresce a partir do topo.
+      */}
+      <div className="bg-background/70 fixed inset-0 z-50 overflow-y-auto p-4 backdrop-blur-md sm:p-8">
+        <div className="flex min-h-full items-center justify-center">
+          <ResumoDoDia
+            userId={userId}
+            accountId={accountId}
+            ctx={ctx}
+            primeiroNome={profile?.full_name?.trim().split(/\s+/)[0] || null}
+            agoraMs={decisao.agoraMs}
+            desdeMs={decisao.desdeMs}
+            temConfirmacaoAnterior={decisao.daConfirmacao}
+            onContinuar={confirmar}
+            onSair={sair}
+          />
+        </div>
       </div>
     </LimiteDeErro>
   );

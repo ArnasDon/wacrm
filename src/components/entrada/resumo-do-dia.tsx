@@ -410,18 +410,35 @@ function Novidades({
 }) {
   const t = useTranslations('ResumoDoDia');
   if (bloco.status !== 'pronto') return <EstadoDoBloco bloco={bloco} />;
-  const { mencoes, tarefas, conversas, total, foraDoPerfil } = bloco.dados;
+  const { mencoes, tarefas, conversas, total, foraDoPerfil, truncada } =
+    bloco.dados;
   // A régua da D8 também aqui: o número aparece, o conteúdo não.
   const fora =
     foraDoPerfil > 0 ? (
       <p className="text-muted-foreground mt-2 text-xs">
-        {t('outOfProfile', { count: foraDoPerfil })}
+        {t(truncada ? 'outOfProfileAtLeast' : 'outOfProfile', {
+          count: foraDoPerfil,
+        })}
       </p>
     ) : null;
+  // ⚠️ Consulta TRUNCADA não afirma número nem ausência (Codex, PR #199).
+  // Passando do teto, o hook devolve só os avisos mais NOVOS — e se todos
+  // eles estiverem fora do perfil, "Nada de novo" seria dito sobre uma
+  // menção mais antiga que ficou de fora. É a armadilha "lista vazia
+  // virando afirmação", aqui com a lista cheia e o recorte esvaziando-a.
+  //
+  // ⚠️ E o truncado diz "PELO MENOS N" (≥), nunca "mais de N" (>): o
+  // `truncada` prova que ALGUM aviso ficou de fora, não que ficou de fora
+  // um aviso DESTE tipo. Com 3 menções na janela e só tarefas no que foi
+  // cortado, "mais de 3 menções" seria falso — são exatamente 3 (Codex,
+  // PR #200). As chaves da fila e das conversas dizem "mais de" porque lá
+  // o número exibido É o teto, e aí a desigualdade estrita é verdadeira.
   if (total === 0) {
     return (
       <>
-        <p className="text-muted-foreground mt-2 text-sm">{t('newsNone')}</p>
+        <p className="text-muted-foreground mt-2 text-sm">
+          {t(truncada ? 'newsTooMany' : 'newsNone')}
+        </p>
         {fora}
       </>
     );
@@ -433,19 +450,25 @@ function Novidades({
         {mencoes > 0 && (
           <span className={cn(chip, 'bg-primary/10 text-primary')}>
             <AtSign className="size-3.5" aria-hidden />
-            {t('newsMentions', { count: mencoes })}
+            {t(truncada ? 'newsMentionsAtLeast' : 'newsMentions', {
+              count: mencoes,
+            })}
           </span>
         )}
         {tarefas > 0 && (
           <span className={cn(chip, 'bg-muted text-foreground')}>
             <ListTodo className="size-3.5" aria-hidden />
-            {t('newsTasks', { count: tarefas })}
+            {t(truncada ? 'newsTasksAtLeast' : 'newsTasks', {
+              count: tarefas,
+            })}
           </span>
         )}
         {conversas > 0 && (
           <span className={cn(chip, 'bg-muted text-foreground')}>
             <UserPlus className="size-3.5" aria-hidden />
-            {t('newsConversations', { count: conversas })}
+            {t(truncada ? 'newsConversationsAtLeast' : 'newsConversations', {
+              count: conversas,
+            })}
           </span>
         )}
       </div>

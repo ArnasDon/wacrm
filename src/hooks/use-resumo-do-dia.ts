@@ -141,6 +141,9 @@ const TETO_DE_LINHAS = 1000;
 /** Quantas tarefas por grupo vêm como LINHA — a tela lista 5; o número vem do `count`. */
 const LINHAS_LISTADAS = 50;
 
+/** Teto de UUIDs por `.in()` — o PostgREST trava perto de mil valores na URL. */
+const IDS_POR_CONSULTA = 500;
+
 /**
  * Só o que as réguas leem: `conversaNoEscopo` (canal, grupo e o canal do
  * grupo), `atrasoDeResposta` (situação, grupo, espera) e o nome do cliente.
@@ -256,13 +259,18 @@ export function useResumoDoDia(pedido: PedidoDoResumo): ResumoDoDia {
             .filter((id): id is string => !!id)
         ),
       ];
+      // ⚠️ Em FATIAS (o precedente da casa é 500 — `cb-radar/worker.ts`): a
+      // janela pode trazer até TETO_DE_LINHAS avisos de conversas
+      // DIFERENTES, e mil UUIDs num `.in()` estouram a URL do PostgREST.
+      // Numa consulta só, o bloco inteiro de novidades cairia em "falhou"
+      // justamente para quem mais tem aviso acumulado (Codex, PR #199).
       const conversasPorId = new Map<string, Conversation>();
-      if (ids.length > 0) {
+      for (let i = 0; i < ids.length; i += IDS_POR_CONSULTA) {
         const { data: linhas, error: erroConversas } = await supabase
           .from('conversations')
           .select(SELECT_DE_CONVERSA)
           .eq('account_id', accountId)
-          .in('id', ids);
+          .in('id', ids.slice(i, i + IDS_POR_CONSULTA));
         if (erroConversas) throw new Error(erroConversas.message);
         for (const c of conversasDe(linhas)) conversasPorId.set(c.id, c);
       }

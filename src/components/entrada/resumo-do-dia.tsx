@@ -167,17 +167,16 @@ export function ResumoDoDia({
   );
 
   return (
-    <div
-      className={
-        modo === 'pagina'
-          ? 'w-full'
-          : 'bg-background min-h-screen overflow-y-auto p-4 sm:p-8'
-      }
-    >
+    <div className="w-full">
       <div
         ref={cartaoRef}
         tabIndex={-1}
-        className="border-border bg-card mx-auto w-full max-w-lg rounded-xl border p-5 shadow-sm outline-none sm:p-6"
+        className={cn(
+          'border-border bg-card mx-auto w-full max-w-lg rounded-xl border p-5 outline-none sm:p-6',
+          // Na entrada o cartão flutua sobre o app desfocado: sombra forte
+          // para ele se descolar do fundo, em vez do `shadow-sm` da página.
+          modo === 'entrada' ? 'shadow-xl' : 'shadow-sm'
+        )}
       >
         <p className="text-muted-foreground text-xs">
           {agora.toLocaleDateString(undefined, {
@@ -411,10 +410,20 @@ function Novidades({
 }) {
   const t = useTranslations('ResumoDoDia');
   if (bloco.status !== 'pronto') return <EstadoDoBloco bloco={bloco} />;
-  const { mencoes, tarefas, conversas, total } = bloco.dados;
+  const { mencoes, tarefas, conversas, total, foraDoPerfil } = bloco.dados;
+  // A régua da D8 também aqui: o número aparece, o conteúdo não.
+  const fora =
+    foraDoPerfil > 0 ? (
+      <p className="text-muted-foreground mt-2 text-xs">
+        {t('outOfProfile', { count: foraDoPerfil })}
+      </p>
+    ) : null;
   if (total === 0) {
     return (
-      <p className="text-muted-foreground mt-2 text-sm">{t('newsNone')}</p>
+      <>
+        <p className="text-muted-foreground mt-2 text-sm">{t('newsNone')}</p>
+        {fora}
+      </>
     );
   }
   const chip = 'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs';
@@ -440,6 +449,7 @@ function Novidades({
           </span>
         )}
       </div>
+      {fora}
       {veNotificacoes ? (
         <LinkDoBloco
           href="/notifications"

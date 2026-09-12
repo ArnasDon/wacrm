@@ -3756,13 +3756,18 @@ estrutural `transporte.chamadores.test.ts` (no `main` desde 10/09/2026, PR
 o `sessionId` no `useAuth` e o pino `src/lib/auth/sair.chamadores.test.ts`.
 Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
 
-- ⚠️⚠️ **NÃO é um Dialog por cima do app, e nada do app pode renderizar fora
-  da porta.** O layout inteiro do shell (menu, cabeçalho, página, o
-  `PresenceHeartbeat`) fica DENTRO de `<PortaDeEntrada>`: montado por trás,
-  um deep link `/inbox?c=X` abriria o fio e zeraria as não lidas da conversa
-  para a conta inteira, e a presença seria publicada antes da confirmação.
-  Consequência escrita: enquanto o Meu dia está aberto a pessoa aparece
-  OFFLINE para os colegas (só o heartbeat publica presença) — são segundos.
+- ⚠️⚠️ **NÃO é um Dialog do projeto, e a PÁGINA não pode renderizar por
+  trás.** Desde 12/09/2026 o fundo é o app de verdade — menu e cabeçalho —,
+  DESFOCADO e `inert` (pedido do operador); o cartão vem num overlay com
+  `backdrop-blur`. O que NÃO monta atrás é a PÁGINA e o
+  `PresenceHeartbeat`, e é por isso que o filho da porta é uma FUNÇÃO
+  (`children(entradaPendente)`): montada, a página devolveria os efeitos que
+  a porta existe para segurar — um deep link `/inbox?c=X` abriria o fio e
+  zeraria as não lidas da conversa para a conta inteira. Consequência
+  escrita: enquanto o Meu dia está aberto a pessoa aparece OFFLINE para os
+  colegas (só o heartbeat publica presença) — são segundos. E o fundo leva
+  `aria-hidden` junto com o `inert`, senão o Tab alcança o menu atrás do
+  cartão.
 - ⚠️⚠️ **Trava de MÃO ÚNICA, decidida uma vez por carga de página.** A regra
   (`precisaMostrar`: sessão de login nova OU primeiro acesso do dia) roda no
   inicializador do `useState` da porta e só FECHA. Nunca reavaliar por evento
@@ -3841,6 +3846,18 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   da lista — as esperas mais recentes, que são as "novas" (a lição do Radar);
   `truncada` (o `count: 'exact'` passou do teto) vira "mais de N", nunca um
   número menor com cara de certo.
+- ⚠️ **As novidades também são RECORTADAS pelo perfil** (pedido do operador,
+  12/09/2026: "um advogado do trabalhista não precisa ter a tela poluída com
+  notificações da conexão bancária"). `note_mention` e `conversation_assigned`
+  carregam `conversation_id` (919 e o gatilho da 027), então a conversa
+  responde por qual conexão o aviso veio; `task_assigned`/`task_reply` têm a
+  coluna NULA de propósito — e tarefa não tem conexão nenhuma
+  (`cb_tasks` guarda só o contato) —, então aviso de tarefa NUNCA é
+  recortado. Aviso cuja conversa não está no mapa CONTA como dentro (a mesma
+  escolha de `conversaNoEscopo`: não esconder por ignorância). O que ficou
+  fora aparece como "N fora do seu perfil", pela régua da D8. ⚠️ O SINO não
+  recorta nada — os números divergem de propósito, e é por isso que o fora
+  do perfil é mostrado em vez de sumir.
 - ⚠️ **"Novidades desde a sua última entrada" conta pelo `created_at` >
   confirmação anterior (estrito), lidas ou não** — nunca as "não lidas" do
   sino, que acumulam avisos tratados por outro caminho (`read_at` só muda na

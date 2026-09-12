@@ -18,6 +18,13 @@
 // apagado do bucket e a mensagem na janela de desfazer é ENVIADA.
 // Remontagem é coberta pelo `Set` de módulo "liberados nesta carga".
 //
+// ⚠️ A ÚNICA EXCEÇÃO é `reabrir`, chamada só pela guarda de inatividade
+// (F2a): 4 h sem ninguém mexer em nenhuma aba deste navegador — e a guarda
+// intercepta o gesto que acorda a tela (`stopPropagation`), então o Enter ou
+// o clique não chegam ao app antes de o Meu dia se pôr na frente. O caso
+// "aba reaberta depois de 4 h" é decidido aqui mesmo, no inicializador, sem
+// montar o app por um quadro.
+//
 // ⚠️ A confirmação vive no `localStorage`, por pessoa (a régua está em
 // `src/lib/resumo-do-dia/pendencia.ts`): sessão nova OU primeiro acesso do
 // dia. Outra aba que confirma libera esta pelo evento `storage` — só quando
@@ -37,8 +44,16 @@ import {
 } from 'react';
 
 import { useAuth } from '@/hooks/use-auth';
+import { useGuardaDeInatividade } from '@/hooks/use-guarda-de-inatividade';
+import { decidir } from '@/lib/auth/inatividade';
 import { sairDesteAparelho } from '@/lib/auth/sair';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
+import {
+  gravarAtividadeNoNavegador,
+  gravarRegistroNoNavegador,
+  lerAtividadeDoNavegador,
+  lerRegistroDoNavegador,
+} from '@/lib/resumo-do-dia/navegador';
 import {
   chaveDoRegistro,
   decidirEntrada,
@@ -46,7 +61,6 @@ import {
   lerRegistro,
   novoRegistro,
   precisaMostrar,
-  type RegistroDeEntrada,
 } from '@/lib/resumo-do-dia/pendencia';
 import { createClient } from '@/lib/supabase/client';
 import { diaLocal } from '@/lib/tasks/prazo';
@@ -56,32 +70,6 @@ import { ResumoDoDia } from './resumo-do-dia';
 
 /** Quem já passou pela porta NESTA carga de página — remontar não reabre. */
 const liberadosNestaCarga = new Set<string>();
-
-function lerDoNavegador(userId: string): RegistroDeEntrada | null {
-  // O shell só instancia a porta depois do spinner de auth, que no servidor
-  // é o que se renderiza — mas a guarda custa uma linha e sobrevive a quem
-  // mover o componente (o molde de `use-theme.tsx`).
-  if (typeof window === 'undefined') return null;
-  try {
-    return lerRegistro(window.localStorage.getItem(chaveDoRegistro(userId)));
-  } catch {
-    // Storage indisponível (modo privado restrito): sem registro, a tela
-    // aparece — e a confirmação fica só em memória, nesta carga.
-    return null;
-  }
-}
-
-function gravarNoNavegador(userId: string, registro: RegistroDeEntrada): void {
-  if (typeof window === 'undefined') return;
-  try {
-    window.localStorage.setItem(
-      chaveDoRegistro(userId),
-      JSON.stringify(registro)
-    );
-  } catch {
-    // Idem: a confirmação em memória (o Set) já liberou esta carga.
-  }
-}
 
 interface Decisao {
   pendente: boolean;
@@ -95,6 +83,25 @@ interface Decisao {
   daConfirmacao: boolean;
 }
 
+/** A decisão de AGORA, com o registro do navegador — a mesma para a carga e para a reabertura. */
+function decidirAgora(
+  userId: string,
+  sessionId: string | null,
+  pendente: (registroAusente: boolean) => boolean
+): Decisao {
+  const agora = new Date();
+  const registro = lerRegistroDoNavegador(userId);
+  const inicio = inicioDasNovidades(registro, agora.getTime());
+  return {
+    pendente: pendente(registro === null),
+    dia: diaLocal(agora),
+    sessao: sessionId,
+    agoraMs: agora.getTime(),
+    desdeMs: inicio.desdeMs,
+    daConfirmacao: inicio.daConfirmacao,
+  };
+}
+
 export function PortaDeEntrada({
   userId,
   children,
@@ -106,25 +113,20 @@ export function PortaDeEntrada({
     useAuth();
 
   const [decisao, setDecisao] = useState<Decisao>(() => {
-    const agora = new Date();
-    const dia = diaLocal(agora);
-    const registro = lerDoNavegador(userId);
+    const agoraMs = Date.now();
+    const registro = lerRegistroDoNavegador(userId);
     const pendente = decidirEntrada({
       registro,
       sessionId,
-      hoje: dia,
+      hoje: diaLocal(new Date(agoraMs)),
       accountStatus,
       jaLiberadoNestaCarga: liberadosNestaCarga.has(userId),
+      // Aba reaberta depois de 4 h paradas: o Meu dia volta já na carga.
+      inatividadeExpirou:
+        decidir(lerAtividadeDoNavegador(userId), sessionId, agoraMs) ===
+        'expirou',
     });
-    const inicio = inicioDasNovidades(registro, agora.getTime());
-    return {
-      pendente,
-      dia,
-      sessao: sessionId,
-      agoraMs: agora.getTime(),
-      desdeMs: inicio.desdeMs,
-      daConfirmacao: inicio.daConfirmacao,
-    };
+    return decidirAgora(userId, sessionId, () => pendente);
   });
 
   // Liberada (agora ou desde o início) = nesta carga não volta a abrir.
@@ -151,13 +153,37 @@ export function PortaDeEntrada({
   const confirmar = useCallback(() => {
     // O dia e a sessão de AGORA, não os capturados: quem deixa a tela aberta
     // até depois da meia-noite confirma o dia em que clicou.
-    gravarNoNavegador(
+    const agora = new Date();
+    gravarRegistroNoNavegador(
       userId,
-      novoRegistro(sessionId, diaLocal(new Date()), new Date())
+      novoRegistro(sessionId, diaLocal(agora), agora)
     );
+    // É o "Continuar" que regrava o relógio de atividade depois de uma
+    // expiração — a guarda NÃO grava ao expirar (relógio compartilhado; ver
+    // `passoDaGuarda`). Sem isto, o gesto seguinte reabriria de novo.
+    if (sessionId)
+      gravarAtividadeNoNavegador(userId, sessionId, agora.getTime());
     liberadosNestaCarga.add(userId);
     setDecisao((d) => ({ ...d, pendente: false }));
   }, [userId, sessionId]);
+
+  // A única exceção à trava de mão única — só a guarda de inatividade chama.
+  // Já pendente = nada a fazer (a guarda pode conferir de novo antes do
+  // clique em Continuar).
+  const reabrir = useCallback(() => {
+    // Calculado FORA do updater: `decidirAgora` lê o relógio e o storage, e o
+    // updater roda na fase de render (e duas vezes no StrictMode).
+    const nova = decidirAgora(userId, sessionId, () => true);
+    setDecisao((d) => (d.pendente ? d : nova));
+  }, [userId, sessionId]);
+
+  // Conta que não resolveu nunca reabre (a mesma cerca de `decidirEntrada`).
+  useGuardaDeInatividade({
+    userId,
+    sessionId,
+    ativa: !decisao.pendente && accountStatus === 'ready',
+    aoExpirar: reabrir,
+  });
 
   const sair = useCallback(async (): Promise<string | null> => {
     const resultado = await sairDesteAparelho(createClient().auth);

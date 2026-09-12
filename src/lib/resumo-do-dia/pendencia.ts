@@ -132,8 +132,11 @@ export function decidirEntrada(args: {
   hoje: string;
   accountStatus: string;
   jaLiberadoNestaCarga: boolean;
+  /** A guarda de 4 h diz que a aba voltou de uma pausa longa (F2a): mostra, mesmo já liberada. */
+  inatividadeExpirou?: boolean;
 }): boolean {
   if (args.accountStatus !== 'ready') return false;
+  if (args.inatividadeExpirou) return true;
   if (args.jaLiberadoNestaCarga) return false;
   return precisaMostrar(args.registro, args.sessionId, args.hoje);
 }

@@ -16,6 +16,12 @@ import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas 
  * local TROCARIA a conexão da produção, e o cron da VPS passaria a procurar
  * as cobranças reais no sandbox (404 em tudo, o escritório inteiro "em
  * dia"). O sandbox só se testa com `fetchFn` falso.
+ *
+ * ⚠️ **Chave de OUTRA conta do Asaas.** Com espelho existente, antes de
+ * gravar a chave nova ela relê um `cus_…` conhecido: 404 = a chave enxerga
+ * outra conta → recusada (`conta_trocada`). Sem isso, trocar a chave pela
+ * de outro CNPJ zeraria o aviso de todo mundo no ciclo seguinte. O cartão
+ * oferece "Desconectar e apagar os dados do Asaas" para o caso legítimo.
  */
 
 export type CodigoDaConexao =
@@ -27,7 +33,8 @@ export type CodigoDaConexao =
   | "asaas_error"
   | "db_error"
   | "chave_ilegivel"
-  | "nao_conectado";
+  | "nao_conectado"
+  | "conta_trocada";
 
 export type ResultadoDaConexao = { ok: true } | { ok: false; codigo: CodigoDaConexao };
 
@@ -53,6 +60,29 @@ function codigoDaFalha(e: unknown): CodigoDaConexao {
   return e.codigo === "nao_encontrado" ? "asaas_error" : e.codigo;
 }
 
+/** Quantos clientes e cobranças o espelho guarda — para a pergunta do "apagar os dados". */
+export async function contarEspelho(admin: SupabaseClient, accountId: string): Promise<{ clientes: number; cobrancas: number } | null> {
+  const [c, p] = await Promise.all([
+    admin.from("cb_asaas_clientes").select("id", { count: "exact", head: true }).eq("account_id", accountId),
+    admin.from("cb_asaas_cobrancas").select("id", { count: "exact", head: true }).eq("account_id", accountId),
+  ]);
+  if (c.error || p.error) return null;
+  return { clientes: c.count ?? 0, cobrancas: p.count ?? 0 };
+}
+
+/** Até dois clientes conhecidos do espelho — a prova de que a chave é da mesma conta. */
+async function clientesConhecidos(admin: SupabaseClient, accountId: string): Promise<string[] | null> {
+  const { data, error } = await admin
+    .from("cb_asaas_clientes")
+    .select("asaas_customer_id")
+    .eq("account_id", accountId)
+    .eq("deleted", false)
+    .order("visto_em", { ascending: false })
+    .limit(2);
+  if (error) return null;
+  return ((data ?? []) as { asaas_customer_id: string }[]).map((l) => l.asaas_customer_id);
+}
+
 export async function conectarAsaas(
   admin: SupabaseClient,
   accountId: string,
@@ -69,6 +99,24 @@ export async function conectarAsaas(
     await cliente.listar("/customers", { limit: 1 });
   } catch (e) {
     return { ok: false, codigo: codigoDaFalha(e) };
+  }
+
+  // Com espelho, a chave nova tem de enxergar um cliente que o espelho conhece.
+  const conhecidos = await clientesConhecidos(admin, accountId);
+  if (conhecidos === null) return { ok: false, codigo: "db_error" };
+  if (conhecidos.length > 0) {
+    let enxerga = false;
+    try {
+      for (const id of conhecidos) {
+        if ((await cliente.obter<unknown>(`/customers/${id}`)) !== null) {
+          enxerga = true;
+          break;
+        }
+      }
+    } catch (e) {
+      return { ok: false, codigo: codigoDaFalha(e) };
+    }
+    if (!enxerga) return { ok: false, codigo: "conta_trocada" };
   }
 
   const agora = new Date().toISOString();
@@ -91,10 +139,16 @@ export async function conectarAsaas(
 }
 
 /**
- * Apaga a config. Nada mais é apagado — não há espelho ainda, e quando
- * houver ele é histórico de cobrança do escritório.
+ * Apaga a config. O espelho FICA (é histórico de cobrança do escritório,
+ * e a chave nova o reaproveita) — a menos que `apagarEspelho`: aí os
+ * clientes vão embora e as cobranças em cascata. As FICHAS criadas pela D2
+ * ficam: são contatos do escritório, como qualquer outro.
  */
-export async function desconectarAsaas(admin: SupabaseClient, accountId: string): Promise<ResultadoDaConexao> {
+export async function desconectarAsaas(admin: SupabaseClient, accountId: string, opcoes: { apagarEspelho?: boolean } = {}): Promise<ResultadoDaConexao> {
+  if (opcoes.apagarEspelho) {
+    const { error } = await admin.from("cb_asaas_clientes").delete().eq("account_id", accountId);
+    if (error) return { ok: false, codigo: "db_error" };
+  }
   const { error } = await admin.from("cb_asaas_config").delete().eq("account_id", accountId);
   if (error) return { ok: false, codigo: "db_error" };
   return { ok: true };

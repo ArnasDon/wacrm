@@ -1,0 +1,109 @@
+import type { SupabaseClient } from "@supabase/supabase-js";
+
+import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
+import { resolveImportTagIds } from "@/lib/contacts/resolve-import-tags";
+import { variantesDoNonoDigito } from "@/lib/contacts/telefone";
+
+/**
+ * A ficha que NASCE do Asaas (D2, decidida pelo operador em 12/09/2026):
+ * para o cliente do Asaas com telefone e sem ficha no CRM, o ciclo cria o
+ * CONTATO — e só ele. I/O.
+ *
+ * O que morde:
+ *
+ * - `findExistingContact` vem primeiro, como PORTÃO anti-duplicata (últimos
+ *   8 dígitos, tolerante a tronco) — não como vínculo. Se ele devolver ficha
+ *   cujo número NÃO é igual nem irmã do nono dígito do número do Asaas, o
+ *   ciclo NÃO cria e NÃO liga: devolve o candidato, e o cliente vai para
+ *   "Para confirmar" (D5). Se devolver a irmã/igual, é um vínculo por
+ *   TELEFONE que a leitura em memória perdeu por corrida (a ficha nasceu
+ *   entre o índice e agora) — liga, não cria.
+ * - ⚠️ `contacts.user_id` é o DONO DA CONTA (`accounts.owner_user_id`),
+ *   resolvido SEM fallback: a coluna cascateia de `auth.users`, e o dono é
+ *   o único login que a conta impede de apagar (971). Há varredura
+ *   estrutural cobrando isto (`src/lib/contacts/dono-duravel.test.ts`).
+ * - 23505 na corrida = reler e aplicar a mesma régua.
+ * - A ficha recebe a etiqueta `asaas` por `resolveImportTagIds` (a régua
+ *   única de etiqueta), com INSERT direto em `contact_tags`: a ficha entra
+ *   em "todos os contatos" do disparo e nos filtros, e a etiqueta é o que
+ *   deixa o operador excluí-la (ou achá-la). ⚠️ Direto, e não por
+ *   `tag-events.ts`: aquele caminho dispara o gatilho `tag_added` das
+ *   automações, e 264 fichas de uma vez virariam 264 disparos. Falha na
+ *   etiqueta não desfaz a ficha — é registrada e o ciclo segue.
+ * - SEM conversa: 264 conversas vazias de uma vez iriam para o fim da
+ *   caixa como ruído. A conversa nasce quando o cliente escrever ou no
+ *   primeiro envio da régua (criada pela VARREDURA, Fase 3).
+ * - ⚠️ O nome legal não sobrevive à primeira mensagem do cliente:
+ *   `inbound-store` sobrescreve `contacts.name` com o push name do
+ *   WhatsApp. É por isso que a régua usa o nome do Asaas, nunca o da ficha.
+ */
+
+export const ETIQUETA_DA_FICHA = "asaas";
+
+export type ResultadoDaFicha =
+  | { ok: true; contactId: string; criou: boolean }
+  /** o sufixo bate com OUTRO número: vai para "Para confirmar" com o candidato */
+  | { ok: false; codigo: "sufixo"; candidatoId: string }
+  | { ok: false; codigo: "db_error" | "sem_dono" };
+
+/** Puro: a ficha achada pelo sufixo tem o MESMO número (ou a irmã do 9)? */
+export function mesmoNumero(daFicha: string | null | undefined, doAsaas: string): boolean {
+  const digitos = (daFicha ?? "").replace(/\D/g, "");
+  return digitos !== "" && variantesDoNonoDigito(doAsaas).includes(digitos);
+}
+
+async function donoDaConta(admin: SupabaseClient, accountId: string): Promise<string | null> {
+  const { data, error } = await admin.from("accounts").select("owner_user_id").eq("id", accountId).maybeSingle();
+  if (error) return null;
+  return typeof data?.owner_user_id === "string" ? data.owner_user_id : null;
+}
+
+async function etiquetar(admin: SupabaseClient, accountId: string, dono: string, contactId: string): Promise<void> {
+  try {
+    const { tagIdByKey } = await resolveImportTagIds(admin, { accountId, userId: dono, tagNames: [ETIQUETA_DA_FICHA], canCreateTags: true });
+    const tagId = tagIdByKey.get(ETIQUETA_DA_FICHA);
+    if (!tagId) return;
+    await admin.from("contact_tags").upsert({ contact_id: contactId, tag_id: tagId }, { onConflict: "contact_id,tag_id", ignoreDuplicates: true });
+  } catch (e) {
+    console.warn(`[asaas] etiqueta na ficha ${contactId} falhou:`, e instanceof Error ? e.message : e);
+  }
+}
+
+export async function criarFichaDoAsaas(
+  admin: SupabaseClient,
+  accountId: string,
+  cliente: { nome: string; telefone: string },
+): Promise<ResultadoDaFicha> {
+  const busca = await findExistingContact(admin, accountId, cliente.telefone);
+  // ⚠️ Erro de banco NÃO é "não achei": criar agora duplicaria a ficha.
+  if (busca.falhou) return { ok: false, codigo: "db_error" };
+  if (busca.contato) {
+    return mesmoNumero(busca.contato.phone, cliente.telefone)
+      ? { ok: true, contactId: busca.contato.id, criou: false }
+      : { ok: false, codigo: "sufixo", candidatoId: busca.contato.id };
+  }
+
+  const dono = await donoDaConta(admin, accountId);
+  if (!dono) return { ok: false, codigo: "sem_dono" };
+
+  const nome = cliente.nome.trim() || cliente.telefone;
+  const { data: criado, error } = await admin
+    .from("contacts")
+    .insert({ account_id: accountId, user_id: dono, phone: cliente.telefone, name: nome })
+    .select("id")
+    .single();
+  if (error || !criado) {
+    if (!isUniqueViolation(error)) return { ok: false, codigo: "db_error" };
+    // Corrida: alguém gravou o mesmo número entre a busca e o insert. Reler
+    // e aplicar a MESMA régua — a ficha pode ser a irmã do 9 ou só o sufixo.
+    const deNovo = await findExistingContact(admin, accountId, cliente.telefone);
+    if (deNovo.falhou || !deNovo.contato) return { ok: false, codigo: "db_error" };
+    return mesmoNumero(deNovo.contato.phone, cliente.telefone)
+      ? { ok: true, contactId: deNovo.contato.id, criou: false }
+      : { ok: false, codigo: "sufixo", candidatoId: deNovo.contato.id };
+  }
+
+  const contactId = criado.id as string;
+  await etiquetar(admin, accountId, dono, contactId);
+  return { ok: true, contactId, criou: true };
+}

@@ -20,6 +20,7 @@ export const CODIGOS_DO_ASAAS = [
   "db_error",
   "chave_ilegivel",
   "nao_conectado",
+  "conta_trocada",
 ] as const;
 
 export type CodigoDoAsaas = (typeof CODIGOS_DO_ASAAS)[number];
@@ -28,12 +29,18 @@ export function codigoConhecido(codigo: string): codigo is CodigoDoAsaas {
   return (CODIGOS_DO_ASAAS as readonly string[]).includes(codigo);
 }
 
+/** As origens de vínculo que a tela rotula (`asaas.origem.<origem>`), cobradas por teste. */
+export const ORIGENS_DO_VINCULO = ["telefone", "cpf", "email", "criada", "manual", "desvinculado"] as const;
+
 export interface ConfigDoAsaas {
   chave_nome: string | null;
   ambiente: string;
   chave_expira_em: string | null;
   status: string;
   last_sync_at: string | null;
+  last_sync_attempt_at: string | null;
+  vencidas_listadas_em: string | null;
+  last_full_sync_at: string | null;
   last_error: string | null;
   created_at: string | null;
 }
@@ -49,6 +56,12 @@ export interface CartaoDoAsaas {
   /** Dias até a chave expirar; negativo quando já expirou; `null` sem validade. */
   diasAteExpirar: number | null;
   ultimaSync: string | null;
+  /** o começo da última tentativa, mesmo a que falhou */
+  ultimaTentativa: string | null;
+  /** o início da última listagem COMPLETA das vencidas */
+  vencidasListadasEm: string | null;
+  /** já houve alguma sincronização (o espelho tem de onde vir)? */
+  nuncaSincronizado: boolean;
   /** código do último erro (a tela traduz) */
   erro: string | null;
   conectadoEm: string | null;
@@ -78,6 +91,9 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
       expiraEm: null,
       diasAteExpirar: null,
       ultimaSync: null,
+      ultimaTentativa: null,
+      vencidasListadasEm: null,
+      nuncaSincronizado: true,
       erro: null,
       conectadoEm: null,
     };
@@ -89,6 +105,9 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
     expiraEm: config.chave_expira_em,
     diasAteExpirar: config.chave_expira_em ? diasAte(config.chave_expira_em, agora) : null,
     ultimaSync: config.last_sync_at,
+    ultimaTentativa: config.last_sync_attempt_at ?? null,
+    vencidasListadasEm: config.vencidas_listadas_em ?? null,
+    nuncaSincronizado: !config.last_sync_at && !config.vencidas_listadas_em,
     erro: config.status === "erro" ? config.last_error : null,
     conectadoEm: config.created_at,
   };

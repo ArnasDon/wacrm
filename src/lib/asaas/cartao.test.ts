@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, cartaoDoAsaas, codigoConhecido, diasAte, type ConfigDoAsaas } from './cartao'
+import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, ORIGENS_DO_VINCULO, cartaoDoAsaas, codigoConhecido, diasAte, type ConfigDoAsaas } from './cartao'
+import { NOMES_DAS_LISTAS } from './listas'
+import { MOTIVOS_DO_CANDIDATO } from './vinculo'
 
 // ============================================================
 // O BURACO QUE A METADE DE i18n DESTE TESTE FECHA
@@ -47,6 +49,23 @@ describe.each(['pt-BR.json', 'en.json'])('dicionário %s', (arquivo) => {
     const semFrase = MOTIVOS_DO_VINCULO.filter((m) => typeof asaas.vinculoMotivo?.[m] !== 'string')
     expect(semFrase).toEqual([])
   })
+
+  // As listas do cartão (994) pedem mais quatro famílias de chave montada:
+  // o nome de cada lista, a frase de vazio de cada uma, a origem do vínculo
+  // e o motivo de cada candidato — e a faixa de atraso dos inadimplentes.
+  it('CRÍTICO: toda lista tem nome e frase de vazio', () => {
+    expect(NOMES_DAS_LISTAS.filter((n) => typeof asaas.listas?.[n] !== 'string')).toEqual([])
+    expect(NOMES_DAS_LISTAS.filter((n) => typeof asaas.vazio?.[n] !== 'string')).toEqual([])
+  })
+
+  it('CRÍTICO: toda origem de vínculo e todo motivo de candidato têm frase', () => {
+    expect(ORIGENS_DO_VINCULO.filter((o) => typeof asaas.origem?.[o] !== 'string')).toEqual([])
+    expect(MOTIVOS_DO_CANDIDATO.filter((m) => typeof asaas.candidatoMotivo?.[m] !== 'string')).toEqual([])
+  })
+
+  it('CRÍTICO: as faixas de atraso têm frase', () => {
+    expect(['todas', 'ate_5', 'de_6_a_30', 'mais_de_30'].filter((f) => typeof asaas.faixa?.[f] !== 'string')).toEqual([])
+  })
 })
 
 describe('codigoConhecido', () => {
@@ -80,6 +99,9 @@ describe('cartaoDoAsaas', () => {
     chave_expira_em: null,
     status: 'conectado',
     last_sync_at: null,
+    last_sync_attempt_at: null,
+    vencidas_listadas_em: null,
+    last_full_sync_at: null,
     last_error: null,
     created_at: '2026-09-12T10:00:00Z',
   }
@@ -106,6 +128,13 @@ describe('cartaoDoAsaas', () => {
 
   it('marca o sandbox: os números de lá não são os do escritório', () => {
     expect(cartaoDoAsaas({ ...base, ambiente: 'sandbox' }).sandbox).toBe(true)
+  })
+
+  it('"nunca sincronizado" só sem sucesso E sem listagem — a tentativa que falhou não conta', () => {
+    expect(cartaoDoAsaas(base).nuncaSincronizado).toBe(true)
+    expect(cartaoDoAsaas({ ...base, last_sync_attempt_at: '2026-09-12T11:00:00Z' }).nuncaSincronizado).toBe(true)
+    expect(cartaoDoAsaas({ ...base, vencidas_listadas_em: '2026-09-12T11:00:00Z' }).nuncaSincronizado).toBe(false)
+    expect(cartaoDoAsaas(null).nuncaSincronizado).toBe(true)
   })
 
   it('conta os dias até a validade que o operador digitou', () => {

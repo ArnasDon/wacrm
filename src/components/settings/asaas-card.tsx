@@ -1,33 +1,46 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Copy, Receipt, Search } from "lucide-react";
+import { Check, ChevronDown, Copy, Receipt, RefreshCw, Search } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { avisarAsaasMudou } from "@/lib/asaas/aviso";
 import { AVISAR_EXPIRACAO_EM_DIAS, codigoConhecido, type CartaoDoAsaas } from "@/lib/asaas/cartao";
 import type { MotivoDoVinculo, RelatorioDoLevantamento } from "@/lib/asaas/levantamento";
+import type { ResumoDoEspelho } from "@/lib/asaas/listas";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
+import { AsaasListas } from "./asaas-listas";
 import { SettingsChip } from "./settings-chip";
 
 /**
- * O cartão "Asaas" da aba Integrações (992). Faz DUAS coisas, e só elas:
- * guarda a chave da API (testada e cifrada pela rota) e roda o LEVANTAMENTO
- * da conta, que é só leitura e não grava nada.
+ * O cartão "Asaas" da aba Integrações (992/994). Guarda a chave da API
+ * (testada e cifrada pela rota), mostra o RESUMO do espelho — quantos
+ * clientes do Asaas, quantos ligados a uma ficha, quantos para confirmar,
+ * sem ficha e inadimplentes —, dispara a sincronização e abre as cinco
+ * listas (`asaas-listas.tsx`) onde uma pessoa liga, desliga e ignora. O
+ * LEVANTAMENTO da Fase 0 (só leitura) continua disponível, atrás de um
+ * botão menor.
  *
- * ⚠️ O espelho das cobranças, o aviso na conversa e a régua de cobrança
- * NÃO estão aqui de propósito: a forma das tabelas depende dos números do
- * levantamento (docs/PLANO-integracao-asaas.md, D2/D5/D10), e migration
- * aplicada não se reescreve.
+ * ⚠️ Os NÚMEROS do resumo somem enquanto a carga corre ou falha (a regra da
+ * tela de agendadas): "Inadimplentes: 0" por um segundo, ou depois de um
+ * 500, afirmaria o contrário do que a conta tem.
  *
  * Só admin chega aqui (a aba inteira é admin). Nenhuma chave volta da rota;
  * o campo nasce vazio sempre.
  */
+
+interface Resposta {
+  cartao: CartaoDoAsaas;
+  resumo: ResumoDoEspelho;
+  leituraFresca: boolean;
+  guardado: { clientes: number; cobrancas: number };
+}
 
 const MOTIVOS: MotivoDoVinculo[] = [
   "telefone_igual",
@@ -54,7 +67,7 @@ function listarTexto(mapa: Record<string, string>): string {
 
 export function AsaasCard() {
   const t = useTranslations("Settings.integracoes");
-  const [cartao, setCartao] = useState<CartaoDoAsaas | null>(null);
+  const [dados, setDados] = useState<Resposta | null>(null);
   const [falhou, setFalhou] = useState(false);
   const [aberto, setAberto] = useState(false);
   const [chave, setChave] = useState("");
@@ -62,10 +75,13 @@ export function AsaasCard() {
   const [validade, setValidade] = useState("");
   const [salvando, setSalvando] = useState(false);
   const [desconectando, setDesconectando] = useState(false);
+  const [sincronizando, setSincronizando] = useState(false);
   const [levantando, setLevantando] = useState(false);
   const [relatorio, setRelatorio] = useState<RelatorioDoLevantamento | null>(null);
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
+  const [mostrarListas, setMostrarListas] = useState(false);
+  const [versao, setVersao] = useState(0);
   const vivoRef = useRef(true);
   const tinhaDadosRef = useRef(false);
 
@@ -80,11 +96,12 @@ export function AsaasCard() {
     try {
       const res = await fetch("/api/cb/asaas");
       if (!res.ok) throw new Error(String(res.status));
-      const corpo = (await res.json()) as { cartao: CartaoDoAsaas };
+      const corpo = (await res.json()) as Resposta;
       if (vivoRef.current) {
-        setCartao(corpo.cartao);
+        setDados(corpo);
         setFalhou(false);
         tinhaDadosRef.current = true;
+        setVersao((v) => v + 1);
       }
     } catch {
       if (!vivoRef.current) return;
@@ -117,26 +134,52 @@ export function AsaasCard() {
       }
       setChave("");
       toast.success(t("asaas.conectado"));
+      avisarAsaasMudou();
+      // a primeira sincronização roda em `after()` na rota
+      setTimeout(() => void carregar(), 6000);
       await carregar();
     } finally {
       if (vivoRef.current) setSalvando(false);
     }
   };
 
-  const desconectar = async () => {
+  const desconectar = async (apagarEspelho: boolean) => {
     if (desconectando) return;
-    if (!window.confirm(t("asaas.confirmarDesconectar"))) return;
+    const guardado = dados?.guardado ?? { clientes: 0, cobrancas: 0 };
+    const pergunta = apagarEspelho ? t("asaas.confirmarApagar", { clientes: guardado.clientes, cobrancas: guardado.cobrancas }) : t("asaas.confirmarDesconectar");
+    if (!window.confirm(pergunta)) return;
     setDesconectando(true);
     try {
-      const res = await fetch("/api/cb/asaas/config", { method: "DELETE" });
+      const res = await fetch(`/api/cb/asaas/config${apagarEspelho ? "?espelho=1" : ""}`, { method: "DELETE" });
       if (!res.ok) {
         toast.error(t("salvarFalhou"));
         return;
       }
       setRelatorio(null);
+      setMostrarListas(false);
+      avisarAsaasMudou();
       await carregar();
     } finally {
       if (vivoRef.current) setDesconectando(false);
+    }
+  };
+
+  const sincronizar = async (completa: boolean) => {
+    setSincronizando(true);
+    setErro(null);
+    try {
+      const res = await fetch("/api/cb/asaas/sync", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ completa }) });
+      if (!res.ok) {
+        toast.error(t("salvarFalhou"));
+        return;
+      }
+      toast.success(t("asaas.sincronizacaoPedida"));
+      // 202: o trabalho corre em `after()`; dá um tempo e relê.
+      await new Promise((r) => setTimeout(r, 6000));
+      avisarAsaasMudou();
+      await carregar();
+    } finally {
+      if (vivoRef.current) setSincronizando(false);
     }
   };
 
@@ -167,6 +210,8 @@ export function AsaasCard() {
     }
   };
 
+  const cartao = dados?.cartao ?? null;
+  const resumo = dados?.resumo ?? null;
   const estado = cartao?.estado ?? "nao_conectado";
   // ⚠️ O chip fica no cabeçalho, sempre visível, e é uma AFIRMAÇÃO. Enquanto
   // a carga corre — ou quando ela falha — dizer "Não conectada" acusa de
@@ -189,6 +234,8 @@ export function AsaasCard() {
     if (dias !== null && dias <= AVISAR_EXPIRACAO_EM_DIAS) return t("asaas.expiraEmBreve", { dia: cartao.expiraEm, dias });
     return t("asaas.expiraEm", { dia: cartao.expiraEm });
   })();
+
+  const quando = (iso: string) => new Date(iso).toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
 
   return (
     <div className="rounded-lg border border-border bg-card">
@@ -213,6 +260,11 @@ export function AsaasCard() {
           ) : cartao.estado === "nao_conectado" ? (
             <>
               <p className="max-w-[62ch] text-muted-foreground">{t("asaas.desc")}</p>
+              {dados && dados.guardado.clientes > 0 && (
+                <p className="max-w-[62ch] text-xs text-amber-600 dark:text-amber-400">
+                  {t("asaas.espelhoGuardado", { clientes: dados.guardado.clientes, cobrancas: dados.guardado.cobrancas })}
+                </p>
+              )}
               <div className="grid gap-3 sm:max-w-md">
                 <div className="space-y-1">
                   <Label htmlFor="asaas-chave">{t("asaas.campoChave")}</Label>
@@ -251,16 +303,26 @@ export function AsaasCard() {
                   {cartao.chaveNome ? t("asaas.chaveRotulada", { nome: cartao.chaveNome }) : t("asaas.semNome")}
                   {cartao.conectadoEm ? ` · ${t("asaas.conectadoEm", { quando: new Date(cartao.conectadoEm).toLocaleDateString(undefined) })}` : ""}
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button type="button" variant="outline" size="sm" onClick={() => void levantar()} disabled={levantando}>
-                    <Search className={cn("size-4", levantando && "animate-pulse")} />
-                    {levantando ? t("asaas.levantando") : t("asaas.levantar")}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button type="button" variant="outline" size="sm" onClick={() => void sincronizar(false)} disabled={sincronizando}>
+                    <RefreshCw className={cn("size-4", sincronizando && "animate-spin")} />
+                    {sincronizando ? t("asaas.sincronizando") : t("asaas.sincronizar")}
                   </Button>
-                  <Button type="button" variant="outline" size="sm" onClick={() => void desconectar()} disabled={desconectando}>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void sincronizar(true)} disabled={sincronizando} title={t("asaas.sincronizarTudoDica")}>
+                    {t("asaas.sincronizarTudo")}
+                  </Button>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void desconectar(false)} disabled={desconectando}>
                     {t("asaas.desconectar")}
                   </Button>
                 </div>
               </div>
+
+              <p className="text-xs text-muted-foreground">
+                {cartao.ultimaSync ? t("asaas.ultimaSync", { quando: quando(cartao.ultimaSync) }) : t("asaas.nuncaSincronizado")}
+                {cartao.ultimaTentativa && cartao.ultimaTentativa !== cartao.ultimaSync ? ` · ${t("asaas.ultimaTentativa", { quando: quando(cartao.ultimaTentativa) })}` : ""}
+                {cartao.vencidasListadasEm && !dados?.leituraFresca ? ` · ${t("asaas.leituraAntiga", { quando: quando(cartao.vencidasListadasEm) })}` : ""}
+              </p>
+
               {cartao.sandbox && <p className="text-xs text-amber-600 dark:text-amber-400">{t("asaas.sandboxAviso")}</p>}
               {avisoDaChave && (
                 <p className={cn("text-xs", cartao.diasAteExpirar !== null && cartao.diasAteExpirar <= AVISAR_EXPIRACAO_EM_DIAS ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground")}>
@@ -269,9 +331,54 @@ export function AsaasCard() {
               )}
               {cartao.erro && <p className="text-xs text-destructive">{t("falha", { motivo: motivo(cartao.erro) })}</p>}
               {erro && <p className="text-xs text-destructive">{t("falha", { motivo: erro })}</p>}
-              <p className="max-w-[62ch] text-xs text-muted-foreground">{t("asaas.levantamentoAjuda")}</p>
+
+              {resumo && (
+                <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
+                  <p className="text-foreground">
+                    {t("asaas.resumo.clientes", { n: resumo.clientes })}
+                    {" · "}
+                    <span className="font-medium">{t("asaas.resumo.ligados", { n: resumo.ligados })}</span>
+                    {resumo.ligados > 0
+                      ? ` (${t("asaas.resumo.ligadosDetalhe", {
+                          telefone: (resumo.ligadosPorOrigem.telefone ?? 0) + (resumo.ligadosPorOrigem.cpf ?? 0) + (resumo.ligadosPorOrigem.email ?? 0),
+                          criadas: resumo.ligadosPorOrigem.criada ?? 0,
+                          manual: resumo.ligadosPorOrigem.manual ?? 0,
+                        })})`
+                      : ""}
+                    {" · "}
+                    <span className={cn(resumo.confirmar > 0 && "font-medium text-amber-600 dark:text-amber-400")}>{t("asaas.resumo.confirmar", { n: resumo.confirmar })}</span>
+                    {" · "}
+                    {t("asaas.resumo.semFicha", { n: resumo.semFicha })}
+                    {" · "}
+                    <span className={cn(resumo.inadimplentes > 0 && "font-medium text-red-700 dark:text-red-300")}>{t("asaas.resumo.inadimplentes", { n: resumo.inadimplentes })}</span>
+                    {resumo.inadimplentes > 0
+                      ? ` (${t("asaas.resumo.inadimplentesDetalhe", { valor: formatCurrency(resumo.valorVencido), parcelas: resumo.parcelasVencidas, semFicha: resumo.inadimplentesSemFicha })})`
+                      : ""}
+                    {resumo.comMaisDeTresParcelas > 0 ? ` · ${t("asaas.resumo.maisDeTres", { n: resumo.comMaisDeTresParcelas })}` : ""}
+                    {resumo.statusDesconhecidos > 0 ? ` · ${t("asaas.resumo.desconhecidos", { n: resumo.statusDesconhecidos })}` : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <Button type="button" variant="outline" size="sm" onClick={() => setMostrarListas((m) => !m)}>
+                      {mostrarListas ? t("asaas.esconderListas") : t("asaas.verListas")}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" onClick={() => void levantar()} disabled={levantando}>
+                      <Search className={cn("size-4", levantando && "animate-pulse")} />
+                      {levantando ? t("asaas.levantando") : t("asaas.levantar")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {mostrarListas && <AsaasListas resumo={resumo} versao={versao} aoMudar={() => void carregar()} />}
 
               {relatorio && <Relatorio relatorio={relatorio} t={t} onCopiar={() => void copiarRelatorio()} copiado={copiado} />}
+
+              <p className="text-xs text-muted-foreground">
+                <button type="button" className="underline" onClick={() => void desconectar(true)} disabled={desconectando}>
+                  {t("asaas.desconectarEApagar")}
+                </button>{" "}
+                {t("asaas.desconectarEApagarDica")}
+              </p>
             </>
           )}
         </div>

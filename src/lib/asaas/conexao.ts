@@ -3,6 +3,22 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { decrypt, encrypt } from "@/lib/whatsapp/encryption";
 
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
+import { lerCliente } from "./leitura";
+
+/**
+ * Depois de quanto tempo SEM BATIMENTO um ciclo é considerado morto e o
+ * cadeado (`cb_asaas_config.sincronizando_desde`, 995), recolhido. O ciclo
+ * bate (`last_sync_attempt_at`) a cada passo — listagem, lote de cobranças,
+ * a cada 20 releituras, a cada 25 fichas —, então um ciclo VIVO nunca fica
+ * 10 minutos sem sinal, por mais páginas que a conta tenha. É o que permite
+ * recolher cedo sem correr o risco de dois ciclos juntos (Codex, PR #201).
+ */
+export const RECOLHER_CICLO_MS = 10 * 60_000;
+
+/** O filtro do claim: cadeado livre, ou um ciclo sem batimento há mais de `RECOLHER_CICLO_MS`. */
+export function filtroDoCadeadoLivre(agoraMs: number = Date.now()): string {
+  return `sincronizando_desde.is.null,last_sync_attempt_at.lt.${new Date(agoraMs - RECOLHER_CICLO_MS).toISOString()}`;
+}
 
 /**
  * Conectar e desconectar o Asaas — I/O. A chave é TESTADA na hora (uma
@@ -34,7 +50,8 @@ export type CodigoDaConexao =
   | "db_error"
   | "chave_ilegivel"
   | "nao_conectado"
-  | "conta_trocada";
+  | "conta_trocada"
+  | "em_curso";
 
 export type ResultadoDaConexao = { ok: true } | { ok: false; codigo: CodigoDaConexao };
 
@@ -70,7 +87,7 @@ export async function contarEspelho(admin: SupabaseClient, accountId: string): P
   return { clientes: c.count ?? 0, cobrancas: p.count ?? 0 };
 }
 
-/** Até dois clientes conhecidos do espelho — a prova de que a chave é da mesma conta. */
+/** Os três clientes vistos mais recentemente — as sondas da prova de identidade. */
 async function clientesConhecidos(admin: SupabaseClient, accountId: string): Promise<string[] | null> {
   const { data, error } = await admin
     .from("cb_asaas_clientes")
@@ -78,9 +95,52 @@ async function clientesConhecidos(admin: SupabaseClient, accountId: string): Pro
     .eq("account_id", accountId)
     .eq("deleted", false)
     .order("visto_em", { ascending: false })
-    .limit(2);
+    .limit(3);
   if (error) return null;
   return ((data ?? []) as { asaas_customer_id: string }[]).map((l) => l.asaas_customer_id);
+}
+
+/** Todos os ids vivos do espelho, paginados — a prova final, pela listagem da chave. */
+async function idsDoEspelho(admin: SupabaseClient, accountId: string): Promise<Set<string> | null> {
+  const ids = new Set<string>();
+  for (let pagina = 0; pagina < 50; pagina++) {
+    const { data, error } = await admin
+      .from("cb_asaas_clientes")
+      .select("asaas_customer_id")
+      .eq("account_id", accountId)
+      .eq("deleted", false)
+      .order("id")
+      .range(pagina * 1000, pagina * 1000 + 999);
+    if (error) return null;
+    const linhas = (data ?? []) as { asaas_customer_id: string }[];
+    for (const l of linhas) ids.add(l.asaas_customer_id);
+    if (linhas.length < 1000) return ids;
+  }
+  return ids;
+}
+
+/**
+ * A chave enxerga esta conta do Asaas? Sondas pelos clientes mais recentes;
+ * se todos derem 404 (apagados no Asaas desde a última listagem), a prova
+ * final é uma página de `/customers` cruzando com o espelho — sondas fixas
+ * recusariam uma chave nova legítima (Codex, PR #201). Lança `AsaasError`
+ * em falha de rede/cota.
+ */
+export async function mesmaConta(admin: SupabaseClient, accountId: string, cliente: ClienteAsaas): Promise<"sim" | "nao" | "db_error" | "sem_espelho"> {
+  const conhecidos = await clientesConhecidos(admin, accountId);
+  if (conhecidos === null) return "db_error";
+  if (conhecidos.length === 0) return "sem_espelho";
+  for (const id of conhecidos) {
+    if ((await cliente.obter<unknown>(`/customers/${id}`)) !== null) return "sim";
+  }
+  const ids = await idsDoEspelho(admin, accountId);
+  if (ids === null) return "db_error";
+  const pagina = await cliente.listar<unknown>("/customers", { limit: 100 });
+  for (const bruto of pagina.data) {
+    const lido = lerCliente(bruto);
+    if (lido && ids.has(lido.id)) return "sim";
+  }
+  return "nao";
 }
 
 export async function conectarAsaas(
@@ -102,21 +162,12 @@ export async function conectarAsaas(
   }
 
   // Com espelho, a chave nova tem de enxergar um cliente que o espelho conhece.
-  const conhecidos = await clientesConhecidos(admin, accountId);
-  if (conhecidos === null) return { ok: false, codigo: "db_error" };
-  if (conhecidos.length > 0) {
-    let enxerga = false;
-    try {
-      for (const id of conhecidos) {
-        if ((await cliente.obter<unknown>(`/customers/${id}`)) !== null) {
-          enxerga = true;
-          break;
-        }
-      }
-    } catch (e) {
-      return { ok: false, codigo: codigoDaFalha(e) };
-    }
-    if (!enxerga) return { ok: false, codigo: "conta_trocada" };
+  try {
+    const prova = await mesmaConta(admin, accountId, cliente);
+    if (prova === "db_error") return { ok: false, codigo: "db_error" };
+    if (prova === "nao") return { ok: false, codigo: "conta_trocada" };
+  } catch (e) {
+    return { ok: false, codigo: codigoDaFalha(e) };
   }
 
   const agora = new Date().toISOString();
@@ -145,6 +196,23 @@ export async function conectarAsaas(
  * ficam: são contatos do escritório, como qualquer outro.
  */
 export async function desconectarAsaas(admin: SupabaseClient, accountId: string, opcoes: { apagarEspelho?: boolean } = {}): Promise<ResultadoDaConexao> {
+  // ⚠️ Toma o CADEADO antes de apagar: um ciclo em curso já tem o cliente
+  // HTTP na mão e continuaria gravando no espelho recém-apagado — e, com
+  // outra conta conectada logo depois, misturaria os clientes das duas
+  // (Codex, PR #201, 5ª rodada). Sem linha de config não há ciclo possível
+  // (`lerConfig` devolve `nao_conectado`): segue direto.
+  const { data: existente, error: erroLeitura } = await admin.from("cb_asaas_config").select("account_id").eq("account_id", accountId).maybeSingle();
+  if (erroLeitura) return { ok: false, codigo: "db_error" };
+  if (existente) {
+    const { data: tomado, error: erroClaim } = await admin
+      .from("cb_asaas_config")
+      .update({ sincronizando_desde: new Date().toISOString() })
+      .eq("account_id", accountId)
+      .or(filtroDoCadeadoLivre())
+      .select("account_id");
+    if (erroClaim) return { ok: false, codigo: "db_error" };
+    if (!tomado || tomado.length === 0) return { ok: false, codigo: "em_curso" };
+  }
   if (opcoes.apagarEspelho) {
     const { error } = await admin.from("cb_asaas_clientes").delete().eq("account_id", accountId);
     if (error) return { ok: false, codigo: "db_error" };

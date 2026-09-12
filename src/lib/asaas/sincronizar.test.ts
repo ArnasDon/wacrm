@@ -4,7 +4,7 @@ import { encrypt } from "@/lib/whatsapp/encryption";
 
 import { AsaasError } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
-import { FICHAS_POR_CICLO, listagemDiariaDevida, RECOLHER_CICLO_MS, sincronizarAsaas } from "./sincronizar";
+import { FICHAS_POR_CICLO, listagemDiariaDevida, listagemSuspeita, RECOLHER_CICLO_MS, sincronizarAsaas } from "./sincronizar";
 
 const CONTA = "conta-1";
 const DONO = "dono-1";
@@ -133,7 +133,10 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
 
     const config = estado.tabelas.cb_asaas_config[0];
     expect(config).toMatchObject({ status: "conectado", last_error: null, last_sync_at: AGORA.toISOString(), vencidas_listadas_em: AGORA.toISOString(), last_full_sync_at: AGORA.toISOString() });
-    expect(config.last_sync_attempt_at).toBe(AGORA.toISOString());
+    // a TENTATIVA é o batimento do cadeado: carimbada no claim (= agora) e
+    // avançada com o relógio real a cada passo — por isso não é `AGORA`
+    expect(typeof config.last_sync_attempt_at).toBe("string");
+    expect(config.sincronizando_desde).toBeNull();
   });
 
   it("o teto de fichas por ciclo adia o que não coube", async () => {
@@ -368,16 +371,42 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
 
   it("o CADEADO: com um ciclo em curso, o segundo volta `em_curso` sem tocar em nada; recolhido depois de 10 min", async () => {
     const respostas: RespostasDoAsaas = { listas: { "/customers": [], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
-    const emCurso = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - 60_000).toISOString() });
+    const emCurso = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - 60_000).toISOString(), last_sync_attempt_at: new Date(Date.now() - 60_000).toISOString() });
     const { resultado, registro } = rodar(emCurso, respostas);
     expect(await resultado).toEqual({ ok: false, codigo: "em_curso" });
     expect(registro.pedidos).toHaveLength(0);
     expect(emCurso.tabelas.cb_asaas_config[0].status).toBe("conectado");
-    // cadeado velho (processo morto) é recolhido
-    const morto = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - RECOLHER_CICLO_MS - 1000).toISOString() });
+    // cadeado de processo MORTO (sem batimento há mais de 10 min) é recolhido —
+    // mesmo que o ciclo tenha começado há muito mais tempo, o que conta é o batimento
+    const morto = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - 3 * RECOLHER_CICLO_MS).toISOString(), last_sync_attempt_at: new Date(Date.now() - RECOLHER_CICLO_MS - 1000).toISOString() });
     const r = await rodar(morto, respostas).resultado;
     expect(r).toMatchObject({ ok: true });
     expect(morto.tabelas.cb_asaas_config[0].sincronizando_desde).toBeNull();
+  });
+
+  it("ciclo VIVO e demorado não é recolhido: o batimento mantém o cadeado (começou há 30 min, bateu há 1)", async () => {
+    const vivo = estadoInicial({}, { sincronizando_desde: new Date(Date.now() - 3 * RECOLHER_CICLO_MS).toISOString(), last_sync_attempt_at: new Date(Date.now() - 60_000).toISOString() });
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    expect(await rodar(vivo, respostas).resultado).toEqual({ ok: false, codigo: "em_curso" });
+  });
+
+  it("o ciclo BATE o cadeado enquanto trabalha (last_sync_attempt_at avança depois do claim)", async () => {
+    const estado = estadoInicial();
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    await rodar(estado, respostas).resultado;
+    const batidas = estado.escritas.filter((w) => w.tabela === "cb_asaas_config" && w.op === "update" && (w.payload as Record<string, unknown>).last_sync_attempt_at !== undefined);
+    // o claim e pelo menos dois batimentos (depois dos clientes e depois das cobranças)
+    expect(batidas.length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("listagemSuspeita: vazia é sempre suspeita; parcial só acima de 20% E de 5", () => {
+    expect(listagemSuspeita(0, 439, 439)).toBe(true);
+    expect(listagemSuspeita(0, 3, 3)).toBe(true);
+    expect(listagemSuspeita(0, 0, 0)).toBe(false); // primeira listagem de uma conta vazia
+    expect(listagemSuspeita(433, 439, 6)).toBe(false); // 6 apagados de 439: churn normal
+    expect(listagemSuspeita(300, 439, 139)).toBe(true); // um terço sumiu: veio pela metade
+    expect(listagemSuspeita(7, 10, 3)).toBe(false); // conta pequena: 3 de 10 não passa do piso absoluto
+    expect(listagemSuspeita(4, 10, 6)).toBe(true);
   });
 
   it("o cadeado é solto no erro também", async () => {

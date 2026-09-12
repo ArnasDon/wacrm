@@ -70,6 +70,8 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         vinculado_por_nome: quem,
         vinculado_em: agora,
         candidatos: [],
+        // a pendência de etiqueta era da ficha CRIADA pelo CRM, não desta
+        etiqueta_pendente: false,
         updated_at: agora,
       };
     } else if (acao === "desligar") {
@@ -82,6 +84,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         vinculado_em: agora,
         contatos_recusados: comORecusado,
         candidatos: [],
+        etiqueta_pendente: false,
         updated_at: agora,
       };
     } else if (acao === "ignorar") {
@@ -93,6 +96,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
         vinculado_em: agora,
         contatos_recusados: comORecusado,
         candidatos: [],
+        etiqueta_pendente: false,
         updated_at: agora,
       };
     } else {

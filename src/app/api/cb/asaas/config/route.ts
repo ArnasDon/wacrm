@@ -62,7 +62,7 @@ export async function DELETE(request: Request) {
     // caminho para trocar de CONTA do Asaas. As fichas criadas pela D2 ficam.
     const apagarEspelho = new URL(request.url).searchParams.get("espelho") === "1";
     const r = await desconectarAsaas(supabaseAdmin(), ctx.accountId, { apagarEspelho });
-    if (!r.ok) return NextResponse.json({ error: r.codigo }, { status: 500 });
+    if (!r.ok) return NextResponse.json({ error: r.codigo }, { status: r.codigo === "em_curso" ? 409 : 500 });
     return NextResponse.json({ ok: true });
   } catch (err) {
     return toErrorResponse(err);

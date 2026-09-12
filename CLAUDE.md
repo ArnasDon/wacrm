@@ -3481,17 +3481,27 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   primeira sincronização depois de conectar podiam correr JUNTOS (e no
   deploy `start-first` há dois processos Node vivos) — dois ciclos com
   `visto_em` diferentes se atropelam na varredura de clientes. Reivindicar é
-  `UPDATE … RETURNING` cercado; recolhimento em 10 min (MAIOR que o teto do
-  ciclo); cerca de posse (`.eq('sincronizando_desde', vistoEm)`) nas
-  escritas de fim de ciclo; `em_curso` não é erro (o cron conta como
-  adiada, o cartão mostra "sincronizando desde").
+  `UPDATE … RETURNING` cercado (`filtroDoCadeadoLivre`); cerca de posse
+  (`.eq('sincronizando_desde', vistoEm)`) nas escritas de fim de ciclo;
+  `em_curso` não é erro (o cron conta como adiada, o cartão mostra
+  "sincronizando desde"). ⚠️ O recolhimento (10 min) olha o BATIMENTO
+  (`last_sync_attempt_at`, que o ciclo avança a cada passo — listagem, lote,
+  a cada 20 releituras/fichas), não o começo do ciclo: uma conta com
+  dezenas de páginas pode passar de 10 min viva, e recolher um ciclo vivo é
+  justamente o que o cadeado impede. ⚠️ **`desconectarAsaas` TOMA o cadeado
+  antes de apagar** (409 `em_curso` se um ciclo está no meio): o ciclo já
+  tem o cliente HTTP na mão e continuaria gravando no espelho apagado — e
+  misturaria as contas se outra fosse conectada em seguida.
 - ⚠️⚠️ **A varredura de "cliente que sumiu da listagem" tem PISO**
-  (`SUMICO_MAX_ABSOLUTO` = 5 ou 20% das linhas vivas): acima disso a
-  listagem é que veio curta — nada é marcado `deleted` e
-  `last_full_sync_at` NÃO é carimbado, para o ciclo seguinte relistar. Sem o
-  piso, uma listagem VAZIA (soluço do Asaas) marcaria os 439 como apagados,
-  o cartão diria "0 clientes" e a prova de identidade do ciclo seguinte
-  (que só sonda clientes vivos) ficaria desarmada.
+  (`listagemSuspeita`): listagem VAZIA com espelho vivo é SEMPRE suspeita;
+  parcial é suspeita quando somem mais de 20% das vivas **E** mais de 5 —
+  as duas condições de propósito (o absoluto impede conta pequena de travar
+  por churn normal; a fração impede conta grande de aceitar listagem pela
+  metade). Suspeita = nada é marcado `deleted` e `last_full_sync_at` NÃO é
+  carimbado, para o ciclo seguinte relistar. Sem o piso, uma listagem vazia
+  (soluço do Asaas) marcaria os 439 como apagados, o cartão diria "0
+  clientes" e a prova de identidade do ciclo seguinte (que só sonda clientes
+  vivos) ficaria desarmada.
 - ⚠️⚠️ **Ficha APAGADA pelo administrador não é recriada em origem
   NENHUMA**: `criar` só quando `vinculo_origem IS NULL`. A FK é `ON DELETE
   SET NULL (contact_id)` e a origem sobrevive — com a guarda só em

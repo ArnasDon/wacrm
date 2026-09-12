@@ -155,7 +155,8 @@ export function AsaasCard() {
     try {
       const res = await fetch(`/api/cb/asaas/config${apagarEspelho ? "?espelho=1" : ""}`, { method: "DELETE" });
       if (!res.ok) {
-        toast.error(t("salvarFalhou"));
+        const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+        toast.error(corpo.error ? t("falha", { motivo: motivo(corpo.error) }) : t("salvarFalhou"));
         return;
       }
       setRelatorio(null);

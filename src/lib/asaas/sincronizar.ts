@@ -5,6 +5,7 @@ import { decrypt } from "@/lib/whatsapp/encryption";
 
 import { aplicarCobranca, aplicarCobrancas } from "./aplicar";
 import { AsaasError, criarClienteAsaas, type AmbienteDoAsaas, type ClienteAsaas } from "./cliente";
+import { filtroDoCadeadoLivre, RECOLHER_CICLO_MS } from "./conexao";
 import { criarFichaDoAsaas, etiquetar, etiquetarPendentes, type ContextoDaFicha, type EtiquetaPendente } from "./criar-ficha";
 import { inteiro, lerCliente, lerCobranca, type ClienteDoAsaas, type CobrancaDoAsaas } from "./leitura";
 import {
@@ -61,22 +62,29 @@ export const FICHAS_POR_CICLO = 150;
 export const PARCELAMENTOS_POR_CICLO = 30;
 /** A partir de que hora local a listagem diária de clientes é devida. */
 export const HORA_DA_LISTAGEM_DIARIA = 3;
+export { RECOLHER_CICLO_MS };
+/** A cada quantas releituras/fichas o ciclo BATE o cadeado (ver `RECOLHER_CICLO_MS`). */
+const BATIMENTO_A_CADA = 20;
 /**
- * Depois de quanto tempo um ciclo que não terminou é considerado morto e o
- * cadeado, recolhido. ⚠️ MAIOR que o teto real do ciclo (90 s de orçamento
- * + o timeout de 20 s de um pedido ao Asaas): recolher um ciclo VIVO faria
- * dois rodarem juntos — o que o cadeado existe para impedir.
- */
-export const RECOLHER_CICLO_MS = 10 * 60_000;
-/**
- * A varredura de "cliente que sumiu da listagem" tem PISO: mais que isto (ou
- * 20% das linhas vivas) num ciclo só é listagem incompleta, não clientes
- * apagados — e a varredura é pulada. Uma listagem VAZIA marcaria os 439
- * como apagados e ainda desarmaria a prova de identidade do ciclo
- * seguinte (achado da revisão do PR #201).
+ * A varredura de "cliente que sumiu da listagem" tem PISO. Listagem VAZIA
+ * com espelho vivo é SEMPRE suspeita (marcaria os 439 como apagados e ainda
+ * desarmaria a prova de identidade do ciclo seguinte). Listagem parcial é
+ * suspeita quando somem mais de 20% das linhas vivas E mais de
+ * `SUMICO_MAX_ABSOLUTO` — as duas condições, de propósito: o piso absoluto
+ * é o que impede uma conta pequena de travar por churn normal (2 de 10
+ * clientes apagados no Asaas são 20%), e a fração é o que impede uma conta
+ * grande de aceitar uma listagem pela metade. Suspeita = nada é marcado e
+ * `last_full_sync_at` não é carimbado (o ciclo seguinte relista).
  */
 export const SUMICO_MAX_ABSOLUTO = 5;
 export const SUMICO_MAX_FRACAO = 0.2;
+
+/** Puro: a listagem completa de clientes é suspeita? (ver os comentários acima) */
+export function listagemSuspeita(listados: number, vivos: number, sumiriam: number): boolean {
+  if (vivos === 0) return false;
+  if (listados === 0) return true;
+  return sumiriam > SUMICO_MAX_ABSOLUTO && sumiriam > vivos * SUMICO_MAX_FRACAO;
+}
 const PRAZO_PADRAO_MS = 60_000;
 const PAGINA_DO_BANCO = 1000;
 const LOTE_DE_IDS = 200;
@@ -159,15 +167,28 @@ async function marcarErro(admin: SupabaseClient, accountId: string, codigo: stri
  * rodízio do cron.
  */
 async function reivindicarCiclo(admin: SupabaseClient, accountId: string, vistoEm: string): Promise<"ok" | "em_curso" | "db_error"> {
-  const recolhimento = new Date(Date.now() - RECOLHER_CICLO_MS).toISOString();
   const { data, error } = await admin
     .from("cb_asaas_config")
     .update({ sincronizando_desde: vistoEm, last_sync_attempt_at: vistoEm })
     .eq("account_id", accountId)
-    .or(`sincronizando_desde.is.null,sincronizando_desde.lt.${recolhimento}`)
+    .or(filtroDoCadeadoLivre())
     .select("account_id");
   if (error) return "db_error";
   return (data?.length ?? 0) > 0 ? "ok" : "em_curso";
+}
+
+/**
+ * O BATIMENTO do cadeado: `last_sync_attempt_at` avança enquanto o ciclo
+ * trabalha, com a cerca de posse. É o que separa "ciclo vivo e demorado"
+ * (uma conta com dezenas de páginas) de "processo morto": o recolhimento
+ * olha o batimento, não o começo do ciclo (Codex, PR #201, 5ª rodada).
+ */
+async function bater(admin: SupabaseClient, accountId: string, vistoEm: string): Promise<void> {
+  await admin
+    .from("cb_asaas_config")
+    .update({ last_sync_attempt_at: new Date().toISOString() })
+    .eq("account_id", accountId)
+    .eq("sincronizando_desde", vistoEm);
 }
 
 /** Uma listagem paginada do banco, até fechar — o PostgREST corta em 1000 sem avisar. */
@@ -273,8 +294,7 @@ async function listarClientes(admin: SupabaseClient, accountId: string, cliente:
     .eq("deleted", false)
     .lt("visto_em", vistoEm);
   if (erroVivos || erroSumiram) throw new Error(`contagem de clientes: ${(erroVivos ?? erroSumiram)?.message}`);
-  const teto = Math.max(SUMICO_MAX_ABSOLUTO, Math.ceil((vivos ?? 0) * SUMICO_MAX_FRACAO));
-  if ((sumiram ?? 0) > teto) {
+  if (listagemSuspeita(clientes.length, vivos ?? 0, sumiram ?? 0)) {
     console.warn(`[asaas] listagem de clientes suspeita (conta ${accountId}): ${clientes.length} listados, ${sumiram} sumiriam de ${vivos} — varredura pulada`);
     return clientes.length;
   }
@@ -351,6 +371,7 @@ async function reconciliar(
   vistoEm: string,
   clientesLigados: ReadonlySet<string>,
   prazoMs: number,
+  batimento: () => Promise<void> = async () => {},
 ): Promise<{ relidas: number; adiadas: number }> {
   const pendentes = await lerTudo<CobrancaARevisar>(
     (de, ate) =>
@@ -373,6 +394,7 @@ async function reconciliar(
       adiadas++;
       continue;
     }
+    if (relidas > 0 && relidas % BATIMENTO_A_CADA === 0) await batimento();
     const bruta = await cliente.obter<unknown>(`/payments/${p.asaas_payment_id}`);
     const lida = bruta ? lerCobranca(bruta) : null;
     if (lida) {
@@ -509,6 +531,7 @@ async function vincular(
   vistoEm: string,
   prazoMs: number,
   tetoDeFichas: number,
+  batimento: () => Promise<void> = async () => {},
 ): Promise<Pick<ContagemDoCiclo, "ligados" | "fichasCriadas" | "candidatosAtualizados" | "adiadas">> {
   const contagem = { ligados: 0, fichasCriadas: 0, candidatosAtualizados: 0, adiadas: 0 };
   // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
@@ -566,6 +589,7 @@ async function vincular(
       contagem.adiadas++;
       continue;
     }
+    if (contagem.fichasCriadas > 0 && contagem.fichasCriadas % BATIMENTO_A_CADA === 0) await batimento();
     // A criação é irreversível e a foto do ciclo pode estar velha: reconfere.
     if (!(await aindaElegivel(admin, accountId, c.id))) continue;
     const ficha = await criarFichaDoAsaas(admin, accountId, { nome: c.nome, telefone: decisao.telefone }, contextoDaFicha);
@@ -687,6 +711,7 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     if (opcoes.completa || listagemDiariaDevida(config.lastFullSyncAt, agora, fuso)) {
       contagem.clientesListados = await listarClientes(admin, accountId, cliente, vistoEm);
       clientes = await lerClientesDoEspelho(admin, accountId);
+      await bater(admin, accountId, vistoEm);
     }
 
     // 4) vencidas, sempre completas — e o que vence hoje (D17)
@@ -696,6 +721,7 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
       ...(await cliente.listarTudo<unknown>("/payments", { status: "PENDING", "dueDate[ge]": hoje, "dueDate[le]": hoje, limit: 100 })),
     ];
     const cobrancas = brutas.map(lerCobranca).filter((c): c is CobrancaDoAsaas => c !== null && c.clienteId !== null);
+    await bater(admin, accountId, vistoEm);
     const semLinha = await garantirClientes(
       admin,
       accountId,
@@ -721,7 +747,7 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
 
     // 5) reconciliação
     const ligados = new Set(clientes.filter((c) => c.contact_id !== null).map((c) => c.asaas_customer_id));
-    const rec = await reconciliar(admin, accountId, cliente, hoje, vistoEm, ligados, prazoMs);
+    const rec = await reconciliar(admin, accountId, cliente, hoje, vistoEm, ligados, prazoMs, () => bater(admin, accountId, vistoEm));
     contagem.reconciliadas = rec.relidas;
     contagem.adiadas += rec.adiadas;
 
@@ -730,7 +756,7 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
 
     // 7) vínculo e criação da ficha
     if (contagem.clientesListados === 0) clientes = await lerClientesDoEspelho(admin, accountId);
-    const v = await vincular(admin, accountId, clientes, vistoEm, prazoMs, tetoDeFichas);
+    const v = await vincular(admin, accountId, clientes, vistoEm, prazoMs, tetoDeFichas, () => bater(admin, accountId, vistoEm));
     contagem.ligados = v.ligados;
     contagem.fichasCriadas = v.fichasCriadas;
     contagem.candidatosAtualizados = v.candidatosAtualizados;

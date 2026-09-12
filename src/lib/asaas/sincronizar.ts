@@ -424,14 +424,22 @@ async function vincular(
   tetoDeFichas: number,
 ): Promise<Pick<ContagemDoCiclo, "ligados" | "fichasCriadas" | "candidatosAtualizados" | "adiadas">> {
   const contagem = { ligados: 0, fichasCriadas: 0, candidatosAtualizados: 0, adiadas: 0 };
+  // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
+  const contextoDaFicha: ContextoDaFicha = {};
+
+  // A etiqueta que falhou num ciclo anterior (o upsert devolveu erro) é
+  // refeita ANTES de qualquer recorte: as fichas criadas pelo CRM que ainda
+  // não a têm. ⚠️ Fora do `if (elegiveis...)` de propósito — com a
+  // importação terminada ninguém está elegível, e era justamente aí que a
+  // retentativa ficava inalcançável (Codex, PR #201, 2ª rodada).
+  const criadas = clientes.filter((c) => c.vinculo_origem === "criada" && c.contact_id !== null).map((c) => c.contact_id as string);
+  await etiquetarFichasCriadas(admin, accountId, criadas, contextoDaFicha);
+
   const elegiveis = clientes.filter((c) => elegivel(c));
   if (elegiveis.length === 0) return contagem;
 
   const [fichas, calendly, conexoes] = await Promise.all([lerFichas(admin, accountId), lerEmailsDoCalendly(admin, accountId), lerTelefonesDasConexoes(admin, accountId)]);
   const idx: IndicesDoVinculo = montarIndices(fichas, calendly, conexoes, clientes.filter((c) => c.contact_id !== null));
-  // O dono da conta e a etiqueta são resolvidos UMA vez por ciclo.
-  const contextoDaFicha: ContextoDaFicha = {};
-  const semEtiqueta: string[] = [];
 
   const registrarLigado = (c: LinhaDeCliente, contactId: string) => {
     if (c.cpf_cnpj && !idx.contatoPorDocumento.has(c.cpf_cnpj)) idx.contatoPorDocumento.set(c.cpf_cnpj, contactId);
@@ -496,10 +504,8 @@ async function vincular(
       updated_at: vistoEm,
     });
     if (gravou) {
-      if (ficha.criou) {
-        contagem.fichasCriadas++;
-        if (!ficha.etiquetada) semEtiqueta.push(ficha.contactId);
-      } else contagem.ligados++;
+      if (ficha.criou) contagem.fichasCriadas++;
+      else contagem.ligados++;
       registrarLigado(c, ficha.contactId);
       // A ficha nova entra nos índices: o próximo cliente com o mesmo número
       // (a empresa dele) cai em "contato já ligado", não em outra ficha.
@@ -508,17 +514,16 @@ async function vincular(
       if (atual) atual.add(ficha.contactId);
       else idx.porTelefone.set(decisao.telefone, new Set([ficha.contactId]));
     } else if (ficha.criou) {
-      // Perdeu a corrida para gente entre a reconferência e o vínculo: a
-      // ficha que ACABOU de nascer aqui não tem conversa, mensagem nem
-      // negócio — apagá-la é desfazer o próprio passo, não apagar contato.
-      const { error } = await admin.from("contacts").delete().eq("id", ficha.contactId).eq("account_id", accountId);
-      if (error) console.warn(`[asaas] ficha órfã ${ficha.contactId} não pôde ser desfeita: ${error.message}`);
+      // Perdeu a corrida para gente entre a reconferência e o vínculo (um
+      // "Ligar"/"Ignorar" naquela janela de um segundo). A ficha FICA:
+      // apagá-la cascatearia a conversa e a mensagem que o cliente pode ter
+      // acabado de mandar para este número (`conversations.contact_id` é
+      // CASCADE) — e apagar contato é decisão de administrador (981), não
+      // limpeza de ciclo. Ela é um contato válido do escritório, com a
+      // etiqueta `asaas`; o log diz o que houve (Codex, PR #201, 2ª rodada).
+      console.warn(`[asaas] ficha ${ficha.contactId} criada para ${c.asaas_customer_id}, mas o cliente foi ligado/ignorado por gente no meio do ciclo — ficha mantida sem vínculo`);
     }
   }
-  // A etiqueta que falhou num ciclo anterior (o upsert devolveu erro) é
-  // refeita aqui: as fichas criadas pelo CRM que ainda não a têm.
-  const criadas = clientes.filter((c) => c.vinculo_origem === "criada" && c.contact_id !== null).map((c) => c.contact_id as string);
-  await etiquetarFichasCriadas(admin, accountId, [...new Set([...criadas, ...semEtiqueta])], contextoDaFicha);
   return contagem;
 }
 

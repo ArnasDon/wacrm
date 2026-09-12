@@ -176,6 +176,11 @@ export async function lerEspelho(admin: SupabaseClient, accountId: string, agora
     lerCobrancasDevidas(admin, accountId),
     contarStatusDesconhecidos(admin, accountId),
   ]);
+  // ⚠️ A contagem que falha derruba a leitura inteira (a rota responde 500),
+  // nunca cai na contagem local: `cobrancas` já veio filtrada às devidas, e
+  // o "zero" daí seria falso — o aviso de status novo sumiria com cara de
+  // resposta certa (Codex, PR #201, 2ª rodada).
+  if (desconhecidos === null) throw new Error("status desconhecidos: contagem falhou");
   const ids = new Set<string>();
   for (const c of clientes) {
     if (c.contact_id) ids.add(c.contact_id);
@@ -186,8 +191,6 @@ export async function lerEspelho(admin: SupabaseClient, accountId: string, agora
     conectado: config !== null,
     config,
     leituraFresca: leituraFresca(config, agora),
-    listas: montarListas(clientes, cobrancas, fichas, agora, config?.vencidas_listadas_em ?? null, {
-      statusDesconhecidos: desconhecidos ?? undefined,
-    }),
+    listas: montarListas(clientes, cobrancas, fichas, agora, config?.vencidas_listadas_em ?? null, { statusDesconhecidos: desconhecidos }),
   };
 }

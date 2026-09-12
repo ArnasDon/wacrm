@@ -275,6 +275,56 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(estado.tabelas.cb_asaas_clientes[0]).toMatchObject({ contact_id: null, vinculo_origem: "desvinculado" });
   });
 
+  it("com ninguém elegível, a etiqueta que faltou numa ficha criada ainda é refeita", async () => {
+    const estado = estadoInicial(
+      {
+        contacts: [{ id: "c-joao", account_id: CONTA, user_id: DONO, name: "João", phone: "5584999990000", email: null }],
+        cb_asaas_clientes: [
+          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "João Pedro Souza", cpf_cnpj: "1", celular: "5584999990000", contact_id: "c-joao", vinculo_origem: "criada", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const respostas: RespostasDoAsaas = { listas: { [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: { "/customers/cus_B": clienteAsaas("cus_B", "João Pedro Souza") } };
+    const r = await rodar(estado, respostas).resultado;
+    expect(r).toMatchObject({ ok: true, ligados: 0, fichasCriadas: 0 });
+    expect(estado.tabelas.tags.map((t) => t.name)).toEqual(["asaas"]);
+    expect(estado.tabelas.contact_tags).toEqual([expect.objectContaining({ contact_id: "c-joao" })]);
+  });
+
+  it("ficha criada que perde a corrida para gente FICA — nunca é apagada pelo ciclo", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [
+          { id: "l-b", account_id: CONTA, asaas_customer_id: "cus_B", nome: "João Pedro Souza", cpf_cnpj: "1", celular: "5584999990000", contact_id: null, vinculo_origem: null, contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const respostas: RespostasDoAsaas = { listas: { [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: { "/customers/cus_B": clienteAsaas("cus_B", "João Pedro Souza") } };
+    const admin = dubleDoSupabase(estado);
+    // O administrador ignora o cliente DEPOIS da reconferência: o dublê muda a
+    // linha na primeira escrita em `contacts` (o insert da ficha).
+    const original = admin.from.bind(admin);
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = original(t) as unknown as Record<string, unknown> & { insert: (...a: unknown[]) => unknown };
+      if (t === "contacts") {
+        const insert = q.insert;
+        q.insert = (...a: unknown[]) => {
+          estado.tabelas.cb_asaas_clientes[0].vinculo_origem = "desvinculado";
+          return insert.apply(q, a);
+        };
+      }
+      return q;
+    };
+    const r = await sincronizarAsaas(admin, CONTA, { agora: AGORA, cliente: () => dubleDoAsaas(respostas) });
+    expect(r).toMatchObject({ ok: true, fichasCriadas: 0, ligados: 0 });
+    // a ficha existe, com a etiqueta, e nada foi apagado
+    expect(estado.tabelas.contacts).toHaveLength(1);
+    expect(estado.escritas.filter((w) => w.tabela === "contacts" && w.op === "delete")).toHaveLength(0);
+    expect(estado.tabelas.cb_asaas_clientes[0]).toMatchObject({ contact_id: null, vinculo_origem: "desvinculado" });
+  });
+
   it("chave ilegível marca o erro e não chama o Asaas", async () => {
     const estado = estadoInicial({}, { api_key: "lixo" });
     const { resultado, registro } = rodar(estado, { listas: {}, recursos: {} });

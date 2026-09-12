@@ -1280,8 +1280,8 @@ referência" Chatguru).** Quatro mudanças pequenas com um motivo cada:
   é comparada contra a prop do render atual (`de === conversationId`) — a
   armadilha do efeito passivo, de novo.
 
-⚠️ **Selo da janela de 24h na lista (991/992, 12/09/2026): a ampulheta lê o
-BANCO, e o banco espelha o fio.** `conversations.janela_meta` (992: mapa
+⚠️ **Selo da janela de 24h na lista (991/993, 12/09/2026): a ampulheta lê o
+BANCO, e o banco espelha o fio.** `conversations.janela_meta` (993: mapa
 número → instante, mais a chave `sem_carimbo`; gatilho em `messages` e a
 dobra na exclusão de conexão), `src/lib/inbox/selo-da-janela.ts` (puro,
 testado) e a ampulheta em `conversation-list.tsx`. Decisões do
@@ -1303,7 +1303,7 @@ código novo:
   com DOIS oficiais. ⚠️ A 991 guardava UM par por conversa (a mensagem
   oficial mais recente, de qualquer número) e DIVERGIA do fio com dois
   oficiais + conversa fixada no mais antigo (achado da revisão e do Codex no
-  PR #194) — a 992 trocou o par pelo mapa no mesmo dia. ⚠️ **UMA divergência
+  PR #194) — a 993 trocou o par pelo mapa no mesmo dia. ⚠️ **UMA divergência
   ESCRITA, para o lado sem selo:** a conta SEM canal nenhum (o fio conta o
   fio inteiro; a lista cala, porque não sabe por qual número responde).
 - ⚠️ **Conexão oficial APAGADA: a chave dela é DOBRADA em `sem_carimbo`**
@@ -4129,15 +4129,22 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `read` silencioso no terminal dele — a CLI 2.75 não tem comando de SQL e
     guarda o token codificado no Keychain. Conferida por consulta REST feita
     pelo navegador logado do preview (1 conversa carimbada; nenhuma dentro
-    das 24h). ⚠️ SUBSTITUÍDA pela 992 no mesmo dia: as duas colunas foram
+    das 24h). ⚠️ SUBSTITUÍDA pela 993 no mesmo dia: as duas colunas foram
     REMOVIDAS. Não "corrigir" o app para lê-las de volta.
-  - **992_cb_janela_da_meta_por_numero** — `conversations.janela_meta jsonb`
+  - **993_cb_janela_da_meta_por_numero** — `conversations.janela_meta jsonb`
     (mapa número → instante + `sem_carimbo`), a função do gatilho da 991
     reescrita para gravar na chave do número, o gatilho de dobra na exclusão
     de conexão oficial, acervo refeito de `messages` e a remoção das colunas
     da 991. Corrige a divergência lista×fio com dois números oficiais
     (revisão + Codex no PR #194). Aditiva para o app anterior (lê `select *`,
-    degrada sem ampulheta) — aplicar ANTES do merge, como as outras.
+    degrada sem ampulheta) — aplicada ANTES do merge, como as outras. ⚠️
+    NASCEU como `992` e COLIDIU com a `992_cb_asaas_config`, que OUTRA
+    sessão aplicou em produção no mesmo dia (histórico `20260912144829`)
+    antes de o arquivo dela chegar a qualquer branch remota — o QUINTO caso
+    de duas branches em paralelo (906, 963, 966, 989). Pego pela conferência
+    de deriva por consulta ao histórico, feita ANTES de aplicar; renumerado o
+    arquivo que ainda não estava aplicado (este). `ls` sozinho não pegaria:
+    a 992 do Asaas não existia em branch nenhuma — só no banco.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

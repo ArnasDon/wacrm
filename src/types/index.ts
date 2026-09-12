@@ -434,7 +434,7 @@ export interface Conversation {
    */
   aguardando_desde?: string | null;
   /**
-   * A janela de 24h da Meta POR NÚMERO (migration 992): mapa id-da-conexão →
+   * A janela de 24h da Meta POR NÚMERO (migration 993): mapa id-da-conexão →
    * instante ISO da última mensagem do CLIENTE por aquele número oficial,
    * mais a chave `sem_carimbo` (a mensagem da Meta sem carimbo: histórico,
    * carimbo que falhou, conexão apagada — conta para qualquer número oficial,

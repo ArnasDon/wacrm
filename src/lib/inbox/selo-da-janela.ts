@@ -10,7 +10,7 @@
 // A régua da janela é a do FIO (`janela-24h.ts`, PR #192): 24h contadas da
 // última mensagem do CLIENTE que chegou pelo número oficial por onde se vai
 // responder. O fio tem as mensagens; a lista não — ela lê o fato do banco:
-// `conversations.janela_meta` (992), um mapa NÚMERO → instante da última
+// `conversations.janela_meta` (993), um mapa NÚMERO → instante da última
 // mensagem do cliente por aquele número oficial, mais a chave `sem_carimbo`
 // (a mensagem da Meta sem carimbo: histórico, carimbo que falhou, conexão
 // apagada — conta para qualquer número oficial, como no fio). Mantido por
@@ -18,7 +18,7 @@
 // fica com a mais recente entre a chave dele e a `sem_carimbo` — que é
 // exatamente a "última mensagem do cliente que conta para este número" do
 // fio. Há teste comparando os dois sobre as mesmas mensagens, inclusive com
-// DOIS números oficiais (a 991 guardava um par só e divergia; a 992 corrigiu).
+// DOIS números oficiais (a 991 guardava um par só e divergia; a 993 corrigiu).
 //
 // UMA exceção, escrita: a conta SEM canal nenhum. O fio conta o fio inteiro
 // (o legado de número único); a lista não tem como saber por qual número
@@ -33,7 +33,7 @@ import { ehMeta } from "@/lib/cb-channels/transporte";
 
 import { MINUTOS_DA_JANELA, type CanalDeSaida } from "./janela-24h";
 
-/** A chave do mapa para a mensagem da Meta SEM carimbo — o literal da 992. */
+/** A chave do mapa para a mensagem da Meta SEM carimbo — o literal da 993. */
 export const CHAVE_SEM_CARIMBO = "sem_carimbo";
 
 /** Doze horas: daqui para baixo a ampulheta fica âmbar. */
@@ -85,7 +85,7 @@ function ultimaNoNumero(
  * `null` = sem selo. Com selo, quanto resta e em que cor.
  *
  * Sem selo quando: o cliente nunca escreveu pelo número oficial (mapa vazio
- * ou ausente — inclusive antes da 992 ser aplicada: a lista degrada para o
+ * ou ausente — inclusive antes da 993 ser aplicada: a lista degrada para o
  * que era, sem erro); a conversa está ENCERRADA (decisão do operador: a aba
  * Encerradas não mostra o selo; o mapa fica, e a reaberta volta a mostrar);
  * é GRUPO; o número de saída é desconhecido (`canalDeSaida` nulo — canais

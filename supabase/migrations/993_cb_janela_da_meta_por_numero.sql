@@ -1,5 +1,5 @@
 -- ============================================================
--- 992 — A janela de 24h da Meta POR NÚMERO (substitui as colunas da 991)
+-- 993 — A janela de 24h da Meta POR NÚMERO (substitui as colunas da 991)
 --
 -- A 991 guardava UM par por conversa (`janela_meta_desde` +
 -- `janela_meta_canal_id`): a mensagem oficial mais recente do cliente, de
@@ -41,7 +41,7 @@ ALTER TABLE conversations
   ADD COLUMN IF NOT EXISTS janela_meta jsonb NOT NULL DEFAULT '{}'::jsonb;
 
 COMMENT ON COLUMN conversations.janela_meta IS
-  'A janela de 24h da Meta POR NÚMERO (992): mapa id-da-conexão → instante da última mensagem do CLIENTE por aquele número oficial; a chave sem_carimbo guarda a mensagem da Meta sem carimbo (histórico, carimbo que falhou, conexão apagada), que conta para qualquer número oficial. Mantido por gatilho; cada chave só avança. {} = o cliente nunca escreveu pelo oficial. Sempre {} em grupo.';
+  'A janela de 24h da Meta POR NÚMERO (993): mapa id-da-conexão → instante da última mensagem do CLIENTE por aquele número oficial; a chave sem_carimbo guarda a mensagem da Meta sem carimbo (histórico, carimbo que falhou, conexão apagada), que conta para qualquer número oficial. Mantido por gatilho; cada chave só avança. {} = o cliente nunca escreveu pelo oficial. Sempre {} em grupo.';
 
 -- ------------------------------------------------------------
 -- 1) O gatilho da 991, agora gravando na chave do número.
@@ -183,24 +183,24 @@ BEGIN
     WHERE table_name = 'conversations' AND column_name = 'janela_meta'
       AND data_type = 'jsonb' AND is_nullable = 'NO'
   ) THEN
-    RAISE EXCEPTION '992: coluna janela_meta ausente ou com a forma errada';
+    RAISE EXCEPTION '993: coluna janela_meta ausente ou com a forma errada';
   END IF;
   IF EXISTS (
     SELECT 1 FROM information_schema.columns
     WHERE table_name = 'conversations'
       AND column_name IN ('janela_meta_desde', 'janela_meta_canal_id')
   ) THEN
-    RAISE EXCEPTION '992: as colunas da 991 continuam na tabela';
+    RAISE EXCEPTION '993: as colunas da 991 continuam na tabela';
   END IF;
   IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'cb_marcar_janela_da_meta_trigger')
      OR NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'cb_dobrar_janela_da_conexao_apagada_trigger') THEN
-    RAISE EXCEPTION '992: gatilho ausente';
+    RAISE EXCEPTION '993: gatilho ausente';
   END IF;
   IF has_function_privilege('anon', 'cb_marcar_janela_da_meta()', 'EXECUTE')
      OR has_function_privilege('authenticated', 'cb_marcar_janela_da_meta()', 'EXECUTE')
      OR has_function_privilege('anon', 'cb_dobrar_janela_da_conexao_apagada()', 'EXECUTE')
      OR has_function_privilege('authenticated', 'cb_dobrar_janela_da_conexao_apagada()', 'EXECUTE') THEN
-    RAISE EXCEPTION '992: função DEFINER continua executável pela API';
+    RAISE EXCEPTION '993: função DEFINER continua executável pela API';
   END IF;
 
   -- Forma: grupo nunca tem janela, e toda chave é `sem_carimbo` ou uma
@@ -209,7 +209,7 @@ BEGIN
   IF EXISTS (
     SELECT 1 FROM conversations WHERE group_id IS NOT NULL AND janela_meta <> '{}'::jsonb
   ) THEN
-    RAISE EXCEPTION '992: grupo com janela_meta preenchido';
+    RAISE EXCEPTION '993: grupo com janela_meta preenchido';
   END IF;
   IF EXISTS (
     SELECT 1
@@ -219,7 +219,7 @@ BEGIN
         SELECT 1 FROM cb_channels ch WHERE ch.id::text = e.key AND ch.kind = 'meta'
       )
   ) THEN
-    RAISE EXCEPTION '992: chave de janela_meta que não é conexão oficial viva';
+    RAISE EXCEPTION '993: chave de janela_meta que não é conexão oficial viva';
   END IF;
 
   -- Mecânica do acervo: a mensagem mais recente do cliente pela API oficial
@@ -239,12 +239,12 @@ BEGIN
   LIMIT 1;
 
   IF v_conv IS NULL THEN
-    RAISE NOTICE '992: banco sem mensagem do cliente pela API oficial, nada a provar.';
+    RAISE NOTICE '993: banco sem mensagem do cliente pela API oficial, nada a provar.';
   ELSE
     SELECT (janela_meta ->> v_chave)::timestamptz INTO v_gravado
     FROM conversations WHERE id = v_conv;
     IF v_gravado IS NULL OR v_gravado < v_em THEN
-      RAISE EXCEPTION '992: acervo não carimbou a conversa % na chave % (gravado %, esperado >= %)',
+      RAISE EXCEPTION '993: acervo não carimbou a conversa % na chave % (gravado %, esperado >= %)',
         v_conv, v_chave, v_gravado, v_em;
     END IF;
   END IF;

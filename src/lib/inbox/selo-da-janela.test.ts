@@ -39,7 +39,7 @@ function conversa(
   };
 }
 
-/** O mapa como o gatilho da 992 o deixa: uma chave por número. */
+/** O mapa como o gatilho da 993 o deixa: uma chave por número. */
 const pelo = (canalId: string, minutosAtras: number) => ({ [canalId]: min(minutosAtras) });
 
 describe("corDaJanela — as três cores que o operador escolheu", () => {
@@ -85,7 +85,7 @@ describe("seloDaJanela — quando a ampulheta aparece", () => {
     expect(seloDaJanela(conversa(pelo(OFICIAL.id, 3 * 24 * 60)), OFICIAL, AGORA)).toBeNull();
   });
 
-  it("o cliente nunca escreveu pelo número oficial (mapa vazio, nulo ou pré-992): sem selo", () => {
+  it("o cliente nunca escreveu pelo número oficial (mapa vazio, nulo ou pré-993): sem selo", () => {
     expect(seloDaJanela(conversa({}), OFICIAL, AGORA)).toBeNull();
     expect(seloDaJanela(conversa(null), OFICIAL, AGORA)).toBeNull();
     expect(seloDaJanela(conversa(undefined), OFICIAL, AGORA)).toBeNull();
@@ -148,10 +148,10 @@ describe("seloDaJanela — quando a ampulheta aparece", () => {
 
 describe("a lista e o fio nunca discordam sobre o que resta", () => {
   // O fio conta sobre as MENSAGENS (`minutosRestantes`); a lista, sobre o
-  // mapa que o gatilho da 992 deixou na conversa. Mesmas mensagens, mesmo
+  // mapa que o gatilho da 993 deixou na conversa. Mesmas mensagens, mesmo
   // instante, mesmo número de saída — mesmo restante.
 
-  /** O que o gatilho da 992 grava para estas mensagens: a última do cliente por chave. */
+  /** O que o gatilho da 993 grava para estas mensagens: a última do cliente por chave. */
   function mapaDoGatilho(mensagens: readonly MensagemDaJanela[]): Record<string, string> {
     const mapa: Record<string, string> = {};
     for (const m of mensagens) {
@@ -229,9 +229,9 @@ describe("a lista e o fio nunca discordam sobre o que resta", () => {
   });
 });
 
-describe("o gatilho da 992 espelha a regra do fio", () => {
+describe("o gatilho da 993 espelha a regra do fio", () => {
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/992_cb_janela_da_meta_por_numero.sql"),
+    join(process.cwd(), "supabase/migrations/993_cb_janela_da_meta_por_numero.sql"),
     "utf8",
   );
 

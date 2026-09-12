@@ -17,9 +17,9 @@
 | --- | --- | --- | --- | --- |
 | F0 | Medições e decisões | medição feita em 12/09 (§2.2); faltam a 2ª rodada e as respostas da §6 | — | — |
 | F1 | Tela de entrada "Meu dia" (resumo que bloqueia) + "Sair" deste aparelho | **implementada em 12/09/2026** (branch `feat/meu-dia`; §13) | nenhuma | a abrir |
-| F2a | Relógio de atividade entre abas: depois de 4 h sem ninguém mexer, o Meu dia volta a aparecer, **sem senha** | a fazer (D3a) | nenhuma | — |
-| F3 | Painel permanente `/meu-dia` no menu | recomendado logo depois da F1 (D10) | nenhuma | — |
-| F2b | Pedir a senha depois de 4 h sem atividade + login que devolve ao ponto | a decidir (D3b) depois de alguns dias com F1, F2a e F3 em uso | nenhuma | — |
+| F2a | Relógio de atividade entre abas: depois de 4 h sem ninguém mexer, o Meu dia volta a aparecer, **sem senha** | **implementada em 12/09/2026** (branch `feat/meu-dia-fase-2`; §15) | nenhuma | a abrir |
+| F3 | Painel permanente `/meu-dia` no menu | **implementada em 12/09/2026** (mesma branch; §15) | nenhuma | a abrir |
+| F2b | Pedir a senha depois de 4 h sem atividade + login que devolve ao ponto | **descartada por ora** — o operador escolheu "volta o Meu dia, sem senha" (12/09) | — | — |
 
 **Ordem recomendada (revisão do coordenador, §11):** F0 → F1 → F2a → F3 → uso real por alguns dias → F2b. A F2 da v2 foi partida em duas: a volta do Meu dia é uma troca de tela comum, com a sessão viva, e sai barata; o pedido de senha é a parte delicada (encerramento ordenado, login, middleware) e merece decisão com a feature já em uso. Onde o texto abaixo diz "F2", a §7 separa o que é F2a e o que é F2b. A F4 da v1 saiu. A D4 entra na F1 (mesmo arquivo), e a D11 é conferência da F0 com a decisão no fim da F2b.
 
@@ -300,6 +300,8 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 ---
 
 ## 6. Decisões para o operador
+
+> **Respondidas em 12/09/2026** (pela ferramenta de perguntas, depois da F1 em produção): comentários = anotações internas; **D1 (a)** mantida; **D7** com recorte por tempo, mantida; **D13 (a)** sem bloco de reuniões por enquanto; **D10** sim, `/meu-dia` no menu (F3); **D3a** sim — 4 h sem atividade → o Meu dia volta, **sem senha** (F2a); **D3b** não por ora (F2b descartada); **D4** sim — o "Sair" do menu passa a sair só deste aparelho; **D11** conferir o plano do Supabase e ligar a trava de inatividade no servidor (pendente: precisa do painel). O texto abaixo é o da proposta, mantido como registro.
 
 ### 6.1 Perguntas para você (sim/não ou escolha simples)
 
@@ -717,3 +719,18 @@ Dois achados P2, aplicados no PR seguinte (`fix/meu-dia-teto-das-consultas`):
 2. **Sinal de truncamento misturado na fila.** `truncadaNovas` e `truncadaAntigas` separados; "mais de N" só na partição que bateu no teto.
 
 `resumirNovidades` saiu de `contagens.ts` (as novidades não passam mais por linha nenhuma); cinco chaves novas ("mais de N") nos dois dicionários.
+
+---
+
+## 15. Registro da execução da fase 2 — D4 + F3 + F2a (12/09/2026)
+
+**Branch `feat/meu-dia-fase-2`** (worktree própria, a partir do `main` c9daad1), sem migration.
+
+- **D4 — "Sair" só deste aparelho.** `use-auth.tsx` passa a chamar `sairDesteAparelho` (escopo `local`), confere o erro e só navega com sucesso; erro vira toast (`DashboardShell.signOutError`). "Sair de todos os aparelhos" continua em Segurança. O manifesto do pino `sair.chamadores.test.ts` perde a entrada do `use-auth` (não há mais `.signOut(` direto ali).
+- **F3 — `/meu-dia`.** `src/app/(dashboard)/meu-dia/page.tsx` monta o MESMO `ResumoDoDia` em `modo="pagina"` (sem Continuar/Sair, com "Atualizar", que recaptura o relógio e reconsulta pela `versao` na chave do pedido). Item "Meu dia" no menu logo abaixo do Painel (FORA do catálogo de perfis: o filtro do menu deixa passar `telaDoCaminho === null`), `/meu-dia` no `pageTitles` e em `protectedPaths`. Pino novo `src/components/layout/rotulo-do-menu.test.ts`: todo `labelKey` do menu e todo título do cabeçalho existem nos dois dicionários (chave montada, fora do alcance do portão do CI).
+- **F2a — 4 h sem atividade → o Meu dia volta, sem senha.** `src/lib/auth/inatividade.ts` (puro, com teste: `decidir` — outra sessão nunca expira; 3h59 grava, 4h expira; futuro grava; intervalo de 30 s; `sessionId` nulo não decide), `src/lib/resumo-do-dia/navegador.ts` (o I/O dos dois registros + sonda do storage) e `src/hooks/use-guarda-de-inatividade.ts` (gestos em `window` na fase de captura: `pointerdown`, `keydown`, `wheel`, `touchstart`, `mousemove` com posição mudada — nunca `scroll`; conferência a cada 60 s e em `visibilitychange`/`focus`/`pageshow`; confere ANTES de gravar; o gesto que descobre a expiração leva `stopPropagation()`; storage que não grava ou `sessionId` nulo desligam a guarda). A porta ganhou `reabrir` — a ÚNICA exceção à trava de mão única — e decide o caso "aba reaberta depois de 4 h" já no inicializador (`decidirEntrada` com `inatividadeExpirou`), sem montar o app por um quadro.
+- **Não entrou (F2b):** encerrar a sessão, `url-do-login`, mudanças no middleware/login. Ficam no plano como opção.
+
+**Revisão de lente fria da fase 2 (12/09/2026), 12 achados, todos aplicados:** (1) FATAL — a conferência periódica regravava o relógio a cada tique (60 s > 30 s), e a guarda NUNCA expirava com a aba aberta (simulação: 12 h, zero expirações) → só GESTO grava; (2) gravar ao expirar apagava a expiração para as outras abas e um F5 antes do "Continuar" abria o app em silêncio → expirar não grava; quem regrava é o "Continuar"; (3) `decidirAgora` dentro do updater do `setState` (relógio + storage na fase de render) → calculado fora; (4) `mousemove` lia o storage por pixel → teto de 1 s no caminho de gesto; (5) duas notas mentindo sobre o escopo do "Sair" → corrigidas; (6) o encanamento não tinha teste → `passoDaGuarda` pura, com a simulação de 12 h; (7) `reabrir` fora da cerca de `accountStatus` → `ativa` exige `ready`; (8) `/meu-dia` usava o contexto REAL enquanto o shell bloqueia pela LENTE → usa `acesso`; (9) `signOutError` duplicada em dois namespaces → uma chave; (10) o pino do menu ignorava caminho com mais de um segmento e colhia o `ROLE_META` → regex e recorte corrigidos; (11) sonda do storage sem namespace → `cb-sonda:<userId>`; (12) o comentário do `stopPropagation` prometia mais que o código → reescrito.
+
+**Preview (fase 2):** `/meu-dia` no menu e no cabeçalho, "Atualizar" reconsulta (24 → 33 requisições); registro de atividade 5 h atrás + `focus` → o Meu dia volta sem regravar o relógio; "Continuar" regrava; `focus` com registro de 2 h NÃO regrava, um `pointerdown` regrava; aba recarregada com registro de 5 h → o Meu dia já na carga; zero erros no console.

@@ -18,6 +18,7 @@ import {
   Crown,
   GitBranch,
   LayoutDashboard,
+  Sunrise,
   ListTodo,
   LogOut,
   MessageSquare,
@@ -99,6 +100,13 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { href: "/dashboard", labelKey: "dashboard", icon: LayoutDashboard },
+  // O painel PRÓPRIO (Meu dia, F3): a mesma tela da entrada, para rever o dia
+  // a qualquer hora. Logo abaixo do Painel — para quem não tem o Painel
+  // (Advogado, Observador), é o primeiro item. ⚠️ Fica FORA do catálogo de
+  // perfis de propósito: `telaDoCaminho` devolve null e o filtro abaixo deixa
+  // passar; uma tela nova no catálogo nasceria invisível para todo perfil já
+  // gravado.
+  { href: "/meu-dia", labelKey: "meuDia", icon: Sunrise },
   // Logo abaixo do Painel: as duas telas são "visão do conjunto" — o
   // Painel conta números, o Radar diz PARA ONDE olhar (e salta pro inbox).
   { href: "/radar", labelKey: "radar", icon: Activity },

@@ -166,6 +166,8 @@ export interface PedidoDoResumo {
   ctx: ContextoDeAcesso;
   /** Desde quando contar novidades e fila nova (a confirmação anterior). */
   desdeMs: number;
+  /** Muda para consultar de novo com os mesmos parâmetros (o "Atualizar" da página /meu-dia). */
+  versao?: number;
 }
 
 function chaveDoPedido(p: PedidoDoResumo): string {
@@ -175,6 +177,7 @@ function chaveDoPedido(p: PedidoDoResumo): string {
     p.desdeMs,
     p.ctx.papel ?? '',
     p.ctx.perfil?.id ?? '',
+    p.versao ?? 0,
   ].join('|');
 }
 

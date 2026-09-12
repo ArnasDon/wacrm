@@ -12,6 +12,9 @@ import {
 } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { sessionIdDoToken } from "@/lib/auth/token";
+import { sairDesteAparelho } from "@/lib/auth/sair";
+import { toast } from "sonner";
+import { useTranslations } from "next-intl";
 import type { User } from "@supabase/supabase-js";
 import {
   canEditSettings as canEditSettingsFor,
@@ -312,6 +315,8 @@ const SIMULACAO_TIMEOUT_MS = 8_000;
  * component, avoiding internal lock contention in the Supabase client.
  */
 export function AuthProvider({ children }: { children: ReactNode }) {
+  // Só a mensagem de erro do "Sair"; o provider vive sob o NextIntlClientProvider do layout raiz.
+  const t = useTranslations("DashboardShell");
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   // ⚠️ `null` = SEM RESTRIÇÃO, nunca "não vê nada". É o estado de todo mundo
@@ -605,13 +610,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const signOut = useCallback(async () => {
     const supabase = createClient();
-    // ⚠️ GLOBAL por escrito: é o padrão da biblioteca e o comportamento de
-    // sempre deste botão — encerra a sessão em TODOS os aparelhos da pessoa.
-    // Passar a sair só deste aparelho é a decisão D4 do plano Meu dia
-    // (`docs/PLANO-meu-dia.md`), ainda em aberto; o pino
-    // `src/lib/auth/sair.chamadores.test.ts` exige que todo signOut declare
-    // o escopo, para a troca ser uma decisão visível no diff.
-    await supabase.auth.signOut({ scope: "global" });
+    // ⚠️ Só DESTE aparelho (decisão D4 do plano Meu dia, 12/09/2026). Até
+    // aqui era `signOut()` sem escopo — GLOBAL na biblioteca, e o "Sair" do
+    // computador derrubava o celular sem ninguém ter decidido isso. "Sair de
+    // todos os aparelhos" continua em Configurações → Segurança. O helper
+    // devolve o erro: um signOut que falha por rede NÃO apaga a sessão do
+    // cookie, e navegar para /login assim formaria o laço /login → /dashboard.
+    const resultado = await sairDesteAparelho(supabase.auth);
+    if (!resultado.ok) {
+      toast.error(t("signOutError", { message: resultado.erro }));
+      return;
+    }
     setUser(null);
     setProfile(null);
     setAccount(null);
@@ -621,7 +630,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setSimulacaoGravada(null);
     resolvedUserIdRef.current = null;
     window.location.href = "/login";
-  }, []);
+  }, [t]);
 
   const refreshProfile = useCallback(async () => {
     if (!user?.id) return;

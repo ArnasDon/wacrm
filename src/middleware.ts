@@ -77,7 +77,7 @@ export async function middleware(request: NextRequest) {
   // e é por isso mesmo que a página pública de auto-agendamento da Fase 2 vai
   // se chamar `/marcar/<token>`, nunca `/agendar/<token>`: esta linha mandaria
   // o cliente, que não tem login, para a tela de login.
-  const protectedPaths = ['/dashboard', '/radar', '/inbox', '/contacts', '/agenda', '/pipelines', '/broadcasts', '/automations', '/settings']
+  const protectedPaths = ['/dashboard', '/meu-dia', '/radar', '/inbox', '/contacts', '/agenda', '/pipelines', '/broadcasts', '/automations', '/settings']
   if (!user && protectedPaths.some(path => request.nextUrl.pathname.startsWith(path))) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'

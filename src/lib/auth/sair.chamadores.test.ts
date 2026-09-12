@@ -23,8 +23,8 @@ const SRC = path.resolve(__dirname, '..', '..');
 
 /** Manifesto: arquivo → escopo declarado em cada chamada. */
 const CHAMADORES: Record<string, string[]> = {
-  // O botão do menu: global de sempre, por escrito (D4 do plano Meu dia, em aberto).
-  'hooks/use-auth.tsx': ['global'],
+  // O botão do menu passou a sair SÓ deste aparelho pelo helper
+  // `sairDesteAparelho` (D4, 12/09/2026) — não chama `.signOut(` direto.
   // "Sair e tentar com outra conta" do convite.
   'app/join/[token]/page.tsx': ['global'],
   // "Sair de todos os aparelhos", em Configurações → Segurança.

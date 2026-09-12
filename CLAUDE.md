@@ -308,8 +308,10 @@ upstream sobrescrevê-los:
 | `src/lib/ai/types.ts`, `config.ts`, `structured.ts`, `defaults.ts`, `src/lib/cb-radar/worker.ts`, `src/app/api/ai/config/route.ts` | o modelo do Radar separado do modelo de chat (946): `radarModel` no tipo e em `CONFIG_COLUMNS`, o parâmetro `model` do `generateStructured`, `AI_PROVIDER_MODELS`, e a validação do modelo do Radar no save |
 | `src/components/settings/ai-config.tsx` | `<datalist>` de sugestão no campo Modelo e a frase de escopo com link para Integrações |
 | `src/app/(dashboard)/dashboard-shell.tsx` (Meu dia, 12/09/2026) | envolve o layout INTEIRO (menu, cabeçalho, página, heartbeat) na `<PortaDeEntrada key={user.id}>`, abaixo do `if (!user) return null` — nunca renderizar pedaço do app fora dela; e o "Loading..." traduzido (`DashboardShell.loading`) |
-| `src/hooks/use-auth.tsx` (Meu dia) | `sessionId` no contexto (o `session_id` do token, publicado no MESMO passo que `user`, no init e no listener) e o `signOut({ scope: "global" })` por escrito — além do que já era nosso (lente de simulação, perfis, `resolvedUserIdRef`) |
-| `src/components/layout/header.tsx` (Meu dia) | `"/agenda": "agenda"` no `pageTitles`, DEPOIS de `/agendadas` (o mapa casa por `startsWith` na ordem de inserção) |
+| `src/hooks/use-auth.tsx` (Meu dia) | `sessionId` no contexto (o `session_id` do token, publicado no MESMO passo que `user`, no init e no listener) e o `signOut` do menu via `sairDesteAparelho` (escopo `local`, D4, 12/09/2026; erro vira toast e não navega) — além do que já era nosso (lente de simulação, perfis, `resolvedUserIdRef`) |
+| `src/components/layout/header.tsx` (Meu dia) | `"/agenda": "agenda"` no `pageTitles`, DEPOIS de `/agendadas` (o mapa casa por `startsWith` na ordem de inserção); e `"/meu-dia": "meuDia"` |
+| `src/components/layout/sidebar.tsx` (Meu dia, F3) | o item `/meu-dia` em `navItems`, fora do catálogo de perfis |
+| `src/middleware.ts` (Meu dia, F3) | `/meu-dia` em `protectedPaths` |
 
 ⚠️ **Qual NÚMERO nesta conversa: o critério é a CONVERSA, nunca a conta.**
 `src/lib/inbox/canais-do-fio.ts` e `src/lib/cb-channels/cores.ts` (puros, com
@@ -3765,8 +3767,22 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   daí o `Set` de módulo `liberadosNestaCarga`) nem pela virada do dia com a
   aba aberta. Abrir no meio do uso desmontaria o compositor: rascunho
   perdido, anexo preparado apagado do bucket, mensagem na janela de desfazer
-  ENVIADA. Quem precisar reabrir (F2 do plano: 4 h sem atividade) escreve a
-  única exceção, de propósito.
+  ENVIADA. **A ÚNICA exceção é `reabrir`, chamada só pela guarda de
+  inatividade** (F2a, 12/09/2026): 4 h sem gesto em NENHUMA aba deste
+  navegador — relógio compartilhado em `cb-atividade:<userId>`, régua pura
+  em `src/lib/auth/inatividade.ts`, encanamento em
+  `src/hooks/use-guarda-de-inatividade.ts`. O gesto que descobre a expiração
+  leva `stopPropagation()` (ouvinte em `window`, fase de captura, antes do
+  container do React): o Enter ou o clique que acorda a tela NÃO chega ao
+  app. `scroll` não conta como atividade (o fio escreve `scrollTop`
+  sozinho); registro de OUTRA sessão ou ausente nunca expira (senão o
+  carimbo de ontem derrubaria o login de hoje); confere ANTES de gravar
+  (mexer o mouse às 4h05 não ressuscita); storage que não grava ou
+  `sessionId` nulo DESLIGAM a guarda (sem relógio compartilhado, a aba
+  ociosa derrubaria quem trabalha na outra). O caso "aba reaberta depois
+  de 4 h" é decidido no INICIALIZADOR da porta (`inatividadeExpirou`), sem
+  montar o app por um quadro. Sem senha, por decisão do operador (a F2b,
+  que encerraria a sessão, ficou de fora).
 - ⚠️ **A chave "mesmo login" é o `session_id` do token de acesso**
   (`sessionIdDoToken`, decodificado sem verificar assinatura — chave de
   interface, não de autorização), publicado no contexto de auth no MESMO
@@ -3826,12 +3842,13 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   últimas 24 h). Sem registro no aparelho, a janela é 24 h.
 - ⚠️⚠️ **Todo `auth.signOut(` em `src/` declara o escopo por escrito** — o
   padrão da biblioteca é `'global'` (auth-js 2.108.2: revoga TODOS os
-  aparelhos) e é invisível. O "Sair" do menu continua global (D4 do plano,
-  em aberto), o do convite também; o "Não é você? Sair" da entrada é LOCAL
-  via `sairDesteAparelho`, que devolve o erro e só navega com sucesso (um
-  signOut que falha por rede NÃO apaga a sessão; navegar assim forma o laço
-  `/login` → `/dashboard`). O pino é deep-equal: chamada nova entra no
-  manifesto por decisão visível no diff.
+  aparelhos) e é invisível. Desde 12/09/2026 (D4) o "Sair" do menu sai SÓ
+  deste aparelho via `sairDesteAparelho` (devolve o erro e só navega com
+  sucesso: um signOut que falha por rede NÃO apaga a sessão, e navegar assim
+  forma o laço `/login` → `/dashboard`); o do convite segue global por
+  escrito, e "Sair de todos os aparelhos" mora em Segurança. O pino é
+  deep-equal e também reprova `signOut` desestruturado ou referenciado
+  solto: chamada nova entra no manifesto por decisão visível no diff.
 - ⚠️ **Todo link da tela CONFIRMA antes de navegar** (`onClick={onContinuar}`):
   a porta fica acima da página roteada, então navegar sem confirmar trocaria
   a URL e deixaria o resumo na frente da conversa pedida.
@@ -3841,6 +3858,14 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   produção — as reuniões vivem no Calendly. Código para tabela vazia é código
   para futuro hipotético; entra quando a agenda for usada ou quando o
   Calendly gravar nela.
+- **`/meu-dia` (F3, 12/09/2026) é a MESMA tela em `modo="pagina"`**, FORA do
+  catálogo de perfis (`telaDoCaminho` devolve null; o filtro do menu e a
+  guarda do shell deixam passar) — uma tela nova no catálogo nasceria
+  invisível para todo perfil já gravado. Não vira tela de chegada (D15).
+  Está em `protectedPaths` e no `pageTitles`; o pino
+  `src/components/layout/rotulo-do-menu.test.ts` cobra `Sidebar.<labelKey>`
+  e `Header.<título>` nos dois dicionários (chave montada, fora do alcance
+  do portão do CI).
 
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e

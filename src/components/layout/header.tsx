@@ -22,6 +22,7 @@ import { SchedulerHealthIndicator } from "@/components/scheduled/scheduler-healt
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "dashboard",
+  "/meu-dia": "meuDia",
   "/radar": "radar",
   "/inbox": "inbox",
   "/notifications": "notifications",

@@ -149,6 +149,26 @@ describe('decidirEntrada (a decisão inteira da porta)', () => {
     ).toBe(false);
   });
 
+  it('4 h paradas (inatividade expirou) mostram, mesmo já liberado e já confirmado hoje', () => {
+    const hoje = novoRegistro('s1', HOJE, new Date('2026-09-12T11:00:00Z'));
+    expect(
+      decidirEntrada({
+        ...base,
+        registro: hoje,
+        jaLiberadoNestaCarga: true,
+        inatividadeExpirou: true,
+      })
+    ).toBe(true);
+    // Mas nunca com a conta quebrada.
+    expect(
+      decidirEntrada({
+        ...base,
+        accountStatus: 'error',
+        inatividadeExpirou: true,
+      })
+    ).toBe(false);
+  });
+
   it('delega o resto a precisaMostrar', () => {
     const hoje = novoRegistro('s1', HOJE, new Date('2026-09-12T11:00:00Z'));
     expect(decidirEntrada({ ...base, registro: hoje })).toBe(false);

@@ -61,7 +61,8 @@
     "scheduled": "Scheduled",
     "radar": "Radar",
     "agenda": "Calendar",
-    "unreadTasks": "{count} unread {count, plural, =1 {task} other {tasks}}"
+    "unreadTasks": "{count} unread {count, plural, =1 {task} other {tasks}}",
+    "meuDia": "My day"
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -84,7 +85,8 @@
     "flows": "Flows",
     "aiAgents": "AI Agents",
     "radar": "Service radar",
-    "agenda": "Meeting calendar"
+    "agenda": "Meeting calendar",
+    "meuDia": "My day"
   },
   "ModeToggle": {
     "switchMode": "Switch to {mode} mode"
@@ -3953,7 +3955,6 @@
     "continue": "Continue",
     "notYou": "Not you?",
     "signOut": "Sign out",
-    "signOutError": "Could not sign out: {message}",
     "greetingMorningPlain": "Good morning",
     "greetingAfternoonPlain": "Good afternoon",
     "greetingEveningPlain": "Good evening",
@@ -3965,9 +3966,12 @@
     "assignedToYouAtLeast": "more than {count} conversations assigned to you",
     "waitingQueueNewAtLeast": "more than {count} new unassigned",
     "queueNewAtLeast": "more than {count} customers started waiting since your last visit",
-    "queueNew24hAtLeast": "more than {count} customers started waiting in the last 24 hours"
+    "queueNew24hAtLeast": "more than {count} customers started waiting in the last 24 hours",
+    "refresh": "Refresh",
+    "introPage": "What is on your plate today."
   },
   "DashboardShell": {
-    "loading": "Loading…"
+    "loading": "Loading…",
+    "signOutError": "Could not sign out: {message}"
   }
 }

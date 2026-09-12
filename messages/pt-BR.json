@@ -61,7 +61,8 @@
     "scheduled": "Agendadas",
     "radar": "Radar",
     "agenda": "Agenda",
-    "unreadTasks": "{count} {count, plural, =1 {tarefa não lida} other {tarefas não lidas}}"
+    "unreadTasks": "{count} {count, plural, =1 {tarefa não lida} other {tarefas não lidas}}",
+    "meuDia": "Meu dia"
   },
   "Header": {
     "dashboard": "Painel",
@@ -84,7 +85,8 @@
     "flows": "Fluxos",
     "aiAgents": "Agentes de IA",
     "radar": "Radar do atendimento",
-    "agenda": "Agenda de reuniões"
+    "agenda": "Agenda de reuniões",
+    "meuDia": "Meu dia"
   },
   "ModeToggle": {
     "switchMode": "Alternar para o modo {mode}"
@@ -3953,7 +3955,6 @@
     "continue": "Continuar",
     "notYou": "Não é você?",
     "signOut": "Sair",
-    "signOutError": "Não foi possível sair: {message}",
     "greetingMorningPlain": "Bom dia",
     "greetingAfternoonPlain": "Boa tarde",
     "greetingEveningPlain": "Boa noite",
@@ -3965,9 +3966,12 @@
     "assignedToYouAtLeast": "mais de {count} conversas atribuídas a você",
     "waitingQueueNewAtLeast": "mais de {count} novos sem responsável",
     "queueNewAtLeast": "mais de {count} clientes começaram a esperar desde a sua última entrada",
-    "queueNew24hAtLeast": "mais de {count} clientes começaram a esperar nas últimas 24 horas"
+    "queueNew24hAtLeast": "mais de {count} clientes começaram a esperar nas últimas 24 horas",
+    "refresh": "Atualizar",
+    "introPage": "O que está com você hoje."
   },
   "DashboardShell": {
-    "loading": "Carregando…"
+    "loading": "Carregando…",
+    "signOutError": "Não foi possível sair: {message}"
   }
 }

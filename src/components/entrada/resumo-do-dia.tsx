@@ -76,6 +76,14 @@ interface Props {
   onContinuar: () => void;
   /** Sai deste aparelho; devolve a mensagem de erro, ou null com sucesso. */
   onSair: () => Promise<string | null>;
+  /**
+   * `entrada` (padrão): tela cheia no lugar do app, com "Continuar" e "Sair".
+   * `pagina`: a rota /meu-dia, dentro do shell, com "Atualizar" no lugar.
+   */
+  modo?: 'entrada' | 'pagina';
+  /** Muda para consultar de novo (o "Atualizar"). */
+  versao?: number;
+  onAtualizar?: () => void;
 }
 
 export function ResumoDoDia({
@@ -88,9 +96,14 @@ export function ResumoDoDia({
   temConfirmacaoAnterior,
   onContinuar,
   onSair,
+  modo = 'entrada',
+  versao,
+  onAtualizar,
 }: Props) {
   const t = useTranslations('ResumoDoDia');
-  const resumo = useResumoDoDia({ userId, accountId, ctx, desdeMs });
+  // O erro do "Sair" é UMA chave, compartilhada com o "Sair" do menu (use-auth).
+  const tShell = useTranslations('DashboardShell');
+  const resumo = useResumoDoDia({ userId, accountId, ctx, desdeMs, versao });
 
   // O botão espera as consultas — senão "Continuar" sobre zeros de carga
   // afirmaria "nada pendente" — mas não para sempre: sem rede, a pessoa
@@ -112,8 +125,9 @@ export function ResumoDoDia({
   // leitor de tela continuam "na página anterior", que já não existe.
   const cartaoRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    cartaoRef.current?.focus();
-  }, []);
+    // Só na entrada: na página, roubar o foco a cada navegação seria ruído.
+    if (modo === 'entrada') cartaoRef.current?.focus();
+  }, [modo]);
 
   const [saindo, setSaindo] = useState(false);
   const sair = async () => {
@@ -121,7 +135,7 @@ export function ResumoDoDia({
     const erro = await onSair();
     if (erro !== null) {
       setSaindo(false);
-      toast.error(t('signOutError', { message: erro }));
+      toast.error(tShell('signOutError', { message: erro }));
     }
   };
 
@@ -153,7 +167,13 @@ export function ResumoDoDia({
   );
 
   return (
-    <div className="bg-background min-h-screen overflow-y-auto p-4 sm:p-8">
+    <div
+      className={
+        modo === 'pagina'
+          ? 'w-full'
+          : 'bg-background min-h-screen overflow-y-auto p-4 sm:p-8'
+      }
+    >
       <div
         ref={cartaoRef}
         tabIndex={-1}
@@ -169,7 +189,9 @@ export function ResumoDoDia({
         <h1 className="text-foreground mt-1 text-xl font-semibold">
           {saudacao}
         </h1>
-        <p className="text-muted-foreground mt-1 text-sm">{t('intro')}</p>
+        <p className="text-muted-foreground mt-1 text-sm">
+          {modo === 'pagina' ? t('introPage') : t('intro')}
+        </p>
 
         {/* ---------------- Novidades ---------------- */}
         <section className="mt-5">
@@ -262,32 +284,50 @@ export function ResumoDoDia({
         </section>
 
         {/* ---------------- Rodapé ---------------- */}
-        <div className="border-border mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-          <button
-            type="button"
-            onClick={sair}
-            disabled={saindo}
-            className="text-muted-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline disabled:opacity-50"
-          >
-            <LogOut className="size-3.5" aria-hidden />
-            {t('notYou')} {t('signOut')}
-          </button>
-          <div className="flex items-center gap-3">
-            {!podeContinuar && (
+        {modo === 'pagina' ? (
+          <div className="border-border mt-6 flex items-center justify-end gap-3 border-t pt-4">
+            {carregando && (
               <span role="status" className="text-muted-foreground text-xs">
                 {t('loadingYourDay')}
               </span>
             )}
             <Button
-              onClick={onContinuar}
-              disabled={!podeContinuar}
-              aria-busy={!podeContinuar}
-              size="lg"
+              variant="outline"
+              onClick={onAtualizar}
+              disabled={carregando}
+              aria-busy={carregando}
             >
-              {t('continue')}
+              {t('refresh')}
             </Button>
           </div>
-        </div>
+        ) : (
+          <div className="border-border mt-6 flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+            <button
+              type="button"
+              onClick={sair}
+              disabled={saindo}
+              className="text-muted-foreground inline-flex items-center gap-1 text-xs underline-offset-4 hover:underline disabled:opacity-50"
+            >
+              <LogOut className="size-3.5" aria-hidden />
+              {t('notYou')} {t('signOut')}
+            </button>
+            <div className="flex items-center gap-3">
+              {!podeContinuar && (
+                <span role="status" className="text-muted-foreground text-xs">
+                  {t('loadingYourDay')}
+                </span>
+              )}
+              <Button
+                onClick={onContinuar}
+                disabled={!podeContinuar}
+                aria-busy={!podeContinuar}
+                size="lg"
+              >
+                {t('continue')}
+              </Button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

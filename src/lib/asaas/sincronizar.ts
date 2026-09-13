@@ -792,9 +792,22 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     // volta ao início do ciclo: os batimentos a avançaram, e um sucesso com
     // `last_sync_at` diferente de `last_sync_attempt_at` seria lido no cartão
     // como "houve outra tentativa depois" (Codex, PR #201, 7ª rodada).
+    // ⚠️ `vinculo_completo_em` (996) só quando o passo 7 não ADIOU nada: é o
+    // marcador que a tela usa para "ninguém deve" ser resposta, e um ciclo
+    // que terminou com fichas adiadas ainda tem o mapa parcial (Codex, PR
+    // #203, 7ª rodada). `last_sync_at` continua avançando — o cartão diz
+    // que o ciclo rodou; o marcador diz se o vínculo ficou inteiro.
     const { data: fechado, error: erroFim } = await admin
       .from("cb_asaas_config")
-      .update({ status: "conectado", last_sync_at: vistoEm, last_sync_attempt_at: vistoEm, last_error: null, sincronizando_desde: null, updated_at: vistoEm })
+      .update({
+        status: "conectado",
+        last_sync_at: vistoEm,
+        last_sync_attempt_at: vistoEm,
+        last_error: null,
+        sincronizando_desde: null,
+        updated_at: vistoEm,
+        ...(v.adiadas === 0 ? { vinculo_completo_em: vistoEm } : {}),
+      })
       .eq("account_id", accountId)
       .eq("sincronizando_desde", vistoEm)
       .select("account_id");

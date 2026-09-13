@@ -24,6 +24,8 @@ export interface ConfigDoEspelho {
   vencidas_listadas_em: string | null;
   last_full_sync_at: string | null;
   sincronizando_desde: string | null;
+  /** o último ciclo cujo VÍNCULO terminou sem adiar nada (996) — ver `cicloCompleto` */
+  vinculo_completo_em: string | null;
   last_error: string | null;
 }
 
@@ -78,7 +80,7 @@ export function lerParcela(l: Record<string, unknown>): ParcelaDoEspelho {
 export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: string): Promise<ConfigDoEspelho | null> {
   const { data, error } = await admin
     .from("cb_asaas_config")
-    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error")
+    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, vinculo_completo_em, last_error")
     .eq("account_id", accountId)
     .maybeSingle();
   if (error) throw new Error(`config: ${error.message}`);
@@ -86,21 +88,22 @@ export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: strin
 }
 
 /**
- * Puro: o ciclo que produziu a listagem ATUAL das vencidas terminou inteiro?
+ * Puro: o VÍNCULO da listagem ATUAL das vencidas terminou inteiro?
  *
  * ⚠️ `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES da
- * reconciliação e do vínculo (passo 7); `last_sync_at` só no passo 8, com o
- * mesmo `vistoEm`. Entre os dois o mapa contato → dívida está PARCIAL
- * (cliente novo ainda sem vínculo), e "ninguém deve" seria lacuna, não
- * resposta. "Algum ciclo já terminou" não basta: nos ciclos seguintes a
- * janela se repete a cada 15 min (Codex, PR #203, 5ª e 6ª rodadas). É
- * verdade só quando o último ciclo inteiro é o da listagem vigente.
+ * reconciliação e do vínculo (passo 7). Entre os dois o mapa contato → dívida
+ * está PARCIAL, e "ninguém deve" seria lacuna, não resposta. "Algum ciclo já
+ * terminou" (`last_sync_at`) não basta duas vezes: a janela se repete a cada
+ * ciclo, e o ciclo TERMINA com sucesso mesmo tendo ADIADO a criação de fichas
+ * (teto por ciclo, prazo). Por isso o marcador é `vinculo_completo_em` (996),
+ * carimbado no passo 8 só quando o passo 7 não adiou nada — completo quando
+ * ele é da listagem vigente ou posterior (Codex, PR #203, 5ª a 7ª rodadas).
  */
-export function cicloCompleto(config: Pick<ConfigDoEspelho, "last_sync_at" | "vencidas_listadas_em"> | null): boolean {
-  if (!config?.last_sync_at || !config.vencidas_listadas_em) return false;
-  const fim = Date.parse(config.last_sync_at);
+export function cicloCompleto(config: Pick<ConfigDoEspelho, "vinculo_completo_em" | "vencidas_listadas_em"> | null): boolean {
+  if (!config?.vinculo_completo_em || !config.vencidas_listadas_em) return false;
+  const vinculo = Date.parse(config.vinculo_completo_em);
   const listagem = Date.parse(config.vencidas_listadas_em);
-  return Number.isFinite(fim) && Number.isFinite(listagem) && fim >= listagem;
+  return Number.isFinite(vinculo) && Number.isFinite(listagem) && vinculo >= listagem;
 }
 
 /**

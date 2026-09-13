@@ -3563,9 +3563,11 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   NEUTRALIZADO (`ContextoDosFiltros.inadimplentes: Set<string> | null`,
   campo OBRIGATÓRIO — a régua de `recorteDeEtapaConfiavel`). Conectado SEM
   ciclo inteiro também é `null` (`cicloCompleto` em `espelho.ts`:
-  `last_sync_at >= vencidas_listadas_em` — a listagem é carimbada no passo
-  4 e o vínculo roda no 7, então entre os dois o mapa é PARCIAL, e a janela
-  se repete a cada ciclo): um conjunto vazio ali faria uma visão salva
+  `vinculo_completo_em >= vencidas_listadas_em` — a listagem é carimbada no
+  passo 4 e o vínculo roda no 7, então entre os dois o mapa é PARCIAL, a
+  janela se repete a cada ciclo, e `last_sync_at` não serve porque avança
+  mesmo quando o ciclo ADIOU fichas pelo teto; a 996 é esse marcador,
+  carimbado só sem adiamento): um conjunto vazio ali faria uma visão salva
   esconder a caixa inteira. ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA
   régua do ícone, e medido em 13/09 com 11 h sem ciclo a neutralização
   deixava 15 ícones na lista e um interruptor que "não fazia nada" — a tela
@@ -4492,6 +4494,13 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `asaas` que não ficou gravada na criação), as duas pedidas pela revisão
     do PR #201. Aplicada em 12/09/2026 à noite pela Management API
     (histórico `20260912234246`), ANTES do merge; aditiva.
+  - **996_cb_asaas_vinculo_completo** — `cb_asaas_config.vinculo_completo_em`,
+    o marcador de que o VÍNCULO da listagem vigente terminou sem adiar nada
+    (7ª rodada do Codex no PR #203): `last_sync_at` avança mesmo com fichas
+    adiadas pelo teto do ciclo, e a tela precisa saber quando "ninguém deve"
+    é resposta. Aditiva, com acervo do `last_sync_at`. Aplicada em 13/09/2026
+    pela Management API (histórico `20260913122337`), ANTES do merge;
+    conferido: a conta real ficou com o marcador igual ao `last_sync_at`.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

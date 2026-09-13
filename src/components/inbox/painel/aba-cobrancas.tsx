@@ -269,14 +269,18 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
           "em conferência" seria contradição na mesma tela (Codex e revisão
           do PR #203). Sem frescura, a aba diz que não sabe. */}
       {divida.vencidas.length === 0 ? (
-        <p className={cn("px-1 text-sm", fresca && divida.emConferencia.length === 0 ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300")}>
-          {!fresca
-            ? quando
-              ? t("semLeituraRecente", { quando })
-              : t("semListagem")
-            : divida.emConferencia.length > 0
-              ? t("nadaConfirmado", { n: divida.emConferencia.length })
-              : t("emDia")}
+        <p className={cn("px-1 text-sm", fresca && dados.cicloCompleto && divida.emConferencia.length === 0 ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300")}>
+          {!dados.cicloCompleto
+            ? // o ciclo da listagem vigente ainda não terminou: outro cliente
+              // do mesmo documento pode estar por ligar a este contato
+              t("semListagem")
+            : !fresca
+              ? quando
+                ? t("semLeituraRecente", { quando })
+                : t("semListagem")
+              : divida.emConferencia.length > 0
+                ? t("nadaConfirmado", { n: divida.emConferencia.length })
+                : t("emDia")}
         </p>
       ) : (
         <div>

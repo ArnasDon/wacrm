@@ -24,6 +24,7 @@ function estadoInicial(extra: Partial<Record<string, unknown[]>> = {}, config: R
           last_sync_attempt_at: null,
           vencidas_listadas_em: null,
           last_full_sync_at: null,
+          vinculo_completo_em: null,
           last_error: null,
           ...config,
         },
@@ -133,6 +134,8 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
 
     const config = estado.tabelas.cb_asaas_config[0];
     expect(config).toMatchObject({ status: "conectado", last_error: null, last_sync_at: AGORA.toISOString(), vencidas_listadas_em: AGORA.toISOString(), last_full_sync_at: AGORA.toISOString() });
+    // nada adiado: o VÍNCULO da listagem vigente terminou inteiro (996)
+    expect(config.vinculo_completo_em).toBe(AGORA.toISOString());
     // a TENTATIVA é o batimento do cadeado durante o ciclo, e volta ao
     // início dele no sucesso
     expect(config.last_sync_attempt_at).toBe(AGORA.toISOString());
@@ -144,6 +147,12 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
     const r = await rodar(estado, respostas, { tetoDeFichas: 0 }).resultado;
     // A e B têm telefone e nenhuma ficha: as duas criações ficam para o ciclo seguinte
     expect(r).toMatchObject({ ok: true, fichasCriadas: 0, adiadas: 2 });
+    // ⚠️ o ciclo terminou (`last_sync_at` avança — o cartão diz que rodou), mas
+    // ADIOU fichas: o marcador do vínculo NÃO avança, e a tela não afirma
+    // "ninguém deve" sobre o mapa parcial (Codex, PR #203, 7ª rodada)
+    const config = estado.tabelas.cb_asaas_config[0];
+    expect(config.last_sync_at).toBe(AGORA.toISOString());
+    expect(config.vinculo_completo_em).toBeNull();
     expect(estado.tabelas.contacts).toHaveLength(0);
     expect(FICHAS_POR_CICLO).toBeGreaterThan(0);
   });

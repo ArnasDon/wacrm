@@ -4086,6 +4086,13 @@ miniatura idêntica da que aparece no modal". Hoje são sete blocos num grid;
 o cartão da entrada ficou com os números e UM botão que leva à aba. O que
 morde código novo:
 
+- ⚠️ **O bloco "o que precisa ser corrigido" é SÓ DO ADMINISTRADOR**
+  (`useCan('view-reports')`, pedido do operador em 13/09/2026) — a mesma
+  régua das abas analíticas do funil, e pela mesma razão: agendada que não
+  saiu, conexão fora do ar, automação que falhou e entrada parada são saúde
+  da OPERAÇÃO, e para o atendente seriam alarme sobre o qual ele não pode
+  agir. `useCan` deriva do acesso EFETIVO, então o "Ver como" o esconde
+  junto. Os outros seis blocos continuam de qualquer membro.
 - ⚠️⚠️ **"Tudo em ordem" é uma AFIRMAÇÃO, e exige TODAS as fontes
   respondidas.** `resumirCorrecoes` tem um estado PRÓPRIO para zero-com-falha
   (`incompleto`), distinto de `limpo`: o bloco existe para avisar que algo

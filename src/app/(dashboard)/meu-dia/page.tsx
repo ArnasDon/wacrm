@@ -45,6 +45,7 @@ import { Button } from '@/components/ui/button';
 import { useAgendadorSaude } from '@/hooks/use-agendador-saude';
 import { useAreaDeTrabalho } from '@/hooks/use-area-de-trabalho';
 import { useAuth } from '@/hooks/use-auth';
+import { useCan } from '@/hooks/use-can';
 import { useChannelHealth } from '@/hooks/use-channel-health';
 import { useResumoDoDia } from '@/hooks/use-resumo-do-dia';
 import type { EstadoDaFonte } from '@/lib/meu-dia/correcoes';
@@ -273,6 +274,7 @@ function AreaDeTrabalho({
   const veAgenda = podeVerTela(acesso, 'agenda');
   const veFunis = podeVerTela(acesso, 'pipelines');
   const veAutomacoes = podeVerTela(acesso, 'automations');
+  const veCorrecoes = useCan('view-reports');
   // Por SEÇÃO: a tela de Configurações não é recortável, mas as seções são.
   const veConexoes = podeVerSecao(acesso, 'channels');
   const veIntegracoes = podeVerSecao(acesso, 'integracoes');
@@ -410,18 +412,32 @@ function AreaDeTrabalho({
           />
         </section>
 
-        <div className="lg:col-span-3">
-          <BlocoDeCorrecoes
-            correcoes={area.correcoes}
-            integracoes={area.integracoes}
-            conexoes={conexoes}
-            agendadorParado={saude === null ? null : agendadorEstaParado(saude)}
-            veAgendadas={veAgendadas}
-            veAutomacoes={veAutomacoes}
-            veConexoes={veConexoes}
-            veIntegracoes={veIntegracoes}
-          />
-        </div>
+        {/* ⚠️ Só o ADMINISTRADOR vê o que precisa ser corrigido (pedido do
+            operador, 13/09/2026). É a régua das abas analíticas do funil
+            (`view-reports`), e pela mesma razão: agendada que não saiu,
+            conexão fora do ar, automação que falhou e entrada que não virou
+            atendimento são a saúde da OPERAÇÃO — quem conserta é quem
+            administra, e para o atendente seria um alarme sobre o qual ele
+            não pode agir. ⚠️ `useCan` deriva do acesso EFETIVO, então o
+            "Ver como" esconde o bloco junto; e devolve `false` enquanto o
+            perfil carrega, de propósito — o bloco entra depois, em vez de
+            piscar para quem não o vê. */}
+        {veCorrecoes && (
+          <div className="lg:col-span-3">
+            <BlocoDeCorrecoes
+              correcoes={area.correcoes}
+              integracoes={area.integracoes}
+              conexoes={conexoes}
+              agendadorParado={
+                saude === null ? null : agendadorEstaParado(saude)
+              }
+              veAgendadas={veAgendadas}
+              veAutomacoes={veAutomacoes}
+              veConexoes={veConexoes}
+              veIntegracoes={veIntegracoes}
+            />
+          </div>
+        )}
 
         <div className="lg:col-span-3">
           <BlocoDeResultados

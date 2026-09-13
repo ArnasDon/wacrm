@@ -865,3 +865,28 @@ Duas rodadas, nove achados — dois P1 e sete P2. Os que mudaram o desenho:
    do filtro em JS.
 7. **A agenda derrubava a sexta reunião** do período em silêncio.
 8. **A linha de conversas do cartão** mostrava só a metade que carregou.
+
+### Ajuste pedido na tela (13/09/2026)
+
+**"O que precisa ser corrigido" é só do administrador** (`useCan('view-reports')`,
+a régua das abas analíticas do funil). O bloco fala da saúde da operação —
+agendada que não saiu, conexão caída, automação que falhou, entrada parada —
+e para o atendente seria alarme sobre o qual ele não pode agir.
+
+### O que o bloco achou na primeira abertura (13/09/2026)
+
+A verificação no preview com o banco de produção mostrou "4" e, investigando:
+
+- **1 automação falhou hoje** — "Calendly → Reunião agendada", para Angela
+  Silva às 09:23. Os três primeiros passos rodaram (nome e dois campos
+  personalizados); o quarto, `send_to_number` (o aviso ao advogado), morreu
+  com **"Error: Connection Closed"** — a instância da Evolution fechou a
+  conexão no instante do envio. Como passo que falha ENCERRA a execução, o
+  `move_deal_stage` seguinte não rodou: **o card da Angela continua em
+  "Contato Avulso"**. Foi soluço pontual — uma ocorrência em sete dias, zero
+  agendadas com o mesmo erro, e as seis conexões reais conectadas agora.
+- **3 entradas não viraram atendimento** — a da Angela acima, mais **Joel**
+  (08/09, telefone 5519982764080) e **Renato** (08/09, 5511999956666), os
+  dois `sem_contato`. Os dois são ANTERIORES à revisão da D2 do Calendly, que
+  fez a ficha nascer do agendamento: hoje o "Processar de novo" cria a ficha
+  e roda a automação.

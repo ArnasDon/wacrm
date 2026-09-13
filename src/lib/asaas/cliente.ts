@@ -150,8 +150,12 @@ export type CabecalhosDeCota = Record<string, string>;
 export interface ClienteAsaas {
   /** Uma página. `params` vai na query; GET nunca leva corpo (403). */
   listar<T>(caminho: string, params?: Record<string, string | number | undefined>): Promise<PaginaDoAsaas<T>>;
-  /** Todas as páginas, com teto. ESTOURA no teto — nunca devolve meia lista. */
-  listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>, teto?: number): Promise<T[]>;
+  /**
+   * Todas as páginas, com teto. ESTOURA no teto — nunca devolve meia lista.
+   * `aCadaPagina` roda depois de cada página: é o batimento do cadeado do
+   * ciclo numa listagem longa (100 páginas × 20 s de timeout passam de 10 min).
+   */
+  listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>, teto?: number, aCadaPagina?: () => Promise<void>): Promise<T[]>;
   /** Um recurso por id. `null` no 404 — que também significa "de outra conta". */
   obter<T>(caminho: string): Promise<T | null>;
   /** Os cabeçalhos de cota da última resposta (vazio antes do primeiro pedido). */
@@ -234,6 +238,7 @@ export function criarClienteAsaas(
       caminho: string,
       params?: Record<string, string | number | undefined>,
       teto = PAGINAS_MAX,
+      aCadaPagina?: () => Promise<void>,
     ): Promise<T[]> {
       const limit = Math.min(POR_PAGINA_MAX, Math.max(1, Number(params?.limit ?? POR_PAGINA_MAX)));
       const tudo: T[] = [];
@@ -241,6 +246,7 @@ export function criarClienteAsaas(
         const p = await listar<T>(caminho, { ...params, limit, offset: pagina * limit });
         tudo.push(...p.data);
         if (!p.hasMore || p.data.length === 0) return tudo;
+        if (aCadaPagina) await aCadaPagina();
       }
       // ⚠️ Estourar, nunca devolver meia lista: a contagem parcial vira
       // número errado com cara de número certo (lição do Meta Ads).

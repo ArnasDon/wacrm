@@ -395,8 +395,9 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
     await rodar(estado, respostas).resultado;
     const batidas = estado.escritas.filter((w) => w.tabela === "cb_asaas_config" && w.op === "update" && (w.payload as Record<string, unknown>).last_sync_attempt_at !== undefined);
-    // o claim e pelo menos dois batimentos (depois dos clientes e depois das cobranças)
-    expect(batidas.length).toBeGreaterThanOrEqual(3);
+    // o claim, o batimento ENTRE as páginas de cada listagem (o dublê chama uma vez por listagem)
+    // e os batimentos depois dos clientes e das cobranças
+    expect(batidas.length).toBeGreaterThanOrEqual(6);
   });
 
   it("listagemSuspeita: vazia é sempre suspeita; parcial só acima de 20% E de 5", () => {
@@ -407,6 +408,32 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(listagemSuspeita(300, 439, 139)).toBe(true); // um terço sumiu: veio pela metade
     expect(listagemSuspeita(7, 10, 3)).toBe(false); // conta pequena: 3 de 10 não passa do piso absoluto
     expect(listagemSuspeita(4, 10, 6)).toBe(true);
+  });
+
+  it("cliente NOVO de cobrança vencida adiado pelo prazo: a listagem NÃO é carimbada como completa", async () => {
+    const estado = estadoInicial({}, { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" });
+    const respostas: RespostasDoAsaas = {
+      listas: { [LISTA_VENCIDAS]: [cobranca("pay_N", "cus_N")], [LISTA_VENCE_HOJE]: [] },
+      recursos: { "/customers/cus_N": clienteAsaas("cus_N", "Novo") },
+    };
+    // prazo já esgotado: a leitura do cliente novo é adiada
+    const r = await rodar(estado, respostas, { prazoMs: Date.now() - 1 }).resultado;
+    expect(r).toMatchObject({ ok: true, cobrancasGravadas: 0 });
+    expect(estado.tabelas.cb_asaas_cobrancas).toHaveLength(0);
+    expect(estado.tabelas.cb_asaas_config[0].vencidas_listadas_em).toBe("2026-09-14T06:00:00Z");
+    // com prazo, o cliente é lido, a cobrança entra e a listagem é carimbada
+    const estado2 = estadoInicial({}, { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" });
+    const r2 = await rodar(estado2, respostas).resultado;
+    expect(r2).toMatchObject({ ok: true, cobrancasGravadas: 1 });
+    expect(estado2.tabelas.cb_asaas_config[0].vencidas_listadas_em).toBe(AGORA.toISOString());
+  });
+
+  it("cliente que o Asaas NÃO devolve (404) não segura o carimbo da listagem", async () => {
+    const estado = estadoInicial({}, { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" });
+    const respostas: RespostasDoAsaas = { listas: { [LISTA_VENCIDAS]: [cobranca("pay_N", "cus_sumido")], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    const r = await rodar(estado, respostas).resultado;
+    expect(r).toMatchObject({ ok: true, cobrancasGravadas: 0 });
+    expect(estado.tabelas.cb_asaas_config[0].vencidas_listadas_em).toBe(AGORA.toISOString());
   });
 
   it("o cadeado é solto no erro também", async () => {

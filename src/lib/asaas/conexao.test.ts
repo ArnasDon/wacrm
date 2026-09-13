@@ -62,6 +62,29 @@ describe("desconectarAsaas — respeita o cadeado do ciclo", () => {
     expect(e.tabelas.cb_asaas_clientes).toHaveLength(1);
   });
 
+  it("o claim do desconectar renova o batimento na mesma escrita — um ciclo que chegue depois vê o cadeado VIVO", async () => {
+    const e = estado({
+      cb_asaas_config: [{ account_id: CONTA, sincronizando_desde: null, last_sync_attempt_at: new Date(Date.now() - 3 * RECOLHER_CICLO_MS).toISOString() }],
+    });
+    const admin = dubleDoSupabase(e);
+    const original = admin.from.bind(admin);
+    let batimentoNoClaim: unknown = null;
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      const q = original(t) as unknown as Record<string, unknown> & { update: (...a: unknown[]) => unknown };
+      if (t === "cb_asaas_config") {
+        const update = q.update;
+        q.update = (...a: unknown[]) => {
+          const patch = a[0] as Record<string, unknown>;
+          if (patch.sincronizando_desde && batimentoNoClaim === null) batimentoNoClaim = patch.last_sync_attempt_at ?? null;
+          return update.apply(q, a);
+        };
+      }
+      return q;
+    };
+    expect(await desconectarAsaas(admin, CONTA)).toEqual({ ok: true });
+    expect(typeof batimentoNoClaim).toBe("string");
+  });
+
   it("ciclo morto (sem batimento há mais de 10 min) não segura: toma o cadeado e apaga", async () => {
     const e = estado({
       cb_asaas_config: [{ account_id: CONTA, sincronizando_desde: new Date(Date.now() - 3 * RECOLHER_CICLO_MS).toISOString(), last_sync_attempt_at: new Date(Date.now() - RECOLHER_CICLO_MS - 1000).toISOString() }],

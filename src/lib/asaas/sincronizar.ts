@@ -280,7 +280,7 @@ async function gravarClientes(admin: SupabaseClient, accountId: string, clientes
  * ciclo seguinte relistar. O carimbo leva a cerca de posse do cadeado.
  */
 async function listarClientes(admin: SupabaseClient, accountId: string, cliente: ClienteAsaas, vistoEm: string): Promise<number> {
-  const brutos = await cliente.listarTudo<unknown>("/customers", { limit: 100 });
+  const brutos = await cliente.listarTudo<unknown>("/customers", { limit: 100 }, undefined, () => bater(admin, accountId, vistoEm));
   const clientes = brutos.map(lerCliente).filter((c): c is ClienteDoAsaas => c !== null);
   await gravarClientes(admin, accountId, clientes, vistoEm);
   const contar = (q: ReturnType<typeof admin.from>) => q;
@@ -316,7 +316,11 @@ async function listarClientes(admin: SupabaseClient, accountId: string, cliente:
 
 /**
  * Garante a linha do cliente de cada cobrança (a FK exige). Devolve os ids
- * de cliente que o Asaas NÃO devolveu (404): as cobranças deles ficam de fora.
+ * de cliente que o Asaas NÃO devolveu (404, `semLinha`: as cobranças deles
+ * ficam de fora, e a listagem continua completa no que dá para guardar) e
+ * os que o PRAZO não deixou ler (`adiados`: aí a listagem NÃO é completa —
+ * carimbá-la faria `leituraFresca` afirmar "em dia" sobre uma vencida que
+ * nem entrou no espelho; Codex, PR #201, 6ª rodada).
  */
 async function garantirClientes(
   admin: SupabaseClient,
@@ -325,7 +329,7 @@ async function garantirClientes(
   idsDeCliente: Iterable<string>,
   vistoEm: string,
   prazoMs: number,
-): Promise<Set<string>> {
+): Promise<{ semLinha: Set<string>; adiados: Set<string> }> {
   const ids = [...new Set(idsDeCliente)];
   const conhecidos = new Set<string>();
   for (let i = 0; i < ids.length; i += LOTE_DE_IDS) {
@@ -338,11 +342,12 @@ async function garantirClientes(
     for (const l of (data ?? []) as { asaas_customer_id: string }[]) conhecidos.add(l.asaas_customer_id);
   }
   const semLinha = new Set<string>();
+  const adiados = new Set<string>();
   const novos: ClienteDoAsaas[] = [];
   for (const id of ids) {
     if (conhecidos.has(id)) continue;
     if (Date.now() > prazoMs) {
-      semLinha.add(id);
+      adiados.add(id);
       continue;
     }
     const lido = lerCliente(await cliente.obter<unknown>(`/customers/${id}`));
@@ -350,7 +355,7 @@ async function garantirClientes(
     else semLinha.add(id);
   }
   if (novos.length > 0) await gravarClientes(admin, accountId, novos, vistoEm);
-  return semLinha;
+  return { semLinha, adiados };
 }
 
 interface CobrancaARevisar {
@@ -716,13 +721,14 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
 
     // 4) vencidas, sempre completas — e o que vence hoje (D17)
     const hoje = diaNoFuso(agora, fuso);
+    const batimento = () => bater(admin, accountId, vistoEm);
     const brutas = [
-      ...(await cliente.listarTudo<unknown>("/payments", { status: "OVERDUE,DUNNING_REQUESTED", limit: 100 })),
-      ...(await cliente.listarTudo<unknown>("/payments", { status: "PENDING", "dueDate[ge]": hoje, "dueDate[le]": hoje, limit: 100 })),
+      ...(await cliente.listarTudo<unknown>("/payments", { status: "OVERDUE,DUNNING_REQUESTED", limit: 100 }, undefined, batimento)),
+      ...(await cliente.listarTudo<unknown>("/payments", { status: "PENDING", "dueDate[ge]": hoje, "dueDate[le]": hoje, limit: 100 }, undefined, batimento)),
     ];
     const cobrancas = brutas.map(lerCobranca).filter((c): c is CobrancaDoAsaas => c !== null && c.clienteId !== null);
     await bater(admin, accountId, vistoEm);
-    const semLinha = await garantirClientes(
+    const { semLinha, adiados } = await garantirClientes(
       admin,
       accountId,
       cliente,
@@ -730,20 +736,29 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
       vistoEm,
       prazoMs,
     );
-    const aplicaveis = cobrancas.filter((c) => !semLinha.has(c.clienteId as string));
+    const aplicaveis = cobrancas.filter((c) => !semLinha.has(c.clienteId as string) && !adiados.has(c.clienteId as string));
     const aplicadas = await aplicarCobrancas(admin, accountId, aplicaveis, vistoEm);
     contagem.cobrancasGravadas = aplicadas.gravadas;
     if (semLinha.size > 0) {
-      // Cliente que o Asaas não devolveu: a listagem fica incompleta para ele,
-      // e o carimbo abaixo mandaria as cobranças dele para "em conferência".
+      // Cliente que o Asaas não devolveu (404): as cobranças dele não têm
+      // como ser guardadas (a FK exige a linha) — a listagem continua completa
+      // no que dá para guardar.
       console.warn(`[asaas] ${semLinha.size} cliente(s) de cobrança vencida sem linha no Asaas (conta ${accountId})`);
     }
-    const { error: erroListagem } = await admin
-      .from("cb_asaas_config")
-      .update({ vencidas_listadas_em: vistoEm })
-      .eq("account_id", accountId)
-      .eq("sincronizando_desde", vistoEm);
-    if (erroListagem) throw new Error(`vencidas_listadas_em: ${erroListagem.message}`);
+    if (adiados.size > 0) {
+      // O PRAZO cortou a leitura de clientes novos: a listagem NÃO está
+      // completa, e carimbá-la faria "em dia" valer sobre vencida que nem
+      // entrou. O ciclo seguinte relista (o Asaas é a fonte).
+      contagem.adiadas += adiados.size;
+      console.warn(`[asaas] ${adiados.size} cliente(s) novo(s) de cobrança vencida adiado(s) pelo prazo (conta ${accountId}) — listagem não carimbada`);
+    } else {
+      const { error: erroListagem } = await admin
+        .from("cb_asaas_config")
+        .update({ vencidas_listadas_em: vistoEm })
+        .eq("account_id", accountId)
+        .eq("sincronizando_desde", vistoEm);
+      if (erroListagem) throw new Error(`vencidas_listadas_em: ${erroListagem.message}`);
+    }
 
     // 5) reconciliação
     const ligados = new Set(clientes.filter((c) => c.contact_id !== null).map((c) => c.asaas_customer_id));

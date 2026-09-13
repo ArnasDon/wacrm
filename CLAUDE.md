@@ -3485,13 +3485,21 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   (`.eq('sincronizando_desde', vistoEm)`) nas escritas de fim de ciclo;
   `em_curso` não é erro (o cron conta como adiada, o cartão mostra
   "sincronizando desde"). ⚠️ O recolhimento (10 min) olha o BATIMENTO
-  (`last_sync_attempt_at`, que o ciclo avança a cada passo — listagem, lote,
-  a cada 20 releituras/fichas), não o começo do ciclo: uma conta com
-  dezenas de páginas pode passar de 10 min viva, e recolher um ciclo vivo é
+  (`last_sync_attempt_at`, que o ciclo avança a cada passo — ENTRE as
+  páginas de cada `listarTudo` (`aCadaPagina`), depois de cada listagem, a
+  cada 20 releituras/fichas), não o começo do ciclo: uma conta com dezenas
+  de páginas pode passar de 10 min viva, e recolher um ciclo vivo é
   justamente o que o cadeado impede. ⚠️ **`desconectarAsaas` TOMA o cadeado
-  antes de apagar** (409 `em_curso` se um ciclo está no meio): o ciclo já
-  tem o cliente HTTP na mão e continuaria gravando no espelho apagado — e
-  misturaria as contas se outra fosse conectada em seguida.
+  antes de apagar** (409 `em_curso` se um ciclo está no meio), renovando o
+  batimento na MESMA escrita: o ciclo já tem o cliente HTTP na mão e
+  continuaria gravando no espelho apagado — e misturaria as contas se outra
+  fosse conectada em seguida.
+- ⚠️ **`vencidas_listadas_em` só é carimbado quando TODA cobrança listada
+  pôde ser guardada**: cliente novo que o PRAZO não deixou ler (`adiados`)
+  segura o carimbo — senão `leituraFresca` afirmaria "em dia" sobre uma
+  vencida que nem entrou no espelho. Cliente que o Asaas não devolve (404,
+  `semLinha`) NÃO segura: as cobranças dele não têm como ser guardadas, e a
+  listagem está completa no que dá para guardar.
 - ⚠️⚠️ **A varredura de "cliente que sumiu da listagem" tem PISO**
   (`listagemSuspeita`): listagem VAZIA com espelho vivo é SEMPRE suspeita;
   parcial é suspeita quando somem mais de 20% das vivas **E** mais de 5 —

@@ -204,9 +204,13 @@ export async function desconectarAsaas(admin: SupabaseClient, accountId: string,
   const { data: existente, error: erroLeitura } = await admin.from("cb_asaas_config").select("account_id").eq("account_id", accountId).maybeSingle();
   if (erroLeitura) return { ok: false, codigo: "db_error" };
   if (existente) {
+    // ⚠️ Renova o BATIMENTO na mesma escrita: com `last_sync_attempt_at`
+    // velho, um ciclo que chegasse ao claim antes dos deletes ainda passaria
+    // pelo filtro e tomaria o cadeado de volta (Codex, PR #201, 6ª rodada).
+    const agora = new Date().toISOString();
     const { data: tomado, error: erroClaim } = await admin
       .from("cb_asaas_config")
-      .update({ sincronizando_desde: new Date().toISOString() })
+      .update({ sincronizando_desde: agora, last_sync_attempt_at: agora })
       .eq("account_id", accountId)
       .or(filtroDoCadeadoLivre())
       .select("account_id");

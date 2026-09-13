@@ -266,10 +266,12 @@ export function dubleDoAsaas(respostas: RespostasDoAsaas, registro: PedidosAoAsa
       const data = (respostas.listas[c] ?? []) as T[];
       return { data, hasMore: false, totalCount: data.length };
     },
-    async listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>): Promise<T[]> {
+    async listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>, _teto?: number, aCadaPagina?: () => Promise<void>): Promise<T[]> {
       const c = chave(caminho, params);
       registro.pedidos.push(c);
       if (respostas.erro) throw respostas.erro;
+      // o dublê devolve tudo numa página; o batimento entre páginas é chamado uma vez para o teste enxergá-lo
+      if (aCadaPagina) await aCadaPagina();
       return (respostas.listas[c] ?? []) as T[];
     },
     async obter<T>(caminho: string): Promise<T | null> {

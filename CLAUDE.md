@@ -3957,6 +3957,28 @@ morde código novo:
 - ⚠️ **Chave de i18n LITERAL por fonte de correção**, nunca
   uma chave montada com o nome da fonte: chave montada escapa do portão do CI, que só as
   CONTA. É a lição de `Settings.sections.webhooks` aparecendo cru na tela.
+- ⚠️⚠️ **`useChannelHealth` ganhou `falhou` POR CAUSA deste bloco** (Codex,
+  PR #202). Ele engolia a falha de propósito — lista vazia esconde o
+  indicador do cabeçalho, e é o contrato escrito dele —, mas aqui o mesmo
+  zero vira a afirmação "tudo em ordem" sobre uma sonda que não respondeu.
+  Vale para qualquer consumidor novo: o zero de uma sonda silenciosa não
+  autoriza afirmar nada. O `unavailable: true` (200 com lista vazia, janela
+  pré-migration) entra em `falhou` pela mesma razão. E `useAgendadorSaude`
+  NÃO precisou disso: batimento ilegível já cai em `nuncaRodou`, que ACENDE.
+- ⚠️ **Cada destino de conserto é gateado pela tela PARA ONDE ELE LEVA**, e
+  Configurações não serve de gate para nada: é tela SEMPRE VISÍVEL, então
+  `podeVerTela(ctx, 'settings')` é verdadeiro para todo perfil — um link
+  para `/automations` atrás dela levava direto à `TelaBloqueada`. E o
+  parâmetro de Configurações é **`?tab=`**, nunca `?section=`: a página lê
+  `searchParams.get('tab')` e ignora o resto, então o clique de conserto
+  abria a Visão geral sem erro nenhum.
+- ⚠️⚠️ **Os agendamentos do Calendly NÃO entram no bloco da agenda**, e a
+  primeira versão os trazia. A 977 grava só `invitee.created`: cancelamento
+  é ignorado e reagendamento INSERE linha nova sem invalidar a antiga (a URI
+  do convidado muda). Uma consulta por `inicio >= agora` devolve reunião
+  cancelada e as duas pontas de um reagendamento como se ambas fossem
+  acontecer. Entra quando a integração tratar `invitee.canceled` — até lá o
+  bloco é só `cb_meetings` e diz por quê.
 
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e

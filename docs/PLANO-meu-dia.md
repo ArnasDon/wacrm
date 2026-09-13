@@ -838,3 +838,30 @@ tela que abre a cada entrada.
 - `src/app/(dashboard)/meu-dia/page.tsx` — reescrita, grid de 6 colunas
 - `src/components/entrada/resumo-do-dia.tsx` — cartão enxuto, com o botão
 - namespace `MeuDia` nos dois dicionários (33 chaves)
+
+### Revisão do Codex no PR #202 (13/09/2026)
+
+Duas rodadas, nove achados — dois P1 e sete P2. Os que mudaram o desenho:
+
+1. **A sonda das conexões engolia a falha** (P1). `useChannelHealth`
+   terminava com `loading: false` e lista vazia tanto para "nenhuma conexão
+   caída" quanto para "a rota não respondeu". O bloco afirmava "tudo em
+   ordem" a partir desse zero. O hook passou a expor `falhou`, e a aba o
+   trata como fonte não conferida; o indicador do cabeçalho não mudou.
+2. **Os agendamentos do Calendly saíram do bloco da agenda** (P1). A
+   integração grava só `invitee.created`: cancelamento é ignorado e
+   reagendamento insere linha nova sem invalidar a antiga. A lista mostraria
+   reunião cancelada e as duas pontas de um reagendamento. **Pendência:**
+   tratar `invitee.canceled` na 977 devolve o bloco.
+3. **O "Atualizar" não alcançava as duas sondas de saúde** — elas têm laço
+   próprio e não enxergam o `pedido`. O operador consertava a conexão,
+   clicava, e o bloco seguia vermelho por até cinco minutos.
+4. **`?section=` não existe**: a página de Configurações lê `?tab=`. Os dois
+   links de conserto abriam a Visão geral.
+5. **Configurações não serve de gate**: é tela sempre visível, então o link
+   para Automações aparecia para perfil que cai na `TelaBloqueada`.
+6. **O vazio do bloco de negócios** era afirmado mesmo com a consulta
+   truncada — num perfil recortado por funil, o teto pode ser atingido antes
+   do filtro em JS.
+7. **A agenda derrubava a sexta reunião** do período em silêncio.
+8. **A linha de conversas do cartão** mostrava só a metade que carregou.

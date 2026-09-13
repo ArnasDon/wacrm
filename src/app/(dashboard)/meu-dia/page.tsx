@@ -435,6 +435,8 @@ function AreaDeTrabalho({
               veAutomacoes={veAutomacoes}
               veConexoes={veConexoes}
               veIntegracoes={veIntegracoes}
+              veInbox={veInbox}
+              veContatos={veContatos}
             />
           </div>
         )}

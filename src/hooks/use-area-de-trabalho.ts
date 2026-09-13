@@ -56,6 +56,23 @@ const LINHAS_LISTADAS = 5;
 /** Teto defensivo das listas que passam por recorte em JS. */
 const TETO_DE_LINHAS = 500;
 
+/** Uma automação que falhou hoje, com onde ir consertar. */
+export interface FalhaDeAutomacao {
+  /** O id do log — chave de render, e o que o histórico da automação mostra. */
+  id: string;
+  automacao: string | null;
+  contato: ContatoDoGanho | null;
+  /**
+   * A conversa do contato, quando ele tem uma.
+   *
+   * ⚠️ DERIVADA do contato numa consulta própria, nunca coluna:
+   * `automation_logs` não guarda conversa, e a régua da casa é a UNIQUE da
+   * 036 (uma conversa por contato por conta). Sem conversa, a tela cai na
+   * ficha — é o mesmo caminho das tarefas.
+   */
+  conversationId: string | null;
+}
+
 export interface Correcoes {
   /**
    * Falhou e NÃO é entrega incerta — o que dá para reenviar.
@@ -69,6 +86,11 @@ export interface Correcoes {
   agendadasFalharam: number;
   entregaIncerta: number;
   automacoesFalharam: number;
+  /**
+   * As primeiras falhas, para o operador ir direto consertar. O NÚMERO
+   * acima é o do banco (`count: 'exact'`); esta lista é só o começo.
+   */
+  falhasDeAutomacao: FalhaDeAutomacao[];
 }
 
 export interface GanhoDoDia {
@@ -260,20 +282,69 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
         // ele pintaria de vermelho toda automação que apenas COMEÇOU,
         // inclusive as paradas num "Aguardar". `finalizado_em` no filtro
         // recorta o dia E garante que a execução terminou.
+        //
+        // ⚠️ Traz LINHA (com o nome da automação e o contato), não só o
+        // `count`: sem elas o achado levava a `/automations`, uma tela
+        // genérica onde o operador ainda teria de descobrir qual execução
+        // falhou e de quem era. O número afirmado continua vindo do
+        // `count: 'exact'`; a lista é só o começo.
         supabase
           .from('automation_logs')
-          .select('id', { count: 'exact', head: true })
+          .select(
+            'id, contact_id, automations(name), contact:contacts(id, name, phone, instagram_username)',
+            { count: 'exact' }
+          )
           .eq('account_id', accountId)
           .eq('desfecho', 'falhou')
-          .gte('finalizado_em', inicioDoDia),
+          .gte('finalizado_em', inicioDoDia)
+          .order('finalizado_em', { ascending: false })
+          .limit(LINHAS_LISTADAS),
       ]);
       if (falharam.error) throw new Error(falharam.error.message);
       if (incertas.error) throw new Error(incertas.error.message);
       if (automacoes.error) throw new Error(automacoes.error.message);
+
+      const logs = linhas<{
+        id: string;
+        contact_id: string | null;
+        automations: { name: string | null } | null;
+        contact: ContatoDoGanho | null;
+      }>(automacoes.data);
+
+      // A conversa de cada contato, em UMA consulta. `automation_logs` não
+      // guarda conversa; quem responde é a UNIQUE da 036.
+      const conversaPorContato = new Map<string, string>();
+      const idsDeContato = [
+        ...new Set(
+          logs.map((l) => l.contact_id).filter((id): id is string => !!id)
+        ),
+      ];
+      if (idsDeContato.length > 0) {
+        // No máximo LINHAS_LISTADAS contatos — não precisa de fatias.
+        const { data: convs } = await supabase
+          .from('conversations')
+          .select('id, contact_id')
+          .eq('account_id', accountId)
+          .in('contact_id', idsDeContato);
+        for (const c of linhas<{ id: string; contact_id: string | null }>(
+          convs
+        )) {
+          if (c.contact_id) conversaPorContato.set(c.contact_id, c.id);
+        }
+      }
+
       return {
         agendadasFalharam: falharam.count ?? 0,
         entregaIncerta: incertas.count ?? 0,
-        automacoesFalharam: automacoes.count ?? 0,
+        automacoesFalharam: automacoes.count ?? logs.length,
+        falhasDeAutomacao: logs.map((l) => ({
+          id: l.id,
+          automacao: l.automations?.name ?? null,
+          contato: l.contact ?? null,
+          conversationId: l.contact_id
+            ? (conversaPorContato.get(l.contact_id) ?? null)
+            : null,
+        })),
       };
     });
 

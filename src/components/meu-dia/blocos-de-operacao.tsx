@@ -33,6 +33,7 @@ import type {
   Resultados as DadosDeResultados,
 } from '@/hooks/use-area-de-trabalho';
 import { nomeDoContato } from '@/lib/contacts/identidade';
+import { urlDoInbox } from '@/lib/inbox/url';
 import {
   resumirCorrecoes,
   type EstadoDaFonte,
@@ -65,6 +66,8 @@ export function BlocoDeCorrecoes({
   veAutomacoes,
   veConexoes,
   veIntegracoes,
+  veInbox,
+  veContatos,
 }: {
   correcoes: Bloco<Correcoes>;
   integracoes: Bloco<Integracoes>;
@@ -92,6 +95,9 @@ export function BlocoDeCorrecoes({
    */
   veConexoes: boolean;
   veIntegracoes: boolean;
+  /** Para onde levar a falha de automação: a conversa, senão a ficha. */
+  veInbox: boolean;
+  veContatos: boolean;
 }) {
   const t = useTranslations('MeuDia');
 
@@ -233,6 +239,49 @@ export function BlocoDeCorrecoes({
           })}
         </ul>
       )}
+
+      {/* ⚠️ As falhas de automação vêm NOMEADAS, com o caminho de conserto.
+          Antes o achado levava a `/automations`, uma tela genérica onde o
+          operador ainda teria de descobrir qual execução falhou e de quem
+          era — e o conserto (executar a automação de novo) mora na CONVERSA
+          do cliente. Sem conversa, cai na ficha, como as tarefas fazem. */}
+      {correcoes.status === 'pronto' &&
+        correcoes.dados.falhasDeAutomacao.length > 0 && (
+          <ul className="border-border mt-2 space-y-1 border-t pt-2">
+            {correcoes.dados.falhasDeAutomacao.map((f) => {
+              const nome = nomeDoContato(f.contato, t('unknownContact'));
+              const destino = f.conversationId
+                ? veInbox
+                  ? urlDoInbox({ c: f.conversationId })
+                  : null
+                : f.contato && veContatos
+                  ? `/contacts?contact=${encodeURIComponent(f.contato.id)}`
+                  : null;
+              const texto = (
+                <>
+                  <span className="text-foreground">{nome}</span>
+                  {f.automacao && (
+                    <span className="text-muted-foreground">
+                      {' · '}
+                      {f.automacao}
+                    </span>
+                  )}
+                </>
+              );
+              return (
+                <li key={f.id} className="min-w-0 truncate text-xs">
+                  {destino ? (
+                    <Link href={destino} className="hover:underline">
+                      {texto}
+                    </Link>
+                  ) : (
+                    texto
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+        )}
 
       {/* A falha parcial é dita SEMPRE, inclusive quando já há achados: o
           que apareceu não prova que o resto foi conferido. */}

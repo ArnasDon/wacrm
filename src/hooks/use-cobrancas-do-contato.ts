@@ -17,7 +17,21 @@ import { lerRespostaDoContato, type RespostaDoContato } from "@/lib/asaas/aviso-
  * dívida de um cliente na conversa de outro. É a guarda dos campos
  * personalizados (`{ de, mapa }`) e das reuniões transcritas.
  */
-export function useCobrancasDoContato(contactId: string | null | undefined): {
+export function useCobrancasDoContato(
+  contactId: string | null | undefined,
+  /**
+   * O token de resync de quem monta (a página do inbox o incrementa ao
+   * voltar à aba, na reconexão do realtime e no botão de atualizar).
+   *
+   * ⚠️ Sem ele a aba só relia por ação DESTA árvore ou pelo evento
+   * `cb:asaas-mudou` — e o ciclo do agendador, que é quem tira a parcela
+   * paga do espelho, roda no servidor e não dispara evento nenhum: com a
+   * conversa aberta, a parcela paga ficava na aba (e na etiqueta) até o
+   * operador trocar de cliente (Codex, PR #203). A ficha de `/contacts`
+   * não passa token: ela remonta a cada abertura.
+   */
+  resyncToken: number = 0,
+): {
   dados: RespostaDoContato | null;
   carregando: boolean;
   falhou: boolean;
@@ -60,7 +74,7 @@ export function useCobrancasDoContato(contactId: string | null | undefined): {
     return () => {
       vivo = false;
     };
-  }, [contactId, nonce]);
+  }, [contactId, nonce, resyncToken]);
 
   const doContatoAtual = !!contactId && estado.de === contactId;
   return {

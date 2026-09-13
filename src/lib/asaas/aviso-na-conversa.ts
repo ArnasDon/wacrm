@@ -10,7 +10,7 @@
 
 import { diaNoFuso, FUSO_PADRAO } from "@/lib/agenda/fuso";
 
-import { classificar, resumirDivida, type ParcelaDoEspelho, type ResumoDeDivida } from "./inadimplencia";
+import { classificar, LEITURA_FRESCA_MS, resumirDivida, type ParcelaDoEspelho, type ResumoDeDivida } from "./inadimplencia";
 
 export interface RespostaDoResumo {
   conectado: boolean;
@@ -73,6 +73,24 @@ export function lerRespostaDoResumo(json: unknown): RespostaDoResumo | null {
     atualizadoEm: typeof o.atualizadoEm === "string" ? o.atualizadoEm : null,
     contatos,
   };
+}
+
+/**
+ * A leitura AINDA é fresca, pelo relógio da tela?
+ *
+ * ⚠️ O `leituraFresca` da rota é verdade no instante da resposta, e a
+ * resposta fica na tela: o hook a retém quando a recarga falha (rede,
+ * 500), e mesmo sem falha ela envelhece entre uma recarga e outra. Sem
+ * esta derivação, uma resposta fresca seguida de meia hora de falhas
+ * continuaria dizendo "fresca" — a faixa e o filtro afirmariam a dívida
+ * sem o "dados do Asaas de …" (Codex, PR #203). O critério é o mesmo do
+ * servidor (`leituraFresca` em `espelho.ts`): `atualizadoEm` dentro de
+ * `LEITURA_FRESCA_MS`.
+ */
+export function leituraAindaFresca(resumo: Pick<RespostaDoResumo, "leituraFresca" | "atualizadoEm">, agora: Date): boolean {
+  if (!resumo.leituraFresca || !resumo.atualizadoEm) return false;
+  const inicio = Date.parse(resumo.atualizadoEm);
+  return Number.isFinite(inicio) && agora.getTime() - inicio <= LEITURA_FRESCA_MS;
 }
 
 /**

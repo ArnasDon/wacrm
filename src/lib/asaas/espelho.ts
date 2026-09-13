@@ -1,6 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import type { ParcelaDoEspelho } from "./inadimplencia";
+import { LEITURA_FRESCA_MS, type ParcelaDoEspelho } from "./inadimplencia";
 import { montarListas, STATUS_CONHECIDOS, type ClienteDoEspelho, type FichaResumida, type ListasDoEspelho } from "./listas";
 import type { Candidato } from "./vinculo";
 
@@ -15,8 +15,7 @@ import type { Candidato } from "./vinculo";
 const PAGINA = 1000;
 const LOTE_DE_IDS = 200;
 
-/** Quanto tempo depois da última listagem completa a leitura ainda é "fresca" — duas vezes o laço lento. */
-export const LEITURA_FRESCA_MS = 2 * 15 * 60_000;
+export { LEITURA_FRESCA_MS };
 
 export interface ConfigDoEspelho {
   status: string;

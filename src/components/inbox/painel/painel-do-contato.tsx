@@ -238,7 +238,7 @@ export function PainelDoContato({
   // etiqueta da aba (parcelas vencidas) precisa do número antes de a aba
   // abrir. O hook carimba o dono da resposta (`{ de }`) e deriva
   // `carregando` — a guarda do efeito passivo.
-  const cobrancas = useCobrancasDoContato(contact?.id ?? null);
+  const cobrancas = useCobrancasDoContato(contact?.id ?? null, resyncToken);
   const vencidasDoAsaas = useMemo(
     () =>
       cobrancas.dados?.conectado

@@ -55,7 +55,10 @@ export function useInadimplencia(resyncToken: number = 0): { resumo: RespostaDoR
       if (!res?.ok) {
         // Rede ou 500: continua "não sei" — e se JÁ tinha uma resposta, ela
         // fica: número velho com a marca de "de quando" é melhor do que sumir
-        // com o aviso de quem deve. A faixa mostra a data do dado.
+        // com o aviso de quem deve. ⚠️ O `leituraFresca` retido NÃO vale
+        // para sempre: quem consome deriva a frescura pelo relógio
+        // (`leituraAindaFresca`), senão meia hora de falhas deixaria a
+        // faixa afirmando dado velho sem o "dados do Asaas de …".
         return;
       }
       const json = await res.json().catch(() => null);

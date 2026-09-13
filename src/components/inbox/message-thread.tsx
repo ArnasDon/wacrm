@@ -12,7 +12,7 @@ import { useFixarNota } from "@/hooks/use-fixar-nota";
 import { useCan } from "@/hooks/use-can";
 import { ScheduledBar } from "./scheduled-bar";
 import { FaixaDeInadimplencia } from "./faixa-de-inadimplencia";
-import { dividaDoContato, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
+import { dividaDoContato, leituraAindaFresca, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
 import { ExecutarAutomacaoDialog } from "./executar-automacao-dialog";
 import { CopiarLinkDaConversa } from "@/components/inbox/copiar-link-da-conversa";
 import { AvataresNaConversa } from "./avatares-na-conversa";
@@ -2903,7 +2903,7 @@ export function MessageThread({
       <FaixaDeInadimplencia
         divida={dividaDoAsaas}
         atualizadoEm={inadimplencia?.atualizadoEm ?? null}
-        leituraFresca={inadimplencia?.leituraFresca === true}
+        leituraFresca={inadimplencia ? leituraAindaFresca(inadimplencia, agoraDaBadge) : false}
         aoVerCobrancas={onOpenContactPanel ? () => onOpenContactPanel("cobrancas") : undefined}
       />
 

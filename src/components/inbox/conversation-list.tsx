@@ -68,7 +68,7 @@ import { NovaConversaDialog } from "@/components/inbox/nova-conversa-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useBuscaEmMensagens } from "@/hooks/use-busca-em-mensagens";
 import { useSinalDeExecucoes } from "@/hooks/use-sinal-de-execucoes";
-import { dividasPorContato, idsInadimplentes, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
+import { dividasPorContato, idsInadimplentes, leituraAindaFresca, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
 import { dinheiro, type ResumoDeDivida } from "@/lib/asaas/inadimplencia";
 import { useChannels } from "@/hooks/use-channels";
 import { useAuth } from "@/hooks/use-auth";
@@ -943,8 +943,11 @@ export function ConversationList({
           // conectado (ou já ligado por uma visão salva, para dar como
           // desligar). Sem conexão ele não recortaria nada.
           asaasConectado={inadimplencia?.conectado === true}
+          // Pelo RELÓGIO, não pelo `leituraFresca` da resposta: ela envelhece
+          // na tela (recarga que falha retém a anterior) — ver
+          // `leituraAindaFresca`.
           asaasDadosDe={
-            inadimplencia?.conectado && !inadimplencia.leituraFresca
+            inadimplencia?.conectado && !leituraAindaFresca(inadimplencia, new Date(agora))
               ? inadimplencia.atualizadoEm
               : null
           }

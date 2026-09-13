@@ -23,7 +23,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { useCan } from "@/hooks/use-can";
 import { avisarAsaasMudou } from "@/lib/asaas/aviso";
-import { REGULARIZADAS_DIAS, separarParcelas, type RespostaDoContato } from "@/lib/asaas/aviso-na-conversa";
+import { leituraAindaFresca, REGULARIZADAS_DIAS, separarParcelas, type RespostaDoContato } from "@/lib/asaas/aviso-na-conversa";
 import { classificar, diaPorExtenso, diasDeAtraso, dinheiro, rotuloDaParcela, valorAtualizado, type ParcelaDoEspelho } from "@/lib/asaas/inadimplencia";
 import { cn } from "@/lib/utils";
 
@@ -141,6 +141,9 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
   const agora = new Date();
   const { divida, regularizadas, estornadas, aVencer } = separarParcelas(dados.parcelas, agora, dados.atualizadoEm);
   const quando = dados.atualizadoEm ? quandoFoi(dados.atualizadoEm) : null;
+  // Pelo relógio da tela, não pelo booleano da resposta: a aba fica aberta
+  // e a resposta envelhece — ver `leituraAindaFresca`.
+  const fresca = leituraAindaFresca(dados, agora);
 
   function Linha({ p, devida }: { p: ParcelaDoEspelho; devida: boolean }) {
     const dias = devida ? diasDeAtraso(p.vencimento, agora) : null;
@@ -269,8 +272,8 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
       <Secao titulo={t("estornadas")} parcelas={estornadas} devida={false} />
 
       {quando && (
-        <p className={cn("px-1 text-[11px]", dados.leituraFresca ? "text-muted-foreground/70" : "text-amber-700 dark:text-amber-300")}>
-          {dados.leituraFresca ? t("dadosDe", { quando }) : t("leituraAntiga", { quando })}
+        <p className={cn("px-1 text-[11px]", fresca ? "text-muted-foreground/70" : "text-amber-700 dark:text-amber-300")}>
+          {fresca ? t("dadosDe", { quando }) : t("leituraAntiga", { quando })}
         </p>
       )}
     </div>

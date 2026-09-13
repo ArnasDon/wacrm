@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { dividaDoContato, dividasPorContato, idsInadimplentes, lerRespostaDoContato, lerRespostaDoResumo, separarParcelas, type RespostaDoResumo } from "./aviso-na-conversa";
-import type { ParcelaDoEspelho } from "./inadimplencia";
+import { dividaDoContato, dividasPorContato, idsInadimplentes, leituraAindaFresca, lerRespostaDoContato, lerRespostaDoResumo, separarParcelas, type RespostaDoResumo } from "./aviso-na-conversa";
+import { LEITURA_FRESCA_MS, type ParcelaDoEspelho } from "./inadimplencia";
 
 const AGORA = new Date("2026-09-12T15:00:00Z");
 const LISTADAS_EM = "2026-09-12T14:50:00Z";
@@ -108,6 +108,20 @@ describe("idsInadimplentes — o conjunto do filtro", () => {
 
   it("leitura ANTIGA não neutraliza: é a mesma régua do ícone da linha, e a tela diz de quando é o dado", () => {
     expect(idsInadimplentes(lerRespostaDoResumo(corpo(contatos, { leituraFresca: false })), AGORA)).toEqual(new Set(["ct-deve"]));
+  });
+});
+
+describe("leituraAindaFresca — a resposta envelhece na tela", () => {
+  it("fresca na resposta e dentro do prazo pelo relógio → fresca; passado o prazo (recarga falhando), deixa de ser", () => {
+    const resposta = { leituraFresca: true, atualizadoEm: LISTADAS_EM };
+    expect(leituraAindaFresca(resposta, AGORA)).toBe(true);
+    expect(leituraAindaFresca(resposta, new Date(Date.parse(LISTADAS_EM) + LEITURA_FRESCA_MS + 1))).toBe(false);
+  });
+
+  it("o servidor disse 'não fresca' (ciclo com erro) → não fresca, mesmo com o carimbo recente; sem carimbo, idem", () => {
+    expect(leituraAindaFresca({ leituraFresca: false, atualizadoEm: LISTADAS_EM }, AGORA)).toBe(false);
+    expect(leituraAindaFresca({ leituraFresca: true, atualizadoEm: null }, AGORA)).toBe(false);
+    expect(leituraAindaFresca({ leituraFresca: true, atualizadoEm: "lixo" }, AGORA)).toBe(false);
   });
 });
 

@@ -7,6 +7,7 @@
 | [`INSTALACAO.md`](./INSTALACAO.md) | Instalar do zero: Supabase, segredos, WhatsApp, deploy, primeiro acesso, diagnóstico |
 | [`ATUALIZAR.md`](./ATUALIZAR.md) | Trazer uma versão nova sem perder customizações, e quando um passo manual é necessário |
 | [`docker.md`](./docker.md) | Rodar com Docker localmente |
+| [`multi-waba.md`](./multi-waba.md) | Vários números oficiais na mesma instalação, e WABAs em apps diferentes da Meta (`META_APP_SECRET` com vários segredos) |
 
 ## Para integrar
 

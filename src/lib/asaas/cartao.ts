@@ -23,12 +23,33 @@ export const CODIGOS_DO_ASAAS = [
   "conta_trocada",
   "em_curso",
   "cadeado_perdido",
+  // os eventos de chave do webhook (Fase 2): a chave da conta foi mexida no painel do Asaas
+  "chave_desabilitada",
+  "chave_expirada",
+  "chave_apagada",
+  // o ciclo de vida do webhook
+  "nao_encontrado",
+  "url_inalcancavel",
+  "sem_email",
 ] as const;
 
 export type CodigoDoAsaas = (typeof CODIGOS_DO_ASAAS)[number];
 
 export function codigoConhecido(codigo: string): codigo is CodigoDoAsaas {
   return (CODIGOS_DO_ASAAS as readonly string[]).includes(codigo);
+}
+
+/**
+ * Os estados do webhook (997), rotulados por chave montada
+ * (`asaas.webhook.estado.<estado>`) e cobrados por teste nos dois dicionários.
+ * NULL (nunca tentado) tem frase própria (`asaas.webhook.nunca`).
+ */
+export const ESTADOS_DO_WEBHOOK = ["ativo", "penalizado", "interrompido", "ausente", "desligado", "sem_permissao", "erro"] as const;
+
+export type EstadoDoWebhook = (typeof ESTADOS_DO_WEBHOOK)[number];
+
+export function estadoDoWebhookConhecido(estado: string | null | undefined): estado is EstadoDoWebhook {
+  return typeof estado === "string" && (ESTADOS_DO_WEBHOOK as readonly string[]).includes(estado);
 }
 
 /** As origens de vínculo que a tela rotula (`asaas.origem.<origem>`), cobradas por teste. */
@@ -47,6 +68,28 @@ export interface ConfigDoAsaas {
   sincronizando_desde?: string | null;
   last_error: string | null;
   created_at: string | null;
+  /** o webhook (997) — ausentes na linha anterior à migration */
+  webhook_state?: string | null;
+  webhook_erro?: string | null;
+  webhook_email?: string | null;
+  webhook_asaas_id?: string | null;
+  webhook_religado_em?: string | null;
+  webhook_conferido_em?: string | null;
+  last_event_at?: string | null;
+}
+
+export interface WebhookDoCartao {
+  /** `null` = nunca tentado (o cron cria no próximo ciclo, se houver endereço público) */
+  estado: EstadoDoWebhook | null;
+  /** código do último erro do webhook (a tela traduz por `asaas.motivo.<código>`) */
+  erro: string | null;
+  email: string | null;
+  /** o CRM já religou a fila sozinho desde o último gesto de gente */
+  religadoPeloCrm: boolean;
+  conferidoEm: string | null;
+  ultimoEvento: string | null;
+  /** há um webhook registrado no Asaas (id guardado) */
+  registrado: boolean;
 }
 
 export type EstadoDoAsaas = "nao_conectado" | "conectado" | "erro";
@@ -71,6 +114,21 @@ export interface CartaoDoAsaas {
   /** código do último erro (a tela traduz) */
   erro: string | null;
   conectadoEm: string | null;
+  webhook: WebhookDoCartao;
+}
+
+const SEM_WEBHOOK: WebhookDoCartao = { estado: null, erro: null, email: null, religadoPeloCrm: false, conferidoEm: null, ultimoEvento: null, registrado: false };
+
+export function webhookDoCartao(config: ConfigDoAsaas): WebhookDoCartao {
+  return {
+    estado: estadoDoWebhookConhecido(config.webhook_state) ? config.webhook_state : null,
+    erro: config.webhook_erro ?? null,
+    email: config.webhook_email ?? null,
+    religadoPeloCrm: !!config.webhook_religado_em,
+    conferidoEm: config.webhook_conferido_em ?? null,
+    ultimoEvento: config.last_event_at ?? null,
+    registrado: !!config.webhook_asaas_id,
+  };
 }
 
 /** A partir de quantos dias antes o cartão avisa que a chave vai expirar. */
@@ -103,6 +161,7 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
       sincronizandoDesde: null,
       erro: null,
       conectadoEm: null,
+      webhook: SEM_WEBHOOK,
     };
   }
   return {
@@ -118,5 +177,6 @@ export function cartaoDoAsaas(config: ConfigDoAsaas | null, agora: Date = new Da
     sincronizandoDesde: config.sincronizando_desde ?? null,
     erro: config.status === "erro" ? config.last_error : null,
     conectadoEm: config.created_at,
+    webhook: webhookDoCartao(config),
   };
 }

@@ -33,6 +33,7 @@ const UNIQUES: Record<string, string[][]> = {
   contacts: [["account_id", "phone_normalized"]],
   cb_asaas_clientes: [["account_id", "asaas_customer_id"]],
   cb_asaas_cobrancas: [["account_id", "asaas_payment_id"]],
+  cb_asaas_eventos: [["account_id", "asaas_event_id"]],
   tags: [["account_id", "name_key"]],
   contact_tags: [["contact_id", "tag_id"]],
 };
@@ -46,7 +47,22 @@ export function idDeTeste(prefixo = "id"): string {
 /** Os DEFAULTs de coluna que o banco daria — sem eles o dublê devolveria `undefined` onde o Postgres devolve `null`. */
 const DEFAULTS: Record<string, Linha> = {
   cb_asaas_clientes: { contact_id: null, vinculo_origem: null, vinculado_por: null, vinculado_por_nome: null, vinculado_em: null, contatos_recusados: [], candidatos: [], deleted: false, email: null, celular: null, telefone: null, cpf_cnpj: null, etiqueta_pendente: false },
-  cb_asaas_config: { sincronizando_desde: null, vinculo_completo_em: null },
+  cb_asaas_config: {
+    sincronizando_desde: null,
+    vinculo_completo_em: null,
+    webhook_token: null,
+    webhook_auth_token: null,
+    webhook_asaas_id: null,
+    webhook_email: null,
+    webhook_state: null,
+    webhook_erro: null,
+    webhook_religado_em: null,
+    webhook_conferido_em: null,
+    last_event_at: null,
+    chave_nome: null,
+    created_by: null,
+  },
+  cb_asaas_eventos: { asaas_payment_id: null, evento_criado_em: null, processado_em: null, resultado: "recebido", detalhe: null },
   cb_asaas_cobrancas: { deleted: false, vista_vencida_em: null, parcela_total: null, juros_e_multa: null },
   contacts: { name: null, email: null },
 };
@@ -242,6 +258,8 @@ export interface RespostasDoAsaas {
   listas: Record<string, unknown[]>;
   /** por caminho de RECURSO ("/customers/cus_1", "/payments/pay_1") — `null` = 404 */
   recursos: Record<string, unknown | null>;
+  /** por ESCRITA ("POST /webhooks", "PUT /webhooks/wh_1", "DELETE /webhooks/wh_1"): a resposta, ou um Error a lançar */
+  envios?: Record<string, unknown>;
   /** lança este erro em qualquer pedido */
   erro?: Error;
 }
@@ -249,6 +267,8 @@ export interface RespostasDoAsaas {
 /** O que foi pedido ao Asaas, na ordem. */
 export interface PedidosAoAsaas {
   pedidos: string[];
+  /** as escritas, com o corpo enviado */
+  envios?: { chave: string; corpo: unknown }[];
 }
 
 export function dubleDoAsaas(respostas: RespostasDoAsaas, registro: PedidosAoAsaas = { pedidos: [] }): ClienteAsaas {
@@ -278,6 +298,16 @@ export function dubleDoAsaas(respostas: RespostasDoAsaas, registro: PedidosAoAsa
       registro.pedidos.push(caminho);
       if (respostas.erro) throw respostas.erro;
       return (respostas.recursos[caminho] ?? null) as T | null;
+    },
+    async enviar<T>(metodo: "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown): Promise<T> {
+      const c = `${metodo} ${caminho}`;
+      registro.pedidos.push(c);
+      (registro.envios ??= []).push({ chave: c, corpo });
+      if (respostas.erro) throw respostas.erro;
+      const resposta = respostas.envios?.[c];
+      if (resposta instanceof Error) throw resposta;
+      if (resposta === undefined) throw new Error(`dublê: escrita sem resposta preparada: ${c}`);
+      return resposta as T;
     },
     cota: () => ({}),
   };

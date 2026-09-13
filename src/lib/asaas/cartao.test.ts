@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, ORIGENS_DO_VINCULO, cartaoDoAsaas, codigoConhecido, diasAte, type ConfigDoAsaas } from './cartao'
+import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, ESTADOS_DO_WEBHOOK, ORIGENS_DO_VINCULO, cartaoDoAsaas, codigoConhecido, diasAte, type ConfigDoAsaas } from './cartao'
 import { NOMES_DAS_LISTAS } from './listas'
 import { MOTIVOS_DO_CANDIDATO } from './vinculo'
 
@@ -61,6 +61,15 @@ describe.each(['pt-BR.json', 'en.json'])('dicionário %s', (arquivo) => {
   it('CRÍTICO: toda origem de vínculo e todo motivo de candidato têm frase', () => {
     expect(ORIGENS_DO_VINCULO.filter((o) => typeof asaas.origem?.[o] !== 'string')).toEqual([])
     expect(MOTIVOS_DO_CANDIDATO.filter((m) => typeof asaas.candidatoMotivo?.[m] !== 'string')).toEqual([])
+  })
+
+  // O bloco do webhook (997) pede o estado por chave montada
+  // (`asaas.webhook.estado.<estado>`); a lista mora em `cartao.ts`.
+  it('CRÍTICO: todo estado do webhook tem frase, e o estado nulo também', () => {
+    const webhook = asaas.webhook as Record<string, unknown> | undefined
+    const estados = (webhook?.estado ?? {}) as Record<string, unknown>
+    expect(ESTADOS_DO_WEBHOOK.filter((e) => typeof estados[e] !== 'string')).toEqual([])
+    expect(typeof webhook?.nunca).toBe('string')
   })
 
   it('CRÍTICO: as faixas de atraso têm frase', () => {
@@ -141,6 +150,17 @@ describe('cartaoDoAsaas', () => {
   it('o cadeado do ciclo (995) aparece como "sincronizando desde"', () => {
     expect(cartaoDoAsaas(base).sincronizandoDesde).toBeNull()
     expect(cartaoDoAsaas({ ...base, sincronizando_desde: '2026-09-12T11:00:00Z' }).sincronizandoDesde).toBe('2026-09-12T11:00:00Z')
+  })
+
+  it('o webhook (997): linha anterior à migration = nunca tentado; estado desconhecido vira nulo, nunca `as`', () => {
+    expect(cartaoDoAsaas(base).webhook).toEqual({ estado: null, erro: null, email: null, religadoPeloCrm: false, conferidoEm: null, ultimoEvento: null, registrado: false })
+    const c = cartaoDoAsaas({ ...base, webhook_state: 'ativo', webhook_asaas_id: 'wh_1', webhook_email: 'a@b.c', last_event_at: '2026-09-13T10:00:00Z', webhook_religado_em: '2026-09-12T10:00:00Z' })
+    expect(c.webhook.estado).toBe('ativo')
+    expect(c.webhook.registrado).toBe(true)
+    expect(c.webhook.religadoPeloCrm).toBe(true)
+    expect(c.webhook.ultimoEvento).toBe('2026-09-13T10:00:00Z')
+    expect(cartaoDoAsaas({ ...base, webhook_state: 'inventado' }).webhook.estado).toBeNull()
+    expect(cartaoDoAsaas(null).webhook.estado).toBeNull()
   })
 
   it('conta os dias até a validade que o operador digitou', () => {

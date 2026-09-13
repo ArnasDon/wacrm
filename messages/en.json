@@ -2773,7 +2773,7 @@
         "desc": "Connect Asaas — the platform where the firm bills its fees — so the CRM knows which clients are overdue. With the key stored, the CRM reads overdue charges every 15 minutes, links each Asaas customer to a CRM contact (by phone, document or e-mail), creates the contact for those who have a phone and no contact yet, and lists the ones left for a person to decide.",
         "campoChave": "API key",
         "chaveVazia": "Paste the key generated in Asaas",
-        "chaveDica": "Asaas → Integrations → API keys → Generate. Tick READ only on Customers, Payments and Installments, with no expiry date. The key starts with $ and is shown only once; here it is stored encrypted and never shown again.",
+        "chaveDica": "Asaas → Integrations → API keys → Generate. Tick READ on Customers, Payments and Installments, and Webhooks in read and write (it lets the CRM create the instant notice), with no expiry date. The key starts with $ and is shown only once; here it is stored encrypted and never displayed again.",
         "campoNome": "Key name in Asaas",
         "nomePlaceholder": "CRM — production",
         "nomeDica": "The same name you gave the key in the Asaas screen. It is needed because key-disabled and key-expired events apply to ANY key on the account and carry only the name — without it the CRM cannot tell whether the event is about its own key.",
@@ -2844,8 +2844,14 @@
           "chave_ilegivel": "the stored key could not be read — connect again",
           "nao_conectado": "Asaas is not connected",
           "conta_trocada": "this key belongs to ANOTHER Asaas account — to switch accounts, disconnect deleting the stored data",
-          "em_curso": "a sync is already running",
-          "cadeado_perdido": "another process took over the sync mid-cycle — this cycle was abandoned without writing"
+          "em_curso": "a sync is already running — try again in a moment",
+          "cadeado_perdido": "another process took over the sync mid-cycle — this cycle was abandoned without writing",
+          "chave_desabilitada": "the API key was disabled in Asaas (3 months unused, or by hand) — re-enable it there or connect another",
+          "chave_expirada": "the API key expired in Asaas — create another and connect again",
+          "chave_apagada": "the API key was deleted in Asaas — create another and connect again",
+          "nao_encontrado": "Asaas did not find the record",
+          "url_inalcancavel": "the CRM public URL is not reachable from outside",
+          "sem_email": "no e-mail for Asaas alerts (the administrator who connected has no e-mail on the profile)"
         },
         "confirmarApagar": "Disconnect AND delete the Asaas data stored in the CRM ({clientes} customers and {cobrancas} charges)? Links and ignored customers are lost. Contacts that were created stay. Use this to switch Asaas accounts.",
         "desconectarEApagar": "Disconnect and delete the Asaas data",
@@ -2939,7 +2945,41 @@
         "atualizado": "{valor} with interest and fine",
         "negativada": "reported to credit bureau",
         "sincronizandoDesde": "syncing since {quando}",
-        "fichaApagada": "The contact that was linked to this customer was deleted. Sync will not create another one: link to a contact or ignore."
+        "fichaApagada": "The contact that was linked to this customer was deleted. Sync will not create another one: link to a contact or ignore.",
+        "webhook": {
+          "titulo": "Instant notice (webhook)",
+          "desc": "With the webhook, Asaas tells the CRM within seconds when a charge is paid, falls due or changes — without it, the notice in the conversation only changes on the 15-minute cycle. The CRM creates and looks after the webhook by itself, using the key's Webhooks (read and write) permission.",
+          "nunca": "Not created yet — the scheduler creates it on the next cycle.",
+          "semEndereco": "The CRM public URL (NEXT_PUBLIC_SITE_URL) is not reachable from outside — the webhook cannot be created from this environment.",
+          "soDaProducao": "Only from the CRM in production: this environment carries the production URL and would register an address that only answers there.",
+          "estado": {
+            "ativo": "Active",
+            "penalizado": "Active, with delayed deliveries — Asaas is penalising the queue",
+            "interrompido": "Queue interrupted by Asaas — needs attention (the CRM already re-enabled it once; fix the cause before re-enabling)",
+            "ausente": "Deleted in the Asaas panel",
+            "desligado": "Disabled",
+            "sem_permissao": "The key lacks the Webhooks permission in read and write — the 15-minute cycle carries on alone",
+            "erro": "Could not create"
+          },
+          "ultimoEvento": "last notice {quando}",
+          "semEvento": "no notice received yet",
+          "conferidoEm": "checked {quando}",
+          "email": "Asaas failure alerts go to {email}",
+          "ativar": "Enable",
+          "tentarDeNovo": "Try again",
+          "religar": "Re-enable queue",
+          "desativar": "Disable",
+          "ativando": "Enabling…",
+          "ativado": "Webhook active in Asaas.",
+          "religado": "Queue re-enabled.",
+          "desativado": "Webhook deleted in Asaas.",
+          "confirmarDesativar": "Disable the instant notice? The CRM deletes the webhook in Asaas and the notice in the conversation goes back to changing only on the 15-minute cycle.",
+          "urlLabel": "Webhook URL",
+          "urlHint": "This is the URL registered in Asaas. For reference only — the CRM does the registration.",
+          "naoApagado": "The connection was removed, but the webhook could not be deleted in Asaas — delete it in the panel (Integrations → Webhooks), or Asaas keeps insisting for hours on a URL that no longer answers and interrupts the queue.",
+          "semEnderecoCurto": "Not created yet — this environment has no public address.",
+          "ultimoErro": "Last attempt failed: {motivo}."
+        }
       }
     },
     "groups": {

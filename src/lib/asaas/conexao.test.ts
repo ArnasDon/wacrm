@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { encrypt } from "@/lib/whatsapp/encryption";
+
+import { AsaasError } from "./cliente";
 import { conectarAsaas, desconectarAsaas, RECOLHER_CICLO_MS } from "./conexao";
-import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type RespostasDoAsaas } from "./duble.test-helper";
+import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
 
 const CONTA = "conta-1";
 const CHAVE = "$aact_prod_chave_de_teste_0000";
@@ -99,6 +102,26 @@ describe("desconectarAsaas — respeita o cadeado do ciclo", () => {
     const e = estado({ cb_asaas_clientes: [{ id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", deleted: false }] });
     expect(await desconectarAsaas(dubleDoSupabase(e), CONTA, { apagarEspelho: true })).toEqual({ ok: true });
     expect(e.tabelas.cb_asaas_clientes).toHaveLength(0);
+  });
+
+  it("desconectar APAGA o webhook no Asaas antes de apagar a config (997); 404 lá conta como apagado", async () => {
+    const e = estado({
+      cb_asaas_config: [{ account_id: CONTA, api_key: encrypt(CHAVE), ambiente: "producao", sincronizando_desde: null, last_sync_attempt_at: null, webhook_asaas_id: "wh_nosso" }],
+    });
+    const registro: PedidosAoAsaas = { pedidos: [], envios: [] };
+    const cliente = () => dubleDoAsaas({ listas: {}, recursos: {}, envios: { "DELETE /webhooks/wh_nosso": { deleted: true, id: "wh_nosso" } } }, registro);
+    expect(await desconectarAsaas(dubleDoSupabase(e), CONTA, { cliente })).toEqual({ ok: true });
+    expect(registro.pedidos).toEqual(["DELETE /webhooks/wh_nosso"]);
+    expect(e.tabelas.cb_asaas_config).toHaveLength(0);
+  });
+
+  it("chave já inválida: a config vai embora mesmo assim, e o resultado avisa que o webhook ficou no Asaas", async () => {
+    const e = estado({
+      cb_asaas_config: [{ account_id: CONTA, api_key: encrypt(CHAVE), ambiente: "producao", sincronizando_desde: null, last_sync_attempt_at: null, webhook_asaas_id: "wh_nosso" }],
+    });
+    const cliente = () => dubleDoAsaas({ listas: {}, recursos: {}, envios: { "DELETE /webhooks/wh_nosso": new AsaasError("chave_invalida", "401") } });
+    expect(await desconectarAsaas(dubleDoSupabase(e), CONTA, { cliente })).toEqual({ ok: true, webhookNaoApagado: true });
+    expect(e.tabelas.cb_asaas_config).toHaveLength(0);
   });
 
   it("desconectar comum mantém o espelho", async () => {

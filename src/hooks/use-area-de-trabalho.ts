@@ -374,14 +374,24 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
           // Lista vazia = sem recorte = todos, a convenção do projeto.
           return funis && funis.length > 0 ? q.in('pipeline_id', funis) : q;
         };
-        const [meus, orfas] = await Promise.all([
-          supabase
+        // ⚠️ O recorte de funil entra NA CONSULTA, antes do teto — e não só
+        // em `agruparPorEtapa`. Com mais de TETO_DE_LINHAS negócios seus, o
+        // corte acontece ANTES do filtro em JS: se as linhas que vieram
+        // forem todas de funis que o perfil não enxerga, o bloco fica vazio
+        // sobre trabalho que existe (Codex, PR #202). O filtro em JS
+        // continua, como segunda cerca — a consulta pode mudar, a régua não.
+        const meusNegocios = () => {
+          const q = supabase
             .from('deals')
             .select(SELECT_DE_NEGOCIO, { count: 'exact' })
             .eq('account_id', accountId)
             .eq('assigned_to', profileId)
             .eq('status', 'open')
-            .limit(TETO_DE_LINHAS),
+            .limit(TETO_DE_LINHAS);
+          return funis && funis.length > 0 ? q.in('pipeline_id', funis) : q;
+        };
+        const [meus, orfas] = await Promise.all([
+          meusNegocios(),
           // ⚠️ Os sem responsável passam pelo MESMO recorte de funil dos
           // seus — aqui na consulta, porque é contagem e não há lista para
           // filtrar depois. Sem ele, um perfil restrito ao trabalhista via

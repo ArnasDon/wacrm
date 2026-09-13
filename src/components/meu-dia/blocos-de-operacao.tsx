@@ -23,6 +23,7 @@ import {
   Wrench,
 } from 'lucide-react';
 
+import { diaNoFuso, FUSO_PADRAO } from '@/lib/agenda/fuso';
 import type { Bloco } from '@/hooks/use-resumo-do-dia';
 import type {
   Agenda as DadosDaAgenda,
@@ -581,19 +582,28 @@ function formatarValor(v: number): string {
  * a função é chamada no render, e ler o relógio ali é a mesma impureza que
  * o React Compiler recusa em `Date.now()`. O instante é o do pedido, o
  * mesmo que data a saudação e as consultas.
+ *
+ * ⚠️ E TUDO aqui é no fuso da AGENDA (`FUSO_PADRAO`) — o dia comparado e a
+ * hora escrita —, porque a janela da consulta é recortada nele e a tela de
+ * Agenda exibe nele. No fuso do navegador, uma reunião das 23h em São Paulo
+ * apareceria como 02h do dia seguinte para quem estivesse em UTC: o bloco
+ * discordaria da Agenda para a qual ele leva, e chamaria de amanhã uma
+ * reunião de hoje (Codex, PR #202).
  */
 function quandoCurto(iso: string | null, agoraMs: number): string {
   if (!iso) return '—';
   const d = new Date(iso);
-  const hoje = new Date(agoraMs);
   const mesmoDia =
-    d.getFullYear() === hoje.getFullYear() &&
-    d.getMonth() === hoje.getMonth() &&
-    d.getDate() === hoje.getDate();
+    diaNoFuso(d, FUSO_PADRAO) === diaNoFuso(new Date(agoraMs), FUSO_PADRAO);
   const hora = d.toLocaleTimeString(undefined, {
+    timeZone: FUSO_PADRAO,
     hour: '2-digit',
     minute: '2-digit',
   });
   if (mesmoDia) return hora;
-  return `${d.toLocaleDateString(undefined, { weekday: 'short' })} ${hora}`;
+  const dia = d.toLocaleDateString(undefined, {
+    timeZone: FUSO_PADRAO,
+    weekday: 'short',
+  });
+  return `${dia} ${hora}`;
 }

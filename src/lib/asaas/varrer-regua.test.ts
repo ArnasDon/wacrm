@@ -4,7 +4,7 @@ import type { DispatchInput, ResultadoDoDisparo } from "@/lib/automations/engine
 
 import { AsaasError } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
-import { varrerRegua, type DependenciasDaVarredura } from "./varrer-regua";
+import { varrerRegua, vivaParaEnviar, type DependenciasDaVarredura } from "./varrer-regua";
 
 const CONTA = "conta-1";
 const DONO = "dono-1";
@@ -50,7 +50,8 @@ function estado(extra: Partial<Record<string, unknown[]>> = {}, config: Record<s
     tabelas: {
       accounts: [{ id: CONTA, owner_user_id: DONO, name: "CB Advogados" }],
       cb_asaas_config: [{ account_id: CONTA, regua_ativa: true, regua_ativada_em: ATIVADA, regua_intervalo_dias: 3, vencidas_listadas_em: LISTAGEM, ...config }],
-      cb_channels: [{ id: CANAL, account_id: CONTA, status: "connected" }],
+      cb_channels: [{ id: CANAL, account_id: CONTA, status: "connected", kind: "evolution" }],
+      contacts: [{ id: "ct-a", account_id: CONTA, phone: "5583988745316" }, { id: "ct-b", account_id: CONTA, phone: "5583988745317" }],
       automations: [automacao("a-1", "asaas_cobranca_vencida", { dias_de_atraso: 1 }, "Cobrança · 1 dia"), automacao("a-0", "asaas_cobranca_vence_hoje", {}, "Lembrete")],
       cb_asaas_clientes: [cliente("cus_a", "ct-a")],
       cb_asaas_cobrancas: [cobranca("c1", "cus_a")],
@@ -145,6 +146,26 @@ describe("varrerRegua — o interruptor e as cercas", () => {
     expect(disparos.chamadas).toEqual([]);
   });
 
+  it("conexão do passo que não é por QR Code (Instagram/Meta): a automação é pulada como conexão inválida — o robô não fala no Direct, e a Meta não manda texto livre fora das 24 h (Codex, 2ª rodada)", async () => {
+    const e = estado({ cb_channels: [{ id: CANAL, account_id: CONTA, status: "connected", kind: "instagram" }] });
+    const { d, disparos } = deps(e, { listas: {}, recursos: {} });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    // as DUAS automações (cobrança e lembrete) apontam para a mesma conexão
+    expect(r.conexaoInvalida).toBe(2);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+  });
+
+  it("ficha ligada SEM telefone (só Instagram): pulada sem travar, contada em semTelefone (Codex, 2ª rodada)", async () => {
+    const e = estado({ contacts: [{ id: "ct-a", account_id: CONTA, phone: null, instagram_id: "1780" }] });
+    const { d, disparos } = deps(e, { listas: {}, recursos: {} });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.semTelefone).toBe(1);
+    expect(r.candidatos).toBe(0);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+  });
+
   it("a SONDA das conexões falha: nada sai, nada é travado, e o resultado diz que foi a sonda (não a conexão)", async () => {
     const e = estado();
     const { d, disparos } = deps(e, { listas: {}, recursos: {} }, { saudeDasConexoes: async () => null });
@@ -209,6 +230,18 @@ describe("varrerRegua — a cobrança do marco", () => {
     expect(e.tabelas.cb_asaas_cobrancas[0].status).toBe("RECEIVED");
   });
 
+  it("TODAS as parcelas da mensagem são relidas no Asaas antes da trava: a antiga paga entre a sincronização e o disparo sai do texto e o espelho é atualizado (Codex, 2ª rodada)", async () => {
+    const e = estado({ cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c-ago", "cus_a", { asaas_payment_id: "pay_ago", vencimento: "2026-08-11", vista_vencida_em: "2026-08-12T03:00:00Z" })] });
+    const { d, disparos, registro } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_ago": noAsaas("ago", "cus_a", { status: "RECEIVED", dueDate: "2026-08-11" }) } });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.enviados).toBe(1);
+    expect(registro.pedidos.join(" ")).toMatch(/pay_ago/);
+    const vars = disparos.chamadas[0].context?.vars as Record<string, string>;
+    expect(vars.cobranca_quantidade).toBe("1");
+    expect(vars.cobranca_detalhe).not.toMatch(/11\/08/);
+    expect(e.tabelas.cb_asaas_cobrancas.find((c) => c.id === "c-ago")).toMatchObject({ status: "RECEIVED" });
+  });
+
   it("a mensagem lista TODAS as vencidas do cliente (D11) e só a que cruzou o marco é travada", async () => {
     const e = estado({
       cb_asaas_cobrancas: [
@@ -216,7 +249,8 @@ describe("varrerRegua — a cobrança do marco", () => {
         cobranca("c0", "cus_a", { vencimento: "2026-08-11", vista_vencida_em: "2026-09-02T03:00:00Z", parcela_numero: 0 }), // antiga, dentro da régua, sem marco hoje
       ],
     });
-    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } });
+    // as duas são relidas no Asaas antes da trava (a mensagem lista as duas)
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_c0": noAsaas("c0", "cus_a", { dueDate: "2026-08-11" }) } });
     await varrerRegua(dubleDoSupabase(e), CONTA, d);
     const vars = disparos.chamadas[0].context?.vars ?? {};
     expect(vars.cobranca_quantidade).toBe("2");
@@ -432,5 +466,17 @@ describe("varrerRegua — travas órfãs", () => {
     const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
     expect(r.orfasRecolhidas).toBe(2);
     expect(e.tabelas.cb_asaas_regua_envios.map((t) => [t.id, t.resultado])).toEqual([["t-2", "incerto"]]);
+  });
+});
+
+describe("vivaParaEnviar — o que a sonda tem de provar (Codex, 2ª rodada do PR #206)", () => {
+  it("só `ok`, ou `warn` por causa do WEBHOOK (a instância está aberta); pairing, stale, lastError, down e unknown não provam envio", () => {
+    expect(vivaParaEnviar({ tone: "ok", detail: null })).toBe(true);
+    expect(vivaParaEnviar({ tone: "warn", detail: "webhook" })).toBe(true);
+    expect(vivaParaEnviar({ tone: "warn", detail: "pairing" })).toBe(false);
+    expect(vivaParaEnviar({ tone: "warn", detail: "stale" })).toBe(false);
+    expect(vivaParaEnviar({ tone: "warn", detail: "lastError" })).toBe(false);
+    expect(vivaParaEnviar({ tone: "down", detail: "closed" })).toBe(false);
+    expect(vivaParaEnviar({ tone: "unknown", detail: "incomplete" })).toBe(false);
   });
 });

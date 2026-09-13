@@ -3725,6 +3725,10 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   (dono durável, canal do passo, sem pino), passa `{ automation_id,
   conversation_id, channel_id, vars }` e mede o desfecho no `automation_logs`
   DEPOIS do disparo — por isso grupos do mesmo contato saem em SEQUÊNCIA.
+  ⚠️ A releitura é de TUDO que vai para a mensagem (as que cruzam o marco,
+  as demais devidas e a que vence hoje), não só das que cruzam — senão uma
+  parcela paga entre a sincronização e o disparo sai como "em aberto" no
+  texto (Codex, 2ª rodada do PR #206).
   A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
   `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
   mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).
@@ -3765,7 +3769,16 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   que entra nos ramos de condição), e recusa qualquer "Aguardar" nos dois
   gatilhos; a varredura pula a automação cuja conexão não resolve na conta
   e a candidata cuja conexão está desconectada (sem travar; a SONDA que
-  falha conta igual e é dita no log — `sondaFalhou`); e o
+  falha conta igual e é dita no log — `sondaFalhou`). ⚠️ "Viva" é a
+  sonda em `ok`, ou `warn` SÓ por causa do webhook (`vivaParaEnviar`):
+  `pairing`/`stale`/`lastError` não provam envio, e travar o marco por
+  elas deixava a trava em `falhou` sem o ciclo seguinte poder tentar. E a
+  cerca é de conexão por QR CODE (`kind = 'evolution'`, `connected`):
+  Instagram e Meta no passo dariam `falhou` determinístico consumindo a
+  trava. A ficha ligada SEM telefone (só Instagram, 989) é pulada sem
+  travar (`semTelefone`). O seletor de conexão do passo aparece SEMPRE nos
+  gatilhos da régua, mesmo com uma conexão só (`reguaDoAsaas` no contexto
+  do construtor) — senão a automação criada à mão nunca ligava; e o
   motor, nesses gatilhos, lança em vez de cair no padrão
   (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
   numa cobrança isso é o link de pagamento saindo por outro número).

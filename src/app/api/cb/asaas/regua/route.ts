@@ -97,7 +97,13 @@ export async function POST() {
         .single();
       if (erroInsert || !automacao) throw new Error(erroInsert?.message ?? "insert falhou");
       const erroPassos = await insertSteps(automacao.id as string, [passo(texto)]);
-      if (erroPassos) throw new Error(erroPassos);
+      if (erroPassos) {
+        // Sem o passo a automação ficaria de pé e a próxima tentativa a leria
+        // como "esse marco já existe" — irreparável pelo botão (Codex, 2ª
+        // rodada do PR #206). Apaga a linha recém-criada e falha.
+        await admin.from("automations").delete().eq("id", automacao.id as string).eq("account_id", ctx.accountId);
+        throw new Error(erroPassos);
+      }
       criadas.push(nome);
     };
 

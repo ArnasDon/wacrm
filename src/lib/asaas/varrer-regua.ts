@@ -92,6 +92,8 @@ export interface ResultadoDaRegua {
   semConexao: number;
   /** a sonda das conexões (Evolution) FALHOU: toda candidata conta em `semConexao` por ignorância, não por queda */
   sondaFalhou: boolean;
+  /** clientes ligados a ficha SEM telefone (só Instagram, ou ficha sem número): pulados sem travar */
+  semTelefone: number;
   /** automações puladas por conexão que não resolve na conta */
   conexaoInvalida: number;
   orfasRecolhidas: number;
@@ -212,10 +214,23 @@ async function reguaAindaLigada(admin: SupabaseClient, accountId: string): Promi
  * sem travar, o ciclo seguinte tenta dentro da janela — e o resultado DIZ
  * que foi a sonda, não a conexão (revisão adversarial do PR #206).
  */
+/**
+ * Puro: a sonda confirma que a conexão ENVIA? `ok` = o provedor respondeu
+ * `open` (ou o registro está fresco); `warn` só serve quando o detalhe é o
+ * WEBHOOK (a instância está aberta — o CRM é que está surdo, e isso não
+ * impede o envio). `pairing`, `stale` e `lastError` NÃO provam nada: travar
+ * o marco e tentar por elas deixava a trava em `falhou` com a mensagem sem
+ * sair, e a trava única impedia o ciclo seguinte de tentar (Codex, 2ª rodada
+ * do PR #206).
+ */
+export function vivaParaEnviar(c: { tone: string; detail: string | null }): boolean {
+  return c.tone === "ok" || (c.tone === "warn" && c.detail === "webhook");
+}
+
 async function saudePadrao(admin: SupabaseClient, accountId: string): Promise<Map<string, boolean> | null> {
   const mapa = new Map<string, boolean>();
   try {
-    for (const c of await probeChannels(admin, accountId)) mapa.set(c.id, c.tone === "ok" || c.tone === "warn");
+    for (const c of await probeChannels(admin, accountId)) mapa.set(c.id, vivaParaEnviar(c));
   } catch (e) {
     console.warn("[asaas] régua: sonda das conexões falhou —", e instanceof Error ? e.message : e);
     return null;
@@ -258,14 +273,29 @@ async function lerAutomacoes(
   return prontas;
 }
 
-/** As conexões ativas da conta (id → existe), para a cerca de D19. */
+/**
+ * As conexões que a régua pode usar (id → existe), para a cerca de D19: só as
+ * por QR Code (Evolution), conectadas. A Meta fica fora na v1 (texto livre
+ * fora das 24 h não sai) e o Instagram também (o robô não fala no Direct —
+ * `sendViaMeta` recusa): as duas dariam `falhou` determinístico consumindo a
+ * trava do marco (Codex, 2ª rodada do PR #206). Conexão de outro transporte
+ * no passo = automação pulada como "conexão inválida".
+ */
 async function conexoesDaConta(admin: SupabaseClient, accountId: string): Promise<Set<string>> {
-  const { data, error } = await admin.from("cb_channels").select("id").eq("account_id", accountId).eq("status", "connected");
+  const { data, error } = await admin.from("cb_channels").select("id").eq("account_id", accountId).eq("status", "connected").eq("kind", "evolution");
   if (error) throw new Error(`conexões: ${error.message}`);
   return new Set(((data ?? []) as { id: string }[]).map((c) => c.id));
 }
 
-async function lerClientesLigados(admin: SupabaseClient, accountId: string): Promise<Map<string, ClienteLigado>> {
+/**
+ * Os clientes ligados a uma ficha e fora da exceção — e a ficha precisa de
+ * TELEFONE: ligado por e-mail ou à mão, o contato pode ser só do Instagram
+ * (`contacts.phone` nulo desde a 989); travar o marco e disparar terminaria
+ * em `falhou` no `engineSendText`, sem nova chance depois de o telefone ser
+ * corrigido (Codex, 2ª rodada do PR #206). Sem telefone = pulado sem travar,
+ * contado em `semTelefone`.
+ */
+async function lerClientesLigados(admin: SupabaseClient, accountId: string, saida: ResultadoDaRegua): Promise<Map<string, ClienteLigado>> {
   const linhas = await lerTudo<{ asaas_customer_id: string; contact_id: string; nome: string | null }>(
     (de, ate) =>
       admin
@@ -279,7 +309,23 @@ async function lerClientesLigados(admin: SupabaseClient, accountId: string): Pro
         .range(de, ate),
     "clientes ligados",
   );
-  return new Map(linhas.map((l) => [l.asaas_customer_id, { asaas_customer_id: l.asaas_customer_id, contact_id: l.contact_id, nome: l.nome ?? "" }]));
+  const telefones = new Map<string, string | null>();
+  const ids = [...new Set(linhas.map((l) => l.contact_id))];
+  for (let i = 0; i < ids.length; i += 500) {
+    const { data, error } = await admin.from("contacts").select("id, phone").eq("account_id", accountId).in("id", ids.slice(i, i + 500));
+    if (error) throw new Error(`telefones: ${error.message}`);
+    for (const c of (data ?? []) as { id: string; phone: string | null }[]) telefones.set(c.id, c.phone);
+  }
+  const mapa = new Map<string, ClienteLigado>();
+  for (const l of linhas) {
+    const telefone = telefones.get(l.contact_id) ?? null;
+    if (!telefone || telefone.replace(/\D/g, "").length < 8) {
+      saida.semTelefone += 1;
+      continue;
+    }
+    mapa.set(l.asaas_customer_id, { asaas_customer_id: l.asaas_customer_id, contact_id: l.contact_id, nome: l.nome ?? "" });
+  }
+  return mapa;
 }
 
 /** As parcelas em aberto (devidas ou pendentes) dos clientes ligados. */
@@ -552,7 +598,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
   const fuso = deps.fuso ?? FUSO_PADRAO;
   const lerPassos = deps.lerPassos ?? loadStepsTree;
   const disparar = deps.disparar ?? dispararAutomacoes;
-  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, sondaFalhou: false, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
+  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, sondaFalhou: false, semTelefone: 0, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
   try {
     const config = await lerConfigDaRegua(admin, accountId);
     if (!config || !config.regua_ativa) return saida;
@@ -580,7 +626,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
 
     const ctx: ContextoDaRegua = { hoje: diaNoFuso(agora, fuso), reguaAtivadaEm: config.regua_ativada_em, somenteDiasUteis: true, fuso };
     const vistoEm = agora.toISOString();
-    const [clientes, parcelasTodas] = await Promise.all([lerClientesLigados(admin, accountId), lerParcelas(admin, accountId)]);
+    const [clientes, parcelasTodas] = await Promise.all([lerClientesLigados(admin, accountId, saida), lerParcelas(admin, accountId)]);
     // Só as parcelas de clientes ligados e fora da exceção (D21), e só as
     // vistas na última listagem completa (as "em conferência" ficam fora).
     const corte = config.vencidas_listadas_em ? Date.parse(config.vencidas_listadas_em) : null;
@@ -628,12 +674,22 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         saida.semConexao += 1;
         continue;
       }
-      // 4) reconfirma no Asaas o que vai cruzar o marco
-      const cruzaram = await reconfirmar(admin, accountId, cliente, grupo.cruzaram.map((c) => c.parcela), (p) => ehDevida(classificar(p.status, p.deleted)), vistoEm);
+      // 4) reconfirma no Asaas TUDO que vai para a mensagem — as que cruzam o
+      // marco, as demais devidas (a mensagem lista todas, D11) e a que vence
+      // hoje (D17). Reler só as que cruzam deixava uma parcela paga entre a
+      // sincronização e o disparo sair como "em aberto" no texto (Codex, 2ª
+      // rodada do PR #206). O espelho é atualizado no caminho.
+      const dia = ctx.hoje;
+      const idsCruzaram = new Set(grupo.cruzaram.map((c) => c.parcela.id));
+      const naMensagem = (porCliente.get(grupo.asaasCustomerId) ?? []).filter((p) => {
+        const classe = classificar(p.status, p.deleted);
+        return idsCruzaram.has(p.id) || ehDevida(classe) || (classe === "a_vencer" && p.vencimento === dia);
+      });
+      const frescas = await reconfirmar(admin, accountId, cliente, naMensagem, () => true, vistoEm);
+      const cruzaram = frescas.filter((p) => idsCruzaram.has(p.id) && ehDevida(classificar(p.status, p.deleted)));
       if (cruzaram.length === 0) continue;
       const marcoDe = new Map(grupo.cruzaram.map((c) => [c.parcela.id, c.automacao]));
-      const dia = ctx.hoje;
-      const venceHoje = (porCliente.get(grupo.asaasCustomerId) ?? []).filter((p) => classificar(p.status, p.deleted) === "a_vencer" && p.vencimento === dia);
+      const venceHoje = frescas.filter((p) => classificar(p.status, p.deleted) === "a_vencer" && p.vencimento === dia);
       // 5) o intervalo mínimo (D11, 13/09)
       const absorvida = dentroDoIntervalo(ultimaCobranca.get(grupo.asaasCustomerId) ?? null, dia, config.regua_intervalo_dias, fuso);
       if (!(await reguaAindaLigada(admin, accountId))) {
@@ -674,7 +730,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       // intervalo mínimo e para a aba — revisão adversarial do PR #206).
       if (ids.length === 0) continue;
       // 6) a conversa, o contexto e o disparo
-      const vencidas = resumirDivida(vencidasDoCliente(porCliente.get(grupo.asaasCustomerId) ?? []).map((p) => cruzaram.find((c) => c.id === p.id) ?? p), agora, config.vencidas_listadas_em, fuso).vencidas;
+      const vencidas = resumirDivida(vencidasDoCliente(frescas), agora, config.vencidas_listadas_em, fuso).vencidas;
       const conversationId = await conversaDoContato(admin, accountId, ligado.contact_id, automacao.channelId);
       const vars = montarVariaveis({ clienteNome: ligado.nome, escritorioNome: escritorio, vencidas, cruzaram, venceHoje, hoje: dia, agora, fuso });
       const carimbo = new Date().toISOString();

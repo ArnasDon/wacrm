@@ -1095,6 +1095,20 @@ ATUALIZADO e todas as formas de pagamento.
 >     s de folga entre o relógio do Node e o `now()` do Postgres. E
 >     `validate.ts` exige a MESMA conexão em todos os `send_message`/
 >     `send_media` da automação: a varredura só confere a do primeiro.
+> 15. **Da 2ª rodada do Codex (PR #206):** a varredura relê no Asaas TODAS
+>     as parcelas que vão para a mensagem (as que cruzam o marco, as demais
+>     devidas e a que vence hoje) — reler só as que cruzam deixava uma
+>     parcela paga entre a sincronização e o disparo sair como "em aberto";
+>     a sonda só conta como viva com `ok` (ou `warn` por causa do webhook —
+>     a instância está aberta): `pairing`/`stale`/`lastError` NÃO travam o
+>     marco (`vivaParaEnviar`); só conexão por QR Code (Evolution,
+>     `connected`) entra na cerca de D19 — Instagram e Meta dariam `falhou`
+>     determinístico consumindo a trava; a ficha ligada SEM telefone (só
+>     Instagram) é pulada sem travar (`semTelefone`); o seletor de conexão
+>     do passo aparece SEMPRE nos gatilhos da régua, mesmo com uma conexão
+>     só (senão a automação criada à mão nunca ligava); e "Criar régua
+>     padrão" apaga a automação recém-criada quando o passo falha (senão a
+>     próxima tentativa a lia como "marco já existe").
 > 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
 >     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
 >     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
@@ -1976,7 +1990,7 @@ o painel do navegador estava oculto e a captura não sai)
       do marco perdido, agrupamento por cliente através das automações,
       lembrete cedendo à cobrança, variáveis, `resultadoDoLog` inclusive
       `na_fila`, os nove resultados nos dois dicionários),
-      `varrer-regua.test.ts` (25 com o dublê: interruptor, exceção, atrasado
+      `varrer-regua.test.ts` (29 com o dublê: interruptor, exceção, atrasado
       antigo fora, conexão inválida/desconectada, janela, trava do marco e
       recusa no ciclo seguinte, pagou há três minutos, TODAS as vencidas na
       mensagem, dois marcos no mesmo dia, intervalo mínimo, falha sem

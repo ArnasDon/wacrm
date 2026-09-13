@@ -377,6 +377,14 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
 // ------------------------------------------------------------
 
 interface AutomationResources {
+  /**
+   * O gatilho em edição é um dos da régua do Asaas (998)? Aí o seletor de
+   * conexão do passo aparece MESMO com uma conexão só: a ativação exige
+   * `channel_id` no `send_message` (D19), e com o seletor escondido "por só
+   * haver um número" a automação criada à mão nunca ligava (Codex, 2ª rodada
+   * do PR #206).
+   */
+  reguaDoAsaas: boolean
   tags: TagRecord[]
   members: AccountMember[]
   templates: MessageTemplate[]
@@ -432,6 +440,7 @@ interface PipelineStageOption {
 }
 
 const ResourcesContext = createContext<AutomationResources>({
+  reguaDoAsaas: false,
   tags: [],
   members: [],
   templates: [],
@@ -450,10 +459,13 @@ function useResources(): AutomationResources {
 function ResourcesProvider({
   children,
   automacaoAtualId,
+  reguaDoAsaas = false,
 }: {
   children: ReactNode
   /** `undefined` numa automação nova — ela ainda não tem id para se excluir. */
   automacaoAtualId?: string
+  /** o gatilho em edição é da régua do Asaas (ver `AutomationResources.reguaDoAsaas`) */
+  reguaDoAsaas?: boolean
 }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
@@ -542,6 +554,7 @@ function ResourcesProvider({
   return (
     <ResourcesContext.Provider
       value={{
+        reguaDoAsaas,
         tags,
         members,
         templates,
@@ -1023,7 +1036,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       <div className="relative flex-1 overflow-y-auto">
         <div className="absolute inset-0 bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
         <div className="relative mx-auto flex max-w-2xl flex-col items-center gap-0 px-4 py-10">
-          <ResourcesProvider automacaoAtualId={initial.id}>
+          <ResourcesProvider automacaoAtualId={initial.id} reguaDoAsaas={ehGatilhoDaRegua(state.trigger_type)}>
             <AvisosDeCanal steps={state.steps} channelIds={state.channel_ids} />
             <TriggerCard
               type={state.trigger_type}
@@ -2011,7 +2024,7 @@ function CanalDeSaida({
   help?: string
 }) {
   const tCanais = useTranslations("Channels")
-  const { channels } = useResources()
+  const { channels, reguaDoAsaas } = useResources()
 
   // CONEXÃO APAGADA. Nenhum trigger limpa `step_config` — o da 903 só toca em
   // `automations.channel_ids` —, e a validação de ativação ignora id
@@ -2031,7 +2044,10 @@ function CanalDeSaida({
   // Com um número só não há o que decidir — mesma regra do resto do projeto.
   // MAS o órfão precisa aparecer para poder ser trocado: apagar uma conexão de
   // uma conta de duas deixa UMA, que é exatamente quando o aviso importa.
-  if (channels.length < 2 && !orfao) return null
+  // E na régua do Asaas ele aparece SEMPRE: a ativação exige a conexão no
+  // passo (D19), e escondido "por só haver um número" a automação criada à
+  // mão nunca ligava (Codex, 2ª rodada do PR #206).
+  if (channels.length < 2 && !orfao && !reguaDoAsaas) return null
 
   return (
     <FieldBlock label={tCanais("outboundLabel")}>

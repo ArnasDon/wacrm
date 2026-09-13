@@ -611,6 +611,11 @@ tinha relação com ele. O que morde código novo:
   `evolution_error`), e o `entrega_incerta` existe porque ela não se
   adivinha. `EvolutionApiError.status` é o que responde isso, e o erro
   chega INTEIRO ao motor porque `flows/meta-send.ts` o propaga cru.
+- ⚠️⚠️ **Só o transporte EVOLUTION retenta hoje.** Quem carrega o status
+  HTTP é `EvolutionApiError`; o cliente da Cloud API (`meta-api.ts`) lança
+  `Error` genérico, e sem status não dá para separar "a Meta recusou" de
+  "não sei se saiu" — a régua falha FECHADA e não repete. Quem quiser o
+  retry na Meta começa por dar um erro com status àquele cliente.
 - ⚠️ **`PASSOS_DE_ENVIO` é allowlist**: passo novo nasce FORA, sem
   retentativa, até alguém decidir por escrito. Lista de exclusão faria o
   passo novo herdar o retry por esquecimento — que é como se manda mensagem

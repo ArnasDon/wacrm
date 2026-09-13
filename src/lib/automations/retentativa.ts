@@ -30,6 +30,17 @@
 // ============================================================
 
 /**
+ * ⚠️⚠️ SÓ O TRANSPORTE EVOLUTION RETENTA HOJE, e é uma assimetria
+ * conhecida: quem carrega o status HTTP é `EvolutionApiError`, enquanto o
+ * cliente da Cloud API (`meta-api.ts`) lança `Error` genérico. Sem o
+ * status não dá para separar "a Meta recusou" de "não sei se saiu", e a
+ * régua deste módulo falha FECHADA — não repete. Quem quiser o retry
+ * também na Meta começa por dar um erro com status ao cliente dela; até
+ * lá, envio pela Cloud API que falha segue encerrando a execução, como
+ * sempre foi, e aparece no bloco de correções do Meu dia.
+ */
+
+/**
  * Os passos que falam com o provedor. Só eles podem receber uma
  * `EvolutionApiError`, e só eles entram na retentativa.
  *

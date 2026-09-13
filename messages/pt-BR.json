@@ -590,7 +590,7 @@
           "fora_do_escopo": "fora do escopo da automação em {quando}",
           "sem_automacao": "a automação foi desligada antes de sair ({quando})",
           "incerto": "sem desfecho registrado ({quando}) — pode ter saído; não é reenviada",
-          "na_fila": "na fila do motor ({quando}) — o WhatsApp recusou e a mensagem será tentada de novo em instantes"
+          "na_fila": "na fila do motor ({quando}) — a conexão recusou o envio; nova tentativa em minutos"
         }
       }
     },

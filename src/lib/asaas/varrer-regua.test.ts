@@ -297,6 +297,32 @@ describe("varrerRegua — a cobrança do marco", () => {
     expect(e.tabelas.cb_asaas_regua_envios[0]).toMatchObject({ resultado: "incerto", detalhe: "retentativa sem desfecho registrado" });
   });
 
+  it("o `send_message` DENTRO de um ramo de condição é encontrado: a automação não é pulada como 'conexão inválida' (Codex, PR #206)", async () => {
+    const e = estado();
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } }, {
+      lerPassos: async () => [{ step_type: "condition", step_config: {}, branches: { yes: [{ step_type: "send_message", step_config: { text: "x", channel_id: CANAL } }], no: [] } }],
+    });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.conexaoInvalida).toBe(0);
+    expect(r.enviados).toBe(1);
+    expect(disparos.chamadas[0].context?.channel_id).toBe(CANAL);
+  });
+
+  it("cobrança absorvida pelo intervalo mínimo + parcela vencendo hoje: o LEMBRETE sai (o intervalo não o conta), e nada é travado como 'absorvida pela cobrança' (Codex, PR #206)", async () => {
+    const e = estado({
+      cb_asaas_regua_envios: [{ id: "t-old", account_id: CONTA, cobranca_id: "c-old", asaas_customer_id: "cus_a", tipo: "atraso", marco: 5, vencimento: "2026-09-07", automation_nome: "x", resultado: "enviado", criado_em: "2026-09-12T13:00:00Z" }],
+      cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c2", "cus_a", { status: "PENDING", vencimento: "2026-09-14", vista_vencida_em: null })],
+    });
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_c2": noAsaas("c2", "cus_a", { status: "PENDING", dueDate: "2026-09-14" }) } });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.absorvidos).toBe(1);
+    expect(r.enviados).toBe(1);
+    expect(disparos.chamadas.map((c) => c.triggerType)).toEqual(["asaas_cobranca_vence_hoje"]);
+    const travas = e.tabelas.cb_asaas_regua_envios.filter((t) => t.id !== "t-old").map((t) => ({ c: t.cobranca_id, tipo: t.tipo, r: t.resultado }));
+    expect(travas).toEqual(expect.arrayContaining([{ c: "c1", tipo: "atraso", r: "absorvida" }, { c: "c2", tipo: "vence_hoje", r: "enviado" }]));
+    expect(travas).toHaveLength(2);
+  });
+
   it("o interruptor desligado NO MEIO do ciclo: o grupo é descartado sem travar e a varredura para", async () => {
     const e = estado({ cb_asaas_clientes: [cliente("cus_a", "ct-a"), cliente("cus_b", "ct-b")], cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c2", "cus_b")] });
     const admin = dubleDoSupabase(e);
@@ -369,6 +395,19 @@ describe("varrerRegua — o lembrete do vencimento (D17)", () => {
 });
 
 describe("varrerRegua — travas órfãs", () => {
+  it("leitura do log que FALHA não recolhe: a trava fica `reservado` (apagá-la deixaria o ciclo seguinte mandar de novo — Codex, PR #206)", async () => {
+    const e = estado({
+      cb_asaas_regua_envios: [{ id: "t-1", account_id: CONTA, cobranca_id: "c1", asaas_customer_id: "cus_a", tipo: "atraso", marco: 1, vencimento: "2026-09-11", automation_id: "a-1", automation_nome: "x", contact_id: "ct-a", resultado: "reservado", criado_em: new Date(AGORA.getTime() - 15 * 60_000).toISOString() }],
+    });
+    e.falhasDeLeitura = { automation_logs: "connection reset" };
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.orfasRecolhidas).toBe(0);
+    expect(e.tabelas.cb_asaas_regua_envios.map((t) => [t.id, t.resultado])).toEqual([["t-1", "reservado"]]);
+    // e a trava viva continua barrando o marco: nada disparado
+    expect(disparos.chamadas).toEqual([]);
+  });
+
   it("`reservado` há mais de 10 min sem log é apagada; com log vira `incerto`", async () => {
     const velha = new Date(AGORA.getTime() - 15 * 60_000).toISOString();
     const e = estado({

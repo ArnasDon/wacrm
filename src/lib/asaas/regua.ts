@@ -357,8 +357,14 @@ export function agruparPorCliente(
   opcoes: { semJanela?: boolean } = {},
 ): GrupoDeCobranca[] {
   const grupos = new Map<string, GrupoDeCobranca>();
-  for (const automacao of automacoes) {
-    if (automacao.tipo !== "atraso") continue;
+  // ⚠️ Ordem DETERMINÍSTICA (maior marco primeiro, depois o id): duas
+  // automações LIGADAS com o mesmo marco — a "régua padrão" criada duas
+  // vezes — disputam a MESMA trava. Sem a ordem e sem o dedupe abaixo, a
+  // mesma parcela entrava duas vezes em `cruzaram`, o INSERT do grupo
+  // levava duas linhas com a mesma chave, o 23505 era lido como "outro
+  // processo pegou" e NENHUMA das duas enviava (Codex, PR #206).
+  const ordenadas = automacoes.filter((a) => a.tipo === "atraso").sort((a, b) => b.marco - a.marco || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const automacao of ordenadas) {
     const c = { ...ctx, somenteDiasUteis: automacao.somenteDiasUteis };
     if (!opcoes.semJanela && !janelaAberta(agora, ctx.hoje, automacao.horaEnvio, ctx.fuso)) continue;
     for (const p of parcelas) {
@@ -367,6 +373,8 @@ export function agruparPorCliente(
       if (!aindaPagavel(p, ctx.hoje)) continue;
       if (diaAlvoDoMarco(p, automacao.marco, c) !== ctx.hoje) continue;
       const g = grupos.get(p.asaas_customer_id) ?? { asaasCustomerId: p.asaas_customer_id, automacao, cruzaram: [] };
+      // a parcela já cruzou ESTE marco por outra automação: a trava é uma só
+      if (g.cruzaram.some((x) => x.parcela.id === p.id && x.automacao.marco === automacao.marco)) continue;
       g.cruzaram.push({ parcela: p, automacao });
       if (automacao.marco > g.automacao.marco) g.automacao = automacao;
       grupos.set(p.asaas_customer_id, g);
@@ -436,11 +444,15 @@ export function resultadoDoLog(
     if (disparo.executadas === 0 && disparo.foraDoEscopo > 0) return "fora_do_escopo";
     return disparo.executadas > 0 ? "incerto" : "sem_automacao";
   }
+  // ⚠️ O envio bem-sucedido VENCE o desfecho: um `add_tag` que estoura
+  // DEPOIS do `send_message` fecha o log como `falhou`, mas a mensagem SAIU
+  // — registrá-la como `falhou` a tiraria do intervalo mínimo e outro marco
+  // cobraria o cliente cedo demais (Codex, PR #206).
+  const enviou = log.steps_executed.some((s) => s.step_type === "send_message" && s.status === "success");
+  if (enviou) return "enviado";
   if (log.desfecho === "falhou") return "falhou";
   if (log.desfecho === "barrada") return "barrada";
-  const enviou = log.steps_executed.some((s) => s.step_type === "send_message" && s.status === "success");
-  if (log.desfecho === "concluida") return enviou ? "enviado" : "barrada";
-  if (enviou) return "enviado";
+  if (log.desfecho === "concluida") return "barrada";
   if ((disparo.emEspera ?? 0) > 0) return "na_fila";
   // Sem desfecho e sem espera: o processo morreu no meio — pode ter saído.
   return "incerto";

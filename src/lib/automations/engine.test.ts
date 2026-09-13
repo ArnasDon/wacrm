@@ -883,6 +883,38 @@ describe('triggerMatches — date_field_offset (952)', () => {
   });
 });
 
+describe('triggerMatches — a régua do Asaas (998)', () => {
+  function regua(id: string, tipo: 'asaas_cobranca_vencida' | 'asaas_cobranca_vence_hoje'): Automation {
+    return {
+      id,
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      name: 'cobrança',
+      trigger_type: tipo,
+      trigger_config: tipo === 'asaas_cobranca_vencida' ? { dias_de_atraso: 5 } : {},
+      is_active: true,
+      execution_count: 0,
+      created_at: '',
+      updated_at: '',
+    };
+  }
+
+  it('⚠️ roda SÓ a automação carimbada no contexto, nos DOIS gatilhos', () => {
+    // O "aconteceu?" é decidido pela varredura; o dispatch por tipo rodaria
+    // a de 5 dias junto com a de 1 (a mesma cerca do `date_field_offset`).
+    expect(triggerMatches(regua('a1', 'asaas_cobranca_vencida'), { automation_id: 'a1' })).toBe(true);
+    expect(triggerMatches(regua('a2', 'asaas_cobranca_vencida'), { automation_id: 'a1' })).toBe(false);
+    expect(triggerMatches(regua('l1', 'asaas_cobranca_vence_hoje'), { automation_id: 'l1' })).toBe(true);
+    expect(triggerMatches(regua('l2', 'asaas_cobranca_vence_hoje'), { automation_id: 'l1' })).toBe(false);
+  });
+
+  it('fail closed: sem carimbo no contexto, nada roda', () => {
+    expect(triggerMatches(regua('a1', 'asaas_cobranca_vencida'), {})).toBe(false);
+    expect(triggerMatches(regua('a1', 'asaas_cobranca_vencida'), undefined)).toBe(false);
+    expect(triggerMatches(regua('l1', 'asaas_cobranca_vence_hoje'), {})).toBe(false);
+  });
+});
+
 describe('tag_added — conversation policy', () => {
   it('records a clear failed step when the contact has no conversation', async () => {
     h.state.owned = { id: 'c1' };

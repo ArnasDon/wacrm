@@ -1053,10 +1053,35 @@ ATUALIZADO e todas as formas de pagamento.
 >    …`); o que cada cliente recebeu está na aba Cobranças (a trava). O
 >    cartão mostra o interruptor, o intervalo, as automações ligadas, o
 >    marco repetido e quantos estão na exceção.
-> 10. **O dia-alvo do marco perdido**: além de `vista_vencida_em`, o marco
->     cujo dia-alvo passou há até 3 dias (`TOLERANCIA_DA_VISTA_DIAS`) e
->     ainda não foi travado é cobrado no primeiro ciclo dentro da janela —
->     o agendador parado por um dia não perde o marco de todo mundo.
+> 10. **A tolerância é da VISTA, não do agendador**: `TOLERANCIA_DA_VISTA_DIAS`
+>     (3) aceita `vista_vencida_em` até 3 dias DEPOIS de `vencimento + marco`
+>     como dia-alvo (o Asaas marcou vencida tarde — C7); passado disso o
+>     marco é perdido e o próximo o cobre. Agendador parado até as 18:00 =
+>     marco perdido naquele dia (é o que a dica do editor diz) — não há
+>     recuperação de marco cujo dia-alvo já passou. E o passo 3 abaixo
+>     ("tira as que já têm trava") NÃO é uma consulta: a única barreira é o
+>     23505 do INSERT do grupo — uma parcela já travada descarta o grupo
+>     inteiro naquele ciclo (o teste "o ciclo seguinte no mesmo dia NÃO
+>     manda de novo" mede isso). O recolhimento de órfãs (passo 1) só tem o
+>     PISO da janela (`created_at >= criado_em da trava`): um log de um
+>     grupo POSTERIOR do mesmo contato faz a órfã virar `incerto` em vez de
+>     ser apagada — o lado seguro (nunca reenviada). ⚠️ A leitura do log que
+>     FALHA não recolhe nada: a trava fica `reservado` (Codex, PR #206).
+> 12. **`vista_vencida_em` é apagada quando a cobrança VOLTA a "a vencer"**
+>     (renegociada: PENDING de novo, com outro vencimento — `aplicar.ts`),
+>     para a próxima vencida ganhar o carimbo dela e a régua rearmar; a paga
+>     mantém. Sem isso o boleto renegociado carregava o carimbo anterior ao
+>     ligar da régua e nunca entrava (Codex, PR #206).
+> 13. **Duas automações LIGADAS com o mesmo marco**: a parcela entra UMA vez
+>     no grupo (dedupe por parcela × marco, ordem determinística — maior
+>     marco, depois o id); sem isso o INSERT levava a chave duplicada, o
+>     23505 era lido como "outro processo pegou" e NENHUMA enviava. E o
+>     `send_message` bem-sucedido VENCE o desfecho `falhou` de um passo
+>     posterior (`resultadoDoLog`): a mensagem saiu e conta para o
+>     intervalo. O primeiro `send_message` é procurado também DENTRO dos
+>     ramos de condição (`primeiroEnvio`). O lembrete de quem teve a
+>     cobrança absorvida pelo intervalo SAI (a cobrança não sai, e o
+>     lembrete não é contado pelo intervalo). Todos do Codex, PR #206.
 > 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
 >     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
 >     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
@@ -1150,8 +1175,9 @@ ciclo; se não sobrar, o ciclo seguinte a roda, dentro da mesma janela.
 
 **As candidatas.** Uma cobrança só é candidata quando:
 
-- `classificar` diz `vencida` (a negativada fica fora, D6) e ela foi vista
-  na última listagem completa;
+- `classificar` diz `vencida` (a negativada fica fora, D6 — **superado**:
+  a negativada ENTRA, ver o item 5 do bloco no início desta seção) e ela foi
+  vista na última listagem completa;
 - o cliente está ligado a uma ficha (pela regra automática ou à mão);
 - o boleto ainda pode ser pago (`pode_pagar_apos_vencimento` e
   `dias_ate_cancelar_registro`); a que o Asaas diz que não pode mais fica
@@ -1232,7 +1258,8 @@ reconferido na própria trava (passo 5):
    `enviado` por cliente do Asaas por dia.
    ⚠️ **O INSERT da trava reconfere o interruptor** (D20): `INSERT … SELECT …
    WHERE EXISTS (SELECT 1 FROM cb_asaas_config WHERE account_id = $1 AND
-   regua_ativa)` — zero linhas = desligado no meio do ciclo → o grupo é
+   regua_ativa)` (**superado**: é um SELECT antes do INSERT, item 8 do bloco
+   no início desta seção) — zero linhas = desligado no meio do ciclo → o grupo é
    descartado sem travar e a varredura para. O que já foi travado e disparado
    sai (disparo não se cancela); o cartão diz "desligada às 9h05 — N
    mensagens já tinham saído neste ciclo".
@@ -1931,12 +1958,12 @@ o painel do navegador estava oculto e a captura não sai)
 
 **Fase 3** (13/09, PR #206)
 
-- [x] **Automatizado:** `regua.test.ts` (26: dia-alvo com `vista_vencida_em`
+- [x] **Automatizado:** `regua.test.ts` (28: dia-alvo com `vista_vencida_em`
       contra `regua_ativada_em`, fim de semana e feriado, janela, tolerância
       do marco perdido, agrupamento por cliente através das automações,
       lembrete cedendo à cobrança, variáveis, `resultadoDoLog` inclusive
       `na_fila`, os nove resultados nos dois dicionários),
-      `varrer-regua.test.ts` (21 com o dublê: interruptor, exceção, atrasado
+      `varrer-regua.test.ts` (24 com o dublê: interruptor, exceção, atrasado
       antigo fora, conexão inválida/desconectada, janela, trava do marco e
       recusa no ciclo seguinte, pagou há três minutos, TODAS as vencidas na
       mensagem, dois marcos no mesmo dia, intervalo mínimo, falha sem
@@ -1944,7 +1971,13 @@ o painel do navegador estava oculto e a captura não sai)
       para o intervalo, `na_fila` velha → `incerto`, interruptor desligado no
       meio, 429, lembrete, órfãs), `cartao.test.ts` (o bloco), `validate.test.ts`
       (sem "Aguardar", conexão obrigatória), `engine.test.ts` (recusas),
-      `regua.chamadores.test.ts` (D16, default-deny), `dono-duravel`.
+      `regua.chamadores.test.ts` (D16, default-deny), `dono-duravel`,
+      `engine.test.ts` (`triggerMatches` dos dois gatilhos por
+      `automation_id`, fail closed sem carimbo), `aplicar.test.ts` (o
+      rearme da renegociada). A recusa de `runAutomationById` é testada
+      pelo diálogo/rota (`validate`/`executar-automacao`) só na forma
+      estrutural — o motor exige o dublê do admin, e o caso está coberto
+      pela revisão (Codex e a revisão de coerência do PR #206).
 - [ ] Preview e2e (13/09, depois da 998): interruptor, intervalo, "Criar
       régua padrão", a aba "Sem cobrança automática" com a planilha marcada,
       o sino na aba Cobranças — registrado no PR #206.

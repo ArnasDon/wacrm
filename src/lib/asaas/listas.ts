@@ -1,7 +1,7 @@
 /**
  * As LISTAS do cartão do Asaas — puras. A partir das linhas do espelho (os
  * clientes com o vínculo, as cobranças devidas) e das fichas referenciadas,
- * monta o resumo e as cinco listas: Para confirmar, Sem ficha, Ligados,
+ * monta o resumo e as seis listas: Para confirmar, Sem ficha, Ligados,
  * Ignorados e Inadimplentes. A rota pagina o que sai daqui.
  *
  * ⚠️ O CPF/CNPJ só sai MASCARADO (`***.456.789-**`), e só por esta função —

@@ -3487,12 +3487,16 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   role, que devolve também o que o membro não enxergaria sozinho — se está
   conectado e se a leitura é FRESCA (`leituraFresca`, duas voltas do laço
   lento). Sem isso "em dia" seria afirmação sobre dado parado.
-- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito.** É a PRIMEIRA vez que o
-  espelho viu a cobrança vencida, carimbada num UPDATE cercado por `IS NULL`
-  — fora do upsert, de propósito. É o que a régua de cobrança (Fase 3) vai
-  usar como dia-alvo quando o Asaas marca vencida tarde, e o que faz "ligar
-  a régua não é retroativo" valer. "Está vencida" é o `status` do Asaas,
-  nunca `vencimento < hoje` (C7: o instante da virada não é documentado).
+- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito enquanto a cobrança continua
+  devida.** É a PRIMEIRA vez que o espelho viu a cobrança vencida, carimbada
+  num UPDATE cercado por `IS NULL` — fora do upsert, de propósito. É o que a
+  régua de cobrança (Fase 3) usa como dia-alvo quando o Asaas marca vencida
+  tarde, e o que faz "ligar a régua não é retroativo" valer. "Está vencida"
+  é o `status` do Asaas, nunca `vencimento < hoje` (C7: o instante da virada
+  não é documentado). ⚠️ UMA exceção (Codex, PR #206): a cobrança que VOLTA
+  a "a vencer" (renegociada — PENDING de novo, outro vencimento) perde o
+  carimbo, para a próxima vencida ganhar o dela e a régua rearmar — a paga
+  MANTÉM (histórico).
 - ⚠️ **O upsert de clientes leva SÓ metadados** — nunca `contact_id`,
   `vinculo_origem`, `contatos_recusados` nem `candidatos` (a lição do tl;dv:
   o que já é conhecido mantém o que tem). O upsert das cobranças, idem: o
@@ -3764,10 +3768,14 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   (`cb_asaas_clientes.regua_desligada`, com quem e quando): a régua agrupa
   por cliente, e o mesmo contato pode ter a pessoa e a empresa. O sino está
   na aba Cobranças e nas listas do cartão; a planilha do operador foi
-  marcada por script fora do repositório. ⚠️ **Deploy DEPOIS da 998**: a
-  rota GET do cartão seleciona `regua_*` por nome e a varredura lê
-  `regua_ativa` — sem as colunas o cartão responde 500 e o cron registra
-  a régua como interrompida a cada ciclo.
+  marcada por script fora do repositório. ⚠️ **Deploy DEPOIS da 998**: as
+  rotas `/api/cb/asaas` (o cartão), `/api/cb/asaas/resumo` e
+  `/api/cb/asaas/contato/[id]` selecionam `regua_*`/`regua_desligada` por
+  nome (`lerConfigDoEspelho`/`lerClientes`) — sem as colunas o `resumo`
+  responde 500 e, pela régua da Fase 1b (`null` = "não sei"), o ícone, a
+  faixa e o filtro "Inadimplentes" apagam para a CONTA INTEIRA, não só o
+  cartão do admin; e o cron registra a régua como interrompida a cada
+  ciclo. (Aplicada em 13/09/2026 ANTES do merge.)
 
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
@@ -4784,7 +4792,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `cb_asaas_regua_envios` (a trava E o histórico; FECHADA ao navegador;
     UNIQUE por marco; nove resultados, `na_fila` incluso; `automation_log_id`).
     Aditiva (colunas com default; a tabela nasce vazia). ⚠️ O deploy tem de
-    vir DEPOIS dela: a rota GET do cartão seleciona as colunas por nome.
+    vir DEPOIS dela: três rotas selecionam as colunas por nome (ver a seção
+    da régua). Aplicada em 13/09/2026 pela Management API (histórico
+    `20260913211455`), ANTES do merge; a lista de exceção do operador (38
+    clientes do Asaas) marcada em seguida por script fora do repositório.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

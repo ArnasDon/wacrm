@@ -16,6 +16,8 @@ import type { ClienteAsaas, PaginaDoAsaas } from "./cliente";
 export type Linha = Record<string, unknown>;
 
 export interface EstadoDoDuble {
+  /** tabela → mensagem: todo SELECT nela devolve `{ data: null, error }` (para testar falha de leitura) */
+  falhasDeLeitura?: Partial<Record<string, string>>;
   tabelas: Record<string, Linha[]>;
   /** todo insert/upsert/update/delete, na ordem */
   escritas: { tabela: string; op: string; payload: unknown; filtros: Filtro[] }[];
@@ -173,6 +175,8 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       const linhas = tabela(nome);
       const filtradas = linhas.filter((l) => filtros.every((f) => casa(l, f)));
       if (op === "select") {
+        const falha = estado.falhasDeLeitura?.[nome];
+        if (falha) return { data: null, error: { message: falha }, count: null };
         let saida = filtradas;
         if (faixa) saida = saida.slice(faixa[0], faixa[1] + 1);
         if (teto !== null) saida = saida.slice(0, teto);

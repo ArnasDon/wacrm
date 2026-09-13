@@ -106,8 +106,8 @@ export interface DependenciasDaVarredura {
   prazoMs?: number;
   fuso?: string;
   cliente?: ClienteAsaas;
-  /** os passos de uma automação (padrão: `loadStepsTree`) */
-  lerPassos?: (automationId: string) => Promise<{ step_type: string; step_config: Record<string, unknown> }[]>;
+  /** os passos de uma automação, em ÁRVORE (padrão: `loadStepsTree`) */
+  lerPassos?: (automationId: string) => Promise<PassoDaArvore[]>;
   /** o disparo (padrão: `dispararAutomacoes`) */
   disparar?: typeof dispararAutomacoes;
   /** id da conexão → viva? (padrão: `probeChannels`; `undefined` = desconhecida) */
@@ -116,6 +116,31 @@ export interface DependenciasDaVarredura {
 
 const PAGINA = 1000;
 const PRAZO_PADRAO_MS = 45_000;
+
+/** A forma mínima do que `loadStepsTree` devolve: passo com ramos opcionais. */
+export interface PassoDaArvore {
+  step_type: string;
+  step_config: Record<string, unknown>;
+  branches?: { yes?: PassoDaArvore[]; no?: PassoDaArvore[] };
+}
+
+/**
+ * O PRIMEIRO `send_message` da automação, em ordem de execução — entrando
+ * nos ramos de condição. ⚠️ `loadStepsTree` devolve só a raiz com os ramos
+ * aninhados: um `find` na raiz não enxerga o envio posto dentro de um "Se",
+ * e `validate.ts` aceita essa forma — a automação ligava e toda varredura a
+ * pulava como "conexão inválida", em silêncio (Codex, PR #206).
+ */
+export function primeiroEnvio(passos: readonly PassoDaArvore[]): PassoDaArvore | null {
+  for (const p of passos) {
+    if (p.step_type === "send_message") return p;
+    if (p.branches) {
+      const dentro = primeiroEnvio([...(p.branches.yes ?? []), ...(p.branches.no ?? [])]);
+      if (dentro) return dentro;
+    }
+  }
+  return null;
+}
 
 interface ConfigDaRegua {
   regua_ativa: boolean;
@@ -208,7 +233,7 @@ async function lerAutomacoes(
       continue;
     }
     const passos = await lerPassos(bruta.id);
-    const envio = passos.find((p) => p.step_type === "send_message");
+    const envio = primeiroEnvio(passos);
     const channelId = typeof envio?.step_config?.channel_id === "string" ? envio.step_config.channel_id : "";
     if (!channelId) {
       // A ativação exige a conexão (validate.ts); só chega aqui automação
@@ -303,13 +328,21 @@ async function recolherOrfas(admin: SupabaseClient, accountId: string, agora: Da
   for (const t of (data ?? []) as { id: string; automation_id: string | null; contact_id: string | null; criado_em: string }[]) {
     let temLog = false;
     if (t.automation_id && t.contact_id) {
-      const { data: logs } = await admin
+      const { data: logs, error: erroLog } = await admin
         .from("automation_logs")
         .select("id")
         .eq("automation_id", t.automation_id)
         .eq("contact_id", t.contact_id)
         .gte("created_at", t.criado_em)
         .limit(1);
+      // ⚠️ Leitura que FALHA não é "não rodou": apagar a trava aqui deixaria
+      // o ciclo seguinte mandar de novo uma mensagem que pode ter saído. A
+      // órfã fica `reservado` e a varredura seguinte tenta ler outra vez
+      // (Codex, PR #206).
+      if (erroLog) {
+        console.warn(`[asaas] régua: não consegui ler o log da trava ${t.id} — fica reservada:`, erroLog.message);
+        continue;
+      }
       temLog = (logs?.length ?? 0) > 0;
     }
     if (temLog) {
@@ -555,7 +588,15 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
 
     // ---- as cobranças por marco (passos 3 a 7)
     const grupos = agruparPorCliente(validas, parcelas, ctx, agora);
-    const comMarcoHoje = new Set(agruparPorCliente(validas, parcelas, ctx, agora, { semJanela: true }).map((g) => g.asaasCustomerId));
+    // Quem tem marco HOJE cede o lembrete à cobrança (D17, uma mensagem só)
+    // — MENOS quem o intervalo mínimo vai absorver: aí não sai cobrança
+    // nenhuma, e o lembrete tem de sair (o lembrete não conta nem é contado
+    // pelo intervalo; Codex, PR #206).
+    const comMarcoHoje = new Set(
+      agruparPorCliente(validas, parcelas, ctx, agora, { semJanela: true })
+        .filter((g) => !dentroDoIntervalo(ultimaCobranca.get(g.asaasCustomerId) ?? null, ctx.hoje, config.regua_intervalo_dias, fuso))
+        .map((g) => g.asaasCustomerId),
+    );
     for (const grupo of grupos) {
       if (Date.now() > prazoMs) throw new ParadaDaVarredura("prazo");
       saida.candidatos += 1;
@@ -597,8 +638,10 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
           detalhe: absorvida ? `intervalo mínimo de ${config.regua_intervalo_dias} dias` : daMensagem ? null : `absorvida pelo marco de ${grupo.automacao.marco} dias`,
         };
       });
-      // a parcela que vence hoje entra na mensagem e fica travada como lembrete absorvido (D17, uma mensagem só)
-      for (const p of venceHoje) {
+      // a parcela que vence hoje entra na mensagem e fica travada como lembrete
+      // absorvido (D17, uma mensagem só) — só quando a cobrança SAI: absorvida
+      // pelo intervalo, o lembrete segue livre para o passo 8
+      for (const p of absorvida ? [] : venceHoje) {
         linhas.push({ account_id: accountId, cobranca_id: p.id, asaas_customer_id: grupo.asaasCustomerId, tipo: "vence_hoje", marco: 0, vencimento: p.vencimento, automation_id: grupo.automacao.id, automation_nome: grupo.automacao.nome, contact_id: ligado.contact_id, resultado: "absorvida", detalhe: `absorvida pela cobrança de ${grupo.automacao.marco} dias` });
       }
       const ids = await travar(admin, linhas);

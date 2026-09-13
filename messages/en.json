@@ -597,7 +597,7 @@
           "fora_do_escopo": "outside the automation's scope on {quando}",
           "sem_automacao": "the automation was disabled before it went out ({quando})",
           "incerto": "no recorded outcome ({quando}) — may have gone out; never resent",
-          "na_fila": "queued by the engine ({quando}) — WhatsApp refused and the message will be retried shortly"
+          "na_fila": "queued by the engine ({quando}) — the connection refused the send; it will be retried within minutes"
         }
       }
     },

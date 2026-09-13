@@ -186,9 +186,10 @@ describe("agruparPorCliente (D11) — uma mensagem por cliente, através das aut
     const grupos = agruparPorCliente([cobranca(1), cobranca(5), cobranca(30)], [set, ago], ctx("2026-09-14"), segunda);
     expect(grupos).toHaveLength(1);
     expect(grupos[0].automacao.marco).toBe(30);
+    // maior marco primeiro (a ordem determinística das automações)
     expect(grupos[0].cruzaram.map((c) => [c.parcela.asaas_payment_id, c.automacao.marco])).toEqual([
-      ["pay_set", 1],
       ["pay_ago", 30],
+      ["pay_set", 1],
     ]);
   });
 
@@ -199,6 +200,18 @@ describe("agruparPorCliente (D11) — uma mensagem por cliente, através das aut
     expect(agruparPorCliente([cobranca(1)], [negativada], ctx("2026-09-14"), segunda)).toHaveLength(1);
     const paga = parcela({ vencimento: "2026-09-11", vista_vencida_em: "2026-09-12T03:00:00Z", status: "RECEIVED" });
     expect(agruparPorCliente([cobranca(1)], [paga], ctx("2026-09-14"), segunda)).toEqual([]);
+  });
+
+  it("duas automações LIGADAS com o MESMO marco: a parcela entra UMA vez no grupo, pela automação de menor id — sem isso o INSERT do grupo levava a chave duplicada, o 23505 era lido como 'outro processo pegou' e nenhuma enviava (Codex, PR #206)", () => {
+    const set = parcela({ vencimento: "2026-09-11", vista_vencida_em: "2026-09-12T03:00:00Z" });
+    const b = { ...cobranca(1), id: "b-1", nome: "Cobrança · 1 dia (cópia)" };
+    const a = { ...cobranca(1), id: "a-1" };
+    const grupos = agruparPorCliente([b, a], [set], ctx("2026-09-14"), segunda);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].cruzaram).toHaveLength(1);
+    expect(grupos[0].automacao.id).toBe("a-1");
+    // a ordem de entrada não muda a escolha
+    expect(agruparPorCliente([a, b], [set], ctx("2026-09-14"), segunda)[0].automacao.id).toBe("a-1");
   });
 
   it("fora da janela da automação nada é candidato; cada automação tem a sua hora", () => {
@@ -286,6 +299,8 @@ describe("resultadoDoLog — o que a trava registra", () => {
     expect(resultadoDoLog({ desfecho: "concluida", steps_executed: [{ step_type: "send_message", status: "success" }] }, disparo)).toBe("enviado");
     expect(resultadoDoLog({ desfecho: "barrada", steps_executed: [] }, disparo)).toBe("barrada");
     expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_message", status: "failed" }] }, disparo)).toBe("falhou");
+    // o envio SAIU e um passo posterior estourou: é `enviado` — a mensagem chegou ao cliente e conta para o intervalo (Codex, PR #206)
+    expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_message", status: "success" }, { step_type: "add_tag", status: "failed" }] }, disparo)).toBe("enviado");
     expect(resultadoDoLog({ desfecho: "concluida", steps_executed: [{ step_type: "add_tag", status: "success" }] }, disparo)).toBe("barrada");
   });
   it("sem desfecho: enviou = enviado (o processo morreu depois do envio); senão incerto", () => {

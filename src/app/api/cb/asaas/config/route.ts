@@ -49,7 +49,7 @@ export async function PUT(request: Request) {
     // o preview carrega a URL da produção e registraria um endereço que só
     // atende depois do deploy. Fora daqui, o cron da VPS cria no ciclo seguinte.
     const origem = origemPublica();
-    const criarWebhook = podeCriarDaqui(origem, request.url);
+    const criarWebhook = podeCriarDaqui(origem, request);
     after(async () => {
       await sincronizarAsaas(admin, ctx.accountId, { completa: true });
       if (criarWebhook) await cuidarDoWebhook(admin, ctx.accountId, { origem });

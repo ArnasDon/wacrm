@@ -3608,29 +3608,46 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   credencial é `asaas-access-token`, o valor que o CRM gerou e informou ao
   Asaas ao criar o webhook, guardado CIFRADO (`webhook_auth_token`) e
   comparado em tempo constante (`tokenConfere`) — não há HMAC no Asaas, é
-  igualdade. 404 e 401 são as únicas respostas que não são 200: **limite do
-  balde responde 200 `adiado`** (só 200 conta como entrega; um 429 contaria
-  como falha e ajudaria a interromper a fila — 15 falhas seguidas param
-  tudo), e a reentrega responde 200 `duplicado` pelo UNIQUE `(conta, id do
-  evento)` de `cb_asaas_eventos`. O corpo é AVISO (D8): só `payment.id` ou
+  igualdade. 404 e 401 são as únicas RECUSAS; com URL e token certos, o que
+  não é 200 são os três 500 (config, token ilegível, INSERT do evento), de
+  propósito — o Asaas retenta por ~13 h e um soluço do banco não pode perder
+  o evento. **Limite do balde — POR CONTA, contado só depois do cabeçalho
+  conferir — responde 200 `adiado`** (só 200 conta como entrega; um 429
+  contaria como falha e ajudaria a interromper a fila — 15 falhas seguidas
+  param tudo; chaveado pelo token da URL, quem tivesse a URL calaria as
+  entregas legítimas), e a reentrega responde 200 `duplicado` pelo UNIQUE
+  `(conta, id do evento)` de `cb_asaas_eventos`. O corpo é AVISO (D8): só `payment.id` ou
   `accessToken.name` são lidos, e a cobrança é RELIDA na API em `after()`
   (`processarEvento`, sob um semáforo de 4 — uma fila religada despeja dias
   de eventos de uma vez, e a conta tem 50 GET simultâneos divididos com o
   outro sistema do escritório). Cobrança paga que o espelho NÃO conhece é
   `ignorada` (`deveEntrarNoEspelho`): o espelho não é cópia do Asaas.
-- ⚠️⚠️ **A criação AUTOMÁTICA do webhook vive SÓ no cron (`cuidarDoWebhook`,
-  em `cron/route.ts`), e o botão do cartão só cria a partir do PRÓPRIO host
-  público (`podeCriarDaqui`).** O `.env.local` do preview carrega a URL da
+- ⚠️⚠️ **A criação SEM gesto de gente vive SÓ no cron (`cuidarDoWebhook`,
+  em `cron/route.ts`); conectar (a primeira sincronização) e o botão do
+  cartão também criam, e os três gestos do cartão (Ativar, Religar,
+  Desativar) só valem a partir do PRÓPRIO host público (`podeCriarDaqui`).** O `.env.local` do preview carrega a URL da
   PRODUÇÃO: criar dali registraria no Asaas um endereço que só atende
   depois do deploy, e 15 entregas falhadas interrompem a fila com três
   e-mails. Estado NULO = nunca tentado (o cron cria no ciclo seguinte);
   `desligado`/`ausente`/`sem_permissao`/`erro` esperam gente (o cron não
   insiste no que uma pessoa ou o Asaas recusou); rede e cota não mexem no
-  estado. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
+  estado. ⚠️ O host do PEDIDO sai de `x-forwarded-host`/`host`
+  (`hostDoPedido`), nunca de `request.url`: o `standalone` da produção sobe
+  com `HOSTNAME=0.0.0.0` e o Next monta `request.url` a partir disso — com a
+  URL, o botão nasceria travado em produção também (revisão do PR #204). O
+  token da URL é gravado ANTES do POST, cercado por `IS NULL`, para a URL ser
+  determinística (retentativa e concorrente reencontram o webhook pela URL
+  em vez de criar um segundo). `obter()` do cliente devolve `null` SÓ no 404
+  — 2xx sem corpo LANÇA — e o 404 de uma cobrança só vira `deleted` com o
+  CLIENTE dela respondendo 200 (a cerca da reconciliação). O balde da rota é
+  POR CONTA e só depois do cabeçalho conferir. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
   então POST) — trocar a chave não pode dobrar as entregas. Fila
   interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a
-  segunda vira `interrompido` ("precisa de atenção"), e só o "Religar" de
-  gente zera o marcador. Desconectar APAGA o webhook no Asaas antes de
+  segunda vira `interrompido` ("precisa de atenção"), e só um gesto de gente
+  (Religar ou Ativar) zera o marcador. O estado `erro` (o Asaas recusou a
+  criação) é retentado pelo cron uma vez por dia (`RETENTAR_ERRO_MS`): a
+  primeira criação real acontece depois do merge, e uma lista de eventos
+  recusada não pode travar a integração até alguém clicar. Desconectar APAGA o webhook no Asaas antes de
   apagar a config (senão o Asaas insiste por horas numa rota 404);
   `webhookNaoApagado` manda apagar no painel. Evento de chave só conta
   quando `accessToken.name` é o `chave_nome` da config (os eventos de chave
@@ -4531,13 +4548,6 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `asaas` que não ficou gravada na criação), as duas pedidas pela revisão
     do PR #201. Aplicada em 12/09/2026 à noite pela Management API
     (histórico `20260912234246`), ANTES do merge; aditiva.
-  - **997_cb_asaas_webhook** — as colunas do webhook em `cb_asaas_config`
-    (token da URL em claro com índice único parcial; token de autenticação
-    CIFRADO; id no Asaas, e-mail, estado, erro, religado, conferido, último
-    evento) e `cb_asaas_eventos` (FECHADA; UNIQUE por conta e id do evento;
-    o `dateCreated` do evento CRU, em texto — a medição de C7). Aditiva:
-    nada em produção a lê até o deploy. Aplicada em 13/09/2026 pela
-    Management API, ANTES do merge.
   - **996_cb_asaas_vinculo_completo** — `cb_asaas_config.vinculo_completo_em`,
     o marcador de que o VÍNCULO da listagem vigente já rodou (5ª a 7ª
     rodadas do Codex no PR #203) — a tela precisa saber quando "ninguém
@@ -4546,6 +4556,14 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     sem ficha não tem conversa a esconder). Aditiva, com acervo do
     `last_sync_at`. Aplicada em 13/09/2026 pela Management API (histórico
     `20260913122337`), ANTES do merge.
+
+  - **997_cb_asaas_webhook** — as colunas do webhook em `cb_asaas_config`
+    (token da URL em claro com índice único parcial; token de autenticação
+    CIFRADO; id no Asaas, e-mail, estado, erro, religado, conferido, último
+    evento) e `cb_asaas_eventos` (FECHADA; UNIQUE por conta e id do evento;
+    o `dateCreated` do evento CRU, em texto — a medição de C7). Aditiva:
+    nada em produção a lê até o deploy. Aplicada em 13/09/2026 pela
+    Management API, ANTES do merge.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

@@ -56,10 +56,12 @@ export interface ConfigDoWebhook {
   webhook_email: string | null;
   webhook_state: EstadoDoWebhook | null;
   webhook_religado_em: string | null;
+  /** a última conferência OU tentativa (a retentativa diária do `erro` conta a partir daqui) */
+  webhook_conferido_em: string | null;
 }
 
 const COLUNAS_DO_WEBHOOK =
-  "account_id, created_by, chave_nome, webhook_token, webhook_auth_token, webhook_asaas_id, webhook_email, webhook_state, webhook_religado_em";
+  "account_id, created_by, chave_nome, webhook_token, webhook_auth_token, webhook_asaas_id, webhook_email, webhook_state, webhook_religado_em, webhook_conferido_em";
 
 /** Até 10 webhooks por conta: uma página de 100 sobra; o teto de 2 é só cerca. */
 const PAGINAS_DE_WEBHOOKS = 2;
@@ -114,8 +116,16 @@ function codigoDe(e: unknown): CodigoDoWebhook {
 }
 
 async function gravarFalha(admin: SupabaseClient, accountId: string, estado: EstadoDoWebhook | null, codigo: string, agora: string): Promise<void> {
-  await admin.from("cb_asaas_config").update({ webhook_state: estado, webhook_erro: codigo, updated_at: agora }).eq("account_id", accountId);
+  await admin.from("cb_asaas_config").update({ webhook_state: estado, webhook_erro: codigo, webhook_conferido_em: agora, updated_at: agora }).eq("account_id", accountId);
 }
+
+/**
+ * O estado `erro` (o Asaas recusou a criação) é retentado pelo cron UMA vez
+ * por dia: uma lista de eventos que o Asaas não aceite no primeiro ciclo
+ * travaria a integração até alguém clicar — e, corrigida a causa num deploy,
+ * o webhook nasce sozinho no dia seguinte (revisão do PR #204, R1).
+ */
+export const RETENTAR_ERRO_MS = 24 * 60 * 60_000;
 
 /**
  * Cria — ou reaproveita e atualiza — o webhook desta conta no Asaas, com um
@@ -135,24 +145,42 @@ export async function garantirWebhook(
   if (config === "db_error") return { ok: false, codigo: "db_error" };
   if (!config) return { ok: false, codigo: "nao_conectado" };
   const carimbo = agora.toISOString();
-  const token = config.webhook_token ?? gerarTokenDaUrl();
+  // ⚠️ O token da URL é gravado ANTES de falar com o Asaas, cercado por
+  // `IS NULL`: é só endereço, e gravá-lo cedo torna a URL DETERMINÍSTICA.
+  // Sem isso, um POST que dava certo seguido de uma gravação que falhava
+  // deixava um webhook ÓRFÃO no Asaas (respondendo 404 até interromper a
+  // fila), e a tentativa seguinte — ou o cron e o botão correndo juntos —
+  // gerava outro token, não achava o órfão pela URL e criava um SEGUNDO
+  // (revisão independente do PR #204).
+  const token = config.webhook_token ?? (await carimbarTokenDaUrl(admin, accountId));
+  if (!token) return { ok: false, codigo: "db_error" };
   const url = urlDoWebhook(origem, token);
   const authToken = gerarTokenDeAutenticacao();
   const corpo = corpoDoWebhook(url, email, authToken);
 
   let w: WebhookNoAsaas | null = null;
   try {
+    // ⚠️ Um PUT que deu certo mas voltou sem `id` (forma estranha) CONTINUA
+    // sendo o webhook que já existe — cair para o POST criaria um segundo
+    // na mesma URL e dobraria as entregas (revisão do PR #204).
+    const atualizar = async (id: string): Promise<WebhookNoAsaas> => {
+      const resposta = lerWebhookDoAsaas(await cliente.enviar<unknown>("PUT", `/webhooks/${id}`, corpo));
+      return resposta ?? { id, url, enabled: true, interrupted: false, penalizados: 0, temToken: true };
+    };
     if (config.webhook_asaas_id) {
       const atual = lerWebhookDoAsaas(await cliente.obter<unknown>(`/webhooks/${config.webhook_asaas_id}`));
-      if (atual) w = lerWebhookDoAsaas(await cliente.enviar<unknown>("PUT", `/webhooks/${atual.id}`, corpo));
+      if (atual) w = await atualizar(atual.id);
     }
     if (!w) {
       const lista = await cliente.listarTudo<unknown>("/webhooks", { limit: 100 }, PAGINAS_DE_WEBHOOKS);
       const igual = lista.map(lerWebhookDoAsaas).find((x): x is WebhookNoAsaas => x !== null && x.url === url);
-      if (igual) w = lerWebhookDoAsaas(await cliente.enviar<unknown>("PUT", `/webhooks/${igual.id}`, corpo));
+      if (igual) w = await atualizar(igual.id);
     }
     if (!w) w = lerWebhookDoAsaas(await cliente.enviar<unknown>("POST", "/webhooks", corpo));
     if (!w) throw new AsaasError("asaas_error", "resposta do webhook sem id");
+    // O Asaas devolve `hasAuthToken`: sem ele, TODA entrega chegaria sem o
+    // cabeçalho e a rota responderia 401 até a fila ser interrompida.
+    if (!w.temToken) throw new AsaasError("asaas_error", "o Asaas não registrou o token de autenticação do webhook");
   } catch (e) {
     const codigo = codigoDe(e);
     // Sem a permissão Webhooks e recusa do Asaas precisam de GENTE (o
@@ -178,8 +206,21 @@ export async function garantirWebhook(
       updated_at: carimbo,
     })
     .eq("account_id", accountId);
-  if (error) return { ok: false, codigo: "db_error" };
+  if (error) {
+    console.error(`[asaas] webhook da conta ${accountId} criado no Asaas (${w.id}) mas não gravado:`, error.message);
+    return { ok: false, codigo: "db_error" };
+  }
   return { ok: true, estado: "ativo" };
+}
+
+/** Grava um token de URL novo só se ainda não há um; devolve o que ficou valendo (o nosso ou o do concorrente). */
+async function carimbarTokenDaUrl(admin: SupabaseClient, accountId: string): Promise<string | null> {
+  const novo = gerarTokenDaUrl();
+  const { data, error } = await admin.from("cb_asaas_config").update({ webhook_token: novo }).eq("account_id", accountId).is("webhook_token", null).select("webhook_token");
+  if (error) return null;
+  if (data && data.length > 0) return novo;
+  const atual = await lerConfigDoWebhook(admin, accountId);
+  return atual && atual !== "db_error" ? atual.webhook_token : null;
 }
 
 /**
@@ -321,7 +362,11 @@ export async function cuidarDoWebhook(
   const c = opcoes.cliente ? { ok: true as const, cliente: opcoes.cliente } : await clienteDaConta(admin, accountId);
   if (!c.ok) return { ok: false, codigo: c.codigo };
   if (config.webhook_asaas_id) return conferirWebhook(admin, accountId, c.cliente, config, opcoes.agora);
-  if (config.webhook_state !== null) return { ok: true, estado: config.webhook_state };
+  if (config.webhook_state !== null) {
+    const agoraMs = (opcoes.agora ?? new Date()).getTime();
+    const ultimaTentativa = config.webhook_conferido_em ? Date.parse(config.webhook_conferido_em) : 0;
+    if (config.webhook_state !== "erro" || agoraMs - ultimaTentativa < RETENTAR_ERRO_MS) return { ok: true, estado: config.webhook_state };
+  }
   if (!opcoes.origem) return { ok: false, codigo: "url_inalcancavel" };
   const email = await emailDosAlertas(admin, accountId, config);
   if (!email) {
@@ -339,13 +384,18 @@ export function criarSemaforo(max: number): { com<T>(fn: () => Promise<T>): Prom
   const espera: (() => void)[] = [];
   return {
     async com<T>(fn: () => Promise<T>): Promise<T> {
+      // ⚠️ Quem espera HERDA a vaga de quem terminou (o contador não cai
+      // entre os dois): decrementar e deixar o acordado incrementar abria
+      // uma fresta em que um chamador novo tomava a vaga e o acordado passava
+      // de `max` (revisão do PR #204, R8).
       if (ativos >= max) await new Promise<void>((liberar) => espera.push(liberar));
-      ativos++;
+      else ativos++;
       try {
         return await fn();
       } finally {
-        ativos--;
-        espera.shift()?.();
+        const proximo = espera.shift();
+        if (proximo) proximo();
+        else ativos--;
       }
     },
   };
@@ -383,15 +433,31 @@ export async function processarEvento(
         const bruta = await c.cliente.obter<unknown>(`/payments/${aviso.paymentId}`);
         const lida = bruta ? lerCobranca(bruta) : null;
         if (!lida) {
-          const { data, error } = await admin
+          // 404 na cobrança: só vira `deleted` se a linha existe E o CLIENTE
+          // dela ainda responde — os dois 404 juntos são a chave de outra
+          // conta, a mesma cerca da reconciliação do ciclo.
+          const { data: linha, error: erroLinha } = await admin
             .from("cb_asaas_cobrancas")
-            .update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm })
+            .select("id, asaas_customer_id")
             .eq("account_id", accountId)
             .eq("asaas_payment_id", aviso.paymentId)
-            .select("id");
-          if (error) throw new Error(error.message);
-          resultado = (data?.length ?? 0) > 0 ? "apagada" : "ignorada";
-          detalhe = "404";
+            .maybeSingle();
+          if (erroLinha) throw new Error(erroLinha.message);
+          if (!linha) {
+            detalhe = "404";
+          } else if ((await c.cliente.obter<unknown>(`/customers/${linha.asaas_customer_id}`)) === null) {
+            resultado = "falhou";
+            detalhe = "conta_trocada";
+          } else {
+            const { error } = await admin
+              .from("cb_asaas_cobrancas")
+              .update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm })
+              .eq("account_id", accountId)
+              .eq("asaas_payment_id", aviso.paymentId);
+            if (error) throw new Error(error.message);
+            resultado = "apagada";
+            detalhe = "404";
+          }
         } else {
           const { data: existente, error } = await admin
             .from("cb_asaas_cobrancas")
@@ -406,12 +472,15 @@ export async function processarEvento(
             resultado = "falhou";
             detalhe = "sem_cliente";
           } else {
-            const { semLinha } = await garantirClientes(admin, accountId, c.cliente, [lida.clienteId], vistoEm, Date.now() + PRAZO_DO_EVENTO_MS);
-            if (semLinha.size > 0) {
+            const { semLinha, adiados } = await garantirClientes(admin, accountId, c.cliente, [lida.clienteId], vistoEm, Date.now() + PRAZO_DO_EVENTO_MS);
+            if (semLinha.size > 0 || adiados.size > 0) {
               resultado = "falhou";
-              detalhe = "cliente_ausente";
+              detalhe = semLinha.size > 0 ? "cliente_ausente" : "cliente_adiado";
+            } else if (!(await aplicarCobranca(admin, accountId, lida, vistoEm))) {
+              // sem vencimento a linha não cabe no espelho (`linhaDaCobranca`)
+              resultado = "falhou";
+              detalhe = "descartada";
             } else {
-              await aplicarCobranca(admin, accountId, lida, vistoEm);
               resultado = "aplicada";
               detalhe = lida.status;
             }
@@ -420,13 +489,16 @@ export async function processarEvento(
       } else if (aviso.tipo === "chave") {
         const codigo = CODIGO_DO_EVENTO_DE_CHAVE[aviso.evento];
         const config = await lerConfigDoWebhook(admin, accountId);
-        if (codigo && config && config !== "db_error" && aviso.nome && config.chave_nome && aviso.nome === config.chave_nome) {
+        if (config === "db_error") throw new Error("config: leitura falhou");
+        if (codigo && config && aviso.nome && config.chave_nome && aviso.nome === config.chave_nome) {
           const { error } = await admin.from("cb_asaas_config").update({ status: "erro", last_error: codigo, updated_at: vistoEm }).eq("account_id", accountId);
           if (error) throw new Error(error.message);
           resultado = "chave";
           detalhe = codigo;
         } else {
-          detalhe = aviso.nome ? "outra_chave" : "sem_nome";
+          // Sem `chave_nome` na config não há como saber se a chave é a nossa —
+          // o cartão avisa que o nome da chave não foi informado.
+          detalhe = !config?.chave_nome ? "sem_nome_da_chave_na_config" : aviso.nome ? "outra_chave" : "sem_nome";
         }
       } else {
         detalhe = aviso.evento;
@@ -436,7 +508,8 @@ export async function processarEvento(
       detalhe = e instanceof AsaasError ? e.codigo : e instanceof Error ? e.message.slice(0, 200) : "erro";
       console.error(`[asaas] evento ${aviso.evento} da conta ${accountId} falhou:`, e instanceof Error ? e.message : e);
     }
-    await admin.from("cb_asaas_eventos").update({ processado_em: new Date().toISOString(), resultado, detalhe }).eq("id", opcoes.eventoId);
+    const { error: erroFinal } = await admin.from("cb_asaas_eventos").update({ processado_em: new Date().toISOString(), resultado, detalhe }).eq("id", opcoes.eventoId);
+    if (erroFinal) console.error(`[asaas] evento ${opcoes.eventoId} processado (${resultado}) mas o registro não foi atualizado:`, erroFinal.message);
     return resultado;
   });
 }

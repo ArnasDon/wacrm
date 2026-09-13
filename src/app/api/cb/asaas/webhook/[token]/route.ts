@@ -21,18 +21,19 @@ import { decrypt } from "@/lib/whatsapp/encryption";
  *   5. responde 200 e trabalha em `after()`: o Asaas espera 10 s, e o
  *      trabalho é reler a cobrança na API e aplicar ao espelho.
  *
- * ⚠️ Limite por token estourado responde **200 `{ adiado: true }`**, sem
- * gravar nem processar: só 200 conta como entrega — um 429 contaria como
- * falha e ajudaria a interromper a fila (15 falhas seguidas), e o ciclo de
- * 15 min reconcilia o que ficou de fora. 404 e 401 são as únicas respostas
- * que não são 200, e só acontecem com URL ou token errados.
+ * ⚠️ O balde é POR CONTA e conta só entregas AUTENTICADAS (depois do
+ * cabeçalho conferido). Chaveado pelo token da URL e antes da conferência,
+ * quem tivesse a URL — que o desenho assume que vaza — o encheria e faria
+ * toda entrega legítima cair em `adiado`, em silêncio (revisão independente
+ * do PR #204). Estourado, responde **200 `{ adiado: true }`** com aviso no
+ * log, sem gravar nem processar: só 200 conta como entrega — um 429
+ * contaria como falha e ajudaria a interromper a fila (15 falhas seguidas),
+ * e o ciclo de 15 min reconcilia o que ficou de fora. 404 e 401 são as
+ * únicas respostas que não são 200, e só acontecem com URL ou token errados.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
   if (!RE_TOKEN.test(token)) return NextResponse.json({ error: "not_found" }, { status: 404 });
-
-  const limit = checkRateLimit(`asaas:webhook:${token}`, RATE_LIMITS.asaasWebhook);
-  if (!limit.success) return NextResponse.json({ ok: true, adiado: true });
 
   const admin = supabaseAdmin();
   const { data: config, error } = await admin
@@ -53,6 +54,12 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
   if (!tokenConfere(request.headers.get("asaas-access-token"), esperado)) {
     return NextResponse.json({ error: "invalid_token" }, { status: 401 });
+  }
+
+  const limit = checkRateLimit(`asaas:webhook:${accountId}`, RATE_LIMITS.asaasWebhook);
+  if (!limit.success) {
+    console.warn(`[asaas] entrega adiada pelo balde na conta ${accountId} — o ciclo de 15 min reconcilia`);
+    return NextResponse.json({ ok: true, adiado: true });
   }
 
   const corpo: unknown = await request.json().catch(() => null);

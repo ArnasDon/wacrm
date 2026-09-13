@@ -7,6 +7,7 @@ import {
   EVENTOS_ASSINADOS,
   gerarTokenDaUrl,
   gerarTokenDeAutenticacao,
+  hostDoPedido,
   lerAviso,
   lerWebhookDoAsaas,
   podeCriarDaqui,
@@ -83,11 +84,22 @@ describe("os tokens", () => {
 });
 
 describe("podeCriarDaqui — só a partir do próprio host público", () => {
+  const pedido = (url: string, cabecalhos: Record<string, string> = {}) => ({ url, headers: new Headers(cabecalhos) });
+
   it("o mesmo host cria; o preview (localhost) com a URL da produção no env NÃO cria", () => {
-    expect(podeCriarDaqui("https://crm.exemplo.com", "https://crm.exemplo.com/api/cb/asaas/webhook")).toBe(true);
-    expect(podeCriarDaqui("https://crm.exemplo.com", "http://localhost:3000/api/cb/asaas/webhook")).toBe(false);
-    expect(podeCriarDaqui(null, "https://crm.exemplo.com/api")).toBe(false);
-    expect(podeCriarDaqui("https://crm.exemplo.com", "lixo")).toBe(false);
+    expect(podeCriarDaqui("https://crm.exemplo.com", pedido("https://crm.exemplo.com/api/cb/asaas/webhook"))).toBe(true);
+    expect(podeCriarDaqui("https://crm.exemplo.com", pedido("http://localhost:3000/api/cb/asaas/webhook", { host: "localhost:3000" }))).toBe(false);
+    expect(podeCriarDaqui(null, pedido("https://crm.exemplo.com/api"))).toBe(false);
+    expect(podeCriarDaqui("https://crm.exemplo.com", pedido("lixo"))).toBe(false);
+  });
+
+  it("em PRODUÇÃO o `request.url` é 0.0.0.0:3000 (standalone com HOSTNAME=0.0.0.0): quem diz o host é `x-forwarded-host`, senão `host`", () => {
+    expect(hostDoPedido(pedido("http://0.0.0.0:3000/api/cb/asaas", { "x-forwarded-host": "crm.exemplo.com", host: "0.0.0.0:3000" }))).toBe("crm.exemplo.com");
+    expect(hostDoPedido(pedido("http://0.0.0.0:3000/api/cb/asaas", { host: "crm.exemplo.com" }))).toBe("crm.exemplo.com");
+    expect(hostDoPedido(pedido("http://0.0.0.0:3000/api/cb/asaas", { "x-forwarded-host": "crm.exemplo.com, proxy.interno" }))).toBe("crm.exemplo.com");
+    expect(podeCriarDaqui("https://crm.exemplo.com", pedido("http://0.0.0.0:3000/api/cb/asaas", { "x-forwarded-host": "crm.exemplo.com" }))).toBe(true);
+    // cabeçalho com lixo cai para a URL
+    expect(hostDoPedido(pedido("http://0.0.0.0:3000/api", { host: "não é host" }))).toBe("0.0.0.0:3000");
   });
 });
 

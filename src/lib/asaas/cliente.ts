@@ -156,7 +156,7 @@ export interface ClienteAsaas {
    * ciclo numa listagem longa (100 páginas × 20 s de timeout passam de 10 min).
    */
   listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>, teto?: number, aCadaPagina?: () => Promise<void>): Promise<T[]>;
-  /** Um recurso por id. `null` no 404 — que também significa "de outra conta". */
+  /** Um recurso por id. `null` SÓ no 404 — que também significa "de outra conta"; 2xx sem corpo lança. */
   obter<T>(caminho: string): Promise<T | null>;
   /**
    * POST/PUT/DELETE com corpo JSON — a ÚNICA escrita da integração é o
@@ -272,7 +272,11 @@ export function criarClienteAsaas(
     async obter<T>(caminho: string): Promise<T | null> {
       const { status, corpo } = await pedir(url(caminho), [404]);
       if (status === 404) return null;
-      return (corpo ?? null) as T | null;
+      // ⚠️ `null` é SÓ o 404. Um 2xx com corpo vazio ou ilegível LANÇA: quem
+      // lê "null = apagado" marcaria como apagada uma cobrança viva, ou como
+      // ausente um webhook que está entregando (revisão do PR #204).
+      if (corpo === null || corpo === undefined) throw new AsaasError("asaas_error", `${caminho}: resposta ${status} sem corpo`);
+      return corpo as T;
     },
 
     async enviar<T>(metodo: "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown): Promise<T> {

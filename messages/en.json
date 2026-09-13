@@ -2976,7 +2976,9 @@
           "confirmarDesativar": "Disable the instant notice? The CRM deletes the webhook in Asaas and the notice in the conversation goes back to changing only on the 15-minute cycle.",
           "urlLabel": "Webhook URL",
           "urlHint": "This is the URL registered in Asaas. For reference only — the CRM does the registration.",
-          "naoApagado": "The connection was removed, but the webhook could not be deleted in Asaas — delete it in the panel (Integrations → Webhooks), or Asaas keeps insisting for hours on a URL that no longer answers and interrupts the queue."
+          "naoApagado": "The connection was removed, but the webhook could not be deleted in Asaas — delete it in the panel (Integrations → Webhooks), or Asaas keeps insisting for hours on a URL that no longer answers and interrupts the queue.",
+          "semEnderecoCurto": "Not created yet — this environment has no public address.",
+          "ultimoErro": "Last attempt failed: {motivo}."
         }
       }
     },

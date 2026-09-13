@@ -480,7 +480,9 @@ function BlocoDoWebhook({
         : "text-muted-foreground";
   // chave montada: `asaas.webhook.estado.<estado>` — a lista fechada mora em
   // `lib/asaas/cartao.ts` (ESTADOS_DO_WEBHOOK) e há teste cobrando cada uma.
-  const frase = estado ? t(`asaas.webhook.estado.${estado}` as Parameters<typeof t>[0]) : t("asaas.webhook.nunca");
+  // Sem endereço público não há "o agendador cria no próximo ciclo": o
+  // aviso `semEndereco` logo abaixo é a única afirmação verdadeira.
+  const frase = estado ? t(`asaas.webhook.estado.${estado}` as Parameters<typeof t>[0]) : origemAlcancavel ? t("asaas.webhook.nunca") : t("asaas.webhook.semEnderecoCurto");
   return (
     <div className="min-w-0 space-y-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -496,18 +498,18 @@ function BlocoDoWebhook({
               size="sm"
               onClick={() => aoMexer("ativar")}
               disabled={acaoEmCurso !== null || !podeCriarDaqui}
-              title={!podeCriarDaqui ? t("asaas.webhook.soDaProducao") : undefined}
+              title={!origemAlcancavel ? t("asaas.webhook.semEndereco") : !podeCriarDaqui ? t("asaas.webhook.soDaProducao") : undefined}
             >
               {acaoEmCurso === "ativar" ? t("asaas.webhook.ativando") : precisaDeGente ? t("asaas.webhook.tentarDeNovo") : t("asaas.webhook.ativar")}
             </Button>
           )}
           {estado === "interrompido" && (
-            <Button type="button" variant="outline" size="sm" onClick={() => aoMexer("religar")} disabled={acaoEmCurso !== null}>
+            <Button type="button" variant="outline" size="sm" onClick={() => aoMexer("religar")} disabled={acaoEmCurso !== null || !podeCriarDaqui} title={!podeCriarDaqui ? t("asaas.webhook.soDaProducao") : undefined}>
               {t("asaas.webhook.religar")}
             </Button>
           )}
           {webhook.registrado && (
-            <Button type="button" variant="ghost" size="sm" onClick={() => aoMexer("desativar")} disabled={acaoEmCurso !== null}>
+            <Button type="button" variant="ghost" size="sm" onClick={() => aoMexer("desativar")} disabled={acaoEmCurso !== null || !podeCriarDaqui} title={!podeCriarDaqui ? t("asaas.webhook.soDaProducao") : undefined}>
               {t("asaas.webhook.desativar")}
             </Button>
           )}
@@ -520,6 +522,10 @@ function BlocoDoWebhook({
         {ativo ? ` · ${webhook.ultimoEvento ? t("asaas.webhook.ultimoEvento", { quando: quando(webhook.ultimoEvento) }) : t("asaas.webhook.semEvento")}` : ""}
         {webhook.conferidoEm && webhook.registrado ? ` · ${t("asaas.webhook.conferidoEm", { quando: quando(webhook.conferidoEm) })}` : ""}
       </p>
+      {/* O último erro aparece SEMPRE que existe: rede e cota mantêm o
+          estado nulo e a tela diria "ainda não criado" para sempre, com o
+          motivo real invisível. */}
+      {webhook.erro && estado !== "erro" && <p className="text-amber-600 dark:text-amber-400">{t("asaas.webhook.ultimoErro", { motivo: motivo(webhook.erro) })}</p>}
       {webhook.email && webhook.registrado && <p className="text-muted-foreground">{t("asaas.webhook.email", { email: webhook.email })}</p>}
       {!origemAlcancavel && <p className="text-destructive">{t("asaas.webhook.semEndereco")}</p>}
       {url && webhook.registrado && (

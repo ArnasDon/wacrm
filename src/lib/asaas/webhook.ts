@@ -100,16 +100,37 @@ export function origemPublica(): string | null {
 }
 
 /**
+ * O HOST por onde o pedido entrou. ⚠️ Nunca só `new URL(request.url).host`:
+ * o servidor `standalone` da produção sobe com `HOSTNAME=0.0.0.0` e o Next
+ * monta `request.url` a partir DISSO, não do `Host` — em produção ele é
+ * `0.0.0.0:3000`, sempre. O Traefik escreve `x-forwarded-host`, e o próprio
+ * Next preenche o cabeçalho com o `Host` quando ele falta (`base-server`),
+ * então a ordem é a mesma do OAuth do Instagram (`origemDoPedido`):
+ * `x-forwarded-host` → `host` → a URL (revisão independente do PR #204).
+ */
+export function hostDoPedido(request: Pick<Request, "headers" | "url">): string {
+  const primeiro = (v: string | null) => v?.split(",")[0]?.trim() ?? "";
+  const doCabecalho = primeiro(request.headers.get("x-forwarded-host")) || primeiro(request.headers.get("host"));
+  if (/^[A-Za-z0-9.-]+(:\d{1,5})?$/.test(doCabecalho)) return doCabecalho.toLowerCase();
+  try {
+    return new URL(request.url).host.toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
+/**
  * Puro: o pedido veio do PRÓPRIO host público? É a guarda do botão "Ativar"
  * e da primeira sincronização depois de conectar — sem ela, a máquina de
  * alguém com a URL da produção no `.env.local` registraria o webhook no
  * Asaas antes de o deploy existir (a mesma família da guarda da Evolution
  * em `webhook-url.ts`, `origemDoPedido`).
  */
-export function podeCriarDaqui(origem: string | null, urlDoPedido: string): boolean {
+export function podeCriarDaqui(origem: string | null, request: Pick<Request, "headers" | "url">): boolean {
   if (!origem) return false;
   try {
-    return new URL(origem).host.toLowerCase() === new URL(urlDoPedido).host.toLowerCase();
+    const host = hostDoPedido(request);
+    return host !== "" && new URL(origem).host.toLowerCase() === host;
   } catch {
     return false;
   }

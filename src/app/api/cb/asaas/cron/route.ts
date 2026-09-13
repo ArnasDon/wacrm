@@ -77,9 +77,12 @@ export async function GET(request: Request) {
         `[asaas] ciclo da conta ${conta.account_id}: ${r.clientesListados} clientes listados, ${r.cobrancasGravadas} cobranças, ${r.reconciliadas} reconciliadas, ${r.ligados} ligados, ${r.fichasCriadas} fichas criadas, ${r.adiadas} adiadas`,
       );
       // Com a conta sincronizada, o webhook: confere o que existe, cria o
-      // que nunca foi tentado. Falha aqui não é falha do ciclo.
-      const w = await cuidarDoWebhook(admin, conta.account_id, { origem });
-      if (!w.ok && w.codigo !== "url_inalcancavel") console.warn(`[asaas] webhook da conta ${conta.account_id}: ${w.codigo}`);
+      // que nunca foi tentado. Falha aqui não é falha do ciclo — e fica
+      // DENTRO do orçamento (o `-m 120` do curl não sabe de webhook).
+      if (Date.now() - inicio <= ORCAMENTO_MS) {
+        const w = await cuidarDoWebhook(admin, conta.account_id, { origem });
+        if (!w.ok && w.codigo !== "url_inalcancavel") console.warn(`[asaas] webhook da conta ${conta.account_id}: ${w.codigo}`);
+      }
     } else if (r.codigo === "em_curso" || r.codigo === "cadeado_perdido") adiadas++;
     else falhas++;
   }

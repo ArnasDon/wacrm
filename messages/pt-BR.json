@@ -2969,7 +2969,9 @@
           "confirmarDesativar": "Desativar o aviso na hora? O CRM apaga o webhook no Asaas e o aviso na conversa passa a mudar só no ciclo de 15 minutos.",
           "urlLabel": "URL do webhook",
           "urlHint": "É esta URL que está registrada no Asaas. Só para conferência — o registro é feito pelo CRM.",
-          "naoApagado": "A conexão foi desfeita, mas o webhook não pôde ser apagado no Asaas — apague no painel (Integrações → Webhooks), senão o Asaas insiste por horas numa URL que não responde e interrompe a fila."
+          "naoApagado": "A conexão foi desfeita, mas o webhook não pôde ser apagado no Asaas — apague no painel (Integrações → Webhooks), senão o Asaas insiste por horas numa URL que não responde e interrompe a fila.",
+          "semEnderecoCurto": "Ainda não criado — este ambiente não tem endereço público.",
+          "ultimoErro": "Última tentativa falhou: {motivo}."
         }
       }
     },

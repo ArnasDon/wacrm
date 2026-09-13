@@ -47,6 +47,16 @@
 -- `anon` sem nada (931). `service_role` com tudo, POR ESCRITO — em banco
 -- novo não existe default privilege que o conceda. Aditiva e idempotente:
 -- o app anterior não lê nada disto.
+--
+-- ⚠️ SEM PODA na v1, por decisão: `cb_asaas_eventos` cresce uma linha por
+-- entrega (a conta gera unidades por dia — a mesma ordem de grandeza dos
+-- eventos do Calendly, que também ficam), e a medição de C7 quer justamente
+-- os `dateCreated` antigos. Quem decidir podar um dia tem a data em
+-- `recebido_em`.
+--
+-- ⚠️ Deploy DEPOIS da migration: o app novo SELECIONA as colunas novas (o
+-- cartão, o desconectar e o passo do webhook no cron) e o PostgREST recusa
+-- o select inteiro sem elas. Aplicada em 13/09/2026 antes do merge.
 
 ALTER TABLE cb_asaas_config
   ADD COLUMN IF NOT EXISTS webhook_token         text,
@@ -109,6 +119,15 @@ BEGIN
     SELECT 1 FROM pg_indexes WHERE schemaname = 'public' AND indexname = 'cb_asaas_config_webhook_token_idx'
   ) THEN
     RAISE EXCEPTION '997: índice do token do webhook ausente — a rota não teria como achar a conta';
+  END IF;
+  -- O CHECK viaja com o ADD COLUMN: uma aplicação parcial anterior que já
+  -- tivesse a coluna pularia a coluna E o CHECK juntos, em silêncio.
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.cb_asaas_config'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%webhook_state%sem_permissao%'
+  ) THEN
+    RAISE EXCEPTION '997: o CHECK de webhook_state não existe — o estado aceitaria qualquer texto';
   END IF;
 
   IF NOT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_schema = 'public' AND table_name = 'cb_asaas_eventos') THEN

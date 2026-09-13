@@ -54,7 +54,7 @@ export async function GET(request: Request) {
       guardado: guardado ?? { clientes: 0, cobrancas: 0 },
       webhookUrl,
       origemAlcancavel: origem !== null,
-      podeCriarDaqui: podeCriarDaqui(origem, request.url),
+      podeCriarDaqui: podeCriarDaqui(origem, request),
     });
   } catch (err) {
     return toErrorResponse(err);

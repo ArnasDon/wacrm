@@ -4,7 +4,7 @@ import { decrypt, encrypt } from "@/lib/whatsapp/encryption";
 
 import { AsaasError } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
-import { apagarWebhook, ativarWebhook, conferirWebhook, criarSemaforo, cuidarDoWebhook, garantirWebhook, lerConfigDoWebhook, processarEvento, religarWebhook } from "./webhook-asaas";
+import { apagarWebhook, ativarWebhook, conferirWebhook, criarSemaforo, cuidarDoWebhook, garantirWebhook, lerConfigDoWebhook, processarEvento, religarWebhook, RETENTAR_ERRO_MS } from "./webhook-asaas";
 
 const CONTA = "conta-1";
 const ORIGEM = "https://crm.exemplo.com";
@@ -35,6 +35,7 @@ function estado(config: Record<string, unknown> = {}, extra: Partial<Record<stri
           webhook_state: null,
           webhook_erro: null,
           webhook_religado_em: null,
+          webhook_conferido_em: null,
           ...config,
         },
       ],
@@ -98,6 +99,22 @@ describe("garantirWebhook — cria, reaproveita, e grava o token cifrado", () =>
     expect((registro.envios![0].corpo as Record<string, unknown>).enabled).toBe(true);
   });
 
+  it("PUT que volta sem `id` continua sendo o webhook de sempre — nunca cai para o POST (dobraria as entregas)", async () => {
+    const e = estado({ webhook_token: "tok_antigo_0000000000000000", webhook_asaas_id: "wh_nosso" });
+    const { registro, cliente } = rodar({ listas: {}, recursos: { "/webhooks/wh_nosso": webhookDoAsaas("wh_nosso") }, envios: { "PUT /webhooks/wh_nosso": { object: "webhook" } } });
+    expect(await garantirWebhook(dubleDoSupabase(e), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: true, estado: "ativo" });
+    expect(registro.envios!.map((x) => x.chave)).toEqual(["PUT /webhooks/wh_nosso"]);
+    expect(e.tabelas.cb_asaas_config[0].webhook_asaas_id).toBe("wh_nosso");
+  });
+
+  it("o Asaas não registrou o token de autenticação (`hasAuthToken: false`): é falha, estado `erro` — senão toda entrega viraria 401", async () => {
+    const e = estado();
+    const { cliente } = rodar({ listas: { "/webhooks": [] }, recursos: {}, envios: { "POST /webhooks": webhookDoAsaas("wh_novo", { hasAuthToken: false }) } });
+    expect(await garantirWebhook(dubleDoSupabase(e), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: false, codigo: "asaas_error" });
+    expect(e.tabelas.cb_asaas_config[0].webhook_state).toBe("erro");
+    expect(e.tabelas.cb_asaas_config[0].webhook_asaas_id).toBeNull();
+  });
+
   it("sem a permissão Webhooks: estado `sem_permissao` (o cron para de tentar) e o ciclo de 15 min segue", async () => {
     const e = estado();
     const { cliente } = rodar({ listas: {}, recursos: {}, erro: new AsaasError("sem_permissao", "403") });
@@ -107,12 +124,19 @@ describe("garantirWebhook — cria, reaproveita, e grava o token cifrado", () =>
     expect(e.tabelas.cb_asaas_config[0].webhook_asaas_id).toBeNull();
   });
 
-  it("rede ou cota: o estado fica como estava (NULO = o cron tenta de novo), só o erro é anotado", async () => {
+  it("rede ou cota: o estado fica como estava (NULO = o cron tenta de novo), só o erro é anotado — e o token da URL JÁ ficou gravado", async () => {
     const e = estado();
     const { cliente } = rodar({ listas: {}, recursos: {}, erro: new AsaasError("rede", "timeout") });
     expect(await garantirWebhook(dubleDoSupabase(e), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: false, codigo: "rede" });
     expect(e.tabelas.cb_asaas_config[0].webhook_state).toBeNull();
     expect(e.tabelas.cb_asaas_config[0].webhook_erro).toBe("rede");
+    // o endereço é determinístico: a próxima tentativa (ou um concorrente) usa a MESMA URL e reencontra o que o Asaas já tem
+    const token = e.tabelas.cb_asaas_config[0].webhook_token as string;
+    expect(token).toMatch(/^[A-Za-z0-9_-]{32}$/);
+    const { registro: r2, cliente: c2 } = rodar({ listas: { "/webhooks": [webhookDoAsaas("wh_orfao", { url: `${ORIGEM}/api/cb/asaas/webhook/${token}` })] }, recursos: {}, envios: { "PUT /webhooks/wh_orfao": webhookDoAsaas("wh_orfao") } });
+    expect(await garantirWebhook(dubleDoSupabase(e), CONTA, c2, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: true, estado: "ativo" });
+    expect(r2.envios!.map((x) => x.chave)).toEqual(["PUT /webhooks/wh_orfao"]);
+    expect(e.tabelas.cb_asaas_config[0].webhook_token).toBe(token);
   });
 });
 
@@ -199,6 +223,16 @@ describe("cuidarDoWebhook — o passo do cron", () => {
     expect(e.tabelas.cb_asaas_config[0].webhook_state).toBeNull();
   });
 
+  it("estado `erro` é retentado pelo cron só depois de um dia (R1: a lista de eventos recusada no primeiro ciclo não trava para sempre)", async () => {
+    const recente = estado({ webhook_state: "erro", webhook_erro: "asaas_error", webhook_conferido_em: new Date(AGORA.getTime() - 60 * 60_000).toISOString() });
+    const { registro, cliente } = rodar({ listas: { "/webhooks": [] }, recursos: {}, envios: { "POST /webhooks": webhookDoAsaas("wh_novo") } });
+    expect(await cuidarDoWebhook(dubleDoSupabase(recente), CONTA, { origem: ORIGEM, cliente, agora: AGORA })).toEqual({ ok: true, estado: "erro" });
+    expect(registro.pedidos).toEqual([]);
+    const velho = estado({ webhook_state: "erro", webhook_erro: "asaas_error", webhook_conferido_em: new Date(AGORA.getTime() - RETENTAR_ERRO_MS - 1000).toISOString() });
+    expect(await cuidarDoWebhook(dubleDoSupabase(velho), CONTA, { origem: ORIGEM, cliente, agora: AGORA })).toEqual({ ok: true, estado: "ativo" });
+    expect(registro.pedidos).toEqual(["/webhooks", "POST /webhooks"]);
+  });
+
   it("`desligado` por decisão de gente: o cron não recria; o `ativar` do cartão sim", async () => {
     const e = estado({ webhook_state: "desligado", webhook_token: "tok_antigo_0000000000000000" });
     const { registro, cliente } = rodar({ listas: { "/webhooks": [] }, recursos: {}, envios: { "POST /webhooks": webhookDoAsaas("wh_novo") } });
@@ -266,16 +300,22 @@ describe("processarEvento — a cobrança é RELIDA e aplicada ao espelho", () =
     expect(e.tabelas.cb_asaas_cobrancas).toEqual([]);
   });
 
-  it("404 na cobrança: marca `deleted` se a linha existe (`apagada`); senão `ignorada`", async () => {
+  it("404 na cobrança: marca `deleted` se a linha existe E o cliente responde (`apagada`); sem linha `ignorada`; cliente também 404 = chave de outra conta (`falhou`)", async () => {
     const e = estado({}, {
-      cb_asaas_clientes: [{ id: "l-1", account_id: CONTA, asaas_customer_id: "cus_1", deleted: false }],
-      cb_asaas_cobrancas: [{ id: "c-1", account_id: CONTA, asaas_payment_id: "pay_1", asaas_customer_id: "cus_1", status: "OVERDUE", vencimento: "2026-09-01", visto_em: "2026-09-13T00:00:00Z", deleted: false }],
-      cb_asaas_eventos: [evento("ev-1"), { ...evento("ev-2"), asaas_event_id: "evt_2" }],
+      cb_asaas_clientes: [{ id: "l-1", account_id: CONTA, asaas_customer_id: "cus_1", deleted: false }, { id: "l-2", account_id: CONTA, asaas_customer_id: "cus_2", deleted: false }],
+      cb_asaas_cobrancas: [
+        { id: "c-1", account_id: CONTA, asaas_payment_id: "pay_1", asaas_customer_id: "cus_1", status: "OVERDUE", vencimento: "2026-09-01", visto_em: "2026-09-13T00:00:00Z", deleted: false },
+        { id: "c-2", account_id: CONTA, asaas_payment_id: "pay_2", asaas_customer_id: "cus_2", status: "OVERDUE", vencimento: "2026-09-01", visto_em: "2026-09-13T00:00:00Z", deleted: false },
+      ],
+      cb_asaas_eventos: [evento("ev-1"), { ...evento("ev-2"), asaas_event_id: "evt_2" }, { ...evento("ev-3"), asaas_event_id: "evt_3" }],
     });
-    const { cliente } = rodar({ listas: {}, recursos: { "/payments/pay_1": null, "/payments/pay_x": null } });
+    const { cliente } = rodar({ listas: {}, recursos: { "/payments/pay_1": null, "/customers/cus_1": { id: "cus_1" }, "/payments/pay_x": null, "/payments/pay_2": null, "/customers/cus_2": null } });
     expect(await processarEvento(dubleDoSupabase(e), CONTA, { tipo: "cobranca", eventoId: "evt_1", evento: "PAYMENT_DELETED", paymentId: "pay_1", criadoEm: null }, { eventoId: "ev-1", cliente, agora: AGORA })).toBe("apagada");
     expect(e.tabelas.cb_asaas_cobrancas[0].deleted).toBe(true);
     expect(await processarEvento(dubleDoSupabase(e), CONTA, { tipo: "cobranca", eventoId: "evt_2", evento: "PAYMENT_DELETED", paymentId: "pay_x", criadoEm: null }, { eventoId: "ev-2", cliente, agora: AGORA })).toBe("ignorada");
+    expect(await processarEvento(dubleDoSupabase(e), CONTA, { tipo: "cobranca", eventoId: "evt_3", evento: "PAYMENT_DELETED", paymentId: "pay_2", criadoEm: null }, { eventoId: "ev-3", cliente, agora: AGORA })).toBe("falhou");
+    expect(e.tabelas.cb_asaas_cobrancas[1].deleted).toBe(false);
+    expect(e.tabelas.cb_asaas_eventos[2].detalhe).toBe("conta_trocada");
   });
 
   it("evento de chave só conta quando o nome é o da NOSSA chave — e aí a conexão vira erro com o código", async () => {
@@ -315,5 +355,39 @@ describe("criarSemaforo", () => {
     expect(r).toEqual([1, 2, 3, 4]);
     expect(pico).toBe(2);
     expect(ordem).toEqual([1, 2, 3, 4]);
+  });
+
+  it("um chamador NOVO chegando no instante em que um trabalho termina não fura a fila: quem espera herda a vaga", async () => {
+    const s = criarSemaforo(1);
+    let ativos = 0;
+    let pico = 0;
+    const ordem: string[] = [];
+    let liberarA: () => void = () => {};
+    const a = s.com(async () => {
+      ativos++;
+      pico = Math.max(pico, ativos);
+      await new Promise<void>((r) => (liberarA = r));
+      ordem.push("a");
+      ativos--;
+    });
+    const b = s.com(async () => {
+      ativos++;
+      pico = Math.max(pico, ativos);
+      await new Promise((r) => setTimeout(r, 5));
+      ordem.push("b");
+      ativos--;
+    });
+    // "a" termina; no MESMO tique um chamador novo ("c") tenta entrar
+    liberarA();
+    await Promise.resolve();
+    const c = s.com(async () => {
+      ativos++;
+      pico = Math.max(pico, ativos);
+      ordem.push("c");
+      ativos--;
+    });
+    await Promise.all([a, b, c]);
+    expect(pico).toBe(1);
+    expect(ordem).toEqual(["a", "b", "c"]);
   });
 });

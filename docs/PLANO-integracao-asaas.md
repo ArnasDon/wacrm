@@ -41,7 +41,7 @@
 | **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento | ✅ código em `feat/asaas-conexao`, no MESMO PR do espelho (12/09 à noite) | `992_cb_asaas_config` ✅ aplicada | [#201](https://github.com/leonardocabralb/CB-CRM/pull/201) |
 | **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | ✅ **construída em 12/09 à noite** e MEDIDA no primeiro ciclo real (§6): 439 clientes, 405 vencidas, 86 ligados pela regra (84 telefone, 2 CPF), 32 fichas criadas no primeiro ciclo de 60 s e o resto nos seguintes, 7 para confirmar (6 "nome diferente", 1 "contato já ligado"), 85 sem telefone com 9 sugestões por nome | `994_cb_asaas_espelho` ✅ aplicada em 12/09 (histórico `20260912225955`) | [#201](https://github.com/leonardocabralb/CB-CRM/pull/201) |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | ✅ **construída em 12–13/09** e medida no preview contra a conta real (§6): 89 contatos devendo, 15 deles na aba aberta com o ícone, filtro "15 de 677", faixa e aba com os MESMOS números do cartão; com o espelho parado há 11 h a tela diz "dados do Asaas de 12/09, 21:19" em vez de calar | `996_cb_asaas_vinculo_completo` (o marcador do vínculo inteiro, pedido na 7ª rodada do Codex; aditiva, com acervo) | [#203](https://github.com/leonardocabralb/CB-CRM/pull/203) |
-| **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 🔧 **construída em 13/09** (`feat/asaas-webhook`): rota pública autenticada pelo cabeçalho, criação AUTOMÁTICA pelo cron (só na VPS), conferência a cada ciclo, religa uma vez, apaga ao desconectar, bloco "Aviso na hora" no cartão. ⚠️ O que ficou DIFERENTE da §3.4: a listagem das vencidas continua a cada 15 min (10–30 pedidos por ciclo não pesam na cota; o webhook só antecipa), e a criação a partir do preview é RECUSADA (`podeCriarDaqui`) — o `.env.local` carrega a URL da produção | `997_cb_asaas_webhook` | — |
+| **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 🔧 **construída em 13/09** (`feat/asaas-webhook`): rota pública autenticada pelo cabeçalho, criação AUTOMÁTICA pelo cron (só na VPS), conferência a cada ciclo, religa uma vez, apaga ao desconectar, bloco "Aviso na hora" no cartão. ⚠️ O que ficou DIFERENTE da §3.4: a listagem das vencidas continua a cada 15 min (10–30 pedidos por ciclo não pesam na cota; o webhook só antecipa), e a criação a partir do preview é RECUSADA (`podeCriarDaqui`) — o `.env.local` carrega a URL da produção | `997_cb_asaas_webhook` ✅ aplicada em 13/09 (histórico `20260913161622`) | [#204](https://github.com/leonardocabralb/CB-CRM/pull/204) |
 | **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 💤 | `9xx_cb_asaas_regua` | — |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
@@ -818,18 +818,21 @@ prazoMs })` faz, nesta ordem, conferindo o prazo antes de cada passo:
    cabeçalho de cota para antecipá-lo — C14).
 
 Custo por ciclo, numa conta com algumas centenas de vencidas: uns 10 a 30
-pedidos, contra 25.000 a cada 12 h. Com a Fase 2 no ar, a listagem completa
-das vencidas passa a uma vez por hora: o webhook é o caminho rápido, a
-listagem é a garantia. Nenhuma poda na v1: o volume é o de cobranças que um
-dia venceram.
+pedidos, contra 25.000 a cada 12 h. ~~Com a Fase 2 no ar, a listagem completa
+das vencidas passa a uma vez por hora~~ — NÃO entrou (13/09): a listagem
+continua a cada 15 min, porque 10–30 pedidos por ciclo não pesam na cota e o
+webhook só antecipa; a listagem é a garantia. Nenhuma poda na v1: o volume é
+o de cobranças que um dia venceram.
 
 **Webhook (Fase 2, `POST /api/cb/asaas/webhook/[token]`).** A migration da
 Fase 2 acrescenta à config `webhook_token` (em claro: é o ENDEREÇO, o
 segmento da URL), `webhook_auth_token` (cifrado: é a CREDENCIAL que chega em
 `asaas-access-token` — a lição da 982: o token da URL não basta),
 `webhook_asaas_id`, `webhook_email`, `webhook_state` (`ausente`, `ativo`,
-`penalizado`, `interrompido` ou `desligado`), `webhook_religado_em`,
-e `last_event_at` (`chave_nome` já existe desde a 992); e cria `cb_asaas_eventos (account_id,
+`penalizado`, `interrompido`, `desligado`, `sem_permissao` ou `erro` — os dois
+últimos são os que esperam gente; o `erro` é retentado pelo cron uma vez por
+dia), `webhook_erro`, `webhook_religado_em`, `webhook_conferido_em` e
+`last_event_at` (`chave_nome` já existe desde a 992); e cria `cb_asaas_eventos (account_id,
 asaas_event_id, evento, asaas_payment_id, evento_criado_em, recebido_em,
 processado_em, resultado)`, fechada ao navegador, com UNIQUE `(account_id,
 asaas_event_id)`, sem o corpo do evento (ele traz valor, descrição e links
@@ -841,15 +844,20 @@ retentativas).
    `webhook_token` → senão 404.
 2. `asaas-access-token` comparado em tempo constante com o token decifrado →
    senão 401.
-3. Limite por token estourado → **200 `{ adiado: true }`**, sem gravar nem
-   processar: um 429 contaria como falha e ajudaria a interromper a fila, e
-   o cron reconcilia de qualquer jeito.
+3. Limite POR CONTA estourado — contado só DEPOIS do cabeçalho conferir,
+   senão quem tivesse a URL (que vaza) calaria as entregas legítimas
+   (revisão do PR #204) → **200 `{ adiado: true }`** com aviso no log, sem
+   gravar nem processar: um 429 contaria como falha e ajudaria a
+   interromper a fila, e o cron reconcilia de qualquer jeito.
 4. Leitura tolerante (D8): evento de cobrança → `payment.id`; evento de
    chave → `accessToken.name`.
 5. INSERT em `cb_asaas_eventos` com `ignoreDuplicates`; reentrega →
    `200 { duplicado: true }` sem processar.
-6. `last_event_at` e `webhook_state = 'ativo'` (entrega chegando é prova de
-   vida) → **200 em menos de 10 s**, e o trabalho vai para `after()`: um
+6. `last_event_at` e `webhook_state = 'ativo'` — SÓ quando o estado era
+   `ativo`, `penalizado` ou `interrompido` (entrega chegando é prova de vida;
+   `desligado`, `ausente`, `sem_permissao`, `erro` e nulo ficam como estão:
+   depois do DELETE ainda chega a retentativa de uma entrega antiga) → **200
+   em menos de 10 s**, e o trabalho vai para `after()`: um
    `GET /payments/{id}` com a nossa chave e `aplicarCobranca`, que só grava
    cobrança vencida ou já existente; no máximo 4 GET simultâneos, para uma
    fila religada que despeja 14 dias de eventos não esgotar os 50 da conta.
@@ -857,16 +865,28 @@ retentativas).
    (os eventos de chave são da conta inteira) → `last_error` com
    `chave_desabilitada`, `chave_expirada` ou `chave_apagada`.
 
-404 e 401 são as únicas respostas que não são 200, e as duas só acontecem
-com URL ou token errados.
+404 e 401 são as únicas recusas, e só acontecem com URL ou token errados.
+Com URL e token certos, o que não é 200 são os TRÊS 500 — leitura da config,
+token de autenticação ilegível (`ENCRYPTION_KEY` rotacionada) e o INSERT do
+evento —, de propósito: o Asaas RETENTA (30 s, 1 min, 3,5 min… até ~13 h
+antes de interromper), e um soluço do Supabase não pode PERDER o evento como
+o `adiado` perde. Um 500 persistente (a chave de cifra trocada) interrompe a
+fila em ~13 h — e nesse caso a integração inteira já está no chão.
 
 **Ciclo de vida do webhook (D7).** Criar com `name`, `url`, `email` (o
-cartão pede; padrão, o do administrador que conecta — é para ele que o Asaas
-manda os alertas de falha), `enabled: true`, `interrupted: false`,
-`apiVersion: 3`, `authToken` de 48 caracteres aleatórios, `sendType:
-NON_SEQUENTIALLY` (D8) e `events`. Antes de criar, `GET /webhooks` procura um
-com a mesma URL e o reaproveita (`PUT` com o token novo): trocar a chave não
-pode criar um segundo webhook e dobrar as entregas. Desconectar faz
+cartão NÃO pede: é o e-mail do administrador que conectou, senão o do dono
+da conta — o cartão mostra; é para ele que o Asaas manda os alertas de
+falha), `enabled: true`, `interrupted: false`, `apiVersion: 3`, `authToken`
+de 48 caracteres aleatórios, `sendType: NON_SEQUENTIALLY` (D8) e `events`.
+O token da URL é gravado ANTES de falar com o Asaas (cercado por `IS NULL`),
+para a URL ser determinística; antes de criar, o id já nosso ou um
+`GET /webhooks` com a mesma URL é reaproveitado (`PUT` com o token novo):
+trocar a chave, uma gravação que falhou depois do POST, ou o cron e o botão
+correndo juntos não podem criar um segundo webhook e dobrar as entregas.
+Quem cria SEM gesto de gente é só o cron (VPS); conectar (a primeira
+sincronização) e o botão do cartão também criam, e os dois — como o
+Religar e o Desativar — exigem o PRÓPRIO host público (`podeCriarDaqui`, pelo
+`x-forwarded-host`: o preview aponta para o mesmo Supabase da produção). Desconectar faz
 `DELETE /webhooks/{id}`; se a chave já não funcionar, o cartão manda apagar
 no painel do Asaas — senão o Asaas insiste por umas 13 horas, interrompe a
 fila e manda três e-mails. A cada ciclo, o cron lê `GET /webhooks/{id}` e
@@ -1698,7 +1718,7 @@ reprova, e é assim que tem de ser.
 | **Evento de chave de outro sistema** acendendo alarme falso | só conta o evento cujo `accessToken.name` é a chave do CRM |
 | **Chave com validade expirando sem aviso** | chave de produção sem validade; se houver, o cartão avisa 30 dias antes |
 | **Lista de IPs** bloqueando outro sistema do escritório | é da conta: opcional, e só depois de conferir os outros sistemas |
-| **Cota dividida com outro sistema** | teto de pedidos por ciclo, e o 429 encerra o ciclo (não há cabeçalho de cota, C14); 4 GET simultâneos no webhook; listagem de hora em hora depois da Fase 2 |
+| **Cota dividida com outro sistema** | teto de pedidos por ciclo, e o 429 encerra o ciclo (não há cabeçalho de cota, C14); 4 GET simultâneos no webhook; ~~listagem de hora em hora depois da Fase 2~~ (não entrou — a cada 15 min são 10–30 pedidos; ver §4 Fase 2) |
 | **`$` inicial da chave** | entra pelo cartão, cifrada; nenhum `.env` a lê (§3.1) |
 | **Migration em banco vazio** | todo REVOKE com GRANT de volta; conferências sem dado; `supabase db start` antes do PR |
 | **`upsert` sobre índice parcial** | só `(account_id)`, `(account_id, asaas_customer_id)`, `(account_id, asaas_payment_id)` e `(account_id, asaas_event_id)`, todos TOTAIS |
@@ -1816,8 +1836,19 @@ o painel do navegador estava oculto e a captura não sai)
 - [ ] Pagar uma cobrança de teste → a faixa some em segundos (com a
       cobrança de teste da Fase 3).
 - [x] Reenvio do mesmo evento → `duplicado`; `curl` sem
-      `asaas-access-token` → 401; medidos no preview com a rota local e o
-      token semeado na config (ver o log da sessão).
+      `asaas-access-token` → 401; medidos no preview com a rota local e os
+      DOIS tokens semeados na config de produção (o `.env.local` é o mesmo
+      Supabase): o da URL FICA — é só endereço, e o cron o reaproveita —; o
+      de autenticação é regerado na criação. As três linhas de teste em
+      `cb_asaas_eventos` foram apagadas. Há também um teste da rota com o
+      dublê (`route.test.ts`): a ordem 404 → 401 → 200, a reentrega, o balde
+      por conta e a prova de vida.
+- [ ] **Depois do merge, no primeiro ciclo do cron**: o cartão mostrando
+      "Aviso na hora: Ativo" e o webhook em `GET /webhooks`. ⚠️ Se o Asaas
+      recusar a lista de eventos (é a primeira vez que `POST /webhooks` roda
+      de verdade), o estado vai a `erro` com o motivo no cartão; o cron
+      retenta uma vez por dia e o botão "Tentar de novo" funciona em
+      produção.
 - [ ] Fila interrompida no painel do Asaas → o cartão mostra e religa uma
       vez no ciclo seguinte (coberto por teste; não provocado no Asaas real).
 - [ ] **C7 medido**: o `evento_criado_em` dos primeiros `PAYMENT_OVERDUE`
@@ -1988,7 +2019,7 @@ exigência nova, a **lista de exceção por cliente** (D21), com a planilha de
 41 nomes que nasce marcada. A 5 (CPF mascarado, só administrador) já está
 construída como recomendado.
 
-**As que decidem a cobrança, e podem esperar a Fase 3:**
+**As que decidem a cobrança — respondidas em 13/09 (a recomendação original fica registrada):**
 
 1. **A cobrança automática sai a partir das 9h (e o lembrete do vencimento
    às 8h), só em dia útil, e nunca depois das 18h nem em feriado nacional?**
@@ -2003,7 +2034,8 @@ construída como recomendado.
    sem essa trava dispararia centenas de mensagens de uma vez. (D13)
 4. **Cliente negativado no Serasa aparece no aviso?** Recomendo que apareça,
    com a marca "negativada", e que fique fora da cobrança automática. Hoje
-   não há nenhum na conta. (D6)
+   não há nenhum na conta. (D6) **Respondida em 13/09: aparece E recebe a
+   cobrança automática** — contra a recomendação; D6 revista.
 
 **As de cadastro e acesso:**
 
@@ -2142,8 +2174,8 @@ mudou por causa deles e das regras que ele fixou no mesmo dia:
 | 20 | **Fase 1b construída e medida (12–13/09, PR #203)**: ícone na linha, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" no painel de ajustes; duas rotas de leitura para qualquer membro (D4). Três coisas mudaram na construção: (a) leitura ANTIGA deixou de neutralizar o filtro — medido com o espelho parado há 11 h, o interruptor "não fazia nada" ao lado de 15 ícones; agora recorta e mostra "dados do Asaas de …", e só `null`/desconectado neutralizam; (b) a aba some só com `conectado === false`, sinal da CONTA guardado pelo hook entre contatos, senão piscava a cada troca de cliente; (c) "Ligar…" a partir da aba ficou para a Fase 4 — o vínculo segue pelas listas do cartão. **Revisão do PR #203 (Codex, 1ª rodada, dois P2, aplicados)**: a rota de contato lia as cobranças com `.limit(1000)` pelo vencimento — acima disso sumiam as mais NOVAS e a aba diria "nenhuma vencida" (agora `lerCobrancasDosClientes`, paginada, ordem total, estoura acima do teto); e o corte das "regularizadas em 30 dias" era o dia UTC, que das 21h à meia-noite já é o seguinte (agora `diaNoFuso`, como os dias de atraso). **2ª rodada, mais dois P2**: a aba não relia no `resyncToken` da página — o ciclo do agendador roda no servidor e não dispara `cb:asaas-mudou`, então a parcela paga ficava na aba com a conversa aberta (o hook passou a receber o token); e o `leituraFresca` de uma resposta RETIDA (recarga falhando) valia para sempre — agora a frescura é derivada no navegador pelo relógio (`leituraAindaFresca`, o mesmo critério do servidor) na faixa, no painel de filtros e na aba. **3ª rodada + revisor independente (11 achados), aplicados juntos**: conectado SEM listagem completa (recém-conectado) virava conjunto VAZIO no filtro — uma visão salva esconderia a caixa inteira (agora `null`, e o interruptor diz "aguardando a primeira listagem"); a aba dizia "nenhuma parcela vencida" sobre leitura antiga E logo acima de parcelas "em conferência" (agora só com leitura fresca e sem conferência; senão "nada afirma que está em dia"/"nenhuma vencida confirmada — N em conferência"); a resposta retida numa recarga que falha é marcada como não fresca no próprio hook; o painel de filtros afirmava "Asaas desconectado" com a leitura ainda no ar ou em 500 (`null` ≠ `false`: agora tri-estado, "conferindo…"); a faixa cala sobre "de quando" sem listagem completa (agora diz); a PENDING que passou do dia sem o Asaas virá-la sumia de toda seção (agora em "Pendentes no Asaas"); o dia da paga sem `pago_em` era o UTC de `visto_em` (agora no fuso); o `title` do ícone dizia "há 0 dias" na prorrogada; `dividasPorContato` ignorava `conectado`; `TituloDeSecao` saiu para módulo próprio (a ficha de Contatos arrastava o painel inteiro); `recarregar` morto retirado do hook. **4ª rodada, mais dois**: a ficha de `/contacts` não relia a aba enquanto ficava aberta (o hook passou a reler sozinho a cada 5 min com a aba visível e ao voltar à aba); e "nenhum cliente ligado" era afirmado antes da primeira listagem completa (agora "o Asaas ainda não completou a primeira listagem"). **5ª rodada, mais um**: `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES do vínculo (passo 7) — no primeiro ciclo o resumo vem com listagem completa e nenhum contato ligado, e o conjunto vazio esconderia a caixa; as duas rotas passaram a devolver `cicloCompleto` (`last_sync_at`, só depois de um ciclo inteiro), e o filtro e o "nenhum cliente ligado" da aba só afirmam com ele. **6ª rodada, mais dois**: "algum ciclo já terminou" não bastava — a janela entre o passo 4 e o 8 se repete a cada ciclo, então `cicloCompleto` passou a ser `last_sync_at >= vencidas_listadas_em` (o ciclo da listagem VIGENTE terminou; `espelho.ts`, testado); e a busca dos clientes ligados ao contato passou a paginar (`lerClientesDoContato`). **7ª rodada, mais dois**: o Codex pediu que o marcador não avançasse quando o passo 7 ADIOU a criação de fichas (teto de 150/ciclo, prazo) — nasceu a coluna `cb_asaas_config.vinculo_completo_em` (996, com acervo do `last_sync_at`), e a aba passou a exigir o ciclo inteiro também no "nenhuma parcela vencida". **Revisto no mesmo dia pela segunda revisão independente, com reprodução no dublê**: só a CRIAÇÃO de ficha é adiada, nunca o `ligar`, e cliente sem ficha não tem conversa a esconder — condicionar o marcador ao adiamento neutralizava o filtro da conta INTEIRA (e punha "ainda não terminou de sincronizar" em todo contato sem dívida) durante qualquer importação, e podia prendê-lo numa conta em que a reconciliação consome o orçamento antes do passo 7. O marcador passou a ser carimbado em todo fim de ciclo (o laço do vínculo não tem corte de prazo); a coluna fica, com o nome certo. A mesma revisão trouxe: a régua da neutralização num lugar só (`motivoDaNeutralizacao`, alimentando o recorte E as dicas do painel), as dicas só com o interruptor ligado, as linhas da aba içadas (o foco do "Copiar link" se perdia no render), e a seção "Pendentes no Asaas" sem o "(a vencer)" que mentia sobre a PENDING atrasada. O Codex atingiu o limite de uso na 8ª rodada. Fica ABERTA a pergunta 12 da §9 (a rota em lote entrega a carteira inteira a qualquer membro, fora do escopo do perfil) | o desenho da §3.5 previa neutralizar sem leitura fresca e a aba "só existir com conectado" — as duas regras, aplicadas ao pé da letra, produziam tela muda ou piscando |
 | 18 | **Fase 1a-espelho construída e medida (12/09, à noite)**: migration 994 em produção; primeiro ciclo real com 439 clientes, 405 vencidas, 86 ligados pela regra, 32 fichas criadas em 60 s (o resto nos ciclos seguintes), 7 para confirmar, 9 sugestões por nome; três ajustes que a medição pediu — a PROVA DE IDENTIDADE da chave no começo do ciclo (404 de cliente apagado ≠ chave de outra conta), o cache do dono e da etiqueta por ciclo (cinco idas ao banco por ficha) e o orçamento de 90 s na sincronização manual | o desenho previa a recusa da chave de outra conta só ao CONECTAR; no ciclo, o único sinal era o 404 da reconciliação, que também é o de uma cobrança apagada com o cliente junto |
 | 17 | **Revisão final de 12/09 à noite** (seis lentes, 183 achados, ~45 aplicados): restos da pausa e da D10 em seis seções; a conversa que o motor NÃO cria para a ficha da D2 (a varredura cria, e passa canal e conversa no `context`); o CHECK sem `'criada'`; a trava do lembrete numa coluna `integer` (virou `tipo` + `marco`); D18/D20 sem coluna nem arquivo; a reserva de `RateLimit` que a conta não devolve; o remetente real do robô (`automations/meta-send.ts`); a cerca contra o telefone de outra pessoa; dois marcos do mesmo cliente no mesmo dia (`absorvida`); o interruptor reconferido na trava; `vista_vencida_em` contra `regua_ativada_em`; o lembrete em fim de semana; o boleto pago no caixa; `cb_channels` sem `instance_state`; a etiqueta `asaas` na ficha criada; as listas do cartão com estado de carga | o plano tinha sido editado por partes ao longo do dia, e cada parte deixou uma seção vizinha para trás |
-
 | 21 | **As perguntas da §9 respondidas de uma vez (13/09, pelo perguntador)** e a Fase 2 construída no mesmo dia. Quatro decisões mudaram o desenho da Fase 3: a negativada ENTRA na régua (D6), uma mensagem só quando vencimento e marco coincidem (D17), intervalo mínimo de 3 dias entre cobranças (D11) e a lista de exceção por cliente (D21, com a planilha de 41 nomes nascendo marcada). O deploy do agendador foi feito pela sessão (SSH com a chave da VPS): o laço lento cita o Asaas, o segredo está no contêiner, o cron sem segredo responde 401. E o outro sistema que usa a API do Asaas (pergunta 8) passa a ser hipótese escrita para todo 429 | o operador pediu as perguntas pelo perguntador, com recomendação; respondeu todas |
+
 
 **Pendências que nasceram aqui, e são do operador:**
 
@@ -2152,5 +2184,5 @@ mudou por causa deles e das regras que ele fixou no mesmo dia:
   rotação no mesmo dia.
 - Nenhuma decisão trava a Fase 1a-espelho: a D2 (cria a ficha) e o
   interruptor do WhatsApp (fica ligado) foram respondidos em 12/09 à tarde
-  (§9). Ficam as perguntas 1, 3–11 da §9, que podem esperar as fases
-  seguintes — a 10 e a 11 antes de escrever os textos da Fase 3.
+  (§9). ~~Ficam as perguntas 1, 3–11 da §9~~ — TODAS respondidas em 13/09
+  pelo perguntador (linha 21; o preâmbulo da §9 tem as respostas).

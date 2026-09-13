@@ -187,7 +187,11 @@ export function separarParcelas(parcelas: readonly ParcelaDoEspelho[], agora: Da
   const regularizadas: ParcelaDoEspelho[] = [];
   const estornadas: ParcelaDoEspelho[] = [];
   const aVencer: ParcelaDoEspelho[] = [];
-  const corte = new Date(agora.getTime() - REGULARIZADAS_DIAS * 86_400_000).toISOString().slice(0, 10);
+  // ⚠️ O corte é o DIA no fuso do escritório, como `hojeLocal` e os dias de
+  // atraso — `toISOString()` daria o dia UTC, que das 21h à meia-noite já é
+  // o seguinte, e tiraria de "regularizadas" a parcela paga há exatos 30
+  // dias (Codex, PR #203).
+  const corte = diaNoFuso(new Date(agora.getTime() - REGULARIZADAS_DIAS * 86_400_000), fuso);
   for (const p of parcelas) {
     const classe = classificar(p.status, p.deleted);
     if (classe === "paga" && diaDaParcela(p) >= corte) regularizadas.push(p);

@@ -149,6 +149,13 @@ describe("separarParcelas — a aba Cobranças", () => {
     expect(r.estornadas.map((p) => p.id)).toEqual(["estornada", "contestada"]);
   });
 
+  it("⚠️ o corte dos 30 dias é o dia no FUSO do escritório, não o dia UTC (às 22h locais o UTC já virou)", () => {
+    // 12/09 22:00 em São Paulo = 13/09 01:00 UTC. Trinta dias antes: 13/08 local (o UTC diria 14/08).
+    const noite = new Date("2026-09-13T01:00:00Z");
+    const r = separarParcelas([parcela({ id: "limite", status: "RECEIVED", pago_em: "2026-08-13" }), parcela({ id: "fora", status: "RECEIVED", pago_em: "2026-08-12" })], noite, LISTADAS_EM);
+    expect(r.regularizadas.map((p) => p.id)).toEqual(["limite"]);
+  });
+
   it("regularizadas saem da mais recente para a mais antiga", () => {
     const r = separarParcelas([parcela({ id: "p1", status: "RECEIVED", pago_em: "2026-08-20" }), parcela({ id: "p2", status: "RECEIVED", pago_em: "2026-09-10" })], AGORA, LISTADAS_EM);
     expect(r.regularizadas.map((p) => p.id)).toEqual(["p2", "p1"]);

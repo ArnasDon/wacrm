@@ -143,6 +143,32 @@ export async function lerCobrancasDevidas(admin: SupabaseClient, accountId: stri
 }
 
 /**
+ * TODAS as cobranças (não apagadas) dos clientes dados — a aba Cobranças de
+ * um contato. Paginada como o resto: um `.limit(1000)` devolvia as 1.000
+ * mais ANTIGAS pelo vencimento e calava sobre as novas — a aba diria
+ * "nenhuma parcela vencida" sobre um cliente com mil cobranças antigas
+ * (Codex, PR #203). Acima de 50 páginas ESTOURA, nunca lista parcial.
+ * A ordem é total (`vencimento, id`) para a paginação não pular linha.
+ */
+export async function lerCobrancasDosClientes(admin: SupabaseClient, accountId: string, asaasCustomerIds: readonly string[]): Promise<ParcelaDoEspelho[]> {
+  if (asaasCustomerIds.length === 0) return [];
+  const linhas = await lerTudo<Record<string, unknown>>(
+    (de, ate) =>
+      admin
+        .from("cb_asaas_cobrancas")
+        .select(COLUNAS_DA_COBRANCA)
+        .eq("account_id", accountId)
+        .eq("deleted", false)
+        .in("asaas_customer_id", [...asaasCustomerIds])
+        .order("vencimento", { ascending: true })
+        .order("id")
+        .range(de, ate),
+    "cobranças do contato",
+  );
+  return linhas.map(lerParcela);
+}
+
+/**
  * Quantas cobranças do espelho têm status que o CRM não conhece — contadas
  * no banco, porque a leitura das devidas já filtra por status e nunca as
  * traria (achado do Codex no PR #201). `null` = a contagem falhou.

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { COLUNAS_DA_COBRANCA, leituraFresca, lerConfigDoEspelho, lerParcela } from "@/lib/asaas/espelho";
+import { leituraFresca, lerCobrancasDosClientes, lerConfigDoEspelho } from "@/lib/asaas/espelho";
+import type { ParcelaDoEspelho } from "@/lib/asaas/inadimplencia";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
@@ -46,22 +47,13 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
       (c) => ({ id: c.id, asaasId: c.asaas_customer_id, nome: c.nome ?? "", origem: c.vinculo_origem, notificacoesDesligadas: c.notificacoes_desligadas === true }),
     );
 
-    let parcelas: ReturnType<typeof lerParcela>[] = [];
-    if (clientes.length > 0) {
-      const { data, error } = await admin
-        .from("cb_asaas_cobrancas")
-        .select(COLUNAS_DA_COBRANCA)
-        .eq("account_id", ctx.accountId)
-        .eq("deleted", false)
-        .in(
-          "asaas_customer_id",
-          clientes.map((c) => c.asaasId),
-        )
-        .order("vencimento", { ascending: true })
-        .limit(1000);
-      if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
-      parcelas = ((data ?? []) as Record<string, unknown>[]).map(lerParcela);
-    }
+    // Paginada, e acima do teto ESTOURA (o catch abaixo responde 500):
+    // uma lista parcial seria lida como "as outras não existem".
+    const parcelas: ParcelaDoEspelho[] = await lerCobrancasDosClientes(
+      admin,
+      ctx.accountId,
+      clientes.map((c) => c.asaasId),
+    );
 
     return NextResponse.json({
       conectado: true,

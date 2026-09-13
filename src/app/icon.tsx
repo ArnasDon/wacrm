@@ -7,8 +7,10 @@ import { ImageResponse } from "next/og";
 //
 // This route takes precedence over src/app/favicon.ico, which is the
 // Next.js default and can stay on disk harmlessly (or be removed).
+//
+// Rendered on the default Node.js runtime — `next/og` no longer needs
+// the Edge runtime, which Next 16.3 deprecates.
 
-export const runtime = "edge";
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
 

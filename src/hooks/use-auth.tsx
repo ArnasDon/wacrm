@@ -386,6 +386,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setUser(null);
     setProfile(null);
     setAccount(null);
+    // Full reload, not router.push: sign-out must drop every piece of
+    // in-memory client state (realtime channels, cached inbox/contact
+    // data, this provider) and hand the server a request that carries
+    // the now-cleared auth cookies — mirrors the deliberate hard
+    // navigation the login page does in the other direction (#365).
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full reload on sign-out
     window.location.href = "/login";
   }, []);
 
@@ -463,6 +469,10 @@ export function useAuth(): AuthContextValue {
       loading: false,
       profileLoading: false,
       signOut: async () => {
+        // Same intentional full reload as the provider's signOut above.
+        // No router here either — this fallback runs outside any
+        // provider, in a branch where hooks can't be called.
+        // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full reload on sign-out
         window.location.href = "/login";
       },
       refreshProfile: async () => {},

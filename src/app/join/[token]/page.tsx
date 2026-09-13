@@ -194,6 +194,7 @@ export default function JoinPage() {
       toast.success('Welcome to the team');
       // Full reload (not router.push) so AuthProvider re-fetches
       // the profile with the new account_id and account_role.
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full reload so AuthProvider re-fetches the profile
       window.location.href = '/dashboard';
     } catch (err) {
       console.error('[join] redeem error:', err);
@@ -207,7 +208,7 @@ export default function JoinPage() {
     try {
       await createClient().auth.signOut();
       // Hard reload so the new auth state propagates everywhere
-      // (middleware, AuthProvider). Preserves the invite token in
+      // (proxy, AuthProvider). Preserves the invite token in
       // the URL so the rebuilt page renders the signed-out CTA path.
       window.location.reload();
     } catch (err) {

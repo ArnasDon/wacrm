@@ -2,6 +2,8 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { sincronizarAsaas } from "@/lib/asaas/sincronizar";
+import { origemPublica } from "@/lib/asaas/webhook";
+import { cuidarDoWebhook } from "@/lib/asaas/webhook-asaas";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 
 /**
@@ -58,6 +60,11 @@ export async function GET(request: Request) {
   let ok = 0;
   let falhas = 0;
   let adiadas = 0;
+  // ⚠️ A criação AUTOMÁTICA do webhook (D7) vive só aqui, de propósito: o
+  // cron só roda na VPS, onde `NEXT_PUBLIC_SITE_URL` é o endereço que
+  // atende de verdade. O preview carrega a mesma URL e NÃO pode registrar
+  // o webhook — ele bateria numa rota que só existe depois do deploy.
+  const origem = origemPublica();
   for (const conta of contas) {
     if (Date.now() - inicio > ORCAMENTO_MS) {
       adiadas++;
@@ -69,6 +76,15 @@ export async function GET(request: Request) {
       console.log(
         `[asaas] ciclo da conta ${conta.account_id}: ${r.clientesListados} clientes listados, ${r.cobrancasGravadas} cobranças, ${r.reconciliadas} reconciliadas, ${r.ligados} ligados, ${r.fichasCriadas} fichas criadas, ${r.adiadas} adiadas`,
       );
+      // Com a conta sincronizada, o webhook: confere o que existe, cria o
+      // que nunca foi tentado. Falha aqui não é falha do ciclo — e só ENTRA
+      // dentro do orçamento (o passo em si pode gastar até ~40 s: duas
+      // páginas de listagem e um POST, 20 s de timeout cada; o `-m 120` do
+      // curl cobre o pior caso com folga curta).
+      if (Date.now() - inicio <= ORCAMENTO_MS) {
+        const w = await cuidarDoWebhook(admin, conta.account_id, { origem });
+        if (!w.ok && w.codigo !== "url_inalcancavel") console.warn(`[asaas] webhook da conta ${conta.account_id}: ${w.codigo}`);
+      }
     } else if (r.codigo === "em_curso" || r.codigo === "cadeado_perdido") adiadas++;
     else falhas++;
   }

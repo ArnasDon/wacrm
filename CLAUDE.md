@@ -589,6 +589,62 @@ quem mais está com a conversa aberta. `src/lib/execucoes/` e
 - **Conta de UM membro**: a presença fica dormente em produção até o convite
   real — testada em 2026-08-30 com usuária fixture (criada e removida).
 
+⚠️⚠️ **Passo que falha pode VOLTAR PARA A FILA (13/09/2026), e a régua é o
+ERRO — nunca o passo.** `src/lib/automations/retentativa.ts` (puro, com
+teste) e o `catch` de `executeStepsFrom`. Nasceu de um caso medido: a
+automação do Calendly morreu no aviso ao advogado ("Connection Closed") e,
+como qualquer erro dava `break`, o `move_deal_stage` seguinte não rodou — o
+card do cliente ficou na etapa antiga por causa de uma mensagem que não
+tinha relação com ele. O que morde código novo:
+
+- ⚠️⚠️ **Só repete falha do PROVEDOR num passo de ENVIO, e só com RECUSA
+  COMPROVADA (4xx).** A primeira versão classificava por TIPO DE PASSO
+  ("mexe só em dado do CRM, logo repete") e um teste do motor derrubou a
+  ideia: `add_tag` sem `tag_id` estoura por CONFIGURAÇÃO, e repetir três
+  vezes um erro determinístico só adia o aviso em cinco minutos — o oposto
+  do que a retentativa existe para fazer. Erro lançado pelo próprio motor
+  (config, banco, contato sem telefone) NUNCA volta à fila.
+- ⚠️⚠️ **4xx × 5xx não é burocracia.** Entre "a Evolution recusou" (nada
+  saiu) e "tempo esgotado" (o WhatsApp pode ter aceitado) não há diferença
+  no texto do erro, e repetir o segundo manda a mesma mensagem DUAS VEZES
+  ao cliente. É a distinção da 932 (`evolution_rejected` ×
+  `evolution_error`), e o `entrega_incerta` existe porque ela não se
+  adivinha. `EvolutionApiError.status` é o que responde isso, e o erro
+  chega INTEIRO ao motor porque `flows/meta-send.ts` o propaga cru.
+- ⚠️⚠️ **Só o transporte EVOLUTION retenta hoje.** Quem carrega o status
+  HTTP é `EvolutionApiError`; o cliente da Cloud API (`meta-api.ts`) lança
+  `Error` genérico, e sem status não dá para separar "a Meta recusou" de
+  "não sei se saiu" — a régua falha FECHADA e não repete. Quem quiser o
+  retry na Meta começa por dar um erro com status àquele cliente.
+- ⚠️ **`PASSOS_DE_ENVIO` é allowlist**: passo novo nasce FORA, sem
+  retentativa, até alguém decidir por escrito. Lista de exclusão faria o
+  passo novo herdar o retry por esquecimento — que é como se manda mensagem
+  repetida a cliente. `send_webhook` fica de fora de propósito (o n8n do
+  escritório pode já ter recebido e criado o registro).
+- ⚠️ **Volta para a MESMA fila do "Aguardar"** (`automation_pending_executions`)
+  na posição do PRÓPRIO passo — o resume filtra por `gte('position', …)`. O
+  "Aguardar" enfileira `position + 1` porque já terminou; aqui o passo não
+  chegou a acontecer. Sem migration: o contador de tentativas mora no
+  `context` (jsonb), como `_cadeia` e `_tag_chain_depth`.
+- ⚠️ **Fila que recusa a linha NÃO vira "vai tentar de novo"**: ninguém
+  retomaria, e a execução ficaria `partial` para sempre — invisível no fio
+  e fora do bloco de correções do Meu dia. Falhando o enfileiramento, o
+  comportamento é o de antes (falha na hora).
+- ⚠️⚠️ **O contador de tentativas é AMARRADO À POSIÇÃO do passo**
+  (`{ pos, n }` no contexto), nunca um número solto. O contexto atravessa a
+  execução inteira: guardando só o número, um passo que falhou duas vezes e
+  se recuperou deixaria o contador em 2, e o PRÓXIMO passo a falhar — num
+  ponto sem relação nenhuma — nasceria no teto, sem retentativa alguma.
+  Contador de outro passo vale zero, que é a verdade. (Achado da revisão
+  própria; a cota do Codex tinha acabado neste PR.)
+- ⚠️ **O TETO é testado ANTES do tipo do passo** (3 tentativas; 30 s e
+  depois 5 min): invertendo, um provedor que recusa sempre — uma conexão
+  apagada — reenfileiraria para sempre, queimando ciclo do agendador e
+  nunca mostrando a falha a ninguém. A espera real é esta MAIS o tique do
+  cron (~1 min no laço rápido).
+- ⚠️ **O estado da execução vira `partial`**, o mesmo do "Aguardar": é o que
+  impede `fecharLog` de carimbar desfecho enquanto a retentativa não rodou.
+
 ⚠️ **Desfecho da execução de automação (985): o fio NARRA o que a automação
 fez.** `automation_logs.desfecho` ('concluida'|'barrada'|'falhou') +
 `finalizado_em`, `src/lib/automations/estado-da-execucao.ts` e
@@ -3602,6 +3658,57 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   para dar como desligar), fica FORA de `limparOrfaos` e é campo de
   `FiltrosDoInbox` como os outros (`AMOSTRAS` cobra). Grupo nunca casa
   (não tem contato). Cor em par claro/escuro, como o cartão de falha.
+- ⚠️⚠️ **O AVISO NA HORA (webhook, Fase 2, 997) é autenticado pelo
+  CABEÇALHO, nunca pela URL.** `POST /api/cb/asaas/webhook/[token]`: o
+  token da URL só diz de QUAL conta é a entrega (índice único na config); a
+  credencial é `asaas-access-token`, o valor que o CRM gerou e informou ao
+  Asaas ao criar o webhook, guardado CIFRADO (`webhook_auth_token`) e
+  comparado em tempo constante (`tokenConfere`) — não há HMAC no Asaas, é
+  igualdade. 404 e 401 são as únicas RECUSAS; com URL e token certos, o que
+  não é 200 são os três 500 (config, token ilegível, INSERT do evento), de
+  propósito — o Asaas retenta por ~13 h e um soluço do banco não pode perder
+  o evento. **Limite do balde — POR CONTA, contado só depois do cabeçalho
+  conferir — responde 200 `adiado`** (só 200 conta como entrega; um 429
+  contaria como falha e ajudaria a interromper a fila — 15 falhas seguidas
+  param tudo; chaveado pelo token da URL, quem tivesse a URL calaria as
+  entregas legítimas), e a reentrega responde 200 `duplicado` pelo UNIQUE
+  `(conta, id do evento)` de `cb_asaas_eventos`. O corpo é AVISO (D8): só `payment.id` ou
+  `accessToken.name` são lidos, e a cobrança é RELIDA na API em `after()`
+  (`processarEvento`, sob um semáforo de 4 — uma fila religada despeja dias
+  de eventos de uma vez, e a conta tem 50 GET simultâneos divididos com o
+  outro sistema do escritório). Cobrança paga que o espelho NÃO conhece é
+  `ignorada` (`deveEntrarNoEspelho`): o espelho não é cópia do Asaas.
+- ⚠️⚠️ **A criação SEM gesto de gente vive SÓ no cron (`cuidarDoWebhook`,
+  em `cron/route.ts`); conectar (a primeira sincronização) e o botão do
+  cartão também criam, e os três gestos do cartão (Ativar, Religar,
+  Desativar) só valem a partir do PRÓPRIO host público (`podeCriarDaqui`).** O `.env.local` do preview carrega a URL da
+  PRODUÇÃO: criar dali registraria no Asaas um endereço que só atende
+  depois do deploy, e 15 entregas falhadas interrompem a fila com três
+  e-mails. Estado NULO = nunca tentado (o cron cria no ciclo seguinte);
+  `desligado`/`ausente`/`sem_permissao`/`erro` esperam gente (o cron não
+  insiste no que uma pessoa ou o Asaas recusou); rede e cota não mexem no
+  estado. ⚠️ O host do PEDIDO sai de `x-forwarded-host`/`host`
+  (`hostDoPedido`), nunca de `request.url`: o `standalone` da produção sobe
+  com `HOSTNAME=0.0.0.0` e o Next monta `request.url` a partir disso — com a
+  URL, o botão nasceria travado em produção também (revisão do PR #204). O
+  token da URL é gravado ANTES do POST, cercado por `IS NULL`, para a URL ser
+  determinística (retentativa e concorrente reencontram o webhook pela URL
+  em vez de criar um segundo). `obter()` do cliente devolve `null` SÓ no 404
+  — 2xx sem corpo LANÇA — e o 404 de uma cobrança só vira `deleted` com o
+  CLIENTE dela respondendo 200 (a cerca da reconciliação). O balde da rota é
+  POR CONTA e só depois do cabeçalho conferir. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
+  então POST) — trocar a chave não pode dobrar as entregas. Fila
+  interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a
+  segunda vira `interrompido` ("precisa de atenção"), e só um gesto de gente
+  (Religar ou Ativar) zera o marcador. O estado `erro` (o Asaas recusou a
+  criação) é retentado pelo cron uma vez por dia (`RETENTAR_ERRO_MS`): a
+  primeira criação real acontece depois do merge, e uma lista de eventos
+  recusada não pode travar a integração até alguém clicar. Desconectar APAGA o webhook no Asaas antes de
+  apagar a config (senão o Asaas insiste por horas numa rota 404);
+  `webhookNaoApagado` manda apagar no painel. Evento de chave só conta
+  quando `accessToken.name` é o `chave_nome` da config (os eventos de chave
+  são da conta inteira) → `status = 'erro'` com `chave_desabilitada`/
+  `chave_expirada`/`chave_apagada`.
 
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
@@ -4068,14 +4175,111 @@ Plano vivo em `docs/PLANO-meu-dia.md`. Sem migration. O que morde código novo:
   produção — as reuniões vivem no Calendly. Código para tabela vazia é código
   para futuro hipotético; entra quando a agenda for usada ou quando o
   Calendly gravar nela.
-- **`/meu-dia` (F3, 12/09/2026) é a MESMA tela em `modo="pagina"`**, FORA do
-  catálogo de perfis (`telaDoCaminho` devolve null; o filtro do menu e a
-  guarda do shell deixam passar) — uma tela nova no catálogo nasceria
-  invisível para todo perfil já gravado. Não vira tela de chegada (D15).
-  Está em `protectedPaths` e no `pageTitles`; o pino
+- **`/meu-dia` está FORA do catálogo de perfis** (`telaDoCaminho` devolve
+  null; o filtro do menu e a guarda do shell deixam passar) — uma tela nova
+  no catálogo nasceria invisível para todo perfil já gravado. Não vira tela
+  de chegada (D15). Está em `protectedPaths` e no `pageTitles`; o pino
   `src/components/layout/rotulo-do-menu.test.ts` cobra `Sidebar.<labelKey>`
   e `Header.<título>` nos dois dicionários (chave montada, fora do alcance
   do portão do CI).
+
+⚠️ **A ABA `/meu-dia` é uma ÁREA DE TRABALHO, não o cartão da entrada em
+outro tamanho (F5, 12/09/2026).** `src/lib/meu-dia/{correcoes,negocios}.ts`
+(puros, com teste), `src/hooks/use-area-de-trabalho.ts`,
+`src/components/meu-dia/{blocos-pessoais,blocos-de-operacao}.tsx`, a rota
+`/api/cb/meu-dia/pendencias` e o namespace `MeuDia`. Até aqui a aba montava
+o MESMO componente em `modo="pagina"`, e o operador devolveu: "parece só uma
+miniatura idêntica da que aparece no modal". Hoje são sete blocos num grid;
+o cartão da entrada ficou com os números e UM botão que leva à aba. O que
+morde código novo:
+
+- ⚠️ **O bloco "o que precisa ser corrigido" é SÓ DO ADMINISTRADOR**
+  (`useCan('view-reports')`, pedido do operador em 13/09/2026) — a mesma
+  régua das abas analíticas do funil, e pela mesma razão: agendada que não
+  saiu, conexão fora do ar, automação que falhou e entrada parada são saúde
+  da OPERAÇÃO, e para o atendente seriam alarme sobre o qual ele não pode
+  agir. `useCan` deriva do acesso EFETIVO, então o "Ver como" o esconde
+  junto. Os outros seis blocos continuam de qualquer membro.
+- ⚠️⚠️ **"Tudo em ordem" é uma AFIRMAÇÃO, e exige TODAS as fontes
+  respondidas.** `resumirCorrecoes` tem um estado PRÓPRIO para zero-com-falha
+  (`incompleto`), distinto de `limpo`: o bloco existe para avisar que algo
+  quebrou, e um selo verde sobre consulta que falhou faz a pessoa fechar a
+  aba tranquila enquanto a mensagem do cliente não saiu. Fonte AUSENTE do
+  mapa conta como "carregando", nunca como zero — senão a aba nasce verde e
+  vai escurecendo, e o primeiro quadro é o que a pessoa olha.
+- ⚠️⚠️ **`deals.assigned_to` guarda `profiles.id`, NÃO `auth.users.id`** — a
+  exceção à regra do Meu dia (`cb_tasks`, `conversations` e `notifications`
+  guardam o id do LOGIN). `user.id` ali devolve ZERO linhas sem erro nenhum:
+  quem tem trinta cards abertos vê o bloco vazio e conclui que não tem
+  negócio. Por isso `PedidoDaArea` carrega `profileId` separado de `userId`,
+  e o bloco ESPERA em vez de afirmar zero enquanto o perfil não resolve.
+- ⚠️⚠️ **`automation_logs.status` NÃO responde "falhou?"** — ele nasce
+  `'failed'` no INSERT, antes do primeiro passo (985). O bloco filtra por
+  `desfecho = 'falhou'` com `finalizado_em` no dia; por `status` ele pintaria
+  de vermelho toda automação que apenas COMEÇOU, inclusive as paradas num
+  "Aguardar".
+- ⚠️⚠️ **Agendada `failed` e `entrega_incerta` são contadas SEPARADAS e
+  DISJUNTAS.** A incerta vem sempre junto de `failed` (926), então somar as
+  duas cruas conta a mesma linha duas vezes — e a separação não é estética:
+  são ações opostas. Reenviar o que falhou é seguro; reenviar o incerto manda
+  a mesma mensagem duas vezes ao cliente.
+- ⚠️⚠️ **"Mensagens enviadas hoje" é número DO ESCRITÓRIO, e isso não é
+  preguiça.** A régua de resposta humana é `sender_id` OU `from_device`, e o
+  celular pareado grava `from_device` com `sender_id` NULO — 948 contra 8,
+  medido. Não há autor a quem creditar a maior parte do trabalho real;
+  creditar por pessoa mostraria um dia quase vazio a quem trabalhou o dia
+  inteiro. Pela mesma família: **não existe `cb_tasks.concluida_por`** (o
+  rótulo é "tarefas SUAS concluídas", nunca "que você concluiu") e **não
+  existe carimbo de quem encerrou conversa nem quando** (`closed_at`/
+  `closed_by` não existem, `updated_at` é tocado por qualquer UPDATE e
+  encerrar ZERA `assigned_agent_id`) — por isso não há bloco de conversas
+  encerradas, e qualquer número desses seria inventado.
+- ⚠️ **Ganho do dia sai de `cb_lead_events` (`to_status='won'`), do
+  ESCRITÓRIO**: ganho carimbado por automação ou pelo gatilho da etapa (950)
+  tem `actor_user_id` NULO, então "ganhos por mim" subcontaria em silêncio
+  justamente quando a operação funciona. E o ganho é nomeado pelo CONTATO:
+  `cb_lead_events.deal_id` não tem FK (912), então o PostgREST não embute
+  `deals`.
+- ⚠️ **`cb_calendly_eventos` e `cb_webhook_eventos` são fechadas ao
+  navegador** — do cliente devolvem 0 linhas com `error: null`, bloco
+  zerado com cara de resposta certa. Vêm pela rota
+  `/api/cb/meu-dia/pendencias`, que é de QUALQUER membro porque devolve
+  CONTAGENS (as rotas de log dessas tabelas são de admin porque devolvem o
+  registro inteiro: telefone, respostas do formulário, payload do Typebot).
+  Erro lá vira 500, nunca `{}` com zeros.
+- ⚠️ **`messages` não tem `account_id`** — a conta entra pelo embed
+  `conversations!inner`, senão a contagem é de todas as contas de que a
+  pessoa é membro.
+- ⚠️ **O recorte por conexão vai NA CONSULTA em `cb_scheduled_messages`**
+  (a linha carrega o próprio `channel_id`, fixado no agendamento) e em JS
+  nas conversas. Em `deals` o recorte é por FUNIL (`funilNoEscopo`), em JS.
+  Conexão fora do ar também é recortada pelo perfil: o aviso que não é seu
+  é o que ensina a ignorar o bloco.
+- ⚠️ **Chave de i18n LITERAL por fonte de correção**, nunca
+  uma chave montada com o nome da fonte: chave montada escapa do portão do CI, que só as
+  CONTA. É a lição de `Settings.sections.webhooks` aparecendo cru na tela.
+- ⚠️⚠️ **`useChannelHealth` ganhou `falhou` POR CAUSA deste bloco** (Codex,
+  PR #202). Ele engolia a falha de propósito — lista vazia esconde o
+  indicador do cabeçalho, e é o contrato escrito dele —, mas aqui o mesmo
+  zero vira a afirmação "tudo em ordem" sobre uma sonda que não respondeu.
+  Vale para qualquer consumidor novo: o zero de uma sonda silenciosa não
+  autoriza afirmar nada. O `unavailable: true` (200 com lista vazia, janela
+  pré-migration) entra em `falhou` pela mesma razão. E `useAgendadorSaude`
+  NÃO precisou disso: batimento ilegível já cai em `nuncaRodou`, que ACENDE.
+- ⚠️ **Cada destino de conserto é gateado pela tela PARA ONDE ELE LEVA**, e
+  Configurações não serve de gate para nada: é tela SEMPRE VISÍVEL, então
+  `podeVerTela(ctx, 'settings')` é verdadeiro para todo perfil — um link
+  para `/automations` atrás dela levava direto à `TelaBloqueada`. E o
+  parâmetro de Configurações é **`?tab=`**, nunca `?section=`: a página lê
+  `searchParams.get('tab')` e ignora o resto, então o clique de conserto
+  abria a Visão geral sem erro nenhum.
+- ⚠️⚠️ **Os agendamentos do Calendly NÃO entram no bloco da agenda**, e a
+  primeira versão os trazia. A 977 grava só `invitee.created`: cancelamento
+  é ignorado e reagendamento INSERE linha nova sem invalidar a antiga (a URI
+  do convidado muda). Uma consulta por `inicio >= agora` devolve reunião
+  cancelada e as duas pontas de um reagendamento como se ambas fossem
+  acontecer. Entra quando a integração tratar `invitee.canceled` — até lá o
+  bloco é só `cb_meetings` e diz por quê.
 
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e
@@ -4505,6 +4709,14 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     sem ficha não tem conversa a esconder). Aditiva, com acervo do
     `last_sync_at`. Aplicada em 13/09/2026 pela Management API (histórico
     `20260913122337`), ANTES do merge.
+
+  - **997_cb_asaas_webhook** — as colunas do webhook em `cb_asaas_config`
+    (token da URL em claro com índice único parcial; token de autenticação
+    CIFRADO; id no Asaas, e-mail, estado, erro, religado, conferido, último
+    evento) e `cb_asaas_eventos` (FECHADA; UNIQUE por conta e id do evento;
+    o `dateCreated` do evento CRU, em texto — a medição de C7). Aditiva:
+    nada em produção a lê até o deploy. Aplicada em 13/09/2026 pela
+    Management API, ANTES do merge.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

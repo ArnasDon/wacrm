@@ -53,7 +53,7 @@ export type CodigoDaConexao =
   | "conta_trocada"
   | "em_curso";
 
-export type ResultadoDaConexao = { ok: true } | { ok: false; codigo: CodigoDaConexao };
+export type ResultadoDaConexao = { ok: true; webhookNaoApagado?: boolean } | { ok: false; codigo: CodigoDaConexao };
 
 type FabricaDeCliente = (chave: string, ambiente: AmbienteDoAsaas) => ClienteAsaas;
 
@@ -195,14 +195,23 @@ export async function conectarAsaas(
  * clientes vão embora e as cobranças em cascata. As FICHAS criadas pela D2
  * ficam: são contatos do escritório, como qualquer outro.
  */
-export async function desconectarAsaas(admin: SupabaseClient, accountId: string, opcoes: { apagarEspelho?: boolean } = {}): Promise<ResultadoDaConexao> {
+export async function desconectarAsaas(
+  admin: SupabaseClient,
+  accountId: string,
+  opcoes: { apagarEspelho?: boolean; cliente?: FabricaDeCliente } = {},
+): Promise<ResultadoDaConexao> {
   // ⚠️ Toma o CADEADO antes de apagar: um ciclo em curso já tem o cliente
   // HTTP na mão e continuaria gravando no espelho recém-apagado — e, com
   // outra conta conectada logo depois, misturaria os clientes das duas
   // (Codex, PR #201, 5ª rodada). Sem linha de config não há ciclo possível
   // (`lerConfig` devolve `nao_conectado`): segue direto.
-  const { data: existente, error: erroLeitura } = await admin.from("cb_asaas_config").select("account_id").eq("account_id", accountId).maybeSingle();
+  const { data: existente, error: erroLeitura } = await admin
+    .from("cb_asaas_config")
+    .select("account_id, api_key, ambiente, webhook_asaas_id")
+    .eq("account_id", accountId)
+    .maybeSingle();
   if (erroLeitura) return { ok: false, codigo: "db_error" };
+  let webhookNaoApagado = false;
   if (existente) {
     // ⚠️ Renova o BATIMENTO na mesma escrita: com `last_sync_attempt_at`
     // velho, um ciclo que chegasse ao claim antes dos deletes ainda passaria
@@ -216,6 +225,22 @@ export async function desconectarAsaas(admin: SupabaseClient, accountId: string,
       .select("account_id");
     if (erroClaim) return { ok: false, codigo: "db_error" };
     if (!tomado || tomado.length === 0) return { ok: false, codigo: "em_curso" };
+    // O webhook no Asaas vai embora com a conexão (Fase 2): a config some,
+    // a rota passaria a responder 404, e o Asaas insistiria por horas antes
+    // de interromper a fila e mandar três e-mails. 404 lá = já apagado. Se a
+    // chave já não funciona, o cartão manda apagar no painel.
+    if (typeof existente.webhook_asaas_id === "string" && existente.webhook_asaas_id) {
+      try {
+        const chave = decrypt(existente.api_key as string);
+        const cliente = (opcoes.cliente ?? criarPadrao)(chave, ((existente.ambiente as string | null) ?? "producao") as AmbienteDoAsaas);
+        await cliente.enviar<unknown>("DELETE", `/webhooks/${existente.webhook_asaas_id}`);
+      } catch (e) {
+        if (!(e instanceof AsaasError && e.codigo === "nao_encontrado")) {
+          webhookNaoApagado = true;
+          console.warn(`[asaas] webhook da conta ${accountId} não apagado ao desconectar:`, e instanceof Error ? e.message : e);
+        }
+      }
+    }
   }
   if (opcoes.apagarEspelho) {
     const { error } = await admin.from("cb_asaas_clientes").delete().eq("account_id", accountId);
@@ -223,7 +248,7 @@ export async function desconectarAsaas(admin: SupabaseClient, accountId: string,
   }
   const { error } = await admin.from("cb_asaas_config").delete().eq("account_id", accountId);
   if (error) return { ok: false, codigo: "db_error" };
-  return { ok: true };
+  return webhookNaoApagado ? { ok: true, webhookNaoApagado: true } : { ok: true };
 }
 
 export type ConfigLida =

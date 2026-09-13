@@ -33,6 +33,10 @@ import { DealForm } from '@/components/pipelines/deal-form';
 import { SeletorFunilEtapa } from '@/components/inbox/painel/seletor-funil-etapa';
 import { AbaAutomacoes } from '@/components/inbox/painel/aba-automacoes';
 import { AbaArquivos } from '@/components/inbox/painel/aba-arquivos';
+import { AbaCobrancas } from '@/components/inbox/painel/aba-cobrancas';
+import { TituloDeSecao } from '@/components/inbox/painel/titulo-de-secao';
+import { useCobrancasDoContato } from '@/hooks/use-cobrancas-do-contato';
+import { separarParcelas } from '@/lib/asaas/aviso-na-conversa';
 import { ReunioesDoContato } from '@/components/agenda/reunioes-do-contato';
 import { ReunioesTranscritasDoContato } from '@/components/transcricoes/reunioes-transcritas-do-contato';
 import type { AlvoDoSalto } from '@/lib/inbox/salto-no-fio';
@@ -80,6 +84,7 @@ import {
   Plus,
   Building2,
   CalendarDays,
+  CircleDollarSign,
   History,
   ListTodo,
   Paperclip,
@@ -230,6 +235,18 @@ export function PainelDoContato({
   // aba não pode refazer consulta, e a seção precisa distinguir "carregando"
   // de "nada terminou" no primeiro render.
   const historico = useExecucoesDoFio(contact?.id ?? null);
+  // As cobranças do Asaas (Fase 1b). No TOPO como as outras buscas: a
+  // etiqueta da aba (parcelas vencidas) precisa do número antes de a aba
+  // abrir. O hook carimba o dono da resposta (`{ de }`) e deriva
+  // `carregando` — a guarda do efeito passivo.
+  const cobrancas = useCobrancasDoContato(contact?.id ?? null, resyncToken);
+  const vencidasDoAsaas = useMemo(
+    () =>
+      cobrancas.dados?.conectado
+        ? separarParcelas(cobrancas.dados.parcelas, new Date(), cobrancas.dados.atualizadoEm).divida.vencidas.length
+        : null,
+    [cobrancas.dados]
+  );
   /**
    * `true` só depois que as consultas POR-CONTATO do contato ATUAL
    * aterrissaram sem erro. Enquanto `false`, salvar campos e o cartão de
@@ -978,6 +995,24 @@ export function PainelDoContato({
           <AbaDeIcone value="reunioes" label={tSidebar('tabMeetings')}>
             <CalendarDays className="h-4 w-4" />
           </AbaDeIcone>
+          {/* Cobranças (Asaas, Fase 1b): o que o cliente deve, com a
+              etiqueta VERMELHA das parcelas vencidas. Depois de Reuniões:
+              também é "o que combinei com este cliente" — e o que ele não
+              cumpriu. */}
+          {/* ⚠️ Some de vez numa conta SEM Asaas (`conectado === false`, e
+              esse sinal é da conta, guardado pelo hook entre contatos —
+              senão piscaria a cada troca de cliente). Enquanto não se sabe,
+              aparece: esconder por ignorância seria afirmar "não há Asaas". */}
+          {cobrancas.conectado !== false && (
+            <AbaDeIcone
+              value="cobrancas"
+              label={tSidebar('tabBilling')}
+              badge={vencidasDoAsaas}
+              tom="red"
+            >
+              <CircleDollarSign className="h-4 w-4" />
+            </AbaDeIcone>
+          )}
           {/* ⚠️ A aba Traqueamento (o megafone da 949) SAIU na 966: os campos
               de anúncio viraram um bloco como qualquer outro, dentro da
               Principal. Decisão do operador — uma gaveta fixa para dez campos
@@ -1513,6 +1548,20 @@ export function PainelDoContato({
         </TabsContent>
 
 
+        {/* ---- Cobranças (Asaas, Fase 1b): os clientes do Asaas ligados a
+             este contato e as parcelas deles. Dados do hook no topo. ---- */}
+        <TabsContent
+          value="cobrancas"
+          className="min-h-0 flex-1 overflow-y-auto p-4"
+        >
+          <AbaCobrancas
+            dados={cobrancas.dados}
+            carregando={cobrancas.carregando}
+            falhou={cobrancas.falhou}
+            recarregar={cobrancas.recarregar}
+          />
+        </TabsContent>
+
         {/* ---- Automações (955) — o que está RODANDO para o cliente: robô
              ativo e esperas futuras de automação, com o botão de parar. Os
              dados vêm do hook no topo (etiqueta da aba precisa do número
@@ -1648,12 +1697,15 @@ function AbaDeIcone({
   value,
   label,
   badge,
+  tom = 'primary',
   children,
 }: {
   value: string;
   label: string;
   /** Número ao lado do ícone (ex.: tarefas abertas). 0/null = sem etiqueta. */
   badge?: number | null;
+  /** `red` para a etiqueta que é ALERTA (parcelas vencidas), em par claro/escuro. */
+  tom?: 'primary' | 'red';
   children: React.ReactNode;
 }) {
   return (
@@ -1665,7 +1717,14 @@ function AbaDeIcone({
     >
       {children}
       {badge ? (
-        <span className="bg-primary/15 text-primary ml-1 rounded-full px-1 text-[10px] leading-4 font-semibold">
+        <span
+          className={cn(
+            'ml-1 rounded-full px-1 text-[10px] leading-4 font-semibold',
+            tom === 'red'
+              ? 'bg-red-500/15 text-red-700 dark:text-red-300'
+              : 'bg-primary/15 text-primary'
+          )}
+        >
           {badge > 99 ? '99+' : badge}
         </span>
       ) : null}
@@ -1673,25 +1732,7 @@ function AbaDeIcone({
   );
 }
 
-/** Título de seção — a MESMA tipografia nas duas fichas (contato e grupo). */
-export function TituloDeSecao({
-  icon,
-  children,
-  className,
-}: {
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase',
-        className
-      )}
-    >
-      {icon}
-      {children}
-    </div>
-  );
-}
+// O título de seção mudou para `titulo-de-secao.tsx` (a aba Cobranças da
+// ficha de Contatos precisava dele sem arrastar o painel inteiro); a
+// reexportação mantém os chamadores antigos (`aba-automacoes.tsx`).
+export { TituloDeSecao };

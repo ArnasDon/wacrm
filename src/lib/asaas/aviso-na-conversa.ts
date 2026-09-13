@@ -1,0 +1,267 @@
+/**
+ * O AVISO de inadimplência na conversa (Fase 1b do plano, §3.5) — a parte
+ * pura: o que as duas rotas de leitura devolvem, como o navegador lê isso
+ * (campo a campo, nunca `as`) e como reparte as parcelas de um contato.
+ *
+ * ⚠️ `null` de leitura é "não sei", nunca "em dia": a faixa cala, o ícone
+ * não aparece, o filtro é neutralizado. É a régua de `lerResumo` das
+ * execuções (985): corpo estranho vira "não sei", e não vazio.
+ */
+
+import { diaNoFuso, FUSO_PADRAO } from "@/lib/agenda/fuso";
+
+import { classificar, LEITURA_FRESCA_MS, resumirDivida, type ParcelaDoEspelho, type ResumoDeDivida } from "./inadimplencia";
+
+export interface RespostaDoResumo {
+  conectado: boolean;
+  /** a última listagem completa das vencidas é recente (duas voltas do laço lento) */
+  leituraFresca: boolean;
+  /** ISO do início da última listagem completa — "dados do Asaas de …" */
+  atualizadoEm: string | null;
+  /**
+   * O vínculo da listagem VIGENTE já rodou (`vinculo_completo_em` >=
+   * `vencidas_listadas_em`, 996). A listagem das vencidas é carimbada ANTES
+   * do vínculo dentro do ciclo, então "listagem completa e nenhum contato
+   * ligado" só é resposta com isto.
+   */
+  cicloCompleto: boolean;
+  /** contato → as parcelas DEVIDAS (vencidas e negativadas) dos clientes do Asaas ligados a ele */
+  contatos: Record<string, ParcelaDoEspelho[]>;
+}
+
+const CAMPOS_DA_PARCELA: (keyof ParcelaDoEspelho)[] = ["id", "asaas_payment_id", "asaas_customer_id", "status", "vencimento", "visto_em"];
+
+function lerParcelaSolta(v: unknown): ParcelaDoEspelho | null {
+  if (!v || typeof v !== "object") return null;
+  const o = v as Record<string, unknown>;
+  for (const campo of CAMPOS_DA_PARCELA) if (typeof o[campo] !== "string") return null;
+  if (typeof o.valor !== "number") return null;
+  return {
+    id: o.id as string,
+    asaas_payment_id: o.asaas_payment_id as string,
+    asaas_customer_id: o.asaas_customer_id as string,
+    status: o.status as string,
+    deleted: o.deleted === true,
+    valor: o.valor,
+    juros_e_multa: typeof o.juros_e_multa === "number" ? o.juros_e_multa : null,
+    vencimento: o.vencimento as string,
+    vencimento_original: typeof o.vencimento_original === "string" ? o.vencimento_original : null,
+    vista_vencida_em: typeof o.vista_vencida_em === "string" ? o.vista_vencida_em : null,
+    pago_em: typeof o.pago_em === "string" ? o.pago_em : null,
+    forma: typeof o.forma === "string" ? o.forma : null,
+    pode_pagar_apos_vencimento: typeof o.pode_pagar_apos_vencimento === "boolean" ? o.pode_pagar_apos_vencimento : null,
+    dias_ate_cancelar_registro: typeof o.dias_ate_cancelar_registro === "number" ? o.dias_ate_cancelar_registro : null,
+    descricao: typeof o.descricao === "string" ? o.descricao : null,
+    parcelamento_id: typeof o.parcelamento_id === "string" ? o.parcelamento_id : null,
+    parcela_numero: typeof o.parcela_numero === "number" ? o.parcela_numero : null,
+    parcela_total: typeof o.parcela_total === "number" ? o.parcela_total : null,
+    link_fatura: typeof o.link_fatura === "string" ? o.link_fatura : null,
+    link_boleto: typeof o.link_boleto === "string" ? o.link_boleto : null,
+    visto_em: o.visto_em as string,
+  };
+}
+
+/** Parse DEFENSIVO do corpo da rota `/api/cb/asaas/resumo`. Corpo estranho → `null` ("não sei"). */
+export function lerRespostaDoResumo(json: unknown): RespostaDoResumo | null {
+  if (!json || typeof json !== "object") return null;
+  const o = json as Record<string, unknown>;
+  if (typeof o.conectado !== "boolean" || typeof o.leituraFresca !== "boolean") return null;
+  const contatos: Record<string, ParcelaDoEspelho[]> = {};
+  if (o.contatos && typeof o.contatos === "object" && !Array.isArray(o.contatos)) {
+    for (const [id, lista] of Object.entries(o.contatos as Record<string, unknown>)) {
+      if (!Array.isArray(lista)) continue;
+      const parcelas = lista.map(lerParcelaSolta).filter((p): p is ParcelaDoEspelho => p !== null);
+      if (parcelas.length > 0) contatos[id] = parcelas;
+    }
+  }
+  return {
+    conectado: o.conectado,
+    leituraFresca: o.leituraFresca,
+    atualizadoEm: typeof o.atualizadoEm === "string" ? o.atualizadoEm : null,
+    // Ausente (resposta de uma versão anterior da rota) conta como NÃO
+    // completo: neutraliza, em vez de afirmar.
+    cicloCompleto: o.cicloCompleto === true,
+    contatos,
+  };
+}
+
+/**
+ * A leitura AINDA é fresca, pelo relógio da tela?
+ *
+ * ⚠️ O `leituraFresca` da rota é verdade no instante da resposta, e a
+ * resposta fica na tela: o hook a retém quando a recarga falha (rede,
+ * 500), e mesmo sem falha ela envelhece entre uma recarga e outra. Sem
+ * esta derivação, uma resposta fresca seguida de meia hora de falhas
+ * continuaria dizendo "fresca" — a faixa e o filtro afirmariam a dívida
+ * sem o "dados do Asaas de …" (Codex, PR #203). O critério é o mesmo do
+ * servidor (`leituraFresca` em `espelho.ts`): `atualizadoEm` dentro de
+ * `LEITURA_FRESCA_MS`.
+ */
+export function leituraAindaFresca(resumo: Pick<RespostaDoResumo, "leituraFresca" | "atualizadoEm">, agora: Date): boolean {
+  if (!resumo.leituraFresca || !resumo.atualizadoEm) return false;
+  const inicio = Date.parse(resumo.atualizadoEm);
+  return Number.isFinite(inicio) && agora.getTime() - inicio <= LEITURA_FRESCA_MS;
+}
+
+/**
+ * A dívida de cada contato, só de quem tem parcela VENCIDA vista na última
+ * listagem completa — é o que acende o ícone da linha e a faixa.
+ */
+export function dividasPorContato(resumo: RespostaDoResumo, agora: Date): Map<string, ResumoDeDivida> {
+  const mapa = new Map<string, ResumoDeDivida>();
+  // Uma régua, UM portão: desconectado não acende ícone nenhum, mesmo que
+  // o corpo (parse permissivo) traga contatos — o filtro já cala nesse caso.
+  if (!resumo.conectado) return mapa;
+  for (const [id, parcelas] of Object.entries(resumo.contatos)) {
+    const divida = resumirDivida(parcelas, agora, resumo.atualizadoEm);
+    if (divida.vencidas.length > 0) mapa.set(id, divida);
+  }
+  return mapa;
+}
+
+/**
+ * A dívida de UM contato (a faixa do fio), ou `null` quando ele não deve —
+ * ou quando ainda não se sabe (`resumo` nulo). Grupo não tem contato e cai
+ * no `null` sozinho.
+ */
+export function dividaDoContato(resumo: RespostaDoResumo | null, contactId: string | null | undefined, agora: Date): ResumoDeDivida | null {
+  if (!resumo || !contactId || !resumo.conectado) return null;
+  const parcelas = resumo.contatos[contactId];
+  if (!parcelas || parcelas.length === 0) return null;
+  const divida = resumirDivida(parcelas, agora, resumo.atualizadoEm);
+  return divida.vencidas.length > 0 ? divida : null;
+}
+
+/**
+ * Por que o filtro "Inadimplentes" está NEUTRALIZADO — ou `null` quando ele
+ * vale. UMA régua para o recorte (`idsInadimplentes`) e para a dica do
+ * painel de ajustes: com duas cópias, um motivo novo acrescentado aqui
+ * deixaria o interruptor ligado, sem efeito e sem explicação (revisão
+ * independente do PR #203).
+ *
+ * - `sem_resposta`: a leitura ainda não chegou, ou falhou sem resposta
+ *   anterior.
+ * - `desconectado`: a conta não tem Asaas.
+ * - `sincronizando`: conectado, mas sem listagem completa (recém-conectado,
+ *   primeira sincronização no ar ou falhada) ou com o vínculo da listagem
+ *   vigente ainda por rodar (`cicloCompleto`) — a janela entre o passo 4 e
+ *   o 8 de todo ciclo. Um conjunto vazio aí faria uma visão salva esconder
+ *   a caixa inteira com cara de "ninguém deve" (Codex, PR #203).
+ *
+ * ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA régua do
+ * ícone da linha — um interruptor que cala em silêncio sobre dado velho
+ * deixaria o operador com 15 ícones na lista e um filtro que "não faz
+ * nada". A resposta é a última listagem, e a tela diz de quando ela é.
+ */
+export type MotivoDaNeutralizacao = "sem_resposta" | "desconectado" | "sincronizando";
+
+export function motivoDaNeutralizacao(resumo: RespostaDoResumo | null): MotivoDaNeutralizacao | null {
+  if (!resumo) return "sem_resposta";
+  if (!resumo.conectado) return "desconectado";
+  if (!resumo.atualizadoEm || !resumo.cicloCompleto) return "sincronizando";
+  return null;
+}
+
+/**
+ * O conjunto do FILTRO "Inadimplentes": `null` neutraliza (ver
+ * `motivoDaNeutralizacao`) — a lista nunca responde "nenhuma conversa"
+ * sobre dado que não existe. O conjunto VAZIO é reservado ao ciclo inteiro
+ * que não achou dívida.
+ */
+export function idsInadimplentes(resumo: RespostaDoResumo | null, agora: Date): Set<string> | null {
+  if (motivoDaNeutralizacao(resumo) !== null) return null;
+  return new Set(dividasPorContato(resumo as RespostaDoResumo, agora).keys());
+}
+
+export interface ClienteLigadoAoContato {
+  /** o id da linha de `cb_asaas_clientes` — é o que a ação "Não é este cliente" desliga */
+  id: string;
+  asaasId: string;
+  nome: string;
+  origem: string | null;
+  notificacoesDesligadas: boolean;
+}
+
+export interface RespostaDoContato {
+  conectado: boolean;
+  leituraFresca: boolean;
+  atualizadoEm: string | null;
+  /** ver `RespostaDoResumo.cicloCompleto` */
+  cicloCompleto: boolean;
+  clientes: ClienteLigadoAoContato[];
+  /** todas as parcelas do espelho dos clientes ligados (devidas, pagas, estornadas…) */
+  parcelas: ParcelaDoEspelho[];
+}
+
+export function lerRespostaDoContato(json: unknown): RespostaDoContato | null {
+  if (!json || typeof json !== "object") return null;
+  const o = json as Record<string, unknown>;
+  if (typeof o.conectado !== "boolean" || typeof o.leituraFresca !== "boolean") return null;
+  const clientes: ClienteLigadoAoContato[] = [];
+  if (Array.isArray(o.clientes)) {
+    for (const c of o.clientes) {
+      if (!c || typeof c !== "object") continue;
+      const k = c as Record<string, unknown>;
+      if (typeof k.id !== "string" || typeof k.asaasId !== "string") continue;
+      clientes.push({
+        id: k.id,
+        asaasId: k.asaasId,
+        nome: typeof k.nome === "string" ? k.nome : "",
+        origem: typeof k.origem === "string" ? k.origem : null,
+        notificacoesDesligadas: k.notificacoesDesligadas === true,
+      });
+    }
+  }
+  const parcelas = Array.isArray(o.parcelas) ? o.parcelas.map(lerParcelaSolta).filter((p): p is ParcelaDoEspelho => p !== null) : [];
+  return {
+    conectado: o.conectado,
+    leituraFresca: o.leituraFresca,
+    atualizadoEm: typeof o.atualizadoEm === "string" ? o.atualizadoEm : null,
+    cicloCompleto: o.cicloCompleto === true,
+    clientes,
+    parcelas,
+  };
+}
+
+/** Quantos dias uma parcela paga ainda aparece em "Regularizadas". */
+export const REGULARIZADAS_DIAS = 30;
+
+export interface ParcelasDoContato {
+  divida: ResumoDeDivida;
+  /** pagas nos últimos `REGULARIZADAS_DIAS` dias, mais recentes primeiro */
+  regularizadas: ParcelaDoEspelho[];
+  /** estornadas ou contestadas — "o valor voltou ao cliente" */
+  estornadas: ParcelaDoEspelho[];
+  /**
+   * PENDENTES no Asaas: a que vence hoje (D17) e a que já passou do
+   * vencimento sem o Asaas tê-la virado vencida (a janela do C7, o fim de
+   * semana). Esta segunda NÃO é dívida — e também não pode sumir da aba:
+   * está no espelho e o operador precisa vê-la (revisão do PR #203).
+   */
+  aVencer: ParcelaDoEspelho[];
+}
+
+/** O dia da parcela paga: `pago_em`, senão o dia em que o espelho a viu — no FUSO, como o corte. */
+function diaDaParcela(p: ParcelaDoEspelho, fuso: string): string {
+  return p.pago_em ?? diaNoFuso(new Date(p.visto_em), fuso);
+}
+
+export function separarParcelas(parcelas: readonly ParcelaDoEspelho[], agora: Date, vencidasListadasEm: string | null, fuso: string = FUSO_PADRAO): ParcelasDoContato {
+  const divida = resumirDivida(parcelas, agora, vencidasListadasEm, fuso);
+  const regularizadas: ParcelaDoEspelho[] = [];
+  const estornadas: ParcelaDoEspelho[] = [];
+  const aVencer: ParcelaDoEspelho[] = [];
+  // ⚠️ O corte é o DIA no fuso do escritório, como `hojeLocal` e os dias de
+  // atraso — `toISOString()` daria o dia UTC, que das 21h à meia-noite já é
+  // o seguinte, e tiraria de "regularizadas" a parcela paga há exatos 30
+  // dias (Codex, PR #203).
+  const corte = diaNoFuso(new Date(agora.getTime() - REGULARIZADAS_DIAS * 86_400_000), fuso);
+  for (const p of parcelas) {
+    const classe = classificar(p.status, p.deleted);
+    if (classe === "paga" && diaDaParcela(p, fuso) >= corte) regularizadas.push(p);
+    else if (classe === "estornada" || classe === "contestada") estornadas.push(p);
+    else if (classe === "a_vencer") aVencer.push(p);
+  }
+  regularizadas.sort((a, b) => (diaDaParcela(a, fuso) < diaDaParcela(b, fuso) ? 1 : -1));
+  return { divida, regularizadas, estornadas, aVencer };
+}

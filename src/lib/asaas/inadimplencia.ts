@@ -19,6 +19,14 @@
 import { diaNoFuso, FUSO_PADRAO } from "@/lib/agenda/fuso";
 import { formatCurrency } from "@/lib/currency";
 
+/**
+ * Quanto tempo depois da última listagem completa das vencidas a leitura
+ * ainda é "fresca" — duas voltas do laço lento. Mora aqui (puro) porque o
+ * navegador também a usa (`leituraAindaFresca`): a resposta da rota
+ * envelhece na tela, e o `true` que ela trouxe não pode valer para sempre.
+ */
+export const LEITURA_FRESCA_MS = 2 * 15 * 60_000;
+
 export type ClasseDaCobranca =
   | "vencida"
   | "negativada"

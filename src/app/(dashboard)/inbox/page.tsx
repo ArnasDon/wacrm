@@ -12,6 +12,7 @@ import type { Conversation, Message, Contact, ConversationStatus } from "@/types
 import { useRealtime } from "@/hooks/use-realtime";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useMarcarConversaAberta } from "@/hooks/use-conversa-aberta";
+import { useInadimplencia } from "@/hooks/use-inadimplencia";
 import { ConversationList } from "@/components/inbox/conversation-list";
 import { ConversaForaDaArea } from "@/components/inbox/conversa-fora-da-area";
 import { useAuth } from "@/hooks/use-auth";
@@ -119,6 +120,12 @@ function InboxPageInner() {
    * once on conversationId-change as usual.
    */
   const [resyncToken, setResyncToken] = useState(0);
+  /**
+   * Quem está INADIMPLENTE no Asaas (Fase 1b): UMA leitura para a lista
+   * (ícone e filtro) e para o fio (a faixa), que são irmãos — a página é o
+   * único caminho entre eles. `null` = não sei; nada afirma "em dia".
+   */
+  const { resumo: inadimplencia } = useInadimplencia(resyncToken);
 
   /**
    * O termo da busca, espelhado da lista para o fio.
@@ -927,6 +934,7 @@ function InboxPageInner() {
             resyncToken={resyncToken}
             onTermoDeBusca={setTermoDaBusca}
             onConversaAberta={handleConversaAberta}
+            inadimplencia={inadimplencia}
           />
         </div>
 
@@ -971,6 +979,7 @@ function InboxPageInner() {
             onRefresh={handleManualRefresh}
             termoDaBusca={termoDaBusca}
             saltoPedido={saltoPedido}
+            inadimplencia={inadimplencia}
           />
           )}
         </div>

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import { dubleDoSupabase, type EstadoDoDuble } from "./duble.test-helper";
-import { LEITURA_FRESCA_MS, leituraFresca, lerEspelho, lerParcela } from "./espelho";
+import { cicloCompleto, LEITURA_FRESCA_MS, leituraFresca, lerClientesDoContato, lerCobrancasDosClientes, lerEspelho, lerParcela } from "./espelho";
 
 describe("leituraFresca", () => {
   const agora = new Date("2026-09-12T15:00:00Z");
-  const base = { status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, last_error: null };
+  const base = { status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, vinculo_completo_em: null, last_error: null };
 
   it("fresca só conectado, sem erro, e com a última listagem completa dentro de duas voltas do laço lento", () => {
     expect(leituraFresca(base, agora)).toBe(true);
@@ -31,7 +31,7 @@ describe("lerEspelho", () => {
   function estado(): EstadoDoDuble {
     return {
       tabelas: {
-        cb_asaas_config: [{ account_id: CONTA, status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, last_error: null }],
+        cb_asaas_config: [{ account_id: CONTA, status: "conectado", last_sync_at: null, last_sync_attempt_at: null, vencidas_listadas_em: "2026-09-12T14:50:00Z", last_full_sync_at: null, sincronizando_desde: null, vinculo_completo_em: null, last_error: null }],
         cb_asaas_clientes: [],
         cb_asaas_cobrancas: [{ id: "p", account_id: CONTA, asaas_payment_id: "pay", asaas_customer_id: "cus", status: "NOVO_STATUS", deleted: false, valor: 1, vencimento: "2026-09-01", visto_em: "2026-09-12T14:50:00Z" }],
         contacts: [],
@@ -66,5 +66,67 @@ describe("lerEspelho", () => {
       return q;
     };
     await expect(lerEspelho(admin, CONTA, new Date("2026-09-12T15:00:00Z"))).rejects.toThrow(/contagem falhou/);
+  });
+});
+
+describe("lerCobrancasDosClientes — a aba Cobranças", () => {
+  const CONTA = "conta-1";
+
+  it("⚠️ PAGINA: mais de 1.000 cobranças do mesmo cliente voltam inteiras, na ordem do vencimento (um `.limit(1000)` calava sobre as mais novas)", async () => {
+    const cobrancas = Array.from({ length: 1203 }, (_, i) => ({
+      id: `p${String(i).padStart(4, "0")}`,
+      account_id: CONTA,
+      asaas_payment_id: `pay_${i}`,
+      asaas_customer_id: i % 2 === 0 ? "cus_a" : "cus_b",
+      status: i === 1202 ? "OVERDUE" : "RECEIVED",
+      deleted: false,
+      valor: 1,
+      vencimento: new Date(Date.UTC(2020, 0, 1) + i * 86_400_000).toISOString().slice(0, 10),
+      visto_em: "2026-09-12T14:50:00Z",
+    }));
+    const admin = dubleDoSupabase({ tabelas: { cb_asaas_cobrancas: cobrancas, cb_asaas_clientes: [], contacts: [], cb_asaas_config: [] }, escritas: [] });
+    const lidas = await lerCobrancasDosClientes(admin, CONTA, ["cus_a", "cus_b"]);
+    expect(lidas).toHaveLength(1203);
+    // a mais NOVA (a vencida) está lá — é a que o teto de 1.000 escondia
+    expect(lidas.at(-1)?.id).toBe("p1202");
+    expect(lidas.at(-1)?.status).toBe("OVERDUE");
+    // e só os clientes pedidos
+    expect(await lerCobrancasDosClientes(admin, CONTA, ["cus_a"])).toHaveLength(602);
+    expect(await lerCobrancasDosClientes(admin, CONTA, [])).toEqual([]);
+  });
+});
+
+describe("cicloCompleto — o VÍNCULO da listagem ATUAL terminou inteiro", () => {
+  const base = { vinculo_completo_em: "2026-09-12T14:50:00Z", vencidas_listadas_em: "2026-09-12T14:50:00Z" };
+  it("true quando o último vínculo inteiro é o da listagem vigente (carimbos iguais, ou o vínculo depois)", () => {
+    expect(cicloCompleto(base)).toBe(true);
+    expect(cicloCompleto({ ...base, vinculo_completo_em: "2026-09-12T14:51:00Z" })).toBe(true);
+  });
+  it("⚠️ false no PRIMEIRO ciclo (sem o marcador), entre o passo 4 e o 8 de um ciclo posterior (listagem mais nova que o marcador) e quando o último ciclo ADIOU fichas (o marcador não avança)", () => {
+    expect(cicloCompleto({ ...base, vinculo_completo_em: null })).toBe(false);
+    expect(cicloCompleto({ ...base, vencidas_listadas_em: "2026-09-12T15:05:00Z" })).toBe(false);
+    expect(cicloCompleto({ vinculo_completo_em: "2026-09-12T14:50:00Z", vencidas_listadas_em: null })).toBe(false);
+    expect(cicloCompleto(null)).toBe(false);
+  });
+});
+
+describe("lerClientesDoContato — paginado", () => {
+  const CONTA = "conta-1";
+  it("mais de 1.000 clientes ligados ao mesmo contato voltam inteiros, só os não apagados e só desta conta", async () => {
+    const clientes = Array.from({ length: 1005 }, (_, i) => ({
+      id: `c${String(i).padStart(4, "0")}`,
+      account_id: i === 1004 ? "outra" : CONTA,
+      asaas_customer_id: `cus_${i}`,
+      nome: `Cliente ${i}`,
+      contact_id: "ct-1",
+      vinculo_origem: "telefone",
+      notificacoes_desligadas: false,
+      deleted: i === 1003,
+    }));
+    const admin = dubleDoSupabase({ tabelas: { cb_asaas_clientes: clientes, cb_asaas_cobrancas: [], contacts: [], cb_asaas_config: [] }, escritas: [] });
+    const lidos = await lerClientesDoContato(admin, CONTA, "ct-1");
+    expect(lidos).toHaveLength(1003);
+    expect(lidos.every((c) => c.asaas_customer_id.startsWith("cus_"))).toBe(true);
+    expect(await lerClientesDoContato(admin, CONTA, "ct-2")).toEqual([]);
   });
 });

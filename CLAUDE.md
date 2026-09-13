@@ -3562,9 +3562,11 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   dia"**: o ícone da linha cala, a faixa cala e o filtro "Inadimplentes" é
   NEUTRALIZADO (`ContextoDosFiltros.inadimplentes: Set<string> | null`,
   campo OBRIGATÓRIO — a régua de `recorteDeEtapaConfiavel`). Conectado SEM
-  listagem completa (`atualizadoEm` nulo, recém-conectado) também é
-  `null`: um conjunto vazio ali faria uma visão salva esconder a caixa
-  inteira. ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA
+  ciclo inteiro também é `null` (`cicloCompleto` em `espelho.ts`:
+  `last_sync_at >= vencidas_listadas_em` — a listagem é carimbada no passo
+  4 e o vínculo roda no 7, então entre os dois o mapa é PARCIAL, e a janela
+  se repete a cada ciclo): um conjunto vazio ali faria uma visão salva
+  esconder a caixa inteira. ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA
   régua do ícone, e medido em 13/09 com 11 h sem ciclo a neutralização
   deixava 15 ícones na lista e um interruptor que "não fazia nada" — a tela
   diz "dados do Asaas de …" (faixa, aba e painel de filtros) em vez de

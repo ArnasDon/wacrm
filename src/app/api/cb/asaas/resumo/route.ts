@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { leituraFresca, lerCobrancasDevidas, lerConfigDoEspelho } from "@/lib/asaas/espelho";
+import { cicloCompleto, leituraFresca, lerCobrancasDevidas, lerConfigDoEspelho } from "@/lib/asaas/espelho";
 import type { ParcelaDoEspelho } from "@/lib/asaas/inadimplencia";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
@@ -77,12 +77,10 @@ export async function GET() {
       conectado: true,
       leituraFresca: leituraFresca(config, new Date()),
       atualizadoEm: config.vencidas_listadas_em,
-      // ⚠️ `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES do
-      // vínculo (passo 7): no PRIMEIRO ciclo há uma janela com a listagem
-      // completa e nenhum contato ligado. `last_sync_at` só existe depois de
-      // um ciclo INTEIRO — é o marcador de que "ninguém deve" é resposta, e
-      // não lacuna (Codex, PR #203, 5ª rodada).
-      cicloCompleto: config.last_sync_at !== null,
+      // Ver `cicloCompleto`: o ciclo da listagem ATUAL terminou inteiro —
+      // é o marcador de que "ninguém deve" é resposta, e não lacuna do
+      // vínculo que ainda não rodou (Codex, PR #203).
+      cicloCompleto: cicloCompleto(config),
       contatos,
     });
   } catch (err) {

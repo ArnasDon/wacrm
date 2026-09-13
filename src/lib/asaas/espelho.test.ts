@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { dubleDoSupabase, type EstadoDoDuble } from "./duble.test-helper";
-import { LEITURA_FRESCA_MS, leituraFresca, lerCobrancasDosClientes, lerEspelho, lerParcela } from "./espelho";
+import { cicloCompleto, LEITURA_FRESCA_MS, leituraFresca, lerClientesDoContato, lerCobrancasDosClientes, lerEspelho, lerParcela } from "./espelho";
 
 describe("leituraFresca", () => {
   const agora = new Date("2026-09-12T15:00:00Z");
@@ -93,5 +93,40 @@ describe("lerCobrancasDosClientes — a aba Cobranças", () => {
     // e só os clientes pedidos
     expect(await lerCobrancasDosClientes(admin, CONTA, ["cus_a"])).toHaveLength(602);
     expect(await lerCobrancasDosClientes(admin, CONTA, [])).toEqual([]);
+  });
+});
+
+describe("cicloCompleto — o ciclo da listagem ATUAL terminou inteiro", () => {
+  const base = { last_sync_at: "2026-09-12T14:50:00Z", vencidas_listadas_em: "2026-09-12T14:50:00Z" };
+  it("true quando o último ciclo inteiro é o da listagem vigente (os dois carimbos iguais, ou o fim depois)", () => {
+    expect(cicloCompleto(base)).toBe(true);
+    expect(cicloCompleto({ ...base, last_sync_at: "2026-09-12T14:51:00Z" })).toBe(true);
+  });
+  it("⚠️ false no PRIMEIRO ciclo (sem `last_sync_at`) E entre o passo 4 e o 8 de um ciclo posterior (listagem mais nova que o fim)", () => {
+    expect(cicloCompleto({ ...base, last_sync_at: null })).toBe(false);
+    expect(cicloCompleto({ ...base, vencidas_listadas_em: "2026-09-12T15:05:00Z" })).toBe(false);
+    expect(cicloCompleto({ last_sync_at: "2026-09-12T14:50:00Z", vencidas_listadas_em: null })).toBe(false);
+    expect(cicloCompleto(null)).toBe(false);
+  });
+});
+
+describe("lerClientesDoContato — paginado", () => {
+  const CONTA = "conta-1";
+  it("mais de 1.000 clientes ligados ao mesmo contato voltam inteiros, só os não apagados e só desta conta", async () => {
+    const clientes = Array.from({ length: 1005 }, (_, i) => ({
+      id: `c${String(i).padStart(4, "0")}`,
+      account_id: i === 1004 ? "outra" : CONTA,
+      asaas_customer_id: `cus_${i}`,
+      nome: `Cliente ${i}`,
+      contact_id: "ct-1",
+      vinculo_origem: "telefone",
+      notificacoes_desligadas: false,
+      deleted: i === 1003,
+    }));
+    const admin = dubleDoSupabase({ tabelas: { cb_asaas_clientes: clientes, cb_asaas_cobrancas: [], contacts: [], cb_asaas_config: [] }, escritas: [] });
+    const lidos = await lerClientesDoContato(admin, CONTA, "ct-1");
+    expect(lidos).toHaveLength(1003);
+    expect(lidos.every((c) => c.asaas_customer_id.startsWith("cus_"))).toBe(true);
+    expect(await lerClientesDoContato(admin, CONTA, "ct-2")).toEqual([]);
   });
 });

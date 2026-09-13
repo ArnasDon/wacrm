@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { leituraFresca, lerCobrancasDosClientes, lerConfigDoEspelho } from "@/lib/asaas/espelho";
+import { cicloCompleto, leituraFresca, lerClientesDoContato, lerCobrancasDosClientes, lerConfigDoEspelho } from "@/lib/asaas/espelho";
 import type { ParcelaDoEspelho } from "@/lib/asaas/inadimplencia";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
@@ -34,18 +34,16 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
     const config = await lerConfigDoEspelho(admin, ctx.accountId);
     if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, cicloCompleto: false, clientes: [], parcelas: [] });
 
-    const { data: ligados, error: erroClientes } = await admin
-      .from("cb_asaas_clientes")
-      .select("id, asaas_customer_id, nome, vinculo_origem, notificacoes_desligadas")
-      .eq("account_id", ctx.accountId)
-      .eq("contact_id", contactId)
-      .eq("deleted", false)
-      .order("nome");
-    if (erroClientes) return NextResponse.json({ error: "db_error" }, { status: 500 });
-
-    const clientes = ((ligados ?? []) as { id: string; asaas_customer_id: string; nome: string | null; vinculo_origem: string | null; notificacoes_desligadas: boolean }[]).map(
-      (c) => ({ id: c.id, asaasId: c.asaas_customer_id, nome: c.nome ?? "", origem: c.vinculo_origem, notificacoesDesligadas: c.notificacoes_desligadas === true }),
-    );
+    // Paginado (o catch abaixo responde 500 acima do teto): um contato com
+    // mais clientes que uma página perderia clientes E as cobranças deles.
+    const ligados = await lerClientesDoContato(admin, ctx.accountId, contactId);
+    const clientes = ligados.map((c) => ({
+      id: c.id,
+      asaasId: c.asaas_customer_id,
+      nome: c.nome ?? "",
+      origem: c.vinculo_origem,
+      notificacoesDesligadas: c.notificacoes_desligadas,
+    }));
 
     // Paginada, e acima do teto ESTOURA (o catch abaixo responde 500):
     // uma lista parcial seria lida como "as outras não existem".
@@ -59,9 +57,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
       conectado: true,
       leituraFresca: leituraFresca(config, new Date()),
       atualizadoEm: config.vencidas_listadas_em,
-      // Ver a rota do resumo: só depois de um ciclo INTEIRO "nenhum cliente
-      // ligado" é resposta, e não lacuna do vínculo que ainda não rodou.
-      cicloCompleto: config.last_sync_at !== null,
+      // Ver `cicloCompleto`: só com o ciclo da listagem atual terminado
+      // "nenhum cliente ligado" é resposta, e não lacuna do vínculo.
+      cicloCompleto: cicloCompleto(config),
       clientes,
       parcelas,
     });

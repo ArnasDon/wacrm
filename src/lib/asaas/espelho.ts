@@ -85,6 +85,56 @@ export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: strin
   return (data ?? null) as ConfigDoEspelho | null;
 }
 
+/**
+ * Puro: o ciclo que produziu a listagem ATUAL das vencidas terminou inteiro?
+ *
+ * ⚠️ `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES da
+ * reconciliação e do vínculo (passo 7); `last_sync_at` só no passo 8, com o
+ * mesmo `vistoEm`. Entre os dois o mapa contato → dívida está PARCIAL
+ * (cliente novo ainda sem vínculo), e "ninguém deve" seria lacuna, não
+ * resposta. "Algum ciclo já terminou" não basta: nos ciclos seguintes a
+ * janela se repete a cada 15 min (Codex, PR #203, 5ª e 6ª rodadas). É
+ * verdade só quando o último ciclo inteiro é o da listagem vigente.
+ */
+export function cicloCompleto(config: Pick<ConfigDoEspelho, "last_sync_at" | "vencidas_listadas_em"> | null): boolean {
+  if (!config?.last_sync_at || !config.vencidas_listadas_em) return false;
+  const fim = Date.parse(config.last_sync_at);
+  const listagem = Date.parse(config.vencidas_listadas_em);
+  return Number.isFinite(fim) && Number.isFinite(listagem) && fim >= listagem;
+}
+
+/**
+ * Os clientes do Asaas LIGADOS a um contato — paginado como o resto (um
+ * contato ligado a mais linhas que o teto do PostgREST perderia clientes e
+ * as cobranças deles em silêncio; Codex, PR #203). Ordem total (`nome, id`).
+ */
+export async function lerClientesDoContato(
+  admin: SupabaseClient,
+  accountId: string,
+  contactId: string,
+): Promise<{ id: string; asaas_customer_id: string; nome: string | null; vinculo_origem: string | null; notificacoes_desligadas: boolean }[]> {
+  const linhas = await lerTudo<Record<string, unknown>>(
+    (de, ate) =>
+      admin
+        .from("cb_asaas_clientes")
+        .select("id, asaas_customer_id, nome, vinculo_origem, notificacoes_desligadas")
+        .eq("account_id", accountId)
+        .eq("contact_id", contactId)
+        .eq("deleted", false)
+        .order("nome")
+        .order("id")
+        .range(de, ate),
+    "clientes do contato",
+  );
+  return linhas.map((l) => ({
+    id: l.id as string,
+    asaas_customer_id: l.asaas_customer_id as string,
+    nome: (l.nome as string | null) ?? null,
+    vinculo_origem: (l.vinculo_origem as string | null) ?? null,
+    notificacoes_desligadas: l.notificacoes_desligadas === true,
+  }));
+}
+
 /** Puro: a última listagem completa das vencidas é recente o bastante para afirmar "em dia"? */
 export function leituraFresca(config: ConfigDoEspelho | null, agora: Date): boolean {
   if (!config || config.status !== "conectado" || !config.vencidas_listadas_em) return false;

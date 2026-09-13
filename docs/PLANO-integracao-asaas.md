@@ -1082,6 +1082,19 @@ ATUALIZADO e todas as formas de pagamento.
 >     ramos de condição (`primeiroEnvio`). O lembrete de quem teve a
 >     cobrança absorvida pelo intervalo SAI (a cobrança não sai, e o
 >     lembrete não é contado pelo intervalo). Todos do Codex, PR #206.
+> 14. **Da revisão adversarial (PR #206):** a MESMA parcela cruzando dois
+>     marcos no mesmo dia (venceu na quarta, o espelho a viu vencida no
+>     sábado: o marco de 1 empurrado para segunda cai no dia do marco de 5)
+>     entra UMA vez no grupo, pelo MAIOR marco — o dedupe é por PARCELA, não
+>     por parcela × marco; e o passo 5 abaixo ("a trava de todas as parcelas
+>     que cruzaram leva o marco de cada uma") vale com esse dedupe: uma
+>     trava por parcela por dia. Grupo sem trava `reservado` nenhuma não
+>     dispara (`ids.length === 0`). A SONDA das conexões que falha é dita
+>     (`sondaFalhou` no log do agendador) — toda candidata é pulada sem
+>     travar, por ignorância, não por queda. A busca do log em `medir` tem 5
+>     s de folga entre o relógio do Node e o `now()` do Postgres. E
+>     `validate.ts` exige a MESMA conexão em todos os `send_message`/
+>     `send_media` da automação: a varredura só confere a do primeiro.
 > 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
 >     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
 >     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
@@ -1958,12 +1971,12 @@ o painel do navegador estava oculto e a captura não sai)
 
 **Fase 3** (13/09, PR #206)
 
-- [x] **Automatizado:** `regua.test.ts` (28: dia-alvo com `vista_vencida_em`
+- [x] **Automatizado:** `regua.test.ts` (29: dia-alvo com `vista_vencida_em`
       contra `regua_ativada_em`, fim de semana e feriado, janela, tolerância
       do marco perdido, agrupamento por cliente através das automações,
       lembrete cedendo à cobrança, variáveis, `resultadoDoLog` inclusive
       `na_fila`, os nove resultados nos dois dicionários),
-      `varrer-regua.test.ts` (24 com o dublê: interruptor, exceção, atrasado
+      `varrer-regua.test.ts` (25 com o dublê: interruptor, exceção, atrasado
       antigo fora, conexão inválida/desconectada, janela, trava do marco e
       recusa no ciclo seguinte, pagou há três minutos, TODAS as vencidas na
       mensagem, dois marcos no mesmo dia, intervalo mínimo, falha sem

@@ -90,6 +90,8 @@ export interface ResultadoDaRegua {
   falhas: number;
   /** candidatas puladas por conexão desconectada (tentam no ciclo seguinte) */
   semConexao: number;
+  /** a sonda das conexões (Evolution) FALHOU: toda candidata conta em `semConexao` por ignorância, não por queda */
+  sondaFalhou: boolean;
   /** automações puladas por conexão que não resolve na conta */
   conexaoInvalida: number;
   orfasRecolhidas: number;
@@ -110,12 +112,14 @@ export interface DependenciasDaVarredura {
   lerPassos?: (automationId: string) => Promise<PassoDaArvore[]>;
   /** o disparo (padrão: `dispararAutomacoes`) */
   disparar?: typeof dispararAutomacoes;
-  /** id da conexão → viva? (padrão: `probeChannels`; `undefined` = desconhecida) */
-  saudeDasConexoes?: (accountId: string) => Promise<Map<string, boolean>>;
+  /** id da conexão → viva? (padrão: `probeChannels`; `undefined` = desconhecida; `null` = a sonda falhou) */
+  saudeDasConexoes?: (accountId: string) => Promise<Map<string, boolean> | null>;
 }
 
 const PAGINA = 1000;
 const PRAZO_PADRAO_MS = 45_000;
+/** folga entre o relógio do Node e o `now()` do Postgres na busca do log recém-criado */
+const FOLGA_DO_RELOGIO_MS = 5_000;
 
 /** A forma mínima do que `loadStepsTree` devolve: passo com ramos opcionais. */
 export interface PassoDaArvore {
@@ -201,12 +205,20 @@ async function reguaAindaLigada(admin: SupabaseClient, accountId: string): Promi
   return data?.regua_ativa === true;
 }
 
-async function saudePadrao(admin: SupabaseClient, accountId: string): Promise<Map<string, boolean>> {
+/**
+ * id da conexão → viva? `null` quando a SONDA falhou (a Evolution não
+ * respondeu): aí ninguém é candidato neste ciclo — mandar por uma conexão
+ * que não se sabe viva seria `falhou` na trava e o marco queimado; pulando
+ * sem travar, o ciclo seguinte tenta dentro da janela — e o resultado DIZ
+ * que foi a sonda, não a conexão (revisão adversarial do PR #206).
+ */
+async function saudePadrao(admin: SupabaseClient, accountId: string): Promise<Map<string, boolean> | null> {
   const mapa = new Map<string, boolean>();
   try {
     for (const c of await probeChannels(admin, accountId)) mapa.set(c.id, c.tone === "ok" || c.tone === "warn");
   } catch (e) {
     console.warn("[asaas] régua: sonda das conexões falhou —", e instanceof Error ? e.message : e);
+    return null;
   }
   return mapa;
 }
@@ -507,12 +519,17 @@ async function medir(
   desde: string,
   disparo: ResultadoDoDisparo,
 ): Promise<{ resultado: ReturnType<typeof resultadoDoLog>; detalhe: string | null; logId: string | null }> {
+  // `desde` é o relógio do Node; `created_at` é o `now()` do Postgres. Uns
+  // segundos de folga evitam que um log recém-criado fique fora da busca e a
+  // trava vire `incerto` (revisão adversarial do PR #206). Ordem DESC + 1:
+  // o log mais novo deste contato e automação — grupos do mesmo contato são
+  // medidos em sequência, e o anterior fica atrás do novo.
   const { data } = await admin
     .from("automation_logs")
     .select("id, desfecho, steps_executed, error_message")
     .eq("automation_id", automationId)
     .eq("contact_id", contactId)
-    .gte("created_at", desde)
+    .gte("created_at", new Date(Date.parse(desde) - FOLGA_DO_RELOGIO_MS).toISOString())
     .order("created_at", { ascending: false })
     .limit(1);
   const log = (data?.[0] as { id: string; desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null } | undefined) ?? null;
@@ -535,7 +552,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
   const fuso = deps.fuso ?? FUSO_PADRAO;
   const lerPassos = deps.lerPassos ?? loadStepsTree;
   const disparar = deps.disparar ?? dispararAutomacoes;
-  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
+  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, sondaFalhou: false, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
   try {
     const config = await lerConfigDaRegua(admin, accountId);
     if (!config || !config.regua_ativa) return saida;
@@ -557,7 +574,9 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       return false;
     });
     if (validas.length === 0) return saida;
-    const saude = await (deps.saudeDasConexoes ?? ((id: string) => saudePadrao(admin, id)))(accountId);
+    const sondada = await (deps.saudeDasConexoes ?? ((id: string) => saudePadrao(admin, id)))(accountId);
+    const saude = sondada ?? new Map<string, boolean>();
+    saida.sondaFalhou = sondada === null;
 
     const ctx: ContextoDaRegua = { hoje: diaNoFuso(agora, fuso), reguaAtivadaEm: config.regua_ativada_em, somenteDiasUteis: true, fuso };
     const vistoEm = agora.toISOString();
@@ -650,6 +669,10 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         saida.absorvidos += 1;
         continue;
       }
+      // Sem trava `reservado` nenhuma não há prova de envio a fechar: NÃO
+      // disparar (a mensagem sairia sem linha `enviado`, invisível para o
+      // intervalo mínimo e para a aba — revisão adversarial do PR #206).
+      if (ids.length === 0) continue;
       // 6) a conversa, o contexto e o disparo
       const vencidas = resumirDivida(vencidasDoCliente(porCliente.get(grupo.asaasCustomerId) ?? []).map((p) => cruzaram.find((c) => c.id === p.id) ?? p), agora, config.vencidas_listadas_em, fuso).vencidas;
       const conversationId = await conversaDoContato(admin, accountId, ligado.contact_id, automacao.channelId);
@@ -699,7 +722,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         admin,
         venceHoje.map((p) => ({ account_id: accountId, cobranca_id: p.id, asaas_customer_id: grupo.asaasCustomerId, tipo: "vence_hoje" as const, marco: 0, vencimento: p.vencimento, automation_id: automacao.id, automation_nome: automacao.nome, contact_id: ligado.contact_id, resultado: "reservado" as const, detalhe: null })),
       );
-      if (ids === null) continue;
+      if (ids === null || ids.length === 0) continue;
       const conversationId = await conversaDoContato(admin, accountId, ligado.contact_id, automacao.channelId);
       const vars = montarVariaveis({ clienteNome: ligado.nome, escritorioNome: escritorio, vencidas: [], cruzaram: [], venceHoje, hoje: dia, agora, fuso });
       const carimbo = new Date().toISOString();

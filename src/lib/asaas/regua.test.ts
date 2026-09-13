@@ -214,6 +214,15 @@ describe("agruparPorCliente (D11) — uma mensagem por cliente, através das aut
     expect(agruparPorCliente([a, b], [set], ctx("2026-09-14"), segunda)[0].automacao.id).toBe("a-1");
   });
 
+  it("a MESMA parcela cruzando dois marcos no mesmo dia (venceu qua 09/09, vista sáb 12/09: o marco de 1 empurrado para segunda cai no dia do marco de 5) entra UMA vez, pelo MAIOR marco — o INSERT do grupo não pode levar a mesma chave duas vezes (revisão adversarial, PR #206)", () => {
+    const p = parcela({ vencimento: "2026-09-09", vista_vencida_em: "2026-09-12T12:00:00Z" });
+    const grupos = agruparPorCliente([cobranca(1), cobranca(5), cobranca(30)], [p], ctx("2026-09-14"), segunda);
+    expect(grupos).toHaveLength(1);
+    expect(grupos[0].cruzaram).toHaveLength(1);
+    expect(grupos[0].cruzaram[0].automacao.marco).toBe(5);
+    expect(grupos[0].automacao.marco).toBe(5);
+  });
+
   it("fora da janela da automação nada é candidato; cada automação tem a sua hora", () => {
     const set = parcela({ vencimento: "2026-09-11", vista_vencida_em: "2026-09-12T03:00:00Z" });
     expect(agruparPorCliente([cobranca(1, { horaEnvio: "10:00" })], [set], ctx("2026-09-14"), segunda)).toEqual([]);

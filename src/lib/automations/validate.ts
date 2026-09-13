@@ -434,14 +434,28 @@ export function validateAsaasReguaForActivation(
 ): ValidationIssue[] {
   const issues: ValidationIssue[] = []
   if (!ehGatilhoDaRegua(triggerType)) return issues
+  // ⚠️ UMA conexão para TODOS os envios da automação (D19): a varredura
+  // resolve e confere a saúde da conexão do PRIMEIRO `send_message` e a
+  // passa em `context.channel_id`; um segundo envio apontado para outra
+  // conexão sairia por um número que ninguém conferiu (revisão adversarial
+  // do PR #206). `send_media` entra na mesma regra — a mídia também sai
+  // pelo canal do passo.
+  let conexao: string | null = null
   const visitar = (lista: StepLike[], prefixo: string) => {
     lista.forEach((s, i) => {
       const path = `${prefixo}steps[${i}]`
       if (s.step_type === 'wait') {
         issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence cannot wait — each milestone is its own automation' })
       }
-      if (s.step_type === 'send_message' && !nonEmpty(s.step_config?.channel_id)) {
-        issues.push({ path: `${path}.channel_id`, message: 'the Asaas collection message needs a connection chosen on the step' })
+      if (s.step_type === 'send_message' || s.step_type === 'send_media') {
+        const canal = s.step_config?.channel_id
+        if (!nonEmpty(canal)) {
+          issues.push({ path: `${path}.channel_id`, message: 'the Asaas collection message needs a connection chosen on the step' })
+        } else if (conexao === null) {
+          conexao = canal as string
+        } else if (canal !== conexao) {
+          issues.push({ path: `${path}.channel_id`, message: 'the Asaas collection sequence must send every message through the same connection' })
+        }
       }
       if (s.step_type === 'condition' && s.branches) {
         if (s.branches.yes) visitar(s.branches.yes, `${path}.yes.`)

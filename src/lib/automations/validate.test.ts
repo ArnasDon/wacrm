@@ -371,3 +371,26 @@ describe('régua do Asaas — os passos', () => {
     expect(validateAsaasReguaForActivation('keyword_match', [msg(), { step_type: 'wait', step_config: { amount: 1, unit: 'days' } }])).toEqual([])
   })
 })
+
+describe('régua do Asaas — uma conexão só para todos os envios (revisão adversarial, PR #206)', () => {
+  const envio = (channel_id?: string) => ({ step_type: 'send_message', step_config: channel_id ? { text: 'x', channel_id } : { text: 'x' } })
+
+  it('dois envios pela mesma conexão passam; por conexões diferentes, o segundo é recusado — inclusive dentro de um ramo', () => {
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), envio('c1')])).toEqual([])
+    const fora = validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), envio('c2')])
+    expect(fora).toHaveLength(1)
+    expect(fora[0].path).toBe('steps[1].channel_id')
+    const noRamo = validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [
+      { step_type: 'condition', step_config: {}, branches: { yes: [envio('c2')], no: [] } },
+      envio('c1'),
+    ])
+    expect(noRamo.map((i) => i.path)).toEqual(['steps[1].channel_id'])
+  })
+
+  it('send_media entra na mesma regra: precisa da conexão, e da MESMA', () => {
+    const midia = (channel_id?: string) => ({ step_type: 'send_media', step_config: channel_id ? { media_url: 'u', channel_id } : { media_url: 'u' } })
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia()])).toHaveLength(1)
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia('c3')])).toHaveLength(1)
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia('c1')])).toEqual([])
+  })
+})

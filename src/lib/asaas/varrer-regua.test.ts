@@ -145,6 +145,16 @@ describe("varrerRegua — o interruptor e as cercas", () => {
     expect(disparos.chamadas).toEqual([]);
   });
 
+  it("a SONDA das conexões falha: nada sai, nada é travado, e o resultado diz que foi a sonda (não a conexão)", async () => {
+    const e = estado();
+    const { d, disparos } = deps(e, { listas: {}, recursos: {} }, { saudeDasConexoes: async () => null });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.sondaFalhou).toBe(true);
+    expect(r.semConexao).toBe(1);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+  });
+
   it("fora da janela (antes das 9h) nada sai", async () => {
     const e = estado();
     const { d, disparos } = deps(e, { listas: {}, recursos: {} }, { agora: new Date("2026-09-14T11:30:00Z") /* 08:30 */ });

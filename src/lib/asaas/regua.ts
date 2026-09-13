@@ -357,12 +357,19 @@ export function agruparPorCliente(
   opcoes: { semJanela?: boolean } = {},
 ): GrupoDeCobranca[] {
   const grupos = new Map<string, GrupoDeCobranca>();
-  // ⚠️ Ordem DETERMINÍSTICA (maior marco primeiro, depois o id): duas
-  // automações LIGADAS com o mesmo marco — a "régua padrão" criada duas
-  // vezes — disputam a MESMA trava. Sem a ordem e sem o dedupe abaixo, a
-  // mesma parcela entrava duas vezes em `cruzaram`, o INSERT do grupo
-  // levava duas linhas com a mesma chave, o 23505 era lido como "outro
-  // processo pegou" e NENHUMA das duas enviava (Codex, PR #206).
+  // ⚠️ Ordem DETERMINÍSTICA (maior marco primeiro, depois o id) e UMA
+  // entrada por PARCELA, com o MAIOR marco que ela cruzou hoje. Dois casos
+  // reais entravam a mesma parcela duas vezes em `cruzaram`: duas automações
+  // LIGADAS com o mesmo marco (a "régua padrão" criada duas vezes — Codex,
+  // PR #206) e a MESMA parcela cruzando dois marcos no mesmo dia (venceu na
+  // quarta, o espelho a viu vencida no sábado: o marco de 1 dia empurrado
+  // para segunda cai no dia do marco de 5 — revisão adversarial do PR #206).
+  // Nos dois, o INSERT do grupo levava duas linhas com a mesma chave, o
+  // 23505 era lido como "outro processo pegou" e NINGUÉM enviava, em
+  // silêncio, todo ciclo do dia — e no dia seguinte o marco já tinha
+  // passado. A trava da parcela fica com o maior marco; o menor não precisa
+  // de trava própria: no ciclo seguinte do mesmo dia o grupo bate na trava
+  // do maior (23505) e sai, e amanhã o dia-alvo do menor já não é hoje.
   const ordenadas = automacoes.filter((a) => a.tipo === "atraso").sort((a, b) => b.marco - a.marco || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   for (const automacao of ordenadas) {
     const c = { ...ctx, somenteDiasUteis: automacao.somenteDiasUteis };
@@ -373,8 +380,8 @@ export function agruparPorCliente(
       if (!aindaPagavel(p, ctx.hoje)) continue;
       if (diaAlvoDoMarco(p, automacao.marco, c) !== ctx.hoje) continue;
       const g = grupos.get(p.asaas_customer_id) ?? { asaasCustomerId: p.asaas_customer_id, automacao, cruzaram: [] };
-      // a parcela já cruzou ESTE marco por outra automação: a trava é uma só
-      if (g.cruzaram.some((x) => x.parcela.id === p.id && x.automacao.marco === automacao.marco)) continue;
+      // a parcela já entrou (pelo maior marco, ou por outra automação do mesmo marco): a trava é uma só
+      if (g.cruzaram.some((x) => x.parcela.id === p.id)) continue;
       g.cruzaram.push({ parcela: p, automacao });
       if (automacao.marco > g.automacao.marco) g.automacao = automacao;
       grupos.set(p.asaas_customer_id, g);

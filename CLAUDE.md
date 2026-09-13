@@ -3731,7 +3731,12 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
 - ⚠️⚠️ **A trava é do MARCO, e é UM INSERT com várias linhas.**
   `cb_asaas_regua_envios` com `UNIQUE (cobranca_id, tipo, marco, vencimento)`:
   23505 em qualquer parcela recusa o GRUPO inteiro (dois processos Node
-  vivos no deploy `start-first`); a trava vale para a automação que enviou
+  vivos no deploy `start-first`) — por isso `agruparPorCliente` entra cada
+  parcela UMA vez (pelo MAIOR marco que cruzou hoje; duas automações do
+  mesmo marco ou a mesma parcela em dois marcos punham a mesma chave duas
+  vezes no INSERT, o 23505 era lido como "outro processo pegou" e ninguém
+  enviava — Codex e revisão adversarial, PR #206), e grupo sem `reservado`
+  não dispara; a trava vale para a automação que enviou
   E para a que foi absorvida no mesmo dia (`absorvida`), e o lembrete usa
   `tipo = 'vence_hoje'`/`marco = 0`. `reservado` há mais de 10 min é órfã
   (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ **`na_fila`
@@ -3755,9 +3760,12 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   revista). Interruptor e intervalo: `PUT /api/cb/asaas/regua/interruptor`
   (ROWCOUNT; ligar carimba `regua_ativada_em`), NÃO o PUT da config.
 - ⚠️ **A conexão do `send_message` da régua FALHA FECHADA** (D19):
-  `validate.ts` exige `channel_id` no passo e recusa qualquer "Aguardar"
-  nos dois gatilhos; a varredura pula a automação cuja conexão não resolve
-  na conta e a candidata cuja conexão está desconectada (sem travar); e o
+  `validate.ts` exige `channel_id` em todo `send_message`/`send_media`, a
+  MESMA em todos (a varredura só confere a do primeiro — `primeiroEnvio`,
+  que entra nos ramos de condição), e recusa qualquer "Aguardar" nos dois
+  gatilhos; a varredura pula a automação cuja conexão não resolve na conta
+  e a candidata cuja conexão está desconectada (sem travar; a SONDA que
+  falha conta igual e é dita no log — `sondaFalhou`); e o
   motor, nesses gatilhos, lança em vez de cair no padrão
   (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
   numa cobrança isso é o link de pagamento saindo por outro número).

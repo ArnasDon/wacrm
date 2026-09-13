@@ -98,7 +98,7 @@ export async function GET(request: Request) {
         const rg = await varrerRegua(admin, conta.account_id, { prazoMs: inicio + ORCAMENTO_MS });
         if (rg.ativa) {
           console.log(
-            `[asaas] régua da conta ${conta.account_id}: ${rg.automacoes} automações, ${rg.candidatos} candidatos, ${rg.enviados} enviados, ${rg.naFila} na fila, ${rg.absorvidos} absorvidos, ${rg.barrados} barrados, ${rg.falhas} falhas, ${rg.semConexao} sem conexão, ${rg.conexaoInvalida} conexão inválida, ${rg.orfasRecolhidas} órfãs, ${rg.reconciliadas} reconciliadas${rg.desligadaNoMeio ? ", desligada no meio" : ""}${rg.interrompida ? `, interrompida (${rg.interrompida})` : ""}`,
+            `[asaas] régua da conta ${conta.account_id}: ${rg.automacoes} automações, ${rg.candidatos} candidatos, ${rg.enviados} enviados, ${rg.naFila} na fila, ${rg.absorvidos} absorvidos, ${rg.barrados} barrados, ${rg.falhas} falhas, ${rg.semConexao} sem conexão${rg.sondaFalhou ? " (a SONDA das conexões falhou)" : ""}, ${rg.conexaoInvalida} conexão inválida, ${rg.orfasRecolhidas} órfãs, ${rg.reconciliadas} reconciliadas${rg.desligadaNoMeio ? ", desligada no meio" : ""}${rg.interrompida ? `, interrompida (${rg.interrompida})` : ""}`,
           );
         }
       }

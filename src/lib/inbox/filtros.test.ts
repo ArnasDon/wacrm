@@ -89,6 +89,7 @@ const ctx = (patch: Partial<ContextoDosFiltros> = {}): ContextoDosFiltros => ({
   achadasNoTexto: new Set<string>(),
   recorteDeEtapaConfiavel: true,
   agoraMs: AGORA,
+  inadimplentes: null,
   ...patch,
 });
 
@@ -917,5 +918,32 @@ describe("canalIds — OU entre as conexões marcadas (03/09)", () => {
       ctx(),
     );
     expect(saida.map((c) => c.id)).toEqual(["a", "b"]);
+  });
+});
+
+describe("recorte por inadimplência no Asaas (Fase 1b)", () => {
+  const devendo = conversa({ id: "c-deve", contact_id: "ct-deve" });
+  const emDia = conversa({ id: "c-em-dia", contact_id: "ct-em-dia" });
+  const f = { ...FILTROS_VAZIOS, inadimplentes: true };
+
+  it("com o conjunto em mão, fica só quem está nele", () => {
+    const ids = aplicarFiltros([devendo, emDia], f, ctx({ inadimplentes: new Set(["ct-deve"]) })).map((c) => c.id);
+    expect(ids).toEqual(["c-deve"]);
+  });
+
+  it("⚠️ `null` NEUTRALIZA: Asaas desconectado ou espelho parado nunca vira 'nenhuma conversa'", () => {
+    const ids = aplicarFiltros([devendo, emDia], f, ctx({ inadimplentes: null })).map((c) => c.id);
+    expect(ids).toEqual(["c-deve", "c-em-dia"]);
+  });
+
+  it("grupo não tem contato e fica de fora — dívida é de gente", () => {
+    const ids = aplicarFiltros([devendo, grupo()], f, ctx({ inadimplentes: new Set(["ct-deve"]) })).map((c) => c.id);
+    expect(ids).toEqual(["c-deve"]);
+  });
+
+  it("conta como um filtro e desligado não recorta nada", () => {
+    expect(contarFiltrosAtivos(f)).toBe(1);
+    const ids = aplicarFiltros([devendo, emDia], FILTROS_VAZIOS, ctx({ inadimplentes: new Set() })).map((c) => c.id);
+    expect(ids).toEqual(["c-deve", "c-em-dia"]);
   });
 });

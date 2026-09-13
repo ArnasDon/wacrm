@@ -11,6 +11,8 @@ import { useApagarNota } from "@/hooks/use-apagar-nota";
 import { useFixarNota } from "@/hooks/use-fixar-nota";
 import { useCan } from "@/hooks/use-can";
 import { ScheduledBar } from "./scheduled-bar";
+import { FaixaDeInadimplencia } from "./faixa-de-inadimplencia";
+import { dividaDoContato, leituraAindaFresca, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
 import { ExecutarAutomacaoDialog } from "./executar-automacao-dialog";
 import { CopiarLinkDaConversa } from "@/components/inbox/copiar-link-da-conversa";
 import { AvataresNaConversa } from "./avatares-na-conversa";
@@ -198,6 +200,12 @@ interface MessageThreadProps {
    * clicado duas vezes rolar duas vezes.
    */
   saltoPedido?: PedidoDeSalto | null;
+  /**
+   * Quem está INADIMPLENTE no Asaas (Fase 1b) — a resposta em lote da
+   * página, a MESMA que acende o ícone da lista. `null` = ainda não sei:
+   * a faixa cala, sem afirmar "em dia".
+   */
+  inadimplencia?: RespostaDoResumo | null;
 }
 
 /**
@@ -463,6 +471,7 @@ export function MessageThread({
   onRefresh,
   termoDaBusca = "",
   saltoPedido = null,
+  inadimplencia = null,
 }: MessageThreadProps) {
   const t = useTranslations("Inbox.messageThread");
   const tTimer = useTranslations("Inbox.sessionTimer");
@@ -1152,6 +1161,13 @@ export function MessageThread({
   // CHECK XOR da 906 —, então não há contato por quem perguntar. E automação
   // não roda em grupo, por garantia estrutural.
   const { itens: execucoesDoFio } = useExecucoesDoFio(contact?.id, resyncToken);
+  // A dívida DESTE contato no Asaas (Fase 1b), para a faixa acima do
+  // compositor. `agoraDaBadge` é o relógio de um minuto do cabeçalho — os
+  // dias de atraso viram à meia-noite sem recarregar. Grupo não tem contato.
+  const dividaDoAsaas = useMemo(
+    () => dividaDoContato(inadimplencia, contact?.id, agoraDaBadge),
+    [inadimplencia, contact?.id, agoraDaBadge],
+  );
 
   // Anotações internas (migration 918). Chaveadas pela CONVERSA, não pelo
   // contato como a trilha acima — é a única chave que existe em grupo.
@@ -2879,6 +2895,16 @@ export function MessageThread({
         abertaEm={galeriaAbertaEm}
         onIrPara={setGaleriaAbertaEm}
         onFechar={() => setGaleriaAbertaEm(null)}
+      />
+
+      {/* Faixa INADIMPLENTE (Asaas, Fase 1b), acima da de agendadas e pelo
+          mesmo motivo de morar no fio: quem vai escrever precisa esbarrar
+          nela antes. Cala com `null` — nunca afirma "em dia". */}
+      <FaixaDeInadimplencia
+        divida={dividaDoAsaas}
+        atualizadoEm={inadimplencia?.atualizadoEm ?? null}
+        leituraFresca={inadimplencia ? leituraAindaFresca(inadimplencia, agoraDaBadge) : false}
+        aoVerCobrancas={onOpenContactPanel ? () => onOpenContactPanel("cobrancas") : undefined}
       />
 
       {/* Faixa AGENDADAS (925), colada no compositor e dentro do fio.

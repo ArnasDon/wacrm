@@ -120,6 +120,7 @@ export function lerFiltroSalvo(bruto: unknown): FiltrosDoInbox {
     favoritas: o.favoritas === true,
     naoLidas: o.naoLidas === true,
     emAtraso: o.emAtraso === true,
+    inadimplentes: o.inadimplentes === true,
   };
 }
 
@@ -145,6 +146,7 @@ export function escreverFiltroSalvo(f: FiltrosDoInbox): Record<string, unknown> 
     favoritas: f.favoritas,
     naoLidas: f.naoLidas,
     emAtraso: f.emAtraso,
+    inadimplentes: f.inadimplentes,
   };
 }
 
@@ -194,6 +196,7 @@ export function mesmoFiltro(a: FiltrosDoInbox, b: FiltrosDoInbox): boolean {
     a.favoritas === b.favoritas &&
     a.naoLidas === b.naoLidas &&
     a.emAtraso === b.emAtraso &&
+    a.inadimplentes === b.inadimplentes &&
     etiquetasIguais &&
     (!modoImporta || a.modoDeEtiqueta === b.modoDeEtiqueta)
   );
@@ -223,6 +226,7 @@ export type ChaveDeRotulo =
   | "typeGroups"
   | "filterUnread"
   | "filterAwaiting"
+  | "filterDelinquent"
   | "favorites"
   | "channelFilter"
   | "assigneeNone"
@@ -442,6 +446,17 @@ export function descreverFiltro(
       chave: "emAtraso",
       rotulo: { fonte: "i18n", chave: "filterAwaiting" },
       limpar: { emAtraso: false },
+    });
+  }
+
+  // Também fora de `limparOrfaos`: não é id, é uma pergunta ao espelho do
+  // Asaas — e com o espelho indisponível o recorte é neutralizado no ctx,
+  // não apagado da visão salva.
+  if (f.inadimplentes) {
+    pedacos.push({
+      chave: "inadimplentes",
+      rotulo: { fonte: "i18n", chave: "filterDelinquent" },
+      limpar: { inadimplentes: false },
     });
   }
 

@@ -139,6 +139,20 @@ export interface FiltrosDoInbox {
    * ⚠️ Depende do RELÓGIO, não só da linha: ver `ContextoDosFiltros.agoraMs`.
    */
   emAtraso: boolean;
+  /**
+   * Só as conversas de cliente INADIMPLENTE no Asaas (Fase 1b do plano da
+   * integração): contato ligado a um cliente do Asaas com parcela vencida
+   * vista na última listagem completa.
+   *
+   * ⚠️ **É a MESMA régua do ícone da linha e da faixa do fio**
+   * (`dividasPorContato`, em `lib/asaas/aviso-na-conversa.ts`): um recorte
+   * com régua própria acenderia o chip sobre linha sem ícone.
+   *
+   * ⚠️ Depende de uma LEITURA que a lista não faz sozinha — ver
+   * `ContextoDosFiltros.inadimplentes`: sem o Asaas conectado (ou sem a
+   * resposta ainda) o recorte é NEUTRALIZADO, nunca aplicado sobre nada.
+   */
+  inadimplentes: boolean;
 }
 
 export const FILTROS_VAZIOS: FiltrosDoInbox = {
@@ -154,6 +168,7 @@ export const FILTROS_VAZIOS: FiltrosDoInbox = {
   favoritas: false,
   naoLidas: false,
   emAtraso: false,
+  inadimplentes: false,
 };
 
 /**
@@ -190,6 +205,7 @@ export function contarFiltrosAtivos(f: FiltrosDoInbox): number {
   if (f.favoritas) n++;
   if (f.naoLidas) n++;
   if (f.emAtraso) n++;
+  if (f.inadimplentes) n++;
   return n;
 }
 
@@ -324,6 +340,20 @@ export interface ContextoDosFiltros {
    * aquela tela precisa de um tique de um minuto, senão o recorte congela.
    */
   agoraMs: number;
+  /**
+   * Os `contact_id` de quem está INADIMPLENTE no Asaas (a régua de
+   * `idsInadimplentes`, em `lib/asaas/aviso-na-conversa.ts`), ou `null`.
+   *
+   * ⚠️ `null` NEUTRALIZA o recorte (é `recorteDeEtapaConfiavel` de novo):
+   * Asaas desconectado, leitura ainda no ar ou falhada — nesses casos o
+   * filtro "Inadimplentes" ligado não recorta nada, em vez de responder
+   * "nenhuma conversa" sobre um dado que não existe. Leitura ANTIGA não
+   * neutraliza (é a régua do ícone da linha); o painel diz de quando é.
+   * Obrigatório pela mesma razão de `achadasNoTexto`: esquecê-lo não daria
+   * erro nenhum, e o compilador é quem cobra de quem consumir
+   * `aplicarFiltros` em outra tela.
+   */
+  inadimplentes: Set<string> | null;
 }
 
 /**
@@ -555,6 +585,15 @@ export function aplicarFiltros(
     // com o que está desenhado na tela por construção. Na aba Encerradas ele
     // devolve vazio de propósito — lá não há ninguém esperando resposta.
     if (f.emAtraso && !atrasoDeResposta(c, ctx.agoraMs)) return false;
+    // Ver `ContextoDosFiltros.inadimplentes`: com `null` o recorte é
+    // NEUTRALIZADO. Grupo não tem contato e nunca casa — dívida é de gente.
+    if (
+      f.inadimplentes &&
+      ctx.inadimplentes !== null &&
+      (!c.contact_id || !ctx.inadimplentes.has(c.contact_id))
+    ) {
+      return false;
+    }
     // Ver `recorteDeEtapaConfiavel`: sem os dados por trás, o recorte de
     // funil/etapa é neutralizado — nunca aplicado sobre um mapa incompleto.
     // Os DOIS níveis caem juntos: o mapa que falta é o mesmo.

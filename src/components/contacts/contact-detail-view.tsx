@@ -35,6 +35,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { ReunioesDoContato } from '@/components/agenda/reunioes-do-contato';
 import { ReunioesTranscritasDoContato } from '@/components/transcricoes/reunioes-transcritas-do-contato';
+import { AbaCobrancas } from '@/components/inbox/painel/aba-cobrancas';
+import { useCobrancasDoContato } from '@/hooks/use-cobrancas-do-contato';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -89,6 +91,10 @@ export function ContactDetailView({
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
+  // As cobranças do Asaas (Fase 1b) — a MESMA aba do painel da conversa.
+  // Só busca com a ficha aberta: fechada, `contactId` é o do último aberto
+  // e uma leitura ali seria tráfego para ninguém.
+  const cobrancas = useCobrancasDoContato(open ? contactId : null);
 
   // Send template — lets the business initiate (or re-open) a conversation
   // with this contact by sending an approved template. The send route
@@ -727,6 +733,16 @@ export function ContactDetailView({
                 >
                   {tAgenda('reunioesDoCliente')}
                 </TabsTrigger>
+                {/* Só com o Asaas conectado (sinal da conta, guardado pelo
+                    hook) — a mesma regra da aba do painel da conversa. */}
+                {cobrancas.conectado !== false && (
+                  <TabsTrigger
+                    value="billing"
+                    className="data-active:bg-muted data-active:text-primary text-muted-foreground"
+                  >
+                    {t('tabs.billing')}
+                  </TabsTrigger>
+                )}
                 <TabsTrigger
                   value="history"
                   className="data-active:bg-muted data-active:text-primary text-muted-foreground"
@@ -1041,6 +1057,17 @@ export function ContactDetailView({
                 <div className="mt-4">
                   <ReunioesTranscritasDoContato contactId={contact.id} />
                 </div>
+              </TabsContent>
+
+              {/* Cobranças (Asaas, Fase 1b): o mesmo componente do painel da
+                  conversa — uma tela só para "o que este cliente deve". */}
+              <TabsContent value="billing" className="flex-1 overflow-y-auto px-4 py-3">
+                <AbaCobrancas
+                  dados={cobrancas.dados}
+                  carregando={cobrancas.carregando}
+                  falhou={cobrancas.falhou}
+                  recarregar={cobrancas.recarregar}
+                />
               </TabsContent>
 
               <TabsContent value="history" className="flex-1 overflow-y-auto px-4 py-3">

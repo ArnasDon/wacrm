@@ -46,7 +46,7 @@ export function idDeTeste(prefixo = "id"): string {
 /** Os DEFAULTs de coluna que o banco daria — sem eles o dublê devolveria `undefined` onde o Postgres devolve `null`. */
 const DEFAULTS: Record<string, Linha> = {
   cb_asaas_clientes: { contact_id: null, vinculo_origem: null, vinculado_por: null, vinculado_por_nome: null, vinculado_em: null, contatos_recusados: [], candidatos: [], deleted: false, email: null, celular: null, telefone: null, cpf_cnpj: null, etiqueta_pendente: false },
-  cb_asaas_config: { sincronizando_desde: null },
+  cb_asaas_config: { sincronizando_desde: null, vinculo_completo_em: null },
   cb_asaas_cobrancas: { deleted: false, vista_vencida_em: null, parcela_total: null, juros_e_multa: null },
   contacts: { name: null, email: null },
 };

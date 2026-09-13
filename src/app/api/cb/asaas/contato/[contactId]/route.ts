@@ -32,7 +32,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
 
     const admin = supabaseAdmin();
     const config = await lerConfigDoEspelho(admin, ctx.accountId);
-    if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, clientes: [], parcelas: [] });
+    if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, cicloCompleto: false, clientes: [], parcelas: [] });
 
     const { data: ligados, error: erroClientes } = await admin
       .from("cb_asaas_clientes")
@@ -59,6 +59,9 @@ export async function GET(_request: Request, { params }: { params: Promise<{ con
       conectado: true,
       leituraFresca: leituraFresca(config, new Date()),
       atualizadoEm: config.vencidas_listadas_em,
+      // Ver a rota do resumo: só depois de um ciclo INTEIRO "nenhum cliente
+      // ligado" é resposta, e não lacuna do vínculo que ainda não rodou.
+      cicloCompleto: config.last_sync_at !== null,
       clientes,
       parcelas,
     });

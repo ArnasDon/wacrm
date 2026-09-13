@@ -132,7 +132,7 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
     // clientes — "nenhum cliente ligado" seria afirmação sobre o que não se
     // sabe (Codex, PR #203, 4ª rodada). O vazio de verdade é o da listagem
     // completa que não achou vínculo.
-    const semListagem = dados.atualizadoEm === null;
+    const semListagem = dados.atualizadoEm === null || !dados.cicloCompleto;
     return (
       <div className="py-6 text-center">
         <CircleDollarSign className="text-muted-foreground/40 mx-auto h-8 w-8" />

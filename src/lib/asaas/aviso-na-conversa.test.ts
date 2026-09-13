@@ -34,7 +34,7 @@ function parcela(patch: Partial<ParcelaDoEspelho> & { id: string }): ParcelaDoEs
 
 /** A forma que a rota devolve (JSON cru), com os campos mínimos. */
 function corpo(contatos: Record<string, unknown>, extra: Record<string, unknown> = {}): unknown {
-  return { conectado: true, leituraFresca: true, atualizadoEm: LISTADAS_EM, contatos, ...extra };
+  return { conectado: true, leituraFresca: true, atualizadoEm: LISTADAS_EM, cicloCompleto: true, contatos, ...extra };
 }
 
 describe("lerRespostaDoResumo — parse defensivo", () => {
@@ -61,7 +61,11 @@ describe("lerRespostaDoResumo — parse defensivo", () => {
   });
 
   it("desconectado é uma resposta válida, com contatos vazios", () => {
-    expect(lerRespostaDoResumo({ conectado: false, leituraFresca: false, atualizadoEm: null, contatos: {} })).toEqual({ conectado: false, leituraFresca: false, atualizadoEm: null, contatos: {} });
+    expect(lerRespostaDoResumo({ conectado: false, leituraFresca: false, atualizadoEm: null, cicloCompleto: false, contatos: {} })).toEqual({ conectado: false, leituraFresca: false, atualizadoEm: null, cicloCompleto: false, contatos: {} });
+  });
+
+  it("`cicloCompleto` ausente (rota de uma versão anterior) conta como NÃO completo — neutraliza, em vez de afirmar", () => {
+    expect(lerRespostaDoResumo({ conectado: true, leituraFresca: true, atualizadoEm: LISTADAS_EM, contatos: {} })?.cicloCompleto).toBe(false);
   });
 });
 
@@ -119,7 +123,9 @@ describe("idsInadimplentes — o conjunto do filtro", () => {
 
   it("⚠️ conectado mas SEM listagem completa (recém-conectado, primeira sincronização no ar ou falhada) → null, nunca um conjunto vazio", () => {
     expect(idsInadimplentes(lerRespostaDoResumo(corpo(contatos, { atualizadoEm: null })), AGORA)).toBeNull();
-    // e a listagem completa que não achou dívida é o conjunto VAZIO de verdade
+    // ⚠️ listagem completa mas o PRIMEIRO ciclo ainda não terminou (a listagem é carimbada antes do vínculo): também null
+    expect(idsInadimplentes(lerRespostaDoResumo(corpo({}, { cicloCompleto: false })), AGORA)).toBeNull();
+    // e a listagem completa de um ciclo inteiro que não achou dívida é o conjunto VAZIO de verdade
     expect(idsInadimplentes(lerRespostaDoResumo(corpo({})), AGORA)).toEqual(new Set());
   });
 
@@ -150,9 +156,11 @@ describe("lerRespostaDoContato", () => {
       conectado: true,
       leituraFresca: true,
       atualizadoEm: LISTADAS_EM,
+      cicloCompleto: true,
       clientes: [{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true }, { id: 3 }],
       parcelas: [parcela({ id: "a" }), "lixo"],
     });
+    expect(lido?.cicloCompleto).toBe(true);
     expect(lido?.clientes).toEqual([{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true }]);
     expect(lido?.parcelas.map((p) => p.id)).toEqual(["a"]);
   });

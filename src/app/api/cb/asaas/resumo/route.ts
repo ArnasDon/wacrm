@@ -34,7 +34,7 @@ export async function GET() {
 
     const admin = supabaseAdmin();
     const config = await lerConfigDoEspelho(admin, ctx.accountId);
-    if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, contatos: {} });
+    if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, cicloCompleto: false, contatos: {} });
 
     // cliente do Asaas → contato (só os ligados), paginado. ⚠️ Acima do
     // teto ESTOURA (500), nunca devolve lista parcial: metade dos ligados
@@ -77,6 +77,12 @@ export async function GET() {
       conectado: true,
       leituraFresca: leituraFresca(config, new Date()),
       atualizadoEm: config.vencidas_listadas_em,
+      // ⚠️ `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES do
+      // vínculo (passo 7): no PRIMEIRO ciclo há uma janela com a listagem
+      // completa e nenhum contato ligado. `last_sync_at` só existe depois de
+      // um ciclo INTEIRO — é o marcador de que "ninguém deve" é resposta, e
+      // não lacuna (Codex, PR #203, 5ª rodada).
+      cicloCompleto: config.last_sync_at !== null,
       contatos,
     });
   } catch (err) {

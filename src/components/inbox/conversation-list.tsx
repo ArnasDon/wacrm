@@ -951,7 +951,10 @@ export function ConversationList({
               ? inadimplencia.atualizadoEm
               : null
           }
-          asaasSemListagem={inadimplencia?.conectado === true && inadimplencia.atualizadoEm === null}
+          asaasSemListagem={
+            inadimplencia?.conectado === true &&
+            (inadimplencia.atualizadoEm === null || !inadimplencia.cicloCompleto)
+          }
           visoes={
             <VisoesSalvas
               salvos={filtrosSalvos}

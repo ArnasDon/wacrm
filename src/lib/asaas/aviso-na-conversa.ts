@@ -18,6 +18,12 @@ export interface RespostaDoResumo {
   leituraFresca: boolean;
   /** ISO do início da última listagem completa — "dados do Asaas de …" */
   atualizadoEm: string | null;
+  /**
+   * Já houve pelo menos UM ciclo inteiro com sucesso (`last_sync_at`). A
+   * listagem das vencidas é carimbada ANTES do vínculo dentro do ciclo, então
+   * "listagem completa e nenhum contato ligado" só é resposta com isto.
+   */
+  cicloCompleto: boolean;
   /** contato → as parcelas DEVIDAS (vencidas e negativadas) dos clientes do Asaas ligados a ele */
   contatos: Record<string, ParcelaDoEspelho[]>;
 }
@@ -71,6 +77,9 @@ export function lerRespostaDoResumo(json: unknown): RespostaDoResumo | null {
     conectado: o.conectado,
     leituraFresca: o.leituraFresca,
     atualizadoEm: typeof o.atualizadoEm === "string" ? o.atualizadoEm : null,
+    // Ausente (resposta de uma versão anterior da rota) conta como NÃO
+    // completo: neutraliza, em vez de afirmar.
+    cicloCompleto: o.cicloCompleto === true,
     contatos,
   };
 }
@@ -140,8 +149,10 @@ export function idsInadimplentes(resumo: RespostaDoResumo | null, agora: Date): 
   // falhou) também é "não sei" — um conjunto vazio aqui faria uma visão
   // salva esconder a caixa inteira com cara de "ninguém deve" (Codex, PR
   // #203). O conjunto vazio é reservado para a listagem completa que não
-  // achou dívida.
-  if (!resumo.atualizadoEm) return null;
+  // achou dívida — e para o ciclo INTEIRO: a listagem é carimbada antes do
+  // vínculo, então no primeiro ciclo existe a janela "listagem completa,
+  // nenhum contato ligado ainda" (5ª rodada). `cicloCompleto` a fecha.
+  if (!resumo.atualizadoEm || !resumo.cicloCompleto) return null;
   return new Set(dividasPorContato(resumo, agora).keys());
 }
 
@@ -158,6 +169,8 @@ export interface RespostaDoContato {
   conectado: boolean;
   leituraFresca: boolean;
   atualizadoEm: string | null;
+  /** ver `RespostaDoResumo.cicloCompleto` */
+  cicloCompleto: boolean;
   clientes: ClienteLigadoAoContato[];
   /** todas as parcelas do espelho dos clientes ligados (devidas, pagas, estornadas…) */
   parcelas: ParcelaDoEspelho[];
@@ -187,6 +200,7 @@ export function lerRespostaDoContato(json: unknown): RespostaDoContato | null {
     conectado: o.conectado,
     leituraFresca: o.leituraFresca,
     atualizadoEm: typeof o.atualizadoEm === "string" ? o.atualizadoEm : null,
+    cicloCompleto: o.cicloCompleto === true,
     clientes,
     parcelas,
   };

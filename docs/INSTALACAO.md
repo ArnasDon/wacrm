@@ -431,14 +431,14 @@ minutos.
 **Sem ele, mensagem agendada não sai.** O Next.js não tem agendador
 embutido, e nada no código chama essas rotas sozinho. Também dependem
 dele: o passo "Aguardar" das automações, os lembretes por data, o Radar
-de atendimento e a sincronização do Meta Ads. A linha fica gravada no
-banco e nunca vira mensagem.
+de atendimento e as sincronizações do Meta Ads, do tl;dv e do Asaas. A
+linha fica gravada no banco e nunca vira mensagem.
 
 Se você não usa Docker Swarm, substitua por uma entrada de `cron`:
 
 ```
 * * * * * curl -fsS -m 50 -H "x-cron-secret: SEGREDO" https://crm.seudominio.com/api/automations/cron
-*/15 * * * * for r in cb/scheduled flows cb/radar cb/meta-ads; do curl -fsS -m 120 -H "x-cron-secret: SEGREDO" "https://crm.seudominio.com/api/$r/cron"; done
+*/15 * * * * for r in cb/scheduled flows cb/radar cb/meta-ads cb/tldv cb/asaas; do curl -fsS -m 120 -H "x-cron-secret: SEGREDO" "https://crm.seudominio.com/api/$r/cron"; done
 ```
 
 O laço de 15 minutos não pode encolher sem mexer também em
@@ -545,6 +545,27 @@ gente pelo próprio CRM, religue por um tempo e feche de novo.
 
 Um teste que vale fazer: com o cadastro fechado, abra `/signup` numa aba
 anônima e confirme que ele recusa. É a prova de que a porta fechou.
+
+---
+
+## 11. Integrações opcionais
+
+Ficam em *Configurações → Integrações*, só para administradores. Cada uma
+guarda a própria chave cifrada com a `ENCRYPTION_KEY` — rotacionar essa
+variável invalida todas de uma vez.
+
+**Asaas** (cobrança de honorários): no Asaas, em *Integrações → Chaves de
+API*, gere uma chave só de **leitura** em *Clientes*, *Cobranças* e
+*Parcelamentos*, sem data de validade (o Asaas não avisa antes de uma
+validade definida à mão expirar). Cole a chave no cartão com o NOME que
+ela tem no Asaas. A partir daí o agendador (passo 5.4) lê a cada 15
+minutos as cobranças vencidas e liga cada cliente do Asaas a um contato
+do CRM pelo telefone, pelo documento ou pelo e-mail — e cria a ficha de
+quem tem telefone e ainda não tem contato, com a etiqueta `asaas`. Quem
+não casou aparece no cartão, em *Para confirmar* e *Sem ficha*, para uma
+pessoa decidir. ⚠️ Se você já tinha o agendador no ar antes desta versão,
+refaça o `docker stack deploy` (passo 5.3): o laço só passa a chamar
+`cb/asaas/cron` depois disso.
 
 ---
 

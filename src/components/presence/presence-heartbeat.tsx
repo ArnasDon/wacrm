@@ -56,13 +56,22 @@ export function PresenceHeartbeat() {
       const t = Date.now();
       if (t - lastBeatAt < 1_000) return;
       lastBeatAt = t;
-      const { error } = await supabase.rpc("touch_presence", {
-        p_status: currentStatus(),
-      });
-      if (error && !cancelled) {
-        // Non-fatal: presence is best-effort. Log once per failure so a
-        // misconfigured RPC is visible without spamming.
-        console.error("[PresenceHeartbeat] touch_presence failed:", error.message);
+      try {
+        const { error } = await supabase.rpc("touch_presence", {
+          p_status: currentStatus(),
+        });
+        if (error && !cancelled) {
+          // Non-fatal: presence is best-effort. Suppress transient network / fetch failures
+          // (e.g. ad blockers, offline, tab sleep) and use console.warn so Next.js
+          // does not surface an intrusive red error overlay.
+          if (!error.message?.includes("Failed to fetch")) {
+            console.warn("[PresenceHeartbeat] touch_presence failed:", error.message);
+          }
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && !err.message?.includes("Failed to fetch")) {
+          console.warn("[PresenceHeartbeat] touch_presence failed:", err.message);
+        }
       }
     };
 

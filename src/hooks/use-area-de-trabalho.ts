@@ -113,6 +113,15 @@ export interface Agenda {
    * tela afirmaria compromisso que não existe.
    */
   reunioes: Meeting[];
+  /**
+   * Quantas ficaram FORA do teto da lista.
+   *
+   * ⚠️ Vem do `count: 'exact'`, não de contar o array: com mais de
+   * `LINHAS_LISTADAS` reuniões em dois dias, o teto derrubava as últimas em
+   * silêncio e o bloco não dizia que havia mais — escondendo justamente o
+   * compromisso do fim do dia (Codex, PR #202).
+   */
+  restantes: number;
 }
 
 export interface Integracoes {
@@ -380,9 +389,9 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
       const de = startOfLocalDay(agora);
       const ate = new Date(de);
       ate.setDate(ate.getDate() + 2);
-      const { data, error } = await supabase
+      const { data, error, count } = await supabase
         .from('cb_meetings')
-        .select('*')
+        .select('*', { count: 'exact' })
         .eq('account_id', accountId)
         .eq('owner_user_id', userId)
         .neq('status', 'cancelada')
@@ -391,7 +400,11 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
         .order('starts_at', { ascending: true })
         .limit(LINHAS_LISTADAS);
       if (error) throw new Error(error.message);
-      return { reunioes: linhas<Meeting>(data) };
+      const lista = linhas<Meeting>(data);
+      return {
+        reunioes: lista,
+        restantes: Math.max(0, (count ?? lista.length) - lista.length),
+      };
     });
 
     return () => {

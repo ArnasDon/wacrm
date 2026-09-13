@@ -4010,6 +4010,7 @@
     "openPipelines": "Abrir Funis",
     "agendaTitle": "Agenda e reuniões",
     "agendaNoneYours": "Nenhuma reunião sua hoje ou amanhã",
+    "agendaAndMore": "{count, plural, =1 {e mais 1 reunião neste período} other {e mais {count} reuniões neste período}}",
     "agendaOnlyCrm": "Só a agenda do CRM. Os agendamentos do Calendly não entram aqui: a integração não registra cancelamento nem remarcação, então a lista mostraria reunião que não vai acontecer.",
     "openAgenda": "Abrir Agenda"
   },

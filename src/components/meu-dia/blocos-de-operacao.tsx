@@ -61,6 +61,7 @@ export function BlocoDeCorrecoes({
   conexoes,
   agendadorParado,
   veAgendadas,
+  veAutomacoes,
   veConfiguracoes,
 }: {
   correcoes: Bloco<Correcoes>;
@@ -74,6 +75,13 @@ export function BlocoDeCorrecoes({
   /** `null` enquanto a saúde do agendador não respondeu. */
   agendadorParado: boolean | null;
   veAgendadas: boolean;
+  /**
+   * ⚠️ Gate PRÓPRIO, não `veConfiguracoes`: Configurações é tela sempre
+   * visível, então ela é verdadeira para todo perfil — e um perfil sem
+   * Automações via o link, clicava e caía na `TelaBloqueada` (Codex, PR
+   * #202). Cada destino é gateado pela tela PARA ONDE ELE LEVA.
+   */
+  veAutomacoes: boolean;
   veConfiguracoes: boolean;
 }) {
   const t = useTranslations('MeuDia');
@@ -99,14 +107,18 @@ export function BlocoDeCorrecoes({
 
   // Cada achado com o seu texto e para onde se vai consertar. A régua de
   // "tela fora do perfil" é a de sempre: número sem link, com o aviso.
+  // ⚠️ O parâmetro de Configurações é `?tab=`, NUNCA `?section=`: a página
+  // lê `searchParams.get('tab')` e ignora o resto, então `?section=channels`
+  // abre a Visão geral — o clique de conserto levaria ao lugar errado sem
+  // erro nenhum (Codex, PR #202).
   const DESTINO: Record<FonteDeCorrecao, { href: string; ve: boolean }> = {
     agendador: { href: '/agendadas', ve: veAgendadas },
-    conexoes: { href: '/settings?section=channels', ve: veConfiguracoes },
+    conexoes: { href: '/settings?tab=channels', ve: veConfiguracoes },
     agendadasFalharam: { href: '/agendadas', ve: veAgendadas },
     entregaIncerta: { href: '/agendadas', ve: veAgendadas },
-    automacoesFalharam: { href: '/automations', ve: veConfiguracoes },
+    automacoesFalharam: { href: '/automations', ve: veAutomacoes },
     entradasNaoProcessadas: {
-      href: '/settings?section=integracoes',
+      href: '/settings?tab=integracoes',
       ve: veConfiguracoes,
     },
   };
@@ -330,7 +342,14 @@ export function BlocoDeNegocios({
       />
       {bloco.status !== 'pronto' ? (
         <EstadoDoBlocoDaAba bloco={bloco} />
-      ) : bloco.dados.meus === 0 && bloco.dados.semResponsavel === 0 ? (
+      ) : bloco.dados.meus === 0 &&
+        bloco.dados.semResponsavel === 0 &&
+        // ⚠️ `truncada` proíbe o vazio: com um perfil recortado por funil, a
+        // consulta pode bater no teto ANTES do filtro de escopo em JS e
+        // devolver zero com negócios seus depois do corte. "Nenhum negócio
+        // aberto com você" seria uma afirmação sobre o que não foi lido
+        // (Codex, PR #202).
+        !bloco.dados.truncada ? (
         <p className="text-muted-foreground mt-2 text-sm">{t('dealsNone')}</p>
       ) : (
         <div className="mt-2">
@@ -431,6 +450,12 @@ export function BlocoDaAgenda({
               </li>
             ))}
           </ul>
+        )}
+
+        {bloco.status === 'pronto' && bloco.dados.restantes > 0 && (
+          <p className="text-muted-foreground text-xs">
+            {t('agendaAndMore', { count: bloco.dados.restantes })}
+          </p>
         )}
 
         {/* ⚠️ Os agendamentos do Calendly NÃO aparecem aqui, e não é

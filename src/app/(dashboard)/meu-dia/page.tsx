@@ -192,6 +192,7 @@ function AreaDeTrabalho({
   const veAgendadas = podeVerTela(acesso, 'agendadas');
   const veAgenda = podeVerTela(acesso, 'agenda');
   const veFunis = podeVerTela(acesso, 'pipelines');
+  const veAutomacoes = podeVerTela(acesso, 'automations');
   const veConfiguracoes = podeVerTela(acesso, 'settings');
 
   const agora = new Date(pedido.agoraMs);
@@ -334,6 +335,7 @@ function AreaDeTrabalho({
             conexoes={conexoes}
             agendadorParado={saude === null ? null : agendadorEstaParado(saude)}
             veAgendadas={veAgendadas}
+            veAutomacoes={veAutomacoes}
             veConfiguracoes={veConfiguracoes}
           />
         </div>

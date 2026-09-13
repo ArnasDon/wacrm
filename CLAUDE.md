@@ -3554,6 +3554,39 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   montadas em memória por `listas.ts` (puro) e paginadas na rota — a
   situação de cada cliente (`ligado`/`confirmar`/`sem_ficha`/`ignorado`) é
   DERIVADA da linha, nunca coluna própria.
+- ⚠️⚠️ **O AVISO NA CONVERSA (Fase 1b, PR #203) lê por DUAS rotas para
+  qualquer membro** — `GET /api/cb/asaas/resumo` (a caixa inteira: contato →
+  parcelas devidas) e `GET /api/cb/asaas/contato/[id]` (a aba) —, sem CPF,
+  em service role, e erro é 500, NUNCA `{}`: um objeto vazio seria lido como
+  "ninguém deve". No navegador, **`null` de leitura é "não sei", nunca "em
+  dia"**: o ícone da linha cala, a faixa cala e o filtro "Inadimplentes" é
+  NEUTRALIZADO (`ContextoDosFiltros.inadimplentes: Set<string> | null`,
+  campo OBRIGATÓRIO — a régua de `recorteDeEtapaConfiavel`). ⚠️ Leitura
+  ANTIGA (espelho parado) NÃO neutraliza: é a MESMA régua do ícone, e
+  medido em 13/09 com 11 h sem ciclo a neutralização deixava 15 ícones na
+  lista e um interruptor que "não fazia nada" — a tela diz "dados do Asaas
+  de …" (faixa, aba e painel de filtros) em vez de calar.
+- ⚠️ **UMA régua para ícone, faixa e filtro** (`dividasPorContato`/
+  `dividaDoContato`, `src/lib/asaas/aviso-na-conversa.ts`, pura e testada;
+  a aba reparte por `separarParcelas`, com o relógio da tela). Cópia
+  divergiria e o operador leria "o ícone sumiu". O parse das rotas é campo a
+  campo, nunca `as` — corpo estranho vira `null`, não vazio.
+- ⚠️ **`useInadimplencia` é montado UMA vez na página do inbox** e repassado
+  por prop à lista e ao fio (irmãos — a página é o único caminho); recarrega
+  no `resyncToken`, no evento `cb:asaas-mudou` e a cada 5 min com a aba
+  visível. **`useCobrancasDoContato` carimba o dono da resposta (`{ de }`)
+  e DERIVA `carregando`** — a armadilha do efeito passivo, sétima aparição;
+  `AbaCobrancas` exige `carregando`/`falhou` como `aba-arquivos`. ⚠️
+  `conectado` é da CONTA e sobrevive à troca de contato: a aba Cobranças
+  some SÓ com `false`, nunca com `null` — esconder por ignorância afirmaria
+  "não há Asaas", e esconder no `carregando` faria a aba piscar a cada
+  cliente.
+- ⚠️ **O interruptor "Inadimplentes" mora no PAINEL de ajustes, não na
+  barra** (ela já ocupa ~290 dos 296 px do `lg`; um 5º chip a estouraria),
+  só é OFERECIDO com o Asaas conectado (ou já ligado por uma visão salva,
+  para dar como desligar), fica FORA de `limparOrfaos` e é campo de
+  `FiltrosDoInbox` como os outros (`AMOSTRAS` cobra). Grupo nunca casa
+  (não tem contato). Cor em par claro/escuro, como o cartão de falha.
 
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/

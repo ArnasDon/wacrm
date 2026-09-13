@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  validateAsaasReguaForActivation,
   validateStepsForActivation,
   validateTriggerForActivation,
 } from "./validate";
@@ -324,3 +325,83 @@ describe("send_to_number / calendly_booking (977)", () => {
     ]);
   });
 });
+
+// ============================================================
+// A régua do Asaas (998): o marco obrigatório na cobrança, a hora na faixa
+// 08:00–17:00, e as duas regras a MAIS dos passos — sem "Aguardar" e toda
+// mensagem com a conexão escolhida (D19).
+// ============================================================
+
+describe('régua do Asaas — o gatilho', () => {
+  it('a cobrança exige o marco (1..365); o lembrete não tem marco', () => {
+    expect(validateTriggerForActivation('asaas_cobranca_vencida', {})).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vencida', { dias_de_atraso: 0 })).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vencida', { dias_de_atraso: 366 })).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vencida', { dias_de_atraso: 5 })).toEqual([])
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', {})).toEqual([])
+  })
+
+  it('a hora fica entre 08:00 e 17:00, e "só dia útil" é booleano', () => {
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', { hora_envio: '07:30' })).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', { hora_envio: '17:00' })).toEqual([])
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', { hora_envio: '9h' })).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', { somente_dias_uteis: 'false' })).toHaveLength(1)
+    expect(validateTriggerForActivation('asaas_cobranca_vence_hoje', { somente_dias_uteis: false })).toEqual([])
+  })
+})
+
+describe('régua do Asaas — os passos', () => {
+  const msg = (channel_id?: string) => ({ step_type: 'send_message', step_config: channel_id ? { text: 'x', channel_id } : { text: 'x' } })
+
+  it('toda mensagem precisa da conexão escolhida, em qualquer escopo', () => {
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1')])).toEqual([])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg()])).toHaveLength(1)
+    expect(
+      validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [
+        { step_type: 'condition', step_config: { subject: 'tag_presence', operand: 't' }, branches: { yes: [msg()], no: [msg('c1')] } },
+      ]),
+    ).toHaveLength(1)
+  })
+
+  it('"Aguardar" é recusado em qualquer escopo — cada marco é uma automação própria', () => {
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), { step_type: 'wait', step_config: { amount: 1, unit: 'minutes' } }])).toHaveLength(1)
+  })
+
+  it('outros gatilhos não são tocados', () => {
+    expect(validateAsaasReguaForActivation('keyword_match', [msg(), { step_type: 'wait', step_config: { amount: 1, unit: 'days' } }])).toEqual([])
+  })
+})
+
+describe('régua do Asaas — uma conexão só para todos os envios (revisão adversarial, PR #206)', () => {
+  const envio = (channel_id?: string) => ({ step_type: 'send_message', step_config: channel_id ? { text: 'x', channel_id } : { text: 'x' } })
+
+  it('dois envios pela mesma conexão passam; por conexões diferentes, o segundo é recusado — inclusive dentro de um ramo', () => {
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), envio('c1')])).toEqual([])
+    const fora = validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), envio('c2')])
+    expect(fora).toHaveLength(1)
+    expect(fora[0].path).toBe('steps[1].channel_id')
+    const noRamo = validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [
+      { step_type: 'condition', step_config: {}, branches: { yes: [envio('c2')], no: [] } },
+      envio('c1'),
+    ])
+    expect(noRamo.map((i) => i.path)).toEqual(['steps[1].channel_id'])
+  })
+
+  it('send_media entra na mesma regra: precisa da conexão, e da MESMA', () => {
+    const midia = (channel_id?: string) => ({ step_type: 'send_media', step_config: channel_id ? { media_url: 'u', channel_id } : { media_url: 'u' } })
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia()])).toHaveLength(1)
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia('c3')])).toHaveLength(1)
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia('c1')])).toEqual([])
+  })
+})
+
+describe('régua do Asaas — precisa de um passo de mensagem de texto (Codex, 3ª rodada do PR #206)', () => {
+  it('só send_media, ou nenhum envio, não ativa; com um send_message ativa', () => {
+    const midia = { step_type: 'send_media', step_config: { media_url: 'u', channel_id: 'c1' } }
+    const texto = { step_type: 'send_message', step_config: { text: 'x', channel_id: 'c1' } }
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [midia]).map((i) => i.path)).toEqual(['steps'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [{ step_type: 'add_tag', step_config: { tag_id: 't' } }]).map((i) => i.path)).toEqual(['steps'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [midia, texto])).toEqual([])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [{ step_type: 'condition', step_config: {}, branches: { yes: [texto], no: [] } }])).toEqual([])
+  })
+})

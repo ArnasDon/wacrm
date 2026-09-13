@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { BellOff, BellRing, Loader2 } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -14,9 +15,11 @@ import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 /**
- * As cinco listas do cartão do Asaas (§3.3 do plano): Para confirmar, Sem
- * ficha, Ligados, Ignorados e Inadimplentes — paginadas pela rota
- * `GET /api/cb/asaas/clientes`, com Ligar/Ignorar/Desligar em cada linha.
+ * As seis listas do cartão do Asaas (§3.3 do plano): Para confirmar, Sem
+ * ficha, Ligados, Ignorados, Inadimplentes e Sem cobrança automática (a
+ * lista de exceção da régua, 998/D21) — paginadas pela rota
+ * `GET /api/cb/asaas/clientes`, com Ligar/Ignorar/Desligar em cada linha e,
+ * no cliente ligado, o sino que o tira da cobrança automática (ou o devolve).
  *
  * ⚠️ Cada lista guarda `{ chave, pagina }` e `carregando` é DERIVADO de
  * `chave !== chaveAtual`: a frase de vazio ("Nenhum cliente para confirmar")
@@ -134,8 +137,37 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
     if (nome === "sem_ficha") return resumo.semFicha;
     if (nome === "ligados") return resumo.ligados;
     if (nome === "ignorados") return resumo.ignorados;
+    if (nome === "sem_cobranca") return resumo.semCobranca;
     return resumo.inadimplentes;
   };
+
+  // A lista de exceção da régua (998, D21): por cliente do Asaas, com quem e
+  // quando carimbados pela rota. ROWCOUNT conferido lá — 404 vira toast.
+  const trocarRegua = useCallback(
+    async (clienteId: string, desligada: boolean) => {
+      setAgindo(clienteId);
+      try {
+        const res = await fetch(`/api/cb/asaas/clientes/${clienteId}/regua`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ desligada }),
+        });
+        if (!res.ok) {
+          toast.error(t("asaas.regua.erroTrocar"));
+          return;
+        }
+        toast.success(t(desligada ? "asaas.regua.trocada" : "asaas.regua.religada"));
+        avisarAsaasMudou();
+        setRecarga((n) => n + 1);
+        aoMudar();
+      } catch {
+        toast.error(t("asaas.regua.erroTrocar"));
+      } finally {
+        setAgindo(null);
+      }
+    },
+    [aoMudar, t],
+  );
 
   const origem = (o: string | null) =>
     // chave montada: `asaas.origem.<origem>` — `ORIGENS_DO_VINCULO` em
@@ -206,7 +238,7 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
       ) : (
         <ul className="divide-y divide-border rounded-md border border-border">
           {lista === "inadimplentes"
-            ? (pag.itens as ItemInadimplente[]).map((i) => <LinhaInadimplente key={i.id} item={i} t={t} />)
+            ? (pag.itens as ItemInadimplente[]).map((i) => <LinhaInadimplente key={i.id} item={i} t={t} agindo={agindo === i.id} onTrocarRegua={(desligada) => void trocarRegua(i.id, desligada)} />)
             : (pag.itens as ItemDaLista[]).map((item) => (
                 <li key={item.id} className="space-y-1.5 p-3 text-xs">
                   <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
@@ -219,6 +251,7 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
                         {t("asaas.dividaCurta", { parcelas: item.divida.parcelas, valor: formatCurrency(item.divida.total), dias: item.divida.dias ?? 0 })}
                       </span>
                     )}
+                    {item.reguaDesligada && <span className="text-amber-700 dark:text-amber-300">{t("asaas.regua.excecao")}</span>}
                   </div>
 
                   {item.situacao === "ligado" && item.contato && (
@@ -261,6 +294,9 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
                       <Button type="button" size="sm" variant="outline" disabled={agindo === item.id} onClick={() => desligar(item)}>
                         {t("asaas.desligar")}
                       </Button>
+                    )}
+                    {(item.situacao === "ligado" || item.reguaDesligada) && (
+                      <BotaoDaRegua desligada={item.reguaDesligada} agindo={agindo === item.id} onTrocar={(desligada) => void trocarRegua(item.id, desligada)} t={t} />
                     )}
                     {item.situacao === "ignorado" && (
                       <Button type="button" size="sm" variant="outline" disabled={agindo === item.id} onClick={() => void agir(item.id, { acao: "reconsiderar" })}>
@@ -308,7 +344,20 @@ export function AsaasListas({ resumo, versao, aoMudar }: Props) {
   );
 }
 
-function LinhaInadimplente({ item, t }: { item: ItemInadimplente; t: ReturnType<typeof useTranslations<"Settings.integracoes">> }) {
+type Tradutor = ReturnType<typeof useTranslations<"Settings.integracoes">>;
+
+/** O sino da lista de exceção (998, D21): tira o cliente da cobrança automática ou o devolve. */
+function BotaoDaRegua({ desligada, agindo, onTrocar, t }: { desligada: boolean; agindo: boolean; onTrocar: (desligada: boolean) => void; t: Tradutor }) {
+  const rotulo = desligada ? t("asaas.regua.cobrarDeNovo") : t("asaas.regua.naoCobrar");
+  return (
+    <Button type="button" size="sm" variant="ghost" disabled={agindo} title={rotulo} aria-label={rotulo} className={cn(desligada ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground")} onClick={() => onTrocar(!desligada)}>
+      {agindo ? <Loader2 className="size-3.5 animate-spin" /> : desligada ? <BellOff className="size-3.5" /> : <BellRing className="size-3.5" />}
+      {rotulo}
+    </Button>
+  );
+}
+
+function LinhaInadimplente({ item, t, agindo, onTrocarRegua }: { item: ItemInadimplente; t: Tradutor; agindo: boolean; onTrocarRegua: (desligada: boolean) => void }) {
   const d = item.divida;
   return (
     <li className="space-y-1 p-3 text-xs">
@@ -320,6 +369,7 @@ function LinhaInadimplente({ item, t }: { item: ItemInadimplente; t: ReturnType<
         ) : (
           <span className="text-amber-600 dark:text-amber-400">{t("asaas.semFichaMarca")}</span>
         )}
+        {item.reguaDesligada && <span className="text-amber-700 dark:text-amber-300">{t("asaas.regua.excecao")}</span>}
       </div>
       <p className="text-red-700 dark:text-red-300">
         {t("asaas.parcelasResumo", { n: d.parcelas, rotulos: d.rotulos })}
@@ -328,6 +378,11 @@ function LinhaInadimplente({ item, t }: { item: ItemInadimplente; t: ReturnType<
         {d.totalAtualizado !== d.total ? ` · ${t("asaas.atualizado", { valor: formatCurrency(d.totalAtualizado) })}` : ""}
         {d.negativada ? ` · ${t("asaas.negativada")}` : ""}
       </p>
+      {(item.contato || item.reguaDesligada) && (
+        <div className="flex flex-wrap items-center gap-2">
+          <BotaoDaRegua desligada={item.reguaDesligada} agindo={agindo} onTrocar={onTrocarRegua} t={t} />
+        </div>
+      )}
     </li>
   );
 }

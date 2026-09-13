@@ -3,6 +3,7 @@ import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { digitosDoTelefone } from '@/lib/contacts/telefone'
 import { MAX_DESCRICAO, MAX_TITULO, normalizarHora } from '@/lib/tasks/validar'
 import { motivoDeConfigInvalida } from './lembretes'
+import { ehGatilhoDaRegua, horaDeEnvioValida } from '@/lib/asaas/regua'
 import { ehMeta } from '@/lib/cb-channels/transporte'
 import type { CbChannelKind } from '@/lib/cb-channels/repo'
 
@@ -374,6 +375,23 @@ export function validateTriggerForActivation(
     if (id != null && typeof id !== 'string') {
       issues.push({ path: 'trigger.webhook_id', message: 'webhook must be a string' })
     }
+  } else if (ehGatilhoDaRegua(triggerType)) {
+    // A régua do Asaas (998). O marco é OBRIGATÓRIO na cobrança: sem ele a
+    // automação ficaria ativa e muda. A hora fica na faixa que a varredura
+    // aceita (08:00–17:00; a mensagem sai até as 18:00), e o sinalizador de
+    // dia útil tem de ser booleano — `"false"` é truthy.
+    if (triggerType === 'asaas_cobranca_vencida') {
+      const dias = Number(cfg.dias_de_atraso)
+      if (!Number.isInteger(dias) || dias < 1 || dias > 365) {
+        issues.push({ path: 'trigger.dias_de_atraso', message: 'days overdue must be a whole number from 1 to 365' })
+      }
+    }
+    if (cfg.hora_envio != null && cfg.hora_envio !== '' && !horaDeEnvioValida(cfg.hora_envio)) {
+      issues.push({ path: 'trigger.hora_envio', message: 'send time must be HH:MM between 08:00 and 17:00' })
+    }
+    if (cfg.somente_dias_uteis != null && typeof cfg.somente_dias_uteis !== 'boolean') {
+      issues.push({ path: 'trigger.somente_dias_uteis', message: 'business days only must be true or false' })
+    }
   } else if (triggerType === 'deal_status_changed') {
     const st = cfg.statuses
     if (st != null && !Array.isArray(st)) {
@@ -394,6 +412,68 @@ export function validateTriggerForActivation(
 
 function nonEmpty(v: unknown): boolean {
   return typeof v === 'string' && v.trim().length > 0
+}
+
+/**
+ * As regras a MAIS dos passos das automações da régua do Asaas (998), além
+ * de `validateStepsForActivation`:
+ *
+ * - NENHUM "Aguardar", em nenhum escopo: a espera retoma às cegas (só confere
+ *   se a automação continua ligada) e sairia sem reconfirmar o pagamento —
+ *   `[mensagem][aguardar 4 dias][mensagem]` mandaria a de 5 dias a quem
+ *   pagou no dia 2. Cada marco é uma automação própria (§2.4 do plano).
+ * - TODO `send_message` com a conexão escolhida (`channel_id`, D19): a
+ *   varredura confere que ela resolve e está viva ANTES de travar, e o
+ *   motor falha fechado se não resolver — sem conexão escolhida a
+ *   automação não liga, porque o padrão da conta em silêncio seria o link
+ *   de pagamento saindo por outro número.
+ */
+export function validateAsaasReguaForActivation(
+  triggerType: AutomationTriggerType | string,
+  steps: StepLike[],
+): ValidationIssue[] {
+  const issues: ValidationIssue[] = []
+  if (!ehGatilhoDaRegua(triggerType)) return issues
+  // ⚠️ UMA conexão para TODOS os envios da automação (D19): a varredura
+  // resolve e confere a saúde da conexão do PRIMEIRO `send_message` e a
+  // passa em `context.channel_id`; um segundo envio apontado para outra
+  // conexão sairia por um número que ninguém conferiu (revisão adversarial
+  // do PR #206). `send_media` entra na mesma regra — a mídia também sai
+  // pelo canal do passo.
+  let conexao: string | null = null
+  // ⚠️ Pelo menos UM `send_message`: é dele que a varredura resolve a conexão
+  // (`primeiroEnvio`) e é o sucesso dele que vira `enviado` na trava. Uma
+  // automação só com `send_media` (ou sem envio) ativava e era pulada em
+  // todo ciclo como "conexão inválida" (Codex, 3ª rodada do PR #206).
+  let temMensagem = false
+  const visitar = (lista: StepLike[], prefixo: string) => {
+    lista.forEach((s, i) => {
+      const path = `${prefixo}steps[${i}]`
+      if (s.step_type === 'wait') {
+        issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence cannot wait — each milestone is its own automation' })
+      }
+      if (s.step_type === 'send_message') temMensagem = true
+      if (s.step_type === 'send_message' || s.step_type === 'send_media') {
+        const canal = s.step_config?.channel_id
+        if (!nonEmpty(canal)) {
+          issues.push({ path: `${path}.channel_id`, message: 'the Asaas collection message needs a connection chosen on the step' })
+        } else if (conexao === null) {
+          conexao = canal as string
+        } else if (canal !== conexao) {
+          issues.push({ path: `${path}.channel_id`, message: 'the Asaas collection sequence must send every message through the same connection' })
+        }
+      }
+      if (s.step_type === 'condition' && s.branches) {
+        if (s.branches.yes) visitar(s.branches.yes, `${path}.yes.`)
+        if (s.branches.no) visitar(s.branches.no, `${path}.no.`)
+      }
+    })
+  }
+  visitar(steps, '')
+  if (!temMensagem) {
+    issues.push({ path: 'steps', message: 'the Asaas collection sequence needs a text message step (send_message)' })
+  }
+  return issues
 }
 
 // ------------------------------------------------------------

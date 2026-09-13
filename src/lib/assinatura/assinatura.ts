@@ -48,6 +48,20 @@ export function saneiaNome(bruto: string | null | undefined): string | null {
  * Cai para o e-mail quando não há nome; nesse caso usa o trecho antes do `@`,
  * porque o domínio não diz nada a quem lê.
  */
+/**
+ * "Assinar como" de uma automação (998, D18), como veio do formulário ou da
+ * API: texto aparado com teto de 60 caracteres; vazio ou não-texto = NULL
+ * (o nome automático do escritório). O `saneiaNome` (tira `*_~`) roda na
+ * HORA de assinar, não aqui — o que se grava é o que a pessoa digitou.
+ */
+export const ASSINATURA_PERSONALIZADA_MAX = 60;
+
+export function normalizarAssinatura(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const aparado = v.trim().slice(0, ASSINATURA_PERSONALIZADA_MAX);
+  return aparado === '' ? null : aparado;
+}
+
 export function nomeDePessoa(
   fullName: string | null | undefined,
   email: string | null | undefined,

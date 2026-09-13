@@ -27,6 +27,8 @@ export interface ConfigDoEspelho {
   /** o último ciclo cujo VÍNCULO terminou sem adiar nada (996) — ver `cicloCompleto` */
   vinculo_completo_em: string | null;
   last_error: string | null;
+  /** o interruptor "Cobrança automática" (998, D20) — ausente na linha anterior à migration */
+  regua_ativa?: boolean | null;
 }
 
 export interface Espelho {
@@ -80,7 +82,7 @@ export function lerParcela(l: Record<string, unknown>): ParcelaDoEspelho {
 export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: string): Promise<ConfigDoEspelho | null> {
   const { data, error } = await admin
     .from("cb_asaas_config")
-    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, vinculo_completo_em, last_error")
+    .select("status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, vinculo_completo_em, last_error, regua_ativa")
     .eq("account_id", accountId)
     .maybeSingle();
   if (error) throw new Error(`config: ${error.message}`);
@@ -120,12 +122,12 @@ export async function lerClientesDoContato(
   admin: SupabaseClient,
   accountId: string,
   contactId: string,
-): Promise<{ id: string; asaas_customer_id: string; nome: string | null; vinculo_origem: string | null; notificacoes_desligadas: boolean }[]> {
+): Promise<{ id: string; asaas_customer_id: string; nome: string | null; vinculo_origem: string | null; notificacoes_desligadas: boolean; regua_desligada: boolean }[]> {
   const linhas = await lerTudo<Record<string, unknown>>(
     (de, ate) =>
       admin
         .from("cb_asaas_clientes")
-        .select("id, asaas_customer_id, nome, vinculo_origem, notificacoes_desligadas")
+        .select("id, asaas_customer_id, nome, vinculo_origem, notificacoes_desligadas, regua_desligada")
         .eq("account_id", accountId)
         .eq("contact_id", contactId)
         .eq("deleted", false)
@@ -140,6 +142,42 @@ export async function lerClientesDoContato(
     nome: (l.nome as string | null) ?? null,
     vinculo_origem: (l.vinculo_origem as string | null) ?? null,
     notificacoes_desligadas: l.notificacoes_desligadas === true,
+    regua_desligada: l.regua_desligada === true,
+  }));
+}
+
+export interface EnvioDaRegua {
+  id: string;
+  automationNome: string;
+  tipo: "atraso" | "vence_hoje";
+  marco: number;
+  vencimento: string;
+  resultado: string;
+  detalhe: string | null;
+  criadoEm: string;
+  finalizadoEm: string | null;
+}
+
+/** O histórico da régua para UM contato (998): os últimos `teto` registros, mais recentes primeiro. */
+export async function lerEnviosDoContato(admin: SupabaseClient, accountId: string, contactId: string, teto = 30): Promise<EnvioDaRegua[]> {
+  const { data, error } = await admin
+    .from("cb_asaas_regua_envios")
+    .select("id, automation_nome, tipo, marco, vencimento, resultado, detalhe, criado_em, finalizado_em")
+    .eq("account_id", accountId)
+    .eq("contact_id", contactId)
+    .order("criado_em", { ascending: false })
+    .limit(teto);
+  if (error) throw new Error(`envios da régua: ${error.message}`);
+  return ((data ?? []) as Record<string, unknown>[]).map((l) => ({
+    id: l.id as string,
+    automationNome: (l.automation_nome as string | null) ?? "",
+    tipo: l.tipo === "vence_hoje" ? "vence_hoje" : "atraso",
+    marco: typeof l.marco === "number" ? l.marco : 0,
+    vencimento: (l.vencimento as string | null) ?? "",
+    resultado: (l.resultado as string | null) ?? "reservado",
+    detalhe: (l.detalhe as string | null) ?? null,
+    criadoEm: l.criado_em as string,
+    finalizadoEm: (l.finalizado_em as string | null) ?? null,
   }));
 }
 
@@ -156,7 +194,7 @@ async function lerClientes(admin: SupabaseClient, accountId: string): Promise<Cl
       admin
         .from("cb_asaas_clientes")
         .select(
-          "id, asaas_customer_id, nome, cpf_cnpj, email, celular, telefone, contact_id, vinculo_origem, vinculado_por_nome, vinculado_em, contatos_recusados, candidatos, deleted, notificacoes_desligadas",
+          "id, asaas_customer_id, nome, cpf_cnpj, email, celular, telefone, contact_id, vinculo_origem, vinculado_por_nome, vinculado_em, contatos_recusados, candidatos, deleted, notificacoes_desligadas, regua_desligada",
         )
         .eq("account_id", accountId)
         .order("id")
@@ -179,6 +217,7 @@ async function lerClientes(admin: SupabaseClient, accountId: string): Promise<Cl
     candidatos: Array.isArray(l.candidatos) ? (l.candidatos as Candidato[]) : [],
     deleted: l.deleted === true,
     notificacoes_desligadas: l.notificacoes_desligadas === true,
+    regua_desligada: l.regua_desligada === true,
   }));
 }
 

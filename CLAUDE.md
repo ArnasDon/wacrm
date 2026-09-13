@@ -3487,12 +3487,16 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   role, que devolve também o que o membro não enxergaria sozinho — se está
   conectado e se a leitura é FRESCA (`leituraFresca`, duas voltas do laço
   lento). Sem isso "em dia" seria afirmação sobre dado parado.
-- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito.** É a PRIMEIRA vez que o
-  espelho viu a cobrança vencida, carimbada num UPDATE cercado por `IS NULL`
-  — fora do upsert, de propósito. É o que a régua de cobrança (Fase 3) vai
-  usar como dia-alvo quando o Asaas marca vencida tarde, e o que faz "ligar
-  a régua não é retroativo" valer. "Está vencida" é o `status` do Asaas,
-  nunca `vencimento < hoje` (C7: o instante da virada não é documentado).
+- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito enquanto a cobrança continua
+  devida.** É a PRIMEIRA vez que o espelho viu a cobrança vencida, carimbada
+  num UPDATE cercado por `IS NULL` — fora do upsert, de propósito. É o que a
+  régua de cobrança (Fase 3) usa como dia-alvo quando o Asaas marca vencida
+  tarde, e o que faz "ligar a régua não é retroativo" valer. "Está vencida"
+  é o `status` do Asaas, nunca `vencimento < hoje` (C7: o instante da virada
+  não é documentado). ⚠️ UMA exceção (Codex, PR #206): a cobrança que VOLTA
+  a "a vencer" (renegociada — PENDING de novo, outro vencimento) perde o
+  carimbo, para a próxima vencida ganhar o dela e a régua rearmar — a paga
+  MANTÉM (histórico).
 - ⚠️ **O upsert de clientes leva SÓ metadados** — nunca `contact_id`,
   `vinculo_origem`, `contatos_recusados` nem `candidatos` (a lição do tl;dv:
   o que já é conhecido mantém o que tem). O upsert das cobranças, idem: o
@@ -3709,6 +3713,99 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   quando `accessToken.name` é o `chave_nome` da config (os eventos de chave
   são da conta inteira) → `status = 'erro'` com `chave_desabilitada`/
   `chave_expirada`/`chave_apagada`.
+- ⚠️⚠️ **A RÉGUA DE COBRANÇA (Fase 3, 998) SÓ DISPARA PELA VARREDURA.**
+  `src/lib/asaas/regua.ts` (puro) e `varrer-regua.ts` (I/O, no cron do
+  Asaas depois do sync e do webhook). Os gatilhos `asaas_cobranca_vencida`
+  (marco em `dias_de_atraso`) e `asaas_cobranca_vence_hoje` casam SÓ com o
+  `automation_id` do contexto (`triggerMatches`) — o disparo por tipo
+  rodaria a de 5 dias junto com a de 1; `runAutomationById` (o botão
+  "Executar automação" e o passo `run_automation`), o diálogo e
+  `POST /api/automations/engine` recusam. A varredura reconfirma cada
+  parcela no Asaas ANTES da trava, cria a conversa da ficha sem conversa
+  (dono durável, canal do passo, sem pino), passa `{ automation_id,
+  conversation_id, channel_id, vars }` e mede o desfecho no `automation_logs`
+  DEPOIS do disparo — por isso grupos do mesmo contato saem em SEQUÊNCIA.
+  ⚠️ A releitura é de TUDO que vai para a mensagem (as que cruzam o marco,
+  as demais devidas e a que vence hoje), não só das que cruzam — senão uma
+  parcela paga entre a sincronização e o disparo sai como "em aberto" no
+  texto (Codex, 2ª rodada do PR #206) — e a linha FRESCA passa de novo
+  pelas cercas da seleção (devida, entrou na régua, pagável, cruzando ESTE
+  marco hoje). A janela (até 18:00) é reconferida com o relógio VIVO antes
+  de cada trava (`deps.relogio`; `janelaFechou`), e o log de um disparo
+  nunca responde por outra trava do ciclo (`logsConsumidos`) — dois
+  clientes do Asaas no mesmo contato saem em sequência (Codex, 3ª rodada).
+  A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
+  `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
+  mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).
+- ⚠️⚠️ **A trava é do MARCO, e é UM INSERT com várias linhas.**
+  `cb_asaas_regua_envios` com `UNIQUE (cobranca_id, tipo, marco, vencimento)`:
+  23505 em qualquer parcela recusa o GRUPO inteiro (dois processos Node
+  vivos no deploy `start-first`) — por isso `agruparPorCliente` entra cada
+  parcela UMA vez (pelo MAIOR marco que cruzou hoje; duas automações do
+  mesmo marco ou a mesma parcela em dois marcos punham a mesma chave duas
+  vezes no INSERT, o 23505 era lido como "outro processo pegou" e ninguém
+  enviava — Codex e revisão adversarial, PR #206), e grupo sem `reservado`
+  não dispara; a trava vale para a automação que enviou
+  E para a que foi absorvida no mesmo dia (`absorvida`), e o lembrete usa
+  `tipo = 'vence_hoje'`/`marco = 0`. `reservado` há mais de 10 min é órfã
+  (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ **`na_fila`
+  existe por causa da RETENTATIVA do motor (PR #205)**: um envio que a
+  Evolution RECUSA (4xx) volta para a fila e roda de novo em 30 s / 5 min,
+  FORA da varredura — a trava guarda `automation_log_id` e a varredura
+  seguinte reconcilia pelo log (`enviado`/`falhou`/`barrada`; 1 h sem
+  desfecho → `incerto`). `enviado`, `na_fila` e `incerto` CONTAM como
+  cobrado para o intervalo mínimo (`regua_intervalo_dias`, D11) e o "uma
+  por cliente por dia" — mandar de menos é o lado seguro. Os nove valores
+  do CHECK são `RESULTADOS_DA_TRAVA` (`regua.ts`), rotulados por chave
+  montada na aba e cobrados nos dois dicionários.
+- ⚠️ **Ligar a régua NÃO é retroativo (D13): só parcela vista vencida
+  DEPOIS de `regua_ativada_em` entra** (`entrouNaRegua`), e o dia-alvo é
+  `vencimento + marco` ou o dia em que o espelho a viu vencida (C7), até 3
+  dias de tolerância — o atrasado antigo espera o próximo atraso. Fim de
+  semana e feriado nacional fixo empurram para o dia útil seguinte; a
+  janela vai de `hora_envio` às 18:00. **Lembrete e marco no mesmo dia =
+  UMA mensagem** (D17 revista): a cobrança leva `{{vars.vence_hoje_detalhe}}`
+  e o lembrete é travado como absorvido. **A negativada entra** (D6
+  revista). Interruptor e intervalo: `PUT /api/cb/asaas/regua/interruptor`
+  (ROWCOUNT; SÓ a transição desligado → ligado carimba `regua_ativada_em`,
+  por UPDATE cercado em `regua_ativa = false` — um PUT repetido empurrava a
+  fronteira da D13 para a frente; Codex, 3ª rodada), NÃO o PUT da config.
+- ⚠️ **A conexão do `send_message` da régua FALHA FECHADA** (D19):
+  `validate.ts` exige `channel_id` em todo `send_message`/`send_media`, a
+  MESMA em todos (a varredura só confere a do primeiro — `primeiroEnvio`,
+  que entra nos ramos de condição), e recusa qualquer "Aguardar" nos dois
+  gatilhos; a varredura pula a automação cuja conexão não resolve na conta
+  e a candidata cuja conexão está desconectada (sem travar; a SONDA que
+  falha conta igual e é dita no log — `sondaFalhou`). ⚠️ "Viva" é a
+  sonda em `ok`, ou `warn` SÓ por causa do webhook (`vivaParaEnviar`):
+  `pairing`/`stale`/`lastError` não provam envio, e travar o marco por
+  elas deixava a trava em `falhou` sem o ciclo seguinte poder tentar. E a
+  cerca é de conexão por QR CODE (`kind = 'evolution'`, `connected`):
+  Instagram e Meta no passo dariam `falhou` determinístico consumindo a
+  trava. A ficha ligada SEM telefone (só Instagram, 989) é pulada sem
+  travar (`semTelefone`). O seletor de conexão do passo aparece SEMPRE nos
+  gatilhos da régua, mesmo com uma conexão só (`reguaDoAsaas` no contexto
+  do construtor) — senão a automação criada à mão nunca ligava; a
+  ativação exige pelo menos um `send_message` (é dele que vem a conexão e
+  o `enviado` da trava — só `send_media` ativava e era pulada em todo
+  ciclo); e o motor, nesses gatilhos, lança em vez de cair no padrão
+  (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
+  numa cobrança isso é o link de pagamento saindo por outro número).
+  "Assinar como" (`automations.assinatura_personalizada`, D18) é prefixo
+  de todo `send_message` da automação, por `nomePersonalizadoParaAssinar`,
+  sob o interruptor `assinatura_ativa` da conta.
+- ⚠️ **A lista de exceção (D21) é por CLIENTE DO ASAAS, não por contato**
+  (`cb_asaas_clientes.regua_desligada`, com quem e quando): a régua agrupa
+  por cliente, e o mesmo contato pode ter a pessoa e a empresa. O sino está
+  na aba Cobranças e nas listas do cartão; a planilha do operador foi
+  marcada por script fora do repositório. ⚠️ **Deploy DEPOIS da 998**: as
+  rotas `/api/cb/asaas` (o cartão), `/api/cb/asaas/resumo` e
+  `/api/cb/asaas/contato/[id]` selecionam `regua_*`/`regua_desligada` por
+  nome (`lerConfigDoEspelho`/`lerClientes`) — sem as colunas o `resumo`
+  responde 500 e, pela régua da Fase 1b (`null` = "não sei"), o ícone, a
+  faixa e o filtro "Inadimplentes" apagam para a CONTA INTEIRA, não só o
+  cartão do admin; e o cron registra a régua como interrompida a cada
+  ciclo. (Aplicada em 13/09/2026 ANTES do merge.)
 
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
@@ -4717,6 +4814,18 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     o `dateCreated` do evento CRU, em texto — a medição de C7). Aditiva:
     nada em produção a lê até o deploy. Aplicada em 13/09/2026 pela
     Management API, ANTES do merge.
+  - **998_cb_asaas_regua** — a régua de cobrança (Fase 3, PR #206):
+    `cb_asaas_config.regua_ativa`/`regua_ativada_em`/`regua_intervalo_dias`,
+    `cb_asaas_clientes.regua_desligada` (+ por quem/quando — a lista de
+    exceção), `automations.assinatura_personalizada`, o índice único
+    `cb_asaas_cobrancas (id, account_id)` que a FK composta exige, e
+    `cb_asaas_regua_envios` (a trava E o histórico; FECHADA ao navegador;
+    UNIQUE por marco; nove resultados, `na_fila` incluso; `automation_log_id`).
+    Aditiva (colunas com default; a tabela nasce vazia). ⚠️ O deploy tem de
+    vir DEPOIS dela: três rotas selecionam as colunas por nome (ver a seção
+    da régua). Aplicada em 13/09/2026 pela Management API (histórico
+    `20260913211455`), ANTES do merge; a lista de exceção do operador (38
+    clientes do Asaas) marcada em seguida por script fora do repositório.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

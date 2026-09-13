@@ -22,7 +22,7 @@
 // ============================================================
 
 import { useState } from "react";
-import { Check, CircleDollarSign, Copy, ExternalLink, Loader2, RefreshCw, Unlink } from "lucide-react";
+import { BellOff, BellRing, Check, CircleDollarSign, Copy, ExternalLink, Loader2, RefreshCw, Unlink } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -137,6 +137,8 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
   // `manage-members` é o gate de admin deste projeto.
   const podeDesligar = useCan("manage-members");
   const [desligando, setDesligando] = useState<string | null>(null);
+  /** id do cliente cuja exceção da cobrança automática está sendo trocada */
+  const [trocandoRegua, setTrocandoRegua] = useState<string | null>(null);
   /** Id da parcela cujo link acabou de ser copiado (o "Copiado" some em 2 s). */
   const [copiada, setCopiada] = useState<string | null>(null);
 
@@ -172,6 +174,30 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
       toast.error(t("erroDesligar"));
     } finally {
       setDesligando(null);
+    }
+  }
+
+  // A LISTA DE EXCEÇÃO da cobrança automática (998, D21): por cliente do
+  // Asaas, decisão de administrador, com quem e quando carimbados na rota.
+  async function trocarRegua(clienteId: string, desligada: boolean) {
+    setTrocandoRegua(clienteId);
+    try {
+      const res = await fetch(`/api/cb/asaas/clientes/${clienteId}/regua`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ desligada }),
+      });
+      if (!res.ok) {
+        toast.error(t("regua.erroTrocar"));
+        return;
+      }
+      toast.success(t(desligada ? "regua.desligadaParaEste" : "regua.religadaParaEste"));
+      avisarAsaasMudou();
+      recarregar();
+    } catch {
+      toast.error(t("regua.erroTrocar"));
+    } finally {
+      setTrocandoRegua(null);
     }
   }
 
@@ -246,8 +272,22 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
                 <p className="text-muted-foreground truncate">
                   {c.origem && ORIGENS.has(c.origem) ? tAsaas(`origem.${c.origem}` as Parameters<typeof tAsaas>[0]) : c.asaasId}
                   {c.notificacoesDesligadas && <span> · {t("avisosDesligados")}</span>}
+                  {c.reguaDesligada && <span className="text-amber-700 dark:text-amber-300"> · {t("regua.excecao")}</span>}
                 </p>
               </div>
+              {podeDesligar && (
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={trocandoRegua === c.id}
+                  title={c.reguaDesligada ? t("regua.cobrarDeNovo") : t("regua.naoCobrar")}
+                  aria-label={c.reguaDesligada ? t("regua.cobrarDeNovo") : t("regua.naoCobrar")}
+                  className={cn("h-7 shrink-0 px-2", c.reguaDesligada ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground")}
+                  onClick={() => void trocarRegua(c.id, !c.reguaDesligada)}
+                >
+                  {trocandoRegua === c.id ? <Loader2 className="size-3.5 animate-spin" /> : c.reguaDesligada ? <BellOff className="size-3.5" /> : <BellRing className="size-3.5" />}
+                </Button>
+              )}
               {podeDesligar && (
                 <Button
                   size="sm"
@@ -291,6 +331,30 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
             <p className="font-semibold text-red-700 dark:text-red-300">{t("totalVencido", { valor: dinheiro(divida.total) })}</p>
             {divida.totalAtualizado > divida.total && <p className="text-muted-foreground">{t("totalAtualizado", { valor: dinheiro(divida.totalAtualizado) })}</p>}
           </div>
+        </div>
+      )}
+
+      {/* A régua (998): o histórico deste contato e o estado do interruptor
+          (D20) — "Cobrança automática desligada" só quando há automação
+          ligada e o interruptor não; sem automação nenhuma, nada a dizer. */}
+      {(dados.envios.length > 0 || (dados.reguaComAutomacoes && !dados.reguaAtiva)) && (
+        <div>
+          <TituloDeSecao className="mb-1.5">{t("regua.titulo")}</TituloDeSecao>
+          {dados.reguaComAutomacoes && !dados.reguaAtiva && <p className="mb-1.5 px-1 text-xs text-amber-700 dark:text-amber-300">{t("regua.desligadaNaConta")}</p>}
+          {dados.envios.length > 0 && (
+            <ul className="space-y-1 px-1 text-xs">
+              {dados.envios.slice(0, 8).map((e) => (
+                <li key={e.id} className="text-muted-foreground">
+                  <span className="text-foreground">{e.automationNome}</span>
+                  {" · "}
+                  {e.tipo === "vence_hoje" ? t("regua.lembrete") : t("regua.marco", { dias: e.marco })}
+                  {" · "}
+                  {/* chave montada: `regua.resultado.<resultado>` — os nove valores do CHECK da 998 (`RESULTADOS_DA_TRAVA`), cobrados por teste */}
+                  {t(`regua.resultado.${e.resultado}` as Parameters<typeof t>[0], { quando: quandoFoi(e.finalizadoEm ?? e.criadoEm) ?? "" })}
+                </li>
+              ))}
+            </ul>
+          )}
         </div>
       )}
 

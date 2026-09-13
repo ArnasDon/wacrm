@@ -52,6 +52,7 @@ function NewAutomationPageInner() {
         // que é o comportamento de antes do multi-canal.
         channel_ids: [],
         stage_ids: [],
+        assinatura_personalizada: null,
         is_active: false,
         steps,
       }
@@ -70,6 +71,7 @@ function NewAutomationPageInner() {
         // configurada, ligada e incapaz de disparar, que é exatamente a
         // categoria "nunca dispara aqui" do painel.
         stage_ids: [],
+        assinatura_personalizada: null,
         is_active: false,
         steps: [],
       }
@@ -81,6 +83,7 @@ function NewAutomationPageInner() {
       trigger_config: {},
       channel_ids: [],
       stage_ids: [],
+      assinatura_personalizada: null,
       is_active: false,
       steps: [],
     }

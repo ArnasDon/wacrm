@@ -23,7 +23,7 @@ import {
 } from '@/lib/whatsapp/template-body'
 import { supabaseAdmin } from './admin-client'
 import { aplicarAssinatura } from '@/lib/assinatura/assinatura'
-import { nomeAutomaticoParaAssinar } from '@/lib/assinatura/resolver'
+import { nomeAutomaticoParaAssinar, nomePersonalizadoParaAssinar } from '@/lib/assinatura/resolver'
 import { ehEvolution, ehInstagram } from '@/lib/cb-channels/transporte'
 
 // ------------------------------------------------------------
@@ -52,6 +52,13 @@ interface SendTextArgs {
   /** Canal de saida preferido: o do passo (cfg.channel_id) ou o do DISPARO.
    *  Ausente = canal atual da conversa (comportamento de antes). */
   preferredChannelId?: string | null
+  /**
+   * "Assinar como" (998, D18): o texto que assina no lugar do nome automático
+   * do escritório — "Carol - financeiro". Continua sob o interruptor
+   * `accounts.assinatura_ativa` e passa por `saneiaNome`. Ausente/vazio = o
+   * nome automático, como sempre.
+   */
+  assinarComo?: string | null
 }
 
 interface SendTemplateArgs {
@@ -189,7 +196,10 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
    * depois de a regra ter sido criada. Num escritorio de advocacia isso e uma
    * afirmacao seria, e falsa. Quem assina e o escritorio (P1.5).
    */
-  const nomeQueAssina = await nomeAutomaticoParaAssinar(db, input.accountId)
+  const nomeQueAssina =
+    input.kind === 'text' && input.assinarComo?.trim()
+      ? await nomePersonalizadoParaAssinar(db, input.accountId, input.assinarComo)
+      : await nomeAutomaticoParaAssinar(db, input.accountId)
   const textoFinal =
     input.kind === 'text'
       ? (aplicarAssinatura(input.text, nomeQueAssina) as string)

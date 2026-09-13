@@ -1004,6 +1004,19 @@ export type AutomationTriggerType =
    */
   | 'calendly_booking'
   /**
+   * A RÉGUA DE COBRANÇA do Asaas (migration 998, Fase 3 do plano do Asaas):
+   * `asaas_cobranca_vencida` = a cobrança do atrasado por MARCO de dias
+   * (uma automação por marco: 1, 5, 30…); `asaas_cobranca_vence_hoje` = o
+   * lembrete no DIA do vencimento (D17). São dois gatilhos, e não um com um
+   * sinalizador, porque as mensagens são coisas diferentes para quem escreve
+   * o texto — e "0 dias de atraso" para dizer "no vencimento" seria a tela
+   * mentindo. Os dois só disparam pela VARREDURA (`varrer-regua.ts`), que
+   * carimba `automation_id` no contexto; `runAutomationById`, o diálogo
+   * "Executar automação" e `POST /api/automations/engine` os recusam.
+   */
+  | 'asaas_cobranca_vencida'
+  | 'asaas_cobranca_vence_hoje'
+  /**
    * Um webhook de entrada da conta foi acionado (migration 982). O sistema
    * de fora (Typebot, n8n) faz POST na URL do webhook; o contato é achado
    * pelo TELEFONE que o payload traz no campo configurado, e o payload
@@ -1175,8 +1188,28 @@ export interface WebhookTriggerConfig {
   webhook_nome?: string;
 }
 
+/**
+ * Config dos gatilhos da régua do Asaas (998). `hora_envio` entre 08:00 e
+ * 17:00 (`validate.ts`); `somente_dias_uteis` ausente = true: fim de
+ * semana e feriado nacional de data fixa empurram para o dia útil seguinte
+ * (D12). A mensagem sai entre `hora_envio` e as 18:00 do dia-alvo.
+ */
+export interface AsaasVenceHojeTriggerConfig {
+  hora_envio?: string;
+  somente_dias_uteis?: boolean;
+}
+
+export interface AsaasCobrancaTriggerConfig {
+  /** 1..365 dias CORRIDOS depois do vencimento — o marco desta automação */
+  dias_de_atraso: number;
+  hora_envio?: string;
+  somente_dias_uteis?: boolean;
+}
+
 export type AutomationTriggerConfig =
   | Record<string, never>
+  | AsaasVenceHojeTriggerConfig
+  | AsaasCobrancaTriggerConfig
   | KeywordMatchTriggerConfig
   | TagTriggerConfig
   | TimeBasedTriggerConfig
@@ -1530,6 +1563,12 @@ export interface Automation {
    * como "todas", o oposto do que o operador pediu.
    */
   stage_ids?: string[] | null;
+  /**
+   * "Assinar como" (998, D18): o prefixo de todo `send_message` desta
+   * automação ("Carol - financeiro"), sob o interruptor da conta. NULL = o
+   * nome automático do escritório, como sempre foi.
+   */
+  assinatura_personalizada?: string | null;
   is_active: boolean;
   execution_count: number;
   last_executed_at?: string | null;

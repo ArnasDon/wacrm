@@ -6,10 +6,13 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { getTemplate } from '@/lib/automations/templates'
 import { insertSteps, type BuilderStepInput } from '@/lib/automations/steps-tree'
 import {
+  validateAsaasReguaForActivation,
   validateStepsForActivation,
   validateChannelScopeForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { ehGatilhoDaRegua } from '@/lib/asaas/regua'
+import { normalizarAssinatura } from '@/lib/assinatura/assinatura'
 
 export async function GET() {
   const supabase = await createClient()
@@ -75,6 +78,8 @@ export async function POST(request: Request) {
   const stageIds = Array.isArray(body.stage_ids)
     ? (body.stage_ids as unknown[]).filter((v): v is string => typeof v === 'string')
     : null
+  // "Assinar como" (998, D18): texto livre aparado, teto de 60; vazio = NULL.
+  const assinatura = normalizarAssinatura(body.assinatura_personalizada)
 
   let effectiveSteps: BuilderStepInput[] | undefined = steps
   let effectiveName = name
@@ -110,6 +115,10 @@ export async function POST(request: Request) {
       ...validateStepsForActivation(
         (effectiveSteps ?? []) as unknown as { step_type: string; step_config: Record<string, unknown> }[],
       ),
+      ...validateAsaasReguaForActivation(
+        effectiveTriggerType,
+        (effectiveSteps ?? []) as unknown as { step_type: string; step_config: Record<string, unknown> }[],
+      ),
       ...validateChannelScopeForActivation(
         (effectiveSteps ?? []) as unknown as { step_type: string; step_config: Record<string, unknown> }[],
         channelIds,
@@ -135,7 +144,11 @@ export async function POST(request: Request) {
       trigger_type: effectiveTriggerType,
       trigger_config: effectiveTriggerConfig ?? {},
       channel_ids: channelIds && channelIds.length > 0 ? channelIds : null,
-      stage_ids: stageIds && stageIds.length > 0 ? stageIds : null,
+      // A régua do Asaas (998) não tem recorte por etapa: `stageInScope` só
+      // olha negócio ABERTO e devolveria falso para quem não tem card —
+      // esconder o seletor não bastaria, o valor gravado continuaria valendo.
+      stage_ids: ehGatilhoDaRegua(effectiveTriggerType) ? null : stageIds && stageIds.length > 0 ? stageIds : null,
+      assinatura_personalizada: assinatura,
       is_active: !!is_active,
     })
     .select()

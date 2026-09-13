@@ -64,6 +64,22 @@ describe("aplicarCobrancas", () => {
     expect(e.tabelas.cb_asaas_cobrancas[0].valor).toBe(120);
   });
 
+  it("a renegociada (de volta a PENDING) perde o carimbo, e vencida de novo (outro vencimento) ganha outro — o rearme da régua (Codex, PR #206); a paga mantém", async () => {
+    const e = estado();
+    const admin = dubleDoSupabase(e);
+    await aplicarCobranca(admin, CONTA, cobranca({ status: "OVERDUE", dueDate: "2026-09-01" }), "2026-09-02T10:00:00Z");
+    expect(e.tabelas.cb_asaas_cobrancas[0].vista_vencida_em).toBe("2026-09-02T10:00:00Z");
+    // renegociada: volta a PENDING com vencimento novo
+    await aplicarCobranca(admin, CONTA, cobranca({ status: "PENDING", dueDate: "2026-09-20" }), "2026-09-05T10:00:00Z");
+    expect(e.tabelas.cb_asaas_cobrancas[0]).toMatchObject({ status: "PENDING", vencimento: "2026-09-20", vista_vencida_em: null });
+    // venceu de novo: o carimbo é DESTE vencimento
+    await aplicarCobranca(admin, CONTA, cobranca({ status: "OVERDUE", dueDate: "2026-09-20" }), "2026-09-21T10:00:00Z");
+    expect(e.tabelas.cb_asaas_cobrancas[0].vista_vencida_em).toBe("2026-09-21T10:00:00Z");
+    // a paga MANTÉM o carimbo (histórico; nada mais a cobra)
+    await aplicarCobranca(admin, CONTA, cobranca({ status: "RECEIVED", dueDate: "2026-09-20" }), "2026-09-22T10:00:00Z");
+    expect(e.tabelas.cb_asaas_cobrancas[0].vista_vencida_em).toBe("2026-09-21T10:00:00Z");
+  });
+
   it("a paga NÃO recebe carimbo", async () => {
     const e = estado();
     await aplicarCobranca(dubleDoSupabase(e), CONTA, cobranca({ status: "RECEIVED" }), "2026-09-12T10:00:00Z");

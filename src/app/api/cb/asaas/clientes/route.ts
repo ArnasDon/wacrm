@@ -7,8 +7,8 @@ import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 
 /**
- * GET /api/cb/asaas/clientes?lista=confirmar|sem_ficha|ligados|ignorados|inadimplentes&pagina=1&busca=
- * (admin+) — UMA das cinco listas do cartão, paginada.
+ * GET /api/cb/asaas/clientes?lista=confirmar|sem_ficha|ligados|ignorados|inadimplentes|sem_cobranca&pagina=1&busca=
+ * (admin+) — UMA das seis listas do cartão, paginada.
  *
  * Lê o espelho inteiro em service role (as tabelas são fechadas ao
  * navegador) e devolve a página pedida. O CPF/CNPJ sai MASCARADO, e só daqui

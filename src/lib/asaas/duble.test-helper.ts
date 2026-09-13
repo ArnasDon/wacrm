@@ -16,6 +16,8 @@ import type { ClienteAsaas, PaginaDoAsaas } from "./cliente";
 export type Linha = Record<string, unknown>;
 
 export interface EstadoDoDuble {
+  /** tabela → mensagem: todo SELECT nela devolve `{ data: null, error }` (para testar falha de leitura) */
+  falhasDeLeitura?: Partial<Record<string, string>>;
   tabelas: Record<string, Linha[]>;
   /** todo insert/upsert/update/delete, na ordem */
   escritas: { tabela: string; op: string; payload: unknown; filtros: Filtro[] }[];
@@ -33,6 +35,8 @@ const UNIQUES: Record<string, string[][]> = {
   contacts: [["account_id", "phone_normalized"]],
   cb_asaas_clientes: [["account_id", "asaas_customer_id"]],
   cb_asaas_cobrancas: [["account_id", "asaas_payment_id"]],
+  cb_asaas_regua_envios: [["cobranca_id", "tipo", "marco", "vencimento"]],
+  conversations: [["account_id", "contact_id"]],
   cb_asaas_eventos: [["account_id", "asaas_event_id"]],
   tags: [["account_id", "name_key"]],
   contact_tags: [["contact_id", "tag_id"]],
@@ -64,6 +68,8 @@ const DEFAULTS: Record<string, Linha> = {
   },
   cb_asaas_eventos: { asaas_payment_id: null, evento_criado_em: null, processado_em: null, resultado: "recebido", detalhe: null },
   cb_asaas_cobrancas: { deleted: false, vista_vencida_em: null, parcela_total: null, juros_e_multa: null },
+  cb_asaas_regua_envios: { automation_id: null, contact_id: null, automation_log_id: null, resultado: "reservado", detalhe: null, finalizado_em: null },
+  conversations: { channel_id: null, channel_pinned: false },
   contacts: { name: null, email: null },
 };
 
@@ -72,6 +78,8 @@ function derivadas(tabela: string, linha: Linha): Linha {
   const extra: Linha = {};
   if (tabela === "contacts" && typeof linha.phone === "string") extra.phone_normalized = linha.phone.replace(/\D/g, "");
   if (tabela === "tags" && typeof linha.name === "string") extra.name_key = linha.name.trim().normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
+  // `criado_em DEFAULT now()` da trava da régua (998): a varredura filtra por ela.
+  if (tabela === "cb_asaas_regua_envios" && linha.criado_em === undefined) extra.criado_em = new Date().toISOString();
   return extra;
 }
 
@@ -167,6 +175,8 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       const linhas = tabela(nome);
       const filtradas = linhas.filter((l) => filtros.every((f) => casa(l, f)));
       if (op === "select") {
+        const falha = estado.falhasDeLeitura?.[nome];
+        if (falha) return { data: null, error: { message: falha }, count: null };
         let saida = filtradas;
         if (faixa) saida = saida.slice(faixa[0], faixa[1] + 1);
         if (teto !== null) saida = saida.slice(0, teto);
@@ -183,6 +193,14 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       }
       const cruas = (Array.isArray(payload) ? payload : [payload]) as Linha[];
       const inseridas: Linha[] = [];
+      // ⚠️ Como o Postgres: um INSERT de VÁRIAS linhas é um comando só —
+      // 23505 em qualquer uma recusa todas (é a trava de grupo da régua).
+      if (op === "insert") {
+        const uniques = UNIQUES[nome] ?? [];
+        const novas = cruas.map((c) => normalizarLinha(nome, c));
+        const conflito = novas.some((n, i) => uniques.some((u) => linhas.some((l) => conflita(nome, l, n, u)) || novas.slice(0, i).some((m) => conflita(nome, m, n, u))));
+        if (conflito) return { data: null, error: { message: "duplicate key value violates unique constraint", code: "23505" }, count: null };
+      }
       for (const crua of cruas) {
         const nova = normalizarLinha(nome, crua);
         const uniques = UNIQUES[nome] ?? [];

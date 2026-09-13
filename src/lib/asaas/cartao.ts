@@ -76,6 +76,63 @@ export interface ConfigDoAsaas {
   webhook_religado_em?: string | null;
   webhook_conferido_em?: string | null;
   last_event_at?: string | null;
+  /** a régua (998) — ausentes na linha anterior à migration */
+  regua_ativa?: boolean | null;
+  regua_ativada_em?: string | null;
+  regua_intervalo_dias?: number | null;
+}
+
+/** O que o cartão precisa de cada automação dos gatilhos do Asaas. */
+export interface AutomacaoDaReguaNoCartao {
+  trigger_type: string;
+  trigger_config: unknown;
+  is_active: boolean;
+}
+
+/**
+ * O bloco "Cobrança automática" (998, D20): o interruptor, o intervalo
+ * mínimo (D11), quantas automações da régua existem e quantas estão ligadas,
+ * e os marcos que duas automações LIGADAS disputam (só uma envia — a trava é
+ * do marco, não da automação).
+ */
+export interface ReguaDoCartao {
+  ativa: boolean;
+  ativadaEm: string | null;
+  intervaloDias: number;
+  automacoesTotal: number;
+  automacoesLigadas: number;
+  /** `dias_de_atraso` com duas ou mais automações LIGADAS, em ordem */
+  marcosRepetidos: number[];
+  /** mais de um lembrete do vencimento ligado */
+  lembreteRepetido: boolean;
+}
+
+export const SEM_REGUA: ReguaDoCartao = { ativa: false, ativadaEm: null, intervaloDias: 3, automacoesTotal: 0, automacoesLigadas: 0, marcosRepetidos: [], lembreteRepetido: false };
+
+export function reguaDoCartao(config: Pick<ConfigDoAsaas, "regua_ativa" | "regua_ativada_em" | "regua_intervalo_dias"> | null, automacoes: readonly AutomacaoDaReguaNoCartao[]): ReguaDoCartao {
+  const daRegua = automacoes.filter((a) => a.trigger_type === "asaas_cobranca_vencida" || a.trigger_type === "asaas_cobranca_vence_hoje");
+  const ligadas = daRegua.filter((a) => a.is_active);
+  const porMarco = new Map<number, number>();
+  let lembretes = 0;
+  for (const a of ligadas) {
+    if (a.trigger_type === "asaas_cobranca_vence_hoje") {
+      lembretes += 1;
+      continue;
+    }
+    const cfg = (a.trigger_config ?? {}) as Record<string, unknown>;
+    const marco = Number(cfg.dias_de_atraso);
+    if (!Number.isInteger(marco) || marco < 1) continue;
+    porMarco.set(marco, (porMarco.get(marco) ?? 0) + 1);
+  }
+  return {
+    ativa: config?.regua_ativa === true,
+    ativadaEm: config?.regua_ativada_em ?? null,
+    intervaloDias: typeof config?.regua_intervalo_dias === "number" ? config.regua_intervalo_dias : 3,
+    automacoesTotal: daRegua.length,
+    automacoesLigadas: ligadas.length,
+    marcosRepetidos: [...porMarco.entries()].filter(([, n]) => n >= 2).map(([m]) => m).sort((a, b) => a - b),
+    lembreteRepetido: lembretes >= 2,
+  };
 }
 
 export interface WebhookDoCartao {

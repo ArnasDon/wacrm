@@ -169,11 +169,11 @@ describe("lerRespostaDoContato", () => {
       leituraFresca: true,
       atualizadoEm: LISTADAS_EM,
       cicloCompleto: true,
-      clientes: [{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true }, { id: 3 }],
+      clientes: [{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true, reguaDesligada: false }, { id: 3 }],
       parcelas: [parcela({ id: "a" }), "lixo"],
     });
     expect(lido?.cicloCompleto).toBe(true);
-    expect(lido?.clientes).toEqual([{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true }]);
+    expect(lido?.clientes).toEqual([{ id: "row-1", asaasId: "cus_1", nome: "Ana", origem: "telefone", notificacoesDesligadas: true, reguaDesligada: false }]);
     expect(lido?.parcelas.map((p) => p.id)).toEqual(["a"]);
   });
 });

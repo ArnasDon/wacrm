@@ -73,7 +73,9 @@ import {
 } from "@/components/interactive/interactive-builder"
 import { interactivePayloadPreviewText } from "@/lib/whatsapp/interactive"
 import { createClient } from "@/lib/supabase/client"
+import { AsaasTriggerConfig } from "@/components/automations/asaas-trigger-config"
 import { CalendlyTriggerConfig } from "@/components/automations/calendly-trigger-config"
+import { ehGatilhoDaRegua, HORA_PADRAO_COBRANCA, HORA_PADRAO_LEMBRETE } from "@/lib/asaas/regua"
 import { WebhookTriggerConfig } from "@/components/automations/webhook-trigger-config"
 import {
   childPath,
@@ -126,8 +128,24 @@ export interface BuilderInitial {
    * tela = "todas", e o save converte para `null`.
    */
   stage_ids: string[]
+  /** "Assinar como" (998, D18): `null` = o nome automático do escritório. */
+  assinatura_personalizada: string | null
   is_active: boolean
   steps: BuilderStep[]
+}
+
+/**
+ * Defaults REAIS dos gatilhos da régua do Asaas (998) — a mesma lição de
+ * `semearLembrete`: o que se vê é o que se salva. `dias_de_atraso` nasce 1
+ * na cobrança; a hora nasce 09:00 (cobrança) / 08:00 (lembrete); "só dia
+ * útil" nasce ligado. Nada é sobrescrito quando já existe.
+ */
+function semearRegua(tipo: AutomationTriggerType, cfg: Record<string, unknown>): Record<string, unknown> {
+  const base: Record<string, unknown> = { ...cfg }
+  if (tipo === "asaas_cobranca_vencida" && !Number.isInteger(Number(base.dias_de_atraso))) base.dias_de_atraso = 1
+  if (typeof base.hora_envio !== "string" || base.hora_envio === "") base.hora_envio = tipo === "asaas_cobranca_vencida" ? HORA_PADRAO_COBRANCA : HORA_PADRAO_LEMBRETE
+  if (typeof base.somente_dias_uteis !== "boolean") base.somente_dias_uteis = true
+  return base
 }
 
 /**
@@ -256,6 +274,9 @@ const TRIGGER_OPTIONS: { value: AutomationTriggerType }[] = [
   { value: "date_field_offset" },
   { value: "calendly_booking" },
   { value: "webhook_received" },
+  // A régua do Asaas (998): os dois têm call site na varredura do cron.
+  { value: "asaas_cobranca_vencida" },
+  { value: "asaas_cobranca_vence_hoje" },
   // ⚠️ `manual` é oferecido, e NÃO está em `GATILHOS_SEM_DISPARO`: ele nunca é
   // despachado por evento, mas roda pelo botão "Executar automação" do menu +
   // da conversa. É o gatilho de quem só quer o botão — sem ele, o jeito de
@@ -356,6 +377,14 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
 // ------------------------------------------------------------
 
 interface AutomationResources {
+  /**
+   * O gatilho em edição é um dos da régua do Asaas (998)? Aí o seletor de
+   * conexão do passo aparece MESMO com uma conexão só: a ativação exige
+   * `channel_id` no `send_message` (D19), e com o seletor escondido "por só
+   * haver um número" a automação criada à mão nunca ligava (Codex, 2ª rodada
+   * do PR #206).
+   */
+  reguaDoAsaas: boolean
   tags: TagRecord[]
   members: AccountMember[]
   templates: MessageTemplate[]
@@ -411,6 +440,7 @@ interface PipelineStageOption {
 }
 
 const ResourcesContext = createContext<AutomationResources>({
+  reguaDoAsaas: false,
   tags: [],
   members: [],
   templates: [],
@@ -429,10 +459,13 @@ function useResources(): AutomationResources {
 function ResourcesProvider({
   children,
   automacaoAtualId,
+  reguaDoAsaas = false,
 }: {
   children: ReactNode
   /** `undefined` numa automação nova — ela ainda não tem id para se excluir. */
   automacaoAtualId?: string
+  /** o gatilho em edição é da régua do Asaas (ver `AutomationResources.reguaDoAsaas`) */
+  reguaDoAsaas?: boolean
 }) {
   const [tags, setTags] = useState<TagRecord[]>([])
   const [members, setMembers] = useState<AccountMember[]>([])
@@ -521,6 +554,7 @@ function ResourcesProvider({
   return (
     <ResourcesContext.Provider
       value={{
+        reguaDoAsaas,
         tags,
         members,
         templates,
@@ -867,7 +901,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
     // salvar recusaria com "direção inválida" contradizendo o que se vê.
     initial.trigger_type === "date_field_offset"
       ? { ...initial, trigger_config: semearLembrete(initial.trigger_config) }
-      : initial,
+      : ehGatilhoDaRegua(initial.trigger_type)
+        ? { ...initial, trigger_config: semearRegua(initial.trigger_type, initial.trigger_config) }
+        : initial,
   )
   const [saving, setSaving] = useState(false)
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -916,6 +952,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
         // Mesma regra: vazio vira `null` ("todas as etapas"). Mandar `[]`
         // seria pedir para o trigger da 933 tratar como escopo órfão.
         stage_ids: state.stage_ids.length > 0 ? state.stage_ids : null,
+        assinatura_personalizada: state.assinatura_personalizada?.trim() || null,
         is_active: state.is_active,
         steps: toApiSteps(state.steps),
       }
@@ -999,7 +1036,7 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       <div className="relative flex-1 overflow-y-auto">
         <div className="absolute inset-0 bg-[radial-gradient(circle,var(--border)_1px,transparent_1px)] [background-size:20px_20px] pointer-events-none" />
         <div className="relative mx-auto flex max-w-2xl flex-col items-center gap-0 px-4 py-10">
-          <ResourcesProvider automacaoAtualId={initial.id}>
+          <ResourcesProvider automacaoAtualId={initial.id} reguaDoAsaas={ehGatilhoDaRegua(state.trigger_type)}>
             <AvisosDeCanal steps={state.steps} channelIds={state.channel_ids} />
             <TriggerCard
               type={state.trigger_type}
@@ -1020,12 +1057,20 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
                   trigger_config:
                     tVal === "date_field_offset"
                       ? semearLembrete(s.trigger_config)
-                      : s.trigger_config,
+                      : ehGatilhoDaRegua(tVal)
+                        ? semearRegua(tVal, s.trigger_config)
+                        : s.trigger_config,
+                  // A régua do Asaas (998) não tem recorte por etapa: esconder o
+                  // seletor não limpa o valor gravado (a armadilha da grade do
+                  // funil), e `stageInScope` barraria quem não tem card.
+                  stage_ids: ehGatilhoDaRegua(tVal) ? [] : s.stage_ids,
                 }))
               }
               onConfigChange={(c) => patchTop("trigger_config", c)}
               onChannelIdsChange={(ids) => patchTop("channel_ids", ids)}
               onStageIdsChange={(ids) => patchTop("stage_ids", ids)}
+              assinatura={state.assinatura_personalizada}
+              onAssinaturaChange={(v) => patchTop("assinatura_personalizada", v)}
               t={t}
             />
             <StepList
@@ -1059,6 +1104,8 @@ function TriggerCard({
   onConfigChange,
   onChannelIdsChange,
   onStageIdsChange,
+  assinatura,
+  onAssinaturaChange,
   t,
 }: {
   type: AutomationTriggerType
@@ -1069,6 +1116,8 @@ function TriggerCard({
   onConfigChange: (c: Record<string, unknown>) => void
   onChannelIdsChange: (ids: string[]) => void
   onStageIdsChange: (ids: string[]) => void
+  assinatura: string | null
+  onAssinaturaChange: (v: string | null) => void
   t: ReturnType<typeof useTranslations>
 }) {
   const [open, setOpen] = useState(false)
@@ -1167,7 +1216,7 @@ function TriggerCard({
                 Escondido no gatilho de funil: ali a etapa já é a config do
                 próprio gatilho, e dois seletores de etapa no mesmo card com
                 significados diferentes é convite a erro. */}
-            {type !== "deal_stage_changed" && (
+            {type !== "deal_stage_changed" && !ehGatilhoDaRegua(type) && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
                   {t("stages.scopeLabel")}
@@ -1328,12 +1377,32 @@ function TriggerCard({
             {type === "calendly_booking" && (
               <CalendlyTriggerConfig config={config} onChange={onConfigChange} />
             )}
+            {/* A régua do Asaas (998): o marco, a hora, "só dia útil" e as
+                variáveis da cobrança. Só roda pela varredura do cron. */}
+            {(type === "asaas_cobranca_vencida" || type === "asaas_cobranca_vence_hoje") && (
+              <AsaasTriggerConfig type={type} config={config} onChange={onConfigChange} />
+            )}
             {/* Webhook de entrada (982): QUAL webhook dispara. As variáveis
                 listadas saem do ÚLTIMO acionamento real — o payload é
                 arbitrário, então não há lista fixa a mostrar. */}
             {type === "webhook_received" && (
               <WebhookTriggerConfig config={config} onChange={onConfigChange} />
             )}
+            {/* "Assinar como" (998, D18): o prefixo de todo `send_message`
+                desta automação, sob o interruptor de assinatura da conta.
+                Mora na automação (uma régua são 3–4 automações e a mesma
+                pessoa assina todas), não no passo nem num catálogo. */}
+            <div className="border-t border-border pt-2">
+              <label className="mb-1 block text-xs font-medium text-muted-foreground">{t("assinatura.label")}</label>
+              <input
+                value={assinatura ?? ""}
+                onChange={(e) => onAssinaturaChange(e.target.value === "" ? null : e.target.value)}
+                placeholder={t("assinatura.placeholder")}
+                maxLength={60}
+                className="w-full rounded-md border border-border bg-muted px-2 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none"
+              />
+              <p className="mt-1 text-[11px] text-muted-foreground">{t("assinatura.ajuda")}</p>
+            </div>
             {type === "deal_status_changed" && (
               <div>
                 <label className="mb-1 block text-xs font-medium text-muted-foreground">
@@ -1955,7 +2024,7 @@ function CanalDeSaida({
   help?: string
 }) {
   const tCanais = useTranslations("Channels")
-  const { channels } = useResources()
+  const { channels, reguaDoAsaas } = useResources()
 
   // CONEXÃO APAGADA. Nenhum trigger limpa `step_config` — o da 903 só toca em
   // `automations.channel_ids` —, e a validação de ativação ignora id
@@ -1975,7 +2044,10 @@ function CanalDeSaida({
   // Com um número só não há o que decidir — mesma regra do resto do projeto.
   // MAS o órfão precisa aparecer para poder ser trocado: apagar uma conexão de
   // uma conta de duas deixa UMA, que é exatamente quando o aviso importa.
-  if (channels.length < 2 && !orfao) return null
+  // E na régua do Asaas ele aparece SEMPRE: a ativação exige a conexão no
+  // passo (D19), e escondido "por só haver um número" a automação criada à
+  // mão nunca ligava (Codex, 2ª rodada do PR #206).
+  if (channels.length < 2 && !orfao && !reguaDoAsaas) return null
 
   return (
     <FieldBlock label={tCanais("outboundLabel")}>

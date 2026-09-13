@@ -69,6 +69,7 @@ import { EvolutionApiError } from '@/lib/whatsapp/transport/evolution-client';
 import {
   CHAVE_DA_TENTATIVA,
   TENTATIVAS_MAX,
+  contadorDe,
   decidirRetentativa,
   tentativasJaFeitas,
 } from './retentativa';
@@ -775,7 +776,7 @@ async function executeStepsFrom(
         err instanceof EvolutionApiError
           ? { recusou: err.status >= 400 && err.status < 500 }
           : null;
-      const tentativa = tentativasJaFeitas(args.context) + 1;
+      const tentativa = tentativasJaFeitas(args.context, step.position) + 1;
       const decisao = decidirRetentativa({
         stepType: step.step_type,
         tentativa,
@@ -797,7 +798,10 @@ async function executeStepsFrom(
             // de novo. O "Aguardar" enfileira `position + 1` porque ele já
             // terminou; aqui o passo não chegou a acontecer.
             next_step_position: step.position,
-            context: { ...args.context, [CHAVE_DA_TENTATIVA]: tentativa },
+            context: {
+              ...args.context,
+              [CHAVE_DA_TENTATIVA]: contadorDe(step.position, tentativa),
+            },
             run_at: new Date(Date.now() + decisao.esperaMs).toISOString(),
             status: 'pending',
           });

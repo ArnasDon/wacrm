@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   CHAVE_DA_TENTATIVA,
   ESPERAS_MS,
+  contadorDe,
   PASSOS_DE_ENVIO,
   TENTATIVAS_MAX,
   decidirRetentativa,
@@ -103,16 +104,38 @@ describe('decidirRetentativa', () => {
 
 describe('tentativasJaFeitas', () => {
   it('contexto sem a chave, vazio ou estranho vale zero', () => {
-    expect(tentativasJaFeitas(undefined)).toBe(0);
-    expect(tentativasJaFeitas(null)).toBe(0);
-    expect(tentativasJaFeitas({})).toBe(0);
-    expect(tentativasJaFeitas('nada disso')).toBe(0);
-    expect(tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: 'dois' })).toBe(0);
-    expect(tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: 1.5 })).toBe(0);
-    expect(tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: -1 })).toBe(0);
+    expect(tentativasJaFeitas(undefined, 0)).toBe(0);
+    expect(tentativasJaFeitas(null, 0)).toBe(0);
+    expect(tentativasJaFeitas({}, 0)).toBe(0);
+    expect(tentativasJaFeitas('nada disso', 0)).toBe(0);
+    // Forma ANTIGA (só o número), que uma execução enfileirada por uma
+    // versão anterior ainda pode carregar: vale zero, nunca estoura.
+    expect(tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: 2 }, 0)).toBe(0);
+    expect(
+      tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: contadorDe(0, 1.5) }, 0)
+    ).toBe(0);
+    expect(
+      tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: contadorDe(0, -1) }, 0)
+    ).toBe(0);
   });
 
-  it('lê o contador quando ele é inteiro positivo', () => {
-    expect(tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: 2 })).toBe(2);
+  it('lê o contador do PRÓPRIO passo', () => {
+    expect(
+      tentativasJaFeitas({ [CHAVE_DA_TENTATIVA]: contadorDe(3, 2) }, 3)
+    ).toBe(2);
+  });
+
+  it('⚠️ contador de OUTRO passo vale zero — o teto é por passo, não por execução', () => {
+    // O passo 3 falhou duas vezes e se recuperou; o contexto segue com o
+    // contador dele. O passo 5, ao falhar, tem de nascer com três chances.
+    const ctx = { [CHAVE_DA_TENTATIVA]: contadorDe(3, 2) };
+    expect(tentativasJaFeitas(ctx, 5)).toBe(0);
+    expect(
+      decidirRetentativa({
+        stepType: 'send_message',
+        tentativa: tentativasJaFeitas(ctx, 5) + 1,
+        provedor: recusou,
+      })
+    ).toEqual({ repetir: true, esperaMs: ESPERAS_MS[0] });
   });
 });

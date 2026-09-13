@@ -1888,7 +1888,12 @@ describe('retentativa de passo que falhou (13/09/2026)', () => {
     // ⚠️ A posição do PRÓPRIO passo: é ele que roda de novo. O "Aguardar"
     // enfileira `position + 1` porque já terminou.
     expect(fila.next_step_position).toBe(0);
-    expect((fila.context as Record<string, unknown>)._tentativa).toBe(1);
+    // ⚠️ O contador vai AMARRADO À POSIÇÃO: guardar só o número contaria
+    // por execução, e o próximo passo a falhar nasceria perto do teto.
+    expect((fila.context as Record<string, unknown>)._tentativa).toEqual({
+      pos: 0,
+      n: 1,
+    });
     expect(typeof fila.run_at).toBe('string');
     // Sem desfecho: a execução continua, como no "Aguardar".
     expect(desfechoGravado()?.desfecho).toBeUndefined();
@@ -1908,9 +1913,22 @@ describe('retentativa de passo que falhou (13/09/2026)', () => {
     expect(desfechoGravado()?.desfecho).toBe('falhou');
   });
 
+  it('⚠️ contador de OUTRO passo não consome as chances deste', async () => {
+    // O passo 7 falhou duas vezes antes e se recuperou; este é o passo 0.
+    await avisoQueFalha(new EvolutionApiError('recusado', 400), {
+      _tentativa: { pos: 7, n: 2 },
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    expect(
+      (h.state.esperasEnfileiradas[0].context as Record<string, unknown>)
+        ._tentativa
+    ).toEqual({ pos: 0, n: 1 });
+  });
+
   it('⚠️ no TETO de tentativas desiste e grava a falha, em vez de reenfileirar para sempre', async () => {
     await avisoQueFalha(new EvolutionApiError('recusado de novo', 400), {
-      _tentativa: 2,
+      _tentativa: { pos: 0, n: 2 },
     });
 
     expect(h.state.esperasEnfileiradas).toHaveLength(0);

@@ -625,6 +625,13 @@ tinha relação com ele. O que morde código novo:
   retomaria, e a execução ficaria `partial` para sempre — invisível no fio
   e fora do bloco de correções do Meu dia. Falhando o enfileiramento, o
   comportamento é o de antes (falha na hora).
+- ⚠️⚠️ **O contador de tentativas é AMARRADO À POSIÇÃO do passo**
+  (`{ pos, n }` no contexto), nunca um número solto. O contexto atravessa a
+  execução inteira: guardando só o número, um passo que falhou duas vezes e
+  se recuperou deixaria o contador em 2, e o PRÓXIMO passo a falhar — num
+  ponto sem relação nenhuma — nasceria no teto, sem retentativa alguma.
+  Contador de outro passo vale zero, que é a verdade. (Achado da revisão
+  própria; a cota do Codex tinha acabado neste PR.)
 - ⚠️ **O TETO é testado ANTES do tipo do passo** (3 tentativas; 30 s e
   depois 5 min): invertendo, um provedor que recusa sempre — uma conexão
   apagada — reenfileiraria para sempre, queimando ciclo do agendador e

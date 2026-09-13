@@ -123,11 +123,37 @@ export function decidirRetentativa(p: PedidoDeRetentativa): Retentativa {
  */
 export const CHAVE_DA_TENTATIVA = '_tentativa';
 
-/** Lê o contador do contexto — qualquer coisa estranha vale zero. */
-export function tentativasJaFeitas(context: unknown): number {
+/**
+ * O contador, AMARRADO À POSIÇÃO do passo a que se refere.
+ *
+ * ⚠️⚠️ Guardar só o número seria contar por EXECUÇÃO, e não por passo: o
+ * contexto atravessa a execução inteira, então um passo que falhou duas
+ * vezes e se recuperou deixaria o contador em 2 — e o PRÓXIMO passo a
+ * falhar, num ponto sem relação nenhuma, nasceria no teto e não teria
+ * retentativa alguma. Com a posição junto, contador de outro passo vale
+ * zero, que é a verdade: aquele passo nunca falhou.
+ */
+export interface ContadorDeTentativas {
+  pos: number;
+  n: number;
+}
+
+/**
+ * Quantas vezes ESTE passo (o da posição dada) já falhou.
+ *
+ * Qualquer coisa estranha — forma antiga, posição de outro passo, número
+ * que não é inteiro positivo — vale zero.
+ */
+export function tentativasJaFeitas(context: unknown, posicao: number): number {
   if (!context || typeof context !== 'object') return 0;
   const bruto = (context as Record<string, unknown>)[CHAVE_DA_TENTATIVA];
-  return typeof bruto === 'number' && Number.isInteger(bruto) && bruto > 0
-    ? bruto
-    : 0;
+  if (!bruto || typeof bruto !== 'object') return 0;
+  const { pos, n } = bruto as Partial<ContadorDeTentativas>;
+  if (pos !== posicao) return 0;
+  return typeof n === 'number' && Number.isInteger(n) && n > 0 ? n : 0;
+}
+
+/** O contador a gravar no contexto ao reenfileirar. */
+export function contadorDe(posicao: number, n: number): ContadorDeTentativas {
+  return { pos: posicao, n };
 }

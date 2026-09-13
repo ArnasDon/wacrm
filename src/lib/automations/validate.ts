@@ -441,12 +441,18 @@ export function validateAsaasReguaForActivation(
   // do PR #206). `send_media` entra na mesma regra — a mídia também sai
   // pelo canal do passo.
   let conexao: string | null = null
+  // ⚠️ Pelo menos UM `send_message`: é dele que a varredura resolve a conexão
+  // (`primeiroEnvio`) e é o sucesso dele que vira `enviado` na trava. Uma
+  // automação só com `send_media` (ou sem envio) ativava e era pulada em
+  // todo ciclo como "conexão inválida" (Codex, 3ª rodada do PR #206).
+  let temMensagem = false
   const visitar = (lista: StepLike[], prefixo: string) => {
     lista.forEach((s, i) => {
       const path = `${prefixo}steps[${i}]`
       if (s.step_type === 'wait') {
         issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence cannot wait — each milestone is its own automation' })
       }
+      if (s.step_type === 'send_message') temMensagem = true
       if (s.step_type === 'send_message' || s.step_type === 'send_media') {
         const canal = s.step_config?.channel_id
         if (!nonEmpty(canal)) {
@@ -464,6 +470,9 @@ export function validateAsaasReguaForActivation(
     })
   }
   visitar(steps, '')
+  if (!temMensagem) {
+    issues.push({ path: 'steps', message: 'the Asaas collection sequence needs a text message step (send_message)' })
+  }
   return issues
 }
 

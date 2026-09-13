@@ -15,7 +15,11 @@ import { lerCobranca } from "./leitura";
 import {
   agruparLembretes,
   agruparPorCliente,
+  aindaPagavel,
   dentroDoIntervalo,
+  diaAlvoDoMarco,
+  entrouNaRegua,
+  janelaAberta,
   lerAutomacaoDaRegua,
   montarVariaveis,
   RECOLHER_NA_FILA_MS,
@@ -94,6 +98,8 @@ export interface ResultadoDaRegua {
   sondaFalhou: boolean;
   /** clientes ligados a ficha SEM telefone (só Instagram, ou ficha sem número): pulados sem travar */
   semTelefone: number;
+  /** grupos cuja janela FECHOU (18:00) entre a seleção e a trava: pulados sem travar */
+  janelaFechou: number;
   /** automações puladas por conexão que não resolve na conta */
   conexaoInvalida: number;
   orfasRecolhidas: number;
@@ -106,7 +112,15 @@ export interface ResultadoDaRegua {
 }
 
 export interface DependenciasDaVarredura {
+  /** o carimbo do ciclo (o "hoje" e a janela das candidatas) */
   agora?: Date;
+  /**
+   * O relógio VIVO, reconsultado antes de cada trava: a varredura que começa
+   * 17:58 relê parcelas no Asaas e pode cruzar as 18:00 no meio — a janela é
+   * conferida de novo com a hora de agora, não com a do começo (Codex, 3ª
+   * rodada do PR #206). Padrão `() => new Date()`; o teste injeta.
+   */
+  relogio?: () => Date;
   prazoMs?: number;
   fuso?: string;
   cliente?: ClienteAsaas;
@@ -564,6 +578,8 @@ async function medir(
   contactId: string,
   desde: string,
   disparo: ResultadoDoDisparo,
+  /** logs que já responderam por outra trava neste ciclo — nunca reaproveitados */
+  logsConsumidos: ReadonlySet<string>,
 ): Promise<{ resultado: ReturnType<typeof resultadoDoLog>; detalhe: string | null; logId: string | null }> {
   // `desde` é o relógio do Node; `created_at` é o `now()` do Postgres. Uns
   // segundos de folga evitam que um log recém-criado fique fora da busca e a
@@ -578,7 +594,10 @@ async function medir(
     .gte("created_at", new Date(Date.parse(desde) - FOLGA_DO_RELOGIO_MS).toISOString())
     .order("created_at", { ascending: false })
     .limit(1);
-  const log = (data?.[0] as { id: string; desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null } | undefined) ?? null;
+  const achado = (data?.[0] as { id: string; desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null } | undefined) ?? null;
+  // O log mais novo já respondeu por outra trava (o grupo anterior do mesmo
+  // contato): este disparo não deixou log — medir como "sem log".
+  const log = achado && !logsConsumidos.has(achado.id) ? achado : null;
   const resultado = resultadoDoLog(log ? { desfecho: log.desfecho, steps_executed: log.steps_executed ?? [] } : null, disparo);
   const detalhe = log?.error_message ? log.error_message.slice(0, 300) : disparo.erro ?? null;
   return { resultado, detalhe, logId: log?.id ?? null };
@@ -594,11 +613,16 @@ async function fecharTravas(admin: SupabaseClient, ids: string[], resultado: str
 
 export async function varrerRegua(admin: SupabaseClient, accountId: string, deps: DependenciasDaVarredura = {}): Promise<ResultadoDaRegua> {
   const agora = deps.agora ?? new Date();
+  const relogio = deps.relogio ?? (() => new Date());
   const prazoMs = deps.prazoMs ?? Date.now() + PRAZO_PADRAO_MS;
+  // os logs que já responderam por uma trava neste ciclo: dois grupos do MESMO
+  // contato e automação (a pessoa e a empresa dela) saem em sequência, e o
+  // log do primeiro não pode responder pelo segundo (Codex, 3ª rodada)
+  const logsConsumidos = new Set<string>();
   const fuso = deps.fuso ?? FUSO_PADRAO;
   const lerPassos = deps.lerPassos ?? loadStepsTree;
   const disparar = deps.disparar ?? dispararAutomacoes;
-  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, sondaFalhou: false, semTelefone: 0, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
+  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, sondaFalhou: false, semTelefone: 0, janelaFechou: 0, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
   try {
     const config = await lerConfigDaRegua(admin, accountId);
     if (!config || !config.regua_ativa) return saida;
@@ -686,15 +710,29 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         return idsCruzaram.has(p.id) || ehDevida(classe) || (classe === "a_vencer" && p.vencimento === dia);
       });
       const frescas = await reconfirmar(admin, accountId, cliente, naMensagem, () => true, vistoEm);
-      const cruzaram = frescas.filter((p) => idsCruzaram.has(p.id) && ehDevida(classificar(p.status, p.deleted)));
-      if (cruzaram.length === 0) continue;
       const marcoDe = new Map(grupo.cruzaram.map((c) => [c.parcela.id, c.automacao]));
+      // A linha FRESCA passa pelas mesmas cercas da seleção: ainda devida,
+      // ainda pagável, ainda cruzando ESTE marco hoje — o Asaas pode ter
+      // mudado o vencimento ou o "pode pagar depois" entre a sincronização e
+      // o disparo (Codex, 3ª rodada do PR #206).
+      const cruzaram = frescas.filter((p) => {
+        const a = marcoDe.get(p.id);
+        if (!a) return false;
+        return ehDevida(classificar(p.status, p.deleted)) && entrouNaRegua(p, ctx.reguaAtivadaEm) && aindaPagavel(p, dia) && diaAlvoDoMarco(p, a.marco, { ...ctx, somenteDiasUteis: a.somenteDiasUteis }) === dia;
+      });
+      if (cruzaram.length === 0) continue;
       const venceHoje = frescas.filter((p) => classificar(p.status, p.deleted) === "a_vencer" && p.vencimento === dia);
       // 5) o intervalo mínimo (D11, 13/09)
       const absorvida = dentroDoIntervalo(ultimaCobranca.get(grupo.asaasCustomerId) ?? null, dia, config.regua_intervalo_dias, fuso);
       if (!(await reguaAindaLigada(admin, accountId))) {
         saida.desligadaNoMeio = true;
         break;
+      }
+      // A janela é reconferida com o relógio VIVO: as releituras podem ter
+      // cruzado as 18:00 (Codex, 3ª rodada do PR #206).
+      if (!janelaAberta(relogio(), dia, automacao.horaEnvio, fuso)) {
+        saida.janelaFechou += 1;
+        continue;
       }
       const linhas: LinhaDaTrava[] = cruzaram.map((p) => {
         const a = marcoDe.get(p.id) ?? grupo.automacao;
@@ -741,7 +779,8 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         context: { automation_id: automacao.id, conversation_id: conversationId, channel_id: automacao.channelId, vars },
       });
       // 7) o desfecho, pelo log
-      const { resultado, detalhe, logId } = await medir(admin, grupo.automacao.id, ligado.contact_id, carimbo, disparo);
+      const { resultado, detalhe, logId } = await medir(admin, grupo.automacao.id, ligado.contact_id, carimbo, disparo, logsConsumidos);
+      if (logId) logsConsumidos.add(logId);
       await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString(), logId);
       if (resultado === "enviado" || resultado === "na_fila") {
         if (resultado === "enviado") saida.enviados += 1;
@@ -774,6 +813,10 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         saida.desligadaNoMeio = true;
         break;
       }
+      if (!janelaAberta(relogio(), dia, automacao.horaEnvio, fuso)) {
+        saida.janelaFechou += 1;
+        continue;
+      }
       const ids = await travar(
         admin,
         venceHoje.map((p) => ({ account_id: accountId, cobranca_id: p.id, asaas_customer_id: grupo.asaasCustomerId, tipo: "vence_hoje" as const, marco: 0, vencimento: p.vencimento, automation_id: automacao.id, automation_nome: automacao.nome, contact_id: ligado.contact_id, resultado: "reservado" as const, detalhe: null })),
@@ -788,7 +831,8 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         contactId: ligado.contact_id,
         context: { automation_id: automacao.id, conversation_id: conversationId, channel_id: automacao.channelId, vars },
       });
-      const { resultado, detalhe, logId } = await medir(admin, automacao.id, ligado.contact_id, carimbo, disparo);
+      const { resultado, detalhe, logId } = await medir(admin, automacao.id, ligado.contact_id, carimbo, disparo, logsConsumidos);
+      if (logId) logsConsumidos.add(logId);
       await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString(), logId);
       if (resultado === "enviado") saida.enviados += 1;
       else if (resultado === "na_fila") saida.naFila += 1;

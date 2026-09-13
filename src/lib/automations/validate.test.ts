@@ -394,3 +394,14 @@ describe('régua do Asaas — uma conexão só para todos os envios (revisão ad
     expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [envio('c1'), midia('c1')])).toEqual([])
   })
 })
+
+describe('régua do Asaas — precisa de um passo de mensagem de texto (Codex, 3ª rodada do PR #206)', () => {
+  it('só send_media, ou nenhum envio, não ativa; com um send_message ativa', () => {
+    const midia = { step_type: 'send_media', step_config: { media_url: 'u', channel_id: 'c1' } }
+    const texto = { step_type: 'send_message', step_config: { text: 'x', channel_id: 'c1' } }
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [midia]).map((i) => i.path)).toEqual(['steps'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [{ step_type: 'add_tag', step_config: { tag_id: 't' } }]).map((i) => i.path)).toEqual(['steps'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [midia, texto])).toEqual([])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [{ step_type: 'condition', step_config: {}, branches: { yes: [texto], no: [] } }])).toEqual([])
+  })
+})

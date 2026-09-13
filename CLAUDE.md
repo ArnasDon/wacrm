@@ -3728,7 +3728,12 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   ⚠️ A releitura é de TUDO que vai para a mensagem (as que cruzam o marco,
   as demais devidas e a que vence hoje), não só das que cruzam — senão uma
   parcela paga entre a sincronização e o disparo sai como "em aberto" no
-  texto (Codex, 2ª rodada do PR #206).
+  texto (Codex, 2ª rodada do PR #206) — e a linha FRESCA passa de novo
+  pelas cercas da seleção (devida, entrou na régua, pagável, cruzando ESTE
+  marco hoje). A janela (até 18:00) é reconferida com o relógio VIVO antes
+  de cada trava (`deps.relogio`; `janelaFechou`), e o log de um disparo
+  nunca responde por outra trava do ciclo (`logsConsumidos`) — dois
+  clientes do Asaas no mesmo contato saem em sequência (Codex, 3ª rodada).
   A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
   `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
   mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).
@@ -3762,7 +3767,9 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   UMA mensagem** (D17 revista): a cobrança leva `{{vars.vence_hoje_detalhe}}`
   e o lembrete é travado como absorvido. **A negativada entra** (D6
   revista). Interruptor e intervalo: `PUT /api/cb/asaas/regua/interruptor`
-  (ROWCOUNT; ligar carimba `regua_ativada_em`), NÃO o PUT da config.
+  (ROWCOUNT; SÓ a transição desligado → ligado carimba `regua_ativada_em`,
+  por UPDATE cercado em `regua_ativa = false` — um PUT repetido empurrava a
+  fronteira da D13 para a frente; Codex, 3ª rodada), NÃO o PUT da config.
 - ⚠️ **A conexão do `send_message` da régua FALHA FECHADA** (D19):
   `validate.ts` exige `channel_id` em todo `send_message`/`send_media`, a
   MESMA em todos (a varredura só confere a do primeiro — `primeiroEnvio`,
@@ -3778,8 +3785,10 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   trava. A ficha ligada SEM telefone (só Instagram, 989) é pulada sem
   travar (`semTelefone`). O seletor de conexão do passo aparece SEMPRE nos
   gatilhos da régua, mesmo com uma conexão só (`reguaDoAsaas` no contexto
-  do construtor) — senão a automação criada à mão nunca ligava; e o
-  motor, nesses gatilhos, lança em vez de cair no padrão
+  do construtor) — senão a automação criada à mão nunca ligava; a
+  ativação exige pelo menos um `send_message` (é dele que vem a conexão e
+  o `enviado` da trava — só `send_media` ativava e era pulada em todo
+  ciclo); e o motor, nesses gatilhos, lança em vez de cair no padrão
   (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
   numa cobrança isso é o link de pagamento saindo por outro número).
   "Assinar como" (`automations.assinatura_personalizada`, D18) é prefixo

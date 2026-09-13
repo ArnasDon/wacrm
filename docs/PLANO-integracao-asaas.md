@@ -1109,6 +1109,22 @@ ATUALIZADO e todas as formas de pagamento.
 >     só (senão a automação criada à mão nunca ligava); e "Criar régua
 >     padrão" apaga a automação recém-criada quando o passo falha (senão a
 >     próxima tentativa a lia como "marco já existe").
+> 16. **Da 3ª rodada do Codex (PR #206):** a janela (até 18:00) é
+>     reconferida com o relógio VIVO imediatamente antes de cada trava —
+>     uma varredura que começa 17:59 e cruza as 18:00 nas releituras não
+>     manda mais (`janelaFechou`; `deps.relogio` injetável); a linha
+>     FRESCA passa de novo pelas cercas da seleção (devida, entrou na
+>     régua, ainda pagável, cruzando ESTE marco hoje) — o Asaas pode ter
+>     mudado o vencimento ou o "pode pagar depois" entre a sincronização e
+>     o disparo; `validate.ts` exige pelo menos um `send_message` (é dele
+>     que a varredura resolve a conexão e é o sucesso dele que vira
+>     `enviado`); o interruptor só carimba `regua_ativada_em` na TRANSIÇÃO
+>     desligado → ligado (UPDATE cercado por `regua_ativa = false`) — um PUT
+>     repetido não empurra mais a fronteira da D13; e o log de um disparo
+>     nunca responde por outra trava do mesmo ciclo (`logsConsumidos`): dois
+>     clientes do Asaas ligados ao mesmo contato saem em sequência, e o
+>     segundo sem log fica `sem_automacao`, não `enviado` com o log do
+>     primeiro.
 > 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
 >     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
 >     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
@@ -1990,7 +2006,7 @@ o painel do navegador estava oculto e a captura não sai)
       do marco perdido, agrupamento por cliente através das automações,
       lembrete cedendo à cobrança, variáveis, `resultadoDoLog` inclusive
       `na_fila`, os nove resultados nos dois dicionários),
-      `varrer-regua.test.ts` (29 com o dublê: interruptor, exceção, atrasado
+      `varrer-regua.test.ts` (32 com o dublê: interruptor, exceção, atrasado
       antigo fora, conexão inválida/desconectada, janela, trava do marco e
       recusa no ciclo seguinte, pagou há três minutos, TODAS as vencidas na
       mensagem, dois marcos no mesmo dia, intervalo mínimo, falha sem

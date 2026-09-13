@@ -94,6 +94,8 @@ function deps(e: EstadoDoDuble, respostas: RespostasDoAsaas, extra: Partial<Depe
     registro,
     d: {
       agora: AGORA,
+      // o relógio vivo segue o carimbo do teste (o padrão da varredura é `new Date()`)
+      relogio: () => extra.agora ?? AGORA,
       fuso: FUSO,
       cliente: dubleDoAsaas(respostas, registro),
       lerPassos: async () => [{ step_type: "send_message", step_config: { text: "{{vars.cobranca_detalhe}}", channel_id: CANAL } }],
@@ -164,6 +166,27 @@ describe("varrerRegua — o interruptor e as cercas", () => {
     expect(r.candidatos).toBe(0);
     expect(disparos.chamadas).toEqual([]);
     expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+  });
+
+  it("a janela FECHA entre a seleção e a trava (a varredura começou 17:59, as releituras cruzaram as 18:00): nada é travado nem disparado (Codex, 3ª rodada)", async () => {
+    const e = estado();
+    const comeco = new Date("2026-09-14T20:59:30Z"); // 17:59:30 em São Paulo
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } }, { agora: comeco, relogio: () => new Date("2026-09-14T21:00:10Z") });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.candidatos).toBe(1);
+    expect(r.janelaFechou).toBe(1);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+  });
+
+  it("a linha FRESCA passa pelas cercas de novo: o Asaas passou a dizer que o boleto não pode mais ser pago depois do vencimento → nada é travado (Codex, 3ª rodada)", async () => {
+    const e = estado();
+    const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a", { canBePaidAfterDueDate: false }) } });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.candidatos).toBe(1);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+    expect(e.tabelas.cb_asaas_cobrancas[0]).toMatchObject({ pode_pagar_apos_vencimento: false });
   });
 
   it("a SONDA das conexões falha: nada sai, nada é travado, e o resultado diz que foi a sonda (não a conexão)", async () => {
@@ -365,6 +388,27 @@ describe("varrerRegua — a cobrança do marco", () => {
     const travas = e.tabelas.cb_asaas_regua_envios.filter((t) => t.id !== "t-old").map((t) => ({ c: t.cobranca_id, tipo: t.tipo, r: t.resultado }));
     expect(travas).toEqual(expect.arrayContaining([{ c: "c1", tipo: "atraso", r: "absorvida" }, { c: "c2", tipo: "vence_hoje", r: "enviado" }]));
     expect(travas).toHaveLength(2);
+  });
+
+  it("dois clientes do Asaas ligados ao MESMO contato: o log do primeiro disparo não responde pelo segundo — sem log próprio, a segunda trava fica `sem_automacao`, sem id de log (Codex, 3ª rodada)", async () => {
+    const e = estado({
+      cb_asaas_clientes: [cliente("cus_a", "ct-a"), cliente("cus_b", "ct-a")],
+      cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c2", "cus_b")],
+    });
+    const disparos: Disparos = { chamadas: [] };
+    const comLog = motorFalso(e, disparos);
+    // o segundo disparo não deixa log (a automação foi desligada entre a seleção e o disparo)
+    const disparar = async (input: DispatchInput): Promise<ResultadoDoDisparo> => {
+      if (disparos.chamadas.length === 0) return comLog(input);
+      disparos.chamadas.push(input);
+      return { candidatas: 1, foraDoEscopo: 0, executadas: 0, comFalha: 0, emEspera: 0 };
+    };
+    const { d } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_c2": noAsaas("c2", "cus_b") } }, { disparar }, disparos);
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(disparos.chamadas).toHaveLength(2);
+    expect(r.enviados).toBe(1);
+    const travas = e.tabelas.cb_asaas_regua_envios.map((t) => ({ c: t.cobranca_id, r: t.resultado, log: t.automation_log_id }));
+    expect(travas).toEqual(expect.arrayContaining([{ c: "c1", r: "enviado", log: "log-1" }, { c: "c2", r: "sem_automacao", log: null }]));
   });
 
   it("o interruptor desligado NO MEIO do ciclo: o grupo é descartado sem travar e a varredura para", async () => {

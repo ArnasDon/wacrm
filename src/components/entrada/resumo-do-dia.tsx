@@ -137,9 +137,16 @@ export function ResumoDoDia({
 
   // A aba é a MESMA tela protegida do menu; ela não está no catálogo de
   // perfis (`telaDoCaminho` devolve null), então não há gate a consultar.
+  //
+  // ⚠️⚠️ A JANELA VAI NA URL, e isso é o contrário de um detalhe.
+  // `onContinuar` GRAVA a confirmação de agora antes de navegar, e a aba
+  // monta o pedido dela relendo esse registro — sem o parâmetro, ela abriria
+  // com `desdeMs` = o instante do clique e diria "nada de novo" sobre
+  // exatamente as pendências que a pessoa clicou para tratar (Codex, PR
+  // #202). Levar `desde` preserva a janela que ESTE cartão mostrou.
   const abrirMeuDia = () => {
     onContinuar();
-    router.push('/meu-dia');
+    router.push(`/meu-dia?desde=${desdeMs}`);
   };
 
   return (

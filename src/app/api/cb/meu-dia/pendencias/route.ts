@@ -30,6 +30,7 @@ import { NextResponse } from 'next/server';
 
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
+import { RECOLHER_CLAIM_MS } from '@/lib/calendly/claim';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 
 /** A aba pede na abertura e no "Atualizar"; 30/min cobre várias abas. */
@@ -44,6 +45,18 @@ const LIMITE = { limit: 30, windowMs: 60_000 };
  */
 const NAO_PROCESSADAS = ['recebido', 'sem_contato', 'sem_automacao', 'falhou'];
 
+/**
+ * Os que param SEM depender do relógio: já terminaram e precisam de gente.
+ *
+ * ⚠️ `recebido` fica de fora daqui porque ele é AMBÍGUO — é o estado de
+ * quem acabou de chegar e ainda está sendo processado no `after()` da rota
+ * de entrada. Contá-lo cru faz a aba acusar entrada travada no exato
+ * segundo em que a integração está funcionando, e o aviso falso fica até
+ * alguém atualizar (Codex, PR #202). Ele entra só quando o CLAIM já
+ * envelheceu — a mesma régua que o recolhedor usa para tomar a linha.
+ */
+const TERMINARAM_MAL = ['sem_contato', 'sem_automacao', 'falhou'];
+
 export async function GET() {
   try {
     const ctx = await getCurrentAccount();
@@ -51,22 +64,35 @@ export async function GET() {
     if (!limite.success) return rateLimitResponse(limite);
 
     const db = supabaseAdmin();
+    // O corte do claim: antes dele, `recebido` ainda pode estar em curso.
+    const claimVelho = new Date(Date.now() - RECOLHER_CLAIM_MS).toISOString();
 
+    /**
+     * `terminaram mal` OU (`recebido` com o claim velho ou ausente).
+     *
+     * ⚠️ `processando_desde.is.null` precisa estar aqui: a linha que NUNCA
+     * foi reivindicada — o `after()` morreu antes do claim, ou o processo
+     * caiu — é exatamente a que mais precisa de gente, e um filtro só por
+     * idade a deixaria de fora para sempre.
+     */
+    const parado = (tabela: 'cb_calendly_eventos' | 'cb_webhook_eventos') =>
+      db
+        .from(tabela)
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', ctx.accountId)
+        .in('resultado', NAO_PROCESSADAS)
+        .or(
+          `resultado.in.(${TERMINARAM_MAL.join(',')}),` +
+            `processando_desde.is.null,processando_desde.lt.${claimVelho}`
+        );
+
+    // As duas tabelas têm `account_id` PRÓPRIO (977 e 982), além da FK
+    // composta com o webhook — o recorte é direto, como a rota
+    // `/api/cb/webhooks` já faz. Sem embed: filtro em recurso embutido é a
+    // armadilha de `filtros.ts`, e aqui nem seria preciso.
     const [calendly, webhooks] = await Promise.all([
-      db
-        .from('cb_calendly_eventos')
-        .select('id', { count: 'exact', head: true })
-        .eq('account_id', ctx.accountId)
-        .in('resultado', NAO_PROCESSADAS),
-      // `cb_webhook_eventos` tem `account_id` PRÓPRIO (982), além da FK
-      // composta com o webhook — o recorte é direto, como a rota
-      // `/api/cb/webhooks` já faz. Sem embed: filtro em recurso embutido é
-      // a armadilha de `filtros.ts`, e aqui nem seria preciso.
-      db
-        .from('cb_webhook_eventos')
-        .select('id', { count: 'exact', head: true })
-        .eq('account_id', ctx.accountId)
-        .in('resultado', NAO_PROCESSADAS),
+      parado('cb_calendly_eventos'),
+      parado('cb_webhook_eventos'),
     ]);
 
     if (calendly.error || webhooks.error) {

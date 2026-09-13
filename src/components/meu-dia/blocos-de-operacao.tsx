@@ -62,7 +62,8 @@ export function BlocoDeCorrecoes({
   agendadorParado,
   veAgendadas,
   veAutomacoes,
-  veConfiguracoes,
+  veConexoes,
+  veIntegracoes,
 }: {
   correcoes: Bloco<Correcoes>;
   integracoes: Bloco<Integracoes>;
@@ -82,7 +83,14 @@ export function BlocoDeCorrecoes({
    * #202). Cada destino é gateado pela tela PARA ONDE ELE LEVA.
    */
   veAutomacoes: boolean;
-  veConfiguracoes: boolean;
+  /**
+   * ⚠️ Por SEÇÃO, não pela tela de Configurações: ela não é recortável
+   * (sempre visível), mas as seções DENTRO dela são. Um perfil sem
+   * `channels` no `secoes_config` clicava no link e a página o mandava para
+   * a primeira seção pessoal que ele enxerga (Codex, PR #202).
+   */
+  veConexoes: boolean;
+  veIntegracoes: boolean;
 }) {
   const t = useTranslations('MeuDia');
 
@@ -113,13 +121,13 @@ export function BlocoDeCorrecoes({
   // erro nenhum (Codex, PR #202).
   const DESTINO: Record<FonteDeCorrecao, { href: string; ve: boolean }> = {
     agendador: { href: '/agendadas', ve: veAgendadas },
-    conexoes: { href: '/settings?tab=channels', ve: veConfiguracoes },
+    conexoes: { href: '/settings?tab=channels', ve: veConexoes },
     agendadasFalharam: { href: '/agendadas', ve: veAgendadas },
     entregaIncerta: { href: '/agendadas', ve: veAgendadas },
     automacoesFalharam: { href: '/automations', ve: veAutomacoes },
     entradasNaoProcessadas: {
       href: '/settings?tab=integracoes',
-      ve: veConfiguracoes,
+      ve: veIntegracoes,
     },
   };
 

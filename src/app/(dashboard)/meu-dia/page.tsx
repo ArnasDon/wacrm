@@ -25,6 +25,7 @@
 // ============================================================
 
 import { useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ListTodo, MessageCircle } from 'lucide-react';
 
@@ -49,7 +50,7 @@ import { useResumoDoDia } from '@/hooks/use-resumo-do-dia';
 import type { EstadoDaFonte } from '@/lib/meu-dia/correcoes';
 import { canaisVisiveis } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
-import { podeVerTela } from '@/lib/perfis/visibilidade';
+import { podeVerSecao, podeVerTela } from '@/lib/perfis/visibilidade';
 import { lerRegistroDoNavegador } from '@/lib/resumo-do-dia/navegador';
 import { inicioDasNovidades } from '@/lib/resumo-do-dia/pendencia';
 import type { SaudeDoAgendador } from '@/lib/scheduled/saude';
@@ -61,12 +62,38 @@ interface Pedido {
   daConfirmacao: boolean;
 }
 
-function montarPedido(userId: string | null): Pedido {
+/**
+ * A janela herdada do cartão da entrada (`?desde=`), quando houver.
+ *
+ * ⚠️ É PARSE, nunca `Number(x)` cru: o parâmetro vem da URL, que qualquer um
+ * edita. Recusa o que não é inteiro positivo, o que está no FUTURO (janela
+ * que ainda não começou não mostraria nada) e o que é velho demais — o teto
+ * é o mesmo da janela padrão de quem nunca confirmou, e sem ele um `desde=0`
+ * mandaria a consulta varrer a conta inteira.
+ */
+function janelaHerdada(bruto: string | null, agoraMs: number): number | null {
+  if (!bruto) return null;
+  const n = Number(bruto);
+  if (!Number.isInteger(n) || n <= 0) return null;
+  if (n > agoraMs) return null;
+  if (agoraMs - n > TETO_DA_JANELA_MS) return null;
+  return n;
+}
+
+/** Trinta dias — o mesmo teto que `inicioDasNovidades` usa para não varrer a conta. */
+const TETO_DA_JANELA_MS = 30 * 24 * 60 * 60_000;
+
+function montarPedido(userId: string | null, herdada: number | null): Pedido {
   const agoraMs = Date.now();
   const inicio = inicioDasNovidades(
     userId ? lerRegistroDoNavegador(userId) : null,
     agoraMs
   );
+  // A janela do cartão vence a do registro: ela é a que a pessoa viu, e o
+  // registro já foi reescrito pelo "Continuar" que o botão disparou.
+  if (herdada !== null) {
+    return { agoraMs, desdeMs: herdada, daConfirmacao: true };
+  }
   return {
     agoraMs,
     desdeMs: inicio.desdeMs,
@@ -96,10 +123,16 @@ function agendadorEstaParado(s: SaudeDoAgendador): boolean {
 export default function MeuDiaPage() {
   const { user, accountId, accountStatus, profile, acesso } = useAuth();
   const userId = user?.id ?? null;
+  const params = useSearchParams();
 
   // O pedido nasce no inicializador e só muda no clique em "Atualizar" — o
   // relógio novo (`agoraMs`) é a chave que faz os hooks consultarem de novo.
-  const [pedido, setPedido] = useState<Pedido>(() => montarPedido(userId));
+  // ⚠️ A janela herdada entra SÓ na primeira montagem: o "Atualizar" tem de
+  // partir do registro de verdade, senão a aba ficaria presa para sempre na
+  // janela de uma entrada que já foi confirmada.
+  const [pedido, setPedido] = useState<Pedido>(() =>
+    montarPedido(userId, janelaHerdada(params.get('desde'), Date.now()))
+  );
 
   // O shell já segura sessão e perfil; conta quebrada é narrada pelo
   // `AccountAccessAlert` acima desta página.
@@ -113,7 +146,7 @@ export default function MeuDiaPage() {
       primeiroNome={profile?.full_name?.trim().split(/\s+/)[0] || null}
       acesso={acesso}
       pedido={pedido}
-      onAtualizar={() => setPedido(montarPedido(userId))}
+      onAtualizar={() => setPedido(montarPedido(userId, null))}
     />
   );
 }
@@ -193,7 +226,9 @@ function AreaDeTrabalho({
   const veAgenda = podeVerTela(acesso, 'agenda');
   const veFunis = podeVerTela(acesso, 'pipelines');
   const veAutomacoes = podeVerTela(acesso, 'automations');
-  const veConfiguracoes = podeVerTela(acesso, 'settings');
+  // Por SEÇÃO: a tela de Configurações não é recortável, mas as seções são.
+  const veConexoes = podeVerSecao(acesso, 'channels');
+  const veIntegracoes = podeVerSecao(acesso, 'integracoes');
 
   const agora = new Date(pedido.agoraMs);
   const hora = agora.getHours();
@@ -336,7 +371,8 @@ function AreaDeTrabalho({
             agendadorParado={saude === null ? null : agendadorEstaParado(saude)}
             veAgendadas={veAgendadas}
             veAutomacoes={veAutomacoes}
-            veConfiguracoes={veConfiguracoes}
+            veConexoes={veConexoes}
+            veIntegracoes={veIntegracoes}
           />
         </div>
 

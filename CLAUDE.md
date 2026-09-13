@@ -589,6 +589,62 @@ quem mais está com a conversa aberta. `src/lib/execucoes/` e
 - **Conta de UM membro**: a presença fica dormente em produção até o convite
   real — testada em 2026-08-30 com usuária fixture (criada e removida).
 
+⚠️⚠️ **Passo que falha pode VOLTAR PARA A FILA (13/09/2026), e a régua é o
+ERRO — nunca o passo.** `src/lib/automations/retentativa.ts` (puro, com
+teste) e o `catch` de `executeStepsFrom`. Nasceu de um caso medido: a
+automação do Calendly morreu no aviso ao advogado ("Connection Closed") e,
+como qualquer erro dava `break`, o `move_deal_stage` seguinte não rodou — o
+card do cliente ficou na etapa antiga por causa de uma mensagem que não
+tinha relação com ele. O que morde código novo:
+
+- ⚠️⚠️ **Só repete falha do PROVEDOR num passo de ENVIO, e só com RECUSA
+  COMPROVADA (4xx).** A primeira versão classificava por TIPO DE PASSO
+  ("mexe só em dado do CRM, logo repete") e um teste do motor derrubou a
+  ideia: `add_tag` sem `tag_id` estoura por CONFIGURAÇÃO, e repetir três
+  vezes um erro determinístico só adia o aviso em cinco minutos — o oposto
+  do que a retentativa existe para fazer. Erro lançado pelo próprio motor
+  (config, banco, contato sem telefone) NUNCA volta à fila.
+- ⚠️⚠️ **4xx × 5xx não é burocracia.** Entre "a Evolution recusou" (nada
+  saiu) e "tempo esgotado" (o WhatsApp pode ter aceitado) não há diferença
+  no texto do erro, e repetir o segundo manda a mesma mensagem DUAS VEZES
+  ao cliente. É a distinção da 932 (`evolution_rejected` ×
+  `evolution_error`), e o `entrega_incerta` existe porque ela não se
+  adivinha. `EvolutionApiError.status` é o que responde isso, e o erro
+  chega INTEIRO ao motor porque `flows/meta-send.ts` o propaga cru.
+- ⚠️⚠️ **Só o transporte EVOLUTION retenta hoje.** Quem carrega o status
+  HTTP é `EvolutionApiError`; o cliente da Cloud API (`meta-api.ts`) lança
+  `Error` genérico, e sem status não dá para separar "a Meta recusou" de
+  "não sei se saiu" — a régua falha FECHADA e não repete. Quem quiser o
+  retry na Meta começa por dar um erro com status àquele cliente.
+- ⚠️ **`PASSOS_DE_ENVIO` é allowlist**: passo novo nasce FORA, sem
+  retentativa, até alguém decidir por escrito. Lista de exclusão faria o
+  passo novo herdar o retry por esquecimento — que é como se manda mensagem
+  repetida a cliente. `send_webhook` fica de fora de propósito (o n8n do
+  escritório pode já ter recebido e criado o registro).
+- ⚠️ **Volta para a MESMA fila do "Aguardar"** (`automation_pending_executions`)
+  na posição do PRÓPRIO passo — o resume filtra por `gte('position', …)`. O
+  "Aguardar" enfileira `position + 1` porque já terminou; aqui o passo não
+  chegou a acontecer. Sem migration: o contador de tentativas mora no
+  `context` (jsonb), como `_cadeia` e `_tag_chain_depth`.
+- ⚠️ **Fila que recusa a linha NÃO vira "vai tentar de novo"**: ninguém
+  retomaria, e a execução ficaria `partial` para sempre — invisível no fio
+  e fora do bloco de correções do Meu dia. Falhando o enfileiramento, o
+  comportamento é o de antes (falha na hora).
+- ⚠️⚠️ **O contador de tentativas é AMARRADO À POSIÇÃO do passo**
+  (`{ pos, n }` no contexto), nunca um número solto. O contexto atravessa a
+  execução inteira: guardando só o número, um passo que falhou duas vezes e
+  se recuperou deixaria o contador em 2, e o PRÓXIMO passo a falhar — num
+  ponto sem relação nenhuma — nasceria no teto, sem retentativa alguma.
+  Contador de outro passo vale zero, que é a verdade. (Achado da revisão
+  própria; a cota do Codex tinha acabado neste PR.)
+- ⚠️ **O TETO é testado ANTES do tipo do passo** (3 tentativas; 30 s e
+  depois 5 min): invertendo, um provedor que recusa sempre — uma conexão
+  apagada — reenfileiraria para sempre, queimando ciclo do agendador e
+  nunca mostrando a falha a ninguém. A espera real é esta MAIS o tique do
+  cron (~1 min no laço rápido).
+- ⚠️ **O estado da execução vira `partial`**, o mesmo do "Aguardar": é o que
+  impede `fecharLog` de carimbar desfecho enquanto a retentativa não rodou.
+
 ⚠️ **Desfecho da execução de automação (985): o fio NARRA o que a automação
 fez.** `automation_logs.desfecho` ('concluida'|'barrada'|'falhou') +
 `finalizado_em`, `src/lib/automations/estado-da-execucao.ts` e

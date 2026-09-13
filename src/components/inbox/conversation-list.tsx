@@ -45,6 +45,7 @@ import type {
 } from "@/types";
 import {
   AlarmClock,
+  CircleDollarSign,
   Hourglass,
   Zap,
   Search,
@@ -67,6 +68,8 @@ import { NovaConversaDialog } from "@/components/inbox/nova-conversa-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useBuscaEmMensagens } from "@/hooks/use-busca-em-mensagens";
 import { useSinalDeExecucoes } from "@/hooks/use-sinal-de-execucoes";
+import { dividasPorContato, idsInadimplentes, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
+import { dinheiro, type ResumoDeDivida } from "@/lib/asaas/inadimplencia";
 import { useChannels } from "@/hooks/use-channels";
 import { useAuth } from "@/hooks/use-auth";
 import { canaisVisiveis, conversaNoEscopo } from "@/lib/perfis/escopo";
@@ -121,6 +124,13 @@ interface ConversationListProps {
    * mão no painel não é tocada.
    */
   jornadaDoFunil?: boolean;
+  /**
+   * Quem está INADIMPLENTE no Asaas (Fase 1b do plano da integração) — a
+   * resposta em lote da página (`useInadimplencia`), compartilhada com o
+   * fio. `null` = ainda não sei / desconectado: o ícone cala e o filtro é
+   * neutralizado (`ContextoDosFiltros.inadimplentes`).
+   */
+  inadimplencia?: RespostaDoResumo | null;
 }
 
 // Situação da conversa na LINHA (pedido do operador, 2026-09-03 — "hoje a
@@ -148,6 +158,7 @@ export function ConversationList({
   onConversaAberta,
   etapaInicial = null,
   jornadaDoFunil = false,
+  inadimplencia = null,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   const [novaConversaAberta, setNovaConversaAberta] = useState(false);
@@ -222,6 +233,17 @@ export function ConversationList({
   // inteira, não uma por linha. `null` = ainda não sei, e a marca cala: sem a
   // distinção, "não carregou" viraria a afirmação "não tem robô rodando".
   const { resumo: sinalDeExecucoes } = useSinalDeExecucoes(true, resyncToken);
+  // A dívida por contato (Asaas, Fase 1b): ícone da linha e conjunto do
+  // filtro saem da MESMA régua. Recalcula com o tique do minuto para os
+  // dias de atraso virarem à meia-noite sem recarregar.
+  const dividasDoAsaas = useMemo(
+    () => (inadimplencia ? dividasPorContato(inadimplencia, new Date(agora)) : null),
+    [inadimplencia, agora],
+  );
+  const idsInadimplentesDoAsaas = useMemo(
+    () => idsInadimplentes(inadimplencia, new Date(agora)),
+    [inadimplencia, agora],
+  );
   // Favoritas são de CADA MEMBRO (migration 924) — o hook já lê só as minhas.
   // `resyncToken` porque `cb_conversation_favorites` não está no realtime:
   // marcar no celular não apareceria nesta aba até recarregar a página.
@@ -590,6 +612,8 @@ export function ConversationList({
         // O mesmo tique de um minuto que acende o selo na linha — o recorte
         // "em atraso" tem de virar sozinho quando os 10 minutos vencem.
         agoraMs: agora,
+        // `null` neutraliza o filtro "Inadimplentes" — ver `idsInadimplentes`.
+        inadimplentes: idsInadimplentesDoAsaas,
       }),
     [
       conversations,
@@ -597,6 +621,7 @@ export function ConversationList({
       etapasStatus,
       agora,
       favoritas,
+      idsInadimplentesDoAsaas,
       etapaPorContato,
       funilPorEtapa,
       search,
@@ -914,6 +939,15 @@ export function ConversationList({
           etapasConfiaveis={etapasStatus === "ok"}
           funis={funis}
           temGrupos={temGrupos}
+          // O interruptor "Inadimplentes" só é OFERECIDO com o Asaas
+          // conectado (ou já ligado por uma visão salva, para dar como
+          // desligar). Sem conexão ele não recortaria nada.
+          asaasConectado={inadimplencia?.conectado === true}
+          asaasDadosDe={
+            inadimplencia?.conectado && !inadimplencia.leituraFresca
+              ? inadimplencia.atualizadoEm
+              : null
+          }
           visoes={
             <VisoesSalvas
               salvos={filtrosSalvos}
@@ -975,6 +1009,7 @@ export function ConversationList({
                 esperasDeAutomacao={
                   sinalDeExecucoes?.porContato[conv.contact_id ?? ""]?.esperas ?? 0
                 }
+                divida={dividasDoAsaas?.get(conv.contact_id ?? "") ?? null}
                 // Numa conta de um número só a bolinha não decide nada e só
                 // ocupa espaço — mesma régua do seletor e do filtro de canal.
                 // ⚠️ `canalDaConversa`, nunca `conversation.channel_id`: em
@@ -1033,6 +1068,12 @@ interface ConversationItemProps {
    */
   esperasDeAutomacao: number;
   /**
+   * A dívida do contato desta conversa no Asaas (Fase 1b), ou `null` — em
+   * dia, ou ainda não se sabe: a marca cala nos dois casos, porque ausência
+   * de marca não pode afirmar "em dia".
+   */
+  divida: ResumoDeDivida | null;
+  /**
    * O número por onde esta linha RESPONDE (o canal da conversa, senão o
    * padrão da conta — a resolução do fio), para o selo da janela de 24h.
    * `null` = desconhecido (canais carregando, consulta falhou, conta sem
@@ -1067,6 +1108,7 @@ function ConversationItem({
   corDoCanalDaLinha,
   agora,
   esperasDeAutomacao,
+  divida,
   canalDeSaidaDaLinha,
   t,
 }: ConversationItemProps) {
@@ -1220,6 +1262,22 @@ function ConversationItem({
                   <span className="hidden pl-0.5 group-hover/janela:inline">
                     {rotuloDaJanela}
                   </span>
+                </span>
+              )}
+              {/* Inadimplente no Asaas (Fase 1b). Só o ícone, VERMELHO, em
+                  par claro/escuro — o valor e os dias ficam no `title`, na
+                  faixa do fio e na aba Cobranças. Vem antes do robô: é a
+                  marca que muda a resposta. Grupo não tem contato e nunca
+                  recebe a dívida. */}
+              {divida && (
+                <span
+                  title={t("inadimplente", {
+                    valor: dinheiro(divida.totalAtualizado),
+                    dias: divida.dias !== null && divida.dias >= 0 ? divida.dias : 0,
+                  })}
+                  className="inline-flex items-center rounded-full bg-red-500/15 px-1 py-px text-red-700 dark:text-red-300"
+                >
+                  <CircleDollarSign className="h-3 w-3" aria-hidden="true" />
                 </span>
               )}
               {esperasDeAutomacao > 0 && (

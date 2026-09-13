@@ -97,6 +97,7 @@ describe("lerFiltroSalvo", () => {
       favoritas: true,
       naoLidas: true,
       emAtraso: false,
+      inadimplentes: false,
     });
   });
 
@@ -167,6 +168,7 @@ describe("escreverFiltroSalvo", () => {
       "etiquetaIds",
       "favoritas",
       "funilId",
+      "inadimplentes",
       "modoDeEtiqueta",
       "naoLidas",
       "responsavelId",
@@ -469,6 +471,7 @@ const AMOSTRAS: Record<keyof FiltrosDoInbox, Partial<FiltrosDoInbox> | null> = {
   favoritas: { favoritas: true },
   naoLidas: { naoLidas: true },
   emAtraso: { emAtraso: true },
+  inadimplentes: { inadimplentes: true },
 };
 
 describe("todo recorte que o painel CONTA, a descrição DESCREVE", () => {

@@ -1,0 +1,80 @@
+import { NextResponse } from "next/server";
+
+import { COLUNAS_DA_COBRANCA, leituraFresca, lerConfigDoEspelho, lerParcela } from "@/lib/asaas/espelho";
+import { supabaseAdmin } from "@/lib/automations/admin-client";
+import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
+import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * GET /api/cb/asaas/contato/[contactId] — a aba Cobranças de UM contato.
+ *
+ * `{ conectado, leituraFresca, atualizadoEm, clientes: [{ id, asaasId, nome,
+ * origem, notificacoesDesligadas }], parcelas: parcela[] }` — os clientes do
+ * Asaas ligados ao contato e TODAS as parcelas deles que o espelho guarda
+ * (as devidas, as que regularizaram, as estornadas, a que vence hoje). Quem
+ * reparte é o navegador (`separarParcelas`), com o relógio da tela.
+ *
+ * Qualquer membro lê (D4). Sem CPF — ele só sai mascarado, e só para o
+ * administrador, pelas listas do cartão. Contato de outra conta → a
+ * consulta simplesmente não acha cliente ligado (`account_id` na cerca).
+ */
+export async function GET(_request: Request, { params }: { params: Promise<{ contactId: string }> }) {
+  try {
+    const ctx = await getCurrentAccount();
+    const limit = checkRateLimit(`cb:asaas:contato:${ctx.userId}`, RATE_LIMITS.execucao);
+    if (!limit.success) return rateLimitResponse(limit);
+
+    const { contactId } = await params;
+    if (!UUID.test(contactId)) return NextResponse.json({ error: "not_found" }, { status: 404 });
+
+    const admin = supabaseAdmin();
+    const config = await lerConfigDoEspelho(admin, ctx.accountId);
+    if (!config) return NextResponse.json({ conectado: false, leituraFresca: false, atualizadoEm: null, clientes: [], parcelas: [] });
+
+    const { data: ligados, error: erroClientes } = await admin
+      .from("cb_asaas_clientes")
+      .select("id, asaas_customer_id, nome, vinculo_origem, notificacoes_desligadas")
+      .eq("account_id", ctx.accountId)
+      .eq("contact_id", contactId)
+      .eq("deleted", false)
+      .order("nome");
+    if (erroClientes) return NextResponse.json({ error: "db_error" }, { status: 500 });
+
+    const clientes = ((ligados ?? []) as { id: string; asaas_customer_id: string; nome: string | null; vinculo_origem: string | null; notificacoes_desligadas: boolean }[]).map(
+      (c) => ({ id: c.id, asaasId: c.asaas_customer_id, nome: c.nome ?? "", origem: c.vinculo_origem, notificacoesDesligadas: c.notificacoes_desligadas === true }),
+    );
+
+    let parcelas: ReturnType<typeof lerParcela>[] = [];
+    if (clientes.length > 0) {
+      const { data, error } = await admin
+        .from("cb_asaas_cobrancas")
+        .select(COLUNAS_DA_COBRANCA)
+        .eq("account_id", ctx.accountId)
+        .eq("deleted", false)
+        .in(
+          "asaas_customer_id",
+          clientes.map((c) => c.asaasId),
+        )
+        .order("vencimento", { ascending: true })
+        .limit(1000);
+      if (error) return NextResponse.json({ error: "db_error" }, { status: 500 });
+      parcelas = ((data ?? []) as Record<string, unknown>[]).map(lerParcela);
+    }
+
+    return NextResponse.json({
+      conectado: true,
+      leituraFresca: leituraFresca(config, new Date()),
+      atualizadoEm: config.vencidas_listadas_em,
+      clientes,
+      parcelas,
+    });
+  } catch (err) {
+    if (err instanceof Error && !("status" in err)) {
+      console.error("[asaas/contato] leitura falhou:", err.message);
+      return NextResponse.json({ error: "db_error" }, { status: 500 });
+    }
+    return toErrorResponse(err);
+  }
+}

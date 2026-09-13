@@ -30,6 +30,7 @@ import {
   SlidersHorizontal,
   Star,
   X,
+  CircleDollarSign,
 } from "lucide-react";
 import { useTranslations } from "next-intl";
 
@@ -113,6 +114,27 @@ interface InboxFiltersProps {
   onLimparBusca: () => void;
   exibindo: number;
   total: number;
+  /**
+   * O Asaas está conectado nesta conta? Gateia OFERECER o interruptor
+   * "Inadimplentes" (Fase 1b): sem o espelho, ele não recortaria nada. Um
+   * filtro salvo com o campo ligado continua mostrando o interruptor, para
+   * dar como desligá-lo. Opcional: as telas de teste montam sem ele.
+   */
+  asaasConectado?: boolean;
+  /**
+   * ISO da última listagem completa do Asaas quando ela NÃO é fresca (o
+   * espelho está parado); `null` com leitura fresca. O interruptor mostra
+   * "dados do Asaas de …" — o recorte continua valendo (é a régua do ícone
+   * da linha), só não afirma que é de agora.
+   */
+  asaasDadosDe?: string | null;
+}
+
+/** `dd/mm hh:mm` no fuso de quem lê — a mesma forma da faixa do fio. */
+function quandoFoi(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString(undefined, { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function InboxFilters({
@@ -131,6 +153,8 @@ export function InboxFilters({
   onLimparBusca,
   exibindo,
   total,
+  asaasConectado = false,
+  asaasDadosDe = null,
 }: InboxFiltersProps) {
   const t = useTranslations("Inbox.conversationList");
   const [aberto, setAberto] = useState(false);
@@ -552,6 +576,42 @@ export function InboxFilters({
                 />
               </Campo>
             )}
+
+          {/* INADIMPLENTES (Asaas, Fase 1b): um interruptor no painel, e não
+              um 5º chip na barra — medido em 03/09, a barra já ocupa ~290 dos
+              296px úteis do `lg`, e um chip a mais a estouraria. Fixo, não
+              atrás de "Mais filtros": é a pergunta de quem cobra. Só aparece
+              com o Asaas conectado (ou já ligado por uma visão salva). */}
+          {(asaasConectado || filtros.inadimplentes) && (
+            <div>
+              <button
+                type="button"
+                onClick={() => mexer({ inadimplentes: !filtros.inadimplentes })}
+                aria-pressed={filtros.inadimplentes}
+                className={cn(
+                  "inline-flex h-8 w-full items-center gap-2 rounded-md border px-2 text-xs transition-colors",
+                  filtros.inadimplentes
+                    ? "border-red-500/40 bg-red-500/10 text-red-700 hover:bg-red-500/15 dark:text-red-300"
+                    : "border-border text-muted-foreground hover:bg-muted hover:text-foreground",
+                )}
+              >
+                <CircleDollarSign className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{t("filterDelinquent")}</span>
+              </button>
+              {/* Espelho parado: o recorte vale (é o mesmo dado do ícone da
+                  linha), mas a tela não pode deixar parecer que é de agora. */}
+              {asaasDadosDe && (
+                <p className="mt-1 px-0.5 text-[11px] text-amber-700 dark:text-amber-300">
+                  {t("delinquentStale", { quando: quandoFoi(asaasDadosDe) })}
+                </p>
+              )}
+              {/* Ligado por uma visão salva numa conta sem Asaas: o recorte é
+                  neutralizado no ctx, e a tela diz por quê. */}
+              {!asaasConectado && filtros.inadimplentes && (
+                <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">{t("delinquentDisconnected")}</p>
+              )}
+            </div>
+          )}
 
           {/* MAIS FILTROS: tipo, responsável e empresa — os menos usados no
               dia a dia. Abrem sozinhos quando um deles está recortando,

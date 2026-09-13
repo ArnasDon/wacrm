@@ -33,13 +33,15 @@ export function SessionsCard() {
     setSigningOut(true);
     try {
       // scope: 'global' revokes every refresh token for this user
-      // across all devices; the next auth-state change on this tab
-      // triggers the usual redirect.
+      // across all devices. Then a full reload (not router.push) so
+      // every piece of client state on this tab is dropped and the
+      // server sees the cleared cookies — same as useAuth().signOut().
       const { error } = await supabase.auth.signOut({ scope: 'global' });
       if (error) {
         toast.error(t('signOutFailed', { message: error.message }));
         return;
       }
+      // eslint-disable-next-line @next/next/no-location-assign-relative-destination -- intentional full reload on sign-out
       window.location.href = '/login';
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown error';

@@ -99,6 +99,9 @@ export function leituraAindaFresca(resumo: Pick<RespostaDoResumo, "leituraFresca
  */
 export function dividasPorContato(resumo: RespostaDoResumo, agora: Date): Map<string, ResumoDeDivida> {
   const mapa = new Map<string, ResumoDeDivida>();
+  // Uma régua, UM portão: desconectado não acende ícone nenhum, mesmo que
+  // o corpo (parse permissivo) traga contatos — o filtro já cala nesse caso.
+  if (!resumo.conectado) return mapa;
   for (const [id, parcelas] of Object.entries(resumo.contatos)) {
     const divida = resumirDivida(parcelas, agora, resumo.atualizadoEm);
     if (divida.vencidas.length > 0) mapa.set(id, divida);
@@ -112,7 +115,7 @@ export function dividasPorContato(resumo: RespostaDoResumo, agora: Date): Map<st
  * no `null` sozinho.
  */
 export function dividaDoContato(resumo: RespostaDoResumo | null, contactId: string | null | undefined, agora: Date): ResumoDeDivida | null {
-  if (!resumo || !contactId) return null;
+  if (!resumo || !contactId || !resumo.conectado) return null;
   const parcelas = resumo.contatos[contactId];
   if (!parcelas || parcelas.length === 0) return null;
   const divida = resumirDivida(parcelas, agora, resumo.atualizadoEm);
@@ -132,6 +135,13 @@ export function dividaDoContato(resumo: RespostaDoResumo | null, contactId: stri
  */
 export function idsInadimplentes(resumo: RespostaDoResumo | null, agora: Date): Set<string> | null {
   if (!resumo || !resumo.conectado) return null;
+  // ⚠️ Conectado mas SEM listagem completa (`atualizadoEm` nulo: o Asaas
+  // acabou de ser conectado e a primeira sincronização ainda corre, ou
+  // falhou) também é "não sei" — um conjunto vazio aqui faria uma visão
+  // salva esconder a caixa inteira com cara de "ninguém deve" (Codex, PR
+  // #203). O conjunto vazio é reservado para a listagem completa que não
+  // achou dívida.
+  if (!resumo.atualizadoEm) return null;
   return new Set(dividasPorContato(resumo, agora).keys());
 }
 
@@ -191,17 +201,22 @@ export interface ParcelasDoContato {
   regularizadas: ParcelaDoEspelho[];
   /** estornadas ou contestadas — "o valor voltou ao cliente" */
   estornadas: ParcelaDoEspelho[];
-  /** a que vence HOJE (D17): a vencer, sem dívida ainda */
+  /**
+   * PENDENTES no Asaas: a que vence hoje (D17) e a que já passou do
+   * vencimento sem o Asaas tê-la virado vencida (a janela do C7, o fim de
+   * semana). Esta segunda NÃO é dívida — e também não pode sumir da aba:
+   * está no espelho e o operador precisa vê-la (revisão do PR #203).
+   */
   aVencer: ParcelaDoEspelho[];
 }
 
-function diaDaParcela(p: ParcelaDoEspelho): string {
-  return p.pago_em ?? p.visto_em.slice(0, 10);
+/** O dia da parcela paga: `pago_em`, senão o dia em que o espelho a viu — no FUSO, como o corte. */
+function diaDaParcela(p: ParcelaDoEspelho, fuso: string): string {
+  return p.pago_em ?? diaNoFuso(new Date(p.visto_em), fuso);
 }
 
 export function separarParcelas(parcelas: readonly ParcelaDoEspelho[], agora: Date, vencidasListadasEm: string | null, fuso: string = FUSO_PADRAO): ParcelasDoContato {
   const divida = resumirDivida(parcelas, agora, vencidasListadasEm, fuso);
-  const hojeLocal = diaNoFuso(agora, fuso);
   const regularizadas: ParcelaDoEspelho[] = [];
   const estornadas: ParcelaDoEspelho[] = [];
   const aVencer: ParcelaDoEspelho[] = [];
@@ -212,10 +227,10 @@ export function separarParcelas(parcelas: readonly ParcelaDoEspelho[], agora: Da
   const corte = diaNoFuso(new Date(agora.getTime() - REGULARIZADAS_DIAS * 86_400_000), fuso);
   for (const p of parcelas) {
     const classe = classificar(p.status, p.deleted);
-    if (classe === "paga" && diaDaParcela(p) >= corte) regularizadas.push(p);
+    if (classe === "paga" && diaDaParcela(p, fuso) >= corte) regularizadas.push(p);
     else if (classe === "estornada" || classe === "contestada") estornadas.push(p);
-    else if (classe === "a_vencer" && p.vencimento >= hojeLocal) aVencer.push(p);
+    else if (classe === "a_vencer") aVencer.push(p);
   }
-  regularizadas.sort((a, b) => (diaDaParcela(a) < diaDaParcela(b) ? 1 : -1));
+  regularizadas.sort((a, b) => (diaDaParcela(a, fuso) < diaDaParcela(b, fuso) ? 1 : -1));
   return { divida, regularizadas, estornadas, aVencer };
 }

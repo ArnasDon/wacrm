@@ -34,6 +34,7 @@ import { SeletorFunilEtapa } from '@/components/inbox/painel/seletor-funil-etapa
 import { AbaAutomacoes } from '@/components/inbox/painel/aba-automacoes';
 import { AbaArquivos } from '@/components/inbox/painel/aba-arquivos';
 import { AbaCobrancas } from '@/components/inbox/painel/aba-cobrancas';
+import { TituloDeSecao } from '@/components/inbox/painel/titulo-de-secao';
 import { useCobrancasDoContato } from '@/hooks/use-cobrancas-do-contato';
 import { separarParcelas } from '@/lib/asaas/aviso-na-conversa';
 import { ReunioesDoContato } from '@/components/agenda/reunioes-do-contato';
@@ -1731,25 +1732,7 @@ function AbaDeIcone({
   );
 }
 
-/** Título de seção — a MESMA tipografia nas duas fichas (contato e grupo). */
-export function TituloDeSecao({
-  icon,
-  children,
-  className,
-}: {
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <div
-      className={cn(
-        'text-muted-foreground flex items-center gap-2 px-1 text-xs font-medium tracking-wider uppercase',
-        className
-      )}
-    >
-      {icon}
-      {children}
-    </div>
-  );
-}
+// O título de seção mudou para `titulo-de-secao.tsx` (a aba Cobranças da
+// ficha de Contatos precisava dele sem arrastar o painel inteiro); a
+// reexportação mantém os chamadores antigos (`aba-automacoes.tsx`).
+export { TituloDeSecao };

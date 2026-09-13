@@ -3561,11 +3561,19 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   "ninguém deve". No navegador, **`null` de leitura é "não sei", nunca "em
   dia"**: o ícone da linha cala, a faixa cala e o filtro "Inadimplentes" é
   NEUTRALIZADO (`ContextoDosFiltros.inadimplentes: Set<string> | null`,
-  campo OBRIGATÓRIO — a régua de `recorteDeEtapaConfiavel`). ⚠️ Leitura
-  ANTIGA (espelho parado) NÃO neutraliza: é a MESMA régua do ícone, e
-  medido em 13/09 com 11 h sem ciclo a neutralização deixava 15 ícones na
-  lista e um interruptor que "não fazia nada" — a tela diz "dados do Asaas
-  de …" (faixa, aba e painel de filtros) em vez de calar.
+  campo OBRIGATÓRIO — a régua de `recorteDeEtapaConfiavel`). Conectado SEM
+  listagem completa (`atualizadoEm` nulo, recém-conectado) também é
+  `null`: um conjunto vazio ali faria uma visão salva esconder a caixa
+  inteira. ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA
+  régua do ícone, e medido em 13/09 com 11 h sem ciclo a neutralização
+  deixava 15 ícones na lista e um interruptor que "não fazia nada" — a tela
+  diz "dados do Asaas de …" (faixa, aba e painel de filtros) em vez de
+  calar; e a FRESCURA é derivada no navegador pelo relógio
+  (`leituraAindaFresca`), nunca só pelo booleano da resposta, que envelhece
+  na tela (a recarga que falha retém a anterior, marcada como não fresca).
+  A aba só diz "nenhuma parcela vencida" com leitura fresca E sem parcela
+  em conferência; sem isso diz que não sabe. `null` ≠ `false` também no
+  painel de filtros: "Asaas desconectado" só com `false`.
 - ⚠️ **UMA régua para ícone, faixa e filtro** (`dividasPorContato`/
   `dividaDoContato`, `src/lib/asaas/aviso-na-conversa.ts`, pura e testada;
   a aba reparte por `separarParcelas`, com o relógio da tela). Cópia

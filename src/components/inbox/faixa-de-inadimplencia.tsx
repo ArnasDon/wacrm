@@ -67,7 +67,9 @@ export function FaixaDeInadimplencia({ divida, atualizadoEm, leituraFresca, aoVe
           {resumo}
           {desde ? ` · ${desde}` : ""}
         </p>
-        {!leituraFresca && quando && <p className="text-red-700/70 dark:text-red-300/70">{t("faixaDadosDe", { quando })}</p>}
+        {/* Sem frescura a faixa diz de quando é o dado — e sem listagem
+            completa (recém-conectado) diz isso, em vez de calar. */}
+        {!leituraFresca && <p className="text-red-700/70 dark:text-red-300/70">{quando ? t("faixaDadosDe", { quando }) : t("faixaSemListagem")}</p>}
       </div>
       {aoVerCobrancas && (
         <button

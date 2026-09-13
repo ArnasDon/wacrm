@@ -115,12 +115,22 @@ interface InboxFiltersProps {
   exibindo: number;
   total: number;
   /**
-   * O Asaas está conectado nesta conta? Gateia OFERECER o interruptor
-   * "Inadimplentes" (Fase 1b): sem o espelho, ele não recortaria nada. Um
-   * filtro salvo com o campo ligado continua mostrando o interruptor, para
-   * dar como desligá-lo. Opcional: as telas de teste montam sem ele.
+   * O Asaas está conectado nesta conta? `true` oferece o interruptor
+   * "Inadimplentes" (Fase 1b); `false` = desconectado; `null` = ainda não
+   * se sabe (a leitura está no ar, ou falhou). Um filtro salvo com o campo
+   * ligado continua mostrando o interruptor, para dar como desligá-lo, e a
+   * dica abaixo dele distingue os DOIS: "desconectado — sem efeito" só com
+   * `false`; com `null` a tela diz que está conferindo — afirmar
+   * "desconectado" sobre uma conta conectada com a rota em 500 era a
+   * confusão `null`/`false` que o resto do PR evita (revisão do PR #203).
    */
-  asaasConectado?: boolean;
+  asaasConectado?: boolean | null;
+  /**
+   * Conectado, mas o Asaas ainda não completou a primeira listagem: o
+   * recorte está NEUTRALIZADO (ver `idsInadimplentes`) e o interruptor diz
+   * por quê — senão "não faz nada" sem explicação.
+   */
+  asaasSemListagem?: boolean;
   /**
    * ISO da última listagem completa do Asaas quando ela NÃO é fresca (o
    * espelho está parado); `null` com leitura fresca. O interruptor mostra
@@ -153,8 +163,9 @@ export function InboxFilters({
   onLimparBusca,
   exibindo,
   total,
-  asaasConectado = false,
+  asaasConectado = null,
   asaasDadosDe = null,
+  asaasSemListagem = false,
 }: InboxFiltersProps) {
   const t = useTranslations("Inbox.conversationList");
   const [aberto, setAberto] = useState(false);
@@ -582,7 +593,7 @@ export function InboxFilters({
               296px úteis do `lg`, e um chip a mais a estouraria. Fixo, não
               atrás de "Mais filtros": é a pergunta de quem cobra. Só aparece
               com o Asaas conectado (ou já ligado por uma visão salva). */}
-          {(asaasConectado || filtros.inadimplentes) && (
+          {(asaasConectado === true || filtros.inadimplentes) && (
             <div>
               <button
                 type="button"
@@ -607,8 +618,14 @@ export function InboxFilters({
               )}
               {/* Ligado por uma visão salva numa conta sem Asaas: o recorte é
                   neutralizado no ctx, e a tela diz por quê. */}
-              {!asaasConectado && filtros.inadimplentes && (
+              {asaasConectado === false && filtros.inadimplentes && (
                 <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">{t("delinquentDisconnected")}</p>
+              )}
+              {asaasConectado === null && filtros.inadimplentes && (
+                <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">{t("delinquentChecking")}</p>
+              )}
+              {asaasConectado === true && asaasSemListagem && (
+                <p className="mt-1 px-0.5 text-[11px] text-muted-foreground">{t("delinquentPending")}</p>
               )}
             </div>
           )}

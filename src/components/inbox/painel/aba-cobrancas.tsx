@@ -27,7 +27,7 @@ import { leituraAindaFresca, REGULARIZADAS_DIAS, separarParcelas, type RespostaD
 import { classificar, diaPorExtenso, diasDeAtraso, dinheiro, rotuloDaParcela, valorAtualizado, type ParcelaDoEspelho } from "@/lib/asaas/inadimplencia";
 import { cn } from "@/lib/utils";
 
-import { TituloDeSecao } from "./painel-do-contato";
+import { TituloDeSecao } from "./titulo-de-secao";
 
 interface AbaCobrancasProps {
   dados: RespostaDoContato | null;
@@ -254,8 +254,22 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
         </ul>
       </div>
 
+      {/* ⚠️ "Nenhuma parcela vencida" só com leitura FRESCA e sem parcela
+          em conferência: sobre o espelho parado (ou antes da primeira
+          listagem) seria afirmar "em dia" a partir de dado velho — e o
+          atendente repetiria ao cliente; e acima de uma lista de vencidas
+          "em conferência" seria contradição na mesma tela (Codex e revisão
+          do PR #203). Sem frescura, a aba diz que não sabe. */}
       {divida.vencidas.length === 0 ? (
-        <p className="text-muted-foreground px-1 text-sm">{t("emDia")}</p>
+        <p className={cn("px-1 text-sm", fresca && divida.emConferencia.length === 0 ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300")}>
+          {!fresca
+            ? quando
+              ? t("semLeituraRecente", { quando })
+              : t("semListagem")
+            : divida.emConferencia.length > 0
+              ? t("nadaConfirmado", { n: divida.emConferencia.length })
+              : t("emDia")}
+        </p>
       ) : (
         <div>
           <Secao titulo={t("vencidas")} parcelas={divida.vencidas} devida />

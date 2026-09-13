@@ -85,6 +85,17 @@ describe("dividasPorContato / dividaDoContato", () => {
     expect(d.dias).toBe(23);
   });
 
+  it("desconectado não acende ícone nenhum, mesmo com contatos no corpo (parse permissivo) — o mesmo portão do filtro", () => {
+    const desconectado = { ...resumo, conectado: false };
+    expect(dividasPorContato(desconectado, AGORA).size).toBe(0);
+    expect(dividaDoContato(desconectado, "ct-deve", AGORA)).toBeNull();
+  });
+
+  it("sem listagem completa (`atualizadoEm` nulo) toda devida conta como vencida — não há corte para pôr em conferência", () => {
+    const semListagem = lerRespostaDoResumo(corpo({ "ct-x": [parcela({ id: "a", visto_em: "2026-09-11T10:00:00Z" })] }, { atualizadoEm: null })) as RespostaDoResumo;
+    expect(dividaDoContato(semListagem, "ct-x", AGORA)?.vencidas.map((p) => p.id)).toEqual(["a"]);
+  });
+
   it("dividaDoContato: a dívida de UM contato, ou null (em dia, em conferência, grupo sem contato, resumo nulo)", () => {
     expect(dividaDoContato(resumo, "ct-deve", AGORA)?.total).toBe(300);
     expect(dividaDoContato(resumo, "ct-conferencia", AGORA)).toBeNull();
@@ -104,6 +115,12 @@ describe("idsInadimplentes — o conjunto do filtro", () => {
   it("⚠️ null (neutraliza) sem resumo ou desconectado — nunca um conjunto vazio com cara de 'ninguém deve'", () => {
     expect(idsInadimplentes(null, AGORA)).toBeNull();
     expect(idsInadimplentes(lerRespostaDoResumo(corpo(contatos, { conectado: false })), AGORA)).toBeNull();
+  });
+
+  it("⚠️ conectado mas SEM listagem completa (recém-conectado, primeira sincronização no ar ou falhada) → null, nunca um conjunto vazio", () => {
+    expect(idsInadimplentes(lerRespostaDoResumo(corpo(contatos, { atualizadoEm: null })), AGORA)).toBeNull();
+    // e a listagem completa que não achou dívida é o conjunto VAZIO de verdade
+    expect(idsInadimplentes(lerRespostaDoResumo(corpo({})), AGORA)).toEqual(new Set());
   });
 
   it("leitura ANTIGA não neutraliza: é a mesma régua do ícone da linha, e a tela diz de quando é o dado", () => {
@@ -142,13 +159,13 @@ describe("lerRespostaDoContato", () => {
 });
 
 describe("separarParcelas — a aba Cobranças", () => {
-  it("reparte em vencidas, em conferência, a vencer (hoje ou depois), regularizadas (30 dias) e estornadas", () => {
+  it("reparte em vencidas, em conferência, pendentes (a vencer — inclusive a que passou do dia sem o Asaas virá-la), regularizadas (30 dias) e estornadas", () => {
     const parcelas = [
       parcela({ id: "vencida", vencimento: "2026-09-01" }),
       parcela({ id: "conferencia", visto_em: "2026-09-11T10:00:00Z" }),
       parcela({ id: "hoje", status: "PENDING", vencimento: "2026-09-12" }),
       parcela({ id: "futura", status: "PENDING", vencimento: "2026-10-12" }),
-      // a vencer com vencimento no passado: o Asaas ainda não a virou OVERDUE — nem dívida, nem "a vencer"
+      // PENDING com vencimento no passado: o Asaas ainda não a virou OVERDUE (C7, fim de semana) — não é dívida, mas aparece
       parcela({ id: "pendente-atrasada", status: "PENDING", vencimento: "2026-09-10" }),
       parcela({ id: "paga-recente", status: "RECEIVED", pago_em: "2026-09-01" }),
       parcela({ id: "paga-antiga", status: "RECEIVED", pago_em: "2026-07-01" }),
@@ -158,7 +175,7 @@ describe("separarParcelas — a aba Cobranças", () => {
     const r = separarParcelas(parcelas, AGORA, LISTADAS_EM);
     expect(r.divida.vencidas.map((p) => p.id)).toEqual(["vencida"]);
     expect(r.divida.emConferencia.map((p) => p.id)).toEqual(["conferencia"]);
-    expect(r.aVencer.map((p) => p.id)).toEqual(["hoje", "futura"]);
+    expect(r.aVencer.map((p) => p.id)).toEqual(["hoje", "futura", "pendente-atrasada"]);
     expect(r.regularizadas.map((p) => p.id)).toEqual(["paga-recente"]);
     expect(r.estornadas.map((p) => p.id)).toEqual(["estornada", "contestada"]);
   });
@@ -168,6 +185,13 @@ describe("separarParcelas — a aba Cobranças", () => {
     const noite = new Date("2026-09-13T01:00:00Z");
     const r = separarParcelas([parcela({ id: "limite", status: "RECEIVED", pago_em: "2026-08-13" }), parcela({ id: "fora", status: "RECEIVED", pago_em: "2026-08-12" })], noite, LISTADAS_EM);
     expect(r.regularizadas.map((p) => p.id)).toEqual(["limite"]);
+  });
+
+  it("⚠️ paga SEM `pago_em` usa o dia em que o espelho a viu, no FUSO — não o dia UTC de `visto_em`", () => {
+    // vista em 13/09 01:00 UTC = 12/09 22:00 local; o corte às 22h de 12/10 local é 12/09 → entra
+    const vista = parcela({ id: "sem-pago-em", status: "RECEIVED", pago_em: null, visto_em: "2026-09-13T01:00:00Z" });
+    const r = separarParcelas([vista], new Date("2026-10-13T01:00:00Z"), LISTADAS_EM);
+    expect(r.regularizadas.map((p) => p.id)).toEqual(["sem-pago-em"]);
   });
 
   it("regularizadas saem da mais recente para a mais antiga", () => {

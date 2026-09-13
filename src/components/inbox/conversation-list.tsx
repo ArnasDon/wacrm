@@ -942,7 +942,7 @@ export function ConversationList({
           // O interruptor "Inadimplentes" só é OFERECIDO com o Asaas
           // conectado (ou já ligado por uma visão salva, para dar como
           // desligar). Sem conexão ele não recortaria nada.
-          asaasConectado={inadimplencia?.conectado === true}
+          asaasConectado={inadimplencia ? inadimplencia.conectado : null}
           // Pelo RELÓGIO, não pelo `leituraFresca` da resposta: ela envelhece
           // na tela (recarga que falha retém a anterior) — ver
           // `leituraAindaFresca`.
@@ -951,6 +951,7 @@ export function ConversationList({
               ? inadimplencia.atualizadoEm
               : null
           }
+          asaasSemListagem={inadimplencia?.conectado === true && inadimplencia.atualizadoEm === null}
           visoes={
             <VisoesSalvas
               salvos={filtrosSalvos}
@@ -1274,10 +1275,13 @@ function ConversationItem({
                   recebe a dívida. */}
               {divida && (
                 <span
-                  title={t("inadimplente", {
-                    valor: dinheiro(divida.totalAtualizado),
-                    dias: divida.dias !== null && divida.dias >= 0 ? divida.dias : 0,
-                  })}
+                  // Prorrogada (dias negativos, C9): sem contagem — "há 0
+                  // dias" afirmaria um atraso que não existe.
+                  title={
+                    divida.dias !== null && divida.dias >= 0
+                      ? t("inadimplente", { valor: dinheiro(divida.totalAtualizado), dias: divida.dias })
+                      : t("inadimplenteProrrogado", { valor: dinheiro(divida.totalAtualizado) })
+                  }
                   className="inline-flex items-center rounded-full bg-red-500/15 px-1 py-px text-red-700 dark:text-red-300"
                 >
                   <CircleDollarSign className="h-3 w-3" aria-hidden="true" />

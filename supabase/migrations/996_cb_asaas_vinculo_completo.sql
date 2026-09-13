@@ -3,25 +3,26 @@
 -- `vencidas_listadas_em` é carimbado no passo 4 do ciclo (a listagem das
 -- cobranças vencidas está completa no espelho), e o vínculo cliente ↔ contato
 -- roda no passo 7. A tela lê o resumo entre os dois, e "ninguém deve" ali é
--- lacuna, não resposta. `last_sync_at` (passo 8) não basta como marcador: o
--- ciclo TERMINA com sucesso mesmo quando ADIOU a criação de fichas (teto de
--- 150 por ciclo, ou o prazo) — e nesse ciclo o mapa contato → dívida ainda
--- não está inteiro (Codex, PR #203, 7ª rodada).
+-- lacuna, não resposta (Codex, PR #203, 5ª a 7ª rodadas).
 --
--- `vinculo_completo_em` só é carimbado quando o passo 7 não adiou nada; o
--- navegador considera o ciclo completo quando ele é >= `vencidas_listadas_em`
--- (`cicloCompleto`, em `src/lib/asaas/espelho.ts`).
+-- `vinculo_completo_em` é carimbado no passo 8 (o vínculo desta listagem já
+-- rodou); o navegador considera o ciclo completo quando ele é
+-- >= `vencidas_listadas_em` (`cicloCompleto`, em `src/lib/asaas/espelho.ts`).
+-- Hoje ele coincide com `last_sync_at` — a coluna existe para o marcador ter
+-- nome e sobreviver a um dia em que o fim do ciclo e o fim do vínculo se
+-- separem. A criação de ficha ADIADA (teto por ciclo, prazo) não o segura:
+-- cliente sem ficha não tem conversa a esconder, e segurá-lo neutralizava o
+-- filtro da conta inteira durante uma importação (revisão independente).
 --
 -- Aditiva: o app anterior não lê a coluna. Acervo: conta que já completou
--- algum ciclo antes desta coluna existir recebe o `last_sync_at` — era a régua
--- de então, e sem o acervo o filtro "Inadimplentes" ficaria neutralizado até
--- o próximo ciclo em toda instalação que atualizar.
+-- algum ciclo antes desta coluna existir recebe o `last_sync_at` — é o mesmo
+-- instante que o passo 8 passaria a gravar.
 
 ALTER TABLE public.cb_asaas_config
   ADD COLUMN IF NOT EXISTS vinculo_completo_em timestamptz;
 
 COMMENT ON COLUMN public.cb_asaas_config.vinculo_completo_em IS
-  'Início do último ciclo cujo passo de vínculo terminou SEM adiar nada; o ciclo é completo quando >= vencidas_listadas_em.';
+  'Início do último ciclo cujo passo de vínculo já rodou; o ciclo é completo quando >= vencidas_listadas_em.';
 
 UPDATE public.cb_asaas_config
    SET vinculo_completo_em = last_sync_at

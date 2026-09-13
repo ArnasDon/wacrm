@@ -792,11 +792,16 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     // volta ao início do ciclo: os batimentos a avançaram, e um sucesso com
     // `last_sync_at` diferente de `last_sync_attempt_at` seria lido no cartão
     // como "houve outra tentativa depois" (Codex, PR #201, 7ª rodada).
-    // ⚠️ `vinculo_completo_em` (996) só quando o passo 7 não ADIOU nada: é o
-    // marcador que a tela usa para "ninguém deve" ser resposta, e um ciclo
-    // que terminou com fichas adiadas ainda tem o mapa parcial (Codex, PR
-    // #203, 7ª rodada). `last_sync_at` continua avançando — o cartão diz
-    // que o ciclo rodou; o marcador diz se o vínculo ficou inteiro.
+    // ⚠️ `vinculo_completo_em` (996): o passo 7 TERMINOU para esta listagem —
+    // é o marcador que a tela usa para "ninguém deve" ser resposta, e não
+    // lacuna do vínculo que ainda não rodou (entre o carimbo da listagem, no
+    // passo 4, e aqui, o mapa contato → dívida está parcial). Carimbado em
+    // TODO fim de ciclo, de propósito: o laço do `ligar` não tem corte de
+    // prazo e sempre termina; o que o prazo/teto adia é só a CRIAÇÃO de
+    // ficha (`v.adiadas`), e cliente sem ficha não tem conversa a esconder
+    // — condicionar o marcador a isso neutralizava o filtro da conta inteira
+    // durante uma importação, sem ganho (revisão independente do PR #203,
+    // revendo a 7ª rodada do Codex).
     const { data: fechado, error: erroFim } = await admin
       .from("cb_asaas_config")
       .update({
@@ -805,8 +810,8 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
         last_sync_attempt_at: vistoEm,
         last_error: null,
         sincronizando_desde: null,
+        vinculo_completo_em: vistoEm,
         updated_at: vistoEm,
-        ...(v.adiadas === 0 ? { vinculo_completo_em: vistoEm } : {}),
       })
       .eq("account_id", accountId)
       .eq("sincronizando_desde", vistoEm)

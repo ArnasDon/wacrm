@@ -19,9 +19,10 @@ export interface RespostaDoResumo {
   /** ISO do início da última listagem completa — "dados do Asaas de …" */
   atualizadoEm: string | null;
   /**
-   * Já houve pelo menos UM ciclo inteiro com sucesso (`last_sync_at`). A
-   * listagem das vencidas é carimbada ANTES do vínculo dentro do ciclo, então
-   * "listagem completa e nenhum contato ligado" só é resposta com isto.
+   * O vínculo da listagem VIGENTE já rodou (`vinculo_completo_em` >=
+   * `vencidas_listadas_em`, 996). A listagem das vencidas é carimbada ANTES
+   * do vínculo dentro do ciclo, então "listagem completa e nenhum contato
+   * ligado" só é resposta com isto.
    */
   cicloCompleto: boolean;
   /** contato → as parcelas DEVIDAS (vencidas e negativadas) dos clientes do Asaas ligados a ele */
@@ -132,28 +133,44 @@ export function dividaDoContato(resumo: RespostaDoResumo | null, contactId: stri
 }
 
 /**
- * O conjunto do FILTRO "Inadimplentes": `null` neutraliza (desconectado, ou
- * ainda não se sabe) — a lista nunca responde "nenhuma conversa" sobre dado
- * que não existe.
+ * Por que o filtro "Inadimplentes" está NEUTRALIZADO — ou `null` quando ele
+ * vale. UMA régua para o recorte (`idsInadimplentes`) e para a dica do
+ * painel de ajustes: com duas cópias, um motivo novo acrescentado aqui
+ * deixaria o interruptor ligado, sem efeito e sem explicação (revisão
+ * independente do PR #203).
+ *
+ * - `sem_resposta`: a leitura ainda não chegou, ou falhou sem resposta
+ *   anterior.
+ * - `desconectado`: a conta não tem Asaas.
+ * - `sincronizando`: conectado, mas sem listagem completa (recém-conectado,
+ *   primeira sincronização no ar ou falhada) ou com o vínculo da listagem
+ *   vigente ainda por rodar (`cicloCompleto`) — a janela entre o passo 4 e
+ *   o 8 de todo ciclo. Um conjunto vazio aí faria uma visão salva esconder
+ *   a caixa inteira com cara de "ninguém deve" (Codex, PR #203).
  *
  * ⚠️ Leitura ANTIGA (espelho parado) NÃO neutraliza: é a MESMA régua do
  * ícone da linha — um interruptor que cala em silêncio sobre dado velho
  * deixaria o operador com 15 ícones na lista e um filtro que "não faz
- * nada". A resposta é a última listagem, e a tela diz de quando ela é
- * (o interruptor mostra "dados do Asaas de …" quando não é fresca).
+ * nada". A resposta é a última listagem, e a tela diz de quando ela é.
+ */
+export type MotivoDaNeutralizacao = "sem_resposta" | "desconectado" | "sincronizando";
+
+export function motivoDaNeutralizacao(resumo: RespostaDoResumo | null): MotivoDaNeutralizacao | null {
+  if (!resumo) return "sem_resposta";
+  if (!resumo.conectado) return "desconectado";
+  if (!resumo.atualizadoEm || !resumo.cicloCompleto) return "sincronizando";
+  return null;
+}
+
+/**
+ * O conjunto do FILTRO "Inadimplentes": `null` neutraliza (ver
+ * `motivoDaNeutralizacao`) — a lista nunca responde "nenhuma conversa"
+ * sobre dado que não existe. O conjunto VAZIO é reservado ao ciclo inteiro
+ * que não achou dívida.
  */
 export function idsInadimplentes(resumo: RespostaDoResumo | null, agora: Date): Set<string> | null {
-  if (!resumo || !resumo.conectado) return null;
-  // ⚠️ Conectado mas SEM listagem completa (`atualizadoEm` nulo: o Asaas
-  // acabou de ser conectado e a primeira sincronização ainda corre, ou
-  // falhou) também é "não sei" — um conjunto vazio aqui faria uma visão
-  // salva esconder a caixa inteira com cara de "ninguém deve" (Codex, PR
-  // #203). O conjunto vazio é reservado para a listagem completa que não
-  // achou dívida — e para o ciclo INTEIRO: a listagem é carimbada antes do
-  // vínculo, então no primeiro ciclo existe a janela "listagem completa,
-  // nenhum contato ligado ainda" (5ª rodada). `cicloCompleto` a fecha.
-  if (!resumo.atualizadoEm || !resumo.cicloCompleto) return null;
-  return new Set(dividasPorContato(resumo, agora).keys());
+  if (motivoDaNeutralizacao(resumo) !== null) return null;
+  return new Set(dividasPorContato(resumo as RespostaDoResumo, agora).keys());
 }
 
 export interface ClienteLigadoAoContato {

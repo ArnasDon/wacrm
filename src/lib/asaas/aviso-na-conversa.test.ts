@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { dividaDoContato, dividasPorContato, idsInadimplentes, leituraAindaFresca, lerRespostaDoContato, lerRespostaDoResumo, separarParcelas, type RespostaDoResumo } from "./aviso-na-conversa";
+import { dividaDoContato, dividasPorContato, idsInadimplentes, leituraAindaFresca, lerRespostaDoContato, lerRespostaDoResumo, motivoDaNeutralizacao, separarParcelas, type RespostaDoResumo } from "./aviso-na-conversa";
 import { LEITURA_FRESCA_MS, type ParcelaDoEspelho } from "./inadimplencia";
 
 const AGORA = new Date("2026-09-12T15:00:00Z");
@@ -145,6 +145,18 @@ describe("leituraAindaFresca — a resposta envelhece na tela", () => {
     expect(leituraAindaFresca({ leituraFresca: false, atualizadoEm: LISTADAS_EM }, AGORA)).toBe(false);
     expect(leituraAindaFresca({ leituraFresca: true, atualizadoEm: null }, AGORA)).toBe(false);
     expect(leituraAindaFresca({ leituraFresca: true, atualizadoEm: "lixo" }, AGORA)).toBe(false);
+  });
+});
+
+describe("motivoDaNeutralizacao — a régua ÚNICA do recorte e da dica do painel", () => {
+  it("sem resposta → sem_resposta; desconectado → desconectado; sem listagem ou sem o ciclo inteiro → sincronizando; senão null", () => {
+    expect(motivoDaNeutralizacao(null)).toBe("sem_resposta");
+    expect(motivoDaNeutralizacao(lerRespostaDoResumo(corpo({}, { conectado: false })))).toBe("desconectado");
+    expect(motivoDaNeutralizacao(lerRespostaDoResumo(corpo({}, { atualizadoEm: null })))).toBe("sincronizando");
+    expect(motivoDaNeutralizacao(lerRespostaDoResumo(corpo({}, { cicloCompleto: false })))).toBe("sincronizando");
+    expect(motivoDaNeutralizacao(lerRespostaDoResumo(corpo({})))).toBeNull();
+    // leitura ANTIGA não é motivo: o recorte vale, e a tela diz de quando é
+    expect(motivoDaNeutralizacao(lerRespostaDoResumo(corpo({}, { leituraFresca: false })))).toBeNull();
   });
 });
 

@@ -68,7 +68,7 @@ import { NovaConversaDialog } from "@/components/inbox/nova-conversa-dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useBuscaEmMensagens } from "@/hooks/use-busca-em-mensagens";
 import { useSinalDeExecucoes } from "@/hooks/use-sinal-de-execucoes";
-import { dividasPorContato, idsInadimplentes, leituraAindaFresca, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
+import { dividasPorContato, idsInadimplentes, leituraAindaFresca, motivoDaNeutralizacao, type RespostaDoResumo } from "@/lib/asaas/aviso-na-conversa";
 import { dinheiro, type ResumoDeDivida } from "@/lib/asaas/inadimplencia";
 import { useChannels } from "@/hooks/use-channels";
 import { useAuth } from "@/hooks/use-auth";
@@ -939,10 +939,10 @@ export function ConversationList({
           etapasConfiaveis={etapasStatus === "ok"}
           funis={funis}
           temGrupos={temGrupos}
-          // O interruptor "Inadimplentes" só é OFERECIDO com o Asaas
-          // conectado (ou já ligado por uma visão salva, para dar como
-          // desligar). Sem conexão ele não recortaria nada.
-          asaasConectado={inadimplencia ? inadimplencia.conectado : null}
+          // O interruptor "Inadimplentes" é oferecido com o Asaas conectado
+          // (ou já ligado por uma visão salva, para dar como desligar), e a
+          // dica de "sem efeito" sai da MESMA régua do recorte.
+          asaasNeutralizado={motivoDaNeutralizacao(inadimplencia)}
           // Pelo RELÓGIO, não pelo `leituraFresca` da resposta: ela envelhece
           // na tela (recarga que falha retém a anterior) — ver
           // `leituraAindaFresca`.
@@ -951,10 +951,7 @@ export function ConversationList({
               ? inadimplencia.atualizadoEm
               : null
           }
-          asaasSemListagem={
-            inadimplencia?.conectado === true &&
-            (inadimplencia.atualizadoEm === null || !inadimplencia.cicloCompleto)
-          }
+
           visoes={
             <VisoesSalvas
               salvos={filtrosSalvos}

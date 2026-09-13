@@ -3,7 +3,7 @@
 // ============================================================
 // Aba "Cobranças" do painel da conversa E da ficha de Contatos (Fase 1b do
 // plano do Asaas): os clientes do Asaas ligados a este contato e as parcelas
-// deles — vencidas, em conferência, a vencer, regularizadas, estornadas.
+// deles — vencidas, em conferência, pendentes, regularizadas, estornadas.
 //
 // Os dados chegam por props (hook `useCobrancasDoContato`, chamado no TOPO
 // do painel como as outras buscas — a etiqueta da aba precisa do número
@@ -11,8 +11,14 @@
 // relógio da tela.
 //
 // ⚠️ Três estados que NÃO podem virar "em dia": carregando (spinner),
-// falhou (aviso + tentar de novo) e Asaas desconectado (aviso). Só com a
-// resposta em mão e zero vencida a aba diz "nenhuma parcela vencida".
+// falhou (aviso + tentar de novo) e Asaas desconectado (aviso). E "nenhuma
+// parcela vencida" só sai com leitura FRESCA, o ciclo da listagem vigente
+// terminado e nenhuma parcela em conferência — senão a aba diz que não sabe.
+//
+// ⚠️ `LinhaDaParcela` e `SecaoDeParcelas` moram FORA do componente: definidas
+// dentro, o React as trataria como tipos novos a cada render e remontaria
+// as `<li>` — o botão "Copiar link" recém-clicado seria destruído e o foco
+// cairia no `<body>` (revisão independente do PR #203).
 // ============================================================
 
 import { useState } from "react";
@@ -47,6 +53,79 @@ function quandoFoi(iso: string): string | null {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return null;
   return d.toLocaleString(undefined, { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+type T = ReturnType<typeof useTranslations<"Inbox.cobrancas">>;
+
+function LinhaDaParcela({ p, devida, agora, copiada, onCopiar, t }: { p: ParcelaDoEspelho; devida: boolean; agora: Date; copiada: boolean; onCopiar: (p: ParcelaDoEspelho) => void; t: T }) {
+  const dias = devida ? diasDeAtraso(p.vencimento, agora) : null;
+  const classe = classificar(p.status, p.deleted);
+  const atualizado = valorAtualizado(p);
+  return (
+    <li className="border-border bg-muted/40 rounded-md border px-2.5 py-2 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-foreground truncate font-medium">
+            {rotuloDaParcela(p)}
+            {classe === "negativada" && (
+              <span className="ml-1 rounded-full bg-red-500/15 px-1.5 py-px text-[10px] font-semibold uppercase text-red-700 dark:text-red-300">{t("negativada")}</span>
+            )}
+          </p>
+          <p className="text-muted-foreground">
+            {t("vencimento", { dia: diaPorExtenso(p.vencimento) })}
+            {devida && dias !== null && (
+              <>
+                {" · "}
+                <span className={dias >= 0 ? "text-red-700 dark:text-red-300" : undefined}>{dias >= 0 ? t("diasDeAtraso", { dias }) : t("prorrogada")}</span>
+              </>
+            )}
+            {classe === "paga" && p.pago_em && <span> · {t("pagaEm", { dia: diaPorExtenso(p.pago_em.slice(0, 10)) })}</span>}
+          </p>
+        </div>
+        <div className="shrink-0 text-right">
+          <p className={cn("font-semibold", devida ? "text-red-700 dark:text-red-300" : "text-foreground")}>{dinheiro(p.valor)}</p>
+          {devida && atualizado > p.valor && <p className="text-muted-foreground text-[11px]">{t("valorAtualizado", { valor: dinheiro(atualizado) })}</p>}
+        </div>
+      </div>
+      {devida && (p.link_boleto || p.link_fatura) && (
+        <p className="mt-1 flex flex-wrap gap-2">
+          {/* O link da FATURA (mostra o valor atualizado e todas as formas
+              de pagamento), para colar na conversa. Boleto só na falta. */}
+          <button type="button" onClick={() => onCopiar(p)} className="text-primary inline-flex items-center gap-0.5 hover:underline">
+            {copiada ? <Check className="h-3 w-3" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
+            {copiada ? t("linkCopiado") : t("copiarLink")}
+          </button>
+          {p.link_boleto && (
+            <a href={p.link_boleto} target="_blank" rel="noopener noreferrer" className="text-primary inline-flex items-center gap-0.5 hover:underline">
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              {t("boleto")}
+            </a>
+          )}
+          {p.link_fatura && (
+            <a href={p.link_fatura} target="_blank" rel="noopener noreferrer" className="text-primary inline-flex items-center gap-0.5 hover:underline">
+              <ExternalLink className="h-3 w-3" aria-hidden="true" />
+              {t("fatura")}
+            </a>
+          )}
+        </p>
+      )}
+    </li>
+  );
+}
+
+function SecaoDeParcelas({ titulo, dica, parcelas, devida, agora, copiada, onCopiar, t }: { titulo: string; dica?: string; parcelas: ParcelaDoEspelho[]; devida: boolean; agora: Date; copiada: string | null; onCopiar: (p: ParcelaDoEspelho) => void; t: T }) {
+  if (parcelas.length === 0) return null;
+  return (
+    <div>
+      <TituloDeSecao className="mb-1.5">{titulo}</TituloDeSecao>
+      {dica && <p className="text-muted-foreground/70 mb-1.5 px-1 text-[11px]">{dica}</p>}
+      <ul className="space-y-1.5">
+        {parcelas.map((p) => (
+          <LinhaDaParcela key={p.id} p={p} devida={devida} agora={agora} copiada={copiada === p.id} onCopiar={onCopiar} t={t} />
+        ))}
+      </ul>
+    </div>
+  );
 }
 
 export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobrancasProps) {
@@ -127,11 +206,12 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
   }
 
   if (dados.clientes.length === 0) {
-    // ⚠️ Sem listagem completa (`atualizadoEm` nulo: recém-conectado, a
-    // primeira sincronização no ar ou falhada) o espelho ainda não tem os
-    // clientes — "nenhum cliente ligado" seria afirmação sobre o que não se
-    // sabe (Codex, PR #203, 4ª rodada). O vazio de verdade é o da listagem
-    // completa que não achou vínculo.
+    // ⚠️ Sem o ciclo da listagem vigente terminado (`atualizadoEm` nulo:
+    // recém-conectado, a primeira sincronização no ar ou falhada; ou
+    // `cicloCompleto` falso: o vínculo desta listagem ainda por rodar) o
+    // espelho ainda não tem os clientes — "nenhum cliente ligado" seria
+    // afirmação sobre o que não se sabe (Codex, PR #203). O vazio de verdade
+    // é o do ciclo inteiro que não achou vínculo.
     const semListagem = dados.atualizadoEm === null || !dados.cicloCompleto;
     return (
       <div className="py-6 text-center">
@@ -152,83 +232,7 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
   // Pelo relógio da tela, não pelo booleano da resposta: a aba fica aberta
   // e a resposta envelhece — ver `leituraAindaFresca`.
   const fresca = leituraAindaFresca(dados, agora);
-
-  function Linha({ p, devida }: { p: ParcelaDoEspelho; devida: boolean }) {
-    const dias = devida ? diasDeAtraso(p.vencimento, agora) : null;
-    const classe = classificar(p.status, p.deleted);
-    const atualizado = valorAtualizado(p);
-    return (
-      <li className="border-border bg-muted/40 rounded-md border px-2.5 py-2 text-xs">
-        <div className="flex items-start justify-between gap-2">
-          <div className="min-w-0 flex-1">
-            <p className="text-foreground truncate font-medium">
-              {rotuloDaParcela(p)}
-              {classe === "negativada" && (
-                <span className="ml-1 rounded-full bg-red-500/15 px-1.5 py-px text-[10px] font-semibold uppercase text-red-700 dark:text-red-300">{t("negativada")}</span>
-              )}
-            </p>
-            <p className="text-muted-foreground">
-              {t("vencimento", { dia: diaPorExtenso(p.vencimento) })}
-              {devida && dias !== null && (
-                <>
-                  {" · "}
-                  <span className={dias >= 0 ? "text-red-700 dark:text-red-300" : undefined}>
-                    {dias >= 0 ? t("diasDeAtraso", { dias }) : t("prorrogada")}
-                  </span>
-                </>
-              )}
-              {classe === "paga" && p.pago_em && <span> · {t("pagaEm", { dia: diaPorExtenso(p.pago_em.slice(0, 10)) })}</span>}
-            </p>
-          </div>
-          <div className="shrink-0 text-right">
-            <p className={cn("font-semibold", devida ? "text-red-700 dark:text-red-300" : "text-foreground")}>{dinheiro(p.valor)}</p>
-            {devida && atualizado > p.valor && <p className="text-muted-foreground text-[11px]">{t("valorAtualizado", { valor: dinheiro(atualizado) })}</p>}
-          </div>
-        </div>
-        {devida && (p.link_boleto || p.link_fatura) && (
-          <p className="mt-1 flex flex-wrap gap-2">
-            {/* O link da FATURA (mostra o valor atualizado e todas as formas
-                de pagamento), para colar na conversa. Boleto só na falta. */}
-            <button
-              type="button"
-              onClick={() => void copiarLink(p)}
-              className="text-primary inline-flex items-center gap-0.5 hover:underline"
-            >
-              {copiada === p.id ? <Check className="h-3 w-3" aria-hidden="true" /> : <Copy className="h-3 w-3" aria-hidden="true" />}
-              {copiada === p.id ? t("linkCopiado") : t("copiarLink")}
-            </button>
-            {p.link_boleto && (
-              <a href={p.link_boleto} target="_blank" rel="noopener noreferrer" className="text-primary inline-flex items-center gap-0.5 hover:underline">
-                <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                {t("boleto")}
-              </a>
-            )}
-            {p.link_fatura && (
-              <a href={p.link_fatura} target="_blank" rel="noopener noreferrer" className="text-primary inline-flex items-center gap-0.5 hover:underline">
-                <ExternalLink className="h-3 w-3" aria-hidden="true" />
-                {t("fatura")}
-              </a>
-            )}
-          </p>
-        )}
-      </li>
-    );
-  }
-
-  function Secao({ titulo, dica, parcelas, devida }: { titulo: string; dica?: string; parcelas: ParcelaDoEspelho[]; devida: boolean }) {
-    if (parcelas.length === 0) return null;
-    return (
-      <div>
-        <TituloDeSecao className="mb-1.5">{titulo}</TituloDeSecao>
-        {dica && <p className="text-muted-foreground/70 mb-1.5 px-1 text-[11px]">{dica}</p>}
-        <ul className="space-y-1.5">
-          {parcelas.map((p) => (
-            <Linha key={p.id} p={p} devida={devida} />
-          ))}
-        </ul>
-      </div>
-    );
-  }
+  const secao = { agora, copiada, onCopiar: (p: ParcelaDoEspelho) => void copiarLink(p), t };
 
   return (
     <div className="space-y-4">
@@ -262,18 +266,16 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
         </ul>
       </div>
 
-      {/* ⚠️ "Nenhuma parcela vencida" só com leitura FRESCA e sem parcela
-          em conferência: sobre o espelho parado (ou antes da primeira
-          listagem) seria afirmar "em dia" a partir de dado velho — e o
-          atendente repetiria ao cliente; e acima de uma lista de vencidas
-          "em conferência" seria contradição na mesma tela (Codex e revisão
-          do PR #203). Sem frescura, a aba diz que não sabe. */}
+      {/* ⚠️ "Nenhuma parcela vencida" só com o ciclo da listagem vigente
+          terminado, leitura FRESCA e sem parcela em conferência: sobre o
+          espelho parado (ou no meio de um ciclo) seria afirmar "em dia" a
+          partir de dado velho — e o atendente repetiria ao cliente; e acima
+          de uma lista de vencidas "em conferência" seria contradição na mesma
+          tela (Codex e revisão do PR #203). Sem isso, a aba diz que não sabe. */}
       {divida.vencidas.length === 0 ? (
         <p className={cn("px-1 text-sm", fresca && dados.cicloCompleto && divida.emConferencia.length === 0 ? "text-muted-foreground" : "text-amber-700 dark:text-amber-300")}>
           {!dados.cicloCompleto
-            ? // o ciclo da listagem vigente ainda não terminou: outro cliente
-              // do mesmo documento pode estar por ligar a este contato
-              t("semListagem")
+            ? t("semListagem")
             : !fresca
               ? quando
                 ? t("semLeituraRecente", { quando })
@@ -284,7 +286,7 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
         </p>
       ) : (
         <div>
-          <Secao titulo={t("vencidas")} parcelas={divida.vencidas} devida />
+          <SecaoDeParcelas titulo={t("vencidas")} parcelas={divida.vencidas} devida {...secao} />
           <div className="mt-2 px-1 text-xs">
             <p className="font-semibold text-red-700 dark:text-red-300">{t("totalVencido", { valor: dinheiro(divida.total) })}</p>
             {divida.totalAtualizado > divida.total && <p className="text-muted-foreground">{t("totalAtualizado", { valor: dinheiro(divida.totalAtualizado) })}</p>}
@@ -292,10 +294,10 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
         </div>
       )}
 
-      <Secao titulo={t("emConferencia")} dica={t("emConferenciaDica")} parcelas={divida.emConferencia} devida />
-      <Secao titulo={t("aVencer")} parcelas={aVencer} devida={false} />
-      <Secao titulo={t("regularizadas", { dias: REGULARIZADAS_DIAS })} parcelas={regularizadas} devida={false} />
-      <Secao titulo={t("estornadas")} parcelas={estornadas} devida={false} />
+      <SecaoDeParcelas titulo={t("emConferencia")} dica={t("emConferenciaDica")} parcelas={divida.emConferencia} devida {...secao} />
+      <SecaoDeParcelas titulo={t("aVencer")} parcelas={aVencer} devida={false} {...secao} />
+      <SecaoDeParcelas titulo={t("regularizadas", { dias: REGULARIZADAS_DIAS })} parcelas={regularizadas} devida={false} {...secao} />
+      <SecaoDeParcelas titulo={t("estornadas")} parcelas={estornadas} devida={false} {...secao} />
 
       {quando && (
         <p className={cn("px-1 text-[11px]", fresca ? "text-muted-foreground/70" : "text-amber-700 dark:text-amber-300")}>

@@ -556,7 +556,7 @@
       "vencidas": "Past due",
       "emConferencia": "Being checked",
       "emConferenciaDica": "Did not come back in the last Asaas listing — they may have been paid. The next sync confirms.",
-      "aVencer": "Pending on Asaas (upcoming)",
+      "aVencer": "Pending on Asaas",
       "regularizadas": "Settled in the last {dias} days",
       "estornadas": "Refunded or disputed",
       "emDia": "No past-due instalments.",

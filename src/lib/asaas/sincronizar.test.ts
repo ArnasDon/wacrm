@@ -134,7 +134,8 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
 
     const config = estado.tabelas.cb_asaas_config[0];
     expect(config).toMatchObject({ status: "conectado", last_error: null, last_sync_at: AGORA.toISOString(), vencidas_listadas_em: AGORA.toISOString(), last_full_sync_at: AGORA.toISOString() });
-    // nada adiado: o VÍNCULO da listagem vigente terminou inteiro (996)
+    // o VÍNCULO da listagem vigente rodou (996): o marcador fecha a janela
+    // entre o carimbo da listagem (passo 4) e o fim do ciclo
     expect(config.vinculo_completo_em).toBe(AGORA.toISOString());
     // a TENTATIVA é o batimento do cadeado durante o ciclo, e volta ao
     // início dele no sucesso
@@ -147,12 +148,13 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
     const r = await rodar(estado, respostas, { tetoDeFichas: 0 }).resultado;
     // A e B têm telefone e nenhuma ficha: as duas criações ficam para o ciclo seguinte
     expect(r).toMatchObject({ ok: true, fichasCriadas: 0, adiadas: 2 });
-    // ⚠️ o ciclo terminou (`last_sync_at` avança — o cartão diz que rodou), mas
-    // ADIOU fichas: o marcador do vínculo NÃO avança, e a tela não afirma
-    // "ninguém deve" sobre o mapa parcial (Codex, PR #203, 7ª rodada)
+    // ⚠️ ficha ADIADA não segura o marcador do vínculo (996): o laço do
+    // `ligar` terminou, e cliente sem ficha não tem conversa a esconder —
+    // segurá-lo neutralizava o filtro da conta inteira durante uma
+    // importação (revisão independente do PR #203, revendo a 7ª rodada)
     const config = estado.tabelas.cb_asaas_config[0];
     expect(config.last_sync_at).toBe(AGORA.toISOString());
-    expect(config.vinculo_completo_em).toBeNull();
+    expect(config.vinculo_completo_em).toBe(AGORA.toISOString());
     expect(estado.tabelas.contacts).toHaveLength(0);
     expect(FICHAS_POR_CICLO).toBeGreaterThan(0);
   });
@@ -430,6 +432,10 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(r).toMatchObject({ ok: true, cobrancasGravadas: 0 });
     expect(estado.tabelas.cb_asaas_cobrancas).toHaveLength(0);
     expect(estado.tabelas.cb_asaas_config[0].vencidas_listadas_em).toBe("2026-09-14T06:00:00Z");
+    // o marcador do vínculo avança (o passo 7 rodou), a listagem NÃO: quem
+    // cobre a fresta do cliente não lido é a frescura da listagem velha, e
+    // `cicloCompleto` segue verdadeiro para a listagem que existe
+    expect(estado.tabelas.cb_asaas_config[0].vinculo_completo_em).toBe(AGORA.toISOString());
     // com prazo, o cliente é lido, a cobrança entra e a listagem é carimbada
     const estado2 = estadoInicial({}, { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" });
     const r2 = await rodar(estado2, respostas).resultado;

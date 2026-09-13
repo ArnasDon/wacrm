@@ -88,16 +88,21 @@ export async function lerConfigDoEspelho(admin: SupabaseClient, accountId: strin
 }
 
 /**
- * Puro: o VÍNCULO da listagem ATUAL das vencidas terminou inteiro?
+ * Puro: o VÍNCULO da listagem ATUAL das vencidas já rodou?
  *
  * ⚠️ `vencidas_listadas_em` é carimbado no passo 4 do ciclo, ANTES da
  * reconciliação e do vínculo (passo 7). Entre os dois o mapa contato → dívida
  * está PARCIAL, e "ninguém deve" seria lacuna, não resposta. "Algum ciclo já
- * terminou" (`last_sync_at`) não basta duas vezes: a janela se repete a cada
- * ciclo, e o ciclo TERMINA com sucesso mesmo tendo ADIADO a criação de fichas
- * (teto por ciclo, prazo). Por isso o marcador é `vinculo_completo_em` (996),
- * carimbado no passo 8 só quando o passo 7 não adiou nada — completo quando
- * ele é da listagem vigente ou posterior (Codex, PR #203, 5ª a 7ª rodadas).
+ * terminou" não basta: a janela se repete a cada ciclo. O marcador é
+ * `vinculo_completo_em` (996), carimbado no passo 8 — completo quando ele é
+ * da listagem vigente ou posterior (Codex, PR #203, 5ª e 6ª rodadas).
+ *
+ * ⚠️ O que ele NÃO afirma: (a) que a listagem vigente está inteira — cliente
+ * novo que o prazo não deixou ler fica de fora até o ciclo seguinte, e quem
+ * cobre essa fresta é a FRESCURA (a listagem não é carimbada nesse caso);
+ * (b) que toda ficha da D2 já foi criada — a criação adiada pelo teto/prazo
+ * não entra, porque cliente sem ficha não tem conversa a esconder
+ * (revisão independente do PR #203).
  */
 export function cicloCompleto(config: Pick<ConfigDoEspelho, "vinculo_completo_em" | "vencidas_listadas_em"> | null): boolean {
   if (!config?.vinculo_completo_em || !config.vencidas_listadas_em) return false;

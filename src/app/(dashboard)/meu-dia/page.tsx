@@ -24,8 +24,8 @@
 // entrada, lida do navegador — a mesma âncora da porta.
 // ============================================================
 
-import { Suspense, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { Suspense, useEffect, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ListTodo, MessageCircle } from 'lucide-react';
 
@@ -71,19 +71,35 @@ interface Pedido {
  * é o mesmo da janela padrão de quem nunca confirmou, e sem ele um `desde=0`
  * mandaria a consulta varrer a conta inteira.
  */
-function janelaHerdada(bruto: string | null, agoraMs: number): number | null {
+interface JanelaHerdada {
+  desdeMs: number;
+  /** A janela do cartão era a confirmação anterior, ou o recuo de 24 h? */
+  daConfirmacao: boolean;
+}
+
+function janelaHerdada(
+  bruto: string | null,
+  conf: string | null,
+  agoraMs: number
+): JanelaHerdada | null {
   if (!bruto) return null;
   const n = Number(bruto);
   if (!Number.isInteger(n) || n <= 0) return null;
   if (n > agoraMs) return null;
   if (agoraMs - n > TETO_DA_JANELA_MS) return null;
-  return n;
+  // Só o literal '1' confirma. Parâmetro ausente (link antigo, ou colado à
+  // mão) é tratado como as "últimas 24 h": afirmar uma entrada anterior que
+  // não houve é a mentira que este campo existe para evitar.
+  return { desdeMs: n, daConfirmacao: conf === '1' };
 }
 
 /** Trinta dias — o mesmo teto que `inicioDasNovidades` usa para não varrer a conta. */
 const TETO_DA_JANELA_MS = 30 * 24 * 60 * 60_000;
 
-function montarPedido(userId: string | null, herdada: number | null): Pedido {
+function montarPedido(
+  userId: string | null,
+  herdada: JanelaHerdada | null
+): Pedido {
   const agoraMs = Date.now();
   const inicio = inicioDasNovidades(
     userId ? lerRegistroDoNavegador(userId) : null,
@@ -92,7 +108,11 @@ function montarPedido(userId: string | null, herdada: number | null): Pedido {
   // A janela do cartão vence a do registro: ela é a que a pessoa viu, e o
   // registro já foi reescrito pelo "Continuar" que o botão disparou.
   if (herdada !== null) {
-    return { agoraMs, desdeMs: herdada, daConfirmacao: true };
+    return {
+      agoraMs,
+      desdeMs: herdada.desdeMs,
+      daConfirmacao: herdada.daConfirmacao,
+    };
   }
   return {
     agoraMs,
@@ -136,6 +156,7 @@ function MeuDiaPageInner() {
   const { user, accountId, accountStatus, profile, acesso } = useAuth();
   const userId = user?.id ?? null;
   const params = useSearchParams();
+  const router = useRouter();
 
   // O pedido nasce no inicializador e só muda no clique em "Atualizar" — o
   // relógio novo (`agoraMs`) é a chave que faz os hooks consultarem de novo.
@@ -143,8 +164,22 @@ function MeuDiaPageInner() {
   // partir do registro de verdade, senão a aba ficaria presa para sempre na
   // janela de uma entrada que já foi confirmada.
   const [pedido, setPedido] = useState<Pedido>(() =>
-    montarPedido(userId, janelaHerdada(params.get('desde'), Date.now()))
+    montarPedido(
+      userId,
+      janelaHerdada(params.get('desde'), params.get('conf'), Date.now())
+    )
   );
+
+  // ⚠️ O carimbo é consumido UMA vez: ele fica na barra de endereço, e um
+  // recarregamento duro — ou a volta pelo histórico — remontaria a página
+  // consumindo o MESMO carimbo velho, reclassificando como novo o que a
+  // pessoa já tratou, por até trinta dias (Codex, PR #202). Trocar só a
+  // query não remonta a rota (é o que o inbox faz com `?c=`), então o
+  // pedido já montado fica de pé.
+  useEffect(() => {
+    if (!params.has('desde') && !params.has('conf')) return;
+    router.replace('/meu-dia', { scroll: false });
+  }, [params, router]);
 
   // O shell já segura sessão e perfil; conta quebrada é narrada pelo
   // `AccountAccessAlert` acima desta página.

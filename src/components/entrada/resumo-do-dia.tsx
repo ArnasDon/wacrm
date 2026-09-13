@@ -146,7 +146,12 @@ export function ResumoDoDia({
   // #202). Levar `desde` preserva a janela que ESTE cartão mostrou.
   const abrirMeuDia = () => {
     onContinuar();
-    router.push(`/meu-dia?desde=${desdeMs}`);
+    // ⚠️ A PROVENIÊNCIA vai junto (`conf`), não só o carimbo. Sem ela, a aba
+    // tratava toda janela herdada como confirmação e escrevia "desde a sua
+    // última entrada" para quem nunca entrou neste aparelho — ali a janela é
+    // o recuo de 24 h, e o cartão diz isso (Codex, PR #202).
+    const conf = temConfirmacaoAnterior ? '1' : '0';
+    router.push(`/meu-dia?desde=${desdeMs}&conf=${conf}`);
   };
 
   return (

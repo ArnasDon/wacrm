@@ -15,7 +15,7 @@
 // Aba oculta não pede nada: o indicador só importa para quem está olhando.
 // ============================================================
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 
 import { createClient } from '@/lib/supabase/client';
 import type { CbChannelKind } from '@/lib/cb-channels/repo';
@@ -63,6 +63,8 @@ export function useChannelHealth(): SaudeDosCanais {
   const [channels, setChannels] = useState<ChannelHealth[]>([]);
   const [loading, setLoading] = useState(true);
   const [falhou, setFalhou] = useState(false);
+  /** Nome próprio do canal realtime desta instância — ver a nota no efeito. */
+  const instancia = useId();
   const falhasRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vivoRef = useRef(true);
@@ -141,10 +143,20 @@ export function useChannelHealth(): SaudeDosCanais {
   // Realtime: o webhook grava `cb_channels` e nós refazemos a sonda. Não
   // aplicamos o payload direto de propósito — ele traz `status` cru, e a cor
   // depende também do frescor, que só a rota sabe compor.
+  //
+  // ⚠️⚠️ O nome do canal leva o `useId()`, NUNCA um literal fixo. O
+  // supabase-js guarda os canais por NOME: com duas instâncias deste hook
+  // vivas ao mesmo tempo — o indicador do cabeçalho e a aba /meu-dia — a
+  // segunda reencontra o canal que a primeira já assinou e estoura
+  // "cannot add 'postgres_changes' callbacks for realtime:… after
+  // 'subscribe()'", derrubando a PÁGINA inteira para o error boundary.
+  // Medido no preview em 13/09/2026, na primeira abertura da aba; nenhum
+  // teste pega (não há render aqui), e o hook funcionou por meses porque só
+  // existia um consumidor. É o mesmo `useId()` de `use-reunioes.ts`.
   useEffect(() => {
     const supabase = createClient();
     const canal = supabase
-      .channel('cb-channels-health')
+      .channel(`cb-channels-health:${instancia}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: 'cb_channels' },
@@ -156,7 +168,7 @@ export function useChannelHealth(): SaudeDosCanais {
     return () => {
       void supabase.removeChannel(canal);
     };
-  }, [buscar]);
+  }, [buscar, instancia]);
 
   return { channels, loading, falhou, recarregar: buscar };
 }

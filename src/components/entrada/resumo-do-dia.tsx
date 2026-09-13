@@ -198,38 +198,49 @@ export function ResumoDoDia({
               ) : null
             }
           />
-          {/* Cada metade com o PRÓPRIO estado: a fila falhando não apaga o
-              "3 seus" que já carregou. */}
+          {/* ⚠️ As DUAS metades sempre aparecem, cada uma com o seu estado.
+              A versão anterior escolhia o bloco que estivesse pronto e
+              renderizava só ele: com as suas conversas falhando e a fila
+              pronta, a linha mostrava o número da fila como se fosse a
+              resposta inteira, sem nada dizendo que faltava metade (Codex,
+              PR #202). Aqui, "não carregou" ocupa o lugar da metade que
+              faltou — e a falha de uma não apaga o número da outra. */}
           <Linha
             rotulo={t('conversationsTitle')}
             estado={
-              resumo.conversas.status === 'pronto'
-                ? resumo.conversas
-                : resumo.fila
+              resumo.conversas.status === 'falhou' ||
+              resumo.fila.status === 'falhou'
+                ? FALHOU
+                : resumo.conversas.status === 'pronto' &&
+                    resumo.fila.status === 'pronto'
+                  ? PRONTO
+                  : CARREGANDO
             }
             valor={
-              resumo.conversas.status === 'pronto' ||
-              resumo.fila.status === 'pronto' ? (
+              resumo.conversas.status === 'carregando' &&
+              resumo.fila.status === 'carregando' ? null : (
                 <>
-                  {resumo.conversas.status === 'pronto' &&
-                    t(
-                      resumo.conversas.dados.truncadaEsperando
-                        ? 'waitingYoursAtLeast'
-                        : 'waitingYours',
-                      { count: resumo.conversas.dados.esperando.length }
-                    )}
-                  {resumo.conversas.status === 'pronto' &&
-                    resumo.fila.status === 'pronto' &&
-                    ' · '}
-                  {resumo.fila.status === 'pronto' &&
-                    t(
-                      resumo.fila.dados.truncadaNovas
-                        ? 'waitingQueueNewAtLeast'
-                        : 'waitingQueueNew',
-                      { count: resumo.fila.dados.novas.length }
-                    )}
+                  <Metade estado={resumo.conversas.status}>
+                    {resumo.conversas.status === 'pronto' &&
+                      t(
+                        resumo.conversas.dados.truncadaEsperando
+                          ? 'waitingYoursAtLeast'
+                          : 'waitingYours',
+                        { count: resumo.conversas.dados.esperando.length }
+                      )}
+                  </Metade>
+                  {' · '}
+                  <Metade estado={resumo.fila.status}>
+                    {resumo.fila.status === 'pronto' &&
+                      t(
+                        resumo.fila.dados.truncadaNovas
+                          ? 'waitingQueueNewAtLeast'
+                          : 'waitingQueueNew',
+                        { count: resumo.fila.dados.novas.length }
+                      )}
+                  </Metade>
                 </>
-              ) : null
+              )
             }
           />
         </dl>
@@ -272,6 +283,27 @@ export function ResumoDoDia({
         </div>
       </div>
     </div>
+  );
+}
+
+const CARREGANDO = { status: 'carregando' } as const;
+const FALHOU = { status: 'falhou' } as const;
+const PRONTO = { status: 'pronto' } as const;
+
+/** Uma das duas contas da linha de conversas, com o estado DELA. */
+function Metade({
+  estado,
+  children,
+}: {
+  estado: 'carregando' | 'falhou' | 'pronto';
+  children: React.ReactNode;
+}) {
+  const t = useTranslations('ResumoDoDia');
+  if (estado === 'pronto') return <>{children}</>;
+  return (
+    <span className={estado === 'falhou' ? 'text-destructive' : undefined}>
+      {estado === 'falhou' ? t('failedShort') : t('loadingShort')}
+    </span>
   );
 }
 

@@ -40,9 +40,29 @@ const POLL_MS = 30_000;
 /** Depois de uma falha, espaça — servidor fora do ar não melhora em 30s. */
 const BACKOFF_MAX_MS = 5 * 60_000;
 
-export function useChannelHealth(): { channels: ChannelHealth[]; loading: boolean } {
+export interface SaudeDosCanais {
+  channels: ChannelHealth[];
+  loading: boolean;
+  /**
+   * A última conferência não respondeu — erro de rede, 5xx, ou o
+   * `{ unavailable: true }` da janela pré-migration.
+   *
+   * ⚠️ Existe porque lista vazia aqui tem DOIS significados: "nenhuma
+   * conexão fora do ar" e "não consegui perguntar". Para o indicador do
+   * cabeçalho os dois dão no mesmo (ele some), e por anos isso bastou —
+   * mas o bloco "o que precisa ser corrigido" do Meu dia AFIRMA "tudo em
+   * ordem" a partir desse zero, e afirmar isso sobre uma sonda que falhou
+   * é o oposto do que aquele bloco existe para fazer (Codex, PR #202).
+   */
+  falhou: boolean;
+  /** Confere agora — o "Atualizar" da aba /meu-dia. */
+  recarregar: () => void;
+}
+
+export function useChannelHealth(): SaudeDosCanais {
   const [channels, setChannels] = useState<ChannelHealth[]>([]);
   const [loading, setLoading] = useState(true);
+  const [falhou, setFalhou] = useState(false);
   const falhasRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const vivoRef = useRef(true);
@@ -54,17 +74,24 @@ export function useChannelHealth(): { channels: ChannelHealth[]; loading: boolea
       const res = await fetch('/api/cb/channels/health', { cache: 'no-store' });
       if (!res.ok) {
         falhasRef.current++;
+        if (vivoRef.current) setFalhou(true);
         return;
       }
       const payload = await res.json();
       if (!vivoRef.current) return;
       falhasRef.current = 0;
+      // `unavailable` é 200 com lista vazia (tabela ou coluna ausente): o
+      // indicador some, e quem AFIRMA a partir do zero precisa saber que a
+      // pergunta não foi respondida.
+      setFalhou(payload.unavailable === true);
       setChannels((payload.channels ?? []) as ChannelHealth[]);
     } catch {
-      // Silêncio deliberado, igual ao `use-channels`: conta sem canais,
-      // deploy anterior à migration ou rede caindo devolvem lista vazia, e
-      // lista vazia esconde o indicador. Nenhuma tela quebra por isso.
+      // Silêncio deliberado para o INDICADOR, igual ao `use-channels`: conta
+      // sem canais, deploy anterior à migration ou rede caindo devolvem lista
+      // vazia, e lista vazia esconde o indicador. Nenhuma tela quebra por
+      // isso — mas o sinalizador sobe, para quem afirma a partir do zero.
       falhasRef.current++;
+      if (vivoRef.current) setFalhou(true);
     } finally {
       if (vivoRef.current) setLoading(false);
     }
@@ -123,7 +150,7 @@ export function useChannelHealth(): { channels: ChannelHealth[]; loading: boolea
         { event: '*', schema: 'public', table: 'cb_channels' },
         () => {
           if (document.visibilityState === 'visible') void buscar();
-        },
+        }
       )
       .subscribe();
     return () => {
@@ -131,5 +158,5 @@ export function useChannelHealth(): { channels: ChannelHealth[]; loading: boolea
     };
   }, [buscar]);
 
-  return { channels, loading };
+  return { channels, loading, falhou, recarregar: buscar };
 }

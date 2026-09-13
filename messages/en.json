@@ -4010,8 +4010,7 @@
     "openPipelines": "Open Pipelines",
     "agendaTitle": "Agenda and meetings",
     "agendaNoneYours": "No meetings of yours today or tomorrow",
-    "bookingsTitle": "Upcoming bookings",
-    "bookingsFailed": "Couldn't read the bookings.",
+    "agendaOnlyCrm": "CRM agenda only. Calendly bookings are left out: the integration doesn't record cancellations or reschedules, so the list would show meetings that won't happen.",
     "openAgenda": "Open Agenda"
   },
   "DashboardShell": {

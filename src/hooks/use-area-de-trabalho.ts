@@ -103,19 +103,14 @@ export interface Negocios {
   truncada: boolean;
 }
 
-export interface Agendamento {
-  id: string;
-  nome: string | null;
-  inicio: string | null;
-  link: string | null;
-  contact_id: string | null;
-}
-
 export interface Agenda {
   /**
-   * Suas reuniões de hoje e amanhã, da agenda do CRM. Os agendamentos do
-   * Calendly chegam pelo bloco `integracoes` (tabela fechada ao navegador)
-   * e a tela junta os dois.
+   * Suas reuniões de hoje e amanhã, da agenda do CRM.
+   *
+   * ⚠️ SÓ `cb_meetings`. Os agendamentos do Calendly não entram: aquela
+   * tabela guarda só `invitee.created`, então uma reunião cancelada — ou a
+   * ponta velha de um reagendamento — continua lá com hora futura, e a
+   * tela afirmaria compromisso que não existe.
    */
   reunioes: Meeting[];
 }
@@ -123,7 +118,6 @@ export interface Agenda {
 export interface Integracoes {
   calendly: number;
   webhooks: number;
-  proximosAgendamentos: Agendamento[];
 }
 
 export interface AreaDeTrabalho {
@@ -270,12 +264,10 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
       if (!r.ok) throw new Error(`pendencias: HTTP ${r.status}`);
       const json = (await r.json()) as {
         naoProcessadas?: { calendly?: number; webhooks?: number };
-        proximosAgendamentos?: Agendamento[];
       };
       return {
         calendly: json.naoProcessadas?.calendly ?? 0,
         webhooks: json.naoProcessadas?.webhooks ?? 0,
-        proximosAgendamentos: json.proximosAgendamentos ?? [],
       };
     });
 

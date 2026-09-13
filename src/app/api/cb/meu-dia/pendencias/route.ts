@@ -10,9 +10,16 @@
 // ⚠️ Qualquer MEMBRO, não `admin` — ao contrário das rotas de LOG dessas
 // mesmas tabelas (`/api/cb/calendly/eventos`, `/api/cb/webhooks/[id]/eventos`),
 // que são de admin porque devolvem o registro inteiro: telefone, respostas
-// do formulário, o payload achatado do Typebot. Aqui saem CONTAGENS e, dos
-// agendamentos, só o que o atendente já vê na ficha do cliente (nome e
-// horário). Quem precisa consertar a entrega é quem está atendendo.
+// do formulário, o payload achatado do Typebot. Daqui saem só CONTAGENS.
+// Quem precisa consertar a entrega é quem está atendendo.
+//
+// ⚠️⚠️ NÃO devolve "próximos agendamentos", e a primeira versão devolvia.
+// A integração do Calendly (977) grava SÓ `invitee.created`: cancelamento é
+// ignorado, e reagendamento INSERE uma linha nova sem invalidar a antiga
+// (a URI do convidado muda). Então uma consulta por `inicio >= agora`
+// devolve reunião cancelada e as duas pontas de um reagendamento como se
+// ambas fossem acontecer — a tela afirmaria compromisso que não existe
+// (Codex, PR #202). Volta quando a 977 tratar `invitee.canceled`.
 //
 // ⚠️ Erro vira 500, nunca `{}` com zeros: um objeto vazio com 200 faria a
 // aba dizer "tudo em ordem" sobre uma pergunta que não foi respondida — a
@@ -37,9 +44,6 @@ const LIMITE = { limit: 30, windowMs: 60_000 };
  */
 const NAO_PROCESSADAS = ['recebido', 'sem_contato', 'sem_automacao', 'falhou'];
 
-/** Quantos agendamentos futuros a aba mostra. */
-const PROXIMOS = 5;
-
 export async function GET() {
   try {
     const ctx = await getCurrentAccount();
@@ -47,9 +51,8 @@ export async function GET() {
     if (!limite.success) return rateLimitResponse(limite);
 
     const db = supabaseAdmin();
-    const agoraISO = new Date().toISOString();
 
-    const [calendly, webhooks, agendamentos] = await Promise.all([
+    const [calendly, webhooks] = await Promise.all([
       db
         .from('cb_calendly_eventos')
         .select('id', { count: 'exact', head: true })
@@ -64,21 +67,12 @@ export async function GET() {
         .select('id', { count: 'exact', head: true })
         .eq('account_id', ctx.accountId)
         .in('resultado', NAO_PROCESSADAS),
-      db
-        .from('cb_calendly_eventos')
-        .select('id, nome, inicio, link, contact_id')
-        .eq('account_id', ctx.accountId)
-        .not('inicio', 'is', null)
-        .gte('inicio', agoraISO)
-        .order('inicio', { ascending: true })
-        .limit(PROXIMOS),
     ]);
 
-    if (calendly.error || webhooks.error || agendamentos.error) {
+    if (calendly.error || webhooks.error) {
       console.error('[cb/meu-dia/pendencias]', {
         calendly: calendly.error?.message,
         webhooks: webhooks.error?.message,
-        agendamentos: agendamentos.error?.message,
       });
       return NextResponse.json({ error: 'db_error' }, { status: 500 });
     }
@@ -88,7 +82,6 @@ export async function GET() {
         calendly: calendly.count ?? 0,
         webhooks: webhooks.count ?? 0,
       },
-      proximosAgendamentos: agendamentos.data ?? [],
     });
   } catch (err) {
     return toErrorResponse(err);

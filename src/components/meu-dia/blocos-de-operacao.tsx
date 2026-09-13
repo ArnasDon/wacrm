@@ -26,7 +26,6 @@ import {
 import type { Bloco } from '@/hooks/use-resumo-do-dia';
 import type {
   Agenda as DadosDaAgenda,
-  Agendamento,
   Correcoes,
   Integracoes,
   Negocios as DadosDeNegocios,
@@ -59,15 +58,19 @@ function fonteDe<T>(
 export function BlocoDeCorrecoes({
   correcoes,
   integracoes,
-  conexoesForaDoAr,
+  conexoes,
   agendadorParado,
   veAgendadas,
   veConfiguracoes,
 }: {
   correcoes: Bloco<Correcoes>;
   integracoes: Bloco<Integracoes>;
-  /** `null` enquanto a sonda das conexões não respondeu. */
-  conexoesForaDoAr: number | null;
+  /**
+   * ⚠️ Estado, não número: `0` e "não consegui perguntar" são coisas
+   * diferentes, e somá-las faz este bloco dizer "tudo em ordem" sobre uma
+   * sonda que falhou (Codex, PR #202).
+   */
+  conexoes: EstadoDaFonte;
   /** `null` enquanto a saúde do agendador não respondeu. */
   agendadorParado: boolean | null;
   veAgendadas: boolean;
@@ -83,10 +86,7 @@ export function BlocoDeCorrecoes({
             status: 'pronto',
             contagem: { quantidade: agendadorParado ? 1 : 0 },
           },
-    conexoes:
-      conexoesForaDoAr === null
-        ? { status: 'carregando' }
-        : { status: 'pronto', contagem: { quantidade: conexoesForaDoAr } },
+    conexoes,
     agendadasFalharam: fonteDe(correcoes, (c) => c.agendadasFalharam),
     entregaIncerta: fonteDe(correcoes, (c) => c.entregaIncerta),
     automacoesFalharam: fonteDe(correcoes, (c) => c.automacoesFalharam),
@@ -386,39 +386,28 @@ export function BlocoDeNegocios({
 
 export function BlocoDaAgenda({
   bloco,
-  integracoes,
   agoraMs,
   veAgenda,
-  veContatos,
 }: {
   bloco: Bloco<DadosDaAgenda>;
-  integracoes: Bloco<Integracoes>;
   /** O instante do pedido — o relógio desta tela. */
   agoraMs: number;
   veAgenda: boolean;
-  veContatos: boolean;
 }) {
   const t = useTranslations('MeuDia');
-  const agendamentos: Agendamento[] =
-    integracoes.status === 'pronto'
-      ? integracoes.dados.proximosAgendamentos
-      : [];
   return (
     <section className="border-border bg-card rounded-xl border p-4 shadow-sm">
       <Cabecalho
         icone={<CalendarClock className="size-4" aria-hidden />}
         titulo={t('agendaTitle')}
-        direita={null}
+        direita={<De escopo="seu" />}
       />
       <div className="mt-2 space-y-3">
-        {/* A agenda do CRM — suas */}
         {bloco.status !== 'pronto' ? (
           <EstadoDoBlocoDaAba bloco={bloco} />
         ) : bloco.dados.reunioes.length === 0 ? (
           <p className="text-muted-foreground text-sm">
             {t('agendaNoneYours')}
-            {' · '}
-            <De escopo="seu" inline />
           </p>
         ) : (
           <ul className="space-y-1.5">
@@ -444,40 +433,14 @@ export function BlocoDaAgenda({
           </ul>
         )}
 
-        {/* Os agendamentos do Calendly — do escritório */}
-        {integracoes.status === 'falhou' ? (
-          <p className="text-destructive text-sm">{t('bookingsFailed')}</p>
-        ) : agendamentos.length > 0 ? (
-          <div>
-            <p className="text-muted-foreground text-xs font-medium">
-              {t('bookingsTitle')} · <De escopo="escritorio" inline />
-            </p>
-            <ul className="mt-1 space-y-1.5">
-              {agendamentos.map((a) => (
-                <li
-                  key={a.id}
-                  className="flex items-baseline justify-between gap-3 text-sm"
-                >
-                  {veContatos && a.contact_id ? (
-                    <Link
-                      href={`/contacts?contact=${encodeURIComponent(a.contact_id)}`}
-                      className="min-w-0 flex-1 truncate hover:underline"
-                    >
-                      {a.nome ?? t('unknownContact')}
-                    </Link>
-                  ) : (
-                    <span className="min-w-0 flex-1 truncate">
-                      {a.nome ?? t('unknownContact')}
-                    </span>
-                  )}
-                  <span className="text-muted-foreground shrink-0 text-xs">
-                    {quandoCurto(a.inicio, agoraMs)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
+        {/* ⚠️ Os agendamentos do Calendly NÃO aparecem aqui, e não é
+            esquecimento: a integração grava só `invitee.created` — o
+            cancelamento é ignorado e o reagendamento insere uma linha nova
+            sem invalidar a antiga. Listá-los afirmaria reunião que não vai
+            acontecer, e o que está fora do lugar não se conserta por uma
+            tela de resumo. As entradas do Calendly que precisam de gente
+            continuam no bloco "o que precisa ser corrigido". */}
+        <p className="text-muted-foreground text-xs">{t('agendaOnlyCrm')}</p>
 
         {veAgenda && (
           <LinkDoBloco

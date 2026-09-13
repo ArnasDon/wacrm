@@ -46,6 +46,7 @@ import { useAreaDeTrabalho } from '@/hooks/use-area-de-trabalho';
 import { useAuth } from '@/hooks/use-auth';
 import { useChannelHealth } from '@/hooks/use-channel-health';
 import { useResumoDoDia } from '@/hooks/use-resumo-do-dia';
+import type { EstadoDaFonte } from '@/lib/meu-dia/correcoes';
 import { canaisVisiveis } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
 import { podeVerTela } from '@/lib/perfis/visibilidade';
@@ -157,15 +158,32 @@ function AreaDeTrabalho({
     ctx: acesso,
     versao: pedido.agoraMs,
   });
-  const { channels, loading: conexoesCarregando } = useChannelHealth();
-  const { saude } = useAgendadorSaude();
+  const {
+    channels,
+    loading: conexoesCarregando,
+    falhou: conexoesFalharam,
+    recarregar: recarregarConexoes,
+  } = useChannelHealth();
+  const { saude, recarregar: recarregarAgendador } = useAgendadorSaude();
 
   // ⚠️ Só as conexões que o perfil enxerga: um perfil restrito ao
   // trabalhista não tem o que fazer com a conexão do bancário caída — e o
   // aviso que não é seu é o que ensina a ignorar o bloco.
-  const conexoesForaDoAr = conexoesCarregando
-    ? null
-    : canaisVisiveis(acesso, channels).filter((c) => c.tone === 'down').length;
+  //
+  // ⚠️ A sonda que FALHOU vira `falhou`, nunca zero: a lista vazia dela tem
+  // dois significados, e só um deles autoriza dizer "nada a corrigir".
+  const conexoes: EstadoDaFonte = conexoesCarregando
+    ? { status: 'carregando' }
+    : conexoesFalharam
+      ? { status: 'falhou' }
+      : {
+          status: 'pronto',
+          contagem: {
+            quantidade: canaisVisiveis(acesso, channels).filter(
+              (c) => c.tone === 'down'
+            ).length,
+          },
+        };
 
   const veTarefas = podeVerTela(acesso, 'tarefas');
   const veContatos = podeVerTela(acesso, 'contacts');
@@ -189,6 +207,18 @@ function AreaDeTrabalho({
       : hora < 18
         ? tResumo('greetingAfternoonPlain')
         : tResumo('greetingEveningPlain');
+
+  /**
+   * ⚠️ O "Atualizar" precisa alcançar as DUAS sondas de saúde, que têm laço
+   * próprio e não enxergam o `pedido`: sem isso, o operador conserta a
+   * conexão, clica em Atualizar e o bloco continua vermelho até o próximo
+   * tique — até cinco minutos no agendador (Codex, PR #202).
+   */
+  const atualizarTudo = () => {
+    onAtualizar();
+    recarregarConexoes();
+    recarregarAgendador();
+  };
 
   const carregando = [
     resumo.novidades,
@@ -225,7 +255,7 @@ function AreaDeTrabalho({
           )}
           <Button
             variant="outline"
-            onClick={onAtualizar}
+            onClick={atualizarTudo}
             disabled={carregando}
             aria-busy={carregando}
           >
@@ -301,7 +331,7 @@ function AreaDeTrabalho({
           <BlocoDeCorrecoes
             correcoes={area.correcoes}
             integracoes={area.integracoes}
-            conexoesForaDoAr={conexoesForaDoAr}
+            conexoes={conexoes}
             agendadorParado={saude === null ? null : agendadorEstaParado(saude)}
             veAgendadas={veAgendadas}
             veConfiguracoes={veConfiguracoes}
@@ -324,10 +354,8 @@ function AreaDeTrabalho({
         <div className="lg:col-span-3">
           <BlocoDaAgenda
             bloco={area.agenda}
-            integracoes={area.integracoes}
             agoraMs={pedido.agoraMs}
             veAgenda={veAgenda}
-            veContatos={veContatos}
           />
         </div>
       </div>

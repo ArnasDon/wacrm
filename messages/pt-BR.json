@@ -4010,8 +4010,7 @@
     "openPipelines": "Abrir Funis",
     "agendaTitle": "Agenda e reuniões",
     "agendaNoneYours": "Nenhuma reunião sua hoje ou amanhã",
-    "bookingsTitle": "Próximos agendamentos",
-    "bookingsFailed": "Não consegui ler os agendamentos.",
+    "agendaOnlyCrm": "Só a agenda do CRM. Os agendamentos do Calendly não entram aqui: a integração não registra cancelamento nem remarcação, então a lista mostraria reunião que não vai acontecer.",
     "openAgenda": "Abrir Agenda"
   },
   "DashboardShell": {

@@ -455,6 +455,30 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(estado.tabelas.cb_asaas_config[0]).toMatchObject({ sincronizando_desde: "outro-dono", status: "conectado", last_error: null });
   });
 
+  it("posse perdida DEPOIS do último batimento: o fechamento cercado casa zero linhas e o ciclo não diz ok", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [
+          { id: "l-n", account_id: CONTA, asaas_customer_id: "cus_N", nome: "Novo Cliente", cpf_cnpj: "7", celular: "5584999990010", contact_id: null, vinculo_origem: null, contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const respostas: RespostasDoAsaas = { listas: { [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: { "/customers/cus_N": clienteAsaas("cus_N", "Novo Cliente") } };
+    const admin = dubleDoSupabase(estado);
+    const original = admin.from.bind(admin);
+    let leituras = 0;
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      // a resolução do dono (a criação da ficha) vem DEPOIS do último batimento
+      // e ANTES do fechamento: é aí que a posse muda de mãos
+      if (t === "accounts" && ++leituras === 1) estado.tabelas.cb_asaas_config[0].sincronizando_desde = "outro-dono";
+      return original(t);
+    };
+    const r = await sincronizarAsaas(admin, CONTA, { agora: AGORA, cliente: () => dubleDoAsaas(respostas) });
+    expect(r).toEqual({ ok: false, codigo: "cadeado_perdido" });
+    expect(estado.tabelas.cb_asaas_config[0]).toMatchObject({ sincronizando_desde: "outro-dono", last_sync_at: null, last_error: null });
+  });
+
   it("o sucesso realinha a tentativa ao início do ciclo: o cartão não inventa uma 'última tentativa'", async () => {
     const estado = estadoInicial();
     const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };

@@ -3495,7 +3495,8 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   espelho de outro dono sem cerca — a exceção atravessa `listarTudo` pelo
   `aCadaPagina`. No SUCESSO a tentativa volta ao início do ciclo
   (`last_sync_attempt_at = vistoEm`), senão o cartão inventa uma "última
-  tentativa" a partir do último batimento. ⚠️ **`desconectarAsaas` TOMA o
+  tentativa" a partir do último batimento — e o fechamento confere o
+  ROWCOUNT do update cercado: zero linhas é `cadeado_perdido`, nunca `ok`. ⚠️ **`desconectarAsaas` TOMA o
   cadeado antes de apagar** (409 `em_curso` se um ciclo está no meio),
   renovando o batimento na MESMA escrita: o ciclo já tem o cliente HTTP na
   mão e continuaria gravando no espelho apagado — e misturaria as contas se

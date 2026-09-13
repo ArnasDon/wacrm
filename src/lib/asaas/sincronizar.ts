@@ -792,12 +792,17 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     // volta ao início do ciclo: os batimentos a avançaram, e um sucesso com
     // `last_sync_at` diferente de `last_sync_attempt_at` seria lido no cartão
     // como "houve outra tentativa depois" (Codex, PR #201, 7ª rodada).
-    const { error: erroFim } = await admin
+    const { data: fechado, error: erroFim } = await admin
       .from("cb_asaas_config")
       .update({ status: "conectado", last_sync_at: vistoEm, last_sync_attempt_at: vistoEm, last_error: null, sincronizando_desde: null, updated_at: vistoEm })
       .eq("account_id", accountId)
-      .eq("sincronizando_desde", vistoEm);
+      .eq("sincronizando_desde", vistoEm)
+      .select("account_id");
     if (erroFim) throw new Error(`fim do ciclo: ${erroFim.message}`);
+    // ⚠️ Zero linhas aqui = a posse se perdeu DEPOIS do último batimento (o
+    // vínculo e as fichas não batem a cada passo): o ciclo não pode dizer
+    // "ok" sobre um espelho que já é de outro dono (Codex, PR #201, 8ª rodada).
+    if (!fechado || fechado.length === 0) throw new SyncError("cadeado_perdido");
     return { ok: true, ...contagem };
   } catch (e) {
     const codigo = e instanceof AsaasError ? e.codigo : e instanceof SyncError ? e.codigo : "db_error";

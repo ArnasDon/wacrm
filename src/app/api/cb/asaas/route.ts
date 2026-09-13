@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { cartaoDoAsaas, type ConfigDoAsaas } from "@/lib/asaas/cartao";
 import { contarEspelho } from "@/lib/asaas/conexao";
 import { lerEspelho } from "@/lib/asaas/espelho";
+import { origemPublica, podeCriarDaqui, urlDoWebhook } from "@/lib/asaas/webhook";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
@@ -20,7 +21,7 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
  * e as colunas devolvidas são nomeadas uma a uma, nunca `select('*')`. O
  * CPF também não sai daqui (o resumo é só contagem).
  */
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const ctx = await requireRole("admin");
     const limit = checkRateLimit(`cb:asaas:status:${ctx.userId}`, RATE_LIMITS.adminAction);
@@ -29,12 +30,19 @@ export async function GET() {
     const admin = supabaseAdmin();
     const { data, error } = await admin
       .from("cb_asaas_config")
-      .select("chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error, created_at")
+      .select(
+        "chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error, created_at, webhook_token, webhook_state, webhook_erro, webhook_email, webhook_asaas_id, webhook_religado_em, webhook_conferido_em, last_event_at",
+      )
       .eq("account_id", ctx.accountId)
       .maybeSingle();
     if (error) return NextResponse.json({ error: "Não foi possível ler a integração." }, { status: 500 });
 
     const cartao = cartaoDoAsaas((data ?? null) as ConfigDoAsaas | null);
+    // A URL do webhook é só para conferência (o registro é feito pelo CRM);
+    // `podeCriarDaqui` diz se o botão "Ativar" funciona A PARTIR deste host.
+    const origem = origemPublica();
+    const webhookToken = typeof data?.webhook_token === "string" ? data.webhook_token : null;
+    const webhookUrl = origem && webhookToken ? urlDoWebhook(origem, webhookToken) : null;
     // O espelho pode existir sem config (desconectou sem apagar os dados):
     // a contagem entra na pergunta do "apagar" e no aviso de reconexão.
     const espelho = await lerEspelho(admin, ctx.accountId);
@@ -44,6 +52,9 @@ export async function GET() {
       resumo: espelho.listas.resumo,
       leituraFresca: espelho.leituraFresca,
       guardado: guardado ?? { clientes: 0, cobrancas: 0 },
+      webhookUrl,
+      origemAlcancavel: origem !== null,
+      podeCriarDaqui: podeCriarDaqui(origem, request.url),
     });
   } catch (err) {
     return toErrorResponse(err);

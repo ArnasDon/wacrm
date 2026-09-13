@@ -2,6 +2,8 @@ import { NextResponse, after } from "next/server";
 
 import { conectarAsaas, desconectarAsaas } from "@/lib/asaas/conexao";
 import { sincronizarAsaas } from "@/lib/asaas/sincronizar";
+import { origemPublica, podeCriarDaqui } from "@/lib/asaas/webhook";
+import { cuidarDoWebhook } from "@/lib/asaas/webhook-asaas";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
@@ -43,8 +45,14 @@ export async function PUT(request: Request) {
       const status = r.codigo === "db_error" ? 500 : 400;
       return NextResponse.json({ error: r.codigo }, { status });
     }
+    // ⚠️ O webhook só é criado quando o pedido vem do PRÓPRIO host público:
+    // o preview carrega a URL da produção e registraria um endereço que só
+    // atende depois do deploy. Fora daqui, o cron da VPS cria no ciclo seguinte.
+    const origem = origemPublica();
+    const criarWebhook = podeCriarDaqui(origem, request.url);
     after(async () => {
       await sincronizarAsaas(admin, ctx.accountId, { completa: true });
+      if (criarWebhook) await cuidarDoWebhook(admin, ctx.accountId, { origem });
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
@@ -63,7 +71,10 @@ export async function DELETE(request: Request) {
     const apagarEspelho = new URL(request.url).searchParams.get("espelho") === "1";
     const r = await desconectarAsaas(supabaseAdmin(), ctx.accountId, { apagarEspelho });
     if (!r.ok) return NextResponse.json({ error: r.codigo }, { status: r.codigo === "em_curso" ? 409 : 500 });
-    return NextResponse.json({ ok: true });
+    // `webhookNaoApagado`: o Asaas não aceitou o DELETE (chave já inválida,
+    // rede) — o cartão manda apagar no painel, senão o Asaas insiste por
+    // horas numa URL que não responde mais e interrompe a fila com três e-mails.
+    return NextResponse.json({ ok: true, webhookNaoApagado: r.webhookNaoApagado === true });
   } catch (err) {
     return toErrorResponse(err);
   }

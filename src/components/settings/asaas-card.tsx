@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Copy, Receipt, RefreshCw, Search } from "lucide-react";
+import { Check, ChevronDown, Copy, Receipt, RefreshCw, Search, Zap } from "lucide-react";
 import { useTranslations } from "next-intl";
 import { toast } from "sonner";
 
@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { avisarAsaasMudou } from "@/lib/asaas/aviso";
-import { AVISAR_EXPIRACAO_EM_DIAS, codigoConhecido, type CartaoDoAsaas } from "@/lib/asaas/cartao";
+import { AVISAR_EXPIRACAO_EM_DIAS, codigoConhecido, type CartaoDoAsaas, type WebhookDoCartao } from "@/lib/asaas/cartao";
 import type { MotivoDoVinculo, RelatorioDoLevantamento } from "@/lib/asaas/levantamento";
 import type { ResumoDoEspelho } from "@/lib/asaas/listas";
 import { formatCurrency } from "@/lib/currency";
@@ -43,6 +43,11 @@ interface Resposta {
   resumo: ResumoDoEspelho;
   leituraFresca: boolean;
   guardado: { clientes: number; cobrancas: number };
+  /** a URL registrada no Asaas (só para conferência); `null` sem token ou sem endereço público */
+  webhookUrl: string | null;
+  origemAlcancavel: boolean;
+  /** o botão "Ativar" funciona A PARTIR deste host (o preview carrega a URL da produção e não pode criar) */
+  podeCriarDaqui: boolean;
 }
 
 const MOTIVOS: MotivoDoVinculo[] = [
@@ -84,6 +89,7 @@ export function AsaasCard() {
   const [erro, setErro] = useState<string | null>(null);
   const [copiado, setCopiado] = useState(false);
   const [mostrarListas, setMostrarListas] = useState(false);
+  const [webhookAcao, setWebhookAcao] = useState<"ativar" | "religar" | "desativar" | null>(null);
   const [versao, setVersao] = useState(0);
   const vivoRef = useRef(true);
   const tinhaDadosRef = useRef(false);
@@ -154,11 +160,14 @@ export function AsaasCard() {
     setDesconectando(true);
     try {
       const res = await fetch(`/api/cb/asaas/config${apagarEspelho ? "?espelho=1" : ""}`, { method: "DELETE" });
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string; webhookNaoApagado?: boolean };
       if (!res.ok) {
-        const corpo = (await res.json().catch(() => ({}))) as { error?: string };
         toast.error(corpo.error ? t("falha", { motivo: motivo(corpo.error) }) : t("salvarFalhou"));
         return;
       }
+      // O Asaas não aceitou o DELETE do webhook (chave já inválida, rede):
+      // ele insistiria por horas numa URL que não responde mais.
+      if (corpo.webhookNaoApagado) toast.warning(t("asaas.webhook.naoApagado"), { duration: 12_000 });
       setRelatorio(null);
       setMostrarListas(false);
       avisarAsaasMudou();
@@ -184,6 +193,27 @@ export function AsaasCard() {
       await carregar();
     } finally {
       if (vivoRef.current) setSincronizando(false);
+    }
+  };
+
+  const mexerNoWebhook = async (acao: "ativar" | "religar" | "desativar") => {
+    if (webhookAcao) return;
+    if (acao === "desativar" && !window.confirm(t("asaas.webhook.confirmarDesativar"))) return;
+    setWebhookAcao(acao);
+    try {
+      const res =
+        acao === "desativar"
+          ? await fetch("/api/cb/asaas/webhook", { method: "DELETE" })
+          : await fetch("/api/cb/asaas/webhook", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ acao }) });
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        toast.error(t("falha", { motivo: motivo(corpo.error ?? "asaas_error") }));
+        return;
+      }
+      toast.success(t(acao === "ativar" ? "asaas.webhook.ativado" : acao === "religar" ? "asaas.webhook.religado" : "asaas.webhook.desativado"));
+      await carregar();
+    } finally {
+      if (vivoRef.current) setWebhookAcao(null);
     }
   };
 
@@ -338,6 +368,21 @@ export function AsaasCard() {
               {erro && <p className="text-xs text-destructive">{t("falha", { motivo: erro })}</p>}
 
               {falhou && <p className="text-xs text-destructive">{t("recarregarFalhou")}</p>}
+
+              {dados && (
+                <BlocoDoWebhook
+                  webhook={cartao.webhook}
+                  url={dados.webhookUrl}
+                  origemAlcancavel={dados.origemAlcancavel}
+                  podeCriarDaqui={dados.podeCriarDaqui}
+                  acaoEmCurso={webhookAcao}
+                  aoMexer={(acao) => void mexerNoWebhook(acao)}
+                  motivo={motivo}
+                  quando={quando}
+                  t={t}
+                />
+              )}
+
               {resumo && !falhou && (
                 <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">
                   <p className="text-foreground">
@@ -392,6 +437,98 @@ export function AsaasCard() {
           )}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * O bloco "Aviso na hora" (997): o estado do webhook, para quem vão os
+ * alertas, a URL registrada e os três gestos. ⚠️ O estado NULO é "nunca
+ * tentado" — o cron cria no próximo ciclo —, e o bloco DIZ isso em vez de
+ * afirmar "desligado": afirmar o contrário do que vai acontecer em 15 min
+ * é a mesma família do chip "Não conectada" durante a carga.
+ */
+function BlocoDoWebhook({
+  webhook,
+  url,
+  origemAlcancavel,
+  podeCriarDaqui,
+  acaoEmCurso,
+  aoMexer,
+  motivo,
+  quando,
+  t,
+}: {
+  webhook: WebhookDoCartao;
+  url: string | null;
+  origemAlcancavel: boolean;
+  podeCriarDaqui: boolean;
+  acaoEmCurso: "ativar" | "religar" | "desativar" | null;
+  aoMexer: (acao: "ativar" | "religar" | "desativar") => void;
+  motivo: (codigo: string) => string;
+  quando: (iso: string) => string;
+  t: ReturnType<typeof useTranslations<"Settings.integracoes">>;
+}) {
+  const estado = webhook.estado;
+  const precisaDeGente = estado === "ausente" || estado === "desligado" || estado === "sem_permissao" || estado === "erro";
+  const ativo = estado === "ativo" || estado === "penalizado";
+  const corDoEstado =
+    estado === "interrompido" || estado === "erro" || estado === "ausente"
+      ? "text-destructive"
+      : estado === "penalizado" || estado === "sem_permissao"
+        ? "text-amber-600 dark:text-amber-400"
+        : "text-muted-foreground";
+  // chave montada: `asaas.webhook.estado.<estado>` — a lista fechada mora em
+  // `lib/asaas/cartao.ts` (ESTADOS_DO_WEBHOOK) e há teste cobrando cada uma.
+  const frase = estado ? t(`asaas.webhook.estado.${estado}` as Parameters<typeof t>[0]) : t("asaas.webhook.nunca");
+  return (
+    <div className="min-w-0 space-y-2 rounded-md border border-border bg-muted/30 p-3 text-xs">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="flex items-center gap-1.5 font-medium text-foreground">
+          <Zap className="size-3.5" aria-hidden="true" />
+          {t("asaas.webhook.titulo")}
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          {(precisaDeGente || estado === null) && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => aoMexer("ativar")}
+              disabled={acaoEmCurso !== null || !podeCriarDaqui}
+              title={!podeCriarDaqui ? t("asaas.webhook.soDaProducao") : undefined}
+            >
+              {acaoEmCurso === "ativar" ? t("asaas.webhook.ativando") : precisaDeGente ? t("asaas.webhook.tentarDeNovo") : t("asaas.webhook.ativar")}
+            </Button>
+          )}
+          {estado === "interrompido" && (
+            <Button type="button" variant="outline" size="sm" onClick={() => aoMexer("religar")} disabled={acaoEmCurso !== null}>
+              {t("asaas.webhook.religar")}
+            </Button>
+          )}
+          {webhook.registrado && (
+            <Button type="button" variant="ghost" size="sm" onClick={() => aoMexer("desativar")} disabled={acaoEmCurso !== null}>
+              {t("asaas.webhook.desativar")}
+            </Button>
+          )}
+        </div>
+      </div>
+      <p className="max-w-[62ch] text-muted-foreground">{t("asaas.webhook.desc")}</p>
+      <p className={corDoEstado}>
+        {frase}
+        {estado === "erro" && webhook.erro ? `: ${motivo(webhook.erro)}` : ""}
+        {ativo ? ` · ${webhook.ultimoEvento ? t("asaas.webhook.ultimoEvento", { quando: quando(webhook.ultimoEvento) }) : t("asaas.webhook.semEvento")}` : ""}
+        {webhook.conferidoEm && webhook.registrado ? ` · ${t("asaas.webhook.conferidoEm", { quando: quando(webhook.conferidoEm) })}` : ""}
+      </p>
+      {webhook.email && webhook.registrado && <p className="text-muted-foreground">{t("asaas.webhook.email", { email: webhook.email })}</p>}
+      {!origemAlcancavel && <p className="text-destructive">{t("asaas.webhook.semEndereco")}</p>}
+      {url && webhook.registrado && (
+        <div className="space-y-1">
+          <Label>{t("asaas.webhook.urlLabel")}</Label>
+          <Input value={url} readOnly className="font-mono text-xs" />
+          <p className="text-muted-foreground">{t("asaas.webhook.urlHint")}</p>
+        </div>
+      )}
     </div>
   );
 }

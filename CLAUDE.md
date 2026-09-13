@@ -3602,6 +3602,40 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   para dar como desligar), fica FORA de `limparOrfaos` e é campo de
   `FiltrosDoInbox` como os outros (`AMOSTRAS` cobra). Grupo nunca casa
   (não tem contato). Cor em par claro/escuro, como o cartão de falha.
+- ⚠️⚠️ **O AVISO NA HORA (webhook, Fase 2, 997) é autenticado pelo
+  CABEÇALHO, nunca pela URL.** `POST /api/cb/asaas/webhook/[token]`: o
+  token da URL só diz de QUAL conta é a entrega (índice único na config); a
+  credencial é `asaas-access-token`, o valor que o CRM gerou e informou ao
+  Asaas ao criar o webhook, guardado CIFRADO (`webhook_auth_token`) e
+  comparado em tempo constante (`tokenConfere`) — não há HMAC no Asaas, é
+  igualdade. 404 e 401 são as únicas respostas que não são 200: **limite do
+  balde responde 200 `adiado`** (só 200 conta como entrega; um 429 contaria
+  como falha e ajudaria a interromper a fila — 15 falhas seguidas param
+  tudo), e a reentrega responde 200 `duplicado` pelo UNIQUE `(conta, id do
+  evento)` de `cb_asaas_eventos`. O corpo é AVISO (D8): só `payment.id` ou
+  `accessToken.name` são lidos, e a cobrança é RELIDA na API em `after()`
+  (`processarEvento`, sob um semáforo de 4 — uma fila religada despeja dias
+  de eventos de uma vez, e a conta tem 50 GET simultâneos divididos com o
+  outro sistema do escritório). Cobrança paga que o espelho NÃO conhece é
+  `ignorada` (`deveEntrarNoEspelho`): o espelho não é cópia do Asaas.
+- ⚠️⚠️ **A criação AUTOMÁTICA do webhook vive SÓ no cron (`cuidarDoWebhook`,
+  em `cron/route.ts`), e o botão do cartão só cria a partir do PRÓPRIO host
+  público (`podeCriarDaqui`).** O `.env.local` do preview carrega a URL da
+  PRODUÇÃO: criar dali registraria no Asaas um endereço que só atende
+  depois do deploy, e 15 entregas falhadas interrompem a fila com três
+  e-mails. Estado NULO = nunca tentado (o cron cria no ciclo seguinte);
+  `desligado`/`ausente`/`sem_permissao`/`erro` esperam gente (o cron não
+  insiste no que uma pessoa ou o Asaas recusou); rede e cota não mexem no
+  estado. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
+  então POST) — trocar a chave não pode dobrar as entregas. Fila
+  interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a
+  segunda vira `interrompido` ("precisa de atenção"), e só o "Religar" de
+  gente zera o marcador. Desconectar APAGA o webhook no Asaas antes de
+  apagar a config (senão o Asaas insiste por horas numa rota 404);
+  `webhookNaoApagado` manda apagar no painel. Evento de chave só conta
+  quando `accessToken.name` é o `chave_nome` da config (os eventos de chave
+  são da conta inteira) → `status = 'erro'` com `chave_desabilitada`/
+  `chave_expirada`/`chave_apagada`.
 
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
@@ -4497,6 +4531,13 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `asaas` que não ficou gravada na criação), as duas pedidas pela revisão
     do PR #201. Aplicada em 12/09/2026 à noite pela Management API
     (histórico `20260912234246`), ANTES do merge; aditiva.
+  - **997_cb_asaas_webhook** — as colunas do webhook em `cb_asaas_config`
+    (token da URL em claro com índice único parcial; token de autenticação
+    CIFRADO; id no Asaas, e-mail, estado, erro, religado, conferido, último
+    evento) e `cb_asaas_eventos` (FECHADA; UNIQUE por conta e id do evento;
+    o `dateCreated` do evento CRU, em texto — a medição de C7). Aditiva:
+    nada em produção a lê até o deploy. Aplicada em 13/09/2026 pela
+    Management API, ANTES do merge.
   - **996_cb_asaas_vinculo_completo** — `cb_asaas_config.vinculo_completo_em`,
     o marcador de que o VÍNCULO da listagem vigente já rodou (5ª a 7ª
     rodadas do Codex no PR #203) — a tela precisa saber quando "ninguém

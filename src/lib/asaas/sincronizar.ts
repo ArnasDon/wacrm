@@ -330,7 +330,7 @@ async function listarClientes(admin: SupabaseClient, accountId: string, cliente:
  * carimbá-la faria `leituraFresca` afirmar "em dia" sobre uma vencida que
  * nem entrou no espelho; Codex, PR #201, 6ª rodada).
  */
-async function garantirClientes(
+export async function garantirClientes(
   admin: SupabaseClient,
   accountId: string,
   cliente: ClienteAsaas,

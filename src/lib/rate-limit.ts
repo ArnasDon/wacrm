@@ -199,6 +199,13 @@ export const RATE_LIMITS = {
    *  qualquer outro sistema do escritório. 3/min cobre "rodei, li, rodei de
    *  novo depois de arrumar a permissão" e barra um laço com a sessão. */
   asaasLevantamento: { limit: 3, windowMs: 60_000 },
+  /** Webhook do Asaas (997), por token de conta. O token do cabeçalho é o
+   *  portão; isto impede um token vazado de virar uma enxurrada de linhas e
+   *  de GETs à API do Asaas (cada entrega relê a cobrança). Folgado de
+   *  propósito: uma fila religada despeja dias de eventos de uma vez, e o
+   *  que passa do balde responde 200 `adiado` — o ciclo de 15 min
+   *  reconcilia; um 429 contaria como falha e ajudaria a interromper a fila. */
+  asaasWebhook: { limit: 300, windowMs: 60_000 },
   /** Ações de execução na conversa (955): executar/parar automação ou robô.
    *  Mais apertado que o `send` porque UMA execução pode desdobrar em vários
    *  envios ao cliente (a automação manda o que quiser); mais largo que o

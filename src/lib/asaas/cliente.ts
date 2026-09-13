@@ -158,6 +158,13 @@ export interface ClienteAsaas {
   listarTudo<T>(caminho: string, params?: Record<string, string | number | undefined>, teto?: number, aCadaPagina?: () => Promise<void>): Promise<T[]>;
   /** Um recurso por id. `null` no 404 — que também significa "de outra conta". */
   obter<T>(caminho: string): Promise<T | null>;
+  /**
+   * POST/PUT/DELETE com corpo JSON — a ÚNICA escrita da integração é o
+   * webhook (D7/D9: criar, religar e apagar a assinatura). 404 LANÇA
+   * `nao_encontrado` (ao contrário de `obter`): quem apaga um webhook que já
+   * não existe decide o que fazer com isso.
+   */
+  enviar<T>(metodo: "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown): Promise<T>;
   /** Os cabeçalhos de cota da última resposta (vazio antes do primeiro pedido). */
   cota(): CabecalhosDeCota;
 }
@@ -181,18 +188,27 @@ export function criarClienteAsaas(
     return u.toString();
   }
 
-  /** Um pedido. `aceitar` devolve a resposta em vez de lançar naqueles status. */
-  async function pedir(alvo: string, aceitar: number[] = []): Promise<{ status: number; corpo: unknown }> {
+  /**
+   * Um pedido. `aceitar` devolve a resposta em vez de lançar naqueles status.
+   * Sem `metodo` é GET — e GET vai SEM `body` (GET com corpo no Asaas é 403).
+   */
+  async function pedir(
+    alvo: string,
+    aceitar: number[] = [],
+    envio?: { metodo: "POST" | "PUT" | "DELETE"; corpo?: unknown },
+  ): Promise<{ status: number; corpo: unknown }> {
     if (!doAsaas(alvo, ambiente)) throw new AsaasError("asaas_error", "URL fora do host do Asaas");
     let resposta: Response;
     try {
       resposta = await fetchFn(alvo, {
-        // ⚠️ Sem `body`: GET com corpo no Asaas é 403.
+        method: envio?.metodo ?? "GET",
         headers: {
           access_token: chave,
           Accept: "application/json",
           "User-Agent": agente(NOME_DO_APP),
+          ...(envio && envio.corpo !== undefined ? { "Content-Type": "application/json" } : {}),
         },
+        ...(envio && envio.corpo !== undefined ? { body: JSON.stringify(envio.corpo) } : {}),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (e) {
@@ -257,6 +273,11 @@ export function criarClienteAsaas(
       const { status, corpo } = await pedir(url(caminho), [404]);
       if (status === 404) return null;
       return (corpo ?? null) as T | null;
+    },
+
+    async enviar<T>(metodo: "POST" | "PUT" | "DELETE", caminho: string, corpo?: unknown): Promise<T> {
+      const r = await pedir(url(caminho), [], { metodo, corpo });
+      return (r.corpo ?? null) as T;
     },
 
     cota: () => cota,

@@ -22,6 +22,8 @@ const TABELAS = [
   { tabela: 'cb_asaas_config', migration: '992_cb_asaas_config.sql' },
   { tabela: 'cb_asaas_clientes', migration: '994_cb_asaas_espelho.sql' },
   { tabela: 'cb_asaas_cobrancas', migration: '994_cb_asaas_espelho.sql' },
+  // 997: cada entrega do webhook — o id do evento e o que o CRM fez com ele.
+  { tabela: 'cb_asaas_eventos', migration: '997_cb_asaas_webhook.sql' },
 ] as const;
 
 function lerSemComentarios(migration: string): string {
@@ -34,7 +36,7 @@ function lerSemComentarios(migration: string): string {
 
 const sqlDa = new Map(TABELAS.map((t) => [t.tabela, lerSemComentarios(t.migration)]));
 
-describe('992/994 — RLS das tabelas do Asaas', () => {
+describe('992/994/997 — RLS das tabelas do Asaas', () => {
   it.each(TABELAS)('$tabela tem ENABLE ROW LEVEL SECURITY', ({ tabela }) => {
     const padrao = new RegExp(`ALTER\\s+TABLE\\s+${tabela}\\s+ENABLE\\s+ROW\\s+LEVEL\\s+SECURITY`, 'i');
     expect(padrao.test(sqlDa.get(tabela)!)).toBe(true);
@@ -76,6 +78,14 @@ describe('992/994 — RLS das tabelas do Asaas', () => {
     // Coluna NOMEADA no SET NULL: `account_id` é NOT NULL (lição da 966).
     expect(/REFERENCES\s+contacts\s*\(\s*id\s*,\s*account_id\s*\)\s+ON\s+DELETE\s+SET\s+NULL\s*\(\s*contact_id\s*\)/i.test(sql)).toBe(true);
     expect(/REFERENCES\s+cb_asaas_clientes\s*\(\s*account_id\s*,\s*asaas_customer_id\s*\)\s+ON\s+DELETE\s+CASCADE/i.test(sql)).toBe(true);
+  });
+
+  it('997: o token de AUTENTICAÇÃO do webhook fica na config FECHADA, e o id do evento é UNIQUE por conta (idempotência)', () => {
+    const sql = lerSemComentarios('997_cb_asaas_webhook.sql');
+    expect(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+webhook_auth_token\s+text/i.test(sql)).toBe(true);
+    expect(/CONSTRAINT\s+cb_asaas_eventos_uk\s+UNIQUE\s*\(\s*account_id\s*,\s*asaas_event_id\s*\)/i.test(sql)).toBe(true);
+    // O `dateCreated` do evento vai CRU (texto sem fuso): é a medição de C7.
+    expect(/evento_criado_em\s+text/i.test(sql)).toBe(true);
   });
 
   it('o status da cobrança NÃO tem CHECK: status novo do Asaas não pode derrubar a sincronização', () => {

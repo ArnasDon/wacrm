@@ -42,13 +42,15 @@
 | **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | ✅ **construída em 12/09 à noite** e MEDIDA no primeiro ciclo real (§6): 439 clientes, 405 vencidas, 86 ligados pela regra (84 telefone, 2 CPF), 32 fichas criadas no primeiro ciclo de 60 s e o resto nos seguintes, 7 para confirmar (6 "nome diferente", 1 "contato já ligado"), 85 sem telefone com 9 sugestões por nome | `994_cb_asaas_espelho` ✅ aplicada em 12/09 (histórico `20260912225955`) | [#201](https://github.com/leonardocabralb/CB-CRM/pull/201) |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | ✅ **construída em 12–13/09** e medida no preview contra a conta real (§6): 89 contatos devendo, 15 deles na aba aberta com o ícone, filtro "15 de 677", faixa e aba com os MESMOS números do cartão; com o espelho parado há 11 h a tela diz "dados do Asaas de 12/09, 21:19" em vez de calar | `996_cb_asaas_vinculo_completo` (o marcador do vínculo inteiro, pedido na 7ª rodada do Codex; aditiva, com acervo) | [#203](https://github.com/leonardocabralb/CB-CRM/pull/203) |
 | **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 🔧 **construída em 13/09** (`feat/asaas-webhook`): rota pública autenticada pelo cabeçalho, criação AUTOMÁTICA pelo cron (só na VPS), conferência a cada ciclo, religa uma vez, apaga ao desconectar, bloco "Aviso na hora" no cartão. ⚠️ O que ficou DIFERENTE da §3.4: a listagem das vencidas continua a cada 15 min (10–30 pedidos por ciclo não pesam na cota; o webhook só antecipa), e a criação a partir do preview é RECUSADA (`podeCriarDaqui`) — o `.env.local` carrega a URL da produção | `997_cb_asaas_webhook` ✅ aplicada em 13/09 (histórico `20260913161622`) | [#204](https://github.com/leonardocabralb/CB-CRM/pull/204) |
-| **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 💤 | `9xx_cb_asaas_regua` | — |
+| **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | 🔧 **construída em 13/09** (`feat/asaas-regua`): os dois gatilhos no motor, a varredura no cron, o bloco "Cobrança automática" no cartão, a lista de exceção (D21) na aba e nas listas, "Assinar como". ⚠️ O que ficou DIFERENTE da §3.6 está no bloco "O que ficou diferente na construção" no início dela — entre outros, a trava `na_fila` por causa da retentativa do motor (PR #205) e o intervalo mínimo (D11, 13/09). O teste real (a cobrança de R$ 5 no contato autorizado) fica para depois do merge, no primeiro dia útil | `998_cb_asaas_regua` (a aplicar pela Management API depois do replay do CI, antes do merge) | [#206](https://github.com/leonardocabralb/CB-CRM/pull/206) |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
-- **Número das migrations:** a última hoje é a **996** (o marcador do vínculo inteiro, Fase 1b); antes dela a **995** (o cadeado do ciclo e
-  a etiqueta pendente, `20260912234246`; a 994 é o espelho, `20260912225955`;
-  a 993 é a janela da Meta por número, de outra branch; a 992 é a config do
-  Asaas, `20260912144829`).
+- **Número das migrations:** a última hoje é a **998** (a régua, Fase 3);
+  antes dela a **997** (o webhook, Fase 2, `20260913161622`), a **996** (o
+  marcador do vínculo inteiro, Fase 1b, `20260913122337`), a **995** (o
+  cadeado do ciclo e a etiqueta pendente, `20260912234246`; a 994 é o
+  espelho, `20260912225955`; a 993 é a janela da Meta por número, de outra
+  branch; a 992 é a config do Asaas, `20260912144829`).
   ⚠️ Ela nasceu 991 e colidiu com a `991_cb_janela_da_meta_na_conversa`, de
   outra branch, aplicada primeiro em 12/09 — a quinta colisão do projeto. Conferir
   `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de
@@ -1001,6 +1003,65 @@ ATUALIZADO e todas as formas de pagamento.
 >    fechado** (D19) e o **interruptor "Cobrança automática"** (D20) — as
 >    três pedidas à tarde.
 
+> **O que ficou DIFERENTE na construção (13/09/2026, PR #206)** — o texto
+> abaixo é o desenho; onde ele e o código divergem, vale o código, e a
+> diferença está aqui:
+>
+> 1. **Sem "Aguardar" NENHUM** nos dois gatilhos (`validate.ts`): o desenho
+>    tolerava até 10 min; a retomada da fila não reconfirma pagamento e não
+>    tem janela, então marco é automação própria, sempre.
+> 2. **Intervalo mínimo entre cobranças** (D11 revista em 13/09):
+>    `cb_asaas_config.regua_intervalo_dias` (3 por padrão, 0–60). O marco
+>    que cai dentro dele depois da última cobrança do cliente é travado
+>    como `absorvida`, sem mensagem. O lembrete não conta nem é contado.
+> 3. **Uma mensagem só quando o vencimento e um marco coincidem** (D17
+>    revista): o cliente com marco às 9h NÃO recebe o lembrete das 8h; a
+>    cobrança leva a linha "e hoje vence…" (`{{vars.vence_hoje_detalhe}}`)
+>    e a parcela do dia é travada como lembrete `absorvida`. O texto padrão
+>    da cobrança já traz a variável.
+> 4. **Lista de exceção por cliente do Asaas** (D21, nova):
+>    `cb_asaas_clientes.regua_desligada` (+ por quem e quando), o sino na
+>    aba Cobranças e nas listas do cartão (Ligados, Inadimplentes, e a aba
+>    "Sem cobrança automática"), `PUT /api/cb/asaas/clientes/[id]/regua`.
+>    Por cliente do Asaas, não por contato: a régua agrupa por cliente. A
+>    planilha do operador (41 nomes) nasce marcada por um script fora do
+>    repositório, depois da migration — documento não entra em migration.
+> 5. **A negativada ENTRA** (D6 revista em 13/09): `ehDevida` = vencida OU
+>    negativada; o texto abaixo que diz "a negativada fica fora" está
+>    superado.
+> 6. **O interruptor tem rota própria**, `PUT /api/cb/asaas/regua/interruptor`
+>    (`{ regua_ativa?, regua_intervalo_dias? }`, admin, ROWCOUNT, carimba
+>    `regua_ativada_em` ao ligar) — não o PUT de `/api/cb/asaas/config`, que
+>    é o da chave. "Criar régua padrão" é `POST /api/cb/asaas/regua`.
+> 7. **A retentativa do motor** (PR #205, que entrou no `main` enquanto a
+>    Fase 3 era construída): um `send_message` que a Evolution RECUSA (4xx)
+>    volta para a fila do "Aguardar" e roda de novo em 30 s / 5 min, fora
+>    da varredura. A trava registra `na_fila` (nono valor do CHECK) com
+>    `automation_log_id`, e a varredura seguinte RECONCILIA pelo log —
+>    `enviado`/`falhou`/`barrada`, ou `incerto` depois de 1 h sem desfecho.
+>    `enviado`, `na_fila` e `incerto` contam como "cobrado" para o
+>    intervalo mínimo e o "uma por cliente por dia": mandar de menos é o
+>    lado seguro de uma cobrança.
+> 8. **A reconferência do interruptor na trava é um SELECT antes do
+>    INSERT** (`reguaAindaLigada`), não `INSERT … SELECT … WHERE EXISTS`:
+>    o PostgREST não faz o segundo. Sobra uma janela de milissegundos entre
+>    a leitura e a trava — aceita, porque desligar no meio do ciclo já
+>    deixa sair o que foi disparado.
+> 9. **O resultado da varredura NÃO fica no cartão** (`ResultadoDaRegua`
+>    não é persistido): "conexão da mensagem inválida", "desligada às 9h05"
+>    e os contadores vão para o log do agendador (`[asaas] régua da conta
+>    …`); o que cada cliente recebeu está na aba Cobranças (a trava). O
+>    cartão mostra o interruptor, o intervalo, as automações ligadas, o
+>    marco repetido e quantos estão na exceção.
+> 10. **O dia-alvo do marco perdido**: além de `vista_vencida_em`, o marco
+>     cujo dia-alvo passou há até 3 dias (`TOLERANCIA_DA_VISTA_DIAS`) e
+>     ainda não foi travado é cobrado no primeiro ciclo dentro da janela —
+>     o agendador parado por um dia não perde o marco de todo mundo.
+> 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
+>     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
+>     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
+>     com `user_id = accounts.owner_user_id` (`dono-duravel.test.ts`).
+
 
 **Gatilho novo `asaas_cobranca_vencida`, não uma terceira fonte do
 `date_field_offset`.** O código de risco é o mesmo nas duas opções; a
@@ -1623,11 +1684,24 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
   hora (continua a cada 15 min — o webhook só antecipa, e 10–30 pedidos por
   ciclo não pesam na cota) e o cadastro à mão (a chave já tem a permissão).
 
-**Fase 3 — régua**
+**Fase 3 — régua** 🔧 (13/09, PR #206)
 
-- `supabase/migrations/9xx_cb_asaas_regua.sql` (§3.6): `cb_asaas_regua_envios`
-  (com `tipo` e `marco`), `cb_asaas_config.regua_ativa` + `regua_ativada_em`
-  (D20) e `automations.assinatura_personalizada` (D18).
+- `supabase/migrations/998_cb_asaas_regua.sql` (§3.6): `cb_asaas_regua_envios`
+  (com `tipo`, `marco`, `automation_log_id` e o CHECK de nove resultados),
+  `cb_asaas_config.regua_ativa` + `regua_ativada_em` (D20) +
+  `regua_intervalo_dias` (D11), `cb_asaas_clientes.regua_desligada` (+ por
+  quem/quando, D21) e `automations.assinatura_personalizada` (D18).
+- Novos, além do desenho: `src/components/settings/asaas-regua.tsx` (o
+  bloco do cartão), `src/app/api/cb/asaas/regua/interruptor/route.ts`,
+  `src/app/api/cb/asaas/clientes/[id]/regua/route.ts`,
+  `src/lib/assinatura/assinatura.ts` (`normalizarAssinatura`). Tocados,
+  além do desenho: `src/lib/asaas/{cartao,espelho,listas,aviso-na-conversa}.ts`,
+  `asaas-listas.tsx` (a aba "Sem cobrança automática" e o sino),
+  `src/components/inbox/painel/aba-cobrancas.tsx` (o sino e o histórico), o
+  cron do Asaas (`varrerRegua` depois do webhook), `src/lib/asaas/duble.test-helper.ts`
+  e o `UNIVERSO` de `dono-duravel.test.ts` (`varrer-regua.ts` cria conversa).
+  O `PUT /api/cb/asaas/config` NÃO ganhou `regua_ativa` (rota própria).
+  A lista original do desenho segue abaixo, para o que ela ainda descreve:
 - `src/lib/asaas/regua.ts` (+ teste: dia-alvo, `vista_vencida_em` contra
   `regua_ativada_em`, fim de semana e feriado, janela, agrupamento por
   cliente através das automações, variáveis),
@@ -1855,8 +1929,25 @@ o painel do navegador estava oculto e a captura não sai)
       reais anotado neste plano, **incluindo um vencimento de sábado ou
       domingo** — só com o webhook vivo em produção.
 
-**Fase 3**
+**Fase 3** (13/09, PR #206)
 
+- [x] **Automatizado:** `regua.test.ts` (26: dia-alvo com `vista_vencida_em`
+      contra `regua_ativada_em`, fim de semana e feriado, janela, tolerância
+      do marco perdido, agrupamento por cliente através das automações,
+      lembrete cedendo à cobrança, variáveis, `resultadoDoLog` inclusive
+      `na_fila`, os nove resultados nos dois dicionários),
+      `varrer-regua.test.ts` (21 com o dublê: interruptor, exceção, atrasado
+      antigo fora, conexão inválida/desconectada, janela, trava do marco e
+      recusa no ciclo seguinte, pagou há três minutos, TODAS as vencidas na
+      mensagem, dois marcos no mesmo dia, intervalo mínimo, falha sem
+      retentativa pela varredura, `na_fila` reconciliada pelo log e contando
+      para o intervalo, `na_fila` velha → `incerto`, interruptor desligado no
+      meio, 429, lembrete, órfãs), `cartao.test.ts` (o bloco), `validate.test.ts`
+      (sem "Aguardar", conexão obrigatória), `engine.test.ts` (recusas),
+      `regua.chamadores.test.ts` (D16, default-deny), `dono-duravel`.
+- [ ] Preview e2e (13/09, depois da 998): interruptor, intervalo, "Criar
+      régua padrão", a aba "Sem cobrança automática" com a planilha marcada,
+      o sino na aba Cobranças — registrado no PR #206.
 - [ ] Ponta a ponta com o contato de teste autorizado: cobrança de poucos
       reais com vencimento hoje → no dia útil seguinte, depois de 09:00, a
       mensagem de 1 dia sai UMA vez, com `enviado` medido no log.

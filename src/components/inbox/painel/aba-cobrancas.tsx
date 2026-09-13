@@ -127,11 +127,19 @@ export function AbaCobrancas({ dados, carregando, falhou, recarregar }: AbaCobra
   }
 
   if (dados.clientes.length === 0) {
+    // ⚠️ Sem listagem completa (`atualizadoEm` nulo: recém-conectado, a
+    // primeira sincronização no ar ou falhada) o espelho ainda não tem os
+    // clientes — "nenhum cliente ligado" seria afirmação sobre o que não se
+    // sabe (Codex, PR #203, 4ª rodada). O vazio de verdade é o da listagem
+    // completa que não achou vínculo.
+    const semListagem = dados.atualizadoEm === null;
     return (
       <div className="py-6 text-center">
         <CircleDollarSign className="text-muted-foreground/40 mx-auto h-8 w-8" />
-        <p className="text-muted-foreground mt-2 text-sm">{t("semCliente")}</p>
-        <p className="text-muted-foreground/70 mt-1 text-xs">{t("semClienteDica")}</p>
+        <p className={cn("mt-2 text-sm", semListagem ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground")}>
+          {semListagem ? t("semListagem") : t("semCliente")}
+        </p>
+        {!semListagem && <p className="text-muted-foreground/70 mt-1 text-xs">{t("semClienteDica")}</p>}
       </div>
     );
   }

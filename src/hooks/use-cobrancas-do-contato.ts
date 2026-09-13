@@ -5,6 +5,8 @@ import { useCallback, useEffect, useState } from "react";
 import { EVENTO_ASAAS_MUDOU } from "@/lib/asaas/aviso";
 import { lerRespostaDoContato, type RespostaDoContato } from "@/lib/asaas/aviso-na-conversa";
 
+import { RECARGA_MS } from "./use-inadimplencia";
+
 /**
  * As cobranças de UM contato (a aba Cobranças do painel e da ficha) — a rota
  * `/api/cb/asaas/contato/[contactId]`.
@@ -53,6 +55,26 @@ export function useCobrancasDoContato(
     const aoMudar = () => setNonce((n) => n + 1);
     window.addEventListener(EVENTO_ASAAS_MUDOU, aoMudar);
     return () => window.removeEventListener(EVENTO_ASAAS_MUDOU, aoMudar);
+  }, []);
+
+  // ⚠️ Relê SOZINHO, a cada 5 min com a aba visível e ao voltar à aba —
+  // pelo mesmo motivo do `resyncToken` acima: o ciclo do agendador roda no
+  // servidor e não avisa ninguém, e a ficha de `/contacts` (que não tem
+  // token de resync) pode ficar aberta por horas com uma parcela já paga
+  // (Codex, PR #203, 4ª rodada). O painel do inbox recebe as duas coisas —
+  // uma leitura a mais ao voltar à aba é o preço de um hook só.
+  useEffect(() => {
+    const tique = setInterval(() => {
+      if (document.visibilityState === "visible") setNonce((n) => n + 1);
+    }, RECARGA_MS);
+    const aoVoltar = () => {
+      if (document.visibilityState === "visible") setNonce((n) => n + 1);
+    };
+    document.addEventListener("visibilitychange", aoVoltar);
+    return () => {
+      clearInterval(tique);
+      document.removeEventListener("visibilitychange", aoVoltar);
+    };
   }, []);
 
   useEffect(() => {

@@ -26,6 +26,8 @@ export interface ClienteDoEspelho extends ClienteParaVincular {
   vinculado_por_nome: string | null;
   vinculado_em: string | null;
   notificacoes_desligadas: boolean;
+  /** a lista de exceção da cobrança automática (998, D21) */
+  regua_desligada?: boolean;
 }
 
 export interface FichaResumida {
@@ -76,6 +78,8 @@ export interface ItemDaLista {
   contato: ContatoNaLista | null;
   candidatos: CandidatoNaLista[];
   divida: DividaNaLista | null;
+  /** "não cobrar automaticamente" (998, D21) */
+  reguaDesligada: boolean;
 }
 
 export interface ItemInadimplente {
@@ -87,6 +91,7 @@ export interface ItemInadimplente {
   contato: ContatoNaLista | null;
   divida: DividaNaLista;
   faixa: FaixaDeAtraso;
+  reguaDesligada: boolean;
 }
 
 export interface ResumoDoEspelho {
@@ -113,6 +118,8 @@ export interface ResumoDoEspelho {
   statusDesconhecidos: number;
   /** clientes com mais de 3 parcelas vencidas (planejamento futuro, §8) */
   comMaisDeTresParcelas: number;
+  /** a lista de exceção da cobrança automática (998, D21) */
+  semCobranca: number;
 }
 
 export interface ListasDoEspelho {
@@ -122,11 +129,13 @@ export interface ListasDoEspelho {
   ligados: ItemDaLista[];
   ignorados: ItemDaLista[];
   inadimplentes: ItemInadimplente[];
+  /** quem está marcado "não cobrar automaticamente" (998, D21), vivo, qualquer situação */
+  sem_cobranca: ItemDaLista[];
 }
 
 export type NomeDaLista = keyof Omit<ListasDoEspelho, "resumo">;
 
-export const NOMES_DAS_LISTAS: readonly NomeDaLista[] = ["confirmar", "sem_ficha", "ligados", "ignorados", "inadimplentes"];
+export const NOMES_DAS_LISTAS: readonly NomeDaLista[] = ["confirmar", "sem_ficha", "ligados", "ignorados", "inadimplentes", "sem_cobranca"];
 
 export function ehNomeDeLista(v: string): v is NomeDaLista {
   return (NOMES_DAS_LISTAS as readonly string[]).includes(v);
@@ -185,8 +194,9 @@ export function montarListas(
     valorEmConferencia: 0,
     statusDesconhecidos: 0,
     comMaisDeTresParcelas: 0,
+    semCobranca: 0,
   };
-  const listas: ListasDoEspelho = { resumo, confirmar: [], sem_ficha: [], ligados: [], ignorados: [], inadimplentes: [] };
+  const listas: ListasDoEspelho = { resumo, confirmar: [], sem_ficha: [], ligados: [], ignorados: [], inadimplentes: [], sem_cobranca: [] };
 
   for (const c of clientes) {
     if (c.deleted) continue;
@@ -222,7 +232,13 @@ export function montarListas(
       contato: contatoNaLista(c.contact_id, fichas),
       candidatos: c.candidatos.map((k) => ({ ...(contatoNaLista(k.contact_id, fichas) as ContatoNaLista), motivo: k.motivo, pontuacao: k.pontuacao ?? null })),
       divida: dividaNaLista,
+      reguaDesligada: c.regua_desligada === true,
     };
+    // A lista de exceção (998, D21): qualquer situação, desde que vivo.
+    if (item.reguaDesligada) {
+      resumo.semCobranca++;
+      listas.sem_cobranca.push(item);
+    }
     if (situacao === "ligado") {
       resumo.ligados++;
       const origem = c.vinculo_origem ?? "sem_origem";
@@ -257,6 +273,7 @@ export function montarListas(
         contato: item.contato,
         divida: dividaNaLista,
         faixa: faixaDeAtraso(dividaNaLista.dias ?? 0),
+        reguaDesligada: item.reguaDesligada,
       });
     }
   }
@@ -273,6 +290,7 @@ export function montarListas(
   listas.sem_ficha.sort(porNome);
   listas.ligados.sort(porNome);
   listas.ignorados.sort(porNome);
+  listas.sem_cobranca.sort(porNome);
   // Inadimplentes: quem está há mais tempo em atraso primeiro.
   listas.inadimplentes.sort((a, b) => (b.divida.dias ?? 0) - (a.divida.dias ?? 0) || porNome(a, b));
   return listas;

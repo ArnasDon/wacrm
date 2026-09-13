@@ -11,8 +11,11 @@ import {
 import {
   validateStepsForActivation,
   validateChannelScopeForActivation,
+  validateAsaasReguaForActivation,
   validateTriggerForActivation,
 } from '@/lib/automations/validate'
+import { ehGatilhoDaRegua } from '@/lib/asaas/regua'
+import { normalizarAssinatura } from '@/lib/assinatura/assinatura'
 
 async function requireUser() {
   const supabase = await createClient()
@@ -93,6 +96,9 @@ export async function PATCH(
   ] as const) {
     if (k in body) update[k] = body[k]
   }
+  // "Assinar como" (998, D18): ausente do corpo = não mexe (a convenção de
+  // `handoff_agent_id`); presente, texto aparado com teto ou NULL.
+  if ('assinatura_personalizada' in body) update.assinatura_personalizada = normalizarAssinatura(body.assinatura_personalizada)
   // Array vazio significaria "nenhum canal", mas o dispatch o leria como
   // "sem restricao" — normaliza para null, a mesma regra da migration 903.
   if (Array.isArray(update.channel_ids) && update.channel_ids.length === 0) {
@@ -109,6 +115,9 @@ export async function PATCH(
   // are still allowed to be incomplete.
   const willBeActive =
     typeof update.is_active === 'boolean' ? update.is_active : existing.is_active
+  // Gatilho da régua do Asaas (998): sem recorte por etapa — trocar o gatilho
+  // pela tela não limpa o valor gravado (a armadilha da grade do funil).
+  if (ehGatilhoDaRegua((update.trigger_type ?? existing.trigger_type) as string)) update.stage_ids = null
   if (willBeActive) {
     const mergedTriggerType = (update.trigger_type ?? existing.trigger_type) as string
     const mergedTriggerConfig = update.trigger_config ?? existing.trigger_config
@@ -118,6 +127,7 @@ export async function PATCH(
     const issues = [
       ...validateTriggerForActivation(mergedTriggerType, mergedTriggerConfig),
       ...validateStepsForActivation(mergedSteps),
+      ...validateAsaasReguaForActivation(mergedTriggerType, mergedSteps),
       ...validateChannelScopeForActivation(
         mergedSteps,
         (('channel_ids' in update

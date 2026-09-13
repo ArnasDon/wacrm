@@ -65,6 +65,32 @@ export async function nomeParaAssinar(
 }
 
 /**
+ * A assinatura PERSONALIZADA de uma automação (998, D18): "Carol -
+ * financeiro" no lugar do nome automático do escritório. Não é usuário —
+ * "Carol" não precisa de login —, é texto livre saneado (`saneiaNome`, que
+ * tira `*_~`), e continua sob o interruptor da conta: desligado, nada
+ * assina. Falha fechada como as irmãs.
+ */
+export async function nomePersonalizadoParaAssinar(
+  db: SupabaseClient,
+  accountId: string,
+  texto: string,
+): Promise<string | null> {
+  try {
+    const { data: conta } = await db
+      .from('accounts')
+      .select('assinatura_ativa')
+      .eq('id', accountId)
+      .maybeSingle();
+    if (!conta?.assinatura_ativa) return null;
+    return saneiaNome(texto);
+  } catch (erro) {
+    console.warn('[assinatura] não foi possível resolver a assinatura personalizada:', erro);
+    return null;
+  }
+}
+
+/**
  * Atalho para os motores (automação, fluxo, IA), que nunca têm pessoa.
  *
  * Existe como função própria — e não como `nomeParaAssinar(db, conta, null)` —

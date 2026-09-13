@@ -33,6 +33,8 @@ const UNIQUES: Record<string, string[][]> = {
   contacts: [["account_id", "phone_normalized"]],
   cb_asaas_clientes: [["account_id", "asaas_customer_id"]],
   cb_asaas_cobrancas: [["account_id", "asaas_payment_id"]],
+  cb_asaas_regua_envios: [["cobranca_id", "tipo", "marco", "vencimento"]],
+  conversations: [["account_id", "contact_id"]],
   tags: [["account_id", "name_key"]],
   contact_tags: [["contact_id", "tag_id"]],
 };
@@ -48,6 +50,8 @@ const DEFAULTS: Record<string, Linha> = {
   cb_asaas_clientes: { contact_id: null, vinculo_origem: null, vinculado_por: null, vinculado_por_nome: null, vinculado_em: null, contatos_recusados: [], candidatos: [], deleted: false, email: null, celular: null, telefone: null, cpf_cnpj: null, etiqueta_pendente: false },
   cb_asaas_config: { sincronizando_desde: null, vinculo_completo_em: null },
   cb_asaas_cobrancas: { deleted: false, vista_vencida_em: null, parcela_total: null, juros_e_multa: null },
+  cb_asaas_regua_envios: { automation_id: null, contact_id: null, resultado: "reservado", detalhe: null, finalizado_em: null },
+  conversations: { channel_id: null, channel_pinned: false },
   contacts: { name: null, email: null },
 };
 
@@ -167,6 +171,14 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       }
       const cruas = (Array.isArray(payload) ? payload : [payload]) as Linha[];
       const inseridas: Linha[] = [];
+      // ⚠️ Como o Postgres: um INSERT de VÁRIAS linhas é um comando só —
+      // 23505 em qualquer uma recusa todas (é a trava de grupo da régua).
+      if (op === "insert") {
+        const uniques = UNIQUES[nome] ?? [];
+        const novas = cruas.map((c) => normalizarLinha(nome, c));
+        const conflito = novas.some((n, i) => uniques.some((u) => linhas.some((l) => conflita(nome, l, n, u)) || novas.slice(0, i).some((m) => conflita(nome, m, n, u))));
+        if (conflito) return { data: null, error: { message: "duplicate key value violates unique constraint", code: "23505" }, count: null };
+      }
       for (const crua of cruas) {
         const nova = normalizarLinha(nome, crua);
         const uniques = UNIQUES[nome] ?? [];

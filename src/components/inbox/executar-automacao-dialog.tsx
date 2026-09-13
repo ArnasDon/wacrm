@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { createClient } from "@/lib/supabase/client";
+import { ehGatilhoDaRegua } from "@/lib/asaas/regua";
 import { semAcento } from "@/lib/inbox/busca-em-mensagens";
 import { avisarExecucoesMudaram } from "@/hooks/use-execucoes-do-contato";
 
@@ -40,6 +41,8 @@ interface AutomacaoDaLista {
   description: string | null;
   /** Escopo de canal (903): vazio/nulo = todos os números. */
   channel_ids: string[] | null;
+  /** a régua do Asaas (998) não é oferecida aqui */
+  trigger_type: string;
 }
 
 interface RoboDaLista {
@@ -94,7 +97,7 @@ export function ExecutarAutomacaoDialog({
       const [autosRes, robosRes] = await Promise.all([
         supabase
           .from("automations")
-          .select("id, name, description, channel_ids")
+          .select("id, name, description, channel_ids, trigger_type")
           .eq("is_active", true)
           .order("name"),
         supabase
@@ -125,11 +128,12 @@ export function ExecutarAutomacaoDialog({
   // "cobranca" não achava "Cobrança" e o dialog dizia "Nada casa com a
   // busca" sobre item existente (ledger 48h).
   const termo = semAcento(busca.trim());
+  // A régua do Asaas (998) só roda pela varredura: por aqui sairia com as
+  // `{{vars.*}}` vazias, sem reconfirmar o pagamento e sem trava — a rota
+  // também recusa (`runAutomationById`), mas oferecer o botão seria mentir.
   const automacoesVisiveis = useMemo(
     () =>
-      termo
-        ? automacoes.filter((a) => semAcento(a.name).includes(termo))
-        : automacoes,
+      automacoes.filter((a) => !ehGatilhoDaRegua(a.trigger_type) && (!termo || semAcento(a.name).includes(termo))),
     [automacoes, termo],
   );
   const robosVisiveis = useMemo(

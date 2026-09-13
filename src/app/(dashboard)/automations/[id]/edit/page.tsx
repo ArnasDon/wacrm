@@ -45,6 +45,7 @@ export default function EditAutomationPage({
         channel_ids: (body.automation.channel_ids as string[] | null) ?? [],
         // Idem para o recorte por etapa (933): `null` no banco = todas.
         stage_ids: (body.automation.stage_ids as string[] | null) ?? [],
+        assinatura_personalizada: (body.automation.assinatura_personalizada as string | null) ?? null,
         is_active: !!body.automation.is_active,
         steps: fromServerSteps((body.steps ?? []) as ServerStepNode[]),
       })

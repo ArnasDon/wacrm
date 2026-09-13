@@ -33,6 +33,7 @@ import type {
 import { supabaseAdmin } from './admin-client'
 import { resolverDestinatario } from './destinatario'
 import { resolveEngineChannelPreferring } from '@/lib/cb-channels/engine-send'
+import { ehGatilhoDaRegua } from '@/lib/asaas/regua'
 import { digitosDoTelefone } from '@/lib/contacts/telefone'
 import { urlDoInbox } from '@/lib/inbox/url'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
@@ -418,6 +419,13 @@ export async function runAutomationById(args: {
 
   const alvo = data as Automation
   if (!alvo.is_active) return { ok: false, detail: 'automação alvo está desativada' }
+  // A régua do Asaas (998) só roda pela VARREDURA, que reconfirma o
+  // pagamento, trava o marco e monta as `{{vars.*}}`. Por aqui — o botão
+  // "Executar automação" e o passo `run_automation` — ela sairia com "Olá, !
+  // Consta em aberto:" e sem trava, para quem talvez já pagou.
+  if (ehGatilhoDaRegua(alvo.trigger_type)) {
+    return { ok: false, detail: 'a régua de cobrança do Asaas só roda pela varredura do Asaas' }
+  }
 
   await executeAutomation(
     {
@@ -772,6 +780,17 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const text = await interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
+      // ⚠️ Na régua do Asaas (998, D19) a conexão do passo FALHA FECHADA —
+      // a mesma cerca do `send_to_number`. `resolveEngineChannelPreferring`
+      // cai em silêncio no canal da conversa (e daí no padrão) quando o id
+      // não resolve; numa cobrança isso é o link de pagamento saindo por
+      // outro número sem ninguém saber.
+      if (ehGatilhoDaRegua(args.automation.trigger_type) && cfg.channel_id) {
+        const canal = await resolveEngineChannelPreferring(db, args.automation.account_id, conversationId, cfg.channel_id)
+        if (!canal || canal.channelId !== cfg.channel_id) {
+          throw new Error('send_message: a conexão escolhida não está disponível nesta conta')
+        }
+      }
       const { whatsapp_message_id } = await engineSendText({
         accountId: args.automation.account_id,
         userId: args.automation.user_id,
@@ -782,6 +801,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
           step.step_config as SendMessageStepConfig,
           args,
         ),
+        // "Assinar como" (998, D18): o prefixo desta automação, sob o
+        // interruptor da conta; NULL = o nome automático do escritório.
+        assinarComo: args.automation.assinatura_personalizada ?? null,
       })
       // Sem "via Meta": engineSendText resolve o canal da conversa e pode ter
       // saído pela Evolution. O canal efetivo entra no detalhe na Fase E1.
@@ -1718,6 +1740,14 @@ export function triggerMatches(automation: Automation, ctx: AutomationContext | 
     const alvo = typeof cfg?.webhook_id === 'string' ? cfg.webhook_id.trim() : ''
     if (!alvo) return true
     return Boolean(ctx?.webhook_id && ctx.webhook_id === alvo)
+  }
+
+  // A régua do Asaas (998): SÓ a automação carimbada no contexto, como o
+  // lembrete por data — o "aconteceu?" é decidido pela varredura, fora do
+  // motor, e o dispatch por tipo abriria o leque (a de 5 dias sairia junto
+  // com a de 1). Disparo manual sem `automation_id` não roda nenhuma.
+  if (ehGatilhoDaRegua(automation.trigger_type)) {
+    return ctx?.automation_id === automation.id
   }
 
   return true

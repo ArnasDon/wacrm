@@ -59,6 +59,14 @@ export const TRIGGER_META: Record<AutomationTriggerType, TriggerMeta> = {
     label: 'Webhook',
     pillClass: 'border-teal-500/30 bg-teal-500/10 text-teal-300',
   },
+  asaas_cobranca_vencida: {
+    label: 'Asaas — overdue',
+    pillClass: 'border-red-500/30 bg-red-500/10 text-red-300',
+  },
+  asaas_cobranca_vence_hoje: {
+    label: 'Asaas — due today',
+    pillClass: 'border-rose-500/30 bg-rose-500/10 text-rose-300',
+  },
   manual: {
     label: 'Manual',
     pillClass: 'border-zinc-500/30 bg-zinc-500/10 text-zinc-300',

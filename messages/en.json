@@ -576,7 +576,29 @@
       "totalVencido": "Total past due: {valor}",
       "totalAtualizado": "With interest and fine: {valor}",
       "leituraAntiga": "Stale reading: Asaas data as of {quando}.",
-      "dadosDe": "Asaas data as of {quando}."
+      "dadosDe": "Asaas data as of {quando}.",
+      "regua": {
+        "titulo": "Automatic billing",
+        "excecao": "no automatic billing",
+        "naoCobrar": "Stop automatic billing for this customer",
+        "cobrarDeNovo": "Resume automatic billing for this customer",
+        "desligadaParaEste": "This customer no longer receives automatic billing.",
+        "religadaParaEste": "This customer receives automatic billing again.",
+        "erroTrocar": "Could not change automatic billing for this customer.",
+        "desligadaNaConta": "Automatic billing is OFF for the account (Settings → Integrations → Asaas): there is an active automation, but nothing goes out until the switch is on.",
+        "lembrete": "due-date reminder",
+        "marco": "{dias} day(s) overdue",
+        "resultado": {
+          "reservado": "in progress ({quando})",
+          "enviado": "sent on {quando}",
+          "absorvida": "absorbed on {quando} — another message the same day or the minimum interval",
+          "barrada": "blocked by a condition on {quando}",
+          "falhou": "failed on {quando}",
+          "fora_do_escopo": "outside the automation's scope on {quando}",
+          "sem_automacao": "the automation was disabled before it went out ({quando})",
+          "incerto": "no recorded outcome ({quando}) — may have gone out; never resent"
+        }
+      }
     },
     "execucoes": {
       "roboAtivo": "Active bot",
@@ -1744,6 +1766,14 @@
         "manual": {
           "label": "Manual (button only)",
           "hint": "Never fires on its own. It runs when you execute it inside a conversation, from the composer + menu → Run automation."
+        },
+        "asaas_cobranca_vencida": {
+          "label": "Asaas billing — overdue",
+          "hint": "When an Asaas instalment reaches N days overdue (this automation's milestone). Runs only from the Asaas sweep, with the 'Automatic billing' switch on in Integrations: reconfirms payment, locks the milestone and sends ONE message per customer listing every overdue instalment."
+        },
+        "asaas_cobranca_vence_hoje": {
+          "label": "Asaas billing — due today",
+          "hint": "Reminder on the due date: whoever has an Asaas instalment due today. Runs only from the Asaas sweep, with the 'Automatic billing' switch on. On weekends and holidays the reminder goes out on the next business day."
         }
       },
       "trigger": "Trigger",
@@ -1967,6 +1997,23 @@
         "horaLabel": "Time (optional)",
         "horaHint": "Empty = all day.",
         "importanteLabel": "Mark as important"
+      },
+      "asaas": {
+        "diasLabel": "Days overdue (the milestone)",
+        "diasAjuda": "Calendar days after the due date. Each milestone is its own automation: 1, 5, 30… The message lists every overdue instalment of the customer, not only the one crossing this milestone.",
+        "horaLabel": "Send from",
+        "horaAjuda": "Between 08:00 and 17:00. The message goes out between this time and 18:00 on the milestone day; scheduler down until 18:00 = milestone missed that day.",
+        "diasUteisLabel": "Business days only",
+        "diasUteisAjuda": "Saturday, Sunday and fixed-date national holidays push the message to the next business day.",
+        "conexaoAviso": "This automation's message needs the connection chosen on the step (fails closed: never goes out through the default number). No 'Wait': each milestone is its own automation.",
+        "variaveisTitulo": "Billing variables, for the steps",
+        "variaveisAjuda": "E.g. {nome} · {detalhe} brings ALL overdue instalments, one per line, with the payment link · {valor} is the sum · {venceHoje} brings the instalment due today, when there is one.",
+        "variaveisLembreteAjuda": "In the reminder, {detalhe} brings only what is due today and {texto} says 'due today' or 'fell due on Saturday, 12/09 — can be paid today without interest'."
+      },
+      "assinatura": {
+        "label": "Sign as",
+        "placeholder": "Carol - billing",
+        "ajuda": "The name that signs this automation's text messages, instead of the firm's automatic name. Empty = the automatic name. Still under the account's signature switch."
       }
     }
   },
@@ -2879,14 +2926,16 @@
           "sem_ficha": "No CRM contact",
           "ligados": "Linked",
           "ignorados": "Ignored",
-          "inadimplentes": "Overdue"
+          "inadimplentes": "Overdue",
+          "sem_cobranca": "No automatic billing"
         },
         "vazio": {
           "confirmar": "No customer to confirm.",
           "sem_ficha": "No customer without a contact.",
           "ligados": "No customer linked to a contact yet.",
           "ignorados": "No ignored customer.",
-          "inadimplentes": "No overdue customer."
+          "inadimplentes": "No overdue customer.",
+          "sem_cobranca": "No customer is marked to skip automatic billing."
         },
         "faixa": {
           "todas": "All delays",

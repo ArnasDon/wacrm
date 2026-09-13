@@ -180,6 +180,21 @@ export interface ClienteLigadoAoContato {
   nome: string;
   origem: string | null;
   notificacoesDesligadas: boolean;
+  /** a lista de exceção da cobrança automática (998, D21) */
+  reguaDesligada: boolean;
+}
+
+/** Um registro da régua (998) — a trava e o desfecho, como a aba mostra. */
+export interface EnvioDaReguaNaAba {
+  id: string;
+  automationNome: string;
+  tipo: "atraso" | "vence_hoje";
+  marco: number;
+  vencimento: string;
+  resultado: string;
+  detalhe: string | null;
+  criadoEm: string;
+  finalizadoEm: string | null;
 }
 
 export interface RespostaDoContato {
@@ -191,6 +206,29 @@ export interface RespostaDoContato {
   clientes: ClienteLigadoAoContato[];
   /** todas as parcelas do espelho dos clientes ligados (devidas, pagas, estornadas…) */
   parcelas: ParcelaDoEspelho[];
+  /** o interruptor "Cobrança automática" da conta (998, D20) */
+  reguaAtiva: boolean;
+  /** há automação da régua LIGADA na conta — com o interruptor desligado, a aba avisa */
+  reguaComAutomacoes: boolean;
+  /** o histórico da régua deste contato, mais recente primeiro */
+  envios: EnvioDaReguaNaAba[];
+}
+
+function lerEnvio(bruto: unknown): EnvioDaReguaNaAba | null {
+  if (!bruto || typeof bruto !== "object") return null;
+  const e = bruto as Record<string, unknown>;
+  if (typeof e.id !== "string" || typeof e.criadoEm !== "string") return null;
+  return {
+    id: e.id,
+    automationNome: typeof e.automationNome === "string" ? e.automationNome : "",
+    tipo: e.tipo === "vence_hoje" ? "vence_hoje" : "atraso",
+    marco: typeof e.marco === "number" ? e.marco : 0,
+    vencimento: typeof e.vencimento === "string" ? e.vencimento : "",
+    resultado: typeof e.resultado === "string" ? e.resultado : "reservado",
+    detalhe: typeof e.detalhe === "string" ? e.detalhe : null,
+    criadoEm: e.criadoEm,
+    finalizadoEm: typeof e.finalizadoEm === "string" ? e.finalizadoEm : null,
+  };
 }
 
 export function lerRespostaDoContato(json: unknown): RespostaDoContato | null {
@@ -209,10 +247,12 @@ export function lerRespostaDoContato(json: unknown): RespostaDoContato | null {
         nome: typeof k.nome === "string" ? k.nome : "",
         origem: typeof k.origem === "string" ? k.origem : null,
         notificacoesDesligadas: k.notificacoesDesligadas === true,
+        reguaDesligada: k.reguaDesligada === true,
       });
     }
   }
   const parcelas = Array.isArray(o.parcelas) ? o.parcelas.map(lerParcelaSolta).filter((p): p is ParcelaDoEspelho => p !== null) : [];
+  const envios = Array.isArray(o.envios) ? o.envios.map(lerEnvio).filter((e): e is EnvioDaReguaNaAba => e !== null) : [];
   return {
     conectado: o.conectado,
     leituraFresca: o.leituraFresca,
@@ -220,6 +260,9 @@ export function lerRespostaDoContato(json: unknown): RespostaDoContato | null {
     cicloCompleto: o.cicloCompleto === true,
     clientes,
     parcelas,
+    reguaAtiva: o.reguaAtiva === true,
+    reguaComAutomacoes: o.reguaComAutomacoes === true,
+    envios,
   };
 }
 

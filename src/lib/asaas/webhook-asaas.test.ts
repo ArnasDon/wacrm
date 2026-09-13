@@ -99,12 +99,22 @@ describe("garantirWebhook — cria, reaproveita, e grava o token cifrado", () =>
     expect((registro.envios![0].corpo as Record<string, unknown>).enabled).toBe(true);
   });
 
-  it("PUT que volta sem `id` continua sendo o webhook de sempre — nunca cai para o POST (dobraria as entregas)", async () => {
+  it("PUT que volta sem `id` continua sendo o webhook de sempre — relê e nunca cai para o POST (dobraria as entregas)", async () => {
     const e = estado({ webhook_token: "tok_antigo_0000000000000000", webhook_asaas_id: "wh_nosso" });
     const { registro, cliente } = rodar({ listas: {}, recursos: { "/webhooks/wh_nosso": webhookDoAsaas("wh_nosso") }, envios: { "PUT /webhooks/wh_nosso": { object: "webhook" } } });
     expect(await garantirWebhook(dubleDoSupabase(e), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: true, estado: "ativo" });
-    expect(registro.envios!.map((x) => x.chave)).toEqual(["PUT /webhooks/wh_nosso"]);
+    expect(registro.pedidos).toEqual(["/webhooks/wh_nosso", "PUT /webhooks/wh_nosso", "/webhooks/wh_nosso"]);
     expect(e.tabelas.cb_asaas_config[0].webhook_asaas_id).toBe("wh_nosso");
+  });
+
+  it("a criação passa pelo CADEADO do ciclo: com um ciclo em curso responde em_curso sem falar com o Asaas, e solta o cadeado ao terminar", async () => {
+    const ocupado = estado({ sincronizando_desde: new Date(AGORA.getTime() - 30_000).toISOString(), last_sync_attempt_at: new Date(AGORA.getTime() - 30_000).toISOString() });
+    const { registro, cliente } = rodar({ listas: { "/webhooks": [] }, recursos: {}, envios: { "POST /webhooks": webhookDoAsaas("wh_novo") } });
+    expect(await garantirWebhook(dubleDoSupabase(ocupado), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: false, codigo: "em_curso" });
+    expect(registro.pedidos).toEqual([]);
+    const livre = estado({ sincronizando_desde: null, last_sync_attempt_at: null });
+    expect(await garantirWebhook(dubleDoSupabase(livre), CONTA, cliente, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: true, estado: "ativo" });
+    expect(livre.tabelas.cb_asaas_config[0].sincronizando_desde).toBeNull();
   });
 
   it("o Asaas não registrou o token de autenticação (`hasAuthToken: false`): é falha, estado `erro` — senão toda entrega viraria 401", async () => {

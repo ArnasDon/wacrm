@@ -2844,7 +2844,7 @@
           "chave_ilegivel": "the stored key could not be read — connect again",
           "nao_conectado": "Asaas is not connected",
           "conta_trocada": "this key belongs to ANOTHER Asaas account — to switch accounts, disconnect deleting the stored data",
-          "em_curso": "a sync is already running",
+          "em_curso": "a sync is already running — try again in a moment",
           "cadeado_perdido": "another process took over the sync mid-cycle — this cycle was abandoned without writing",
           "chave_desabilitada": "the API key was disabled in Asaas (3 months unused, or by hand) — re-enable it there or connect another",
           "chave_expirada": "the API key expired in Asaas — create another and connect again",
@@ -2959,7 +2959,7 @@
             "ausente": "Deleted in the Asaas panel",
             "desligado": "Disabled",
             "sem_permissao": "The key lacks the Webhooks permission in read and write — the 15-minute cycle carries on alone",
-            "erro": "Asaas refused the creation"
+            "erro": "Could not create"
           },
           "ultimoEvento": "last notice {quando}",
           "semEvento": "no notice received yet",

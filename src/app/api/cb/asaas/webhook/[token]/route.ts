@@ -35,6 +35,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   const { token } = await params;
   if (!RE_TOKEN.test(token)) return NextResponse.json({ error: "not_found" }, { status: 404 });
 
+  // Antes do banco, um balde por IP de ORIGEM (o Traefik escreve
+  // `x-forwarded-for`): quem tiver só a URL não força `maybeSingle` +
+  // `decrypt` sem limite. É por IP, e não por token, para o atacante não
+  // calar as entregas do Asaas — os IPs do Asaas têm os próprios baldes, e
+  // o que passa dele responde 200 `adiado` como o balde de baixo.
+  const ip = (request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || request.headers.get("x-real-ip") || "desconhecido").slice(0, 64);
+  const porIp = checkRateLimit(`asaas:webhook:ip:${ip}`, RATE_LIMITS.asaasWebhookPorIp);
+  if (!porIp.success) return NextResponse.json({ ok: true, adiado: true });
+
   const admin = supabaseAdmin();
   const { data: config, error } = await admin
     .from("cb_asaas_config")

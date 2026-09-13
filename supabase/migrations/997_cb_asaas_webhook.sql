@@ -32,8 +32,10 @@
 --    - `webhook_religado_em`: o CRM religa a fila interrompida UMA vez; a
 --      segunda interrupção vira "precisa de atenção", como a doc manda
 --      (corrigir a causa antes de religar). Zerado só pelo "Religar" de gente.
---    - `webhook_conferido_em`: a última leitura de `GET /webhooks/{id}` pelo
---      cron; `last_event_at`: a última entrega que chegou (prova de vida).
+--    - `webhook_conferido_em`: a última CONFERÊNCIA (`GET /webhooks/{id}`
+--      pelo cron) OU TENTATIVA de criação — é o relógio da retentativa
+--      diária do estado `erro`; `last_event_at`: a última entrega que chegou
+--      (prova de vida).
 --
 -- 2) `cb_asaas_eventos` — cada entrega recebida: o id do evento (UNIQUE por
 --    conta = idempotência: o Asaas entrega "pelo menos uma vez" e repete o
@@ -56,7 +58,10 @@
 --
 -- ⚠️ Deploy DEPOIS da migration: o app novo SELECIONA as colunas novas (o
 -- cartão, o desconectar e o passo do webhook no cron) e o PostgREST recusa
--- o select inteiro sem elas. Aplicada em 13/09/2026 antes do merge.
+-- o select inteiro sem elas. Aplicada em 13/09/2026 antes do merge — na
+-- versão SEM a conferência do CHECK do bloco DO abaixo, acrescentada na
+-- revisão do PR #204 depois da aplicação (só o bloco de conferência mudou;
+-- o schema é o mesmo, e o replay do CI roda a versão atual).
 
 ALTER TABLE cb_asaas_config
   ADD COLUMN IF NOT EXISTS webhook_token         text,

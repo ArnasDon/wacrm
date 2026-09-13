@@ -7,7 +7,7 @@ import { encrypt } from "@/lib/whatsapp/encryption";
 import { aplicarCobranca } from "./aplicar";
 import type { EstadoDoWebhook } from "./cartao";
 import { AsaasError, type ClienteAsaas } from "./cliente";
-import { clienteDaConta, type CodigoDaConexao } from "./conexao";
+import { clienteDaConta, filtroDoCadeadoLivre, type CodigoDaConexao } from "./conexao";
 import { lerCobranca } from "./leitura";
 import { garantirClientes } from "./sincronizar";
 import {
@@ -141,10 +141,40 @@ export async function garantirWebhook(
   email: string,
   agora: Date = new Date(),
 ): Promise<ResultadoDoWebhook> {
+  // ⚠️ O CADEADO do ciclo (995) em volta da criação: o token da URL
+  // determinístico conserta a RETENTATIVA, mas não dois criadores no MESMO
+  // instante (o `after()` do conectar e o cron; dois administradores
+  // clicando "Ativar") — os dois listariam `/webhooks` vazio e os dois
+  // POSTariam, e o perdedor ficaria órfão entregando com um token que a
+  // rota não conhece (re-verificação do PR #204). Só `sincronizando_desde`:
+  // `last_sync_attempt_at` é o batimento do CICLO e o rodízio do cron.
+  const carimbo = agora.toISOString();
+  const { data: tomado, error: erroClaim } = await admin
+    .from("cb_asaas_config")
+    .update({ sincronizando_desde: carimbo })
+    .eq("account_id", accountId)
+    .or(filtroDoCadeadoLivre(agora.getTime()))
+    .select("account_id");
+  if (erroClaim) return { ok: false, codigo: "db_error" };
+  if (!tomado || tomado.length === 0) return { ok: false, codigo: "em_curso" };
+  try {
+    return await garantirWebhookComCadeado(admin, accountId, cliente, origem, email, carimbo);
+  } finally {
+    await admin.from("cb_asaas_config").update({ sincronizando_desde: null }).eq("account_id", accountId).eq("sincronizando_desde", carimbo);
+  }
+}
+
+async function garantirWebhookComCadeado(
+  admin: SupabaseClient,
+  accountId: string,
+  cliente: ClienteAsaas,
+  origem: string,
+  email: string,
+  carimbo: string,
+): Promise<ResultadoDoWebhook> {
   const config = await lerConfigDoWebhook(admin, accountId);
   if (config === "db_error") return { ok: false, codigo: "db_error" };
   if (!config) return { ok: false, codigo: "nao_conectado" };
-  const carimbo = agora.toISOString();
   // ⚠️ O token da URL é gravado ANTES de falar com o Asaas, cercado por
   // `IS NULL`: é só endereço, e gravá-lo cedo torna a URL DETERMINÍSTICA.
   // Sem isso, um POST que dava certo seguido de uma gravação que falhava
@@ -165,7 +195,12 @@ export async function garantirWebhook(
     // na mesma URL e dobraria as entregas (revisão do PR #204).
     const atualizar = async (id: string): Promise<WebhookNoAsaas> => {
       const resposta = lerWebhookDoAsaas(await cliente.enviar<unknown>("PUT", `/webhooks/${id}`, corpo));
-      return resposta ?? { id, url, enabled: true, interrupted: false, penalizados: 0, temToken: true };
+      if (resposta) return resposta;
+      // PUT sem corpo: relê antes de afirmar que o token ficou registrado —
+      // a guarda de `hasAuthToken` abaixo precisa da resposta de verdade.
+      const relido = lerWebhookDoAsaas(await cliente.obter<unknown>(`/webhooks/${id}`));
+      if (!relido) throw new AsaasError("asaas_error", "o webhook sumiu logo depois do PUT");
+      return relido;
     };
     if (config.webhook_asaas_id) {
       const atual = lerWebhookDoAsaas(await cliente.obter<unknown>(`/webhooks/${config.webhook_asaas_id}`));

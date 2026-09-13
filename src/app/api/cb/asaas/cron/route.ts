@@ -77,8 +77,10 @@ export async function GET(request: Request) {
         `[asaas] ciclo da conta ${conta.account_id}: ${r.clientesListados} clientes listados, ${r.cobrancasGravadas} cobranças, ${r.reconciliadas} reconciliadas, ${r.ligados} ligados, ${r.fichasCriadas} fichas criadas, ${r.adiadas} adiadas`,
       );
       // Com a conta sincronizada, o webhook: confere o que existe, cria o
-      // que nunca foi tentado. Falha aqui não é falha do ciclo — e fica
-      // DENTRO do orçamento (o `-m 120` do curl não sabe de webhook).
+      // que nunca foi tentado. Falha aqui não é falha do ciclo — e só ENTRA
+      // dentro do orçamento (o passo em si pode gastar até ~40 s: duas
+      // páginas de listagem e um POST, 20 s de timeout cada; o `-m 120` do
+      // curl cobre o pior caso com folga curta).
       if (Date.now() - inicio <= ORCAMENTO_MS) {
         const w = await cuidarDoWebhook(admin, conta.account_id, { origem });
         if (!w.ok && w.codigo !== "url_inalcancavel") console.warn(`[asaas] webhook da conta ${conta.account_id}: ${w.codigo}`);

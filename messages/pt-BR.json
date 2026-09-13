@@ -2837,7 +2837,7 @@
           "chave_ilegivel": "a chave guardada não pôde ser lida — conecte de novo",
           "nao_conectado": "o Asaas não está conectado",
           "conta_trocada": "esta chave é de OUTRA conta do Asaas — para trocar de conta, desconecte apagando os dados guardados",
-          "em_curso": "já há uma sincronização em curso",
+          "em_curso": "uma sincronização está em curso — tente de novo em instantes",
           "cadeado_perdido": "outro processo assumiu a sincronização no meio do ciclo — o ciclo foi abandonado sem gravar",
           "chave_desabilitada": "a chave da API foi desabilitada no Asaas (3 meses sem uso, ou à mão) — reative-a lá ou conecte outra",
           "chave_expirada": "a chave da API expirou no Asaas — crie outra e conecte de novo",
@@ -2952,7 +2952,7 @@
             "ausente": "Apagado no painel do Asaas",
             "desligado": "Desligado",
             "sem_permissao": "A chave não tem a permissão Webhooks em leitura e escrita — o ciclo de 15 minutos segue sozinho",
-            "erro": "O Asaas recusou a criação"
+            "erro": "Não foi possível criar"
           },
           "ultimoEvento": "último aviso {quando}",
           "semEvento": "nenhum aviso recebido ainda",

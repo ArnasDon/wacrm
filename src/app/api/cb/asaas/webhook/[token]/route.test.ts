@@ -89,15 +89,27 @@ describe("POST /api/cb/asaas/webhook/[token]", () => {
     }
   });
 
-  it("o balde é POR CONTA e só conta entregas AUTENTICADAS: tentativas com token errado não o gastam; estourado, responde 200 adiado sem gravar", async () => {
+  it("o balde POR CONTA só conta entregas AUTENTICADAS — antes da autenticação só o balde por IP; estourado, responde 200 adiado sem gravar", async () => {
     const rl = await import("@/lib/rate-limit");
     const espiao = vi.spyOn(rl, "checkRateLimit");
     for (let i = 0; i < 5; i++) await chamar(entrega(`evt_x${i}`), { "asaas-access-token": "errado" });
-    expect(espiao).not.toHaveBeenCalled();
-    espiao.mockReturnValueOnce({ success: false, remaining: 0, reset: Date.now() + 1000, limit: 600 });
+    expect(espiao.mock.calls.every(([chave]) => String(chave).startsWith("asaas:webhook:ip:"))).toBe(true);
+    espiao.mockClear();
+    espiao.mockImplementation((chave, opcoes) =>
+      String(chave) === `asaas:webhook:${CONTA}` ? { success: false, remaining: 0, reset: Date.now() + 1000, limit: 600 } : { success: true, remaining: 1, reset: Date.now() + 1000, limit: opcoes.limit },
+    );
     const res = await chamar(entrega("evt_adiado"), { "asaas-access-token": AUTH });
     expect(await res.json()).toEqual({ ok: true, adiado: true });
-    expect(espiao.mock.calls[0][0]).toBe(`asaas:webhook:${CONTA}`);
+    expect(espiao.mock.calls.map(([c]) => String(c))).toEqual([expect.stringMatching(/^asaas:webhook:ip:/), `asaas:webhook:${CONTA}`]);
+    expect(estado.tabelas.cb_asaas_eventos).toEqual([]);
+  });
+
+  it("o balde por IP estourado responde 200 adiado ANTES do banco — o atacante com a URL não força leitura nem decifragem", async () => {
+    const rl = await import("@/lib/rate-limit");
+    const espiao = vi.spyOn(rl, "checkRateLimit").mockReturnValue({ success: false, remaining: 0, reset: Date.now() + 1000, limit: 1200 });
+    const res = await chamar(entrega("evt_ip"), { "asaas-access-token": AUTH, "x-forwarded-for": "203.0.113.9, 10.0.0.1" });
+    expect(await res.json()).toEqual({ ok: true, adiado: true });
+    expect(espiao.mock.calls.map(([c]) => String(c))).toEqual(["asaas:webhook:ip:203.0.113.9"]);
     expect(estado.tabelas.cb_asaas_eventos).toEqual([]);
   });
 });

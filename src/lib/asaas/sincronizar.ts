@@ -184,11 +184,19 @@ async function reivindicarCiclo(admin: SupabaseClient, accountId: string, vistoE
  * olha o batimento, não o começo do ciclo (Codex, PR #201, 5ª rodada).
  */
 async function bater(admin: SupabaseClient, accountId: string, vistoEm: string): Promise<void> {
-  await admin
+  const { data, error } = await admin
     .from("cb_asaas_config")
     .update({ last_sync_attempt_at: new Date().toISOString() })
     .eq("account_id", accountId)
-    .eq("sincronizando_desde", vistoEm);
+    .eq("sincronizando_desde", vistoEm)
+    .select("account_id");
+  // ⚠️ Zero linhas = a POSSE mudou de mãos (outro processo recolheu o cadeado
+  // depois de um sumiço do banco maior que o recolhimento, ou um "desconectar"
+  // tomou a conta). Seguir gravaria no espelho de outro dono, sem cerca —
+  // o ciclo ABORTA aqui, e a exceção atravessa `listarTudo` pelo `aCadaPagina`
+  // (Codex, PR #201, 7ª rodada). Erro de banco no batimento é tratado igual:
+  // sem prova de posse, não se escreve.
+  if (error || !data || data.length === 0) throw new SyncError("cadeado_perdido");
 }
 
 /** Uma listagem paginada do banco, até fechar — o PostgREST corta em 1000 sem avisar. */
@@ -654,9 +662,12 @@ async function vincular(
   return contagem;
 }
 
-/** Erro do CICLO que não é do Asaas nem do banco: a chave é de outra conta. */
+/**
+ * Erro do CICLO que não é do Asaas nem do banco: a chave é de outra conta,
+ * ou o cadeado mudou de dono no meio do ciclo.
+ */
 export class SyncError extends Error {
-  constructor(public readonly codigo: "conta_trocada") {
+  constructor(public readonly codigo: "conta_trocada" | "cadeado_perdido") {
     super(codigo);
     this.name = "SyncError";
   }
@@ -777,10 +788,13 @@ export async function sincronizarAsaas(admin: SupabaseClient, accountId: string,
     contagem.candidatosAtualizados = v.candidatosAtualizados;
     contagem.adiadas += v.adiadas;
 
-    // 8) sucesso — e o cadeado é solto, com a cerca de posse
+    // 8) sucesso — e o cadeado é solto, com a cerca de posse. A TENTATIVA
+    // volta ao início do ciclo: os batimentos a avançaram, e um sucesso com
+    // `last_sync_at` diferente de `last_sync_attempt_at` seria lido no cartão
+    // como "houve outra tentativa depois" (Codex, PR #201, 7ª rodada).
     const { error: erroFim } = await admin
       .from("cb_asaas_config")
-      .update({ status: "conectado", last_sync_at: vistoEm, last_error: null, sincronizando_desde: null, updated_at: vistoEm })
+      .update({ status: "conectado", last_sync_at: vistoEm, last_sync_attempt_at: vistoEm, last_error: null, sincronizando_desde: null, updated_at: vistoEm })
       .eq("account_id", accountId)
       .eq("sincronizando_desde", vistoEm);
     if (erroFim) throw new Error(`fim do ciclo: ${erroFim.message}`);

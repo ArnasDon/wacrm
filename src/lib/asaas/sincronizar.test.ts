@@ -133,9 +133,9 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
 
     const config = estado.tabelas.cb_asaas_config[0];
     expect(config).toMatchObject({ status: "conectado", last_error: null, last_sync_at: AGORA.toISOString(), vencidas_listadas_em: AGORA.toISOString(), last_full_sync_at: AGORA.toISOString() });
-    // a TENTATIVA é o batimento do cadeado: carimbada no claim (= agora) e
-    // avançada com o relógio real a cada passo — por isso não é `AGORA`
-    expect(typeof config.last_sync_attempt_at).toBe("string");
+    // a TENTATIVA é o batimento do cadeado durante o ciclo, e volta ao
+    // início dele no sucesso
+    expect(config.last_sync_attempt_at).toBe(AGORA.toISOString());
     expect(config.sincronizando_desde).toBeNull();
   });
 
@@ -434,6 +434,34 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     const r = await rodar(estado, respostas).resultado;
     expect(r).toMatchObject({ ok: true, cobrancasGravadas: 0 });
     expect(estado.tabelas.cb_asaas_config[0].vencidas_listadas_em).toBe(AGORA.toISOString());
+  });
+
+  it("batimento que NÃO casa a linha (a posse mudou de mãos) ABORTA o ciclo — e não escreve o erro por cima do novo dono", async () => {
+    const estado = estadoInicial();
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    const admin = dubleDoSupabase(estado);
+    const original = admin.from.bind(admin);
+    let leituras = 0;
+    (admin as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      // Na primeira leitura do espelho — que vem logo DEPOIS do claim deste
+      // ciclo —, OUTRO processo toma o cadeado. O batimento seguinte não casa.
+      if (t === "cb_asaas_clientes" && ++leituras === 1) estado.tabelas.cb_asaas_config[0].sincronizando_desde = "outro-dono";
+      return original(t);
+    };
+    const r = await sincronizarAsaas(admin, CONTA, { agora: AGORA, cliente: () => dubleDoAsaas(respostas) });
+    expect(r).toEqual({ ok: false, codigo: "cadeado_perdido" });
+    // nada do ciclo abortado chegou ao espelho, e a config é do outro dono
+    expect(estado.tabelas.cb_asaas_clientes).toHaveLength(0);
+    expect(estado.tabelas.cb_asaas_config[0]).toMatchObject({ sincronizando_desde: "outro-dono", status: "conectado", last_error: null });
+  });
+
+  it("o sucesso realinha a tentativa ao início do ciclo: o cartão não inventa uma 'última tentativa'", async () => {
+    const estado = estadoInicial();
+    const respostas: RespostasDoAsaas = { listas: { "/customers": [clienteAsaas("cus_A", "A")], [LISTA_VENCIDAS]: [], [LISTA_VENCE_HOJE]: [] }, recursos: {} };
+    await rodar(estado, respostas).resultado;
+    const c = estado.tabelas.cb_asaas_config[0];
+    expect(c.last_sync_at).toBe(AGORA.toISOString());
+    expect(c.last_sync_attempt_at).toBe(AGORA.toISOString());
   });
 
   it("o cadeado é solto no erro também", async () => {

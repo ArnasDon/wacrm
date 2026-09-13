@@ -2790,7 +2790,8 @@
           "chave_ilegivel": "the stored key could not be read — connect again",
           "nao_conectado": "Asaas is not connected",
           "conta_trocada": "this key belongs to ANOTHER Asaas account — to switch accounts, disconnect deleting the stored data",
-          "em_curso": "a sync is already running"
+          "em_curso": "a sync is already running",
+          "cadeado_perdido": "another process took over the sync mid-cycle — this cycle was abandoned without writing"
         },
         "confirmarApagar": "Disconnect AND delete the Asaas data stored in the CRM ({clientes} customers and {cobrancas} charges)? Links and ignored customers are lost. Contacts that were created stay. Use this to switch Asaas accounts.",
         "desconectarEApagar": "Disconnect and delete the Asaas data",

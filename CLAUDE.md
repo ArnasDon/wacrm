@@ -3489,11 +3489,17 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   páginas de cada `listarTudo` (`aCadaPagina`), depois de cada listagem, a
   cada 20 releituras/fichas), não o começo do ciclo: uma conta com dezenas
   de páginas pode passar de 10 min viva, e recolher um ciclo vivo é
-  justamente o que o cadeado impede. ⚠️ **`desconectarAsaas` TOMA o cadeado
-  antes de apagar** (409 `em_curso` se um ciclo está no meio), renovando o
-  batimento na MESMA escrita: o ciclo já tem o cliente HTTP na mão e
-  continuaria gravando no espelho apagado — e misturaria as contas se outra
-  fosse conectada em seguida.
+  justamente o que o cadeado impede. ⚠️ **Batimento que não casa a linha
+  ABORTA o ciclo** (`cadeado_perdido`): a posse mudou de mãos (recolhimento
+  depois de um sumiço do banco, ou um "desconectar"), e seguir gravaria no
+  espelho de outro dono sem cerca — a exceção atravessa `listarTudo` pelo
+  `aCadaPagina`. No SUCESSO a tentativa volta ao início do ciclo
+  (`last_sync_attempt_at = vistoEm`), senão o cartão inventa uma "última
+  tentativa" a partir do último batimento. ⚠️ **`desconectarAsaas` TOMA o
+  cadeado antes de apagar** (409 `em_curso` se um ciclo está no meio),
+  renovando o batimento na MESMA escrita: o ciclo já tem o cliente HTTP na
+  mão e continuaria gravando no espelho apagado — e misturaria as contas se
+  outra fosse conectada em seguida.
 - ⚠️ **`vencidas_listadas_em` só é carimbado quando TODA cobrança listada
   pôde ser guardada**: cliente novo que o PRAZO não deixou ler (`adiados`)
   segura o carimbo — senão `leituraFresca` afirmaria "em dia" sobre uma

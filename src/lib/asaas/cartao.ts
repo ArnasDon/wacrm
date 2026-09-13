@@ -22,6 +22,7 @@ export const CODIGOS_DO_ASAAS = [
   "nao_conectado",
   "conta_trocada",
   "em_curso",
+  "cadeado_perdido",
 ] as const;
 
 export type CodigoDoAsaas = (typeof CODIGOS_DO_ASAAS)[number];

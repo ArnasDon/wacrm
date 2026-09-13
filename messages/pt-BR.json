@@ -2783,7 +2783,8 @@
           "chave_ilegivel": "a chave guardada não pôde ser lida — conecte de novo",
           "nao_conectado": "o Asaas não está conectado",
           "conta_trocada": "esta chave é de OUTRA conta do Asaas — para trocar de conta, desconecte apagando os dados guardados",
-          "em_curso": "já há uma sincronização em curso"
+          "em_curso": "já há uma sincronização em curso",
+          "cadeado_perdido": "outro processo assumiu a sincronização no meio do ciclo — o ciclo foi abandonado sem gravar"
         },
         "confirmarApagar": "Desconectar E apagar os dados do Asaas guardados no CRM ({clientes} clientes e {cobrancas} cobranças)? Os vínculos e os ignorados são perdidos. As fichas de contato criadas ficam. Use isto para trocar de conta do Asaas.",
         "desconectarEApagar": "Desconectar e apagar os dados do Asaas",

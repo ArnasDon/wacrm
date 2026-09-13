@@ -589,7 +589,8 @@
           "falhou": "falhou em {quando}",
           "fora_do_escopo": "fora do escopo da automação em {quando}",
           "sem_automacao": "a automação foi desligada antes de sair ({quando})",
-          "incerto": "sem desfecho registrado ({quando}) — pode ter saído; não é reenviada"
+          "incerto": "sem desfecho registrado ({quando}) — pode ter saído; não é reenviada",
+          "na_fila": "na fila do motor ({quando}) — o WhatsApp recusou e a mensagem será tentada de novo em instantes"
         }
       }
     },
@@ -3021,6 +3022,39 @@
           "naoApagado": "A conexão foi desfeita, mas o webhook não pôde ser apagado no Asaas — apague no painel (Integrações → Webhooks), senão o Asaas insiste por horas numa URL que não responde e interrompe a fila.",
           "semEnderecoCurto": "Ainda não criado — este ambiente não tem endereço público.",
           "ultimoErro": "Última tentativa falhou: {motivo}."
+        },
+        "regua": {
+          "titulo": "Cobrança automática",
+          "desc": "Com o interruptor ligado, o CRM manda pelo WhatsApp o lembrete no dia do vencimento e a cobrança nos marcos de atraso — pelas automações dos gatilhos do Asaas, uma mensagem por cliente com todas as parcelas vencidas. Ligar não é retroativo: só o que vencer daqui em diante entra.",
+          "estadoLigada": "Ligada",
+          "estadoDesligada": "Desligada",
+          "automacoes": "{ligadas} de {total} automações da régua ligadas",
+          "ativadaEm": "ligada em {quando}",
+          "ligadasMasDesligada": "há automação ligada, mas nada sai até ligar o interruptor",
+          "ligadaSemAutomacao": "sem automação ligada, nada sai — ligue uma em Automações",
+          "marcoRepetido": "Duas ou mais automações ligadas têm o mesmo marco ({marcos} dias): só uma delas envia, a outra fica travada.",
+          "lembreteRepetido": "Há mais de um lembrete do vencimento ligado: só um deles envia.",
+          "excecoes": "{n} cliente(s) marcado(s) para não receber a cobrança automática (lista \"Sem cobrança automática\").",
+          "intervaloLabel": "Intervalo mínimo entre cobranças (dias)",
+          "intervaloGravar": "Gravar",
+          "intervaloAjuda": "Um marco que cai dentro deste intervalo depois da última cobrança enviada ao cliente não manda mensagem. O lembrete do vencimento não conta.",
+          "intervaloGravado": "Intervalo gravado.",
+          "criarPadrao": "Criar régua padrão",
+          "verAutomacoes": "Ver automações",
+          "erroGravar": "Não foi possível gravar.",
+          "ligada": "Cobrança automática ligada. Só o que vencer daqui em diante entra na régua.",
+          "desligada": "Cobrança automática desligada.",
+          "erroPadrao": "Não foi possível criar a régua padrão.",
+          "padraoCriada": "{n} automação(ões) criada(s), desligada(s): revise o texto e ligue uma a uma em Automações.",
+          "padraoJaExistia": "A régua padrão já existe — nada foi criado.",
+          "padraoSemConexao": "Nenhuma conexão por QR Code conectada: os passos nasceram sem conexão, e a automação só liga depois de escolher uma.",
+          "naoCobrar": "Não cobrar automaticamente",
+          "cobrarDeNovo": "Voltar a cobrar automaticamente",
+          "excecao": "sem cobrança automática",
+          "excecaoDesde": "sem cobrança automática desde {quando}, por {quem}",
+          "trocada": "Este cliente não recebe mais a cobrança automática.",
+          "religada": "Este cliente volta a receber a cobrança automática.",
+          "erroTrocar": "Não foi possível mudar a cobrança automática deste cliente."
         }
       }
     },

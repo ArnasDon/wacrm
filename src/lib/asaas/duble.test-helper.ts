@@ -66,7 +66,7 @@ const DEFAULTS: Record<string, Linha> = {
   },
   cb_asaas_eventos: { asaas_payment_id: null, evento_criado_em: null, processado_em: null, resultado: "recebido", detalhe: null },
   cb_asaas_cobrancas: { deleted: false, vista_vencida_em: null, parcela_total: null, juros_e_multa: null },
-  cb_asaas_regua_envios: { automation_id: null, contact_id: null, resultado: "reservado", detalhe: null, finalizado_em: null },
+  cb_asaas_regua_envios: { automation_id: null, contact_id: null, automation_log_id: null, resultado: "reservado", detalhe: null, finalizado_em: null },
   conversations: { channel_id: null, channel_pinned: false },
   contacts: { name: null, email: null },
 };
@@ -76,6 +76,8 @@ function derivadas(tabela: string, linha: Linha): Linha {
   const extra: Linha = {};
   if (tabela === "contacts" && typeof linha.phone === "string") extra.phone_normalized = linha.phone.replace(/\D/g, "");
   if (tabela === "tags" && typeof linha.name === "string") extra.name_key = linha.name.trim().normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
+  // `criado_em DEFAULT now()` da trava da régua (998): a varredura filtra por ela.
+  if (tabela === "cb_asaas_regua_envios" && linha.criado_em === undefined) extra.criado_em = new Date().toISOString();
   return extra;
 }
 

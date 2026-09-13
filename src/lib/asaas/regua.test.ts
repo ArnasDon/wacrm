@@ -18,6 +18,7 @@ import {
   linhaDaParcela,
   montarVariaveis,
   proximoDiaUtil,
+  RESULTADOS_DA_TRAVA,
   resultadoDoLog,
   somarDias,
   textoDoVencimento,
@@ -291,6 +292,14 @@ describe("resultadoDoLog — o que a trava registra", () => {
     expect(resultadoDoLog({ desfecho: null, steps_executed: [{ step_type: "send_message", status: "success" }] }, disparo)).toBe("enviado");
     expect(resultadoDoLog({ desfecho: null, steps_executed: [] }, disparo)).toBe("incerto");
   });
+  it("`na_fila`: sem desfecho, sem envio e com o disparo em espera — o motor reenfileirou o passo (PR #205); com envio registrado continua `enviado`", () => {
+    const emEspera = { candidatas: 1, foraDoEscopo: 0, executadas: 1, emEspera: 1 };
+    expect(resultadoDoLog({ desfecho: null, steps_executed: [{ step_type: "send_message", status: "failed" }] }, emEspera)).toBe("na_fila");
+    expect(resultadoDoLog({ desfecho: null, steps_executed: [{ step_type: "send_message", status: "success" }] }, emEspera)).toBe("enviado");
+    // o desfecho gravado vence a espera: a retentativa já rodou
+    expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_message", status: "failed" }] }, emEspera)).toBe("falhou");
+    expect(RESULTADOS_DA_TRAVA).toContain("na_fila");
+  });
   it("sem log: fora do escopo, sem automação, ou incerto quando o motor diz que executou", () => {
     expect(resultadoDoLog(null, { candidatas: 0, foraDoEscopo: 0, executadas: 0 })).toBe("sem_automacao");
     expect(resultadoDoLog(null, { candidatas: 1, foraDoEscopo: 1, executadas: 0 })).toBe("fora_do_escopo");
@@ -301,12 +310,12 @@ describe("resultadoDoLog — o que a trava registra", () => {
 // ============================================================
 // A aba Cobranças pede o desfecho da trava por chave MONTADA
 // (`Inbox.cobrancas.regua.resultado.<resultado>`), fora do alcance do portão
-// estático de i18n — os oito valores do CHECK da 998 têm de existir nos
-// dois dicionários, senão a aba imprime a chave crua.
+// estático de i18n — os NOVE valores do CHECK da 998 (`RESULTADOS_DA_TRAVA`,
+// em `regua.ts`) têm de existir nos dois dicionários, senão a aba imprime a
+// chave crua.
 // ============================================================
 import { readFileSync } from "node:fs";
 
-const RESULTADOS_DA_TRAVA = ["reservado", "enviado", "absorvida", "barrada", "falhou", "fora_do_escopo", "sem_automacao", "incerto"] as const;
 
 describe.each(["pt-BR.json", "en.json"])("dicionário %s — os resultados da régua", (arquivo) => {
   it("CRÍTICO: todo resultado da trava tem frase, e o lembrete e o marco também", () => {

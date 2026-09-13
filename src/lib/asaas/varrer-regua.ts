@@ -18,7 +18,9 @@ import {
   dentroDoIntervalo,
   lerAutomacaoDaRegua,
   montarVariaveis,
+  RECOLHER_NA_FILA_MS,
   RECOLHER_TRAVA_MS,
+  RESULTADOS_QUE_CONTAM_COMO_ENVIO,
   resultadoDoLog,
   vencidasDoCliente,
   type AutomacaoDaRegua,
@@ -38,6 +40,9 @@ import {
  *     automação para aquele contato criado depois da trava = nada rodou →
  *     a trava é apagada e o ciclo seguinte tenta dentro da janela; COM log =
  *     pode ter saído → `incerto`, nunca reenviado.
+ *  1b. Reconcilia as travas `na_fila` (o provedor recusou o envio e o MOTOR
+ *     o reenfileirou, PR #205): o log daquela execução já tem desfecho →
+ *     `enviado`/`falhou`/`barrada`; sem desfecho depois de 1 h → `incerto`.
  *  2. As automações ligadas dos dois gatilhos, com a CONEXÃO do primeiro
  *     `send_message` (D19) resolvida e VIVA — id que não resolve na conta
  *     pula a automação inteira ("conexão da mensagem inválida"); conexão
@@ -57,8 +62,11 @@ import {
  *     não tem conversa, e o passo `send_message` não a cria), com o canal
  *     do passo e sem pino.
  *  7. Dispara SÓ a automação carimbada (`automation_id` no contexto) e mede
- *     pelo `automation_logs` — `enviado` só com o `send_message` bem-sucedido.
- *     Grupos do mesmo contato em SEQUÊNCIA (o log não guarda contexto).
+ *     pelo `automation_logs` — `enviado` só com o `send_message` bem-sucedido;
+ *     `na_fila` quando o motor reenfileirou (a trava guarda o id do log para
+ *     o passo 1b). Grupos do mesmo contato em SEQUÊNCIA (o log não guarda
+ *     contexto). ⚠️ `enviado`, `na_fila` e `incerto` contam como "cobrado"
+ *     para o intervalo mínimo e o "uma por cliente por dia".
  *  8. O lembrete (D17): mesma mecânica, sobre o que vence hoje; o cliente com
  *     marco hoje cede a vez à cobrança, que leva a linha "e hoje vence…".
  *
@@ -75,6 +83,8 @@ export interface ResultadoDaRegua {
   /** grupos (cliente × dia) examinados */
   candidatos: number;
   enviados: number;
+  /** o provedor recusou e o motor reenfileirou (PR #205): sai em 30 s / 5 min, fora da varredura */
+  naFila: number;
   absorvidos: number;
   barrados: number;
   falhas: number;
@@ -83,6 +93,8 @@ export interface ResultadoDaRegua {
   /** automações puladas por conexão que não resolve na conta */
   conexaoInvalida: number;
   orfasRecolhidas: number;
+  /** travas `na_fila` fechadas pelo log da execução (passo 1b) */
+  reconciliadas: number;
   /** o interruptor foi desligado no meio do ciclo */
   desligadaNoMeio: boolean;
   /** `rede`/`limite`/erro que encerrou a varredura antes do fim */
@@ -311,6 +323,61 @@ async function recolherOrfas(admin: SupabaseClient, accountId: string, agora: Da
 }
 
 /**
+ * Travas `na_fila` (passo 1b): o motor reenfileirou o `send_message` e a
+ * varredura não esperou — o desfecho está no log da execução, pelo id que a
+ * trava guardou. Com desfecho → o resultado de sempre; log sumido, ou sem
+ * desfecho depois de `RECOLHER_NA_FILA_MS` → `incerto`. Cerca de posse:
+ * `resultado = 'na_fila'`.
+ */
+async function reconciliarNaFila(admin: SupabaseClient, accountId: string, agora: Date): Promise<number> {
+  const { data, error } = await admin
+    .from("cb_asaas_regua_envios")
+    .select("id, automation_log_id, criado_em")
+    .eq("account_id", accountId)
+    .eq("resultado", "na_fila")
+    .order("criado_em", { ascending: true })
+    .limit(200);
+  if (error) throw new Error(`na fila: ${error.message}`);
+  const travas = (data ?? []) as { id: string; automation_log_id: string | null; criado_em: string }[];
+  if (travas.length === 0) return 0;
+  const ids = [...new Set(travas.map((t) => t.automation_log_id).filter((v): v is string => typeof v === "string"))];
+  const logs = new Map<string, { desfecho: string | null; steps_executed: { step_type: string; status: string }[]; error_message: string | null }>();
+  if (ids.length > 0) {
+    const { data: linhas, error: erroLogs } = await admin.from("automation_logs").select("id, desfecho, steps_executed, error_message").in("id", ids);
+    if (erroLogs) throw new Error(`logs da fila: ${erroLogs.message}`);
+    for (const l of (linhas ?? []) as { id: string; desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null }[]) {
+      logs.set(l.id, { desfecho: l.desfecho, steps_executed: l.steps_executed ?? [], error_message: l.error_message });
+    }
+  }
+  const disparo = { candidatas: 1, foraDoEscopo: 0, executadas: 1, emEspera: 1 };
+  let fechadas = 0;
+  for (const t of travas) {
+    const log = t.automation_log_id ? (logs.get(t.automation_log_id) ?? null) : null;
+    const velha = agora.getTime() - Date.parse(t.criado_em) > RECOLHER_NA_FILA_MS;
+    let resultado: string | null = null;
+    let detalhe: string | null = null;
+    if (!log) {
+      if (!velha) continue;
+      resultado = "incerto";
+      detalhe = "retentativa sem log da execução";
+    } else {
+      const medido = resultadoDoLog(log, disparo);
+      if (medido === "na_fila") {
+        if (!velha) continue; // o motor ainda vai rodar de novo
+        resultado = "incerto";
+        detalhe = "retentativa sem desfecho registrado";
+      } else {
+        resultado = medido;
+        detalhe = log.error_message ? log.error_message.slice(0, 300) : null;
+      }
+    }
+    await admin.from("cb_asaas_regua_envios").update({ resultado, detalhe, finalizado_em: agora.toISOString() }).eq("id", t.id).eq("resultado", "na_fila");
+    fechadas++;
+  }
+  return fechadas;
+}
+
+/**
  * A conversa 1:1 do contato — a mais antiga; senão nasce aqui, com o canal
  * do passo e sem pino, e `user_id` = o DONO da conta (`dono-duravel`).
  */
@@ -406,24 +473,27 @@ async function medir(
   contactId: string,
   desde: string,
   disparo: ResultadoDoDisparo,
-): Promise<{ resultado: ReturnType<typeof resultadoDoLog>; detalhe: string | null }> {
+): Promise<{ resultado: ReturnType<typeof resultadoDoLog>; detalhe: string | null; logId: string | null }> {
   const { data } = await admin
     .from("automation_logs")
-    .select("desfecho, steps_executed, error_message")
+    .select("id, desfecho, steps_executed, error_message")
     .eq("automation_id", automationId)
     .eq("contact_id", contactId)
     .gte("created_at", desde)
     .order("created_at", { ascending: false })
     .limit(1);
-  const log = (data?.[0] as { desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null } | undefined) ?? null;
+  const log = (data?.[0] as { id: string; desfecho: string | null; steps_executed: { step_type: string; status: string }[] | null; error_message: string | null } | undefined) ?? null;
   const resultado = resultadoDoLog(log ? { desfecho: log.desfecho, steps_executed: log.steps_executed ?? [] } : null, disparo);
   const detalhe = log?.error_message ? log.error_message.slice(0, 300) : disparo.erro ?? null;
-  return { resultado, detalhe };
+  return { resultado, detalhe, logId: log?.id ?? null };
 }
 
-async function fecharTravas(admin: SupabaseClient, ids: string[], resultado: string, detalhe: string | null, agora: string): Promise<void> {
+/** Fecha as travas `reservado` do grupo com o desfecho medido; `na_fila` fica com o id do log para o passo 1b. */
+async function fecharTravas(admin: SupabaseClient, ids: string[], resultado: string, detalhe: string | null, agora: string, logId: string | null = null): Promise<void> {
   if (ids.length === 0) return;
-  await admin.from("cb_asaas_regua_envios").update({ resultado, detalhe, finalizado_em: agora }).in("id", ids).eq("resultado", "reservado");
+  const patch: Record<string, unknown> = { resultado, detalhe, automation_log_id: logId };
+  if (resultado !== "na_fila") patch.finalizado_em = agora;
+  await admin.from("cb_asaas_regua_envios").update(patch).in("id", ids).eq("resultado", "reservado");
 }
 
 export async function varrerRegua(admin: SupabaseClient, accountId: string, deps: DependenciasDaVarredura = {}): Promise<ResultadoDaRegua> {
@@ -432,12 +502,13 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
   const fuso = deps.fuso ?? FUSO_PADRAO;
   const lerPassos = deps.lerPassos ?? loadStepsTree;
   const disparar = deps.disparar ?? dispararAutomacoes;
-  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, conexaoInvalida: 0, orfasRecolhidas: 0, desligadaNoMeio: false, interrompida: null };
+  const saida: ResultadoDaRegua = { ativa: false, automacoes: 0, candidatos: 0, enviados: 0, naFila: 0, absorvidos: 0, barrados: 0, falhas: 0, semConexao: 0, conexaoInvalida: 0, orfasRecolhidas: 0, reconciliadas: 0, desligadaNoMeio: false, interrompida: null };
   try {
     const config = await lerConfigDaRegua(admin, accountId);
     if (!config || !config.regua_ativa) return saida;
     saida.ativa = true;
     saida.orfasRecolhidas = await recolherOrfas(admin, accountId, agora);
+    saida.reconciliadas = await reconciliarNaFila(admin, accountId, agora);
 
     const automacoes = await lerAutomacoes(admin, accountId, lerPassos, saida);
     saida.automacoes = automacoes.length;
@@ -464,10 +535,11 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
     const parcelas = parcelasTodas.filter((p) => clientes.has(p.asaas_customer_id) && (corte === null || !ehDevida(classificar(p.status, p.deleted)) || Date.parse(p.visto_em) >= corte));
     const desde = new Date(agora.getTime() - Math.max(config.regua_intervalo_dias, 1) * 86_400_000 - 86_400_000).toISOString();
     const envios = await lerEnviosRecentes(admin, accountId, desde);
-    const enviadosHoje = new Set(envios.filter((e) => e.resultado === "enviado" && diaNoFuso(new Date(e.criado_em), fuso) === ctx.hoje).map((e) => e.asaas_customer_id));
+    // `enviado`, `na_fila` e `incerto` contam como cobrado: mandar de menos é o lado seguro.
+    const enviadosHoje = new Set(envios.filter((e) => RESULTADOS_QUE_CONTAM_COMO_ENVIO.has(e.resultado) && diaNoFuso(new Date(e.criado_em), fuso) === ctx.hoje).map((e) => e.asaas_customer_id));
     const ultimaCobranca = new Map<string, string>();
     for (const e of envios) {
-      if (e.tipo === "atraso" && e.resultado === "enviado" && !ultimaCobranca.has(e.asaas_customer_id)) ultimaCobranca.set(e.asaas_customer_id, e.criado_em);
+      if (e.tipo === "atraso" && RESULTADOS_QUE_CONTAM_COMO_ENVIO.has(e.resultado) && !ultimaCobranca.has(e.asaas_customer_id)) ultimaCobranca.set(e.asaas_customer_id, e.criado_em);
     }
 
     const { data: conta } = await admin.from("accounts").select("name").eq("id", accountId).maybeSingle();
@@ -547,10 +619,11 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         context: { automation_id: automacao.id, conversation_id: conversationId, channel_id: automacao.channelId, vars },
       });
       // 7) o desfecho, pelo log
-      const { resultado, detalhe } = await medir(admin, grupo.automacao.id, ligado.contact_id, carimbo, disparo);
-      await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString());
-      if (resultado === "enviado") {
-        saida.enviados += 1;
+      const { resultado, detalhe, logId } = await medir(admin, grupo.automacao.id, ligado.contact_id, carimbo, disparo);
+      await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString(), logId);
+      if (resultado === "enviado" || resultado === "na_fila") {
+        if (resultado === "enviado") saida.enviados += 1;
+        else saida.naFila += 1;
         enviadosHoje.add(grupo.asaasCustomerId);
         ultimaCobranca.set(grupo.asaasCustomerId, carimbo);
       } else if (resultado === "barrada") saida.barrados += 1;
@@ -593,9 +666,10 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         contactId: ligado.contact_id,
         context: { automation_id: automacao.id, conversation_id: conversationId, channel_id: automacao.channelId, vars },
       });
-      const { resultado, detalhe } = await medir(admin, automacao.id, ligado.contact_id, carimbo, disparo);
-      await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString());
+      const { resultado, detalhe, logId } = await medir(admin, automacao.id, ligado.contact_id, carimbo, disparo);
+      await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString(), logId);
       if (resultado === "enviado") saida.enviados += 1;
+      else if (resultado === "na_fila") saida.naFila += 1;
       else if (resultado === "barrada") saida.barrados += 1;
       else saida.falhas += 1;
     }

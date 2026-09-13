@@ -16,17 +16,27 @@ import type { ReguaDoCartao } from "@/lib/asaas/cartao";
 /**
  * O bloco "Cobrança automática" do cartão do Asaas (998): o interruptor de
  * cima (D20), o intervalo mínimo entre cobranças (D11, 13/09), quantas
- * automações da régua estão ligadas, o aviso de marco repetido, o que a
- * última varredura fez, "Criar régua padrão" e o link para as automações.
+ * automações da régua existem e estão ligadas, o aviso de marco repetido,
+ * quantos clientes estão na lista de exceção (D21), "Criar régua padrão" e
+ * o link para as automações. O que cada varredura fez fica na aba Cobranças
+ * de cada cliente (o histórico da trava) e no log do agendador.
  *
  * ⚠️ O interruptor NÃO é retroativo (D13): o bloco diz isso ao ligar. E
  * desligado com automação ligada é um estado que a aba Cobranças também
- * denuncia — aqui é onde se resolve.
+ * denuncia — aqui é onde se resolve. `semCobranca` vem NULO enquanto o
+ * resumo não está na tela (carga ou falha): o número some, não vira 0.
  */
-export function AsaasRegua({ regua, semCobranca, aoMudar }: { regua: ReguaDoCartao; semCobranca: number; aoMudar: () => void }) {
+export function AsaasRegua({ regua, semCobranca, aoMudar }: { regua: ReguaDoCartao; semCobranca: number | null; aoMudar: () => void }) {
   const t = useTranslations("Settings.integracoes.asaas.regua");
   const [salvando, setSalvando] = useState<"interruptor" | "intervalo" | "padrao" | null>(null);
   const [intervalo, setIntervalo] = useState(String(regua.intervaloDias));
+  // A recarga do cartão traz o valor gravado: o campo segue a prop enquanto
+  // ninguém o edita (o React reusa a instância entre recargas).
+  const [intervaloGravado, setIntervaloGravado] = useState(regua.intervaloDias);
+  if (intervaloGravado !== regua.intervaloDias) {
+    setIntervaloGravado(regua.intervaloDias);
+    setIntervalo(String(regua.intervaloDias));
+  }
 
   const gravar = async (corpo: Record<string, unknown>, o: "interruptor" | "intervalo") => {
     setSalvando(o);
@@ -83,7 +93,8 @@ export function AsaasRegua({ regua, semCobranca, aoMudar }: { regua: ReguaDoCart
         {regua.ativa && regua.automacoesLigadas === 0 ? ` · ${t("ligadaSemAutomacao")}` : ""}
       </p>
       {regua.marcosRepetidos.length > 0 && <p className="text-amber-600 dark:text-amber-400">{t("marcoRepetido", { marcos: regua.marcosRepetidos.join(", ") })}</p>}
-      {semCobranca > 0 && <p className="text-muted-foreground">{t("excecoes", { n: semCobranca })}</p>}
+      {regua.lembreteRepetido && <p className="text-amber-600 dark:text-amber-400">{t("lembreteRepetido")}</p>}
+      {semCobranca !== null && semCobranca > 0 && <p className="text-muted-foreground">{t("excecoes", { n: semCobranca })}</p>}
       <div className="flex flex-wrap items-end gap-3">
         <div className="space-y-1">
           <Label htmlFor="asaas-regua-intervalo">{t("intervaloLabel")}</Label>

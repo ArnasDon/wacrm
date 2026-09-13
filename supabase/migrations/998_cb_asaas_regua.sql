@@ -44,6 +44,14 @@
 --    serializa dois processos (o deploy `start-first` tem dois Node vivos).
 --    `asaas_customer_id` fica na linha para o intervalo mínimo e o "uma por
 --    cliente por dia" serem uma consulta.
+--    ⚠️ `na_fila` e `automation_log_id` existem por causa da RETENTATIVA do
+--    motor (13/09/2026, PR #205): um `send_message` que o provedor RECUSA
+--    (4xx) volta para a fila do "Aguardar" e roda de novo em 30 s / 5 min,
+--    fora da varredura. A trava registra `na_fila` com o id do log, e a
+--    varredura seguinte RECONCILIA pelo log (`enviado`/`falhou`/`barrada`;
+--    sem desfecho depois de 1 h, `incerto`). Enquanto isso o cliente conta
+--    como cobrado (intervalo mínimo e "uma por dia") — mandar de menos é o
+--    lado seguro de uma cobrança.
 --
 -- A FK composta para `cb_asaas_cobrancas` exige o índice único `(id,
 -- account_id)` lá (a rota roda em service role; FK simples só garante
@@ -81,8 +89,11 @@ CREATE TABLE IF NOT EXISTS cb_asaas_regua_envios (
   automation_id      uuid REFERENCES automations(id) ON DELETE SET NULL,
   automation_nome    text NOT NULL,
   contact_id         uuid,
+  -- o log da execução que a varredura disparou (para reconciliar `na_fila`);
+  -- SET NULL porque o log pode ser podado sem levar o histórico da cobrança
+  automation_log_id  uuid REFERENCES automation_logs(id) ON DELETE SET NULL,
   resultado          text NOT NULL DEFAULT 'reservado' CHECK (resultado IN
-                       ('reservado', 'enviado', 'absorvida', 'barrada', 'falhou', 'fora_do_escopo', 'sem_automacao', 'incerto')),
+                       ('reservado', 'enviado', 'absorvida', 'barrada', 'falhou', 'fora_do_escopo', 'sem_automacao', 'incerto', 'na_fila')),
   detalhe            text,
   criado_em          timestamptz NOT NULL DEFAULT now(),
   finalizado_em      timestamptz,
@@ -177,5 +188,18 @@ BEGIN
     WHERE conrelid = 'public.cb_asaas_regua_envios'::regclass AND conname = 'cb_asaas_regua_envios_contato_fk' AND contype = 'f'
   ) THEN
     RAISE EXCEPTION '998: FK composta para contacts ausente';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM information_schema.columns
+    WHERE table_schema = 'public' AND table_name = 'cb_asaas_regua_envios' AND column_name = 'automation_log_id'
+  ) THEN
+    RAISE EXCEPTION '998: automation_log_id ausente — a trava na_fila não teria como ser reconciliada';
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conrelid = 'public.cb_asaas_regua_envios'::regclass AND contype = 'c'
+      AND pg_get_constraintdef(oid) LIKE '%resultado%na_fila%'
+  ) THEN
+    RAISE EXCEPTION '998: o CHECK de resultado não aceita na_fila (a retentativa do motor, PR #205)';
   END IF;
 END $$;

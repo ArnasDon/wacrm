@@ -2,6 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextResponse } from "next/server";
 
 import { sincronizarAsaas } from "@/lib/asaas/sincronizar";
+import { varrerRegua } from "@/lib/asaas/varrer-regua";
 import { origemPublica } from "@/lib/asaas/webhook";
 import { cuidarDoWebhook } from "@/lib/asaas/webhook-asaas";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
@@ -20,6 +21,11 @@ import { supabaseAdmin } from "@/lib/automations/admin-client";
  * Teto: o `-m 120` do curl. O laço para de abrir contas novas depois de
  * 90 s — a que ficou entra no ciclo seguinte (15 min), e vem para a frente
  * pelo rodízio de `last_sync_attempt_at`.
+ *
+ * Depois da sincronização de cada conta, com o espelho recém-atualizado: o
+ * webhook (Fase 2) e a RÉGUA de cobrança (Fase 3, `varrerRegua`) — os dois
+ * só dentro do orçamento; o que não coube roda no ciclo seguinte, dentro da
+ * mesma janela de envio.
  */
 export const maxDuration = 120;
 
@@ -84,6 +90,17 @@ export async function GET(request: Request) {
       if (Date.now() - inicio <= ORCAMENTO_MS) {
         const w = await cuidarDoWebhook(admin, conta.account_id, { origem });
         if (!w.ok && w.codigo !== "url_inalcancavel") console.warn(`[asaas] webhook da conta ${conta.account_id}: ${w.codigo}`);
+      }
+      // A régua (998): só com o interruptor ligado ela lê alguma coisa; o
+      // prazo é o que sobrou do orçamento — a varredura para sozinha
+      // (`interrompida: "prazo"`) e o ciclo seguinte continua.
+      if (Date.now() - inicio <= ORCAMENTO_MS) {
+        const rg = await varrerRegua(admin, conta.account_id, { prazoMs: inicio + ORCAMENTO_MS });
+        if (rg.ativa) {
+          console.log(
+            `[asaas] régua da conta ${conta.account_id}: ${rg.automacoes} automações, ${rg.candidatos} candidatos, ${rg.enviados} enviados, ${rg.naFila} na fila, ${rg.absorvidos} absorvidos, ${rg.barrados} barrados, ${rg.falhas} falhas, ${rg.semConexao} sem conexão, ${rg.conexaoInvalida} conexão inválida, ${rg.orfasRecolhidas} órfãs, ${rg.reconciliadas} reconciliadas${rg.desligadaNoMeio ? ", desligada no meio" : ""}${rg.interrompida ? `, interrompida (${rg.interrompida})` : ""}`,
+          );
+        }
       }
     } else if (r.codigo === "em_curso" || r.codigo === "cadeado_perdido") adiadas++;
     else falhas++;

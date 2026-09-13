@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, ESTADOS_DO_WEBHOOK, ORIGENS_DO_VINCULO, cartaoDoAsaas, codigoConhecido, diasAte, type ConfigDoAsaas } from './cartao'
+import { AVISAR_EXPIRACAO_EM_DIAS, CODIGOS_DO_ASAAS, ESTADOS_DO_WEBHOOK, ORIGENS_DO_VINCULO, cartaoDoAsaas, codigoConhecido, diasAte, reguaDoCartao, type ConfigDoAsaas } from './cartao'
 import { NOMES_DAS_LISTAS } from './listas'
 import { MOTIVOS_DO_CANDIDATO } from './vinculo'
 
@@ -168,5 +168,39 @@ describe('cartaoDoAsaas', () => {
     const c = cartaoDoAsaas({ ...base, chave_expira_em: '2026-10-01' }, agora)
     expect(c.diasAteExpirar).toBe(19)
     expect(c.diasAteExpirar!).toBeLessThanOrEqual(AVISAR_EXPIRACAO_EM_DIAS)
+  })
+})
+
+describe('reguaDoCartao (998)', () => {
+  const ligada = (trigger_type: string, dias?: number, is_active = true) => ({ trigger_type, trigger_config: dias === undefined ? {} : { dias_de_atraso: dias }, is_active })
+
+  it('linha anterior à migration (ou sem config): desligada, intervalo padrão, nenhuma automação', () => {
+    expect(reguaDoCartao(null, [])).toEqual({ ativa: false, ativadaEm: null, intervaloDias: 3, automacoesTotal: 0, automacoesLigadas: 0, marcosRepetidos: [], lembreteRepetido: false })
+    expect(reguaDoCartao({}, []).ativa).toBe(false)
+  })
+
+  it('conta só as automações dos DOIS gatilhos do Asaas, e as ligadas à parte', () => {
+    const r = reguaDoCartao({ regua_ativa: true, regua_ativada_em: '2026-09-13T12:00:00Z', regua_intervalo_dias: 5 }, [
+      ligada('asaas_cobranca_vencida', 1),
+      ligada('asaas_cobranca_vencida', 5, false),
+      ligada('asaas_cobranca_vence_hoje'),
+      ligada('keyword', undefined),
+    ])
+    expect(r).toMatchObject({ ativa: true, ativadaEm: '2026-09-13T12:00:00Z', intervaloDias: 5, automacoesTotal: 3, automacoesLigadas: 2, marcosRepetidos: [], lembreteRepetido: false })
+  })
+
+  it('marco repetido é o de duas automações LIGADAS — a desligada não disputa a trava; o lembrete em dobro tem aviso próprio', () => {
+    const r = reguaDoCartao({ regua_ativa: false }, [
+      ligada('asaas_cobranca_vencida', 5),
+      ligada('asaas_cobranca_vencida', 5),
+      ligada('asaas_cobranca_vencida', 1),
+      ligada('asaas_cobranca_vencida', 1, false),
+      ligada('asaas_cobranca_vencida', 30),
+      ligada('asaas_cobranca_vencida', 30),
+      ligada('asaas_cobranca_vence_hoje'),
+      ligada('asaas_cobranca_vence_hoje'),
+    ])
+    expect(r.marcosRepetidos).toEqual([5, 30])
+    expect(r.lembreteRepetido).toBe(true)
   })
 })

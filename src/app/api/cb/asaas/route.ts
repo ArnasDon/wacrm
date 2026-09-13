@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 
-import { cartaoDoAsaas, type ConfigDoAsaas } from "@/lib/asaas/cartao";
+import { cartaoDoAsaas, reguaDoCartao, type AutomacaoDaReguaNoCartao, type ConfigDoAsaas } from "@/lib/asaas/cartao";
 import { contarEspelho } from "@/lib/asaas/conexao";
 import { lerEspelho } from "@/lib/asaas/espelho";
+import { GATILHOS_DA_REGUA } from "@/lib/asaas/regua";
 import { origemPublica, podeCriarDaqui, urlDoWebhook } from "@/lib/asaas/webhook";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
@@ -15,7 +16,10 @@ import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit
  * chave, desde quando, o último erro, quando foi a última sincronização — e
  * o RESUMO do espelho (quantos clientes, ligados, para confirmar, sem ficha,
  * inadimplentes), que as listas do cartão detalham por
- * `GET /api/cb/asaas/clientes`.
+ * `GET /api/cb/asaas/clientes` — e o bloco da RÉGUA (998): interruptor,
+ * intervalo e as automações dos dois gatilhos do Asaas (contadas aqui, em
+ * service role, para o cartão não depender do que a RLS de `automations`
+ * mostra a quem lê).
  *
  * ⚠️ A chave NÃO sai daqui, nem mascarada — a linha é lida com service role
  * e as colunas devolvidas são nomeadas uma a uma, nunca `select('*')`. O
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
     const { data, error } = await admin
       .from("cb_asaas_config")
       .select(
-        "chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error, created_at, webhook_token, webhook_state, webhook_erro, webhook_email, webhook_asaas_id, webhook_religado_em, webhook_conferido_em, last_event_at",
+        "chave_nome, ambiente, chave_expira_em, status, last_sync_at, last_sync_attempt_at, vencidas_listadas_em, last_full_sync_at, sincronizando_desde, last_error, created_at, webhook_token, webhook_state, webhook_erro, webhook_email, webhook_asaas_id, webhook_religado_em, webhook_conferido_em, last_event_at, regua_ativa, regua_ativada_em, regua_intervalo_dias",
       )
       .eq("account_id", ctx.accountId)
       .maybeSingle();
@@ -47,6 +51,13 @@ export async function GET(request: Request) {
     // a contagem entra na pergunta do "apagar" e no aviso de reconexão.
     const espelho = await lerEspelho(admin, ctx.accountId);
     const guardado = await contarEspelho(admin, ctx.accountId);
+    const { data: automacoes, error: erroAutomacoes } = await admin
+      .from("automations")
+      .select("trigger_type, trigger_config, is_active")
+      .eq("account_id", ctx.accountId)
+      .in("trigger_type", [...GATILHOS_DA_REGUA]);
+    if (erroAutomacoes) return NextResponse.json({ error: "Não foi possível ler as automações da régua." }, { status: 500 });
+    const regua = reguaDoCartao((data ?? null) as ConfigDoAsaas | null, (automacoes ?? []) as AutomacaoDaReguaNoCartao[]);
     return NextResponse.json({
       cartao,
       resumo: espelho.listas.resumo,
@@ -55,6 +66,7 @@ export async function GET(request: Request) {
       webhookUrl,
       origemAlcancavel: origem !== null,
       podeCriarDaqui: podeCriarDaqui(origem, request),
+      regua,
     });
   } catch (err) {
     return toErrorResponse(err);

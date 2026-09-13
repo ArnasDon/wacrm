@@ -68,19 +68,22 @@ interface Disparos {
 }
 
 /** O motor falso: registra o disparo e grava o log como o motor de verdade gravaria. */
-function motorFalso(e: EstadoDoDuble, disparos: Disparos, desfecho: "concluida" | "barrada" | "falhou" = "concluida") {
+function motorFalso(e: EstadoDoDuble, disparos: Disparos, desfecho: "concluida" | "barrada" | "falhou" | "na_fila" = "concluida") {
   return async (input: DispatchInput): Promise<ResultadoDoDisparo> => {
     disparos.chamadas.push(input);
+    // `na_fila`: o provedor recusou (4xx) e o motor reenfileirou o passo (PR
+    // #205) — o log fica sem desfecho, com o passo `failed`, e o disparo
+    // volta com `emEspera`.
     e.tabelas.automation_logs.push({
       id: `log-${disparos.chamadas.length}`,
       automation_id: input.context?.automation_id,
       contact_id: input.contactId,
       created_at: new Date().toISOString(),
-      desfecho,
-      steps_executed: desfecho === "concluida" ? [{ step_type: "send_message", status: "success" }] : desfecho === "falhou" ? [{ step_type: "send_message", status: "failed" }] : [],
-      error_message: desfecho === "falhou" ? "WhatsApp not configured" : null,
+      desfecho: desfecho === "na_fila" ? null : desfecho,
+      steps_executed: desfecho === "concluida" ? [{ step_type: "send_message", status: "success" }] : desfecho === "falhou" || desfecho === "na_fila" ? [{ step_type: "send_message", status: "failed" }] : [],
+      error_message: desfecho === "falhou" ? "WhatsApp not configured" : desfecho === "na_fila" ? "Evolution 400 — tentativa 1 de 3; nova tentativa em 30s" : null,
     });
-    return { candidatas: 1, foraDoEscopo: 0, executadas: 1, comFalha: desfecho === "falhou" ? 1 : 0, emEspera: 0 };
+    return { candidatas: 1, foraDoEscopo: 0, executadas: 1, comFalha: desfecho === "falhou" ? 1 : 0, emEspera: desfecho === "na_fila" ? 1 : 0 };
   };
 }
 
@@ -245,6 +248,53 @@ describe("varrerRegua — a cobrança do marco", () => {
     const { d: d2 } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } }, {}, disparos);
     await varrerRegua(dubleDoSupabase(e), CONTA, d2);
     expect(disparos.chamadas).toHaveLength(1);
+  });
+
+  it("o provedor recusou e o motor reenfileirou (PR #205): a trava fica `na_fila` com o id do log, conta como cobrada para o intervalo, e a varredura seguinte a fecha pelo log", async () => {
+    const e = estado();
+    const disparos: Disparos = { chamadas: [] };
+    const { d } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } }, { disparar: motorFalso(e, disparos, "na_fila") }, disparos);
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.naFila).toBe(1);
+    expect(r.enviados).toBe(0);
+    expect(r.falhas).toBe(0);
+    const trava = e.tabelas.cb_asaas_regua_envios[0] as Record<string, unknown>;
+    expect(trava).toMatchObject({ resultado: "na_fila", automation_log_id: "log-1", finalizado_em: null });
+
+    // o motor rodou de novo e concluiu: o log ganha desfecho
+    const log = e.tabelas.automation_logs[0] as Record<string, unknown>;
+    log.desfecho = "concluida";
+    log.steps_executed = [{ step_type: "send_message", status: "failed" }, { step_type: "send_message", status: "success" }];
+    // um segundo marco do MESMO cliente no dia seguinte (terça 15/09: venceu 11/09 + 4) cai no
+    // intervalo mínimo de 3 dias: a cobrança de segunda conta, mesmo tendo saído pela fila do motor
+    e.tabelas.automations.push(automacao("a-2", "asaas_cobranca_vencida", { dias_de_atraso: 4 }, "Cobrança · 4 dias"));
+    const amanha = new Date(AGORA.getTime() + 86_400_000);
+    const { d: d2 } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a") } }, { agora: amanha }, disparos);
+    const r2 = await varrerRegua(dubleDoSupabase(e), CONTA, d2);
+    expect(r2.reconciliadas).toBe(1);
+    expect(e.tabelas.cb_asaas_regua_envios[0]).toMatchObject({ resultado: "enviado", automation_log_id: "log-1" });
+    expect((e.tabelas.cb_asaas_regua_envios[0] as Record<string, unknown>).finalizado_em).toEqual(expect.any(String));
+    expect(r2.absorvidos).toBe(1);
+    expect(disparos.chamadas).toHaveLength(1);
+  });
+
+  it("`na_fila` cujo log continua sem desfecho depois de 1 h vira `incerto`; antes disso a varredura espera o motor", async () => {
+    const e = estado({
+      cb_asaas_regua_envios: [
+        { id: "t-1", account_id: CONTA, cobranca_id: "c1", asaas_customer_id: "cus_a", tipo: "atraso", marco: 1, vencimento: "2026-09-11", automation_id: "a-1", automation_nome: "Cobrança · 1 dia", contact_id: "ct-a", automation_log_id: "log-x", resultado: "na_fila", detalhe: null, criado_em: new Date(AGORA.getTime() - 20 * 60_000).toISOString(), finalizado_em: null },
+      ],
+      automation_logs: [{ id: "log-x", automation_id: "a-1", contact_id: "ct-a", created_at: new Date(AGORA.getTime() - 20 * 60_000).toISOString(), desfecho: null, steps_executed: [{ step_type: "send_message", status: "failed" }], error_message: null }],
+    });
+    const { d } = deps(e, { listas: {}, recursos: {} });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.reconciliadas).toBe(0);
+    expect(e.tabelas.cb_asaas_regua_envios[0]).toMatchObject({ resultado: "na_fila" });
+
+    const depois = new Date(AGORA.getTime() + 61 * 60_000);
+    const { d: d2 } = deps(e, { listas: {}, recursos: {} }, { agora: depois });
+    const r2 = await varrerRegua(dubleDoSupabase(e), CONTA, d2);
+    expect(r2.reconciliadas).toBe(1);
+    expect(e.tabelas.cb_asaas_regua_envios[0]).toMatchObject({ resultado: "incerto", detalhe: "retentativa sem desfecho registrado" });
   });
 
   it("o interruptor desligado NO MEIO do ciclo: o grupo é descartado sem travar e a varredura para", async () => {

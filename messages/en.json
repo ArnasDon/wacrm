@@ -596,7 +596,8 @@
           "falhou": "failed on {quando}",
           "fora_do_escopo": "outside the automation's scope on {quando}",
           "sem_automacao": "the automation was disabled before it went out ({quando})",
-          "incerto": "no recorded outcome ({quando}) — may have gone out; never resent"
+          "incerto": "no recorded outcome ({quando}) — may have gone out; never resent",
+          "na_fila": "queued by the engine ({quando}) — WhatsApp refused and the message will be retried shortly"
         }
       }
     },
@@ -3028,6 +3029,39 @@
           "naoApagado": "The connection was removed, but the webhook could not be deleted in Asaas — delete it in the panel (Integrations → Webhooks), or Asaas keeps insisting for hours on a URL that no longer answers and interrupts the queue.",
           "semEnderecoCurto": "Not created yet — this environment has no public address.",
           "ultimoErro": "Last attempt failed: {motivo}."
+        },
+        "regua": {
+          "titulo": "Automatic billing",
+          "desc": "With the switch on, the CRM sends the due-date reminder and the overdue notices by WhatsApp, through the automations of the Asaas triggers — one message per customer listing every overdue installment. Turning it on is not retroactive: only what falls due from now on enters.",
+          "estadoLigada": "On",
+          "estadoDesligada": "Off",
+          "automacoes": "{ligadas} of {total} billing automations active",
+          "ativadaEm": "on since {quando}",
+          "ligadasMasDesligada": "an automation is active, but nothing goes out until the switch is on",
+          "ligadaSemAutomacao": "no active automation, nothing goes out — activate one under Automations",
+          "marcoRepetido": "Two or more active automations share the same milestone ({marcos} days): only one of them sends, the other stays locked.",
+          "lembreteRepetido": "More than one due-date reminder is active: only one of them sends.",
+          "excecoes": "{n} customer(s) marked to skip automatic billing (\"No automatic billing\" list).",
+          "intervaloLabel": "Minimum interval between notices (days)",
+          "intervaloGravar": "Save",
+          "intervaloAjuda": "A milestone that falls within this interval after the last notice sent to the customer sends no message. The due-date reminder does not count.",
+          "intervaloGravado": "Interval saved.",
+          "criarPadrao": "Create default sequence",
+          "verAutomacoes": "See automations",
+          "erroGravar": "Could not save.",
+          "ligada": "Automatic billing on. Only what falls due from now on enters the sequence.",
+          "desligada": "Automatic billing off.",
+          "erroPadrao": "Could not create the default sequence.",
+          "padraoCriada": "{n} automation(s) created, inactive: review the text and activate them one by one under Automations.",
+          "padraoJaExistia": "The default sequence already exists — nothing was created.",
+          "padraoSemConexao": "No QR-code connection is connected: the steps were created without a connection, and the automation only activates after you pick one.",
+          "naoCobrar": "Skip automatic billing",
+          "cobrarDeNovo": "Resume automatic billing",
+          "excecao": "no automatic billing",
+          "excecaoDesde": "no automatic billing since {quando}, by {quem}",
+          "trocada": "This customer no longer receives automatic billing.",
+          "religada": "This customer receives automatic billing again.",
+          "erroTrocar": "Could not change this customer's automatic billing."
         }
       }
     },

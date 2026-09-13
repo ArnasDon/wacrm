@@ -45,6 +45,23 @@ export const INTERVALO_PADRAO_DIAS = 3;
 export const TOLERANCIA_DA_VISTA_DIAS = 3;
 /** Depois de quanto tempo uma trava `reservado` sem desfecho é órfã. */
 export const RECOLHER_TRAVA_MS = 10 * 60_000;
+/**
+ * Depois de quanto tempo uma trava `na_fila` (o motor reenfileirou o envio,
+ * PR #205) sem desfecho no log vira `incerto`. A retentativa roda em 30 s e
+ * depois em 5 min, mais o tique do agendador — uma hora cobre com folga.
+ */
+export const RECOLHER_NA_FILA_MS = 60 * 60_000;
+
+/** Os valores do CHECK de `cb_asaas_regua_envios.resultado` (998), rotulados por chave montada na aba. */
+export const RESULTADOS_DA_TRAVA = ["reservado", "enviado", "absorvida", "barrada", "falhou", "fora_do_escopo", "sem_automacao", "incerto", "na_fila"] as const;
+export type ResultadoDaTrava = (typeof RESULTADOS_DA_TRAVA)[number];
+
+/**
+ * O que conta como "já cobrado" para o intervalo mínimo (D11) e o "uma por
+ * cliente por dia": o que SAIU, o que está na fila do motor (vai sair) e o
+ * incerto (pode ter saído). Mandar de menos é o lado seguro de uma cobrança.
+ */
+export const RESULTADOS_QUE_CONTAM_COMO_ENVIO: ReadonlySet<string> = new Set(["enviado", "na_fila", "incerto"]);
 
 /** Feriados nacionais de data FIXA (MM-DD). Os móveis ficam fora da v1 (§8). */
 export const FERIADOS_NACIONAIS_FIXOS = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"] as const;
@@ -403,11 +420,17 @@ export function agruparLembretes(
  * `enviado` só com o `send_message` bem-sucedido e a execução concluída;
  * `barrada` (condição) e `falhou` vêm do desfecho; sem log = a automação
  * não rodou (desligada entre a seleção e o disparo, ou fora do escopo).
+ *
+ * ⚠️ `na_fila`: o provedor RECUSOU o envio (4xx) e o motor o reenfileirou
+ * (PR #205) — o log fica `partial`, sem desfecho, e o disparo volta com
+ * `emEspera`. Não é "falhou" (vai rodar de novo em 30 s) nem "incerto"
+ * (nada saiu); a varredura seguinte reconcilia pelo log (`reconciliarNaFila`).
+ * A régua não tem "Aguardar" (validate.ts), então `emEspera` aqui é só isso.
  */
 export function resultadoDoLog(
   log: { desfecho: string | null; steps_executed: { step_type: string; status: string }[] } | null,
-  disparo: { candidatas: number; foraDoEscopo: number; executadas: number },
-): "enviado" | "barrada" | "falhou" | "fora_do_escopo" | "sem_automacao" | "incerto" {
+  disparo: { candidatas: number; foraDoEscopo: number; executadas: number; emEspera?: number },
+): "enviado" | "barrada" | "falhou" | "fora_do_escopo" | "sem_automacao" | "incerto" | "na_fila" {
   if (!log) {
     if (disparo.candidatas === 0) return "sem_automacao";
     if (disparo.executadas === 0 && disparo.foraDoEscopo > 0) return "fora_do_escopo";
@@ -417,6 +440,8 @@ export function resultadoDoLog(
   if (log.desfecho === "barrada") return "barrada";
   const enviou = log.steps_executed.some((s) => s.step_type === "send_message" && s.status === "success");
   if (log.desfecho === "concluida") return enviou ? "enviado" : "barrada";
-  // Sem desfecho: o processo morreu no meio — pode ter saído.
-  return enviou ? "enviado" : "incerto";
+  if (enviou) return "enviado";
+  if ((disparo.emEspera ?? 0) > 0) return "na_fila";
+  // Sem desfecho e sem espera: o processo morreu no meio — pode ter saído.
+  return "incerto";
 }

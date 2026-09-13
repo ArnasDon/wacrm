@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { avisarAsaasMudou } from "@/lib/asaas/aviso";
-import { AVISAR_EXPIRACAO_EM_DIAS, codigoConhecido, type CartaoDoAsaas, type WebhookDoCartao } from "@/lib/asaas/cartao";
+import { AVISAR_EXPIRACAO_EM_DIAS, codigoConhecido, type CartaoDoAsaas, type ReguaDoCartao, type WebhookDoCartao } from "@/lib/asaas/cartao";
 import type { MotivoDoVinculo, RelatorioDoLevantamento } from "@/lib/asaas/levantamento";
 import type { ResumoDoEspelho } from "@/lib/asaas/listas";
 import { formatCurrency } from "@/lib/currency";
 import { cn } from "@/lib/utils";
 
 import { AsaasListas } from "./asaas-listas";
+import { AsaasRegua } from "./asaas-regua";
 import { SettingsChip } from "./settings-chip";
 
 /**
@@ -48,6 +49,8 @@ interface Resposta {
   origemAlcancavel: boolean;
   /** o botão "Ativar" funciona A PARTIR deste host (o preview carrega a URL da produção e não pode criar) */
   podeCriarDaqui: boolean;
+  /** o bloco "Cobrança automática" (998) */
+  regua: ReguaDoCartao;
 }
 
 const MOTIVOS: MotivoDoVinculo[] = [
@@ -382,6 +385,8 @@ export function AsaasCard() {
                   t={t}
                 />
               )}
+
+              {dados && <AsaasRegua regua={dados.regua} semCobranca={resumo && !falhou ? resumo.semCobranca : null} aoMudar={() => void carregar()} />}
 
               {resumo && !falhou && (
                 <div className="rounded-md border border-border bg-muted/30 p-3 text-xs">

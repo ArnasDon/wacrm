@@ -69,6 +69,13 @@ const UNIVERSO: Record<
     callSites: 1,
     viaVariavel: true,
   },
+  'lib/asaas/criar-ficha.ts': {
+    // A ficha que NASCE do Asaas (D2 de docs/PLANO-integracao-asaas.md): o
+    // cliente com telefone e sem ficha ganha o contato — e só ele. `dono`
+    // vem de `accounts.owner_user_id`, resolvido sem fallback.
+    fontes: ['dono'],
+    callSites: 1,
+  },
   'lib/automations/destinatario.ts': {
     // O passo `send_to_number` (977) cria a ficha e a conversa do número
     // avisado. `donoDaConta` vem de `accounts.owner_user_id`, resolvido sem

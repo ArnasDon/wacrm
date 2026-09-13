@@ -128,7 +128,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        echo "[agendador] laço rápido (15s) para automações + laço de 15min para agendadas, fluxos, radar, Meta Ads e tl;dv"
+        echo "[agendador] laço rápido (15s) para automações + laço de 15min para agendadas, fluxos, radar, Meta Ads, tl;dv e Asaas"
         while true; do
           curl -fsS -m 50 -o /dev/null \
             -H "x-cron-secret: $$AUTOMATION_CRON_SECRET" \
@@ -136,7 +136,7 @@ services:
           sleep 15
         done &
         while true; do
-          for rota in cb/scheduled flows cb/radar cb/meta-ads cb/tldv; do
+          for rota in cb/scheduled flows cb/radar cb/meta-ads cb/tldv cb/asaas; do
             curl -fsS -m 120 -o /dev/null \
               -H "x-cron-secret: $$AUTOMATION_CRON_SECRET" \
               "http://crm_crm:3000/api/$$rota/cron" || true

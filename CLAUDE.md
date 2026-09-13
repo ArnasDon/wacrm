@@ -3416,6 +3416,145 @@ do painel da conversa no inbox (`src/components/transcricoes/`). Plano vivo em
   armadilha do efeito passivo, na sexta aparição; a guarda é a mesma dos
   campos personalizados (`{ de, mapa }`).
 
+⚠️ **Asaas → vínculo dos clientes e espelho das cobranças (992/994): o
+Asaas é a fonte, o CRM só lê.** `src/lib/asaas/` — `cliente` (HTTP),
+`leitura`, `inadimplencia`, `vinculo`, `nome-aproximado`, `listas`,
+`aplicar`, `criar-ficha`, `sincronizar`, `espelho`, `conexao`, `cartao`;
+rotas em `/api/cb/asaas/*`, cartão em Integrações (`asaas-card.tsx` +
+`asaas-listas.tsx`). Plano vivo em `docs/PLANO-integracao-asaas.md` (as
+decisões D1–D20 e os números da conta real). O que morde código novo:
+
+- ⚠️⚠️ **TODAS as tabelas do Asaas são FECHADAS ao navegador** (RLS ligada,
+  zero policies, `REVOKE` de `anon` e `authenticated`), e é assim que tem de
+  ser: a chave cifrada, o CPF/CNPJ (só sai MASCARADO, pela rota do admin) e a
+  dívida de quem nem tem ficha moram lá. Toda tela lê por rota em service
+  role, que devolve também o que o membro não enxergaria sozinho — se está
+  conectado e se a leitura é FRESCA (`leituraFresca`, duas voltas do laço
+  lento). Sem isso "em dia" seria afirmação sobre dado parado.
+- ⚠️⚠️ **`vista_vencida_em` NUNCA é reescrito.** É a PRIMEIRA vez que o
+  espelho viu a cobrança vencida, carimbada num UPDATE cercado por `IS NULL`
+  — fora do upsert, de propósito. É o que a régua de cobrança (Fase 3) vai
+  usar como dia-alvo quando o Asaas marca vencida tarde, e o que faz "ligar
+  a régua não é retroativo" valer. "Está vencida" é o `status` do Asaas,
+  nunca `vencimento < hoje` (C7: o instante da virada não é documentado).
+- ⚠️ **O upsert de clientes leva SÓ metadados** — nunca `contact_id`,
+  `vinculo_origem`, `contatos_recusados` nem `candidatos` (a lição do tl;dv:
+  o que já é conhecido mantém o que tem). O upsert das cobranças, idem: o
+  PostgREST só escreve as colunas presentes, e o dublê de teste imita isso.
+- ⚠️ **A elegibilidade da regra automática é `contact_id IS NULL AND
+  (vinculo_origem IS NULL OR IN ('telefone','cpf','email','criada'))`,
+  nunca `<> 'desvinculado'`**: com a coluna nula (todo cliente novo) a
+  comparação dá NULL e exclui o cliente sem erro nenhum. O UPDATE do vínculo
+  é cercado pelas MESMAS condições — gente que ligou no meio do ciclo vence.
+  `manual` órfão (contato apagado) e `desvinculado` são de gente: a regra
+  não toca.
+- ⚠️ **Só telefone (com a irmã do nono dígito), CPF já ligado e e-mail
+  LIGAM.** Sufixo de 8 e nome aproximado só SUGEREM (`candidatos`, D5) —
+  medidos na conta real: zero casos cada um como vínculo, e ligar errado
+  mostra a dívida de um na conversa de outro. As cercas: contato já ligado a
+  outro cliente de documento DIFERENTE, nome de gente sem nenhum token em
+  comum (a esposa que paga a conta do marido), telefone igual ao de uma
+  conexão da própria conta, e `contatos_recusados` (desligado por gente
+  nunca volta — nem pela CRIAÇÃO da ficha: o número é o mesmo e o índice
+  único de `contacts` impede outra).
+- ⚠️⚠️ **O CRM CRIA a ficha do cliente com telefone e sem contato (D2,
+  decisão do operador em 12/09/2026)** — só o contato, SEM conversa, com
+  `user_id = accounts.owner_user_id` (`criar-ficha.ts` está no manifesto de
+  `dono-duravel.test.ts`), o nome do Asaas, e a etiqueta `asaas` por INSERT
+  DIRETO em `contact_tags` — nunca por `tag-events.ts`, que dispararia o
+  gatilho `tag_added` das automações 264 vezes de uma vez. Medido em
+  12/09/2026: 79,5% dos clientes do Asaas não tinham ficha. ⚠️ A ficha
+  criada é contato como outro qualquer (entra em "todos os contatos" do
+  disparo); a etiqueta é o que deixa excluí-la. `findExistingContact` é o
+  PORTÃO anti-duplicata, não o vínculo: ficha cujo número só bate pelo
+  sufixo vai para "Para confirmar".
+- ⚠️ **O ciclo PROVA A IDENTIDADE da chave antes de gravar** (relê os três
+  `cus_…` vistos mais RECENTEMENTE e, se todos derem 404, cruza uma página
+  de `/customers` com o espelho; nada cruzando = `conta_trocada`) e
+  `conectarAsaas` faz o mesmo com espelho existente. Sem isso, a chave de
+  outro CNPJ zeraria o aviso de todo mundo no ciclo seguinte. Sondas FIXAS
+  (o primeiro id da tabela) travariam a integração para sempre se aqueles
+  clientes fossem apagados no Asaas. O 404 de UMA cobrança na reconciliação
+  só vira `deleted` com o cliente dela respondendo 200.
+- ⚠️⚠️ **O ciclo tem CADEADO (`cb_asaas_config.sincronizando_desde`, 995),
+  no molde do claim do Calendly**: cron, "Sincronizar" do cartão e a
+  primeira sincronização depois de conectar podiam correr JUNTOS (e no
+  deploy `start-first` há dois processos Node vivos) — dois ciclos com
+  `visto_em` diferentes se atropelam na varredura de clientes. Reivindicar é
+  `UPDATE … RETURNING` cercado (`filtroDoCadeadoLivre`); cerca de posse
+  (`.eq('sincronizando_desde', vistoEm)`) nas escritas de fim de ciclo;
+  `em_curso` não é erro (o cron conta como adiada, o cartão mostra
+  "sincronizando desde"). ⚠️ O recolhimento (10 min) olha o BATIMENTO
+  (`last_sync_attempt_at`, que o ciclo avança a cada passo — ENTRE as
+  páginas de cada `listarTudo` (`aCadaPagina`), depois de cada listagem, a
+  cada 20 releituras/fichas), não o começo do ciclo: uma conta com dezenas
+  de páginas pode passar de 10 min viva, e recolher um ciclo vivo é
+  justamente o que o cadeado impede. ⚠️ **Batimento que não casa a linha
+  ABORTA o ciclo** (`cadeado_perdido`): a posse mudou de mãos (recolhimento
+  depois de um sumiço do banco, ou um "desconectar"), e seguir gravaria no
+  espelho de outro dono sem cerca — a exceção atravessa `listarTudo` pelo
+  `aCadaPagina`. No SUCESSO a tentativa volta ao início do ciclo
+  (`last_sync_attempt_at = vistoEm`), senão o cartão inventa uma "última
+  tentativa" a partir do último batimento — e o fechamento confere o
+  ROWCOUNT do update cercado: zero linhas é `cadeado_perdido`, nunca `ok`. ⚠️ **`desconectarAsaas` TOMA o
+  cadeado antes de apagar** (409 `em_curso` se um ciclo está no meio),
+  renovando o batimento na MESMA escrita: o ciclo já tem o cliente HTTP na
+  mão e continuaria gravando no espelho apagado — e misturaria as contas se
+  outra fosse conectada em seguida.
+- ⚠️ **`vencidas_listadas_em` só é carimbado quando TODA cobrança listada
+  pôde ser guardada**: cliente novo que o PRAZO não deixou ler (`adiados`)
+  segura o carimbo — senão `leituraFresca` afirmaria "em dia" sobre uma
+  vencida que nem entrou no espelho. Cliente que o Asaas não devolve (404,
+  `semLinha`) NÃO segura: as cobranças dele não têm como ser guardadas, e a
+  listagem está completa no que dá para guardar.
+- ⚠️⚠️ **A varredura de "cliente que sumiu da listagem" tem PISO**
+  (`listagemSuspeita`): listagem VAZIA com espelho vivo é SEMPRE suspeita;
+  parcial é suspeita quando somem mais de 20% das vivas **E** mais de 5 —
+  as duas condições de propósito (o absoluto impede conta pequena de travar
+  por churn normal; a fração impede conta grande de aceitar listagem pela
+  metade). Suspeita = nada é marcado `deleted` e `last_full_sync_at` NÃO é
+  carimbado, para o ciclo seguinte relistar. Sem o piso, uma listagem vazia
+  (soluço do Asaas) marcaria os 439 como apagados, o cartão diria "0
+  clientes" e a prova de identidade do ciclo seguinte (que só sonda clientes
+  vivos) ficaria desarmada.
+- ⚠️⚠️ **Ficha APAGADA pelo administrador não é recriada em origem
+  NENHUMA**: `criar` só quando `vinculo_origem IS NULL`. A FK é `ON DELETE
+  SET NULL (contact_id)` e a origem sobrevive — com a guarda só em
+  `criada`, o cliente de origem `telefone` cujo contato foi apagado
+  (inclusive por pedido de exclusão LGPD) ganhava ficha nova 15 minutos
+  depois, para sempre. A regra ainda RELIGA pelo telefone à ficha
+  sobrevivente de uma fusão.
+- ⚠️ **A etiqueta refeita é só a PENDENTE** (`etiqueta_pendente`, gravada
+  quando o upsert de `contact_tags` devolveu `{ error }` — o Supabase NÃO
+  lança). Derivar "faltou etiquetar" da ausência em `contact_tags` devolvia
+  a cada ciclo a etiqueta que uma pessoa tirou de propósito — e ela existe
+  justamente para o operador excluir essas fichas de um disparo.
+- ⚠️ **A ficha que perde a corrida para gente FICA.** Entre a reconferência
+  de elegibilidade e o vínculo cercado cabe um "Ligar"/"Ignorar" do
+  administrador; a primeira versão apagava a ficha recém-criada, e
+  `conversations.contact_id` é CASCADE — uma mensagem do cliente naquela
+  janela iria junto. Fica um contato a mais (com a etiqueta), nunca um a
+  menos; o log diz o que houve.
+- ⚠️ **Sandbox NUNCA neste banco**: o `.env.local` aponta para o MESMO
+  projeto Supabase da produção e a config é uma linha por conta — conectar
+  o sandbox no preview trocaria a conexão da produção. `ehChaveDeSandbox`
+  recusa `$aact_hmlg_`; o sandbox só se testa com `fetchFn` falso.
+- ⚠️ **A chave vai no cabeçalho `access_token` (não é Bearer), nunca na
+  URL; `User-Agent` é obrigatório e passa por `agente()` (ASCII); GET com
+  corpo é 403; 404 também significa "id de outra conta"; a cota é da CONTA
+  do Asaas, sem cabeçalho `RateLimit-*` (medido) — o 429 encerra o ciclo
+  sem retentar.** Toda mensagem de erro passa por `semSegredo()`.
+- ⚠️ **`cb/asaas` está no laço LENTO do `docker-stack.yml`, e o CI não relê
+  o `command` do agendador**: só vale depois de `docker stack deploy` manual
+  na VPS, com o `crm.env` carregado (as três linhas). Até lá, o botão
+  "Sincronizar" do cartão é o único ciclo. O rodízio é por
+  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho.
+- **Toda leitura do banco PAGINA** (`contacts` já passa de 700; a importação
+  do Atlas, avisada pelo operador, passa disso). As listas do cartão são
+  montadas em memória por `listas.ts` (puro) e paginadas na rota — a
+  situação de cada cliente (`ligado`/`confirmar`/`sem_ficha`/`ignorado`) é
+  DERIVADA da linha, nunca coluna própria.
+
 ⚠️ **Webhooks de ENTRADA (982) e tags ADITIVAS na v1: o Typebot chama o CRM.**
 `src/lib/webhooks-de-entrada/` (`achatar.ts` e o `resultadoDoDisparo`/
 `escutamEsteWebhook` de `processar.ts` são puros e testados; `claim.ts` e
@@ -4291,6 +4430,25 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     de deriva por consulta ao histórico, feita ANTES de aplicar; renumerado o
     arquivo que ainda não estava aplicado (este). `ls` sozinho não pegaria:
     a 992 do Asaas não existia em branch nenhuma — só no banco.
+
+  - **992_cb_asaas_config** — a CONEXÃO do Asaas: a chave da API cifrada,
+    o nome dela e a validade opcional, FECHADA ao navegador. Aplicada em
+    12/09/2026 pela Management API (histórico `20260912144829`), ANTES do
+    merge. Nasceu 991 e colidiu com a `991_cb_janela_da_meta_na_conversa` —
+    a quinta colisão de branches em paralelo.
+  - **994_cb_asaas_espelho** — `cb_asaas_clientes` (o vínculo com a ficha,
+    `candidatos`, `contatos_recusados`, origem com o valor `criada` da D2)
+    e `cb_asaas_cobrancas` (toda cobrança já vista vencida, mais a que vence
+    hoje). As duas FECHADAS ao navegador (o CPF só sai mascarado, pela rota
+    do administrador). Aplicada em 12/09/2026 à noite pela Management API
+    (histórico `20260912225955`), ANTES do merge, dentro do "faça tudo" do
+    operador; conferida por consulta (RLS, `anon`/`authenticated` sem SELECT,
+    `service_role` com INSERT). Aditiva: nada em produção a lê até o deploy.
+  - **995_cb_asaas_ciclo_e_etiqueta** — `cb_asaas_config.sincronizando_desde`
+    (o CADEADO do ciclo) e `cb_asaas_clientes.etiqueta_pendente` (a etiqueta
+    `asaas` que não ficou gravada na criação), as duas pedidas pela revisão
+    do PR #201. Aplicada em 12/09/2026 à noite pela Management API
+    (histórico `20260912234246`), ANTES do merge; aditiva.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

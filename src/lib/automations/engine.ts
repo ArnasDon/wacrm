@@ -362,7 +362,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'send_message': {
       const cfg = step.step_config as SendMessageStepConfig
       if (!args.contactId) throw new Error('send_message needs a contact')
-      const text = interpolate(cfg.text, args)
+      const text = await interpolate(cfg.text, args)
       if (!text.trim()) throw new Error('send_message has empty text')
       const conversationId = await resolveConversationId(args)
       const { whatsapp_message_id } = await engineSendText({
@@ -507,9 +507,9 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'update_contact_field': {
       const cfg = step.step_config as UpdateContactFieldStepConfig
       if (!args.contactId) throw new Error('update_contact_field needs a contact')
-      // Resolve workflow variables ({{ vars.* }}, {{ message.text }}) so custom
+      // Resolve workflow variables ({{ vars.* }}, {{ message.text }}, {{ contact.* }}) so custom
       // values can be populated dynamically from the triggering context.
-      const value = interpolate(cfg.value, args)
+      const value = await interpolate(cfg.value, args)
 
       // Custom fields are encoded as `custom:<custom_field_id>`; anything else
       // is a built-in contact column.
@@ -576,7 +576,7 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         pipeline_id: cfg.pipeline_id,
         stage_id: cfg.stage_id,
         contact_id: args.contactId,
-        title: interpolate(cfg.title, args),
+        title: await interpolate(cfg.title, args),
         value: cfg.value ?? 0,
         currency: acct?.default_currency ?? 'USD',
         status: 'open',
@@ -594,7 +594,12 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       if (!(await isDeliverableUrl(cfg.url))) {
         throw new Error('send_webhook: destination not allowed')
       }
-      const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
+      const body = cfg.body_template
+        ? await interpolate(cfg.body_template, args)
+        : JSON.stringify({
+            ...args.context,
+            contact_id: args.contactId ?? undefined,
+          })
       const res = await fetch(cfg.url, {
         method: 'POST',
         headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
@@ -790,11 +795,94 @@ function waitMs(cfg: WaitStepConfig): number {
   return Math.max(1_000, cfg.amount * unitMs)
 }
 
-function interpolate(s: string, args: ExecuteArgs): string {
-  return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, key) => {
-    const [ns, prop] = String(key).split('.')
-    if (ns === 'message' && prop === 'text') return String(args.context.message_text ?? '')
-    if (ns === 'vars' && prop) return String(args.context.vars?.[prop] ?? '')
+async function resolveContact(args: ExecuteArgs): Promise<Record<string, unknown> | null> {
+  if (!args.contactId) return null
+  const cache = args.context as { _contact_cache?: Record<string, unknown> }
+  if (cache._contact_cache) return cache._contact_cache
+
+  const db = supabaseAdmin()
+  const { data, error } = await db
+    .from('contacts')
+    .select('*')
+    .eq('id', args.contactId)
+    .eq('account_id', args.automation.account_id)
+    .maybeSingle()
+
+  if (error || !data) return null
+  cache._contact_cache = data as Record<string, unknown>
+  return cache._contact_cache
+}
+
+async function interpolate(s: string, args: ExecuteArgs): Promise<string> {
+  if (!s) return ''
+  const matches = [...s.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)]
+  if (matches.length === 0) return s
+
+  let contactRecord: Record<string, unknown> | null = null
+  const needsContact = matches.some((m) => {
+    const key = m[1].toLowerCase()
+    return (
+      key.startsWith('contact.') ||
+      key === 'phone' ||
+      key === 'name' ||
+      key === 'email' ||
+      key === 'company' ||
+      key === 'contact_id'
+    )
+  })
+
+  if (needsContact && args.contactId) {
+    contactRecord = await resolveContact(args)
+  }
+
+  return s.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, rawKey) => {
+    const key = String(rawKey).trim()
+    const rawParts = key.split('.')
+    const ns = rawParts[0].toLowerCase()
+    const rawProp = rawParts.slice(1).join('.')
+    const prop = rawProp.toLowerCase()
+
+    // contact namespace: {{ contact.phone }}, {{ contact.name }}, etc.
+    if (ns === 'contact') {
+      if (!contactRecord) {
+        if (prop === 'id') return String(args.contactId ?? '')
+        return ''
+      }
+      if (prop === 'phone' || prop === 'number') return String(contactRecord.phone ?? '')
+      if (prop === 'name') return String(contactRecord.name ?? '')
+      if (prop === 'email') return String(contactRecord.email ?? '')
+      if (prop === 'company') return String(contactRecord.company ?? '')
+      if (prop === 'id') return String(contactRecord.id ?? args.contactId ?? '')
+      return String(contactRecord[rawProp] ?? contactRecord[prop] ?? '')
+    }
+
+    // message namespace: {{ message.text }}
+    if (ns === 'message') {
+      if (prop === 'text' || !prop) return String(args.context.message_text ?? '')
+      return ''
+    }
+
+    // conversation namespace: {{ conversation.id }}
+    if (ns === 'conversation') {
+      if (prop === 'id' || !prop) return String(args.context.conversation_id ?? '')
+      return ''
+    }
+
+    // vars namespace: {{ vars.key }}
+    if (ns === 'vars' && rawProp) {
+      return String(args.context.vars?.[rawProp] ?? args.context.vars?.[prop] ?? '')
+    }
+
+    // Shorthands without namespace: {{ phone }}, {{ name }}, {{ email }}, {{ company }}, {{ message }}, {{ conversation_id }}, {{ contact_id }}
+    const lowerKey = key.toLowerCase()
+    if (lowerKey === 'phone') return String(contactRecord?.phone ?? '')
+    if (lowerKey === 'name') return String(contactRecord?.name ?? '')
+    if (lowerKey === 'email') return String(contactRecord?.email ?? '')
+    if (lowerKey === 'company') return String(contactRecord?.company ?? '')
+    if (lowerKey === 'contact_id') return String(contactRecord?.id ?? args.contactId ?? '')
+    if (lowerKey === 'conversation_id') return String(args.context.conversation_id ?? '')
+    if (lowerKey === 'message') return String(args.context.message_text ?? '')
+
     return ''
   })
 }

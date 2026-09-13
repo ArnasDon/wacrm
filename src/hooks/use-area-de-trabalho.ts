@@ -28,6 +28,7 @@
 
 import { useEffect, useState } from 'react';
 
+import { diaNoFuso, FUSO_PADRAO, paraInstante } from '@/lib/agenda/fuso';
 import { startOfLocalDay } from '@/lib/dashboard/date-utils';
 import type { Bloco } from '@/hooks/use-resumo-do-dia';
 import {
@@ -35,8 +36,9 @@ import {
   type GrupoDeEtapa,
   type NegocioDoBloco,
 } from '@/lib/meu-dia/negocios';
-import { recorteDeCanais } from '@/lib/perfis/escopo';
+import { recorteDeCanais, recorteDeFunis } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
+import { somarDias } from '@/lib/tasks/prazo';
 import { createClient } from '@/lib/supabase/client';
 import type { Meeting } from '@/types';
 
@@ -196,8 +198,15 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
     let vivo = true;
     const agora = new Date();
     const agoraMs = agora.getTime();
+    // ⚠️ São DOIS "hojes" nesta tela, e a diferença é deliberada. Aqui o
+    // dia é o de QUEM LÊ (`startOfLocalDay`, o mesmo do Painel e da régua de
+    // prazo das tarefas): "o que aconteceu hoje" é uma pergunta sobre o dia
+    // da pessoa. Já a AGENDA recorta no fuso da agenda (`FUSO_PADRAO`),
+    // porque `cb_meetings` define e exibe data naquele fuso. Unificar os
+    // dois moveria uma das duas respostas para um dia que ninguém pediu.
     const inicioDoDia = startOfLocalDay(agora).toISOString();
     const canais = recorteDeCanais(ctx);
+    const funis = recorteDeFunis(ctx);
 
     const assentar = <K extends keyof Omit<AreaDeTrabalho, 'agoraMs'>>(
       bloco: K,
@@ -355,6 +364,16 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
     // chave do pedido.
     if (profileId)
       carregar('negocios', async () => {
+        const semResponsavel = () => {
+          const q = supabase
+            .from('deals')
+            .select('id', { count: 'exact', head: true })
+            .eq('account_id', accountId)
+            .is('assigned_to', null)
+            .eq('status', 'open');
+          // Lista vazia = sem recorte = todos, a convenção do projeto.
+          return funis && funis.length > 0 ? q.in('pipeline_id', funis) : q;
+        };
         const [meus, orfas] = await Promise.all([
           supabase
             .from('deals')
@@ -363,12 +382,13 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
             .eq('assigned_to', profileId)
             .eq('status', 'open')
             .limit(TETO_DE_LINHAS),
-          supabase
-            .from('deals')
-            .select('id', { count: 'exact', head: true })
-            .eq('account_id', accountId)
-            .is('assigned_to', null)
-            .eq('status', 'open'),
+          // ⚠️ Os sem responsável passam pelo MESMO recorte de funil dos
+          // seus — aqui na consulta, porque é contagem e não há lista para
+          // filtrar depois. Sem ele, um perfil restrito ao trabalhista via
+          // "12 negócios sem responsável" do escritório inteiro e, ao
+          // seguir o link, não achava nenhum: a tela de Funis só oferece os
+          // funis visíveis (Codex, PR #202).
+          semResponsavel(),
         ]);
         if (meus.error) throw new Error(meus.error.message);
         if (orfas.error) throw new Error(orfas.error.message);
@@ -386,9 +406,17 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
     carregar('agenda', async () => {
       // Hoje e amanhã: a reunião de amanhã cedo precisa aparecer para quem
       // olha a tela no fim da tarde.
-      const de = startOfLocalDay(agora);
-      const ate = new Date(de);
-      ate.setDate(ate.getDate() + 2);
+      //
+      // ⚠️ O recorte é no FUSO DA AGENDA (`FUSO_PADRAO`), não na meia-noite
+      // local do navegador: `cb_meetings` define e exibe data naquele fuso,
+      // e um navegador em UTC logo depois da meia-noite cortaria boa parte
+      // do dia ainda corrente em São Paulo e traria um pedaço de um dia a
+      // mais (Codex, PR #202). Aqui não muda nada enquanto todo mundo está
+      // no Brasil — muda no dia em que houver advogado em outro país, que é
+      // o mesmo motivo pelo qual `cb_availability` guarda `time` + fuso.
+      const hojeNoFuso = diaNoFuso(agora, FUSO_PADRAO);
+      const de = paraInstante(hojeNoFuso, '00:00', FUSO_PADRAO);
+      const ate = paraInstante(somarDias(hojeNoFuso, 2), '00:00', FUSO_PADRAO);
       const { data, error, count } = await supabase
         .from('cb_meetings')
         .select('*', { count: 'exact' })

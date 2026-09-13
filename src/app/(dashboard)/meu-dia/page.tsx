@@ -24,7 +24,7 @@
 // entrada, lida do navegador — a mesma âncora da porta.
 // ============================================================
 
-import { useState } from 'react';
+import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { ListTodo, MessageCircle } from 'lucide-react';
@@ -120,7 +120,19 @@ function agendadorEstaParado(s: SaudeDoAgendador): boolean {
   );
 }
 
+// ⚠️ `useSearchParams` (o `?desde=` herdado do cartão) exige um limite de
+// Suspense — é o mesmo invólucro fino de `inbox` e `contacts`. Sem ele a
+// página prerenderizada resolve a query string no build, e o parâmetro que
+// o botão da entrada manda seria ignorado na hidratação.
 export default function MeuDiaPage() {
+  return (
+    <Suspense fallback={null}>
+      <MeuDiaPageInner />
+    </Suspense>
+  );
+}
+
+function MeuDiaPageInner() {
   const { user, accountId, accountStatus, profile, acesso } = useAuth();
   const userId = user?.id ?? null;
   const params = useSearchParams();

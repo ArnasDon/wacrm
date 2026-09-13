@@ -8,19 +8,19 @@
 // operador lê "nenhuma" e desconfigura o perfil achando que está restringindo.
 // ============================================================
 
-import { canalDaConversa } from "@/lib/inbox/filtros";
-import type { Conversation } from "@/types";
-import type { ContextoDeAcesso, PerfilDeAcesso } from "./tipos";
+import { canalDaConversa } from '@/lib/inbox/filtros';
+import type { Conversation } from '@/types';
+import type { ContextoDeAcesso, PerfilDeAcesso } from './tipos';
 
 /** Escopo irrestrito: sem perfil, dono, ou lista vazia. */
 function semRecorteDeCanal(ctx: ContextoDeAcesso): boolean {
-  if (ctx.papel === "owner") return true;
+  if (ctx.papel === 'owner') return true;
   if (!ctx.perfil) return true;
   return ctx.perfil.channel_ids.length === 0;
 }
 
 function semRecorteDeFunil(ctx: ContextoDeAcesso): boolean {
-  if (ctx.papel === "owner") return true;
+  if (ctx.papel === 'owner') return true;
   if (!ctx.perfil) return true;
   return ctx.perfil.pipeline_ids.length === 0;
 }
@@ -39,7 +39,7 @@ function semRecorteDeFunil(ctx: ContextoDeAcesso): boolean {
  */
 export function canaisVisiveis<T extends { id: string }>(
   ctx: ContextoDeAcesso,
-  todos: T[],
+  todos: T[]
 ): T[] {
   if (semRecorteDeCanal(ctx)) return todos;
   const permitidos = new Set(ctx.perfil!.channel_ids);
@@ -48,19 +48,25 @@ export function canaisVisiveis<T extends { id: string }>(
 
 export function funisVisiveis<T extends { id: string }>(
   ctx: ContextoDeAcesso,
-  todos: T[],
+  todos: T[]
 ): T[] {
   if (semRecorteDeFunil(ctx)) return todos;
   const permitidos = new Set(ctx.perfil!.pipeline_ids);
   return todos.filter((p) => permitidos.has(p.id));
 }
 
-export function canalNoEscopo(ctx: ContextoDeAcesso, channelId: string): boolean {
+export function canalNoEscopo(
+  ctx: ContextoDeAcesso,
+  channelId: string
+): boolean {
   if (semRecorteDeCanal(ctx)) return true;
   return ctx.perfil!.channel_ids.includes(channelId);
 }
 
-export function funilNoEscopo(ctx: ContextoDeAcesso, pipelineId: string): boolean {
+export function funilNoEscopo(
+  ctx: ContextoDeAcesso,
+  pipelineId: string
+): boolean {
   if (semRecorteDeFunil(ctx)) return true;
   return ctx.perfil!.pipeline_ids.includes(pipelineId);
 }
@@ -84,6 +90,20 @@ export function recorteDeCanais(ctx: ContextoDeAcesso): string[] | null {
 }
 
 /**
+ * A lista de funis do recorte, para montar CONSULTA — ou `null` quando não
+ * há recorte nenhum (dono, sem perfil, ou lista vazia = todos).
+ *
+ * Irmã de `recorteDeCanais`, e com a mesma ressalva: serve para consulta em
+ * tabela que carrega o próprio `pipeline_id` (`deals`). Para decidir sobre
+ * UM registro que já está em mão, use `funilNoEscopo`; para filtrar uma
+ * lista carregada, `funisVisiveis`.
+ */
+export function recorteDeFunis(ctx: ContextoDeAcesso): string[] | null {
+  if (semRecorteDeFunil(ctx)) return null;
+  return ctx.perfil!.pipeline_ids;
+}
+
+/**
  * A conversa entra no escopo?
  *
  * ⚠️⚠️ USA `canalDaConversa`, NUNCA `conversation.channel_id` direto. Conversa
@@ -103,7 +123,7 @@ export function recorteDeCanais(ctx: ContextoDeAcesso): string[] | null {
  */
 export function conversaNoEscopo(
   ctx: ContextoDeAcesso,
-  conversa: Conversation,
+  conversa: Conversation
 ): boolean {
   if (semRecorteDeCanal(ctx)) return true;
 

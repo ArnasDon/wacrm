@@ -11,6 +11,10 @@ import {
 import type { Conversation, Message, Contact, ConversationStatus } from "@/types";
 import { useRealtime } from "@/hooks/use-realtime";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import {
+  aoAndarNoHistorico,
+  navegacaoAoAbrir,
+} from "@/lib/inbox/voltar-no-celular";
 import { useMarcarConversaAberta } from "@/hooks/use-conversa-aberta";
 import { useInadimplencia } from "@/hooks/use-inadimplencia";
 import { ConversationList } from "@/components/inbox/conversation-list";
@@ -268,6 +272,21 @@ function InboxPageInner() {
    * A ref não corre contra nada. (Achado do Codex na revisão do PR #79.)
    */
   const conversaRecemAbertaRef = useRef<string | null>(null);
+  /**
+   * A conversa aberta criou um passo no histórico (celular — ver
+   * `navegacaoAoAbrir`)? É o que decide se fechar pelo botão DESFAZ o passo
+   * (`router.back()`) ou escreve a lista por cima (`replace`).
+   */
+  const abriuComPassoRef = useRef(false);
+  /**
+   * A conversa da tela, para o ouvinte do `popstate`, que vive fora do
+   * render. Escrita num efeito: escrever ref durante o render é erro do React
+   * Compiler.
+   */
+  const conversaAbertaRef = useRef<string | null>(null);
+  useEffect(() => {
+    conversaAbertaRef.current = activeConversation?.id ?? null;
+  }, [activeConversation?.id]);
 
   // Tracks conversations whose hydrate fetch is currently in flight. The
   // conv-INSERT and the first-message-INSERT events both call into
@@ -603,9 +622,23 @@ function InboxPageInner() {
     (conversationId: string) => {
       conversaRecemAbertaRef.current = conversationId;
       setResyncToken((t) => t + 1);
-      router.replace(urlDoInbox({ c: conversationId, de }));
+      // Mesma regra do clique na lista (`navegacaoAoAbrir`): no celular, a
+      // conversa recém-criada também ganha o passo que o gesto de voltar
+      // desfaz.
+      const urlDaConversa = urlDoInbox({ c: conversationId, de });
+      if (
+        navegacaoAoAbrir({
+          ehDesktop,
+          haviaConversaAberta: Boolean(activeConversation?.id),
+        }) === "push"
+      ) {
+        abriuComPassoRef.current = true;
+        router.push(urlDaConversa);
+      } else {
+        router.replace(urlDaConversa);
+      }
     },
-    [router, de],
+    [router, de, ehDesktop, activeConversation?.id],
   );
 
   const handleConversationsLoaded = useCallback(
@@ -735,19 +768,37 @@ function InboxPageInner() {
       // manda. (Achado do Codex na revisão do PR #80.)
       conversaRecemAbertaRef.current = null;
       // Reflect the selection in the URL so a refresh lands the user
-      // back in the same thread, and so copy-paste links work. Use
-      // replace() to avoid polluting browser history with every click.
+      // back in the same thread, and so copy-paste links work.
       // `urlDoInbox` reescreve o `de=funil` vigente — sem isso, o primeiro
       // clique numa conversa apagava a faixa "Voltar ao funil".
-      router.replace(urlDoInbox({ c: conv.id, de }), { scroll: false });
+      // ⚠️ No CELULAR, abrir a conversa a partir da lista vira um PASSO no
+      // histórico (`navegacaoAoAbrir`): é o que faz o gesto de voltar do
+      // iPhone e o botão voltar do Android fecharem a conversa, em vez de
+      // saírem da caixa de entrada (pedido do operador, 14/09/2026). No
+      // computador continua `replace`, para não sujar o histórico a cada
+      // clique.
+      const urlDaConversa = urlDoInbox({ c: conv.id, de });
+      if (
+        navegacaoAoAbrir({
+          ehDesktop,
+          haviaConversaAberta: Boolean(activeConversation?.id),
+        }) === "push"
+      ) {
+        abriuComPassoRef.current = true;
+        router.push(urlDaConversa, { scroll: false });
+      } else {
+        router.replace(urlDaConversa, { scroll: false });
+      }
     },
-    [activeConversation?.id, router, de, acesso]
+    [activeConversation?.id, router, de, acesso, ehDesktop]
   );
 
-  // Mobile "back" — deselect the conversation so the list pane comes
-  // back. Also clears the ?c= param so a refresh lands on the list
-  // instead of re-opening the thread the user just backed out of.
-  const handleCloseConversation = useCallback(() => {
+  /**
+   * Tira a conversa da tela, sem mexer na URL. É o que o botão voltar e o
+   * histórico andando (`popstate`) têm em comum — cada um cuida da URL do
+   * seu jeito.
+   */
+  const limparConversaAberta = useCallback(() => {
     setActiveConversation(null);
     setActiveContact(null);
     setMessages([]);
@@ -760,8 +811,56 @@ function InboxPageInner() {
     // explícito: sem isto, o fio que o operador acabou de fechar reabria
     // sozinho quando o refetch chegasse — no celular, por cima da lista.
     conversaRecemAbertaRef.current = null;
+  }, []);
+
+  // Mobile "back" — deselect the conversation so the list pane comes
+  // back. Also clears the ?c= param so a refresh lands on the list
+  // instead of re-opening the thread the user just backed out of.
+  const handleCloseConversation = useCallback(() => {
+    limparConversaAberta();
+    // ⚠️ Conversa aberta com passo no histórico (celular): fechar DESFAZ o
+    // passo em vez de escrever `/inbox` por cima. Com `replace`, sobrariam
+    // duas entradas da lista, e o gesto de voltar seguinte "não faria nada"
+    // antes de sair da caixa de entrada.
+    if (abriuComPassoRef.current) {
+      abriuComPassoRef.current = false;
+      router.back();
+      return;
+    }
     router.replace(urlDoInbox({ de }), { scroll: false });
-  }, [router, de]);
+  }, [limparConversaAberta, router, de]);
+
+  /**
+   * O histórico andou: o gesto de voltar do iPhone, o botão voltar do
+   * Android, ou avançar de novo. A URL já mudou quando o `popstate` chega;
+   * falta a tela concordar com ela (ver `aoAndarNoHistorico`).
+   *
+   * ⚠️ Num ouvinte, e não num efeito que compare `deepLinkConvId`: `setState`
+   * síncrono no corpo de efeito é erro do React Compiler, e o `popstate` só
+   * existe quando o histórico anda de verdade — trocar de conversa por
+   * `replace` não o dispara.
+   */
+  useEffect(() => {
+    const aoAndar = () => {
+      const acao = aoAndarNoHistorico({
+        conversaNaUrl: new URLSearchParams(window.location.search).get("c"),
+        conversaAberta: conversaAbertaRef.current,
+      });
+      if (acao === "fechar") {
+        abriuComPassoRef.current = false;
+        limparConversaAberta();
+      } else if (acao === "reabrir") {
+        // Avançou de novo para a conversa: o passo para a lista existe outra
+        // vez, e a reabertura vai pelo caminho do deep link — que só atende
+        // com a ref limpa e a lista recarregada.
+        abriuComPassoRef.current = true;
+        autoSelectedForDeepLinkRef.current = null;
+        setResyncToken((n) => n + 1);
+      }
+    };
+    window.addEventListener("popstate", aoAndar);
+    return () => window.removeEventListener("popstate", aoAndar);
+  }, [limparConversaAberta]);
 
 
   const handleMessagesLoaded = useCallback(

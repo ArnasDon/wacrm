@@ -36,6 +36,7 @@ import {
 import { useAcoesDaTarefa } from '@/hooks/use-acoes-da-tarefa';
 import { useAuth } from '@/hooks/use-auth';
 import { useTarefas, VISOES, type VisaoDeTarefas } from '@/hooks/use-tarefas';
+import { useAoVoltarParaOApp } from '@/hooks/use-ao-voltar-para-o-app';
 import { agruparPorPrazo } from '@/lib/tasks/prazo';
 import { cn } from '@/lib/utils';
 
@@ -53,6 +54,9 @@ export default function TarefasPage() {
 
   const dados = useTarefas(visao);
   const acoes = useAcoesDaTarefa(dados.recarregar);
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora atualiza a lista, sem trocá-la pelo spinner.
+  useAoVoltarParaOApp(dados.recarregarEmSilencio);
 
   // O formulário serve a três intenções: editar, responder e desdobrar. Guardar
   // as três num estado só evita três `useState` que podem estar abertos ao

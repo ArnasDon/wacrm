@@ -299,6 +299,7 @@ upstream sobrescrevê-los:
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
+| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, `refreshStages`/`refreshDeals` (nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
 | `src/lib/ai/types.ts`, `generate.ts`, `defaults.ts`, `config.ts`, `usage.ts`, `providers/` | o TERCEIRO provedor (`gemini`, 941) e o modo `'radar'` no log de uso — o upstream conhece só openai/anthropic. `structured.ts` e `providers/gemini.ts` são arquivos NOSSOS |
 | `src/components/settings/ai-config.tsx`, `src/app/api/ai/config/route.ts` | a opção Gemini no seletor e na validação do provider |
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
@@ -4677,6 +4678,65 @@ morde código novo:
   cancelada e as duas pontas de um reagendamento como se ambas fossem
   acontecer. Entra quando a integração tratar `invitee.canceled` — até lá o
   bloco é só `cb_meetings` e diz por quê.
+
+⚠️ **Telas que se atualizam ao VOLTAR para o app (14/09/2026).**
+`src/lib/celular/ao-voltar.ts` (puro, com teste) e
+`src/hooks/use-ao-voltar-para-o-app.ts`, chamado em Tarefas, Meu dia, Funil e
+Contatos. O CRM instalado no celular não tem botão de recarregar nem "puxar
+para atualizar": a caixa de entrada já se atualizava no `visibilitychange`,
+as outras quatro não — quem voltava do WhatsApp uma hora depois via a lista
+de uma hora atrás, sem aviso nenhum. O que morde código novo:
+
+- ⚠️⚠️ **O recarregar passado ao hook precisa ser SILENCIOSO**, mantendo a
+  tela até a resposta chegar. Tarefas ganhou `recarregarEmSilencio` (mantém a
+  lista e as páginas abertas, e uma falha não troca a lista pelo aviso de
+  erro); Contatos, `fetchContacts({ silencioso: true, preservarSelecao: true })`;
+  o Funil, uma recarga própria sobre `buscarEtapas`/`buscarNegocios`. ⚠️ No
+  Funil, NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
+  perde a rolagem e o retorno do inbox.
+- ⚠️⚠️ **A recarga silenciosa de Contatos PODA a seleção** às linhas que
+  continuam na página (`podarSelecao`). A página pode ter mudado enquanto a
+  pessoa estava fora, e a ação em massa age sobre `selected` inteiro: id que
+  saiu da tela e continuou marcado seria apagado sem ninguém o ver marcado
+  (Codex, PR #216).
+- ⚠️ **A volta em Contatos recarrega também o catálogo de etiquetas**
+  (`fetchTags`): sem ele, etiqueta criada por outro membro sumia da linha, a
+  renomeada ficava com o nome velho e a apagada seguia filtrando a lista.
+  ⚠️⚠️ E o `fetchTags` troca o mapa SÓ quando o conteúdo mudou (`igual ? prev
+  : map`): `fetchContacts` depende de `tagsMap`, e um mapa novo com o mesmo
+  conteúdo refaria a lista inteira com spinner e seleção zerada a cada volta
+  (Codex, PR #216, 2ª rodada). ⚠️⚠️ Quando o catálogo MUDOU de fato, o efeito
+  da lista percebe que só ele mudou — a página, a busca e o filtro são os
+  mesmos (`chaveDaListaRef`) — e refaz em silêncio e com a seleção; senão
+  quem preparava uma ação em massa perdia a seleção inteira (3ª rodada).
+- ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas, o
+  mesmo funil aberto** (`funilAbertoRef`) **e nenhuma mudança no meio do
+  caminho** (`versaoDoQuadroRef`, que o arrasto, `refreshDeals`,
+  `refreshStages` E a troca de funil avançam). `buscarEtapas`/`buscarNegocios`
+  devolvem `null` na FALHA — diferente de `[]`, funil vazio —, porque voltar
+  ao app antes de a rede do celular voltar esvaziava o quadro; trocar de
+  funil com a recarga no ar deixava o quadro de B com os dados de A (e A → B
+  → A passava pelas duas primeiras cercas); e a recarga que saiu antes de um
+  arrasto, voltando depois dele, devolvia o card à etapa antiga (Codex, PR
+  #216, três rodadas). Quem criar outro caminho que mexa em `deals` ou
+  `stages` nesta página avança a versão também. `loadStages`/`loadDeals`
+  continuam devolvendo `[]` para quem já os chamava.
+- ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
+  (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
+  hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de
+  propósito. Desempenho e Saúde são relatórios que afirmam números (a
+  escolha do Meu dia), e na Lista a tabela sem linhas durante a carga é o
+  que impede mudar a etapa de um negócio com a recarga no ar, a corrida que
+  o quadro precisou cercar com a versão (Codex, PR #216, 3ª rodada).
+- **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
+  botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
+  "0 vencidas"), e afirmar sobre número velho é pior que piscar.
+- **Só recarrega depois de 30 s fora** (`AUSENCIA_QUE_RECARREGA_MS`): olhada
+  rápida em outro app não queima consulta (o funil busca todos os negócios do
+  quadro). Relógio andando para trás não recarrega.
+- **A função mais recente é lida por ref**: passar uma arrow nova a cada
+  render não re-assina o evento. Tela nova que ganhe o hook entra no pino de
+  `ao-voltar.test.ts`.
 
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e

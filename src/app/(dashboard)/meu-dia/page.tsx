@@ -44,6 +44,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAgendadorSaude } from '@/hooks/use-agendador-saude';
 import { useAreaDeTrabalho } from '@/hooks/use-area-de-trabalho';
+import { useAoVoltarParaOApp } from '@/hooks/use-ao-voltar-para-o-app';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
 import { useChannelHealth } from '@/hooks/use-channel-health';
@@ -304,6 +305,13 @@ function AreaDeTrabalho({
     recarregarConexoes();
     recarregarAgendador();
   };
+
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora faz o mesmo que o "Atualizar". ⚠️ Os blocos voltam
+  // a "carregando" por um instante, como no botão — e é o certo aqui: esta tela
+  // AFIRMA ("tudo em ordem", "0 vencidas"), e afirmar sobre números velhos
+  // seria pior que piscar.
+  useAoVoltarParaOApp(atualizarTudo);
 
   const carregando = [
     resumo.novidades,

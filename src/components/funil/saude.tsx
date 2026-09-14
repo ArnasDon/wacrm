@@ -5,6 +5,7 @@ import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
 import { useTrajetorias } from "@/hooks/use-trajetorias";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { formatarPercentual, paraPontosPercentuais } from "@/lib/funil/apresentacao";
 import { classificarEtapas, type Degrau } from "@/lib/funil/degraus";
 import { inicioDoMesLocal } from "@/lib/funil/periodo";
@@ -72,6 +73,10 @@ export function Saude({
   const agora = new Date();
   const desde = inicioDoMesLocal(agora.getFullYear(), agora.getMonth() - (MESES - 1));
   const { linhas, carregando, falhou, recarregar } = useTrajetorias(pipeline.id, { desde, ate: null });
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora refaz as coortes. Com o `recarregar` comum, que
+  // pisca o carregando — é relatório, afirma números (a escolha do Meu dia).
+  useAoVoltarParaOApp(recarregar);
 
   const classificacao = classificarEtapas(stages);
   const rotuloDoDegrau = (d: Degrau) =>

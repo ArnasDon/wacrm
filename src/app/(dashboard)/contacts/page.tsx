@@ -56,6 +56,7 @@ import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
+import { useAoVoltarParaOApp } from '@/hooks/use-ao-voltar-para-o-app';
 import { lerExclusao, podeLimparSelecao, selecaoRestante } from '@/lib/contacts/exclusao';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -130,7 +131,17 @@ export default function ContactsPage() {
     if (data) {
       const map: Record<string, Tag> = {};
       data.forEach((t) => (map[t.id] = t));
-      setTagsMap(map);
+      // ⚠️ Troca o mapa SÓ quando o catálogo mudou. `fetchContacts` depende de
+      // `tagsMap`, e um mapa novo com o mesmo conteúdo refaria a lista inteira
+      // com spinner e seleção zerada — a cada volta ao app, que recarrega o
+      // catálogo (`useAoVoltarParaOApp`; Codex, PR #216, 2ª rodada).
+      setTagsMap((prev) => {
+        const ids = Object.keys(map);
+        const igual =
+          ids.length === Object.keys(prev).length &&
+          ids.every((id) => JSON.stringify(prev[id]) === JSON.stringify(map[id]));
+        return igual ? prev : map;
+      });
       // Drop any filter selections whose tag no longer exists (e.g. a tag
       // deleted elsewhere) so it can't linger invisibly in the query.
       setSelectedTagIds((prev) => {
@@ -140,9 +151,12 @@ export default function ContactsPage() {
     }
   }, [supabase]);
 
-  const fetchContacts = useCallback(async (opcoes?: { preservarSelecao?: boolean }) => {
+  const fetchContacts = useCallback(async (opcoes?: { preservarSelecao?: boolean; silencioso?: boolean }) => {
     const seq = ++fetchSeq.current;
-    setLoading(true);
+    // ⚠️ `silencioso` mantém a tabela na tela até a resposta chegar: é o
+    // recarregar de quem VOLTA para o app (`useAoVoltarParaOApp`), e ligar o
+    // `loading` trocaria as linhas pelo spinner a cada volta do WhatsApp.
+    if (!opcoes?.silencioso) setLoading(true);
     // The visible rows are about to change — drop any selection that
     // referred to the old page/search results so the bulk bar can't
     // act on rows the user can no longer see.
@@ -207,8 +221,24 @@ export default function ContactsPage() {
 
     setTotalCount(count);
 
+    // ⚠️ A recarga SILENCIOSA (volta ao app) preserva a seleção, mas a página
+    // pode ter mudado enquanto a pessoa estava fora — outro membro apagou,
+    // criou ou reetiquetou contatos. Id que saiu da página NÃO pode continuar
+    // selecionado: a ação em massa age sobre `selected` inteiro, e apagaria um
+    // contato que ninguém está vendo marcado (Codex, PR #216). Fica marcado só
+    // o que continua na tela.
+    const podarSelecao = (visiveis: { id: string }[]) => {
+      if (!opcoes?.silencioso) return;
+      const naPagina = new Set(visiveis.map((c) => c.id));
+      setSelected((prev) => {
+        const podada = new Set([...prev].filter((id) => naPagina.has(id)));
+        return podada.size === prev.size ? prev : podada;
+      });
+    };
+
     if (contactRows.length === 0) {
       setContacts([]);
+      podarSelecao([]);
       setLoading(false);
       return;
     }
@@ -235,6 +265,7 @@ export default function ContactsPage() {
     }));
 
     setContacts(enriched);
+    podarSelecao(enriched);
     setLoading(false);
   }, [supabase, page, search, selectedTagIds, tagsMap, t]);
 
@@ -247,10 +278,35 @@ export default function ContactsPage() {
     fetchTags();
   }, [fetchTags]);
 
+  // ⚠️ Quando SÓ o catálogo de etiquetas mudou — a página, a busca e o filtro
+  // são os mesmos —, a lista é refeita em silêncio e com a seleção. O
+  // `fetchContacts` depende de `tagsMap`, e a volta ao app recarrega o
+  // catálogo: um refetch comum ali ligaria o spinner e zeraria a seleção de
+  // quem preparava uma ação em massa (Codex, PR #216, 3ª rodada). Mudou a
+  // página, a busca ou o filtro: recarga comum, com a seleção zerada, como
+  // sempre.
+  const chaveDaListaRef = useRef<string | null>(null);
   useEffect(() => {
+    const chave = JSON.stringify([page, search, selectedTagIds]);
+    const soOCatalogo = chaveDaListaRef.current === chave;
+    chaveDaListaRef.current = chave;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchContacts();
-  }, [fetchContacts]);
+    fetchContacts(
+      soOCatalogo ? { silencioso: true, preservarSelecao: true } : undefined,
+    );
+  }, [fetchContacts, page, search, selectedTagIds]);
+
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora atualiza a página aberta da tabela, sem trocá-la
+  // pelo spinner e sem perder a seleção de quem estava no meio de uma ação.
+  // ⚠️ O catálogo de etiquetas vai junto: etiqueta criada, renomeada ou
+  // apagada por outro membro enquanto a pessoa estava fora sumiria da linha,
+  // ficaria com o nome velho ou seguiria filtrando a lista (Codex, PR #216).
+  // Se o catálogo não mudou, o `fetchTags` não troca o mapa e nada mais roda.
+  useAoVoltarParaOApp(() => {
+    void fetchTags();
+    void fetchContacts({ preservarSelecao: true, silencioso: true });
+  });
 
   function openAddForm() {
     setEditContact(null);

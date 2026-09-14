@@ -652,6 +652,45 @@ describe("varrerRegua — o lembrete do vencimento (D17)", () => {
     expect(lembretes.map((t) => t.id)).toEqual(["t-sab"]);
   });
 
+  // O sábado foi lembrado com o lembrete em dias CORRIDOS, e antes de segunda
+  // alguém ligou "só dias úteis": agora a segunda cobre sábado e domingo, e a
+  // configuração ATUAL não sabe que o sábado já saiu — quem sabe é a trava.
+  const travaDoSabado = { id: "t-sab", account_id: CONTA, cobranca_id: "s1", asaas_customer_id: "cus_a", tipo: "vence_hoje", marco: 0, vencimento: "2026-09-12", automation_id: "a-0", automation_nome: "Lembrete", contact_id: "ct-a", resultado: "enviado", criado_em: "2026-09-12T11:10:00Z", finalizado_em: "2026-09-12T11:10:05Z" };
+
+  it("o lembrete do sábado já saiu e a configuração virou 'só dias úteis' antes de segunda: a cobrança de segunda NÃO leva a parcela do sábado nem repete a trava dela — senão o 23505 recusava o grupo e o marco se perdia (Codex, PR #212)", async () => {
+    const e = estado({
+      cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("s1", "cus_a", { status: "PENDING", vencimento: "2026-09-12", vista_vencida_em: null, parcela_numero: 2 })],
+      cb_asaas_regua_envios: [travaDoSabado],
+    });
+    const respostas = { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_s1": noAsaas("s1", "cus_a", { status: "PENDING", dueDate: "2026-09-12" }) } };
+    const { d, disparos } = deps(e, respostas);
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.enviados).toBe(1);
+    expect(disparos.chamadas.map((c) => c.triggerType)).toEqual(["asaas_cobranca_vencida"]);
+    expect(disparos.chamadas[0].context?.vars?.vence_hoje_detalhe ?? "").not.toContain("Parcela 2/3");
+    const lembretes = e.tabelas.cb_asaas_regua_envios.filter((t) => t.tipo === "vence_hoje");
+    expect(lembretes.map((t) => t.id)).toEqual(["t-sab"]);
+  });
+
+  it("o mesmo no LEMBRETE: a parcela do sábado já lembrada não entra no lembrete de segunda (nem é relida no Asaas), e o da parcela de segunda sai (Codex, PR #212)", async () => {
+    const e = estado({
+      cb_asaas_cobrancas: [cobranca("s1", "cus_a", { status: "PENDING", vencimento: "2026-09-12", vista_vencida_em: null, parcela_numero: 2 }), cobranca("h1", "cus_a", { status: "PENDING", vencimento: "2026-09-14", vista_vencida_em: null, parcela_numero: 3 })],
+      cb_asaas_regua_envios: [travaDoSabado],
+    });
+    const respostas = { listas: {}, recursos: { "/payments/pay_s1": noAsaas("s1", "cus_a", { status: "PENDING", dueDate: "2026-09-12" }), "/payments/pay_h1": noAsaas("h1", "cus_a", { status: "PENDING", dueDate: "2026-09-14" }) } };
+    const { d, disparos, registro } = deps(e, respostas, { agora: as8h });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.enviados).toBe(1);
+    expect(disparos.chamadas.map((c) => c.triggerType)).toEqual(["asaas_cobranca_vence_hoje"]);
+    const vars = disparos.chamadas[0].context?.vars as Record<string, string>;
+    expect(vars.cobranca_detalhe).toContain("Parcela 3/3");
+    expect(vars.cobranca_detalhe).not.toContain("Parcela 2/3");
+    expect(registro.pedidos).not.toContain("/payments/pay_s1");
+    const lembretes = e.tabelas.cb_asaas_regua_envios.filter((t) => t.tipo === "vence_hoje").map((t) => ({ c: t.cobranca_id, r: t.resultado }));
+    expect(lembretes).toEqual(expect.arrayContaining([{ c: "s1", r: "enviado" }, { c: "h1", r: "enviado" }]));
+    expect(lembretes).toHaveLength(2);
+  });
+
   it("paga por Pix de manhã: a releitura tira a parcela e o lembrete não sai", async () => {
     const e = estado({ cb_asaas_cobrancas: [cobranca("h1", "cus_a", { status: "PENDING", vencimento: "2026-09-14", vista_vencida_em: null })] });
     const { d, disparos } = deps(e, { listas: {}, recursos: { "/payments/pay_h1": noAsaas("h1", "cus_a", { status: "RECEIVED", dueDate: "2026-09-14", paymentDate: "2026-09-14" }) } }, { agora: as8h });

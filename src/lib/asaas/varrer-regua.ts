@@ -595,6 +595,30 @@ async function reconfirmar(
   return vivas;
 }
 
+/**
+ * As parcelas "vence hoje" que AINDA não têm trava de lembrete para aquele
+ * vencimento. ⚠️ Quem sabe se o lembrete de uma parcela já saiu é a TRAVA,
+ * nunca a configuração de hoje: com o lembrete em dias corridos o sábado é
+ * lembrado no sábado, e se alguém liga "só dias úteis" antes de segunda, a
+ * segunda passa a cobrir o sábado de novo. A parcela entrava no INSERT do
+ * grupo com a chave que já existe, o 23505 recusava o grupo INTEIRO — a
+ * cobrança do marco (ou o lembrete da parcela de segunda) — e o `continue`
+ * lia "outro processo pegou" o dia todo (Codex, PR #212). Quem já foi
+ * lembrado sai da mensagem e da trava, como no caso dos dias corridos.
+ */
+async function semLembreteTravado(admin: SupabaseClient, accountId: string, parcelas: readonly ParcelaDoEspelho[]): Promise<ParcelaDoEspelho[]> {
+  if (parcelas.length === 0) return [];
+  const { data, error } = await admin
+    .from("cb_asaas_regua_envios")
+    .select("cobranca_id, vencimento")
+    .eq("account_id", accountId)
+    .eq("tipo", "vence_hoje")
+    .in("cobranca_id", parcelas.map((p) => p.id));
+  if (error) throw new Error(`travas de lembrete: ${error.message}`);
+  const travadas = new Set(((data ?? []) as { cobranca_id: string; vencimento: string }[]).map((t) => `${t.cobranca_id}|${t.vencimento}`));
+  return parcelas.filter((p) => !travadas.has(`${p.id}|${p.vencimento}`));
+}
+
 interface LinhaDaTrava {
   account_id: string;
   cobranca_id: string;
@@ -799,7 +823,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         saida.semConexao += 1;
         continue;
       }
-      const venceHoje = frescas.filter(venceNoDia);
+      const venceHoje = await semLembreteTravado(admin, accountId, frescas.filter(venceNoDia));
       // 5) o intervalo mínimo (D11, 13/09)
       const absorvida = dentroDoIntervalo(ultimaCobranca.get(grupo.asaasCustomerId) ?? null, dia, config.regua_intervalo_dias, fuso);
       if (!(await reguaAindaLigada(admin, accountId))) {
@@ -895,7 +919,12 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       // dias do lembrete, não só o status: a PENDING de hoje que o Asaas
       // prorrogou mandava "vence hoje" com a data futura e travava o lembrete
       // legítimo do dia novo por 23505 (Codex, 4ª rodada do PR #206).
-      const venceHoje = await reconfirmar(admin, accountId, cliente, grupo.venceHoje, (p) => cabeNoLembrete(p, diasDoLembreteHoje, dia), vistoEm);
+      // A trava de lembrete que JÁ existe é conferida ANTES da releitura: a
+      // parcela lembrada não entra no grupo (senão o 23505 levava a outra
+      // junto) e não gasta GET no Asaas a cada ciclo do dia (Codex, PR #212).
+      const aLembrar = await semLembreteTravado(admin, accountId, grupo.venceHoje);
+      if (aLembrar.length === 0) continue;
+      const venceHoje = await reconfirmar(admin, accountId, cliente, aLembrar, (p) => cabeNoLembrete(p, diasDoLembreteHoje, dia), vistoEm);
       if (venceHoje.length === 0) continue;
       if (!(await reguaAindaLigada(admin, accountId))) {
         saida.desligadaNoMeio = true;

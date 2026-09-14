@@ -3910,6 +3910,15 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   AUTOMAÇÃO do lembrete, nunca `true` fixo (em dias corridos, a do sábado já
   foi lembrada no sábado, e somá-la repetia a trava `vence_hoje` — 23505 no
   grupo; pino "dias CORRIDOS"). (Codex, 4ª rodada do PR #206.)
+  ⚠️⚠️ **Mas quem responde "esse lembrete já saiu?" é a TRAVA, nunca a
+  configuração de hoje** (`semLembreteTravado`): lembrado o sábado em dias
+  corridos e ligado "só dias úteis" antes de segunda, a segunda volta a
+  cobrir o sábado — a parcela entrava de novo no INSERT do grupo, o 23505
+  recusava a cobrança do marco (ou o lembrete da parcela de segunda) e o
+  `continue` lia "outro processo pegou" o dia inteiro. As parcelas com trava
+  `vence_hoje` para aquele vencimento saem da mensagem e da trava nos DOIS
+  caminhos; no do lembrete a conferência vem ANTES da releitura, para não
+  gastar GET no Asaas a cada ciclo com quem já foi lembrado (Codex, PR #212).
   A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
   `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
   mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).

@@ -266,7 +266,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
 | `src/lib/whatsapp/inbound-store.ts` | idem, no lado Evolution |
-| `src/lib/automations/engine.ts` | `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou |
+| `src/lib/automations/engine.ts` | `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome |
 | `src/app/api/whatsapp/webhook/route.ts`, `src/lib/whatsapp/inbound-store.ts` (×2) e `src/lib/whatsapp/send-message.ts` | a chamada a `routeContactToPipeline`. ⚠️ São **QUATRO** call sites: os dois de ingestão (não há função compartilhada de abrir conversa — enxertar só num faz a feature valer só num transporte, e produção roda Evolution), o `persistDeviceMessage` do celular pareado e o núcleo de envio. Ver "Quem abre negócio" abaixo |
 | `src/lib/whatsapp/inbound-store.ts` (`persistDeviceMessage`) | o `followConversationChannel` que aponta a conversa para o número por onde a EQUIPE falou. Sem ele a conversa nasce com `channel_id` nulo e o CRM responde pelo canal PADRÃO — o advogado aborda pelo Jurídico e o sistema responderia pelo Comercial |
 | `src/lib/flows/engine.ts` | `findEntryFlow` por canal, `flow_runs.channel_id`, try/catch nos nós interativos, e o parâmetro opcional `substituicao` de `startFlowForContact` (955): o start manual carimba a run substituída como gente (`stopped_by_agent`/`replaced_by_agent`), não como regra |
@@ -3342,8 +3342,12 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     com o conjunto EXATO de escritores de `contacts.name`
     (`src/lib/contacts/nome-fixado.chamadores.test.ts`, que reprova com a
     guarda do webhook da Meta removida E com a marca tirada da ficha —
-    medido). O perfil do Instagram não entra: ele só preenche nome quando a
-    ficha não tem nenhum.
+    medido). ⚠️ O teste enxerga toda escrita em `contacts` com chave
+    `name`, chave COMPUTADA, espalhamento ou objeto montado, e cada uma é
+    `respeita`/`grava`/`sem-marca` com o motivo escrito. A 1ª versão só via
+    objeto LITERAL e deixou passar o `update_contact_field` do motor
+    (`[cfg.field]`), que é o passo 0 da automação ativa do Calendly
+    (revisão do PR #208).
   - ⚠️ **A marca protege contra o AUTOMÁTICO, não contra gente — e gente
     também FIXA** (decisão do operador, 14/09/2026). Painel da conversa, ficha
     e formulário gravam a marca junto com o nome por `marcaDoNomeManual`, e o
@@ -3351,13 +3355,28 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     grave. ⚠️⚠️ **A marca só muda quando o NOME mudou**: a ficha e o
     formulário regravam o nome em todo salvamento, e sem essa régua corrigir
     só o e-mail fixaria de tabela o nome que veio do WhatsApp. Nome APAGADO
-    solta a marca (a próxima mensagem volta a preencher). O formulário também
-    fixa na CRIAÇÃO. Fora da regra, por ora: o PATCH da API v1 (troca o nome,
-    não grava a marca) e os INSERT automáticos (criar a ficha com o nome do
-    WhatsApp é o certo).
-  - ⚠️ **Só o negócio ABERTO é renomeado**: um contato é um telefone, e no
-    celular da empresa o card fechado de meses atrás pode ser de OUTRA
-    pessoa. Mexer só no `title` não dispara a trilha da 912 nem a fila do
+    solta a marca (a próxima mensagem volta a preencher). O formulário e o
+    "Nova conversa" (`/api/cb/conversas/abrir`) também fixam na CRIAÇÃO.
+    ⚠️⚠️ **E nome igual ao carregado NÃO é regravado**
+    (`escritaDoNomeManual`): a tela abre sobre uma FOTO da ficha, e se o
+    agendamento trocou o nome enquanto ela estava aberta, salvar só a empresa
+    devolvia o nome antigo — FIXADO, porque a marca não mudava (revisão do PR
+    #208). Fora da regra, SEM decisão do operador: o PATCH e a criação da API
+    v1, a importação de CSV (tela e disparo), a ficha criada pelo Asaas e por
+    `destinatario.ts` — escritas `sem-marca`, declaradas no teste.
+  - ⚠️⚠️ **O passo `update_contact_field` de NOME grava FIXADO, e valor que
+    não é nome não sobrescreve** (`engine.ts`). A automação é escrita
+    deliberada de quem a configurou. Sem isto, o passo 0 da automação do
+    Calendly (`nome = {{vars.agendamento_nome}}`) gravava o telefone digitado
+    no campo de nome por cima de um nome já fixado, e a marca antiga o
+    CONGELAVA; e um "Atualizar nome" vindo do Typebot durava até o pushName
+    seguinte. Vazio também não apaga mais o nome.
+  - ⚠️ **Só UM negócio ABERTO é renomeado — o mais recente**: um contato é
+    um telefone, e no celular da empresa o card fechado de meses atrás pode
+    ser de OUTRA pessoa. E o CRM permite mais de um aberto (o formulário de
+    Funis não confere): a régua é a de `negocioAlvo` (`engine.ts`), senão o
+    título que o advogado escreveu num card de outro funil sumia sem registro
+    (revisão do PR #208). Mexer só no `title` não dispara a trilha da 912 nem a fila do
     funil (os dois olham `pipeline_id`/`stage_id`/`status`).
   - **Número não é nome** (`nomeParaFixar`, `src/lib/contacts/nome-fixado.ts`,
     a mesma régua da ingestão da Evolution): fixar "5583…" tiraria da ficha o

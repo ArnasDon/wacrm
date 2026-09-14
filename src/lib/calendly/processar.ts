@@ -222,6 +222,14 @@ async function fixarNomeDaFicha(
  * fechado de meses atrás pode ser de OUTRA pessoa; renomeá-lo reescreveria a
  * história daquele caso.
  *
+ * ⚠️⚠️ E só UM: o aberto mais RECENTE — a mesma régua de `negocioAlvo`
+ * (`engine.ts`), que é o card que o `move_deal_stage` da automação acabou de
+ * mover. O CRM permite mais de um negócio aberto por contato (o formulário de
+ * Funis cria à mão; só o índice da 911 barra, e só para `source='channel'`).
+ * Um UPDATE por contato trocaria também o título que o advogado escreveu num
+ * card de outro funil ("Reclamatória – Empresa X"), e a trilha da 912 não
+ * guarda título — sumiria sem registro (revisão do PR #208).
+ *
  * ⚠️ Não alcança card criado DEPOIS de um "Aguardar": o agendador retoma a
  * execução fora deste processamento. A automação do Calendly cria o card
  * antes de qualquer espera.
@@ -236,11 +244,26 @@ async function renomearCardAberto(
   contactId: string,
   nome: string,
 ): Promise<string | null> {
+  const { data: alvo, error: erroDaBusca } = await admin
+    .from("deals")
+    .select("id")
+    .eq("account_id", accountId)
+    .eq("contact_id", contactId)
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (erroDaBusca) {
+    console.error("[calendly] não foi possível achar o negócio aberto:", erroDaBusca.message);
+    return `o título do negócio não foi atualizado (${erroDaBusca.message})`;
+  }
+  if (!alvo) return null;
+
   const { error } = await admin
     .from("deals")
     .update({ title: nome })
+    .eq("id", alvo.id)
     .eq("account_id", accountId)
-    .eq("contact_id", contactId)
     .eq("status", "open");
   if (error) {
     console.error("[calendly] não foi possível renomear o negócio aberto:", error.message);

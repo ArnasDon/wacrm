@@ -108,7 +108,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato, nomeDoContato } from '@/lib/contacts/identidade';
-import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
 
 export interface PainelDoContatoProps {
   contact: Contact | null;
@@ -598,7 +598,15 @@ export function PainelDoContato({
    */
   const salvarNome = useCallback(async () => {
     if (!contact) return;
-    const nome = nomeEdit.trim();
+    const nome = nomeEdit.replace(/[\s ]+/g, ' ').trim();
+    // Nome igual ao que está na tela: nada a gravar. Regravar mandaria de
+    // volta um nome que o agendamento pode ter trocado neste meio-tempo — e
+    // sem mudança de nome a marca (999) ficaria com o nome velho fixado.
+    const escrita = escritaDoNomeManual(contact.name, nome, new Date().toISOString());
+    if (!('name' in escrita)) {
+      setEditandoNome(false);
+      return;
+    }
     setSalvandoNome(true);
     const supabase = createClient();
     // Nome vazio volta a NULL — a ficha então mostra o telefone, que é o
@@ -613,10 +621,7 @@ export function PainelDoContato({
     // WhatsApp na mensagem seguinte do cliente.
     const { data, error } = await supabase
       .from('contacts')
-      .update({
-        name: nome === '' ? null : nome,
-        ...marcaDoNomeManual(contact.name, nome, new Date().toISOString()),
-      })
+      .update({ name: escrita.name, nome_fixado_em: escrita.nome_fixado_em })
       .eq('id', contact.id)
       .select('id');
     setSalvandoNome(false);

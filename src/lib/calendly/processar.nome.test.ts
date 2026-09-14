@@ -51,16 +51,31 @@ interface Escrita {
   filtros: [string, unknown][];
 }
 
+interface Consulta {
+  tabela: string;
+  filtros: [string, unknown][];
+  ordem: [string, unknown][];
+  limite: number | null;
+}
+
 let escritas: Escrita[] = [];
+let consultas: Consulta[] = [];
 let erroPorTabela: Record<string, { message: string } | null> = {};
+/** O negócio aberto mais recente que a busca do card devolve. */
+let cardAberto: { id: string } | null = { id: "deal-recente" };
+let erroNaBuscaDoCard: { message: string } | null = null;
 const ESCUTA = [{ trigger_type: "calendly_booking", trigger_config: {}, is_active: true }];
 let automacoes: unknown[] = ESCUTA;
 
 const admin = {
   from(tabela: string) {
     let escrita: Escrita | null = null;
+    const consulta: Consulta = { tabela, filtros: [], ordem: [], limite: null };
     const b: Record<string, unknown> = {
-      select: () => b,
+      select: () => {
+        consultas.push(consulta);
+        return b;
+      },
       update: (valores: Record<string, unknown>) => {
         escrita = { tabela, valores, filtros: [] };
         escritas.push(escrita);
@@ -68,12 +83,21 @@ const admin = {
         return b;
       },
       eq: (coluna: string, valor: unknown) => {
-        escrita?.filtros.push([coluna, valor]);
+        (escrita ? escrita.filtros : consulta.filtros).push([coluna, valor]);
         return b;
       },
-      order: () => b,
-      limit: () => b,
-      maybeSingle: async () => ({ data: { id: "conv-1", channel_id: "canal-1" }, error: null }),
+      order: (coluna: string, opcoes: unknown) => {
+        consulta.ordem.push([coluna, opcoes]);
+        return b;
+      },
+      limit: (n: number) => {
+        consulta.limite = n;
+        return b;
+      },
+      maybeSingle: async () =>
+        tabela === "deals"
+          ? { data: erroNaBuscaDoCard ? null : cardAberto, error: erroNaBuscaDoCard }
+          : { data: { id: "conv-1", channel_id: "canal-1" }, error: null },
       then: (f: (v: unknown) => unknown) =>
         Promise.resolve(
           escrita
@@ -87,7 +111,10 @@ const admin = {
 
 beforeEach(() => {
   escritas = [];
+  consultas = [];
   erroPorTabela = {};
+  cardAberto = { id: "deal-recente" };
+  erroNaBuscaDoCard = null;
   automacoes = ESCUTA;
   ordem.length = 0;
   busca.findExistingContact.mockReset().mockResolvedValue({ contato: { id: "c1", phone: "5562993798909" }, falhou: false });
@@ -117,13 +144,48 @@ describe("processarAgendamento — o nome do agendamento", () => {
   it("CRÍTICO: renomeia SÓ o negócio ABERTO do contato — o card fechado pode ser de outra pessoa", async () => {
     await processarAgendamento(admin, "acct-1", AGENDAMENTO);
 
-    const [negocio] = daTabela("deals");
-    expect(negocio.valores).toEqual({ title: "Douglas Barbosa" });
-    expect(negocio.filtros).toEqual([
+    const busca = consultas.find((c) => c.tabela === "deals");
+    expect(busca?.filtros).toEqual([
       ["account_id", "acct-1"],
       ["contact_id", "c1"],
       ["status", "open"],
     ]);
+    const [negocio] = daTabela("deals");
+    expect(negocio.valores).toEqual({ title: "Douglas Barbosa" });
+    expect(negocio.filtros).toContainEqual(["status", "open"]);
+  });
+
+  it("CRÍTICO: com MAIS DE UM negócio aberto, renomeia só o mais RECENTE — o título que o advogado escreveu noutro funil fica", async () => {
+    // Revisão do PR #208: o UPDATE por contato trocava TODOS os títulos
+    // abertos, e a trilha da 912 não guarda título. A régua é a de
+    // `negocioAlvo` (engine.ts): o aberto mais recente, UM.
+    await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+
+    const busca = consultas.find((c) => c.tabela === "deals");
+    expect(busca?.ordem).toEqual([["created_at", { ascending: false }]]);
+    expect(busca?.limite).toBe(1);
+    const escritasDeCard = daTabela("deals");
+    expect(escritasDeCard).toHaveLength(1);
+    expect(escritasDeCard[0].filtros).toEqual([
+      ["id", "deal-recente"],
+      ["account_id", "acct-1"],
+      ["status", "open"],
+    ]);
+  });
+
+  it("contato sem negócio aberto: nada a renomear, e nada a avisar", async () => {
+    cardAberto = null;
+    const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+    expect(daTabela("deals")).toEqual([]);
+    expect(r.detalhe).not.toContain("·");
+  });
+
+  it("falha ao BUSCAR o negócio vira aviso, sem renomear nada nem derrubar o disparo", async () => {
+    erroNaBuscaDoCard = { message: "timeout" };
+    const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+    expect(r.resultado).toBe("disparado");
+    expect(daTabela("deals")).toEqual([]);
+    expect(r.detalhe).toContain("o título do negócio não foi atualizado");
   });
 
   it("CRÍTICO: a FICHA antes do disparo (a automação fala com o nome novo), o CARD depois", async () => {
@@ -149,14 +211,8 @@ describe("processarAgendamento — o nome do agendamento", () => {
     const iCard = ordem.indexOf("update:deals");
     expect(cardsNoBanco).toBe(1);
     expect(iCard).toBeGreaterThan(iDisparo);
-    expect(daTabela("deals")[0]).toMatchObject({
-      valores: { title: "Douglas Barbosa" },
-      filtros: [
-        ["account_id", "acct-1"],
-        ["contact_id", "novo-1"],
-        ["status", "open"],
-      ],
-    });
+    expect(consultas.find((c) => c.tabela === "deals")?.filtros).toContainEqual(["contact_id", "novo-1"]);
+    expect(daTabela("deals")[0]).toMatchObject({ valores: { title: "Douglas Barbosa" } });
   });
 
   it("ficha recém-criada pelo agendamento também sai com o nome fixado", async () => {

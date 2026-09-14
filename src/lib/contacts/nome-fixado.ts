@@ -2,7 +2,8 @@
  * Nome FIXADO da ficha (999): o nome que o WhatsApp não sobrescreve.
  *
  * `contacts.nome_fixado_em` preenchido quer dizer que uma fonte deliberada
- * escolheu o nome — hoje, o agendamento do Calendly. A partir daí os três
+ * escolheu o nome — o agendamento do Calendly, o passo de automação que
+ * atualiza o nome, ou gente escrevendo o nome à mão. A partir daí os três
  * caminhos AUTOMÁTICOS que trocavam o nome pelo perfil do WhatsApp deixam a
  * ficha em paz: a ingestão da Evolution (`inbound-store.ts`), o webhook da
  * Meta e o envio por telefone da API v1 (`resolve-conversation.ts`). Cada um
@@ -62,4 +63,31 @@ export function marcaDoNomeManual(
   const ficou = (depois ?? "").replace(/[\s ]+/g, " ").trim();
   if (eraAntes === ficou) return {};
   return { nome_fixado_em: nomeParaFixar(ficou) ? agoraIso : null };
+}
+
+/**
+ * Puro: o pedaço do UPDATE de uma tela onde GENTE edita o nome — o NOME e a
+ * marca juntos, ou NADA quando o nome não mudou. Espalhe no objeto gravado:
+ * `.update({ ...escritaDoNomeManual(antes, digitado, agora), phone, … })`.
+ *
+ * ⚠️⚠️ Nome igual ao carregado NÃO é regravado. A tela abre sobre uma FOTO da
+ * ficha (a lista de /contatos não tem realtime; a ficha carrega uma vez): se
+ * o agendamento do Calendly trocou o nome enquanto ela estava aberta, regravar
+ * o nome da foto devolveria à ficha o nome ANTIGO — e, como a marca só muda
+ * quando o nome muda, ele ficaria FIXADO no lugar do que o cliente digitou,
+ * sem mensagem nenhuma capaz de consertar (revisão do PR #208). Mandar só o
+ * que mudou deixa no banco o valor mais novo.
+ *
+ * Nome apagado grava NULL e solta a marca, como `marcaDoNomeManual`. O nome
+ * gravado é o colapsado (espaços repetidos viram um).
+ */
+export function escritaDoNomeManual(
+  antes: string | null | undefined,
+  depois: string | null | undefined,
+  agoraIso: string,
+): { name?: string | null; nome_fixado_em?: string | null } {
+  const ficou = (depois ?? "").replace(/[\s ]+/g, " ").trim();
+  const marca = marcaDoNomeManual(antes, ficou, agoraIso);
+  if (!("nome_fixado_em" in marca)) return {};
+  return { name: ficou || null, ...marca };
 }

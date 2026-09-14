@@ -60,7 +60,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato } from '@/lib/contacts/identidade';
-import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -365,10 +365,10 @@ export function ContactDetailView({
     const { error } = await supabase
       .from('contacts')
       .update({
-        name: editName.trim() || null,
-        // A marca (999) só muda quando o NOME mudou — salvar só o e-mail não
-        // fixa o nome que veio do WhatsApp.
-        ...marcaDoNomeManual(contact?.name, editName, agora),
+        // O nome (e a marca, 999) só vão quando o NOME mudou: salvar só o
+        // e-mail não fixa o nome que veio do WhatsApp, e a ficha aberta antes
+        // de um agendamento não devolve o nome antigo por cima do novo.
+        ...escritaDoNomeManual(contact?.name, editName, agora),
         phone: editPhone.trim(),
         email: editEmail.trim() || null,
         company: editCompany.trim() || null,

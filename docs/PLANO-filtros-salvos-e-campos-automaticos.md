@@ -101,7 +101,7 @@ com o valor guardado; não há caminho novo de recorte, nada muda em
 
 ### Fase A1 — Banco + módulo puro
 
-**Migration `967_cb_filtros_salvos.sql`** (⚠️ confirmar o número com
+**Migration `0967_cb_filtros_salvos.sql`** (⚠️ confirmar o número com
 `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de criar o
 arquivo — branches em paralelo mudam isso; e o histórico do Supabase não é
 fonte de verdade completa):
@@ -200,7 +200,7 @@ CREATE UNIQUE INDEX ... ON cb_inbox_saved_filters (account_id, lower(btrim(nome)
 
 | Arquivo | O que é |
 | --- | --- |
-| `supabase/migrations/967_cb_filtros_salvos.sql` | **NOVO.** `cb_inbox_saved_filters` como descrito acima. **Aplicada** e conferida no banco: RLS ligada, 4 policies, `anon` sem SELECT, `authenticated` com os quatro privilégios, índice único de nome de pé. |
+| `supabase/migrations/0967_cb_filtros_salvos.sql` | **NOVO.** `cb_inbox_saved_filters` como descrito acima. **Aplicada** e conferida no banco: RLS ligada, 4 policies, `anon` sem SELECT, `authenticated` com os quatro privilégios, índice único de nome de pé. |
 | `src/lib/inbox/filtros-salvos.ts` | **NOVO, puro.** `lerFiltroSalvo` (parse defensivo), `escreverFiltroSalvo`, `mesmoFiltro`, `descreverFiltro`, `limparOrfaos`, `nomeDaEtapa`. |
 | `src/lib/inbox/filtros-salvos.test.ts` | **NOVO.** 46 casos. |
 | `messages/{en,pt-BR}.json` | `Inbox.conversationList.deletedRef` — "(deleted)" / "(apagado)". |
@@ -267,7 +267,7 @@ quando há efeito, como a notificação de menção).
 
 ### Fase A3 — O filtro padrão
 
-**Migration `968_cb_filtro_padrao.sql`** — tabela minúscula, porque o padrão é
+**Migration `0968_cb_filtro_padrao.sql`** — tabela minúscula, porque o padrão é
 **por pessoa** e o filtro é **da conta**: uma coluna `padrao boolean` na tabela
 de filtros seria uma marca compartilhada, e o padrão de um apagaria o do outro
 sem nada na tela explicando (é literalmente o motivo pelo qual a 924 virou

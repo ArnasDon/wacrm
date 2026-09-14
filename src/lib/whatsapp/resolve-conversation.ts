@@ -111,10 +111,14 @@ export async function resolveConversationByPhone(
   if (existing) {
     contactId = existing.id;
     if (name && name !== existing.name) {
+      // ⚠️ `.is('nome_fixado_em', null)` (999): o nome que acompanha um envio
+      // costuma ser o do WhatsApp; nome FIXADO pelo agendamento do Calendly não
+      // volta a ser ele. Trocar nome de propósito é o PATCH do contato.
       await db
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .is('nome_fixado_em', null);
     }
   } else {
     const { data: created, error: createErr } = await db

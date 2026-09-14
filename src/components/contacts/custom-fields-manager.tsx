@@ -47,6 +47,7 @@ import {
   Copy,
   GripVertical,
   Loader2,
+  Lock,
   Plus,
   Trash2,
 } from 'lucide-react';
@@ -400,6 +401,9 @@ export function CustomFieldsPanel({
   }
 
   async function handleDelete(field: CustomField) {
+    // O campo espelhado (1000) não tem botão de apagar, e o banco recusa o
+    // DELETE mesmo assim. A guarda aqui só evita um confirm sem sentido.
+    if (field.espelho) return;
     if (!window.confirm(t('deleteConfirm', { name: field.field_name }))) {
       return;
     }
@@ -1184,21 +1188,43 @@ function FieldRow({
           aria-label={t('renameAria', { name: field.field_name })}
           className="focus:border-primary text-foreground hover:border-border h-8 border-transparent bg-transparent"
         />
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          disabled={busy}
-          onClick={() => onDelete(field)}
-          title={t('deleteTitle')}
-          className="text-muted-foreground shrink-0 hover:text-red-400"
-        >
-          {busy ? (
-            <Loader2 className="size-4 animate-spin" />
-          ) : (
-            <Trash2 className="size-4" />
-          )}
-        </Button>
+        {/* O campo que espelha o e-mail da ficha (1000) não se apaga: no lugar
+            da lixeira, um cadeado que diz por quê. Mover e renomear seguem. */}
+        {field.espelho ? (
+          <span
+            title={t('espelhoTitulo')}
+            aria-label={t('espelhoTitulo')}
+            className="text-muted-foreground flex size-8 shrink-0 items-center justify-center"
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Lock className="size-4" />
+            )}
+          </span>
+        ) : (
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            disabled={busy}
+            onClick={() => onDelete(field)}
+            title={t('deleteTitle')}
+            className="text-muted-foreground shrink-0 hover:text-red-400"
+          >
+            {busy ? (
+              <Loader2 className="size-4 animate-spin" />
+            ) : (
+              <Trash2 className="size-4" />
+            )}
+          </Button>
+        )}
       </div>
+
+      {field.espelho && (
+        <p className="text-muted-foreground mt-0.5 pl-6 text-[11px]">
+          {t('espelhoDescricao')}
+        </p>
+      )}
 
       <div className="mt-0.5 flex items-center gap-2 pl-6">
         {/* A chave (948): imutável depois de criada — renomear o CAMPO não a

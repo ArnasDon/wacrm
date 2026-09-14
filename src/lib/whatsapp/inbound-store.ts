@@ -107,10 +107,15 @@ async function findOrCreateContact(
     // só serve como nome na CRIAÇÃO, quando não há nada melhor.
     const nomeEhNumero = name.replace(/[\s()+-]/g, '') !== '' && /^\d+$/.test(name.replace(/[\s()+-]/g, ''));
     if (name && name !== existing.name && !nomeEhNumero) {
+      // ⚠️ `.is('nome_fixado_em', null)` (999): nome FIXADO por uma fonte
+      // deliberada — o agendamento do Calendly — não volta a ser o do perfil.
+      // A guarda mora no UPDATE, e não num `if`, porque a busca do contato não
+      // traz essa coluna. Teste estrutural: `nome-fixado.chamadores.test.ts`.
       await db
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
-        .eq('id', existing.id);
+        .eq('id', existing.id)
+        .is('nome_fixado_em', null);
     }
     return { contact: existing as ContactRow, wasCreated: false };
   }

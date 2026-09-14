@@ -35,6 +35,7 @@ import { resolverDestinatario } from './destinatario';
 import { resolveEngineChannelPreferring } from '@/lib/cb-channels/engine-send';
 import { ehGatilhoDaRegua } from '@/lib/asaas/regua';
 import { digitosDoTelefone } from '@/lib/contacts/telefone';
+import { nomeParaFixar } from '@/lib/contacts/nome-fixado';
 import { urlDoInbox } from '@/lib/inbox/url';
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write';
 import {
@@ -161,6 +162,16 @@ export interface DispatchInput {
   triggerType: AutomationTriggerType;
   contactId?: string | null;
   context?: AutomationContext;
+  /**
+   * NOSSO: chamado UMA vez, logo antes da PRIMEIRA automação que passou em
+   * todos os recortes (canal, gatilho, etapa) — e nunca quando nenhuma roda.
+   * É onde o chamador faz o que só vale "se alguma automação vai rodar" e
+   * precisa estar pronto ANTES dela: o Calendly fixa ali o nome da ficha, que
+   * a automação fala em `{{contact.name}}`. Sem o gancho, o chamador teria de
+   * repetir os recortes do motor para saber — e duas cópias divergem.
+   * Falha dele não segura o disparo.
+   */
+  antesDeExecutar?: () => Promise<void>;
 }
 
 /**
@@ -266,6 +277,7 @@ export async function dispararAutomacoes(
     if (!automations || automations.length === 0) return r;
     r.candidatas = automations.length;
 
+    let preparou = false;
     for (const automation of automations as Automation[]) {
       if (!channelInScope(automation, input.context)) {
         r.foraDoEscopo += 1;
@@ -283,6 +295,14 @@ export async function dispararAutomacoes(
       ) {
         r.foraDoEscopo += 1;
         continue;
+      }
+      if (input.antesDeExecutar && !preparou) {
+        preparou = true;
+        try {
+          await input.antesDeExecutar();
+        } catch (err) {
+          console.error('[automations] antesDeExecutar falhou:', err);
+        }
       }
       try {
         const status = await executeAutomation(input, automation);
@@ -1158,6 +1178,27 @@ async function runStep(
       const allowed = new Set(['name', 'email', 'company']);
       if (!allowed.has(cfg.field)) {
         return `field ${cfg.field} not writable from automations`;
+      }
+
+      // ⚠️⚠️ O NOME é escrita DELIBERADA de quem configurou a automação, e
+      // segue a régua do agendamento do Calendly (999): valor que não é nome
+      // — vazio, ou o telefone que o formulário devolveu no campo de nome —
+      // NÃO sobrescreve a ficha; nome de verdade é gravado FIXADO. Sem isto,
+      // a automação ativa do Calendly (passo 0: nome = {{vars.agendamento_nome}})
+      // gravava o número por cima de um nome já fixado, e a marca antiga o
+      // CONGELAVA — a mensagem seguinte do cliente não consertava mais; e um
+      // "Atualizar nome" vindo do Typebot durava só até o pushName seguinte
+      // (revisão do PR #208).
+      if (cfg.field === 'name') {
+        const nome = nomeParaFixar(value);
+        if (!nome) return 'name not updated: the value is not a name';
+        const agora = new Date().toISOString();
+        await db
+          .from('contacts')
+          .update({ name: nome, nome_fixado_em: agora, updated_at: agora })
+          .eq('id', args.contactId)
+          .eq('account_id', args.automation.account_id);
+        return 'name updated';
       }
       // Defense in depth: scope the service-role write to the account so
       // a future caller that skips the entry-point ownership guard still

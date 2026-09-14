@@ -231,7 +231,7 @@ describe("a lista e o fio nunca discordam sobre o que resta", () => {
 
 describe("o gatilho da 993 espelha a regra do fio", () => {
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/993_cb_janela_da_meta_por_numero.sql"),
+    join(process.cwd(), "supabase/migrations/0993_cb_janela_da_meta_por_numero.sql"),
     "utf8",
   );
 

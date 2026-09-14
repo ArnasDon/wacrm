@@ -9,7 +9,7 @@ import { APP_ID_VALIDO } from './app';
 // diz nada ao operador. Mesmo molde de `anexo-declarado.test.ts` (986).
 describe('APP_ID_VALIDO', () => {
   it('é a MESMA expressão do CHECK de cb_instagram_config (990)', () => {
-    const sql = readFileSync('supabase/migrations/990_cb_instagram_config.sql', 'utf8');
+    const sql = readFileSync('supabase/migrations/0990_cb_instagram_config.sql', 'utf8');
     const noSql = /ig_app_id\s+text\s+NOT\s+NULL\s+CHECK\s*\(\s*ig_app_id\s*~\s*'([^']+)'\s*\)/.exec(sql);
     expect(noSql).not.toBeNull();
     expect(noSql![1]).toBe(APP_ID_VALIDO.source);

@@ -1017,6 +1017,8 @@
       "retry": "Tentar de novo",
       "renameAria": "Renomear {name}",
       "deleteTitle": "Excluir campo",
+      "espelhoTitulo": "Espelha o e-mail da ficha — não pode ser excluído",
+      "espelhoDescricao": "Espelha o e-mail da ficha do contato: editar aqui ou na ficha muda os dois. Pode mudar de nome e de bloco, mas não pode ser excluído.",
       "deleteConfirm": "Excluir \"{name}\"? Isso também remove o valor armazenado em todos os contatos. Esta ação não pode ser desfeita.",
       "toastNoAccount": "Seu perfil não está vinculado a uma conta.",
       "toastDuplicate": "Já existe um campo chamado \"{name}\".",
@@ -1751,7 +1753,7 @@
         },
         "calendly_booking": {
           "label": "Agendamento no Calendly",
-          "hint": "Quando alguém marca um horário no Calendly (integração em Configurações → Integrações). O contato é achado pelo telefone do agendamento."
+          "hint": "Quando alguém marca um horário no Calendly (integração em Configurações → Integrações). O contato é achado pelo telefone do agendamento e passa a se chamar pelo nome informado nele — na conversa e no card do funil —, e a mensagem seguinte do WhatsApp não troca esse nome."
         },
         "webhook_received": {
           "label": "Webhook recebido",

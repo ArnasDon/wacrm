@@ -14,7 +14,7 @@ import path from 'node:path';
 // dentro de um DO block é invisível aqui.
 // ============================================================
 
-const sql = fs.readFileSync(path.join(__dirname, '990_cb_instagram_config.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '0990_cb_instagram_config.sql'), 'utf8');
 
 const semComentarios = sql
   .split('\n')

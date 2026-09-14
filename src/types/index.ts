@@ -175,6 +175,12 @@ export interface CustomField {
    */
   grupo_id?: string | null;
   /**
+   * Coluna da ficha que o campo ESPELHA (1000): hoje só `'contacts.email'`.
+   * O espelho é feito por gatilho nas duas tabelas; o campo espelhado não se
+   * apaga nem troca de tipo ou chave (o banco recusa). `null` = campo comum.
+   */
+  espelho?: string | null;
+  /**
    * Ordem DENTRO do bloco (966). `null` cai no fim — é o que acontece com
    * campo criado por um caminho que não carimba a posição (o semeador de
    * traqueamento, por exemplo).

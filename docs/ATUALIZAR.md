@@ -103,6 +103,17 @@ supabase db push
 Isso aplica **só o que ainda não foi aplicado** no seu projeto. Rodar de
 novo não faz nada.
 
+> ⚠️ **Atualizando uma instalação feita antes de 14/09/2026?** Nessa data
+> os arquivos de migration passaram de três para quatro dígitos
+> (`001_initial_schema.sql` virou `0001_initial_schema.sql`). O `db push`
+> guarda no histórico o número do arquivo, então o seu histórico ainda diz
+> `001`, `998` — e o `push` recusa aplicar qualquer coisa enquanto não
+> encontrar esses números nos arquivos. **Uma vez, antes do `db push`**,
+> rode no *SQL Editor* do painel o conteúdo de
+> [`scripts/reparar-historico-de-migrations.sql`](../scripts/reparar-historico-de-migrations.sql).
+> Ele troca só o número registrado; nenhuma migration roda de novo, e ele
+> é seguro de repetir. Instalação feita depois dessa data não precisa.
+
 **Ordem importa.** Quando uma versão traz coluna nova que o código passa
 a ler, aplique a migration **antes** de publicar a imagem nova. Ao
 contrário, a aplicação nova pede uma coluna que o banco ainda não tem, e

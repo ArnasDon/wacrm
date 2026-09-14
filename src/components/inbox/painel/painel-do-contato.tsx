@@ -108,6 +108,8 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato, nomeDoContato } from '@/lib/contacts/identidade';
+import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { campoDoEmail, emailNormalizado } from '@/lib/contacts/email-espelhado';
 
 export interface PainelDoContatoProps {
   contact: Contact | null;
@@ -597,7 +599,15 @@ export function PainelDoContato({
    */
   const salvarNome = useCallback(async () => {
     if (!contact) return;
-    const nome = nomeEdit.trim();
+    const nome = nomeEdit.replace(/[\s ]+/g, ' ').trim();
+    // Nome igual ao que está na tela: nada a gravar. Regravar mandaria de
+    // volta um nome que o agendamento pode ter trocado neste meio-tempo — e
+    // sem mudança de nome a marca (999) ficaria com o nome velho fixado.
+    const escrita = escritaDoNomeManual(contact.name, nome, new Date().toISOString());
+    if (!('name' in escrita)) {
+      setEditandoNome(false);
+      return;
+    }
     setSalvandoNome(true);
     const supabase = createClient();
     // Nome vazio volta a NULL — a ficha então mostra o telefone, que é o
@@ -607,9 +617,12 @@ export function PainelDoContato({
     // (ou contato que sumiu numa fusão de duplicados) volta com `error`
     // NULO e zero linhas — e a tela fechava o editor como se tivesse
     // salvado. A armadilha do "0 linhas" documentada no CLAUDE.md.
+    //
+    // A marca (999) vai junto: nome corrigido à mão não volta a ser o do
+    // WhatsApp na mensagem seguinte do cliente.
     const { data, error } = await supabase
       .from('contacts')
-      .update({ name: nome === '' ? null : nome })
+      .update({ name: escrita.name, nome_fixado_em: escrita.nome_fixado_em })
       .eq('id', contact.id)
       .select('id');
     setSalvandoNome(false);
@@ -820,9 +833,20 @@ export function PainelDoContato({
           ? { de: prev.de, mapa: { ...prev.mapa, [fieldId]: valor.trim() } }
           : prev
       );
+      // O campo espelhado (1000): o gatilho já gravou o e-mail da FICHA. A
+      // linha com o envelope, logo acima nesta mesma aba, lê `contact.email`
+      // — sem o aviso à página, a tela mostrava dois e-mails diferentes para
+      // o mesmo cliente até recarregar (revisão do PR #210). A página casa o
+      // patch pelo id, então uma resposta atrasada não suja outro contato.
+      if (fieldId === campoDoEmail(customFields)) {
+        onContactUpdated?.({
+          id: contact.id,
+          email: emailNormalizado(valor) ?? undefined,
+        } as Partial<Contact>);
+      }
       return true;
     },
-    [contact, dadosProntos, customFields, tSidebar]
+    [contact, dadosProntos, customFields, tSidebar, onContactUpdated]
   );
 
   const handleCopyPhone = useCallback(async () => {

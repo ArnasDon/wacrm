@@ -19,11 +19,11 @@ import path from 'node:path';
 // ============================================================
 
 const TABELAS = [
-  { tabela: 'cb_asaas_config', migration: '992_cb_asaas_config.sql' },
-  { tabela: 'cb_asaas_clientes', migration: '994_cb_asaas_espelho.sql' },
-  { tabela: 'cb_asaas_cobrancas', migration: '994_cb_asaas_espelho.sql' },
+  { tabela: 'cb_asaas_config', migration: '0992_cb_asaas_config.sql' },
+  { tabela: 'cb_asaas_clientes', migration: '0994_cb_asaas_espelho.sql' },
+  { tabela: 'cb_asaas_cobrancas', migration: '0994_cb_asaas_espelho.sql' },
   // 997: cada entrega do webhook — o id do evento e o que o CRM fez com ele.
-  { tabela: 'cb_asaas_eventos', migration: '997_cb_asaas_webhook.sql' },
+  { tabela: 'cb_asaas_eventos', migration: '0997_cb_asaas_webhook.sql' },
 ] as const;
 
 function lerSemComentarios(migration: string): string {
@@ -81,7 +81,7 @@ describe('992/994/997 — RLS das tabelas do Asaas', () => {
   });
 
   it('997: o token de AUTENTICAÇÃO do webhook fica na config FECHADA, e o id do evento é UNIQUE por conta (idempotência)', () => {
-    const sql = lerSemComentarios('997_cb_asaas_webhook.sql');
+    const sql = lerSemComentarios('0997_cb_asaas_webhook.sql');
     expect(/ADD\s+COLUMN\s+IF\s+NOT\s+EXISTS\s+webhook_auth_token\s+text/i.test(sql)).toBe(true);
     expect(/CONSTRAINT\s+cb_asaas_eventos_uk\s+UNIQUE\s*\(\s*account_id\s*,\s*asaas_event_id\s*\)/i.test(sql)).toBe(true);
     // O `dateCreated` do evento vai CRU (texto sem fuso): é a medição de C7.

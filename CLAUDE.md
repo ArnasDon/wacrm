@@ -4921,17 +4921,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     sem quebrar nada) e o Calendly não consegue fixar o nome (vira aviso no
     detalhe do evento).
 
-  ⚠️⚠️ **A 999 é o ÚLTIMO número possível no formato atual.** O replay do CI
-  aplica as migrations em ordem de NOME (`fs.ReadDir`, lexicográfica), e
-  `1000_` ordena ENTRE a `042_` e a `900_` — rodaria antes das tabelas de que
-  depende, o replay ficaria vermelho, e desde 08/09/2026 replay vermelho
-  TRAVA o deploy. Nenhum prefixo só de dígitos ordena depois de `999_`
-  (`9990_` < `999_`, porque `0` vem antes de `_`). A próxima migration exige
-  DECIDIR a numeração antes de nascer — a saída que mantém a ordem é renomear
-  todos os arquivos para 4 dígitos (`0001_` … `0999_`), o que o histórico do
-  Supabase não sente (registra por timestamp) mas quebra os testes que leem
-  migration por caminho e conflita com toda branch aberta que traga
-  migration. Decisão do operador, pendente em 14/09/2026.
+  ⚠️⚠️ **A 999 foi o ÚLTIMO número de 3 dígitos.** O replay do CI aplica as
+  migrations em ordem de NOME (`fs.ReadDir`, lexicográfica), e `1000_`
+  ordenaria ENTRE a `042_` e a `900_`. Decisão do operador em 14/09/2026:
+  todos os arquivos passaram a ter 4 dígitos (PR #209) — a 999 nasceu
+  `999_` e virou `0999_` no merge. As entradas desta lista seguem com o
+  nome da época em que foram aplicadas.
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

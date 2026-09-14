@@ -998,6 +998,10 @@ via nem editava na conversa. O que morde código novo:
   cima da edição do campo, e o gatilho levaria o velho de volta ao campo, em
   silêncio. E cada lado atualiza o estado do outro ao gravar. O painel da
   conversa não tem o problema: lá só existe o campo.
+- ⚠️ **Os dois lados guardam o MESMO texto (1001)**: gatilhos BEFORE aparam a
+  linha de origem — o e-mail da ficha e o valor do campo espelhado — antes de
+  os AFTER da 1000 espelharem. Sem isso, `{{contact.campo.email}}` devolvia
+  " ana@x.com\n" e `{{contact.email}}` o aparado. Campo COMUM não é aparado.
 - **Um espelho por conta** (índice único parcial), semeado no FIM do bloco
   Geral; conta NOVA nasce com ele por gatilho em `accounts`, que nunca derruba
   a criação da conta (falha vira WARNING). A chave é `email` quando livre.
@@ -4981,7 +4985,16 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     ⚠️ Depende da renomeação para 4 dígitos (PR #209): com 3, `1000_`
     ordenaria antes das 900. ⚠️ Deploy DEPOIS dela: o catálogo lê `espelho`
     para trocar a lixeira pelo cadeado. Sem a coluna, a tela só não mostra o
-    cadeado — nada quebra.
+    cadeado — nada quebra. Aplicada em 14/09/2026 pela Management API (histórico
+    `20260914155014`), ANTES do merge, depois de a revisão adversarial achar
+    e a própria migration corrigir a `redeem_invitation` (todo convite seria
+    recusado).
+  - **1001_cb_email_espelhado_normalizado** — dois gatilhos BEFORE que aparam
+    a LINHA DE ORIGEM (o e-mail da ficha e o valor do campo espelhado) antes do
+    espelho, com `cb_email_normalizado` (`[[:space:]]` das pontas; vazio na
+    ficha vira NULL). A 1000 aparava só o lado espelhado, e automação/API com
+    espaço deixavam os dois lados com textos diferentes (Codex, PR #210).
+    Migration nova porque a 1000 já estava aplicada.
 
   ⚠️⚠️ **A 999 foi o ÚLTIMO número de 3 dígitos.** O replay do CI aplica as
   migrations em ordem de NOME (`fs.ReadDir`, lexicográfica), e `1000_`

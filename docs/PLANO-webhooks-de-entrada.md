@@ -178,7 +178,7 @@ diferença duas vezes.
 
 ## Fase 2 — Banco e porta de entrada ✅
 
-- [x] **Migration `982_cb_webhooks_de_entrada.sql`** (número conferido em
+- [x] **Migration `0982_cb_webhooks_de_entrada.sql`** (número conferido em
       08/09/2026 contra `ls supabase/migrations/` **e** `list_migrations` — as
       duas fontes dão 981 como última).
   - `cb_webhooks`: `id`, `account_id` (FK CASCADE), `nome text NOT NULL`,

@@ -25,6 +25,7 @@ const h = vi.hoisted(() => ({
     updateCalls: [] as {
       table: string;
       filters: [string, string, unknown][];
+      payload?: unknown;
     }[],
     upsertCalls: [] as { table: string; payload: unknown }[],
     logInserts: [] as Record<string, unknown>[],
@@ -66,7 +67,7 @@ vi.mock('./admin-client', () => {
     const { table, type } = ops;
     if (table === 'contacts') {
       if (type === 'update') {
-        state.updateCalls.push({ table, filters: ops.filters });
+        state.updateCalls.push({ table, filters: ops.filters, payload: ops.payload });
         return { data: null, error: null };
       }
       // ownership guard / condition read
@@ -473,6 +474,66 @@ describe('update_contact_field — custom fields', () => {
 
     expect(h.state.upsertCalls).toHaveLength(0);
     expect(h.state.updateCalls).toHaveLength(0);
+  });
+});
+
+describe('update_contact_field — o NOME (999)', () => {
+  // Revisão do PR #208: o passo gravava `contacts.name` por chave computada,
+  // sem respeitar nem gravar a marca. A automação ativa do Calendly tem este
+  // passo com {{vars.agendamento_nome}} — um telefone digitado no campo de nome
+  // ia para a ficha e a marca antiga o CONGELAVA.
+  it('CRÍTICO: nome de verdade é gravado FIXADO', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [customStep('name', '{{ vars.nome }}')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { vars: { nome: '  Douglas   Barbosa ' } },
+    });
+
+    expect(h.state.updateCalls).toHaveLength(1);
+    const payload = h.state.updateCalls[0].payload as Record<string, unknown>;
+    expect(payload.name).toBe('Douglas Barbosa');
+    expect(typeof payload.nome_fixado_em).toBe('string');
+    expect(h.state.updateCalls[0].filters).toContainEqual(['eq', 'account_id', ACCOUNT]);
+  });
+
+  it('CRÍTICO: valor que não é nome (telefone, vazio) NÃO sobrescreve a ficha', async () => {
+    for (const valor of ['+55 62 99379-8909', '']) {
+      h.state.updateCalls = [];
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automationWithUpdateStep()];
+      h.state.steps = [customStep('name', '{{ vars.nome }}')];
+
+      await runAutomationsForTrigger({
+        accountId: ACCOUNT,
+        triggerType: 'new_message_received',
+        contactId: 'c1',
+        context: { vars: { nome: valor } },
+      });
+
+      expect(h.state.updateCalls).toHaveLength(0);
+    }
+  });
+
+  it('e-mail e empresa seguem sem marca nenhuma', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [customStep('company', 'ACME')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    const payload = h.state.updateCalls[0].payload as Record<string, unknown>;
+    expect(payload.company).toBe('ACME');
+    expect(payload).not.toHaveProperty('nome_fixado_em');
   });
 });
 

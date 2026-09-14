@@ -200,7 +200,7 @@ sem autor, gravado por trigger porque havia 6 escritores espalhados. A nota é a
 *primário*: tem autor, tem intenção, tem um caminho só, e precisa ser apagável por gente.
 Copiar o padrão de escrita dele seria errado.
 
-### Schema — `918_cb_notas_na_conversa.sql`
+### Schema — `0918_cb_notas_na_conversa.sql`
 
 ```sql
 create table cb_conversation_notes (
@@ -800,7 +800,7 @@ cliente; a fatia B move **tudo** de uma vez para uma RPC.
 Estender as funções puras de `src/lib/inbox/conversations.ts` (que são **nossas**, já
 testadas) em vez de reescrever `conversation-list.tsx` (que é do **upstream**).
 
-### Schema — `924_cb_favoritar.sql` ✅ aplicada
+### Schema — `0924_cb_favoritar.sql` ✅ aplicada
 
 **Arquivada = `status='closed'`** (P2.3). Não é coluna nova — o operador definiu que
 arquivar *é* encerrar. Isso encolhe a migration e elimina a objeção do CHECK.
@@ -1096,7 +1096,7 @@ casar por palavra inteira com radicalização: digitar "advog" acharia o contato
 e **não** acharia a mensagem "advogado", no mesmo campo, sem nada na tela explicando qual
 regra está valendo.
 
-### Migration `929_cb_busca_em_mensagens.sql` ✅ aplicada e conferida
+### Migration `0929_cb_busca_em_mensagens.sql` ✅ aplicada e conferida
 
 - `pg_trgm` e `unaccent` em `extensions` (onde `pgcrypto` e `uuid-ossp` já moram).
 - `cb_texto_para_busca(text)` — `IMMUTABLE`, minúsculas + sem acento. **Uma função para as
@@ -1292,7 +1292,7 @@ conversas depois.
 | Faixa de `content_type='system'` fora do `MessageActions` | `message-thread.tsx:1455`, `cb-groups/system-events.ts:155` | **F3** — molde visual do balão |
 | `parseWhatsAppFormat` / `stripWhatsAppFormat` | `src/lib/inbox/whatsapp-format.ts` | **F1** — negrito já funciona |
 | `resolveEngineChannel*`, `evolutionTransportFor` | `src/lib/cb-channels/engine-send.ts` | **F4** — "por qual número isto sai" |
-| RPC com join + dedup + contagem janelada | `025_filter_contacts_by_tags.sql` | **F2 fatia B** — molde |
+| RPC com join + dedup + contagem janelada | `0025_filter_contacts_by_tags.sql` | **F2 fatia B** — molde |
 | `matchesContactFilters`, `matchesTypeFilter`, `CONVERSATION_SELECT` | `src/lib/inbox/conversations.ts` | **F2 fatia A** — estender, são nossos |
 | Auth de cron + claim em dois passos | `src/app/api/automations/cron/route.ts:18` | **F4** — só o código; o agendador não existe |
 | Índice único `(id, account_id)` → FK composta | migration `910` | **F3 e F4** — posse de graça |

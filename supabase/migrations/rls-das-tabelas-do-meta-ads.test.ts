@@ -30,7 +30,7 @@ const TABELAS = ['cb_meta_ads_config', 'cb_meta_ads_campanhas', 'cb_meta_ads_gas
 /** Só estas duas dão SELECT ao membro; a config não dá nada. */
 const COM_SELECT_DO_MEMBRO = ['cb_meta_ads_campanhas', 'cb_meta_ads_gastos'] as const;
 
-const sql = fs.readFileSync(path.join(__dirname, '976_cb_meta_ads.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '0976_cb_meta_ads.sql'), 'utf8');
 
 /** Sem comentários: um `-- ALTER TABLE …` não vale como prova. */
 const semComentarios = sql

@@ -17,7 +17,7 @@ import path from 'node:path';
 // dentro de um DO block é invisível aqui.
 // ============================================================
 
-const sql = fs.readFileSync(path.join(__dirname, '987_cb_tldv.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '0987_cb_tldv.sql'), 'utf8');
 
 const semComentarios = sql
   .split('\n')

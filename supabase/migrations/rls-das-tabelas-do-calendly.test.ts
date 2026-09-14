@@ -18,7 +18,7 @@ import path from 'node:path';
 
 const TABELAS = ['cb_calendly_config', 'cb_calendly_eventos'] as const;
 
-const sql = fs.readFileSync(path.join(__dirname, '977_cb_calendly.sql'), 'utf8');
+const sql = fs.readFileSync(path.join(__dirname, '0977_cb_calendly.sql'), 'utf8');
 
 const semComentarios = sql
   .split('\n')

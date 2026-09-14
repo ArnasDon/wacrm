@@ -78,7 +78,7 @@ function policiasDeEscritaComCorpo(): Map<string, { cmd: string; corpo: string }
   const arquivos = fs
     .readdirSync(DIR)
     .filter((f) => f.endsWith('.sql'))
-    .sort(); // 001 < 017 < 037 < 900 < 964 — três dígitos, ordem lexicográfica serve
+    .sort(); // 0001 < 0017 < 0037 < 0900 < 0964 — largura fixa, ordem lexicográfica serve (ver nomes-das-migrations.test.ts)
 
   const vivas = new Map<string, { cmd: string; corpo: string }>();
 
@@ -138,7 +138,7 @@ describe('policies de escrita em disparo/regras (M17)', () => {
     // Sanidade do próprio parser: a `"Users can manage own broadcasts"` da
     // 001 TEM de ser encontrada nos arquivos (e sumir pelo DROP da 017).
     // Sem isto, um parser que não casa nada passaria no teste acima.
-    const sql001 = fs.readFileSync(path.join(DIR, '001_initial_schema.sql'), 'utf8');
+    const sql001 = fs.readFileSync(path.join(DIR, '0001_initial_schema.sql'), 'utf8');
     const achadas = [...sql001.matchAll(CRIA)].map((m) => m[1] ?? m[2]);
     expect(achadas).toContain('Users can manage own broadcasts');
   });

@@ -1760,7 +1760,7 @@
         },
         "calendly_booking": {
           "label": "Calendly booking",
-          "hint": "When someone books a slot on Calendly (integration in Settings → Integrations). The contact is matched by the booking's phone number."
+          "hint": "When someone books a slot on Calendly (integration in Settings → Integrations). The contact is matched by the booking's phone number and takes the name given in the booking — in the conversation and on the pipeline card —, and the next WhatsApp message does not change that name."
         },
         "webhook_received": {
           "label": "Incoming webhook",

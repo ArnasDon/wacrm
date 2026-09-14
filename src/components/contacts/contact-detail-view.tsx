@@ -61,6 +61,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato } from '@/lib/contacts/identidade';
 import { campoDoEmail, emailMudou, emailNormalizado } from '@/lib/contacts/email-espelhado';
+import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -367,14 +368,18 @@ export function ContactDetailView({
     // que estava na tela — e o gatilho levaria o antigo de volta ao campo.
     const mudouEmail = emailMudou(contact?.email, editEmail);
     const emailNovo = emailNormalizado(editEmail);
+    const agora = new Date().toISOString();
     const { error } = await supabase
       .from('contacts')
       .update({
-        name: editName.trim() || null,
+        // O nome (e a marca, 999) só vão quando o NOME mudou: salvar só o
+        // e-mail não fixa o nome que veio do WhatsApp, e a ficha aberta antes
+        // de um agendamento não devolve o nome antigo por cima do novo.
+        ...escritaDoNomeManual(contact?.name, editName, agora),
         phone: editPhone.trim(),
         ...(mudouEmail ? { email: emailNovo } : {}),
         company: editCompany.trim() || null,
-        updated_at: new Date().toISOString(),
+        updated_at: agora,
       })
       .eq('id', contactId);
 

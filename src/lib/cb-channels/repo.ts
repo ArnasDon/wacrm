@@ -1,7 +1,7 @@
 // ============================================================
 // Acesso à tabela `cb_channels` — os canais de WhatsApp da conta.
 //
-// Ver o cabeçalho de supabase/migrations/901_cb_channels.sql para o
+// Ver o cabeçalho de supabase/migrations/0901_cb_channels.sql para o
 // porquê da tabela existir ao lado de `whatsapp_config`.
 //
 // REGRA DE OURO DESTE MÓDULO

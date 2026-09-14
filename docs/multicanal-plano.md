@@ -16,9 +16,9 @@ O multi-canal foi entregue completo no eixo **"conversa → canal → credencial
 
 ---
 
-## 2) MUDANÇAS DE SCHEMA — migration única `903_cb_multicanal.sql`
+## 2) MUDANÇAS DE SCHEMA — migration única `0903_cb_multicanal.sql`
 
-**Princípio transversal:** toda coluna de canal é **NULLABLE**, e `NULL` significa sempre **"qualquer canal / herda o padrão"** — nunca "nenhum canal". Isso preserva 100% do comportamento das linhas existentes sem backfill obrigatório. `ON DELETE SET NULL` em toda FK para `cb_channels`, seguindo o padrão já estabelecido em `supabase/migrations/902_cb_conversation_channel.sql:28-29`.
+**Princípio transversal:** toda coluna de canal é **NULLABLE**, e `NULL` significa sempre **"qualquer canal / herda o padrão"** — nunca "nenhum canal". Isso preserva 100% do comportamento das linhas existentes sem backfill obrigatório. `ON DELETE SET NULL` em toda FK para `cb_channels`, seguindo o padrão já estabelecido em `supabase/migrations/0902_cb_conversation_channel.sql:28-29`.
 
 ### 2.1 Escopo de disparo e execução
 
@@ -38,11 +38,11 @@ O multi-canal foi entregue completo no eixo **"conversa → canal → credencial
 | `message_templates` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | backfill **condicional**: recebe o id do canal padrão **somente se** ele for `kind='meta'`; senão fica `NULL` |
 | `broadcasts` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | `NULL` = campanha histórica disparada pelo padrão |
 
-Índices de `message_templates` — o atual é `UNIQUE(user_id, name, language)` (`supabase/migrations/014_message_templates_meta_integration.sql:190-191`). Substituir por dois parciais:
+Índices de `message_templates` — o atual é `UNIQUE(user_id, name, language)` (`supabase/migrations/0014_message_templates_meta_integration.sql:190-191`). Substituir por dois parciais:
 - `UNIQUE (user_id, name, language) WHERE channel_id IS NULL`
 - `UNIQUE (user_id, channel_id, name, language) WHERE channel_id IS NOT NULL`
 
-`broadcast_recipients` **não** precisa de coluna: o canal é da campanha inteira e `idx_broadcast_recipients_wamid` (`003_broadcast_recipient_wamid.sql:29-32`) já é UNIQUE global, então não há ambiguidade de ACK.
+`broadcast_recipients` **não** precisa de coluna: o canal é da campanha inteira e `idx_broadcast_recipients_wamid` (`0003_broadcast_recipient_wamid.sql:29-32`) já é UNIQUE global, então não há ambiguidade de ACK.
 
 ### 2.3 IA
 
@@ -52,14 +52,14 @@ O multi-canal foi entregue completo no eixo **"conversa → canal → credencial
 | `cb_channels` | `default_agent_id` | `uuid` | sim | `auth.users(id)` ON DELETE SET NULL | `NULL` = sem roteamento automático (atende inbox + handoff por canal) |
 | `ai_configs` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | linha existente fica `NULL` = agente padrão da conta |
 | `ai_knowledge_documents` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | `NULL` = documento comum a todos os canais |
-| `ai_knowledge_chunks` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | denormalizado do documento, como já se faz com `account_id` (`030_ai_knowledge.sql:96`) |
+| `ai_knowledge_chunks` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | denormalizado do documento, como já se faz com `account_id` (`0030_ai_knowledge.sql:96`) |
 | `ai_usage_log` | `channel_id` | `uuid` | sim | `cb_channels(id)` ON DELETE SET NULL | `NULL` = histórico sem atribuição de custo |
 
-`ai_configs` hoje tem `account_id NOT NULL UNIQUE` (`029_ai_reply.sql:47`). **Dropar essa constraint** e criar dois índices parciais:
+`ai_configs` hoje tem `account_id NOT NULL UNIQUE` (`0029_ai_reply.sql:47`). **Dropar essa constraint** e criar dois índices parciais:
 - `UNIQUE (account_id) WHERE channel_id IS NULL` — garante um único agente padrão
 - `UNIQUE (account_id, channel_id) WHERE channel_id IS NOT NULL` — um agente por canal
 
-⚠️ As duas RPCs `match_ai_knowledge_semantic` e `match_ai_knowledge_fts` (`030_ai_knowledge.sql:155-190`) precisam de `DROP FUNCTION` antes do `CREATE` para mudar a assinatura (novo `p_channel_id`), e `src/lib/ai/knowledge.ts:113-136` tem que mudar **no mesmo PR** — senão a busca quebra entre o deploy do banco e o do app. Ver §5.
+⚠️ As duas RPCs `match_ai_knowledge_semantic` e `match_ai_knowledge_fts` (`0030_ai_knowledge.sql:155-190`) precisam de `DROP FUNCTION` antes do `CREATE` para mudar a assinatura (novo `p_channel_id`), e `src/lib/ai/knowledge.ts:113-136` tem que mudar **no mesmo PR** — senão a busca quebra entre o deploy do banco e o do app. Ver §5.
 
 ### 2.4 Integridade de canal ↔ conta
 
@@ -108,7 +108,7 @@ O multi-canal foi entregue completo no eixo **"conversa → canal → credencial
 - `src/lib/whatsapp/send-message.ts:344-352` busca o template só por `account_id+name+language`. Filtrar por `channel.channelId` com fallback `channel_id IS NULL`.
 - Rate limit: chave `broadcast:${user.id}` (`src/app/api/whatsapp/broadcast/route.ts:77`) passa a compor o canal. ⚠️ **Achado colateral que merece issue própria e não é multi-canal**: `src/lib/rate-limit.ts:120-123` dá 5 POSTs/60s enquanto `src/hooks/use-broadcast-sending.ts:62-63` fatia em lotes de 10 com 1s de pausa — a partir de ~51 destinatários **todo lote leva 429** e é marcado `failed` (`:528-539`). Campanha de 500 = ~50 enviados, ~450 falsos-negativos.
 
-**API** — as quatro rotas de template (`templates/sync/route.ts:153-184`, `templates/submit/route.ts:152-197`, `templates/[id]/route.ts:141-171` e `:280-299`) leem `whatsapp_config` e usam `config.waba_id`. Passar a aceitar `channel_id` e resolver por `getChannelWithSecrets`, com fallback no padrão. O sync itera todos os canais `kind='meta'` com `waba_id` e grava cada linha com o `channel_id` de origem. `cb_channels.waba_id` já existe (`901_cb_channels.sql:62`) e nunca foi lido.
+**API** — as quatro rotas de template (`templates/sync/route.ts:153-184`, `templates/submit/route.ts:152-197`, `templates/[id]/route.ts:141-171` e `:280-299`) leem `whatsapp_config` e usam `config.waba_id`. Passar a aceitar `channel_id` e resolver por `getChannelWithSecrets`, com fallback no padrão. O sync itera todos os canais `kind='meta'` com `waba_id` e grava cada linha com o `channel_id` de origem. `cb_channels.waba_id` já existe (`0901_cb_channels.sql:62`) e nunca foi lido.
 
 **UI/i18n** — seletor de canal no passo 4 do wizard (`src/app/(dashboard)/broadcasts/new/page.tsx:191-230`, hook em `use-broadcast-sending.ts:476-485`); pré-checagem de canal Meta no **passo 1**, não no envio; coluna "Canal" na lista e no detalhe da campanha; seletor de canal no `template-manager.tsx`; corrigir a condição do banner em `src/components/settings/template-manager.tsx:150-154` — hoje testa "existe algum Meta" e some justamente no cenário quebrado (padrão Evolution + Meta adicional); filtro de canal em `template-picker.tsx:114-118` e `step1-choose-template.tsx:36-40`.
 
@@ -158,7 +158,7 @@ O multi-canal foi entregue completo no eixo **"conversa → canal → credencial
 
 ### 3.6 Núcleo, webhooks e infra — **ALTO**
 
-- **Proxy de mídia** (`src/app/api/whatsapp/media/[mediaId]/route.ts:53-75`): faz `decrypt(config.access_token)` **incondicional** antes de olhar `?channel=`. Em conta Evolution o token é NULL (`037_evolution_transport.sql:49`) e `encryption.ts:51` estoura → 500. **Inverter a ordem**: resolver o `?channel=` primeiro, só cair no `whatsapp_config` se não houver canal, e nunca decriptar valor nulo.
+- **Proxy de mídia** (`src/app/api/whatsapp/media/[mediaId]/route.ts:53-75`): faz `decrypt(config.access_token)` **incondicional** antes de olhar `?channel=`. Em conta Evolution o token é NULL (`0037_evolution_transport.sql:49`) e `encryption.ts:51` estoura → 500. **Inverter a ordem**: resolver o `?channel=` primeiro, só cair no `whatsapp_config` se não houver canal, e nunca decriptar valor nulo.
 - **Verify do webhook Meta** (`webhook/route.ts:117-144`): varre só `whatsapp_config.verify_token`. `cb_channels.verify_token` é escrito (`cb/channels/route.ts:359`, `:388`) e **nunca lido**. Adicionar varredura aditiva em `cb_channels` (`kind='meta'`, token não nulo).
 - **Mídia inbound Evolution** (`src/lib/whatsapp/transport/evolution-inbound.ts:108`): devolve `mediaUrl: null` — hoje 100% da mídia recebida em produção se perde. Baixar via Evolution dentro do `after()` do webhook e subir para o bucket da 023.
 - **Fail-fast da API v1** (`src/lib/whatsapp/resolve-conversation.ts:58-69`): pergunta sobre `whatsapp_config`, tabela errada. Aceitar `cb_channels` como fonte, na mesma ordem de `resolveChannelForConversation`. ⚠️ Gatilho determinístico: `DELETE /api/whatsapp/config` (`config/route.ts:477-493`) apaga o espelho e mata a API pública enquanto o inbox continua funcionando.
@@ -203,7 +203,7 @@ Todas as fases são deploy-safe: nenhuma altera o comportamento existente da Evo
 - `AutomationContext.channel_id`, `DispatchInboundInput.channelId`, canal no payload dos 4 webhooks de saída + `message.status_updated` da Evolution, `channel_id` opcional no POST `/api/v1/messages` e `GET /api/v1/channels`.
 > Nada muda de comportamento; é o pré-requisito de D, E e F. Ganho colateral imediato: o canal do disparo passa a sobreviver ao `wait` das automações.
 
-**Fase D — Migration `903_cb_multicanal.sql`** *(depende de C só na ordem lógica; pode ser aplicada antes)*
+**Fase D — Migration `0903_cb_multicanal.sql`** *(depende de C só na ordem lógica; pode ser aplicada antes)*
 - Todas as colunas de §2, índices parciais, FK composta, triggers de limpeza, recriação das RPCs de knowledge.
 - ⚠️ Aplicar via **MCP do Supabase** (`apply_migration`), conferindo o `project_ref` do `.mcp.json` do CB CRM. Nunca `db push`.
 > Colunas nullable + defaults preservam tudo. **Deploy do app pode vir depois** — nenhum código antigo lê as colunas novas.
@@ -247,7 +247,7 @@ Todas as fases são deploy-safe: nenhuma altera o comportamento existente da Evo
 
 ## 6) O QUE NÃO PRECISA MEXER
 
-- **Schema de `cb_channels` e roteamento de entrada** — `901_cb_channels.sql:35-102`: CHECKs por tipo, índices únicos globais por `phone_number_id`/`instance_name`, índice parcial de um padrão por conta, RLS. Desenho correto.
+- **Schema de `cb_channels` e roteamento de entrada** — `0901_cb_channels.sql:35-102`: CHECKs por tipo, índices únicos globais por `phone_number_id`/`instance_name`, índice parcial de um padrão por conta, RLS. Desenho correto.
 - **`conversations.channel_id` / `messages.channel_id` / `channel_pinned`** — `902:27-43`. Nullable, `ON DELETE SET NULL`, indexados. Nada a mudar.
 - **Resolução de saída** — `src/lib/cb-channels/resolve.ts:89-119` e `engine-send.ts:33-50`: ordem correta, filtro por `account_id`, deploy-safe (engolem erro pré-901/902). Os senders de flows (`meta-send.ts:93,223,402`), automações (`meta-send.ts:142`), IA (via `engineSendText`) e reações (`react/route.ts:118`) **já saem pelo canal certo**.
 - **Carimbo de saída e de entrada** — `send-message.ts:587`, `stamp.ts:17-58`, `inbound-store.ts:223-226`, `webhook/route.ts:758-761`. Os dois transportes se comportam de forma idêntica.
@@ -258,7 +258,7 @@ Todas as fases são deploy-safe: nenhuma altera o comportamento existente da Evo
 - **Cron de flows** (`src/app/api/flows/cron/route.ts:87`) — só marca `timed_out`, não envia nada.
 - **Autenticação da API pública** (`src/lib/api-keys/store.ts:34-57`, `scopes.ts:70-75`) — canal e autorização são ortogonais; `account_id` já isola.
 - **`broadcast_recipients`** — o UNIQUE global de `whatsapp_message_id` (`003:29-32`) já impede ambiguidade de ACK; não precisa de coluna de canal.
-- **Quick replies de texto** (`035_interactive_messages.sql:24-40`) — snippets de conta, corretamente agnósticos a canal.
+- **Quick replies de texto** (`0035_interactive_messages.sql:24-40`) — snippets de conta, corretamente agnósticos a canal.
 - **Webhook de ciclo de vida de template** (`src/lib/whatsapp/template-webhook.ts:133-159`) — casa por `meta_template_id`, único por WABA; continua correto com N WABAs.
 - **Infra de entrega de webhook de saída** (`src/lib/webhooks/deliver.ts:66-128`) — envelope, HMAC, SSRF guard, auto-disable: agnóstica a canal; acrescentar campo em `data` é aditivo.
 - **Opt-in/consentimento de broadcast** — a ausência é herdada do upstream e idêntica antes e depois do multi-canal. Só entra na conversa se o escritório pedir como funcionalidade nova.

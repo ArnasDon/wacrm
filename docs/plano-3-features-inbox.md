@@ -312,7 +312,7 @@ existem na faixa e devem ser extraídos, não reescritos.
 
 É a maior e a única que **cria dado que pode apodrecer** entre o agendamento e o envio.
 
-### Schema — `932_cb_agendada_com_midia_e_citacao.sql`
+### Schema — `0932_cb_agendada_com_midia_e_citacao.sql`
 
 - `media_url`, `media_path`, `media_kind`, `media_filename`
 - `reply_to_message_id`
@@ -406,7 +406,7 @@ CHECK do corpo a ser afrouxado.
 
 | Onde | O quê |
 | --- | --- |
-| `932_cb_agendada_com_midia_e_citacao.sql` | colunas + 5 CHECKs, com bloco que EXERCITA cada um |
+| `0932_cb_agendada_com_midia_e_citacao.sql` | colunas + 5 CHECKs, com bloco que EXERCITA cada um |
 | `src/lib/scheduled/midia.ts` | regras puras (23 testes): posse do arquivo, teto da legenda, "áudio não leva legenda", "a citação ainda vale?" |
 | `api/cb/scheduled/route.ts` | confere o que só ela pode: arquivo da CONTA, citada da CONVERSA, teto com assinatura |
 | `src/lib/scheduled/dispatch.ts` | confere o objeto ANTES de reivindicar; derruba citação apagada; traduz as recusas do núcleo |

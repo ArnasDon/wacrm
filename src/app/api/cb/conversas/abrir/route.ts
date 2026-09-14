@@ -4,6 +4,7 @@ import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { createClient } from '@/lib/supabase/server'
 import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado'
 import { isValidE164, sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 import { pinConversationChannel } from '@/lib/cb-channels/stamp'
 
@@ -232,6 +233,10 @@ async function resolverContato(
       // Sem nome, o número: é o que a ingestão faz, e o que o WhatsApp
       // mostra até alguém batizar o contato.
       name: nomeLimpo || digitos,
+      // Nome DIGITADO pelo operador fica fixado (999), como no formulário de
+      // contato: sem a marca, a primeira resposta do cliente o trocava pelo
+      // perfil do WhatsApp (revisão do PR #208). Sem nome, nada é gravado.
+      ...marcaDoNomeManual(null, nomeLimpo, new Date().toISOString()),
     })
     .select('id, name')
     .single()

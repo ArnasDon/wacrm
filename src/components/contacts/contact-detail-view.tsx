@@ -60,6 +60,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato } from '@/lib/contacts/identidade';
+import { campoDoEmail, emailMudou, emailNormalizado } from '@/lib/contacts/email-espelhado';
 import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
 
 interface ContactDetailViewProps {
@@ -132,6 +133,11 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
+  /** O contato à vista AGORA — a cerca de quem grava depois de um `await`. */
+  const contatoAbertoRef = useRef(contactId);
+  useEffect(() => {
+    contatoAbertoRef.current = contactId;
+  }, [contactId]);
 
   // Tags tab
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -361,6 +367,12 @@ export function ContactDetailView({
     }
 
     setSavingDetails(true);
+    // ⚠️ O e-mail só viaja se MUDOU nesta caixa (1000). Ele também é o campo
+    // personalizado espelhado, que salva sozinho em outra aba: sem a régua,
+    // editar o campo e depois salvar aqui só o telefone regravaria o e-mail
+    // que estava na tela — e o gatilho levaria o antigo de volta ao campo.
+    const mudouEmail = emailMudou(contact?.email, editEmail);
+    const emailNovo = emailNormalizado(editEmail);
     const agora = new Date().toISOString();
     const { error } = await supabase
       .from('contacts')
@@ -370,7 +382,7 @@ export function ContactDetailView({
         // de um agendamento não devolve o nome antigo por cima do novo.
         ...escritaDoNomeManual(contact?.name, editName, agora),
         phone: editPhone.trim(),
-        email: editEmail.trim() || null,
+        ...(mudouEmail ? { email: emailNovo } : {}),
         company: editCompany.trim() || null,
         updated_at: agora,
       })
@@ -380,6 +392,16 @@ export function ContactDetailView({
       toast.error(t('toastUpdateFailed'));
     } else {
       toast.success(t('toastUpdated'));
+      // O gatilho já copiou o e-mail para o campo espelhado; a aba de campos
+      // desmonta quando inativa e remonta lendo este mapa.
+      const espelho = campoDoEmail(customFields);
+      if (mudouEmail && espelho) {
+        setCustomValues((prev) =>
+          prev.de === contactId
+            ? { de: prev.de, mapa: { ...prev.mapa, [espelho]: emailNovo ?? '' } }
+            : prev
+        );
+      }
       fetchContact();
       onUpdated();
     }
@@ -503,6 +525,21 @@ export function ContactDetailView({
           ? { de: prev.de, mapa: { ...prev.mapa, [fieldId]: valor.trim() } }
           : prev
       );
+      // O campo espelhado (1000): o gatilho já gravou o e-mail da ficha.
+      // A caixa da aba de dados e o contato carregado passam a dizer o mesmo
+      // — senão o "Salvar" de lá compararia contra o e-mail velho.
+      //
+      // ⚠️ Com a cerca do CONTATO: a descarga de desmonte grava o cliente A
+      // depois de a ficha já ter aberto o B, e sem a cerca o e-mail de A caía
+      // na caixa e no cabeçalho de B — e um "Salvar" ali o gravaria no B
+      // (revisão do PR #210).
+      if (fieldId === campoDoEmail(customFields) && contatoAbertoRef.current === contactId) {
+        const novo = emailNormalizado(valor);
+        setEditEmail(novo ?? '');
+        setContact((prev) =>
+          prev && prev.id === contactId ? { ...prev, email: novo ?? undefined } : prev
+        );
+      }
       return true;
     },
     [contactId, podeEditar, supabase, customFields, contact, t]

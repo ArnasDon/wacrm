@@ -109,6 +109,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato, nomeDoContato } from '@/lib/contacts/identidade';
 import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { campoDoEmail, emailNormalizado } from '@/lib/contacts/email-espelhado';
 
 export interface PainelDoContatoProps {
   contact: Contact | null;
@@ -832,9 +833,20 @@ export function PainelDoContato({
           ? { de: prev.de, mapa: { ...prev.mapa, [fieldId]: valor.trim() } }
           : prev
       );
+      // O campo espelhado (1000): o gatilho já gravou o e-mail da FICHA. A
+      // linha com o envelope, logo acima nesta mesma aba, lê `contact.email`
+      // — sem o aviso à página, a tela mostrava dois e-mails diferentes para
+      // o mesmo cliente até recarregar (revisão do PR #210). A página casa o
+      // patch pelo id, então uma resposta atrasada não suja outro contato.
+      if (fieldId === campoDoEmail(customFields)) {
+        onContactUpdated?.({
+          id: contact.id,
+          email: emailNormalizado(valor) ?? undefined,
+        } as Partial<Contact>);
+      }
       return true;
     },
-    [contact, dadosProntos, customFields, tSidebar]
+    [contact, dadosProntos, customFields, tSidebar, onContactUpdated]
   );
 
   const handleCopyPhone = useCallback(async () => {

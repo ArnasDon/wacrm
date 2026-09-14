@@ -966,6 +966,65 @@ grupos-de-campos.ts` (testado) e o catálogo com arrastar em
   288px porque o `DialogContent` deste projeto **não tem teto de altura** —
   lista alta ali cresce para fora da viewport sem barra que a alcance.
 
+⚠️ **O campo "E-mail" ESPELHA `contacts.email` (1000), e o espelho mora no
+BANCO.** `custom_fields.espelho` (hoje só `'contacts.email'`), dois gatilhos
+— um em `contacts`, outro em `contact_custom_values` —, o módulo puro
+`src/lib/contacts/email-espelhado.ts` e o cadeado no catálogo. Pedido do
+operador (14/09/2026): o e-mail só existia na ficha de /contatos e ninguém o
+via nem editava na conversa. O que morde código novo:
+
+- ⚠️⚠️ **Não espelhe em código.** `contacts.email` tem muitos escritores
+  (ficha, formulário, CSV, PATCH da API v1, `update_contact_field`, a criação
+  de ficha do Calendly e do Asaas) e o valor do campo também. É a lição da
+  trilha da 912. Com o gatilho, TODO leitor do valor do campo
+  (`{{contact.campo.<chave>}}`, disparos, API v1, a lista do funil) enxerga o
+  e-mail sem saber que ele é especial.
+- ⚠️⚠️ **`pg_trigger_depth() > 1` separa gente de eco e de cascata.** Escrita
+  direta chega com profundidade 1 e espelha; a que veio do outro gatilho, ou
+  de CASCATA (apagar o contato cascateia o valor), chega com 2 e para. O eco
+  também termina sozinho pelo `IS DISTINCT FROM`: UPDATE que não muda nada não
+  casa linha. MEDIDO num Postgres 16 descartável, com 22 cenários, inclusive
+  as duas cascatas.
+- ⚠️ **O campo espelhado não se apaga nem troca de tipo, chave ou espelho** —
+  gatilho `BEFORE UPDATE OR DELETE`, e não só policy: a policy não alcança a
+  service role, e RLS que barra devolve 0 linhas sem erro. Renomear e mudar
+  de bloco/posição continuam livres. O DELETE direto (profundidade 1) é
+  recusado; a CASCATA de apagar a conta (profundidade 2) passa. No catálogo,
+  a lixeira vira cadeado.
+- ⚠️⚠️ **A ficha de /contatos mostra o e-mail DUAS vezes**, em abas diferentes
+  e com o estado sobrevivendo à troca: na aba de dados (botão "Salvar") e no
+  campo espelhado (salva sozinho). Por isso o "Salvar" só manda o e-mail se
+  ele MUDOU naquela caixa (`emailMudou`) — senão regravaria o valor velho por
+  cima da edição do campo, e o gatilho levaria o velho de volta ao campo, em
+  silêncio. E cada lado atualiza o estado do outro ao gravar. O painel da
+  conversa não tem o problema: lá só existe o campo.
+- ⚠️ **Os dois lados guardam o MESMO texto (1001)**: gatilhos BEFORE aparam a
+  linha de origem — o e-mail da ficha e o valor do campo espelhado — antes de
+  os AFTER da 1000 espelharem. Sem isso, `{{contact.campo.email}}` devolvia
+  " ana@x.com\n" e `{{contact.email}}` o aparado. Campo COMUM não é aparado.
+- **Um espelho por conta** (índice único parcial), semeado no FIM do bloco
+  Geral; conta NOVA nasce com ele por gatilho em `accounts`, que nunca derruba
+  a criação da conta (falha vira WARNING). A chave é `email` quando livre.
+- ⚠️⚠️ **O CONVITE não conta o campo espelhado como dado.** `redeem_invitation`
+  recusa quem tem dados na própria conta, e `custom_fields` está na lista;
+  como a conta provisória do cadastro (e a que `remove_account_member` cria)
+  nasce com o campo, TODO convite passaria a ser recusado com 409. A 1000
+  recria a função (reprodução fiel da 960) com `AND espelho IS NULL` naquela
+  linha. Achado da revisão do PR #210 ANTES de aplicar; medido num Postgres
+  descartável — o mutante sem a linha reproduz a recusa. Pino:
+  `supabase/migrations/convite-ignora-campo-espelhado.test.ts`. Quem recriar
+  `redeem_invitation` (ou mesclar a do upstream) mantém a exclusão.
+- ⚠️⚠️ **São DOIS escritores de tela com foto velha, e os dois só mandam o
+  e-mail quando ele MUDOU** (`emailMudou`): a ficha E o formulário "Editar" de
+  /contatos, que é preenchido pela linha da lista (sem recarga) — consertar a
+  ficha não consertou o formulário (revisão do PR #210). Pino:
+  `src/lib/contacts/email-espelhado.chamadores.test.ts`.
+- **Gravar o campo espelhado avisa o estado do e-mail na mesma tela**: no painel
+  da conversa, `onContactUpdated({ id, email })` (senão a linha do envelope
+  mostrava o e-mail velho logo acima do campo novo); na ficha, com CERCA do
+  contato à vista (`contatoAbertoRef`) — a descarga de desmonte grava o
+  cliente A depois de a ficha já ter aberto o B.
+
 ⚠️ **Efeito passivo = o primeiro render mostra o estado VELHO.** Já mordeu
 duas vezes em 2026-08-30, nas duas features do dia: a faixa da nota fixada
 mostrava a anotação do cliente anterior sob o cabeçalho do novo (o
@@ -4920,6 +4979,22 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     PostgREST recusar o UPDATE de nome (o nome para de acompanhar o WhatsApp,
     sem quebrar nada) e o Calendly não consegue fixar o nome (vira aviso no
     detalhe do evento).
+  - **1000_cb_campo_email_espelhado** — `custom_fields.espelho`, o campo
+    "E-mail" semeado em cada conta, o acervo dos e-mails já gravados, os dois
+    gatilhos de espelho, a proteção contra apagar e a semeadura de conta nova.
+    ⚠️ Depende da renomeação para 4 dígitos (PR #209): com 3, `1000_`
+    ordenaria antes das 900. ⚠️ Deploy DEPOIS dela: o catálogo lê `espelho`
+    para trocar a lixeira pelo cadeado. Sem a coluna, a tela só não mostra o
+    cadeado — nada quebra. Aplicada em 14/09/2026 pela Management API (histórico
+    `20260914155014`), ANTES do merge, depois de a revisão adversarial achar
+    e a própria migration corrigir a `redeem_invitation` (todo convite seria
+    recusado).
+  - **1001_cb_email_espelhado_normalizado** — dois gatilhos BEFORE que aparam
+    a LINHA DE ORIGEM (o e-mail da ficha e o valor do campo espelhado) antes do
+    espelho, com `cb_email_normalizado` (`[[:space:]]` das pontas; vazio na
+    ficha vira NULL). A 1000 aparava só o lado espelhado, e automação/API com
+    espaço deixavam os dois lados com textos diferentes (Codex, PR #210).
+    Migration nova porque a 1000 já estava aplicada.
 
   ⚠️⚠️ **A 999 foi o ÚLTIMO número de 3 dígitos.** O replay do CI aplica as
   migrations em ordem de NOME (`fs.ReadDir`, lexicográfica), e `1000_`

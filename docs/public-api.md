@@ -317,6 +317,13 @@ lead and read it back later.
 }
 ```
 
+> **The `email` field mirrors the contact's e-mail.** Every account has
+> one custom field (usually keyed `email`) that is kept identical to the
+> contact's `email`, in both directions, by the database. Writing it here
+> changes the contact's `email`; `PATCH /api/v1/contacts/{id}` with a new
+> `email` changes this field; clearing either clears both. It cannot be
+> deleted from the dashboard.
+
 (Every success response is wrapped in the `data` envelope, like the
 rest of the v1 API.) `values` is the same payload as a flat map —
 index it from an n8n expression as `data.values.utm_source`. `value` is always the raw stored text (`type` tells

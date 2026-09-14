@@ -1024,6 +1024,8 @@
       "retry": "Try again",
       "renameAria": "Rename {name}",
       "deleteTitle": "Delete field",
+      "espelhoTitulo": "Mirrors the contact's e-mail — cannot be deleted",
+      "espelhoDescricao": "Mirrors the e-mail on the contact record: editing it here or on the record changes both. It can be renamed and moved to another block, but not deleted.",
       "deleteConfirm": "Delete \"{name}\"? This also removes its stored value on every contact. This cannot be undone.",
       "toastNoAccount": "Your profile is not linked to an account.",
       "toastDuplicate": "A field named \"{name}\" already exists.",

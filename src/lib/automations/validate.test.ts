@@ -367,6 +367,36 @@ describe('régua do Asaas — os passos', () => {
     expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), { step_type: 'wait', step_config: { amount: 1, unit: 'minutes' } }])).toHaveLength(1)
   })
 
+  it('"Acionar automação" e "Iniciar robô" são recusados em qualquer escopo — a entrega pela filha não conta como envio e a filha pode esperar (revisão da 4ª rodada do PR #206)', () => {
+    const acionar = { step_type: 'run_automation', step_config: { automation_id: 'filha' } }
+    const robo = { step_type: 'run_flow', step_config: { flow_id: 'f' } }
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), acionar]).map((i) => i.path)).toEqual(['steps[1].step_type'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [msg('c1'), robo]).map((i) => i.path)).toEqual(['steps[1].step_type'])
+    expect(
+      validateAsaasReguaForActivation('asaas_cobranca_vencida', [
+        { step_type: 'condition', step_config: {}, branches: { yes: [msg('c1')], no: [acionar, robo] } },
+      ]).map((i) => i.path),
+    ).toEqual(['steps[0].no.steps[0].step_type', 'steps[0].no.steps[1].step_type'])
+    // parar continua permitido: não entrega nada ao contato
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), { step_type: 'stop_automation', step_config: { automation_id: 'x' } }, { step_type: 'stop_flow', step_config: {} }])).toEqual([])
+    expect(validateAsaasReguaForActivation('keyword_match', [msg(), acionar, robo])).toEqual([])
+  })
+
+  it('modelo, botões e lista são recusados em qualquer escopo — só saem pela Meta, que a varredura não sonda e o motor não cerca (revisão da 4ª rodada do PR #206)', () => {
+    const modelo = { step_type: 'send_template', step_config: { template_name: 'cobranca', language: 'pt_BR', channel_id: 'meta-2' } }
+    const botoes = { step_type: 'send_buttons', step_config: { body: 'x', buttons: [{ id: 'a', title: 'A' }] } }
+    const lista = { step_type: 'send_list', step_config: { body: 'x', button: 'ver', sections: [] } }
+    // o cenário medido: o modelo fixado num número oficial, dentro do ramo — ativava
+    expect(
+      validateAsaasReguaForActivation('asaas_cobranca_vencida', [
+        msg('c1'),
+        { step_type: 'condition', step_config: {}, branches: { yes: [modelo] } },
+      ]).map((i) => i.path),
+    ).toEqual(['steps[1].yes.steps[0].step_type'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [msg('c1'), botoes, lista]).map((i) => i.path)).toEqual(['steps[1].step_type', 'steps[2].step_type'])
+    expect(validateAsaasReguaForActivation('keyword_match', [msg(), modelo, botoes, lista])).toEqual([])
+  })
+
   it('outros gatilhos não são tocados', () => {
     expect(validateAsaasReguaForActivation('keyword_match', [msg(), { step_type: 'wait', step_config: { amount: 1, unit: 'days' } }])).toEqual([])
   })

@@ -422,6 +422,10 @@ function nonEmpty(v: unknown): boolean {
  *   se a automação continua ligada) e sairia sem reconfirmar o pagamento —
  *   `[mensagem][aguardar 4 dias][mensagem]` mandaria a de 5 dias a quem
  *   pagou no dia 2. Cada marco é uma automação própria (§2.4 do plano).
+ * - NENHUM "Acionar automação"/"Iniciar robô", em nenhum escopo: a entrega
+ *   por eles não conta como envio na trava, e a filha pode esperar.
+ * - NENHUM modelo, botões ou lista, em nenhum escopo: só saem pela Meta, e a
+ *   régua sai por conexão de QR Code (a varredura exige isso).
  * - TODO `send_message` com a conexão escolhida (`channel_id`, D19): a
  *   varredura confere que ela resolve e está viva ANTES de travar, e o
  *   motor falha fechado se não resolver — sem conexão escolhida a
@@ -442,7 +446,8 @@ export function validateAsaasReguaForActivation(
   // pelo canal do passo.
   let conexao: string | null = null
   // ⚠️ Pelo menos UM `send_message`: é dele que a varredura resolve a conexão
-  // (`primeiroEnvio`) e é o sucesso dele que vira `enviado` na trava. Uma
+  // (`primeiroEnvio`). O `enviado` da trava vem de QUALQUER passo que entrega
+  // ao contato (`PASSOS_QUE_FALAM_COM_O_CONTATO`, em asaas/regua.ts). Uma
   // automação só com `send_media` (ou sem envio) ativava e era pulada em
   // todo ciclo como "conexão inválida" (Codex, 3ª rodada do PR #206).
   let temMensagem = false
@@ -451,6 +456,29 @@ export function validateAsaasReguaForActivation(
       const path = `${prefixo}steps[${i}]`
       if (s.step_type === 'wait') {
         issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence cannot wait — each milestone is its own automation' })
+      }
+      // ⚠️ Nem "Acionar automação" nem "Iniciar robô", em nenhum escopo: a
+      // mensagem que sai pela FILHA fica no log dela, e o log da régua fecha
+      // só com `run_automation: success` → a trava vira `barrada` e o cliente
+      // cobrado fica fora do intervalo mínimo; pior, a filha comum pode ter um
+      // "Aguardar" e retomar dias depois sem reconfirmar o pagamento, e a
+      // cerca de conexão do motor olha o gatilho da FILHA — a proibição do
+      // "Aguardar" e a D19 ficavam dribladas por um passo (revisão da 4ª
+      // rodada do PR #206). Parar (`stop_*`) segue permitido: não entrega nada.
+      if (s.step_type === 'run_automation' || s.step_type === 'run_flow') {
+        issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence cannot run another automation or bot — the message must be sent by this automation' })
+      }
+      // ⚠️ Nem modelo, nem botões, nem lista, em nenhum escopo: só saem pela
+      // Meta, e a régua é só QR Code na v1 (o modelo aprovado é Fase 4). Fixado
+      // num número oficial, o passo passava em `validateChannelScopeForActivation`
+      // e saía por um número que a varredura não sondou (ela confere só o do
+      // primeiro `send_message`) e que o motor não cerca (a trava que falha
+      // fechado existe só no `send_message`) — o link de pagamento por outro
+      // número, que a D19 proíbe. Sem conexão fixada, herdava o QR Code do
+      // disparo, falhava sempre e gastava a trava do marco como `falhou`
+      // (revisão da 4ª rodada do PR #206).
+      if (s.step_type === 'send_template' || s.step_type === 'send_buttons' || s.step_type === 'send_list') {
+        issues.push({ path: `${path}.step_type`, message: 'the Asaas collection sequence sends through a QR Code connection — templates, buttons and lists are only available on the official API' })
       }
       if (s.step_type === 'send_message') temMensagem = true
       if (s.step_type === 'send_message' || s.step_type === 'send_media') {

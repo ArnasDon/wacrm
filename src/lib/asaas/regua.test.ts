@@ -5,6 +5,7 @@ import {
   agruparLembretes,
   agruparPorCliente,
   aindaPagavel,
+  cabeNoLembrete,
   dentroDoIntervalo,
   diaAlvoDoMarco,
   diasDoLembrete,
@@ -17,6 +18,7 @@ import {
   lerAutomacaoDaRegua,
   linhaDaParcela,
   montarVariaveis,
+  porMaiorMarco,
   proximoDiaUtil,
   RESULTADOS_DA_TRAVA,
   resultadoDoLog,
@@ -223,6 +225,11 @@ describe("agruparPorCliente (D11) — uma mensagem por cliente, através das aut
     expect(grupos[0].automacao.marco).toBe(5);
   });
 
+  it("porMaiorMarco — a ordem da escolha, reusada pela varredura depois da releitura: maior marco primeiro, empate pelo menor id", () => {
+    const lista = [cobranca(1), { ...cobranca(30), id: "b-30" }, cobranca(5), { ...cobranca(30), id: "a-30" }];
+    expect([...lista].sort(porMaiorMarco).map((a) => a.id)).toEqual(["a-30", "b-30", "a-5", "a-1"]);
+  });
+
   it("fora da janela da automação nada é candidato; cada automação tem a sua hora", () => {
     const set = parcela({ vencimento: "2026-09-11", vista_vencida_em: "2026-09-12T03:00:00Z" });
     expect(agruparPorCliente([cobranca(1, { horaEnvio: "10:00" })], [set], ctx("2026-09-14"), segunda)).toEqual([]);
@@ -252,6 +259,19 @@ describe("agruparLembretes (D17) — e a absorção pela cobrança do dia", () =
     expect(agruparLembretes([lembrete()], [hoje], new Set(), ctx("2026-09-14"), em("2026-09-14", "07:50"))).toEqual([]);
     const sab = parcela({ status: "PENDING", vencimento: "2026-09-12", vista_vencida_em: null });
     expect(agruparLembretes([lembrete()], [sab], new Set(), ctx("2026-09-12"), em("2026-09-12", "08:10"))).toEqual([]);
+  });
+
+  it("cabeNoLembrete — a MESMA cerca da seleção, reaplicada na linha relida (Codex, 4ª rodada do PR #206)", () => {
+    const dias = new Set(diasDoLembrete("2026-09-14", true)); // segunda: 12, 13 e 14
+    const hoje = "2026-09-14";
+    expect(cabeNoLembrete(parcela({ status: "PENDING", vencimento: "2026-09-14" }), dias, hoje)).toBe(true);
+    // prorrogada para o futuro: fora
+    expect(cabeNoLembrete(parcela({ status: "PENDING", vencimento: "2026-09-30" }), dias, hoje)).toBe(false);
+    // vencida no sábado, lembrete empurrado para segunda: dentro
+    expect(cabeNoLembrete(parcela({ status: "OVERDUE", vencimento: "2026-09-12" }), dias, hoje)).toBe(true);
+    // vencida HOJE não é lembrete (é marco)
+    expect(cabeNoLembrete(parcela({ status: "OVERDUE", vencimento: "2026-09-14" }), dias, hoje)).toBe(false);
+    expect(cabeNoLembrete(parcela({ status: "PENDING", vencimento: "2026-09-14", deleted: true }), dias, hoje)).toBe(false);
   });
 });
 
@@ -323,6 +343,14 @@ describe("resultadoDoLog — o que a trava registra", () => {
     // o desfecho gravado vence a espera: a retentativa já rodou
     expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_message", status: "failed" }] }, emEspera)).toBe("falhou");
     expect(RESULTADOS_DA_TRAVA).toContain("na_fila");
+  });
+  it("todo passo que ENTREGA ao contato conta como envio — um ramo de condição pode rodar só a mídia; `send_to_number` (avisa a equipe) e `send_webhook` (fala com um sistema) não contam (Codex, 4ª rodada do PR #206)", () => {
+    expect(resultadoDoLog({ desfecho: "concluida", steps_executed: [{ step_type: "condition", status: "success" }, { step_type: "send_media", status: "success" }] }, disparo)).toBe("enviado");
+    expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_media", status: "success" }, { step_type: "send_message", status: "failed" }] }, disparo)).toBe("enviado");
+    expect(resultadoDoLog({ desfecho: null, steps_executed: [{ step_type: "send_media", status: "success" }, { step_type: "send_message", status: "failed" }] }, { ...disparo, emEspera: 1 })).toBe("enviado");
+    expect(resultadoDoLog({ desfecho: "concluida", steps_executed: [{ step_type: "send_to_number", status: "success" }] }, disparo)).toBe("barrada");
+    expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_webhook", status: "success" }, { step_type: "send_message", status: "failed" }] }, disparo)).toBe("falhou");
+    expect(resultadoDoLog({ desfecho: "falhou", steps_executed: [{ step_type: "send_media", status: "failed" }] }, disparo)).toBe("falhou");
   });
   it("sem log: fora do escopo, sem automação, ou incerto quando o motor diz que executou", () => {
     expect(resultadoDoLog(null, { candidatas: 0, foraDoEscopo: 0, executadas: 0 })).toBe("sem_automacao");

@@ -24,7 +24,8 @@
  *   irmãos — uma URL de outro host levaria a chave junto.
  * - ⚠️ A cota é da **CONTA do Asaas**, não da chave: 25.000 pedidos a cada
  *   12 h e 50 GET simultâneos, dividido com qualquer outro sistema do
- *   escritório que use a API. Por isso o cliente guarda os cabeçalhos
+ *   escritório que use a API — e o bloqueio por cota também chega como
+ *   **403** (medido em 14/09/2026; ver `codigoDoErro`). Por isso o cliente guarda os cabeçalhos
  *   `RateLimit-*` da última resposta (o cartão os mostra) e a paginação tem
  *   TETO — e o teto ESTOURA em vez de devolver meia lista (lição do Meta
  *   Ads: meia lista vira número errado com cara de número certo).
@@ -92,16 +93,31 @@ export function doAsaas(url: string, ambiente: AmbienteDoAsaas): boolean {
   }
 }
 
+/** A descrição de BLOQUEIO POR COTA, casada minúscula e sem acento. */
+const RE_BLOQUEIO_POR_COTA = /limite de requisi|excesso de requisi|temporariamente bloquead|too many requests|rate limit/;
+
 /**
  * Puro: o status HTTP (e o `code` do corpo, quando vem) → o nosso código.
  * ⚠️ 401 com `invalid_environment` é chave do ambiente ERRADO — sandbox
  * numa base de produção, o engano mais fácil de cometer e o mais difícil de
  * enxergar depois.
+ * ⚠️ O Asaas documenta 429 para cota, mas em 14/09/2026 respondeu **403**
+ * com "Seu acesso foi temporariamente bloqueado por exceder o limite de
+ * requisições". Lido como permissão, o 403 fazia o cartão mandar mexer na
+ * chave, calava o passo dos Parcelamentos e marcava o webhook como terminal
+ * (medido em produção em 14/09/2026). Casa pela DESCRIÇÃO porque nenhum
+ * `code` de cota é documentado; 403 de permissão de verdade
+ * (`insufficient_permission`, IP fora da lista, corpo vazio ou HTML →
+ * "HTTP 403") continua `sem_permissao`.
  */
-export function codigoDoErro(status: number, codigoDoAsaas?: string | null): CodigoDoErroAsaas {
+export function codigoDoErro(status: number, codigoDoAsaas?: string | null, descricao?: string | null): CodigoDoErroAsaas {
   if (codigoDoAsaas === "invalid_environment") return "ambiente_errado";
   if (status === 401) return "chave_invalida";
-  if (status === 403) return "sem_permissao";
+  if (status === 403) {
+    // o intervalo dos acentos por ESCAPE, nunca o caractere combinante literal (a regra da 984)
+    const texto = (descricao ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return RE_BLOQUEIO_POR_COTA.test(texto) ? "limite" : "sem_permissao";
+  }
   if (status === 404) return "nao_encontrado";
   if (status === 429) return "limite";
   return "asaas_error";
@@ -198,6 +214,11 @@ export function criarClienteAsaas(
     envio?: { metodo: "POST" | "PUT" | "DELETE"; corpo?: unknown },
   ): Promise<{ status: number; corpo: unknown }> {
     if (!doAsaas(alvo, ambiente)) throw new AsaasError("asaas_error", "URL fora do host do Asaas");
+    // ⚠️ QUAL pedido falhou vai na mensagem (e daí no log): em 14/09/2026 o
+    // 403 de cota chegou sem ele, e é o caminho que separa a prova de
+    // identidade em /customers da listagem de /payments. SEM a query — filtro
+    // de busca pode carregar dado do cliente.
+    const pedido = `${envio?.metodo ?? "GET"} ${new URL(alvo).pathname.replace(/^\/v3(?=\/)/, "")}`;
     let resposta: Response;
     try {
       resposta = await fetchFn(alvo, {
@@ -212,7 +233,7 @@ export function criarClienteAsaas(
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (e) {
-      throw new AsaasError("rede", semSegredo(e instanceof Error ? e.message : String(e), chave));
+      throw new AsaasError("rede", semSegredo(`${pedido}: ${e instanceof Error ? e.message : String(e)}`, chave));
     }
 
     const vistos: CabecalhosDeCota = {};
@@ -226,8 +247,9 @@ export function criarClienteAsaas(
       if (aceitar.includes(resposta.status)) return { status: resposta.status, corpo };
       const { codigo, descricao } = lerErro(corpo, resposta.status);
       throw new AsaasError(
-        codigoDoErro(resposta.status, codigo),
-        semSegredo(`${resposta.status}: ${descricao}`, chave),
+        // a descrição crua só é CASADA (bloqueio por cota em 403); o que é gravado passa por `semSegredo`
+        codigoDoErro(resposta.status, codigo, descricao),
+        semSegredo(`${pedido} → ${resposta.status}: ${descricao}`, chave),
         codigo,
         resposta.status,
       );

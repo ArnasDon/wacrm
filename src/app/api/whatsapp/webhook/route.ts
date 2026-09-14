@@ -1331,11 +1331,15 @@ async function findOrCreateContact(
 
   if (existingContact) {
     // Update name if it changed
+    // ⚠️ NOSSO (999): nome FIXADO por fonte deliberada (o agendamento do
+    // Calendly) não volta a ser o do perfil. Um merge do upstream que traga
+    // este bloco cru derruba a guarda — há teste estrutural cobrando.
     if (name && name !== existingContact.name) {
       await supabaseAdmin()
         .from('contacts')
         .update({ name, updated_at: new Date().toISOString() })
         .eq('id', existingContact.id)
+        .is('nome_fixado_em', null)
     }
     return { contact: existingContact, wasCreated: false }
   }

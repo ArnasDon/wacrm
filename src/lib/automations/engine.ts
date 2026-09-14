@@ -35,6 +35,7 @@ import { resolverDestinatario } from './destinatario';
 import { resolveEngineChannelPreferring } from '@/lib/cb-channels/engine-send';
 import { ehGatilhoDaRegua } from '@/lib/asaas/regua';
 import { digitosDoTelefone } from '@/lib/contacts/telefone';
+import { nomeParaFixar } from '@/lib/contacts/nome-fixado';
 import { urlDoInbox } from '@/lib/inbox/url';
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write';
 import {
@@ -1158,6 +1159,27 @@ async function runStep(
       const allowed = new Set(['name', 'email', 'company']);
       if (!allowed.has(cfg.field)) {
         return `field ${cfg.field} not writable from automations`;
+      }
+
+      // ⚠️⚠️ O NOME é escrita DELIBERADA de quem configurou a automação, e
+      // segue a régua do agendamento do Calendly (999): valor que não é nome
+      // — vazio, ou o telefone que o formulário devolveu no campo de nome —
+      // NÃO sobrescreve a ficha; nome de verdade é gravado FIXADO. Sem isto,
+      // a automação ativa do Calendly (passo 0: nome = {{vars.agendamento_nome}})
+      // gravava o número por cima de um nome já fixado, e a marca antiga o
+      // CONGELAVA — a mensagem seguinte do cliente não consertava mais; e um
+      // "Atualizar nome" vindo do Typebot durava só até o pushName seguinte
+      // (revisão do PR #208).
+      if (cfg.field === 'name') {
+        const nome = nomeParaFixar(value);
+        if (!nome) return 'name not updated: the value is not a name';
+        const agora = new Date().toISOString();
+        await db
+          .from('contacts')
+          .update({ name: nome, nome_fixado_em: agora, updated_at: agora })
+          .eq('id', args.contactId)
+          .eq('account_id', args.automation.account_id);
+        return 'name updated';
       }
       // Defense in depth: scope the service-role write to the account so
       // a future caller that skips the entry-point ownership guard still

@@ -498,24 +498,38 @@ export default function PipelinesPage() {
       setSelectedPipelineId(list[0].id);
   }, [loadPipelines, selectedPipelineId, acesso]);
 
+  /**
+   * Versão das mudanças LOCAIS do quadro. Toda ação que mexe nos negócios ou
+   * nas etapas por aqui (arrastar, salvar, apagar, editar as etapas) a
+   * avança, e a recarga da volta ao app só grava se a versão ainda for a de
+   * quando partiu. Sem isso, uma recarga que saiu ANTES de um arrasto voltava
+   * DEPOIS dele e devolvia o card à etapa antiga — e nada recarregaria de novo
+   * (Codex, PR #216, 2ª rodada).
+   */
+  const versaoDoQuadroRef = useRef(0);
+
   const refreshStages = useCallback(async () => {
     if (!selectedPipelineId) return;
+    versaoDoQuadroRef.current += 1;
     setStages(await loadStages(selectedPipelineId));
   }, [loadStages, selectedPipelineId]);
 
   const refreshDeals = useCallback(async () => {
     if (!selectedPipelineId) return;
+    versaoDoQuadroRef.current += 1;
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
 
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza as etapas e os negócios do funil aberto.
-  // ⚠️ Três cercas (as duas últimas, do Codex no PR #216):
+  // ⚠️ Quatro cercas (as três últimas, do Codex no PR #216):
   // - NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
   //   perde a rolagem e o retorno do inbox (ver retorno.ts);
   // - resposta de funil que já não está aberto é DESCARTADA: trocar de funil
   //   com a recarga no ar deixaria o quadro de B com as etapas e os negócios
   //   de A;
+  // - resposta que saiu antes de uma mudança LOCAL também é descartada
+  //   (`versaoDoQuadroRef`): ela desfaria o arrasto ou o salvamento;
   // - consulta que FALHOU mantém o quadro: voltar ao app antes de a rede do
   //   celular voltar esvaziava o funil. Só grava com as DUAS consultas certas.
   const funilAbertoRef = useRef(selectedPipelineId);
@@ -525,12 +539,14 @@ export default function PipelinesPage() {
   useAoVoltarParaOApp(() => {
     const funil = selectedPipelineId;
     if (!funil) return;
+    const versao = versaoDoQuadroRef.current;
     void (async () => {
       const [etapas, negocios] = await Promise.all([
         buscarEtapas(funil),
         buscarNegocios(funil),
       ]);
       if (funilAbertoRef.current !== funil) return;
+      if (versaoDoQuadroRef.current !== versao) return;
       if (!etapas || !negocios) return;
       setStages(etapas);
       setDeals(negocios);
@@ -539,6 +555,9 @@ export default function PipelinesPage() {
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
+      // Mudança local: a recarga da volta ao app que estiver no ar já não
+      // pode gravar por cima (ver `versaoDoQuadroRef`).
+      versaoDoQuadroRef.current += 1;
       // Optimistic update — board already animated; just persist.
       // ⚠️ Espelho do gatilho da 950: entrar numa etapa marcada carimba
       // ganho/perdido NO BANCO (BEFORE trigger, mesma escrita). Sem refletir

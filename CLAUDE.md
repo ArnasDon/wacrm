@@ -4526,13 +4526,24 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   pessoa estava fora, e a ação em massa age sobre `selected` inteiro: id que
   saiu da tela e continuou marcado seria apagado sem ninguém o ver marcado
   (Codex, PR #216).
-- ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas E
-  o mesmo funil aberto** (`funilAbertoRef`). `buscarEtapas`/`buscarNegocios`
-  devolvem `null` na FALHA — diferente de `[]`, funil vazio —, porque voltar
-  ao app antes de a rede do celular voltar esvaziava o quadro; e trocar de
-  funil com a recarga no ar deixava o quadro de B com os dados de A (Codex,
-  PR #216). `loadStages`/`loadDeals` continuam devolvendo `[]` para quem já
-  os chamava.
+- ⚠️ **A volta em Contatos recarrega também o catálogo de etiquetas**
+  (`fetchTags`): sem ele, etiqueta criada por outro membro sumia da linha, a
+  renomeada ficava com o nome velho e a apagada seguia filtrando a lista.
+  ⚠️⚠️ E o `fetchTags` troca o mapa SÓ quando o conteúdo mudou (`igual ? prev
+  : map`): `fetchContacts` depende de `tagsMap`, e um mapa novo com o mesmo
+  conteúdo refaria a lista inteira com spinner e seleção zerada a cada volta
+  (Codex, PR #216, 2ª rodada).
+- ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas, o
+  mesmo funil aberto** (`funilAbertoRef`) **e nenhuma mudança local no meio do
+  caminho** (`versaoDoQuadroRef`, que o arrasto, `refreshDeals` e
+  `refreshStages` avançam). `buscarEtapas`/`buscarNegocios` devolvem `null` na
+  FALHA — diferente de `[]`, funil vazio —, porque voltar ao app antes de a
+  rede do celular voltar esvaziava o quadro; trocar de funil com a recarga no
+  ar deixava o quadro de B com os dados de A; e a recarga que saiu antes de um
+  arrasto, voltando depois dele, devolvia o card à etapa antiga (Codex, PR
+  #216, duas rodadas). Quem criar outro caminho que mexa em `deals` ou
+  `stages` nesta página avança a versão também. `loadStages`/`loadDeals`
+  continuam devolvendo `[]` para quem já os chamava.
 - **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
   botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
   "0 vencidas"), e afirmar sobre número velho é pior que piscar.

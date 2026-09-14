@@ -131,7 +131,17 @@ export default function ContactsPage() {
     if (data) {
       const map: Record<string, Tag> = {};
       data.forEach((t) => (map[t.id] = t));
-      setTagsMap(map);
+      // ⚠️ Troca o mapa SÓ quando o catálogo mudou. `fetchContacts` depende de
+      // `tagsMap`, e um mapa novo com o mesmo conteúdo refaria a lista inteira
+      // com spinner e seleção zerada — a cada volta ao app, que recarrega o
+      // catálogo (`useAoVoltarParaOApp`; Codex, PR #216, 2ª rodada).
+      setTagsMap((prev) => {
+        const ids = Object.keys(map);
+        const igual =
+          ids.length === Object.keys(prev).length &&
+          ids.every((id) => JSON.stringify(prev[id]) === JSON.stringify(map[id]));
+        return igual ? prev : map;
+      });
       // Drop any filter selections whose tag no longer exists (e.g. a tag
       // deleted elsewhere) so it can't linger invisibly in the query.
       setSelectedTagIds((prev) => {
@@ -276,7 +286,12 @@ export default function ContactsPage() {
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza a página aberta da tabela, sem trocá-la
   // pelo spinner e sem perder a seleção de quem estava no meio de uma ação.
+  // ⚠️ O catálogo de etiquetas vai junto: etiqueta criada, renomeada ou
+  // apagada por outro membro enquanto a pessoa estava fora sumiria da linha,
+  // ficaria com o nome velho ou seguiria filtrando a lista (Codex, PR #216).
+  // Se o catálogo não mudou, o `fetchTags` não troca o mapa e nada mais roda.
   useAoVoltarParaOApp(() => {
+    void fetchTags();
     void fetchContacts({ preservarSelecao: true, silencioso: true });
   });
 

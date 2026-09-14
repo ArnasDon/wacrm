@@ -268,6 +268,28 @@ describe("varrerRegua — a cobrança do marco", () => {
     expect(e.tabelas.cb_asaas_cobrancas[0].status).toBe("RECEIVED");
   });
 
+  it("a releitura dá 404 na cobrança e o CLIENTE dela responde: a parcela é marcada apagada e nada sai — a mesma cerca da reconciliação", async () => {
+    const e = estado();
+    const { d, disparos, registro } = deps(e, { listas: {}, recursos: { "/customers/cus_a": { id: "cus_a", name: "Cliente cus_a" } } });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(registro.pedidos).toContain("/customers/cus_a");
+    expect(r.interrompida).toBeNull();
+    expect(r.enviados).toBe(0);
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+    expect(e.tabelas.cb_asaas_cobrancas[0]).toMatchObject({ deleted: true });
+  });
+
+  it("a releitura dá 404 na cobrança E no cliente (a chave é de OUTRA conta): a varredura para como `conta_trocada` e o espelho NÃO é marcado apagado", async () => {
+    const e = estado();
+    const { d, disparos } = deps(e, { listas: {}, recursos: {} });
+    const r = await varrerRegua(dubleDoSupabase(e), CONTA, d);
+    expect(r.interrompida).toBe("conta_trocada");
+    expect(disparos.chamadas).toEqual([]);
+    expect(e.tabelas.cb_asaas_regua_envios).toEqual([]);
+    expect(e.tabelas.cb_asaas_cobrancas[0]).toMatchObject({ deleted: false });
+  });
+
   it("TODAS as parcelas da mensagem são relidas no Asaas antes da trava: a antiga paga entre a sincronização e o disparo sai do texto e o espelho é atualizado (Codex, 2ª rodada)", async () => {
     const e = estado({ cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c-ago", "cus_a", { asaas_payment_id: "pay_ago", vencimento: "2026-08-11", vista_vencida_em: "2026-08-12T03:00:00Z" })] });
     const { d, disparos, registro } = deps(e, { listas: {}, recursos: { "/payments/pay_c1": noAsaas("c1", "cus_a"), "/payments/pay_ago": noAsaas("ago", "cus_a", { status: "RECEIVED", dueDate: "2026-08-11" }) } });

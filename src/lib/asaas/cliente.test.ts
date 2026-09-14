@@ -138,6 +138,23 @@ describe('criarClienteAsaas', () => {
     await expect(com({ errors: [{ code: 'insufficient_permission', description: 'sem acesso' }] }).obter('/payments/pay_1')).rejects.toMatchObject({ codigo: 'sem_permissao' })
   })
 
+  // ⚠️ Em 14/09/2026 o log do 403 de cota não dizia QUAL pedido o levou — e é
+  // isso que separa "a prova de identidade em /customers" de "a listagem de
+  // /payments" ao investigar o bloqueio. O caminho vai SEM a query: filtro de
+  // busca pode carregar dado do cliente.
+  it('a mensagem de erro diz o método e o caminho do pedido, sem a query', async () => {
+    const bloqueado = criarClienteAsaas(CHAVE, { fetchFn: (async () => resposta({ errors: [{ description: 'bloqueado' }] }, { status: 403 })) as unknown as typeof fetch })
+    const erro = (await bloqueado.listar('/payments', { customer: 'cus_9', status: 'OVERDUE' }).catch((e: unknown) => e)) as Error
+    expect(erro.message).toBe('GET /payments → 403: bloqueado')
+    const semRede = criarClienteAsaas(CHAVE, {
+      fetchFn: (async () => {
+        throw new Error('timeout')
+      }) as unknown as typeof fetch,
+    })
+    const erroDeRede = (await semRede.obter('/customers/cus_1').catch((e: unknown) => e)) as Error
+    expect(erroDeRede.message).toBe('GET /customers/cus_1: timeout')
+  })
+
   it('404 em `obter` devolve null — que também significa "id de outra conta"', async () => {
     const fetchFn = vi.fn(async () => resposta({ errors: [] }, { status: 404 }))
     const cliente = criarClienteAsaas(CHAVE, { fetchFn: fetchFn as unknown as typeof fetch })

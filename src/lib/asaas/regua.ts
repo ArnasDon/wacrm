@@ -376,7 +376,11 @@ export function porMaiorMarco(a: Pick<AutomacaoDaRegua, "marco" | "id">, b: Pick
 
 export interface GrupoDeCobranca {
   asaasCustomerId: string;
-  /** a automação de MAIOR marco entre as que cruzaram hoje (a que manda a mensagem) */
+  /**
+   * a automação de MAIOR marco entre as que cruzaram hoje NO ESPELHO da
+   * seleção — ⚠️ não é necessariamente a que manda: a varredura a re-escolhe
+   * sobre as parcelas RELIDAS (`porMaiorMarco`, Codex, 4ª rodada do PR #206)
+   */
   automacao: AutomacaoDaRegua;
   /** parcela → o marco que ela cruzou hoje (para as travas) */
   cruzaram: { parcela: ParcelaDoEspelho; automacao: AutomacaoDaRegua }[];

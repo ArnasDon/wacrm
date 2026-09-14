@@ -3740,6 +3740,11 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   passo dos Parcelamentos se calava fingindo falta da permissão e o webhook
   ia a estado terminal. Se o Asaas trocar a frase, o 403 de cota volta a
   cair em `sem_permissao` — sem regressão, só a leitura antiga.
+  ⚠️ **Toda mensagem de `AsaasError` começa pelo PEDIDO** (`GET /payments →
+  403: …`, montado em `pedir()`), SEM a query — filtro de busca pode levar
+  dado do cliente. Em 14/09 o log do bloqueio não dizia qual pedido o levou,
+  e é o caminho que separa a prova de identidade em `/customers` da listagem
+  de `/payments` quando se investiga quem estourou o limite.
 - ⚠️ **`cb/asaas` está no laço LENTO do `docker-stack.yml`, e o CI não relê
   o `command` do agendador**: só vale depois de `docker stack deploy` manual
   na VPS, com o `crm.env` carregado (as três linhas). Até lá, o botão
@@ -3837,7 +3842,10 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   determinística (retentativa e concorrente reencontram o webhook pela URL
   em vez de criar um segundo). `obter()` do cliente devolve `null` SÓ no 404
   — 2xx sem corpo LANÇA — e o 404 de uma cobrança só vira `deleted` com o
-  CLIENTE dela respondendo 200 (a cerca da reconciliação). O balde da rota é
+  CLIENTE dela respondendo 200 (a cerca da reconciliação). ⚠️ A releitura da
+  RÉGUA (`reconfirmar`, varrer-regua.ts) marcava apagada SEM essa cerca até
+  14/09/2026: hoje as duas usam a mesma, e os dois 404 juntos param a
+  varredura como `conta_trocada`, sem travar nada. O balde da rota é
   POR CONTA e só depois do cabeçalho conferir. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
   então POST) — trocar a chave não pode dobrar as entregas. Fila
   interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a

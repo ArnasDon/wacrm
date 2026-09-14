@@ -549,7 +549,15 @@ async function conversaDoContato(admin: SupabaseClient, accountId: string, conta
   throw new Error(`conversa: não foi possível criar (${erroNova?.message ?? "?"})`);
 }
 
-/** Relê cada parcela no Asaas e aplica ao espelho; devolve as que continuam como o chamador quer. */
+/**
+ * Relê cada parcela no Asaas e aplica ao espelho; devolve as que continuam
+ * como o chamador quer.
+ * ⚠️ 404 na cobrança só vira "apagada" com o CLIENTE dela respondendo — a
+ * mesma cerca de `reconciliar` (sincronizar.ts): os dois 404 juntos são a
+ * chave de OUTRA conta, e marcar apagado ali esvaziaria o espelho e calaria
+ * o aviso na conversa de quem ainda deve. A varredura para como
+ * `conta_trocada`, sem travar nada.
+ */
 async function reconfirmar(
   admin: SupabaseClient,
   accountId: string,
@@ -563,7 +571,9 @@ async function reconfirmar(
     const bruta = await cliente.obter<unknown>(`/payments/${p.asaas_payment_id}`);
     const lida = bruta ? lerCobranca(bruta) : null;
     if (!lida) {
-      await admin.from("cb_asaas_cobrancas").update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm }).eq("account_id", accountId).eq("asaas_payment_id", p.asaas_payment_id);
+      if ((await cliente.obter<unknown>(`/customers/${p.asaas_customer_id}`)) === null) throw new ParadaDaVarredura("conta_trocada");
+      const { error } = await admin.from("cb_asaas_cobrancas").update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm }).eq("account_id", accountId).eq("asaas_payment_id", p.asaas_payment_id);
+      if (error) throw new Error(`cobrança apagada: ${error.message}`);
       continue;
     }
     await aplicarCobranca(admin, accountId, lida, vistoEm);

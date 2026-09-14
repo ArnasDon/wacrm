@@ -214,6 +214,11 @@ export function criarClienteAsaas(
     envio?: { metodo: "POST" | "PUT" | "DELETE"; corpo?: unknown },
   ): Promise<{ status: number; corpo: unknown }> {
     if (!doAsaas(alvo, ambiente)) throw new AsaasError("asaas_error", "URL fora do host do Asaas");
+    // ⚠️ QUAL pedido falhou vai na mensagem (e daí no log): em 14/09/2026 o
+    // 403 de cota chegou sem ele, e é o caminho que separa a prova de
+    // identidade em /customers da listagem de /payments. SEM a query — filtro
+    // de busca pode carregar dado do cliente.
+    const pedido = `${envio?.metodo ?? "GET"} ${new URL(alvo).pathname.replace(/^\/v3(?=\/)/, "")}`;
     let resposta: Response;
     try {
       resposta = await fetchFn(alvo, {
@@ -228,7 +233,7 @@ export function criarClienteAsaas(
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (e) {
-      throw new AsaasError("rede", semSegredo(e instanceof Error ? e.message : String(e), chave));
+      throw new AsaasError("rede", semSegredo(`${pedido}: ${e instanceof Error ? e.message : String(e)}`, chave));
     }
 
     const vistos: CabecalhosDeCota = {};
@@ -244,7 +249,7 @@ export function criarClienteAsaas(
       throw new AsaasError(
         // a descrição crua só é CASADA (bloqueio por cota em 403); o que é gravado passa por `semSegredo`
         codigoDoErro(resposta.status, codigo, descricao),
-        semSegredo(`${resposta.status}: ${descricao}`, chave),
+        semSegredo(`${pedido} → ${resposta.status}: ${descricao}`, chave),
         codigo,
         resposta.status,
       );

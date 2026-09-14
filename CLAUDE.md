@@ -4541,8 +4541,18 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   do CI aplica os arquivos em ordem de NOME (lexicográfica): com 3 dígitos a
   `999_` era o último nome possível — `1000_` ordenaria entre a `042_` e a
   `900_`, rodaria antes das tabelas de que depende, e o replay vermelho TRAVA o
-  deploy. As 137 migrations foram renomeadas (`0001_` … `0998_`); o histórico
-  do Supabase não sentiu (registra por timestamp). Há teste cobrando o formato,
+  deploy. As 137 migrations foram renomeadas (`0001_` … `0998_`).
+  ⚠️⚠️ **A NOSSA produção não sentiu; uma instalação feita por `db push`,
+  sim.** Aqui o histórico registra por timestamp (as migrations foram
+  aplicadas pelo conector e pela API). Mas o `docs/INSTALACAO.md` manda quem
+  instala usar `supabase db push`, que registra o PREFIXO do arquivo (`001`,
+  `998`): depois da renomeação, o próximo `push` dessas instalações acha no
+  histórico versões que não existem mais nos arquivos e recusa tudo (Codex,
+  PR #209). O reparo é UM UPDATE que troca só o número registrado,
+  `scripts/reparar-historico-de-migrations.sql` — filtra versão de
+  EXATAMENTE 3 dígitos, então histórico por timestamp não é tocado —, e o
+  passo está no `docs/ATUALIZAR.md` e no `CHANGELOG.md`. Quem mudar o
+  formato do nome de novo repete os três. Há teste cobrando o formato,
   a unicidade do número e ordem-por-nome == ordem-numérica
   (`supabase/migrations/nomes-das-migrations.test.ts`). **Todo merge do
   upstream traz migration nova com 3 dígitos: renomeie para 4 no merge** — o

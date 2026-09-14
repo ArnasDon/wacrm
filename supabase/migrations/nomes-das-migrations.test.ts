@@ -14,7 +14,10 @@ import path from 'node:path';
 // vermelho TRAVA o deploy.
 //
 // Em 14/09/2026 as 137 migrations foram renomeadas para `0001_` … `0998_`.
-// O histórico do Supabase não sente (registra por timestamp, não por nome).
+// ⚠️ A NOSSA produção registra o histórico por timestamp e não sentiu. Uma
+// instalação feita por `supabase db push` registra o PREFIXO do arquivo e
+// precisa, uma vez, de `scripts/reparar-historico-de-migrations.sql` — o
+// passo está no `docs/ATUALIZAR.md` (Codex, PR #209).
 //
 // Por que um teste, e não só a convenção escrita:
 //   · um merge do upstream traz migration nova com TRÊS dígitos (`043_x.sql`);

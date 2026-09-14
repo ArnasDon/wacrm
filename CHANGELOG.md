@@ -45,6 +45,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **O replay das migrations passou a segurar a publicação.** Antes era
   apenas um aviso: uma migration que não aplicasse num banco vazio ia
   para produção assim mesmo. Agora não vai.
+- **Os arquivos de migration passaram a ter quatro dígitos**
+  (`001_initial_schema.sql` → `0001_initial_schema.sql`). Com três, a
+  `999` era o último número que ainda aplicava na ordem certa.
+  **Ação necessária em instalação feita antes de 14/09/2026:** antes do
+  próximo `supabase db push`, rode uma vez
+  `scripts/reparar-historico-de-migrations.sql` no *SQL Editor* — o
+  roteiro está em [`docs/ATUALIZAR.md`](./docs/ATUALIZAR.md).
 
 ## [0.8.1] — 2026-07-10
 

@@ -15,20 +15,22 @@ export async function proxy(request: NextRequest) {
   // this reversible — no permanent-redirect caching in browsers while the
   // domain move settles.
   const canonicalUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '');
-  // Only redirect requests that actually came in through a reverse proxy
-  // (real browser/webhook traffic always carries `x-forwarded-host`).
-  // Without this guard, the container's own Docker HEALTHCHECK — which
-  // hits `http://127.0.0.1:<port>/` directly, with no forwarded-host
-  // header — gets redirected out to the canonical HTTPS domain and back
-  // in again (a hairpin round-trip that can fail or exceed the
-  // healthcheck's timeout on VPS networks that block NAT loopback),
+  // Never redirect a request that's targeting a loopback/internal host.
+  // The container's own Docker HEALTHCHECK hits `http://127.0.0.1:<port>/`
+  // directly — no reverse proxy in front of it — and Next.js populates
+  // `x-forwarded-host` from the raw `Host` header even then, so checking
+  // merely "is x-forwarded-host present" (the original guard here) never
+  // actually distinguishes it from real proxied traffic. Redirecting that
+  // request out to the canonical HTTPS domain and back in again is a
+  // hairpin round-trip that fails on VPS networks blocking NAT loopback,
   // permanently marking the container unhealthy and taking the whole
   // site down even though the app itself is running fine.
   const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
-  if (canonicalUrl && forwardedHost && !request.nextUrl.pathname.startsWith('/api/')) {
+  const currentHost = forwardedHost || request.nextUrl.host;
+  const isInternalHost = !currentHost || /^(127\.0\.0\.1|localhost|\[::1\]|0\.0\.0\.0)(:\d+)?$/i.test(currentHost);
+  if (canonicalUrl && !isInternalHost && !request.nextUrl.pathname.startsWith('/api/')) {
     const canonicalHost = new URL(canonicalUrl).host;
-    const currentHost = forwardedHost;
-    if (currentHost && currentHost !== canonicalHost) {
+    if (currentHost !== canonicalHost) {
       return NextResponse.redirect(
         new URL(
           request.nextUrl.pathname + request.nextUrl.search,

@@ -181,4 +181,38 @@ describe('proxy — canonical host redirect', () => {
 
     expect(res.headers.get('location')).toBeNull();
   });
+
+  it('never redirects when X-Forwarded-Host itself is a loopback address', async () => {
+    // The fix above (checking only "is x-forwarded-host present") turned
+    // out not to be enough: confirmed live in production that Next.js
+    // populates `x-forwarded-host` from the raw `Host` header even for
+    // the container's own unproxied healthcheck request, so the header
+    // is present with value "127.0.0.1" and the redirect fired anyway —
+    // sending the healthcheck on the same hairpin round-trip this test
+    // suite was meant to catch. Guard on the resolved host being a
+    // loopback/internal address instead, regardless of which header it
+    // came from.
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(
+      new NextRequest('http://127.0.0.1:80/', {
+        headers: { 'x-forwarded-host': '127.0.0.1' },
+      }),
+    );
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('never redirects localhost or 0.0.0.0 hosts', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    for (const host of ['localhost:80', '0.0.0.0:80', '127.0.0.1']) {
+      const res = await proxy(
+        new NextRequest('http://internal.invalid/', {
+          headers: { 'x-forwarded-host': host },
+        }),
+      );
+      expect(res.headers.get('location')).toBeNull();
+    }
+  });
 });

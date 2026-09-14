@@ -406,6 +406,97 @@ el patrón pg_cron/marcadores existente — "una entrada más", no rediseño.
 
 ---
 
+### 2026-09-14 — Caída total de producción: hairpin del canonical-host redirect contra el healthcheck del contenedor
+
+**Estado:** PR #134 y #135 fusionados y desplegados. PR de endurecimiento
+(este mismo, ver más abajo) en curso.
+
+**Qué pasó.** `chatsandia.com` estuvo completamente caído (todas las rutas,
+incluida `/api/health`, devolviendo la página genérica "Service is not
+reachable" de EasyPanel) durante buena parte de la tarde. La app y la base
+de datos estaban sanas todo el tiempo — el problema fue puramente de
+enrutamiento: Docker nunca marcaba el contenedor "healthy", así que
+EasyPanel/Traefik nunca le mandaba tráfico.
+
+**Causa raíz.** El redirect de host canónico en `src/proxy.ts` (añadido en
+PR #77, sección O/P de este diagnóstico) manda cualquier request en un host
+distinto al de `NEXT_PUBLIC_SITE_URL` hacia `https://chatsandia.com`. El
+`HEALTHCHECK` del `Dockerfile` pega directo a `http://127.0.0.1:<puerto>/`
+**dentro del mismo contenedor**, sin pasar por ningún proxy — y ese request
+también caía en la regla del redirect, rebotando hacia afuera
+(`127.0.0.1` → `chatsandia.com` → de vuelta al mismo servidor). Ese
+"hairpin" fallaba en la red del VPS (Contabo), el healthcheck nunca pasaba,
+Docker Swarm reprogramaba la tarea sin parar (`RestartPolicy` on-failure,
+reintentos ilimitados — comportamiento normal de Swarm ante un fallo real,
+no el bug en sí), y el sitio quedó indefinidamente inalcanzable.
+
+**Primer intento insuficiente (PR #134).** Se intentó distinguir tráfico
+real de proxy (que siempre trae `x-forwarded-host`) del healthcheck interno
+(que no debería traerlo) chequeando solo la presencia del header. No
+funcionó: confirmado en vivo, por SSH directo al VPS y `docker exec` contra
+el contenedor corriendo, que Next.js rellena `x-forwarded-host` a partir del
+`Host` crudo incluso para ese request sin proxy — el header sí llega,
+con valor `127.0.0.1`, y el redirect se disparaba de todos modos.
+
+**Fix real (PR #135).** En vez de fijarse en qué header trae el dato, se
+resuelve el host efectivo (`x-forwarded-host` si viene, si no el host crudo
+del request) y se salta el redirect cuando **ese** valor es una dirección
+loopback/interna (`127.0.0.1`, `localhost`, `0.0.0.0`, `::1`),
+independientemente de qué header lo haya puesto ahí.
+
+**Endurecimiento adicional (este PR).** Dos capas más de defensa, pensadas
+para que ni esta clase de bug ni una variante futura puedan volver a
+apagar el sitio entero:
+
+1. El `HEALTHCHECK` del Dockerfile ahora pega a `/api/health` en vez de
+   `/`. Esa ruta ya estaba excluida del redirect (`!pathname.startsWith
+   ('/api/')`), así que el healthcheck queda fuera del alcance de
+   *cualquier* regresión futura en esa lógica, no solo la de hoy.
+2. `proxy()` ahora hace un `return` inmediato para `/api/health` **antes**
+   de crear el cliente de Supabase o llamar `auth.getUser()`. Sin esto,
+   cada healthcheck pagaba una llamada de red real a Supabase Auth — una
+   dependencia innecesaria que podría tumbar el healthcheck por una
+   intermitencia de Auth aunque la base de datos (lo que `/api/health` sí
+   revisa) y la app estuvieran perfectamente sanas. Es la misma forma de
+   bug (una dependencia no relacionada apaga el healthcheck, apaga el
+   sitio entero) con otra cara.
+3. Tests nuevos en `src/proxy.test.ts` (corren en cada CI vía `npm test`)
+   cubren ambos: que `x-forwarded-host: 127.0.0.1` no dispare el redirect,
+   y que `/api/health` nunca invoque `createServerClient`. Una regresión
+   futura de cualquiera de las dos formas del bug **no llega a `main`**.
+
+**Hueco estructural encontrado (sin resolver aún, ver sección K/N de este
+diagnóstico): no hay monitoreo externo real.** El "SANDIA alert watcher"
+(rutina horaria, ver `docs/RUNBOOK.md`) solo reacciona a filas en
+`system_alerts`, una tabla que **la propia app** escribe. Durante esta
+caída, la app entera estaba abajo — nunca pudo escribir una alerta sobre sí
+misma. El sistema de heartbeats (`src/lib/observability/heartbeat.ts`) tiene
+el mismo punto ciego: depende de cron jobs corriendo *dentro* de la app para
+reportar que la app está viva. Un apagón total es invisible para todo el
+stack de alertas actual hasta que un humano lo nota manualmente — que es
+exactamente lo que pasó hoy. Mitigación parcial aplicada: la rutina del
+alert watcher ahora hace un `curl` externo a `https://chatsandia.com/api/health`
+al inicio de cada corrida (independiente de `system_alerts`) y, si el sitio
+está caído, intenta notificar igual y dejar constancia. Sigue siendo
+best-effort — el canal de notificación (`POST .../alert-watcher/notify`)
+vive en la misma app que podría estar caída. Una solución completa necesita
+un canal de notificación verdaderamente externo (Telegram, email, SMS) que
+no dependa de que `chatsandia.com` responda; queda pendiente como decisión
+de producto (¿qué canal usar?, sección I/J de este diagnóstico).
+
+**Dónde vive.** `Dockerfile` (línea del `HEALTHCHECK`), `src/proxy.ts`
+(guard de `/api/health` + guard de host loopback), `src/proxy.test.ts`
+(tests de regresión).
+
+**Relación con el diagnóstico.** Cierra parte del hueco de la sección K/L
+("nunca fue operada bajo carga real de muchas empresas... hay que cerrar
+antes de vender al primer grupo de clientes reales") — específicamente, la
+app ahora sobrevive a un fallo de red del hairpin y a una intermitencia de
+Supabase Auth sin perder disponibilidad total. El hueco de monitoreo externo
+queda documentado como pendiente explícito, no oculto.
+
+---
+
 ## Nota final
 
 Este documento es el diagnóstico de referencia para el proyecto SANDÍA: confirma que **no hay que reconstruir el CRM**, identifica con precisión (archivo por archivo, migración por migración) qué ya sirve, qué hay que ajustar y qué falta, y ordena el trabajo en fases con la seguridad y la multi-tenancy primero. Claude Code debe consultar este documento antes de proponer cambios estructurales al proyecto.

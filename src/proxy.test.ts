@@ -14,6 +14,9 @@ let refreshedCookies: Array<{
   value: string;
   options: Record<string, unknown>;
 }> = [];
+// How many times createServerClient() was called — proves /api/health
+// bypasses Supabase entirely instead of merely ignoring its result.
+let createServerClientCalls = 0;
 
 vi.mock('@supabase/ssr', () => ({
   createServerClient: (
@@ -22,17 +25,20 @@ vi.mock('@supabase/ssr', () => ({
     opts: {
       cookies: { setAll: (c: typeof refreshedCookies) => void };
     }
-  ) => ({
-    auth: {
-      // Mirrors real auth-js: an expired access token is transparently
-      // refreshed inside getUser(), which rotates the refresh token and
-      // pushes the new cookies through setAll() before resolving.
-      getUser: async () => {
-        if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
-        return { data: { user: mockUser } };
+  ) => {
+    createServerClientCalls += 1;
+    return {
+      auth: {
+        // Mirrors real auth-js: an expired access token is transparently
+        // refreshed inside getUser(), which rotates the refresh token and
+        // pushes the new cookies through setAll() before resolving.
+        getUser: async () => {
+          if (refreshedCookies.length) opts.cookies.setAll(refreshedCookies);
+          return { data: { user: mockUser } };
+        },
       },
-    },
-  }),
+    };
+  },
 }));
 
 // Imported after the mock is registered.
@@ -44,6 +50,7 @@ beforeEach(() => {
   delete process.env.NEXT_PUBLIC_SITE_URL;
   mockUser = null;
   refreshedCookies = [];
+  createServerClientCalls = 0;
 });
 
 afterEach(() => {
@@ -214,5 +221,39 @@ describe('proxy — canonical host redirect', () => {
       );
       expect(res.headers.get('location')).toBeNull();
     }
+  });
+});
+
+describe('proxy — /api/health bypasses everything else', () => {
+  it('never redirects /api/health even off the canonical host', async () => {
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(
+      new NextRequest('https://sandia-sandia-crm.kmencc.easypanel.host/api/health', {
+        headers: { 'x-forwarded-host': 'sandia-sandia-crm.kmencc.easypanel.host' },
+      }),
+    );
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('never calls Supabase for /api/health — the healthcheck must not depend on Auth', async () => {
+    // The bug this guards against: without the early return, every
+    // request (including the container's own healthcheck) pays for a
+    // live supabase.auth.getUser() call. A slow/unreachable Supabase
+    // Auth would then fail the healthcheck even though the database
+    // (what the /api/health route itself checks) and the app are both
+    // fine — an unrelated dependency with exactly the same "healthcheck
+    // fails for a reason nobody expected, site goes fully dark" shape
+    // as the hairpin-redirect bug (#134, #135).
+    await proxy(new NextRequest('http://127.0.0.1:3000/api/health'));
+
+    expect(createServerClientCalls).toBe(0);
+  });
+
+  it('still calls Supabase for a normal page request (sanity check on the mock)', async () => {
+    await proxy(new NextRequest('http://127.0.0.1:3000/dashboard'));
+
+    expect(createServerClientCalls).toBe(1);
   });
 });

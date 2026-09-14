@@ -53,7 +53,14 @@ COPY --from=builder --chown=nextjs:nextjs /app/public ./public
 USER nextjs
 EXPOSE 3000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000)).then((r)=>process.exit(r.ok||r.status<500?0:1)).catch(()=>process.exit(1))"]
+# Hits /api/health, not `/`: that route (a) is excluded from *all*
+# middleware logic in src/proxy.ts — not just the canonical-host
+# redirect (see the early-return there for this exact path) — so this
+# check can't be caught by a regression in that logic again, on top of
+# the loopback-host guard the redirect itself now applies, and (b)
+# reports actual liveness (DB reachable, required secrets present)
+# instead of "did some page render a response under 500".
+HEALTHCHECK --interval=30s --timeout=8s --start-period=15s --retries=3 \
+CMD ["node", "-e", "fetch('http://127.0.0.1:' + (process.env.PORT || 3000) + '/api/health').then((r)=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
 
 CMD ["node", "server.js"]

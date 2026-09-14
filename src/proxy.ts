@@ -2,6 +2,21 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function proxy(request: NextRequest) {
+  // /api/health is the container's own liveness/readiness probe (see the
+  // Dockerfile HEALTHCHECK and the external uptime monitor). It must
+  // never depend on anything below this line: the canonical-host
+  // redirect already excludes all of `/api/*`, but every other request
+  // that reaches here still pays for a live `supabase.auth.getUser()`
+  // call — a network round-trip to Supabase Auth. That's fine for real
+  // traffic, but it would make the healthcheck fail on an Auth-service
+  // hiccup even when the database (what /api/health itself checks) and
+  // the app are both fine — exactly the kind of unrelated dependency
+  // that took the whole site down before (see git blame on this file:
+  // #134, #135). Bypass everything else and let the route handler run.
+  if (request.nextUrl.pathname === '/api/health') {
+    return NextResponse.next({ request });
+  }
+
   // Canonical host. EasyPanel serves the app on every attached domain
   // (the *.easypanel.host fallback included) and does not redirect the
   // extras to the primary one, so an old bookmark keeps the address bar

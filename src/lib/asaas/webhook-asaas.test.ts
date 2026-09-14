@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { decrypt, encrypt } from "@/lib/whatsapp/encryption";
 
-import { AsaasError } from "./cliente";
+import { AsaasError, criarClienteAsaas } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
 import { apagarWebhook, ativarWebhook, conferirWebhook, criarSemaforo, cuidarDoWebhook, garantirWebhook, lerConfigDoWebhook, processarEvento, religarWebhook, RETENTAR_ERRO_MS } from "./webhook-asaas";
 
@@ -134,6 +134,16 @@ describe("garantirWebhook — cria, reaproveita, e grava o token cifrado", () =>
     expect(e.tabelas.cb_asaas_config[0].webhook_asaas_id).toBeNull();
   });
 
+  it("403 de BLOQUEIO POR COTA (medido em produção em 14/09/2026) na criação não é `sem_permissao` terminal: o estado fica NULO e o cron tenta de novo", async () => {
+    const e = estado();
+    const bloqueio = criarClienteAsaas("$aact_prod_chave_de_teste_0000", {
+      fetchFn: (async () => new Response(JSON.stringify({ errors: [{ code: "x", description: "Seu acesso foi temporariamente bloqueado por exceder o limite de requisições. Tente novamente dentro de alguns minutos." }] }), { status: 403, headers: { "Content-Type": "application/json" } })) as unknown as typeof fetch,
+    });
+    expect(await garantirWebhook(dubleDoSupabase(e), CONTA, bloqueio, ORIGEM, "admin@exemplo.com", AGORA)).toEqual({ ok: false, codigo: "limite" });
+    expect(e.tabelas.cb_asaas_config[0].webhook_state).toBeNull();
+    expect(e.tabelas.cb_asaas_config[0].webhook_erro).toBe("limite");
+  });
+
   it("rede ou cota: o estado fica como estava (NULO = o cron tenta de novo), só o erro é anotado — e o token da URL JÁ ficou gravado", async () => {
     const e = estado();
     const { cliente } = rodar({ listas: {}, recursos: {}, erro: new AsaasError("rede", "timeout") });
@@ -197,6 +207,24 @@ describe("conferirWebhook — o que o cron faz a cada ciclo", () => {
     expect(await conferirWebhook(admin, CONTA, cliente, c, AGORA)).toEqual({ ok: true, estado: "penalizado" });
     const { cliente: c2 } = rodar({ listas: {}, recursos: { "/webhooks/wh_nosso": webhookDoAsaas("wh_nosso", { enabled: false }) } });
     expect(await conferirWebhook(admin, CONTA, c2, c, AGORA)).toEqual({ ok: true, estado: "desligado" });
+  });
+
+  it("rede ou cota NO RELIGAR da fila interrompida: o estado anterior fica e o marcador do religar não é carimbado — o ciclo seguinte tenta de novo (Codex, 4ª rodada do PR #206)", async () => {
+    for (const erro of [new AsaasError("limite", "403: bloqueado por exceder o limite de requisições", null, 403), new AsaasError("rede", "timeout")]) {
+      const e = estado(config());
+      const admin = dubleDoSupabase(e);
+      const c = (await lerConfigDoWebhook(admin, CONTA)) as Exclude<Awaited<ReturnType<typeof lerConfigDoWebhook>>, null | "db_error">;
+      const { cliente } = rodar({ listas: {}, recursos: { "/webhooks/wh_nosso": webhookDoAsaas("wh_nosso", { interrupted: true }) }, envios: { "PUT /webhooks/wh_nosso": erro } });
+      expect(await conferirWebhook(admin, CONTA, cliente, c, AGORA)).toEqual({ ok: false, codigo: erro.codigo });
+      expect(e.tabelas.cb_asaas_config[0]).toMatchObject({ webhook_state: "ativo", webhook_erro: erro.codigo, webhook_religado_em: null });
+    }
+    // controle: recusa do Asaas no religar continua `interrompido`
+    const e = estado(config());
+    const admin = dubleDoSupabase(e);
+    const c = (await lerConfigDoWebhook(admin, CONTA)) as Exclude<Awaited<ReturnType<typeof lerConfigDoWebhook>>, null | "db_error">;
+    const { cliente } = rodar({ listas: {}, recursos: { "/webhooks/wh_nosso": webhookDoAsaas("wh_nosso", { interrupted: true }) }, envios: { "PUT /webhooks/wh_nosso": new AsaasError("asaas_error", "400") } });
+    expect(await conferirWebhook(admin, CONTA, cliente, c, AGORA)).toEqual({ ok: true, estado: "interrompido" });
+    expect(e.tabelas.cb_asaas_config[0]).toMatchObject({ webhook_state: "interrompido", webhook_erro: "asaas_error", webhook_religado_em: null });
   });
 
   it("rede na conferência não grava nada — o estado anterior fica", async () => {

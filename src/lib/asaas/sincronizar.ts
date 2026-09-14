@@ -449,6 +449,9 @@ async function completarParcelamentos(admin: SupabaseClient, accountId: string, 
       await admin.from("cb_asaas_cobrancas").update({ parcela_total: total }).eq("account_id", accountId).eq("parcelamento_id", id);
     } catch (e) {
       // Cota e chave param o ciclo; o resto (um parcelamento estranho) não.
+      // ⚠️ O bloqueio por cota também chega como 403 — o cliente o classifica
+      // como `limite` pela descrição, e só o 403 de permissão de verdade cai
+      // no ramo de baixo (medido em produção em 14/09/2026).
       if (e instanceof AsaasError && (e.codigo === "limite" || e.codigo === "chave_invalida" || e.codigo === "rede")) throw e;
       // Sem a permissão Parcelamentos na chave, TODOS dariam 403: um pedido
       // por ciclo basta para saber — e se cura sozinho quando a permissão entrar.

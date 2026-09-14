@@ -12,7 +12,7 @@
 > confirme contra a realidade (grep, leitura do arquivo, query no banco, a
 > doc do Asaas).
 
-- **Criado:** 2026-09-10 · **Revisto:** 2026-09-12 (§11) · **Medido contra:**
+- **Criado:** 2026-09-10 · **Revisto:** 2026-09-14 (§11) · **Medido contra:**
   `main` @ `5bb66d8` mais a branch `feat/asaas-conexao`, o banco de produção
   (consultas de 09/09 na §2.1 e de 12/09 na §2.5 — a base passou de 588 para
   705 fichas entre as duas, 195 criadas desde 09/09), a conta REAL do Asaas
@@ -41,8 +41,8 @@
 | **1a-conexão** | O cartão "Asaas" em Integrações: a chave cifrada, o nome dela, a validade opcional, e o botão que roda o levantamento | ✅ código em `feat/asaas-conexao`, no MESMO PR do espelho (12/09 à noite) | `992_cb_asaas_config` ✅ aplicada | [#201](https://github.com/leonardocabralb/CB-CRM/pull/201) |
 | **1a-espelho** | Espelho das cobranças (vencidas + as que vencem hoje), vínculo automático **com criação da ficha** (D2) e sugestão por nome aproximado (D5), tela de revisão e lista de inadimplentes | ✅ **construída em 12/09 à noite** e MEDIDA no primeiro ciclo real (§6): 439 clientes, 405 vencidas, 86 ligados pela regra (84 telefone, 2 CPF), 32 fichas criadas no primeiro ciclo de 60 s e o resto nos seguintes, 7 para confirmar (6 "nome diferente", 1 "contato já ligado"), 85 sem telefone com 9 sugestões por nome | `994_cb_asaas_espelho` ✅ aplicada em 12/09 (histórico `20260912225955`) | [#201](https://github.com/leonardocabralb/CB-CRM/pull/201) |
 | **1b** | O aviso: ícone na linha da caixa, faixa colada ao compositor, aba Cobranças no painel e na ficha, filtro "Inadimplentes" | ✅ **construída em 12–13/09** e medida no preview contra a conta real (§6): 89 contatos devendo, 15 deles na aba aberta com o ícone, filtro "15 de 677", faixa e aba com os MESMOS números do cartão; com o espelho parado há 11 h a tela diz "dados do Asaas de 12/09, 21:19" em vez de calar | `996_cb_asaas_vinculo_completo` (o marcador do vínculo inteiro, pedido na 7ª rodada do Codex; aditiva, com acervo) | [#203](https://github.com/leonardocabralb/CB-CRM/pull/203) |
-| **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | 🔧 **construída em 13/09** (`feat/asaas-webhook`): rota pública autenticada pelo cabeçalho, criação AUTOMÁTICA pelo cron (só na VPS), conferência a cada ciclo, religa uma vez, apaga ao desconectar, bloco "Aviso na hora" no cartão. ⚠️ O que ficou DIFERENTE da §3.4: a listagem das vencidas continua a cada 15 min (10–30 pedidos por ciclo não pesam na cota; o webhook só antecipa), e a criação a partir do preview é RECUSADA (`podeCriarDaqui`) — o `.env.local` carrega a URL da produção | `997_cb_asaas_webhook` ✅ aplicada em 13/09 (histórico `20260913161622`) | [#204](https://github.com/leonardocabralb/CB-CRM/pull/204) |
-| **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | ✅ **construída em 13/09 e MESCLADA no mesmo dia** (PR #206, merge `d1eb0eb`, 19:16): os dois gatilhos no motor, a varredura no cron, o bloco "Cobrança automática" no cartão, a lista de exceção (D21) na aba e nas listas, "Assinar como". Revisada por QUATRO rodadas do Codex (6 + 6 + 5 + 0 achados), uma revisão de coerência e uma adversarial — tudo corrigido no PR. Em produção a régua padrão existe DESLIGADA (4 automações) e o interruptor está DESLIGADO; a lista de exceção do operador (38 clientes) já está marcada. ⚠️ O que ficou DIFERENTE da §3.6 está no bloco "O que ficou diferente na construção" no início dela. O teste real (a cobrança de R$ 5 no contato autorizado, ligar uma automação e o interruptor) fica para o primeiro dia útil | `998_cb_asaas_regua` ✅ aplicada em 13/09 (histórico `20260913211455`), antes do merge | [#206](https://github.com/leonardocabralb/CB-CRM/pull/206) |
+| **2** | Webhook do Asaas (o pagamento some do aviso em segundos), o ciclo de vida dele e o aviso de chave desativada | ✅ **construída e EM PRODUÇÃO desde 13/09** (PR #204): o cron criou o webhook no primeiro ciclo depois do merge, e o `webhook_state` está `ativo`, conferido a cada ciclo; o 1º evento chegou em 14/09 06:23Z (`PAYMENT_RECEIVED`, resultado `ignorada` — cobrança fora do espelho). ⚠️ C7 ainda NÃO medido: nenhum `PAYMENT_OVERDUE` até 14/09. Rota pública autenticada pelo cabeçalho, criação AUTOMÁTICA pelo cron (só na VPS), conferência a cada ciclo, religa uma vez, apaga ao desconectar, bloco "Aviso na hora" no cartão. ⚠️ O que ficou DIFERENTE da §3.4: a listagem das vencidas continua a cada 15 min (10–30 pedidos por ciclo não pesam na cota; o webhook só antecipa), e a criação a partir do preview é RECUSADA (`podeCriarDaqui`) — o `.env.local` carrega a URL da produção | `997_cb_asaas_webhook` ✅ aplicada em 13/09 (histórico `20260913161622`) | [#204](https://github.com/leonardocabralb/CB-CRM/pull/204) |
+| **3** | Régua de cobrança: **o lembrete no dia do vencimento** (D17) e a cobrança do atrasado por marcos, **uma mensagem por cliente com TODAS as parcelas vencidas** (D11), pelo caminho do robô — sem reabrir conversa, sem zerar o contador de espera, sem mexer em não lidas (D16). Trava por marco com prova de envio e reconfirmação no Asaas | ✅ **construída em 13/09 e MESCLADA no mesmo dia** (PR #206, merge `d1eb0eb`, 13/09 22:11:13Z): os dois gatilhos no motor, a varredura no cron, o bloco "Cobrança automática" no cartão, a lista de exceção (D21) na aba e nas listas, "Assinar como". Revisada por QUATRO rodadas do Codex (6 + 6 + 5 + 4 achados), uma revisão de coerência e uma adversarial. ⚠️ As três primeiras rodadas foram corrigidas no PR; a 4ª (sobre `3e666f0`, 2 P1 e 2 P2) foi publicada em 13/09 22:10:20Z, 53 s ANTES do merge, e este Estado registrou "0" por engano — os 4 achados entram no #PR_RODADA_4, junto com o 403 de cota (§11 #22). Em produção (medido em 14/09) a régua padrão existe DESLIGADA (4 automações), o interruptor está DESLIGADO e há 0 envios; a lista de exceção do operador (38 clientes) já está marcada. ⚠️ O que ficou DIFERENTE da §3.6 está no bloco "O que ficou diferente na construção" no início dela. O teste real (a cobrança de R$ 5 no contato autorizado, ligar uma automação e o interruptor) fica para o primeiro dia útil | `998_cb_asaas_regua` ✅ aplicada em 13/09 (histórico `20260913211455`), antes do merge | [#206](https://github.com/leonardocabralb/CB-CRM/pull/206) |
 | **4** (ideias, não pedidas) | régua para conexão da Meta com modelo aprovado; botão "cobrar agora" na aba; condição "cliente inadimplente?" em outras automações; parcela a vencer na aba; relatório histórico de recebimento; inserir o link de pagamento direto no compositor | 💤 | — | — |
 
 - **Número das migrations:** a última hoje é a **998** (a régua, Fase 3);
@@ -157,7 +157,7 @@ reaparecem em linguagem simples na §9.
 | Ciclo da chave | criada só na tela, por administrador, exibida UMA vez; até 10 por conta; **3 meses sem uso = desabilitada, 6 = expirada**. ⚠️ O aviso de "chave expirando" só existe no ciclo de inatividade: **chave com data de validade definida à mão não recebe aviso antes de expirar** | [chaves-de-api](https://docs.asaas.com/docs/chaves-de-api) · [eventos-para-chaves-de-api](https://docs.asaas.com/docs/eventos-para-chaves-de-api) |
 | Permissões | por recurso, `READ` ou `READ_WRITE`; na tela: Clientes, Cobranças, Parcelamentos, Notificações, Webhooks, Negativação… A doc diz que a chave criada pela API sem `permissions` nasce com tudo em `READ_WRITE`; na tela, conferir a lista antes de salvar. Falta de permissão = 403 `insufficient_permission`, com o escopo na descrição | [permissões](https://docs.asaas.com/docs/gerenciamento-de-permiss%C3%B5es-de-chaves-de-api) |
 | Restrição de IP | ⚠️ é da **CONTA** (Integrações → Mecanismos de segurança) e vale para todas as chaves; IP fora da lista = 403 "Acesso negado" | [whitelist-de-ips](https://docs.asaas.com/docs/whitelist-de-ips) |
-| Limites | ⚠️ **por CONTA, somando todas as chaves**: 25.000 requisições a cada 12 h e 50 GET simultâneos; limite por endpoint nos cabeçalhos `RateLimit-*`; tudo em 429, e "não retente logo após o 429". A doc pede webhook em vez de consulta repetida, e não aumenta a cota de quem faz polling | [rate-e-quota-limit](https://docs.asaas.com/reference/rate-e-quota-limit) · [api-limits](https://docs.asaas.com/docs/api-limits-1) |
+| Limites | ⚠️ **por CONTA, somando todas as chaves**: 25.000 requisições a cada 12 h e 50 GET simultâneos; limite por endpoint nos cabeçalhos `RateLimit-*`; tudo em 429, e "não retente logo após o 429". A doc pede webhook em vez de consulta repetida, e não aumenta a cota de quem faz polling. ⚠️ **MEDIDO em produção em 14/09/2026: o bloqueio por cota chegou como 403, não 429**, com a descrição "Seu acesso foi temporariamente bloqueado por exceder o limite de requisições. Tente novamente dentro de alguns minutos." — mesmo status da falta de permissão; o CRM separa os dois pela DESCRIÇÃO (§3.4) | [rate-e-quota-limit](https://docs.asaas.com/reference/rate-e-quota-limit) · [api-limits](https://docs.asaas.com/docs/api-limits-1) |
 | Paginação | `offset` + `limit` (≤ 100, padrão 10); `{ hasMore, totalCount, data[] }`. ⚠️ **GET com corpo = 403**. ⚠️ **404 também quando o id é de outra conta** | [listagem-e-paginacao](https://docs.asaas.com/reference/listagem-e-paginacao) · [códigos HTTP](https://docs.asaas.com/reference/codigos-http-das-respostas) |
 | Clientes | `GET /customers`, filtros `name`, `email`, `cpfCnpj`, `groupName`, `externalReference` — ⚠️ **NÃO há filtro por telefone** (o casamento é feito no CRM, em memória). Campos `id` (`cus_…`), `name`, `email`, `phone`, `mobilePhone`, `cpfCnpj`, `personType`, `deleted`, `externalReference`, `notificationDisabled`. **Cadastro duplicado é permitido.** Apagar cliente leva junto as cobranças pendentes e vencidas dele, e restaurar não as devolve | [listar-clientes](https://docs.asaas.com/reference/listar-clientes) · [criar-novo-cliente](https://docs.asaas.com/reference/criar-novo-cliente) · [remover-cliente](https://docs.asaas.com/reference/remover-cliente) |
 | Cobranças | `GET /payments`, filtros `customer`, `status`, `installment`, `dueDate[ge]/[le]`, `paymentDate[ge]/[le]`, `dateCreated[ge]/[le]`…; campos `id` (`pay_…`), `customer`, `status`, `value`, `interestValue`, `dueDate`, `originalDueDate`, `paymentDate`, `clientPaymentDate`, `installment`, `installmentNumber`, `invoiceUrl`, `bankSlipUrl`, `billingType`, `canBePaidAfterDueDate`, `daysAfterDueDateToRegistrationCancellation`, `deleted`. Não há filtro "alterada desde" | [listar-cobrancas](https://docs.asaas.com/reference/listar-cobrancas) · [recuperar-uma-unica-cobranca](https://docs.asaas.com/reference/recuperar-uma-unica-cobranca) |
@@ -185,7 +185,7 @@ reaparecem em linguagem simples na §9.
 | C11 | Cobrança removida responde 404 ou vem com `deleted: true`? | Fase 2 (exige um id sabidamente removido; só GET não provoca) |
 | C12 | Listar `status=DUNNING_REQUESTED` exige a permissão Negativação? | ✅ 12/09: 200 sem Negativação — Cobranças basta |
 | C13 | O painel do Asaas tem um ajuste da CONTA para os avisos dos clientes novos? | caducou com a D10: o CRM não mexe em notificação, e o operador decidiu manter os avisos |
-| C14 | A cota de 12 h tem cabeçalho próprio, ou só se vê pelo 429? | ✅ 12/09: a resposta NÃO traz cabeçalho `RateLimit-*` — só o 429 |
+| C14 | A cota de 12 h tem cabeçalho próprio, ou só se vê pelo 429? | ✅ 12/09: a resposta NÃO traz cabeçalho `RateLimit-*` — só o 429. ⚠️ E em 14/09/2026 o bloqueio por cota veio como **403** com "Seu acesso foi temporariamente bloqueado por exceder o limite de requisições…" (1 falha em 86 ciclos, às 10:02 BRT): o status sozinho não separa cota de permissão |
 
 ### 2.4 O motor de automações (código)
 
@@ -246,7 +246,7 @@ desenhos que estavam no plano.
 | `externalReference` (**C4**) | **0** — livre, mas a D9 segue: o CRM não escreve |
 | Cobranças | 4.084 no total: **405 vencidas**, 474 a vencer, 2.988 recebidas, 60 confirmadas, 155 recebidas em dinheiro, 2 estornadas · 3.276 são de parcelamento e 345 de assinatura |
 | `DUNNING_REQUESTED` (**C12**) | **200 com 0 cobranças** — a permissão Cobranças basta; Negativação não é necessária |
-| Cota (**C14**) | a resposta **não traz cabeçalho `RateLimit-*`**: só se vê pelo 429 |
+| Cota (**C14**) | a resposta **não traz cabeçalho `RateLimit-*`**: só se vê pelo 429 — ou, medido em 14/09/2026, por um **403** com a descrição de bloqueio por cota (§2.2) |
 | `status` múltiplo (**C3**) | aceita: `status=OVERDUE,PENDING` devolveu 879 = 405 + 474 |
 | Webhooks cadastrados | **0** (o teto é 10) |
 
@@ -743,7 +743,11 @@ ter de respeitar:
   não a chave), `sem_permissao` (403 — permissão que falta OU IP fora da lista da
   conta: o Asaas devolve o mesmo status nos dois, e a tela diz as duas
   hipóteses), `nao_encontrado`, `limite` (429, "pode ser outro sistema na
-  mesma conta"), `rede`, `asaas_error`.
+  mesma conta"), `rede`, `asaas_error`. ⚠️ O 403 cuja descrição é de
+  BLOQUEIO POR COTA também é `limite` (`codigoDoErro` casa a descrição sem
+  acento): medido em produção em 14/09/2026, a cota chegou como 403, e lida
+  como permissão ela mandava mexer na chave, calava o passo dos
+  Parcelamentos e punha o webhook num estado terminal.
 - `semSegredo(texto, chave)` em tudo que vira `message`; o log e a rota
   levam o CÓDIGO.
 - Guarda os cabeçalhos `RateLimit-*` quando vierem (`cota()`) — MEDIDO em
@@ -1125,6 +1129,24 @@ ATUALIZADO e todas as formas de pagamento.
 >     clientes do Asaas ligados ao mesmo contato saem em sequência, e o
 >     segundo sem log fica `sem_automacao`, não `enviado` com o log do
 >     primeiro.
+> 17. **Da 4ª rodada do Codex (publicada 53 s antes do merge do PR #206,
+>     corrigida no #PR_RODADA_4) e da revisão dela:** a automação que MANDA
+>     é escolhida de novo sobre as parcelas RELIDAS (`porMaiorMarco`, com a
+>     conexão conferida de novo com ela) — paga a parcela do maior marco,
+>     sai a do marco que sobrou, em vez de tudo virar `absorvida`; o
+>     lembrete relido passa por `cabeNoLembrete` (a PENDING prorrogada não
+>     sai com a data futura) e o "vence hoje" da cobrança cobre os dias do
+>     lembrete (`venceNoDia`: a PENDING do sábado entra na cobrança de
+>     segunda); o telefone da ficha é conferido pelo predicado do remetente
+>     do robô (`isValidE164(sanitizePhoneForMeta(…))`); mídia, botões,
+>     lista e modelo entregues ao contato contam como envio
+>     (`PASSOS_QUE_FALAM_COM_O_CONTATO`, sem `send_to_number` nem
+>     `send_webhook`); `dias_de_atraso` sai da parcela da automação que
+>     manda; `validate.ts` recusa `run_automation`/`run_flow` e
+>     `send_template`/`send_buttons`/`send_list` nos dois gatilhos; e a
+>     órfã sem log leva junto as `absorvida` do MESMO INSERT (mesmo
+>     `criado_em`). Fora da régua, no mesmo PR: o 403 de cota vira `limite`,
+>     e rede/cota no religar do webhook não viram `interrompido`.
 > 11. **As variáveis a mais**: `marco_detalhe` (só as que cruzaram hoje),
 >     `vence_hoje_detalhe` (item 3) e `vencimento_texto` ("venceu no
 >     sábado, 12/09"). A conversa criada pela varredura nasce SEM pino e
@@ -1933,9 +1955,16 @@ reprova, e é assim que tem de ser.
 - [x] Durante a carga nenhuma lista diz "nenhum" (`{ chave, pagina }` com
       `carregando` derivado) e os números do resumo só aparecem com a
       resposta resolvida.
-- [ ] `docker stack deploy` feito com o `crm.env` carregado e o
+- [x] `docker stack deploy` feito com o `crm.env` carregado e o
       `CRM_IMAGE` fixado (§7) — DEPOIS do merge; banner do agendador cita
-      `cb/asaas`; `curl` sem segredo → 401, não 503.
+      `cb/asaas`; `curl` sem segredo → 401, não 503. **Feito em 13/09**
+      (conferido na VPS em 14/09): `crm_agendador` roda desde 13/09 12:56
+      BRT com o laço lento `cb/scheduled flows cb/radar cb/meta-ads cb/tldv
+      cb/asaas`, o `/root/docker-stack.yml` é idêntico ao do repositório,
+      `crm_crm` na imagem `07b1f3a`, e o cron sem segredo respondeu 401
+      (13/09). Em 14/09: 86 ciclos desde 13/09 13:12 BRT, 1 falha (o 403 de
+      cota das 10:02 BRT, §2.2); 439 clientes, 356 ligados, 92 devedores (89
+      ligados), 405 vencidas, 38 na exceção.
 - [x] Log `[asaas] …` sem chave nem CPF (ids e contagens, só).
 - [x] **Medido e corrigido na hora:** o primeiro ciclo criou 32 fichas em
       60 s — cinco idas ao banco por ficha. O dono da conta e o id da
@@ -1987,8 +2016,12 @@ o painel do navegador estava oculto e a captura não sai)
       `cb_asaas_eventos` foram apagadas. Há também um teste da rota com o
       dublê (`route.test.ts`): a ordem 404 → 401 → 200, a reentrega, o balde
       por conta e a prova de vida.
-- [ ] **Depois do merge, no primeiro ciclo do cron**: o cartão mostrando
-      "Aviso na hora: Ativo" e o webhook em `GET /webhooks`. ⚠️ Se o Asaas
+- [x] **Depois do merge, no primeiro ciclo do cron**: o cartão mostrando
+      "Aviso na hora: Ativo" e o webhook em `GET /webhooks`. **Medido em
+      14/09:** o cron criou o webhook no primeiro ciclo depois do merge do
+      #204, `webhook_state = 'ativo'`, conferido a cada ciclo, e o 1º evento
+      chegou em 14/09 06:23Z (`PAYMENT_RECEIVED`, `ignorada` — cobrança fora
+      do espelho). ⚠️ Se o Asaas
       recusar a lista de eventos (é a primeira vez que `POST /webhooks` roda
       de verdade), o estado vai a `erro` com o motivo no cartão; o cron
       retenta uma vez por dia e o botão "Tentar de novo" funciona em
@@ -1997,7 +2030,8 @@ o painel do navegador estava oculto e a captura não sai)
       vez no ciclo seguinte (coberto por teste; não provocado no Asaas real).
 - [ ] **C7 medido**: o `evento_criado_em` dos primeiros `PAYMENT_OVERDUE`
       reais anotado neste plano, **incluindo um vencimento de sábado ou
-      domingo** — só com o webhook vivo em produção.
+      domingo** — só com o webhook vivo em produção. Ainda não: nenhum
+      `PAYMENT_OVERDUE` chegou até 14/09.
 
 **Fase 3** (13/09, PR #206)
 
@@ -2021,6 +2055,22 @@ o painel do navegador estava oculto e a captura não sai)
       pelo diálogo/rota (`validate`/`executar-automacao`) só na forma
       estrutural — o motor exige o dublê do admin, e o caso está coberto
       pela revisão (Codex e a revisão de coerência do PR #206).
+- [x] **A 4ª rodada do Codex e o 403 de cota (#PR_RODADA_4, 14/09),
+      automatizado, cada teste visto VERMELHO — antes do conserto, ou por
+      mutação temporária onde o código já estava certo:**
+      `varrer-regua.test.ts` (a parcela do maior marco paga entre a
+      sincronização e o disparo; a escolhida com outra conexão; a PENDING
+      prorrogada; a PENDING do sábado na cobrança de segunda; o telefone que
+      o remetente recusa; `na_fila` com mídia entregue; `dias_de_atraso` do
+      maior marco; a órfã levando as `absorvida` do mesmo INSERT e não as de
+      outro; o lembrete em dias corridos), `regua.test.ts` (`porMaiorMarco`,
+      `cabeNoLembrete`, a mídia contando como envio), `validate.test.ts`
+      (`run_automation`/`run_flow` e modelo/botões/lista recusados),
+      `regua.chamadores.test.ts` (o predicado do telefone, sem comentários),
+      `cliente.test.ts`, `webhook-asaas.test.ts` e `sincronizar.test.ts` (o
+      403 de cota como `limite`; o de permissão continua `sem_permissao`).
+      `src/lib/asaas`, `src/lib/automations` e `src/app/api/cb/asaas`: 38
+      arquivos, 706 testes no Node 22.
 - [ ] Preview e2e (13/09, depois da 998): interruptor, intervalo, "Criar
       régua padrão", a aba "Sem cobrança automática" com a planilha marcada,
       o sino na aba Cobranças — registrado no PR #206.
@@ -2102,11 +2152,12 @@ não há conexão. Rotacionar também o PAT do Supabase.
    tudo" do operador (994, `20260912225955`).
 8. Depois do merge, o `docker stack deploy` (o CI não relê o agendador),
    feito na sessão, com autorização, como no tl;dv — sempre as três linhas.
-   ⚠️ **Ainda pendente em 13/09**: o PR #201 foi mesclado e o CI publicou a
-   imagem, mas a sessão não conseguiu abrir o SSH para a VPS; o script está
-   pronto (`deploy-agendador.sh` no scratchpad da sessão) e até lá o
-   "Sincronizar" do cartão é o único ciclo — a faixa e o filtro passam a
-   dizer "dados do Asaas de …" depois de 30 min sem ciclo:
+   ✅ **Feito em 13/09** (§11 #21 — esta linha dizia "ainda pendente" até
+   14/09): conferido na VPS em 14/09, o `crm_agendador` roda desde
+   13/09 12:56 BRT com o laço lento `cb/scheduled flows cb/radar cb/meta-ads
+   cb/tldv cb/asaas` (o banner cita o Asaas), o `/root/docker-stack.yml` é
+   idêntico ao do repositório, `crm_crm` está na imagem `07b1f3a` e o cron
+   sem segredo respondeu 401 (13/09). A receita, para a próxima vez:
 
    ```bash
    set -a; . /root/crm.env; set +a
@@ -2125,7 +2176,9 @@ não há conexão. Rotacionar também o PAT do Supabase.
     ROTACIONAR, criar a nova com Webhooks em leitura e escrita. O e-mail dos
     alertas do Asaas é o do administrador que conectou (o cartão mostra);
     depois do merge, o cron da VPS cria o webhook no ciclo seguinte — nada a
-    clicar. Conferir no cartão: "Aviso na hora: Ativo".
+    clicar. Conferir no cartão: "Aviso na hora: Ativo". ✅ Conferido em
+    14/09: o cron o criou no primeiro ciclo depois do merge do #204, e o
+    estado é `ativo`.
 
 **Fase 3**
 
@@ -2342,6 +2395,7 @@ mudou por causa deles e das regras que ele fixou no mesmo dia:
 | 18 | **Fase 1a-espelho construída e medida (12/09, à noite)**: migration 994 em produção; primeiro ciclo real com 439 clientes, 405 vencidas, 86 ligados pela regra, 32 fichas criadas em 60 s (o resto nos ciclos seguintes), 7 para confirmar, 9 sugestões por nome; três ajustes que a medição pediu — a PROVA DE IDENTIDADE da chave no começo do ciclo (404 de cliente apagado ≠ chave de outra conta), o cache do dono e da etiqueta por ciclo (cinco idas ao banco por ficha) e o orçamento de 90 s na sincronização manual | o desenho previa a recusa da chave de outra conta só ao CONECTAR; no ciclo, o único sinal era o 404 da reconciliação, que também é o de uma cobrança apagada com o cliente junto |
 | 17 | **Revisão final de 12/09 à noite** (seis lentes, 183 achados, ~45 aplicados): restos da pausa e da D10 em seis seções; a conversa que o motor NÃO cria para a ficha da D2 (a varredura cria, e passa canal e conversa no `context`); o CHECK sem `'criada'`; a trava do lembrete numa coluna `integer` (virou `tipo` + `marco`); D18/D20 sem coluna nem arquivo; a reserva de `RateLimit` que a conta não devolve; o remetente real do robô (`automations/meta-send.ts`); a cerca contra o telefone de outra pessoa; dois marcos do mesmo cliente no mesmo dia (`absorvida`); o interruptor reconferido na trava; `vista_vencida_em` contra `regua_ativada_em`; o lembrete em fim de semana; o boleto pago no caixa; `cb_channels` sem `instance_state`; a etiqueta `asaas` na ficha criada; as listas do cartão com estado de carga | o plano tinha sido editado por partes ao longo do dia, e cada parte deixou uma seção vizinha para trás |
 | 21 | **As perguntas da §9 respondidas de uma vez (13/09, pelo perguntador)** e a Fase 2 construída no mesmo dia. Quatro decisões mudaram o desenho da Fase 3: a negativada ENTRA na régua (D6), uma mensagem só quando vencimento e marco coincidem (D17), intervalo mínimo de 3 dias entre cobranças (D11) e a lista de exceção por cliente (D21, com a planilha de 41 nomes nascendo marcada). O deploy do agendador foi feito pela sessão (SSH com a chave da VPS): o laço lento cita o Asaas, o segredo está no contêiner, o cron sem segredo responde 401. E o outro sistema que usa a API do Asaas (pergunta 8) passa a ser hipótese escrita para todo 429 | o operador pediu as perguntas pelo perguntador, com recomendação; respondeu todas |
+| 22 | **A revisão de 14/09 — a produção medida, a 4ª rodada do Codex que ficou para trás e o 403 de cota (#PR_RODADA_4).** Medido: o agendador na VPS desde 13/09 12:56 BRT com `cb/asaas` no laço lento (o `docker stack deploy` da 1a-espelho FOI feito, §7 passo 8); o webhook criado pelo cron no primeiro ciclo depois do #204, `ativo`, com o 1º evento em 14/09 06:23Z (`PAYMENT_RECEIVED`, `ignorada`); 86 ciclos desde 13/09 13:12 BRT com 1 falha às 10:02 BRT de 14/09; 439 clientes, 356 ligados, 92 devedores (89 ligados), 405 vencidas, 38 na exceção; régua e as 4 automações padrão DESLIGADAS, 0 envios; C7 ainda sem `PAYMENT_OVERDUE`. A 4ª rodada do Codex no #206 (sobre `3e666f0`) saiu 53 s antes do merge com 4 achados (2 P1, 2 P2), e o Estado registrou "0". Regras novas, uma frase cada: **(a)** a automação que manda é re-escolhida sobre as parcelas RELIDAS (`porMaiorMarco`), com a conexão conferida de novo com ela; **(b)** o lembrete relido passa pela MESMA cerca da seleção (`cabeNoLembrete`), e o "vence hoje" da cobrança cobre os dias do lembrete (`venceNoDia`); **(c)** "tem telefone" é o predicado do remetente do robô (`isValidE164(sanitizePhoneForMeta(…))`); **(d)** qualquer passo que entrega ao contato conta como envio na trava (`PASSOS_QUE_FALAM_COM_O_CONTATO`), e `send_to_number`/`send_webhook` não; **(e)** o 403 com descrição de bloqueio por cota é `limite`, e rede/limite no webhook nunca viram estado que espera gente (nem na criação, nem no religar). Da revisão da própria correção: `dias_de_atraso` sai da parcela da automação que manda; `run_automation`/`run_flow` e modelo/botões/lista são recusados nos dois gatilhos; a órfã sem log leva junto as `absorvida` do mesmo INSERT; e o lembrete em dias corridos ganhou pino | o 403 das 10:02 foi lido como `sem_permissao`: o cartão mandaria mexer na chave, o passo dos Parcelamentos se calaria fingindo falta de permissão e o webhook iria a um estado terminal. Os quatro achados perdiam uma cobrança legítima (a trava gasta sem mensagem), mandavam a data errada, ou gastavam a trava com um `falhou` que o ciclo seguinte não refaz. Ficam para decisão (P3, no PR): a `absorvida` de uma cobrança que não saiu segura o lembrete; `hora_envio` diferente entre automações; o 404 do `reconfirmar` sem a cerca do cliente; o `interrompido` sem carimbo quando o religar falha por outro motivo |
 
 
 **Pendências que nasceram aqui, e são do operador:**

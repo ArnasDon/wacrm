@@ -3604,11 +3604,22 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   corpo é 403; 404 também significa "id de outra conta"; a cota é da CONTA
   do Asaas, sem cabeçalho `RateLimit-*` (medido) — o 429 encerra o ciclo
   sem retentar.** Toda mensagem de erro passa por `semSegredo()`.
+  ⚠️⚠️ **O bloqueio por cota também chega como 403** (medido em produção em
+  14/09/2026: "Seu acesso foi temporariamente bloqueado por exceder o
+  limite de requisições…"), o MESMO status da falta de permissão.
+  `codigoDoErro` recebe a DESCRIÇÃO e lê o 403 de bloqueio como `limite`
+  (casada sem acento; nenhum `code` de cota é documentado); o resto segue
+  `sem_permissao`. Lido como permissão, o cartão mandava mexer na chave, o
+  passo dos Parcelamentos se calava fingindo falta da permissão e o webhook
+  ia a estado terminal. Se o Asaas trocar a frase, o 403 de cota volta a
+  cair em `sem_permissao` — sem regressão, só a leitura antiga.
 - ⚠️ **`cb/asaas` está no laço LENTO do `docker-stack.yml`, e o CI não relê
   o `command` do agendador**: só vale depois de `docker stack deploy` manual
   na VPS, com o `crm.env` carregado (as três linhas). Até lá, o botão
   "Sincronizar" do cartão é o único ciclo. O rodízio é por
-  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho.
+  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho. (Deploy
+  feito em 13/09/2026: o agendador roda desde 12:56 BRT com `cb/asaas` no
+  laço lento — conferido na VPS em 14/09.)
 - **Toda leitura do banco PAGINA** (`contacts` já passa de 700; a importação
   do Atlas, avisada pelo operador, passa disso). As listas do cartão são
   montadas em memória por `listas.ts` (puro) e paginadas na rota — a
@@ -3704,7 +3715,14 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   então POST) — trocar a chave não pode dobrar as entregas. Fila
   interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a
   segunda vira `interrompido` ("precisa de atenção"), e só um gesto de gente
-  (Religar ou Ativar) zera o marcador. O estado `erro` (o Asaas recusou a
+  (Religar ou Ativar) zera o marcador. ⚠️ **Rede e `limite` NUNCA viram
+  estado que espera gente — nem na criação, nem no RELIGAR**
+  (`conferirWebhook`): a falha é gravada com o estado ANTERIOR, o
+  `webhook_religado_em` não é carimbado e o ciclo seguinte tenta de novo.
+  Antes, toda falha do religar virava `interrompido`, e o cartão afirmava "o
+  CRM já religou uma vez" sobre um pedido que nem chegou ao Asaas (Codex, 4ª
+  rodada do PR #206). Somado ao 403 de cota lido como `limite`, é o que
+  impede um soluço de cota de travar o aviso na hora. O estado `erro` (o Asaas recusou a
   criação) é retentado pelo cron uma vez por dia (`RETENTAR_ERRO_MS`): a
   primeira criação real acontece depois do merge, e uma lista de eventos
   recusada não pode travar a integração até alguém clicar. Desconectar APAGA o webhook no Asaas antes de
@@ -3734,6 +3752,29 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   de cada trava (`deps.relogio`; `janelaFechou`), e o log de um disparo
   nunca responde por outra trava do ciclo (`logsConsumidos`) — dois
   clientes do Asaas no mesmo contato saem em sequência (Codex, 3ª rodada).
+  ⚠️⚠️ **A automação que MANDA é escolhida de novo DEPOIS da releitura**,
+  sobre o `cruzaram` RELIDO e pelo mesmo comparador da seleção
+  (`porMaiorMarco`, exportado de `regua.ts` — uma cópia só), com a conexão
+  conferida de novo com ELA; daí em diante travas, janela, canal, contexto e
+  `medir()` usam essa, nunca `grupo.automacao`. Com a do grupo montado sobre
+  o espelho, a parcela do maior marco paga entre a sincronização e o
+  disparo deixava a escolhida sem parcela: tudo virava `absorvida`, nada
+  saía e a trava do marco menor ficava gasta (23505 no ciclo seguinte, e
+  amanhã o dia-alvo já passou). A escolhida com a conexão caída é pulada SEM
+  travar — nunca cai para uma automação menor, que mandaria o texto errado.
+  `dias_de_atraso` sai das parcelas da automação que manda, a mais antiga à
+  frente (na ordem do banco, o marco de 30 dias dizia "3 dias"). (Codex, 4ª
+  rodada do PR #206.)
+  ⚠️ **O lembrete relido passa pela MESMA cerca da seleção
+  (`cabeNoLembrete`: vencimento nos dias do lembrete, não só o status)** — a
+  PENDING de hoje que o Asaas PRORROGOU mandava "vence hoje" com a data
+  futura e travava o lembrete do dia novo. E o "vence hoje" da COBRANÇA é
+  `venceNoDia` (vencimento hoje OU nos dias que o lembrete cobre hoje): na
+  segunda o lembrete cobre sábado e domingo, e a PENDING do sábado de quem
+  tem marco na segunda sumia do dia. Os dias vêm do `somente_dias_uteis` DA
+  AUTOMAÇÃO do lembrete, nunca `true` fixo (em dias corridos, a do sábado já
+  foi lembrada no sábado, e somá-la repetia a trava `vence_hoje` — 23505 no
+  grupo; pino "dias CORRIDOS"). (Codex, 4ª rodada do PR #206.)
   A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
   `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
   mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).
@@ -3748,7 +3789,22 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   não dispara; a trava vale para a automação que enviou
   E para a que foi absorvida no mesmo dia (`absorvida`), e o lembrete usa
   `tipo = 'vence_hoje'`/`marco = 0`. `reservado` há mais de 10 min é órfã
-  (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ **`na_fila`
+  (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ A órfã sem
+  log sai JUNTO com as `absorvida` do MESMO INSERT (mesma conta, cliente e
+  automação e o MESMO `criado_em` — o `now()` é um por transação), e só
+  DEPOIS de a própria órfã sair: sozinhas, elas davam 23505 ao grupo do
+  ciclo seguinte e nada saía o dia inteiro; se o dono fechou a trava no meio,
+  a cerca `resultado = 'reservado'` não apaga nada e a `vence_hoje` absorvida
+  FICA (é ela que impede o lembrete em dobro). Falha ao apagar as irmãs vira
+  só `console.warn` (revisão da 4ª rodada do PR #206). ⚠️ **`enviado` é
+  QUALQUER passo que entrega ao contato com sucesso**
+  (`PASSOS_QUE_FALAM_COM_O_CONTATO` em `regua.ts`: mensagem, mídia, botões,
+  lista, modelo), em `resultadoDoLog` e portanto na reconciliação do
+  `na_fila` — um ramo de condição pode rodar só a mídia, e a trava fechava
+  `barrada`/`falhou` sobre cliente cobrado, fora do intervalo mínimo.
+  `send_to_number` (avisa OUTRO número) e `send_webhook` ficam fora, e por
+  isso não é o `PASSOS_DE_ENVIO` da retentativa (Codex, 4ª rodada do PR
+  #206). ⚠️ **`na_fila`
   existe por causa da RETENTATIVA do motor (PR #205)**: um envio que a
   Evolution RECUSA (4xx) volta para a fila e roda de novo em 30 s / 5 min,
   FORA da varredura — a trava guarda `automation_log_id` e a varredura
@@ -3783,12 +3839,30 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   cerca é de conexão por QR CODE (`kind = 'evolution'`, `connected`):
   Instagram e Meta no passo dariam `falhou` determinístico consumindo a
   trava. A ficha ligada SEM telefone (só Instagram, 989) é pulada sem
-  travar (`semTelefone`). O seletor de conexão do passo aparece SEMPRE nos
+  travar (`semTelefone`). ⚠️ **"Tem telefone" é o predicado do REMETENTE do
+  robô** — `isValidE164(sanitizePhoneForMeta(telefone))`, o de
+  `engineSendText`, conferido antes do desvio de transporte (vale para a
+  Evolution) —, nunca régua própria: com ">= 8 dígitos", o número com zero
+  na frente ou os 18 dígitos de um JID de grupo passavam na varredura, eram
+  recusados no envio e a trava fechava `falhou` sem nova chance depois de o
+  telefone ser corrigido. Pino estrutural em `regua.chamadores.test.ts`,
+  lendo os dois fontes SEM comentários (Codex, 4ª rodada do PR #206).
+  ⚠️ **Nos dois gatilhos, `validate.ts` recusa em qualquer escopo
+  `run_automation`/`run_flow` e `send_template`/`send_buttons`/
+  `send_list`.** A entrega pela FILHA fica no log dela (a trava vira
+  `barrada`), a filha pode ter "Aguardar" e retomar sem reconfirmar o
+  pagamento, e a cerca de conexão do motor olha o gatilho DA FILHA; e os
+  passos só-Meta, fixados num número oficial, saíam por conexão que a
+  varredura não sondou e que o motor não cerca (a trava que falha fechado
+  mora só no `send_message`) — sem conexão, falhavam sempre e gastavam a
+  trava. ⚠️ Vale só na ATIVAÇÃO e na edição: automação da régua gravada
+  antes da regra não é pulada pela varredura — conferir antes de ligar a
+  régua (revisão da 4ª rodada do PR #206). O seletor de conexão do passo aparece SEMPRE nos
   gatilhos da régua, mesmo com uma conexão só (`reguaDoAsaas` no contexto
   do construtor) — senão a automação criada à mão nunca ligava; a
-  ativação exige pelo menos um `send_message` (é dele que vem a conexão e
-  o `enviado` da trava — só `send_media` ativava e era pulada em todo
-  ciclo); e o motor, nesses gatilhos, lança em vez de cair no padrão
+  ativação exige pelo menos um `send_message` (é dele que vem a conexão —
+  só `send_media` ativava e era pulada em todo ciclo; o `enviado` da trava,
+  desde a 4ª rodada, vem de qualquer passo que entrega ao contato); e o motor, nesses gatilhos, lança em vez de cair no padrão
   (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
   numa cobrança isso é o link de pagamento saindo por outro número).
   "Assinar como" (`automations.assinatura_personalizada`, D18) é prefixo

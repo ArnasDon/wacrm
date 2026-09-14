@@ -53,6 +53,22 @@ describe('codigoDoErro', () => {
   it('invalid_environment vence o 401 genérico', () => {
     expect(codigoDoErro(401, 'invalid_environment')).toBe('ambiente_errado')
   })
+
+  // ⚠️ Medido em produção em 14/09/2026: o Asaas bloqueou por cota com 403 e
+  // esta frase. Lido como permissão, o cartão mandava mexer na chave.
+  const COTA_EM_403 = 'Seu acesso foi temporariamente bloqueado por exceder o limite de requisições. Tente novamente dentro de alguns minutos.'
+  it('403 cuja descrição é de BLOQUEIO POR COTA é `limite`, não permissão', () => {
+    expect(codigoDoErro(403, null, COTA_EM_403)).toBe('limite')
+    expect(codigoDoErro(403, null, COTA_EM_403.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase())).toBe('limite')
+    expect(codigoDoErro(403, null, 'Too Many Requests')).toBe('limite')
+  })
+
+  it('403 de permissão de verdade continua `sem_permissao`, e a frase não sequestra outro status', () => {
+    expect(codigoDoErro(403, 'insufficient_permission', 'sem acesso')).toBe('sem_permissao')
+    expect(codigoDoErro(403, null, 'HTTP 403')).toBe('sem_permissao')
+    expect(codigoDoErro(403, null, 'A chave de API não possui permissão para esta operação')).toBe('sem_permissao')
+    expect(codigoDoErro(401, null, 'limite de requisições')).toBe('chave_invalida')
+  })
 })
 
 describe('semSegredo', () => {
@@ -112,6 +128,14 @@ describe('criarClienteAsaas', () => {
     const cliente = criarClienteAsaas(CHAVE, { fetchFn: fetchFn as unknown as typeof fetch })
     await expect(cliente.listar('/customers')).rejects.toThrow(AsaasError)
     await expect(cliente.listar('/customers')).rejects.toThrow(MARCA_DE_CHAVE)
+  })
+
+  it('403 de bloqueio por cota (medido em produção em 14/09/2026) vira `limite`, nas duas formas de corpo; 403 de permissão continua `sem_permissao`', async () => {
+    const frase = 'Seu acesso foi temporariamente bloqueado por exceder o limite de requisições. Tente novamente dentro de alguns minutos.'
+    const com = (corpo: unknown) => criarClienteAsaas(CHAVE, { fetchFn: (async () => resposta(corpo, { status: 403 })) as unknown as typeof fetch })
+    await expect(com({ errors: [{ code: 'x', description: frase }] }).obter('/payments/pay_1')).rejects.toMatchObject({ codigo: 'limite', status: 403 })
+    await expect(com({ message: frase }).listar('/customers')).rejects.toMatchObject({ codigo: 'limite', status: 403 })
+    await expect(com({ errors: [{ code: 'insufficient_permission', description: 'sem acesso' }] }).obter('/payments/pay_1')).rejects.toMatchObject({ codigo: 'sem_permissao' })
   })
 
   it('404 em `obter` devolve null — que também significa "id de outra conta"', async () => {

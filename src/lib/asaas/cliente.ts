@@ -24,7 +24,8 @@
  *   irmãos — uma URL de outro host levaria a chave junto.
  * - ⚠️ A cota é da **CONTA do Asaas**, não da chave: 25.000 pedidos a cada
  *   12 h e 50 GET simultâneos, dividido com qualquer outro sistema do
- *   escritório que use a API. Por isso o cliente guarda os cabeçalhos
+ *   escritório que use a API — e o bloqueio por cota também chega como
+ *   **403** (medido em 14/09/2026; ver `codigoDoErro`). Por isso o cliente guarda os cabeçalhos
  *   `RateLimit-*` da última resposta (o cartão os mostra) e a paginação tem
  *   TETO — e o teto ESTOURA em vez de devolver meia lista (lição do Meta
  *   Ads: meia lista vira número errado com cara de número certo).
@@ -92,16 +93,31 @@ export function doAsaas(url: string, ambiente: AmbienteDoAsaas): boolean {
   }
 }
 
+/** A descrição de BLOQUEIO POR COTA, casada minúscula e sem acento. */
+const RE_BLOQUEIO_POR_COTA = /limite de requisi|excesso de requisi|temporariamente bloquead|too many requests|rate limit/;
+
 /**
  * Puro: o status HTTP (e o `code` do corpo, quando vem) → o nosso código.
  * ⚠️ 401 com `invalid_environment` é chave do ambiente ERRADO — sandbox
  * numa base de produção, o engano mais fácil de cometer e o mais difícil de
  * enxergar depois.
+ * ⚠️ O Asaas documenta 429 para cota, mas em 14/09/2026 respondeu **403**
+ * com "Seu acesso foi temporariamente bloqueado por exceder o limite de
+ * requisições". Lido como permissão, o 403 fazia o cartão mandar mexer na
+ * chave, calava o passo dos Parcelamentos e marcava o webhook como terminal
+ * (medido em produção em 14/09/2026). Casa pela DESCRIÇÃO porque nenhum
+ * `code` de cota é documentado; 403 de permissão de verdade
+ * (`insufficient_permission`, IP fora da lista, corpo vazio ou HTML →
+ * "HTTP 403") continua `sem_permissao`.
  */
-export function codigoDoErro(status: number, codigoDoAsaas?: string | null): CodigoDoErroAsaas {
+export function codigoDoErro(status: number, codigoDoAsaas?: string | null, descricao?: string | null): CodigoDoErroAsaas {
   if (codigoDoAsaas === "invalid_environment") return "ambiente_errado";
   if (status === 401) return "chave_invalida";
-  if (status === 403) return "sem_permissao";
+  if (status === 403) {
+    // o intervalo dos acentos por ESCAPE, nunca o caractere combinante literal (a regra da 984)
+    const texto = (descricao ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    return RE_BLOQUEIO_POR_COTA.test(texto) ? "limite" : "sem_permissao";
+  }
   if (status === 404) return "nao_encontrado";
   if (status === 429) return "limite";
   return "asaas_error";
@@ -226,7 +242,8 @@ export function criarClienteAsaas(
       if (aceitar.includes(resposta.status)) return { status: resposta.status, corpo };
       const { codigo, descricao } = lerErro(corpo, resposta.status);
       throw new AsaasError(
-        codigoDoErro(resposta.status, codigo),
+        // a descrição crua só é CASADA (bloqueio por cota em 403); o que é gravado passa por `semSegredo`
+        codigoDoErro(resposta.status, codigo, descricao),
         semSegredo(`${resposta.status}: ${descricao}`, chave),
         codigo,
         resposta.status,

@@ -115,7 +115,12 @@ describe('proxy — canonical host redirect', () => {
     process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
 
     const res = await proxy(
-      new NextRequest('https://sandia-sandia-crm.kmencc.easypanel.host/admin?tab=x'),
+      new NextRequest('https://sandia-sandia-crm.kmencc.easypanel.host/admin?tab=x', {
+        // Real browser traffic always arrives through the reverse proxy,
+        // which sets this header — see the "is inert" test below for the
+        // no-header case (the container's own Docker healthcheck).
+        headers: { 'x-forwarded-host': 'sandia-sandia-crm.kmencc.easypanel.host' },
+      }),
     );
 
     expect(res.status).toBe(307);
@@ -159,6 +164,20 @@ describe('proxy — canonical host redirect', () => {
   it('is inert when NEXT_PUBLIC_SITE_URL is unset', async () => {
     // `/` is not a protected path, so nothing else in the proxy redirects it.
     const res = await proxy(new NextRequest('https://whatever.example/'));
+
+    expect(res.headers.get('location')).toBeNull();
+  });
+
+  it('never redirects a request with no X-Forwarded-Host, even on a mismatched raw host', async () => {
+    // This is exactly the shape of the container's own Docker HEALTHCHECK
+    // (`fetch('http://127.0.0.1:<port>/')`, no reverse proxy in front of
+    // it). Redirecting it out to the canonical HTTPS domain and back in
+    // again previously made the healthcheck fail on VPS networks that
+    // block NAT hairpin loopback, marking the container permanently
+    // unhealthy and taking the whole site down.
+    process.env.NEXT_PUBLIC_SITE_URL = 'https://chatsandia.com';
+
+    const res = await proxy(new NextRequest('http://127.0.0.1:3000/'));
 
     expect(res.headers.get('location')).toBeNull();
   });

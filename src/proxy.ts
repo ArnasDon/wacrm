@@ -15,11 +15,19 @@ export async function proxy(request: NextRequest) {
   // this reversible — no permanent-redirect caching in browsers while the
   // domain move settles.
   const canonicalUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/+$/, '');
-  if (canonicalUrl && !request.nextUrl.pathname.startsWith('/api/')) {
+  // Only redirect requests that actually came in through a reverse proxy
+  // (real browser/webhook traffic always carries `x-forwarded-host`).
+  // Without this guard, the container's own Docker HEALTHCHECK — which
+  // hits `http://127.0.0.1:<port>/` directly, with no forwarded-host
+  // header — gets redirected out to the canonical HTTPS domain and back
+  // in again (a hairpin round-trip that can fail or exceed the
+  // healthcheck's timeout on VPS networks that block NAT loopback),
+  // permanently marking the container unhealthy and taking the whole
+  // site down even though the app itself is running fine.
+  const forwardedHost = request.headers.get('x-forwarded-host')?.split(',')[0]?.trim();
+  if (canonicalUrl && forwardedHost && !request.nextUrl.pathname.startsWith('/api/')) {
     const canonicalHost = new URL(canonicalUrl).host;
-    const currentHost =
-      request.headers.get('x-forwarded-host')?.split(',')[0]?.trim() ||
-      request.nextUrl.host;
+    const currentHost = forwardedHost;
     if (currentHost && currentHost !== canonicalHost) {
       return NextResponse.redirect(
         new URL(

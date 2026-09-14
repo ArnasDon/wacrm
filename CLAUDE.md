@@ -285,7 +285,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/conversation-list.tsx` (09/09/2026) | o interruptor **"Buscar também dentro das mensagens"** (`buscarNasMensagens`, desligado por padrão) e o placeholder que muda com ele; `useBuscaEmMensagens` ganhou o 2º parâmetro `ativa` |
 | `src/components/inbox/conversation-list.tsx` (canal, 2026-09-02) | a prop `corDoCanalDaLinha` do `ConversationItem` e a bolinha antes do nome — bolinha, e não trilha, porque a borda esquerda já é da seleção |
 | `src/components/inbox/conversation-list.tsx` (janela, 12/09/2026) | a AMPULHETA da janela de 24h da Meta (991): a prop `canalDeSaidaDaLinha` do `ConversationItem`, `canaisPorId`/`canalPadrao` no pai, o `tTimer` da linha e `COR_DA_AMPULHETA` — ver a seção "Selo da janela de 24h na lista" |
-| `src/app/(dashboard)/inbox/page.tsx` | espelha o termo da busca da lista para o fio — são irmãos, e a página é o único caminho entre eles. Mais o escritor da presença por conversa (963): `useMarcarConversaAberta(activeConversation?.id)` — a página é a dona da seleção |
+| `src/app/(dashboard)/inbox/page.tsx` | espelha o termo da busca da lista para o fio — são irmãos, e a página é o único caminho entre eles. Mais o escritor da presença por conversa (963): `useMarcarConversaAberta(activeConversation?.id)` — a página é a dona da seleção. Mais (14/09/2026) a navegação por HISTÓRICO no celular: abrir conversa pela lista ou pelo "nova conversa" é `push` (`navegacaoAoAbrir`), o botão voltar desfaz o passo (`router.back()`), e um ouvinte de `popstate` fecha ou reabre — um merge que traga o `replace` cru do upstream faz o gesto de voltar do iPhone SAIR da caixa de entrada de novo. Ver a seção "Voltar da conversa pelo HISTÓRICO" |
 | `src/components/inbox/message-thread.tsx` (955/963) | monta o `<ExecutarAutomacaoDialog>` (é o fio que tem o contato; o canal passado é `conversation.channel_id ?? null` — o PR #74 trocou o `activeChannel` resolvido pelo cru DE PROPÓSITO, para a checagem de escopo da rota falhar aberta igual ao motor em conversa sem canal; grupo fica de fora) e os avatares `<AvataresNaConversa>` no cabeçalho, alimentados por `useQuemVeAConversa` |
 | `src/components/inbox/message-thread.tsx` (#84) | a **janela de 24h**: a regra saiu para `src/lib/inbox/janela-24h.ts` (puro, com teste) e os TRÊS caminhos de envio (texto, mídia, interativa) passam por `janelaFechadaAgora()` antes do `fetch` — o portão lê o RELÓGIO no disparo, nunca `sessionInfo.expired` (um `useMemo`: recomputa no tique de 1 min da badge, nunca no instante exato do disparo). Um merge que traga o `sessionInfo` inline do upstream devolve os três buracos de uma vez. Desde 10/09/2026 a janela é **POR NÚMERO**: os dois relógios passam `canalDaJanela` (= `activeChannel`, id + transporte, o mesmo do `expected_channel_id`) — parâmetro OBRIGATÓRIO em `janelaFechada`/`minutosRestantes`, com pino estrutural cobrando o MESMO canal nos dois —, grupo fica fora (`!ehGrupo` em `janelaDe24h`), e a etiqueta fala minutos na última hora (`restanteParaExibir`; antes o ramo de minutos era código morto e a última hora aparecia inteira como "1h restantes") |
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
@@ -2426,6 +2426,41 @@ id; a página recarrega a lista e navega por `?c=`. O que morde código novo:
   precisa saber que existe conversa legítima com a coluna nula.
 - **A rota confere POSSE do canal, não escopo de perfil** — nenhuma rota
   deste projeto valida `canalNoEscopo` hoje. Ver o comentário no arquivo.
+
+⚠️ **Voltar da conversa pelo HISTÓRICO, no celular (14/09/2026).**
+`src/lib/inbox/voltar-no-celular.ts` (puro, com teste) e a página do inbox.
+Pedido do operador, com o CRM instalado no iPhone: voltar da conversa para a
+lista arrastando da borda esquerda, como no WhatsApp. O que morde código
+novo:
+
+- ⚠️⚠️ **O gesto do iPhone e o botão voltar do Android andam no HISTÓRICO, e
+  a caixa de entrada abria a conversa com `replace`** — sem passo nenhum, o
+  gesto SAÍA da caixa de entrada em vez de fechar a conversa. Agora, no
+  celular (`!ehDesktop`), abrir a conversa a partir da lista é `router.push`
+  (`navegacaoAoAbrir`), no clique da lista E na conversa criada pelo botão
+  "nova conversa". No computador continua `replace`: lá lista e conversa
+  convivem, e um passo por clique faria o voltar do navegador percorrer o
+  dia inteiro de conversas.
+- ⚠️ **Não é arrasto feito à mão em JavaScript**: ele disputaria a borda da
+  tela com o gesto do próprio sistema. É dar ao sistema o passo que o gesto
+  desfaz.
+- ⚠️⚠️ **Quem fecha a conversa no gesto é um ouvinte de `popstate`**
+  (`aoAndarNoHistorico`): URL sem `?c=` com conversa na tela, fecha; URL com
+  outra conversa, reabre pelo caminho do deep link (ref limpa +
+  `resyncToken`). Num ouvinte, e não num efeito sobre `deepLinkConvId`,
+  porque `setState` síncrono no corpo de efeito é erro do React Compiler — e
+  `replace` não dispara `popstate`, então trocar de conversa não passa por
+  ali.
+- ⚠️ **O botão voltar da tela DESFAZ o passo (`router.back()`)** quando a
+  abertura o criou (`abriuComPassoRef`). Com `replace`, sobrariam duas
+  entradas da lista, e o gesto seguinte "não faria nada" antes de sair da
+  caixa de entrada. Recarregar a página zera a ref, e aí o botão volta ao
+  `replace` de sempre.
+- **`limparConversaAberta` é o que o botão e o `popstate` têm em comum**, e
+  não mexe na URL. Rodar duas vezes (o `router.back()` também dispara o
+  ouvinte) é inofensivo.
+- ⚠️ **O navegador do computador testa a mecânica** (histórico, `popstate`,
+  push × replace); o arrasto em si, só no aparelho.
 
 ⚠️ **Negócio (`deals`) só nasce por `src/lib/deals/create-deal.ts` no servidor.**
 A 908 deu à conexão um funil padrão, e o roteador de entrada

@@ -27,6 +27,7 @@ import {
 import { useCan } from "@/hooks/use-can";
 import { useChannels } from "@/hooks/use-channels";
 import { useTrajetorias } from "@/hooks/use-trajetorias";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { avisarDrenagemDeFunil } from "@/lib/automations/avisar-drenagem";
 import { formatCurrency } from "@/lib/currency";
 import { baixarArquivo, nomeDeArquivoSeguro, paraCsv } from "@/lib/csv";
@@ -165,6 +166,12 @@ export function ListaDeLeads({
   const intervalo = intervaloDoPreset(preset, new Date(), personalizado);
   const trajetorias = useTrajetorias(pipeline.id, intervalo);
   const { linhas, falhou, recarregar, atualizarLinha } = trajetorias;
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora refaz a lista. ⚠️ Com o `recarregar` comum, que
+  // pisca — e é o que se quer aqui: sem linhas durante a carga, ninguém muda
+  // a etapa de um negócio com a recarga no ar, a corrida que o quadro
+  // precisou cercar com versão (Codex, PR #216).
+  useAoVoltarParaOApp(recarregar);
   // Sem as etapas DESTE funil, `classificarEtapas` não casa nada: toda linha
   // sairia "fora do funil" e o seletor da linha nasceria em branco.
   const carregando = trajetorias.carregando || !etapasCarregadas;

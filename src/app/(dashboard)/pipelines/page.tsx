@@ -535,6 +535,11 @@ export default function PipelinesPage() {
   const funilAbertoRef = useRef(selectedPipelineId);
   useEffect(() => {
     funilAbertoRef.current = selectedPipelineId;
+    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
+    // ar passava pelas duas cercas (o funil é A de novo e a versão não
+    // andou), e a resposta velha gravava por cima da carga nova de A (Codex,
+    // PR #216, 3ª rodada).
+    versaoDoQuadroRef.current += 1;
   }, [selectedPipelineId]);
   useAoVoltarParaOApp(() => {
     const funil = selectedPipelineId;

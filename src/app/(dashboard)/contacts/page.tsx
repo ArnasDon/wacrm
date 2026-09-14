@@ -278,10 +278,23 @@ export default function ContactsPage() {
     fetchTags();
   }, [fetchTags]);
 
+  // ⚠️ Quando SÓ o catálogo de etiquetas mudou — a página, a busca e o filtro
+  // são os mesmos —, a lista é refeita em silêncio e com a seleção. O
+  // `fetchContacts` depende de `tagsMap`, e a volta ao app recarrega o
+  // catálogo: um refetch comum ali ligaria o spinner e zeraria a seleção de
+  // quem preparava uma ação em massa (Codex, PR #216, 3ª rodada). Mudou a
+  // página, a busca ou o filtro: recarga comum, com a seleção zerada, como
+  // sempre.
+  const chaveDaListaRef = useRef<string | null>(null);
   useEffect(() => {
+    const chave = JSON.stringify([page, search, selectedTagIds]);
+    const soOCatalogo = chaveDaListaRef.current === chave;
+    chaveDaListaRef.current = chave;
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchContacts();
-  }, [fetchContacts]);
+    fetchContacts(
+      soOCatalogo ? { silencioso: true, preservarSelecao: true } : undefined,
+    );
+  }, [fetchContacts, page, search, selectedTagIds]);
 
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza a página aberta da tabela, sem trocá-la

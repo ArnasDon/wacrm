@@ -4532,18 +4532,29 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   ⚠️⚠️ E o `fetchTags` troca o mapa SÓ quando o conteúdo mudou (`igual ? prev
   : map`): `fetchContacts` depende de `tagsMap`, e um mapa novo com o mesmo
   conteúdo refaria a lista inteira com spinner e seleção zerada a cada volta
-  (Codex, PR #216, 2ª rodada).
+  (Codex, PR #216, 2ª rodada). ⚠️⚠️ Quando o catálogo MUDOU de fato, o efeito
+  da lista percebe que só ele mudou — a página, a busca e o filtro são os
+  mesmos (`chaveDaListaRef`) — e refaz em silêncio e com a seleção; senão
+  quem preparava uma ação em massa perdia a seleção inteira (3ª rodada).
 - ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas, o
-  mesmo funil aberto** (`funilAbertoRef`) **e nenhuma mudança local no meio do
-  caminho** (`versaoDoQuadroRef`, que o arrasto, `refreshDeals` e
-  `refreshStages` avançam). `buscarEtapas`/`buscarNegocios` devolvem `null` na
-  FALHA — diferente de `[]`, funil vazio —, porque voltar ao app antes de a
-  rede do celular voltar esvaziava o quadro; trocar de funil com a recarga no
-  ar deixava o quadro de B com os dados de A; e a recarga que saiu antes de um
+  mesmo funil aberto** (`funilAbertoRef`) **e nenhuma mudança no meio do
+  caminho** (`versaoDoQuadroRef`, que o arrasto, `refreshDeals`,
+  `refreshStages` E a troca de funil avançam). `buscarEtapas`/`buscarNegocios`
+  devolvem `null` na FALHA — diferente de `[]`, funil vazio —, porque voltar
+  ao app antes de a rede do celular voltar esvaziava o quadro; trocar de
+  funil com a recarga no ar deixava o quadro de B com os dados de A (e A → B
+  → A passava pelas duas primeiras cercas); e a recarga que saiu antes de um
   arrasto, voltando depois dele, devolvia o card à etapa antiga (Codex, PR
-  #216, duas rodadas). Quem criar outro caminho que mexa em `deals` ou
+  #216, três rodadas). Quem criar outro caminho que mexa em `deals` ou
   `stages` nesta página avança a versão também. `loadStages`/`loadDeals`
   continuam devolvendo `[]` para quem já os chamava.
+- ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
+  (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
+  hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de
+  propósito. Desempenho e Saúde são relatórios que afirmam números (a
+  escolha do Meu dia), e na Lista a tabela sem linhas durante a carga é o
+  que impede mudar a etapa de um negócio com a recarga no ar, a corrida que
+  o quadro precisou cercar com a versão (Codex, PR #216, 3ª rodada).
 - **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
   botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
   "0 vencidas"), e afirmar sobre número velho é pior que piscar.

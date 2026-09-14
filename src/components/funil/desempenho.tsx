@@ -22,6 +22,7 @@ import { MetricCard } from "@/components/dashboard/metric-card";
 import { Button } from "@/components/ui/button";
 import { useGastosDeAnuncios } from "@/hooks/use-gastos-de-anuncios";
 import { useTrajetorias } from "@/hooks/use-trajetorias";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { formatCurrency } from "@/lib/currency";
 import { custos, diasDoPeriodo, gastoDoPeriodo } from "@/lib/meta-ads/atribuicao";
 import {
@@ -106,6 +107,11 @@ export function Desempenho({
     desde: anterior?.desde ?? intervalo.desde,
     ate: null,
   });
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora refaz as trajetórias. Com o `recarregar` comum,
+  // que pisca o carregando — é relatório, afirma números, e afirmar sobre
+  // número velho é pior que piscar (a escolha do Meu dia).
+  useAoVoltarParaOApp(recarregar);
   // Fase 4: o gasto em anúncios do período (campanhas → funil), sob RLS.
   const anuncios = useGastosDeAnuncios(intervalo);
 

@@ -40,6 +40,11 @@ describe("as telas que se atualizam ao voltar", () => {
     "src/app/(dashboard)/meu-dia/page.tsx",
     "src/app/(dashboard)/pipelines/page.tsx",
     "src/app/(dashboard)/contacts/page.tsx",
+    // As visões do funil que têm dados próprios (`useTrajetorias`): a
+    // recarga do quadro não as alcança (Codex, PR #216, 3ª rodada).
+    "src/components/funil/lista-de-leads.tsx",
+    "src/components/funil/desempenho.tsx",
+    "src/components/funil/saude.tsx",
   ])("%s chama useAoVoltarParaOApp", (caminho) => {
     expect(ler(caminho)).toContain("useAoVoltarParaOApp(");
   });
@@ -63,20 +68,29 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
     expect(contatos).toContain("return igual ? prev : map;");
   });
 
+  it("Contatos refaz a lista em silêncio, com a seleção, quando só o catálogo mudou", () => {
+    expect(contatos).toContain(
+      "soOCatalogo ? { silencioso: true, preservarSelecao: true } : undefined",
+    );
+  });
+
   it("o Funil descarta a resposta de outro funil e mantém o quadro quando a consulta falha", () => {
     expect(funil).toContain("funilAbertoRef.current !== funil");
     expect(funil).toContain("if (!etapas || !negocios) return;");
   });
 
-  it("o Funil descarta a resposta que saiu antes de uma mudança local", () => {
+  it("o Funil descarta a resposta que saiu antes de uma mudança local ou de uma troca de funil", () => {
     // Uma recarga que partiu antes de um arrasto e voltou depois dele
-    // devolveria o card à etapa antiga.
+    // devolveria o card à etapa antiga; A → B → A passaria pelas duas cercas.
     expect(funil).toContain("versaoDoQuadroRef.current !== versao");
     expect(funil).toMatch(
       /const handleDealMoved = useCallback\(\s*async \(dealId: string, newStageId: string\) => \{[\s\S]{0,300}versaoDoQuadroRef\.current \+= 1;/,
     );
     expect(funil).toMatch(
       /const refreshDeals = useCallback\(async \(\) => \{\s*if \(!selectedPipelineId\) return;\s*versaoDoQuadroRef\.current \+= 1;/,
+    );
+    expect(funil).toMatch(
+      /funilAbertoRef\.current = selectedPipelineId;[\s\S]{0,500}versaoDoQuadroRef\.current \+= 1;/,
     );
   });
 });

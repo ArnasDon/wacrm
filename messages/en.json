@@ -340,6 +340,7 @@
       "readOnlyPlaceholder": "Read-only — viewers can browse but not reply",
       "sessionExpiredPlaceholder": "Session expired - use a template",
       "typeMessagePlaceholder": "Type a message... (Shift+Enter for new line)",
+      "typeMessagePlaceholderTouch": "Type a message...",
       "readOnlyTitle": "Read-only — your role can't send messages",
       "recording": "Recording… {current} / {max}",
       "cancel": "Cancel",

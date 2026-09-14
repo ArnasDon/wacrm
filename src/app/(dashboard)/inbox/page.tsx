@@ -887,7 +887,11 @@ function InboxPageInner() {
   const hasActiveConv = !!activeConversation;
 
   return (
-    <div className="-m-4 flex h-[calc(100vh-3.5rem)] flex-col overflow-hidden sm:-m-6">
+    // ⚠️ A altura sai de `--altura-visivel` (a área acima do teclado do
+    // celular, escrita por `useTelaAcimaDoTeclado`), com queda em `100dvh`.
+    // Com `100vh`, o teclado aberto empurrava o cabeçalho da conversa para
+    // fora da tela (relato do operador no iPhone, 14/09/2026).
+    <div className="-m-4 flex h-[calc(var(--altura-visivel,100dvh)-3.5rem)] flex-col overflow-hidden sm:-m-6">
       {/* Volta da jornada funil → conversa. Irmã da faixa amarela abaixo,
           pela mesma razão: empurra os painéis em vez de sobrepor. `inert`
           junto com a lista e o fio: com o painel mobile aberto (modal de

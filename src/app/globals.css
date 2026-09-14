@@ -262,3 +262,21 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+
+/* ⚠️ Campo de texto com letra MENOR que 16px faz o iPhone ampliar a tela
+   sozinho quando a pessoa toca nele, e ele não desfaz quando o teclado
+   fecha. Conferido no código em 14/09/2026, com o CRM instalado na Tela de
+   Início: a caixa de mensagem, a busca da lista e a anotação tinham 14px
+   (`text-sm`). A regra fica FORA de camada de propósito — estilo sem camada
+   vence as utilidades do Tailwind, que moram em `@layer utilities` —, então
+   vale para todo campo, inclusive os que vierem depois, sem tocar em cada
+   um. Só em aparelho de toque: no computador nada muda.
+   ⚠️ A consulta é a mesma de `MIDIA_DE_TOQUE` (src/lib/celular/teclado.ts),
+   e há teste cobrando. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"], [type="button"], [type="submit"], [type="reset"], [type="image"], [type="hidden"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+}

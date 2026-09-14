@@ -333,6 +333,7 @@
       "readOnlyPlaceholder": "Somente leitura — visualizadores podem consultar, mas não responder",
       "sessionExpiredPlaceholder": "Sessão expirada - use um modelo",
       "typeMessagePlaceholder": "Digite uma mensagem... (Shift+Enter para nova linha)",
+      "typeMessagePlaceholderTouch": "Digite uma mensagem...",
       "readOnlyTitle": "Somente leitura — seu papel não permite enviar mensagens",
       "recording": "Gravando… {current} / {max}",
       "cancel": "Cancelar",

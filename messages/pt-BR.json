@@ -1751,7 +1751,7 @@
         },
         "calendly_booking": {
           "label": "Agendamento no Calendly",
-          "hint": "Quando alguém marca um horário no Calendly (integração em Configurações → Integrações). O contato é achado pelo telefone do agendamento."
+          "hint": "Quando alguém marca um horário no Calendly (integração em Configurações → Integrações). O contato é achado pelo telefone do agendamento e passa a se chamar pelo nome informado nele — na conversa e no card do funil —, e a mensagem seguinte do WhatsApp não troca esse nome."
         },
         "webhook_received": {
           "label": "Webhook recebido",

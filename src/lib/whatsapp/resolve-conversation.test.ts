@@ -52,6 +52,8 @@ function makeDb(script: Script): SupabaseClient {
       return builder;
     },
     eq: () => builder,
+    // O UPDATE de nome leva `.is('nome_fixado_em', null)` (999).
+    is: () => builder,
     order: () => builder,
     limit: () => {
       // Only the conversation lookup terminates on `.limit(1)`.

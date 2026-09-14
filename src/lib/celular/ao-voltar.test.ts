@@ -8,6 +8,9 @@ import {
 
 const SAIU = 1_000_000;
 
+const ler = (caminho: string) =>
+  readFileSync(join(process.cwd(), caminho), "utf8");
+
 describe("voltouDepoisDeAusencia", () => {
   it("olhada rápida em outro app não recarrega", () => {
     expect(
@@ -32,9 +35,6 @@ describe("voltouDepoisDeAusencia", () => {
 });
 
 describe("as telas que se atualizam ao voltar", () => {
-  const ler = (caminho: string) =>
-    readFileSync(join(process.cwd(), caminho), "utf8");
-
   it.each([
     "src/app/(dashboard)/tarefas/page.tsx",
     "src/app/(dashboard)/meu-dia/page.tsx",
@@ -42,5 +42,21 @@ describe("as telas que se atualizam ao voltar", () => {
     "src/app/(dashboard)/contacts/page.tsx",
   ])("%s chama useAoVoltarParaOApp", (caminho) => {
     expect(ler(caminho)).toContain("useAoVoltarParaOApp(");
+  });
+});
+
+describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
+  it("Contatos poda a seleção às linhas que continuam na página", () => {
+    // A ação em massa age sobre a seleção inteira: id que saiu da página e
+    // continuou marcado seria apagado sem ninguém o ver marcado.
+    const contatos = ler("src/app/(dashboard)/contacts/page.tsx");
+    expect(contatos).toContain("podarSelecao(enriched)");
+    expect(contatos).toContain("podarSelecao([])");
+  });
+
+  it("o Funil descarta a resposta de outro funil e mantém o quadro quando a consulta falha", () => {
+    const funil = ler("src/app/(dashboard)/pipelines/page.tsx");
+    expect(funil).toContain("funilAbertoRef.current !== funil");
+    expect(funil).toContain("if (!etapas || !negocios) return;");
   });
 });

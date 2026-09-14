@@ -211,8 +211,24 @@ export default function ContactsPage() {
 
     setTotalCount(count);
 
+    // ⚠️ A recarga SILENCIOSA (volta ao app) preserva a seleção, mas a página
+    // pode ter mudado enquanto a pessoa estava fora — outro membro apagou,
+    // criou ou reetiquetou contatos. Id que saiu da página NÃO pode continuar
+    // selecionado: a ação em massa age sobre `selected` inteiro, e apagaria um
+    // contato que ninguém está vendo marcado (Codex, PR #216). Fica marcado só
+    // o que continua na tela.
+    const podarSelecao = (visiveis: { id: string }[]) => {
+      if (!opcoes?.silencioso) return;
+      const naPagina = new Set(visiveis.map((c) => c.id));
+      setSelected((prev) => {
+        const podada = new Set([...prev].filter((id) => naPagina.has(id)));
+        return podada.size === prev.size ? prev : podada;
+      });
+    };
+
     if (contactRows.length === 0) {
       setContacts([]);
+      podarSelecao([]);
       setLoading(false);
       return;
     }
@@ -239,6 +255,7 @@ export default function ContactsPage() {
     }));
 
     setContacts(enriched);
+    podarSelecao(enriched);
     setLoading(false);
   }, [supabase, page, search, selectedTagIds, tagsMap, t]);
 

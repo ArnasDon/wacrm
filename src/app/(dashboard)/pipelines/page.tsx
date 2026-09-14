@@ -199,20 +199,41 @@ export default function PipelinesPage() {
     return data ?? [];
   }, [supabase]);
 
-  const loadStages = useCallback(
-    async (pipelineId: string) => {
-      const { data } = await supabase
+  /**
+   * As etapas do funil. `null` = a consulta FALHOU, que é diferente de "funil
+   * sem etapa" (`[]`): a recarga de quem volta ao app mantém o quadro na
+   * falha em vez de esvaziá-lo (Codex, PR #216). Quem já usava `loadStages`
+   * continua recebendo `[]`.
+   */
+  const buscarEtapas = useCallback(
+    async (pipelineId: string): Promise<PipelineStage[] | null> => {
+      const { data, error } = await supabase
         .from("pipeline_stages")
         .select("*")
         .eq("pipeline_id", pipelineId)
         .order("position");
-      return data ?? [];
+      if (error) {
+        console.error("Failed to load stages:", error.message);
+        return null;
+      }
+      return (data ?? []) as PipelineStage[];
     },
     [supabase],
   );
 
-  const loadDeals = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[]> => {
+  const loadStages = useCallback(
+    async (pipelineId: string): Promise<PipelineStage[]> =>
+      (await buscarEtapas(pipelineId)) ?? [],
+    [buscarEtapas],
+  );
+
+  /**
+   * Os negócios do quadro. `null` = as duas consultas falharam (o select do
+   * quadro e o plano B) — mesmo motivo do `buscarEtapas`. Quem já usava
+   * `loadDeals` continua recebendo `[]`, com o toast.
+   */
+  const buscarNegocios = useCallback(
+    async (pipelineId: string): Promise<DealDoQuadro[] | null> => {
       // A MESMA consulta para os dois selects: qualquer mudança de escopo
       // (filtro, ordem) vale automaticamente no plano B — divergir os dois é
       // exatamente o tipo de bug que só aparece quando ninguém está olhando.
@@ -246,7 +267,9 @@ export default function PipelinesPage() {
       if (erroBasico) {
         // ⚠️ O plano B também pode falhar (rede, RLS) — descartar ESTE erro
         // reproduzia o defeito original: colunas "vazias" com cara de funil
-        // sem negócio. Toast + lista vazia explícita, como o handleDealMoved.
+        // sem negócio. Toast + `null`: o `loadDeals` o converte na lista
+        // vazia explícita de sempre, e a recarga da volta ao app mantém o
+        // quadro.
         console.error("Failed to load deals (select básico):", {
           message: erroBasico.message,
           details: erroBasico.details,
@@ -254,11 +277,17 @@ export default function PipelinesPage() {
           code: erroBasico.code,
         });
         toast.error(t("toastFailedLoadDeals"));
-        return [];
+        return null;
       }
       return mapear(basico);
     },
     [supabase, t],
+  );
+
+  const loadDeals = useCallback(
+    async (pipelineId: string): Promise<DealDoQuadro[]> =>
+      (await buscarNegocios(pipelineId)) ?? [],
+    [buscarNegocios],
   );
 
   // Falha em silêncio → lista vazia. A etiqueta some e o painel diz "nenhuma";
@@ -481,11 +510,31 @@ export default function PipelinesPage() {
 
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza as etapas e os negócios do funil aberto.
-  // ⚠️ Pelos `refresh*`, NUNCA pela carga inicial: aquela liga o `loading`, que
-  // desmonta o quadro — perde a rolagem e o retorno do inbox (ver retorno.ts).
+  // ⚠️ Três cercas (as duas últimas, do Codex no PR #216):
+  // - NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
+  //   perde a rolagem e o retorno do inbox (ver retorno.ts);
+  // - resposta de funil que já não está aberto é DESCARTADA: trocar de funil
+  //   com a recarga no ar deixaria o quadro de B com as etapas e os negócios
+  //   de A;
+  // - consulta que FALHOU mantém o quadro: voltar ao app antes de a rede do
+  //   celular voltar esvaziava o funil. Só grava com as DUAS consultas certas.
+  const funilAbertoRef = useRef(selectedPipelineId);
+  useEffect(() => {
+    funilAbertoRef.current = selectedPipelineId;
+  }, [selectedPipelineId]);
   useAoVoltarParaOApp(() => {
-    void refreshStages();
-    void refreshDeals();
+    const funil = selectedPipelineId;
+    if (!funil) return;
+    void (async () => {
+      const [etapas, negocios] = await Promise.all([
+        buscarEtapas(funil),
+        buscarNegocios(funil),
+      ]);
+      if (funilAbertoRef.current !== funil) return;
+      if (!etapas || !negocios) return;
+      setStages(etapas);
+      setDeals(negocios);
+    })();
   });
 
   const handleDealMoved = useCallback(

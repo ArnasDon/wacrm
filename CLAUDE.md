@@ -4518,9 +4518,21 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   tela até a resposta chegar. Tarefas ganhou `recarregarEmSilencio` (mantém a
   lista e as páginas abertas, e uma falha não troca a lista pelo aviso de
   erro); Contatos, `fetchContacts({ silencioso: true, preservarSelecao: true })`;
-  o Funil chama `refreshStages`/`refreshDeals`. ⚠️ No Funil, NUNCA a carga
-  inicial: ela liga o `loading`, que desmonta o quadro e perde a rolagem e o
-  retorno do inbox.
+  o Funil, uma recarga própria sobre `buscarEtapas`/`buscarNegocios`. ⚠️ No
+  Funil, NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
+  perde a rolagem e o retorno do inbox.
+- ⚠️⚠️ **A recarga silenciosa de Contatos PODA a seleção** às linhas que
+  continuam na página (`podarSelecao`). A página pode ter mudado enquanto a
+  pessoa estava fora, e a ação em massa age sobre `selected` inteiro: id que
+  saiu da tela e continuou marcado seria apagado sem ninguém o ver marcado
+  (Codex, PR #216).
+- ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas E
+  o mesmo funil aberto** (`funilAbertoRef`). `buscarEtapas`/`buscarNegocios`
+  devolvem `null` na FALHA — diferente de `[]`, funil vazio —, porque voltar
+  ao app antes de a rede do celular voltar esvaziava o quadro; e trocar de
+  funil com a recarga no ar deixava o quadro de B com os dados de A (Codex,
+  PR #216). `loadStages`/`loadDeals` continuam devolvendo `[]` para quem já
+  os chamava.
 - **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
   botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
   "0 vencidas"), e afirmar sobre número velho é pior que piscar.

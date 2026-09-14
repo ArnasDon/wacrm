@@ -343,11 +343,17 @@ build-args: |
   NEXT_PUBLIC_SITE_URL=https://crm.seudominio.com
   NEXT_PUBLIC_APP_LOCALE=pt-BR
   NEXT_PUBLIC_APP_NAME=CRM do Seu Escritório
+  NEXT_PUBLIC_APP_SHORT_NAME=Seu CRM
 ```
 
 Idiomas prontos: `pt-BR` e `en`, os dois completos. Para um logo próprio,
 ponha o arquivo em `public/marca/logo.svg` e acrescente
 `NEXT_PUBLIC_APP_LOGO_URL=/marca/logo.svg`.
+
+O `NEXT_PUBLIC_APP_SHORT_NAME` é o nome que aparece embaixo do ícone quando
+alguém instala o sistema no celular (no iPhone: Safari → Compartilhar →
+Adicionar à Tela de Início). O iPhone corta nome comprido ali; sem essa
+linha, vale o `NEXT_PUBLIC_APP_NAME`.
 
 No mesmo arquivo, ajuste `IMAGE` para o seu usuário do GitHub, e no
 `docker-stack.yml` ajuste o domínio, a rede e o resolvedor de certificado

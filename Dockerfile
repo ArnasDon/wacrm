@@ -36,15 +36,18 @@ ARG NEXT_PUBLIC_SUPABASE_URL
 ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
 ARG NEXT_PUBLIC_SITE_URL
 ARG NEXT_PUBLIC_APP_LOCALE=pt-BR
-# Nome e logo do produto. Sem valor, o app se chama "CRM" e usa o símbolo
-# padrão (src/lib/marca.ts) — instalação nova não precisa definir nada.
+# Nome, nome curto (o de baixo do ícone no celular) e logo do produto. Sem
+# valor, o app se chama "CRM" e usa o símbolo padrão (src/lib/marca.ts) —
+# instalação nova não precisa definir nada.
 ARG NEXT_PUBLIC_APP_NAME
+ARG NEXT_PUBLIC_APP_SHORT_NAME
 ARG NEXT_PUBLIC_APP_LOGO_URL
 ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL \
     NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY \
     NEXT_PUBLIC_SITE_URL=$NEXT_PUBLIC_SITE_URL \
     NEXT_PUBLIC_APP_LOCALE=$NEXT_PUBLIC_APP_LOCALE \
     NEXT_PUBLIC_APP_NAME=$NEXT_PUBLIC_APP_NAME \
+    NEXT_PUBLIC_APP_SHORT_NAME=$NEXT_PUBLIC_APP_SHORT_NAME \
     NEXT_PUBLIC_APP_LOGO_URL=$NEXT_PUBLIC_APP_LOGO_URL \
     NEXT_TELEMETRY_DISABLED=1
 

@@ -313,6 +313,7 @@ upstream sobrescrevê-los:
 | `src/components/layout/header.tsx` (Meu dia) | `"/agenda": "agenda"` no `pageTitles`, DEPOIS de `/agendadas` (o mapa casa por `startsWith` na ordem de inserção); e `"/meu-dia": "meuDia"` |
 | `src/components/layout/sidebar.tsx` (Meu dia, F3) | o item `/meu-dia` em `navItems`, fora do catálogo de perfis |
 | `src/middleware.ts` (Meu dia, F3) | `/meu-dia` em `protectedPaths` |
+| `src/app/layout.tsx` (app no celular, 14/09/2026) | `appleWebApp` com `NOME_CURTO_DO_APP` (o nome que o iPhone sugere embaixo do ícone) e a REMOÇÃO do `icons` do upstream: declarado, ele faz o Next ignorar os ícones de arquivo, e o `<head>` sai sem `apple-touch-icon` — um merge que o traga de volta tira o ícone do app instalado sem conflito nenhum (há pino). O manifesto e o ícone são arquivos NOSSOS (`manifest.ts`, `apple-icon.tsx`); ver a seção "App instalado no celular" |
 
 ⚠️ **Qual NÚMERO nesta conversa: o critério é a CONVERSA, nunca a conta.**
 `src/lib/inbox/canais-do-fio.ts` e `src/lib/cb-channels/cores.ts` (puros, com
@@ -4538,6 +4539,53 @@ marca do projeto original. O que morde código novo:
   de `SignupPage.description` e `Settings.invite.whatsappMessage`); onde não
   é, a frase diz "este CRM". Merge do upstream reintroduz "wacrm" em toda
   chave nova.
+
+⚠️ **App instalado no celular (14/09/2026): o manifesto existe por causa do
+ESCOPO.** `src/app/manifest.ts`, `src/app/apple-icon.tsx`,
+`NOME_CURTO_DO_APP` e `TAMANHOS_DO_ICONE` em `src/lib/marca.ts`, e o pino
+`src/app/manifest.test.ts`. Plano vivo em `docs/PLANO-app-no-celular.md`. O
+que morde código novo:
+
+- ⚠️⚠️ **`scope: "/"` não é detalhe.** Sem manifesto, o iPhone decide sozinho
+  quais endereços são do app, a partir da página em que a pessoa instalou
+  (regra não documentada) — e abrir uma conversa, que só troca `/inbox` por
+  `/inbox?c=…`, já cobria a tela com a moldura de navegador (X em cima;
+  voltar, recarregar e "abrir no Safari" embaixo; print do operador,
+  14/09). Estreitar o escopo devolve a moldura, e há pino.
+- ⚠️ **O iPhone lê manifesto e ícone NA INSTALAÇÃO.** Mudança de nome, ícone,
+  escopo ou tela de abertura não chega a quem já instalou: é apagar o ícone
+  e adicionar de novo, com login de novo (o app instalado guarda o login
+  separado do Safari). Avisar o operador a cada mudança aqui.
+- ⚠️ **O ícone é fundo até a borda, sem canto arredondado e sem
+  transparência** (`apple-icon.tsx`): o iPhone arredonda sozinho e pinta
+  transparência de preto. Não reaproveitar o desenho do `icon.tsx` (a aba do
+  navegador), que tem canto arredondado.
+- ⚠️ **`TAMANHOS_DO_ICONE` alimenta os DOIS lados** — os arquivos que o
+  `apple-icon` gera e os `src` do manifesto. Tamanho que só um lado conhece
+  vira ícone quebrado, sem erro. O endereço é `/apple-icon/<lado>`, a forma
+  que o `generateImageMetadata` dá.
+- ⚠️⚠️ **`metadata.icons` no layout DESLIGA os ícones de arquivo.** O Next só
+  injeta o `icon.tsx` e o `apple-icon.tsx` no `<head>` quando o metadata não
+  declara `icons` (`resolve-metadata.js`, `if (!resolvedMetadata.icons)`).
+  O upstream declarava `icons: { icon: [{ url: "/icon" }] }`, e com ele o
+  manifesto e as imagens saíam perfeitos e o `<head>` saía SEM
+  `apple-touch-icon` — medido em 14/09/2026; o iPhone improvisaria o ícone.
+  Foi removido, e há pino. A documentação do Next diz que o ícone de arquivo
+  "tem prioridade" — para `icons` é o contrário.
+- **O nome embaixo do ícone é `NEXT_PUBLIC_APP_SHORT_NAME`**, build-arg como o
+  nome longo ("CB CRM" no `pipeline.yml`, decisão do operador). Sem ele vale
+  o `NOME_DO_APP`, que o iPhone corta.
+- **Abre em `/inbox`** (decisão do operador: no celular o uso é atender). O
+  `id: "/"` fixo impede que trocar a tela de abertura faça o Android tratar o
+  app como outro. Quem abre deslogado passa pelo login e cai no Painel — o
+  login não guarda a página de origem.
+- **O logo do escritório ficou para depois** (decisão do operador): o ícone é
+  o símbolo genérico. Quando vier, entra por configuração (a regra da marca,
+  acima), nunca como arquivo do escritório no código — e cada pessoa
+  reinstala o ícone.
+- **Link recebido no WhatsApp abre no Safari, não no app instalado**: o
+  iPhone não deixa link abrir app da Tela de Início. Não tem conserto do
+  nosso lado.
 
 ⚠️ **`scripts/produto-gate.test.ts` reprova a nossa infraestrutura em código
 que viaja.** Proíbe `cbadvogados`, `CBAdvNet`, o IP da VPS, o ref do

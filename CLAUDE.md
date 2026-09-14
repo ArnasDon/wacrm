@@ -309,6 +309,7 @@ upstream sobrescrevê-los:
 | `src/lib/ai/types.ts`, `config.ts`, `structured.ts`, `defaults.ts`, `src/lib/cb-radar/worker.ts`, `src/app/api/ai/config/route.ts` | o modelo do Radar separado do modelo de chat (946): `radarModel` no tipo e em `CONFIG_COLUMNS`, o parâmetro `model` do `generateStructured`, `AI_PROVIDER_MODELS`, e a validação do modelo do Radar no save |
 | `src/components/settings/ai-config.tsx` | `<datalist>` de sugestão no campo Modelo e a frase de escopo com link para Integrações |
 | `src/app/(dashboard)/dashboard-shell.tsx` (Meu dia, 12/09/2026) | envolve o layout INTEIRO (menu, cabeçalho, página, heartbeat) na `<PortaDeEntrada key={user.id}>`, abaixo do `if (!user) return null` — nunca renderizar pedaço do app fora dela; e o "Loading..." traduzido (`DashboardShell.loading`) |
+| `dashboard-shell.tsx`, `inbox/page.tsx`, `message-composer.tsx`, `message-thread.tsx` e `src/app/globals.css` (teclado do celular, 14/09/2026) | a altura por `var(--altura-visivel,100dvh)` na casca e na caixa de entrada (um merge que devolva `h-screen`/`100vh` devolve o cabeçalho sumindo com o teclado) e o `useTelaAcimaDoTeclado()` na casca; no compositor, o Enter por `enterEnvia` e a dica por `useMediaQuery(MIDIA_DE_TOQUE)`; no fio, o `data-acima-do-teclado` na raiz, o `onTouchStart`/`onTouchMove` do contêiner (recolhe o teclado) e o `ResizeObserver` que mantém o fim; no CSS, a regra dos 16 px FORA de camada. Ver a seção "O teclado do celular" |
 | `src/hooks/use-auth.tsx` (Meu dia) | `sessionId` no contexto (o `session_id` do token, publicado no MESMO passo que `user`, no init e no listener) e o `signOut` do menu via `sairDesteAparelho` (escopo `local`, D4, 12/09/2026; erro vira toast e não navega) — além do que já era nosso (lente de simulação, perfis, `resolvedUserIdRef`) |
 | `src/components/layout/header.tsx` (Meu dia) | `"/agenda": "agenda"` no `pageTitles`, DEPOIS de `/agendadas` (o mapa casa por `startsWith` na ordem de inserção); e `"/meu-dia": "meuDia"` |
 | `src/components/layout/sidebar.tsx` (Meu dia, F3) | o item `/meu-dia` em `navItems`, fora do catálogo de perfis |
@@ -2285,6 +2286,51 @@ e as três já morderam de verdade.
   tela. O `min-w-0` no wrapper direto devolve o clamp e o `truncate` volta a
   funcionar. (Primo do caso `<ScrollArea>`/flex acima — mesma família:
   `min-width: auto` anulando o limite do pai.)
+
+⚠️ **O teclado do celular (14/09/2026): a conversa fica ACIMA dele, e o
+ajuste só liga dentro do fio.** `src/lib/celular/teclado.ts` (puro, com
+teste), `src/hooks/use-tela-acima-do-teclado.ts` (montado na casca), a regra
+dos 16 px no fim do `globals.css` e o `data-acima-do-teclado` na raiz do
+`message-thread.tsx`. Nasceu do relato do operador com o CRM instalado no
+iPhone: ao tocar na caixa de mensagem o cabeçalho da conversa subia para fora
+da tela e só voltava rolando, não havia como recolher o teclado, e, recolhido,
+a tela ficava "desconfigurada". O que morde código novo:
+
+- ⚠️⚠️ **A altura da casca e da caixa de entrada sai de `--altura-visivel`,
+  com queda em `100dvh` — nunca `h-screen`/`100vh`.** `100vh` não encolhe com
+  o teclado: o iPhone empurra a página inteira para cima até a caixa
+  aparecer, e o cabeçalho (o nome do cliente e o número por onde a resposta
+  sai) vai junto. O hook escreve a variável com a área visível e desfaz o
+  empurrão (`window.scrollTo(0, 0)`). Tela nova de altura cheia usa a mesma
+  variável.
+- ⚠️⚠️ **O ajuste só age com o foco DENTRO de `[data-acima-do-teclado]`**
+  (hoje, só o fio). Fora dele — formulário de outra tela, diálogo, o painel
+  do contato no celular — o empurrão do iPhone é o que revela o campo acima
+  do teclado, e desfazê-lo esconderia o campo em que a pessoa digita. Marcar
+  outra área é decisão a testar no aparelho.
+- ⚠️ **O hook lê no `requestAnimationFrame`**: no `focusout` o foco ainda não
+  chegou ao próximo campo, e ler ali diria "saiu da conversa" numa simples
+  troca de campo. Pinça de zoom (`visualViewport.scale` diferente de 1) não
+  ajusta nem desfaz, senão brigaria com o dedo.
+- ⚠️ **Encolher o fio pela base esconde as últimas mensagens**, porque o
+  `scrollTop` fica onde estava: um `ResizeObserver` no contêiner mantém no fim
+  quem estava colado no fim. A dependência é a CONVERSA, porque o contêiner
+  só existe com conversa aberta.
+- ⚠️⚠️ **Letra de 16 px em todo campo de aparelho de toque**, numa regra FORA
+  de camada no `globals.css`: abaixo disso o iPhone amplia a tela ao tocar no
+  campo e não desfaz. Sem camada ela vence as utilidades do Tailwind (`text-sm`
+  mora em `@layer utilities`); movida para `@layer base`, perderia para o
+  `text-sm`, e o zoom voltaria sem erro nenhum. A consulta é a de
+  `MIDIA_DE_TOQUE`, e há teste.
+- **No toque, o retorno pula linha e só o botão envia** (`enterEnvia`,
+  decisão do operador): o teclado do celular não tem Shift+Enter. A dica da
+  caixa troca para `typeMessagePlaceholderTouch`, que não fala de Shift+Enter.
+- **Arrastar a conversa para BAIXO recolhe o teclado** (`arrastoRecolheTeclado`,
+  o gesto do WhatsApp, pedido do operador); para cima não, porque é o gesto de
+  quem continua escrevendo. Mora no `onTouchMove` do contêiner, junto do
+  `liberarSalto`.
+- ⚠️ **O navegador do computador não testa nada disso**: a emulação de celular
+  não abre teclado virtual. A verificação é no aparelho, depois do deploy.
 
 ⚠️ **QUEM ABRE NEGÓCIO: os dois sentidos da conversa, decididos por GENTE.**
 Até 2026-08-31 só a mensagem RECEBIDA chamava `routeContactToPipeline` (que

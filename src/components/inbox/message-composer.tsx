@@ -46,6 +46,8 @@ import {
 } from "@/components/ui/dialog";
 import { useCan } from "@/hooks/use-can";
 import { useAuth } from "@/hooks/use-auth";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { enterEnvia, MIDIA_DE_TOQUE } from "@/lib/celular/teclado";
 import { custoDaAssinatura, nomeDePessoa } from "@/lib/assinatura/assinatura";
 import type { ConversationNote, MediaLibraryItem } from "@/types";
 import { InternalNoteBox } from "./internal-note-box";
@@ -282,6 +284,9 @@ export function MessageComposer({
   const [text, setText] = useState("");
   const [drafting, setDrafting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  // Aparelho de toque: a dica da caixa não fala de Shift+Enter, que o teclado
+  // do celular não tem (e lá o retorno pula linha — ver `enterEnvia`).
+  const toque = useMediaQuery(MIDIA_DE_TOQUE);
   /**
    * Mensagem escrita, ainda segurável. `null` = nada esperando.
    *
@@ -866,7 +871,10 @@ export function MessageComposer({
           return;
         }
       }
-      if (e.key === "Enter" && !e.shiftKey) {
+      // ⚠️ No aparelho de toque o retorno pula linha e só o botão envia —
+      // o teclado do celular não tem Shift+Enter (ver `enterEnvia`). Lido
+      // no momento da tecla, não no render: é a tecla que decide.
+      if (enterEnvia(e, window.matchMedia(MIDIA_DE_TOQUE).matches)) {
         e.preventDefault();
         handleSend();
       }
@@ -1759,7 +1767,9 @@ export function MessageComposer({
                 ? t("readOnlyPlaceholder")
                 : sessionExpired
                   ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                  : toque
+                    ? t("typeMessagePlaceholderTouch")
+                    : t("typeMessagePlaceholder")
             }
             disabled={sessionExpired || readOnly}
             rows={1}

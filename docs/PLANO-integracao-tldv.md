@@ -78,7 +78,7 @@ até o operador dizer o contrário):**
 
 ## 2. O que foi construído (Fase 1)
 
-### 2.1 Banco — `987_cb_tldv.sql`
+### 2.1 Banco — `0987_cb_tldv.sql`
 
 - `cb_tldv_config` (1 por conta, FECHADA para o navegador): `api_key`
   cifrada, `webhook_token` em claro (é endereço), `status`, `last_sync_at`,

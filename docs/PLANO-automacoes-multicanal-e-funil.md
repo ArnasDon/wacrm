@@ -68,7 +68,7 @@ sem escrever migração de dados.
 ### 2.1 Multi-canal — o que JÁ existe
 
 - **Escopo de canal por automação já existe e já tem tela.**
-  `automations.channel_ids uuid[]` (migration `903_cb_multicanal.sql:33`), lido
+  `automations.channel_ids uuid[]` (migration `0903_cb_multicanal.sql:33`), lido
   por `channelInScope()` em `src/lib/automations/engine.ts:740-749`, editável
   pelo `ChannelMultiSelect` em `src/components/automations/automation-builder.tsx:869-887`.
   Como é **um gatilho por automação**, esse escopo *já é* "qual conexão disparou".
@@ -122,7 +122,7 @@ sem escrever migração de dados.
   realtime, não há `pg_notify`, e o único consumidor é um hook que faz polling
   (`src/hooks/use-lead-events.ts`).
 - ⚠️ **Movimento entre funis emite `pipeline_changed`, NUNCA `stage_changed`**
-  (`912_cb_historico_de_atividade.sql:306-310`). Um gatilho "entrou na etapa X"
+  (`0912_cb_historico_de_atividade.sql:306-310`). Um gatilho "entrou na etapa X"
   que só escutar `stage_changed` **não dispara** quando o card vem de outro funil.
 
 ### 2.4 Muitos escritores, e alguns no navegador
@@ -148,7 +148,7 @@ banco. Os gatilhos novos seguem a mesma lição (ver §4.1).
 
 | Capacidade pedida | Existe? | Primitiva a reusar |
 |---|---|---|
-| Desligar a IA numa conversa | coluna sim, escritor de motor **não** | `conversations.ai_autoreply_disabled` (`029_ai_reply.sql:100`); copiar `src/app/api/ai/autoreply/[conversationId]/route.ts:75` |
+| Desligar a IA numa conversa | coluna sim, escritor de motor **não** | `conversations.ai_autoreply_disabled` (`0029_ai_reply.sql:100`); copiar `src/app/api/ai/autoreply/[conversationId]/route.ts:75` |
 | Religar a IA numa conversa | idem | mesma rota `:87-93` — decidir se zera `ai_reply_count` |
 | **Acionar "chatbot X"** | ❌ **não existe "X"** | `ai_configs` não tem coluna `name`; é **1 agente padrão por conta + 1 por canal**, chaveado por `(account_id, channel_id)`. E **não há API nem tela** para criar o por-canal — `/api/ai/config` fixa `channel_id IS NULL` em toda operação. → Feature futura pré-avaliada em §4.7 (D7) |
 | Acionar "robô X" (fluxo) | ❌ falta a função | `flows` **tem `name` e `id`**, e tem um `trigger_type: 'manual'` que **nunca dispara** — esperando exatamente isto. `startNewRun` (`src/lib/flows/engine.ts:1136`) é privado e tem assinatura de webhook |
@@ -157,7 +157,7 @@ banco. Os gatilhos novos seguem a mesma lição (ver §4.1).
 | Parar automação | ❌ | não há nenhum DELETE/cancel de `automation_pending_executions` fora do cron; o CHECK não tem `'cancelled'` |
 | Guarda de laço | ✅ | `src/lib/contacts/tag-chain.ts` — profundidade em `context.vars`, teto 3, **sobrevive ao `wait`** porque o contexto é JSONB |
 
-⚠️ **`idx_one_active_run_per_contact`** (`010_flows.sql:187`): **um fluxo ativo
+⚠️ **`idx_one_active_run_per_contact`** (`0010_flows.sql:187`): **um fluxo ativo
 por contato**. "Acionar robô Y" com um robô já rodando bate em `23505` — hoje
 tratado como "outro webhook começou a run" e devolvido como sucesso silencioso.
 
@@ -173,14 +173,14 @@ avaliados no disparo, nunca no resume.
   URL pública guardada no config JSONB, reusada em toda execução
   (`src/lib/flows/types.ts:105-126`, motor em `src/lib/flows/engine.ts:642-671`).
 - **Sem migration**: `automation_steps.step_type` é `TEXT` **sem CHECK**
-  (`006_automations.sql:58`).
+  (`0006_automations.sql:58`).
 - **Sem bloqueio técnico**: a Meta busca a URL sozinha a cada envio
   (`meta-api.ts:300`), a Evolution aceita a mesma URL pública.
 - ⚠️ **`engineSendMedia` não grava `media_url` na linha de `messages`**
   (`src/lib/flows/meta-send.ts:336-347`) — mídia enviada por fluxo aparece como
   balão vazio no inbox. Herdaríamos o defeito.
 - ⚠️ **Os três buckets são `public = true`** e a rota pública **não passa por
-  RLS** — o próprio cabeçalho da `900_cb_storage_restringe_listagem.sql:24-30`
+  RLS** — o próprio cabeçalho da `0900_cb_storage_restringe_listagem.sql:24-30`
   diz isso. Quem tiver a URL abre o arquivo, para sempre, sem login. Para
   documento de cliente de escritório de advocacia, é exposição real, e **não há
   nenhum helper de URL assinada no repo**. *(Risco aceito pelo operador — D12.)*

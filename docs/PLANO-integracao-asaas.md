@@ -122,7 +122,7 @@ reaparecem em linguagem simples na §9.
 
 | O que o operador pediu | O que reusa | O que é novo |
 | --- | --- | --- |
-| "Quando eu te der a chave" | o molde das três integrações: config fechada ao navegador, `encrypt()`, cartão em Integrações, cron do laço lento com rodízio (`987_cb_tldv.sql`, `src/lib/tldv/*`); as tabelas fechadas lidas por rota, como as do Calendly (977) | `cb_asaas_config`, `src/lib/asaas/{cliente,conexao,cartao}.ts` |
+| "Quando eu te der a chave" | o molde das três integrações: config fechada ao navegador, `encrypt()`, cartão em Integrações, cron do laço lento com rodízio (`0987_cb_tldv.sql`, `src/lib/tldv/*`); as tabelas fechadas lidas por rota, como as do Calendly (977) | `cb_asaas_config`, `src/lib/asaas/{cliente,conexao,cartao}.ts` |
 | "Verifique e faça o link dos clientes", por nome, CPF, CNPJ, telefone ou e-mail | `digitosDoTelefone` + `variantesDoNonoDigito` (`src/lib/contacts/telefone.ts`); `chaveDeTag` para nome; `normalizarEmail` e a ponte do Calendly, a mesma que fez o tl;dv ligar reuniões sozinho; a regra "um candidato só" (`contatoParaVincular`, `src/lib/tldv/vinculo.ts`) | o levantamento da Fase 0, `cb_asaas_clientes`, `src/lib/asaas/vinculo.ts`, a tela de revisão |
 | "Badge ou aviso na caixa de entrada, na conversa, com quais parcelas" | a régua pura + selo da linha (`src/lib/inbox/atraso.ts`); a faixa colada ao compositor (`ScheduledBar` e a faixa de divergência de canal em `message-thread.tsx`); `AbaDeIcone` com `badge` no painel; o chip "Em atraso" como molde do filtro; a rota em lote `/api/cb/execucoes/resumo` como molde da leitura | `src/lib/asaas/inadimplencia.ts`, as rotas de resumo e de contato, a faixa, a aba Cobranças, o filtro |
 | "A data da inadimplência e quantos dias" | a regra do `aguardando_desde` (972): o banco guarda o dado, a tela conta; `diaNoFuso`/`paraInstante` de `src/lib/agenda/fuso.ts` | `cb_asaas_cobrancas.vencimento` (DATE), `diasDeAtraso()` na leitura, e a lista de inadimplentes do cartão, ordenada pelos dias |
@@ -391,7 +391,7 @@ dois).
 
 ### 3.2 Banco — a 992 (config, aplicada) e a `9xx_cb_asaas.sql` (as duas do espelho)
 
-Molde: `987_cb_tldv.sql` para a forma, e `977_cb_calendly.sql` para o
+Molde: `0987_cb_tldv.sql` para a forma, e `0977_cb_calendly.sql` para o
 acesso. **Todas as tabelas do Asaas são FECHADAS ao navegador**: RLS ligada,
 nenhuma policy, `REVOKE ALL` de `PUBLIC`, `anon` e `authenticated`, e
 `GRANT ALL` a `service_role` por escrito. A tela lê por rotas em service role
@@ -400,7 +400,7 @@ conectado e se a leitura é fresca. Tudo `IF NOT EXISTS`, idempotente, com o
 cabeçalho explicando cada decisão.
 
 ```sql
--- 1) config — JÁ APLICADA como 992_cb_asaas_config.sql (12/09); reproduzida
+-- 1) config — JÁ APLICADA como 0992_cb_asaas_config.sql (12/09); reproduzida
 --    aqui só para leitura, NÃO entra na 9xx (migration aplicada não se reescreve)
 CREATE TABLE IF NOT EXISTS cb_asaas_config (
   account_id             uuid PRIMARY KEY REFERENCES accounts(id) ON DELETE CASCADE,
@@ -1607,7 +1607,7 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 
 **Fase 1a-conexão — a chave num lugar seguro e o levantamento** ✅ (12/09)
 
-- `supabase/migrations/992_cb_asaas_config.sql` — SÓ `cb_asaas_config`
+- `supabase/migrations/0992_cb_asaas_config.sql` — SÓ `cb_asaas_config`
   (§3.2). ⚠️ As outras duas tabelas ficaram de fora de propósito: a forma
   delas é o que o levantamento pode mudar (D2, D5, D9), e migration aplicada
   não se reescreve.
@@ -1638,10 +1638,10 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 
 **Fase 1a-espelho — cron, vínculo, listas** ✅ (12/09, à noite; no mesmo PR da conexão)
 
-- `supabase/migrations/994_cb_asaas_espelho.sql` — `cb_asaas_clientes` e
+- `supabase/migrations/0994_cb_asaas_espelho.sql` — `cb_asaas_clientes` e
   `cb_asaas_cobrancas` (§3.2), com a forma ajustada pelos números da Fase 0.
   As duas entraram em `rls-da-config-do-asaas.test.ts`.
-- `supabase/migrations/995_cb_asaas_ciclo_e_etiqueta.sql` — as duas colunas
+- `supabase/migrations/0995_cb_asaas_ciclo_e_etiqueta.sql` — as duas colunas
   que a revisão do PR #201 pediu: `cb_asaas_config.sincronizando_desde` (o
   CADEADO do ciclo, no molde do Calendly: `UPDATE … RETURNING` cercado,
   recolhimento em 10 min, posse nas escritas de fim de ciclo) e
@@ -1720,7 +1720,7 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 
 **Fase 2 — webhook** 🔧 (13/09)
 
-- `supabase/migrations/997_cb_asaas_webhook.sql` — as nove colunas do
+- `supabase/migrations/0997_cb_asaas_webhook.sql` — as nove colunas do
   webhook na config (token da URL em claro com índice único; token de
   autenticação CIFRADO; id, e-mail, estado, erro, religado, conferido,
   último evento) e `cb_asaas_eventos` (fechada; UNIQUE por conta e id do
@@ -1756,7 +1756,7 @@ cliente recebe os dois, e o texto padrão acima se apresenta por isso.
 
 **Fase 3 — régua** 🔧 (13/09, PR #206)
 
-- `supabase/migrations/998_cb_asaas_regua.sql` (§3.6): `cb_asaas_regua_envios`
+- `supabase/migrations/0998_cb_asaas_regua.sql` (§3.6): `cb_asaas_regua_envios`
   (com `tipo`, `marco`, `automation_log_id` e o CHECK de nove resultados),
   `cb_asaas_config.regua_ativa` + `regua_ativada_em` (D20) +
   `regua_intervalo_dias` (D11), `cb_asaas_clientes.regua_desligada` (+ por

@@ -112,7 +112,7 @@ normaliza chave explícita).
 
 | Arquivo | O que |
 | --- | --- |
-| `supabase/migrations/948_cb_campos_personalizados.sql` | acima |
+| `supabase/migrations/0948_cb_campos_personalizados.sql` | acima |
 | `src/lib/contacts/chave-do-campo.ts` (+ teste) | gêmeo TS do gerador SQL — 7 pares medidos NO banco fixados em teste de paridade |
 | `src/lib/contacts/custom-values.ts` | `salvarValoresDoContato`: **upsert + delete dos esvaziados** — substitui o delete-all+insert destrutivo |
 | `src/components/contacts/campo-personalizado-input.tsx` | input por tipo (text/datetime/select/number), compartilhado ficha↔painel; `opcoesDoCampo` tolerante a lixo; valor herdado fora da lista continua selecionável |
@@ -157,7 +157,7 @@ broadcast já os enxergam, e a futura API os lê pelo `field_key` da 948. **Sem
 seed em migration** — o catálogo padrão (10 campos) nasce pelo botão "Criar os
 10 campos padrão" na aba (admin), por conta.
 
-**Arquivos:** `supabase/migrations/949_cb_categoria_do_campo.sql` ·
+**Arquivos:** `supabase/migrations/0949_cb_categoria_do_campo.sql` ·
 `src/lib/contacts/campos-de-traqueamento.ts` (+ teste: catálogo é ponto-fixo
 do gerador de chave da 948 — senão o seed divergiria do gatilho — e faltantes
 comparados por CHAVE em qualquer categoria) · `painel-do-contato.tsx` (ordem

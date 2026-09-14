@@ -444,7 +444,7 @@ segundos, antes de tocar o Swarm.
 `supabase/migrations/`.
 
 **Contexto.** `src/types/index.ts:717`, `src/lib/whatsapp/transport/
-evolution-client.ts:140`, `supabase/migrations/901_cb_channels.sql:67` (só
+evolution-client.ts:140`, `supabase/migrations/0901_cb_channels.sql:67` (só
 comentários) e os testes `webhook-url.test.ts`, `assinatura.test.ts`,
 `notes/mentions.test.ts`.
 
@@ -922,7 +922,7 @@ deploy` manual.
 | `.github/workflows/evolution-lid-fix.yml` | imagem `leonardocabralb/…` | 1.4 | `repository_owner` |
 | `docker/evolution-lid-fix/Dockerfile` | "instância do escritório" nos comentários | 1.4 | reescrever |
 | `Dockerfile` | `NEXT_PUBLIC_SITE_URL` build-arg; default `pt-BR` | 1.3, 3.1 | tirar SITE_URL; `APP_NAME` |
-| `src/types/index.ts:717`, `evolution-client.ts:140`, `901_cb_channels.sql:67` | exemplo `cbadvogados` | 1.6 | `example.com` |
+| `src/types/index.ts:717`, `evolution-client.ts:140`, `0901_cb_channels.sql:67` | exemplo `cbadvogados` | 1.6 | `example.com` |
 | `src/lib/cb-channels/webhook-url.test.ts`, `assinatura.test.ts`, `notes/mentions.test.ts` | domínio/nome em fixture | 1.6 | trocar fixture |
 | `.env.local.example` | faltam 3 da Evolution; `ko` citado | 2.1, 2.4 | completar |
 | `src/app/(auth)/forgot-password/page.tsx` | aponta para rotas inexistentes | 2.2 | criar rotas |

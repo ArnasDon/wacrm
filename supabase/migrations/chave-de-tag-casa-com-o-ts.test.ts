@@ -21,7 +21,7 @@ import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
 const p = (arquivo: string) =>
   readFileSync(path.join(__dirname, arquivo), 'utf8');
 
-const SQL_984 = p('984_cb_chave_de_tag_normalizada.sql');
+const SQL_984 = p('0984_cb_chave_de_tag_normalizada.sql');
 
 const semComentarios = (sql: string) =>
   sql

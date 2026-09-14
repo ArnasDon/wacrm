@@ -413,7 +413,7 @@ como hipótese.
 RPC das trajetórias; e o cálculo inteiro coberto por teste ANTES de qualquer
 tela — para as Fases 1–3 serem só apresentação.
 
-**Migration `975_cb_degrau_do_funil.sql`** (conferir o número com
+**Migration `0975_cb_degrau_do_funil.sql`** (conferir o número com
 `ls supabase/migrations/` E `list_migrations` na hora — a lista do CLAUDE.md
 envelhece):
 1. `ALTER TABLE pipeline_stages ADD COLUMN degrau text` + CHECK (seção 3.1).
@@ -512,7 +512,7 @@ paginadas em uma página e o negócio movido em 31/08 aparece com trajeto de
   29/01 à meia-noite, e de ano bissexto; rodado também com
   `TZ=America/New_York`).
 
-**Arquivos tocados:** `supabase/migrations/975_cb_degrau_do_funil.sql`;
+**Arquivos tocados:** `supabase/migrations/0975_cb_degrau_do_funil.sql`;
 `src/lib/funil/{degraus,trajetoria,periodo,coorte,saude,carregar}.ts` (+
 `.test.ts` de cada); `src/types/index.ts` (`PipelineStage.degrau`,
 `account_id` opcional em `Pipeline`/`Deal`);
@@ -752,7 +752,7 @@ com `ads_read` (Configurações do negócio → Usuários do sistema → Gerar t
 escolhendo um app da Meta do BM — qualquer um serve); o id da conta
 (`act_…`). Sem o token nada aqui funciona, e o token é o único segredo.
 
-**Migration `976_cb_meta_ads.sql`** — três tabelas `cb_*`, todas com
+**Migration `0976_cb_meta_ads.sql`** — três tabelas `cb_*`, todas com
 `REVOKE ALL FROM anon` (931) e **escrita SÓ pela API** (REVOKE
 INSERT/UPDATE/DELETE de `authenticated`, como `cb_tasks`):
 - `cb_meta_ads_config` (uma linha por conta): `account_id` PK,

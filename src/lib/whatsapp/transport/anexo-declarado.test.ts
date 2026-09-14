@@ -107,7 +107,7 @@ describe("anexoGrandeDemais", () => {
 describe("o teto do código espelha a migration 986", () => {
   it("MEDIA_MAX_BYTES_ENTRADA === file_size_limit do chat-media", () => {
     const sql = readFileSync(
-      join(process.cwd(), "supabase/migrations/986_cb_anexo_grande.sql"),
+      join(process.cwd(), "supabase/migrations/0986_cb_anexo_grande.sql"),
       "utf8",
     );
     const m = sql.match(/SET file_size_limit = (\d+)/);

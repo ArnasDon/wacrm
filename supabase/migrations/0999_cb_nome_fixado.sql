@@ -26,9 +26,9 @@
 -- erro — o nome deixaria de acompanhar o WhatsApp até a coluna existir, sem
 -- quebrar a ingestão. Por isso a ordem é migration ANTES do deploy.
 --
--- ⚠️ 999 é o ÚLTIMO número que ordena depois das 900: o replay do CI aplica
--- as migrations em ordem de NOME, e `1000_` cairia entre a `042_` e a `900_`.
--- A próxima migration exige decidir a numeração antes de nascer.
+-- ⚠️ 999 foi o ÚLTIMO número de 3 dígitos que ordenava depois das 900 (o
+-- replay do CI aplica em ordem de NOME). Por isso todos os arquivos passaram
+-- a ter 4 dígitos (PR #209) — este arquivo nasceu `999_` e virou `0999_`.
 -- ============================================================
 
 ALTER TABLE public.contacts

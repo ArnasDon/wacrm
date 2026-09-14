@@ -183,7 +183,7 @@ visualizadores ao inbox).
 **Objetivo:** o operador lê `MARÇO 2024.pdf` na bolha, no fio, na prévia da lista
 e no arquivo baixado — em vez de "Documento".
 
-### Migration `969_cb_nome_do_anexo.sql`
+### Migration `0969_cb_nome_do_anexo.sql`
 
 ⚠️ **Conferir o número na hora** com `ls supabase/migrations/` **e**
 `list_migrations` (a CLAUDE.md manda os dois; a numeração já divergiu 3 vezes por
@@ -358,7 +358,7 @@ Custo: montar `InternalNoteBox` + a lista no `group-sidebar`, como as linhas
 
 ## Resposta à pergunta: por que grupo não tem as abas
 
-**Foi decisão, não limitação** — e está escrita na migration `906_cb_grupos.sql:130-135`,
+**Foi decisão, não limitação** — e está escrita na migration `0906_cb_grupos.sql:130-135`,
 que chama a fase de contenção de *"manter grupo fora do painel, da API v1 e do
 seletor de negócios"*, aplicada **antes** do código que grava o primeiro grupo.
 A ramificação vive em `inbox/page.tsx:962`, com o comentário: *"Painel próprio: a

@@ -56,6 +56,7 @@ import { ContactDetailView } from '@/components/contacts/contact-detail-view';
 import { ImportModal } from '@/components/contacts/import-modal';
 import { CustomFieldsManager } from '@/components/contacts/custom-fields-manager';
 import { useCan } from '@/hooks/use-can';
+import { useAoVoltarParaOApp } from '@/hooks/use-ao-voltar-para-o-app';
 import { lerExclusao, podeLimparSelecao, selecaoRestante } from '@/lib/contacts/exclusao';
 import { GatedButton } from '@/components/ui/gated-button';
 import { useTranslations } from 'next-intl';
@@ -140,9 +141,12 @@ export default function ContactsPage() {
     }
   }, [supabase]);
 
-  const fetchContacts = useCallback(async (opcoes?: { preservarSelecao?: boolean }) => {
+  const fetchContacts = useCallback(async (opcoes?: { preservarSelecao?: boolean; silencioso?: boolean }) => {
     const seq = ++fetchSeq.current;
-    setLoading(true);
+    // ⚠️ `silencioso` mantém a tabela na tela até a resposta chegar: é o
+    // recarregar de quem VOLTA para o app (`useAoVoltarParaOApp`), e ligar o
+    // `loading` trocaria as linhas pelo spinner a cada volta do WhatsApp.
+    if (!opcoes?.silencioso) setLoading(true);
     // The visible rows are about to change — drop any selection that
     // referred to the old page/search results so the bulk bar can't
     // act on rows the user can no longer see.
@@ -251,6 +255,13 @@ export default function ContactsPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     fetchContacts();
   }, [fetchContacts]);
+
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora atualiza a página aberta da tabela, sem trocá-la
+  // pelo spinner e sem perder a seleção de quem estava no meio de uma ação.
+  useAoVoltarParaOApp(() => {
+    void fetchContacts({ preservarSelecao: true, silencioso: true });
+  });
 
   function openAddForm() {
     setEditContact(null);

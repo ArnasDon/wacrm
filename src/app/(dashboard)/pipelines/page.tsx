@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import {
   VISTA_PADRAO,
   vistaVigente,
@@ -477,6 +478,15 @@ export default function PipelinesPage() {
     if (!selectedPipelineId) return;
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
+
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora atualiza as etapas e os negócios do funil aberto.
+  // ⚠️ Pelos `refresh*`, NUNCA pela carga inicial: aquela liga o `loading`, que
+  // desmonta o quadro — perde a rolagem e o retorno do inbox (ver retorno.ts).
+  useAoVoltarParaOApp(() => {
+    void refreshStages();
+    void refreshDeals();
+  });
 
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {

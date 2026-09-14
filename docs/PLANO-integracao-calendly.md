@@ -123,7 +123,7 @@ até o operador dizer o contrário):**
 
 ## 3. Desenho
 
-### 3.1 Migration `977_cb_calendly.sql`
+### 3.1 Migration `0977_cb_calendly.sql`
 
 - `cb_calendly_config` (uma linha por conta): `access_token` (PAT, cifrado),
   `signing_key` (cifrado), `webhook_token` (segredo de rota, único —
@@ -251,7 +251,7 @@ qualquer, até a conexão existir), passos nesta ordem (D6):
 
 - **Código:** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`,
   `cartao`, `cliente` puros; `conexao`, `processar` I/O) e
-  `src/lib/contacts/telefone.ts`; migration `977_cb_calendly.sql` + teste
+  `src/lib/contacts/telefone.ts`; migration `0977_cb_calendly.sql` + teste
   estrutural de RLS; motor (`calendly_booking`, `send_to_number`,
   `destinatario.ts`); rotas `/api/cb/calendly/{,config,reassinar,
   event-types,webhook/[token]}`; `calendly-card.tsx` em Integrações;

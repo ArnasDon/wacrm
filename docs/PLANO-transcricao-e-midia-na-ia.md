@@ -41,7 +41,7 @@ Radar, de que depende). O que mudou em relação ao texto original abaixo:
    `[áudio] …` em toda análise futura. Áudio da equipe segue como lacuna
    declarada, e o botão da bolha aparece só na fala do cliente.
 
-Migration: **943_cb_transcricao_de_audio.sql** (colunas `transcricao_*` em
+Migration: **0943_cb_transcricao_de_audio.sql** (colunas `transcricao_*` em
 `messages` + `transcricao` no CHECK de `mode`). ⚠️ Aplicar ANTES do deploy do
 merge — o worker do Radar passa a selecionar as colunas novas.
 

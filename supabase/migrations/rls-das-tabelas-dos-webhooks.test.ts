@@ -19,7 +19,7 @@ import path from 'node:path';
 const TABELAS = ['cb_webhooks', 'cb_webhook_eventos'] as const;
 
 const sql = fs.readFileSync(
-  path.join(__dirname, '982_cb_webhooks_de_entrada.sql'),
+  path.join(__dirname, '0982_cb_webhooks_de_entrada.sql'),
   'utf8'
 );
 

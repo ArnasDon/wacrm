@@ -157,7 +157,7 @@ arquivo** — por isso preferir módulos novos a reescrever o core.
 `git diff --stat upstream/main main`): `messages/en.json` é o campo de
 batalha — o upstream mexe nele a cada feature e nós temos tradução por cima.
 Também são nossos: `messages/pt-BR.json`, `CLAUDE.md`, `.gitignore`,
-`scripts/`, as migrations `037_evolution_transport.sql`, `900_cb_*` e
+`scripts/`, as migrations `0037_evolution_transport.sql`, `900_cb_*` e
 `901`/`902`/`903_cb_*`, a **integração Evolution API** (`src/lib/whatsapp/transport/`,
 `src/app/api/whatsapp/evolution/`, `src/components/settings/evolution-connect.tsx`,
 `src/lib/whatsapp/inbound-store.ts`), o **multi-canal** (`src/lib/cb-channels/`,
@@ -4535,15 +4535,27 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
 
 ## Workflow de migrations (Supabase)
 
-- **Nomenclatura:** `NNN_descricao_snake_case.sql`, sequencial de 3 dígitos
-  (o upstream está em `036`). ⚠️ **NÃO é timestamp.**
+- **Nomenclatura:** `NNNN_descricao_snake_case.sql`, sequencial de **4
+  dígitos** (o upstream numera com 3). ⚠️ **NÃO é timestamp.**
+  ⚠️⚠️ **Os 4 dígitos existem desde 14/09/2026, e são load-bearing.** O replay
+  do CI aplica os arquivos em ordem de NOME (lexicográfica): com 3 dígitos a
+  `999_` era o último nome possível — `1000_` ordenaria entre a `042_` e a
+  `900_`, rodaria antes das tabelas de que depende, e o replay vermelho TRAVA o
+  deploy. As 137 migrations foram renomeadas (`0001_` … `0998_`); o histórico
+  do Supabase não sentiu (registra por timestamp). Há teste cobrando o formato,
+  a unicidade do número e ordem-por-nome == ordem-numérica
+  (`supabase/migrations/nomes-das-migrations.test.ts`). **Todo merge do
+  upstream traz migration nova com 3 dígitos: renomeie para 4 no merge** — o
+  teste reprova até isso acontecer. Nas listas abaixo as migrations aparecem
+  pelo número ("a 912"), que continua identificando o arquivo `0912_`.
 - ⚠️ **Evitar colisão de número com o upstream:** como o original também numera
-  em sequência, se criarmos `037_...` e o upstream criar `037_...`, colidem no
-  merge. **Nossas migrations próprias usam a faixa reservada `900+`** e prefixo
-  `cb_` na descrição: `900_cb_<descricao>.sql`, `901_cb_...`. Assim ficam
-  isoladas da numeração do upstream.
+  em sequência, se criarmos `0037_...` e o upstream criar `037_...`, colidem no
+  merge. **Nossas migrations próprias usam a faixa reservada `0900+`** (e, a
+  partir de `1000`, a continuação dela) e prefixo `cb_` na descrição:
+  `1000_cb_<descricao>.sql`, `1001_cb_...`. Assim ficam isoladas da numeração
+  do upstream, que não passa de dezenas.
 - ⚠️ **Exceção existente:** a integração Evolution criou
-  `037_evolution_transport.sql` na sequência do upstream, não no `900+`. Já está
+  `0037_evolution_transport.sql` na sequência do upstream, não no `900+`. Já está
   aplicada e no `main` — **não renumerar**. É exceção conhecida; daqui em diante
   seguir o `900+`. Se o upstream um dia criar um `037_*`, resolver o conflito de
   número renomeando o **do upstream** no merge, nunca o nosso já aplicado.
@@ -5147,7 +5159,8 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
       diferente da do CI é como o PR #66 passou aqui e reprovou lá.
 - [ ] Estamos numa branch derivada de `main`? Não commitar direto no `main`.
 - [ ] Branch criada a partir de `main` atualizado (`git pull origin main`)?
-- [ ] Se mexer em schema: migration na faixa `900+`/`cb_` e check de drift.
+- [ ] Se mexer em schema: migration com 4 dígitos na faixa `0900+`/`1000+`,
+      prefixo `cb_`, e check de drift.
 - [ ] A migration aplica num banco **VAZIO**? Todo `REVOKE` tem `GRANT` de volta
       para quem precisa, e nenhuma conferência exige dado que só existe aqui?
       (Ver "Migration tem de aplicar num banco VAZIO".) Conferir com
@@ -5166,7 +5179,10 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
 - ❌ Commitar direto no `main` sem passar por branch de feature.
 - ❌ `git push` no `upstream` (é read-only).
 - ❌ Numerar migration nossa na sequência do upstream (`037`, `038`…) em vez da
-  faixa reservada `900+`.
+  faixa reservada `0900+`/`1000+`.
+- ❌ Criar migration com 3 dígitos (`999_x.sql`, `043_x.sql`). Com o resto do
+  diretório em 4, ela ordena fora do lugar no replay — e o teste
+  `nomes-das-migrations.test.ts` reprova.
 - ❌ Renomear/renumerar migration já aplicada.
 - ❌ Conferir privilégio numa migration sem tê-lo CONCEDIDO ali. O que vem do
   *default privilege* do Supabase não existe em banco novo — nove migrations

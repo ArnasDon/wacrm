@@ -48,7 +48,7 @@ Em linguagem simples, para você confirmar:
 
 - Menção só existe na anotação interna: `src/lib/notes/mentions.ts:1-2`. O dicionário não tem a palavra "comentário" e chama a nota de "Anotação interna" (`messages/pt-BR.json:356`).
 - O dono vê todas as telas: `src/lib/perfis/visibilidade.ts:36-37`. O Advogado não tem Painel (`src/lib/perfis/padroes.ts:35-46`), e o Observador é o Advogado sem as agendadas (`padroes.ts:90`). Os dois caem no inbox, pela ordem de `src/lib/perfis/catalogo.ts:74-91` e pelo desvio em `src/app/(dashboard)/dashboard-shell.tsx:52-58`.
-- O Painel é da conta inteira. As consultas filtram só por situação e data, nunca por pessoa (`src/lib/dashboard/queries.ts:118-126` e seguintes), e a RLS de conversas é da conta (`supabase/migrations/017_account_sharing.sql:414`). ⚠️ O comentário em `queries.ts:21-27` ("RLS scopes every query to the signed-in user") está **desatualizado**. É arquivo do upstream; não corrigir de carona.
+- O Painel é da conta inteira. As consultas filtram só por situação e data, nunca por pessoa (`src/lib/dashboard/queries.ts:118-126` e seguintes), e a RLS de conversas é da conta (`supabase/migrations/0017_account_sharing.sql:414`). ⚠️ O comentário em `queries.ts:21-27` ("RLS scopes every query to the signed-in user") está **desatualizado**. É arquivo do upstream; não corrigir de carona.
 
 ### 2.1 De onde sai cada número
 
@@ -56,13 +56,13 @@ Regra geral: **todo filtro "meu" usa o id do login** (`user.id`, que é `profile
 
 | Item do resumo | Onde mora | Regra de contagem | Função pura que já existe | Evidência |
 | --- | --- | --- | --- | --- |
-| **Novidades desde a sua última entrada** (D1 ✅ b) | `notifications.user_id`, `account_id`, `type`, `created_at` | `user_id = eu AND account_id = conta AND created_at > confirmação anterior` (guardada no registro local da F1, **por aparelho**). Separado por tipo: `note_mention` = "menções a você"; `task_assigned` + `task_reply` = "tarefas encaminhadas ou respondidas"; `conversation_assigned` = "conversas atribuídas a você". Sem registro no aparelho: as das **últimas 24 h**. Os dois filtros vão escritos, porque o contador do menu não filtra nenhum e confia só na RLS | — | `027_notifications.sql:4-26,40-41`; `use-unread-notifications.ts:25-28`; `944_cb_tarefas.sql:258-265`; `src/app/api/cb/notes/route.ts:215-219`; `src/app/api/cb/tasks/route.ts:269-274` |
+| **Novidades desde a sua última entrada** (D1 ✅ b) | `notifications.user_id`, `account_id`, `type`, `created_at` | `user_id = eu AND account_id = conta AND created_at > confirmação anterior` (guardada no registro local da F1, **por aparelho**). Separado por tipo: `note_mention` = "menções a você"; `task_assigned` + `task_reply` = "tarefas encaminhadas ou respondidas"; `conversation_assigned` = "conversas atribuídas a você". Sem registro no aparelho: as das **últimas 24 h**. Os dois filtros vão escritos, porque o contador do menu não filtra nenhum e confia só na RLS | — | `0027_notifications.sql:4-26,40-41`; `use-unread-notifications.ts:25-28`; `0944_cb_tarefas.sql:258-265`; `src/app/api/cb/notes/route.ts:215-219`; `src/app/api/cb/tasks/route.ts:269-274` |
 | **Clientes esperando resposta: atribuídos a você** | `conversations.assigned_agent_id` (UUID sem FK, grava o `user.id`), `status`, `aguardando_desde` (mantida por gatilho) | Consulta: `.select(CONVERSATION_SELECT)` + `assigned_agent_id = eu` + `status <> 'closed'`, e depois `normalizeConversations`. Em JS: `conversaNoEscopo(ctxReal, c)` e `atrasoDeResposta(c, agoraMs) !== null` (10 min ou mais, crítico a partir de 30; grupo e encerrada ficam de fora) | `conversaNoEscopo`, `canalDaConversa`, `atrasoDeResposta` | `src/lib/inbox/conversations.ts:9-10,51-55`; `responsavel-menu.tsx:128`; `src/lib/perfis/escopo.ts:104-114`; `src/lib/inbox/filtros.ts:434-437`; `src/lib/inbox/atraso.ts:28,36,55-70`; `017:414` |
 | **… sem responsável** (D7 ✅) | idem | `assigned_agent_id IS NULL AND status <> 'closed' AND aguardando_desde IS NOT NULL`; em JS, os mesmos dois filtros. Mostra também **a espera mais antiga**. Nunca somado ao "seus" | idem | `src/lib/conversations/reopen.ts:29-33,59`; `filtros.ts:41-44` |
 | Conversas atribuídas a você (contexto) | as mesmas linhas da primeira consulta | total das atribuídas (abertas + pendentes, grupos incluídos). As que estão num número **fora do perfil** entram como "N fora do seu perfil", sem link (D5) | `conversaNoEscopo` | `filtros.ts:538`; `inbox/page.tsx:683,950-956` |
-| Tarefas que vencem hoje | `cb_tasks.responsavel_user_id`, `status`, `vence_em` (date NOT NULL) | `responsavel_user_id = eu AND status = 'aberta' AND vence_em = diaLocal(agora)`. A régua é o **dia**: a tarefa das 9h continua "hoje" às 18h. Lista até 5 | `diaLocal`, `situacaoDoPrazo`, `horaJaPassou` (só destaque) | `src/lib/tasks/prazo.ts:33-38,94-101,116-128`; `944_cb_tarefas.sql:92,95,146` |
+| Tarefas que vencem hoje | `cb_tasks.responsavel_user_id`, `status`, `vence_em` (date NOT NULL) | `responsavel_user_id = eu AND status = 'aberta' AND vence_em = diaLocal(agora)`. A régua é o **dia**: a tarefa das 9h continua "hoje" às 18h. Lista até 5 | `diaLocal`, `situacaoDoPrazo`, `horaJaPassou` (só destaque) | `src/lib/tasks/prazo.ts:33-38,94-101,116-128`; `0944_cb_tarefas.sql:92,95,146` |
 | Tarefas vencidas | idem | `… AND vence_em < diaLocal(agora)`, com "venceu há N dias". Concluída nunca conta, e "sem prazo" não existe | idem | `prazo.ts:96-101`; `944:92` |
-| **Reuniões na agenda do CRM** de hoje | `cb_meetings.owner_user_id`, `status`, `starts_at`, `contato_nome`, `local` | `owner_user_id = eu AND status = 'agendada' AND starts_at ∈ [hoje 00:00, amanhã 00:00)` em `America/Sao_Paulo`, intervalo **semiaberto**. Itens com hora, título, cliente e local | `hojeNoFuso`, `paraInstante`, `somarDias` (da agenda, não a de `prazo.ts`), `horaNoFuso`, `FUSO_PADRAO` | `src/lib/agenda/grade.ts:26,134-136`; `src/lib/agenda/fuso.ts:28,159,198`; `945_cb_agenda_de_reunioes.sql:91-92,104,108,111,140` |
+| **Reuniões na agenda do CRM** de hoje | `cb_meetings.owner_user_id`, `status`, `starts_at`, `contato_nome`, `local` | `owner_user_id = eu AND status = 'agendada' AND starts_at ∈ [hoje 00:00, amanhã 00:00)` em `America/Sao_Paulo`, intervalo **semiaberto**. Itens com hora, título, cliente e local | `hojeNoFuso`, `paraInstante`, `somarDias` (da agenda, não a de `prazo.ts`), `horaNoFuso`, `FUSO_PADRAO` | `src/lib/agenda/grade.ts:26,134-136`; `src/lib/agenda/fuso.ts:28,159,198`; `0945_cb_agenda_de_reunioes.sql:91-92,104,108,111,140` |
 
 **Aonde cada item leva.** A tela de destino **abre**, mas nem sempre no recorte que o número conta:
 
@@ -73,16 +73,16 @@ Regra geral: **todo filtro "meu" usa o id do login** (`user.id`, que é `profile
 
 O que **não** existe e muda o desenho:
 
-- **Reunião não gera notificação.** O tipo de notificação aceita só quatro valores (`944_cb_tarefas.sql:258-265`), então o resumo lê `cb_meetings` direto.
+- **Reunião não gera notificação.** O tipo de notificação aceita só quatro valores (`0944_cb_tarefas.sql:258-265`), então o resumo lê `cb_meetings` direto.
 - **O Calendly não grava na agenda.** Só gravam em `cb_meetings` as rotas `src/app/api/cb/agenda/route.ts`, `src/app/api/cb/agenda/[id]/route.ts`, `src/app/api/v1/meetings/route.ts` e `src/app/api/v1/meetings/[id]/route.ts`. Nada em `src/lib/calendly` a cita (grep vazio). O log do Calendly (`cb_calendly_eventos`) não serve para contar as reuniões de hoje:
-  - é fechado ao navegador (`977_cb_calendly.sql:99-101`);
+  - é fechado ao navegador (`0977_cb_calendly.sql:99-101`);
   - não tem responsável (`977:70-93`);
   - só grava `invitee.created` (`src/lib/calendly/payload.ts:24,151`), então cancelamento não fica registrado;
   - reagendamento vira linha nova (`payload.ts:182`; UNIQUE por `invitee_uri` em `977:93`), e a linha antiga fica com o horário velho.
-- **Não há registro de "último acesso" no servidor**: não existe `last_sign_in` no código, e `member_presence.last_seen_at` avança a cada 30 s (`024_member_presence.sql:83-87`). Para a D1(b) basta o registro **local** que a F1 já grava: um campo a mais, sem migration, valendo **por aparelho**.
+- **Não há registro de "último acesso" no servidor**: não existe `last_sign_in` no código, e `member_presence.last_seen_at` avança a cada 30 s (`0024_member_presence.sql:83-87`). Para a D1(b) basta o registro **local** que a F1 já grava: um campo a mais, sem migration, valendo **por aparelho**.
 - **`read_at` só muda na página de Notificações** (`notifications/page.tsx:118,160`), então "não lidas" **acumula** avisos já tratados. Esse número já aparece no menu o dia inteiro (`sidebar.tsx:145,323-326`). Por isso a D1 recomenda "novidades".
 - **Atribuição quase não acontece neste escritório.** O código registra 63 de 64 conversas sem responsável (`filtros.ts:41-44`). Cliente e celular pareado reabrem a conversa **gravando responsável nulo** (`reopen.ts:29-33,59`), e a equipe responde pelo celular (1.041 mensagens pelo celular contra 8 pelo CRM: `CLAUDE.md:2103`). Por isso "atribuídas a você" tende a zero, e a fila "sem responsável" entra (D7).
-- **Parte das atribuições não gera aviso.** Autoatribuir não avisa (`027_notifications.sql:77-80`). Reabrir pelo cabeçalho do fio atribui a quem reabriu (`src/lib/conversations/situacao.ts:17-25`), também sem aviso. O resumo conta as **conversas**, não os avisos.
+- **Parte das atribuições não gera aviso.** Autoatribuir não avisa (`0027_notifications.sql:77-80`). Reabrir pelo cabeçalho do fio atribui a quem reabriu (`src/lib/conversations/situacao.ts:17-25`), também sem aviso. O resumo conta as **conversas**, não os avisos.
 - **Contagem dupla com tarefas.** Todo encaminhamento gera um aviso `task_assigned` **e** uma tarefa. Os dois blocos continuam separados e não se somam.
 
 ### 2.2 Números medidos em produção
@@ -294,7 +294,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 | 17 | Fila "sem responsável" no resumo **de todos** | é onde está a espera real (§2.1) | baixo | **v1 se D7 = sim** |
 | 18 | Agendadas minhas que falharam | pendência real de quem agendou | baixo | depois |
 | 19 | Registrar no servidor quem confirmou e quando | só se precisar de prova de ciência | migration + rota + retenção (LGPD) | fora (D12) |
-| 20 | "Reuniões sem baixa" (dono = eu, `agendada`, início antes de hoje, últimos 7 dias) | a agenda deve refletir o que aconteceu. Só protege do follow-up indevido quando o lembrete "depois" tem deslocamento longo (`952_cb_lembrete_depois_de_realizada.sql:11-12,55-56`) | baixo | depois, condicionada à F0 e à D13 |
+| 20 | "Reuniões sem baixa" (dono = eu, `agendada`, início antes de hoje, últimos 7 dias) | a agenda deve refletir o que aconteceu. Só protege do follow-up indevido quando o lembrete "depois" tem deslocamento longo (`0952_cb_lembrete_depois_de_realizada.sql:11-12,55-56`) | baixo | depois, condicionada à F0 e à D13 |
 | 21 | Agendamentos do Calendly de hoje no resumo | se o escritório não lança na agenda (D13) | rota no servidor (a tabela é fechada) + regra de dono (não há responsável) + tratar cancelamento e reagendamento, senão conta reunião que não vai acontecer | depende da D13 |
 
 ---
@@ -506,7 +506,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 7. **Conversa de grupo tem `channel_id` nulo**; o canal está em `cb_groups`. → `conversaNoEscopo` em JS, com o embed de `CONVERSATION_SELECT`.
 8. **`new Date(vence_em)` recua um dia no Brasil.** → Comparar strings com `diaLocal` (tarefas) e usar `FUSO_PADRAO` (agenda).
 9. **O fim 23:59 do `periodoDaVisao`** (`grade.ts:128-129`) perde a reunião de 23:59:30. → Intervalo semiaberto.
-10. **O título da notificação de atribuição é gravado em inglês** pelo gatilho (`027_notifications.sql:100`). → Texto por `type` com o dicionário, nunca o `title` cru.
+10. **O título da notificação de atribuição é gravado em inglês** pelo gatilho (`0027_notifications.sql:100`). → Texto por `type` com o dicionário, nunca o `title` cru.
 11. **Tela nova no catálogo nasce invisível** e exige quatro mapas `Record<TelaId>` mais backfill. → `/meu-dia` fora do catálogo.
 12. **`if (!user) return null` e o spinner remontam o que vem abaixo** (`dashboard-shell.tsx:69-80`). O "Ver como" pendente sobe `profileLoading` (`use-auth.tsx:738`), e a troca de usuário ergue o spinner (`use-auth.tsx:354`). → A confirmação fica no localStorage por usuário, mais o `Set` de módulo "liberado nesta carga".
 13. **Abrir a entrada no meio do uso desmonta o compositor:** o rascunho se perde, o anexo preparado é apagado do bucket (`message-composer.tsx:482-490`) e a mensagem na janela de desfazer é **enviada** (`805-816`). → Trava de mão única; na F2, o gesto que dispara a expiração leva `stopPropagation()`.
@@ -537,7 +537,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 - **Painel de gestão (`/dashboard`) pessoal**: todas as consultas dele são da conta, e ele continua como está.
 - **Migrar `middleware.ts` para `proxy.ts`**: tarefa própria, não vai de carona.
 - **"Inactivity timeout" do Supabase como mecanismo principal**: mede renovação de token, não uso, e não serve para a aba aberta. Entra como **complemento** para o navegador fechado (D11).
-- **Migration futura** (sugestões 14 e 19): o número será confirmado com `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de criar. Hoje o último arquivo é `990_cb_instagram_config.sql`; não deduzir a partir daqui.
+- **Migration futura** (sugestões 14 e 19): o número será confirmado com `ls supabase/migrations/` **e** `list_migrations` imediatamente antes de criar. Hoje o último arquivo é `0990_cb_instagram_config.sql`; não deduzir a partir daqui.
 
 ---
 

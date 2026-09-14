@@ -596,7 +596,7 @@ não trocava até recarregar. Mais um motivo para mesclar o #84 logo.
 
 > **A regra.** `contacts.user_id` e `conversations.user_id` são
 > `NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE`
-> (`001_initial_schema.sql:38` e `:142`), e `conversations.contact_id`
+> (`0001_initial_schema.sql:38` e `:142`), e `conversations.contact_id`
 > cascateia de novo (`001:143`). Todo caminho que CRIA contato ou conversa tem de gravar o **dono da
 > conta** (`accounts.owner_user_id`), nunca o membro que clicou — senão, no dia
 > em que essa pessoa for apagada do `auth.users`, o contato/conversa é apagado
@@ -653,9 +653,9 @@ usuário pelo dashboard do Supabase e observar a conversa e as mensagens sumirem
 
 **Armadilhas.** A RLS **permite** gravar o dono da conta: a policy original de
 `conversations` era `"Users can manage own conversations" … auth.uid() = user_id`
-(`001_initial_schema.sql:158`), substituída pelas
+(`0001_initial_schema.sql:158`), substituída pelas
 `conversations_select/insert/update/delete … is_account_member(account_id, …)`
-em `017_account_sharing.sql:413-417`. Ou seja, o conserto **não precisa de
+em `0017_account_sharing.sql:413-417`. Ou seja, o conserto **não precisa de
 migration**. Conferido.
 
 E a pergunta do passo 2 já tem resposta: **esta rota não cria contato.** O
@@ -2288,8 +2288,8 @@ re-achando o mesmo e não abra PR desnecessário.
 **Por que é falso:** o repo tem DOIS padrões, separados por CONSUMIDOR, não
 por recência. Tabela com escritor server-side concede ao `service_role` (941,
 944, 945, 953, 963, 966); tabela escrita **só pelo navegador sob RLS** não —
-e sempre foi assim: `924_cb_favoritar.sql:91-93` e
-`918_cb_notas_na_conversa.sql:123-124` têm a forma idêntica e replayam verdes
+e sempre foi assim: `0924_cb_favoritar.sql:91-93` e
+`0918_cb_notas_na_conversa.sql:123-124` têm a forma idêntica e replayam verdes
 no mesmo CI. Os únicos consumidores de `cb_inbox_saved_filters` e
 `cb_inbox_filtro_padrao` são `use-filtros-salvos.ts` (cliente do NAVEGADOR) e
 o parser puro; zero ocorrências em `src/app/api/`. Além disso, o mecanismo de
@@ -2327,7 +2327,7 @@ true; input desabilitado nunca chama `mudou`, logo `rascunhoRef.current`
 continua igual ao valor de montagem e a descarga morre em
 `salvamento-de-campo.ts:133` (`if (!valorMudou(desejado, valor)) return`) —
 comportamento fixado por teste. E a RLS de `contact_custom_values`
-(`017_account_sharing.sql:502-506`) exige `agent`+ no `USING` **e** no
+(`0017_account_sharing.sql:502-506`) exige `agent`+ no `USING` **e** no
 `WITH CHECK`, o mesmo limiar de `canSendMessages`, lido da mesma coluna.
 **Resíduo legítimo:** sobra a assimetria de altitude (a ficha checa papel, o
 painel checa dados carregados). Sem caminho de exploração.
@@ -2380,7 +2380,7 @@ avaliado e rejeitado.
 | id | Onde | O que | Carona natural |
 | --- | --- | --- | --- |
 | **M1** | `custom-fields-manager.tsx:265` e `:466` | `handleCreate` e `handleSeed` gravam `user_id: user.id` em `custom_fields`, que é CASCADE para `auth.users` e leva `contact_custom_values` junto. **Pré-existente**, não é do #78 (o diff mostra a linha como contexto). Mesma família do #11/#12, severidade menor (o dado é definição de campo + valores, não histórico de conversa) | F2 — ✅ PR #90 (`ownerUserId` nos dois; `custom_fields` entrou na varredura; E2E: campo fixture criado com `user_id` do dono e apagado) |
-| **M24** | `supabase/migrations/001_initial_schema.sql` (+006, 010, 035) | ⚠️ **Irmão da F2 e da 971, e é DECISÃO DE PRODUTO.** `tags`, `message_templates`, `pipelines`, `whatsapp_config`, `broadcasts`, `automations`, `automation_logs`, `automation_pending_executions`, `flows`, `flow_runs` e `quick_replies` têm o MESMO `user_id … ON DELETE CASCADE` para `auth.users` que a F2 fechou em contatos/conversas/campos — e `pipelines` cascateia `deals`. São carimbados com quem CRIOU (upstream), e telas do upstream filtram por essa coluna (`tag-manager`, `template-manager`, `settings-overview` usam `.eq('user_id', user.id)`): apagar o login de um admin que criou o funil apaga o funil e os negócios. Reparentar para o dono muda o que cada pessoa vê nessas telas; converter as FKs para `SET NULL` exige `user_id` anulável e revisar quem lê. Medido em 01/09: 0 linhas fora do dono em TODAS elas (conta de um membro) — dormente até o segundo membro criar algo | 🔵 **decisão do operador** — não é carona: a 971 deixou de fora de propósito |
+| **M24** | `supabase/migrations/0001_initial_schema.sql` (+006, 010, 035) | ⚠️ **Irmão da F2 e da 971, e é DECISÃO DE PRODUTO.** `tags`, `message_templates`, `pipelines`, `whatsapp_config`, `broadcasts`, `automations`, `automation_logs`, `automation_pending_executions`, `flows`, `flow_runs` e `quick_replies` têm o MESMO `user_id … ON DELETE CASCADE` para `auth.users` que a F2 fechou em contatos/conversas/campos — e `pipelines` cascateia `deals`. São carimbados com quem CRIOU (upstream), e telas do upstream filtram por essa coluna (`tag-manager`, `template-manager`, `settings-overview` usam `.eq('user_id', user.id)`): apagar o login de um admin que criou o funil apaga o funil e os negócios. Reparentar para o dono muda o que cada pessoa vê nessas telas; converter as FKs para `SET NULL` exige `user_id` anulável e revisar quem lê. Medido em 01/09: 0 linhas fora do dono em TODAS elas (conta de um membro) — dormente até o segundo membro criar algo | 🔵 **decisão do operador** — não é carona: a 971 deixou de fora de propósito |
 | **M22** | `message-composer.tsx:684` | ⚠️ **Irmão do #01, e mais provável que ele.** O efeito de troca de conversa limpa `pendente`, agendamento, seletor e anotação — mas **não** `draft`. O anexo JÁ POUSADO do cliente A continua montado no compositor de B, e `sendDraft` chama o `onSendMedia` de B. Não exige rede lenta: basta anexar e trocar de conversa. O #74 fechou o upload EM VOO e deixou o rascunho pousado | **F1, com o #01** — ✅ resolvido no PR #86 (o efeito de troca descarta o rascunho e limpa o estado) |
 | **M2** | `radar/page.tsx:110` | `const { channels } = useChannels()` sem `loading` → "canal com Radar desligado" derivado de lista vazia; análise de canal PESSOAL desligado aparece na tela. Exceção deliberada à convenção "vazio = todos" (privacidade, 941) | F5 — ✅ PR #95: `canaisFalharam` esconde TODO insight com canal (medido: 2 de 23 sob falha) e a carga dos canais entra no spinner |
 | **M3** | `use-radar.ts:259` | análise `failed` tem `analisado_em` NULO; com `.order(..., nullsFirst:false).limit(200)` ela é a PRIMEIRA a cair do teto, e não há consulta de resgate (só pendência tem). A garantia "failed aparece independente de gatilho" expira em silêncio | F4 — ✅ PR #96 (caiu no vão da F4 e foi registrado como pendente na revisão de 01/09; agora tem consulta de resgate própria, ordenada por `created_at` porque `analisado_em` é justamente a coluna nula) |
@@ -2400,7 +2400,7 @@ avaliado e rejeitado.
 | **M17** | `964:129` | a conferência da migration pega policy RENOMEADA (`count < 12`) mas não policy ADICIONADA — um merge do upstream que reintroduza `"Users can manage own broadcasts"` reabre o furo com a migration imprimindo "OK" | ✅ PR #98 — a conferência passou a perguntar pelo CONJUNTO, em duas metades: `verify-schema.sql` (banco replayado; medido no Postgres 16 local — limpo passa, policy intrusa sai com exit 3 nomeando a policy) e um teste estrutural que roda em `verificar`, o job que gateia o deploy |
 | **M18** | `perfis-panel.tsx:538` | a grade de canais do perfil não tem a saída "Todos" nem o rótulo de id órfão que o `ChannelMultiSelect` já tem → recorte órfão fica irremovível e a lista de perfis afirma o contrário na mesma tela | ✅ PR #99 — passou a usar o `ChannelMultiSelect` (tem o item "Todos", que zera o array inteiro) e a linha resume por `summarizeScope`. Medido com perfil fixture de id órfão: a lista dizia "1 conexão" e passou a dizer "conexões que não existem mais"; o recorte foi limpo PELA TELA (`channel_ids` de `['0000…ff']` para `[]` no banco) — antes era impossível. Fixture apagado |
 | **M19** | `agenda/[id]/route.ts:245` | `channel_id` torto no PATCH vira `null` (desvincula o canal) e devolve 200, enquanto o mesmo PR aplicou "presente e torto = 400" a `owner_user_id` e `contact_id` | F9 — ✅ PR #96 (presente e torto = 400, como `owner_user_id`/`contact_id` na mesma rota; `null` explícito continua desvinculando) |
-| **M20** | `965_cb_transferencia_limpa_perfil.sql` | conserta a CAUSA e não faz backfill: um `profiles` que já esteja `owner` + `perfil_id` preenchido (o estado que o cabeçalho chama de irremovível) permanece assim para sempre | ⏭️ **ENCERRADO POR MEDIÇÃO (01/09)**: `profiles` tem UMA linha, `owner` com `perfil_id` NULO — zero linhas no estado divergente. As duas portas que o criavam estão fechadas (962 no `set_member_role`, 965 na transferência), então o backfill só alcançaria linhas anteriores a elas, e não há nenhuma. A migration seria um UPDATE sem efeito, replayado para sempre pelo CI |
+| **M20** | `0965_cb_transferencia_limpa_perfil.sql` | conserta a CAUSA e não faz backfill: um `profiles` que já esteja `owner` + `perfil_id` preenchido (o estado que o cabeçalho chama de irremovível) permanece assim para sempre | ⏭️ **ENCERRADO POR MEDIÇÃO (01/09)**: `profiles` tem UMA linha, `owner` com `perfil_id` NULO — zero linhas no estado divergente. As duas portas que o criavam estão fechadas (962 no `set_member_role`, 965 na transferência), então o backfill só alcançaria linhas anteriores a elas, e não há nenhuma. A migration seria um UPDATE sem efeito, replayado para sempre pelo CI |
 | **M21** | vários (detalhe abaixo) | pacote de reuso/simplificação — **cada item com sua âncora**, senão a "carona" não acontece | ✅ PR #102 (menu de blocos + código morto) e **#103** (o item grande: as pastilhas do painel passaram a sair do `descreverFiltro`, acabando com a segunda cópia que o cabeçalho do módulo negava existir). ⚠️ Três itens da lista NÃO eram o que a nota dizia — ver as correções abaixo da tabela |
 | **M23** | `src/lib/cb-radar/worker.ts:428` | `if (agErr) throw` na consulta de agendadas derruba a análise INTEIRA e queima 1 das 3 tentativas, por um refinamento opcional da régua. A metade gêmea (`use-radar.ts:203`) degrada com `console.warn`, de propósito. Três vezes na mesma conversa e a linha congela em `failed` | F4 — ✅ PR #89 (o `throw` do erro da consulta de agendadas ficou, com a DIREÇÃO do erro documentada no worker: degradar apagaria o alarme) |
 

@@ -266,7 +266,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
 | `src/lib/whatsapp/inbound-store.ts` | idem, no lado Evolution |
-| `src/lib/automations/engine.ts` | `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome |
+| `src/lib/automations/engine.ts` | `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome. Mais o gancho `antesDeExecutar` de `dispararAutomacoes` (chamado uma vez, antes da primeira automação que passou nos recortes) |
 | `src/app/api/whatsapp/webhook/route.ts`, `src/lib/whatsapp/inbound-store.ts` (×2) e `src/lib/whatsapp/send-message.ts` | a chamada a `routeContactToPipeline`. ⚠️ São **QUATRO** call sites: os dois de ingestão (não há função compartilhada de abrir conversa — enxertar só num faz a feature valer só num transporte, e produção roda Evolution), o `persistDeviceMessage` do celular pareado e o núcleo de envio. Ver "Quem abre negócio" abaixo |
 | `src/lib/whatsapp/inbound-store.ts` (`persistDeviceMessage`) | o `followConversationChannel` que aponta a conversa para o número por onde a EQUIPE falou. Sem ele a conversa nasce com `channel_id` nulo e o CRM responde pelo canal PADRÃO — o advogado aborda pelo Jurídico e o sistema responderia pelo Comercial |
 | `src/lib/flows/engine.ts` | `findEntryFlow` por canal, `flow_runs.channel_id`, try/catch nos nós interativos, e o parâmetro opcional `substituicao` de `startFlowForContact` (955): o start manual carimba a run substituída como gente (`stopped_by_agent`/`replaced_by_agent`), não como regra |
@@ -3382,9 +3382,14 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   EMPRESA, o perfil do WhatsApp diz o nome da empresa, e quem vai à reunião
   é a pessoa. Nunca segura o aviso ao advogado: falha vira aviso no
   `detalhe` do evento. O que morde:
-  - ⚠️⚠️ **A FICHA antes do disparo, o CARD depois** (`processar.ts`). A
-    ficha precisa estar renomeada quando a automação fala
-    (`{{contact.name}}`). O card NÃO: contato sem card — o caso comum da ficha
+  - ⚠️⚠️ **A FICHA antes da primeira automação, o CARD depois** (`processar.ts`).
+    A ficha precisa estar renomeada quando a automação fala
+    (`{{contact.name}}`) — e só muda se alguma automação VAI RODAR: é o gancho
+    `antesDeExecutar` de `dispararAutomacoes`, chamado depois dos recortes de
+    canal, gatilho e etapa. Fixando antes do disparo, automação que escuta o
+    evento mas exclui o contato por escopo deixava ficha e card renomeados e
+    travados com o evento dizendo "sem_automacao" (Codex, PR #208). Quem
+    precisar de "só se algo rodar" usa o gancho, nunca uma cópia dos recortes. O card NÃO: contato sem card — o caso comum da ficha
     que nasce do agendamento — só ganha card DENTRO da automação
     (`create_deal`), com o título que o passo configurou, que é livre.
     Renomeando antes, o UPDATE não achava card nenhum e o card novo nascia com

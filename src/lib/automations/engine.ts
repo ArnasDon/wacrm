@@ -162,6 +162,16 @@ export interface DispatchInput {
   triggerType: AutomationTriggerType;
   contactId?: string | null;
   context?: AutomationContext;
+  /**
+   * NOSSO: chamado UMA vez, logo antes da PRIMEIRA automação que passou em
+   * todos os recortes (canal, gatilho, etapa) — e nunca quando nenhuma roda.
+   * É onde o chamador faz o que só vale "se alguma automação vai rodar" e
+   * precisa estar pronto ANTES dela: o Calendly fixa ali o nome da ficha, que
+   * a automação fala em `{{contact.name}}`. Sem o gancho, o chamador teria de
+   * repetir os recortes do motor para saber — e duas cópias divergem.
+   * Falha dele não segura o disparo.
+   */
+  antesDeExecutar?: () => Promise<void>;
 }
 
 /**
@@ -267,6 +277,7 @@ export async function dispararAutomacoes(
     if (!automations || automations.length === 0) return r;
     r.candidatas = automations.length;
 
+    let preparou = false;
     for (const automation of automations as Automation[]) {
       if (!channelInScope(automation, input.context)) {
         r.foraDoEscopo += 1;
@@ -284,6 +295,14 @@ export async function dispararAutomacoes(
       ) {
         r.foraDoEscopo += 1;
         continue;
+      }
+      if (input.antesDeExecutar && !preparou) {
+        preparou = true;
+        try {
+          await input.antesDeExecutar();
+        } catch (err) {
+          console.error('[automations] antesDeExecutar falhou:', err);
+        }
       }
       try {
         const status = await executeAutomation(input, automation);

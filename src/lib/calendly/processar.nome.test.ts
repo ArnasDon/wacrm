@@ -51,6 +51,10 @@ interface Escrita {
   filtros: [string, unknown][];
 }
 
+interface Gancho {
+  antesDeExecutar?: () => Promise<void>;
+}
+
 interface Consulta {
   tabela: string;
   filtros: [string, unknown][];
@@ -119,7 +123,10 @@ beforeEach(() => {
   ordem.length = 0;
   busca.findExistingContact.mockReset().mockResolvedValue({ contato: { id: "c1", phone: "5562993798909" }, falhou: false });
   destino.resolverDestinatario.mockReset().mockResolvedValue({ contactId: "novo-1", conversationId: "conv-nova", criouContato: true });
-  motor.dispararAutomacoes.mockReset().mockImplementation(async () => {
+  // O motor de verdade chama o gancho antes da primeira automação que passou
+  // nos recortes; o dublê faz o mesmo.
+  motor.dispararAutomacoes.mockReset().mockImplementation(async (input: Gancho) => {
+    await input.antesDeExecutar?.();
     ordem.push("disparo");
     return { candidatas: 1, foraDoEscopo: 0, executadas: 1, comFalha: 0, emEspera: 0 };
   });
@@ -199,7 +206,8 @@ describe("processarAgendamento — o nome do agendamento", () => {
     // antes, o UPDATE não achava card nenhum e o novo nascia com outro nome.
     busca.findExistingContact.mockResolvedValue({ contato: null, falhou: false });
     let cardsNoBanco = 0;
-    motor.dispararAutomacoes.mockImplementation(async () => {
+    motor.dispararAutomacoes.mockImplementation(async (input: Gancho) => {
+      await input.antesDeExecutar?.();
       cardsNoBanco = 1; // o passo create_deal gravou o card, com o título dele
       ordem.push("disparo");
       return { candidatas: 1, foraDoEscopo: 0, executadas: 1, comFalha: 0, emEspera: 0 };
@@ -253,6 +261,26 @@ describe("processarAgendamento — o nome do agendamento", () => {
     const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
     expect(r.resultado).toBe("disparado");
     expect(r.detalhe).toContain("o título do negócio não foi atualizado");
+  });
+
+  it("CRÍTICO: automação que escuta mas EXCLUI o contato por escopo não muda ficha nem card", async () => {
+    // Codex, PR #208: a ficha era fixada antes do disparo, então uma automação
+    // restrita a outra conexão/etapa deixava o cliente renomeado e travado com o
+    // evento gravado "sem_automacao". Agora a ficha só muda no gancho do motor,
+    // que não é chamado quando nada passa pelos recortes.
+    motor.dispararAutomacoes.mockImplementation(async () => {
+      ordem.push("disparo");
+      return { candidatas: 1, foraDoEscopo: 1, executadas: 0, comFalha: 0, emEspera: 0 };
+    });
+    const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+    expect(r.resultado).toBe("sem_automacao");
+    expect(escritas).toEqual([]);
+    expect(ordem).toEqual(["disparo"]);
+  });
+
+  it("o disparo recebe o gancho — é por ele que a ficha muda", async () => {
+    await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+    expect(typeof motor.dispararAutomacoes.mock.calls[0][0].antesDeExecutar).toBe("function");
   });
 
   it("sem automação escutando, o nome NÃO muda — o agendamento não tocou em nada", async () => {

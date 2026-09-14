@@ -3,8 +3,12 @@ import fs from "node:fs";
 import path from "node:path";
 
 // ============================================================
-// Todo UPDATE que escreve `contacts.name` é ou DELIBERADO (gente, ou a fonte
-// que fixa o nome) ou GUARDADO por `.is('nome_fixado_em', null)` (999).
+// Todo UPDATE que escreve `contacts.name` ou RESPEITA a marca
+// (`.is('nome_fixado_em', null)`, os caminhos automáticos) ou a GRAVA junto
+// (o agendamento do Calendly e as três telas onde gente escreve o nome — a
+// escrita à mão também fixa, decisão do operador em 14/09/2026). Não existe
+// terceira categoria: um escritor que não faz nenhum dos dois ou desfaz o nome
+// escolhido, ou deixa o nome que gente corrigiu voltar a ser o do WhatsApp.
 //
 // Até a 999, três caminhos automáticos trocavam o nome da ficha pelo do
 // perfil do WhatsApp a cada mensagem — e com isso o nome que o cliente
@@ -23,34 +27,30 @@ import path from "node:path";
 //
 // ⚠️ Alcance: acha `.update({ ... name ... })` com objeto LITERAL numa cadeia
 // que parte de `from('contacts')`. UPDATE por objeto montado antes
-// (`.update(patch)`) fica fora — é o caso do PATCH da API v1, que é
-// deliberado, e do perfil do Instagram, que só preenche nome quando a ficha
-// não tem nenhum (nunca sobrescreve).
+// (`.update(patch)`) fica fora — é o caso do PATCH da API v1 (integrador, não
+// grava a marca; hoje sem decisão) e do perfil do Instagram, que só preenche
+// nome quando a ficha não tem nenhum (nunca sobrescreve). INSERT também fica
+// fora: criar a ficha com o nome do WhatsApp é o comportamento certo — só o
+// formulário de contato grava a marca na criação.
 // ============================================================
 
 const SRC = path.resolve(__dirname, "..", "..");
 
-type Classe = "deliberado" | "guardado";
+type Classe = "respeita" | "grava";
 
-/** Manifesto: arquivo → o que cada UPDATE de nome dele é. */
+/** Manifesto: arquivo → o que cada UPDATE de nome dele faz com a marca. */
 const ESCRITORES: Record<string, Classe[]> = {
-  // Gente escolhendo o nome: pode trocar mesmo um nome fixado.
-  "components/contacts/contact-detail-view.tsx": ["deliberado"],
-  "components/contacts/contact-form.tsx": ["deliberado"],
-  "components/inbox/painel/painel-do-contato.tsx": ["deliberado"],
-  // A fonte que FIXA o nome (e grava a marca na mesma escrita).
-  "lib/calendly/processar.ts": ["deliberado"],
-  // Automáticos: o nome do perfil do WhatsApp. Guardados.
-  "app/api/whatsapp/webhook/route.ts": ["guardado"],
-  "lib/whatsapp/inbound-store.ts": ["guardado"],
-  "lib/whatsapp/resolve-conversation.ts": ["guardado"],
+  // Gente escrevendo o nome: grava a marca (só quando o nome mudou).
+  "components/contacts/contact-detail-view.tsx": ["grava"],
+  "components/contacts/contact-form.tsx": ["grava"],
+  "components/inbox/painel/painel-do-contato.tsx": ["grava"],
+  // O agendamento do Calendly: a fonte que fixa o nome.
+  "lib/calendly/processar.ts": ["grava"],
+  // Automáticos, o nome do perfil do WhatsApp: respeitam.
+  "app/api/whatsapp/webhook/route.ts": ["respeita"],
+  "lib/whatsapp/inbound-store.ts": ["respeita"],
+  "lib/whatsapp/resolve-conversation.ts": ["respeita"],
 };
-
-const DELIBERADOS = new Set(
-  Object.entries(ESCRITORES)
-    .filter(([, cs]) => cs.every((c) => c === "deliberado"))
-    .map(([a]) => a),
-);
 
 function arquivos(dir: string, fora: string[] = []): string[] {
   for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -64,7 +64,7 @@ function arquivos(dir: string, fora: string[] = []): string[] {
 interface Escrita {
   arquivo: string;
   linha: number;
-  guardada: boolean;
+  classe: Classe | null;
 }
 
 function escritasDeNome(): Escrita[] {
@@ -81,10 +81,14 @@ function escritasDeNome(): Escrita[] {
       const cadeia = fonte.slice(m.index, fim);
       const op = cadeia.match(/\.update\(\s*\{([\s\S]*?)\}\s*\)/);
       if (!op || !/(^|[\s,{])name\s*[:,}]/.test(op[1])) continue;
+      const respeita = /\.is\(\s*['"]nome_fixado_em['"]\s*,\s*null\s*\)/.test(cadeia);
+      const grava = /\bnome_fixado_em\s*:|\.\.\.\s*marcaDoNomeManual\(/.test(op[1]);
       achadas.push({
         arquivo: path.relative(SRC, abs).split(path.sep).join("/"),
         linha: fonte.slice(0, m.index).split("\n").length,
-        guardada: /\.is\(\s*['"]nome_fixado_em['"]\s*,\s*null\s*\)/.test(cadeia),
+        // As duas juntas não fazem sentido (gravar a marca só onde ela já é
+        // nula) — quem aparecer assim reprova como classe nula.
+        classe: respeita === grava ? null : respeita ? "respeita" : "grava",
       });
     }
   }
@@ -94,20 +98,17 @@ function escritasDeNome(): Escrita[] {
 describe("escritores de contacts.name × nome fixado (999)", () => {
   const achadas = escritasDeNome();
 
-  it("CRÍTICO: todo escritor automático respeita o nome fixado", () => {
-    const soltos = achadas
-      .filter((e) => !e.guardada && !DELIBERADOS.has(e.arquivo))
-      .map((e) => `${e.arquivo}:${e.linha}`);
-    // Quem aparecer aqui troca o nome escolhido pelo do perfil do WhatsApp.
-    // Ou leva `.is('nome_fixado_em', null)`, ou é gente e entra em ESCRITORES.
+  it("CRÍTICO: todo escritor de nome ou respeita a marca ou a grava", () => {
+    const soltos = achadas.filter((e) => e.classe === null).map((e) => `${e.arquivo}:${e.linha}`);
+    // Quem aparecer aqui ou troca o nome escolhido pelo do perfil do WhatsApp,
+    // ou salva um nome à mão que a mensagem seguinte desfaz. Automático leva
+    // `.is('nome_fixado_em', null)`; gente espalha `marcaDoNomeManual(...)`.
     expect(soltos).toEqual([]);
   });
 
   it("o conjunto de escritores é EXATO — escritor novo é decisão escrita neste arquivo", () => {
-    const porArquivo: Record<string, Classe[]> = {};
-    for (const e of achadas) {
-      (porArquivo[e.arquivo] ??= []).push(e.guardada ? "guardado" : "deliberado");
-    }
+    const porArquivo: Record<string, (Classe | null)[]> = {};
+    for (const e of achadas) (porArquivo[e.arquivo] ??= []).push(e.classe);
     expect(porArquivo).toEqual(ESCRITORES);
   });
 });

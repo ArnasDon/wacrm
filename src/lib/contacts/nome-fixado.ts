@@ -10,7 +10,9 @@
  * estrutural cobrando isso (`nome-fixado.chamadores.test.ts`).
  *
  * Quem escreve o nome à mão continua podendo trocá-lo: a marca protege contra
- * o automático, não contra gente.
+ * o automático, não contra gente. E a escrita à mão também FIXA o nome
+ * (decisão do operador, 14/09/2026): quem corrige um nome no painel, na ficha
+ * ou no formulário não o vê voltar na mensagem seguinte — `marcaDoNomeManual`.
  */
 
 /**
@@ -33,4 +35,31 @@ export function nomeParaFixar(bruto: string | null | undefined): string | null {
   const semPontuacaoDeTelefone = nome.replace(/[\s().+-]/g, "");
   if (semPontuacaoDeTelefone === "" || /^\d+$/.test(semPontuacaoDeTelefone)) return null;
   return nome;
+}
+
+/**
+ * Puro: o pedaço do UPDATE (ou INSERT) que acompanha um nome escrito À MÃO.
+ * Espalhe no objeto gravado: `.update({ name, ...marcaDoNomeManual(antes, name, agora) })`.
+ *
+ * ⚠️⚠️ SÓ mexe na marca quando o NOME mudou. A ficha e o formulário regravam o
+ * nome em TODO salvamento, junto com telefone, e-mail e empresa: sem essa
+ * régua, corrigir só o e-mail de um contato fixaria de tabela o nome que veio
+ * do WhatsApp — e ninguém escolheu aquele nome.
+ *
+ * Nome trocado por um nome de verdade FIXA; nome apagado (ou trocado por um
+ * número) SOLTA — quem esvaziou o campo está dizendo que não sabe o nome, e a
+ * próxima mensagem do cliente volta a preenchê-lo pelo perfil.
+ *
+ * Na criação, passe `antes = null`: nome digitado fixa, campo vazio não grava
+ * a chave (a coluna nasce nula).
+ */
+export function marcaDoNomeManual(
+  antes: string | null | undefined,
+  depois: string | null | undefined,
+  agoraIso: string,
+): { nome_fixado_em?: string | null } {
+  const eraAntes = (antes ?? "").replace(/[\s ]+/g, " ").trim();
+  const ficou = (depois ?? "").replace(/[\s ]+/g, " ").trim();
+  if (eraAntes === ficou) return {};
+  return { nome_fixado_em: nomeParaFixar(ficou) ? agoraIso : null };
 }

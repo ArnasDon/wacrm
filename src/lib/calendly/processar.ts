@@ -124,10 +124,9 @@ export async function processarAgendamento(
   // passaria no compilador e os passos morreriam um a um no motor.
   const contactId: string = resolvido;
 
-  // ANTES do disparo, para a automação já falar com o nome do agendamento
-  // (`{{contact.name}}`) e para o card que já existia sair renomeado — o passo
-  // `create_deal` desiste em silêncio quando o contato já tem card.
-  const avisoDoNome = await fixarNomeDoAgendamento(admin, accountId, contactId, agendamento.nome);
+  // A FICHA antes do disparo: a automação tem de falar com o nome do
+  // agendamento (`{{contact.name}}`). O CARD, depois — ver abaixo.
+  const ficha = await fixarNomeDaFicha(admin, accountId, contactId, agendamento.nome);
 
   // A conversa do contato (única por conta, 036) e o canal por onde ele
   // fala — é o que o recorte por conexão da automação lê. Ficha recém-criada
@@ -155,66 +154,97 @@ export async function processarAgendamento(
       vars: vars ?? variaveisDoAgendamento(agendamento),
     },
   });
-  return comAvisoDoNome(comFichaNova(resultadoDoDisparo(r, contactId), fichaNova), avisoDoNome);
+
+  // ⚠️ O CARD depois do disparo, e não antes. Contato sem card — o caso comum
+  // da ficha que acabou de nascer do agendamento — só ganha card DENTRO da
+  // automação (`create_deal`), com o título que o passo configurou, que é
+  // livre e pode não ser o nome do agendamento. Renomeando antes, o UPDATE não
+  // achava card nenhum e o card novo nascia com outro nome, com o evento
+  // dizendo "disparado" (achado do Codex no PR #208). Depois do disparo, o
+  // mesmo UPDATE alcança o card que já existia e o que acabou de nascer.
+  // Ficha que não gravou não renomeia o card: os dois contariam nomes diferentes.
+  const avisoDoCard = ficha.nome ? await renomearCardAberto(admin, accountId, contactId, ficha.nome) : null;
+  return comAvisoDoNome(comFichaNova(resultadoDoDisparo(r, contactId), fichaNova), ficha.aviso ?? avisoDoCard);
 }
 
 /**
- * O nome digitado no agendamento vira o nome da FICHA e o título do NEGÓCIO
- * aberto, e fica FIXADO (999) — decisão do operador em 14/09/2026.
+ * O nome digitado no agendamento vira o nome da FICHA e fica FIXADO (999) —
+ * decisão do operador em 14/09/2026.
  *
  * O motivo é identidade, não completude: o cliente muitas vezes fala pelo
  * celular da EMPRESA, e o perfil do WhatsApp diz o nome da empresa; quem
  * agendou e vai à reunião é a pessoa. A marca `nome_fixado_em` é o que impede
  * a próxima mensagem dele — que costuma vir logo depois de agendar — de
- * devolver o nome do perfil à ficha.
- *
- * ⚠️ Só o negócio ABERTO é renomeado. Um contato é um telefone, e no celular
- * da empresa o card fechado de meses atrás pode ser de OUTRA pessoa;
- * renomeá-lo reescreveria a história daquele caso.
+ * devolver o nome do perfil à ficha. O título do card é `renomearCardAberto`,
+ * chamado DEPOIS do disparo.
  *
  * ⚠️ Consequência aceita: duas pessoas que agendam pelo MESMO telefone trocam
  * o nome da ficha a cada agendamento, e o anterior se perde. É o modelo de um
  * contato por telefone, não desta função.
  *
  * Nunca lança, e nunca segura o disparo: o aviso ao advogado vale mais que o
- * nome. Devolve o que o detalhe do evento deve dizer quando algo não gravou.
+ * nome. `nome` é o que foi gravado (nulo quando nada foi); `aviso` é o que o
+ * detalhe do evento deve dizer quando algo não gravou.
  */
-async function fixarNomeDoAgendamento(
+async function fixarNomeDaFicha(
   admin: SupabaseClient,
   accountId: string,
   contactId: string,
   nomeDoAgendamento: string,
-): Promise<string | null> {
+): Promise<{ nome: string | null; aviso: string | null }> {
   const nome = nomeParaFixar(nomeDoAgendamento);
   if (!nome) {
     // Nome ausente (linha antiga reprocessada) não é notícia; nome que é um
     // número é — é a resposta para "por que a ficha não mudou de nome?".
-    return nomeDoAgendamento.trim() ? "o nome do agendamento parece um número — a ficha manteve o nome de antes" : null;
+    return {
+      nome: null,
+      aviso: nomeDoAgendamento.trim() ? "o nome do agendamento parece um número — a ficha manteve o nome de antes" : null,
+    };
   }
 
   const agora = new Date().toISOString();
-  const { error: erroDaFicha } = await admin
+  const { error } = await admin
     .from("contacts")
     .update({ name: nome, nome_fixado_em: agora, updated_at: agora })
     .eq("id", contactId)
     .eq("account_id", accountId);
-  if (erroDaFicha) {
-    console.error("[calendly] não foi possível fixar o nome da ficha:", erroDaFicha.message);
-    return `o nome da ficha não foi atualizado (${erroDaFicha.message})`;
+  if (error) {
+    console.error("[calendly] não foi possível fixar o nome da ficha:", error.message);
+    return { nome: null, aviso: `o nome da ficha não foi atualizado (${error.message})` };
   }
+  return { nome, aviso: null };
+}
 
-  // Sem `updated_at`: o gatilho `set_updated_at` de `deals` carimba sozinho. E
-  // mexer só no título não dispara a trilha da 912 nem a fila do funil — os
-  // dois olham `pipeline_id`, `stage_id` e `status`.
-  const { error: erroDoNegocio } = await admin
+/**
+ * O título do negócio ABERTO do contato passa a ser o nome do agendamento.
+ *
+ * ⚠️ Só o ABERTO: um contato é um telefone, e no celular da empresa o card
+ * fechado de meses atrás pode ser de OUTRA pessoa; renomeá-lo reescreveria a
+ * história daquele caso.
+ *
+ * ⚠️ Não alcança card criado DEPOIS de um "Aguardar": o agendador retoma a
+ * execução fora deste processamento. A automação do Calendly cria o card
+ * antes de qualquer espera.
+ *
+ * Sem `updated_at`: o gatilho `set_updated_at` de `deals` carimba sozinho. E
+ * mexer só no título não dispara a trilha da 912 nem a fila do funil — os dois
+ * olham `pipeline_id`, `stage_id` e `status`. Nunca lança.
+ */
+async function renomearCardAberto(
+  admin: SupabaseClient,
+  accountId: string,
+  contactId: string,
+  nome: string,
+): Promise<string | null> {
+  const { error } = await admin
     .from("deals")
     .update({ title: nome })
     .eq("account_id", accountId)
     .eq("contact_id", contactId)
     .eq("status", "open");
-  if (erroDoNegocio) {
-    console.error("[calendly] não foi possível renomear o negócio aberto:", erroDoNegocio.message);
-    return `o título do negócio não foi atualizado (${erroDoNegocio.message})`;
+  if (error) {
+    console.error("[calendly] não foi possível renomear o negócio aberto:", error.message);
+    return `o título do negócio não foi atualizado (${error.message})`;
   }
   return null;
 }

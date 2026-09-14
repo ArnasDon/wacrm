@@ -3321,10 +3321,17 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   antes aceita como "sobrescrito pela próxima mensagem").** O motivo é
   IDENTIDADE, não completude: o cliente muitas vezes fala pelo celular da
   EMPRESA, o perfil do WhatsApp diz o nome da empresa, e quem vai à reunião
-  é a pessoa. `fixarNomeDoAgendamento` (`processar.ts`) roda ANTES do
-  disparo (a automação já fala com o nome novo, e o card existente sai
-  renomeado — o `create_deal` desiste quando já há card) e nunca segura o
-  aviso ao advogado: falha vira aviso no `detalhe` do evento. O que morde:
+  é a pessoa. Nunca segura o aviso ao advogado: falha vira aviso no
+  `detalhe` do evento. O que morde:
+  - ⚠️⚠️ **A FICHA antes do disparo, o CARD depois** (`processar.ts`). A
+    ficha precisa estar renomeada quando a automação fala
+    (`{{contact.name}}`). O card NÃO: contato sem card — o caso comum da ficha
+    que nasce do agendamento — só ganha card DENTRO da automação
+    (`create_deal`), com o título que o passo configurou, que é livre.
+    Renomeando antes, o UPDATE não achava card nenhum e o card novo nascia com
+    outro nome, com o evento dizendo "disparado" (Codex, PR #208). Card criado
+    depois de um "Aguardar" continua fora do alcance (o agendador retoma fora
+    do processamento).
   - ⚠️⚠️ **Sem `contacts.nome_fixado_em`, o nome durava até a próxima
     mensagem do cliente** — que costuma vir logo depois de agendar. TRÊS
     caminhos AUTOMÁTICOS gravavam o nome do perfil do WhatsApp sempre que
@@ -3334,13 +3341,20 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     do UPDATE (a busca do contato não traz a coluna), e há teste estrutural
     com o conjunto EXATO de escritores de `contacts.name`
     (`src/lib/contacts/nome-fixado.chamadores.test.ts`, que reprova com a
-    guarda do webhook da Meta removida — medido). O perfil do Instagram não
-    entra: ele só preenche nome quando a ficha não tem nenhum.
-  - ⚠️ **A marca protege contra o AUTOMÁTICO, não contra gente.** Painel da
-    conversa, ficha, formulário e o PATCH da API v1 continuam trocando nome
-    fixado. Até 14/09/2026, nome editado À MÃO **sem** agendamento ainda é
-    sobrescrito pela mensagem seguinte — as escritas manuais não gravam a
-    marca (pendente de decisão do operador).
+    guarda do webhook da Meta removida E com a marca tirada da ficha —
+    medido). O perfil do Instagram não entra: ele só preenche nome quando a
+    ficha não tem nenhum.
+  - ⚠️ **A marca protege contra o AUTOMÁTICO, não contra gente — e gente
+    também FIXA** (decisão do operador, 14/09/2026). Painel da conversa, ficha
+    e formulário gravam a marca junto com o nome por `marcaDoNomeManual`, e o
+    teste estrutural cobra que TODO escritor de nome ou respeite a marca ou a
+    grave. ⚠️⚠️ **A marca só muda quando o NOME mudou**: a ficha e o
+    formulário regravam o nome em todo salvamento, e sem essa régua corrigir
+    só o e-mail fixaria de tabela o nome que veio do WhatsApp. Nome APAGADO
+    solta a marca (a próxima mensagem volta a preencher). O formulário também
+    fixa na CRIAÇÃO. Fora da regra, por ora: o PATCH da API v1 (troca o nome,
+    não grava a marca) e os INSERT automáticos (criar a ficha com o nome do
+    WhatsApp é o certo).
   - ⚠️ **Só o negócio ABERTO é renomeado**: um contato é um telefone, e no
     celular da empresa o card fechado de meses atrás pode ser de OUTRA
     pessoa. Mexer só no `title` não dispara a trilha da 912 nem a fila do
@@ -4858,10 +4872,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     clientes do Asaas) marcada em seguida por script fora do repositório.
   - **999_cb_nome_fixado** — `contacts.nome_fixado_em`, a marca que impede os
     caminhos automáticos de trocar o nome da ficha pelo do perfil do WhatsApp
-    (o nome do agendamento do Calendly). Aditiva. ⚠️ O deploy tem de vir
-    DEPOIS dela: sem a coluna, a guarda dos três caminhos faz o PostgREST
-    recusar o UPDATE de nome (o nome para de acompanhar o WhatsApp, sem
-    quebrar nada) e o Calendly não consegue fixar o nome (vira aviso no
+    (o nome do agendamento do Calendly, e o nome escrito à mão). Aditiva.
+    Aplicada em 14/09/2026 pela Management API (histórico `20260914140125`),
+    ANTES do merge do PR #208 e DEPOIS de o replay do CI passar. ⚠️ O deploy
+    tem de vir DEPOIS dela: sem a coluna, a guarda dos três caminhos faz o
+    PostgREST recusar o UPDATE de nome (o nome para de acompanhar o WhatsApp,
+    sem quebrar nada) e o Calendly não consegue fixar o nome (vira aviso no
     detalhe do evento).
 
   ⚠️⚠️ **A 999 é o ÚLTIMO número possível no formato atual.** O replay do CI

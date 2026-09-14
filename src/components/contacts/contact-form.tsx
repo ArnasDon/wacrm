@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
@@ -159,16 +160,20 @@ export function ContactForm({
       if (!accountId) throw new Error('Your profile is not linked to an account.');
 
       let contactId = contact?.id;
+      const agora = new Date().toISOString();
 
       if (isEdit && contactId) {
         const { error } = await supabase
           .from('contacts')
           .update({
             name: name.trim() || null,
+            // A marca (999) só muda quando o NOME mudou — salvar só o e-mail
+            // não fixa o nome que veio do WhatsApp.
+            ...marcaDoNomeManual(contact?.name, name, agora),
             phone: phone.trim() || null,
             email: email.trim() || null,
             company: company.trim() || null,
-            updated_at: new Date().toISOString(),
+            updated_at: agora,
           })
           .eq('id', contactId);
         if (error) throw error;
@@ -185,6 +190,8 @@ export function ContactForm({
             user_id: ownerUserId,
             account_id: accountId,
             name: name.trim() || null,
+            // Nome digitado na criação também fica fixado (999).
+            ...marcaDoNomeManual(null, name, agora),
             phone: phone.trim(),
             email: email.trim() || null,
             company: company.trim() || null,

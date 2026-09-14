@@ -126,9 +126,37 @@ describe("processarAgendamento — o nome do agendamento", () => {
     ]);
   });
 
-  it("CRÍTICO: acontece ANTES do disparo — a automação já fala com o nome novo", async () => {
+  it("CRÍTICO: a FICHA antes do disparo (a automação fala com o nome novo), o CARD depois", async () => {
     await processarAgendamento(admin, "acct-1", AGENDAMENTO);
-    expect(ordem).toEqual(["update:contacts", "update:deals", "disparo"]);
+    expect(ordem).toEqual(["update:contacts", "disparo", "update:deals"]);
+  });
+
+  it("CRÍTICO: o card que a PRÓPRIA automação cria (create_deal) também sai com o nome do agendamento", async () => {
+    // O caso do Codex no PR #208: contato sem card, o `create_deal` do disparo
+    // cria o card com o título configurado no passo — que é livre. Renomeando
+    // antes, o UPDATE não achava card nenhum e o novo nascia com outro nome.
+    busca.findExistingContact.mockResolvedValue({ contato: null, falhou: false });
+    let cardsNoBanco = 0;
+    motor.dispararAutomacoes.mockImplementation(async () => {
+      cardsNoBanco = 1; // o passo create_deal gravou o card, com o título dele
+      ordem.push("disparo");
+      return { candidatas: 1, foraDoEscopo: 0, executadas: 1, comFalha: 0, emEspera: 0 };
+    });
+
+    await processarAgendamento(admin, "acct-1", AGENDAMENTO);
+
+    const iDisparo = ordem.indexOf("disparo");
+    const iCard = ordem.indexOf("update:deals");
+    expect(cardsNoBanco).toBe(1);
+    expect(iCard).toBeGreaterThan(iDisparo);
+    expect(daTabela("deals")[0]).toMatchObject({
+      valores: { title: "Douglas Barbosa" },
+      filtros: [
+        ["account_id", "acct-1"],
+        ["contact_id", "novo-1"],
+        ["status", "open"],
+      ],
+    });
   });
 
   it("ficha recém-criada pelo agendamento também sai com o nome fixado", async () => {
@@ -160,7 +188,7 @@ describe("processarAgendamento — o nome do agendamento", () => {
     expect(motor.dispararAutomacoes).toHaveBeenCalledTimes(1);
     expect(r.resultado).toBe("disparado");
     expect(r.detalhe).toContain("o nome da ficha não foi atualizado");
-    // Ficha que não gravou não renomeia o negócio: os dois contariam nomes diferentes.
+    // Ficha que não gravou não renomeia o card: os dois contariam nomes diferentes.
     expect(daTabela("deals")).toEqual([]);
   });
 

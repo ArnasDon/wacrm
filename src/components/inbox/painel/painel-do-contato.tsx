@@ -108,6 +108,7 @@ import {
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
 import { useTranslations } from 'next-intl';
 import { identidadeDoContato, nomeDoContato } from '@/lib/contacts/identidade';
+import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado';
 
 export interface PainelDoContatoProps {
   contact: Contact | null;
@@ -607,9 +608,15 @@ export function PainelDoContato({
     // (ou contato que sumiu numa fusão de duplicados) volta com `error`
     // NULO e zero linhas — e a tela fechava o editor como se tivesse
     // salvado. A armadilha do "0 linhas" documentada no CLAUDE.md.
+    //
+    // A marca (999) vai junto: nome corrigido à mão não volta a ser o do
+    // WhatsApp na mensagem seguinte do cliente.
     const { data, error } = await supabase
       .from('contacts')
-      .update({ name: nome === '' ? null : nome })
+      .update({
+        name: nome === '' ? null : nome,
+        ...marcaDoNomeManual(contact.name, nome, new Date().toISOString()),
+      })
       .eq('id', contact.id)
       .select('id');
     setSalvandoNome(false);

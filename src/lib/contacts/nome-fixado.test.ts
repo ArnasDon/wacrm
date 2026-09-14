@@ -1,6 +1,31 @@
 import { describe, expect, it } from "vitest";
 
-import { nomeParaFixar } from "./nome-fixado";
+import { marcaDoNomeManual, nomeParaFixar } from "./nome-fixado";
+
+const AGORA = "2026-09-14T14:00:00.000Z";
+
+describe("marcaDoNomeManual (a escrita à mão também fixa o nome)", () => {
+  it("CRÍTICO: nome que NÃO mudou não mexe na marca — salvar só o e-mail não fixa o nome do WhatsApp", () => {
+    expect(marcaDoNomeManual("DOUGLAS BARBOSA", "DOUGLAS BARBOSA", AGORA)).toEqual({});
+    expect(marcaDoNomeManual("DOUGLAS BARBOSA", "  DOUGLAS   BARBOSA ", AGORA)).toEqual({});
+    expect(marcaDoNomeManual(null, "", AGORA)).toEqual({});
+    expect(marcaDoNomeManual(undefined, null, AGORA)).toEqual({});
+  });
+
+  it("nome trocado por um nome de verdade FIXA", () => {
+    expect(marcaDoNomeManual("Carolzinha", "Anny Karoline da Silva", AGORA)).toEqual({ nome_fixado_em: AGORA });
+  });
+
+  it("nome apagado ou trocado por número SOLTA — a próxima mensagem volta a preencher", () => {
+    expect(marcaDoNomeManual("Anny Karoline da Silva", "", AGORA)).toEqual({ nome_fixado_em: null });
+    expect(marcaDoNomeManual("Anny Karoline da Silva", "5583988745316", AGORA)).toEqual({ nome_fixado_em: null });
+  });
+
+  it("na criação (antes nulo), nome digitado fixa e campo vazio não grava a chave", () => {
+    expect(marcaDoNomeManual(null, "Joana Silva", AGORA)).toEqual({ nome_fixado_em: AGORA });
+    expect(marcaDoNomeManual(null, "   ", AGORA)).toEqual({});
+  });
+});
 
 describe("nomeParaFixar", () => {
   it("devolve o nome como a pessoa escreveu, só com o espaço arrumado", () => {

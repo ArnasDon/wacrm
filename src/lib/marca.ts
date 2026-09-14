@@ -48,3 +48,21 @@ export const NOME_DO_APP =
  * pode quebrar a barra lateral por causa de um arquivo que não existe.
  */
 export const LOGO_DO_APP = process.env.NEXT_PUBLIC_APP_LOGO_URL?.trim() || null
+
+/**
+ * Nome curto: o que aparece embaixo do ícone quando o sistema é instalado
+ * na Tela de Início do celular. O iPhone corta nome comprido embaixo do
+ * ícone, então quem quer o nome inteiro ali define
+ * `NEXT_PUBLIC_APP_SHORT_NAME` no build. Sem ele, vale o nome do produto.
+ */
+export const NOME_CURTO_DO_APP =
+  process.env.NEXT_PUBLIC_APP_SHORT_NAME?.trim() || NOME_DO_APP
+
+/**
+ * Tamanhos do ícone do app instalado: 180 é o que o iPhone usa; 192 e 512,
+ * os que o Android exige no manifesto. `apple-icon.tsx` gera um arquivo por
+ * tamanho e `manifest.ts` aponta para eles — os dois leem daqui para não
+ * divergirem (um tamanho que só um lado conhece vira ícone quebrado, sem
+ * erro nenhum).
+ */
+export const TAMANHOS_DO_ICONE = [180, 192, 512] as const

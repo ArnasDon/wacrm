@@ -6,7 +6,7 @@ import Script from "next/script";
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
-import { NOME_DO_APP } from "@/lib/marca";
+import { NOME_CURTO_DO_APP, NOME_DO_APP } from "@/lib/marca";
 import {
   DEFAULT_MODE,
   DEFAULT_THEME,
@@ -34,8 +34,18 @@ export const metadata: Metadata = {
     index: false,
     follow: false,
   },
-  icons: {
-    icon: [{ url: "/icon" }],
+  // ⚠️ SEM `icons` aqui. O Next só injeta os ícones de ARQUIVO — o
+  // `icon.tsx` (a aba do navegador) e o `apple-icon.tsx` (o do app instalado
+  // no celular) — quando o metadata não declara `icons`. Com a declaração
+  // que vinha do upstream, o `<head>` saía sem nenhum `apple-touch-icon` e o
+  // iPhone improvisava o ícone (medido em 14/09/2026, Next 16.2). Há pino em
+  // `manifest.test.ts`.
+  // App instalado na Tela de Início do celular: o nome que o iPhone sugere
+  // embaixo do ícone. O resto (escopo, tela de abertura, ícones) mora em
+  // `manifest.ts`, e o ícone em `apple-icon.tsx`.
+  appleWebApp: {
+    capable: true,
+    title: NOME_CURTO_DO_APP,
   },
   formatDetection: {
     email: false,

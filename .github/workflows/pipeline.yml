@@ -300,12 +300,18 @@ jobs:
           # nascer se apresentando como a nossa. Quem dá nome à NOSSA
           # produção é esta linha. Removê-la não quebra nada — só troca o
           # título da aba e da barra lateral por "CRM".
+          # `NEXT_PUBLIC_APP_SHORT_NAME` é o nome embaixo do ícone do app
+          # instalado no celular (decisão do operador, 14/09/2026): o nome
+          # longo o iPhone corta. Removê-la faz o ícone usar o nome longo.
+          # ⚠️ Nada de comentário DENTRO do bloco `build-args: |` — é texto
+          # literal, e a linha com `#` iria para o build como argumento.
           build-args: |
             NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
             NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
             NEXT_PUBLIC_SITE_URL=https://crm.cbadvogados.com
             NEXT_PUBLIC_APP_LOCALE=pt-BR
             NEXT_PUBLIC_APP_NAME=CB Advogados CRM
+            NEXT_PUBLIC_APP_SHORT_NAME=CB CRM
           cache-from: type=gha
           cache-to: type=gha,mode=max
 

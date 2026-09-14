@@ -23,7 +23,8 @@
 --      acervo: e-mail já gravado vira valor do campo.
 --   3. Dois gatilhos de espelho, um em cada tabela.
 --   4. O campo espelhado não se apaga nem troca de tipo, chave ou espelho.
---   5. Conta NOVA nasce com o campo.
+--   5. Conta NOVA nasce com o campo — e o convite (redeem_invitation) passa a
+--      não contar esse campo como dado da conta de quem aceita.
 --
 -- ⚠️ `pg_trigger_depth() > 1` nos dois gatilhos de espelho é o que separa a
 -- escrita de GENTE (profundidade 1) da que veio do outro gatilho ou de uma
@@ -265,6 +266,160 @@ CREATE TRIGGER cb_semeia_campo_de_email_trigger
   FOR EACH ROW EXECUTE FUNCTION public.cb_semeia_campo_de_email();
 
 -- ------------------------------------------------------------
+-- 5b) O convite não conta o campo semeado como "dado" da conta
+-- ------------------------------------------------------------
+-- ⚠️⚠️ Achado da revisão do PR #210, antes de aplicar. `redeem_invitation`
+-- recusa quem tenta entrar numa conta tendo dados na própria ("Your account
+-- already contains data"), e `custom_fields` está na lista. Com o gatilho da
+-- seção 5, a conta provisória do cadastro (`handle_new_user`) e a conta que
+-- `remove_account_member` cria nascem com o campo "E-mail" — e TODO convite
+-- passaria a ser recusado com 409, sem que trocar de e-mail resolvesse.
+--
+-- O corpo abaixo é a reprodução FIEL do vigente (960), com UMA linha mudada:
+-- a de `custom_fields` ignora o campo espelhado. `CREATE OR REPLACE`
+-- substitui o corpo inteiro, e a função carrega as guardas que decidem quem
+-- entra na conta — omitir um trecho apagaria uma delas em silêncio (a lição da
+-- 922 e da 960). O DELETE da conta velha no fim passa pela proteção da seção 4:
+-- a cascata chega lá com profundidade 2.
+CREATE OR REPLACE FUNCTION public.redeem_invitation(p_token_hash text)
+ RETURNS uuid
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public'
+AS $function$
+DECLARE
+  v_caller_id UUID := auth.uid();
+  v_inv account_invitations%ROWTYPE;
+  v_old_account_id UUID;
+  v_old_account_owner UUID;
+  v_has_data BOOLEAN;
+  -- 960: o papel e o perfil que o aceite vai gravar.
+  v_papel account_role_enum;
+  v_perfil_id UUID;
+BEGIN
+  IF v_caller_id IS NULL THEN
+    RAISE EXCEPTION 'Unauthorized' USING ERRCODE = '42501';
+  END IF;
+
+  SELECT * INTO v_inv
+  FROM account_invitations
+  WHERE token_hash = p_token_hash
+  FOR UPDATE;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Invitation not found' USING ERRCODE = '22023';
+  END IF;
+  IF v_inv.accepted_at IS NOT NULL THEN
+    RAISE EXCEPTION 'Invitation has already been redeemed'
+      USING ERRCODE = '22023';
+  END IF;
+  IF v_inv.expires_at <= NOW() THEN
+    RAISE EXCEPTION 'Invitation has expired' USING ERRCODE = '22023';
+  END IF;
+
+  -- Caller's current account + its owner.
+  SELECT p.account_id, a.owner_user_id
+  INTO v_old_account_id, v_old_account_owner
+  FROM profiles p
+  JOIN accounts a ON a.id = p.account_id
+  WHERE p.user_id = v_caller_id;
+
+  IF v_old_account_id IS NULL THEN
+    -- Defensive — every authenticated user has a profile post-017.
+    RAISE EXCEPTION 'Caller has no profile' USING ERRCODE = '42501';
+  END IF;
+
+  -- Edge case: the inviter sent themselves a link, or the
+  -- caller is somehow already in the inviter's account.
+  IF v_old_account_id = v_inv.account_id THEN
+    RAISE EXCEPTION 'You are already a member of this account'
+      USING ERRCODE = '23505';
+  END IF;
+
+  -- Safety: the caller must be the SOLE OWNER of their current
+  -- account (i.e. their fresh personal account from signup or a
+  -- prior removal). Any other state means they're either:
+  --   - a member of another shared account (joining a second
+  --     would silently orphan their access to the first), or
+  --   - the owner of an account with teammates (they'd abandon
+  --     their team to join the inviter's).
+  -- Either way, the safe answer is "make a different login".
+  IF v_old_account_owner <> v_caller_id THEN
+    RAISE EXCEPTION 'You are already in a shared account; sign up with a different email to join this one'
+      USING ERRCODE = '23505';
+  END IF;
+
+  -- Belt: even if they own their account, refuse if it has any
+  -- domain data — joining would orphan their contacts, deals,
+  -- broadcasts, automations, flows, templates, etc.
+  SELECT EXISTS (
+    SELECT 1 FROM contacts WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM conversations WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM broadcasts WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM automations WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM flows WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM pipelines WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM message_templates WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM tags WHERE account_id = v_old_account_id
+    -- 1000: o campo "E-mail" espelhado nasce com TODA conta (gatilho em
+    -- accounts) e não é dado de ninguém — contá-lo recusava todo convite.
+    UNION ALL SELECT 1 FROM custom_fields WHERE account_id = v_old_account_id AND espelho IS NULL
+    -- 922: aqui era a tabela antiga de anotacoes por contato. O nome dela
+    -- nao pode ser escrito aqui — ver a nota da 922.
+    UNION ALL SELECT 1 FROM cb_conversation_notes WHERE account_id = v_old_account_id
+    UNION ALL SELECT 1 FROM whatsapp_config WHERE account_id = v_old_account_id
+    LIMIT 1
+  ) INTO v_has_data;
+
+  IF v_has_data THEN
+    RAISE EXCEPTION 'Your account already contains data; sign up with a different email to join this one'
+      USING ERRCODE = '23505';
+  END IF;
+
+  -- 960: resolve papel e perfil. O papel vem do PERFIL VIGENTE quando o
+  -- convite carrega um; o carimbo do convite é o fallback (perfil apagado
+  -- entre convidar e aceitar → SET NULL → v_inv.perfil_id já é NULL).
+  v_papel := v_inv.role;
+  v_perfil_id := NULL;
+  IF v_inv.perfil_id IS NOT NULL THEN
+    SELECT papel_base INTO v_papel
+    FROM cb_perfis_de_acesso
+    WHERE id = v_inv.perfil_id AND account_id = v_inv.account_id;
+    IF FOUND THEN
+      v_perfil_id := v_inv.perfil_id;
+    ELSE
+      v_papel := v_inv.role;  -- linha sumiu entre o SELECT do convite e aqui
+    END IF;
+  END IF;
+
+  -- Move the profile first so the cascade-on-delete of the old
+  -- account doesn't try to nuke this user's profile too.
+  -- (960: perfil_id entra no MESMO update — a FK composta de profiles é
+  -- validada contra o account_id novo, que é o da conta do convite.)
+  UPDATE profiles
+  SET account_id = v_inv.account_id,
+      account_role = v_papel,
+      perfil_id = v_perfil_id
+  WHERE user_id = v_caller_id;
+
+  UPDATE account_invitations
+  SET accepted_at = NOW(),
+      accepted_by_user_id = v_caller_id
+  WHERE id = v_inv.id;
+
+  -- Clean up the orphan personal account. Empty by the checks
+  -- above, so this is purely housekeeping — no cascades fire
+  -- because no other rows reference it.
+  DELETE FROM accounts WHERE id = v_old_account_id;
+
+  RETURN v_inv.account_id;
+END;
+$function$;
+
+-- O REPLACE mantém os privilégios, mas a conferência abaixo não confia nisso.
+GRANT EXECUTE ON FUNCTION public.redeem_invitation(text) TO authenticated;
+
+-- ------------------------------------------------------------
 -- 6) Ninguém chama estas funções direto
 -- ------------------------------------------------------------
 -- Revogar não impede o gatilho de disparar (o privilégio é checado no
@@ -299,6 +454,17 @@ BEGIN
 
   IF has_function_privilege('anon', 'public.cb_email_do_campo_para_a_ficha()', 'EXECUTE') THEN
     RAISE EXCEPTION '1000: anon ainda executa cb_email_do_campo_para_a_ficha';
+  END IF;
+
+  -- 5b: o convite ignora o campo espelhado, e quem aceita convite ainda executa.
+  IF pg_get_functiondef('public.redeem_invitation(text)'::regprocedure) !~ 'espelho IS NULL' THEN
+    RAISE EXCEPTION '1000: redeem_invitation ainda conta o campo espelhado — todo convite seria recusado';
+  END IF;
+  IF pg_get_functiondef('public.redeem_invitation(text)'::regprocedure) !~ 'perfil_id' THEN
+    RAISE EXCEPTION '1000: redeem_invitation perdeu o bloco do perfil (960)';
+  END IF;
+  IF NOT has_function_privilege('authenticated', 'public.redeem_invitation(text)', 'EXECUTE') THEN
+    RAISE EXCEPTION '1000: authenticated perdeu redeem_invitation — ninguém entra na conta';
   END IF;
 
   -- Toda conta existente ficou com o campo (verdade trivial sem contas).

@@ -133,6 +133,11 @@ export function ContactDetailView({
   const [editEmail, setEditEmail] = useState('');
   const [editCompany, setEditCompany] = useState('');
   const [savingDetails, setSavingDetails] = useState(false);
+  /** O contato à vista AGORA — a cerca de quem grava depois de um `await`. */
+  const contatoAbertoRef = useRef(contactId);
+  useEffect(() => {
+    contatoAbertoRef.current = contactId;
+  }, [contactId]);
 
   // Tags tab
   const [allTags, setAllTags] = useState<Tag[]>([]);
@@ -523,10 +528,17 @@ export function ContactDetailView({
       // O campo espelhado (1000): o gatilho já gravou o e-mail da ficha.
       // A caixa da aba de dados e o contato carregado passam a dizer o mesmo
       // — senão o "Salvar" de lá compararia contra o e-mail velho.
-      if (fieldId === campoDoEmail(customFields)) {
+      //
+      // ⚠️ Com a cerca do CONTATO: a descarga de desmonte grava o cliente A
+      // depois de a ficha já ter aberto o B, e sem a cerca o e-mail de A caía
+      // na caixa e no cabeçalho de B — e um "Salvar" ali o gravaria no B
+      // (revisão do PR #210).
+      if (fieldId === campoDoEmail(customFields) && contatoAbertoRef.current === contactId) {
         const novo = emailNormalizado(valor);
         setEditEmail(novo ?? '');
-        setContact((prev) => (prev ? { ...prev, email: novo ?? undefined } : prev));
+        setContact((prev) =>
+          prev && prev.id === contactId ? { ...prev, email: novo ?? undefined } : prev
+        );
       }
       return true;
     },

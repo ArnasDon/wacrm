@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { useAuth } from '@/hooks/use-auth';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
 import { escritaDoNomeManual, marcaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { emailMudou, emailNormalizado } from '@/lib/contacts/email-espelhado';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
@@ -171,7 +172,12 @@ export function ContactForm({
             // aberto sobre a lista velha não devolve à ficha um nome antigo.
             ...escritaDoNomeManual(contact?.name, name, agora),
             phone: phone.trim() || null,
-            email: email.trim() || null,
+            // O e-mail também só vai quando MUDOU (1000): ele é o campo
+            // espelhado, que salva sozinho na ficha e na conversa. O formulário
+            // é preenchido pela linha da lista, que não recarrega — mandá-lo
+            // sempre regravava o e-mail velho por cima da edição feita pelo
+            // campo, e o gatilho o levava de volta ao campo (revisão do PR #210).
+            ...(emailMudou(contact?.email, email) ? { email: emailNormalizado(email) } : {}),
             company: company.trim() || null,
             updated_at: agora,
           })

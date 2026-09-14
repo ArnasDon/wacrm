@@ -1001,6 +1001,25 @@ via nem editava na conversa. O que morde código novo:
 - **Um espelho por conta** (índice único parcial), semeado no FIM do bloco
   Geral; conta NOVA nasce com ele por gatilho em `accounts`, que nunca derruba
   a criação da conta (falha vira WARNING). A chave é `email` quando livre.
+- ⚠️⚠️ **O CONVITE não conta o campo espelhado como dado.** `redeem_invitation`
+  recusa quem tem dados na própria conta, e `custom_fields` está na lista;
+  como a conta provisória do cadastro (e a que `remove_account_member` cria)
+  nasce com o campo, TODO convite passaria a ser recusado com 409. A 1000
+  recria a função (reprodução fiel da 960) com `AND espelho IS NULL` naquela
+  linha. Achado da revisão do PR #210 ANTES de aplicar; medido num Postgres
+  descartável — o mutante sem a linha reproduz a recusa. Pino:
+  `supabase/migrations/convite-ignora-campo-espelhado.test.ts`. Quem recriar
+  `redeem_invitation` (ou mesclar a do upstream) mantém a exclusão.
+- ⚠️⚠️ **São DOIS escritores de tela com foto velha, e os dois só mandam o
+  e-mail quando ele MUDOU** (`emailMudou`): a ficha E o formulário "Editar" de
+  /contatos, que é preenchido pela linha da lista (sem recarga) — consertar a
+  ficha não consertou o formulário (revisão do PR #210). Pino:
+  `src/lib/contacts/email-espelhado.chamadores.test.ts`.
+- **Gravar o campo espelhado avisa o estado do e-mail na mesma tela**: no painel
+  da conversa, `onContactUpdated({ id, email })` (senão a linha do envelope
+  mostrava o e-mail velho logo acima do campo novo); na ficha, com CERCA do
+  contato à vista (`contatoAbertoRef`) — a descarga de desmonte grava o
+  cliente A depois de a ficha já ter aberto o B.
 
 ⚠️ **Efeito passivo = o primeiro render mostra o estado VELHO.** Já mordeu
 duas vezes em 2026-08-30, nas duas features do dia: a faixa da nota fixada

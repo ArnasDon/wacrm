@@ -124,9 +124,15 @@ export async function processarAgendamento(
   // passaria no compilador e os passos morreriam um a um no motor.
   const contactId: string = resolvido;
 
-  // A FICHA antes do disparo: a automação tem de falar com o nome do
-  // agendamento (`{{contact.name}}`). O CARD, depois — ver abaixo.
-  const ficha = await fixarNomeDaFicha(admin, accountId, contactId, agendamento.nome);
+  // ⚠️⚠️ A FICHA só é fixada quando alguma automação VAI RODAR — e antes dela,
+  // porque a automação fala com o nome do agendamento (`{{contact.name}}`).
+  // É o gancho `antesDeExecutar` do motor: ele é chamado depois dos recortes
+  // de canal, gatilho e etapa. Fixando antes do disparo, uma automação que
+  // escuta o evento mas exclui este contato por escopo deixava a ficha e o
+  // card renomeados e travados com o evento gravado "sem_automacao" — o
+  // agendamento mudava o cliente sem nada ter rodado, ao contrário de quando
+  // nenhuma automação escuta (Codex, PR #208). O CARD, depois — ver abaixo.
+  let ficha: { nome: string | null; aviso: string | null } = { nome: null, aviso: null };
 
   // A conversa do contato (única por conta, 036) e o canal por onde ele
   // fala — é o que o recorte por conexão da automação lê. Ficha recém-criada
@@ -152,6 +158,9 @@ export async function processarAgendamento(
       channel_id: conversa?.channel_id ?? null,
       calendly_event_type: agendamento.eventoUri,
       vars: vars ?? variaveisDoAgendamento(agendamento),
+    },
+    antesDeExecutar: async () => {
+      ficha = await fixarNomeDaFicha(admin, accountId, contactId, agendamento.nome);
     },
   });
 

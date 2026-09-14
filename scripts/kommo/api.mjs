@@ -64,10 +64,25 @@ export function criarCliente(env = carregarEnv()) {
   async function get(caminho, tentativa = 0) {
     await aguardarVez();
     const url = caminho.startsWith('http') ? caminho : `${base}${caminho}`;
-    const res = await fetch(url, {
-      headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
-      signal: AbortSignal.timeout(60_000),
-    });
+    let res;
+    try {
+      res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (err) {
+      // ⚠️ Queda de rede NÃO é 5xx: o `fetch` rejeita ("other side closed",
+      // tempo esgotado) e, sem este ramo, uma varredura de vários minutos
+      // morria inteira no meio — medido em 14/09/2026 no histórico de etapas,
+      // depois de 3 MB lidos. GET é seguro de repetir.
+      if (tentativa < 5) {
+        const espera = 2 ** tentativa * 1000;
+        console.warn(`  ↻ ${err.cause?.code ?? err.name} em ${url} — repetindo em ${espera}ms`);
+        await new Promise((r) => setTimeout(r, espera));
+        return get(caminho, tentativa + 1);
+      }
+      throw err;
+    }
 
     // ⚠️ 204 é resposta NORMAL da Kommo para coleção vazia — não é erro, e
     // `res.json()` num corpo vazio estoura. Tratar como falha faria o

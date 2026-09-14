@@ -4,12 +4,16 @@
 // SÓ LEITURA. Este script não escreve nada — nem na Kommo, nem no Supabase.
 // Ele responde, com números, as perguntas que decidem o resto da migração:
 //
-//   · Quantos contatos NÃO têm telefone? (`contacts.phone` é NOT NULL no CB
-//     CRM — sem telefone o cadastro não tem como existir lá.)
+//   · Quantos contatos NÃO têm telefone? (desde a 989 `contacts.phone` é
+//     anulável, mas o CHECK exige telefone OU Instagram — contato da Kommo
+//     sem telefone continua sem como existir lá.)
 //   · Quantos telefones colidem depois de normalizados? (o índice único
 //     `(account_id, phone_normalized)` da 022 funde os dois num só.)
+//     ⚠️ A conta daqui usa só dígitos crus; a que vale para a carga é a do
+//     `cruzamento.mjs`, pelo `digitosDoTelefone` do app e com o nono dígito.
 //   · Quais campos personalizados existem, de que tipo, e quantos estão de
-//     fato preenchidos? (o CB CRM só tem `text` e `date`, e só em CONTATO.)
+//     fato preenchidos? (no CB CRM: `text`, `datetime`, `select` e `number`
+//     desde a 948, e só em CONTATO.)
 //   · Quantas anotações existem? (elas exigem CONVERSA no CB CRM — a
 //     `cb_conversation_notes.conversation_id` é NOT NULL desde a 918.)
 //
@@ -262,7 +266,7 @@ async function main() {
 
   L.push('## Telefone — a trava dura do CB CRM');
   L.push('');
-  L.push('`contacts.phone` é `NOT NULL` e o índice único `(account_id, phone_normalized)` (migration 022) funde contatos cujo telefone, só com dígitos, seja igual.');
+  L.push('`contacts` exige telefone OU Instagram (989) e o índice único `(account_id, phone_normalized)` (migration 022) funde contatos cujo telefone, só com dígitos, seja igual. Contagem com dígitos crus — a do nono dígito sai do `cruzamento.mjs`.');
   L.push('');
   L.push('| Situação | Contatos | % |');
   L.push('| --- | ---: | ---: |');
@@ -301,7 +305,7 @@ async function main() {
 
   L.push('## Campos personalizados');
   L.push('');
-  L.push('O CB CRM só tem dois tipos (`text` e `date`) e **só em contato** — campo de lead precisa descer para o contato ou virar texto no negócio.');
+  L.push('O CB CRM tem `text`, `datetime`, `select` e `number` (948) e **só em contato** — campo de lead precisa descer para o contato ou virar texto no negócio.');
   L.push('');
   L.push('### De contato');
   L.push('');

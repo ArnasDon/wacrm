@@ -1,255 +1,417 @@
 # Plano — migração Kommo → CB CRM
 
-> Documento vivo. Fase 1 (levantamento) **concluída em 02/09/2026**; as demais
-> dependem das decisões da seção "Decisões pendentes".
+> Documento vivo. Fase 1 (levantamento) **refeita em 14/09/2026**, contra o
+> `main` de hoje (depois do PR #211). O levantamento de 02/09 e a conferência
+> de 08/09 ficaram obsoletos nos NÚMEROS e, pior, na PREMISSA — ver "O que a
+> medição de 14/09 mudou". As demais fases dependem das decisões no fim.
 >
-> Reproduzir o levantamento: `node scripts/kommo/levantamento.mjs` (só leitura,
-> não escreve em lugar nenhum). A saída vai para `.kommo-levantamento/`, que é
-> gitignored — **contém dado de cliente e não pode ser versionado**.
+> Reproduzir (tudo só leitura; a saída tem dado de cliente e fica FORA do
+> repositório):
 >
-> ⚠️ **Conferido contra o `main` em 08/09/2026** (118 commits e 10 migrations
-> depois do levantamento). O de‑para de funis, campos e a trava das anotações
-> seguem VÁLIDOS; o que mudou está em "O que mudou desde o levantamento".
+> 1. `node scripts/kommo/levantamento.mjs --saida <pasta>` — a Kommo inteira
+>    (~6 min a 5 req/s).
+> 2. `scripts/kommo/destino-contatos.sql` — a foto dos contatos do CB CRM,
+>    salva como JSON (API de gerenciamento do Supabase ou SQL Editor).
+> 3. `node scripts/kommo/cruzamento.mjs --kommo <pasta>/kommo-bruto.json --destino <destino.json>`
+>    — sobreposição, entrada recente e anotações, só agregados.
+> 4. `node scripts/kommo/historico.mjs --saida <arquivo.jsonl>` — o histórico
+>    de etapas (decisão 9).
+> 5. `node scripts/kommo/entradas.mjs` — o que alimenta a Kommo hoje.
+
+## O que a medição de 14/09 mudou
+
+1. ⚠️⚠️ **A Kommo NÃO é um sistema parado esperando carga — é o CRM em uso.**
+   Nos 7 dias até 14/09 ela recebeu **241 leads novos (~30 por dia), todos
+   criados por integração**, **652 leads antigos foram mexidos** (445 pelo
+   login compartilhado "Trabalhista", 181 por robô) e **437 foram fechados**. O plano
+   anterior tratava a migração como "fundir um cadastro"; ela é uma **troca de
+   sistema com dois CRMs vivos ao mesmo tempo**, e a parte difícil deixa de ser
+   a carga e passa a ser o **corte**.
+2. ⚠️⚠️ **O CB CRM virou quase um SUBCONJUNTO da Kommo.** 979 dos 1.024
+   contatos daqui existem lá (96%); só 45 são exclusivos do CB CRM. Dos 241
+   leads novos da semana, **217 já tinham ficha aqui** — o mesmo cliente
+   entra pelos dois lados em paralelo (WhatsApp aqui, formulário/Typebot lá).
+3. ⚠️⚠️ **O funil do CB CRM não é trabalhado; o da Kommo é.** Dos 766
+   negócios daqui, **740 estão parados na etapa de entrada** (Contato Avulso,
+   Entrada Avulsa, Avulso), 25 em Reunião Agendada (o Calendly os move) e 1 em
+   Proposta — **zero ganhos, zero perdidos**. Enquanto isso, **845 leads
+   ABERTOS da Kommo pertencem a contatos que já têm card aqui**. Ou seja: o
+   card daqui é um esboço criado pela conexão, e a etapa verdadeira está lá.
+   Decisão nova (11).
+4. **Duas travas novas** (7 e 8, abaixo): a carga **dispara automação** — o
+   gatilho de funil da 933 enfileira evento a cada card criado ou movido, e há
+   automação ATIVA mandando webhook ao CB OS quando o card entra em "Contrato
+   Fechado" —, e a carga precisa respeitar o **nome fixado** (999) e o
+   **e-mail espelhado** (1000/1001), que não existiam em 08/09.
+5. **Duas travas eram menores do que o plano de 08/09 dizia**: campo
+   personalizado tem também `select` e `number` (948), e a API v1 escreve
+   campo personalizado (`PATCH /api/v1/contacts/{id}/custom-fields`). A de telefone mudou de forma
+   mas não de efeito (989: `contacts.phone` é anulável, com CHECK "telefone OU
+   Instagram" — contato da Kommo sem telefone continua sem como existir).
 
 ## Situação medida
 
-Conta Kommo `cbadvogados` (id 34706107), moeda BRL, 7 usuários. A coluna do
-destino foi remedida em 08/09; a da Kommo é do levantamento de 02/09.
+Conta Kommo `cbadvogados` (id 34706107), moeda BRL, 7 usuários.
 
-| | Kommo (02/09) | CB CRM em 02/09 | CB CRM em 08/09 |
-| --- | ---: | ---: | ---: |
-| Contatos | 12.736 | 116 | **515** |
-| Negócios / leads | 12.256 | 112 | **513** |
-| Conversas | — | 118 | **518** |
-| Funis | 6 (70 etapas) | 4 + 2 de teste (28 etapas) | igual |
-| Tags | 30 em lead, 3 em contato | 9 | **11** |
-| Campos personalizados | 35 em lead, 3 em contato | 18 (só em contato) | igual |
-| Anotações internas | 543 de texto | — | 28 |
+| | Kommo 02/09 | **Kommo 14/09** | CB CRM 08/09 | **CB CRM 14/09** |
+| --- | ---: | ---: | ---: | ---: |
+| Contatos | 12.736 | **13.110** | 515 | **1.024** |
+| Leads / negócios | 12.256 | **12.614** | 513 | **766** |
+| ↳ abertos | — | **6.823** | — | 766 |
+| ↳ ganhos | 170 | **170** | — | 0 |
+| ↳ perdidos | 5.093 | **5.621** | — | 0 |
+| Conversas | — | — | 518 | **772** |
+| Funis (etapas) | 6 (70) | 6 (70) | 4 (28) | 4 (28) |
+| Tags | 30 lead + 3 contato | **31 no total** | 11 | **12** |
+| Campos personalizados | 35 lead + 3 contato | 36 lead + 3 contato | 18 | **19** |
+| Anotações de texto | 543 | **543** | 28 | 32 |
+| Empresas | — | 26 | — | — |
 
-⚠️ **O destino deixou de ser vazio, e a conta está VIVA** — o WhatsApp roda
-todo dia e, desde 08/09, o Calendly cria ficha de cliente sozinho. A migração
-não é mais "encher um CRM vazio": é fundir 12.570 cadastros numa base que
-cresce ~65 contatos por dia.
+Do crescimento do CB CRM, **262 contatos têm a etiqueta `asaas`** — são as
+fichas que a integração do Asaas criou em 12/09 (D2 daquele plano).
 
-### Sobreposição medida (08/09)
+### Sobreposição (14/09)
 
-Casando `contacts.phone_normalized` com o primeiro telefone de cada contato da
-Kommo:
+Casando pela chave de telefone **sem o nono dígito** (a régua de
+`findExistingContact`), com o telefone normalizado por `digitosDoTelefone`:
 
 | | Contatos |
 | --- | ---: |
-| Já existem nos DOIS (a carga reencontra, não cria) | **313** |
-| Só na Kommo (criar) | 12.257 |
-| Só no CB CRM (não vêm da Kommo) | 202 |
+| Nos DOIS (a carga reencontra, não cria) | **979** |
+| Só na Kommo (criar) | **11.890** |
+| Só no CB CRM | **45** |
 
-Os 313 são o caso interessante: são clientes com quem o escritório **falou esta
-semana** pelo CRM. O dado deles aqui é mais novo que o da Kommo. Ver a decisão 8.
+Dos 979 que existem nos dois:
 
-### O destino já foi preparado
+| | |
+| ---: | --- |
+| 751 | têm conversa com mensagens aqui |
+| 749 | têm negócio aqui (quase todos na etapa de entrada) |
+| 640 | têm **nome diferente** nos dois lados (ver decisão 8) |
+| 233 | nasceram da integração do Asaas |
+| 26 | têm algum campo personalizado preenchido aqui |
+| 9 | têm o **nome fixado** (999) — a carga não pode trocá-lo |
 
-Os 18 campos personalizados e as tags que já existem no CB CRM **espelham a
-Kommo quase 1:1**. Isso não é coincidência e muda a natureza do trabalho: não é
-modelagem, é de‑para.
+### A Kommo ainda recebe e trabalha lead
+
+| Dia | Leads novos |
+| --- | ---: |
+| 07/09 | 36 |
+| 08/09 | 43 |
+| 09/09 | 36 |
+| 10/09 | 30 |
+| 11/09 | 30 |
+| 12/09 (sáb) | 17 |
+| 13/09 (dom) | 22 |
+| 14/09 (até 13h58) | 27 |
+
+- **Todos** criados por integração (`created_by = 0`), com as etiquetas
+  TRABALHISTA (179), FORMULÁRIO (137) e TYPEBOT (38).
+- Entram sobretudo em **Trabalhista › Etapa de entrada** (68), no
+  **Pré-Vendas › TYPEBOT e FORMS** (25) e no **Pré-Vendas › Reunião Agendada
+  BOT** (10) — e 66 já nasceram ou caíram em PERDIDO na mesma semana.
+- **652 leads antigos foram mexidos** na semana: 445 pelo usuário
+  "Trabalhista", 181 por robô, 26 por "Cabral Baptista Advocacia".
+- **Nenhuma anotação** foi escrita na Kommo desde 02/09 — as 543 são acervo
+  congelado.
+
+O que alimenta essas entradas — e os webhooks que a Kommo dispara a cada
+mudança de etapa — está em "Entradas e saídas da Kommo", mais abaixo.
 
 ## De‑para
 
 ### Campos personalizados — de LEAD (Kommo) para CONTATO (CB CRM)
 
-⚠️ No CB CRM campo personalizado só existe em **contato**, e só em dois tipos
-(`text` e `datetime`). Todo campo rico da Kommo (`tracking_data`, `date_time`,
-lista) desce para um desses dois.
+⚠️ No CB CRM campo personalizado só existe em **contato**. Os tipos agora são
+`text`, `datetime`, `select` e `number` (948) — lista da Kommo pode virar
+`select` em vez de texto solto.
 
-| Kommo (lead) | Preenchidos | CB CRM (contato) |
+| Kommo (lead) | Preenchidos 14/09 | CB CRM (contato) |
 | --- | ---: | --- |
-| Tamanho da dívida | 2.683 | Tamanho da Divida |
-| Atraso da dívida | 2.249 | Tempo de Atraso |
-| Origem dívida | 2.237 | Origem da Divida |
-| Marcou reunião onde | 1.321 | ❓ não existe |
-| URL Reunião | 1.280 | Link Reunião |
-| Reunião Marcada (`date_time`) | 1.165 | Data e Hora Reunião |
-| fbclid | 949 | fbclid |
-| Conjunto anuncios | 877 | Nome do conjunto |
-| Campanha | 877 | Nome da campanha |
-| anuncio | 877 | Nome do anúncio |
+| Tamanho da dívida | 2.773 | Tamanho da Divida |
+| Atraso da dívida | 2.337 | Tempo de Atraso |
+| Origem dívida | 2.327 | Origem da Divida |
+| Marcou reunião onde | 1.354 | ❓ não existe |
+| URL Reunião | 1.314 | Link Reunião |
+| Reunião Marcada (`date_time`) | 1.199 | Data e Hora Reunião |
+| Campanha / Conjunto anuncios / anuncio | 1.152 cada | Nome da campanha / do conjunto / do anúncio |
+| fbclid | 1.004 | fbclid |
 | Código ID | 671 | ❓ não existe |
-| Telefone (campo de lead) | 386 | → `contacts.phone` (não é campo) |
-| E-mail (campo de lead) | 382 | → `contacts.email` (não é campo) |
-| Data Proposta (`date`) | 338 | Data da Proposta |
+| Telefone (campo de lead) | 443 | → `contacts.phone` (não é campo) |
+| E-mail (campo de lead) | 439 | → `contacts.email` (não é campo) |
+| Data Proposta (`date`) | 353 | Data da Proposta |
 | utm_source/medium/campaign/content/term | ~305 cada | utm_* (mesmos nomes) |
 | TAGs contem | 298 | ❓ não existe |
-| Demitida ou demissão | 81 | ❓ não existe |
-| Tempo da demissão | 81 | ❓ não existe |
+| Demitida ou demissão | 268 | ❓ não existe (mas há TAGS "Demitida", "Pediu Demissão", "Ag. Demissão" aqui) |
+| Tempo da demissão | 268 | ❓ não existe |
+| Grávida | 4 | ❓ não existe |
 
-Sem origem na Kommo (ficam vazios): `ctwa_clid`, `Data do Primeiro Contato`,
-`Data de Fechamento do Contrato`.
+Os 14 campos restantes da Kommo seguem com **zero** preenchimentos (inclusive
+a família `utm_*` duplicada do tipo `text`). Não migram.
 
-Os 14 campos restantes da Kommo têm **zero** preenchimentos — inclusive uma
-segunda família `utm_*` do tipo `text`, duplicada da `tracking_data`. Não migram.
-
-Campos de **contato** na Kommo: só os de sistema (Telefone, E-mail) e `Posição`,
-com 0 preenchimentos. **Todo o dado rico está no lead.**
+Campo de **contato** na Kommo: Telefone (13.082), **E-mail (1.831)** e
+Posição (0). ⚠️ O CB CRM tem **zero** contatos com e-mail hoje — os 1.831
+entram em `contacts.email`, e o gatilho da 1000 os espelha sozinho no campo
+"E-mail" do bloco Geral. De quebra, o vínculo automático do tl;dv (987), que
+casa por e-mail, ganha base.
 
 ### Tags
 
-⚠️ **Remedido em 08/09: são 11 tags no CB CRM, não 9.** Nasceram `Formulário` e
-`Typebot`, e as duas casam com tag da Kommo — `FORMULÁRIO` (81 leads) e
-`TYPEBOT` (2.425 leads, a 2ª mais usada de lá). A coluna "já existe no CB CRM?"
-da planilha de de‑para está desatualizada para essas duas.
+Medido com `chaveDeTag` (sem acento, minúsculas): **6 das 31 tags da Kommo já
+existem** no CB CRM — TRABALHISTA (8.291 usos), TYPEBOT (2.482),
+DESQUALIFICADO (1.664), BANCÁRIO (1.250), CLIENTE FECHADO (1.185) e
+FORMULÁRIO (268). ⚠️ O plano de 08/09 dizia 11; estava errado.
 
-Hoje 11 das 30 tags da Kommo já existem por nome (Trabalhista, Bancário,
-Cliente Fechado, Desqualificado, Typebot, Formulário…). As outras ~20 (100K a
-500K, adsBLOG, PROCESSO PROT. TRAB, EM ATRASO, REVISIONAL, CONSIGNADO…)
-precisariam ser criadas.
+As outras 25, por uso: 100K a 500K (1.433), adsBLOG (652), PROCESSO PROT.
+TRAB (623), EM ATRASO (355), Leads AVN (343), -100K (292), NÃO RESPONDEU
+(250), CONTATO SEG. TRAB (240), PROPOSTA RECEBIDA CHATGURU (186), CPF e CNPJ
+(183), EM DIA (156), REVISIONAL (116) e 13 com menos de 40 usos.
 
-⚠️ No CB CRM a tag é do **contato**, não do negócio. Tag de lead vira tag do
-contato vinculado — o que funciona porque quase todo lead tem exatamente um.
+As tags "Ag. Demissão", "Pediu Demissão" e "Demitida" do CB CRM **não existem
+como tag na Kommo** — lá são ETAPAS do funil Trabalhista (882, 1.144 e 398
+leads). Ao montar o CB CRM, essas etapas parecem ter virado tag; o de‑para de
+funil precisa dizer se um lead em "Pediu Demissão" lá vira tag aqui.
 
-### Funis — 6 → 4, e é aqui que não há resposta automática
+⚠️ No CB CRM a tag é do **contato**. Tag de lead vira tag do contato vinculado
+— e a gravação vai DIRETO em `contact_tags` (como o Asaas faz), nunca por
+`tag-events.ts`, que dispararia o gatilho `tag_added` das automações milhares
+de vezes.
 
-A Kommo separa por **função** (SDR → Closer → Onboarding → Pós-venda), com um
-funil por **área** (Trabalhista). O CB CRM separa por **área × função**
-(Bancário/Trabalhista × Comercial/Jurídico). Não há mapeamento óbvio.
+### Funis — 6 → 4
 
-| Funil Kommo | Leads | Destino provável |
-| --- | ---: | --- |
-| Trabalhista (18 etapas) | 8.115 | Trabalhista - Comercial + Trabalhista - Jurídico |
-| Funil Pré Vendas (SDR) / Recuperação (14) | 3.282 | Bancário - Comercial |
-| Jurídico (Atendimento Geral) (8) | 340 | Bancário - Jurídico |
-| Funil de Vendas (Closer) (9) | 339 | Bancário - Comercial |
-| Funil de Onboarding (12) | 178 | Bancário - Comercial? |
-| Checkpoints (Pós Vendas) (9) | 2 | descartar? |
+A Kommo separa por **função** (SDR → Closer → Onboarding → Pós-venda) com um
+funil por **área** (Trabalhista); o CB CRM separa por **área × função**.
 
-**Ganho e perdido não são etapa.** `status_id` 142 e 143 são nativos da Kommo e
-compartilhados por todos os funis: **170 ganhos** e **5.093 perdidos**, ou seja
-**43% dos leads já estão fechados**. No CB CRM isso é `deals.status`
-(`won`/`lost`) + a etapa com `resultado` da migration 950 — não precisa de etapa
-própria.
+| Funil Kommo | Leads | Abertos | Destino provável |
+| --- | ---: | ---: | --- |
+| Trabalhista (18 etapas) | 8.381 | 5.572 | Trabalhista - Comercial + Trabalhista - Jurídico |
+| Funil Pré Vendas (SDR) / Recuperação (14) | 3.358 | 434 | Bancário - Comercial |
+| Funil de Vendas (Closer) (9) | 352 | 295 | Bancário - Comercial |
+| Jurídico (Atendimento Geral) (8) | 341 | 341 | Bancário - Jurídico |
+| Funil de Onboarding (12) | 180 | 179 | Bancário - Comercial? |
+| Checkpoints (Pós Vendas) (9) | 2 | 2 | descartar? |
+
+As etapas do CB CRM (28) seguem com os mesmos nomes de 08/09, e várias têm par
+óbvio na Kommo — Link Enviado, Contrato Assinado, Protocolado, Cliente Ativo,
+Contato Banco, Contato Avulso, Reunião Sem Proposta. ⚠️ Três armadilhas no par
+"óbvio":
+
+- **"Não Respondeu" (Trabalhista - Comercial) tem `resultado = perdido`**
+  (950). Os **1.542 leads** da Kommo em "Não respondeu 1ª mensagem" estão
+  ABERTOS lá; entrar nessa etapa aqui os carimba perdidos pelo gatilho.
+- **"Protocolado" tem `resultado = ganho`**: 738 leads.
+- **`pipeline_stages.degrau` segue NULO nas 28 etapas** (975) — o funil de
+  eficiência não conta nada até o operador mapear. Mapear ANTES da carga faz
+  os leads importados entrarem classificados.
+
+**Ganho e perdido não são etapa** na Kommo: `status_id` 142/143, compartilhados
+por todos os funis — **170 ganhos e 5.621 perdidos (46% dos leads)**. ⚠️ Os 170
+ganhos têm **valor zero** (o `price` preenchido está em 423 leads, quase todos
+abertos, somando R$ 10,46 mi — a conferir com o operador se é honorário ou o
+tamanho da dívida).
+**1.122 perdidos têm motivo de perda**, e o CB CRM não tem onde guardá-lo
+(decisão 13).
+
+### Responsáveis
+
+| Usuário da Kommo | Leads como responsável |
+| --- | ---: |
+| Gabriel Queiroz | 8.088 |
+| Leonardo Cabral | 3.871 |
+| Trabalhista (login compartilhado) | 559 |
+| Cabral Baptista Advocacia | 96 |
+
+O CB CRM tem **3 membros** (Leonardo, Isa Lenier, Estephany Dias).
+`deals.assigned_to` guarda `profiles.id` e só aceita membro. Gabriel, o
+responsável por 64% dos leads, não é membro. Decisão 12.
 
 ## Travas técnicas medidas
 
-1. **Telefone é a chave e é obrigatório.** `contacts.phone` é `NOT NULL`, com
-   índice único em `(account_id, phone_normalized)` (migration 022). Medido:
-   - 28 contatos (0,2%) **sem telefone** — não têm como existir no CB CRM;
-   - 116 números **duplicados**, envolvendo 254 contatos, que o banco funde
-     sozinho (ex.: "Keyla momesso" e "Keylla Momesso" no mesmo número);
-   - 95 telefones sem DDI 55 e 2 com menos de 10 dígitos;
-   - **12.570 contatos distintos** ao fim, contra 12.736 na Kommo.
-2. **Anotação exige conversa.** `cb_conversation_notes.conversation_id` é
-   `NOT NULL` (918) e a `contact_notes` foi apagada na 922. Como só 118 conversas
-   existem hoje, **nenhum contato importado terá onde receber anotação**. São
-   543 anotações de texto (538 em 336 leads + 5 em contatos); o resto
-   (`link_followed`, `lead_auto_created`, `call_out`) é registro de máquina e
-   não se migra.
-3. **A API pública v1 não escreve campo personalizado.** `POST /v1/contacts`
-   aceita telefone, nome, e-mail, empresa e tags — nada além. A carga precisa ir
-   por service-role direto no banco, reusando `createDeal` para os negócios.
-4. **48 nomes vêm corrompidos da própria Kommo** — UTF-8 lido com a tabela
-   errada, virando ideogramas: `Let铆cia Concei莽茫o`, `MARIA RITA LE脙O DA SILVA`,
-   `Vanessa Val茅ria`. É recuperável por reinterpretação de bytes.
-5. **607 contatos não têm lead nenhum.**
-6. ⚠️⚠️ **A carga ESTRAGA o funil de eficiência se for feita ingenuamente**
-   (trava NOVA, achada na conferência de 08/09). Inserir negócio dispara o
-   trigger `cb_deals_log_event` (912), que grava `cb_lead_events` com
-   `occurred_at = clock_timestamp()` — **a data da importação**, não a do lead.
-   A RPC do funil comercial (975, em produção desde 04/09) lê exatamente
-   `cb_lead_events` por `to_pipeline_id` + janela de `occurred_at`, filtrando
-   só por `event_type`, **nunca por `origin`**. Resultado: 12.256 leads
-   "chegando" no dia da carga, e o relatório que o operador acabou de montar
-   vira ficção.
-   **O caminho certo já existe no próprio repositório**: o backfill da 912
-   escreve os eventos à mão, com `occurred_at = deals.created_at` e
-   `origin = 'retroativo'` (o CHECK aceita esse valor justamente para isto).
-   A carga faz igual — com a data real da Kommo — ou desliga o trigger e
-   escreve os eventos depois. Decisão 9 diz qual das duas.
+1. **Telefone é a chave.** Medido com `digitosDoTelefone` e com o nono dígito:
+   - 28 contatos **sem telefone** e 1 com telefone que não parece telefone —
+     não têm como existir no CB CRM;
+   - **181 números duplicados, envolvendo 393 contatos** (em 02/09 eram
+     116/254 contando só dígitos crus: o nono dígito esconde parte das
+     duplicatas);
+   - 37 telefones de fora do Brasil;
+   - **12.869 contatos distintos** ao fim.
+   ⚠️ O índice único `(account_id, phone_normalized)` NÃO funde as duas
+   grafias do nono dígito — a carga precisa casar pela chave de
+   `findExistingContact`, senão cria a segunda ficha de quem já está aqui.
+2. **Anotação exige conversa.** `cb_conversation_notes.conversation_id` segue
+   `NOT NULL`. São **543 anotações de texto** (538 em 336 leads + 5 em
+   contatos); **126 das de lead já têm onde pousar** (o contato tem conversa
+   aqui). As outras 412 de lead, e as 5 de contato, dependem da decisão 3.
+3. **Campo personalizado pela API v1: existe.** O plano de 08/09 dizia que
+   não; há `PATCH /api/v1/contacts/{id}/custom-fields` (escopo
+   `custom_fields:write`).
+   Mesmo assim, a carga segue melhor por service-role direto no banco: são
+   ~13 mil contatos, e a rota v1 pede uma requisição por contato.
+4. **43 nomes corrompidos** na própria Kommo (UTF-8 lido com a tabela errada:
+   `Let铆cia Concei莽茫o`). Recuperável por reinterpretação de bytes.
+5. **Um card por contato.** 118 contatos têm mais de um lead na Kommo, **6 com
+   mais de um ABERTO**. `createDeal` não impõe a regra (cada chamador decide),
+   mas o CB CRM trabalha supondo um aberto por contato: o motor escolhe o mais
+   recente (`negocioAlvo`), a rota v1 recusa o segundo com 409 e o roteador da
+   conexão desiste quando já há card. Os outros abertos ficariam órfãos de
+   atenção.
+6. ⚠️⚠️ **A carga ESTRAGA o funil de eficiência se for feita ingenuamente.**
+   Continua valendo: inserir negócio dispara o trigger da 912, que grava
+   `cb_lead_events` com a data da IMPORTAÇÃO, e a RPC do funil (975) lê
+   exatamente essa trilha. O caminho é o do backfill da 912: eventos escritos
+   com a data real e `origin = 'retroativo'` (o CHECK aceita). Hoje há **1**
+   evento retroativo na conta.
+7. ⚠️⚠️ **NOVA — a carga DISPARA AUTOMAÇÃO.** O gatilho
+   `cb_enfileira_evento_de_funil` (933) insere em `cb_automation_events` a
+   cada `INSERT` em `deals` e a cada mudança de etapa/status, e o agendador da
+   VPS drena a fila a cada ~60 s. Automações ativas na conta em 14/09:
+   - **"Envio Webhook CB OS - Atlas"** — `deal_stage_changed` em
+     *Bancário - Comercial › Contrato Fechado*, passos `add_tag` +
+     `send_webhook`. **Cada contrato importado ou movido para lá vira um
+     registro no CB OS.**
+   - "Calendly → Reunião agendada" (gatilho do Calendly, não do funil) e
+     "Teste do plano — follow-up (pode apagar)" (palavra-chave) não escutam o
+     funil.
+   - As 4 da régua do Asaas estão desligadas.
+   Qualquer automação de etapa criada até a carga entra na mesma conta — com
+   `send_message`, é mensagem de WhatsApp para milhares de clientes antigos.
+   A carga não pode depender de "ninguém ligou nada". Decisão 10.
+8. ⚠️ **NOVA — nome fixado e e-mail espelhado.** A carga é um escritor de
+   `contacts.name`: nos 9 contatos com `nome_fixado_em` ela não pode trocar o
+   nome (a marca protege contra o automático, e a carga é automática). E
+   escrever `contacts.email` aciona o espelho da 1000 — é o comportamento
+   desejado, mas a carga de e-mail passa pela aparagem da 1001 e não deve
+   gravar o campo "E-mail" à mão por fora.
+9. **NOVA — há outros escritores de ficha ao vivo.** Calendly (977), Asaas
+   (994) e as duas ingestões de WhatsApp criam ficha por telefone o dia todo.
+   A carga precisa ser **reexecutável** (idempotente pelo id da Kommo) e rodar
+   de novo no dia do corte para pegar o delta — o cadastro dos dois lados muda
+   ~30 leads por dia.
 
-## O que mudou desde o levantamento (conferência de 08/09/2026)
+## Entradas e saídas da Kommo
 
-118 commits e 10 migrations (972–981) entraram no `main`. Conferido item a item:
+Medido com `entradas.mjs` em 14/09. ⚠️ É o que precisa ser religado ao CB CRM
+ANTES de a Kommo sair do ar — senão lead para de chegar, ou conversão para de
+ser contada, sem erro em lugar nenhum.
 
-**Continua valendo, verificado ao vivo:**
+- **Fontes (`/sources`): nenhuma.** Os 241 leads da semana entram pela API,
+  por integração externa (`created_by = 0`); a Kommo não diz qual. Pelas
+  etiquetas são formulário (137) e Typebot (38). **Descobrir com quem mantém
+  o n8n e o Typebot** para onde eles escrevem hoje — é a primeira porta a
+  apontar para os webhooks de entrada do CB CRM (982).
+- **Widgets ativos:** `amocrm_whatsapp` (o WhatsApp da própria Kommo) e
+  `gotoconnect` (telefonia). A integração de WhatsApp da Kommo segue ligada:
+  conferir qual número ela ainda atende — o 5199‑8229 da API oficial foi
+  conectado ao CB CRM em 10/09 com a previsão de sair da Kommo.
+- ⚠️⚠️ **Webhooks de SAÍDA ativos: 5, todos em `status_lead`** (a cada mudança
+  de etapa):
+  - 4 para um n8n em `editor.trafegoedu.com.br` (fluxos
+    `cbadvogados-n8n-kommo-arven_*`), da agência de tráfego;
+  - 1 para uma função de outro projeto Supabase
+    (`…supabase.co/functions/v1/track-webhook`), dono a confirmar.
+  Pelo nome e pelo evento, são **rastreamento de conversão** (etapa do funil
+  → plataforma de anúncio). Quando a equipe parar de mover card na Kommo,
+  esses cinco param de receber — e o Meta Ads perde o sinal de conversão. O
+  CB CRM tem as duas peças para substituí-los (webhooks de saída da 028 e o
+  passo `send_webhook` numa automação de etapa), mas o formato que cada
+  destino espera precisa ser levantado com a agência. Decisão 14.
+  (Há mais 2 webhooks desativados, em `add_message`.)
+- **Motivos de perda:** só os 4 genéricos de fábrica ("Orçamento
+  insuficiente", "O produto não se encaixa à necessidade", "Não satisfeito com
+  as condições", "Comprado do concorrente") — o que pesa na decisão 13.
+- **Tarefas abertas:** 118. O CB CRM tem tarefas por cliente (944); não
+  estavam no escopo original.
 
-- `contacts.phone` segue `NOT NULL` (lido no schema do PostgREST, não deduzido).
-- `cb_conversation_notes.conversation_id` segue `NOT NULL` — **a trava das
-  anotações não afrouxou**. Nenhuma migration nova tocou essa tabela.
-- Os 18 campos personalizados: mesmos nomes, mesmos tipos, ainda só em contato.
-- Os 4 funis e as 28 etapas: **nomes idênticos** aos de 02/09. A planilha de
-  de‑para continua apontando para destinos que existem.
-- `POST /v1/contacts` continua sem aceitar campo personalizado.
+## Histórico de etapas na Kommo (decisão 9)
 
-**Mudou, e o plano foi corrigido acima:**
+Medido com `historico.mjs` em 14/09: **a Kommo guarda o histórico inteiro**,
+desde a abertura da conta.
 
-- Volume do destino (515 contatos) e a sobreposição de 313.
-- 11 tags, não 9.
-- A trava 6 (funil de eficiência), inteiramente nova.
+| | |
+| ---: | --- |
+| 40.832 | eventos de lead (`lead_added` + `lead_status_changed`) |
+| 13.222 | criações de lead (mais que os 12.614 vivos: inclui apagados) |
+| 27.610 | mudanças de etapa ou de status |
+| 11.510 | leads com pelo menos uma mudança |
+| 06/06/2025 → 14/09/2026 | do mais antigo ao mais recente |
 
-**Ferramenta nova que a carga deve usar:** `src/lib/contacts/telefone.ts`
-(`digitosDoTelefone`), nascido para o Calendly na 977. Ele resolve exatamente
-as formas que a Kommo devolve (`+55 96 99112-6767`, `(96) 99112-6767`,
-`96991126767`) e decide DDI pelo `+` e pelo nono dígito na 3ª posição — a
-guarda que impede um número americano de 11 dígitos virar brasileiro. A carga
-usa esse módulo em vez de um normalizador próprio. ⚠️ Isso muda os números da
-trava 1: os "95 telefones sem DDI 55" foram contados com um
-`replace(/\D/g,'')` cru, e parte deles ganharia o 55 corretamente — **recontar
-com `digitosDoTelefone` na fase 2**.
+Cada mudança traz etapa e funil de antes e de depois, com o instante. Por mês
+foram de 1.000 a 3.400 eventos, com um pico de 8.133 em setembro/2025. Ou seja:
+**a decisão 9 tem a opção boa disponível** — reconstruir a trilha real em
+`cb_lead_events` com `origin = 'retroativo'`, e o funil de eficiência dos
+últimos 15 meses sai verdadeiro. O custo é o de‑para de etapa valer também
+para as etapas por onde o lead PASSOU, não só para a atual.
 
-**Contexto novo que não bloqueia, mas muda o ambiente:**
-
-- `pipeline_stages.degrau` (975) existe e está **NULO em todas as 30 etapas** —
-  o operador ainda não mapeou. Se o mapeamento acontecer antes da carga, os
-  leads importados entram já classificados; se depois, o funil de eficiência
-  simplesmente não os conta até lá.
-- Calendly (977–980) cria ficha de cliente sozinho desde 08/09, usando o mesmo
-  `findExistingContact` — não conflita com a carga, mas é um segundo escritor.
-- Apagar contato virou de admin (981). Importa para desfazer uma carga errada.
+⚠️ A varredura leva ~12 min a 5 req/s e passa do teto de 400 páginas do
+`api.mjs`: `historico.mjs --continuar` retoma de onde parou.
 
 ## Decisões pendentes
 
 | # | Decisão | Opções |
 | --- | --- | --- |
-| 1 | De‑para dos funis e das 70 etapas | tabela acima, a preencher |
-| 2 | Migrar os 5.263 leads já fechados (43%)? | sim, com `status` fechado · só os 170 ganhos · não |
-| 3 | Onde vão as 543 anotações | `deals.notes` concatenado · criar conversa por contato · migration nova |
-| 4 | 5 campos da Kommo sem destino (2.452 valores) | criar no CB CRM · descartar |
-| 5 | Criar as ~20 tags que faltam? | sim · só as usadas acima de N |
-| 6 | Consertar os 48 nomes corrompidos? | sim · manter como está |
-| 7 | 28 sem telefone e 607 sem lead | descartar · migrar assim mesmo |
-| 8 | **Nos 313 contatos que existem nos DOIS, quem vence?** | o CB CRM (só preenche buraco) · a Kommo (sobrescreve) · caso a caso por campo |
-| 9 | **Data dos eventos de funil dos leads importados** | data real da Kommo, `origin='retroativo'` · sem evento nenhum (trigger desligado) |
+| 1 | De‑para dos funis e das 70 etapas | tabela acima, a preencher — incluir o que vira TAG (Pediu Demissão, Ag. Demissão, Foi demitido) |
+| 2 | Migrar os 5.791 leads já fechados (46%)? | sim, com `status` fechado · só os 170 ganhos · não |
+| 3 | Onde vão as anotações sem conversa (412 de lead + 5 de contato) | `deals.notes` concatenado · criar conversa vazia por contato · migration nova |
+| 4 | 6 campos sem destino (Marcou reunião onde, Código ID, TAGs contem, Demitida ou demissão, Tempo da demissão, Grávida) | criar no CB CRM · descartar |
+| 5 | Criar as 25 tags que faltam? | todas · só as usadas acima de N · nenhuma |
+| 6 | Consertar os 43 nomes corrompidos? | sim · manter como está |
+| 7 | 28 sem telefone e os contatos sem lead | descartar · migrar assim mesmo |
+| 8 | **Nos 979 contatos que existem nos DOIS, quem vence?** | o CB CRM (só preenche buraco) · a Kommo (sobrescreve) · por campo |
+| 9 | **Data dos eventos de funil dos leads importados** | histórico real da Kommo, `origin='retroativo'` · só criação e fechamento · nenhum evento |
+| 10 | **NOVA — como a carga passa pelas automações** | carga com o gatilho da 933 fora do caminho (sessão de replicação, com os eventos da 912 escritos à mão) · pausar TODAS as automações durante a carga · limpar a fila antes do agendador |
+| 11 | **NOVA — os 845 leads abertos de quem já tem card aqui** | a etapa da Kommo MOVE o card daqui · o card daqui fica e o lead vira histórico · caso a caso |
+| 12 | **NOVA — responsáveis** | mapear usuário → membro (e Gabriel?) · deixar sem responsável |
+| 13 | **NOVA — motivo de perda (1.122)** | campo `select` novo · tag · descartar |
+| 14 | **NOVA — o corte** | quais entradas religar primeiro (n8n/Typebot → CB CRM), quem substitui os 5 webhooks de conversão, quanto tempo os dois convivem, e quando a equipe para de mover card na Kommo |
+| 15 | **NOVA — as 118 tarefas abertas** | migrar para as tarefas por cliente (944) · descartar |
 
-As decisões **8** e **9** nasceram da conferência de 08/09 e não existiam no
-plano original. A 8 porque o destino deixou de ser vazio; a 9 porque o funil de
-eficiência entrou em produção no dia 04/09 e passou a ler a mesma trilha que a
-carga vai escrever.
+**Recomendação para a 8:** no nome, a Kommo tende a ser melhor — foi digitado
+por SDR, enquanto o daqui costuma ser o nome de perfil do WhatsApp (640 dos
+979 divergem) —, **exceto nos 9 fixados**, que ficam. E-mail e empresa: a
+Kommo preenche buraco (aqui não há e-mail nenhum). Tag e campo personalizado
+somam, nunca substituem.
 
-**Recomendação para a 8**, se ajudar a decidir: o CB CRM vence em nome, e-mail
-e empresa (são 313 clientes com quem o escritório falou nesta semana — o dado
-de lá é mais velho), e a Kommo entra só onde o campo está vazio. Tag e campo
-personalizado somam, nunca substituem. Mas é chamada sua.
+**Recomendação para a 9:** histórico real, com `origin='retroativo'` — a
+Kommo guarda as 27.610 mudanças desde junho/2025, então dá para reconstruir o
+funil verdadeiro em vez de fabricar um pico no dia da carga.
 
-**Recomendação para a 9:** data real da Kommo com `origin='retroativo'`. Isso
-reconstrói meses de histórico comercial verdadeiro em vez de fabricar um pico
-no dia da carga — e é exatamente o que a própria 912 fez quando precisou.
+**Recomendação para a 10:** a carga não pode depender de estado de tela. O
+caminho mais seguro é a carga escrever `deals` sem passar pelo gatilho da 933
+e escrever os eventos da 912 à mão (é o mesmo caminho da decisão 9) — pausar
+automações deixa uma janela em que a produção fica sem automação para os
+clientes de verdade.
+
+**Recomendação para a 11:** a etapa da Kommo move o card — o card daqui é o
+esboço que a conexão criou, e o trabalho do escritório está lá. Com a
+decisão 10 resolvida antes, mover não dispara nada.
 
 ## Fases
 
-- [x] **1. Levantamento** — `scripts/kommo/levantamento.mjs`, só leitura. Feito
-      em 02/09; conferido contra o `main` em 08/09.
-- [ ] **2. De‑para** — decisões acima fechadas, num arquivo de mapa versionado.
-      Refazer aqui a contagem de telefone com `digitosDoTelefone`.
-- [ ] **3. Carga** — script idempotente, por partes (contatos → tags → campos →
-      negócios → anotações), reexecutável. Chave de reconciliação: telefone
-      normalizado + o id da Kommo carimbado num campo personalizado. Os eventos
-      de funil seguem a decisão 9, nunca o trigger cru.
-- [ ] **4. Conferência** — contagens dos dois lados, amostragem na tela **e o
-      relatório do funil comercial antes/depois** (é o que a trava 6 ameaça).
+- [x] **1. Levantamento** — refeito em 14/09/2026 (este documento).
+- [ ] **2. De‑para e decisões** — as 15 decisões fechadas num arquivo de mapa
+      versionado (sem dado de cliente: ids de funil, etapa, campo, tag e
+      usuário).
+- [ ] **3. Ensaio** — a carga rodando contra um Postgres local com o schema do
+      replay e o bruto da Kommo, com relatório de diferença. Não existe banco
+      de homologação: o `.env.local` aponta para a produção.
+- [ ] **4. Religar entradas e saídas** — formulários e Typebot passam a chamar
+      o CB CRM (webhooks de entrada da 982), e os 5 webhooks de conversão
+      ganham substituto no CB CRM, antes da carga final.
+- [ ] **5. Carga** — idempotente, por partes (contatos → tags → campos →
+      negócios → eventos → anotações), com o id da Kommo carimbado. Reexecutada
+      no dia do corte para o delta.
+- [ ] **6. Conferência** — contagens dos dois lados, amostra na tela, e o
+      relatório do funil comercial antes/depois.
+- [ ] **7. Desligar** — a equipe para de usar a Kommo; revogar token e chave
+      secreta da integração.
 
-⚠️ **A conferência de hoje vale por poucos dias.** O destino cresce ~65
-contatos por dia e o `main` recebeu 118 commits em seis. Se a fase 3 não
-começar nesta semana, remedir contagens e sobreposição antes de escrever a
-carga — o resto do plano (schema, funis, campos) tem se mostrado estável.
+⚠️ **Esta medição vale por poucos dias.** Os dois lados mudam ~30 leads por
+dia. Remedir (os 5 passos do topo) antes de escrever a carga.
 
 ## Credenciais
 
-`KOMMO_TOKEN` e `KOMMO_API_BASE` no `.env.local` (gitignored). O token expira em
-**30/09/2026**. ⚠️ Ele foi colado num chat durante o levantamento — **revogar na
-Kommo assim que a migração terminar**, junto com a chave secreta da integração.
+`KOMMO_TOKEN` e `KOMMO_API_BASE` no `.env.local` (gitignored). ⚠️ O token
+**expira em 30/09/2026** — faltam 16 dias em 14/09, e a fase 5 dificilmente
+termina antes. Gerar um novo na integração da Kommo antes de vencer. Ele foi
+colado num chat durante o levantamento de 02/09 — **revogar na Kommo ao fim da
+migração**, junto com a chave secreta da integração.

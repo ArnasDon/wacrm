@@ -3,6 +3,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { resolverDestinatario } from "@/lib/automations/destinatario";
 import { dispararAutomacoes } from "@/lib/automations/engine";
 import { findExistingContact } from "@/lib/contacts/dedupe";
+import { nomeParaFixar } from "@/lib/contacts/nome-fixado";
 
 import type { ResultadoDoEvento } from "./cartao";
 import type { Agendamento } from "./payload";
@@ -123,6 +124,11 @@ export async function processarAgendamento(
   // passaria no compilador e os passos morreriam um a um no motor.
   const contactId: string = resolvido;
 
+  // ANTES do disparo, para a automação já falar com o nome do agendamento
+  // (`{{contact.name}}`) e para o card que já existia sair renomeado — o passo
+  // `create_deal` desiste em silêncio quando o contato já tem card.
+  const avisoDoNome = await fixarNomeDoAgendamento(admin, accountId, contactId, agendamento.nome);
+
   // A conversa do contato (única por conta, 036) e o canal por onde ele
   // fala — é o que o recorte por conexão da automação lê. Ficha recém-criada
   // já devolveu a conversa; a conexão dela é NULA, e `channelInScope` deixa
@@ -149,7 +155,74 @@ export async function processarAgendamento(
       vars: vars ?? variaveisDoAgendamento(agendamento),
     },
   });
-  return comFichaNova(resultadoDoDisparo(r, contactId), fichaNova);
+  return comAvisoDoNome(comFichaNova(resultadoDoDisparo(r, contactId), fichaNova), avisoDoNome);
+}
+
+/**
+ * O nome digitado no agendamento vira o nome da FICHA e o título do NEGÓCIO
+ * aberto, e fica FIXADO (999) — decisão do operador em 14/09/2026.
+ *
+ * O motivo é identidade, não completude: o cliente muitas vezes fala pelo
+ * celular da EMPRESA, e o perfil do WhatsApp diz o nome da empresa; quem
+ * agendou e vai à reunião é a pessoa. A marca `nome_fixado_em` é o que impede
+ * a próxima mensagem dele — que costuma vir logo depois de agendar — de
+ * devolver o nome do perfil à ficha.
+ *
+ * ⚠️ Só o negócio ABERTO é renomeado. Um contato é um telefone, e no celular
+ * da empresa o card fechado de meses atrás pode ser de OUTRA pessoa;
+ * renomeá-lo reescreveria a história daquele caso.
+ *
+ * ⚠️ Consequência aceita: duas pessoas que agendam pelo MESMO telefone trocam
+ * o nome da ficha a cada agendamento, e o anterior se perde. É o modelo de um
+ * contato por telefone, não desta função.
+ *
+ * Nunca lança, e nunca segura o disparo: o aviso ao advogado vale mais que o
+ * nome. Devolve o que o detalhe do evento deve dizer quando algo não gravou.
+ */
+async function fixarNomeDoAgendamento(
+  admin: SupabaseClient,
+  accountId: string,
+  contactId: string,
+  nomeDoAgendamento: string,
+): Promise<string | null> {
+  const nome = nomeParaFixar(nomeDoAgendamento);
+  if (!nome) {
+    // Nome ausente (linha antiga reprocessada) não é notícia; nome que é um
+    // número é — é a resposta para "por que a ficha não mudou de nome?".
+    return nomeDoAgendamento.trim() ? "o nome do agendamento parece um número — a ficha manteve o nome de antes" : null;
+  }
+
+  const agora = new Date().toISOString();
+  const { error: erroDaFicha } = await admin
+    .from("contacts")
+    .update({ name: nome, nome_fixado_em: agora, updated_at: agora })
+    .eq("id", contactId)
+    .eq("account_id", accountId);
+  if (erroDaFicha) {
+    console.error("[calendly] não foi possível fixar o nome da ficha:", erroDaFicha.message);
+    return `o nome da ficha não foi atualizado (${erroDaFicha.message})`;
+  }
+
+  // Sem `updated_at`: o gatilho `set_updated_at` de `deals` carimba sozinho. E
+  // mexer só no título não dispara a trilha da 912 nem a fila do funil — os
+  // dois olham `pipeline_id`, `stage_id` e `status`.
+  const { error: erroDoNegocio } = await admin
+    .from("deals")
+    .update({ title: nome })
+    .eq("account_id", accountId)
+    .eq("contact_id", contactId)
+    .eq("status", "open");
+  if (erroDoNegocio) {
+    console.error("[calendly] não foi possível renomear o negócio aberto:", erroDoNegocio.message);
+    return `o título do negócio não foi atualizado (${erroDoNegocio.message})`;
+  }
+  return null;
+}
+
+/** Puro: acrescenta ao detalhe do evento o que não gravou no nome. */
+export function comAvisoDoNome(r: ProcessamentoDoAgendamento, aviso: string | null): ProcessamentoDoAgendamento {
+  if (!aviso) return r;
+  return { ...r, detalhe: r.detalhe ? `${r.detalhe} · ${aviso}` : aviso };
 }
 
 /**

@@ -48,7 +48,7 @@ até o operador dizer o contrário):**
 | **D2** | ~~Agendamento cujo telefone **não está no CRM**~~ → **REVISTA em 08/09/2026** | **CRIAR** a ficha e a conversa (dono durável da conta), e disparar a automação | a versão antiga ("não criar") só funcionava por acidente: o OUTRO CRM respondia ao mesmo agendamento mandando um WhatsApp pelo celular pareado, e era ESSA mensagem que criava a ficha aqui — medido, 4,2 s e 4,5 s depois do nosso processamento, o que fez os dois primeiros agendamentos reais virarem `sem_contato`. O operador vai desligar aquela automação; sem criar a ficha, lead novo nenhum teria em quem a automação agir |
 | **D3** | **Escopo** da assinatura do webhook no Calendly | `organization` (todos os eventos da organização), com queda para `user` quando o token não é de admin | o evento pode ser de outro advogado; o token de admin enxerga todos |
 | **D4** | Onde fica a escolha do **evento** | na config do **gatilho** (select alimentado pela API do Calendly; vazio = qualquer evento) | permite mais de uma automação por evento no futuro sem mexer na integração |
-| **D5** | ⚠️ **O nome vindo do Calendly é sobrescrito pela próxima mensagem do cliente no WhatsApp** | aceitar e avisar; NÃO mudar a ingestão neste PR | `inbound-store.ts:95-100`, o webhook da Meta e a API v1 gravam o `pushName` do WhatsApp sempre que ele difere do nome salvo — é o comportamento do upstream para TODO nome, inclusive o que o operador edita à mão. Fixar o nome do Calendly exige uma marca "nome fixado pelo escritório" na ficha, que é feature à parte |
+| **D5** | ✅ **REVISTA em 14/09/2026: o nome do agendamento vira o nome da ficha e o título do negócio aberto, e fica FIXADO** (era "sobrescrito pela próxima mensagem do cliente; aceitar e avisar") | migration 999 (`contacts.nome_fixado_em`) + `fixarNomeDoAgendamento` antes do disparo + `.is('nome_fixado_em', null)` nos três caminhos que gravavam o nome do perfil | Decisão do operador, pelo motivo da identidade: o cliente fala muitas vezes pelo celular da EMPRESA, e quem agendou é a pessoa. Os caminhos que sobrescreviam: `inbound-store.ts` (Evolution), o webhook da Meta e o envio por telefone da API v1. Escrita MANUAL continua trocando nome fixado, e ainda não grava a marca. Detalhes em CLAUDE.md, seção do Calendly |
 | **D6** | **Ordem** dos passos na automação criada | nome → campos → **aviso ao número** → mover card | um passo que falha ENCERRA a execução (`engine.ts`, `break` no catch), e `move_deal_stage` falha quando o contato não tem card aberto — o aviso do agendamento não pode depender disso |
 | **D7** | Cancelamento no Calendly (`invitee.canceled`) | fora deste PR; a assinatura escuta só `invitee.created` | não foi pedido; reagendamento já chega como `invitee.created` novo (campos atualizados, aviso de novo) |
 
@@ -242,7 +242,8 @@ qualquer, até a conexão existir), passos nesta ordem (D6):
   e-mail, telefone e origem, evento, horário, link, respostas do
   formulário, resultado, contato) — não o JSON cru do Calendly.
 - Criar contato/card para telefone desconhecido (D2).
-- Fixar o nome vindo do Calendly contra o `pushName` do WhatsApp (D5).
+- ~~Fixar o nome vindo do Calendly contra o `pushName` do WhatsApp (D5).~~
+  Feito em 14/09/2026 (migration 999).
 - OAuth do Calendly (o token pessoal basta para um escritório).
 
 ---

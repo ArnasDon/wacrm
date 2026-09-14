@@ -259,6 +259,7 @@ upstream sobrescrevê-los:
 | `src/lib/whatsapp/send-message.ts` (2ª linha nossa) | a 932 separou `evolution_rejected` (4xx: a Evolution recusou, nada saiu) de `evolution_error` (tempo esgotado/5xx: pode ter saído). Só o segundo vira `entrega_incerta` |
 | `src/lib/whatsapp/send-message.ts` (3ª linha nossa) | `media_filename` no INSERT (969) — o `filename` já chegava na função e ia só para o WhatsApp; sem ele a bolha do que NÓS enviamos cai no rótulo genérico |
 | `src/app/api/whatsapp/webhook/route.ts` (2ª linha nossa) | `mediaFilename` no tipo de retorno da extração, no `empty`, no case `document` e no upsert (969). ⚠️ O `contentText` continua `caption \|\| filename` — não "simplificar" removendo o filename de lá: a lista de conversas e a busca já leem essa coluna há meses |
+| `src/app/api/whatsapp/webhook/route.ts` (3ª linha nossa) | o `.is('nome_fixado_em', null)` no UPDATE que troca o nome do contato pelo do perfil (999). O bloco é do upstream e volta cru num merge — sem a guarda, o nome fixado pelo agendamento do Calendly vira o do WhatsApp na mensagem seguinte. Pino: `src/lib/contacts/nome-fixado.chamadores.test.ts` |
 | `src/components/inbox/message-bubble.tsx` (além de ser nosso inteiro) | o case `document` usa `mediaFilename(message)` e mostra a legenda embaixo só quando ela DIFERE do nome; `nomeDeArquivo` delega para a cascata em vez de derivar o basename cru |
 | `src/components/inbox/message-bubble.tsx` (canal, 2026-09-02) | a prop `canal` (nome + cor) no lugar do antigo `channelLabel`: o rótulo embaixo da mensagem ganhou a bolinha da cor, 10px (era 9) e teto de 9rem (era 7). ⚠️ Uma versão desta nota dizia que em 7rem os nomes truncavam "no ponto em que ainda são iguais" — MEDIDO em 02/09: os seis nomes da conta cabem em 7rem até a 10px (o mais longo, "Trabalhista - Comercial", dá 110px); o 9rem é folga, não conserto. A cor vive na BOLINHA, não no texto: a bolha da equipe é `bg-primary`, violeta nesta conta. Uma trilha de 3px na borda foi feita e DESCARTADA pelo operador na hora ("não gostei dessa borda colorida") |
 | `src/components/inbox/message-thread.tsx` | além do fio intercalado, renderiza a faixa `ScheduledBar` logo acima do compositor e guarda o contador que a liga ao compositor |
@@ -3315,11 +3316,40 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   (a forma muda entre majors do Node — o PR #66); `agendamento_inicio` é o
   ISO UTC cru, que é o que o campo `datetime` guarda (`campo-data.ts`).
   Fuso fixo `America/Sao_Paulo` em `FUSO_DO_ESCRITORIO`.
-- ⚠️ **O nome vindo do Calendly é sobrescrito pela próxima mensagem do
-  cliente**: `inbound-store.ts`, o webhook da Meta e a API v1 gravam o
-  `pushName` do WhatsApp sempre que difere do salvo — para TODO nome,
-  inclusive o editado à mão. Fixar o nome exige uma marca na ficha (fora
-  deste PR, D5).
+- ⚠️⚠️ **O nome do AGENDAMENTO vira o nome da ficha e o título do negócio
+  aberto, e fica FIXADO (999, decisão do operador em 14/09/2026 — era a D5,
+  antes aceita como "sobrescrito pela próxima mensagem").** O motivo é
+  IDENTIDADE, não completude: o cliente muitas vezes fala pelo celular da
+  EMPRESA, o perfil do WhatsApp diz o nome da empresa, e quem vai à reunião
+  é a pessoa. `fixarNomeDoAgendamento` (`processar.ts`) roda ANTES do
+  disparo (a automação já fala com o nome novo, e o card existente sai
+  renomeado — o `create_deal` desiste quando já há card) e nunca segura o
+  aviso ao advogado: falha vira aviso no `detalhe` do evento. O que morde:
+  - ⚠️⚠️ **Sem `contacts.nome_fixado_em`, o nome durava até a próxima
+    mensagem do cliente** — que costuma vir logo depois de agendar. TRÊS
+    caminhos AUTOMÁTICOS gravavam o nome do perfil do WhatsApp sempre que
+    diferia do salvo (o comportamento do upstream): `inbound-store.ts`
+    (Evolution), o webhook da Meta e `resolve-conversation.ts` (envio por
+    telefone da API v1). Os três levam `.is('nome_fixado_em', null)` DENTRO
+    do UPDATE (a busca do contato não traz a coluna), e há teste estrutural
+    com o conjunto EXATO de escritores de `contacts.name`
+    (`src/lib/contacts/nome-fixado.chamadores.test.ts`, que reprova com a
+    guarda do webhook da Meta removida — medido). O perfil do Instagram não
+    entra: ele só preenche nome quando a ficha não tem nenhum.
+  - ⚠️ **A marca protege contra o AUTOMÁTICO, não contra gente.** Painel da
+    conversa, ficha, formulário e o PATCH da API v1 continuam trocando nome
+    fixado. Até 14/09/2026, nome editado À MÃO **sem** agendamento ainda é
+    sobrescrito pela mensagem seguinte — as escritas manuais não gravam a
+    marca (pendente de decisão do operador).
+  - ⚠️ **Só o negócio ABERTO é renomeado**: um contato é um telefone, e no
+    celular da empresa o card fechado de meses atrás pode ser de OUTRA
+    pessoa. Mexer só no `title` não dispara a trilha da 912 nem a fila do
+    funil (os dois olham `pipeline_id`/`stage_id`/`status`).
+  - **Número não é nome** (`nomeParaFixar`, `src/lib/contacts/nome-fixado.ts`,
+    a mesma régua da ingestão da Evolution): fixar "5583…" tiraria da ficha o
+    nome de verdade para sempre. O detalhe do evento diz por que não mudou.
+  - **Consequência aceita**: duas pessoas que agendam pelo MESMO telefone
+    trocam o nome da ficha a cada agendamento.
 - ⚠️⚠️ **`send_to_number` NÃO herda o canal do disparo** (ao contrário de
   `send_message`): o canal do disparo é o número por onde o CLIENTE
   escreveu, e não diz nada sobre por qual número o escritório avisa a si
@@ -4826,7 +4856,25 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     da régua). Aplicada em 13/09/2026 pela Management API (histórico
     `20260913211455`), ANTES do merge; a lista de exceção do operador (38
     clientes do Asaas) marcada em seguida por script fora do repositório.
+  - **999_cb_nome_fixado** — `contacts.nome_fixado_em`, a marca que impede os
+    caminhos automáticos de trocar o nome da ficha pelo do perfil do WhatsApp
+    (o nome do agendamento do Calendly). Aditiva. ⚠️ O deploy tem de vir
+    DEPOIS dela: sem a coluna, a guarda dos três caminhos faz o PostgREST
+    recusar o UPDATE de nome (o nome para de acompanhar o WhatsApp, sem
+    quebrar nada) e o Calendly não consegue fixar o nome (vira aviso no
+    detalhe do evento).
 
+  ⚠️⚠️ **A 999 é o ÚLTIMO número possível no formato atual.** O replay do CI
+  aplica as migrations em ordem de NOME (`fs.ReadDir`, lexicográfica), e
+  `1000_` ordena ENTRE a `042_` e a `900_` — rodaria antes das tabelas de que
+  depende, o replay ficaria vermelho, e desde 08/09/2026 replay vermelho
+  TRAVA o deploy. Nenhum prefixo só de dígitos ordena depois de `999_`
+  (`9990_` < `999_`, porque `0` vem antes de `_`). A próxima migration exige
+  DECIDIR a numeração antes de nascer — a saída que mantém a ordem é renomear
+  todos os arquivos para 4 dígitos (`0001_` … `0999_`), o que o histórico do
+  Supabase não sente (registra por timestamp) mas quebra os testes que leem
+  migration por caminho e conflita com toda branch aberta que traga
+  migration. Decisão do operador, pendente em 14/09/2026.
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

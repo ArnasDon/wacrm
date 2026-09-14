@@ -50,6 +50,9 @@ const admin = {
   from(tabela: string) {
     const b: Record<string, unknown> = {
       select: () => b,
+      // O nome do agendamento é fixado na ficha e no negócio (999) — o
+      // comportamento é coberto em `processar.nome.test.ts`.
+      update: () => b,
       eq: () => b,
       order: () => b,
       limit: () => b,

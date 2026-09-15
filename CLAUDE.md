@@ -4709,18 +4709,24 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   da lista percebe que só ele mudou — a página, a busca e o filtro são os
   mesmos (`chaveDaListaRef`) — e refaz em silêncio e com a seleção; senão
   quem preparava uma ação em massa perdia a seleção inteira (3ª rodada).
-- ⚠️⚠️ **No Funil, a recarga da volta só grava com as DUAS consultas certas, o
-  mesmo funil aberto** (`funilAbertoRef`) **e nenhuma mudança no meio do
-  caminho** (`versaoDoQuadroRef`, que o arrasto, `refreshDeals`,
-  `refreshStages` E a troca de funil avançam). `buscarEtapas`/`buscarNegocios`
-  devolvem `null` na FALHA — diferente de `[]`, funil vazio —, porque voltar
-  ao app antes de a rede do celular voltar esvaziava o quadro; trocar de
-  funil com a recarga no ar deixava o quadro de B com os dados de A (e A → B
-  → A passava pelas duas primeiras cercas); e a recarga que saiu antes de um
-  arrasto, voltando depois dele, devolvia o card à etapa antiga (Codex, PR
-  #216, três rodadas). Quem criar outro caminho que mexa em `deals` ou
-  `stages` nesta página avança a versão também. `loadStages`/`loadDeals`
-  continuam devolvendo `[]` para quem já os chamava.
+- ⚠️⚠️ **No Funil, a volta recarrega o QUADRO, o CATÁLOGO DE FUNIS e as
+  AUTOMAÇÕES, e só grava com o mesmo funil aberto** (`funilAbertoRef`) **e
+  nenhuma mudança no meio do caminho** (`versaoDoQuadroRef`, que o arrasto,
+  `refreshDeals`, `refreshStages`, `refreshPipelines`, `refreshAutomations` E a
+  troca de funil avançam). Tudo o que ela lê tem variante com `null` na FALHA —
+  `buscarEtapas`, `buscarNegocios`, `buscarFunis`, `buscarAutomacoes` e o
+  `falhou` de `loadPassosENomes` —, porque voltar ao app antes de a rede do
+  celular voltar esvaziava o quadro, apagava a lista de funis e a seleção, ou
+  trocava os nomes dos cartões por "(apagado)". Funil apagado lá fora sai da
+  seleção, e a troca carrega o primeiro que sobrou. ⚠️ As gravações acontecem
+  JUNTAS, depois de uma única conferência: gravando a troca de funil antes, a
+  própria troca avançaria a versão e descartaria as automações. Motivos, das
+  quatro rodadas do Codex no PR #216: trocar de funil com a recarga no ar
+  deixava o quadro de B com os dados de A (e A → B → A passava pela cerca do
+  funil); a recarga que saiu antes de um arrasto devolvia o card à etapa
+  antiga; e o catálogo e as automações ficavam velhos até reabrir a tela.
+  Quem criar outro caminho que mexa nesses estados avança a versão também. Os
+  `load*` continuam devolvendo vazio para quem já os chamava.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de

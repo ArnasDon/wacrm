@@ -74,23 +74,30 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
     );
   });
 
-  it("o Funil descarta a resposta de outro funil e mantém o quadro quando a consulta falha", () => {
-    expect(funil).toContain("funilAbertoRef.current !== funil");
-    expect(funil).toContain("if (!etapas || !negocios) return;");
+  it("a volta do Funil recarrega quadro, catálogo de funis e automações, com leitores que devolvem null na falha", () => {
+    // Uma falha passageira na volta não pode esvaziar o quadro, apagar a
+    // lista de funis e a seleção, nem trocar os nomes dos cartões.
+    expect(funil).toContain("buscarFunis(),");
+    expect(funil).toContain("buscarAutomacoes(),");
+    expect(funil).toContain("!extra.falhou");
+    expect(funil).toContain("if (etapas && negocios) {");
   });
 
-  it("o Funil descarta a resposta que saiu antes de uma mudança local ou de uma troca de funil", () => {
-    // Uma recarga que partiu antes de um arrasto e voltou depois dele
-    // devolveria o card à etapa antiga; A → B → A passaria pelas duas cercas.
-    expect(funil).toContain("versaoDoQuadroRef.current !== versao");
-    expect(funil).toMatch(
-      /const handleDealMoved = useCallback\(\s*async \(dealId: string, newStageId: string\) => \{[\s\S]{0,300}versaoDoQuadroRef\.current \+= 1;/,
+  it("o Funil só grava com o mesmo funil aberto e sem mudança no meio do caminho", () => {
+    expect(funil).toContain(
+      "versaoDoQuadroRef.current === versao && funilAbertoRef.current === funil",
     );
-    expect(funil).toMatch(
+    // Toda mudança local ou troca de funil avança a versão: a resposta que
+    // partiu antes dela desfaria o arrasto, o salvamento ou a troca.
+    for (const quem of [
       /const refreshDeals = useCallback\(async \(\) => \{\s*if \(!selectedPipelineId\) return;\s*versaoDoQuadroRef\.current \+= 1;/,
-    );
-    expect(funil).toMatch(
+      /const refreshStages = useCallback\(async \(\) => \{\s*if \(!selectedPipelineId\) return;\s*versaoDoQuadroRef\.current \+= 1;/,
+      /const refreshPipelines = useCallback\(async \(\) => \{\s*versaoDoQuadroRef\.current \+= 1;/,
+      /const refreshAutomations = useCallback\(async \(\) => \{\s*versaoDoQuadroRef\.current \+= 1;/,
+      /const handleDealMoved = useCallback\(\s*async \(dealId: string, newStageId: string\) => \{[\s\S]{0,300}versaoDoQuadroRef\.current \+= 1;/,
       /funilAbertoRef\.current = selectedPipelineId;[\s\S]{0,500}versaoDoQuadroRef\.current \+= 1;/,
-    );
+    ]) {
+      expect(funil).toMatch(quem);
+    }
   });
 });

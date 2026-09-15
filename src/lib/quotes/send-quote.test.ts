@@ -194,6 +194,30 @@ describe('sendQuoteToConversation', () => {
       contentText: '¿Le gustaría confirmar la reservación? Me falta el número de personas para dejarla lista.',
     })
   })
+
+  it('recaps the full reservation once nothing is missing', async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' },
+      account: { default_currency: 'GTQ' },
+      reservationRow: {
+        category: 'habitaciones',
+        service_name: 'Suite Premium',
+        guests: 2,
+        check_in: '2026-10-01',
+        check_out: '2026-10-03',
+      },
+    })
+    await sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1', true)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(
+      db,
+      'acct-1',
+      expect.objectContaining({
+        contentText: expect.stringContaining(
+          'Perfecto, esto sería: Suite Premium, del 2026-10-01 al 2026-10-03, 2 personas',
+        ),
+      }),
+    )
+  })
 })
 
 describe('sendQuoteAsText', () => {

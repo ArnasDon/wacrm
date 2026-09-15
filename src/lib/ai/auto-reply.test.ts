@@ -1858,6 +1858,41 @@ describe('dispatchInboundToAiReply — autonomous send_photo', () => {
     )
   })
 
+  it('hotel vertical, reservation already complete: recaps it instead of asking again', async () => {
+    h.state.account = { default_currency: 'GTQ', industry_vertical: 'hotel' }
+    h.state.products = [
+      { id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg', category_id: 'cat-1' },
+    ]
+    h.state.reservationRow = {
+      category: 'habitaciones',
+      service_name: 'Suite Premium',
+      guests: 2,
+      check_in: '2026-10-01',
+      check_out: '2026-10-03',
+      use_date: null,
+      hall: null,
+      estimated_price: 1200,
+    }
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({
+        contentText: expect.stringContaining(
+          'Perfecto, esto sería: Suite Premium, del 2026-10-01 al 2026-10-03, 2 personas',
+        ),
+      }),
+    )
+  })
+
   it('hotel vertical, product is in a non-bookable category: no nudge, just the photo', async () => {
     h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
     h.state.products = [

@@ -28,7 +28,7 @@ import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/goog
 import { formatWithOffset, describeNowInZone } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
-import { missingReservationFields, reservationFollowUpText } from '@/lib/reservations/missing-fields'
+import { buildReservationFollowUpMessage } from '@/lib/reservations/missing-fields'
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 import { describeError, isUndefinedColumnError } from '@/lib/observability/describe-error'
 import {
@@ -2256,12 +2256,14 @@ async function autoSendProductPhoto(args: {
  * vertical only — called only when `isHotel`). Looks up this product's
  * own `reservation_requests` row for THIS conversation (if the guest,
  * or an earlier `record_reservation` marker this same turn, already
- * started one) to name what's still missing; a product with no row yet
- * falls back to its catalog category alone, so a guest whose very
- * first message was "send me a photo" still gets asked for dates/guests
- * instead of silence. A product outside the five hotel categories (or
- * one `categorySlugFromName` can't resolve) sends nothing — not every
- * photo is of something bookable.
+ * started one) — naming what's still missing, or, once nothing is, a
+ * full recap (service, dates/guests, estimated price) ending in the
+ * confirmation ask (see `buildReservationFollowUpMessage`). A product
+ * with no row yet falls back to its catalog category alone, so a guest
+ * whose very first message was "send me a photo" still gets asked for
+ * dates/guests instead of silence. A product outside the five hotel
+ * categories (or one `categorySlugFromName` can't resolve) sends
+ * nothing — not every photo is of something bookable.
  */
 async function sendHotelBookingNudge(args: {
   db: SupabaseClient
@@ -2271,23 +2273,28 @@ async function sendHotelBookingNudge(args: {
 }): Promise<void> {
   const { db, accountId, conversationId, productId } = args
 
-  const { data: row } = await db
-    .from('reservation_requests')
-    .select('category, guests, check_in, check_out, use_date, hall')
-    .eq('account_id', accountId)
-    .eq('conversation_id', conversationId)
-    .eq('product_id', productId)
-    .eq('is_active_build', true)
-    .eq('status', 'pending')
-    .maybeSingle()
+  const [{ data: row }, { data: account }] = await Promise.all([
+    db
+      .from('reservation_requests')
+      .select('category, service_name, guests, check_in, check_out, use_date, hall, estimated_price')
+      .eq('account_id', accountId)
+      .eq('conversation_id', conversationId)
+      .eq('product_id', productId)
+      .eq('is_active_build', true)
+      .eq('status', 'pending')
+      .maybeSingle(),
+    db.from('accounts').select('default_currency').eq('id', accountId).maybeSingle(),
+  ])
 
   type Row = {
     category: ReservationCategory
+    service_name: string | null
     guests: number | null
     check_in: string | null
     check_out: string | null
     use_date: string | null
     hall: string | null
+    estimated_price: number | null
   }
 
   let snapshot: Row | null = (row as Row | null) ?? null
@@ -2306,13 +2313,25 @@ async function sendHotelBookingNudge(args: {
       .maybeSingle()
     const slug = categorySlugFromName((category as { name: string | null } | null)?.name ?? null)
     if (!slug) return
-    snapshot = { category: slug, guests: null, check_in: null, check_out: null, use_date: null, hall: null }
+    snapshot = {
+      category: slug,
+      service_name: null,
+      guests: null,
+      check_in: null,
+      check_out: null,
+      use_date: null,
+      hall: null,
+      estimated_price: null,
+    }
   }
 
   await sendMessageToConversation(db, accountId, {
     conversationId,
     messageType: 'text',
-    contentText: reservationFollowUpText(missingReservationFields(snapshot)),
+    contentText: buildReservationFollowUpMessage(
+      snapshot,
+      (account as { default_currency: string | null } | null)?.default_currency ?? 'USD',
+    ),
   })
 }
 

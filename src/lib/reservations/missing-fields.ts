@@ -1,8 +1,12 @@
+import { formatCurrency } from '@/lib/currency'
 import type { ReservationCategory } from './upsert'
 
 /** The reservation fields a follow-up nudge cares about — a subset of
  *  the full `reservation_requests` row (or an empty snapshot when no
- *  row exists yet for this category/product). */
+ *  row exists yet for this category/product). `service_name` and
+ *  `estimated_price` aren't used by `missingReservationFields` (never
+ *  "missing" — a summary just omits them if absent) but do feed
+ *  `reservationSummaryText`. */
 export interface ReservationFieldSnapshot {
   category: ReservationCategory
   guests?: number | null
@@ -10,6 +14,8 @@ export interface ReservationFieldSnapshot {
   check_out?: string | null
   use_date?: string | null
   hall?: string | null
+  service_name?: string | null
+  estimated_price?: number | null
 }
 
 const DATE_RANGE_CATEGORIES = new Set<ReservationCategory>(['habitaciones', 'paquetes'])
@@ -48,4 +54,36 @@ export function reservationFollowUpText(missing: string[]): string {
       ? missing[0]
       : `${missing.slice(0, -1).join(', ')} y ${missing[missing.length - 1]}`
   return `¿Le gustaría confirmar la reservación? Me falta ${joined} para dejarla lista.`
+}
+
+/**
+ * A one-line recap of everything captured for this reservation —
+ * service, dates/guests/hall, and the estimated total if one is on
+ * file — ending in the confirmation ask. Only meaningful once
+ * `missingReservationFields` returns `[]`; see
+ * `buildReservationFollowUpMessage` for the combined decision.
+ */
+export function reservationSummaryText(row: ReservationFieldSnapshot, currency: string): string {
+  const bits: string[] = []
+  if (row.service_name) bits.push(row.service_name)
+  if (row.check_in && row.check_out) bits.push(`del ${row.check_in} al ${row.check_out}`)
+  else if (row.use_date) bits.push(row.use_date)
+  if (row.guests) bits.push(`${row.guests} ${row.guests === 1 ? 'persona' : 'personas'}`)
+  if (row.category === 'eventos' && row.hall) bits.push(row.hall)
+  if (row.estimated_price != null && row.estimated_price > 0) {
+    bits.push(`total estimado ${formatCurrency(row.estimated_price, currency)}`)
+  }
+  const detail = bits.length > 0 ? bits.join(', ') : 'su reservación'
+  return `Perfecto, esto sería: ${detail}. ¿Confirmamos la reservación?`
+}
+
+/** Single entry point for both post-photo and post-quote follow-ups:
+ *  the missing-fields ask while something's still needed, the full
+ *  recap (`reservationSummaryText`) once nothing is. */
+export function buildReservationFollowUpMessage(
+  row: ReservationFieldSnapshot,
+  currency: string,
+): string {
+  const missing = missingReservationFields(row)
+  return missing.length > 0 ? reservationFollowUpText(missing) : reservationSummaryText(row, currency)
 }

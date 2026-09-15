@@ -3,7 +3,7 @@ import { renderQuotePdf } from '@/lib/pdf/quote-pdf'
 import { uploadCatalogPdf } from '@/lib/pdf/upload-pdf'
 import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
 import { formatCurrency } from '@/lib/currency'
-import { missingReservationFields, reservationFollowUpText } from '@/lib/reservations/missing-fields'
+import { buildReservationFollowUpMessage } from '@/lib/reservations/missing-fields'
 import type { ReservationCategory } from '@/lib/reservations/upsert'
 import type { Quote, QuoteItem } from '@/types'
 // Re-exported under its original name — see `@/lib/messaging/window`'s
@@ -34,9 +34,11 @@ export type QuoteDeliveryMode = 'pdf' | 'message'
  * populated for any other vertical, so this naturally no-ops
  * elsewhere): when this conversation has an in-progress hotel booking
  * still being captured (`record_reservation`, migration 112), swap the
- * generic "anything else?" for a reservation-specific nudge naming
- * whatever's still missing (see `missingReservationFields`) — this is
- * a deterministic, code-level ask, not something left to the model to
+ * generic "anything else?" for a reservation-specific nudge — either
+ * naming whatever's still missing, or, once nothing is, a full recap
+ * (service, dates/guests, estimated price) ending in the confirmation
+ * ask (see `buildReservationFollowUpMessage`) — this is a
+ * deterministic, code-level ask, not something left to the model to
  * remember on a later turn.
  */
 async function sendQuoteFollowUp(
@@ -45,29 +47,33 @@ async function sendQuoteFollowUp(
   conversationId: string,
 ): Promise<void> {
   try {
-    const { data: row } = await db
-      .from('reservation_requests')
-      .select('category, guests, check_in, check_out, use_date, hall')
-      .eq('account_id', accountId)
-      .eq('conversation_id', conversationId)
-      .eq('is_active_build', true)
-      .eq('status', 'pending')
-      .order('updated_at', { ascending: false })
-      .limit(1)
-      .maybeSingle()
+    const [{ data: row }, { data: account }] = await Promise.all([
+      db
+        .from('reservation_requests')
+        .select('category, service_name, guests, check_in, check_out, use_date, hall, estimated_price')
+        .eq('account_id', accountId)
+        .eq('conversation_id', conversationId)
+        .eq('is_active_build', true)
+        .eq('status', 'pending')
+        .order('updated_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      db.from('accounts').select('default_currency').eq('id', accountId).maybeSingle(),
+    ])
 
     const contentText = row
-      ? reservationFollowUpText(
-          missingReservationFields(
-            row as {
-              category: ReservationCategory
-              guests: number | null
-              check_in: string | null
-              check_out: string | null
-              use_date: string | null
-              hall: string | null
-            },
-          ),
+      ? buildReservationFollowUpMessage(
+          row as {
+            category: ReservationCategory
+            service_name: string | null
+            guests: number | null
+            check_in: string | null
+            check_out: string | null
+            use_date: string | null
+            hall: string | null
+            estimated_price: number | null
+          },
+          (account as { default_currency: string | null } | null)?.default_currency ?? 'USD',
         )
       : '¿Hay algo más en lo que le pueda ayudar?'
 

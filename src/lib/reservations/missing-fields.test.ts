@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { missingReservationFields, reservationFollowUpText } from './missing-fields'
+import { formatCurrency } from '@/lib/currency'
+import {
+  missingReservationFields,
+  reservationFollowUpText,
+  reservationSummaryText,
+  buildReservationFollowUpMessage,
+} from './missing-fields'
 
 describe('missingReservationFields', () => {
   it('a room/package with no dates or guests needs both', () => {
@@ -82,5 +88,80 @@ describe('reservationFollowUpText', () => {
     ).toBe(
       '¿Le gustaría confirmar la reservación? Me falta la fecha, el número de personas y el salón que le interesa para dejarla lista.',
     )
+  })
+})
+
+describe('reservationSummaryText', () => {
+  it('recaps service, dates, guests and price for a complete room booking', () => {
+    expect(
+      reservationSummaryText(
+        {
+          category: 'habitaciones',
+          service_name: 'Suite Premium',
+          check_in: '2026-10-01',
+          check_out: '2026-10-03',
+          guests: 2,
+          estimated_price: 1200,
+        },
+        'GTQ',
+      ),
+    ).toBe(
+      `Perfecto, esto sería: Suite Premium, del 2026-10-01 al 2026-10-03, 2 personas, total estimado ${formatCurrency(1200, 'GTQ')}. ¿Confirmamos la reservación?`,
+    )
+  })
+
+  it('recaps a single-use-date category (spa/actividades) without a price on file', () => {
+    expect(
+      reservationSummaryText(
+        { category: 'spa', service_name: 'Masaje relajante', use_date: '2026-10-05', guests: 1 },
+        'GTQ',
+      ),
+    ).toBe('Perfecto, esto sería: Masaje relajante, 2026-10-05, 1 persona. ¿Confirmamos la reservación?')
+  })
+
+  it('includes the hall for eventos', () => {
+    expect(
+      reservationSummaryText(
+        {
+          category: 'eventos',
+          service_name: 'Salón de bodas',
+          use_date: '2026-12-01',
+          guests: 80,
+          hall: 'Salón Jardín',
+        },
+        'GTQ',
+      ),
+    ).toBe(
+      'Perfecto, esto sería: Salón de bodas, 2026-12-01, 80 personas, Salón Jardín. ¿Confirmamos la reservación?',
+    )
+  })
+
+  it('falls back to a generic phrase when nothing is on file to recap', () => {
+    expect(reservationSummaryText({ category: 'habitaciones' }, 'GTQ')).toBe(
+      'Perfecto, esto sería: su reservación. ¿Confirmamos la reservación?',
+    )
+  })
+})
+
+describe('buildReservationFollowUpMessage', () => {
+  it('asks for missing fields when the reservation is incomplete', () => {
+    expect(buildReservationFollowUpMessage({ category: 'habitaciones' }, 'GTQ')).toBe(
+      '¿Le gustaría confirmar la reservación? Me falta las fechas de entrada y salida y el número de personas para dejarla lista.',
+    )
+  })
+
+  it('gives the full summary once the reservation is complete', () => {
+    expect(
+      buildReservationFollowUpMessage(
+        {
+          category: 'habitaciones',
+          service_name: 'Suite Premium',
+          check_in: '2026-10-01',
+          check_out: '2026-10-03',
+          guests: 2,
+        },
+        'GTQ',
+      ),
+    ).toBe('Perfecto, esto sería: Suite Premium, del 2026-10-01 al 2026-10-03, 2 personas. ¿Confirmamos la reservación?')
   })
 })

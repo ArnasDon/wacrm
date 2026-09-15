@@ -4734,6 +4734,17 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   escolha do Meu dia), e na Lista a tabela sem linhas durante a carga é o
   que impede mudar a etapa de um negócio com a recarga no ar, a corrida que
   o quadro precisou cercar com a versão (Codex, PR #216, 3ª rodada).
+  ⚠️⚠️ **E o que não é trajetória vai JUNTO** (Codex, merge do PR #216). O
+  Desempenho recarrega também o gasto dos anúncios (`useGastosDeAnuncios`
+  ganhou `recarregar`, com a versão DENTRO da chave): só as trajetórias
+  misturava leads novos com o gasto de antes da sincronização, e o custo por
+  lead e o CAC saíam errados. A Lista recarrega também o catálogo de campos,
+  blocos e perfis (`versaoDoCatalogo`) e as conexões — esses EM SILÊNCIO,
+  por serem rótulos: recarga do catálogo que falha mantém o que está na tela
+  (vazio tiraria as colunas de campo da tabela), e as conexões usam o
+  `recarregarEmSilencio` do `useChannels`, que descarta a falha. O
+  `recarregar` comum trocaria a lista boa pelo vazio e apagaria os nomes da
+  coluna Conexão até a volta seguinte.
 - **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
   botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
   "0 vencidas"), e afirmar sobre número velho é pior que piscar.

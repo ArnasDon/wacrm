@@ -47,6 +47,14 @@ export interface UseChannelsResult {
   falhou: boolean;
   /** Busca de novo, ignorando o cache — a saída do "tentar de novo" (#08). */
   recarregar: () => Promise<void>;
+  /**
+   * Busca de novo SEM trocar uma lista boa por uma falha — para a volta ao
+   * app (`useAoVoltarParaOApp`), onde a lista só dá nome às conexões. O
+   * celular volta ao app antes da rede: com o `recarregar`, a falha apagava
+   * os nomes da tela até a volta seguinte. Resposta boa entra; a que falha é
+   * descartada. Quem precisa SABER da falha usa `recarregar`.
+   */
+  recarregarEmSilencio: () => Promise<void>;
 }
 
 interface Resultado {
@@ -156,11 +164,19 @@ export function useChannels(): UseChannelsResult {
     if (montadoRef.current) setResultado(r);
   }, []);
 
+  // A falha é descartada, e só aqui: para quem usa a lista como rótulo, a
+  // lista boa na tela vale mais que a afirmação "não consegui perguntar".
+  const recarregarEmSilencio = useCallback(async () => {
+    const r = await obterCanais(true);
+    if (montadoRef.current && !r.falhou) setResultado(r);
+  }, []);
+
   return {
     channels: resultado?.channels ?? SEM_CANAIS,
     loading: resultado === null,
     falhou: resultado?.falhou ?? false,
     recarregar,
+    recarregarEmSilencio,
   };
 }
 

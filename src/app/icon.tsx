@@ -1,15 +1,21 @@
 import { ImageResponse } from "next/og";
 
-// Replaces the default Next.js favicon with the brand mark — Hostinger
-// violet rounded square + white chat-square glyph — matching the
-// sidebar logo in `src/components/layout/sidebar.tsx`. Next.js renders
-// this at build time and auto-injects <link rel="icon"> into <head>.
+// Replaces the default Next.js favicon with the brand mark — a square
+// crop of the watermelon slice from the "Chat Sandía" logo, matching
+// the sidebar logo in `src/components/layout/sidebar.tsx` and the PWA
+// icons in `public/icons/`. Inlined as a data URI (rather than reading
+// `public/icons/mark.png` from disk) because this route renders via
+// satori/ImageResponse at request time, which needs image bytes up
+// front, not a filesystem path.
 //
 // This route takes precedence over src/app/favicon.ico, which is the
 // Next.js default and can stay on disk harmlessly (or be removed).
 
 export const size = { width: 32, height: 32 };
 export const contentType = "image/png";
+
+const MARK_DATA_URI =
+  "data:image/png;base64,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";
 
 export default function Icon() {
   return new ImageResponse(
@@ -19,24 +25,19 @@ export default function Icon() {
           width: "100%",
           height: "100%",
           display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          background: "#7c3aed", // primary (Hostinger-aligned purple)
+          background: "#ffffff",
           borderRadius: 6,
+          overflow: "hidden",
         }}
       >
-        <svg
-          width="20"
-          height="20"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="#ffffff"
-          strokeWidth="2.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        >
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
+        {/* eslint-disable-next-line @next/next/no-img-element -- ImageResponse (satori) renders this itself; next/image isn't available here. */}
+        <img
+          src={MARK_DATA_URI}
+          alt=""
+          width={32}
+          height={32}
+          style={{ objectFit: "cover" }}
+        />
       </div>
     ),
     { ...size },

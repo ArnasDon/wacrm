@@ -223,8 +223,13 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border px-3">
           <Link href="/dashboard" className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-sidebar-accent">
-            <div className="flex h-7 w-7 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <IconMessage className="h-4 w-4" />
+            <div className="h-7 w-7 shrink-0 overflow-hidden rounded-md">
+              {/* eslint-disable-next-line @next/next/no-img-element -- small static brand mark, not worth next/image's remote-domain setup. */}
+              <img
+                src="/icons/mark.png"
+                alt=""
+                className="h-full w-full object-cover"
+              />
             </div>
             <span className="text-sm font-semibold text-sidebar-foreground">
               {t("title")}

@@ -195,7 +195,10 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       }
       const cruas = (Array.isArray(payload) ? payload : [payload]) as Linha[];
       const inseridas: Linha[] = [];
-      // o `now()` do comando: um instante só para todas as linhas
+      // o `now()` do comando: um instante só para todas as linhas. ⚠️ É o
+      // relógio REAL: teste que simula ciclos em dias diferentes move o relógio
+      // do sistema junto (`vi.setSystemTime`, como o `deps()` de
+      // varrer-regua.test.ts), senão o resultado depende do calendário.
       const instante = new Date().toISOString();
       // ⚠️ Como o Postgres: um INSERT de VÁRIAS linhas é um comando só —
       // 23505 em qualquer uma recusa todas (é a trava de grupo da régua).

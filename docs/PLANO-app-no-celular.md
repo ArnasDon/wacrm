@@ -128,24 +128,29 @@ aviso.
   Lista a tabela sem linhas durante a carga impede mudar etapa com a recarga
   no ar.
 
-**Anotado, fora por decisão (D8):** as revisões do Codex sobre o merge do
-#216 e sobre o #217 apontaram mais três pontos em que a volta não recarrega
-tudo:
+**Anotado pela D8, e depois resolvido em parte (#218):** as revisões do Codex
+sobre o merge do #216 e sobre o #217 apontaram mais três pontos em que a
+volta não recarregava tudo. Dois foram resolvidos no #218:
 
-- **Desempenho:** a volta recarrega as trajetórias, mas não o gasto do Meta
-  Ads (`useGastosDeAnuncios` só busca de novo quando o período muda). Se a
-  sincronização trouxe gasto novo enquanto o app estava fora, custo por lead
-  e CAC misturam leads novos com o investimento antigo até trocar de tela ou
-  de período.
-- **Lista:** a volta não recarrega os catálogos de campos personalizados,
-  blocos, perfis e conexões. Campo, perfil ou conexão renomeados lá fora
-  continuam com o nome antigo — e um responsável novo aparece em branco — até
-  trocar de tela.
+- **Desempenho:** a volta recarrega as trajetórias E o gasto do Meta Ads. Só
+  as trajetórias misturava leads novos com o gasto de antes da sincronização,
+  e custo por lead e CAC saíam errados até trocar de tela ou de período.
+- **Lista:** a volta recarrega também os catálogos de campos personalizados,
+  blocos, perfis e conexões — em silêncio, e a recarga que falha mantém os
+  nomes que estão na tela.
+
+**Pendente, com proposta ao operador:**
+
 - **Perfil de acesso:** a volta recarrega a lista de funis, mas o recorte por
   perfil usa o perfil carregado quando o app abriu — o login não recarrega o
   perfil da mesma pessoa, e isso já vale para o app inteiro. Funil tirado do
   perfil por outro administrador continua visível e selecionado até o app ser
-  recarregado.
+  recarregado. Recarregar o perfil na volta mexe no provedor de login: cada
+  recarga devolve um perfil "novo" mesmo sem mudança, e as telas que reagem a
+  ele (o quadro do Funil, o painel da conversa, a ficha do contato) voltariam
+  a recarregar inteiras a cada retorno ao app. O conserto seguro é o provedor
+  só trocar o perfil quando o conteúdo mudou, e a casca do app recarregá-lo
+  na volta — valendo para o menu e todas as telas, não só o Funil.
 
 ## E4 — Voltar com o gesto do iPhone (#215)
 

@@ -366,8 +366,25 @@ export function buildSystemPrompt(args: {
    *  `APPOINTMENT_ACTION_SENTINEL_PREFIX`. Omitted = the marker is never
    *  taught (nothing to act on). */
   clinicAppointment?: { summary: string; confirmationStatus: string } | null
+  /** This contact's saved name + any non-empty custom field value on
+   *  file (`loadKnownContactFacts`), auto-reply mode only — every
+   *  vertical, not hotel-specific. `buildConversationContext` only
+   *  feeds the model the last ~20 raw messages, so on a long-running
+   *  thread a fact from days ago (the guest's name, an answered
+   *  question captured into a field) silently falls out of view unless
+   *  it's re-supplied here. Omitted/null = nothing on file yet. */
+  knownContactFacts?: string | null
+  /** Every active hotel request already captured for THIS conversation
+   *  across all categories (`loadActiveReservationsSummary`) — auto-
+   *  reply mode, `hotel` vertical. A guest can have a room, a spa slot
+   *  and an event request open at once; without this the bot only ever
+   *  sees whichever one is still inside the raw message window and can
+   *  re-ask for details on the others, or the customer's own words in
+   *  a fresh message on another category, and be unable to give a
+   *  confirmation-quality answer. Omitted/null = nothing open yet. */
+  activeReservations?: string | null
 }): string {
-  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies, askCustomerTaxInfo, hotelReservations, restaurantMenu, hotelStayEstimate, currentDate, flowDirective, clinicGuardrails, clinicAppointment } = args
+  const { userPrompt, mode, knowledge, dealStageOptions, catalog, calendar, catalogDeliveryMode, quickReplies, askCustomerTaxInfo, hotelReservations, restaurantMenu, hotelStayEstimate, currentDate, flowDirective, clinicGuardrails, clinicAppointment, knownContactFacts, activeReservations } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -388,6 +405,16 @@ export function buildSystemPrompt(args: {
     if (flowDirective && flowDirective.trim()) {
       parts.push(
         `A guided menu just routed this conversation to you with a specific instruction from the business — treat it as a priority task for your next reply, on top of your normal role: «${flowDirective.trim()}». The customer just picked a menu option; act on that instruction now (e.g. look the relevant information up in the knowledge base and answer), and keep helping them normally afterward.`,
+      )
+    }
+    if (knownContactFacts && knownContactFacts.trim()) {
+      parts.push(
+        `ALREADY KNOWN ABOUT THIS CONTACT — on file with the business, possibly from before what you can see in the chat history above:\n${knownContactFacts.trim()}\nTreat these as confirmed facts, not things to double-check. Use the name naturally when you address the customer. Do NOT ask again for anything already listed here unless the customer's own words in this conversation suggest it changed — then trust what they just told you over this list.`,
+      )
+    }
+    if (hotelReservations && activeReservations && activeReservations.trim()) {
+      parts.push(
+        `ALREADY REGISTERED REQUESTS FOR THIS GUEST IN THIS CONVERSATION — captured earlier, possibly outside the chat history above (the guest can have more than one open at a time, e.g. a room AND a spa slot):\n${activeReservations.trim()}\nTreat these as already captured — do not ask again for the dates/people/service on a category already listed here unless the guest brings that category up again with different details (then the new details replace the old ones, same as always). If they ask about something else, you can still weave in a reminder of another open request when it's natural (e.g. wrapping up), but never act like you don't know something that's listed here.`,
       )
     }
     if (hotelStayEstimate && hotelStayEstimate.trim()) {

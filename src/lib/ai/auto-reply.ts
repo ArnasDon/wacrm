@@ -7,6 +7,7 @@ import { makeInboundImageResolver, providerSupportsVision } from './inbound-imag
 import { retrieveKnowledge } from './knowledge'
 import { loadCatalogContext } from './catalog-context'
 import { loadHotelStayEstimate } from './hotel-stay-estimate'
+import { loadKnownContactFacts, loadActiveReservationsSummary } from './known-context'
 import { loadClinicAppointmentContext } from '@/lib/clinic/appointment-context'
 import { transitionAppointment } from '@/lib/clinic/appointments'
 import { loadQuickReplyContext } from './quick-reply-context'
@@ -541,6 +542,8 @@ export async function dispatchInboundToAiReply(
     let hotelStayEstimate: string | undefined
     let clinicAppointment: Awaited<ReturnType<typeof loadClinicAppointmentContext>> = null
     let calendarContext: AutoReplyCalendarContext | null = null
+    let knownContactFacts: string | null = null
+    let activeReservations: string | null = null
     try {
       // Independent reads run concurrently. One failed enrichment must
       // not prevent the other sources from grounding the reply.
@@ -549,11 +552,13 @@ export async function dispatchInboundToAiReply(
         loadDealStageOptions({ db, accountId, contactId }),
         loadCatalogContext(db, accountId),
         loadQuickReplyContext(db, accountId),
+        loadKnownContactFacts(db, accountId, contactId),
       ])
       if (enrichment[0].status === 'fulfilled') knowledge = enrichment[0].value
       if (enrichment[1].status === 'fulfilled') dealStageOptions = enrichment[1].value
       if (enrichment[2].status === 'fulfilled') catalog = enrichment[2].value
       if (enrichment[3].status === 'fulfilled') quickReplies = enrichment[3].value
+      if (enrichment[4].status === 'fulfilled') knownContactFacts = enrichment[4].value
 
       // How the catalog is delivered (migration 068) + the vertical +
       // whether a restaurant menu PDF is on file (migration 114).
@@ -581,13 +586,17 @@ export async function dispatchInboundToAiReply(
       // guest is currently asking about, so the bot can answer "¿cuánto
       // sería?" with a real number instead of deferring every quote.
       if (isHotel) {
+        const currency = (catalogModeRow?.default_currency as string | undefined) ?? 'USD'
         hotelStayEstimate =
-          (await loadHotelStayEstimate(
-            db,
-            accountId,
-            conversationId,
-            (catalogModeRow?.default_currency as string | undefined) ?? 'USD',
-          ).catch(() => null)) ?? undefined
+          (await loadHotelStayEstimate(db, accountId, conversationId, currency).catch(
+            () => null,
+          )) ?? undefined
+        activeReservations = await loadActiveReservationsSummary(
+          db,
+          accountId,
+          conversationId,
+          currency,
+        ).catch(() => null)
       }
 
       // Clinic: the patient's one upcoming appointment, so the bot can
@@ -654,6 +663,8 @@ export async function dispatchInboundToAiReply(
         : null,
       currentDate: describeNowInZone(businessTimeZone),
       flowDirective,
+      knownContactFacts,
+      activeReservations,
     })
 
     let generation: GenerateResult

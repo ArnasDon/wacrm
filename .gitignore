@@ -45,3 +45,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# datos sensibles de clientes (onboarding con info bancaria/personal) — nunca commitear
+docs/clientes/.local/

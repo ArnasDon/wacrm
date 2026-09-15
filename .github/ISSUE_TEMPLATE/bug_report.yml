@@ -21,7 +21,7 @@ body:
       placeholder: Clicking a conversation leaves the thread stuck on "No messages yet".
     validations:
       required: true
-
+  
   - type: textarea
     id: steps
     attributes:

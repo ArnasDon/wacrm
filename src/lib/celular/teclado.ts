@@ -46,8 +46,11 @@ export interface LeituraDaTela {
   /** `visualViewport.height`: o que sobra acima do teclado. */
   alturaVisivel: number;
   /**
-   * `visualViewport.offsetTop`: quanto o iPhone deslocou a área visível — o
-   * "empurrão". A casca desce o mesmo tanto e fica parada na tela.
+   * `visualViewport.pageTop`: onde a área visível começa, contada do topo da
+   * página — o "empurrão", seja o iPhone rolando a janela, seja deslocando a
+   * área dentro dela. A casca desce o mesmo tanto e fica parada na tela.
+   * ⚠️ Nunca só o `offsetTop`, que é contado da janela e fica em zero quando
+   * o empurrão é rolagem (Codex, PR #219).
    */
   deslocamentoVisivel: number;
   /** `visualViewport.scale`: diferente de 1 é pinça de zoom. */

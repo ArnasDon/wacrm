@@ -174,7 +174,11 @@ describe("as peças que o ajuste amarra", () => {
     // (15/09/2026). A crase exclui a menção no comentário do próprio hook.
     expect(hook).not.toMatch(/window\.innerHeight(?!`)/);
     expect(hook).toContain("toque: toque.matches");
-    expect(hook).toContain("deslocamentoVisivel: vv.offsetTop");
+    // `pageTop`, e não só `offsetTop`: quando o iPhone ROLA a janela para
+    // revelar a caixa, o `offsetTop` fica em zero e a casca ficaria acima da
+    // área visível (Codex, PR #219) — e a rolagem da janela precisa reler.
+    expect(hook).toContain("deslocamentoVisivel: vv.pageTop");
+    expect(hook).toContain('window.addEventListener("scroll", agendar');
   });
 });
 

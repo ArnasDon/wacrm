@@ -13,9 +13,16 @@ import {
  *
  * Escreve no `<html>` as duas variáveis que a casca do app lê:
  * `--altura-visivel` (a área acima do teclado — a caixa de entrada também a
- * lê, com queda em `100dvh`) e `--deslocamento-visivel` (quanto o iPhone
- * empurrou a área visível; a casca desce o mesmo tanto e fica parada na
+ * lê, com queda em `100dvh`) e `--deslocamento-visivel` (onde a área visível
+ * começa, contada do topo da página; a casca desce até lá e fica parada na
  * tela). Ao sair do ajuste, rola a janela de volta ao topo.
+ *
+ * ⚠️ O deslocamento é `visualViewport.pageTop`, NUNCA só o `offsetTop`: este
+ * é contado da janela, e quando o iPhone revela a caixa ROLANDO a janela
+ * (`window.scrollY > 0`) ele fica em zero — a casca ficaria acima da área
+ * visível pela rolagem inteira, e o cabeçalho sumiria do mesmo jeito (Codex,
+ * PR #219). Pelo mesmo motivo o hook relê na rolagem da JANELA, que não
+ * dispara o `scroll` do `visualViewport`.
  *
  * ⚠️ NÃO lê `window.innerHeight`: a primeira versão comparava a área visível
  * com ela para decidir se o teclado estava aberto, e no iPhone do operador o
@@ -45,7 +52,7 @@ export function useTelaAcimaDoTeclado() {
       const ajuste = ajusteDoTeclado(
         {
           alturaVisivel: vv.height,
-          deslocamentoVisivel: vv.offsetTop,
+          deslocamentoVisivel: vv.pageTop,
           escala: vv.scale,
           toque: toque.matches,
           focoNaArea:
@@ -73,11 +80,13 @@ export function useTelaAcimaDoTeclado() {
 
     vv.addEventListener("resize", agendar);
     vv.addEventListener("scroll", agendar);
+    window.addEventListener("scroll", agendar, { passive: true });
     document.addEventListener("focusin", agendar);
     document.addEventListener("focusout", agendar);
     return () => {
       vv.removeEventListener("resize", agendar);
       vv.removeEventListener("scroll", agendar);
+      window.removeEventListener("scroll", agendar);
       document.removeEventListener("focusin", agendar);
       document.removeEventListener("focusout", agendar);
       cancelAnimationFrame(quadro);

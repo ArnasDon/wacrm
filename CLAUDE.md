@@ -2313,8 +2313,12 @@ a tela ficava "desconfigurada". O que morde código novo:
   aparecer, e o cabeçalho (o nome do cliente e o número por onde a resposta
   sai) vai junto. O hook escreve a variável com a área visível, e a casca
   DESCE junto com o empurrão (`relative top-[var(--deslocamento-visivel)]`,
-  com `visualViewport.offsetTop`); `window.scrollTo(0, 0)` só roda ao SAIR do
-  ajuste. Tela nova de altura cheia usa a mesma variável.
+  com `visualViewport.pageTop`); `window.scrollTo(0, 0)` só roda ao SAIR do
+  ajuste. Tela nova de altura cheia usa a mesma variável. ⚠️ `pageTop`, NUNCA
+  só o `offsetTop`: este é contado da janela e fica em zero quando o iPhone
+  revela a caixa ROLANDO a janela, e a casca ficaria acima da área visível
+  pela rolagem inteira (Codex, PR #219). Pelo mesmo motivo o hook relê na
+  rolagem da janela, que não dispara o `scroll` do `visualViewport`.
 - ⚠️⚠️ **A regra NÃO compara a área visível com `window.innerHeight`.** A
   primeira versão (PR #214) só agia com 120 px de diferença, e o print do
   operador no iPhone no dia seguinte (15/09/2026) mostrou a tela exatamente

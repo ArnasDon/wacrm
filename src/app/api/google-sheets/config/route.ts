@@ -116,6 +116,22 @@ export async function PUT(request: Request) {
       return NextResponse.json({ error: message }, { status: status >= 400 && status < 600 ? status : 400 })
     }
 
+    // Pointing at a different spreadsheet than before means every row
+    // number this account has ever recorded is now stale — a header
+    // never gets (re)written for a fresh spreadsheet otherwise, because
+    // `writeReservationRow` (google-sheets/dispatch.ts) trusts a non-null
+    // `reservation_requests.sheet_row` and blindly PUTs at that row
+    // number instead of taking the "tab is new" append-with-header path.
+    // Confirmed live: a reconnected demo sheet ("tercera demo") had data
+    // landing at row 2 with no header at row 1, because old `sheet_row`
+    // values from an earlier spreadsheet carried over untouched.
+    const { data: existingConfig } = await supabase
+      .from('google_sheets_config')
+      .select('spreadsheet_id')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    const spreadsheetChanged = existingConfig?.spreadsheet_id !== spreadsheetId
+
     const { error } = await supabase
       .from('google_sheets_config')
       .update({
@@ -129,6 +145,17 @@ export async function PUT(request: Request) {
     if (error) {
       console.error('[google-sheets/config PUT] update failed:', error)
       return NextResponse.json({ error: 'Failed to save' }, { status: 500 })
+    }
+
+    if (spreadsheetChanged) {
+      const { error: resetError } = await supabase
+        .from('reservation_requests')
+        .update({ sheet_row: null })
+        .eq('account_id', accountId)
+        .not('sheet_row', 'is', null)
+      if (resetError) {
+        console.error('[google-sheets/config PUT] sheet_row reset failed:', resetError)
+      }
     }
 
     return NextResponse.json({ success: true, spreadsheet_name: spreadsheetName, sheet_tab: sheetTab, events })

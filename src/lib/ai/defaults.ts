@@ -233,16 +233,25 @@ export const MAX_OUTPUT_TOKENS = 2048
 const DEFAULT_REQUEST_TIMEOUT_MS = 40_000
 const DEFAULT_CONTEXT_MESSAGE_LIMIT = 20
 const DEFAULT_AUTO_REPLY_RETRY_DELAY_MS = 1_500
-const DEFAULT_DEBOUNCE_MS = 30_000
+const DEFAULT_DEBOUNCE_MS = 20_000
 
 /** How long the auto-reply debouncer (`debounce.ts`) waits for a
  *  conversation to go quiet before answering the burst — gives a
  *  customer typing across several bubbles a pause to finish before the
- *  bot replies to what might be a half-finished thought. Was 60s; halved
- *  to 30s (owner's call, 2026-09-07) to cut the felt response time —
- *  still long enough to coalesce normal multi-bubble typing. Override
- *  with `AI_DEBOUNCE_MS`; 0 disables debouncing (used by tests wanting
- *  an immediate reply). */
+ *  bot replies to what might be a half-finished thought. Was 60s, then
+ *  30s (owner's call, 2026-09-07); down to 20s (owner's call,
+ *  2026-09-15) after data showed the debounce was ~75% of the median
+ *  end-to-end reply time (40s) while the AI call itself rarely
+ *  approached its own 40s timeout (p90 generation ~21s) — the real
+ *  lever for felt speed, not aiRequestTimeoutMs. The typing indicator
+ *  (src/lib/whatsapp/typing-indicator.ts, shipped the same day) already
+ *  covers the "does this feel dead?" problem a shorter debounce used to
+ *  help with, so this is a moderate cut, not an aggressive one — still
+ *  long enough to coalesce normal multi-bubble typing (the 2026-08-21
+ *  incident this exists to prevent: a customer's 2 messages 7s apart
+ *  got 2 separate, near-duplicate replies). Override with
+ *  `AI_DEBOUNCE_MS`; 0 disables debouncing (used by tests wanting an
+ *  immediate reply). */
 export function aiDebounceMs(): number {
   const raw = Number(process.env.AI_DEBOUNCE_MS)
   return Number.isFinite(raw) && raw >= 0 ? raw : DEFAULT_DEBOUNCE_MS

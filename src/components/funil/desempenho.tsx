@@ -107,13 +107,19 @@ export function Desempenho({
     desde: anterior?.desde ?? intervalo.desde,
     ate: null,
   });
-  // O app instalado no celular não tem botão de recarregar: voltar para ele
-  // depois de um tempo fora refaz as trajetórias. Com o `recarregar` comum,
-  // que pisca o carregando — é relatório, afirma números, e afirmar sobre
-  // número velho é pior que piscar (a escolha do Meu dia).
-  useAoVoltarParaOApp(recarregar);
   // Fase 4: o gasto em anúncios do período (campanhas → funil), sob RLS.
   const anuncios = useGastosDeAnuncios(intervalo);
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora refaz as trajetórias E o gasto, com o
+  // `recarregar` comum, que pisca o carregando — é relatório, afirma
+  // números, e afirmar sobre número velho é pior que piscar (a escolha do
+  // Meu dia). ⚠️ Os DOIS juntos: só as trajetórias misturava os leads novos
+  // com o gasto de antes da sincronização, e o custo por lead e o CAC saíam
+  // errados até trocar de tela ou de período (Codex, merge do PR #216).
+  useAoVoltarParaOApp(() => {
+    recarregar();
+    anuncios.recarregar();
+  });
 
   const classificacao = classificarEtapas(stages);
   const rotuloDoDegrau = (d: Degrau) =>

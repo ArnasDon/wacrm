@@ -101,3 +101,34 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
     }
   });
 });
+
+describe("as visões do funil recarregam também o que não é trajetória (Codex, merge do PR #216)", () => {
+  const desempenho = ler("src/components/funil/desempenho.tsx");
+  const gastos = ler("src/hooks/use-gastos-de-anuncios.ts");
+  const lista = ler("src/components/funil/lista-de-leads.tsx");
+  const canais = ler("src/hooks/use-channels.ts");
+
+  it("o Desempenho recarrega as trajetórias E o gasto dos anúncios", () => {
+    // Só as trajetórias misturava leads novos com o gasto de antes da
+    // sincronização: custo por lead e CAC errados até trocar de tela.
+    expect(desempenho).toMatch(
+      /useAoVoltarParaOApp\(\(\) => \{\s*recarregar\(\);\s*anuncios\.recarregar\(\);\s*\}\);/,
+    );
+    // A versão entra NA CHAVE: sem ela, o resultado velho continuaria vigente.
+    expect(gastos).toContain('const chave = `${dias.desde ?? ""}|${dias.ate ?? ""}|${versao}`;');
+    expect(gastos).toContain("const recarregar = useCallback(() => setVersao((v) => v + 1), []);");
+  });
+
+  it("a Lista recarrega as linhas, o catálogo e as conexões, e a falha não apaga os rótulos", () => {
+    expect(lista).toMatch(
+      /useAoVoltarParaOApp\(\(\) => \{\s*recarregar\(\);\s*setVersaoDoCatalogo\(\(v\) => v \+ 1\);\s*void recarregarCanais\(\);\s*\}\);/,
+    );
+    expect(lista).toContain("}, [supabase, versaoDoCatalogo]);");
+    // Catálogo vazio tiraria as colunas de campo da tabela até a volta seguinte.
+    expect(lista).toContain("falhouAgora && atual !== null");
+    // As conexões voltam pela recarga que DESCARTA a falha: a comum trocaria
+    // a lista boa pelo vazio e apagaria os nomes da coluna Conexão.
+    expect(lista).toContain("recarregarEmSilencio: recarregarCanais");
+    expect(canais).toContain("if (montadoRef.current && !r.falhou) setResultado(r);");
+  });
+});

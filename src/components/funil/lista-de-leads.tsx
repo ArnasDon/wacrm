@@ -153,7 +153,11 @@ export function ListaDeLeads({
   const router = useRouter();
   const supabase = createClient();
   const podeMover = useCan("send-messages");
-  const { channels, loading: canaisCarregando } = useChannels();
+  const {
+    channels,
+    loading: canaisCarregando,
+    recarregarEmSilencio: recarregarCanais,
+  } = useChannels();
 
   const [preset, setPreset] = useState<Preset>("este_mes");
   const [personalizado, setPersonalizado] = useState<Personalizado>({ desde: "", ate: "" });
@@ -162,6 +166,8 @@ export function ListaDeLeads({
   const [colunas, setColunas] = useState<ColunaId[]>(lerColunasGravadas);
   const [limite, setLimite] = useState(PAGINA);
   const [catalogo, setCatalogo] = useState<Catalogo | null>(null);
+  // Sobe na volta ao app: refaz o catálogo sem tirar o de agora da tela.
+  const [versaoDoCatalogo, setVersaoDoCatalogo] = useState(0);
 
   const intervalo = intervaloDoPreset(preset, new Date(), personalizado);
   const trajetorias = useTrajetorias(pipeline.id, intervalo);
@@ -170,14 +176,23 @@ export function ListaDeLeads({
   // depois de um tempo fora refaz a lista. ⚠️ Com o `recarregar` comum, que
   // pisca — e é o que se quer aqui: sem linhas durante a carga, ninguém muda
   // a etapa de um negócio com a recarga no ar, a corrida que o quadro
-  // precisou cercar com versão (Codex, PR #216).
-  useAoVoltarParaOApp(recarregar);
+  // precisou cercar com versão (Codex, PR #216). ⚠️ E os catálogos JUNTO
+  // (campos, blocos, perfis e conexões): só as linhas deixava campo, perfil
+  // ou conexão renomeados lá fora com o nome antigo, e o responsável novo em
+  // branco, até trocar de tela (Codex, merge do PR #216). Esses vão EM
+  // SILÊNCIO — são rótulos, e a falha mantém os que estão na tela.
+  useAoVoltarParaOApp(() => {
+    recarregar();
+    setVersaoDoCatalogo((v) => v + 1);
+    void recarregarCanais();
+  });
   // Sem as etapas DESTE funil, `classificarEtapas` não casa nada: toda linha
   // sairia "fora do funil" e o seletor da linha nasceria em branco.
   const carregando = trajetorias.carregando || !etapasCarregadas;
 
   // Catálogo de campos (colunas + rótulos), blocos e nomes dos responsáveis —
-  // uma busca por montagem; setState só no `.then` (regra do React Compiler).
+  // uma busca na montagem e outra a cada volta ao app (`versaoDoCatalogo`);
+  // setState só no `.then` (regra do React Compiler).
   useEffect(() => {
     let ativo = true;
     void Promise.all([
@@ -190,16 +205,25 @@ export function ListaDeLeads({
       supabase.from("profiles").select("id, full_name"),
     ]).then(([campos, grupos, perfis]) => {
       if (!ativo) return;
-      setCatalogo({
-        campos: campos.data ?? [],
-        grupos: grupos.data ?? [],
-        perfis: perfis.data ?? [],
-      });
+      // ⚠️ Recarga que FALHA não grava por cima do catálogo que já está na
+      // tela: vazio apagaria os rótulos e tiraria as colunas de campo da
+      // tabela (`colunasVisiveis`) até a volta seguinte — e o celular volta
+      // ao app antes da rede. Na primeira carga fica como sempre foi.
+      const falhouAgora = Boolean(campos.error || grupos.error || perfis.error);
+      setCatalogo((atual) =>
+        falhouAgora && atual !== null
+          ? atual
+          : {
+              campos: campos.data ?? [],
+              grupos: grupos.data ?? [],
+              perfis: perfis.data ?? [],
+            },
+      );
     });
     return () => {
       ativo = false;
     };
-  }, [supabase]);
+  }, [supabase, versaoDoCatalogo]);
 
   const classificacao = classificarEtapas(stages);
   const etapasOrdenadas = [...stages].sort((a, b) => a.position - b.position);

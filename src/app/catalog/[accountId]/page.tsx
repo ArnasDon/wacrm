@@ -33,7 +33,7 @@ import { readResponseJson } from '@/lib/http/response-json';
 // product are already in the cart.
 // ============================================================
 
-import { Suspense, useCallback, useEffect, useMemo, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
@@ -47,6 +47,10 @@ import {
   ArrowRight,
   Leaf,
   Wrench,
+  X,
+  ChevronLeft,
+  ChevronRight,
+  Expand,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -184,7 +188,51 @@ function PublicCatalogPageInner() {
   );
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
   const [detailImageIndex, setDetailImageIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const [search, setSearch] = useState('');
+
+  // ----------------------------------------------------------------
+  // Modal back-button handling. This page is frequently opened as the
+  // very first (and only) entry in a WhatsApp/Instagram in-app browser
+  // — there's no page "behind" it. The product and photo views are
+  // plain React state, so the phone's back gesture had nowhere to go
+  // but out of the webview, closing the whole app. Each open pushes a
+  // history entry instead; any in-UI close (X button, backdrop,
+  // Escape, "Agregar") routes through the same history.back() a real
+  // back press would trigger, so both paths close just the top modal
+  // and land back on the catalog grid.
+  // ----------------------------------------------------------------
+  const modalStackRef = useRef<Array<'product' | 'lightbox'>>([]);
+
+  const pushModal = useCallback((level: 'product' | 'lightbox') => {
+    modalStackRef.current.push(level);
+    window.history.pushState(
+      { catalogModalDepth: modalStackRef.current.length },
+      ''
+    );
+  }, []);
+
+  const closeTopModal = useCallback(() => {
+    if (modalStackRef.current.length > 0) {
+      window.history.back();
+    }
+  }, []);
+
+  useEffect(() => {
+    function onPopState() {
+      const level = modalStackRef.current.pop();
+      if (level === 'lightbox') {
+        setLightboxOpen(false);
+      } else if (level === 'product') {
+        setLightboxOpen(false);
+        setSelectedProduct(null);
+        setSelectedOptionId(null);
+        setDetailImageIndex(0);
+      }
+    }
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [name, setName] = useState('');
@@ -334,14 +382,35 @@ function PublicCatalogPageInner() {
   const detailInstallationCost = selectedOption
     ? selectedOption.installation_cost
     : (selectedProduct?.installation_cost ?? null);
-  const detailImages =
-    selectedOption && selectedOption.image_urls.length > 0
-      ? selectedOption.image_urls
-      : (selectedProduct?.image_urls?.length ?? 0) > 0
-        ? selectedProduct!.image_urls
-        : selectedProduct?.image_url
-          ? [selectedProduct.image_url]
-          : [];
+  const detailImages = useMemo(
+    () =>
+      selectedOption && selectedOption.image_urls.length > 0
+        ? selectedOption.image_urls
+        : (selectedProduct?.image_urls?.length ?? 0) > 0
+          ? selectedProduct!.image_urls
+          : selectedProduct?.image_url
+            ? [selectedProduct.image_url]
+            : [],
+    [selectedOption, selectedProduct]
+  );
+
+  useEffect(() => {
+    if (!lightboxOpen) return;
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        closeTopModal();
+      } else if (e.key === 'ArrowLeft' && detailImages.length > 1) {
+        setDetailImageIndex(
+          (i) => (i - 1 + detailImages.length) % detailImages.length
+        );
+      } else if (e.key === 'ArrowRight' && detailImages.length > 1) {
+        setDetailImageIndex((i) => (i + 1) % detailImages.length);
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [lightboxOpen, detailImages, closeTopModal]);
+
   const detailLineKey = selectedProduct
     ? lineKey(selectedProduct.id, selectedOptionId)
     : null;
@@ -645,6 +714,7 @@ function PublicCatalogPageInner() {
                   setSelectedOptionId(null);
                   setDetailImageIndex(0);
                   setSelectedProduct(featuredProduct);
+                  pushModal('product');
                 }}
                 className="mt-5 inline-flex h-12 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.12em] text-white uppercase transition active:scale-[0.98] sm:mt-6 sm:w-auto sm:rounded-none sm:px-7 sm:hover:bg-[#1e7774]"
               >
@@ -728,6 +798,7 @@ function PublicCatalogPageInner() {
                       setSelectedOptionId(null);
                       setDetailImageIndex(0);
                       setSelectedProduct(product);
+                      pushModal('product');
                     }}
                     className="block w-full rounded-2xl text-left focus-visible:ring-2 focus-visible:ring-[#1e7774] focus-visible:outline-none sm:rounded-none"
                   >
@@ -784,6 +855,7 @@ function PublicCatalogPageInner() {
                           setSelectedOptionId(null);
                           setDetailImageIndex(0);
                           setSelectedProduct(product);
+                          pushModal('product');
                         }}
                         className="flex h-12 w-full items-center justify-center rounded-xl border border-[#082f38]/20 bg-[#fffefa] text-sm font-medium text-[#082f38] sm:h-10 sm:rounded-none"
                       >
@@ -829,23 +901,34 @@ function PublicCatalogPageInner() {
         open={selectedProduct !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setSelectedProduct(null);
-            setSelectedOptionId(null);
-            setDetailImageIndex(0);
+            // While the photo lightbox sits on top, it owns Escape/close —
+            // let its own handler pop just that layer instead of also
+            // tearing down the product dialog underneath it.
+            if (lightboxOpen) return;
+            closeTopModal();
           }
         }}
       >
-        <DialogContent className="inset-0 top-0 left-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none border-0 bg-[#fffefa] p-0 text-[#082f38] sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[94vh] sm:w-full sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
+        <DialogContent className="inset-0 top-0 left-0 h-dvh max-h-dvh w-screen max-w-none translate-x-0 translate-y-0 overflow-y-auto rounded-none border-0 bg-[#fffefa] p-0 text-[#082f38] sm:top-1/2 sm:left-1/2 sm:h-auto sm:max-h-[92vh] sm:w-[94vw] sm:max-w-6xl sm:-translate-x-1/2 sm:-translate-y-1/2 sm:rounded-xl">
           {selectedProduct && (
-            <div className="grid lg:min-h-[620px] lg:grid-cols-[1.08fr_0.92fr]">
-              <div className="flex flex-col items-center justify-center gap-3 bg-[#e8e9e5] p-3 pt-12 sm:gap-4 sm:p-10 lg:min-h-[620px] lg:pt-10">
-                <div className="relative aspect-[4/3] w-full max-w-xl overflow-hidden rounded-2xl bg-[#f1f1ee] sm:aspect-square sm:rounded-none">
+            <div className="flex flex-col lg:grid lg:h-[min(86vh,760px)] lg:grid-cols-[1.08fr_0.92fr] lg:items-stretch">
+              <div className="flex flex-col items-center justify-center gap-3 bg-[#e8e9e5] p-3 pt-12 sm:gap-4 sm:p-10 lg:h-full lg:overflow-y-auto lg:pt-10">
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (detailImages.length === 0) return;
+                    setLightboxOpen(true);
+                    pushModal('lightbox');
+                  }}
+                  className="group/zoom relative aspect-[4/3] w-full max-w-xl shrink-0 cursor-zoom-in overflow-hidden rounded-2xl bg-[#f1f1ee] sm:aspect-square sm:rounded-none"
+                  aria-label="Ver foto completa"
+                >
                   {detailImages[detailImageIndex] ? (
                     // eslint-disable-next-line @next/next/no-img-element -- see the catalog grid's own image above.
                     <img
                       src={detailImages[detailImageIndex]}
                       alt={selectedProduct.name}
-                      className="h-full w-full object-contain transition duration-500 hover:scale-[1.03]"
+                      className="h-full w-full object-contain transition duration-500 group-hover/zoom:scale-[1.04]"
                     />
                   ) : (
                     <div className="flex h-full items-center justify-center">
@@ -855,15 +938,20 @@ function PublicCatalogPageInner() {
                   <span className="absolute top-4 left-4 bg-[#1e7774] px-4 py-2 text-[10px] font-bold tracking-[0.16em] text-white uppercase">
                     Catálogo
                   </span>
-                </div>
+                  {detailImages.length > 0 && (
+                    <span className="absolute right-4 bottom-4 flex items-center gap-1.5 rounded-full bg-black/45 px-3 py-1.5 text-[10px] font-semibold tracking-wide text-white backdrop-blur-sm transition group-hover/zoom:bg-black/60">
+                      <Expand className="size-3.5" /> Ver foto
+                    </span>
+                  )}
+                </button>
                 {detailImages.length > 1 && (
-                  <div className="app-scroll flex w-full max-w-xl gap-2 overflow-x-auto pb-1">
+                  <div className="app-scroll flex w-full max-w-xl shrink-0 gap-2 overflow-x-auto pb-1">
                     {detailImages.map((url, i) => (
                       <button
                         key={url + i}
                         type="button"
                         onClick={() => setDetailImageIndex(i)}
-                        className={`size-16 shrink-0 overflow-hidden rounded-xl border-2 ${detailImageIndex === i ? 'border-[#1e7774]' : 'border-transparent'}`}
+                        className={`size-16 shrink-0 overflow-hidden rounded-xl border-2 transition ${detailImageIndex === i ? 'border-[#1e7774]' : 'border-transparent hover:border-[#082f38]/25'}`}
                         aria-label={`Ver imagen ${i + 1}`}
                       >
                         {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -878,7 +966,7 @@ function PublicCatalogPageInner() {
                 )}
               </div>
 
-              <div className="flex flex-col p-5 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-10 lg:p-14">
+              <div className="flex flex-col p-5 pb-[calc(2rem+env(safe-area-inset-bottom))] sm:p-10 lg:h-full lg:overflow-y-auto lg:p-12">
                 <p className="text-[10px] font-bold tracking-[0.2em] text-[#1e7774] uppercase">
                   {data.account_name} · Colección
                 </p>
@@ -1192,8 +1280,7 @@ function PublicCatalogPageInner() {
                           selectedOptionId,
                           Math.max(1, detailQty + 1)
                         );
-                        setSelectedProduct(null);
-                        setSelectedOptionId(null);
+                        closeTopModal();
                       }}
                       className="mt-8 flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-[#062f38] px-6 text-xs font-bold tracking-[0.14em] text-white uppercase transition active:scale-[0.98] sm:rounded-none sm:hover:bg-[#1e7774]"
                     >
@@ -1211,6 +1298,95 @@ function PublicCatalogPageInner() {
           )}
         </DialogContent>
       </Dialog>
+
+      {/* Full-screen photo viewer — a plain fixed overlay rather than a
+          nested Dialog (base-ui doesn't support stacking two of its own
+          dialogs cleanly). Sits above the product dialog (z-60 > z-50)
+          and shares its Escape/arrow handling via the effect below, and
+          its close routes through the same history-back path as the
+          product dialog so the back gesture only ever undoes one layer
+          at a time. */}
+      {lightboxOpen && selectedProduct && detailImages.length > 0 && (
+        <div
+          className="fixed inset-0 z-[60] flex flex-col bg-black/95 backdrop-blur-sm data-open:animate-in data-open:fade-in-0"
+          data-open=""
+          role="dialog"
+          aria-modal="true"
+          aria-label={`Foto de ${selectedProduct.name}`}
+        >
+          <div className="flex items-center justify-between px-4 pt-[calc(0.75rem+env(safe-area-inset-top))] pb-3 text-white sm:px-6">
+            <span className="truncate pr-4 text-xs font-semibold tracking-[0.12em] uppercase opacity-70">
+              {selectedProduct.name}
+              {detailImages.length > 1 && (
+                <span className="ml-2 opacity-50">
+                  {detailImageIndex + 1} / {detailImages.length}
+                </span>
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={closeTopModal}
+              className="flex size-10 shrink-0 items-center justify-center rounded-full transition hover:bg-white/10"
+              aria-label="Cerrar foto"
+            >
+              <X className="size-5" />
+            </button>
+          </div>
+
+          <button
+            type="button"
+            onClick={closeTopModal}
+            className="relative flex-1 cursor-zoom-out touch-pinch-zoom select-none border-0 bg-transparent p-0"
+            aria-label="Cerrar foto"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element -- full-size render of the same storage URL as the thumbnail above. */}
+            <img
+              src={detailImages[detailImageIndex]}
+              alt={selectedProduct.name}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute inset-0 m-auto max-h-full max-w-full cursor-default object-contain p-3 sm:p-8"
+            />
+          </button>
+
+          {detailImages.length > 1 && (
+            <>
+              <button
+                type="button"
+                onClick={() =>
+                  setDetailImageIndex(
+                    (i) => (i - 1 + detailImages.length) % detailImages.length
+                  )
+                }
+                className="absolute top-1/2 left-2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 sm:left-4"
+                aria-label="Foto anterior"
+              >
+                <ChevronLeft className="size-6" />
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  setDetailImageIndex((i) => (i + 1) % detailImages.length)
+                }
+                className="absolute top-1/2 right-2 flex size-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-white transition hover:bg-black/60 sm:right-4"
+                aria-label="Foto siguiente"
+              >
+                <ChevronRight className="size-6" />
+              </button>
+              <div className="flex items-center justify-center gap-1.5 pt-2 pb-[calc(1rem+env(safe-area-inset-bottom))]">
+                {detailImages.map((url, i) => (
+                  <button
+                    key={url + i}
+                    type="button"
+                    onClick={() => setDetailImageIndex(i)}
+                    className={`h-1.5 rounded-full transition-all ${detailImageIndex === i ? 'w-5 bg-white' : 'w-1.5 bg-white/40'}`}
+                    aria-label={`Ver foto ${i + 1}`}
+                  />
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {totalCount > 0 && (
         <div

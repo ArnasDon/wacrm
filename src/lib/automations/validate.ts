@@ -52,7 +52,7 @@ export function validateStepsForActivation(steps: StepLike[]): ValidationIssue[]
 const KNOWN_STEP_TYPES = new Set([
   'send_message', 'send_buttons', 'send_list', 'send_template',
   'add_tag', 'remove_tag', 'assign_conversation', 'update_contact_field',
-  'create_deal', 'move_deal', 'create_task', 'wait', 'condition', 'send_webhook', 'close_conversation',
+  'create_deal', 'move_deal', 'create_task', 'send_photo', 'wait', 'condition', 'send_webhook', 'close_conversation',
 ])
 
 export function validateStepTypesKnown(steps: StepLike[]): ValidationIssue[] {
@@ -155,6 +155,11 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
           c.due_in_hours < 0)
       ) {
         issues.push({ path: `${path}.due_in_hours`, message: 'due offset must be 0 or more hours' })
+      }
+      break
+    case 'send_photo':
+      if (!nonEmpty(c.product_id)) {
+        issues.push({ path: `${path}.product_id`, message: 'product is required' })
       }
       break
     case 'wait':

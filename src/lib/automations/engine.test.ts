@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
     owned: null as { id: string } | null,
     ownedCustomField: null as { id: string } | null,
     member: null as { user_id: string } | null,
+    product: null as { id: string; name: string; image_url: string | null } | null,
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
     fromCalls: [] as string[],
@@ -43,6 +44,10 @@ vi.mock("./admin-client", () => {
     if (table === "profiles") {
       // account-scoped member lookup (create_task assignee resolution)
       return { data: state.member, error: null };
+    }
+    if (table === "products") {
+      // account-scoped product lookup (send_photo)
+      return { data: state.product, error: null };
     }
     if (table === "tasks") {
       if (type === "insert") {
@@ -117,8 +122,18 @@ vi.mock("./meta-send", () => ({
   engineSendInteractive: vi.fn(async () => ({ whatsapp_message_id: "m1" })),
 }));
 
+vi.mock("@/lib/whatsapp/send-message", () => ({
+  sendMessageToConversation: vi.fn(async () => ({ messageId: "m1", whatsappMessageId: "wamid1" })),
+  SendMessageError: class SendMessageError extends Error {
+    constructor(public code: string, message: string, public status = 400) {
+      super(message);
+    }
+  },
+}));
+
 import { runAutomationsForTrigger, triggerMatches, compareMessageCount } from "./engine";
 import type { Automation, KeywordMatchTriggerConfig } from "@/types";
+import { sendMessageToConversation } from "@/lib/whatsapp/send-message";
 
 const ACCOUNT = "acct-1";
 
@@ -126,6 +141,8 @@ beforeEach(() => {
   h.state.owned = null;
   h.state.ownedCustomField = null;
   h.state.member = null;
+  h.state.product = null;
+  vi.mocked(sendMessageToConversation).mockClear();
   h.state.automations = [];
   h.state.steps = [];
   h.state.fromCalls = [];
@@ -439,6 +456,79 @@ describe("create_task", () => {
 
     expect(h.state.taskInserts).toHaveLength(1);
     expect(h.state.taskInserts[0].assigned_to).toBeNull();
+  });
+});
+
+describe("send_photo", () => {
+  function photoStep(step_config: Record<string, unknown>) {
+    return {
+      id: "s1",
+      automation_id: "a1",
+      step_type: "send_photo",
+      position: 0,
+      parent_step_id: null,
+      step_config,
+    };
+  }
+
+  it("sends the product's photo as an image with an interpolated caption", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.product = { id: "p1", name: "Suite Premium", image_url: "https://cdn.example.com/suite.jpg" };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [photoStep({ product_id: "p1", caption: "Mira esta, {{ vars.name }}" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conv-1", vars: { name: "Ana" } },
+    });
+
+    expect(sendMessageToConversation).toHaveBeenCalledTimes(1);
+    const [db, accountId, params] = vi.mocked(sendMessageToConversation).mock.calls[0];
+    expect(db).toBeTruthy();
+    expect(accountId).toBe(ACCOUNT);
+    expect(params).toMatchObject({
+      conversationId: "conv-1",
+      messageType: "image",
+      mediaUrl: "https://cdn.example.com/suite.jpg",
+      contentText: "Mira esta, Ana",
+      senderType: "bot",
+    });
+  });
+
+  it("throws when the product has no photo on file", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.product = { id: "p1", name: "Suite Premium", image_url: null };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [photoStep({ product_id: "p1" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conv-1" },
+    });
+
+    expect(sendMessageToConversation).not.toHaveBeenCalled();
+    expect(h.state.logInserts.at(-1)).toMatchObject({ status: "failed" });
+  });
+
+  it("throws when the product no longer exists in this account", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.product = null;
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [photoStep({ product_id: "missing" })];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conv-1" },
+    });
+
+    expect(sendMessageToConversation).not.toHaveBeenCalled();
+    expect(h.state.logInserts.at(-1)).toMatchObject({ status: "failed" });
   });
 });
 

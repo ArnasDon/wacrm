@@ -22,6 +22,7 @@ import { checkSharedRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import { moveDeal, MoveDealError } from '@/lib/pipelines/move-deal'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { sendCatalogToConversation, SendCatalogError, catalogUrlForConversation } from '@/lib/products/send-catalog'
+import { sendMessageToConversation } from '@/lib/whatsapp/send-message'
 import { sendRestaurantMenuToConversation, SendRestaurantMenuError } from '@/lib/products/send-restaurant-menu'
 import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/google-calendar/api'
 import { formatWithOffset, describeNowInZone } from '@/lib/timezone'
@@ -690,7 +691,7 @@ export async function dispatchInboundToAiReply(
       return
     }
     const {
-      text, handoff, markDealWon, moveToStageName, sendCatalog: modelSendCatalog, sendRestaurantMenu: modelSendRestaurantMenu, leadTemperature, contactName, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, reservationProposal, appointmentAction, usage,
+      text, handoff, markDealWon, moveToStageName, sendCatalog: modelSendCatalog, sendPhotoProductName, sendRestaurantMenu: modelSendRestaurantMenu, leadTemperature, contactName, appointmentProposal, sentinelLeakDetected, quoteProposal, quickReplyId, reservationProposal, appointmentAction, usage,
     } = generation
 
     // Self-heal a model-compliance gap, not a code bug: `buildSystemPrompt`
@@ -1151,6 +1152,38 @@ export async function dispatchInboundToAiReply(
             message: detail.slice(0, 300),
           },
           dedupKey: `ai_send_catalog_failed:${accountId}`,
+          accountId,
+          throttleMinutes: 60,
+        })
+      }
+    }
+
+    if (sendPhotoProductName) {
+      try {
+        await autoSendProductPhoto({
+          db,
+          accountId,
+          configOwnerUserId,
+          conversationId,
+          productName: sendPhotoProductName,
+        })
+      } catch (err) {
+        // Same reasoning as send_catalog above: never rethrow, always
+        // alert on an actual send failure (a real product/photo was
+        // found — Meta/network is what broke). A no-match or
+        // no-photo-on-file isn't an error at all — autoSendProductPhoto
+        // itself just returns quietly for those, nothing to catch here.
+        console.error('[ai auto-reply] autonomous send_photo failed:', describeError(err))
+        void dispatchSystemAlert({
+          severity: 'warning',
+          source: 'ai_dispatch_error',
+          title: 'AI tried to send a product photo but it could not be sent',
+          detail: {
+            account_id: accountId,
+            conversation_id: conversationId,
+            message: describeError(err).slice(0, 300),
+          },
+          dedupKey: `ai_send_photo_failed:${accountId}`,
           accountId,
           throttleMinutes: 60,
         })
@@ -2119,6 +2152,62 @@ async function autoSetContactName(args: {
       source: 'ai_chat',
     })
   }
+}
+
+/**
+ * Sends one active product's own photo into the conversation, resolved
+ * by exact (case-insensitive) name against the account's real active
+ * `products` — same matching `autoCreateQuoteFromChat` uses, so the
+ * model can't send an arbitrary image even if it tried. Silently
+ * returns (no error, nothing sent) when the name doesn't match a real
+ * product or that product has no photo on file — both are expected,
+ * unremarkable outcomes the model's own prompt already accounts for,
+ * not something the caller needs to alert on. A genuine send failure
+ * (Meta/network, once a real photo was found) is left to throw, so the
+ * caller's own alerting fires only for that.
+ */
+async function autoSendProductPhoto(args: {
+  db: SupabaseClient
+  accountId: string
+  configOwnerUserId: string
+  conversationId: string
+  productName: string
+}): Promise<void> {
+  const { db, accountId, configOwnerUserId, conversationId, productName } = args
+
+  const { data: products } = await db
+    .from('products')
+    .select('id, name, image_url')
+    .eq('account_id', accountId)
+    .eq('is_active', true)
+  const product = ((products ?? []) as { id: string; name: string; image_url: string | null }[]).find(
+    (p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase(),
+  )
+  if (!product) {
+    console.warn(`[ai auto-reply] send_photo: no active product matches "${productName}"`)
+    return
+  }
+  if (!product.image_url) {
+    console.warn(`[ai auto-reply] send_photo: product "${product.name}" has no photo on file`)
+    return
+  }
+
+  await sendMessageToConversation(db, accountId, {
+    conversationId,
+    messageType: 'image',
+    mediaUrl: product.image_url,
+    contentText: product.name,
+    senderType: 'bot',
+  })
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'send_photo',
+    target_id: product.id,
+    input: { product_name: product.name, source: 'auto_reply_autonomous' },
+    result: { product_id: product.id },
+  })
 }
 
 /**

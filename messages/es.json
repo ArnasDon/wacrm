@@ -76,6 +76,7 @@
         "create_deal": "Crear negocio",
         "move_deal": "Mover negocio de etapa",
         "create_task": "Crear tarea",
+        "send_photo": "Enviar foto",
         "wait": "Esperar",
         "condition": "Condición (Si/Si no)",
         "send_webhook": "Enviar webhook",
@@ -238,7 +239,14 @@
           "author": "Autor de la automatización"
         },
         "taskDueLabel": "Vence en (horas)",
-        "taskDueHint": "0 = sin fecha límite (y sin recordatorio). La tarea queda vinculada al contacto."
+        "taskDueHint": "0 = sin fecha límite (y sin recordatorio). La tarea queda vinculada al contacto.",
+        "photoProductLabel": "Producto",
+        "photoCaptionLabel": "Descripción (opcional)"
+      },
+      "photoProduct": {
+        "placeholder": "Selecciona un producto…",
+        "noPhoto": "sin foto",
+        "noPhotoWarning": "Este producto todavía no tiene una foto guardada — agrégale una en Productos antes de activar esta automatización."
       }
     }
   },

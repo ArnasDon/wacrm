@@ -48,6 +48,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -68,6 +69,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -85,6 +87,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -105,6 +108,7 @@ describe('parseGeneration', () => {
       markDealWon: true,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -132,6 +136,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: 'Negotiation',
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -167,6 +172,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: true,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -189,6 +195,27 @@ describe('parseGeneration', () => {
     expect(res.text).toBe('Claro, aquí tienes.')
   })
 
+  it('detects + strips the send-photo sentinel, capturing the product name', () => {
+    const res = parseGeneration(
+      'Claro, aquí tienes. [[ACTION:send_photo:Suite Premium]]',
+    )
+    expect(res.sendPhotoProductName).toBe('Suite Premium')
+    expect(res.text).toBe('Claro, aquí tienes.')
+  })
+
+  it('allows send-photo to appear alongside send-catalog in the same reply', () => {
+    const res = parseGeneration(
+      'Aquí lo tienes. [[ACTION:send_photo:Paquete Romántico]] [[ACTION:send_catalog]]',
+    )
+    expect(res.sendPhotoProductName).toBe('Paquete Romántico')
+    expect(res.sendCatalog).toBe(true)
+    expect(res.text).toBe('Aquí lo tienes.')
+  })
+
+  it('sendPhotoProductName is null with no marker', () => {
+    expect(parseGeneration('Just a normal reply.').sendPhotoProductName).toBeNull()
+  })
+
   it('detects + strips the set-temperature sentinel', () => {
     expect(parseGeneration('Claro que sí! [[ACTION:set_temperature:hot]]')).toEqual({
       text: 'Claro que sí!',
@@ -196,6 +223,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: 'hot',
       contactName: null,
@@ -274,6 +302,7 @@ describe('parseGeneration', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -540,6 +569,7 @@ describe('generateReply — OpenAI', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,
@@ -611,6 +641,7 @@ describe('generateReply — Anthropic', () => {
       markDealWon: false,
       moveToStageName: null,
       sendCatalog: false,
+      sendPhotoProductName: null,
       sendRestaurantMenu: false,
       leadTemperature: null,
       contactName: null,

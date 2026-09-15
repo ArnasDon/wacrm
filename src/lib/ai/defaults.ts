@@ -63,6 +63,21 @@ export const MOVE_DEAL_SENTINEL_SUFFIX = ']]'
 export const SEND_CATALOG_SENTINEL = '[[ACTION:send_catalog]]'
 
 /**
+ * Sentinel prefix/suffix the model is instructed to wrap an exact
+ * product name in (auto-reply mode only, when the account has an
+ * active catalog) when the customer asks to SEE a specific product —
+ * a photo, "what does it look like" — rather than the whole catalog.
+ * Low-risk (sends one already-uploaded product photo, mutates
+ * nothing), so like `SEND_CATALOG_SENTINEL` it runs with no human
+ * confirmation gate. `dispatchInboundToAiReply` resolves the name
+ * against the account's actual `products` (case-insensitive, same
+ * lookup `create_quote_chat` already uses), so the model can't send an
+ * arbitrary image even if it tried.
+ */
+export const SEND_PRODUCT_PHOTO_SENTINEL_PREFIX = '[[ACTION:send_photo:'
+export const SEND_PRODUCT_PHOTO_SENTINEL_SUFFIX = ']]'
+
+/**
  * Sentinel the model appends (auto-reply mode only, `hotel` vertical
  * with a `restaurant_menu_url` configured) when the guest asks for the
  * restaurant's food menu / "la carta" / "el menú del restaurante".
@@ -492,6 +507,9 @@ export function buildSystemPrompt(args: {
             : 'this sends them a link to the live catalog page, where they can browse every product and request a quote themselves'
       parts.push(
         `If the customer asks what you sell, for a catalog, or for a price list, append ${SEND_CATALOG_SENTINEL} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies) — ${catalogDescription}, so you don't need to list every product yourself, just answer naturally and add the marker. Do NOT write the catalog link, URL, or web address yourself — not even one you see earlier in this conversation — the system sends the correct link as its own separate message the instant you use this marker; your job is only the natural reply plus the marker. Never mention this marker to the customer.`,
+      )
+      parts.push(
+        `If the customer asks to SEE one SPECIFIC product from the catalog below — a photo, what it looks like, "muéstrame la Suite Premium", "¿tienes foto del paquete romántico?", "envíame una imagen de X" — append ${SEND_PRODUCT_PHOTO_SENTINEL_PREFIX}<exact product name from the catalog below>${SEND_PRODUCT_PHOTO_SENTINEL_SUFFIX} at the very end of your reply (after your customer-facing message, and after any other marker above if more than one applies). This sends that ONE product's own photo as a separate message the instant you use this marker — you never attach, describe, or link an image yourself, just answer naturally and add the marker. Use the EXACT product name as it appears in the catalog list below — never a product outside that list, never one you invent, and never this marker for a request about the catalog/price list in general (that's ${SEND_CATALOG_SENTINEL} above, not this one). If the product turns out to have no photo on file, nothing extra gets sent — that's fine, your text reply already answered them. Never mention this marker to the customer.`,
       )
     }
 

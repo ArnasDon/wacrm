@@ -1483,6 +1483,7 @@
         "create_deal": "Create Deal",
         "move_deal": "Move Deal",
         "create_task": "Create Task",
+        "send_photo": "Send Photo",
         "wait": "Wait",
         "condition": "Condition (If/Else)",
         "send_webhook": "Send Webhook",
@@ -1645,7 +1646,14 @@
           "author": "Automation author"
         },
         "taskDueLabel": "Due in (hours)",
-        "taskDueHint": "0 = no due date (and no reminder). The task is linked to the contact."
+        "taskDueHint": "0 = no due date (and no reminder). The task is linked to the contact.",
+        "photoProductLabel": "Product",
+        "photoCaptionLabel": "Caption (optional)"
+      },
+      "photoProduct": {
+        "placeholder": "Select a product…",
+        "noPhoto": "no photo",
+        "noPhotoWarning": "This product has no photo on file yet — add one in Products before activating this automation."
       }
     }
   },

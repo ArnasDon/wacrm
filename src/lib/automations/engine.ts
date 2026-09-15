@@ -18,6 +18,7 @@ import type {
   CreateDealStepConfig,
   MoveDealStepConfig,
   CreateTaskStepConfig,
+  SendPhotoStepConfig,
   AssignConversationStepConfig,
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
@@ -25,6 +26,7 @@ import { describeError } from '@/lib/observability/describe-error'
 import { addContactTagIfAbsent } from '@/lib/contacts/tag-write'
 import { MAX_TAG_CHAIN_DEPTH, getTagChainDepth } from '@/lib/contacts/tag-chain'
 import { engineSendText, engineSendTemplate, engineSendInteractive } from './meta-send'
+import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
 import { validateInteractivePayload } from '@/lib/whatsapp/interactive'
 import { isDeliverableUrl } from '@/lib/webhooks/ssrf'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -726,6 +728,40 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
         status: 'open',
       })
       return `task created${assignedTo ? ' (assigned)' : ''}${dueAt ? ' with due date' : ''}`
+    }
+
+    case 'send_photo': {
+      const cfg = step.step_config as SendPhotoStepConfig
+      if (!args.contactId) throw new Error('send_photo needs a contact')
+      if (!cfg.product_id) throw new Error('send_photo needs product_id')
+      const { data: product } = await db
+        .from('products')
+        .select('name, image_url')
+        .eq('id', cfg.product_id)
+        .eq('account_id', args.automation.account_id)
+        .maybeSingle()
+      if (!product?.image_url) {
+        throw new Error('product has no photo on file (or no longer exists)')
+      }
+      const conversationId = await resolveConversationId(args)
+      // Goes through the general-purpose send core (not this file's own
+      // sendViaMeta, which only knows text/template) — it already
+      // handles media across every channel (WhatsApp direct, Zernio,
+      // Instagram, Facebook), the same path the AI's own send_photo
+      // action and the public catalog's quote PDFs use.
+      try {
+        await sendMessageToConversation(db, args.automation.account_id, {
+          conversationId,
+          messageType: 'image',
+          mediaUrl: product.image_url as string,
+          contentText: cfg.caption ? interpolate(cfg.caption, args) : undefined,
+          senderType: 'bot',
+        })
+      } catch (err) {
+        if (err instanceof SendMessageError) throw new Error(err.message)
+        throw err
+      }
+      return `photo sent (${product.name as string})`
     }
 
     case 'send_webhook': {

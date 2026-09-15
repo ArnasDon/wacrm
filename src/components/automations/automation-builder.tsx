@@ -38,6 +38,7 @@ import {
   ArrowUp,
   MousePointerClick,
   List,
+  ImageIcon,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -159,6 +160,11 @@ const STEP_META: Record<AutomationStepType, StepMeta> = {
     icon: ClipboardList,
     border: 'border-l-primary',
   },
+  send_photo: {
+    label: 'send_photo',
+    icon: ImageIcon,
+    border: 'border-l-primary',
+  },
   wait: { label: 'wait', icon: Hourglass, border: 'border-l-border' },
   condition: {
     label: 'condition',
@@ -202,6 +208,7 @@ const ADDABLE_STEPS: AutomationStepType[] = [
   'create_deal',
   'move_deal',
   'create_task',
+  'send_photo',
   'wait',
   'condition',
   'send_webhook',
@@ -265,6 +272,8 @@ function blankConfig(type: AutomationStepType): Record<string, unknown> {
       return { stage_id: '' };
     case 'create_task':
       return { title: '', notes: '', assignee: '', due_in_hours: 24 };
+    case 'send_photo':
+      return { product_id: '', caption: '' };
     case 'wait':
       return { amount: 1, unit: 'hours' };
     case 'condition':
@@ -295,6 +304,13 @@ interface AutomationResources {
   customFields: CustomField[];
   pipelines: PipelineOption[];
   stages: PipelineStageOption[];
+  products: ProductOption[];
+}
+
+interface ProductOption {
+  id: string;
+  name: string;
+  image_url: string | null;
 }
 
 interface PipelineOption {
@@ -316,6 +332,7 @@ const ResourcesContext = createContext<AutomationResources>({
   customFields: [],
   pipelines: [],
   stages: [],
+  products: [],
 });
 
 function useResources(): AutomationResources {
@@ -329,6 +346,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
   const [customFields, setCustomFields] = useState<CustomField[]>([]);
   const [pipelines, setPipelines] = useState<PipelineOption[]>([]);
   const [stages, setStages] = useState<PipelineStageOption[]>([]);
+  const [products, setProducts] = useState<ProductOption[]>([]);
 
   useEffect(() => {
     let cancelled = false;
@@ -339,7 +357,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
     // actually be sent (anything else 400s at send time), matching the
     // broadcast picker.
     void (async () => {
-      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes] =
+      const [tagsRes, templatesRes, customFieldsRes, pipelinesRes, stagesRes, productsRes] =
         await Promise.all([
           supabase.from('tags').select('*').order('name'),
           supabase
@@ -353,6 +371,11 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
             .from('pipeline_stages')
             .select('id, name, pipeline_id, position')
             .order('position'),
+          supabase
+            .from('products')
+            .select('id, name, image_url')
+            .eq('is_active', true)
+            .order('name'),
         ]);
       if (cancelled) return;
       setTags((tagsRes.data as TagRecord[] | null) ?? []);
@@ -360,6 +383,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
       setCustomFields((customFieldsRes.data as CustomField[] | null) ?? []);
       setPipelines((pipelinesRes.data as PipelineOption[] | null) ?? []);
       setStages((stagesRes.data as PipelineStageOption[] | null) ?? []);
+      setProducts((productsRes.data as ProductOption[] | null) ?? []);
     })();
 
     // Members go through the API so we inherit its email-visibility
@@ -383,7 +407,7 @@ function ResourcesProvider({ children }: { children: ReactNode }) {
 
   return (
     <ResourcesContext.Provider
-      value={{ tags, members, templates, customFields, pipelines, stages }}
+      value={{ tags, members, templates, customFields, pipelines, stages, products }}
     >
       {children}
     </ResourcesContext.Provider>
@@ -561,6 +585,54 @@ function TaskAssigneeSelect({
         <option value={value}>{t('agents.unknown', { id: value })}</option>
       )}
     </select>
+  );
+}
+
+/** Product picker for Send Photo — stores the product id, the engine
+ *  looks up its `image_url` at send time. Flags a product with no
+ *  photo on file inline rather than letting the author pick one that
+ *  will always fail at runtime. */
+function ProductPhotoSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const { products } = useResources();
+  if (products.length === 0) {
+    return (
+      <Input
+        placeholder={t('photoProduct.placeholder')}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="bg-muted text-foreground"
+      />
+    );
+  }
+  const selected = products.find((p) => p.id === value);
+  return (
+    <div className="space-y-1">
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={SELECT_CLASS}
+      >
+        <option value="">{t('photoProduct.placeholder')}</option>
+        {products.map((p) => (
+          <option key={p.id} value={p.id}>
+            {p.name}
+            {p.image_url ? '' : ` (${t('photoProduct.noPhoto')})`}
+          </option>
+        ))}
+        {value && !selected && <option value={value}>{value}</option>}
+      </select>
+      {selected && !selected.image_url && (
+        <p className="text-destructive text-xs">{t('photoProduct.noPhotoWarning')}</p>
+      )}
+    </div>
   );
 }
 
@@ -1274,6 +1346,7 @@ function StepRenderer({
   basePath: StepPath;
 } & Omit<StepListProps, 'steps' | 'basePath' | 'scope'>) {
   const t = useTranslations('Automations.builder');
+  const { products } = useResources();
   const path = childPath(basePath, scope, index);
   const knownMeta = STEP_META[step.step_type] as StepMeta | undefined;
   const meta = knownMeta ?? UNKNOWN_STEP_META;
@@ -1334,7 +1407,7 @@ function StepRenderer({
                   : `${t('steps.unknown')}: ${step.step_type}`}
               </div>
               <div className="text-muted-foreground truncate text-[11px]">
-                {previewFor(step)}
+                {previewFor(step, products)}
               </div>
             </div>
             <ChevronDown
@@ -1672,6 +1745,26 @@ function StepEditor({
           <p className="text-muted-foreground text-xs">{t('config.taskDueHint')}</p>
         </>
       );
+    case 'send_photo':
+      return (
+        <>
+          <FieldBlock label={t('config.photoProductLabel')}>
+            <ProductPhotoSelect
+              value={(cfg.product_id as string) ?? ''}
+              onChange={(v) => set({ product_id: v })}
+              t={t}
+            />
+          </FieldBlock>
+          <FieldBlock label={t('config.photoCaptionLabel')}>
+            <Textarea
+              value={(cfg.caption as string) ?? ''}
+              onChange={(e) => set({ caption: e.target.value })}
+              rows={2}
+              className="bg-muted text-foreground"
+            />
+          </FieldBlock>
+        </>
+      );
     case 'wait':
       return (
         <div className="grid grid-cols-2 gap-2">
@@ -1828,7 +1921,7 @@ function FieldBlock({
   );
 }
 
-function previewFor(step: BuilderStep): string {
+function previewFor(step: BuilderStep, products: ProductOption[]): string {
   switch (step.step_type) {
     case 'send_message':
       return (step.step_config.text as string) || 'no text yet';
@@ -1842,6 +1935,11 @@ function previewFor(step: BuilderStep): string {
       return (step.step_config.template_name as string) || 'pick a template';
     case 'create_task':
       return (step.step_config.title as string) || 'no title yet';
+    case 'send_photo': {
+      const productId = step.step_config.product_id as string;
+      const product = products.find((p) => p.id === productId);
+      return product?.name || 'pick a product';
+    }
     case 'wait':
       return `${step.step_config.amount ?? '?'} ${step.step_config.unit ?? ''}`;
     case 'condition':

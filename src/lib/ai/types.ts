@@ -100,6 +100,12 @@ export interface GenerateResult {
   /** True when the model asked to send the product catalog (auto-reply
    *  mode only) — see `SEND_CATALOG_SENTINEL`. */
   sendCatalog: boolean
+  /** The exact product name the model asked to send a photo of
+   *  (auto-reply mode only), or null — see
+   *  `SEND_PRODUCT_PHOTO_SENTINEL_PREFIX`. The model's own text,
+   *  resolved against the account's real active `products`
+   *  (case-insensitive) before anything is sent — never trusted as-is. */
+  sendPhotoProductName: string | null
   /** True when the model asked to send the restaurant menu PDF
    *  (auto-reply mode, `hotel` vertical with `restaurant_menu_url` set)
    *  — see `SEND_RESTAURANT_MENU_SENTINEL`. */

@@ -26,6 +26,7 @@ const h = vi.hoisted(() => ({
   sendQuoteAsText: vi.fn(),
   sendQuoteToConversation: vi.fn(),
   sendQuoteByAccountPreference: vi.fn(),
+  sendMessageToConversation: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
     claim: true as boolean,
@@ -47,8 +48,9 @@ const h = vi.hoisted(() => ({
     gcalStatus: null as string | null,
     /** `quick_replies` row the mocked resolution lookup returns, or null. */
     quickReplyRow: null as { id: string; content_text: string } | null,
-    /** Account's active `products` rows, for the create_quote_chat item-matching lookup. */
-    products: [] as { id: string; name: string }[],
+    /** Account's active `products` rows, for the create_quote_chat item-matching
+     *  and send_photo product-name lookups. */
+    products: [] as { id: string; name: string; image_url?: string | null }[],
     /** Rows inserted via `db.from('messages').insert(...)` — currently only handOffToHuman's internal note. */
     messageInserts: [] as Record<string, unknown>[],
     /** `messages` read for `tryRecoverTransientHandoff` — a human's own
@@ -110,6 +112,16 @@ vi.mock('@/lib/quotes/send-quote', () => ({
   SendQuoteError: class SendQuoteError extends Error {
     status: number
     constructor(message: string, status = 400) {
+      super(message)
+      this.status = status
+    }
+  },
+}))
+vi.mock('@/lib/whatsapp/send-message', () => ({
+  sendMessageToConversation: h.sendMessageToConversation,
+  SendMessageError: class SendMessageError extends Error {
+    status: number
+    constructor(code: string, message: string, status = 400) {
       super(message)
       this.status = status
     }
@@ -415,6 +427,7 @@ beforeEach(() => {
   h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
   h.sendQuoteToConversation.mockReset().mockResolvedValue(undefined)
   h.sendQuoteByAccountPreference.mockReset().mockResolvedValue({ mode: 'message', pdfUrl: null })
+  h.sendMessageToConversation.mockReset().mockResolvedValue({ messageId: 'm1', whatsappMessageId: 'wamid1' })
   h.checkFreeBusy.mockReset().mockResolvedValue([])
   h.createEvent.mockReset().mockResolvedValue({ eventId: 'evt-1', htmlLink: 'https://calendar.google.com/evt-1', meetLink: 'https://meet.google.com/abc' })
   h.waitForQuietPeriod.mockReset().mockResolvedValue(true)
@@ -1570,6 +1583,110 @@ describe('dispatchInboundToAiReply — autonomous send_catalog', () => {
     expect(h.state.contactUpdates).toEqual([
       expect.objectContaining({ lead_temperature: 'hot' }),
     ])
+  })
+})
+
+describe('dispatchInboundToAiReply — autonomous send_photo', () => {
+  it('sends the matched product\'s photo when the model asks for one', async () => {
+    h.state.products = [
+      { id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Claro, aquí la tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        messageType: 'image',
+        mediaUrl: 'https://cdn.example.com/suite.jpg',
+        senderType: 'bot',
+      }),
+    )
+  })
+
+  it('does not send anything when the model does not ask for a photo', async () => {
+    await dispatchInboundToAiReply(ARGS) // default mock: sendPhotoProductName undefined
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+  })
+
+  it('matches the product name case-insensitively', async () => {
+    h.state.products = [
+      { id: 'p1', name: 'Paquete Romántico', image_url: 'https://cdn.example.com/romantico.jpg' },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'paquete romántico',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({ mediaUrl: 'https://cdn.example.com/romantico.jpg' }),
+    )
+  })
+
+  it('sends nothing when the name matches no real active product — never an arbitrary image', async () => {
+    h.state.products = [{ id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg' }]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Producto Inventado',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+  })
+
+  it('sends nothing when the matched product has no photo on file — not an error', async () => {
+    h.state.products = [{ id: 'p1', name: 'Suite Premium', image_url: null }]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.sendMessageToConversation).not.toHaveBeenCalled()
+    expect(h.dispatchSystemAlert).not.toHaveBeenCalledWith(
+      expect.objectContaining({ dedupKey: 'ai_send_photo_failed:acct-1' }),
+    )
+  })
+
+  it('swallows an actual send failure and alerts — the already-sent reply is unaffected', async () => {
+    h.state.products = [{ id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg' }]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí la tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    h.sendMessageToConversation.mockRejectedValue(new Error('network blip'))
+
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Aquí la tienes.' }),
+    )
+    expect(h.dispatchSystemAlert).toHaveBeenCalledWith(
+      expect.objectContaining({ dedupKey: 'ai_send_photo_failed:acct-1' }),
+    )
   })
 })
 

@@ -1483,6 +1483,7 @@
         "create_deal": "딜 생성",
         "move_deal": "딜 단계 이동",
         "create_task": "작업 생성",
+        "send_photo": "사진 보내기",
         "wait": "대기",
         "condition": "조건 (If/Else)",
         "send_webhook": "웹훅 보내기",
@@ -1645,7 +1646,14 @@
           "author": "자동화 작성자"
         },
         "taskDueLabel": "기한 (시간)",
-        "taskDueHint": "0 = 기한 없음 (알림 없음). 작업은 연락처에 연결됩니다."
+        "taskDueHint": "0 = 기한 없음 (알림 없음). 작업은 연락처에 연결됩니다.",
+        "photoProductLabel": "제품",
+        "photoCaptionLabel": "캡션 (선택 사항)"
+      },
+      "photoProduct": {
+        "placeholder": "제품 선택…",
+        "noPhoto": "사진 없음",
+        "noPhotoWarning": "이 제품에는 아직 등록된 사진이 없습니다 — 이 자동화를 활성화하기 전에 제품 메뉴에서 사진을 추가하세요."
       }
     }
   },

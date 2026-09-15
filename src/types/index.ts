@@ -663,6 +663,7 @@ export type AutomationStepType =
   | 'create_deal'
   | 'move_deal'
   | 'create_task'
+  | 'send_photo'
   | 'wait'
   | 'condition'
   | 'send_webhook'
@@ -781,6 +782,16 @@ export interface CreateTaskStepConfig {
   due_in_hours?: number;
 }
 
+export interface SendPhotoStepConfig {
+  /** The catalog product whose photo gets sent — its first gallery
+   *  photo (`image_url`, mirrors `image_urls[0]`), same convention the
+   *  public catalog and the AI's own send_photo action both use. */
+  product_id: string;
+  /** Optional caption. Supports `{{ vars.* }}` / `{{ message.text }}`
+   *  interpolation, same as `send_message`. */
+  caption?: string;
+}
+
 export interface WaitStepConfig {
   amount: number;
   unit: 'minutes' | 'hours' | 'days';
@@ -825,6 +836,7 @@ export type AutomationStepConfig =
   | CreateDealStepConfig
   | MoveDealStepConfig
   | CreateTaskStepConfig
+  | SendPhotoStepConfig
   | WaitStepConfig
   | ConditionStepConfig
   | SendWebhookStepConfig

@@ -11,6 +11,8 @@ import {
   MOVE_DEAL_SENTINEL_PREFIX,
   MOVE_DEAL_SENTINEL_SUFFIX,
   SEND_CATALOG_SENTINEL,
+  SEND_PRODUCT_PHOTO_SENTINEL_PREFIX,
+  SEND_PRODUCT_PHOTO_SENTINEL_SUFFIX,
   SEND_RESTAURANT_MENU_SENTINEL,
   SET_TEMPERATURE_SENTINEL_PREFIX,
   SET_TEMPERATURE_SENTINEL_SUFFIX,
@@ -115,6 +117,13 @@ export function parseGeneration(
   const markDealWon = raw.includes(MARK_DEAL_WON_SENTINEL)
   const sendCatalog = raw.includes(SEND_CATALOG_SENTINEL)
   const sendRestaurantMenu = raw.includes(SEND_RESTAURANT_MENU_SENTINEL)
+
+  const sendPhotoMatch = raw.match(
+    new RegExp(
+      `${escapeRegExp(SEND_PRODUCT_PHOTO_SENTINEL_PREFIX)}(.+?)${escapeRegExp(SEND_PRODUCT_PHOTO_SENTINEL_SUFFIX)}`,
+    ),
+  )
+  const sendPhotoProductName = sendPhotoMatch ? sendPhotoMatch[1].trim() || null : null
 
   const moveMatch = raw.match(
     new RegExp(
@@ -250,6 +259,7 @@ export function parseGeneration(
     .join('')
     .split(SEND_RESTAURANT_MENU_SENTINEL)
     .join('')
+    .replace(sendPhotoMatch ? sendPhotoMatch[0] : '', '')
     .replace(moveMatch ? moveMatch[0] : '', '')
     .replace(temperatureMatch ? temperatureMatch[0] : '', '')
     .replace(contactNameMatch ? contactNameMatch[0] : '', '')
@@ -279,7 +289,7 @@ export function parseGeneration(
   //      `QUICK_REPLY`). Strip it SILENTLY — never a reason to park the
   //      conversation on a human.
   const SAFE_KNOWN_MARKER_RE =
-    /\[\[\s*(?:HANDOFF|QUICK_REPLY(?::[^\]]{0,200})?|ACTION:(?:mark_deal_won|move_deal|send_catalog|send_restaurant_menu|set_temperature|set_contact_name|record_reservation|appointment)(?::[^\]]{0,600})?)\s*\]\]/gi
+    /\[\[\s*(?:HANDOFF|QUICK_REPLY(?::[^\]]{0,200})?|ACTION:(?:mark_deal_won|move_deal|send_catalog|send_photo|send_restaurant_menu|set_temperature|set_contact_name|record_reservation|appointment)(?::[^\]]{0,600})?)\s*\]\]/gi
   const straySafe = text.match(SAFE_KNOWN_MARKER_RE)
   if (straySafe) {
     console.warn('[ai generate] stripped stray/duplicate low-stakes marker(s) from reply text:', straySafe)
@@ -316,6 +326,7 @@ export function parseGeneration(
     markDealWon,
     moveToStageName,
     sendCatalog,
+    sendPhotoProductName,
     sendRestaurantMenu,
     leadTemperature,
     contactName,

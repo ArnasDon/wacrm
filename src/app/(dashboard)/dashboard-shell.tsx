@@ -102,7 +102,12 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
         // (`useTelaAcimaDoTeclado`), com queda em `100dvh`. Com `h-screen`, o
         // teclado aberto empurrava a página inteira para cima e o cabeçalho
         // da conversa sumia (relato do operador no iPhone, 14/09/2026).
-        <div className="bg-background flex h-[var(--altura-visivel,100dvh)] overflow-hidden">
+        // ⚠️ E o `top` acompanha o empurrão (`--deslocamento-visivel`): se o
+        // iPhone mantém a área visível deslocada, a casca desce junto e o
+        // topo fica na tela (print do operador, 15/09/2026). `relative` +
+        // `top`, NUNCA `transform`: transform faria todo `fixed` de dentro da
+        // casca se posicionar por ela. Sem a variável, `top` volta a `auto`.
+        <div className="bg-background relative top-[var(--deslocamento-visivel)] flex h-[var(--altura-visivel,100dvh)] overflow-hidden">
           {/* Reports this tab's online/away presence once we know a user is
             signed in. Headless — renders nothing. */}
           {!entradaPendente && <PresenceHeartbeat />}

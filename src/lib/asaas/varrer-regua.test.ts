@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { DispatchInput, ResultadoDoDisparo } from "@/lib/automations/engine";
 
@@ -88,7 +88,19 @@ function motorFalso(e: EstadoDoDuble, disparos: Disparos, desfecho: "concluida" 
   };
 }
 
+afterEach(() => {
+  vi.useRealTimers();
+});
+
 function deps(e: EstadoDoDuble, respostas: RespostasDoAsaas, extra: Partial<DependenciasDaVarredura> = {}, disparos: Disparos = { chamadas: [] }, registro: PedidosAoAsaas = { pedidos: [] }): { d: DependenciasDaVarredura; disparos: Disparos; registro: PedidosAoAsaas } {
+  // ⚠️ O relógio do SISTEMA também segue o carimbo do teste: o `now()` da
+  // trava no dublê, o `created_at` do log no motor falso e os carimbos da
+  // própria varredura leem `new Date()`. Com o relógio real o resultado
+  // dependia do calendário: em 15/09/2026 a trava do ciclo de 14/09 nascia
+  // com a data do relógio (15/09), a varredura do "dia seguinte" (15/09) a
+  // lia como cobrança de HOJE e pulava o cliente antes do intervalo mínimo —
+  // e o CI de todo PR reprovou naquele dia.
+  vi.setSystemTime(extra.agora ?? AGORA);
   return {
     disparos,
     registro,

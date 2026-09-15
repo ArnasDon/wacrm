@@ -50,7 +50,7 @@ const h = vi.hoisted(() => ({
     quickReplyRow: null as { id: string; content_text: string } | null,
     /** Account's active `products` rows, for the create_quote_chat item-matching
      *  and send_photo product-name lookups. */
-    products: [] as { id: string; name: string; image_url?: string | null }[],
+    products: [] as { id: string; name: string; image_url?: string | null; image_urls?: string[] | null }[],
     /** Rows inserted via `db.from('messages').insert(...)` — currently only handOffToHuman's internal note. */
     messageInserts: [] as Record<string, unknown>[],
     /** `messages` read for `tryRecoverTransientHandoff` — a human's own
@@ -1634,6 +1634,65 @@ describe('dispatchInboundToAiReply — autonomous send_photo', () => {
       expect.anything(),
       'acct-1',
       expect.objectContaining({ mediaUrl: 'https://cdn.example.com/romantico.jpg' }),
+    )
+  })
+
+  it('sends every photo in the product\'s gallery, not just the first', async () => {
+    h.state.products = [
+      {
+        id: 'p1',
+        name: 'Junior Suite Familiar',
+        image_url: 'https://cdn.example.com/familiar-1.jpg',
+        image_urls: [
+          'https://cdn.example.com/familiar-1.jpg',
+          'https://cdn.example.com/familiar-2.jpg',
+          'https://cdn.example.com/familiar-3.jpg',
+        ],
+      },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Con gusto le comparto las fotos.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Junior Suite Familiar',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(3)
+    ;['familiar-1', 'familiar-2', 'familiar-3'].forEach((slug, i) => {
+      expect(h.sendMessageToConversation).toHaveBeenNthCalledWith(
+        i + 1,
+        expect.anything(),
+        'acct-1',
+        expect.objectContaining({
+          conversationId: 'conv-1',
+          messageType: 'image',
+          mediaUrl: `https://cdn.example.com/${slug}.jpg`,
+          senderType: 'bot',
+        }),
+      )
+    })
+  })
+
+  it('falls back to the single image_url when the gallery is empty (pre-migration data)', async () => {
+    h.state.products = [
+      { id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg', image_urls: [] },
+    ]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
+    expect(h.sendMessageToConversation).toHaveBeenCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({ mediaUrl: 'https://cdn.example.com/suite.jpg' }),
     )
   })
 

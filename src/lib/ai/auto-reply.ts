@@ -2155,16 +2155,22 @@ async function autoSetContactName(args: {
 }
 
 /**
- * Sends one active product's own photo into the conversation, resolved
- * by exact (case-insensitive) name against the account's real active
- * `products` — same matching `autoCreateQuoteFromChat` uses, so the
- * model can't send an arbitrary image even if it tried. Silently
- * returns (no error, nothing sent) when the name doesn't match a real
- * product or that product has no photo on file — both are expected,
- * unremarkable outcomes the model's own prompt already accounts for,
- * not something the caller needs to alert on. A genuine send failure
- * (Meta/network, once a real photo was found) is left to throw, so the
- * caller's own alerting fires only for that.
+ * Sends an active product's full photo gallery (up to 5, `image_urls` —
+ * migration 117) into the conversation, resolved by exact
+ * (case-insensitive) name against the account's real active `products`
+ * — same matching `autoCreateQuoteFromChat` uses, so the model can't
+ * send an arbitrary image even if it tried. Falls back to the legacy
+ * single `image_url` for a product whose gallery is empty (pre-117
+ * data, or written by an older client). Silently returns (no error,
+ * nothing sent) when the name doesn't match a real product or that
+ * product has no photo on file at all — both are expected, unremarkable
+ * outcomes the model's own prompt already accounts for, not something
+ * the caller needs to alert on. A genuine send failure (Meta/network,
+ * once a real photo was found) is left to throw, so the caller's own
+ * alerting fires only for that — note this means a failure partway
+ * through a multi-photo gallery leaves the earlier photos sent but
+ * unlogged in `ai_action_log`, same tradeoff `sendCatalogToConversation`
+ * already accepts for its own photo loop.
  */
 async function autoSendProductPhoto(args: {
   db: SupabaseClient
@@ -2177,36 +2183,49 @@ async function autoSendProductPhoto(args: {
 
   const { data: products } = await db
     .from('products')
-    .select('id, name, image_url')
+    .select('id, name, image_url, image_urls')
     .eq('account_id', accountId)
     .eq('is_active', true)
-  const product = ((products ?? []) as { id: string; name: string; image_url: string | null }[]).find(
-    (p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase(),
-  )
+  const product = (
+    (products ?? []) as {
+      id: string
+      name: string
+      image_url: string | null
+      image_urls: string[] | null
+    }[]
+  ).find((p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase())
   if (!product) {
     console.warn(`[ai auto-reply] send_photo: no active product matches "${productName}"`)
     return
   }
-  if (!product.image_url) {
+  const photoUrls =
+    product.image_urls && product.image_urls.length > 0
+      ? product.image_urls
+      : product.image_url
+        ? [product.image_url]
+        : []
+  if (photoUrls.length === 0) {
     console.warn(`[ai auto-reply] send_photo: product "${product.name}" has no photo on file`)
     return
   }
 
-  await sendMessageToConversation(db, accountId, {
-    conversationId,
-    messageType: 'image',
-    mediaUrl: product.image_url,
-    contentText: product.name,
-    senderType: 'bot',
-  })
+  for (const photoUrl of photoUrls) {
+    await sendMessageToConversation(db, accountId, {
+      conversationId,
+      messageType: 'image',
+      mediaUrl: photoUrl,
+      contentText: product.name,
+      senderType: 'bot',
+    })
+  }
 
   await db.from('ai_action_log').insert({
     account_id: accountId,
     actor_user_id: configOwnerUserId,
     action: 'send_photo',
     target_id: product.id,
-    input: { product_name: product.name, source: 'auto_reply_autonomous' },
-    result: { product_id: product.id },
+    input: { product_name: product.name, source: 'auto_reply_autonomous', photo_count: photoUrls.length },
+    result: { product_id: product.id, photo_count: photoUrls.length },
   })
 }
 

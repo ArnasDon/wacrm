@@ -6,6 +6,7 @@ const h = vi.hoisted(() => ({
   dispatchInboundToFlows: vi.fn(),
   dispatchInboundToAiReply: vi.fn(),
   dispatchWebhookEvent: vi.fn(),
+  startTypingIndicatorLoop: vi.fn(),
   state: {
     // Result the message upsert's .select() resolves to. A genuine insert
     // returns the row; a replayed delivery conflicts and returns [].
@@ -173,6 +174,9 @@ vi.mock('@/lib/flows/engine', () => ({
 vi.mock('@/lib/ai/auto-reply', () => ({
   dispatchInboundToAiReply: h.dispatchInboundToAiReply,
 }))
+vi.mock('@/lib/whatsapp/typing-indicator', () => ({
+  startTypingIndicatorLoop: h.startTypingIndicatorLoop,
+}))
 vi.mock('@/lib/webhooks/deliver', () => ({
   dispatchWebhookEvent: h.dispatchWebhookEvent,
 }))
@@ -231,6 +235,7 @@ beforeEach(() => {
   h.dispatchInboundToFlows.mockResolvedValue({ consumed: false })
   h.dispatchInboundToAiReply.mockResolvedValue(undefined)
   h.dispatchWebhookEvent.mockResolvedValue(undefined)
+  h.startTypingIndicatorLoop.mockReturnValue(() => {})
   h.runAutomationsForTrigger.mockImplementation(() => {
     h.state.automationStarted++
     return new Promise<void>((resolve) => {
@@ -272,6 +277,31 @@ describe('inbound webhook: idempotent insert (#367)', () => {
     expect(h.runAutomationsForTrigger).not.toHaveBeenCalled()
     expect(h.dispatchInboundToAiReply).not.toHaveBeenCalled()
     expect(h.dispatchWebhookEvent).not.toHaveBeenCalled()
+  })
+})
+
+describe('inbound webhook: "escribiendo…" typing indicator', () => {
+  it('starts the loop with this message\'s own phone/token/conversation/id before dispatching to the AI', async () => {
+    await runWebhook()
+
+    expect(h.startTypingIndicatorLoop).toHaveBeenCalledTimes(1)
+    expect(h.startTypingIndicatorLoop).toHaveBeenCalledWith({
+      phoneNumberId: 'pn-1',
+      accessToken: expect.any(String),
+      conversationId: 'conv-1',
+      messageId: 'wamid.TEST1',
+    })
+    // The loop's own stop function is threaded through so
+    // dispatchInboundToAiReply can stop it once its work is done.
+    expect(h.dispatchInboundToAiReply).toHaveBeenCalledWith(
+      expect.objectContaining({ stopTyping: expect.any(Function) }),
+    )
+  })
+
+  it('never starts for a flow-consumed message — nothing to type towards', async () => {
+    h.dispatchInboundToFlows.mockResolvedValue({ consumed: true })
+    await runWebhook()
+    expect(h.startTypingIndicatorLoop).not.toHaveBeenCalled()
   })
 })
 

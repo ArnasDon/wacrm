@@ -510,6 +510,19 @@ describe('dispatchInboundToAiReply — debounce', () => {
     await dispatchInboundToAiReply(ARGS)
     expect(h.waitForQuietPeriod).toHaveBeenCalledWith('conv-1')
   })
+
+  it('never calls stopTyping for a call superseded before the quiet period elapses — the winner still needs the loop running', async () => {
+    h.waitForQuietPeriod.mockResolvedValue(false)
+    const stopTyping = vi.fn()
+    await dispatchInboundToAiReply({ ...ARGS, stopTyping })
+    expect(stopTyping).not.toHaveBeenCalled()
+  })
+
+  it('calls stopTyping once its own work is done, win or lose', async () => {
+    const stopTyping = vi.fn()
+    await dispatchInboundToAiReply({ ...ARGS, stopTyping })
+    expect(stopTyping).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('dispatchInboundToAiReply — eligibility gates', () => {

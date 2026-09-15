@@ -2,6 +2,7 @@ import { NextResponse, after } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl } from '@/lib/whatsapp/meta-api'
+import { startTypingIndicatorLoop } from '@/lib/whatsapp/typing-indicator'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
@@ -330,7 +331,8 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Which of the account's (possibly several) numbers this
           // message arrived on — pins the conversation to it so
           // replies go out on the same number the customer wrote to.
-          config.id
+          config.id,
+          phoneNumberId
         )
       }
     }
@@ -614,7 +616,12 @@ async function processMessage(
   // The specific whatsapp_config row this message arrived on — see
   // findOrCreateConversation below for why this is now part of the
   // conversation identity, not just the account.
-  whatsappConfigId: string
+  whatsappConfigId: string,
+  // Meta's own routing id for the number this message arrived on —
+  // needed alongside accessToken for the "escribiendo…" typing
+  // indicator's own Graph API call (see startTypingIndicatorLoop
+  // below). Not the same as whatsappConfigId (our own row id).
+  phoneNumberId: string
 ) {
   const senderPhone = normalizePhone(message.from)
   const contactName = contact.profile.name
@@ -926,12 +933,26 @@ async function processMessage(
   // the account has enabled it. Awaited inside `after()` (same reason as
   // the webhook dispatch below); `dispatchInboundToAiReply` owns its
   // eligibility gates + try/catch and never throws.
+  //
+  // "escribiendo…" (direct WhatsApp only — Zernio/Instagram/Facebook
+  // never reach this route): starts 7s after this message, refreshing
+  // itself until the reply actually goes out. `dispatchInboundToAiReply`
+  // stops it in its own `finally`, once — see stopTyping's doc comment
+  // on `DispatchArgs` for why a burst of rapid messages (each starting
+  // its own loop call here) can't stop it early.
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
+    const stopTyping = startTypingIndicatorLoop({
+      phoneNumberId,
+      accessToken,
+      conversationId: conversation.id,
+      messageId: message.id,
+    })
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      stopTyping,
     })
   }
 

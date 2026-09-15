@@ -166,6 +166,13 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /** Stops the caller's "escribiendo…" loop (direct WhatsApp only —
+   *  see src/lib/whatsapp/typing-indicator.ts), called once this
+   *  dispatch's own work is done, win or lose. Only `dispatchInboundToAiReply`
+   *  itself calls this (in its own `finally`, below); every other
+   *  function taking `DispatchArgs` ignores it. Omitted for callers
+   *  with nothing to stop (tests, non-WhatsApp channels). */
+  stopTyping?: () => void
 }
 
 async function sendAiContinuityFallback(args: DispatchArgs): Promise<void> {
@@ -1329,6 +1336,13 @@ export async function dispatchInboundToAiReply(
       accountId,
       throttleMinutes: 60,
     })
+  } finally {
+    // Only the debounce's eventual winner reaches this — every earlier
+    // call in a burst already returned at `if (!isLatest) return`
+    // above, before ever touching `stopTyping`, so the shared loop
+    // (see typing-indicator.ts's per-conversation dedup) never gets
+    // stopped early by a call that did nothing.
+    args.stopTyping?.()
   }
 }
 

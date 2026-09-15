@@ -287,6 +287,47 @@ export async function sendTextMessage(
   return { messageId: data.messages[0].id }
 }
 
+export interface SendTypingIndicatorArgs {
+  phoneNumberId: string
+  accessToken: string
+  /** The inbound message's own Meta id (`messages[].id` from the
+   *  webhook) — required; this same call also marks that message read. */
+  messageId: string
+}
+
+/**
+ * Shows the "escribiendo…" bubble on the customer's side and marks
+ * their message read, both in one call — same `/messages` endpoint as
+ * every send above, just `status: "read"` + a `typing_indicator`
+ * object instead of a message body. Meta auto-dismisses the indicator
+ * after 25s or as soon as an actual reply is sent, whichever comes
+ * first — there is no "keep it up longer" flag, so a caller wanting it
+ * to persist through a slower reply must call this again before that
+ * window closes (see `src/lib/whatsapp/typing-indicator.ts`, which
+ * owns that repeat-call loop; this function is the single raw request,
+ * not the loop).
+ */
+export async function sendTypingIndicator(args: SendTypingIndicatorArgs): Promise<void> {
+  const { phoneNumberId, accessToken, messageId } = args
+  const url = `${META_API_BASE}/${phoneNumberId}/messages`
+  const response = await metaFetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      status: 'read',
+      message_id: messageId,
+      typing_indicator: { type: 'text' },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+}
+
 export type MediaKind = 'image' | 'video' | 'document' | 'audio'
 
 export interface SendMediaMessageArgs {

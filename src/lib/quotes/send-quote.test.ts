@@ -145,6 +145,31 @@ describe('sendQuoteToConversation', () => {
       message: 'down',
     })
   })
+
+  it('does not send a follow-up by default', async () => {
+    const { db } = makeSendDb({ quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' } })
+    await sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1')
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('sends a follow-up text as a second message when askFollowUp is true', async () => {
+    const { db } = makeSendDb({ quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' } })
+    await sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1', true)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(db, 'acct-1', {
+      conversationId: 'conv-1',
+      messageType: 'text',
+      contentText: '¿Hay algo más en lo que le pueda ayudar?',
+    })
+  })
+
+  it('a failed follow-up does not fail the overall send', async () => {
+    const { db } = makeSendDb({ quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' } })
+    h.sendMessageToConversation.mockResolvedValueOnce(sentMessage).mockRejectedValueOnce(new Error('boom'))
+    await expect(sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1', true)).resolves.toMatchObject({
+      pdfUrl: 'https://existing.example.com/q.pdf',
+    })
+  })
 })
 
 describe('sendQuoteAsText', () => {
@@ -184,6 +209,17 @@ describe('sendQuoteAsText', () => {
     await expect(sendQuoteAsText(db, 'acct-1', 'q1', 'conv-1')).rejects.toMatchObject({
       status: 502,
       message: 'down',
+    })
+  })
+
+  it('sends a follow-up text as a second message when askFollowUp is true', async () => {
+    const { db } = makeSendDb({ quote: { id: 'q1', currency: 'GTQ', total: 100 }, items: [] })
+    await sendQuoteAsText(db, 'acct-1', 'q1', 'conv-1', true)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(db, 'acct-1', {
+      conversationId: 'conv-1',
+      messageType: 'text',
+      contentText: '¿Hay algo más en lo que le pueda ayudar?',
     })
   })
 })
@@ -230,6 +266,25 @@ describe('resolveQuoteDeliveryMode / sendQuoteByAccountPreference', () => {
     const res = await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1', true)
     expect(res.mode).toBe('message')
     expect(h.renderQuotePdf).not.toHaveBeenCalled()
+  })
+
+  it('forwards askFollowUp through to the text path', async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', currency: 'GTQ', total: 100 },
+      items: [],
+      account: { quote_delivery_mode: 'message' },
+    })
+    await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1', false, true)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+  })
+
+  it('forwards askFollowUp through to the PDF path', async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' },
+      account: { quote_delivery_mode: 'pdf' },
+    })
+    await sendQuoteByAccountPreference(db, 'acct-1', 'q1', 'conv-1', false, true)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
   })
 })
 

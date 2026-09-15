@@ -18,6 +18,33 @@ export class SendQuoteError extends Error {
 export type QuoteDeliveryMode = 'pdf' | 'message'
 
 /**
+ * A quote delivered by the PDF or text path below is, today, always
+ * the LAST thing the customer hears on that turn — nothing else runs
+ * afterward to ask if they need anything more. For the catalog's own
+ * checkout and the AI's `create_quote_chat` action this is a real gap:
+ * neither path ever runs the model again after the quote goes out, so
+ * an instruction like "after quoting, ask if there's anything else"
+ * has no code path left that could act on it. Best-effort and
+ * swallows its own errors — a failed follow-up must never make an
+ * otherwise-successful quote delivery look broken.
+ */
+async function sendQuoteFollowUp(
+  db: SupabaseClient,
+  accountId: string,
+  conversationId: string,
+): Promise<void> {
+  try {
+    await sendMessageToConversation(db, accountId, {
+      conversationId,
+      messageType: 'text',
+      contentText: '¿Hay algo más en lo que le pueda ayudar?',
+    })
+  } catch (err) {
+    console.error('[quotes/send-quote] follow-up send failed:', err)
+  }
+}
+
+/**
  * The account's configured quote-delivery preference
  * (`accounts.quote_delivery_mode`, migration 109). Anything other than
  * an explicit `'message'` resolves to `'pdf'` — the safe historical
@@ -51,16 +78,18 @@ export async function sendQuoteByAccountPreference(
   /** Force text delivery regardless of the account setting — used by
    *  the AI path when the model itself asked for a text quote. */
   forceMessage = false,
+  /** See `sendQuoteToConversation`'s doc comment — same reasoning. */
+  askFollowUp = false,
 ): Promise<{ mode: QuoteDeliveryMode; pdfUrl: string | null }> {
   const mode: QuoteDeliveryMode =
     forceMessage || (await resolveQuoteDeliveryMode(db, accountId)) === 'message'
       ? 'message'
       : 'pdf'
   if (mode === 'message') {
-    await sendQuoteAsText(db, accountId, quoteId, conversationId)
+    await sendQuoteAsText(db, accountId, quoteId, conversationId, askFollowUp)
     return { mode, pdfUrl: null }
   }
-  const { pdfUrl } = await sendQuoteToConversation(db, accountId, quoteId, conversationId)
+  const { pdfUrl } = await sendQuoteToConversation(db, accountId, quoteId, conversationId, askFollowUp)
   return { mode, pdfUrl }
 }
 
@@ -100,6 +129,13 @@ export async function sendQuoteToConversation(
   accountId: string,
   quoteId: string,
   conversationId: string,
+  /** Send a friendly "anything else?" follow-up right after the quote
+   *  — for a fully automated delivery path (the catalog's own
+   *  checkout, the AI's create_quote_chat action) that bypasses the
+   *  AI's own text generation entirely, so nothing else would ever ask.
+   *  Off by default — a human agent sending a quote from the dashboard
+   *  is already in the conversation and can decide for themselves. */
+  askFollowUp = false,
 ): Promise<{ pdfUrl: string }> {
   const { data: quote, error: quoteError } = await db
     .from('quotes')
@@ -144,6 +180,8 @@ export async function sendQuoteToConversation(
     .eq('id', quoteId)
     .eq('account_id', accountId)
 
+  if (askFollowUp) await sendQuoteFollowUp(db, accountId, conversationId)
+
   return { pdfUrl }
 }
 
@@ -162,6 +200,8 @@ export async function sendQuoteAsText(
   accountId: string,
   quoteId: string,
   conversationId: string,
+  /** See `sendQuoteToConversation`'s doc comment — same reasoning. */
+  askFollowUp = false,
 ): Promise<void> {
   const { data: quote, error: quoteError } = await db
     .from('quotes')
@@ -202,4 +242,6 @@ export async function sendQuoteAsText(
     .update({ sent_at: new Date().toISOString(), status: 'sent', auto_send_pending: false })
     .eq('id', quoteId)
     .eq('account_id', accountId)
+
+  if (askFollowUp) await sendQuoteFollowUp(db, accountId, conversationId)
 }

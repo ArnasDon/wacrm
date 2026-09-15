@@ -246,6 +246,24 @@ export async function POST(
       } catch (err) {
         console.error('[public/catalog/reservation] confirmation send failed:', err)
       }
+      // This confirmation is the end of the line for this request —
+      // nothing else runs afterward on this conversation, so if nobody
+      // asks now, nobody ever does. In particular the AI never sees
+      // this as a turn to reply to (see the module comment above), so
+      // an instruction like "after quoting, ask if there's anything
+      // else" has no code path left that could act on it for a request
+      // submitted through the catalog form itself. Best-effort and
+      // separately caught — a failed follow-up must never look like
+      // the confirmation itself failed.
+      try {
+        await sendMessageToConversation(db, accountId, {
+          conversationId,
+          messageType: 'text',
+          contentText: '¿Hay algo más en lo que le pueda ayudar?',
+        })
+      } catch (err) {
+        console.error('[public/catalog/reservation] follow-up send failed:', err)
+      }
     }
 
     return NextResponse.json({ ok: true, reservation_id: id, summary: recap })

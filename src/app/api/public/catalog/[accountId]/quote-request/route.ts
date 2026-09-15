@@ -224,7 +224,14 @@ export async function POST(
       : await findRecentConversation(db, accountId, contactId)
     if (conversation && (await isWithinMessagingWindow(db, conversation.id))) {
       try {
-        const sent = await sendQuoteByAccountPreference(db, accountId, quote.id, conversation.id)
+        const sent = await sendQuoteByAccountPreference(
+          db,
+          accountId,
+          quote.id,
+          conversation.id,
+          false,
+          true,
+        )
         deliveryMode = sent.mode
         delivered = true
       } catch (err) {

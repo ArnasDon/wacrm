@@ -1764,6 +1764,7 @@ describe('dispatchInboundToAiReply — autonomous create_quote_chat', () => {
       'quote-1',
       'conv-1',
       true, // proposal.format === 'text' forces a text quote
+      true, // askFollowUp — this path bypasses the AI's own text generation entirely
     )
     // A successful quote must never also trip the silent-failure handoff.
     expect(h.state.updatePayload).toBeNull()

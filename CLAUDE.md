@@ -2280,6 +2280,23 @@ e as três já morderam de verdade.
   — o segundo só age em somente-leitura, quando o microfone não é
   renderizado); a dica do ✨ some ali (`hidden sm:block`), senão vira três
   linhas de 10px embaixo de um compositor que já ocupa duas.
+  ⚠️ **A formatação (N, I, S, </>) sobe para a linha dos botões no celular
+  QUANDO CABE** (pedido do operador, 15/09/2026): com `formatacaoNaLinha`, os
+  marcadores aparecem ali a partir de 390 px (`min-[390px]:max-sm:`) e a
+  linha própria some. A condição existe porque a conta é de pixel: a 390 px
+  sobram 366 px, e a linha com os quatro marcadores ocupa 358. O botão de
+  modelos do número oficial (`mostraModelos`) toma esse espaço, e as telas
+  abaixo de 390 px não o têm: nesses casos a formatação volta à linha
+  própria. Quem acrescentar botão a essa linha refaz a conta, senão gravar,
+  agendar e enviar descem para uma terceira linha.
+  ⚠️ **A etiqueta da hora agendada tem linha própria no celular**
+  (`etiquetaEmLinhaPropria` do `SeletorDeHorario`, ligada só no compositor
+  principal): ao lado do relógio ela não cabia a 390 px — medido em
+  15/09/2026, o botão de agendar descia para uma linha a mais, com ou sem a
+  formatação. Com `order-first` ela empata com a caixa de texto, e a ordem do
+  código (a caixa vem antes) a põe logo abaixo dela; `basis-full` a leva a
+  uma linha inteira. Escolha do operador: a peça de segurança do agendamento
+  fica mais visível, e só enquanto há hora escolhida.
 - ⚠️ **Filho direto do `DialogContent` precisa de `min-w-0` quando carrega
   texto com `truncate`.** O `DialogContent` é `grid`, e item de grid nasce
   com `min-width: auto`; `truncate` é `nowrap`, então o intrínseco do filho
@@ -2302,9 +2319,23 @@ a tela ficava "desconfigurada". O que morde código novo:
   com queda em `100dvh` — nunca `h-screen`/`100vh`.** `100vh` não encolhe com
   o teclado: o iPhone empurra a página inteira para cima até a caixa
   aparecer, e o cabeçalho (o nome do cliente e o número por onde a resposta
-  sai) vai junto. O hook escreve a variável com a área visível e desfaz o
-  empurrão (`window.scrollTo(0, 0)`). Tela nova de altura cheia usa a mesma
-  variável.
+  sai) vai junto. O hook escreve a variável com a área visível, e a casca
+  DESCE junto com o empurrão (`relative top-[var(--deslocamento-visivel)]`,
+  com `visualViewport.pageTop`); `window.scrollTo(0, 0)` só roda ao SAIR do
+  ajuste. Tela nova de altura cheia usa a mesma variável. ⚠️ `pageTop`, NUNCA
+  só o `offsetTop`: este é contado da janela e fica em zero quando o iPhone
+  revela a caixa ROLANDO a janela, e a casca ficaria acima da área visível
+  pela rolagem inteira (Codex, PR #219). Pelo mesmo motivo o hook relê na
+  rolagem da janela, que não dispara o `scroll` do `visualViewport`.
+- ⚠️⚠️ **A regra NÃO compara a área visível com `window.innerHeight`.** A
+  primeira versão (PR #214) só agia com 120 px de diferença, e o print do
+  operador no iPhone no dia seguinte (15/09/2026) mostrou a tela exatamente
+  como antes do ajuste. A causa mais provável — não medida, porque o
+  navegador do computador não tem teclado virtual — é a janela encolher junto
+  com o teclado no app instalado. Hoje, num aparelho de toque e com o foco no
+  fio, a casca mede SEMPRE a área visível: sem teclado ela é a tela inteira.
+  ⚠️ `top` e nunca `transform` na casca: transform faria todo `fixed` de
+  dentro dela se posicionar pela casca. Há pinos em `teclado.test.ts`.
 - ⚠️⚠️ **O ajuste só age com o foco DENTRO de `[data-acima-do-teclado]`**
   (hoje, só o fio). Fora dele — formulário de outra tela, diálogo, o painel
   do contato no celular — o empurrão do iPhone é o que revela o campo acima

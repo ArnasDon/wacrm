@@ -105,6 +105,20 @@ responde 200.
 - Retorno pula linha no toque (D4), e a dica "Shift+Enter para nova linha"
   some onde não existe Shift+Enter.
 - As últimas mensagens continuam à vista quando o teclado encolhe a conversa.
+- **Revisto em 15/09 (#219):** o print do operador mostrou o ajuste desligado
+  no iPhone dele — a regra dependia de comparar a área visível com a altura da
+  janela, que no app instalado provavelmente encolhe junto com o teclado.
+  Agora, com o foco na conversa, a tela mede sempre só a área acima do teclado
+  e desce junto se o iPhone a empurrar.
+- **Formatação na linha dos botões (15/09, #219, pedido do operador):** no
+  celular, negrito, itálico, riscado e monoespaçado sobem para a linha dos
+  ícones quando cabem; ficam na linha própria no número oficial da Meta ou
+  em tela abaixo de 390 px.
+- **Etiqueta do agendamento em linha própria (15/09, #219, escolha do
+  operador):** no celular, com hora escolhida, a etiqueta amarela com a data
+  fica numa linha só dela, logo abaixo da caixa de mensagem. Ao lado do
+  relógio ela não cabia num iPhone de 390 px e empurrava o botão de agendar
+  para uma linha a mais.
 
 ## E3 — Telas que se atualizam ao voltar (#216 e #217)
 
@@ -139,7 +153,9 @@ volta não recarregava tudo. Dois foram resolvidos no #218:
   blocos, perfis e conexões — em silêncio, e a recarga que falha mantém os
   nomes que estão na tela.
 
-**Pendente, com proposta ao operador:**
+**Anotado, e fica como está por decisão do operador (15/09/2026)** — o caso
+é raro (um administrador muda o perfil de alguém com o app aberto em segundo
+plano), e a correção mexe no login do app inteiro:
 
 - **Perfil de acesso:** a volta recarrega a lista de funis, mas o recorte por
   perfil usa o perfil carregado quando o app abriu — o login não recarrega o
@@ -184,6 +200,9 @@ volta não recarregava tudo. Dois foram resolvidos no #218:
 - [ ] Arrastar a conversa rumo às mensagens antigas com o teclado aberto: o
       teclado recolhe, e a tela volta inteira.
 - [ ] Retorno pula linha; o botão envia.
+- [ ] Negrito, itálico, riscado e </> aparecem na linha dos ícones.
+- [ ] Escolher uma hora de agendamento: a etiqueta amarela aparece numa linha
+      própria, abaixo da caixa de mensagem, e os botões continuam numa linha só.
 - [ ] Foto da câmera e da galeria; gravar áudio; abrir um PDF recebido e
       voltar ao app.
 - [ ] Trocar o número da conversa; anotação; agendamento.

@@ -1457,6 +1457,38 @@ export function MessageComposer({
 
   // ---- Render --------------------------------------------------------
 
+  // Templates são um conceito da API oficial — o botão some no canal
+  // Evolution e enquanto o transporte é desconhecido (M12). A MESMA régua
+  // decide se a formatação cabe na linha dos botões (abaixo).
+  const mostraModelos =
+    transporteConhecido && !ehEvolution(channelKind) && !ehInstagram(channelKind);
+  // Os marcadores do WhatsApp (negrito, itálico, riscado, monoespaçado).
+  // ⚠️ No CELULAR eles sobem para a linha dos botões quando CABEM (pedido do
+  // operador, 15/09/2026: a linha própria era espaço perdido embaixo). Pelas
+  // classes, a 390 px sobram 366 px, e clipe, +, ✨, anotação, os quatro
+  // marcadores, microfone, relógio e enviar ocupam 358. O botão de modelos do
+  // número oficial toma aquele espaço, e as telas abaixo de 390 px não o têm:
+  // nesses casos fica a linha própria de sempre. A etiqueta da hora agendada
+  // NÃO entra na conta — no celular ela tem linha própria
+  // (`etiquetaEmLinhaPropria`). No computador nada muda.
+  const formatacaoNaLinha = !mostraModelos;
+  const botoesDeFormato = (
+    <>
+      <BotaoFormato onClick={() => formatar("negrito")} title={t("bold")}>
+        <span className="font-bold">N</span>
+      </BotaoFormato>
+      <BotaoFormato onClick={() => formatar("italico")} title={t("italic")}>
+        <span className="italic">I</span>
+      </BotaoFormato>
+      <BotaoFormato onClick={() => formatar("riscado")} title={t("strike")}>
+        <span className="line-through">S</span>
+      </BotaoFormato>
+      <BotaoFormato onClick={() => formatar("mono")} title={t("mono")}>
+        <span className="font-mono text-[10px]">{"</>"}</span>
+      </BotaoFormato>
+    </>
+  );
+
   return (
     <div
       className="relative border-t border-border bg-card p-3"
@@ -1703,7 +1735,7 @@ export function MessageComposer({
               canal Evolution e enquanto o transporte é desconhecido (M12):
               aberto nesse vão, o TemplatePicker nasceria com channelId nulo
               e o catálogo sairia sem o recorte por WABA. */}
-          {transporteConhecido && !ehEvolution(channelKind) && !ehInstagram(channelKind) && (
+          {mostraModelos && (
             <GatedButton
               variant="ghost"
               size="sm"
@@ -1754,6 +1786,16 @@ export function MessageComposer({
             >
               <StickyNote className="h-4 w-4" />
             </Button>
+          )}
+
+          {/* Formatação na linha dos botões: só no celular a partir de 390 px,
+              e só quando cabe (`formatacaoNaLinha`, com a conta). `h-9` põe os
+              marcadores no meio da linha de botões de 36 px, que alinha pela
+              base. */}
+          {formatacaoNaLinha && drafts.length === 0 && (
+            <div className="hidden h-9 shrink-0 items-center gap-1 min-[390px]:max-sm:flex">
+              {botoesDeFormato}
+            </div>
           )}
 
           <textarea
@@ -1815,9 +1857,12 @@ export function MessageComposer({
               tela em que se escreve.
               ⚠️ `inputsDisabled` (e não só o papel): agendar É enviar ao
               cliente, com atraso. Fora da janela de 24h da Meta a mensagem
-              não sairia de jeito nenhum. */}
+              não sairia de jeito nenhum.
+              No CELULAR a etiqueta da hora vai para uma linha própria, logo
+              abaixo da caixa (`etiquetaEmLinhaPropria`): nesta linha ela não
+              cabia a 390 px e empurrava o botão de agendar para baixo. */}
           {!readOnly && (
-            <SeletorDeHorario ag={ag} disabled={inputsDisabled} t={tAgendadas} />
+            <SeletorDeHorario ag={ag} disabled={inputsDisabled} t={tAgendadas} etiquetaEmLinhaPropria />
           )}
 
           <GatedButton
@@ -1854,23 +1899,20 @@ export function MessageComposer({
           `items-end` buttons below the textarea. Indented to line up
           under the textarea left edge. */}
       {drafts.length === 0 && !recording && (
-        // Sem o recuo no celular: lá a caixa começa na borda esquerda.
-        <div className="mt-1 flex items-center gap-1 sm:pl-[5.5rem]">
+        // Sem o recuo no celular: lá a caixa começa na borda esquerda. Com
+        // `formatacaoNaLinha`, a partir de 390 px os marcadores estão na linha
+        // dos botões, e esta linha some no celular (a dica do ✨ já não
+        // aparecia ali).
+        <div
+          className={cn(
+            "mt-1 flex items-center gap-1 sm:pl-[5.5rem]",
+            formatacaoNaLinha && "min-[390px]:max-sm:hidden",
+          )}
+        >
           {/* Inserem os marcadores do WhatsApp na seleção. O texto enviado
               continua sendo `*assim*` — é o próprio WhatsApp que formata do
               outro lado; os botões só poupam decorar a sintaxe. */}
-          <BotaoFormato onClick={() => formatar("negrito")} title={t("bold")}>
-            <span className="font-bold">N</span>
-          </BotaoFormato>
-          <BotaoFormato onClick={() => formatar("italico")} title={t("italic")}>
-            <span className="italic">I</span>
-          </BotaoFormato>
-          <BotaoFormato onClick={() => formatar("riscado")} title={t("strike")}>
-            <span className="line-through">S</span>
-          </BotaoFormato>
-          <BotaoFormato onClick={() => formatar("mono")} title={t("mono")}>
-            <span className="font-mono text-[10px]">{"</>"}</span>
-          </BotaoFormato>
+          {botoesDeFormato}
           {/* A dica some no celular: em 375px ela vira três linhas de 10px
               embaixo de um compositor que já ocupa duas — o ✨ continua ali,
               com o `title`. */}
@@ -2209,10 +2251,18 @@ function SeletorDeHorario({
   ag,
   disabled,
   t,
+  etiquetaEmLinhaPropria = false,
 }: {
   ag: Agendamento;
   disabled: boolean;
   t: ReturnType<typeof useTranslations>;
+  /**
+   * No CELULAR, a etiqueta da hora ganha linha própria, logo abaixo da caixa
+   * de texto e acima dos botões (escolha do operador, 15/09/2026): ao lado do
+   * relógio ela não cabia a 390 px e empurrava o botão de agendar para uma
+   * linha a mais. Só o compositor principal liga — é a linha dele que quebra.
+   */
+  etiquetaEmLinhaPropria?: boolean;
 }) {
   return (
     <>
@@ -2225,7 +2275,13 @@ function SeletorDeHorario({
           type="button"
           onClick={() => ag.setSeletorAberto(true)}
           title={t("scheduleField", { min: CICLO_MINUTOS })}
-          className="inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-amber-500 bg-amber-500/10 px-2 text-[11px] font-medium text-amber-700 dark:text-amber-400"
+          className={cn(
+            "inline-flex h-9 shrink-0 items-center gap-1 rounded-xl border border-amber-500 bg-amber-500/10 px-2 text-[11px] font-medium text-amber-700 dark:text-amber-400",
+            // `order-first` empata com a caixa de texto, e a ordem do código
+            // (a caixa vem antes) põe a etiqueta logo abaixo dela;
+            // `basis-full` a leva a uma linha inteira.
+            etiquetaEmLinhaPropria && "max-sm:order-first max-sm:basis-full max-sm:justify-between",
+          )}
         >
           {ag.quandoAg.toLocaleString(undefined, {
             day: "2-digit",

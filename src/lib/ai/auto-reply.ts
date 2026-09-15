@@ -1676,9 +1676,10 @@ async function handOffToHuman(args: {
   transient?: boolean
 }): Promise<void> {
   const { db, accountId, conversationId, handoffAgentId, alreadyAssigned, summary, transient = false } = args
+  const fullSummary = await appendActiveReservationsRecap(db, accountId, conversationId, summary)
   const update: Record<string, unknown> = {
     ai_autoreply_disabled: true,
-    ai_handoff_summary: summary,
+    ai_handoff_summary: fullSummary,
     ai_handoff_at: new Date().toISOString(),
     ai_handoff_transient: transient ? true : null,
   }
@@ -1712,7 +1713,7 @@ async function handOffToHuman(args: {
     conversation_id: conversationId,
     sender_type: 'bot',
     content_type: 'internal_note',
-    content_text: summary,
+    content_text: fullSummary,
     status: 'sent',
   })
   if (noteError) {
@@ -1727,7 +1728,43 @@ async function handOffToHuman(args: {
   // `unclaimed_conversation_timeout_minutes`, default 60). Notify every
   // agent+ teammate directly instead of waiting on that.
   if (!willAssign && !alreadyAssigned) {
-    void notifyHandoffUnassigned(db, accountId, conversationId, summary)
+    void notifyHandoffUnassigned(db, accountId, conversationId, fullSummary)
+  }
+}
+
+/**
+ * Appends a recap of this conversation's still-open hotel requests
+ * (see `loadActiveReservationsSummary`) to a handoff summary, so
+ * whoever picks up the thread — the banner, the internal note, and the
+ * unassigned-handoff notification all show the same text — doesn't
+ * have to scroll back through a long session to see everything the
+ * guest asked for (traced live 2026-09-15: a handoff note reading only
+ * "last message: 'Si'" after a 60-message session touching a room
+ * cancellation, a massage, and a quad-bike booking). Hotel vertical
+ * only in practice — `reservation_requests` is never populated
+ * elsewhere, so `loadActiveReservationsSummary` returns null and this
+ * is a no-op. Fails open: any error here must never break the handoff
+ * itself, so it falls back to the plain summary.
+ */
+async function appendActiveReservationsRecap(
+  db: SupabaseClient,
+  accountId: string,
+  conversationId: string,
+  summary: string,
+): Promise<string> {
+  try {
+    const { data: account } = await db
+      .from('accounts')
+      .select('default_currency')
+      .eq('id', accountId)
+      .maybeSingle()
+    const currency = (account as { default_currency: string | null } | null)?.default_currency ?? 'USD'
+    const recap = await loadActiveReservationsSummary(db, accountId, conversationId, currency)
+    if (!recap) return summary
+    return `${summary}\n\nSolicitudes activas de este cliente:\n${recap}`
+  } catch (err) {
+    console.error('[ai auto-reply] failed to load active-reservations recap for handoff:', err)
+    return summary
   }
 }
 

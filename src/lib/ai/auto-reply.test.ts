@@ -55,6 +55,9 @@ const h = vi.hoisted(() => ({
      *  look up (the in-progress booking for this conversation/product), or
      *  null when there isn't one yet. */
     reservationRow: null as Record<string, unknown> | null,
+    /** Rows `loadActiveReservationsSummary` sees for the handoff recap —
+     *  empty means "nothing active", the default for every non-hotel test. */
+    activeReservationRows: [] as Record<string, unknown>[],
     /** `product_categories.name` for whatever `category_id` a test's
      *  product carries — feeds `sendHotelBookingNudge`'s cold-start path. */
     productCategoryName: null as string | null,
@@ -334,12 +337,19 @@ vi.mock('./admin-client', () => ({
         return chain
       }
       if (table === 'reservation_requests') {
-        // .select(...).eq(...).eq(...).eq(...).eq(...).maybeSingle() →
-        // sendHotelBookingNudge's own-product lookup.
-        const chain = {
+        // Two shapes share this table:
+        //  - .select(...).eq(...).eq(...).eq(...).eq(...).maybeSingle() →
+        //    sendHotelBookingNudge's/sendQuoteFollowUp's own-row lookup.
+        //  - .select(...).eq(...).eq(...).eq(...).eq(...).order(...) → an
+        //    array, awaited directly (no .maybeSingle) →
+        //    loadActiveReservationsSummary's handoff-recap query.
+        const chain: Record<string, unknown> = {
           select: () => chain,
           eq: () => chain,
+          order: () => chain,
           maybeSingle: () => Promise.resolve({ data: h.state.reservationRow, error: null }),
+          then: (onFulfilled: (v: unknown) => unknown) =>
+            Promise.resolve({ data: h.state.activeReservationRows, error: null }).then(onFulfilled),
         }
         return chain
       }
@@ -481,6 +491,7 @@ beforeEach(() => {
   h.state.quickReplyRow = null
   h.state.products = []
   h.state.reservationRow = null
+  h.state.activeReservationRows = []
   h.state.productCategoryName = null
   h.state.accountProfiles = [{ user_id: 'user-1' }, { user_id: 'user-2' }]
   h.state.notificationInserts = []
@@ -710,6 +721,38 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
+  it('appends a recap of this conversation\'s active hotel requests to the handoff summary and internal note', async () => {
+    h.state.activeReservationRows = [
+      {
+        category: 'habitaciones',
+        service_name: 'Suite Premium',
+        guests: 2,
+        check_in: '2026-10-01',
+        check_out: '2026-10-03',
+        use_date: null,
+        duration_minutes: null,
+        hall: null,
+        estimated_price: null,
+      },
+    ]
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    const expectedRecap =
+      'Solicitudes activas de este cliente:\n- Habitación: Suite Premium · 2026-10-01 → 2026-10-03 · 2 personas'
+    expect(h.state.updatePayload?.ai_handoff_summary).toEqual(
+      expect.stringContaining(expectedRecap),
+    )
+    expect(h.state.messageInserts).toEqual([
+      expect.objectContaining({ content_text: h.state.updatePayload?.ai_handoff_summary }),
+    ])
+  })
+
+  it('leaves the handoff summary untouched when there is nothing active to recap (non-hotel, or nothing captured yet)', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload?.ai_handoff_summary).not.toContain('Solicitudes activas')
+  })
+
   it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
     await dispatchInboundToAiReply(ARGS)

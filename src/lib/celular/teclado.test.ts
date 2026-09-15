@@ -188,14 +188,24 @@ describe("a formatação na linha dos botões do celular (pedido do operador, 15
     "utf8",
   );
 
-  it("sobe só quando cabe: sem hora agendada, sem o botão de modelos, e a partir de 390 px", () => {
-    // A conta é de pixel (366 px livres a 390 px, 358 ocupados): com a
-    // etiqueta da hora ou o botão de modelos, gravar, agendar e enviar
-    // desceriam para uma terceira linha.
-    expect(compositor).toContain("const formatacaoNaLinha = !quandoAg && !mostraModelos;");
+  it("sobe só quando cabe: sem o botão de modelos e a partir de 390 px", () => {
+    // A conta é de pixel (366 px livres a 390 px, 358 ocupados): com o botão
+    // de modelos, gravar, agendar e enviar desceriam para uma terceira linha.
+    expect(compositor).toContain("const formatacaoNaLinha = !mostraModelos;");
     expect(compositor).toContain("min-[390px]:max-sm:flex");
     expect(compositor).toContain('formatacaoNaLinha && "min-[390px]:max-sm:hidden"');
     // O botão de modelos segue a MESMA régua que a condição acima lê.
     expect(compositor).toContain("{mostraModelos && (");
+  });
+
+  it("a etiqueta da hora agendada tem linha própria no celular — ao lado do relógio ela não cabia a 390 px", () => {
+    // Medido em 15/09/2026: com a etiqueta na linha, o botão de agendar descia
+    // para uma linha a mais, com ou sem a formatação.
+    expect(compositor).toContain(
+      'etiquetaEmLinhaPropria && "max-sm:order-first max-sm:basis-full max-sm:justify-between"',
+    );
+    expect(compositor).toContain(
+      "<SeletorDeHorario ag={ag} disabled={inputsDisabled} t={tAgendadas} etiquetaEmLinhaPropria />",
+    );
   });
 });

@@ -2284,11 +2284,19 @@ e as três já morderam de verdade.
   QUANDO CABE** (pedido do operador, 15/09/2026): com `formatacaoNaLinha`, os
   marcadores aparecem ali a partir de 390 px (`min-[390px]:max-sm:`) e a
   linha própria some. A condição existe porque a conta é de pixel: a 390 px
-  sobram 366 px, e a linha com os quatro marcadores ocupa 358. Os dois casos
-  que tomam o espaço — a etiqueta da hora agendada (`quandoAg`) e o botão de
-  modelos do número oficial (`mostraModelos`) — e as telas abaixo de 390 px
-  voltam à linha própria. Quem acrescentar botão a essa linha refaz a conta,
-  senão gravar, agendar e enviar descem para uma terceira linha.
+  sobram 366 px, e a linha com os quatro marcadores ocupa 358. O botão de
+  modelos do número oficial (`mostraModelos`) toma esse espaço, e as telas
+  abaixo de 390 px não o têm: nesses casos a formatação volta à linha
+  própria. Quem acrescentar botão a essa linha refaz a conta, senão gravar,
+  agendar e enviar descem para uma terceira linha.
+  ⚠️ **A etiqueta da hora agendada tem linha própria no celular**
+  (`etiquetaEmLinhaPropria` do `SeletorDeHorario`, ligada só no compositor
+  principal): ao lado do relógio ela não cabia a 390 px — medido em
+  15/09/2026, o botão de agendar descia para uma linha a mais, com ou sem a
+  formatação. Com `order-first` ela empata com a caixa de texto, e a ordem do
+  código (a caixa vem antes) a põe logo abaixo dela; `basis-full` a leva a
+  uma linha inteira. Escolha do operador: a peça de segurança do agendamento
+  fica mais visível, e só enquanto há hora escolhida.
 - ⚠️ **Filho direto do `DialogContent` precisa de `min-w-0` quando carrega
   texto com `truncate`.** O `DialogContent` é `grid`, e item de grid nasce
   com `min-width: auto`; `truncate` é `nowrap`, então o intrínseco do filho

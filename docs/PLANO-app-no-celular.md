@@ -112,8 +112,13 @@ responde 200.
   e desce junto se o iPhone a empurrar.
 - **Formatação na linha dos botões (15/09, #219, pedido do operador):** no
   celular, negrito, itálico, riscado e monoespaçado sobem para a linha dos
-  ícones quando cabem; ficam na linha própria com hora de agendamento
-  escolhida, no número oficial da Meta ou em tela abaixo de 390 px.
+  ícones quando cabem; ficam na linha própria no número oficial da Meta ou
+  em tela abaixo de 390 px.
+- **Etiqueta do agendamento em linha própria (15/09, #219, escolha do
+  operador):** no celular, com hora escolhida, a etiqueta amarela com a data
+  fica numa linha só dela, logo abaixo da caixa de mensagem. Ao lado do
+  relógio ela não cabia num iPhone de 390 px e empurrava o botão de agendar
+  para uma linha a mais.
 
 ## E3 — Telas que se atualizam ao voltar (#216 e #217)
 
@@ -195,8 +200,9 @@ plano), e a correção mexe no login do app inteiro:
 - [ ] Arrastar a conversa rumo às mensagens antigas com o teclado aberto: o
       teclado recolhe, e a tela volta inteira.
 - [ ] Retorno pula linha; o botão envia.
-- [ ] Negrito, itálico, riscado e </> aparecem na linha dos ícones (e voltam
-      para a linha de baixo ao escolher uma hora de agendamento).
+- [ ] Negrito, itálico, riscado e </> aparecem na linha dos ícones.
+- [ ] Escolher uma hora de agendamento: a etiqueta amarela aparece numa linha
+      própria, abaixo da caixa de mensagem, e os botões continuam numa linha só.
 - [ ] Foto da câmera e da galeria; gravar áudio; abrir um PDF recebido e
       voltar ao app.
 - [ ] Trocar o número da conversa; anotação; agendamento.

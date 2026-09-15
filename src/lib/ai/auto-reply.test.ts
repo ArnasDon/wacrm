@@ -66,6 +66,10 @@ const h = vi.hoisted(() => ({
     convFullSelectError: false,
     /** Rows `tryRecoverTransientHandoff`'s guarded UPDATE ... .select('id') returns. */
     recoveryUpdateRows: [{ id: 'conv-1' }] as { id: string }[],
+    /** `profiles` rows `notifyHandoffUnassigned` notifies — agent+ teammates. */
+    accountProfiles: [{ user_id: 'user-1' }, { user_id: 'user-2' }] as { user_id: string }[],
+    /** Rows inserted via `db.from('notifications').insert(...)`. */
+    notificationInserts: [] as Record<string, unknown>[],
   },
 }))
 
@@ -339,6 +343,24 @@ vi.mock('./admin-client', () => ({
         }
         return chain
       }
+      if (table === 'profiles') {
+        // .select('user_id').eq('account_id', ...).in('account_role', [...]) →
+        // notifyHandoffUnassigned's recipient lookup.
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          in: () => Promise.resolve({ data: h.state.accountProfiles, error: null }),
+        }
+        return chain
+      }
+      if (table === 'notifications') {
+        return {
+          insert: (payload: Record<string, unknown>[]) => {
+            h.state.notificationInserts.push(...payload)
+            return Promise.resolve({ error: null })
+          },
+        }
+      }
       if (table === 'messages') {
         // handOffToHuman's best-effort internal-note insert +
         // tryRecoverTransientHandoff's "did a human reply?" read.
@@ -460,6 +482,8 @@ beforeEach(() => {
   h.state.products = []
   h.state.reservationRow = null
   h.state.productCategoryName = null
+  h.state.accountProfiles = [{ user_id: 'user-1' }, { user_id: 'user-2' }]
+  h.state.notificationInserts = []
   h.state.messageInserts = []
   h.createQuote.mockReset()
   h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
@@ -707,6 +731,36 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+    // Assigning fires the existing on_conversation_assigned trigger —
+    // notifyHandoffUnassigned would be redundant, so it must not fire.
+    expect(h.state.notificationInserts).toEqual([])
+  })
+
+  it('notifies every agent+ teammate directly when the handoff lands on nobody (migration 136)', async () => {
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.notificationInserts).toEqual([
+      expect.objectContaining({
+        account_id: 'acct-1',
+        user_id: 'user-1',
+        type: 'ai_handoff',
+        conversation_id: 'conv-1',
+        title: 'AI needs a human',
+      }),
+      expect.objectContaining({
+        account_id: 'acct-1',
+        user_id: 'user-2',
+        type: 'ai_handoff',
+        conversation_id: 'conv-1',
+      }),
+    ])
+  })
+
+  it('does not notify when the conversation already has a human owner', async () => {
+    h.state.conv = { assigned_agent_id: 'existing-agent', ai_autoreply_disabled: false }
+    h.generateReply.mockResolvedValue({ text: '', handoff: true, markDealWon: false, moveToStageName: null })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.notificationInserts).toEqual([])
   })
 
   it('leaves an internal_note message in the thread explaining the handoff, matching the banner summary (migration 083)', async () => {

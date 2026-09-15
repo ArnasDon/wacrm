@@ -211,10 +211,18 @@ export interface Conversation {
 }
 
 // ============================================================
-// Notifications (migration 027, 'ai_key_invalid' added in 079)
+// Notifications (migration 027; 'ai_key_invalid' added in 079;
+// 'google_calendar_error' in 084; 'google_sheets_error' and 'task_due'
+// in 095/097; 'ai_handoff' added in 136)
 // ============================================================
 
-export type NotificationType = 'conversation_assigned' | 'ai_key_invalid';
+export type NotificationType =
+  | 'conversation_assigned'
+  | 'ai_key_invalid'
+  | 'google_calendar_error'
+  | 'google_sheets_error'
+  | 'task_due'
+  | 'ai_handoff';
 
 export interface Notification {
   id: string;

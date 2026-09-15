@@ -5,7 +5,17 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
 import type { Notification } from "@/types";
-import { Bell, CheckCheck, KeyRound, Loader2, UserPlus } from "lucide-react";
+import {
+  Bell,
+  CheckCheck,
+  KeyRound,
+  Loader2,
+  UserPlus,
+  Bot,
+  CalendarX,
+  FileSpreadsheet,
+  ListTodo,
+} from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -15,6 +25,10 @@ import { toast } from "sonner";
 const TYPE_ICON: Record<Notification["type"], typeof Bell> = {
   conversation_assigned: UserPlus,
   ai_key_invalid: KeyRound,
+  google_calendar_error: CalendarX,
+  google_sheets_error: FileSpreadsheet,
+  task_due: ListTodo,
+  ai_handoff: Bot,
 };
 
 export default function NotificationsPage() {

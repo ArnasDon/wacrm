@@ -415,6 +415,7 @@ export async function dispatchInboundToAiReply(
       await sendAiContinuityFallback({ accountId, conversationId, contactId, configOwnerUserId })
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -463,6 +464,7 @@ export async function dispatchInboundToAiReply(
         await sendAiContinuityFallback({ accountId, conversationId, contactId, configOwnerUserId })
         await handOffToHuman({
           db,
+          accountId,
           conversationId,
           handoffAgentId: config.handoffAgentId,
           alreadyAssigned: false,
@@ -520,6 +522,7 @@ export async function dispatchInboundToAiReply(
       await sendAiContinuityFallback({ accountId, conversationId, contactId, configOwnerUserId })
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -866,6 +869,7 @@ export async function dispatchInboundToAiReply(
       }
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -883,6 +887,7 @@ export async function dispatchInboundToAiReply(
       await sendAiContinuityFallback({ accountId, conversationId, contactId, configOwnerUserId })
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -911,6 +916,7 @@ export async function dispatchInboundToAiReply(
       })
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -1038,6 +1044,7 @@ export async function dispatchInboundToAiReply(
         })
         await handOffToHuman({
           db,
+          accountId,
           conversationId,
           handoffAgentId: config.handoffAgentId,
           alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -1055,6 +1062,7 @@ export async function dispatchInboundToAiReply(
     if (clinicActionNeedsHandoff) {
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -1086,6 +1094,7 @@ export async function dispatchInboundToAiReply(
       // incident this guards against.
       await handOffToHuman({
         db,
+        accountId,
         conversationId,
         handoffAgentId: config.handoffAgentId,
         alreadyAssigned: Boolean(conv.assigned_agent_id),
@@ -1544,6 +1553,7 @@ async function handleAiGenerationFailure(args: {
     await sendAiContinuityFallback({ accountId, conversationId, contactId, configOwnerUserId })
     await handOffToHuman({
       db,
+      accountId,
       conversationId,
       handoffAgentId: config.handoffAgentId,
       alreadyAssigned,
@@ -1577,6 +1587,7 @@ async function handleAiGenerationFailure(args: {
 
   await handOffToHuman({
     db,
+    accountId,
     conversationId,
     handoffAgentId: config.handoffAgentId,
     alreadyAssigned,
@@ -1651,6 +1662,7 @@ async function notifyAiKeyInvalid(db: SupabaseClient, accountId: string): Promis
  */
 async function handOffToHuman(args: {
   db: SupabaseClient
+  accountId: string
   conversationId: string
   handoffAgentId: string | null
   alreadyAssigned: boolean
@@ -1663,14 +1675,15 @@ async function handOffToHuman(args: {
    *  handoff clears a stale `true` from an earlier recovered one. */
   transient?: boolean
 }): Promise<void> {
-  const { db, conversationId, handoffAgentId, alreadyAssigned, summary, transient = false } = args
+  const { db, accountId, conversationId, handoffAgentId, alreadyAssigned, summary, transient = false } = args
   const update: Record<string, unknown> = {
     ai_autoreply_disabled: true,
     ai_handoff_summary: summary,
     ai_handoff_at: new Date().toISOString(),
     ai_handoff_transient: transient ? true : null,
   }
-  if (handoffAgentId && !alreadyAssigned) {
+  const willAssign = Boolean(handoffAgentId) && !alreadyAssigned
+  if (willAssign) {
     update.assigned_agent_id = handoffAgentId
   }
   const { error: updError } = await db.from('conversations').update(update).eq('id', conversationId)
@@ -1704,6 +1717,55 @@ async function handOffToHuman(args: {
   })
   if (noteError) {
     console.error('[ai auto-reply] failed to insert handoff internal note:', noteError)
+  }
+
+  // When there's no configured handoff agent AND nobody already owns
+  // this thread, `conversations.assigned_agent_id` stays NULL — the
+  // `on_conversation_assigned` trigger (migration 027) never fires, so
+  // without this the pause is invisible in-app until the idle
+  // reassignment sweep happens to run with someone online (up to
+  // `unclaimed_conversation_timeout_minutes`, default 60). Notify every
+  // agent+ teammate directly instead of waiting on that.
+  if (!willAssign && !alreadyAssigned) {
+    void notifyHandoffUnassigned(db, accountId, conversationId, summary)
+  }
+}
+
+/**
+ * Best-effort in-app notification for an AI handoff that landed on
+ * nobody (migration 136). Mirrors `notifyAiKeyInvalid` below, but goes
+ * to every agent+ teammate (not just owner/admin) since any of them
+ * can pick up the conversation from the inbox.
+ */
+async function notifyHandoffUnassigned(
+  db: SupabaseClient,
+  accountId: string,
+  conversationId: string,
+  summary: string,
+): Promise<void> {
+  try {
+    const { data: recipients } = await db
+      .from('profiles')
+      .select('user_id')
+      .eq('account_id', accountId)
+      .in('account_role', ['owner', 'admin', 'agent'])
+    if (!recipients || recipients.length === 0) return
+
+    const { error } = await db.from('notifications').insert(
+      recipients.map((r) => ({
+        account_id: accountId,
+        user_id: r.user_id as string,
+        type: 'ai_handoff',
+        conversation_id: conversationId,
+        title: 'AI needs a human',
+        body: summary,
+      })),
+    )
+    if (error) {
+      console.error('[ai auto-reply] failed to insert ai_handoff notifications:', error)
+    }
+  } catch (err) {
+    console.error('[ai auto-reply] notifyHandoffUnassigned failed:', err)
   }
 }
 
@@ -1829,6 +1891,7 @@ async function flagDealClosing(args: {
 
   await handOffToHuman({
     db,
+    accountId,
     conversationId,
     handoffAgentId,
     alreadyAssigned,
@@ -2445,6 +2508,7 @@ async function autoScheduleAppointment(args: {
   const handoff = (reason: string) =>
     handOffToHuman({
       db,
+      accountId,
       conversationId,
       handoffAgentId,
       alreadyAssigned,
@@ -2590,6 +2654,7 @@ async function autoCreateQuoteFromChat(args: {
   const handoff = (reason: string) =>
     handOffToHuman({
       db,
+      accountId,
       conversationId,
       handoffAgentId,
       alreadyAssigned,

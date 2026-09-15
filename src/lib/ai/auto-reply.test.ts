@@ -50,7 +50,14 @@ const h = vi.hoisted(() => ({
     quickReplyRow: null as { id: string; content_text: string } | null,
     /** Account's active `products` rows, for the create_quote_chat item-matching
      *  and send_photo product-name lookups. */
-    products: [] as { id: string; name: string; image_url?: string | null; image_urls?: string[] | null }[],
+    products: [] as { id: string; name: string; image_url?: string | null; image_urls?: string[] | null; category_id?: string | null }[],
+    /** `reservation_requests` row `sendHotelBookingNudge`/`sendQuoteFollowUp`
+     *  look up (the in-progress booking for this conversation/product), or
+     *  null when there isn't one yet. */
+    reservationRow: null as Record<string, unknown> | null,
+    /** `product_categories.name` for whatever `category_id` a test's
+     *  product carries — feeds `sendHotelBookingNudge`'s cold-start path. */
+    productCategoryName: null as string | null,
     /** Rows inserted via `db.from('messages').insert(...)` — currently only handOffToHuman's internal note. */
     messageInserts: [] as Record<string, unknown>[],
     /** `messages` read for `tryRecoverTransientHandoff` — a human's own
@@ -295,11 +302,40 @@ vi.mock('./admin-client', () => ({
       }
       if (table === 'products') {
         // .select('id, name').eq('account_id', ...).eq('is_active', true) → thenable
+        // AND .select('category_id').eq('id', ...).maybeSingle() → sendHotelBookingNudge's cold-start lookup.
         const chain: Record<string, unknown> = {
           select: () => chain,
           eq: () => chain,
           then: (onFulfilled: (v: unknown) => unknown) =>
             Promise.resolve({ data: h.state.products, error: null }).then(onFulfilled),
+          maybeSingle: () =>
+            Promise.resolve({
+              data: h.state.products[0] ? { category_id: h.state.products[0].category_id ?? null } : null,
+              error: null,
+            }),
+        }
+        return chain
+      }
+      if (table === 'product_categories') {
+        // .select('name').eq('id', ...).maybeSingle()
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () =>
+            Promise.resolve({
+              data: h.state.productCategoryName ? { name: h.state.productCategoryName } : null,
+              error: null,
+            }),
+        }
+        return chain
+      }
+      if (table === 'reservation_requests') {
+        // .select(...).eq(...).eq(...).eq(...).eq(...).maybeSingle() →
+        // sendHotelBookingNudge's own-product lookup.
+        const chain = {
+          select: () => chain,
+          eq: () => chain,
+          maybeSingle: () => Promise.resolve({ data: h.state.reservationRow, error: null }),
         }
         return chain
       }
@@ -422,6 +458,8 @@ beforeEach(() => {
   h.state.priorScheduleBookings = []
   h.state.quickReplyRow = null
   h.state.products = []
+  h.state.reservationRow = null
+  h.state.productCategoryName = null
   h.state.messageInserts = []
   h.createQuote.mockReset()
   h.sendQuoteAsText.mockReset().mockResolvedValue(undefined)
@@ -1746,6 +1784,96 @@ describe('dispatchInboundToAiReply — autonomous send_photo', () => {
     expect(h.dispatchSystemAlert).toHaveBeenCalledWith(
       expect.objectContaining({ dedupKey: 'ai_send_photo_failed:acct-1' }),
     )
+  })
+
+  it('non-hotel account: sends the photo and nothing else (no booking nudge)', async () => {
+    h.state.products = [{ id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg' }]
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
+  })
+
+  it('hotel vertical, no reservation started yet: nudges for the category\'s missing fields', async () => {
+    h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
+    h.state.products = [
+      { id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg', category_id: 'cat-1' },
+    ]
+    h.state.productCategoryName = 'Habitaciones'
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(2)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({
+        messageType: 'text',
+        contentText:
+          '¿Le gustaría confirmar la reservación? Me falta las fechas de entrada y salida y el número de personas para dejarla lista.',
+      }),
+    )
+  })
+
+  it('hotel vertical, a reservation is already in progress for this product: only names what is still missing', async () => {
+    h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
+    h.state.products = [
+      { id: 'p1', name: 'Suite Premium', image_url: 'https://cdn.example.com/suite.jpg', category_id: 'cat-1' },
+    ]
+    h.state.reservationRow = {
+      category: 'habitaciones',
+      guests: null,
+      check_in: '2026-10-01',
+      check_out: '2026-10-03',
+      use_date: null,
+      hall: null,
+    }
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Suite Premium',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(
+      expect.anything(),
+      'acct-1',
+      expect.objectContaining({
+        contentText: '¿Le gustaría confirmar la reservación? Me falta el número de personas para dejarla lista.',
+      }),
+    )
+  })
+
+  it('hotel vertical, product is in a non-bookable category: no nudge, just the photo', async () => {
+    h.state.account = { default_currency: 'USD', industry_vertical: 'hotel' }
+    h.state.products = [
+      { id: 'p1', name: 'Llavero recuerdo', image_url: 'https://cdn.example.com/llavero.jpg', category_id: 'cat-9' },
+    ]
+    h.state.productCategoryName = 'Souvenirs'
+    h.generateReply.mockResolvedValue({
+      text: 'Aquí tienes.',
+      handoff: false,
+      markDealWon: false,
+      moveToStageName: null,
+      sendCatalog: false,
+      sendPhotoProductName: 'Llavero recuerdo',
+    })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.sendMessageToConversation).toHaveBeenCalledTimes(1)
   })
 })
 

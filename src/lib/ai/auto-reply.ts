@@ -28,10 +28,12 @@ import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/goog
 import { formatWithOffset, describeNowInZone } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
+import { missingReservationFields, reservationFollowUpText } from '@/lib/reservations/missing-fields'
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 import { describeError, isUndefinedColumnError } from '@/lib/observability/describe-error'
 import {
   upsertReservationRequest,
+  categorySlugFromName,
   type ReservationCategory,
   type ReservationInput,
 } from '@/lib/reservations/upsert'
@@ -1158,9 +1160,10 @@ export async function dispatchInboundToAiReply(
       }
     }
 
+    let photoSentProductId: string | null = null
     if (sendPhotoProductName) {
       try {
-        await autoSendProductPhoto({
+        photoSentProductId = await autoSendProductPhoto({
           db,
           accountId,
           configOwnerUserId,
@@ -1286,6 +1289,21 @@ export async function dispatchInboundToAiReply(
         })
       } catch (err) {
         console.error('[ai auto-reply] autonomous record_reservation failed:', err)
+      }
+    }
+
+    // Runs AFTER record_reservation above so it sees this same turn's
+    // freshest captured fields, not a stale snapshot from before the
+    // marker was processed. See `missingReservationFields` — this is a
+    // deterministic, code-level nudge, not left to the model to
+    // remember to ask on its own (see `SEND_PRODUCT_PHOTO_SENTINEL_PREFIX`
+    // for why: the model doesn't reliably re-invoke actions on later
+    // turns in the same conversation).
+    if (photoSentProductId && isHotel) {
+      try {
+        await sendHotelBookingNudge({ db, accountId, conversationId, productId: photoSentProductId })
+      } catch (err) {
+        console.error('[ai auto-reply] post-photo reservation nudge failed:', err)
       }
     }
 
@@ -2170,7 +2188,9 @@ async function autoSetContactName(args: {
  * alerting fires only for that — note this means a failure partway
  * through a multi-photo gallery leaves the earlier photos sent but
  * unlogged in `ai_action_log`, same tradeoff `sendCatalogToConversation`
- * already accepts for its own photo loop.
+ * already accepts for its own photo loop. Returns the sent product's
+ * id (so the caller can follow up with `sendHotelBookingNudge`), or
+ * `null` for either no-op case above.
  */
 async function autoSendProductPhoto(args: {
   db: SupabaseClient
@@ -2178,7 +2198,7 @@ async function autoSendProductPhoto(args: {
   configOwnerUserId: string
   conversationId: string
   productName: string
-}): Promise<void> {
+}): Promise<string | null> {
   const { db, accountId, configOwnerUserId, conversationId, productName } = args
 
   const { data: products } = await db
@@ -2196,7 +2216,7 @@ async function autoSendProductPhoto(args: {
   ).find((p) => p.name.trim().toLowerCase() === productName.trim().toLowerCase())
   if (!product) {
     console.warn(`[ai auto-reply] send_photo: no active product matches "${productName}"`)
-    return
+    return null
   }
   const photoUrls =
     product.image_urls && product.image_urls.length > 0
@@ -2206,7 +2226,7 @@ async function autoSendProductPhoto(args: {
         : []
   if (photoUrls.length === 0) {
     console.warn(`[ai auto-reply] send_photo: product "${product.name}" has no photo on file`)
-    return
+    return null
   }
 
   for (const photoUrl of photoUrls) {
@@ -2226,6 +2246,73 @@ async function autoSendProductPhoto(args: {
     target_id: product.id,
     input: { product_name: product.name, source: 'auto_reply_autonomous', photo_count: photoUrls.length },
     result: { product_id: product.id, photo_count: photoUrls.length },
+  })
+
+  return product.id
+}
+
+/**
+ * Deterministic post-photo "would you like to book?" nudge (hotel
+ * vertical only — called only when `isHotel`). Looks up this product's
+ * own `reservation_requests` row for THIS conversation (if the guest,
+ * or an earlier `record_reservation` marker this same turn, already
+ * started one) to name what's still missing; a product with no row yet
+ * falls back to its catalog category alone, so a guest whose very
+ * first message was "send me a photo" still gets asked for dates/guests
+ * instead of silence. A product outside the five hotel categories (or
+ * one `categorySlugFromName` can't resolve) sends nothing — not every
+ * photo is of something bookable.
+ */
+async function sendHotelBookingNudge(args: {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  productId: string
+}): Promise<void> {
+  const { db, accountId, conversationId, productId } = args
+
+  const { data: row } = await db
+    .from('reservation_requests')
+    .select('category, guests, check_in, check_out, use_date, hall')
+    .eq('account_id', accountId)
+    .eq('conversation_id', conversationId)
+    .eq('product_id', productId)
+    .eq('is_active_build', true)
+    .eq('status', 'pending')
+    .maybeSingle()
+
+  type Row = {
+    category: ReservationCategory
+    guests: number | null
+    check_in: string | null
+    check_out: string | null
+    use_date: string | null
+    hall: string | null
+  }
+
+  let snapshot: Row | null = (row as Row | null) ?? null
+  if (!snapshot) {
+    const { data: product } = await db
+      .from('products')
+      .select('category_id')
+      .eq('id', productId)
+      .maybeSingle()
+    const categoryId = (product as { category_id: string | null } | null)?.category_id ?? null
+    if (!categoryId) return
+    const { data: category } = await db
+      .from('product_categories')
+      .select('name')
+      .eq('id', categoryId)
+      .maybeSingle()
+    const slug = categorySlugFromName((category as { name: string | null } | null)?.name ?? null)
+    if (!slug) return
+    snapshot = { category: slug, guests: null, check_in: null, check_out: null, use_date: null, hall: null }
+  }
+
+  await sendMessageToConversation(db, accountId, {
+    conversationId,
+    messageType: 'text',
+    contentText: reservationFollowUpText(missingReservationFields(snapshot)),
   })
 }
 

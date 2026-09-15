@@ -3,6 +3,8 @@ import { renderQuotePdf } from '@/lib/pdf/quote-pdf'
 import { uploadCatalogPdf } from '@/lib/pdf/upload-pdf'
 import { sendMessageToConversation, SendMessageError } from '@/lib/whatsapp/send-message'
 import { formatCurrency } from '@/lib/currency'
+import { missingReservationFields, reservationFollowUpText } from '@/lib/reservations/missing-fields'
+import type { ReservationCategory } from '@/lib/reservations/upsert'
 import type { Quote, QuoteItem } from '@/types'
 // Re-exported under its original name — see `@/lib/messaging/window`'s
 // own doc comment for why the definition moved there (circular-import
@@ -27,6 +29,15 @@ export type QuoteDeliveryMode = 'pdf' | 'message'
  * has no code path left that could act on it. Best-effort and
  * swallows its own errors — a failed follow-up must never make an
  * otherwise-successful quote delivery look broken.
+ *
+ * Hotel vertical only (in practice — `reservation_requests` is never
+ * populated for any other vertical, so this naturally no-ops
+ * elsewhere): when this conversation has an in-progress hotel booking
+ * still being captured (`record_reservation`, migration 112), swap the
+ * generic "anything else?" for a reservation-specific nudge naming
+ * whatever's still missing (see `missingReservationFields`) — this is
+ * a deterministic, code-level ask, not something left to the model to
+ * remember on a later turn.
  */
 async function sendQuoteFollowUp(
   db: SupabaseClient,
@@ -34,10 +45,36 @@ async function sendQuoteFollowUp(
   conversationId: string,
 ): Promise<void> {
   try {
+    const { data: row } = await db
+      .from('reservation_requests')
+      .select('category, guests, check_in, check_out, use_date, hall')
+      .eq('account_id', accountId)
+      .eq('conversation_id', conversationId)
+      .eq('is_active_build', true)
+      .eq('status', 'pending')
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+
+    const contentText = row
+      ? reservationFollowUpText(
+          missingReservationFields(
+            row as {
+              category: ReservationCategory
+              guests: number | null
+              check_in: string | null
+              check_out: string | null
+              use_date: string | null
+              hall: string | null
+            },
+          ),
+        )
+      : '¿Hay algo más en lo que le pueda ayudar?'
+
     await sendMessageToConversation(db, accountId, {
       conversationId,
       messageType: 'text',
-      contentText: '¿Hay algo más en lo que le pueda ayudar?',
+      contentText,
     })
   } catch (err) {
     console.error('[quotes/send-quote] follow-up send failed:', err)

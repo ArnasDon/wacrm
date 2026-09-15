@@ -32,10 +32,21 @@ function makeSendDb(opts: {
   quote: Record<string, unknown> | null
   items?: Record<string, unknown>[]
   account?: Record<string, unknown> | null
+  reservationRow?: Record<string, unknown> | null
 }) {
   const updates: { table: string; payload: Record<string, unknown> }[] = []
   const db = {
     from: (table: string) => {
+      if (table === 'reservation_requests') {
+        const chain: Record<string, unknown> = {
+          select: () => chain,
+          eq: () => chain,
+          order: () => chain,
+          limit: () => chain,
+          maybeSingle: () => Promise.resolve({ data: opts.reservationRow ?? null, error: null }),
+        }
+        return chain
+      }
       if (table === 'quotes') {
         const chain: {
           select: () => typeof chain
@@ -168,6 +179,19 @@ describe('sendQuoteToConversation', () => {
     h.sendMessageToConversation.mockResolvedValueOnce(sentMessage).mockRejectedValueOnce(new Error('boom'))
     await expect(sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1', true)).resolves.toMatchObject({
       pdfUrl: 'https://existing.example.com/q.pdf',
+    })
+  })
+
+  it('asks about confirming the reservation (naming what is missing) when the conversation has an in-progress hotel booking', async () => {
+    const { db } = makeSendDb({
+      quote: { id: 'q1', pdf_url: 'https://existing.example.com/q.pdf' },
+      reservationRow: { category: 'habitaciones', guests: null, check_in: '2026-10-01', check_out: '2026-10-03' },
+    })
+    await sendQuoteToConversation(db, 'acct-1', 'q1', 'conv-1', true)
+    expect(h.sendMessageToConversation).toHaveBeenLastCalledWith(db, 'acct-1', {
+      conversationId: 'conv-1',
+      messageType: 'text',
+      contentText: '¿Le gustaría confirmar la reservación? Me falta el número de personas para dejarla lista.',
     })
   })
 })

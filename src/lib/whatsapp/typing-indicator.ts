@@ -1,19 +1,19 @@
 import { sendTypingIndicator } from './meta-api'
+import { sendWhatsAppTypingIndicatorViaZernio } from './zernio-send'
 
 // ============================================================
-// "escribiendo…" (typing) indicator for direct WhatsApp Cloud API
-// conversations only — NOT Zernio/Instagram/Facebook, which use a
-// different provider and a different mechanism entirely. This module
-// is only ever wired up from src/app/api/whatsapp/webhook/route.ts,
-// Meta's own direct webhook, so that scoping is structural rather than
-// an explicit provider check here.
+// "escribiendo…" (typing) indicator for WhatsApp — both providers
+// this app supports for it (`whatsapp_config.provider`): Meta's own
+// direct Cloud API, and Zernio (docs.zernio.com/messages/send-typing-
+// indicator, same 25s WhatsApp behavior, same mark-as-read side
+// effect). NOT Instagram/Facebook — those never reach either WhatsApp
+// webhook route this module is wired up from.
 //
-// Meta's typing_indicator auto-dismisses after 25s or as soon as a
-// real reply is sent, whichever comes first (see sendTypingIndicator's
-// own doc comment) — nowhere near long enough to cover this app's own
-// reply latency (up to 30s debounce, aiDebounceMs, plus up to ~40s of
-// generation with one retry, aiRequestTimeoutMs). So this owns a
-// repeating loop, not a single call.
+// Neither provider's own typing_indicator lasts anywhere near this
+// app's own reply latency (up to 30s debounce, aiDebounceMs, plus up
+// to ~40s of generation with one retry, aiRequestTimeoutMs) — it
+// auto-dismisses after 25s or as soon as a real reply sends, whichever
+// comes first. So this owns a repeating loop, not a single call.
 //
 // In-memory, single-process — same tradeoff already accepted for
 // debounce.ts and the shared rate limiter: correct for this app's
@@ -25,14 +25,14 @@ import { sendTypingIndicator } from './meta-api'
  *  bot pouncing on every message; a beat first reads more human. */
 const START_DELAY_MS = 7_000
 
-/** Re-send comfortably before Meta's 25s auto-dismiss window closes. */
+/** Re-send comfortably before the 25s auto-dismiss window closes. */
 const REFRESH_MS = 20_000
 
 /** Hard ceiling so a bug that skips calling the returned stop function
  *  (a crash outside the normal finally, a future code path that
- *  forgets to wire it) can't leave a loop calling the Meta API forever
- *  for one stale conversation. Comfortably covers the worst realistic
- *  case (debounce + generation + one retry) with room to spare. */
+ *  forgets to wire it) can't leave a loop calling the API forever for
+ *  one stale conversation. Comfortably covers the worst realistic case
+ *  (debounce + generation + one retry) with room to spare. */
 const MAX_DURATION_MS = 120_000
 
 function sleep(ms: number): Promise<void> {
@@ -48,16 +48,42 @@ function sleep(ms: number): Promise<void> {
  *  the one shared loop instead of each racing its own. */
 const activeLoops = new Map<string, () => void>()
 
-export interface StartTypingIndicatorLoopArgs {
-  phoneNumberId: string
-  accessToken: string
+interface CommonArgs {
   conversationId: string
-  /** The inbound message that should trigger this — its own Meta id. */
-  messageId: string
   /** Override the module defaults — tests only. */
   startDelayMs?: number
   refreshMs?: number
   maxDurationMs?: number
+}
+
+export type StartTypingIndicatorLoopArgs =
+  | (CommonArgs & {
+      provider: 'meta'
+      phoneNumberId: string
+      accessToken: string
+      /** The inbound message that should trigger this — its own Meta id. */
+      messageId: string
+    })
+  | (CommonArgs & {
+      provider: 'zernio'
+      zernioApiKey: string
+      zernioAccountId: string
+      zernioConversationId: string
+    })
+
+async function sendOnce(args: StartTypingIndicatorLoopArgs): Promise<void> {
+  if (args.provider === 'meta') {
+    await sendTypingIndicator({
+      phoneNumberId: args.phoneNumberId,
+      accessToken: args.accessToken,
+      messageId: args.messageId,
+    })
+    return
+  }
+  await sendWhatsAppTypingIndicatorViaZernio({
+    config: { zernio_api_key: args.zernioApiKey, zernio_account_id: args.zernioAccountId },
+    zernioConversationId: args.zernioConversationId,
+  })
 }
 
 /**
@@ -85,13 +111,9 @@ export function startTypingIndicatorLoop(args: StartTypingIndicatorLoopArgs): ()
     const deadline = Date.now() + maxDurationMs
     while (!stopped && Date.now() < deadline) {
       try {
-        await sendTypingIndicator({
-          phoneNumberId: args.phoneNumberId,
-          accessToken: args.accessToken,
-          messageId: args.messageId,
-        })
+        await sendOnce(args)
       } catch (err) {
-        // A broken token/number would otherwise get hammered every
+        // A broken token/account would otherwise get hammered every
         // refreshMs for the full maxDurationMs on every inbound
         // message — one failure is enough signal, stop this loop.
         console.error('[typing-indicator] send failed, stopping loop:', err)

@@ -286,6 +286,7 @@ describe('inbound webhook: "escribiendo…" typing indicator', () => {
 
     expect(h.startTypingIndicatorLoop).toHaveBeenCalledTimes(1)
     expect(h.startTypingIndicatorLoop).toHaveBeenCalledWith({
+      provider: 'meta',
       phoneNumberId: 'pn-1',
       accessToken: expect.any(String),
       conversationId: 'conv-1',

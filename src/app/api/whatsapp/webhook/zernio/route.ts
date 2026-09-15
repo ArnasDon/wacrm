@@ -8,6 +8,7 @@ import { verifyZernioWebhookSignature } from '@/lib/zernio/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { startTypingIndicatorLoop } from '@/lib/whatsapp/typing-indicator'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import { handleStatusUpdate } from '@/app/api/whatsapp/webhook/route'
 import { handleTemplateWebhookChange } from '@/lib/whatsapp/template-webhook'
@@ -672,11 +673,27 @@ async function processInboundMessage(message: ZernioWebhookMessage, config: any)
   }
 
   if (!flowConsumed && inboundText.trim()) {
+    // "escribiendo…" — see src/lib/whatsapp/typing-indicator.ts's own
+    // doc comment for why this is a loop, not a single call.
+    // `conversation.zernio_conversation_id` is reliably set by this
+    // point (the self-heal above runs first whenever `message.
+    // conversationId` is present, which it always is on an inbound
+    // Zernio message) — the null check is just defense in depth.
+    const stopTyping = conversation.zernio_conversation_id
+      ? startTypingIndicatorLoop({
+          provider: 'zernio',
+          zernioApiKey: config.zernio_api_key,
+          zernioAccountId: config.zernio_account_id,
+          zernioConversationId: conversation.zernio_conversation_id,
+          conversationId: conversation.id,
+        })
+      : undefined
     await dispatchInboundToAiReply({
       accountId,
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      stopTyping,
     })
   }
 

@@ -1,13 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 
 vi.mock('./meta-api', () => ({ sendTypingIndicator: vi.fn().mockResolvedValue(undefined) }))
+vi.mock('./zernio-send', () => ({
+  sendWhatsAppTypingIndicatorViaZernio: vi.fn().mockResolvedValue(undefined),
+}))
 
 import { sendTypingIndicator } from './meta-api'
+import { sendWhatsAppTypingIndicatorViaZernio } from './zernio-send'
 import { startTypingIndicatorLoop } from './typing-indicator'
 
-const h = vi.mocked({ sendTypingIndicator })
+const h = vi.mocked({ sendTypingIndicator, sendWhatsAppTypingIndicatorViaZernio })
 
 const BASE_ARGS = {
+  provider: 'meta' as const,
   phoneNumberId: 'phone-1',
   accessToken: 'token-1',
   messageId: 'wamid-1',
@@ -20,6 +25,8 @@ beforeEach(() => {
   vi.useFakeTimers()
   h.sendTypingIndicator.mockClear()
   h.sendTypingIndicator.mockResolvedValue(undefined)
+  h.sendWhatsAppTypingIndicatorViaZernio.mockClear()
+  h.sendWhatsAppTypingIndicatorViaZernio.mockResolvedValue(undefined)
 })
 
 afterEach(() => {
@@ -100,5 +107,38 @@ describe('startTypingIndicatorLoop', () => {
     // 7s (1st) + 20s (2nd, at 27s) — a 3rd at 47s would be past the 30s ceiling
     await vi.advanceTimersByTimeAsync(200_000)
     expect(h.sendTypingIndicator).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('startTypingIndicatorLoop — Zernio provider', () => {
+  const ZERNIO_ARGS = {
+    provider: 'zernio' as const,
+    zernioApiKey: 'encrypted-key-1',
+    zernioAccountId: 'zacct-1',
+    zernioConversationId: 'zconv-1',
+    startDelayMs: 7_000,
+    refreshMs: 20_000,
+    maxDurationMs: 120_000,
+  }
+
+  it('sends via the Zernio typing-indicator helper, not the Meta one', async () => {
+    startTypingIndicatorLoop({ ...ZERNIO_ARGS, conversationId: 'conv-z1' })
+    await vi.advanceTimersByTimeAsync(7_000)
+    expect(h.sendWhatsAppTypingIndicatorViaZernio).toHaveBeenCalledTimes(1)
+    expect(h.sendWhatsAppTypingIndicatorViaZernio).toHaveBeenCalledWith({
+      config: { zernio_api_key: 'encrypted-key-1', zernio_account_id: 'zacct-1' },
+      zernioConversationId: 'zconv-1',
+    })
+    expect(h.sendTypingIndicator).not.toHaveBeenCalled()
+  })
+
+  it('refreshes and stops the same as the Meta provider', async () => {
+    const stop = startTypingIndicatorLoop({ ...ZERNIO_ARGS, conversationId: 'conv-z2' })
+    await vi.advanceTimersByTimeAsync(7_000)
+    await vi.advanceTimersByTimeAsync(20_000)
+    expect(h.sendWhatsAppTypingIndicatorViaZernio).toHaveBeenCalledTimes(2)
+    stop()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(h.sendWhatsAppTypingIndicatorViaZernio).toHaveBeenCalledTimes(2)
   })
 })

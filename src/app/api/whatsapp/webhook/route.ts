@@ -942,6 +942,7 @@ async function processMessage(
   // its own loop call here) can't stop it early.
   if (!flowConsumed && !interactiveReplyId && inboundText.trim()) {
     const stopTyping = startTypingIndicatorLoop({
+      provider: 'meta',
       phoneNumberId,
       accessToken,
       conversationId: conversation.id,

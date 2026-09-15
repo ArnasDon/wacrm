@@ -333,6 +333,40 @@ export async function sendZernioText(args: ZernioSendTextArgs): Promise<ZernioSe
   return { messageId: data.data?.messageId ?? data.messageId }
 }
 
+export interface ZernioSendTypingIndicatorArgs {
+  apiKey: string
+  /** Zernio's opaque conversation id (`conversations.zernio_conversation_id`). */
+  conversationId: string
+  accountId: string
+}
+
+/**
+ * Shows the "escribiendo…" bubble and marks the customer's message
+ * read (docs.zernio.com/messages/send-typing-indicator) — same
+ * platform-side behavior as the Meta-direct call this mirrors
+ * (`sendTypingIndicator` in `@/lib/whatsapp/meta-api`): WhatsApp
+ * auto-dismisses it after 25s or once a reply sends, whichever comes
+ * first. Best-effort by Zernio's own design — the endpoint always
+ * returns 200 even when the platform call underneath fails or the
+ * platform doesn't support it at all, so there's nothing meaningful to
+ * inspect in the response beyond a network-level failure.
+ */
+export async function sendZernioTypingIndicator(args: ZernioSendTypingIndicatorArgs): Promise<void> {
+  const { apiKey, conversationId, accountId } = args
+  const url = `${ZERNIO_API_BASE}/inbox/conversations/${conversationId}/typing`
+  const response = await zernioFetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({ accountId }),
+  }, ZERNIO_SEND_TIMEOUT_MS)
+  if (!response.ok) {
+    await throwZernioError(response, `Zernio API error: ${response.status}`)
+  }
+}
+
 export type ZernioMediaKind = 'image' | 'video' | 'audio' | 'document'
 
 /** Zernio's attachment `attachmentType` field doesn't use "document" — it's "file". */

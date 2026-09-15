@@ -14,6 +14,7 @@ import {
   sendZernioTemplate,
   sendZernioButtons,
   sendZernioInteractive,
+  sendZernioTypingIndicator,
   createZernioConversation,
   type ZernioMediaKind,
 } from '@/lib/zernio/api';
@@ -52,6 +53,15 @@ export async function sendWhatsAppTextViaZernio(
     conversationId: requireZernioConversation(ctx),
     accountId: ctx.config.zernio_account_id,
     text,
+  });
+}
+
+export async function sendWhatsAppTypingIndicatorViaZernio(ctx: ZernioSendContext): Promise<void> {
+  const apiKey = decrypt(ctx.config.zernio_api_key);
+  await sendZernioTypingIndicator({
+    apiKey,
+    conversationId: requireZernioConversation(ctx),
+    accountId: ctx.config.zernio_account_id,
   });
 }
 

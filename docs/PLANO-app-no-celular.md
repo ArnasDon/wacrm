@@ -128,8 +128,9 @@ aviso.
   Lista a tabela sem linhas durante a carga impede mudar etapa com a recarga
   no ar.
 
-**Anotado, fora por decisão (D8):** a revisão do Codex sobre o merge do #216
-apontou mais dois pontos em que a volta não recarrega tudo:
+**Anotado, fora por decisão (D8):** as revisões do Codex sobre o merge do
+#216 e sobre o #217 apontaram mais três pontos em que a volta não recarrega
+tudo:
 
 - **Desempenho:** a volta recarrega as trajetórias, mas não o gasto do Meta
   Ads (`useGastosDeAnuncios` só busca de novo quando o período muda). Se a
@@ -140,6 +141,11 @@ apontou mais dois pontos em que a volta não recarrega tudo:
   blocos, perfis e conexões. Campo, perfil ou conexão renomeados lá fora
   continuam com o nome antigo — e um responsável novo aparece em branco — até
   trocar de tela.
+- **Perfil de acesso:** a volta recarrega a lista de funis, mas o recorte por
+  perfil usa o perfil carregado quando o app abriu — o login não recarrega o
+  perfil da mesma pessoa, e isso já vale para o app inteiro. Funil tirado do
+  perfil por outro administrador continua visível e selecionado até o app ser
+  recarregado.
 
 ## E4 — Voltar com o gesto do iPhone (#215)
 

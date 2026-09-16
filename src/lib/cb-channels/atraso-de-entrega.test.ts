@@ -381,6 +381,48 @@ describe('registrarEntrega — o I/O', () => {
     ).resolves.toBeUndefined();
   });
 
+  it('⚠️ escrita AINDA atrasada leva o espaçamento NO WHERE (Codex, 2ª rodada)', async () => {
+    // A checagem em memória sozinha não contém nada: concorrentes leem o
+    // mesmo `entrega_recebida_em` velho e passam todas. Quem serializa é o
+    // banco, então o predicado tem de estar no UPDATE.
+    const agora = Date.now();
+    const { db, updates } = duble({
+      linha: {
+        entrega_carimbo_em: new Date(agora - 40 * 60_000).toISOString(),
+        entrega_recebida_em: new Date(agora - 90_000).toISOString(), // espaçamento já passou
+      },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await registrarEntrega(db as any, 'canal-1', Math.floor((agora - 35 * 60_000) / 1000));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em.lt.'))).toBe(true);
+  });
+
+  it('⚠️ só a transição que APAGA o alarme dispensa o predicado', async () => {
+    const agora = Date.now();
+    const { db, updates } = duble({
+      linha: {
+        entrega_carimbo_em: new Date(agora - 29 * 60_000).toISOString(),
+        entrega_recebida_em: new Date(agora - 5_000).toISOString(),
+      },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await registrarEntrega(db as any, 'canal-1', Math.floor(agora / 1000));
+    expect(updates).toHaveLength(1);
+    expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em'))).toBe(false);
+    // a cerca da fronteira NUNCA sai
+    expect(updates[0].filtros.some((f) => f.includes('entrega_carimbo_em.lt.'))).toBe(true);
+  });
+
+  it('a primeira entrega da conexão também leva o predicado (não apaga alarme nenhum)', async () => {
+    const { db, updates } = duble({
+      linha: { entrega_carimbo_em: null, entrega_recebida_em: null },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await registrarEntrega(db as any, 'canal-1', agoraSeg());
+    expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em'))).toBe(true);
+  });
+
   it('carimbo no futuro além da tolerância não escreve', async () => {
     const { db, updates } = duble({
       linha: { entrega_carimbo_em: null, entrega_recebida_em: null },

@@ -218,15 +218,11 @@ export async function registrarEntrega(
     if (!moveAFronteira({ carimboMs, carimboGuardadoIso: guardado.carimboIso, agoraMs })) return;
 
     const atrasoNovoSeg = Math.max(0, Math.round((agoraMs - carimboMs) / 1000));
-    if (
-      !espacamentoLiberou(guardado.recebidaIso, agoraMs) &&
-      !podeIgnorarOEspacamento(atrasoNovoSeg, guardado)
-    ) {
-      return;
-    }
+    const apagaOAlarme = podeIgnorarOEspacamento(atrasoNovoSeg, guardado);
+    if (!espacamentoLiberou(guardado.recebidaIso, agoraMs) && !apagaOAlarme) return;
 
     const carimboIso = new Date(carimboMs).toISOString();
-    const { error } = await db
+    let escrita = db
       .from('cb_channels')
       .update({
         entrega_carimbo_em: carimboIso,
@@ -236,6 +232,29 @@ export async function registrarEntrega(
       // Só avança. `or` cobre a primeira entrega, quando a coluna é nula —
       // `.lt()` sozinho nunca casa NULL e a fronteira nunca sairia do zero.
       .or(`entrega_carimbo_em.is.null,entrega_carimbo_em.lt.${carimboIso}`);
+
+    // ⚠️⚠️ O espaçamento volta para o WHERE quando a escrita AINDA é de uma
+    // amostra atrasada, e é o que o torna ATÔMICO (Codex, 2ª rodada do PR
+    // #220). A checagem em memória acima sozinha não contém nada: várias
+    // invocações concorrentes do webhook para o mesmo canal leem o MESMO
+    // `entrega_recebida_em` velho, todas passam, e se os carimbos pegarem o
+    // lock em ordem crescente todas satisfazem a cerca da fronteira e cada
+    // uma emite seu evento de realtime — a rajada de backlog que o
+    // espaçamento existe para conter voltaria inteira, podendo até estourar
+    // o rate limit da rota de saúde. Quem serializa é o banco.
+    //
+    // O bypass fica SÓ na transição que apaga o alarme, e ele é
+    // auto-limitante: `podeIgnorarOEspacamento` exige a fronteira GUARDADA
+    // atrasada, então assim que a primeira amostra saudável grava, as
+    // seguintes voltam ao espaçamento normal.
+    if (!apagaOAlarme) {
+      const limiteIso = new Date(agoraMs - ESPACAMENTO_DE_GRAVACAO_SEG * 1000).toISOString();
+      escrita = escrita.or(
+        `entrega_recebida_em.is.null,entrega_recebida_em.lt.${limiteIso}`,
+      );
+    }
+
+    const { error } = await escrita;
     if (error) {
       console.warn('[atraso-de-entrega] não registrou a fronteira:', error.message);
     }

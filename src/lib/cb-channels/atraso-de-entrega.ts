@@ -91,6 +91,55 @@ export function entregaAtrasada(atrasoSeg: number | null): boolean {
 }
 
 /**
+ * Até quando uma medição ainda fala sobre o AGORA.
+ *
+ * ⚠️⚠️ Sem isto o alarme vira permanente, e essa é a armadilha que a
+ * migration 1002 declara e que a primeira versão do código não cumpria: uma
+ * amostra atrasada seguida de silêncio mantinha `warn/lagging` para sempre,
+ * porque a régua olhava só o atraso histórico e nunca a IDADE dele. O
+ * cabeçalho e o Meu dia afirmariam "esta conexão está entregando tarde"
+ * horas ou dias depois da última mensagem (Codex, 3ª rodada do PR #220).
+ *
+ * Uma hora é a folga medida na conta: a conexão do episódio recebia ~1,26
+ * mensagem por minuto (medição sempre fresca), e a mais parada do
+ * escritório passa até uma hora sem mensagem em silêncio NORMAL. Curto
+ * demais apagaria o alarme durante o próprio episódio, num intervalo
+ * esparso; longo demais é o alarme permanente de volta.
+ *
+ * ⚠️ O que este eixo NÃO detecta, de propósito: a conexão que trava de vez e
+ * PARA de receber. Ali a medição envelhece e o alarme apaga — dizer "está
+ * atrasada" a partir de uma amostra de ontem seria inventar. "Não chega
+ * mensagem há tempo demais" é outro alarme, e precisaria conhecer o padrão
+ * de tráfego esperado de cada conexão para não gritar toda madrugada.
+ */
+export const VALIDADE_DA_MEDICAO_MS = 60 * 60_000;
+
+/** A medição ainda vale para afirmar algo sobre agora? */
+export function medicaoAindaVale(medidoEmIso: string | null, agoraMs: number): boolean {
+  if (!medidoEmIso) return false;
+  const quando = Date.parse(medidoEmIso);
+  if (!Number.isFinite(quando)) return false;
+  return agoraMs - quando <= VALIDADE_DA_MEDICAO_MS;
+}
+
+export interface Alarme {
+  atrasoSeg: number | null;
+  /** `cb_channels.entrega_recebida_em` — quando a amostra foi colhida. */
+  medidoEmIso: string | null;
+  agoraMs: number;
+}
+
+/**
+ * A conexão está entregando tarde AGORA? É esta que a régua de cor e a tela
+ * usam — `entregaAtrasada` sozinha responde sobre a AMOSTRA, não sobre o
+ * presente, e confundir as duas é o que faz o alarme nunca apagar.
+ */
+export function alarmeDeAtraso(a: Alarme): boolean {
+  if (!entregaAtrasada(a.atrasoSeg)) return false;
+  return medicaoAindaVale(a.medidoEmIso, a.agoraMs);
+}
+
+/**
  * Espaçamento entre duas gravações da fronteira na MESMA conexão.
  *
  * ⚠️ Não é economia de banco — é o realtime. Todo UPDATE em `cb_channels`

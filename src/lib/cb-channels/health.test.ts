@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 
 import { toneFor, piorTom, comCache, STALE_MS, __limparCacheDeSaude } from './health';
+import { VALIDADE_DA_MEDICAO_MS } from './atraso-de-entrega';
 
 const BASE = {
   status: 'connected' as const,
@@ -11,6 +12,7 @@ const BASE = {
   webhookOk: null,
   /** Nível 3: nunca medido. `null` é "não sei", e não acusa (1002). */
   atrasoSeg: null,
+  atrasoMedidoEm: null,
   agoraMs: 1_000_000_000_000,
 };
 
@@ -85,10 +87,14 @@ describe('toneFor — a regra que o indicador carrega', () => {
     // respondia `open`, o webhook apontava para cá e o frescor era novo:
     // os dois eixos antigos diziam "saudável" com verdade, e ainda assim o
     // atendente lia uma conversa com meia hora de defasagem.
-    expect(toneFor({ ...BASE, estadoVivo: 'open', atrasoSeg: 29 * 60 })).toEqual({
-      tone: 'warn',
-      detail: 'lagging',
-    });
+    expect(
+      toneFor({
+        ...BASE,
+        estadoVivo: 'open',
+        atrasoSeg: 29 * 60,
+        atrasoMedidoEm: agora(30_000),
+      }),
+    ).toEqual({ tone: 'warn', detail: 'lagging' });
   });
 
   it('atraso NUNCA MEDIDO não acusa — null é "não sei", não zero', () => {
@@ -103,18 +109,79 @@ describe('toneFor — a regra que o indicador carrega', () => {
     // É medição LOCAL, feita na nossa ingestão: não depende de ninguém
     // responder para ser verdade.
     expect(
-      toneFor({ ...BASE, estadoVivo: null, checkedAt: agora(1_000), atrasoSeg: 40 * 60 }),
+      toneFor({
+        ...BASE,
+        estadoVivo: null,
+        checkedAt: agora(1_000),
+        atrasoSeg: 40 * 60,
+        atrasoMedidoEm: agora(30_000),
+      }),
     ).toEqual({ tone: 'warn', detail: 'lagging' });
   });
 
   it('queda ganha de atraso — vermelho descreve melhor o que houve', () => {
-    expect(toneFor({ ...BASE, estadoVivo: 'close', atrasoSeg: 40 * 60 }).tone).toBe('down');
+    expect(
+      toneFor({
+        ...BASE,
+        estadoVivo: 'close',
+        atrasoSeg: 40 * 60,
+        atrasoMedidoEm: agora(30_000),
+      }).tone,
+    ).toBe('down');
+  });
+
+  it('⚠️ MEDIÇÃO VELHA não afirma nada sobre agora (Codex, 3ª rodada)', () => {
+    // Uma amostra atrasada seguida de silêncio mantinha `lagging` para
+    // sempre: a régua olhava só o atraso histórico e nunca a IDADE dele. O
+    // cabeçalho e o Meu dia diriam "esta conexão está entregando tarde"
+    // horas depois da última mensagem, sobre uma conexão que pode ter se
+    // recuperado — e o alarme que não apaga sozinho é o que ensina o
+    // operador a ignorá-lo.
+    expect(
+      toneFor({
+        ...BASE,
+        estadoVivo: 'open',
+        atrasoSeg: 29 * 60,
+        atrasoMedidoEm: agora(3 * 3600_000),
+      }).tone,
+    ).toBe('ok');
+  });
+
+  it('a medição no limite da validade ainda acende, e um instante além não', () => {
+    const noLimite = toneFor({
+      ...BASE,
+      estadoVivo: 'open',
+      atrasoSeg: 29 * 60,
+      atrasoMedidoEm: agora(VALIDADE_DA_MEDICAO_MS),
+    });
+    expect(noLimite.detail).toBe('lagging');
+    const passou = toneFor({
+      ...BASE,
+      estadoVivo: 'open',
+      atrasoSeg: 29 * 60,
+      atrasoMedidoEm: agora(VALIDADE_DA_MEDICAO_MS + 1_000),
+    });
+    expect(passou.tone).toBe('ok');
+  });
+
+  it('atraso medido MAS sem carimbo de quando não acusa', () => {
+    // Estado impossível hoje (as duas colunas andam juntas), mas a régua não
+    // pode CONFIAR nisso: sem saber quando, não dá para falar do presente.
+    expect(
+      toneFor({ ...BASE, estadoVivo: 'open', atrasoSeg: 29 * 60, atrasoMedidoEm: null }).tone,
+    ).toBe('ok');
   });
 
   it('webhook apontado para fora ganha de atraso — é a causa, não o sintoma', () => {
-    expect(toneFor({ ...BASE, estadoVivo: 'open', webhookOk: false, atrasoSeg: 40 * 60 })).toEqual(
-      { tone: 'warn', detail: 'webhook' },
-    );
+    expect(
+      toneFor({
+        ...BASE,
+        estadoVivo: 'open',
+        webhookOk: false,
+        atrasoSeg: 40 * 60,
+        atrasoMedidoEm: agora(30_000),
+      }),
+    ).toEqual({ tone: 'warn', detail: 'webhook' });
   });
 });
 

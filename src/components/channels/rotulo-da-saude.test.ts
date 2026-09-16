@@ -22,6 +22,9 @@ import { LIMIAR_ATRASO_SEG } from '@/lib/cb-channels/atraso-de-entrega';
 // este arquivo existe para impedir.
 // ============================================================
 
+/** Medição colhida há instantes — sem isto o alarme não acende (3ª rodada). */
+const FRESCO = '2026-09-16T14:59:30.000Z';
+
 const BASE: EntradaDeCor = {
   status: 'connected',
   estadoVivo: null,
@@ -30,6 +33,7 @@ const BASE: EntradaDeCor = {
   incompleto: false,
   webhookOk: null,
   atrasoSeg: null,
+  atrasoMedidoEm: null,
   agoraMs: Date.parse('2026-09-16T15:00:00.000Z'),
 };
 
@@ -41,7 +45,7 @@ const CENARIOS: EntradaDeCor[] = [
   { ...BASE, estadoVivo: 'open' },
   { ...BASE, estadoVivo: 'open', webhookOk: false },
   { ...BASE, estadoVivo: 'open', lastError: 'algo' },
-  { ...BASE, estadoVivo: 'open', atrasoSeg: LIMIAR_ATRASO_SEG + 60 },
+  { ...BASE, estadoVivo: 'open', atrasoSeg: LIMIAR_ATRASO_SEG + 60, atrasoMedidoEm: FRESCO },
   { ...BASE, status: 'disconnected' },
   { ...BASE, status: 'connecting' },
   { ...BASE, status: 'connected', checkedAt: null },
@@ -51,6 +55,7 @@ const CENARIOS: EntradaDeCor[] = [
     status: 'connected',
     checkedAt: '2026-09-16T14:59:50.000Z',
     atrasoSeg: LIMIAR_ATRASO_SEG + 60,
+    atrasoMedidoEm: FRESCO,
   },
 ];
 

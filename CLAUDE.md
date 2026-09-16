@@ -2177,6 +2177,32 @@ morde código novo:
   mediu. NADA é retroativo: `messages.created_at` guarda o carimbo do
   WhatsApp (a ingestão o sobrescreve) e o instante da gravação não existe no
   acervo — um backfill teria de inventar um dos dois lados.
+- ⚠️⚠️ **A medição TEM VALIDADE (1 h), e sem ela o alarme nunca apaga.** A
+  régua olhava só o atraso histórico: uma amostra atrasada seguida de
+  silêncio mantinha `warn/lagging` para sempre, e o cabeçalho e o Meu dia
+  afirmariam "esta conexão está entregando tarde" horas depois da última
+  mensagem. `alarmeDeAtraso` (atraso **E** frescor) é o que a tela e o
+  `toneFor` usam; `entregaAtrasada` sozinha fala da AMOSTRA, não do
+  presente, e confundir as duas é o defeito (Codex, 3ª rodada do PR #220).
+  Uma hora é a folga medida: a conexão do episódio recebia ~1,26 msg/min, e
+  a mais parada do escritório passa até uma hora sem mensagem em silêncio
+  NORMAL. ⚠️ O que este eixo NÃO detecta, de propósito: a conexão que trava
+  de vez e PARA de receber — ali a medição envelhece e o alarme apaga, e
+  dizer "está atrasada" a partir de uma amostra de ontem seria inventar.
+  "Não chega mensagem há tempo demais" é outro alarme, e precisaria do
+  padrão de tráfego esperado de cada conexão para não gritar de madrugada.
+- ⚠️⚠️ **A TELA lê `detail === 'lagging'`, nunca reavalia a régua.**
+  Recalcular no render precisa de `Date.now()`, que é chamada impura e o
+  React Compiler REPROVA (erro de lint, não aviso) — e uma segunda cópia da
+  régua pode discordar do glifo ao lado, que é pior que as duas caladas.
+- ⚠️⚠️ **`lagging` NÃO impede ENVIAR, e isso vale para toda guarda de
+  saída.** `vivaParaEnviar` (`asaas/varrer-regua.ts`) aceita `ok` e os
+  amarelos de `ENVIA_MESMO_EM_AMARELO` = {`webhook`, `lagging`} — os dois
+  descrevem a ENTRADA. Sem isso, a régua de cobrança pulava a conexão e não
+  cobrava ninguém por ela: o episódio de 16/09 teria adiado em silêncio as
+  cobranças do dia (Codex, PR #220). `pairing`/`stale`/`lastError`
+  continuam fora. Quem criar um amarelo novo decide, por escrito, de que
+  lado ele fica.
 - ⚠️ **O espaçamento de 1 min entre gravações não é economia de banco, é o
   REALTIME.** Todo UPDATE em `cb_channels` dispara o `postgres_changes` que
   `use-channel-health` assina, e o hook responde refazendo a sonda. Sem

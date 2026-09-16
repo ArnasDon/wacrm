@@ -25,7 +25,6 @@ import { useTranslations } from 'next-intl';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { useChannelHealth, type ChannelHealth, type HealthTone } from '@/hooks/use-channel-health';
 import { formatChannelPhone } from '@/lib/cb-channels/display';
-import { entregaAtrasada } from '@/lib/cb-channels/atraso-de-entrega';
 import { cn } from '@/lib/utils';
 
 import { WhatsAppGlyph } from './whatsapp-glyph';
@@ -124,7 +123,15 @@ function Ficha({ c }: { c: ChannelHealth }) {
   // Só quando ESTÁ atrasada. O número em operação normal é de segundos e
   // não informa nada — mostrá-lo sempre é como o rótulo de canal que
   // aparecia em 98% das conversas: presente demais vira invisível.
-  const atrasada = entregaAtrasada(c.atrasoSeg);
+  //
+  // ⚠️⚠️ Lê o `detail` que o SERVIDOR decidiu, nunca reavalia a régua aqui.
+  // Duas razões: (1) recalcular com `Date.now()` no render é chamada impura
+  // — o React Compiler reprova, e com motivo, porque o resultado mudaria a
+  // cada re-render; (2) uma segunda cópia da régua pode discordar do glifo
+  // ao lado, e linha e cor discordando sobre a mesma conexão é pior que as
+  // duas caladas. `alarmeDeAtraso` já pesou o frescor lá (Codex, 3ª rodada):
+  // medição velha não vira `lagging`, então não chega aqui.
+  const atrasada = c.detail === 'lagging';
   const medido = hums(c.atrasoMedidoEm);
 
   return (

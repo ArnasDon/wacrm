@@ -30,7 +30,7 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { ehUrlAlcancavel } from './webhook-url';
 import type { CbChannelStatus, CbChannelKind } from './repo';
 import { ehEvolution, ehInstagram, ehMeta } from './transporte';
-import { atrasoDaFronteira, entregaAtrasada } from './atraso-de-entrega';
+import { alarmeDeAtraso, atrasoDaFronteira } from './atraso-de-entrega';
 import { identidadeDoCanal } from './display';
 import { InstagramApiError, criarClienteInstagram } from '@/lib/instagram/graph';
 
@@ -144,6 +144,11 @@ export interface EntradaDeCor {
   webhookOk: boolean | null;
   /** Nível 3. Atraso de entrega em segundos; `null` = nunca medido. */
   atrasoSeg: number | null;
+  /**
+   * Quando esse atraso foi medido (ISO). ⚠️ OBRIGATÓRIO junto do número: a
+   * amostra sozinha fala do passado, e sem a idade o alarme nunca apaga.
+   */
+  atrasoMedidoEm: string | null;
   agoraMs: number;
 }
 
@@ -173,7 +178,8 @@ export function toneFor(e: EntradaDeCor): { tone: HealthTone; detail: string | n
     // Nível 3: de pé, ouvindo, sem erro — e entregando tarde. Era o único
     // buraco que sobrava, e foi por ele que passaram os 29 minutos de
     // 16/09/2026 sem o sistema dizer nada.
-    if (entregaAtrasada(e.atrasoSeg)) return { tone: 'warn', detail: 'lagging' };
+    if (alarmeDeAtraso({ atrasoSeg: e.atrasoSeg, medidoEmIso: e.atrasoMedidoEm, agoraMs: e.agoraMs }))
+      return { tone: 'warn', detail: 'lagging' };
     return { tone: 'ok', detail: null };
   }
 
@@ -190,7 +196,8 @@ export function toneFor(e: EntradaDeCor): { tone: HealthTone; detail: string | n
   if (e.lastError) return { tone: 'warn', detail: 'lastError' };
   // O atraso é informação LOCAL — medida na nossa ingestão, não perguntada
   // ao provedor —, então vale igual aqui, onde o provedor não respondeu.
-  if (entregaAtrasada(e.atrasoSeg)) return { tone: 'warn', detail: 'lagging' };
+  if (alarmeDeAtraso({ atrasoSeg: e.atrasoSeg, medidoEmIso: e.atrasoMedidoEm, agoraMs: e.agoraMs }))
+    return { tone: 'warn', detail: 'lagging' };
   return { tone: 'ok', detail: null };
 }
 
@@ -435,6 +442,7 @@ export async function probeChannels(
       incompleto,
       webhookOk,
       atrasoSeg,
+      atrasoMedidoEm: c.entrega_recebida_em,
       agoraMs: agora,
     });
 

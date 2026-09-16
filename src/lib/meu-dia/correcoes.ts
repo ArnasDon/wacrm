@@ -18,10 +18,11 @@
 // `resumo-do-dia.tsx`: o que se sabe é o mínimo, não a desigualdade estrita.
 // ============================================================
 
-/** As seis fontes do bloco, na ordem em que a tela as mostra. */
+/** As sete fontes do bloco, na ordem em que a tela as mostra. */
 export type FonteDeCorrecao =
   | 'agendador'
   | 'conexoes'
+  | 'conexoesAtrasadas'
   | 'agendadasFalharam'
   | 'entregaIncerta'
   | 'automacoesFalharam'
@@ -31,13 +32,22 @@ export type FonteDeCorrecao =
  * A ordem é de GRAVIDADE, não alfabética nem de custo de consulta.
  *
  * O agendador vem primeiro porque, parado, NADA dispara — agendadas, fluxos,
- * Radar e Meta Ads ficam todos de pé no lugar, e as outras cinco fontes
- * passam a contar consequências dele. Conexão fora do ar vem em seguida pelo
- * mesmo motivo: com ela caída, a mensagem não sai nem chega.
+ * Radar e Meta Ads ficam todos de pé no lugar, e as outras fontes passam a
+ * contar consequências dele. Conexão fora do ar vem em seguida pelo mesmo
+ * motivo: com ela caída, a mensagem não sai nem chega.
+ *
+ * ⚠️ A conexão ATRASADA (1002) é uma fonte SEPARADA da que está fora do ar,
+ * e não uma soma na mesma linha. São problemas diferentes com consertos
+ * diferentes — uma precisa reparear, a outra precisa que a sessão seja
+ * reiniciada —, e a frase "N conexões fora do ar" seria FALSA sobre uma
+ * conexão que está de pé e entregando, só que tarde. Vem logo depois dela
+ * porque o efeito é parecido: o atendente responde sem enxergar metade da
+ * conversa.
  */
 export const ORDEM_DAS_FONTES: readonly FonteDeCorrecao[] = [
   'agendador',
   'conexoes',
+  'conexoesAtrasadas',
   'agendadasFalharam',
   'entregaIncerta',
   'automacoesFalharam',

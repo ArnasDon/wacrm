@@ -61,6 +61,7 @@ export function BlocoDeCorrecoes({
   correcoes,
   integracoes,
   conexoes,
+  conexoesAtrasadas,
   agendadorParado,
   veAgendadas,
   veAutomacoes,
@@ -77,6 +78,7 @@ export function BlocoDeCorrecoes({
    * sonda que falhou (Codex, PR #202).
    */
   conexoes: EstadoDaFonte;
+  conexoesAtrasadas: EstadoDaFonte;
   /** `null` enquanto a saúde do agendador não respondeu. */
   agendadorParado: boolean | null;
   veAgendadas: boolean;
@@ -110,6 +112,7 @@ export function BlocoDeCorrecoes({
             contagem: { quantidade: agendadorParado ? 1 : 0 },
           },
     conexoes,
+    conexoesAtrasadas,
     agendadasFalharam: fonteDe(correcoes, (c) => c.agendadasFalharam),
     entregaIncerta: fonteDe(correcoes, (c) => c.entregaIncerta),
     automacoesFalharam: fonteDe(correcoes, (c) => c.automacoesFalharam),
@@ -129,6 +132,7 @@ export function BlocoDeCorrecoes({
   const DESTINO: Record<FonteDeCorrecao, { href: string; ve: boolean }> = {
     agendador: { href: '/agendadas', ve: veAgendadas },
     conexoes: { href: '/settings?tab=channels', ve: veConexoes },
+    conexoesAtrasadas: { href: '/settings?tab=channels', ve: veConexoes },
     agendadasFalharam: { href: '/agendadas', ve: veAgendadas },
     entregaIncerta: { href: '/agendadas', ve: veAgendadas },
     automacoesFalharam: { href: '/automations', ve: veAutomacoes },
@@ -143,6 +147,8 @@ export function BlocoDeCorrecoes({
     // do CI (`i18n-chaves-usadas.mjs` conta a dinâmica, não a confere).
     if (fonte === 'agendador') return t('fixSchedulerDown');
     if (fonte === 'conexoes') return t('fixChannelsDown', { count });
+    if (fonte === 'conexoesAtrasadas')
+      return t('fixChannelsLagging', { count });
     if (fonte === 'agendadasFalharam')
       return t('fixScheduledFailed', { count });
     if (fonte === 'entregaIncerta') return t('fixDeliveryUnsure', { count });

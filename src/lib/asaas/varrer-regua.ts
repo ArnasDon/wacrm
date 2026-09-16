@@ -243,8 +243,26 @@ async function reguaAindaLigada(admin: SupabaseClient, accountId: string): Promi
  * do PR #206).
  */
 export function vivaParaEnviar(c: { tone: string; detail: string | null }): boolean {
-  return c.tone === "ok" || (c.tone === "warn" && c.detail === "webhook");
+  return c.tone === "ok" || (c.tone === "warn" && ENVIA_MESMO_EM_AMARELO.has(c.detail ?? ""));
 }
+
+/**
+ * Os amarelos que NÃO dizem nada sobre ENVIAR.
+ *
+ * ⚠️ `lagging` (1002) entrou aqui, e a razão é a mesma do `webhook`: os dois
+ * descrevem a ENTRADA. Atraso de entrega mede quanto o WhatsApp demorou para
+ * passar a mensagem do cliente à Evolution; o envio é outra direção — uma
+ * chamada nossa ao provedor, que não espera nada daquela fila. Deixar
+ * `lagging` de fora fazia a régua pular a conexão e NÃO cobrar ninguém por
+ * ela: no episódio de 16/09/2026, que durou a manhã toda, as cobranças do
+ * dia teriam sido silenciosamente adiadas por uma latência de entrada
+ * (Codex, PR #220).
+ *
+ * `pairing`, `stale` e `lastError` continuam FORA — elas não provam que o
+ * envio sai, e travar o marco por elas deixava a trava em `falhou` com a
+ * mensagem sem sair.
+ */
+const ENVIA_MESMO_EM_AMARELO = new Set(["webhook", "lagging"]);
 
 async function saudePadrao(admin: SupabaseClient, accountId: string): Promise<Map<string, boolean> | null> {
   const mapa = new Map<string, boolean>();

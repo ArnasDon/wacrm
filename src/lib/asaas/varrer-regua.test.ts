@@ -811,4 +811,13 @@ describe("vivaParaEnviar — o que a sonda tem de provar (Codex, 2ª rodada do P
     expect(vivaParaEnviar({ tone: "down", detail: "closed" })).toBe(false);
     expect(vivaParaEnviar({ tone: "unknown", detail: "incomplete" })).toBe(false);
   });
+
+  it("⚠️ ATRASO DE ENTREGA não impede ENVIAR (Codex, PR #220)", () => {
+    // `lagging` (1002) descreve a ENTRADA: quanto o WhatsApp demorou para
+    // passar a mensagem do cliente à Evolution. O envio é a outra direção e
+    // não espera aquela fila. Sem isto, o episódio de 16/09/2026 — uma manhã
+    // inteira de conexão `warn`/`lagging` — teria adiado em silêncio todas as
+    // cobranças do dia daquela conexão.
+    expect(vivaParaEnviar({ tone: "warn", detail: "lagging" })).toBe(true);
+  });
 });

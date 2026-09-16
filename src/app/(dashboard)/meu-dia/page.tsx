@@ -267,6 +267,27 @@ function AreaDeTrabalho({
           },
         };
 
+  // Conexão de pé, ouvindo, sem erro — e entregando tarde (1002). Fonte
+  // SEPARADA da de cima: o conserto é outro, e somá-las faria a frase
+  // "fora do ar" mentir sobre uma conexão que está entregando.
+  //
+  // ⚠️ O teste é `detail === 'lagging'`, não `tone === 'warn'`: `warn`
+  // também cobre `stale`, `pairing` e `lastError`, que são transitórios e
+  // encheriam o bloco de alarme que se resolve sozinho — e um bloco que
+  // acende à toa é um bloco que se aprende a ignorar.
+  const conexoesAtrasadas: EstadoDaFonte = conexoesCarregando
+    ? { status: 'carregando' }
+    : conexoesFalharam
+      ? { status: 'falhou' }
+      : {
+          status: 'pronto',
+          contagem: {
+            quantidade: canaisVisiveis(acesso, channels).filter(
+              (c) => c.detail === 'lagging'
+            ).length,
+          },
+        };
+
   const veTarefas = podeVerTela(acesso, 'tarefas');
   const veContatos = podeVerTela(acesso, 'contacts');
   const veInbox = podeVerTela(acesso, 'inbox');
@@ -436,6 +457,7 @@ function AreaDeTrabalho({
               correcoes={area.correcoes}
               integracoes={area.integracoes}
               conexoes={conexoes}
+              conexoesAtrasadas={conexoesAtrasadas}
               agendadorParado={
                 saude === null ? null : agendadorEstaParado(saude)
               }

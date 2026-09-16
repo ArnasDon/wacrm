@@ -106,11 +106,33 @@ function hums(iso: string | null): string | null {
   return `${Math.floor(h / 24)} d`;
 }
 
+/** Uma duração em segundos, no mesmo vocabulário curto do `hums`. */
+function duracao(seg: number): string {
+  const min = Math.floor(seg / 60);
+  if (min < 1) return `${seg} s`;
+  if (min < 60) return `${min} min`;
+  const h = Math.floor(min / 60);
+  return h < 24 ? `${h} h` : `${Math.floor(h / 24)} d`;
+}
+
 function Ficha({ c }: { c: ChannelHealth }) {
   const t = useTranslations('ChannelHealth');
   const telefone = formatChannelPhone(c.phone);
   const verificado = hums(c.checkedAt);
   const conectado = hums(c.connectedAt);
+  // Só quando ESTÁ atrasada. O número em operação normal é de segundos e
+  // não informa nada — mostrá-lo sempre é como o rótulo de canal que
+  // aparecia em 98% das conversas: presente demais vira invisível.
+  //
+  // ⚠️⚠️ Lê o `detail` que o SERVIDOR decidiu, nunca reavalia a régua aqui.
+  // Duas razões: (1) recalcular com `Date.now()` no render é chamada impura
+  // — o React Compiler reprova, e com motivo, porque o resultado mudaria a
+  // cada re-render; (2) uma segunda cópia da régua pode discordar do glifo
+  // ao lado, e linha e cor discordando sobre a mesma conexão é pior que as
+  // duas caladas. `alarmeDeAtraso` já pesou o frescor lá (Codex, 3ª rodada):
+  // medição velha não vira `lagging`, então não chega aqui.
+  const atrasada = c.detail === 'lagging';
+  const medido = hums(c.atrasoMedidoEm);
 
   return (
     <div className="flex items-start gap-2.5 py-1.5">
@@ -132,6 +154,27 @@ function Ficha({ c }: { c: ChannelHealth }) {
         <p className="mt-0.5 text-xs text-muted-foreground">
           {verificado ? t('checkedAgo', { tempo: verificado }) : t('neverChecked')}
         </p>
+        {/* Nível 3 (1002). Leva QUANDO foi medido junto: sem isso, uma
+            conexão que ficou quieta depois de um episódio mostraria o
+            atraso velho como se fosse de agora.
+
+            ⚠️ O par claro/escuro é a convenção do projeto, mas MEDIDO em
+            16/09/2026 o `dark:` está INERTE em toda a aplicação: o variant
+            é `@custom-variant dark (&:is(.dark *))` (globals.css) e o modo
+            é marcado por `html[data-mode="dark"]` — não existe UM elemento
+            com a classe `.dark` na página. Ou seja, vale sempre o
+            `amber-700`. Ele é o melhor compromisso possível numa cor só
+            (contraste medido: 4,90 no claro, 4,17 no escuro), e a segunda
+            metade fica escrita para o dia em que o variant for consertado
+            — são 111 usos de `dark:text-*` no repo na mesma situação, e
+            arrumar o variant muda a cor de todos eles de uma vez, o que é
+            decisão própria e não carona deste PR. */}
+        {atrasada && c.atrasoSeg !== null && (
+          <p className="mt-0.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+            {t('deliveryLag', { tempo: duracao(c.atrasoSeg) })}
+            {medido ? ` · ${t('lagMeasured', { tempo: medido })}` : ''}
+          </p>
+        )}
       </div>
     </div>
   );

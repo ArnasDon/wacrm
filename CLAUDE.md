@@ -734,6 +734,20 @@ novo:
 - ⚠️ **Cor de texto em par claro/escuro**, sempre (`text-red-700
   dark:text-red-300`): medido no tema claro, `text-red-300` sozinho dava
   luminosidade 76 sobre fundo 99 — ilegível justamente no aviso de falha.
+  ⚠️⚠️ **E a segunda metade do par está INERTE hoje — o par funciona por
+  acidente, pela PRIMEIRA.** Medido em 16/09/2026: o variant é
+  `@custom-variant dark (&:is(.dark *))` (globals.css, linha 39), o modo
+  escuro é marcado por `html[data-mode="dark"]` (use-theme.tsx), e não
+  existe **UM** elemento com a classe `.dark` na página — `text-amber-700
+  dark:text-amber-300` resolve para `amber-700` no escuro. São **111** usos
+  de `dark:text-*` no repo na mesma situação. Consequência prática: escolha
+  a PRIMEIRA cor sabendo que ela vale nos dois modos (`amber-700` mede 4,90
+  de contraste no claro e 4,17 no escuro; `amber-500` dá 9,84 no escuro e
+  **2,08** no claro, ilegível). Continue escrevendo o par — ele fica certo
+  no dia em que alguém consertar o variant —, mas **não conte com ele**.
+  Consertar é uma linha (`&:is(.dark *, html[data-mode="dark"] *)`) e muda
+  a cor de 111 lugares de uma vez: é decisão própria, com revisão de tela,
+  nunca carona de outro PR.
 - ⚠️ **A 985 fechou o `anon` em `automation_logs`**, que a 931 não alcançou
   (tabela do upstream): ele tinha INSERT/UPDATE/DELETE/TRUNCATE, com a RLS
   como única barreira.
@@ -2135,6 +2149,87 @@ rotas em `src/app/api/v1/`. O que morde código novo:
   membro de verdade (dono de reunião) confere esse sinalizador.
 - **Grupo continua fora da v1** (`.is('group_id', null)` nas conversas), e a
   agendada resolve canal por `cb_groups` quando a conversa é de grupo.
+
+⚠️ **Saúde das conexões tem TRÊS eixos, e o terceiro é "está entregando EM
+DIA?" (1002).** `src/lib/cb-channels/atraso-de-entrega.ts` (puro, com teste),
+as colunas `entrega_carimbo_em`/`entrega_recebida_em` em `cb_channels`, o
+ramo `lagging` de `toneFor` e a linha âmbar no popover do cabeçalho. Os dois
+eixos antigos (o estado que o provedor reporta × o frescor dessa informação)
+respondem a MESMA pergunta — "está DE PÉ?" —, e foi por esse vão que passou o
+episódio de 16/09/2026: a conexão Bancário - Comercial ficou `open`, com o
+webhook apontado para cá e o frescor novo (verde nos dois, com verdade)
+enquanto o WhatsApp entregava à Evolution com **29 minutos** de atraso. Quem
+percebeu foi o operador, estranhando o relógio da mensagem na tela. O que
+morde código novo:
+
+- ⚠️⚠️ **A fronteira SÓ AVANÇA, e não é conservadorismo: conexão represada
+  drena o backlog FORA DE ORDEM.** Medido no mesmo dia, a Evolution gravou em
+  sequência os carimbos 11:36, 11:30, 11:23, 11:30, 11:29, 11:04, 11:04,
+  11:03. Guardando "a última mensagem que chegou", a de 11:04 apagaria o
+  alarme que a de 11:36 acabou de acender, e a tela piscaria entre "em dia" e
+  "atrasada" a cada 30 s no meio do episódio. A cerca é do BANCO
+  (`entrega_carimbo_em.lt.<novo>` no UPDATE), nunca ler-então-escrever: o
+  webhook responde 200 e trabalha em `after()`, então duas mensagens do mesmo
+  canal podem ser processadas em paralelo.
+- ⚠️ **`atrasoSeg` NULO é "não sei", nunca zero.** Conexão sem medição não
+  acusa nada — é a régua de `falhou` no `use-channel-health`, e vale aqui
+  pelo mesmo motivo: zero afirmaria "entrega instantânea" sobre quem ninguém
+  mediu. NADA é retroativo: `messages.created_at` guarda o carimbo do
+  WhatsApp (a ingestão o sobrescreve) e o instante da gravação não existe no
+  acervo — um backfill teria de inventar um dos dois lados.
+- ⚠️ **O espaçamento de 1 min entre gravações não é economia de banco, é o
+  REALTIME.** Todo UPDATE em `cb_channels` dispara o `postgres_changes` que
+  `use-channel-health` assina, e o hook responde refazendo a sonda. Sem
+  espaçar, a rajada de um backlog drenando — dezenas de mensagens num minuto,
+  exatamente quando o alarme importa — faria a tela sondar dezenas de vezes
+  por minuto.
+- ⚠️ **Carimbo no FUTURO além de 2 min é recusado.** Ele vem do aparelho de
+  quem enviou; aceitar relógio torto trava a fronteira à frente do nosso
+  relógio e mascara atraso real até o tempo alcançá-la.
+- ⚠️⚠️ **GRUPO fica de fora, e é escolha escrita.** A ingestão de grupo tem
+  caminho próprio (`cb-groups/persist.ts`) e lá o `channel_id` gravado é o do
+  webhook que CHEGOU PRIMEIRO — com os dois números do escritório no mesmo
+  grupo, o WhatsApp entrega às duas instâncias e o UNIQUE descarta a segunda.
+  Creditar por ali daria sempre ao número mais RÁPIDO a medição e deixaria de
+  medir o LENTO, que é o que precisa ser detectado.
+- ⚠️ **São QUATRO call sites de `registrarEntrega`**, um por caminho de
+  ingestão: `persistInboundMessage` e `persistDeviceMessage` (Evolution), o
+  webhook da Meta e `instagram/persistir.ts`. O celular pareado CONTA — a
+  mensagem passou pelo WhatsApp e voltou pelo webhook, e é por onde o
+  escritório mais fala (948 pelo aparelho contra 8 digitadas no CRM). Quem
+  criar um 5º caminho de ingestão repete a chamada, senão aquela conexão
+  simplesmente deixa de ser medida, sem erro nenhum.
+- ⚠️ **`registrarEntrega` NUNCA lança** — é o que torna seguro o `await` no
+  caminho da ingestão. `catch` para o que o supabase-js lança (rede) e leitura
+  do `error` para o que ele devolve (erro de banco não lança).
+- **O limiar é 5 min, folgado de propósito**: nos 10 dias anteriores ao
+  episódio o atraso normal ficou em 0,0–0,1 min (segundos) e os episódios
+  foram de 9 a 50 min. Não há nada na faixa do meio, então o limiar não
+  precisa ser fino — precisa não dar falso positivo.
+- ⚠️ **No Meu dia é fonte SEPARADA de "conexão fora do ar"**
+  (`conexoesAtrasadas`), nunca somada: o conserto é outro (uma precisa
+  reparear, a outra que a sessão reinicie) e a frase "N conexões fora do ar"
+  seria FALSA sobre uma conexão de pé que está entregando, só que tarde. E o
+  teste ali é `detail === 'lagging'`, não `tone === 'warn'` — `warn` também
+  cobre `stale`/`pairing`/`lastError`, que são transitórios e encheriam o
+  bloco de alarme que se resolve sozinho.
+- ⚠️ **`tone_*` e `detail_*` são chaves MONTADAS** e escapam do portão de
+  i18n do CI. `rotulo-da-saude.test.ts` é o pino, e ele COLHE a lista de
+  motivos do próprio `toneFor` em vez de digitá-la — lista à mão divergiria
+  na primeira mudança da régua, que é o defeito que ele existe para impedir.
+
+⚠️ **O atraso em si NÃO é bug do CRM, e a sonda não o conserta.** Medido em
+16/09/2026 dentro do banco da Evolution: no mesmo instante de gravação ela
+registrou um carimbo de 12:02:15 numa conexão e 11:36:22 na outra — mesmo
+processo, mesmo segundo. A VPS estava ociosa (load 0,16, Evolution a 0,4% de
+CPU, API respondendo em 23 ms), sem timeout de webhook e sem queda de
+conexão. O atraso está entre o WhatsApp e o Baileys. **`POST
+/instance/restart/<instância>` resolve na hora**: medido, 16 min de atraso
+caíram para 1min40s em um minuto. É intermitente e ROTATIVO — começou em
+10/09 (dia seguinte ao upgrade para Evolution 2.4/Baileys 7) e muda de
+conexão a cada dia. ⚠️ **Voltar de versão da imagem está DESCARTADO por
+decisão do operador**: a atual foi escolhida para resolver o "Aguardando
+mensagem" (mensagens que não chegavam ao cliente), e voltar reintroduz aquilo.
 
 ⚠️ **UI de canal: peças próprias, prefira reusá-las.** `src/hooks/use-channels.ts`
 (uma busca por montagem, falha silenciosa), `src/lib/cb-channels/display.ts`
@@ -5335,6 +5430,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   todos os arquivos passaram a ter 4 dígitos (PR #209) — a 999 nasceu
   `999_` e virou `0999_` no merge. As entradas desta lista seguem com o
   nome da época em que foram aplicadas.
+  - **1002_cb_atraso_de_entrega** — `cb_channels.entrega_carimbo_em` e
+    `entrega_recebida_em`: a fronteira de entrega por conexão, que a sonda de
+    saúde lê para o terceiro eixo (ver a seção própria). Aditiva — o app
+    anterior não as lê e degrada sem alarme. Aplicada em 16/09/2026 pela
+    Management API (histórico `20260916164400`), ANTES do merge do PR #220,
+    com autorização do operador; conferida por consulta (as 2 colunas,
+    `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
+    idempotente, os 4 cenários da cerca do UPDATE).
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

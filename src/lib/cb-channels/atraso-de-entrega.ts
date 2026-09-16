@@ -114,6 +114,20 @@ export function entregaAtrasada(atrasoSeg: number | null): boolean {
  */
 export const VALIDADE_DA_MEDICAO_MS = 60 * 60_000;
 
+/**
+ * O instante antes do qual um carimbo guardado significa ALARME ACESO.
+ *
+ * ⚠️ Serve para pôr no WHERE a condição "a fronteira guardada está
+ * atrasada", que em SQL seria `recebida - carimbo > limiar` — comparação
+ * entre DUAS COLUNAS, que o filtro do PostgREST não faz. A saída é que o
+ * bypass só interessa quando o alarme está ACESO, e alarme aceso já exige
+ * medição FRESCA (`recebida` ≈ agora): então `agora - carimbo > limiar` diz
+ * a mesma coisa contra uma CONSTANTE.
+ */
+export function corteDoAlarme(agoraMs: number): string {
+  return new Date(agoraMs - LIMIAR_ATRASO_SEG * 1000).toISOString();
+}
+
 /** A medição ainda vale para afirmar algo sobre agora? */
 export function medicaoAindaVale(medidoEmIso: string | null, agoraMs: number): boolean {
   if (!medidoEmIso) return false;
@@ -281,21 +295,35 @@ export async function registrarEntrega(
     // várias invocações concorrentes do webhook para o mesmo canal leem a
     // MESMA linha antes de qualquer uma escrever. Quem serializa é o banco.
     if (apagaOAlarme) {
-      // COMPARE-AND-SWAP na transição que apaga o alarme: exige que a
-      // fronteira ainda seja EXATAMENTE a que acabamos de ler.
+      // A transição que APAGA o alarme dispensa o espaçamento, mas leva a
+      // condição que a torna atômica: "a fronteira guardada ainda é um
+      // alarme aceso". Ela não depende do valor lido — é a coluna contra
+      // uma constante.
       //
-      // ⚠️ Uma versão anterior dizia que este ramo era "auto-limitante"
-      // porque `podeIgnorarOEspacamento` exige a fronteira guardada
-      // atrasada — e isso só vale SEQUENCIALMENTE. Concorrentes leem todas
-      // a mesma linha atrasada, todas decidem pelo bypass, e com os
-      // carimbos pegando o lock em ordem crescente cada uma escreve e emite
-      // seu evento de realtime (Codex, 4ª rodada do PR #220). Com o CAS só
-      // a PRIMEIRA vence; as demais não casam e a auto-limitação passa a
-      // ser de verdade, imposta pelo banco.
+      // ⚠️ Duas versões anteriores erraram aqui, em direções opostas, e as
+      // duas valem como aviso:
       //
-      // Não há ramo de `null` aqui: o bypass exige fronteira ATRASADA, e
-      // isso só existe com as duas colunas preenchidas.
-      escrita = escrita.eq('entrega_carimbo_em', guardado.carimboIso as string);
+      //  1. SEM cerca nenhuma, com o argumento de que o ramo era
+      //     "auto-limitante" (`podeIgnorarOEspacamento` exige a fronteira
+      //     guardada atrasada). Só valia SEQUENCIALMENTE: concorrentes leem
+      //     todas a mesma linha atrasada e todas escrevem.
+      //  2. Com COMPARE-AND-SWAP do valor exato lido. Atômico, mas PERDE a
+      //     amostra saudável que corre com uma atrasada mais nova: as duas
+      //     leem a fronteira velha, a atrasada grava primeiro, e a saudável
+      //     não casa mais o valor original. Se era ela que encerrava o
+      //     backlog e o tráfego silencia, o alarme fica aceso até a medição
+      //     expirar — de volta ao defeito da 1ª rodada (Codex, 5ª rodada).
+      //
+      // Com o corte do alarme, os dois casos saem certos: a saudável que
+      // perde a corrida AINDA casa (a fronteira nova continua atrasada, e
+      // ela a apaga), e a segunda saudável NÃO casa (a fronteira já ficou
+      // recente). Auto-limitação de verdade, imposta pelo banco.
+      escrita = escrita
+        .lt('entrega_carimbo_em', corteDoAlarme(agoraMs))
+        // Avanço, pelo mesmo motivo do outro ramo. Redundante enquanto a
+        // amostra for saudável (o corte já é mais restritivo), e mantido
+        // explícito para a invariante não depender dessa coincidência.
+        .lt('entrega_carimbo_em', carimboIso);
     } else {
       const limiteIso = new Date(agoraMs - ESPACAMENTO_DE_GRAVACAO_SEG * 1000).toISOString();
       escrita = escrita

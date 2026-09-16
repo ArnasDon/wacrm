@@ -280,6 +280,10 @@ function duble(opcoes: {
               reg.filtros.push(`or:${cond}`);
               return encadeia;
             },
+            lt(col: string, v: string) {
+              reg.filtros.push(`lt:${col}=${v}`);
+              return encadeia;
+            },
             then(resolve: (r: { error: unknown }) => unknown) {
               return Promise.resolve(resolve({ error: opcoes.erroNaEscrita ?? null }));
             },
@@ -419,8 +423,36 @@ describe('registrarEntrega — o I/O', () => {
     expect(updates).toHaveLength(1);
     // o espaçamento sai...
     expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em'))).toBe(false);
-    // ...e no lugar dele entra o CAS sobre o valor EXATO que foi lido.
-    expect(updates[0].filtros).toContain(`eq:entrega_carimbo_em=${fronteira}`);
+    // ...e no lugar dele entra o CORTE DO ALARME, que não depende do valor
+    // lido — é a coluna contra uma constante.
+    const cortes = updates[0].filtros.filter((f) => f.startsWith('lt:entrega_carimbo_em='));
+    expect(cortes).toHaveLength(2); // o corte do alarme E o avanço
+    // nenhum deles é o valor lido (seria o CAS, que perde a corrida)
+    expect(updates[0].filtros).not.toContain(`eq:entrega_carimbo_em=${fronteira}`);
+  });
+
+  it('⚠️ a saudável que PERDE a corrida para uma atrasada ainda apaga o alarme', async () => {
+    // O defeito do CAS de valor exato (Codex, 5ª rodada): duas leem a
+    // fronteira velha, a atrasada grava primeiro, e a saudável não casava
+    // mais. Com o corte do alarme ela casa, porque a fronteira NOVA
+    // continua atrasada — e é ela que encerra o backlog.
+    const agora = Date.now();
+    const { db, updates } = duble({
+      linha: {
+        entrega_carimbo_em: new Date(agora - 40 * 60_000).toISOString(),
+        entrega_recebida_em: new Date(agora - 5_000).toISOString(),
+      },
+    });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await registrarEntrega(db as any, 'canal-1', Math.floor(agora / 1000));
+    const corte = updates[0].filtros.find((f) => f.startsWith('lt:entrega_carimbo_em='))!;
+    const valor = Date.parse(corte.split('=')[1]);
+    // A fronteira que a concorrente atrasada acabou de gravar (20 min de
+    // atraso) fica ABAIXO do corte, então esta escrita ainda casa.
+    expect(agora - 20 * 60_000).toBeLessThan(valor);
+    // E uma fronteira já saudável (recém-apagada por outra) fica ACIMA,
+    // então a segunda saudável não casa — a contenção continua de pé.
+    expect(agora - 10_000).toBeGreaterThan(valor);
   });
 
   it('a primeira entrega da conexão também leva o predicado (não apaga alarme nenhum)', async () => {

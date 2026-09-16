@@ -2177,16 +2177,30 @@ morde código novo:
   mediu. NADA é retroativo: `messages.created_at` guarda o carimbo do
   WhatsApp (a ingestão o sobrescreve) e o instante da gravação não existe no
   acervo — um backfill teria de inventar um dos dois lados.
-- ⚠️⚠️ **TODA condição de gravação vive no WHERE, nunca só em memória.** O
-  espaçamento na escrita atrasada é um predicado SQL; a transição que APAGA
-  o alarme dispensa o espaçamento mas leva COMPARE-AND-SWAP no lugar
-  (`.eq('entrega_carimbo_em', <o valor lido>)`). Sem o CAS, N invocações
-  concorrentes do webhook leem a MESMA fronteira atrasada, todas decidem
-  pelo bypass e todas escrevem, cada uma com seu evento de realtime — o
-  argumento de que o bypass é "auto-limitante" só vale SEQUENCIALMENTE
-  (Codex, 4ª rodada do PR #220; a mecânica está provada em Postgres real:
-  das 3 concorrentes, só a primeira grava). O SELECT anterior decide se VALE
-  tentar; quem serializa é sempre o banco.
+- ⚠️⚠️ **TODA condição de gravação vive no WHERE, nunca só em memória, e a
+  condição não pode depender do VALOR LIDO.** O espaçamento da escrita
+  atrasada é um predicado SQL; a transição que APAGA o alarme dispensa o
+  espaçamento e leva `entrega_carimbo_em < corteDoAlarme(agora)` — "a
+  fronteira guardada ainda é um alarme aceso", que é coluna contra
+  CONSTANTE. Três formas foram tentadas e as duas primeiras estão erradas,
+  em direções opostas (Codex, 4ª e 5ª rodadas do PR #220):
+  1. **Sem cerca**, com o argumento de que o ramo era "auto-limitante" —
+     só vale SEQUENCIALMENTE; concorrentes leem todos a mesma fronteira
+     atrasada e todos escrevem.
+  2. **Compare-and-swap do valor lido** — atômico, mas PERDE a amostra
+     saudável que corre com uma atrasada mais nova: a atrasada grava
+     primeiro e a saudável não casa mais o valor original. Se era ela que
+     encerrava o backlog, o alarme fica aceso até a medição expirar.
+  3. **O corte do alarme** — a saudável que perde a corrida ainda casa (a
+     fronteira nova continua atrasada) e a segunda saudável não casa (a
+     fronteira já ficou recente). Provado em Postgres real nos dois
+     cenários.
+  ⚠️ "A fronteira guardada está atrasada" seria `recebida - carimbo >
+  limiar`, comparação entre DUAS COLUNAS que o filtro do PostgREST não faz.
+  O corte existe porque o bypass só interessa com o alarme ACESO, e alarme
+  aceso já exige medição FRESCA (`recebida` ≈ agora) — então
+  `agora - carimbo > limiar` diz a mesma coisa contra uma constante. O
+  SELECT anterior decide se VALE tentar; quem serializa é sempre o banco.
 - ⚠️⚠️ **A medição TEM VALIDADE (1 h), e sem ela o alarme nunca apaga.** A
   régua olhava só o atraso histórico: uma amostra atrasada seguida de
   silêncio mantinha `warn/lagging` para sempre, e o cabeçalho e o Meu dia

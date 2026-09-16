@@ -271,36 +271,39 @@ export async function registrarEntrega(
     if (!espacamentoLiberou(guardado.recebidaIso, agoraMs) && !apagaOAlarme) return;
 
     const carimboIso = new Date(carimboMs).toISOString();
-    let escrita = db
-      .from('cb_channels')
-      .update({
-        entrega_carimbo_em: carimboIso,
-        entrega_recebida_em: new Date(agoraMs).toISOString(),
-      })
-      .eq('id', channelId)
-      // Só avança. `or` cobre a primeira entrega, quando a coluna é nula —
-      // `.lt()` sozinho nunca casa NULL e a fronteira nunca sairia do zero.
-      .or(`entrega_carimbo_em.is.null,entrega_carimbo_em.lt.${carimboIso}`);
+    let escrita = db.from('cb_channels').update({
+      entrega_carimbo_em: carimboIso,
+      entrega_recebida_em: new Date(agoraMs).toISOString(),
+    }).eq('id', channelId);
 
-    // ⚠️⚠️ O espaçamento volta para o WHERE quando a escrita AINDA é de uma
-    // amostra atrasada, e é o que o torna ATÔMICO (Codex, 2ª rodada do PR
-    // #220). A checagem em memória acima sozinha não contém nada: várias
-    // invocações concorrentes do webhook para o mesmo canal leem o MESMO
-    // `entrega_recebida_em` velho, todas passam, e se os carimbos pegarem o
-    // lock em ordem crescente todas satisfazem a cerca da fronteira e cada
-    // uma emite seu evento de realtime — a rajada de backlog que o
-    // espaçamento existe para conter voltaria inteira, podendo até estourar
-    // o rate limit da rota de saúde. Quem serializa é o banco.
-    //
-    // O bypass fica SÓ na transição que apaga o alarme, e ele é
-    // auto-limitante: `podeIgnorarOEspacamento` exige a fronteira GUARDADA
-    // atrasada, então assim que a primeira amostra saudável grava, as
-    // seguintes voltam ao espaçamento normal.
-    if (!apagaOAlarme) {
+    // ⚠️⚠️ TODA condição vive no WHERE, nunca só em memória. As checagens
+    // acima decidem se VALE tentar; elas não contêm nada sozinhas, porque
+    // várias invocações concorrentes do webhook para o mesmo canal leem a
+    // MESMA linha antes de qualquer uma escrever. Quem serializa é o banco.
+    if (apagaOAlarme) {
+      // COMPARE-AND-SWAP na transição que apaga o alarme: exige que a
+      // fronteira ainda seja EXATAMENTE a que acabamos de ler.
+      //
+      // ⚠️ Uma versão anterior dizia que este ramo era "auto-limitante"
+      // porque `podeIgnorarOEspacamento` exige a fronteira guardada
+      // atrasada — e isso só vale SEQUENCIALMENTE. Concorrentes leem todas
+      // a mesma linha atrasada, todas decidem pelo bypass, e com os
+      // carimbos pegando o lock em ordem crescente cada uma escreve e emite
+      // seu evento de realtime (Codex, 4ª rodada do PR #220). Com o CAS só
+      // a PRIMEIRA vence; as demais não casam e a auto-limitação passa a
+      // ser de verdade, imposta pelo banco.
+      //
+      // Não há ramo de `null` aqui: o bypass exige fronteira ATRASADA, e
+      // isso só existe com as duas colunas preenchidas.
+      escrita = escrita.eq('entrega_carimbo_em', guardado.carimboIso as string);
+    } else {
       const limiteIso = new Date(agoraMs - ESPACAMENTO_DE_GRAVACAO_SEG * 1000).toISOString();
-      escrita = escrita.or(
-        `entrega_recebida_em.is.null,entrega_recebida_em.lt.${limiteIso}`,
-      );
+      escrita = escrita
+        // Só avança. `or` cobre a primeira entrega, quando a coluna é nula —
+        // `.lt()` sozinho nunca casa NULL e a fronteira nunca sairia do zero.
+        .or(`entrega_carimbo_em.is.null,entrega_carimbo_em.lt.${carimboIso}`)
+        // E o espaçamento, que é o que contém a rajada do backlog drenando.
+        .or(`entrega_recebida_em.is.null,entrega_recebida_em.lt.${limiteIso}`);
     }
 
     const { error } = await escrita;

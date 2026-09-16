@@ -2177,6 +2177,16 @@ morde código novo:
   mediu. NADA é retroativo: `messages.created_at` guarda o carimbo do
   WhatsApp (a ingestão o sobrescreve) e o instante da gravação não existe no
   acervo — um backfill teria de inventar um dos dois lados.
+- ⚠️⚠️ **TODA condição de gravação vive no WHERE, nunca só em memória.** O
+  espaçamento na escrita atrasada é um predicado SQL; a transição que APAGA
+  o alarme dispensa o espaçamento mas leva COMPARE-AND-SWAP no lugar
+  (`.eq('entrega_carimbo_em', <o valor lido>)`). Sem o CAS, N invocações
+  concorrentes do webhook leem a MESMA fronteira atrasada, todas decidem
+  pelo bypass e todas escrevem, cada uma com seu evento de realtime — o
+  argumento de que o bypass é "auto-limitante" só vale SEQUENCIALMENTE
+  (Codex, 4ª rodada do PR #220; a mecânica está provada em Postgres real:
+  das 3 concorrentes, só a primeira grava). O SELECT anterior decide se VALE
+  tentar; quem serializa é sempre o banco.
 - ⚠️⚠️ **A medição TEM VALIDADE (1 h), e sem ela o alarme nunca apaga.** A
   régua olhava só o atraso histórico: uma amostra atrasada seguida de
   silêncio mantinha `warn/lagging` para sempre, e o cabeçalho e o Meu dia

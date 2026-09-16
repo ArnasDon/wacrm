@@ -272,8 +272,8 @@ function duble(opcoes: {
           const reg = { valores, filtros: [] as string[] };
           updates.push(reg);
           const encadeia = {
-            eq(_col: string, v: string) {
-              reg.filtros.push(`eq:${v}`);
+            eq(col: string, v: string) {
+              reg.filtros.push(`eq:${col}=${v}`);
               return encadeia;
             },
             or(cond: string) {
@@ -396,22 +396,31 @@ describe('registrarEntrega — o I/O', () => {
     await registrarEntrega(db as any, 'canal-1', Math.floor((agora - 35 * 60_000) / 1000));
     expect(updates).toHaveLength(1);
     expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em.lt.'))).toBe(true);
+    // e a cerca de avanço continua lá, no mesmo WHERE
+    expect(updates[0].filtros.some((f) => f.includes('entrega_carimbo_em.lt.'))).toBe(true);
   });
 
-  it('⚠️ só a transição que APAGA o alarme dispensa o predicado', async () => {
+  it('⚠️ a transição que APAGA o alarme troca o predicado por COMPARE-AND-SWAP', async () => {
+    // Dispensar o espaçamento sem pôr nada no lugar deixava N concorrentes
+    // saudáveis lerem a mesma fronteira atrasada, todas decidirem pelo
+    // bypass e todas escreverem — cada uma com seu evento de realtime
+    // (Codex, 4ª rodada). O CAS faz só a PRIMEIRA vencer, e a
+    // auto-limitação passa a ser imposta pelo banco.
     const agora = Date.now();
+    const fronteira = new Date(agora - 29 * 60_000).toISOString();
     const { db, updates } = duble({
       linha: {
-        entrega_carimbo_em: new Date(agora - 29 * 60_000).toISOString(),
+        entrega_carimbo_em: fronteira,
         entrega_recebida_em: new Date(agora - 5_000).toISOString(),
       },
     });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await registrarEntrega(db as any, 'canal-1', Math.floor(agora / 1000));
     expect(updates).toHaveLength(1);
+    // o espaçamento sai...
     expect(updates[0].filtros.some((f) => f.includes('entrega_recebida_em'))).toBe(false);
-    // a cerca da fronteira NUNCA sai
-    expect(updates[0].filtros.some((f) => f.includes('entrega_carimbo_em.lt.'))).toBe(true);
+    // ...e no lugar dele entra o CAS sobre o valor EXATO que foi lido.
+    expect(updates[0].filtros).toContain(`eq:entrega_carimbo_em=${fronteira}`);
   });
 
   it('a primeira entrega da conexão também leva o predicado (não apaga alarme nenhum)', async () => {

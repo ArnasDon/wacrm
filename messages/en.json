@@ -3803,12 +3803,15 @@
     "detail_webhook": "connected, but the CRM is not receiving",
     "detail_lastError": "last error recorded",
     "detail_incomplete": "missing credentials — set the connection up again",
+    "detail_lagging": "connected, but delivering late",
     "kind_meta": "Official API · Meta",
     "kind_evolution": "Unofficial · QR Code",
     "kind_instagram": "Direct · Instagram",
     "connectedFor": "connected for {tempo}",
     "checkedAgo": "checked {tempo} ago",
-    "neverChecked": "not checked yet"
+    "neverChecked": "not checked yet",
+    "deliveryLag": "Delivering {tempo} behind",
+    "lagMeasured": "measured {tempo} ago"
   },
   "LeadEvents": {
     "title": "History",
@@ -4343,6 +4346,7 @@
     "fixCountAtLeast": "at least {count}",
     "fixSchedulerDown": "The scheduler is down — nothing runs on its own",
     "fixChannelsDown": "{count, plural, =1 {1 connection is down} other {{count} connections are down}}",
+    "fixChannelsLagging": "{count, plural, =1 {1 connection delivering late} other {{count} connections delivering late}}",
     "fixScheduledFailed": "{count, plural, =1 {1 scheduled message failed} other {{count} scheduled messages failed}}",
     "fixDeliveryUnsure": "{count, plural, =1 {1 scheduled message with unsure delivery — check before resending} other {{count} scheduled messages with unsure delivery — check before resending}}",
     "fixAutomationsFailed": "{count, plural, =1 {1 automation failed today} other {{count} automations failed today}}",

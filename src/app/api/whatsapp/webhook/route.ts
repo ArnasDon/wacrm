@@ -28,6 +28,7 @@ import {
   followConversationChannel,
   gravarComCanal,
 } from '@/lib/cb-channels/stamp'
+import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -900,6 +901,12 @@ async function processMessage(
   // então isto roda uma vez por mensagem.
   if (canalGravado && insertedRows && insertedRows.length > 0) {
     await followConversationChannel(supabaseAdmin(), conversation.id, canalGravado)
+
+    // A fronteira de entrega da conexão (1002). Dentro do mesmo `if` da
+    // reentrega de propósito: o carimbo de uma mensagem reentregue é
+    // ANTIGO, e embora a régua "só avança" já o descarte, medir o que não
+    // acabou de chegar não tem sentido nenhum aqui.
+    await registrarEntrega(supabaseAdmin(), canalGravado, parseInt(message.timestamp))
   }
 
   // A customer writing again re-opens the thread (issue #409). Kept as a

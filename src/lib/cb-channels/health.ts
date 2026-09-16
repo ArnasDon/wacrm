@@ -30,6 +30,7 @@ import { decrypt } from '@/lib/whatsapp/encryption';
 import { ehUrlAlcancavel } from './webhook-url';
 import type { CbChannelStatus, CbChannelKind } from './repo';
 import { ehEvolution, ehInstagram, ehMeta } from './transporte';
+import { atrasoDaFronteira, entregaAtrasada } from './atraso-de-entrega';
 import { identidadeDoCanal } from './display';
 import { InstagramApiError, criarClienteInstagram } from '@/lib/instagram/graph';
 
@@ -54,6 +55,14 @@ export interface ChannelHealth {
    * `null` = não checado nesta volta (canal Meta, ou cache ainda quente).
    */
   webhookOk: boolean | null;
+  /**
+   * Nível 3: quanto tempo a última mensagem levou do WhatsApp até aqui, em
+   * segundos. `null` = nunca se mediu nesta conexão, que NÃO é zero — ver
+   * `atraso-de-entrega.ts`.
+   */
+  atrasoSeg: number | null;
+  /** Quando essa medição foi feita (ISO). Medição velha vale menos. */
+  atrasoMedidoEm: string | null;
 }
 
 /** Acima disto, "conectado" deixa de ser confiável e vira amarelo. */
@@ -133,6 +142,8 @@ export interface EntradaDeCor {
   incompleto: boolean;
   /** Nível 2. `false` = o webhook não aponta para cá. */
   webhookOk: boolean | null;
+  /** Nível 3. Atraso de entrega em segundos; `null` = nunca medido. */
+  atrasoSeg: number | null;
   agoraMs: number;
 }
 
@@ -159,6 +170,10 @@ export function toneFor(e: EntradaDeCor): { tone: HealthTone; detail: string | n
     // único motivo do nível 2 existir.
     if (e.webhookOk === false) return { tone: 'warn', detail: 'webhook' };
     if (e.lastError) return { tone: 'warn', detail: 'lastError' };
+    // Nível 3: de pé, ouvindo, sem erro — e entregando tarde. Era o único
+    // buraco que sobrava, e foi por ele que passaram os 29 minutos de
+    // 16/09/2026 sem o sistema dizer nada.
+    if (entregaAtrasada(e.atrasoSeg)) return { tone: 'warn', detail: 'lagging' };
     return { tone: 'ok', detail: null };
   }
 
@@ -173,6 +188,9 @@ export function toneFor(e: EntradaDeCor): { tone: HealthTone; detail: string | n
     return { tone: 'warn', detail: 'stale' };
   }
   if (e.lastError) return { tone: 'warn', detail: 'lastError' };
+  // O atraso é informação LOCAL — medida na nossa ingestão, não perguntada
+  // ao provedor —, então vale igual aqui, onde o provedor não respondeu.
+  if (entregaAtrasada(e.atrasoSeg)) return { tone: 'warn', detail: 'lagging' };
   return { tone: 'ok', detail: null };
 }
 
@@ -275,6 +293,8 @@ interface LinhaDeCanal {
   instance_name: string | null;
   access_token: string | null;
   ig_user_id: string | null;
+  entrega_carimbo_em: string | null;
+  entrega_recebida_em: string | null;
 }
 
 export async function probeChannels(
@@ -286,7 +306,12 @@ export async function probeChannels(
     .select(
       'id, kind, label, display_phone, is_default, status, connected_at, ' +
         'last_error, last_checked_at, phone_number_id, server_url, ' +
-        'instance_name, access_token, ig_user_id, ig_username',
+        'instance_name, access_token, ig_user_id, ig_username, ' +
+        // ⚠️ Por NOME, então a janela pré-1002 devolve 42703 e a consulta
+        // inteira falha — de propósito: a rota já traduz esse código em
+        // `unavailable`, e o cabeçalho some em vez de afirmar saúde a
+        // partir de colunas que o banco ainda não tem.
+        'entrega_carimbo_em, entrega_recebida_em',
     )
     .eq('account_id', accountId)
     .order('is_default', { ascending: false })
@@ -397,6 +422,11 @@ export async function probeChannels(
       }
     }
 
+    const atrasoSeg = atrasoDaFronteira({
+      carimboIso: c.entrega_carimbo_em,
+      recebidaIso: c.entrega_recebida_em,
+    });
+
     const { tone, detail } = toneFor({
       status: c.status,
       estadoVivo,
@@ -404,6 +434,7 @@ export async function probeChannels(
       lastError: c.last_error,
       incompleto,
       webhookOk,
+      atrasoSeg,
       agoraMs: agora,
     });
 
@@ -439,6 +470,8 @@ export async function probeChannels(
       checkedAt: houveResposta ? agoraIso : c.last_checked_at,
       detail,
       webhookOk,
+      atrasoSeg,
+      atrasoMedidoEm: c.entrega_recebida_em,
     });
   }
 

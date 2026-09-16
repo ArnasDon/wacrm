@@ -33,6 +33,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
 import { followConversationChannel } from '@/lib/cb-channels/stamp';
+import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega';
 import { isUniqueViolation } from '@/lib/contacts/dedupe';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
@@ -415,6 +416,13 @@ async function gravarMensagem(
     conversation as { id: string; status?: string | null }
   );
   await followConversationChannel(db, conversation.id, ctx.channelId);
+
+  // A fronteira de entrega da conexão (1002). Sem `timestampMs` não há o
+  // que medir, e inventar `Date.now()` aqui diria "entrega instantânea" —
+  // a afirmação exatamente oposta à que o alarme existe para fazer.
+  if (ev.timestampMs) {
+    await registrarEntrega(db, ctx.channelId, Math.round(ev.timestampMs / 1000));
+  }
 
   // O perfil ANTES do funil: o card nasce com o nome da pessoa. E nunca
   // derruba o que vem depois — a mensagem já está gravada; roteamento e

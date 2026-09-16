@@ -23,6 +23,7 @@ import {
   followConversationChannel,
   gravarComCanal,
 } from '@/lib/cb-channels/stamp';
+import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega';
 
 /** A message from any transport, reduced to what persistence needs. */
 export interface NormalizedInbound {
@@ -326,6 +327,13 @@ export async function persistDeviceMessage(
   // insert acima; o que faltava era a conversa.
   await followConversationChannel(db, conversation.id, m.channelId ?? null);
 
+  // A fronteira de entrega (1002). O celular pareado CONTA: a mensagem
+  // passou pelo WhatsApp e voltou pelo webhook, exatamente como a do
+  // cliente, então mede o mesmo caminho. É o que mantém a medição viva nas
+  // conexões por onde o escritório mais fala do que ouve — medido em
+  // produção, a equipe manda 948 pelo aparelho contra 8 digitadas no CRM.
+  await registrarEntrega(db, m.channelId ?? null, m.timestamp);
+
   // Funil padrão da conexão — ver o cabeçalho de `pipeline-routing.ts`.
   // Nunca lança, e sai no primeiro SELECT quando a conexão não tem funil.
   await routeContactToPipeline({
@@ -464,6 +472,11 @@ export async function persistInboundMessage(
   if (canalGravado) {
     await followConversationChannel(db, conversation.id, canalGravado);
   }
+
+  // A fronteira de entrega da conexão (1002). Mensagem do CLIENTE é a
+  // medição mais fiel que existe: o carimbo é de quando ele apertou enviar,
+  // e estamos no instante da gravação. Ver `atraso-de-entrega.ts`.
+  await registrarEntrega(db, canalGravado, m.timestamp);
 
   // ---- downstream engines (parity with the Meta webhook) ----
   const inboundText = m.text ?? '';

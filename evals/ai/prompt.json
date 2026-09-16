@@ -1,0 +1,4 @@
+[
+  { "role": "system", "content": "{{system_prompt}}" },
+  { "role": "user", "content": "{{message}}" }
+]

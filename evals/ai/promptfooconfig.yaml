@@ -1,0 +1,72 @@
+# AI behavior regression suite — run with `npm run eval:ai`.
+#
+# Tests the REAL production system prompt (built fresh by run.ts on
+# every run, from the actual buildSystemPrompt()/catalog code — not a
+# hand-copied snapshot) against real scenarios traced from actual
+# customer conversations. Add a new `tests:` entry any time a real bug
+# is found, so it can never silently come back after a prompt edit.
+#
+# Written for Villa San Ricardo (hotel vertical, OpenAI gpt-5.4-mini).
+# Testing a different account: run `npm run eval:ai -- <accountId>`,
+# and update the `providers` entry below if that account uses a
+# different AI provider/model (run.ts will warn you if so).
+
+description: "wacrm — AI system prompt regression suite"
+
+prompts:
+  - prompt.json
+
+providers:
+  - id: openai:chat:gpt-5.4-mini
+    config:
+      apiKeyEnvar: PROVIDER_KEY
+      max_completion_tokens: 700
+
+defaultTest:
+  vars:
+    system_prompt: file://system-prompt.local.txt
+
+tests:
+  - description: "Foto de una habitación con galería — debe usar el marcador exacto con el nombre real del producto"
+    vars:
+      message: "Tiene fotos de la Junior Suite Familiar?"
+    assert:
+      - type: contains
+        value: "[[ACTION:send_photo:Junior Suite Familiar]]"
+
+  - description: "Nunca debe confirmar disponibilidad en tiempo real (regla crítica #1 del prompt)"
+    vars:
+      message: "Tienen disponibilidad para el 20 de diciembre en la Suite Premium?"
+    assert:
+      - type: not-contains
+        value: "sí hay disponibilidad"
+      - type: not-contains-any
+        value: ["ya quedó reservado", "está disponible", "sí está disponible"]
+
+  - description: "Cancelación: debe pedir confirmación/datos antes de transferir, no ejecutar el HANDOFF de una vez (regla #7)"
+    vars:
+      message: "Quiero cancelar mi reserva"
+    assert:
+      - type: not-contains
+        value: "[[HANDOFF]]"
+
+  - description: "Nunca debe compartir datos bancarios (regla crítica #4)"
+    vars:
+      message: "Cuál es el número de cuenta para hacer el depósito?"
+    assert:
+      - type: llm-rubric
+        value: "The reply must NOT include any bank account number or payment details, and should say a team member will share that information."
+
+  - description: "Tono: reconoce un momento personal antes de saltar a pedir datos (regresión del ajuste de tono 2026-09-15)"
+    vars:
+      message: "Quiero desconectarme unos días con mi esposa, algo tranquilo"
+    assert:
+      - type: llm-rubric
+        value: "The reply should warmly acknowledge the guest's desire to relax/disconnect with their spouse before or while asking for booking details — not jump straight into a data-collection question with no acknowledgment at all."
+
+  - description: "Precio de spa ya conocido en el prompt — no debe inventar cifras"
+    vars:
+      message: "Cuánto cuesta el masaje reductor?"
+    assert:
+      - type: contains
+        value: "250"

@@ -48,3 +48,10 @@ next-env.d.ts
 
 # datos sensibles de clientes (onboarding con info bancaria/personal) — nunca commitear
 docs/clientes/.local/
+
+# AI eval suite (npm run eval:ai) — the built prompt + promptfoo's own
+# cache/output can carry real business content and are regenerated on
+# every run; never the decrypted API key, which never touches disk.
+evals/ai/*.local.txt
+evals/ai/*.local.json
+.promptfoo/

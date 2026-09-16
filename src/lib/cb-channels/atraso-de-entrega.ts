@@ -101,6 +101,10 @@ export function entregaAtrasada(atrasoSeg: number | null): boolean {
  *
  * Um minuto não estraga a medição: o limiar é de cinco, e o erro que o
  * espaçamento introduz é no máximo o próprio minuto.
+ *
+ * ⚠️ Ele vale só para ACENDER — ver `podeIgnorarOEspacamento`. Apagar o
+ * alarme não espera, senão a amostra saudável que fecha um backlog cai na
+ * janela e a fronteira congela atrasada.
  */
 export const ESPACAMENTO_DE_GRAVACAO_SEG = 60;
 
@@ -110,6 +114,38 @@ export interface Chegada {
   /** A fronteira guardada hoje nesta conexão. */
   carimboGuardadoIso: string | null;
   agoraMs: number;
+}
+
+/**
+ * O espaçamento já pode ser ignorado?
+ *
+ * ⚠️⚠️ APAGAR O ALARME NUNCA ESPERA — e a assimetria é o conserto de um
+ * defeito real (Codex, PR #220). Um backlog drena várias mensagens em
+ * segundos e TERMINA numa mensagem atual: a primeira (atrasada) grava, a
+ * última (saudável) cai dentro do minuto de espaçamento e é descartada. Se o
+ * tráfego então silencia — fim de expediente, ou uma conexão de volume baixo
+ * como a que passa uma hora sem mensagem —, não há escrita seguinte, e a
+ * fronteira fica congelada na amostra ATRASADA: o alarme segue aceso sobre
+ * uma conexão que já se recuperou. Foi exatamente a forma da recuperação
+ * medida em 16/09/2026, quando o restart drenou 15 min de fila em segundos.
+ *
+ * Acender pode esperar o minuto (o episódio dura dezenas deles); apagar, não
+ * — alarme que fica aceso sozinho é o que ensina o operador a ignorá-lo.
+ */
+export function podeIgnorarOEspacamento(
+  atrasoNovoSeg: number,
+  guardado: ParDaFronteira,
+): boolean {
+  if (entregaAtrasada(atrasoNovoSeg)) return false;
+  return entregaAtrasada(atrasoDaFronteira(guardado));
+}
+
+/** O espaçamento entre gravações já passou? `null` (nunca gravou) libera. */
+export function espacamentoLiberou(recebidaIso: string | null, agoraMs: number): boolean {
+  if (!recebidaIso) return true;
+  const quando = Date.parse(recebidaIso);
+  if (!Number.isFinite(quando)) return true;
+  return agoraMs - quando >= ESPACAMENTO_DE_GRAVACAO_SEG * 1000;
 }
 
 /**
@@ -144,8 +180,10 @@ export function moveAFronteira(c: Chegada): boolean {
  * do mesmo canal podem ser processadas em paralelo (o webhook responde e
  * trabalha em `after()`), e sem ela a mais VELHA das duas pode escrever por
  * último e puxar a fronteira para trás — o defeito que a regra "só avança"
- * existe para impedir. Ler-então-escrever não serializa nada; quem
- * serializa é o banco.
+ * existe para impedir. O SELECT abaixo NÃO substitui essa cerca: ele decide
+ * se VALE A PENA escrever (o espaçamento é heurística); quem garante a
+ * invariante é o banco, no WHERE. Perder a corrida aqui custa um UPDATE a
+ * mais, nunca uma fronteira errada.
  */
 export async function registrarEntrega(
   db: SupabaseClient,
@@ -156,13 +194,38 @@ export async function registrarEntrega(
 
   const agoraMs = Date.now();
   const carimboMs = carimboSegundos * 1000;
-  if (!Number.isFinite(carimboMs) || carimboMs <= 0) return;
-  if (carimboMs > agoraMs + TOLERANCIA_DE_RELOGIO_SEG * 1000) return;
-
-  const carimboIso = new Date(carimboMs).toISOString();
-  const limiteIso = new Date(agoraMs - ESPACAMENTO_DE_GRAVACAO_SEG * 1000).toISOString();
 
   try {
+    const { data, error: erroDaLeitura } = await db
+      .from('cb_channels')
+      .select('entrega_carimbo_em, entrega_recebida_em')
+      .eq('id', channelId)
+      .maybeSingle();
+    // Sem saber o que está guardado não dá para decidir o espaçamento, e
+    // escrever no escuro poderia ressuscitar uma fronteira velha.
+    if (erroDaLeitura || !data) {
+      if (erroDaLeitura) {
+        console.warn('[atraso-de-entrega] não leu a fronteira:', erroDaLeitura.message);
+      }
+      return;
+    }
+
+    const guardado: ParDaFronteira = {
+      carimboIso: (data.entrega_carimbo_em as string | null) ?? null,
+      recebidaIso: (data.entrega_recebida_em as string | null) ?? null,
+    };
+
+    if (!moveAFronteira({ carimboMs, carimboGuardadoIso: guardado.carimboIso, agoraMs })) return;
+
+    const atrasoNovoSeg = Math.max(0, Math.round((agoraMs - carimboMs) / 1000));
+    if (
+      !espacamentoLiberou(guardado.recebidaIso, agoraMs) &&
+      !podeIgnorarOEspacamento(atrasoNovoSeg, guardado)
+    ) {
+      return;
+    }
+
+    const carimboIso = new Date(carimboMs).toISOString();
     const { error } = await db
       .from('cb_channels')
       .update({
@@ -172,10 +235,7 @@ export async function registrarEntrega(
       .eq('id', channelId)
       // Só avança. `or` cobre a primeira entrega, quando a coluna é nula —
       // `.lt()` sozinho nunca casa NULL e a fronteira nunca sairia do zero.
-      .or(`entrega_carimbo_em.is.null,entrega_carimbo_em.lt.${carimboIso}`)
-      // Espaçamento (ver a constante). Condições encadeadas viram AND, então
-      // a gravação só passa quando avança E quando já esperou o intervalo.
-      .or(`entrega_recebida_em.is.null,entrega_recebida_em.lt.${limiteIso}`);
+      .or(`entrega_carimbo_em.is.null,entrega_carimbo_em.lt.${carimboIso}`);
     if (error) {
       console.warn('[atraso-de-entrega] não registrou a fronteira:', error.message);
     }

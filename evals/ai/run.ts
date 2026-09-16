@@ -9,6 +9,20 @@
 // env-var-from-file tricks, so this works the same on Windows/macOS/
 // Linux).
 //
+// promptfoo itself is DELIBERATELY installed in evals/ai/'s own
+// isolated package.json, not the root one — never a root
+// devDependency. Incident 2026-09-16: promptfoo pulls in
+// @huggingface/transformers as an *optional* dependency, which drags
+// in onnxruntime-node's ~211MB of native binaries; once that landed in
+// the root package-lock.json, the production Dockerfile's `npm ci`
+// installed it too (Docker doesn't know or care that it's a "dev-only,
+// local-eval-only" tool), pushing a build from ~2-3min to 6+min and
+// crashing the build host mid-build. Keeping promptfoo in its own
+// nested package.json means the root lockfile the Dockerfile reads
+// never contains it, full stop — not "should be omitted by a flag",
+// structurally absent. `main()` below installs it on first run if
+// evals/ai/node_modules isn't there yet.
+//
 // Writes one LOCAL, gitignored file for inspection (never committed,
 // the key itself is never written to disk or printed):
 //   evals/ai/system-prompt.local.txt — the exact prompt text tested
@@ -21,7 +35,7 @@
 // ============================================================
 import 'dotenv/config'
 import { createClient } from '@supabase/supabase-js'
-import { writeFileSync } from 'node:fs'
+import { writeFileSync, existsSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { buildSystemPrompt } from '@/lib/ai/defaults'
 import { loadCatalogContext } from '@/lib/ai/catalog-context'
@@ -88,7 +102,14 @@ async function main() {
     )
   }
 
-  const result = spawnSync('npx', ['promptfoo', 'eval', '-c', 'evals/ai/promptfooconfig.yaml'], {
+  if (!existsSync(`${__dirname}/node_modules`)) {
+    console.log('First run — installing promptfoo into evals/ai/ (isolated from the root project)...\n')
+    const install = spawnSync('npm', ['install'], { cwd: __dirname, stdio: 'inherit', shell: true })
+    if (install.status !== 0) process.exit(install.status ?? 1)
+  }
+
+  const result = spawnSync('npx', ['promptfoo', 'eval', '-c', 'promptfooconfig.yaml'], {
+    cwd: __dirname,
     stdio: 'inherit',
     shell: true,
     env: { ...process.env, PROVIDER_KEY: decrypt(config.api_key) },

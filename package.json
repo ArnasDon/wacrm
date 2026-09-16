@@ -84,7 +84,6 @@
     "eslint-config-next": "16.2.12",
     "prettier": "^3.9.6",
     "prettier-plugin-tailwindcss": "^0.8.1",
-    "promptfoo": "^0.123.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.13",
     "typescript": "^6",
@@ -99,9 +98,6 @@
     },
     "hono": "^4.13.7",
     "js-yaml": "^4.3.2",
-    "promptfoo": {
-      "js-yaml": "5.4.1"
-    },
     "@babel/core": "^7.29.6",
     "sharp": "^0.35.4",
     "brace-expansion@^1.0.0": "^1.1.18",

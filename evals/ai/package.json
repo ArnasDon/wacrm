@@ -1,0 +1,8 @@
+{
+  "name": "wacrm-ai-evals",
+  "private": true,
+  "description": "Isolated from the root package.json on purpose — promptfoo and its dependency tree must never appear in the root package-lock.json the production Dockerfile installs from. See run.ts's own comment for the incident that made this necessary (2026-09-16: promptfoo's optional @huggingface/transformers → onnxruntime-node, ~211MB, pushed a Docker build from ~2-3min to 6+min and crashed the build host).",
+  "devDependencies": {
+    "promptfoo": "0.123.0"
+  }
+}

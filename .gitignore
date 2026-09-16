@@ -52,6 +52,11 @@ docs/clientes/.local/
 # AI eval suite (npm run eval:ai) — the built prompt + promptfoo's own
 # cache/output can carry real business content and are regenerated on
 # every run; never the decrypted API key, which never touches disk.
+# promptfoo lives in evals/ai/'s OWN package.json/node_modules —
+# deliberately isolated from the root one, see evals/ai/run.ts's own
+# comment for why — so its node_modules needs its own ignore line too
+# (the root /node_modules rule above is anchored, doesn't reach here).
 evals/ai/*.local.txt
 evals/ai/*.local.json
+evals/ai/node_modules/
 .promptfoo/

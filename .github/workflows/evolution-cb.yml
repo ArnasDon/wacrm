@@ -1,8 +1,9 @@
 name: evolution-cb
 
 # Constrói a nossa imagem da Evolution 2.4 (develop) a partir de um commit
-# fixo do upstream, com o patch da citação do cliente e o prisma.config.ts
-# dentro da imagem. Ver docker/evolution-cb/README.md e docs/PLANO-baileys-7.md (P10).
+# fixo do upstream, com os patches de docker/evolution-cb/ (a citação do
+# cliente e a foto de perfil que travava a fila de entrada) e o prisma.config.ts
+# dentro da imagem. Ver docker/evolution-cb/README.md e docs/PLANO-baileys-7.md (P10, 5.10).
 
 on:
   workflow_dispatch:
@@ -14,7 +15,7 @@ on:
       tag:
         description: 'Tag de saída'
         required: true
-        default: '2.4.0-e273b904-citacao'
+        default: '2.4.0-e273b904-citacao-foto'
 
 env:
   IMAGE: ghcr.io/leonardocabralb/evolution-api-cb
@@ -35,12 +36,16 @@ jobs:
           ref: ${{ inputs.upstream_ref }}
           path: upstream
 
-      - name: Aplicar o patch da citação e copiar o prisma.config.ts na imagem
+      - name: Aplicar os patches e copiar o prisma.config.ts na imagem
         run: |
           set -euo pipefail
           cd upstream
+          # Nesta ordem: o segundo foi gerado sobre o primeiro (regiões distintas
+          # do mesmo arquivo; `git apply` tolera o deslocamento de linhas).
           git apply --check ../docker/evolution-cb/2708-citacao.patch
           git apply ../docker/evolution-cb/2708-citacao.patch
+          git apply --check ../docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch
+          git apply ../docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch
           test -f prisma.config.ts
           # builder: o arquivo entra junto com o resto do fonte
           sed -i 's#^COPY ./tsup.config.ts ./$#COPY ./tsup.config.ts ./\nCOPY ./prisma.config.ts ./#' Dockerfile
@@ -48,7 +53,10 @@ jobs:
           sed -i 's#^COPY --from=builder /evolution/tsup.config.ts ./tsup.config.ts$#COPY --from=builder /evolution/tsup.config.ts ./tsup.config.ts\nCOPY --from=builder /evolution/prisma.config.ts ./prisma.config.ts#' Dockerfile
           grep -c 'prisma.config.ts' Dockerfile | grep -qx 2
           grep -q 'quotedContext' src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
-          echo "patch e Dockerfile ok"
+          # A foto de perfil sai pelo telefone resolvido e com teto; a forma antiga (pelo LID, sem teto) não pode sobrar.
+          grep -q 'profilePicture(messageRaw.key.remoteJid, 5_000)' src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
+          ! grep -q 'profilePicture(received.key.remoteJid)' src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
+          echo "patches e Dockerfile ok"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3

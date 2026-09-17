@@ -2268,18 +2268,33 @@ morde código novo:
   motivos do próprio `toneFor` em vez de digitá-la — lista à mão divergiria
   na primeira mudança da régua, que é o defeito que ele existe para impedir.
 
-⚠️ **O atraso em si NÃO é bug do CRM, e a sonda não o conserta.** Medido em
-16/09/2026 dentro do banco da Evolution: no mesmo instante de gravação ela
-registrou um carimbo de 12:02:15 numa conexão e 11:36:22 na outra — mesmo
-processo, mesmo segundo. A VPS estava ociosa (load 0,16, Evolution a 0,4% de
-CPU, API respondendo em 23 ms), sem timeout de webhook e sem queda de
-conexão. O atraso está entre o WhatsApp e o Baileys. **`POST
-/instance/restart/<instância>` resolve na hora**: medido, 16 min de atraso
-caíram para 1min40s em um minuto. É intermitente e ROTATIVO — começou em
-10/09 (dia seguinte ao upgrade para Evolution 2.4/Baileys 7) e muda de
-conexão a cada dia. ⚠️ **Voltar de versão da imagem está DESCARTADO por
-decisão do operador**: a atual foi escolhida para resolver o "Aguardando
-mensagem" (mensagens que não chegavam ao cliente), e voltar reintroduz aquilo.
+⚠️ **O atraso de entrega NÃO é bug do CRM — é UMA LINHA da Evolution 2.4, e
+o restart não o conserta (só esvazia a fila).** Uma versão desta nota dizia
+"o atraso está entre o WhatsApp e o Baileys" — era a metade errada. Provado
+por três vias em 17/09/2026 (o fonte recuperado do `dist/main.js.map`, o
+cronômetro no endpoint `chat/fetchProfilePictureUrl`, a assinatura no log):
+o `BaileysMessageProcessor` passa todo `messages.upsert` por um `concatMap`
+(UM lote por vez; os recibos NÃO passam por ali), e dentro do handler há
+`await this.profilePicture(received.key.remoteJid)` — consulta de rede ao
+WhatsApp feita com o **LID**, que o servidor não responde (7 de 8 estouram),
+enquanto 30 linhas antes a própria Evolution já trocou o LID pelo telefone em
+`messageRaw.key.remoteJid`. A Baileys 7 espera `defaultQueryTimeoutMs` =
+**60 s**, e a Evolution não o configura. Resultado: **1 mensagem por minuto
+por conexão**, nos dois sentidos (o eco do celular pareado paga igual —
+intervalos de 120/181/241/362 s no log são múltiplos de 60). Só vira atraso
+quando o tráfego passa de 1/min — daí "intermitente e rotativo" desde 10/09,
+dia seguinte ao upgrade (a Baileys 7 tornou o LID o endereçamento padrão:
+681 mensagens em LID × 0 por telefone na Trabalhista-Jurídico em 48 h). O
+campo que a consulta preenche (`profilePicUrl` do `contacts.update`) o CRM
+NUNCA lê — a foto vem da 973. **Conserto:**
+`docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch` (consulta
+pelo telefone + teto de 5 s só naquele chamador); o `develop` do upstream em
+17/09 ainda tem o defeito. **Verificação:** `docs/PLANO-baileys-7.md`, 5.10 —
+o instrumento é `messages.gravada_em` (1003), `gravada_em − created_at` por
+mensagem. `POST /instance/restart/<instância>` segue como PALIATIVO (drena
+16 min em 1 min, medido em 16/09). ⚠️ **Voltar de versão da imagem está
+DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
+"Aguardando mensagem" (mensagens que não chegavam ao cliente).
 
 ⚠️ **UI de canal: peças próprias, prefira reusá-las.** `src/hooks/use-channels.ts`
 (uma busca por montagem, falha silenciosa), `src/lib/cb-channels/display.ts`
@@ -5084,6 +5099,13 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   compartilhado com outros serviços); o log da Evolution morre no reinício do
   contêiner; o cron `docker image prune -af` apaga as imagens de rollback na
   madrugada seguinte (são públicas, voltam com `pull`).
+  ⚠️ **Desde 17/09/2026 a imagem carrega DOIS patches** (o da citação e o da
+  foto de perfil que travava a fila de entrada — ver "O atraso de entrega NÃO
+  é bug do CRM", acima), tag `2.4.0-e273b904-citacao-foto`. O rollout troca a
+  imagem por `docker service update --image <tag>@<digest>` (o serviço é
+  `stop-first`: ~1–2 min sem Evolution, as 4 conexões reconectam e entregam
+  em lotes por ~6 min); atualizar `ops/vps/evolution-stack.yml` e este bloco
+  com o digest no mesmo dia.
 
 - ⚠️ **Recibo fora de ordem (medido 09/09/2026, primeira mensagem depois do
   upgrade)**: a 2.4 emite `SERVER_ACK` DEPOIS do `DELIVERY_ACK` da mesma
@@ -5488,6 +5510,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     com autorização do operador; conferida por consulta (as 2 colunas,
     `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
     idempotente, os 4 cenários da cerca do UPDATE).
+  - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
+    com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
+    antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a
+    linha, que NÃO existia: `created_at` recebe o carimbo do WhatsApp na
+    ingestão. Instrumento da verificação do atraso de entrega (PLANO-baileys-7,
+    5.10): `gravada_em − created_at`, por mensagem, todas as conexões, com
+    história — a 1002 guarda só a fronteira atual e o log da Evolution roda a
+    30 MB. Nenhuma linha de código a escreve. Aditiva; aplicar ANTES do
+    rollout da imagem `-foto`, para colher o "antes" com o mesmo instrumento.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

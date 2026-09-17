@@ -8,8 +8,8 @@
 | | |
 | --- | --- |
 | **Criado** | 09/09/2026 |
-| **Estado** | **FASE 1 NO AR desde 09/09/2026 19:02 (BRT)**: Evolution **2.4.0 / Baileys 7.0.0-rc13** em produção. Desde **21:11** a imagem é a **nossa**, `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…` (mesmo commit da `homolog`, + patch da citação do cliente + `prisma.config.ts` dentro, sem bind mount), licença continuou **ativa**, 4 conexões sem QR. Testes: T1, T2, T3, T4, T6, **T7**, T8, T9, T10, T11, T12, T17, T18 ✅; T13 (edição do cliente) mitigada. Registro em **9.4** e **9.5**. Em 10/09, o 1 ✓ das mensagens do celular: o recibo chegava ao CRM ANTES da mensagem — corrigido na rota (5.9, 9.6). |
-| **Próximo passo** | **Fase 2 — observação de 48 h** (até 11/09 à noite) com os medidores de 8.3 e o detector ativo de "Aguardando" (celular do escritório); testes que sobraram para 10/09: T5, T14/T15 (visual), T16, T19, T20, T21, T22, vídeo do T2, acervo do T3, reação nossa do T9. Decidir P9 (rotação da chave) e P10 (imagem própria para a citação). Rollback: seção 10, a partir da foto final `20260909-1902-final` — ⚠️ depois de tanto tráfego real com a v7, rollback = ler QR nas conexões (10, passo 6). |
+| **Estado** | **FASE 1 NO AR desde 09/09/2026 19:02 (BRT)**: Evolution **2.4.0 / Baileys 7.0.0-rc13** em produção. Desde **21:11** a imagem é a **nossa**, `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…` (mesmo commit da `homolog`, + patch da citação do cliente + `prisma.config.ts` dentro, sem bind mount), licença continuou **ativa**, 4 conexões sem QR. Testes: T1, T2, T3, T4, T6, **T7**, T8, T9, T10, T11, T12, T17, T18 ✅; T13 (edição do cliente) mitigada. Registro em **9.4** e **9.5**. Em 10/09, o 1 ✓ das mensagens do celular: o recibo chegava ao CRM ANTES da mensagem — corrigido na rota (5.9, 9.6). **17/09**: o **ATRASO DE ENTREGA** (1 msg/min por conexão desde 10/09, rotativo) tem causa PROVADA e conserto pronto — a foto de perfil consultada pelo LID, esperada dentro do `concatMap` da fila de entrada, 60 s por mensagem; patch na imagem `2.4.0-e273b904-citacao-foto` (5.10, 9.7). |
+| **Próximo passo** | **Atraso de entrega (5.10)**: (1) aplicar a migration **1003** (o instrumento — colhe o "antes" com a mesma régua); (2) **rollout** da imagem `2.4.0-e273b904-citacao-foto` por `docker service update` (autorização do operador; `stop-first`, ~1–2 min sem Evolution, ~6 min de entrega em lotes ao reconectar); (3) **verificação depois de ≥ 3 dias inteiros** com as duas consultas do 5.10 — o critério de sucesso está escrito lá, e o "antes" em 9.7. Pendências antigas: T5, T14/T15, T16, T19–T22; P9 (rotação da chave). Rollback da imagem: só trocar o digest de volta (mesmo commit, mesmas migrations). |
 | **Como retomar sem contexto** | Ler a **seção 0** abaixo primeiro; o prompt de retomada está no **Anexo C**. A memória privada do executor (`baileys-7-plano-e-decisoes.md`) guarda o telefone do cadastro. |
 | **Estudo de origem** | seções 2–4 deste documento condensam o estudo de 09/09 |
 | **Docs relacionadas** | `docs/EVOLUTION-LID-FIX.md` (fica OBSOLETA com este plano), `docs/INFRA-VPS.md`, `docs/DEPLOY-VPS.md`, `docs/INSTALACAO.md` |
@@ -57,6 +57,8 @@ abaixo. Nada foi deixado implícito de propósito.
 | 09/09 18:24 | Pré-voo, parte de backup: dump novo (14,3 MB), db 9 renovado (36 = 36), RDB, restauração de prova **bate em todas as tabelas, 0 avisos**. Achado da cascata do `DELETE` das órfãs (9.3) | 9.3 |
 | 09/09 18:10 | Revisão do Codex no #162 avaliada: rollback **reordenado** (escalar a 0 antes de trocar a imagem — procede); `FLUSHDB` do db 9 já estava no commit final; participante por `id` telefone já coberto no código do #161 (o texto de 5.3 estava defasado e foi sincronizado). Pré-voo **só de leitura** executado na VPS | 9.2, seção 10 |
 | 10/09 09:55 | Operador: mensagens do celular com 1 ✓. Medido: o recibo chega ao CRM ANTES da mensagem — corrida da rota, anterior à 2.4 (~⅓ das mensagens do celular desde 20/08) → espera na rota (PR #191) | 5.9, 9.6 |
+| 16/09 11:55 | Operador: mensagem de 11:24 apareceu às 11:53. Medido: Bancário-Comercial 26–30 min atrasada com a saúde VERDE; restart drenou 16 min em 1 min. O CRM ganhou o 3º eixo da saúde — a fronteira de entrega (migration 1002, PR #220) | 5.10 |
+| 17/09 10:00–12:30 | **Causa raiz do atraso, provada por três vias**: `profilePicture(received.key.remoteJid)` — a foto de perfil consultada pelo LID, que o WhatsApp não responde — esperada dentro do `concatMap` do `BaileysMessageProcessor`, com os 60 s de `defaultQueryTimeoutMs` da Baileys 7. 1 msg/min por conexão. Patch na imagem (`-foto`), migration 1003 (instrumento) e protocolo de verificação | 5.10, 9.7 |
 
 ### 0.3 O que NÃO foi feito (e é o próximo trabalho)
 
@@ -89,6 +91,10 @@ abaixo. Nada foi deixado implícito de propósito.
 - **Aquecimento da Baileys 7**: nos ~6 min depois de (re)conectar, a entrada sai em lotes de 30–120 s (buffer da sincronização de pendências) e depois normaliza. Não é defeito nem gatilho; avisar o operador ANTES da janela, senão o print de "não chegou" chega antes da mensagem.
 - Cópia local de fonte pode ser **página de erro**: `baileys-v7-migration.md` e `CHANGELOG.md` no scratchpad eram um 503 do Varnish (470 bytes) até a noite de 09/09 — a revisão adversarial pegou. Conferir tamanho e `<title>` de tudo que se baixa antes de citar. Re-baixados: o guia v7 (283 KB, real) e `messages-recv.ts` da rc13 e da 6.7.19.
 - O estado Signal no Redis **muda a cada mensagem** (ratchet): uma cópia tirada horas antes restaura sessões velhas e o cliente não decifra o que vem depois. Por isso a **foto final** (dump + db 8 → db 9 + RDB) é tirada com o serviço **a 0**, segundos antes da troca (6.2, passo 1). A do pré-voo serve de prova de restauração.
+- **A fila de ENTRADA da Evolution 2.4 é SERIAL, e uma consulta de rede dentro dela é um teto de vazão** (5.10): `BaileysMessageProcessor` → `concatMap` → handler de `messages.upsert` → `await profilePicture(...)`. Qualquer `await` que possa demorar ali multiplica pelo número de mensagens. Os recibos (`messages.update`) NÃO passam por essa fila — daí "11 recibos e 1 mensagem no mesmo despacho" ser a assinatura para reconhecer o problema. E o restart NÃO conserta: só esvazia a fila.
+- **`profilePictureUrl` por `@lid` não é respondida pelo servidor** (7 de 8 estouraram o timeout; por telefone, 0,2–0,7 s). Toda mensagem chega em LID na Baileys 7 (681 × 0 em 48 h numa conexão). Quem for consultar qualquer coisa por JID na Baileys 7 usa o telefone (`remoteJidAlt`, sempre preenchido — 1011/1011 medido) e passa `timeoutMs`.
+- **O `date_time` do webhook da Evolution é HORA LOCAL com sufixo `Z`** (`TZ=America/Sao_Paulo`): ao comparar com `messageTimestamp` (epoch), somar 3 h — senão o atraso sai negativo em exatamente −10800 s. Intervalos entre despachos não são afetados.
+- **O log da Evolution roda a 30 MB (`max-size 10m` × 3)** — ~2 dias no volume atual — além de morrer no reinício. Medição que precise de dias vai pelo banco (a 1003), nunca pelo log.
 
 **Sumário**
 
@@ -436,6 +442,132 @@ Correção: sem linha, a rota tenta de novo em pausas (1, 2, 4, 8 e 15 s);
 linha que existe e não avança é recibo velho (a escada do 5.8 recusou) e ela
 desiste; recibo de mensagem recebida (`fromMe` false) não espera. Testes em
 `recibo-antes-da-mensagem.test.ts`, com um pino na rota.
+
+### 5.10 Atraso de entrega: a foto de perfil trava a fila de entrada (`docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch`, migration 1003) — **PATCH PRONTO (17/09/2026)**
+
+Relatado pelo operador em 16/09 (mensagem de 11:24 na tela às 11:53, com a saúde
+verde) e diagnosticado em 17/09. A resposta do dia 16 foi dar ao CRM o terceiro
+eixo da saúde — a fronteira de entrega (migration 1002, PR #220), que passou a
+ACUSAR o atraso (>5 min, medição fresca). A causa ficou para o dia 17.
+
+**A causa, em quatro peças (provada por código, cronômetro e assinatura no log):**
+
+1. `src/api/integrations/channel/whatsapp/baileysMessage.processor.ts`: todo
+   `messages.upsert` entra num `Subject` RxJS e sai por **`concatMap`** — UM
+   lote por vez, o próximo só começa quando o anterior termina. Só o UPSERT é
+   montado nele (`messageProcessor.mount`); os recibos (`messages.update`) têm
+   handler próprio e não passam por ali.
+2. `whatsapp.baileys.service.ts:1699`, dentro desse handler:
+   `profilePicUrl: (await this.profilePicture(received.key.remoteJid)).profilePictureUrl` —
+   uma consulta de REDE ao WhatsApp, esperada, no caminho serializado.
+3. Ela usa `received` (o objeto cru, com o **LID**), enquanto 30 linhas antes
+   (1668–1674) a própria Evolution já trocou o LID pelo telefone em
+   `messageRaw.key.remoteJid` (`prepareMessage` cria uma `key` nova; a troca
+   não alcança `received`). O servidor NÃO responde a consulta de foto por
+   LID; por telefone responde em 0,2–0,7 s.
+4. A Baileys 7.0.0-rc13 tem `defaultQueryTimeoutMs: 60000` e a Evolution passa
+   `connectTimeoutMs`, `keepAliveIntervalMs` e `qrTimeout` — não esse. Consulta
+   sem resposta = 60 s inteiros.
+
+**Vazão: 1 mensagem por 60 s, por conexão, nos DOIS sentidos** — o eco de
+cada mensagem enviada pelo celular pareado tem o mesmo `remoteJid` e paga igual.
+Só vira atraso quando o tráfego passa de 1/min: a Comercial-Trabalhista (0,12
+msg/min) cabe folgada, a Trabalhista-Jurídico (0,77) estoura em qualquer
+rajada — daí "intermitente e rotativo". Começou em 10/09 porque a Baileys 7
+tornou o LID o endereçamento padrão. O campo que a consulta preenche
+(`profilePicUrl` do `contacts.update`) o CRM não lê — a foto vem da 973.
+Não há conserto por configuração (a chamada é incondicional; não existe env
+para o timeout) e o `develop` do upstream em 17/09 tem a linha idêntica.
+
+**O conserto (22 linhas, um arquivo, mesma esteira do patch da citação):**
+
+- `profilePicture(number, timeoutMs?)` repassa o teto a
+  `client.profilePictureUrl(jid, 'image', timeoutMs)` — o parâmetro já existe
+  na Baileys (`lib/Socket/chats.d.ts:40`); omitido, vale o padrão de 60 s.
+- O handler chama `this.profilePicture(messageRaw.key.remoteJid, 5_000)`: o
+  telefone resolvido (correção 1) e um teto de 5 s (correção 2). O teto vai SÓ
+  nesse chamador, de propósito: o mesmo método atende `chat/fetchProfilePictureUrl`,
+  que a 973 do CRM usa — com teto ali, um timeout carimbaria `avatar_checked_at`
+  por 30 dias sobre um contato com foto. Chamadores de contatos (966, 1020),
+  grupos e Chatwoot não mudam.
+- Pior caso depois do patch (telefone também sem resposta, medido 1 em 10):
+  5 s por mensagem — piso de 12 msg/min por conexão, 12× o teto de hoje.
+- Efeito colateral esperado e BOM: mais fotos gravadas na Evolution (a
+  consulta passa a ser respondida).
+- `tsc --noEmit` do upstream com os dois patches: 0 erros (cliente Prisma
+  gerado com URI fictícia); `git apply --check` limpo na ordem do workflow
+  a partir do e273b904 pristino.
+
+**O instrumento — migration 1003 (`messages.gravada_em`).** `created_at`
+recebe o carimbo do WhatsApp na ingestão, e NENHUMA coluna guardava o instante
+em que o CRM gravou a linha; a 1002 guarda só a fronteira atual de cada conexão
+e o log da Evolution roda a 30 MB. `gravada_em timestamptz DEFAULT now()` — o
+banco preenche, nenhuma linha de código muda, as antigas ficam NULL. Aplicar
+**antes** do rollout, para o "antes" ser medido com a mesma régua do "depois".
+
+**Protocolo de verificação (rodar ≥ 3 dias inteiros depois do rollout).**
+Escopo: TODAS as conexões, TODAS as mensagens que passaram pela fila de entrada
+(do cliente e do celular pareado — 3.150 + 2.799 em 7 dias, ~850/dia), dia a
+dia, antes × depois. As duas consultas rodam no Supabase (`execute_sql`):
+
+```sql
+-- A) Atraso de entrega por conexão e por dia (BRT): gravada_em − created_at.
+select (m.created_at at time zone 'America/Sao_Paulo')::date as dia,
+       c.label as conexao,
+       count(*) as n,
+       round((percentile_cont(0.5) within group (order by extract(epoch from m.gravada_em - m.created_at)) / 60)::numeric, 1) as mediana_min,
+       round((percentile_cont(0.9) within group (order by extract(epoch from m.gravada_em - m.created_at)) / 60)::numeric, 1) as p90_min,
+       round((max(extract(epoch from m.gravada_em - m.created_at)) / 60)::numeric, 1) as max_min,
+       round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '1 min') / count(*)) as pct_acima_1min,
+       round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '5 min') / count(*)) as pct_acima_5min
+  from messages m
+  join cb_channels c on c.id = m.channel_id
+ where m.gravada_em is not null
+   and (m.sender_type = 'customer' or m.from_device = true)
+   and m.created_at >= now() - interval '14 days'
+ group by 1, 2
+ order by 1, 2;
+
+-- B) O "pente": intervalos entre gravações consecutivas da MESMA conexão.
+--    Antes, 60 s era a moda (38× e 22× em 3 h). Depois, a distribuição deve
+--    seguir as chegadas: sem pico em 60 — e sem pico em 5 (o teto novo).
+with g as (
+  select c.label as conexao,
+         (m.gravada_em at time zone 'America/Sao_Paulo')::date as dia,
+         round(extract(epoch from m.gravada_em - lag(m.gravada_em) over (partition by m.channel_id order by m.gravada_em))) as intervalo_s
+    from messages m
+    join cb_channels c on c.id = m.channel_id
+   where m.gravada_em is not null
+     and (m.sender_type = 'customer' or m.from_device = true)
+     and m.created_at >= now() - interval '14 days')
+select dia, conexao,
+       count(*) as intervalos,
+       count(*) filter (where intervalo_s between 58 and 63) as em_60s,
+       count(*) filter (where intervalo_s between 4 and 7) as em_5s,
+       round(100.0 * count(*) filter (where intervalo_s between 58 and 63) / count(*)) as pct_em_60s
+  from g
+ where intervalo_s is not null
+ group by 1, 2
+ order by 1, 2;
+```
+
+Mais o eixo da saúde (1002), que deve ficar calado:
+`select label, entrega_carimbo_em, entrega_recebida_em, extract(epoch from entrega_recebida_em - entrega_carimbo_em) as atraso_s from cb_channels order by 4 desc nulls last;`
+— e, se o log ainda cobrir o período, o pente no log (Anexo B, "Assinatura do
+pente de 60 s").
+
+**Critério de sucesso (escrito antes de medir):** em cada uma das 4 conexões,
+em cada dia inteiro depois do rollout — `pct_acima_5min = 0`, `pct_acima_1min`
+≤ 2 (o dia do rollout tolera os ~6 min de entrega em lotes ao reconectar),
+`mediana_min` = 0,0 e `pct_em_60s` ≈ 0 (antes: 53% acima de 5 min e mediana
+6,0 min na Trabalhista-Jurídico; 26–30 min na Bancário-Comercial no dia 16).
+**Como ler uma falha:** pico em **5 s** na consulta B = o telefone também não
+responde para alguns contatos — próximo passo é tirar a consulta do caminho
+crítico (a "solução 3": montar o contato sem a foto e buscá-la depois, sem
+bloquear a fila); pico em **60 s** ainda = a imagem em produção não é a `-foto`
+(conferir `docker service inspect evolution_evolution --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`);
+atraso SEM pente = outra causa, voltar ao `xmin` e ao banco da Evolution
+(memória `sonda-atraso-de-entrega`).
 
 ### 5.5 Ajuste 5 — `GROUP_UPDATE` (`evolution-provision.ts`) — **DEPOIS do upgrade**
 
@@ -988,6 +1120,39 @@ Script `prevoo-backup.sh` em segundo plano na VPS (`/root/backups/prevoo-run.log
   intervalo. Não afeta o ✓; afeta a hora em que a mensagem aparece no CRM. Acompanhar nos
   medidores de 24/48 h (8.3).
 
+#### 9.7 Registro — o atraso de entrega e o limite de 1 msg/min (16–17/09/2026, BRT) — o "ANTES" da verificação do 5.10
+
+**16/09.** Bancário-Comercial com 26–30 min de atraso e os dois eixos da saúde
+verdes. No banco da Evolution, no MESMO instante de gravação: carimbo 12:02:15
+numa conexão e 11:36:22 na outra. VPS ociosa (load 0,16; Evolution 0,4% de
+CPU; API em 23 ms), zero timeout de webhook, zero queda. `POST
+/instance/restart` → 16 min viraram 1min40s em um minuto. PR #220 (1002).
+
+**17/09, o "antes", com três instrumentos:**
+
+| medida | valor |
+| --- | --- |
+| Log 07:00–10:24, Trabalhista-Jurídico (75 msgs) | mediana **6,0 min**, p90 13,1, max 15,5, **53% > 5 min** |
+| Log, mesmo período, cbcrm (37 msgs) | mediana 0,0 min, 0% > 5 min |
+| Cadência de despacho (log) | intervalo de **60 s** 38× numa instância, 22× noutra; 61 s 12× |
+| Mesma rajada | **11 recibos e 1 mensagem** |
+| Tipo de mensagem × atraso | `conversation` 6,3 min, `audioMessage` 5,5 min — NÃO é mídia |
+| Banco da Evolution, 11:16 (atraso da última msg) | cbcrm **8,8**, trabalhista-juridico **7,3**, juridico-bancario 2,2, comercial-trabalhista 0,5 min |
+| Cronômetro `chat/fetchProfilePictureUrl`, mesmo instante | cbcrm **60,1 s**, trabalhista-juridico **60,1 s**, juridico-bancario **60,0 s**, comercial-trabalhista **0,3 s** |
+| Por LID (4 + 4 contatos) | **7 de 8 = 60,1 s**; 1 respondeu em 0,3 s |
+| Por telefone | 0,2–0,7 s (1 em 10 estourou 60 s) |
+| Mesmo número, duas conexões | 60,1 s × 0,7 s — o estado é do PAR (sessão, contato) |
+| Assinatura no log (3 h) | 4 msgs em 9 s → despachos 11:26:27, 11:27:27, 11:28:28, 11:29:28; intervalos 120/181/241/362 s = múltiplos de 60 (ecos do celular na mesma fila); conexão sadia: 1 s |
+| JIDs em 48 h (banco da Evolution) | cbcrm 999 LID × 17 telefone; comercial 321 × 0; jurídico 25 × 1; trabalhista **681 × 0**; `remoteJidAlt` telefone em 100% (1011/1011, 314/314, 25/25, 687/687) |
+| Settings das 4 instâncias | `readMessages`/`readStatus`/`groupsIgnore`/`syncFullHistory`/`alwaysOnline` = false (nenhum outro `await` de rede no handler) |
+| Ambiente | sem rate limit; `CONFIG_SESSION_PHONE_VERSION=2.3000.1025193442`; RabbitMQ/SQS/S3 off; Chatwoot global on, por instância off |
+
+O fonte foi recuperado do `dist/main.js.map` da imagem em produção
+(`sourcesContent`, 198 arquivos). O logger `BaileysMessageProcessor` está
+silenciado pelo nível de log em produção — o cronômetro no endpoint provou em
+4 min o que o log não mostrava. ⚠️ `127.0.0.1:8080` no host não alcança a rede
+overlay: o curl sai por `https://api.cbadvogados.com`.
+
 #### 9.1 Registro da execução da Fase 0 (09/09/2026, 17:04–17:30)
 
 - **Prova de restauração** (`evolution_ensaio`, 0 avisos do `pg_restore`), comparando o mesmo corte:
@@ -1029,6 +1194,8 @@ Script `prevoo-backup.sh` em segundo plano na VPS (`/root/backups/prevoo-run.log
 - [ ] Cron `docker image prune -af` × imagens de rollback (P12)
 - [ ] Nenhum "Aguardando mensagem" relatado
 - [x] 1 ✓ nas mensagens do celular — recibo antes da mensagem, corrigido na rota (5.9, 9.6, PR #191); acervo de 1.258 mensagens presas em `sent`: **fica como está** (decisão do operador, 10/09)
+- [x] Atraso de entrega (1 msg/min por conexão): sonda na saúde (1002, PR #220, 16/09); causa provada e patch pronto (5.10, 9.7, 17/09)
+- [ ] 1003 aplicada → rollout da imagem `-foto` → **verificação em ≥ 3 dias** (5.10) → registrar o "depois" em 9.7 e fechar (ou abrir a "solução 3")
 - [ ] Ajuste 5 (`GROUP_UPDATE`) + Ressincronizar nas 4 conexões
 - [ ] `/root/evolution.yaml` atualizado (imagem por digest, `TELEMETRY_ENABLED`)
 - [ ] Docs e `CLAUDE.md` atualizados (5.6); `EVOLUTION-LID-FIX.md` marcado obsoleto
@@ -1349,7 +1516,47 @@ select status, count(*) from cb_scheduled_messages where updated_at between '<sc
 > Ao terminar cada fase, atualize o plano (checklist + registro com data) e
 > a memória.
 
+### B.x — Assinatura do "pente de 60 s" no log da Evolution (5.10)
+
+Só serve enquanto o log cobrir o período (30 MB, ~2 dias; morre no reinício).
+Imprime, por instância e na ordem de despacho, carimbo × despacho × intervalo;
+a assinatura do `concatMap` + timeout é o intervalo cravado em 60 s dentro das
+rajadas (e múltiplos de 60 entre recebidas — os ecos do celular na mesma fila).
+
+```bash
+ssh -i ~/.ssh/cb-crm-vps root@vps.cbadvogados.com \
+  'docker logs $(docker ps -q --filter name=evolution_evolution) --since 3h 2>&1 | grep -v apikey' \
+  | python3 - <<'EOF'
+import sys, re, datetime as dt
+# date_time vem em HORA LOCAL (TZ=America/Sao_Paulo) com sufixo "Z": +3 h.
+DESLOC = 3*3600
+txt = sys.stdin.read()
+por = {}
+for b in re.split(r'\n(?=\{\n)', txt):
+    if "event: 'messages.upsert'" not in b: continue
+    i = re.search(r"instance: '([^']+)'", b); ts = re.search(r"messageTimestamp: (\d+)", b)
+    d = re.search(r"date_time: '([^']+)'", b); fm = re.search(r"fromMe: (true|false)", b)
+    if not (i and ts and d and fm) or fm.group(1) != 'false': continue
+    desp = dt.datetime.fromisoformat(d.group(1).replace('Z','+00:00')).timestamp() + DESLOC
+    por.setdefault(i.group(1).split('-')[0], []).append((desp, int(ts.group(1))))
+brt = dt.timezone(dt.timedelta(hours=-3))
+for inst, lst in sorted(por.items()):
+    lst.sort(); print(f"=== {inst} ({len(lst)} recebidas) ===  carimbo  despacho  atraso  intervalo"); prev = None
+    for desp, ts in lst[-25:]:
+        iv = desp - prev if prev else 0
+        print(f"  {dt.datetime.fromtimestamp(ts, brt):%H:%M:%S}  {dt.datetime.fromtimestamp(desp, brt):%H:%M:%S}  {desp-ts:6.0f}s  {iv:6.0f}s{'  <-- ~60s' if 58 <= iv <= 63 else ''}")
+        prev = desp
+EOF
+```
+
+Para cronometrar a consulta de foto de perfil por instância (o que o handler
+faz), `POST https://api.cbadvogados.com/chat/fetchProfilePictureUrl/<instância>`
+com `{"number": "<jid ou número>"}` e a `AUTHENTICATION_API_KEY` lida de
+DENTRO do contêiner (`docker exec … printenv`), nunca colada na conversa; por
+LID: 60 s; por telefone: < 1 s.
+
 ## 15. Fontes
+
 
 **Reverificado em 09/09 (noite)**, depois de a revisão adversarial achar que as cópias locais do guia e do changelog eram páginas 503: o guia v7 real (`baileys.wiki/migration/v7`) diz textualmente *"By default, all new Signal sessions in Baileys 7.x are created in the LID format, and existing sessions are migrated automatically"* (a premissa "sem QR" da 4.5/7.2) e descreve o `Contact` como o código do #161 implementa (*"id is the preferred identifier; phoneNumber is populated when id is a LID; lid is populated when id is a PN — these changes also affect participants on GroupMetadata"*). O guia também diz *"ACKs no longer sent"* — **não** é o recibo de entrega: `src/Socket/messages-recv.ts` da rc13 (linhas 1740–1758) manda `sendReceipt(remoteJid, participant, [id], type)` com `type` vazio (= entregue) exatamente como a 6.7.19 (linha 856); só o `read` depende de `sendActiveReceipts`. T14 continua sendo o teste. A release rc13 no GitHub é só o conserto do `protocolMessage` (`fromMe` falso) sobre a rc12.
 

@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 
@@ -12,24 +11,27 @@ export async function POST(
   // Duplicating creates a new automation row — a write. Enforce `agent`
   // (the service-role client below bypasses the agent-gated
   // automations_insert RLS).
+  let accountId: string
+  let userId: string
   try {
-    await requireRole('agent')
+    const ctx = await requireRole('agent')
+    accountId = ctx.accountId
+    userId = ctx.userId
   } catch (err) {
     return toErrorResponse(err)
   }
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
+  // Match on `account_id`, not `user_id` — see the tenancy note in the
+  // sibling [id]/route.ts (GHSA-xvrq-88hg-44q6). `user_id` records the
+  // author and survives removal from the account, so scoping the source
+  // row by it let an ex-member clone an automation straight back into
+  // the account they no longer belong to.
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
     .from('automations')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
   if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -37,10 +39,12 @@ export async function POST(
   const { data: copy, error: copyErr } = await admin
     .from('automations')
     .insert({
-      // Clone into the same account as the original. account_id is NOT
-      // NULL post-017, so the INSERT fails the constraint without it.
-      account_id: original.account_id,
-      user_id: user.id,
+      // Clone into the caller's own account. Equal to
+      // `original.account_id` by construction now that the lookup above
+      // is account-scoped; written from the caller's context so the
+      // insert can never land in an account they aren't a member of.
+      account_id: accountId,
+      user_id: userId,
       name: `${original.name} (Copy)`,
       description: original.description,
       trigger_type: original.trigger_type,

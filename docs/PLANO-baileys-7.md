@@ -443,7 +443,7 @@ linha que existe e não avança é recibo velho (a escada do 5.8 recusou) e ela
 desiste; recibo de mensagem recebida (`fromMe` false) não espera. Testes em
 `recibo-antes-da-mensagem.test.ts`, com um pino na rota.
 
-### 5.10 Atraso de entrega: a foto de perfil trava a fila de entrada (`docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch`, migration 1003) — **PATCH PRONTO (17/09/2026)**
+### 5.10 Atraso de entrega: a foto de perfil trava a fila de entrada (`docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch`, migration 1003) — **PATCH PRONTO (17/09/2026, PR #221)**
 
 Relatado pelo operador em 16/09 (mensagem de 11:24 na tela às 11:53, com a saúde
 verde) e diagnosticado em 17/09. A resposta do dia 16 foi dar ao CRM o terceiro
@@ -497,6 +497,15 @@ para o timeout) e o `develop` do upstream em 17/09 tem a linha idêntica.
 - `tsc --noEmit` do upstream com os dois patches: 0 erros (cliente Prisma
   gerado com URI fictícia); `git apply --check` limpo na ordem do workflow
   a partir do e273b904 pristino.
+- **Imagem construída** pelo workflow a partir da branch (run 35240353664,
+  17/09/2026 12:29 BRT):
+  `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto@sha256:a7d56788ba127de3c7f759e57addf97bb54c71fedb1e955ab60d672753924126`.
+  Rollout (autorização do operador): `docker service update --image <essa
+  referência> evolution_evolution` — só o volume `evolution_instances` está
+  montado, sem `--mount-rm`. Antes: aplicar a 1003 e anotar a hora exata do
+  update (é a fronteira antes × depois das consultas A e B).
+- Amostra do "antes" às 12:35 BRT, com o pente da doc já corrigido: cbcrm com
+  **1777–2368 s** (30–39 min) de atraso, intervalo de 60 s em 18 das 25 linhas.
 
 **O instrumento — migration 1003 (`messages.gravada_em`).** `created_at`
 recebe o carimbo do WhatsApp na ingestão, e NENHUMA coluna guardava o instante
@@ -1524,9 +1533,10 @@ a assinatura do `concatMap` + timeout é o intervalo cravado em 60 s dentro das
 rajadas (e múltiplos de 60 entre recebidas — os ecos do celular na mesma fila).
 
 ```bash
-ssh -i ~/.ssh/cb-crm-vps root@vps.cbadvogados.com \
-  'docker logs $(docker ps -q --filter name=evolution_evolution) --since 3h 2>&1 | grep -v apikey' \
-  | python3 - <<'EOF'
+# 1) O script num ARQUIVO. Um heredoc direto em `python3 -` substituiria o stdin
+#    do pipe: o Python leria o programa e `sys.stdin.read()` acharia EOF — o
+#    pente sairia vazio com cara de "sem achados" (Codex, PR #221).
+cat > /tmp/pente.py <<'EOF'
 import sys, re, datetime as dt
 # date_time vem em HORA LOCAL (TZ=America/Sao_Paulo) com sufixo "Z": +3 h.
 DESLOC = 3*3600
@@ -1547,6 +1557,10 @@ for inst, lst in sorted(por.items()):
         print(f"  {dt.datetime.fromtimestamp(ts, brt):%H:%M:%S}  {dt.datetime.fromtimestamp(desp, brt):%H:%M:%S}  {desp-ts:6.0f}s  {iv:6.0f}s{'  <-- ~60s' if 58 <= iv <= 63 else ''}")
         prev = desp
 EOF
+# 2) O log entra pelo PIPE; o script, pelo arquivo.
+ssh -i ~/.ssh/cb-crm-vps root@vps.cbadvogados.com \
+  'docker logs $(docker ps -q --filter name=evolution_evolution) --since 3h 2>&1 | grep -v apikey' \
+  | python3 /tmp/pente.py
 ```
 
 Para cronometrar a consulta de foto de perfil por instância (o que o handler

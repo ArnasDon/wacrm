@@ -28,7 +28,11 @@ import { checkFreeBusy, createEvent, APPOINTMENT_LOOKAHEAD_MS } from '@/lib/goog
 import { formatWithOffset, describeNowInZone } from '@/lib/timezone'
 import { createQuote, CreateQuoteError, type QuoteItemInput } from '@/lib/quotes/create-quote'
 import { sendQuoteByAccountPreference, SendQuoteError } from '@/lib/quotes/send-quote'
-import { buildReservationFollowUpMessage } from '@/lib/reservations/missing-fields'
+import {
+  buildReservationFollowUpMessage,
+  missingReservationFields,
+  type ReservationFieldSnapshot,
+} from '@/lib/reservations/missing-fields'
 import { dispatchSystemAlert, resolveSystemAlert } from '@/lib/observability/alerts'
 import { describeError, isUndefinedColumnError } from '@/lib/observability/describe-error'
 import {
@@ -1306,6 +1310,18 @@ export async function dispatchInboundToAiReply(
       } catch (err) {
         console.error('[ai auto-reply] autonomous record_reservation failed:', err)
       }
+      if (!conv.ai_handoff_at) {
+        try {
+          await handOffIfReservationComplete({
+            db, accountId, conversationId, configOwnerUserId,
+            category: reservationProposal.category as ReservationCategory,
+            handoffAgentId: config.handoffAgentId,
+            alreadyAssigned: Boolean(conv.assigned_agent_id),
+          })
+        } catch (err) {
+          console.error('[ai auto-reply] handOffIfReservationComplete failed:', err)
+        }
+      }
     }
 
     // Runs AFTER record_reservation above so it sees this same turn's
@@ -2363,6 +2379,66 @@ async function autoSendProductPhoto(args: {
   })
 
   return product.id
+}
+
+/**
+ * Once a hotel reservation request has every field needed to quote it
+ * (dates/use-date and guests, plus the hall for `eventos` — the same
+ * bar `missingReservationFields` already uses for the post-photo/quote
+ * confirmation nudge), the bot's job on this request is done: hand the
+ * conversation off to a human exactly like `HANDOFF_SENTINEL` does, so
+ * an advisor is notified and picks it up. This is also what keeps a
+ * guest who already gave every detail from getting an automated
+ * `followups-sweep.ts` "still there?" nudge while waiting on a human —
+ * the sweeper skips any conversation with a handoff.
+ *
+ * Deterministic, not left to the model to decide (same reasoning as
+ * `sendHotelBookingNudge`): runs every turn right after
+ * `autoRecordReservation`, re-reading the conversation's current
+ * active-build row for this category rather than trusting this turn's
+ * marker alone, since completeness can be reached by a field captured
+ * on an earlier turn.
+ */
+async function handOffIfReservationComplete(args: {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  configOwnerUserId: string
+  category: ReservationCategory
+  handoffAgentId: string | null
+  alreadyAssigned: boolean
+}): Promise<void> {
+  const { db, accountId, conversationId, configOwnerUserId, category, handoffAgentId, alreadyAssigned } = args
+
+  const { data: row } = await db
+    .from('reservation_requests')
+    .select('category, guests, check_in, check_out, use_date, hall')
+    .eq('account_id', accountId)
+    .eq('conversation_id', conversationId)
+    .eq('category', category)
+    .eq('is_active_build', true)
+    .maybeSingle()
+  if (!row) return
+  if (missingReservationFields(row as ReservationFieldSnapshot).length > 0) return
+
+  await handOffToHuman({
+    db,
+    accountId,
+    conversationId,
+    handoffAgentId,
+    alreadyAssigned,
+    summary:
+      '🤖 Se completaron los datos de la solicitud del huésped. La IA transfirió esta conversación para que un compañero prepare la cotización o avance la solicitud.',
+  })
+
+  await db.from('ai_action_log').insert({
+    account_id: accountId,
+    actor_user_id: configOwnerUserId,
+    action: 'auto_handoff_reservation_complete',
+    target_id: conversationId,
+    input: { category, source: 'auto_reply_autonomous' },
+    result: { conversation_id: conversationId, handed_off_to: handoffAgentId },
+  })
 }
 
 /**

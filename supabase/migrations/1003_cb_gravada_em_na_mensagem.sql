@@ -51,13 +51,20 @@ comment on column public.messages.gravada_em is
 -- barreira; não é esta migration que muda isso, e ela não afirma nada a
 -- respeito). O dado é só REPORTADO (NOTICE), nunca exigido: numa reaplicação
 -- já há linhas com valor, e exigir "nenhuma" quebraria a idempotência.
+--
+-- ⚠️ A contagem vem da ESTATÍSTICA DO CATÁLOGO (`pg_class.reltuples`), nunca
+-- de um `count(*)`: a migration roda numa transação que ainda segura o lock
+-- `ACCESS EXCLUSIVE` do `ALTER TABLE`, e varrer `messages` inteira ali
+-- travaria a caixa de entrada pelo tempo da varredura — numa instalação
+-- grande, minutos de parada por causa de um NOTICE (Codex, PR #221). A
+-- versão aplicada em produção em 17/09/2026 (12 mil linhas, instantâneo)
+-- tinha o `count(*)`; o DDL é o mesmo, byte a byte.
 -- ============================================================
 do $$
 declare
   v_default   text;
   v_nullable  text;
-  v_sem_valor bigint;
-  v_com_valor bigint;
+  v_linhas    bigint;
 begin
   select column_default, is_nullable into v_default, v_nullable
     from information_schema.columns
@@ -73,10 +80,8 @@ begin
     raise exception '1003: gravada_em precisa aceitar NULL (as linhas antigas são "não medido")';
   end if;
 
-  select count(*) filter (where gravada_em is null),
-         count(*) filter (where gravada_em is not null)
-    into v_sem_valor, v_com_valor
-    from public.messages;
-  raise notice '1003: % mensagens sem instante de gravação (anteriores à coluna) e % com; as novas ganham now() no insert.',
-    v_sem_valor, v_com_valor;
+  select greatest(reltuples, 0)::bigint into v_linhas
+    from pg_class where oid = 'public.messages'::regclass;
+  raise notice '1003: ~% mensagens existentes (estatística do catálogo, sem varrer a tabela) ficam sem instante de gravação; as novas ganham now() no insert.',
+    v_linhas;
 end $$;

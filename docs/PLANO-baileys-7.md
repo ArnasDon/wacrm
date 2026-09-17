@@ -1227,7 +1227,9 @@ overlay: o curl sai por `https://api.cbadvogados.com`.
 - [ ] Nenhum "Aguardando mensagem" relatado
 - [x] 1 ✓ nas mensagens do celular — recibo antes da mensagem, corrigido na rota (5.9, 9.6, PR #191); acervo de 1.258 mensagens presas em `sent`: **fica como está** (decisão do operador, 10/09)
 - [x] Atraso de entrega (1 msg/min por conexão): sonda na saúde (1002, PR #220, 16/09); causa provada e patch pronto (5.10, 9.7, 17/09)
-- [ ] 1003 aplicada → rollout da imagem `-foto` → **verificação em ≥ 3 dias** (5.10) → registrar o "depois" em 9.7 e fechar (ou abrir a "solução 3")
+- [x] Migration 1003 aplicada em produção — 17/09 12:39:17 BRT, histórico `20260917153917`
+- [x] Rollout da imagem `-foto` — **FEITO em 17/09 12:39:37 BRT** (não repetir: `docker service inspect evolution_evolution` mostra `…citacao-foto@sha256:a7d56788…`); custo medido em 5.10
+- [ ] **Verificação em ≥ 3 dias** (a partir de 21/09; consultas A e B do 5.10) → registrar o "depois" em 9.7 e fechar, ou abrir a "solução 3" se houver pico em 5 s
 - [ ] Ajuste 5 (`GROUP_UPDATE`) + Ressincronizar nas 4 conexões
 - [ ] `/root/evolution.yaml` atualizado (imagem por digest, `TELEMETRY_ENABLED`)
 - [ ] Docs e `CLAUDE.md` atualizados (5.6); `EVOLUTION-LID-FIX.md` marcado obsoleto

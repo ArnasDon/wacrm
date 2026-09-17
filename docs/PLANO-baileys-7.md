@@ -538,7 +538,9 @@ select (m.created_at at time zone 'America/Sao_Paulo')::date as dia,
        round((percentile_cont(0.9) within group (order by extract(epoch from m.gravada_em - m.created_at)) / 60)::numeric, 1) as p90_min,
        round((max(extract(epoch from m.gravada_em - m.created_at)) / 60)::numeric, 1) as max_min,
        round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '1 min') / count(*)) as pct_acima_1min,
-       round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '5 min') / count(*)) as pct_acima_5min
+       round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '5 min') / count(*)) as pct_acima_5min,
+       -- o teto NOVO (5 s) se lê pelo ATRASO: 4,8-8 s = a consulta de foto estourou o teto (mais os 2 s do jaGravada no eco do celular)
+       round(100.0 * count(*) filter (where m.gravada_em - m.created_at between interval '4.8 seconds' and interval '8 seconds') / count(*)) as pct_teto_5s
   from messages m
   join cb_channels c on c.id = m.channel_id
   join conversations v on v.id = m.conversation_id
@@ -552,7 +554,9 @@ select (m.created_at at time zone 'America/Sao_Paulo')::date as dia,
 
 -- B) O "pente": intervalos entre gravações consecutivas da MESMA conexão.
 --    Antes, 60 s era a moda (38× e 22× em 3 h). Depois, a distribuição deve
---    seguir as chegadas: sem pico em 60 — e sem pico em 5 (o teto novo).
+--    seguir as chegadas: sem pico em 60. ⚠️ Intervalo de 4-7 s NÃO é o teto
+--    novo — é gente conversando (medido 17/09: carimbos já espaçados de 3-9 s);
+--    o teto de 5 s se lê em A, pelo atraso (`pct_teto_5s`).
 with g as (
   select c.id as canal_id, c.label as conexao,
          (m.gravada_em at time zone 'America/Sao_Paulo')::date as dia,
@@ -568,7 +572,6 @@ with g as (
 select dia, conexao,
        count(*) as intervalos,
        count(*) filter (where intervalo_s between 58 and 63) as em_60s,
-       count(*) filter (where intervalo_s between 4 and 7) as em_5s,
        round(100.0 * count(*) filter (where intervalo_s between 58 and 63) / count(*)) as pct_em_60s
   from g
  where intervalo_s is not null
@@ -584,12 +587,15 @@ pente de 60 s").
 **Critério de sucesso (escrito antes de medir):** em cada uma das 4 conexões,
 em cada dia inteiro depois do rollout — `pct_acima_5min = 0`, `pct_acima_1min`
 ≤ 2 (o dia do rollout tolera os ~6 min de entrega em lotes ao reconectar),
-`mediana_min` = 0,0 e `pct_em_60s` ≈ 0 (antes: 53% acima de 5 min e mediana
-6,0 min na Trabalhista-Jurídico; 26–30 min na Bancário-Comercial no dia 16).
-**Como ler uma falha:** pico em **5 s** na consulta B = o telefone também não
-responde para alguns contatos — próximo passo é tirar a consulta do caminho
-crítico (a "solução 3": montar o contato sem a foto e buscá-la depois, sem
-bloquear a fila); pico em **60 s** ainda = a imagem em produção não é a `-foto`
+`mediana_min` = 0,0, `pct_em_60s` ≈ 0 e `pct_teto_5s` ≤ 20 (antes: 53% acima
+de 5 min e mediana 6,0 min na Trabalhista-Jurídico; 26–30 min na
+Bancário-Comercial no dia 16; na primeira hora depois do rollout,
+`pct_teto_5s` = 15% na Bancário-Comercial — três ecos do celular de UM contato
+cujo telefone tampouco responde, 9.7).
+**Como ler uma falha:** `pct_teto_5s` na MAIORIA das mensagens = o telefone
+também não responde para muitos contatos — próximo passo é tirar a consulta do
+caminho crítico (a "solução 3": montar o contato sem a foto e buscá-la depois,
+sem bloquear a fila); pico em **60 s** ainda = a imagem em produção não é a `-foto`
 (conferir `docker service inspect evolution_evolution --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}'`);
 atraso SEM pente = outra causa, voltar ao `xmin` e ao banco da Evolution
 (memória `sonda-atraso-de-entrega`).
@@ -1182,6 +1188,15 @@ levariam 10 min); mediana 0,0. ⚠️ **Nenhum carimbo antigo da cbcrm
 (12:13–12:39) chegou** — a fila em memória do processo antigo se perdeu (0.4);
 as outras duas conexões estavam em dia (comercial: 12:29:56 → 12:29:57;
 jurídico: 12:17:59 → 12:18:00).
+
+**Primeira hora com a 1003 (12:40–13:01, Bancário-Comercial, 20 msgs 1:1):**
+cliente 0,5–2,6 s; celular 2,6–3,4 s (os 2 s do `jaGravada`, 5.9) e **três
+ecos do celular a 6,6–7,4 s** = o teto de 5 s + 2 s — para aquele contato o
+telefone tampouco responde a consulta de foto em alguns ecos (`pct_teto_5s` =
+15%). Os intervalos de 4–7 s entre gravações eram uma conversa ao vivo
+(carimbos já espaçados de 3–9 s), não o teto em série — por isso a consulta B
+perdeu a coluna `em_5s` e a A ganhou `pct_teto_5s`. Trabalhista-Jurídico (20
+msgs): mediana 0,0 min, p90 0,2, max 0,3; Trabalhista-Comercial (2): 0,1.
 
 O fonte foi recuperado do `dist/main.js.map` da imagem em produção
 (`sourcesContent`, 198 arquivos). O logger `BaileysMessageProcessor` está

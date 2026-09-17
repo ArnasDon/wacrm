@@ -96,6 +96,7 @@ abaixo. Nada foi deixado implícito de propósito.
 - **`profilePictureUrl` por `@lid` não é respondida pelo servidor** (7 de 8 estouraram o timeout; por telefone, 0,2–0,7 s). Toda mensagem chega em LID na Baileys 7 (681 × 0 em 48 h numa conexão). Quem for consultar qualquer coisa por JID na Baileys 7 usa o telefone (`remoteJidAlt`, sempre preenchido — 1011/1011 medido) e passa `timeoutMs`.
 - **O `date_time` do webhook da Evolution é HORA LOCAL com sufixo `Z`** (`TZ=America/Sao_Paulo`): ao comparar com `messageTimestamp` (epoch), somar 3 h — senão o atraso sai negativo em exatamente −10800 s. Intervalos entre despachos não são afetados.
 - **O log da Evolution roda a 30 MB (`max-size 10m` × 3)** — ~2 dias no volume atual — além de morrer no reinício. Medição que precise de dias vai pelo banco (a 1003), nunca pelo log.
+- ⚠️⚠️ **Trocar o contêiner da Evolution com a fila de entrada represada PERDE a fila para o CRM.** A Baileys envia o ack ao servidor ANTES de emitir o `messages.upsert` (`lib/Socket/messages-recv.js`: `sendMessageAck` na linha 1427, `upsertMessage` na 1432), e o `ev.process` da Evolution não é aguardado — mensagem confirmada que morre na fila RxJS **não é reentregue** (só o que chegou ao servidor com o socket fora, `offline`, vem no reconectar). Medido em 17/09/2026: o rollout às 12:39:37 pegou a cbcrm com ~27 min represados; o processo novo entregou só carimbos ≥ 12:41 (mais um 12:25) — as mensagens de 12:13–12:39 da Bancário-Comercial (estimativa pela taxa da manhã: 10–20) ficaram só no celular pareado. O executor recomendou "agora" justamente por causa do atraso, sem ter conferido este ponto — era o argumento inverso. **Regra: reinício de contêiner ou troca de imagem SÓ com a fronteira da 1002 (`entrega_recebida_em − entrega_carimbo_em`) em ~0 s em todas as conexões.** Com o patch da foto de perfil não existe mais fila que represe; a regra vale para o dia em que voltar a existir.
 
 **Sumário**
 
@@ -506,6 +507,13 @@ para o timeout) e o `develop` do upstream em 17/09 tem a linha idêntica.
   migrate deploy` sem pendência, HTTP ON às 12:39:54, as 4 conexões `open`).
   A 1003 foi aplicada 20 s antes (12:39:17, histórico `20260917153917`).
   **Fronteira antes × depois das consultas A e B: `2026-09-17 15:39:37+00`.**
+  ⚠️ **Custo da troca (medido, 0.4):** o que estava na fila em memória do
+  processo antigo se perdeu para o CRM — a Baileys acka antes do handler. A
+  Bancário-Comercial tinha ~27 min represados: as mensagens de 12:13–12:39
+  daquela conexão (estimativa 10–20) existem só no celular pareado; a
+  Trabalhista-Jurídico tinha ~5 min (12:34–12:39, poucas). As outras duas
+  estavam em dia. Fica como lição para a próxima troca de imagem (fila vazia
+  primeiro), não como defeito da imagem nova.
 - Amostra do "antes" às 12:35 BRT, com o pente da doc já corrigido: cbcrm com
   **1777–2368 s** (30–39 min) de atraso, intervalo de 60 s em 18 das 25 linhas.
 
@@ -1164,7 +1172,12 @@ CPU; API em 23 ms), zero timeout de webhook, zero queda. `POST
 12:39:37; HTTP ON às 12:39:54; 4 conexões `open` em < 1 min; API 200. Com a
 1003: a última mensagem gravada pelo processo ANTIGO (12:39:38) era do celular,
 carimbo 12:12:45 — **26,9 min** de atraso; a primeira do processo novo, carimbo
-12:41:49 → gravada 12:41:49 — **0,0 min**.
+12:41:49 → gravada 12:41:49 — **0,0 min**. Aos 10 min: 16 despachos, e **10
+mensagens da cbcrm carimbadas 12:45 gravadas dentro do mesmo minuto** (antes
+levariam 10 min); mediana 0,0. ⚠️ **Nenhum carimbo antigo da cbcrm
+(12:13–12:39) chegou** — a fila em memória do processo antigo se perdeu (0.4);
+as outras duas conexões estavam em dia (comercial: 12:29:56 → 12:29:57;
+jurídico: 12:17:59 → 12:18:00).
 
 O fonte foi recuperado do `dist/main.js.map` da imagem em produção
 (`sourcesContent`, 198 arquivos). O logger `BaileysMessageProcessor` está

@@ -5106,7 +5106,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   --image …@sha256:a7d56788…` (stop-first: 17 s de troca, as 4 conexões
   voltaram `open` em < 1 min, `prisma migrate deploy` sem pendência). Rollback
   = o digest anterior, `…citacao@sha256:dc0f4e8b…` (mesmo commit, mesmas
-  migrations). O `.yml` da stack acompanha o digest.
+  migrations). O `.yml` da stack acompanha o digest. ⚠️⚠️ **Trocar o
+  contêiner com a fila de entrada represada PERDE a fila para o CRM** (a
+  Baileys acka ao servidor ANTES do handler; medido em 17/09: os ~27 min
+  represados da Bancário-Comercial ficaram só no celular). Reinício de
+  contêiner ou troca de imagem SÓ com `entrega_recebida_em − entrega_carimbo_em`
+  da 1002 em ~0 s em todas as conexões.
 
 - ⚠️ **Recibo fora de ordem (medido 09/09/2026, primeira mensagem depois do
   upgrade)**: a 2.4 emite `SERVER_ACK` DEPOIS do `DELIVERY_ACK` da mesma

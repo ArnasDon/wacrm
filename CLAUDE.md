@@ -5087,10 +5087,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   `parseGroupInfo` lê as duas formas.
 - ⚠️ **`GROUP_UPDATE` só entra em `WEBHOOK_EVENTS` DEPOIS do upgrade**: a 2.3.2
   recusa a lista inteira com evento desconhecido (conferido em 28/07/2026).
-- Operação (estado em 09/09/2026 21:11): a imagem é a NOSSA,
-  `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…`
-  (commit `e273b904` do `develop` + patch da citação do cliente + `prisma.config.ts`
-  dentro — `docker/evolution-cb/`), SEMPRE por digest; `TELEMETRY_ENABLED=false`;
+- Operação (estado em 17/09/2026 12:39 BRT): a imagem é a NOSSA,
+  `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto@sha256:a7d56788…`
+  (commit `e273b904` do `develop` + patch da citação do cliente + patch da
+  foto de perfil + `prisma.config.ts` dentro — `docker/evolution-cb/`), SEMPRE
+  por digest; `TELEMETRY_ENABLED=false`;
   a licença está ativa (tabela `RuntimeConfig` do banco `evolution`); a stack
   completa está em `ops/vps/evolution-stack.yml` (= `/root/evolution-stack.yml`,
   segredos em `/root/evolution.env`), e `docker stack deploy` da Evolution só
@@ -5099,13 +5100,13 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   compartilhado com outros serviços); o log da Evolution morre no reinício do
   contêiner; o cron `docker image prune -af` apaga as imagens de rollback na
   madrugada seguinte (são públicas, voltam com `pull`).
-  ⚠️ **Desde 17/09/2026 a imagem carrega DOIS patches** (o da citação e o da
-  foto de perfil que travava a fila de entrada — ver "O atraso de entrega NÃO
-  é bug do CRM", acima), tag `2.4.0-e273b904-citacao-foto`. O rollout troca a
-  imagem por `docker service update --image <tag>@<digest>` (o serviço é
-  `stop-first`: ~1–2 min sem Evolution, as 4 conexões reconectam e entregam
-  em lotes por ~6 min); atualizar `ops/vps/evolution-stack.yml` e este bloco
-  com o digest no mesmo dia.
+  ⚠️ **Desde 17/09/2026 12:39 BRT a imagem carrega DOIS patches** (o da
+  citação e o da foto de perfil que travava a fila de entrada — ver "O atraso
+  de entrega NÃO é bug do CRM", acima). Trocada por `docker service update
+  --image …@sha256:a7d56788…` (stop-first: 17 s de troca, as 4 conexões
+  voltaram `open` em < 1 min, `prisma migrate deploy` sem pendência). Rollback
+  = o digest anterior, `…citacao@sha256:dc0f4e8b…` (mesmo commit, mesmas
+  migrations). O `.yml` da stack acompanha o digest.
 
 - ⚠️ **Recibo fora de ordem (medido 09/09/2026, primeira mensagem depois do
   upgrade)**: a 2.4 emite `SERVER_ACK` DEPOIS do `DELIVERY_ACK` da mesma
@@ -5517,8 +5518,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     ingestão. Instrumento da verificação do atraso de entrega (PLANO-baileys-7,
     5.10): `gravada_em − created_at`, por mensagem, todas as conexões, com
     história — a 1002 guarda só a fronteira atual e o log da Evolution roda a
-    30 MB. Nenhuma linha de código a escreve. Aditiva; aplicar ANTES do
-    rollout da imagem `-foto`, para colher o "antes" com o mesmo instrumento.
+    30 MB. Nenhuma linha de código a escreve. Aditiva. Aplicada em
+    17/09/2026 12:39:17 BRT pela Management API (histórico `20260917153917`),
+    20 s ANTES do rollout da imagem `-foto` — o "antes" e o "depois" são
+    medidos com o mesmo instrumento (a fronteira é `2026-09-17 15:39:37+00`).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

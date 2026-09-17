@@ -8,8 +8,8 @@
 | | |
 | --- | --- |
 | **Criado** | 09/09/2026 |
-| **Estado** | **FASE 1 NO AR desde 09/09/2026 19:02 (BRT)**: Evolution **2.4.0 / Baileys 7.0.0-rc13** em produção. Desde **21:11** a imagem é a **nossa**, `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…` (mesmo commit da `homolog`, + patch da citação do cliente + `prisma.config.ts` dentro, sem bind mount), licença continuou **ativa**, 4 conexões sem QR. Testes: T1, T2, T3, T4, T6, **T7**, T8, T9, T10, T11, T12, T17, T18 ✅; T13 (edição do cliente) mitigada. Registro em **9.4** e **9.5**. Em 10/09, o 1 ✓ das mensagens do celular: o recibo chegava ao CRM ANTES da mensagem — corrigido na rota (5.9, 9.6). **17/09**: o **ATRASO DE ENTREGA** (1 msg/min por conexão desde 10/09, rotativo) tem causa PROVADA e conserto pronto — a foto de perfil consultada pelo LID, esperada dentro do `concatMap` da fila de entrada, 60 s por mensagem; patch na imagem `2.4.0-e273b904-citacao-foto` (5.10, 9.7). |
-| **Próximo passo** | **Atraso de entrega (5.10)**: (1) aplicar a migration **1003** (o instrumento — colhe o "antes" com a mesma régua); (2) **rollout** da imagem `2.4.0-e273b904-citacao-foto` por `docker service update` (autorização do operador; `stop-first`, ~1–2 min sem Evolution, ~6 min de entrega em lotes ao reconectar); (3) **verificação depois de ≥ 3 dias inteiros** com as duas consultas do 5.10 — o critério de sucesso está escrito lá, e o "antes" em 9.7. Pendências antigas: T5, T14/T15, T16, T19–T22; P9 (rotação da chave). Rollback da imagem: só trocar o digest de volta (mesmo commit, mesmas migrations). |
+| **Estado** | **FASE 1 NO AR desde 09/09/2026 19:02 (BRT)**: Evolution **2.4.0 / Baileys 7.0.0-rc13** em produção. Desde **21:11** a imagem é a **nossa**, `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…` (mesmo commit da `homolog`, + patch da citação do cliente + `prisma.config.ts` dentro, sem bind mount), licença continuou **ativa**, 4 conexões sem QR. Testes: T1, T2, T3, T4, T6, **T7**, T8, T9, T10, T11, T12, T17, T18 ✅; T13 (edição do cliente) mitigada. Registro em **9.4** e **9.5**. Em 10/09, o 1 ✓ das mensagens do celular: o recibo chegava ao CRM ANTES da mensagem — corrigido na rota (5.9, 9.6). **17/09**: o **ATRASO DE ENTREGA** (1 msg/min por conexão desde 10/09, rotativo) tem causa PROVADA e conserto pronto — a foto de perfil consultada pelo LID, esperada dentro do `concatMap` da fila de entrada, 60 s por mensagem; patch na imagem `2.4.0-e273b904-citacao-foto` (5.10, 9.7). **Rollout feito em 17/09 12:39 BRT** (1003 aplicada às 12:39:17; imagem `-foto` no ar desde 12:39:54, 4 conexões `open`). |
+| **Próximo passo** | **Verificação do 5.10 a partir de 21/09/2026** (≥ 3 dias inteiros depois do rollout de 17/09 12:39 BRT): rodar as consultas A e B, comparar com o critério de sucesso escrito lá e registrar o "depois" em 9.7 — fechar, ou abrir a "solução 3" se houver pico em 5 s. Pendências antigas: T5, T14/T15, T16, T19–T22; P9 (rotação da chave). Rollback da imagem: só trocar o digest de volta (mesmo commit, mesmas migrations). |
 | **Como retomar sem contexto** | Ler a **seção 0** abaixo primeiro; o prompt de retomada está no **Anexo C**. A memória privada do executor (`baileys-7-plano-e-decisoes.md`) guarda o telefone do cadastro. |
 | **Estudo de origem** | seções 2–4 deste documento condensam o estudo de 09/09 |
 | **Docs relacionadas** | `docs/EVOLUTION-LID-FIX.md` (fica OBSOLETA com este plano), `docs/INFRA-VPS.md`, `docs/DEPLOY-VPS.md`, `docs/INSTALACAO.md` |
@@ -58,6 +58,7 @@ abaixo. Nada foi deixado implícito de propósito.
 | 09/09 18:10 | Revisão do Codex no #162 avaliada: rollback **reordenado** (escalar a 0 antes de trocar a imagem — procede); `FLUSHDB` do db 9 já estava no commit final; participante por `id` telefone já coberto no código do #161 (o texto de 5.3 estava defasado e foi sincronizado). Pré-voo **só de leitura** executado na VPS | 9.2, seção 10 |
 | 10/09 09:55 | Operador: mensagens do celular com 1 ✓. Medido: o recibo chega ao CRM ANTES da mensagem — corrida da rota, anterior à 2.4 (~⅓ das mensagens do celular desde 20/08) → espera na rota (PR #191) | 5.9, 9.6 |
 | 16/09 11:55 | Operador: mensagem de 11:24 apareceu às 11:53. Medido: Bancário-Comercial 26–30 min atrasada com a saúde VERDE; restart drenou 16 min em 1 min. O CRM ganhou o 3º eixo da saúde — a fronteira de entrega (migration 1002, PR #220) | 5.10 |
+| 17/09 12:39 | **1003 aplicada** (Management API, histórico `20260917153917`) e **imagem `-foto` no ar** (`docker service update`, stop-first, 17 s; 4 conexões `open`, migrations em dia). Primeira amostra "depois": carimbo 12:41:49 → gravada 12:41:49 (0,0 min). Última "antes" com a 1003: celular 12:12:45 → 12:39:38 (26,9 min) | 5.10, 9.7 |
 | 17/09 10:00–12:30 | **Causa raiz do atraso, provada por três vias**: `profilePicture(received.key.remoteJid)` — a foto de perfil consultada pelo LID, que o WhatsApp não responde — esperada dentro do `concatMap` do `BaileysMessageProcessor`, com os 60 s de `defaultQueryTimeoutMs` da Baileys 7. 1 msg/min por conexão. Patch na imagem (`-foto`), migration 1003 (instrumento) e protocolo de verificação | 5.10, 9.7 |
 
 ### 0.3 O que NÃO foi feito (e é o próximo trabalho)
@@ -500,10 +501,11 @@ para o timeout) e o `develop` do upstream em 17/09 tem a linha idêntica.
 - **Imagem construída** pelo workflow a partir da branch (run 35240353664,
   17/09/2026 12:29 BRT):
   `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto@sha256:a7d56788ba127de3c7f759e57addf97bb54c71fedb1e955ab60d672753924126`.
-  Rollout (autorização do operador): `docker service update --image <essa
-  referência> evolution_evolution` — só o volume `evolution_instances` está
-  montado, sem `--mount-rm`. Antes: aplicar a 1003 e anotar a hora exata do
-  update (é a fronteira antes × depois das consultas A e B).
+  **EM PRODUÇÃO desde 17/09/2026 12:39:37 BRT** (`docker service update
+  --image …`, autorizado pelo operador; stop-first, 17 s de troca, `prisma
+  migrate deploy` sem pendência, HTTP ON às 12:39:54, as 4 conexões `open`).
+  A 1003 foi aplicada 20 s antes (12:39:17, histórico `20260917153917`).
+  **Fronteira antes × depois das consultas A e B: `2026-09-17 15:39:37+00`.**
 - Amostra do "antes" às 12:35 BRT, com o pente da doc já corrigido: cbcrm com
   **1777–2368 s** (30–39 min) de atraso, intervalo de 60 s em 18 das 25 linhas.
 
@@ -532,21 +534,23 @@ select (m.created_at at time zone 'America/Sao_Paulo')::date as dia,
   from messages m
   join cb_channels c on c.id = m.channel_id
  where m.gravada_em is not null
+   and c.kind = 'evolution'                      -- só a fila testada: Meta e Instagram não passam por ela
    and (m.sender_type = 'customer' or m.from_device = true)
    and m.created_at >= now() - interval '14 days'
- group by 1, 2
+ group by 1, c.id, c.label                       -- pelo id: o rótulo não é único (Codex, PR #221)
  order by 1, 2;
 
 -- B) O "pente": intervalos entre gravações consecutivas da MESMA conexão.
 --    Antes, 60 s era a moda (38× e 22× em 3 h). Depois, a distribuição deve
 --    seguir as chegadas: sem pico em 60 — e sem pico em 5 (o teto novo).
 with g as (
-  select c.label as conexao,
+  select c.id as canal_id, c.label as conexao,
          (m.gravada_em at time zone 'America/Sao_Paulo')::date as dia,
          round(extract(epoch from m.gravada_em - lag(m.gravada_em) over (partition by m.channel_id order by m.gravada_em))) as intervalo_s
     from messages m
     join cb_channels c on c.id = m.channel_id
    where m.gravada_em is not null
+     and c.kind = 'evolution'
      and (m.sender_type = 'customer' or m.from_device = true)
      and m.created_at >= now() - interval '14 days')
 select dia, conexao,
@@ -556,7 +560,7 @@ select dia, conexao,
        round(100.0 * count(*) filter (where intervalo_s between 58 and 63) / count(*)) as pct_em_60s
   from g
  where intervalo_s is not null
- group by 1, 2
+ group by 1, canal_id, conexao
  order by 1, 2;
 ```
 
@@ -1155,6 +1159,12 @@ CPU; API em 23 ms), zero timeout de webhook, zero queda. `POST
 | JIDs em 48 h (banco da Evolution) | cbcrm 999 LID × 17 telefone; comercial 321 × 0; jurídico 25 × 1; trabalhista **681 × 0**; `remoteJidAlt` telefone em 100% (1011/1011, 314/314, 25/25, 687/687) |
 | Settings das 4 instâncias | `readMessages`/`readStatus`/`groupsIgnore`/`syncFullHistory`/`alwaysOnline` = false (nenhum outro `await` de rede no handler) |
 | Ambiente | sem rate limit; `CONFIG_SESSION_PHONE_VERSION=2.3000.1025193442`; RabbitMQ/SQS/S3 off; Chatwoot global on, por instância off |
+
+**Rollout (17/09 12:39:37 BRT).** 1003 às 12:39:17; `docker service update` às
+12:39:37; HTTP ON às 12:39:54; 4 conexões `open` em < 1 min; API 200. Com a
+1003: a última mensagem gravada pelo processo ANTIGO (12:39:38) era do celular,
+carimbo 12:12:45 — **26,9 min** de atraso; a primeira do processo novo, carimbo
+12:41:49 → gravada 12:41:49 — **0,0 min**.
 
 O fonte foi recuperado do `dist/main.js.map` da imagem em produção
 (`sourcesContent`, 198 arquivos). O logger `BaileysMessageProcessor` está

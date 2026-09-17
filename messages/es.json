@@ -472,7 +472,11 @@
       "resultTags": "{count} etiqueta asignada",
       "resultTags_plural": "{count} etiquetas asignadas",
       "resultSkipped": "{count} omitidos",
+      "resultInvalidPhone": "{count} teléfono no válido",
+      "resultInvalidPhone_plural": "{count} teléfonos no válidos",
       "resultFailed": "{count} con error",
+      "failedRowsHeading": "Filas con error",
+      "unknownReason": "Error desconocido",
       "willBeCreated": "{name} (se creará al importar)",
       "columns": {
         "phone": "Teléfono",
@@ -494,6 +498,8 @@
       "toastTagsSkipped": "Etiquetas desconocidas omitidas (créalas primero en Configuración): {sample}{more}",
       "toastSkipped": "{count} duplicado omitido",
       "toastSkipped_plural": "{count} duplicados omitidos",
+      "toastInvalidPhone": "{count} contacto no tenía un número de teléfono utilizable",
+      "toastInvalidPhone_plural": "{count} contactos no tenían un número de teléfono utilizable",
       "toastFailed": "{count} contacto no se pudo importar",
       "toastFailed_plural": "{count} contactos no se pudieron importar",
       "toastError": "Error en la importación"

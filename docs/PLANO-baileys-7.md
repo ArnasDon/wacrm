@@ -525,9 +525,9 @@ banco preenche, nenhuma linha de código muda, as antigas ficam NULL. Aplicar
 **antes** do rollout, para o "antes" ser medido com a mesma régua do "depois".
 
 **Protocolo de verificação (rodar ≥ 3 dias inteiros depois do rollout).**
-Escopo: TODAS as conexões, TODAS as mensagens que passaram pela fila de entrada
-(do cliente e do celular pareado — 3.150 + 2.799 em 7 dias, ~850/dia), dia a
-dia, antes × depois. As duas consultas rodam no Supabase (`execute_sql`):
+Escopo: as 4 conexões Evolution, TODAS as mensagens 1:1 que passaram pela fila
+de entrada (do cliente e do celular pareado — 3.150 + 2.799 em 7 dias, ~850/dia;
+grupo fica fora, como na 1002), dia a dia, antes × depois. As duas consultas rodam no Supabase (`execute_sql`):
 
 ```sql
 -- A) Atraso de entrega por conexão e por dia (BRT): gravada_em − created_at.
@@ -541,8 +541,10 @@ select (m.created_at at time zone 'America/Sao_Paulo')::date as dia,
        round(100.0 * count(*) filter (where m.gravada_em - m.created_at > interval '5 min') / count(*)) as pct_acima_5min
   from messages m
   join cb_channels c on c.id = m.channel_id
+  join conversations v on v.id = m.conversation_id
  where m.gravada_em is not null
    and c.kind = 'evolution'                      -- só a fila testada: Meta e Instagram não passam por ela
+   and v.group_id is null                        -- grupo fora: com dois números no mesmo grupo, o channel_id é o do webhook que chegou PRIMEIRO (Codex, PR #221; a mesma regra da 1002)
    and (m.sender_type = 'customer' or m.from_device = true)
    and m.created_at >= now() - interval '14 days'
  group by 1, c.id, c.label                       -- pelo id: o rótulo não é único (Codex, PR #221)
@@ -557,8 +559,10 @@ with g as (
          round(extract(epoch from m.gravada_em - lag(m.gravada_em) over (partition by m.channel_id order by m.gravada_em))) as intervalo_s
     from messages m
     join cb_channels c on c.id = m.channel_id
+    join conversations v on v.id = m.conversation_id
    where m.gravada_em is not null
      and c.kind = 'evolution'
+     and v.group_id is null
      and (m.sender_type = 'customer' or m.from_device = true)
      and m.created_at >= now() - interval '14 days')
 select dia, conexao,

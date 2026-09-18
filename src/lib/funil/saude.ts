@@ -1,11 +1,14 @@
 import { type Classificacao, type Degrau, DEGRAUS } from "./degraus";
-import { type ResumoDoPeriodo, resumoDoPeriodo } from "./coorte";
+import type { ResumoDoPeriodo } from "./coorte";
 import { type MesDoHistorico, mesesAnteriores } from "./periodo";
+import { type ModoDeContagem, resumoNoModo } from "./por-periodo";
 import type { FatosDoNegocio } from "./trajetoria";
 
 /**
- * A vista de Saúde: doze COORTES MENSAIS (pelo mês da entrada no funil) e a
- * escala de cor do mapa de calor.
+ * A vista de Saúde: doze MESES e a escala de cor do mapa de calor. No modo
+ * "por período" (o padrão desde 18/09/2026) cada mês mostra o que ACONTECEU
+ * nele; no modo "por mês de entrada" cada mês é uma COORTE (quem entrou nele,
+ * e o que fez até hoje). Ver `por-periodo.ts`.
  *
  * Regra 11 do plano: coorte recente ainda está em andamento (a tela marca),
  * e coorte PEQUENA fica apagada — taxa sobre 2 leads é ruído, e a referência
@@ -25,18 +28,31 @@ export interface CoorteMensal extends MesDoHistorico {
   pequena: boolean;
 }
 
+/**
+ * `modo` é OBRIGATÓRIO de propósito (18/09/2026): o padrão das telas passou a
+ * ser a contagem por período, e um parâmetro opcional deixaria um chamador
+ * novo cair na coorte sem ninguém ter escolhido.
+ *
+ * ⚠️ `emAberto` só existe na COORTE: lá o mês ainda muda enquanto houver lead
+ * sem desfecho (a taxa de agosto sobe quando um lead de agosto fecha em
+ * outubro). Por período o mês já passado é final — o contrato de outubro
+ * conta em outubro —, então a marca "N em aberto" afirmaria uma incerteza
+ * que não existe. Fica zero, e quem não fechou ainda é o mês corrente, que a
+ * tela diz na nota.
+ */
 export function coortesMensais(
   fatos: readonly FatosDoNegocio[],
   classificacao: Classificacao,
   meses: number,
   agora: Date,
+  modo: ModoDeContagem,
 ): CoorteMensal[] {
   return mesesAnteriores(agora, meses).map((mes) => {
-    const resumo = resumoDoPeriodo(fatos, classificacao, { desde: mes.desde, ate: mes.ate }, agora);
+    const resumo = resumoNoModo(modo, fatos, classificacao, { desde: mes.desde, ate: mes.ate }, agora);
     return {
       ...mes,
       resumo,
-      emAberto: resumo.semAvanco + resumo.emAndamento,
+      emAberto: modo === "entrada" ? resumo.semAvanco + resumo.emAndamento : 0,
       pequena: coortePequena(resumo.entradas),
     };
   });

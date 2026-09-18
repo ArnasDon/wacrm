@@ -36,6 +36,9 @@
 | **3** | **Saúde**: conversão por degrau nos últimos 12 meses (linhas) e mapa de calor | ✅ **feita** (2026-09-04) | nenhuma | [#122](https://github.com/leonardocabralb/CB-CRM/pull/122) |
 | **4** | **Meta Ads em Integrações**: conexão com a conta de anúncios (token cifrado), campanhas → funil, gasto diário por campanha puxado pelo agendador → custo por lead, CAC e custo dos perdidos no Desempenho | ✅ **feita** (2026-09-04) — falta o operador **conectar** (token) e rodar `docker stack deploy` na VPS | `976_cb_meta_ads` **aplicada** (04/09) | [#123](https://github.com/leonardocabralb/CB-CRM/pull/123) |
 | **5** | **Depois, cada um por decisão própria**: captura automática do anúncio de origem (fica barata depois da Fase 4) · backfill de lista de outro CRM (plano próprio) | 🔭 futuro | — | — |
+| **6** | **Contagem POR PERÍODO como padrão** (o que aconteceu no período), com "por mês de entrada" (a coorte) sob demanda — Desempenho e Saúde | ✅ **feita** (2026-09-18) | nenhuma | (este PR) |
+| **7** | **Ciclo de vendas** no Desempenho: Entrada → Contrato, Reunião → Contrato, Proposta → Contrato (mediana, média, n) | 🔜 próxima | nenhuma | — |
+| **8** | **Reuniões por dia e horário** na Saúde (mapa dia da semana × hora; cruzar com No Show / Proposta / qualquer etapa; taxa por horário), com a fonte no log do Calendly + o campo do contato, e o **cancelamento** do Calendly passando a ser recebido | 🔜 depois da 7 | uma (cancelamento) | — |
 
 **Decisões travadas com o operador (2026-09-03):**
 
@@ -58,6 +61,36 @@
 - O filtro "só alto valor" **fica de fora**.
 - **Investimento começa direto pela API da Meta**, integrada na aba de
   Integrações (Configurações → Integrações), sem lançamento manual.
+
+**Decisões travadas com o operador em 2026-09-18** (as Fases 6–8):
+
+- **O padrão passa a ser "por período"**: quem olha setembro vê os 5
+  contratos fechados em setembro, mesmo que as 10 reuniões tenham sido em
+  agosto. A contagem por coorte ("por mês de entrada") continua, sob demanda,
+  num seletor ao lado do período — é ela que responde "dos que entraram,
+  quantos converteram", com nenhuma taxa acima de 100%.
+- **As duas regras de contagem ficam ESCRITAS e PINADAS por teste**
+  (`por-periodo.test.ts`): (1) o mesmo lead que bate duas vezes em "Reunião
+  Agendada" conta UMA vez; (2) sair de Reunião para Contrato não tira o lead
+  de Reunião — e ele conta em Proposta mesmo sem ter passado por ela.
+- **Taxa acima de 100% no modo por período é MOSTRADA como é**, com a nota
+  na tela (é razão de fluxo: contratos do mês ÷ reuniões do mês). Nunca
+  cortar em 100%.
+- **Ciclo "Reunião → Contrato" conta da ENTRADA na etapa de reunião** (não
+  da data real da reunião no Calendly): vale para qualquer funil e reunião
+  marcada à mão, e a diferença medida é de 1,1 dia em mediana (máx. 4,9).
+- **O cancelamento do Calendly entra na Fase 8**: hoje reunião cancelada
+  conta como marcada e dilui a taxa de no-show por horário. Exige clicar
+  "Reassinar" no cartão do Calendly depois do deploy; cancelamentos antigos
+  não são recuperáveis.
+- **Dados anteriores à operação real: DEIXAR DILUIR.** O CRM só passa a ser
+  operado de verdade na semana de 21/09; os ~700 cards parados nas etapas de
+  entrada e os movimentos feitos com atraso na arrumação ficam como estão.
+  Uma "data de início da medição" por funil e o "informar a data real ao
+  mover" foram oferecidos e RECUSADOS. ⚠️ A migração da Kommo
+  (`docs/PLANO-migracao-kommo.md`, decisão 9) pode tornar isso irrelevante:
+  a Kommo guarda o histórico inteiro de etapas, e a trilha reconstruída com
+  as datas reais faz o funil dos últimos 15 meses sair verdadeiro.
 
 **Decisões ainda abertas:** ver a seção "Decisões a tomar" — cada uma tem a
 recomendação escrita; o plano segue com a recomendação como hipótese até o
@@ -387,6 +420,38 @@ vista carrega o próprio dado quando ativa, como a de Automações já faz; ao
 voltar ao Quadro depois de mexer na Lista, `refreshDeals()`.
 
 ---
+
+### 3.5 A contagem POR PERÍODO (Fase 6, 18/09/2026)
+
+`src/lib/funil/por-periodo.ts` (puro, com teste), sobre a regra 7 da
+trajetória (`FatosDoNegocio.alcancouEm`: a data em que o negócio alcançou
+cada degrau pela PRIMEIRA vez). Devolve o MESMO `ResumoDoPeriodo` da coorte,
+então as telas não bifurcam — só escolhem o modo (`resumoNoModo`), lembrado
+por dispositivo em `localStorage` (`wacrm:pipelines:funil:modo`; parse, nunca
+`as`). O que muda entre os modos, campo a campo:
+
+| Campo | Por período (padrão) | Por mês de entrada (coorte) |
+| --- | --- | --- |
+| Leads (`entradas`) | entrou no funil no período | idem |
+| Degrau k (`porDegrau`) | alcançou k pela 1ª vez no período (`alcancouEm[k]`) | da coorte, alcançou k até hoje (`degrauMaximo`) |
+| Taxas e transições | razão de FLUXO do período — pode passar de 100% | conversão da coorte — nunca passa de 100% |
+| Perdas por etapa | está em perda hoje E entrou nela no período (`naEtapaDesde`) | da coorte, está em perda hoje |
+| Dinheiro (valor, ticket, CAC) | alcançou contrato no período E continua fechado | da coorte, continua fechado |
+| Sem avanço / em andamento / fora do funil | foto de hoje de quem ENTROU no período | idem (é a mesma foto) |
+| "N em aberto" (Saúde) | não existe: mês passado é final | coorte com lead sem desfecho |
+| Coorte pequena (Saúde) | por entradas do mês, como na coorte | por entradas |
+
+Armadilhas que a implementação carrega:
+
+- A RPC devolve a trajetória INTEIRA de todo negócio com evento no intervalo
+  carregado; "primeira vez" só é primeira olhando a história toda. Paginar
+  ou truncar o trajeto ao período faria a reentrada contar de novo.
+- Os gráficos de taxa não podem travar o eixo em 100 (`eixoDasTaxas`,
+  `apresentacao.ts`): a barra era cortada na borda e o ponto da linha saía do
+  gráfico, sem aviso.
+- `coortesMensais` exige o `modo` — um chamador novo não pode cair na coorte
+  sem escolher.
+- Eventos `retroativo` contam na data que carregam (a carga da Kommo).
 
 ## 4. Decisões a tomar (com recomendação)
 
@@ -929,6 +994,112 @@ e #122 e só foram corrigidos aqui):
   do CRM.
 
 ---
+
+### ✅ Fase 6 — Contagem por período como padrão (concluída em 2026-09-18)
+
+**Objetivo.** Responder "quantos contratos fechei ESTE mês" com os contratos
+deste mês, e não com os da coorte que entrou neste mês. Pedido do operador
+em 18/09, com a contagem por coorte mantida sob demanda.
+
+**Entregue.** `src/lib/funil/por-periodo.ts` (+ teste com os cenários do
+operador), `FatosDoNegocio.alcancouEm` (`trajetoria.ts`), `funilDeContagens`
+e `emAbertoDe` extraídos de `coorte.ts` (a coorte não mudou de resultado —
+os testes dela passam intactos), `coortesMensais(…, modo)` em `saude.ts`,
+`eixoDasTaxas` em `apresentacao.ts` e nos dois gráficos, o hook
+`use-modo-de-contagem.ts`, o `SeletorDeModo` em `seletor-de-modo.tsx`, e as
+notas de modo no Desempenho e na Saúde. Chaves novas em `Pipelines.funil.modo`
+e nas duas abas, nos dois dicionários.
+
+**Medido em produção antes (18/09).** Nenhuma etapa dos 4 funis tem `degrau`
+gravado: as abas continuam em "configure" até o operador mapear. Os quatro
+funis têm trilha para 100% dos cards (295/295, 393/393, 21/21, 215/215), mas
+só 14 mudanças de etapa no total — a operação real começa na semana de
+21/09. Há 1 contato com dois cards no mesmo funil (um automático em "Contato
+Avulso", um manual em "Proposta Realizada"): conta como dois leads, e é o
+único caminho de inflar a contagem (o formulário manual de negócio não
+confere se o contato já tem card; router, automação e API v1 conferem).
+
+### Fase 7 — Ciclo de vendas (próxima)
+
+Três medidas no Desempenho, sem migration, a partir da trilha: **Entrada →
+Contrato**, **Reunião → Contrato** (da entrada na etapa de reunião — decisão
+de 18/09) e **Proposta → Contrato**. Cada uma com mediana, média e o `n`.
+
+- Usa as entradas REAIS nas etapas (a primeira entrada numa etapa DA CLASSE),
+  nunca o alcance monotônico: o card que pulou a Proposta fica FORA de
+  "Proposta → Contrato" — contaria 0 dias e puxaria a média para baixo.
+- Atribuição ao período pelo modo vigente: por período, os contratos
+  alcançados no período; por coorte, os da coorte que fecharam.
+- "Primeira mensagem" ≈ entrada no funil: medido em 18/09, 671 de 691 cards
+  (97%) nascem até 1 h da primeira mensagem; nos 3% restantes (contato
+  antigo que virou lead depois) a entrada no funil é a data mais honesta.
+  Os três campos `data_do_primeiro_contato` / `data_da_proposta` /
+  `data_de_fechamento_do_contrato` criados pelo operador estão com 0
+  preenchidos e NÃO são fonte de nada aqui.
+- Hoje a base tem 1 card que chegou a Contrato: a medida nasce vazia e enche
+  com a operação (ou com a carga da Kommo, se vier com histórico).
+
+### Fase 8 — Reuniões por dia e horário, na Saúde (depois da 7)
+
+Mapa dia da semana × hora (fuso de Brasília, `formatToParts`), pelo horário
+PARA O QUAL a reunião foi marcada, com um seletor "cruzar com a etapa" (No
+Show, Proposta Realizada, qualquer etapa do funil) que mostra contagem e
+taxa por horário — no-shows ÷ reuniões do horário é a "probabilidade de
+no-show" pedida. Preferência do seletor por dispositivo (`localStorage`).
+
+- ⚠️ **Fonte: o LOG do Calendly (`cb_calendly_eventos`), não o campo
+  "Data e Hora Reunião".** Medido em 18/09: log = 50 agendamentos; campo =
+  40 (só o último por contato — os 10 reagendados/repetidos sumiram, e o
+  no-show que reagenda é justamente esse caso). Tudo o que está no campo veio
+  do Calendly (0 exceções).
+- ⚠️ **Mais o campo, para quem NÃO tem agendamento no log** — é o caso do
+  lead migrado da Kommo, que traz a data da reunião no campo e nunca passou
+  pelo webhook. Vira um agendamento sintético, "sempre em vigor".
+- **Remarcação**: reunião remarcada ANTES de acontecer sai da conta (nunca
+  aconteceu); remarcada DEPOIS (o no-show que reagenda) fica. A régua é o
+  `recebido_em` da nova contra o `inicio` da antiga.
+- **Atribuição**: a entrada do card na etapa é ligada ao agendamento que
+  estava em vigor naquele instante (o último recebido antes da entrada) —
+  não à data em que o operador moveu. Por isso a arrumação com atraso não
+  estraga estes mapas; vai-e-volta na etapa (mover para No Show e devolver)
+  é o que estraga.
+- **Rota nova só para admin** (`cb_calendly_eventos` é fechada ao
+  navegador), devolvendo só contato + horários — sem nome, e-mail ou
+  telefone. Paginada.
+- **Cancelamento (decisão de 18/09)**: assinar `invitee.canceled`
+  (`EVENTOS_ASSINADOS`), gravar `cancelado_em` no evento (migration pequena)
+  e excluir a reunião cancelada dos mapas. Depois do deploy o operador clica
+  "Reassinar" no cartão do Calendly. Também é o que tira o Calendly do
+  "fora do bloco da agenda" do Meu dia.
+- Hoje a base tem 1 entrada em No Show e 1 em Proposta: o mapa de
+  agendamentos nasce com os 50; os de desfecho enchem com a operação.
+
+### Contrato com a migração da Kommo (`docs/PLANO-migracao-kommo.md`)
+
+O que o funil ESPERA da carga — para a sessão da migração levar em conta:
+
+1. **As datas saem de `cb_lead_events.occurred_at`**, sem filtrar `origin`:
+   evento `retroativo` conta na data que carregar. Carga que deixe o gatilho
+   da 912 carimbar `now()` despeja todo lead importado no dia da importação
+   — nos dois modos, na Saúde e no ciclo (trava 6 daquele plano).
+2. **Mínimo por lead**: `deal_created` na data real de criação (a etapa de
+   entrada) e a entrada na etapa ATUAL na data real (o `closed_at` do ganho/
+   perdido, ou o último `lead_status_changed`). Com só isso, os degraus
+   intermediários herdam a data do degrau que os alcançou (o contrato "conta"
+   em Reunião e Proposta na data do contrato) e o ciclo "Reunião → Contrato"
+   simplesmente não inclui esse lead.
+3. **Ideal (decisão 9 = histórico real)**: um evento por mudança de etapa da
+   Kommo, com o de-para valendo para as etapas por onde o lead PASSOU. Aí o
+   funil dos 15 meses sai verdadeiro, inclusive reuniões por mês.
+4. **Card já existente aqui (decisão 11)**: os eventos retroativos convivem
+   com os que a trilha já tem (o `deal_created` do router, o Calendly →
+   "Reunião Agendada"); entradas duplicadas na mesma etapa contam uma vez
+   (`alcancouEm` é a primeira).
+5. **Um card por contato**: lead com mais de um card no mesmo funil conta
+   como dois leads. Os 118 contatos com mais de um lead na Kommo (trava 5)
+   precisam de decisão lá.
+6. **Data da reunião**: se vier no campo `data_e_hora_reuniao`, a Fase 8 a
+   lê como agendamento sintético (item acima).
 
 ## 6. Fora do escopo (dito para não voltar por acidente)
 

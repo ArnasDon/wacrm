@@ -1,6 +1,7 @@
 import {
   type Classificacao,
   type ClasseDaEtapa,
+  DEGRAUS,
   indiceDoDegrau,
 } from "./degraus";
 
@@ -28,6 +29,10 @@ import {
  *     contrato fechado sumiria da estatística comercial ao ser transferido.
  *     A RPC devolve o negócio porque ele tem evento com `to_pipeline_id` =
  *     este funil; aqui, `noFunil = false` e `transferidoPara` diz para onde.
+ *  7. (18/09/2026) Cada degrau tem uma DATA: a primeira vez em que o negócio
+ *     entrou numa etapa de degrau ≥ k (`alcancouEm`). É o que a contagem
+ *     "por período" usa (`por-periodo.ts`): os 5 contratos fechados este mês
+ *     aparecem neste mês, mesmo que os leads tenham entrado no mês passado.
  *
  * ⚠️ O mapeamento é lido HOJE, sobre a história inteira — remapear uma etapa
  * reescreve o passado de propósito (o operador configura depois e vê o
@@ -225,6 +230,20 @@ export interface FatosDoNegocio {
   entradaEm: Date | null;
   /** índice em DEGRAUS (regra 3); nulo = nunca entrou num degrau positivo. */
   degrauMaximo: number | null;
+  /**
+   * Regra 7 (contagem POR PERÍODO, 18/09/2026): o instante em que o negócio
+   * alcançou cada degrau PELA PRIMEIRA VEZ — a primeira entrada numa etapa
+   * de degrau ≥ k. Um item por posição de `DEGRAUS`; nulo = nunca alcançou.
+   *
+   * ⚠️ É a versão DATADA da regra 3, e herda as duas garantias que o
+   * operador pediu por escrito: (1) cada negócio tem UMA data por degrau,
+   * então entrar duas vezes em "Reunião Agendada" — no mesmo mês ou em
+   * outro — conta uma vez só, na primeira; (2) quem pula de Reunião para
+   * Contrato alcança Proposta NA DATA DO CONTRATO. Monotônica por
+   * construção: `alcancouEm[k] <= alcancouEm[k+1]` sempre que os dois
+   * existem.
+   */
+  alcancouEm: (Date | null)[];
   /** etapa atual NESTE funil (a última que teve aqui, se transferido). */
   etapaAtual: string | null;
   classeAtual: ClasseDaEtapa | null;
@@ -258,6 +277,7 @@ export function fatosDoNegocio(
 
   let entradaEm: Date | null = null;
   let degrauMaximo: number | null = null;
+  const alcancouEm: (Date | null)[] = DEGRAUS.map(() => null);
   for (const passo of aqui) {
     const classe = passo.etapa ? classificacao.classeDaEtapa.get(passo.etapa) : undefined;
     if (!classe) continue;
@@ -265,6 +285,12 @@ export function fatosDoNegocio(
     if (classe !== "perda") {
       const indice = indiceDoDegrau(classe);
       if (degrauMaximo === null || indice > degrauMaximo) degrauMaximo = indice;
+      // Os passos estão em ordem cronológica: a primeira vez que um degrau
+      // ≥ k aparece é a data do degrau k — e de todo degrau abaixo dele que
+      // ainda não tinha data (o pulo de etapa).
+      for (let k = 0; k <= indice; k++) {
+        if (alcancouEm[k] === null) alcancouEm[k] = new Date(passo.em);
+      }
     }
   }
 
@@ -287,6 +313,7 @@ export function fatosDoNegocio(
     transferidoPara: noFunil ? null : linha.pipeline_id,
     entradaEm,
     degrauMaximo,
+    alcancouEm,
     etapaAtual,
     classeAtual,
     naEtapaDesde: naEtapaDesde ?? (linha.created_at ? new Date(linha.created_at) : null),

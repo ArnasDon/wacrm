@@ -362,3 +362,103 @@ describe("created_at nulo não derruba a carga", () => {
     expect(lerLinha({ deal_id: "d1", pipeline_id: "p1", stage_id: "s1", value: "muito" })).toBeNull();
   });
 });
+
+describe("alcancouEm — a data de cada degrau (regra 7, contagem por período)", () => {
+  const datas = (l: LinhaDeTrajetoria) =>
+    fatosDoNegocio(l, FUNIL, CLASSIFICACAO).alcancouEm.map((d) => d?.toISOString() ?? null);
+
+  it("um item por degrau; nunca alcançado = nulo", () => {
+    expect(datas(linha({ deal_id: "a" }))).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("o PULO dá ao degrau pulado a data de quem o alcançou", () => {
+    const l = linha({
+      deal_id: "b",
+      stage_id: "proposta",
+      trajeto: [
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("proposta", "2026-09-05T12:00:00+00:00"),
+      ],
+    });
+    expect(datas(l)).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      null,
+    ]);
+  });
+
+  it("REENTRAR na etapa não muda a data: vale a primeira vez", () => {
+    const l = linha({
+      deal_id: "c",
+      stage_id: "reuniao",
+      trajeto: [
+        passo("avulso", "2026-08-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("reuniao", "2026-08-10T12:00:00+00:00"),
+        passo("desq", "2026-08-20T12:00:00+00:00"),
+        passo("reuniao", "2026-09-15T12:00:00+00:00"),
+      ],
+    });
+    expect(datas(l)[2]).toBe("2026-08-10T12:00:00.000Z");
+  });
+
+  it("perda e etapa sem degrau não dão data a ninguém; entrar direto em perda deixa tudo nulo", () => {
+    const l = linha({
+      deal_id: "d",
+      stage_id: "desq",
+      trajeto: [passo("desq", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    expect(datas(l)).toEqual([null, null, null, null, null]);
+    const estacionado = linha({
+      deal_id: "e",
+      stage_id: "parking",
+      trajeto: [passo("parking", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    expect(datas(estacionado)).toEqual([null, null, null, null, null]);
+  });
+
+  it("só contam os passos DESTE funil; trajeto fora de ordem é ordenado antes", () => {
+    const l = linha({
+      deal_id: "f",
+      stage_id: "mql1",
+      trajeto: [
+        passo("mql1", "2026-09-09T12:00:00+00:00"),
+        passo("contrato", "2026-09-02T12:00:00+00:00", OUTRO),
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+      ],
+    });
+    expect(datas(l)).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      "2026-09-09T12:00:00.000Z",
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("monotônica: a data do degrau k nunca é posterior à do degrau k+1", () => {
+    const l = linha({
+      deal_id: "g",
+      stage_id: "contrato",
+      trajeto: [
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("contrato", "2026-09-03T12:00:00+00:00"),
+        passo("mql1", "2026-09-04T12:00:00+00:00"),
+        passo("contrato", "2026-09-08T12:00:00+00:00"),
+      ],
+    });
+    const d = fatosDoNegocio(l, FUNIL, CLASSIFICACAO).alcancouEm.map((x) => x?.getTime() ?? null);
+    for (let k = 0; k + 1 < d.length; k++) {
+      if (d[k] !== null && d[k + 1] !== null) expect(d[k]!).toBeLessThanOrEqual(d[k + 1]!);
+    }
+    // voltar para MQL depois do contrato não "desalcança" nem redata nada
+    expect(d[1]).toBe(new Date("2026-09-03T12:00:00Z").getTime());
+  });
+});

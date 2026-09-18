@@ -1305,7 +1305,9 @@
           "deLeads": "de {n} leads",
           "contratosFechados": "{n} contrato(s) fechado(s)",
           "semFechados": "nenhum contrato fechado",
-          "porContrato": "por contrato"
+          "porContrato": "por contrato",
+          "noPeriodo": "alcançados no período",
+          "contratosSobreLeads": "contratos ÷ leads do período"
         },
         "funil": {
           "titulo": "Funil de eficiência",
@@ -1313,7 +1315,8 @@
           "dasEntradas": "{pct} das entradas",
           "doAnterior": "{pct} de {degrau}",
           "semEtapa": "Sem etapa correspondente",
-          "etapas": "Etapas: {nomes}"
+          "etapas": "Etapas: {nomes}",
+          "notaPorPeriodo": "Cada degrau conta quem o alcançou pela primeira vez no período. As taxas comparam o que aconteceu no mesmo período e podem passar de 100% quando os contratos vêm de leads de meses anteriores — a conversão lead a lead está em “Por mês de entrada”."
         },
         "negativos": {
           "titulo": "Negativos e em aberto",
@@ -1325,7 +1328,9 @@
           "emAndamento": "Em andamento",
           "emAndamentoDesc": "{n} em {degrau}",
           "foraDoFunil": "Fora do funil",
-          "foraDoFunilDesc": "Movidos para etapa sem degrau"
+          "foraDoFunilDesc": "Movidos para etapa sem degrau",
+          "notaPorPeriodo": "Perdas que aconteceram no período (só quem continua perdido). Sem avanço, em andamento e fora do funil são a situação de hoje dos leads que entraram no período.",
+          "dasEntradas": "{pct} das entradas do período"
         },
         "taxas": {
           "titulo": "Taxas de conversão entre degraus",
@@ -1357,7 +1362,9 @@
           "colCampanha": "Campanha",
           "colGasto": "Gasto no período",
           "semGasto": "Nenhum gasto neste período nas campanhas deste funil."
-        }
+        },
+        "periodoPorAtividade": "Conta o que aconteceu no período (cada lead uma vez por degrau)",
+        "semAtividade": "Nada aconteceu neste funil no período: nenhum lead entrou, avançou ou foi perdido."
       },
       "saude": {
         "periodo": "Últimos {meses} meses, pelo mês de entrada no funil",
@@ -1376,7 +1383,9 @@
           "emAndamento": "{n, plural, one {# lead ainda sem desfecho} other {# leads ainda sem desfecho}} — a taxa deste mês ainda pode mudar",
           "emAberto": "{n} em aberto",
           "pequena": "menos de {minimo} leads: taxa pouco confiável"
-        }
+        },
+        "periodoPorAtividade": "Últimos {meses} meses, pelo mês em que cada avanço aconteceu",
+        "fontePorPeriodo": "Etapas pelo mapeamento do funil {funil}. Cada mês mostra o que aconteceu nele; mês encerrado não muda mais, e o mês corrente ainda está em curso. A taxa pode passar de 100% quando os contratos do mês vêm de leads anteriores."
       },
       "lista": {
         "colunas": {
@@ -1412,6 +1421,13 @@
         "editar": "Editar negócio",
         "ordenarPor": "Ordenar por {coluna}",
         "toastEtapaFalhou": "Não foi possível mover o negócio. A lista foi recarregada."
+      },
+      "modo": {
+        "rotulo": "Contar",
+        "periodo": "Por período",
+        "entrada": "Por mês de entrada",
+        "dicaPeriodo": "Conta o que aconteceu no período, venha o lead de quando vier: o contrato fechado este mês aparece neste mês. Cada lead conta uma vez por degrau, na primeira vez que o alcançou.",
+        "dicaEntrada": "Conta os leads que entraram no período e tudo o que eles fizeram até hoje (coorte). Nenhuma taxa passa de 100%."
       }
     },
     "analytics": {

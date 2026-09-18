@@ -3442,6 +3442,38 @@ Meta Ads) leem daqui. O que morde código novo:
   o ponto da linha caía no preto padrão do SVG, sem erro nenhum. Medido no
   CSS compilado — `.fill-sky-500` tinha ZERO ocorrências (Codex, PR #123).
   Mesma armadilha da `PALETA_DE_CANAIS`.
+- ⚠️⚠️ **DOIS MODOS DE CONTAGEM desde 18/09/2026, e o padrão é POR PERÍODO**
+  (`src/lib/funil/por-periodo.ts`, puro e testado; `use-modo-de-contagem.ts`;
+  `seletor-de-modo.tsx`). Pedido do operador: "se eu tive 10 reuniões
+  marcadas no mês passado e 5 contratos fechados esse mês, quando eu olhar
+  para as métricas desse mês eu preciso ver os 5 contratos". A coorte
+  ("por mês de entrada") continua, sob demanda. O que morde código novo:
+  - **Por período conta a PRIMEIRA vez que o negócio alcançou o degrau**
+    (`FatosDoNegocio.alcancouEm`, regra 7 da trajetória): bater duas vezes
+    em "Reunião Agendada" conta uma vez, e o degrau pulado ganha a data de
+    quem o alcançou. Perda é datada pela ÚLTIMA entrada na etapa de perda
+    em que o negócio ESTÁ (`naEtapaDesde`); quem voltou da perda não é perda
+    em mês nenhum. Dinheiro = contrato alcançado no período que continua
+    fechado. Sem avanço/em andamento/fora do funil são a foto dos que
+    ENTRARAM no período — iguais nos dois modos. Tabela campo a campo na
+    seção 3.5 do plano; pinos em `por-periodo.test.ts`.
+  - ⚠️⚠️ **A taxa por período é razão de FLUXO e PODE PASSAR DE 100%**
+    (5 contratos de reuniões de agosto ÷ 2 reuniões de setembro). Decisão do
+    operador: mostrar como é, com a nota na tela — nunca `Math.min(1, …)`.
+    Por isso os dois gráficos de taxa deixaram de travar o eixo em 100
+    (`eixoDasTaxas`): travado, a barra era cortada na borda e o ponto da
+    linha saía do gráfico sem aviso.
+  - ⚠️ **"Primeira vez" exige a trajetória INTEIRA**, que a RPC já devolve
+    para todo negócio com evento no intervalo. Truncar o trajeto ao período
+    faria a reentrada contar de novo.
+  - `coortesMensais` exige o `modo` (obrigatório de propósito); `emAberto` só
+    existe na coorte — por período o mês passado é final.
+  - `funilDeContagens` e `emAbertoDe` (`coorte.ts`) são a montagem ÚNICA das
+    taxas e dos baldes, usada pelos dois modos: cópia divergiria e a tela
+    leria taxas calculadas de jeitos diferentes conforme o seletor.
+  - A origem do evento NÃO é filtrada: evento `retroativo` (a carga da Kommo)
+    conta na data que carregar. É o contrato escrito no plano ("Contrato com a
+    migração da Kommo").
 - **META ADS (Fase 4, 976): o CRM só LÊ, e o token é o único segredo.**
   `src/lib/meta-ads/`: `janela-de-sync.ts`, `atribuicao.ts` e `cartao.ts`
   são puros e testados; `cliente.ts` faz I/O (os testes cobrem os ajudantes

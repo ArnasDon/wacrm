@@ -1312,7 +1312,9 @@
           "deLeads": "of {n} leads",
           "contratosFechados": "{n} contract(s) closed",
           "semFechados": "no contract closed",
-          "porContrato": "per contract"
+          "porContrato": "per contract",
+          "noPeriodo": "reached in the period",
+          "contratosSobreLeads": "contracts ÷ leads in the period"
         },
         "funil": {
           "titulo": "Efficiency funnel",
@@ -1320,7 +1322,8 @@
           "dasEntradas": "{pct} of entries",
           "doAnterior": "{pct} of {degrau}",
           "semEtapa": "No matching stage",
-          "etapas": "Stages: {nomes}"
+          "etapas": "Stages: {nomes}",
+          "notaPorPeriodo": "Each stage counts who reached it for the first time in the period. Rates compare what happened in the same period and can go above 100% when contracts come from leads of earlier months — lead-by-lead conversion is under “By entry month”."
         },
         "negativos": {
           "titulo": "Negatives and open pipeline",
@@ -1332,7 +1335,9 @@
           "emAndamento": "In progress",
           "emAndamentoDesc": "{n} at {degrau}",
           "foraDoFunil": "Outside the funnel",
-          "foraDoFunilDesc": "Moved to a stage without a step"
+          "foraDoFunilDesc": "Moved to a stage without a step",
+          "notaPorPeriodo": "Losses that happened in the period (only those still lost). No progress, in progress and outside the funnel show where the leads that entered in the period are today.",
+          "dasEntradas": "{pct} of the period's entries"
         },
         "taxas": {
           "titulo": "Conversion rates between steps",
@@ -1364,7 +1369,9 @@
           "colCampanha": "Campaign",
           "colGasto": "Spend in the period",
           "semGasto": "No spend in this period on this pipeline's campaigns."
-        }
+        },
+        "periodoPorAtividade": "Counts what happened in the period (each lead once per stage)",
+        "semAtividade": "Nothing happened in this pipeline in the period: no lead entered, advanced or was lost."
       },
       "saude": {
         "periodo": "Last {meses} months, by funnel entry month",
@@ -1383,7 +1390,9 @@
           "emAndamento": "{n, plural, one {# lead still open} other {# leads still open}} — this month's rate can still change",
           "emAberto": "{n} open",
           "pequena": "fewer than {minimo} leads: rate not reliable"
-        }
+        },
+        "periodoPorAtividade": "Last {meses} months, by the month each step happened",
+        "fontePorPeriodo": "Stages follow the mapping of the {funil} pipeline. Each month shows what happened in it; a closed month no longer changes, and the current month is still running. A rate can go above 100% when the month's contracts come from earlier leads."
       },
       "lista": {
         "colunas": {
@@ -1419,6 +1428,13 @@
         "editar": "Edit deal",
         "ordenarPor": "Sort by {coluna}",
         "toastEtapaFalhou": "Could not move the deal. The list was reloaded."
+      },
+      "modo": {
+        "rotulo": "Count",
+        "periodo": "By period",
+        "entrada": "By entry month",
+        "dicaPeriodo": "Counts what happened in the period, whenever the lead came in: a contract closed this month shows up this month. Each lead counts once per stage, the first time it reached it.",
+        "dicaEntrada": "Counts the leads that entered in the period and everything they have done since (cohort). No rate goes above 100%."
       }
     },
     "analytics": {

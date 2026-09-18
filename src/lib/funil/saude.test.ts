@@ -72,7 +72,7 @@ const LINHAS: LinhaDeTrajetoria[] = [
 const FATOS = LINHAS.map((l) => fatosDoNegocio(l, FUNIL, CLASSIFICACAO));
 
 describe("coortesMensais", () => {
-  const meses = coortesMensais(FATOS, CLASSIFICACAO, 3, AGORA);
+  const meses = coortesMensais(FATOS, CLASSIFICACAO, 3, AGORA, "entrada");
 
   it("uma coorte por mês, do mais antigo ao atual", () => {
     expect(meses.map((m) => m.chave)).toEqual(["2026-07", "2026-08", "2026-09"]);
@@ -91,9 +91,49 @@ describe("coortesMensais", () => {
   });
 
   it("mês sem coorte fica com zero, não some", () => {
-    const seis = coortesMensais(FATOS, CLASSIFICACAO, 6, AGORA);
+    const seis = coortesMensais(FATOS, CLASSIFICACAO, 6, AGORA, "entrada");
     expect(seis.map((m) => m.resumo.entradas)).toEqual([0, 0, 0, 1, 5, 2]);
     expect(seis[0].resumo.transicoes[0].taxa).toBeNull();
+  });
+});
+
+describe("coortesMensais por PERÍODO (o padrão desde 18/09/2026)", () => {
+  // O lead de JULHO que fecha contrato em SETEMBRO: por período o contrato é
+  // de setembro; por mês de entrada, é da coorte de julho.
+  const LINHAS_TARDIAS: LinhaDeTrajetoria[] = [
+    ...LINHAS,
+    negocio("jul-2", [["lead", d(6, 15)], ["mql", d(7, 10)], ["contrato", d(8, 2)]]),
+  ];
+  const fatos = LINHAS_TARDIAS.map((l) => fatosDoNegocio(l, FUNIL, CLASSIFICACAO));
+  const porPeriodo = coortesMensais(fatos, CLASSIFICACAO, 3, AGORA, "periodo");
+  const porEntrada = coortesMensais(fatos, CLASSIFICACAO, 3, AGORA, "entrada");
+  const contratos = (meses: typeof porPeriodo) => meses.map((m) => m.resumo.fechados);
+  const mqls = (meses: typeof porPeriodo) => meses.map((m) => m.resumo.porDegrau[1].alcancaram);
+
+  it("cada avanço conta no mês em que ACONTECEU; as entradas não mudam de mês", () => {
+    expect(porPeriodo.map((m) => m.resumo.entradas)).toEqual([2, 5, 2]);
+    expect(mqls(porPeriodo)).toEqual([1, 3, 0]); // o MQL de jul-2 foi em agosto
+    expect(contratos(porPeriodo)).toEqual([0, 1, 1]); // e o contrato dele, em setembro
+  });
+
+  it("o mesmo dado por mês de entrada devolve o contrato à coorte de julho", () => {
+    expect(mqls(porEntrada)).toEqual([2, 2, 0]);
+    expect(contratos(porEntrada)).toEqual([1, 1, 0]);
+  });
+
+  it("'em aberto' é marca da COORTE: por período o mês passado já é final", () => {
+    expect(porPeriodo.map((m) => m.emAberto)).toEqual([0, 0, 0]);
+    expect(porEntrada.map((m) => m.emAberto)).toEqual([1, 4, 2]);
+  });
+
+  it("as taxas do mês são razão de FLUXO: o que aconteceu nele sobre o que aconteceu nele", () => {
+    // setembro: 1 contrato (de julho) sobre 0 MQLs novos → sem denominador;
+    // lead → contrato: 1 contrato sobre 2 entradas = 0,5.
+    const setembro = porPeriodo[2].resumo;
+    expect(setembro.transicoes[1].taxa).toBeNull();
+    expect(setembro.global?.taxa).toBe(0.5);
+    // agosto: 3 MQLs sobre 5 entradas, 1 contrato sobre 3 MQLs
+    expect(porPeriodo[1].resumo.transicoes.map((t) => t.taxa)).toEqual([0.6, 1 / 3]);
   });
 });
 
@@ -109,7 +149,7 @@ describe("linhas do mapa de saúde", () => {
   });
 
   it("uma taxa por mês e a escala calculada SEM as coortes pequenas", () => {
-    const meses = coortesMensais(FATOS, CLASSIFICACAO, 3, AGORA);
+    const meses = coortesMensais(FATOS, CLASSIFICACAO, 3, AGORA, "entrada");
     const linhas = linhasDoMapa(meses, CLASSIFICACAO);
     const leadMql = linhas[0];
     // julho (1 lead, 100%) e setembro (2 leads, 0%) são pequenas: só agosto (0,4) entra no min/max

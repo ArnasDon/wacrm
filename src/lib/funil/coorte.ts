@@ -108,6 +108,42 @@ function transicao(de: Degrau, para: Degrau, alcancaram: number[]): Transicao {
   return { de, para, numerador, denominador, taxa: denominador > 0 ? numerador / denominador : null };
 }
 
+/**
+ * Das contagens por degrau ao funil de eficiência: a taxa de cada degrau
+ * sobre o mapeado anterior (o primeiro, sobre as entradas), as transições
+ * encadeadas e a global. É a MESMA montagem nos dois modos de contagem — o
+ * que muda entre eles é de onde saem `alcancaram` e `entradas` (a coorte,
+ * aqui; o que aconteceu no período, em `por-periodo.ts`). Duas cópias
+ * divergiriam na primeira mudança, e a tela leria taxas calculadas de jeitos
+ * diferentes conforme o seletor.
+ */
+export function funilDeContagens(
+  alcancaram: readonly number[],
+  entradas: number,
+  classificacao: Classificacao,
+): Pick<ResumoDoPeriodo, "porDegrau" | "transicoes" | "global"> {
+  const contagens = [...alcancaram];
+  const comEtapa = DEGRAUS.map((d) => classificacao.porClasse[d].length > 0);
+
+  let denominadorAnterior = entradas;
+  const porDegrau: ContagemDoDegrau[] = DEGRAUS.map((degrau, k) => {
+    if (!comEtapa[k]) {
+      return { degrau, alcancaram: contagens[k], comEtapa: false, taxaDoAnterior: null };
+    }
+    const taxaDoAnterior = denominadorAnterior > 0 ? contagens[k] / denominadorAnterior : null;
+    denominadorAnterior = contagens[k];
+    return { degrau, alcancaram: contagens[k], comEtapa: true, taxaDoAnterior };
+  });
+
+  const mapeados = DEGRAUS.filter((_, k) => comEtapa[k]);
+  const transicoes = mapeados.slice(1).map((para, i) => transicao(mapeados[i], para, contagens));
+  const global =
+    comEtapa[indiceDoDegrau("lead")] && comEtapa[indiceDoDegrau("contrato")]
+      ? transicao("lead", "contrato", contagens)
+      : null;
+  return { porDegrau, transicoes, global };
+}
+
 export function resumoDoPeriodo(
   fatos: readonly FatosDoNegocio[],
   classificacao: Classificacao,
@@ -120,36 +156,13 @@ export function resumoDoPeriodo(
   const alcancaram = DEGRAUS.map(
     (_, k) => coorte.filter((f) => f.degrauMaximo !== null && f.degrauMaximo >= k).length,
   );
-  const comEtapa = DEGRAUS.map((d) => classificacao.porClasse[d].length > 0);
-
-  let denominadorAnterior = entradas;
-  const porDegrau: ContagemDoDegrau[] = DEGRAUS.map((degrau, k) => {
-    if (!comEtapa[k]) {
-      return { degrau, alcancaram: alcancaram[k], comEtapa: false, taxaDoAnterior: null };
-    }
-    const taxaDoAnterior = denominadorAnterior > 0 ? alcancaram[k] / denominadorAnterior : null;
-    denominadorAnterior = alcancaram[k];
-    return { degrau, alcancaram: alcancaram[k], comEtapa: true, taxaDoAnterior };
-  });
-
-  const mapeados = DEGRAUS.filter((_, k) => comEtapa[k]);
-  const transicoes = mapeados.slice(1).map((para, i) => transicao(mapeados[i], para, alcancaram));
-  const global =
-    comEtapa[indiceDoDegrau("lead")] && comEtapa[indiceDoDegrau("contrato")]
-      ? transicao("lead", "contrato", alcancaram)
-      : null;
+  const { porDegrau, transicoes, global } = funilDeContagens(alcancaram, entradas, classificacao);
 
   const perdasPorEtapa: PerdaPorEtapa[] = classificacao.porClasse.perda.map((etapa) => ({
     etapaId: etapa.id,
     nome: etapa.name,
     n: coorte.filter((f) => f.situacao === "perdido" && f.etapaAtual === etapa.id).length,
   }));
-
-  const emAndamentoPorDegrau: Partial<Record<Degrau, number>> = {};
-  for (const f of coorte) {
-    if (f.situacao !== "andamento" || !f.classeAtual || f.classeAtual === "perda") continue;
-    emAndamentoPorDegrau[f.classeAtual] = (emAndamentoPorDegrau[f.classeAtual] ?? 0) + 1;
-  }
 
   // Duas contas diferentes de propósito: o DEGRAU conta quem alcançou
   // contrato (é o funil de eficiência); o DINHEIRO conta o que está fechado.
@@ -164,10 +177,7 @@ export function resumoDoPeriodo(
     global,
     perdasPorEtapa,
     perdidos: coorte.filter((f) => f.situacao === "perdido").length,
-    semAvanco: coorte.filter((f) => f.situacao === "sem_avanco").length,
-    emAndamento: coorte.filter((f) => f.situacao === "andamento").length,
-    emAndamentoPorDegrau,
-    foraDoFunil: coorte.filter((f) => f.situacao === "fora_do_funil").length,
+    ...emAbertoDe(coorte),
     fechados,
     fechadosAgora: emPe.length,
     valorFechado,
@@ -176,7 +186,28 @@ export function resumoDoPeriodo(
   };
 }
 
-function entradasPorDia(
+/**
+ * Onde estão HOJE os leads que entraram no período e ainda não têm desfecho
+ * — sem avanço, em andamento (por degrau atual) e fora do funil. Vale igual
+ * nos dois modos de contagem: é a FOTO dos entrantes, não um fluxo datado.
+ */
+export function emAbertoDe(
+  entrantes: readonly FatosDoNegocio[],
+): Pick<ResumoDoPeriodo, "semAvanco" | "emAndamento" | "emAndamentoPorDegrau" | "foraDoFunil"> {
+  const emAndamentoPorDegrau: Partial<Record<Degrau, number>> = {};
+  for (const f of entrantes) {
+    if (f.situacao !== "andamento" || !f.classeAtual || f.classeAtual === "perda") continue;
+    emAndamentoPorDegrau[f.classeAtual] = (emAndamentoPorDegrau[f.classeAtual] ?? 0) + 1;
+  }
+  return {
+    semAvanco: entrantes.filter((f) => f.situacao === "sem_avanco").length,
+    emAndamento: entrantes.filter((f) => f.situacao === "andamento").length,
+    emAndamentoPorDegrau,
+    foraDoFunil: entrantes.filter((f) => f.situacao === "fora_do_funil").length,
+  };
+}
+
+export function entradasPorDia(
   coorte: readonly FatosDoNegocio[],
   intervalo: Intervalo,
   agora: Date,

@@ -10,6 +10,8 @@ import {
   YAxis,
 } from "recharts";
 
+import { eixoDasTaxas } from "@/lib/funil/apresentacao";
+
 /**
  * Uma série por transição do funil. ⚠️ A cor vem em TRÊS classes literais
  * (traço, ponto, bloco da legenda), nunca numa só derivada por `replace`: o
@@ -43,6 +45,9 @@ export function GraficoDeConversao({
     for (const s of series) linha[s.chave] = s.valores[i];
     return linha;
   });
+  // 0–100 enquanto couber; por período a taxa pode passar de 100%, e com o
+  // domínio cravado o ponto saía do gráfico (ver `eixoDasTaxas`).
+  const eixo = eixoDasTaxas(series.flatMap((s) => s.valores));
 
   return (
     <div className="flex flex-col gap-2">
@@ -60,8 +65,8 @@ export function GraficoDeConversao({
             <CartesianGrid strokeDasharray="3 3" vertical={false} className="stroke-border" stroke="" />
             <XAxis dataKey="mes" tick={{ fill: "currentColor", fontSize: 11 }} tickLine={false} axisLine={false} />
             <YAxis
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
+              domain={[0, eixo.teto]}
+              ticks={eixo.ticks}
               tickFormatter={(v: number) => `${v}%`}
               tick={{ fill: "currentColor", fontSize: 11 }}
               tickLine={false}

@@ -123,6 +123,30 @@ describe('esperasQueOMovimentoEncerra', () => {
     expect(esperasQueOMovimentoEncerra(lista, movimento, null)).toEqual([]);
   });
 
+  it('⚠️⚠️ o MESMO lead com VÁRIAS automações estacionadas: o movimento só encerra quem pediu', () => {
+    // Pergunta do operador (18/09/2026): um lead pode ter mais de uma
+    // automação rodando — várias na mesma etapa, e outras que NÃO foram
+    // marcadas para parar. Medido de ponta a ponta com quatro ao mesmo tempo;
+    // este é o pino do recorte.
+    const r = esperasQueOMovimentoEncerra(
+      [
+        espera('presa-1', 'deal-1', presa()),
+        espera('presa-2', 'deal-1', presa()),
+        espera('mesma-etapa-sem-caixa', 'deal-1', {
+          trigger_type: 'deal_stage_changed',
+          trigger_config: { stage_ids: [NO_SHOW], parar_ao_sair: false },
+        }),
+        espera('calendly', 'deal-1', { trigger_type: 'calendly_booking', trigger_config: {} }),
+        espera('manual-com-parar-se-responder', null, { trigger_type: 'manual', trigger_config: {} }),
+      ],
+      movimento,
+      'deal-1'
+    );
+    // As DUAS presas caem (as duas pediram); as outras três seguem — inclusive
+    // a da MESMA etapa que o operador deixou sem a caixa.
+    expect(r.map((e) => e.id)).toEqual(['presa-1', 'presa-2']);
+  });
+
   it('o embed do PostgREST pode vir como LISTA', () => {
     const r = esperasQueOMovimentoEncerra([espera('p1', 'deal-1', [presa()])], movimento, null);
     expect(r.map((e) => e.id)).toEqual(['p1']);

@@ -807,6 +807,16 @@ código novo:
   execução está `running`, e o cancelamento só alcança `pending` —, o que vier
   depois de uma espera, não. A ajuda da caixa manda deixar o "Mover card" por
   último.
+- ⚠️⚠️ **VÁRIAS automações no mesmo lead: cada uma cai SÓ pelo que ELA
+  pediu** (pergunta do operador, medida em 18/09 com quatro estacionadas ao
+  mesmo tempo: presa à etapa, mesma etapa SEM a caixa, espera marcada "parar se
+  responder", espera comum). Cliente responde → só a marcada; card sai da
+  etapa → só a presa (a da MESMA etapa sem a caixa segue); "Parar" da aba → só
+  a automação clicada. É o que o recorte garante: a resposta age por MARCA +
+  `log_id` (a execução), a etapa por `etapasQuePrendem` de CADA automação, e o
+  botão por `automation_id`. ⚠️ Consequência: automação acionada por OUTRA
+  ("Acionar automação") é execução própria, com registro próprio — parar a mãe
+  não para a filha; quem encadeia marca as esperas em cada uma.
 - ⚠️ **As mesmas cercas e o mesmo registro dos outros cancelamentos**: conta +
   CONTATO + `pending`; `cancelled`, desfecho intocado, anotação `skipped` em
   `steps_executed` ("interrompida: o card saiu da etapa…"). O cancelamento do

@@ -1,7 +1,7 @@
 "use client"
 
 import { use, useEffect, useState } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { useTranslations } from "next-intl"
 
@@ -11,6 +11,7 @@ import {
   type BuilderInitial,
   type ServerStepNode,
 } from "@/components/automations/automation-builder"
+import { origemDoConstrutor, voltaDoConstrutor } from "@/lib/pipelines/url"
 import type { AutomationTriggerType } from "@/types"
 
 export default function EditAutomationPage({
@@ -21,6 +22,10 @@ export default function EditAutomationPage({
   const { id } = use(params)
   const router = useRouter()
   const t = useTranslations("Automations.edit")
+  const tBuilder = useTranslations("Automations.builder")
+  // A mesma volta do construtor: quem abriu pela grade do funil volta para
+  // ela também quando a automação não carrega.
+  const origem = origemDoConstrutor(useSearchParams())
   const [initial, setInitial] = useState<BuilderInitial | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -61,10 +66,10 @@ export default function EditAutomationPage({
       <div className="flex h-screen flex-col items-center justify-center gap-3">
         <p className="text-sm text-red-400">{error}</p>
         <button
-          onClick={() => router.push("/automations")}
+          onClick={() => router.push(voltaDoConstrutor(origem))}
           className="text-sm text-primary hover:text-primary/80"
         >
-          {t("back")}
+          {origem ? tBuilder("backToPipeline") : t("back")}
         </button>
       </div>
     )

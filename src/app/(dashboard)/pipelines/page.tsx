@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type {
   Automation,
@@ -64,6 +65,7 @@ import {
   type CamposDoCard,
 } from "@/lib/pipelines/campos-do-card";
 import { gravarRetorno, lerRetorno } from "@/lib/pipelines/retorno";
+import { lerUrlDoFunil } from "@/lib/pipelines/url";
 import { CamposDoCardPopover } from "@/components/pipelines/campos-do-card-popover";
 
 // Pipeline creation is admin-class (settings-tier write under
@@ -85,9 +87,28 @@ const SPEC_DEFAULT_STAGES = [
   { name: "Won", color: "#22c55e", position: 4 }, // green
 ];
 
+// `useSearchParams` (a volta do construtor de automações pede aba e funil
+// pela URL) pede um Suspense em página estática — o mesmo embrulho do inbox
+// e de `/automations/new`. Medido em 18/09/2026: HOJE o build passaria sem
+// ele, porque a casca do painel só monta a página depois do login, no
+// navegador; o embrulho segura o dia em que ela renderizar no servidor.
 export default function PipelinesPage() {
+  return (
+    <Suspense fallback={null}>
+      <PipelinesPageInner />
+    </Suspense>
+  );
+}
+
+function PipelinesPageInner() {
   const t = useTranslations("Pipelines.page");
   const tAuto = useTranslations("Pipelines.automacoes");
+  const searchParams = useSearchParams();
+  // Porta de ENTRADA (`?vista=` e `?funil=`), lida UMA vez na montagem: é por
+  // ela que o voltar do construtor de automações devolve o operador à grade
+  // do funil de onde saiu. Trocar de aba ou de funil depois não reescreve a
+  // URL (ver `lib/pipelines/url.ts`).
+  const [pedidoDaUrl] = useState(() => lerUrlDoFunil(searchParams));
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
@@ -165,7 +186,9 @@ export default function PipelinesPage() {
   /** "leads" = o Kanban de sempre; "automacoes" = a grade estilo Kommo. */
   // "leads" é o QUADRO (o id ficou pelo diff mínimo; o rótulo virou "Quadro"
   // quando a lista chegou, na Fase 1 do funil comercial).
-  const [vistaEscolhida, setVista] = useState<VistaDoFunil>(VISTA_PADRAO);
+  const [vistaEscolhida, setVista] = useState<VistaDoFunil>(
+    pedidoDaUrl.vista ?? VISTA_PADRAO,
+  );
   // ⚠️ A aba vigente é resolvida no RENDER, nunca guardada por efeito: a
   // lente de simulação de perfil troca o papel com a tela montada, e uma aba
   // proibida que sobrevivesse até o efeito rodar mostraria o Desempenho da
@@ -441,9 +464,13 @@ export default function PipelinesPage() {
         // que o perfil o alcance (o retorno é conferido contra `visiveis`).
         // O registro tem prazo curto (ver retorno.ts) — vencido, cai no
         // primeiro da lista como sempre.
+        // O funil pedido pela URL (a volta do construtor de automações) vem
+        // antes: é o pedido mais novo, e não expira como o retorno.
         const doRetorno = lerRetorno()?.pipelineId;
+        const daUrl = pedidoDaUrl.funil;
         setSelectedPipelineId((prev) => {
           if (prev && visiveis.some((p) => p.id === prev)) return prev;
+          if (daUrl && visiveis.some((p) => p.id === daUrl)) return daUrl;
           if (doRetorno && visiveis.some((p) => p.id === doRetorno))
             return doRetorno;
           return visiveis[0].id;
@@ -456,7 +483,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline, acesso]);
+  }, [loadPipelines, seedDefaultPipeline, acesso, pedidoDaUrl]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
@@ -932,6 +959,7 @@ export default function PipelinesPage() {
         />
       ) : vista === "automacoes" && podeAutomacoes ? (
         <AutomationsBoard
+          pipelineId={selectedPipelineId}
           stages={stages}
           automations={automations}
           steps={steps}

@@ -6,6 +6,7 @@ import {
   ArrowLeft,
   Check,
   Loader2,
+  Minus,
   X,
   ChevronDown,
   ChevronRight,
@@ -235,16 +236,32 @@ function StatusBadge({
 
 function StepRow({ result }: { result: AutomationLogStepResult }) {
   const ok = result.status === "success"
+  // ⚠️ `skipped` NÃO é falha: é a condição que desviou para um ramo vazio
+  // (985) e a espera interrompida porque o cliente respondeu (18/09/2026).
+  // Até aqui tudo que não era `success` ganhava o ✗ vermelho, e "a automação
+  // parou porque o cliente respondeu" — que é a regra funcionando — era lido
+  // como erro. Classes literais, como o Tailwind exige.
+  const pulado = result.status === "skipped"
   return (
     <li className="flex items-start gap-2 text-xs">
       <span
         className={cn(
           "mt-0.5 flex h-4 w-4 flex-shrink-0 items-center justify-center rounded-full",
-          ok ? "bg-primary/20 text-primary" : "bg-red-500/20 text-red-400",
+          ok
+            ? "bg-primary/20 text-primary"
+            : pulado
+              ? "bg-muted text-muted-foreground"
+              : "bg-red-500/20 text-red-400",
         )}
         aria-hidden
       >
-        {ok ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+        {ok ? (
+          <Check className="h-3 w-3" />
+        ) : pulado ? (
+          <Minus className="h-3 w-3" />
+        ) : (
+          <X className="h-3 w-3" />
+        )}
       </span>
       <span className="text-muted-foreground">{result.step_type}</span>
       {result.detail && (

@@ -296,6 +296,10 @@ upstream sobrescrevê-los:
 | `src/components/pipelines/deal-form.tsx` | além do que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
+| `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
+| `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
+| `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
+| `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
@@ -648,6 +652,72 @@ tinha relação com ele. O que morde código novo:
   cron (~1 min no laço rápido).
 - ⚠️ **O estado da execução vira `partial`**, o mesmo do "Aguardar": é o que
   impede `fecharLog` de carimbar desfecho enquanto a retentativa não rodou.
+
+⚠️⚠️ **"Aguardar — parar se o cliente responder" (18/09/2026): a marca mora
+no `context` DA FILA, e só lá.** `src/lib/automations/parar-se-responder.ts`
+(puro + o cancelamento, com teste), a caixa no passo "Aguardar" do construtor,
+e DOIS pontos de chamada na ingestão. É o "Pausar: até a mensagem recebida /
+cronômetro" do Kommo, no tamanho menor: a saída da resposta leva a "parar".
+Pedido do operador com uma sequência de 10 mensagens de recuperação — o
+cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
+
+- ⚠️⚠️ **A invariante: a marca (`_parar_se_responder` = id do passo
+  "Aguardar") existe APENAS no contexto GRAVADO de uma espera estacionada,
+  nunca num contexto VIVO de execução.** O contexto é copiado de ponta a ponta
+  (a espera seguinte, a retentativa e o `run_automation` herdam
+  `args.context`), então são DUAS defesas: `contextoDaEspera` escreve a decisão
+  a CADA estacionamento (marca ou limpa), e `resumePendingExecution` passa o
+  contexto por `semMarcaDeResposta`. Sem a segunda, a marca vaza para a
+  RETENTATIVA — que reenfileira `args.context` cru, sem passar por
+  `contextoDaEspera` — e uma resposta nos 30 s da retentativa pararia a
+  sequência num ponto que ninguém marcou (medido por mutação: só o pino da
+  retentativa reprova). Por isso a chave NÃO entra no tipo `AutomationContext`.
+- ⚠️⚠️ **`cancelarEsperasPorResposta` roda ANTES do despacho de robôs e
+  automações, nos DOIS caminhos de ingestão** (`persistInboundMessage` da
+  Evolution e o webhook da Meta), sem olhar `flowConsumed`. Depois do despacho,
+  a mensagem cancelaria a espera da automação que ELA MESMA acabou de iniciar;
+  e o cliente respondeu mesmo quando um robô consumiu a resposta (era a fresta
+  do contorno com duas automações: "Nova mensagem recebida" é suprimido nesse
+  caso). Há pino estrutural com a ORDEM e DEFAULT-DENY de chamadores
+  (`parar-se-responder.chamadores.test.ts`): celular pareado
+  (`persistDeviceMessage`), grupo, Instagram e robô ficam de fora — "a
+  mensagem de QUEM para a sequência?" é decisão de produto, não conveniência.
+- ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
+  caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
+  a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
+- ⚠️ **As MESMAS cercas dos outros dois cancelamentos** (`stop_automation` e o
+  botão Parar): conta + CONTATO + `status = 'pending'`. Espera que o agendador
+  já reivindicou (`running`) não é alcançada — corrida de segundos, inerente.
+- ⚠️ **`cancelled`, e o desfecho do log NÃO é tocado** (precedente da 936),
+  mas a interrupção é ANOTADA em `steps_executed` (`wait` / `skipped` /
+  "interrompida: o cliente respondeu…"): aqui ninguém clicou em nada, e sem a
+  anotação a sequência sumiria sem dizer por quê. `sinaisDoHistorico` ignora
+  `wait`, então a anotação não muda desfecho nenhum. ⚠️ A execução
+  interrompida NÃO aparece no fio nem no "Já rodou" (não há desfecho para
+  ela — `concluida` mentiria, `barrada` também); narrá-la pede um 4º desfecho
+  (`interrompida`), com migration no CHECK da 985 e os consumidores — vale
+  para os TRÊS cancelamentos, e ficou de fora de propósito.
+- ⚠️ **Só o booleano `true` liga**, em TODOS os lugares (motor, grade,
+  construtor, validação): `"true"` e `1` chegam de JSONB e são truthy — a
+  caixa apareceria marcada numa tela e o motor a ignoraria.
+- ⚠️ **O filtro é por caminho JSON no PostgREST**
+  (`.not('context->>_parar_se_responder', 'is', null)`, com o RETURNING
+  `passo:context->>…`). O teste unitário usa banco falso que imita a forma
+  SUPOSTA — a lição do `storage.exists()` —, então a forma foi MEDIDA contra o
+  PostgREST real em 18/09 (espera marcada cancela, a de controle fica, conta
+  errada não alcança). Quem mexer no filtro mede de novo.
+- ⚠️ **O INSERT da espera agora é CONFERIDO** (o Supabase devolve `error`, não
+  lança): fila que recusa a linha vira passo `failed` + desfecho `falhou`, em
+  vez de "waiting…" para sempre sem ninguém para retomar. Era buraco do
+  upstream; a retentativa já conferia o dela.
+- **A chave do resumo muda** (`wait_<unidade>_ou_resposta`, em
+  `descrever-passo.ts`): a grade do funil e a linha do tempo da aba Automações
+  dizem "Aguardar 30 h ou até o cliente responder" sem código próprio. As
+  quatro variantes estão em `VARIANTES` do teste, que cobra os dois dicionários.
+- **A tela de registros da automação pinta `skipped` NEUTRO** (traço cinza):
+  até aqui tudo que não era `success` ganhava o ✗ vermelho, e "parou porque o
+  cliente respondeu" — a regra funcionando — era lido como erro. Vale também
+  para a condição de ramo vazio da 985.
 
 ⚠️ **Desfecho da execução de automação (985): o fio NARRA o que a automação
 fez.** `automation_logs.desfecho` ('concluida'|'barrada'|'falhou') +

@@ -1355,6 +1355,17 @@ export interface WaitStepConfig {
    * coladas e dar folga a um webhook —, não para sincronizar nada.
    */
   unit: 'seconds' | 'minutes' | 'hours' | 'days';
+  /**
+   * Parar a automação PARA ESTE CONTATO se ele mandar qualquer mensagem
+   * enquanto esta espera estiver contando (18/09/2026) — o "Pausar: até a
+   * mensagem recebida / cronômetro" do Kommo, com a saída da resposta
+   * levando a "parar".
+   *
+   * ⚠️ Vale só DURANTE esta espera: resposta que chega numa espera sem a
+   * caixa marcada não para nada. Quem quer a sequência inteira sensível à
+   * resposta marca cada "Aguardar". Ver `automations/parar-se-responder.ts`.
+   */
+  parar_se_responder?: boolean;
 }
 
 export type ConditionSubject =

@@ -199,6 +199,16 @@ function validateOne(step: StepLike, path: string, issues: ValidationIssue[]): v
           message: 'wait unit must be seconds, minutes, hours, or days',
         })
       }
+      // ⚠️ Só booleano. O motor liga a opção apenas com `true` estrito, então
+      // um `"true"` gravado aqui seria uma caixa que a tela mostra marcada
+      // (truthy) e o motor ignora — a sequência seguiria depois da resposta
+      // do cliente com o operador achando que ela para.
+      if (c.parar_se_responder !== undefined && typeof c.parar_se_responder !== 'boolean') {
+        issues.push({
+          path: `${path}.parar_se_responder`,
+          message: 'wait parar_se_responder must be true or false',
+        })
+      }
       break
     case 'condition':
       if (!nonEmpty(c.subject)) {

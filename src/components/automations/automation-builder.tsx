@@ -1705,7 +1705,14 @@ function StepRenderer({
                 {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
-              <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                {previewFor(step)}
+                {/* Visível com o passo FECHADO: numa sequência de dez esperas,
+                    é assim que se confere de relance quais param na resposta. */}
+                {step.step_type === "wait" && step.step_config.parar_se_responder === true
+                  ? ` · ${t("config.pararSeResponderResumo")}`
+                  : ""}
+              </div>
             </div>
             <ChevronDown
               className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")}
@@ -2618,6 +2625,25 @@ function StepEditor({
               <option value="days">{t("config.units.days")}</option>
             </select>
           </FieldBlock>
+          {/* "Pausar: até a mensagem recebida / cronômetro" do Kommo. Marcada,
+              a resposta do cliente DURANTE esta espera cancela o resto da
+              automação para ele (`parar-se-responder.ts`). ⚠️ `=== true`, como
+              o motor: valor truthy que não é booleano não pode aparecer
+              marcado aqui e ser ignorado lá. */}
+          <label className="col-span-2 flex items-start gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={cfg.parar_se_responder === true}
+              onChange={(e) => set({ parar_se_responder: e.target.checked })}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span>
+              {t("config.pararSeResponderLabel")}
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                {t("config.pararSeResponderHelp")}
+              </span>
+            </span>
+          </label>
         </div>
       )
     case "condition":

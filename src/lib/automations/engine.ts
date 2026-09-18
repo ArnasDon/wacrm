@@ -75,6 +75,7 @@ import {
   decidirRetentativa,
   tentativasJaFeitas,
 } from './retentativa';
+import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
 import {
   desfechoDoEscopo,
   desfechoDoRetorno,
@@ -383,7 +384,12 @@ export async function resumePendingExecution(pending: {
     const retorno = await executeStepsFrom({
       automation: automation as Automation,
       contactId: pending.contact_id,
-      context: pending.context ?? {},
+      // ⚠️ A marca "parar se o cliente responder" pertence à espera que
+      // ACABOU, não à execução: sai do contexto antes de qualquer passo
+      // rodar. Sem isto ela viajaria para a retentativa, para o
+      // `run_automation` e para as esperas seguintes que o operador NÃO
+      // marcou. Ver `parar-se-responder.ts`.
+      context: semMarcaDeResposta(pending.context ?? {}),
       parentStepId: pending.parent_step_id,
       branch: pending.branch,
       startPosition: pending.next_step_position,
@@ -701,25 +707,50 @@ async function executeStepsFrom(
     if (step.step_type === 'wait') {
       const cfg = step.step_config as WaitStepConfig;
       const ms = waitMs(cfg);
-      await db.from('automation_pending_executions').insert({
-        automation_id: args.automation.id,
-        // Tenancy: account_id required NOT NULL post-017.
-        account_id: args.automation.account_id,
-        user_id: args.automation.user_id,
-        contact_id: args.contactId,
-        log_id: args.logId,
-        parent_step_id: args.parentStepId,
-        branch: args.branch,
-        next_step_position: step.position + 1,
-        context: args.context,
-        run_at: new Date(Date.now() + ms).toISOString(),
-        status: 'pending',
-      });
+      const { error: erroDaEspera } = await db
+        .from('automation_pending_executions')
+        .insert({
+          automation_id: args.automation.id,
+          // Tenancy: account_id required NOT NULL post-017.
+          account_id: args.automation.account_id,
+          user_id: args.automation.user_id,
+          contact_id: args.contactId,
+          log_id: args.logId,
+          parent_step_id: args.parentStepId,
+          branch: args.branch,
+          next_step_position: step.position + 1,
+          // ⚠️ A decisão "parar se o cliente responder" é escrita a CADA
+          // estacionamento — marca ou limpa —, nunca herdada: o contexto é
+          // copiado de ponta a ponta da execução, e a marca de uma espera
+          // vazaria para as seguintes. Ver `parar-se-responder.ts`.
+          context: contextoDaEspera(args.context, cfg, step.id),
+          run_at: new Date(Date.now() + ms).toISOString(),
+          status: 'pending',
+        });
+      // ⚠️ Fila que recusa a linha NÃO pode virar "esperando": ninguém
+      // retomaria, e a execução ficaria `partial` para sempre — invisível no
+      // fio e fora do bloco de correções do Meu dia. É a mesma régua da
+      // retentativa, logo abaixo; até 18/09/2026 este INSERT não era
+      // conferido (o Supabase devolve `error`, não lança).
+      if (erroDaEspera) {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'failed',
+          detail: `não consegui agendar a espera: ${erroDaEspera.message}`,
+        });
+        status = 'failed';
+        errorMessage = erroDaEspera.message;
+        break;
+      }
       results.push({
         step_id: step.id,
         step_type: step.step_type,
         status: 'success',
-        detail: `waiting ${cfg.amount} ${cfg.unit}`,
+        detail:
+          cfg.parar_se_responder === true
+            ? `waiting ${cfg.amount} ${cfg.unit} (para se o cliente responder)`
+            : `waiting ${cfg.amount} ${cfg.unit}`,
       });
       status = 'partial';
       await appendResults(args.logId, results, status, errorMessage);

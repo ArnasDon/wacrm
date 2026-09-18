@@ -16,6 +16,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import { cancelarEsperasPorResposta } from '@/lib/automations/parar-se-responder';
 import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
@@ -480,6 +481,17 @@ export async function persistInboundMessage(
 
   // ---- downstream engines (parity with the Meta webhook) ----
   const inboundText = m.text ?? '';
+
+  // O cliente respondeu: as esperas marcadas "parar se o cliente responder"
+  // deste contato são canceladas. ⚠️ ANTES do despacho de robôs e automações,
+  // e sem olhar `flowConsumed` — ver `parar-se-responder.ts` (depois, esta
+  // mesma mensagem cancelaria a espera da automação que ela acabou de
+  // iniciar). Nunca lança.
+  await cancelarEsperasPorResposta({
+    db,
+    accountId: m.accountId,
+    contactId: contact.id,
+  });
 
   const flowResult = await dispatchInboundToFlows({
     accountId: m.accountId,

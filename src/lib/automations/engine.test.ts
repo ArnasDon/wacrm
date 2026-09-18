@@ -34,8 +34,10 @@ const h = vi.hoisted(() => ({
     updateFiltros: [] as [string, string, unknown][][],
     historicoDoLog: [] as Array<Record<string, unknown>>,
     taskInserts: [] as Record<string, unknown>[],
-    /** O que o motor mandou para a fila — hoje só a retentativa (13/09). */
+    /** O que o motor mandou para a fila — o "Aguardar" e a retentativa. */
     esperasEnfileiradas: [] as Record<string, unknown>[],
+    /** Preenchido, a fila RECUSA o insert com esta mensagem (18/09). */
+    erroNaFila: null as string | null,
     notifInserts: [] as Record<string, unknown>[],
     // Valores de campo personalizado do contato, como o PostgREST os entrega
     // (com a definição embutida) — é por eles que a interpolação de
@@ -115,6 +117,11 @@ vi.mock('./admin-client', () => {
     }
     if (table === 'automation_pending_executions') {
       if (type === 'insert') {
+        // O Supabase DEVOLVE o erro, não lança — é por isso que um insert
+        // não conferido falha em silêncio.
+        if (state.erroNaFila) {
+          return { data: null, error: { message: state.erroNaFila } };
+        }
         state.esperasEnfileiradas.push(ops.payload as Record<string, unknown>);
         return { data: null, error: null };
       }
@@ -316,6 +323,7 @@ beforeEach(() => {
   h.state.notifInserts = [];
   h.state.customValues = [];
   h.state.esperasVivas = [];
+  h.state.erroNaFila = null;
   h.state.membros = [
     { user_id: 'agente-fallback', full_name: 'Agente Um', email: 'um@cb.test' },
   ];
@@ -2483,5 +2491,196 @@ describe('desfecho: os fechadores que não têm o histórico em mão', () => {
     await dispara();
 
     expect(desfechoGravado()?.desfecho).toBe('concluida');
+  });
+});
+
+// ============================================================
+// "Aguardar — parar se o cliente responder" (18/09/2026).
+//
+// O motor só tem DUAS responsabilidades aqui, e as duas são sobre a MARCA no
+// contexto da fila: escrevê-la (ou limpá-la) a cada estacionamento, e tirá-la
+// na retomada. Quem cancela é `parar-se-responder.ts`, na ingestão.
+// ============================================================
+describe('Aguardar — parar se o cliente responder', () => {
+  beforeEach(() => {
+    h.state.esperasEnfileiradas = [];
+  });
+
+  const esperaMarcada = (config: Record<string, unknown>) => ({
+    id: 'esp-1',
+    automation_id: 'a-desf',
+    step_type: 'wait',
+    position: 0,
+    parent_step_id: null,
+    step_config: { amount: 30, unit: 'hours', ...config },
+  });
+
+  const contextoNaFila = () =>
+    h.state.esperasEnfileiradas[0]?.context as Record<string, unknown>;
+
+  /**
+   * A marca como o agendador a devolve: dentro do JSONB da fila. Entra por
+   * espalhamento porque NÃO faz parte de `AutomationContext` — de propósito:
+   * ela nunca vive num contexto de execução, só no contexto GRAVADO de uma
+   * espera (é o que a retomada garante). Mesmo trato do `_tentativa`.
+   */
+  const marcaDaEsperaAnterior: Record<string, unknown> = {
+    _parar_se_responder: 'esp-1',
+  };
+
+  it('marcada: a fila guarda o ID DO PASSO na marca', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [esperaMarcada({ parar_se_responder: true })];
+
+    await dispara();
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    // O id, e não `true`: é o que deixa anotar QUAL espera foi interrompida.
+    expect(contextoNaFila()._parar_se_responder).toBe('esp-1');
+  });
+
+  it('sem a caixa marcada, nenhuma marca vai para a fila', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [esperaMarcada({})];
+
+    await dispara();
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    expect('_parar_se_responder' in contextoNaFila()).toBe(false);
+  });
+
+  it('⚠️ só o booleano true liga — "true" e 1 chegam de JSONB e são truthy', async () => {
+    for (const valor of ['true', 1]) {
+      h.state.esperasEnfileiradas = [];
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automacaoSimples()];
+      h.state.steps = [esperaMarcada({ parar_se_responder: valor })];
+
+      await dispara();
+
+      expect('_parar_se_responder' in contextoNaFila()).toBe(false);
+    }
+  });
+
+  it('⚠️⚠️ a espera seguinte, NÃO marcada, nasce limpa mesmo com a marca no contexto', async () => {
+    // O contexto é copiado de ponta a ponta da execução. Sem a limpeza, a
+    // marca da 1ª espera viajaria para a 2ª — que o operador NÃO marcou — e
+    // a resposta do cliente pararia a sequência num ponto que ele não
+    // escolheu. São DUAS defesas: a retomada limpa (pino abaixo, pela
+    // retentativa) e o estacionamento reescreve a decisão — este pino.
+    h.state.automations = [automacaoSimples('a-resume')];
+    h.state.steps = [
+      {
+        ...esperaMarcada({}),
+        id: 'esp-2',
+        automation_id: 'a-resume',
+        position: 1,
+      },
+    ];
+
+    await resumePendingExecution({
+      id: 'espera-em-curso',
+      automation_id: 'a-resume',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-resume',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { conversation_id: 'conv-1', ...marcaDaEsperaAnterior },
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    expect('_parar_se_responder' in contextoNaFila()).toBe(false);
+    // O resto do contexto atravessa intacto — é o que carrega canal e negócio.
+    expect(contextoNaFila().conversation_id).toBe('conv-1');
+  });
+
+  it('⚠️⚠️ a RETOMADA tira a marca: a retentativa do passo seguinte não a herda', async () => {
+    // A retentativa reenfileira copiando `args.context` cru — ela não passa
+    // por `contextoDaEspera`. Se a retomada não limpasse, a marca da espera
+    // que JÁ ACABOU iria junto, e uma resposta do cliente nos 30 s da
+    // retentativa cancelaria a sequência num ponto que ninguém marcou.
+    // (Medido por mutação: sem a limpeza na retomada, só este pino reprova.)
+    vi.mocked(engineSendText).mockReset();
+    vi.mocked(engineSendText).mockRejectedValueOnce(
+      new EvolutionApiError('Error: Connection Closed', 400)
+    );
+    h.state.automations = [automacaoSimples('a-resume')];
+    h.state.steps = [
+      {
+        ...passoAvisar({ phone: '5583988745316', text: 'oi' }),
+        automation_id: 'a-resume',
+        position: 1,
+        parent_step_id: null,
+      },
+    ];
+
+    await resumePendingExecution({
+      id: 'espera-em-curso',
+      automation_id: 'a-resume',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-resume',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { conversation_id: 'conv-1', ...marcaDaEsperaAnterior },
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    // É a retentativa (mesma posição, contador gravado), e sem a marca.
+    expect(h.state.esperasEnfileiradas[0].next_step_position).toBe(1);
+    expect(contextoNaFila()._tentativa).toEqual({ pos: 1, n: 1 });
+    expect('_parar_se_responder' in contextoNaFila()).toBe(false);
+    vi.mocked(engineSendText).mockReset();
+    vi.mocked(engineSendText).mockResolvedValue({ whatsapp_message_id: 'm1' });
+  });
+
+  it('a retomada seguida de OUTRA espera marcada grava a marca da NOVA', async () => {
+    h.state.automations = [automacaoSimples('a-resume')];
+    h.state.steps = [
+      {
+        ...esperaMarcada({ parar_se_responder: true }),
+        id: 'esp-2',
+        automation_id: 'a-resume',
+        position: 1,
+      },
+    ];
+
+    await resumePendingExecution({
+      id: 'espera-em-curso',
+      automation_id: 'a-resume',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-resume',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { ...marcaDaEsperaAnterior },
+    });
+
+    expect(contextoNaFila()._parar_se_responder).toBe('esp-2');
+  });
+
+  it('⚠️ fila que RECUSA a espera vira falha visível, não "esperando" para sempre', async () => {
+    // Até 18/09/2026 este INSERT não era conferido: recusado, o log dizia
+    // "waiting…", nada retomava, e a execução ficava `partial` eternamente —
+    // fora do fio e fora do bloco de correções do Meu dia.
+    h.state.erroNaFila = 'new row violates check constraint';
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [esperaMarcada({ parar_se_responder: true })];
+
+    await dispara();
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(0);
+    expect(statusGravado()).toBe('failed');
+    expect(desfechoGravado()?.desfecho).toBe('falhou');
   });
 });

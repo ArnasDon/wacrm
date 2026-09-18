@@ -1,0 +1,106 @@
+import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
+
+// ============================================================
+// QUEM cancela as esperas "parar se o cliente responder", e EM QUE ORDEM —
+// travado estruturalmente (o desenho de `reopen.chamadores.test.ts`).
+//
+// Teste de comportamento com mock não pega "esqueci de chamar num dos
+// transportes", e esse é o erro que este projeto já cometeu: o helper de
+// reabrir conversa existia e só o webhook da META o chamava — produção roda
+// Evolution, e a regra não valia para nenhuma mensagem real. Ler o fonte pega.
+// ============================================================
+
+const src = path.join(__dirname, '..', '..')
+
+/** Fonte sem comentários — os arquivos citam a função ao EXPLICAR decisões. */
+function fonte(relativo: string): string {
+  return fs
+    .readFileSync(path.join(src, relativo), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/\/\/.*$/gm, '')
+}
+
+const CHAMADA = 'cancelarEsperasPorResposta('
+
+describe('a resposta do cliente cancela a espera nos DOIS transportes', () => {
+  it('Evolution: dentro de persistInboundMessage, ANTES de robôs e automações', () => {
+    const arquivo = fonte('lib/whatsapp/inbound-store.ts')
+    const inicio = arquivo.indexOf('export async function persistInboundMessage')
+    expect(inicio).toBeGreaterThan(-1)
+    const corpo = arquivo.slice(inicio)
+
+    const cancela = corpo.indexOf(CHAMADA)
+    expect(cancela).toBeGreaterThan(-1)
+    // ⚠️ A ORDEM é a feature: depois do despacho, a mensagem cancelaria a
+    // espera da automação que ela mesma acabou de iniciar.
+    expect(cancela).toBeLessThan(corpo.indexOf('dispatchInboundToFlows('))
+    expect(cancela).toBeLessThan(corpo.indexOf('runAutomationsForTrigger('))
+  })
+
+  it('Meta: no webhook, ANTES de robôs e automações', () => {
+    const arquivo = fonte('app/api/whatsapp/webhook/route.ts')
+    const cancela = arquivo.indexOf(CHAMADA)
+    expect(cancela).toBeGreaterThan(-1)
+    expect(cancela).toBeLessThan(arquivo.indexOf('dispatchInboundToFlows('))
+    expect(cancela).toBeLessThan(arquivo.indexOf('runAutomationsForTrigger('))
+  })
+
+  it('⚠️ mensagem da EQUIPE pelo celular pareado não cancela nada', () => {
+    // A caixa diz "se o CLIENTE responder". O celular pareado é por onde o
+    // escritório mais fala (948 mensagens contra 8 pelo CRM): cancelar ali
+    // pararia a sequência a cada mensagem que o advogado manda.
+    const arquivo = fonte('lib/whatsapp/inbound-store.ts')
+    const inicio = arquivo.indexOf('export async function persistDeviceMessage')
+    const fim = arquivo.indexOf('export async function persistInboundMessage')
+    expect(inicio).toBeGreaterThan(-1)
+    expect(fim).toBeGreaterThan(inicio)
+    expect(arquivo.slice(inicio, fim)).not.toContain(CHAMADA)
+  })
+})
+
+describe('DEFAULT-DENY: ninguém mais chama', () => {
+  // Chamador novo entra aqui por decisão visível no diff. Um 3º call site é
+  // decisão de produto — "a mensagem de QUEM para a sequência?" —, não
+  // conveniência: grupo, Instagram, envio da equipe e robô ficam de fora.
+  const PERMITIDOS = new Set([
+    'app/api/whatsapp/webhook/route.ts',
+    'lib/whatsapp/inbound-store.ts',
+  ])
+
+  function arquivosDe(dir: string): string[] {
+    return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
+      const cheio = path.join(dir, e.name)
+      if (e.isDirectory()) return arquivosDe(cheio)
+      return /\.(ts|tsx)$/.test(e.name) && !/\.test\.(ts|tsx)$/.test(e.name) ? [cheio] : []
+    })
+  }
+
+  it('só os dois caminhos de ingestão do WhatsApp', () => {
+    const chamadores = arquivosDe(src)
+      .map((cheio) => path.relative(src, cheio))
+      .filter((rel) => rel !== 'lib/automations/parar-se-responder.ts')
+      .filter((rel) => fonte(rel).includes('cancelarEsperasPorResposta'))
+      .sort()
+
+    expect(chamadores).toEqual([...PERMITIDOS].sort())
+  })
+})
+
+describe('o motor cuida da MARCA nas duas pontas', () => {
+  const motor = fonte('lib/automations/engine.ts')
+
+  it('estaciona a espera com contextoDaEspera', () => {
+    expect(motor).toMatch(/context:\s*contextoDaEspera\(args\.context,\s*cfg,\s*step\.id\)/)
+  })
+
+  it('⚠️ a retomada limpa a marca antes de qualquer passo rodar', () => {
+    // Sem isto a marca de uma espera viaja para as seguintes (que o operador
+    // pode NÃO ter marcado), para a retentativa e para o `run_automation`.
+    const inicio = motor.indexOf('export async function resumePendingExecution')
+    expect(inicio).toBeGreaterThan(-1)
+    const corpo = motor.slice(inicio, motor.indexOf('export async function', inicio + 10))
+    expect(corpo).toMatch(/context:\s*semMarcaDeResposta\(pending\.context/)
+  })
+})

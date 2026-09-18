@@ -105,6 +105,21 @@ describe('o motor cuida da MARCA nas duas pontas', () => {
     expect(pergunta).toBeLessThan(corpo.indexOf('executeStepsFrom('))
   })
 
+  it('⚠️ o ESTACIONAMENTO pergunta se a execução já foi interrompida — nos dois inserts da fila (4ª rodada)', () => {
+    // Sem isto, o escopo de fora que ainda rodava quando o cliente respondeu
+    // estacionava uma linha `pending` que a aba mostraria por dias.
+    const inicio = motor.indexOf('async function executeStepsFrom')
+    const corpo = motor.slice(inicio, motor.indexOf('async function runStep', inicio))
+    const inserts = corpo.split("from('automation_pending_executions')").length - 1
+    expect(inserts).toBe(2)
+    const perguntas = corpo.split('execucaoJaInterrompida(db, args.logId)').length - 1
+    expect(perguntas).toBe(2)
+    // E a pergunta vem ANTES do insert, nos dois.
+    expect(corpo.indexOf('execucaoJaInterrompida(db, args.logId)')).toBeLessThan(
+      corpo.indexOf("from('automation_pending_executions')"),
+    )
+  })
+
   it('⚠️ a retomada limpa a marca antes de qualquer passo rodar', () => {
     // Sem isto a marca de uma espera viaja para as seguintes (que o operador
     // pode NÃO ter marcado), para a retentativa e para o `run_automation`.

@@ -2098,6 +2098,16 @@ describe('retentativa de passo que falhou (13/09/2026)', () => {
     expect(desfechoGravado()?.desfecho).toBe('falhou');
   });
 
+  it('⚠️ execução JÁ interrompida não volta à fila pela retentativa (Codex, 4ª rodada)', async () => {
+    h.state.interrupcoesDoLog = [{ id: 'espera-cancelada' }];
+    await avisoQueFalha(new EvolutionApiError('Error: Connection Closed', 400));
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(0);
+    // Sem desfecho: cancelamento não é erro, e a execução não terminou por
+    // conta própria — o mesmo estado da espera não estacionada.
+    expect(desfechoGravado()?.desfecho).toBeUndefined();
+  });
+
   it('⚠️ contador de OUTRO passo não consome as chances deste', async () => {
     // O passo 7 falhou duas vezes antes e se recuperou; este é o passo 0.
     await avisoQueFalha(new EvolutionApiError('recusado', 400), {
@@ -2728,6 +2738,28 @@ describe('Aguardar — parar se o cliente responder', () => {
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
     expect(h.state.statusDaFila).toEqual(['cancelled']);
+  });
+
+  it('⚠️⚠️ execução JÁ interrompida NÃO estaciona espera nova (Codex, 4ª rodada) — sem linha zumbi na aba', async () => {
+    // A resposta do cliente cancelou a espera do ramo enquanto o escopo de
+    // fora ainda rodava; ao chegar no SEU "Aguardar", ele não pode criar uma
+    // linha `pending` que a aba mostraria por dias e a retomada cancelaria.
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [esperaMarcada({})];
+    h.state.interrupcoesDoLog = [{ id: 'espera-do-ramo-cancelada' }];
+
+    await dispara();
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(0);
+    expect(statusGravado()).toBe('partial');
+    expect(desfechoGravado()).toBeUndefined();
+    const ultimo = h.state.logUpdates
+      .filter((u) => 'steps_executed' in u)
+      .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+      .at(-1);
+    expect(ultimo).toMatchObject({ status: 'skipped' });
+    expect(ultimo?.detail).toMatch(/já foi interrompida/);
   });
 
   it('⚠️ fila que RECUSA a espera vira falha visível, não "esperando" para sempre', async () => {

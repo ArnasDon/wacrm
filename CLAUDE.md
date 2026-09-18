@@ -704,7 +704,15 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   espera de fora do corte por data do dreno acordava e a execução antiga
   seguia ao lado da nova. Falha ABERTA (é a 2ª defesa de uma corrida de
   segundos). Espera de OUTRA execução do mesmo contato, sem marca, não é
-  tocada — medido.
+  tocada — medido. ⚠️ E o ESTACIONAMENTO faz a mesma pergunta antes dos DOIS
+  inserts da fila (o "Aguardar" e a retentativa; 4ª rodada do Codex): o escopo
+  de fora que ainda rodava quando o cancelamento aconteceu não pode criar uma
+  linha `pending` que a aba Automações mostraria "por dias" e a retomada
+  cancelaria de qualquer jeito. Sem linha, sem zumbi; o passo vira `skipped`
+  e o escopo devolve `partial`, como uma espera estacionada. ⚠️ Toda pergunta
+  por `log_id` na fila (esta, a guarda de `fecharLog`, as irmãs) depende do
+  índice da **1004** — a fila não é podada, e sem ele cada tique do agendador
+  varria o histórico inteiro.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
   a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
@@ -5725,6 +5733,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     com autorização do operador; conferida por consulta (as 2 colunas,
     `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
     idempotente, os 4 cenários da cerca do UPDATE).
+  - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
+    `automation_pending_executions (log_id)`: a guarda de `fecharLog`, o
+    sinal `execucaoJaInterrompida` (retomada E estacionamento) e o
+    cancelamento das irmãs perguntam por execução, e a fila não é podada
+    (`done`/`cancelled` ficam para sempre — é o histórico que o sinal lê).
+    Aditiva: sem ela tudo responde certo, só devagar; pode entrar antes ou
+    depois do deploy. Medido antes: a tabela estava VAZIA em produção (nenhuma
+    automação ativa tinha "Aguardar"). ⚠️ PENDENTE de aplicar em produção
+    (escrita no PR #223, 18/09/2026).
   - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
     com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
     antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a

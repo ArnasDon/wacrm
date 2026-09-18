@@ -762,6 +762,26 @@ async function executeStepsFrom(
     if (step.step_type === 'wait') {
       const cfg = step.step_config as WaitStepConfig;
       const ms = waitMs(cfg);
+      // ⚠️ A EXECUÇÃO JÁ FOI INTERROMPIDA enquanto este escopo rodava? (Codex,
+      // 4ª rodada do PR #223.) A resposta do cliente ou a saída da etapa
+      // cancelaram a espera do ramo enquanto o escopo de fora ainda executava;
+      // estacionar agora criaria uma linha `pending` que a aba Automações
+      // mostraria como "próximo passo em 27 h" — por dias — sobre uma
+      // execução que a retomada vai cancelar de qualquer jeito. Barrado na
+      // origem: sem linha, sem zumbi. Uma consulta por estacionamento.
+      if (await execucaoJaInterrompida(db, args.logId)) {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'skipped',
+          detail: 'não estacionada: a execução já foi interrompida',
+        });
+        // O mesmo estado de uma espera estacionada: a execução não terminou
+        // por conta própria, e cancelamento não ganha desfecho (936).
+        status = 'partial';
+        await appendResults(args.logId, results, status, errorMessage);
+        return status;
+      }
       const { error: erroDaEspera } = await db
         .from('automation_pending_executions')
         .insert({
@@ -900,6 +920,19 @@ async function executeStepsFrom(
         provedor,
       });
 
+      // Execução já interrompida não volta à fila: a retentativa seria a
+      // mesma linha zumbi da espera (acima), só que de 30 s a 5 min.
+      if (decisao.repetir && (await execucaoJaInterrompida(db, args.logId))) {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'skipped',
+          detail: `${msg} — não reenfileirada: a execução já foi interrompida`,
+        });
+        status = 'partial';
+        await appendResults(args.logId, results, status, errorMessage);
+        return status;
+      }
       if (decisao.repetir) {
         const { error: erroDaFila } = await db
           .from('automation_pending_executions')

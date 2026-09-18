@@ -1799,6 +1799,7 @@
       "saveDraft": "Save Draft",
       "untitled": "Untitled automation",
       "backToAutomations": "Back to automations",
+      "backToPipeline": "Back to pipeline",
       "toasts": {
         "saved": "Automation saved",
         "created": "Automation created",

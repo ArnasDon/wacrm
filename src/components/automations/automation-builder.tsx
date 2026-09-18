@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
@@ -94,6 +94,7 @@ import { validateChannelScopeForActivation } from "@/lib/automations/validate"
 import { TIPO_DATA } from "@/lib/contacts/campo-data"
 import { uploadAccountMedia, MEDIA_MAX_BYTES_BY_KIND } from "@/lib/storage/upload-media"
 import { CHAT_MEDIA_BUCKET } from "@/lib/storage/buckets"
+import { origemDoConstrutor, urlDoConstrutor, voltaDoConstrutor } from "@/lib/pipelines/url"
 
 /** Os quatro tipos que o passo `send_media` oferece. */
 type MediaKindUI = "image" | "video" | "document" | "audio"
@@ -893,6 +894,10 @@ function SendTemplateFields({
 export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const router = useRouter()
   const t = useTranslations("Automations.builder")
+  // Aberto pela grade de automações do funil? Então o voltar devolve à grade
+  // daquele funil; sem origem, à tela de Automações, como sempre. Ver
+  // `lib/pipelines/url.ts`.
+  const origem = origemDoConstrutor(useSearchParams())
   const isEditing = !!initial.id
   const [state, setState] = useState<BuilderInitial>(() =>
     // O mesmo semear do onTypeChange, para a automação JÁ EXISTENTE aberta
@@ -987,7 +992,10 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       }
       toast.success(isEditing ? t("toasts.saved") : t("toasts.created"))
       if (!isEditing && body?.automation?.id) {
-        router.replace(`/automations/${body.automation.id}/edit`)
+        // ⚠️ A origem viaja junto: criar pela coluna do funil, salvar o
+        // rascunho e SÓ ENTÃO voltar é o caminho mais comum, e sem ela o
+        // voltar desta tela de edição caía na tela de Automações.
+        router.replace(urlDoConstrutor({ id: body.automation.id, origem }))
       }
     } finally {
       setSaving(false)
@@ -1002,9 +1010,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       <header className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 py-3 sm:gap-3 sm:px-4">
         <button
           type="button"
-          onClick={() => router.push("/automations")}
+          onClick={() => router.push(voltaDoConstrutor(origem))}
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          aria-label={t("backToAutomations")}
+          aria-label={origem ? t("backToPipeline") : t("backToAutomations")}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>

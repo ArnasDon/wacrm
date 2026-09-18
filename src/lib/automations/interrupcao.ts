@@ -22,10 +22,33 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+/** Quantas vezes a anotação tenta de novo quando outro escritor chega antes. */
+const TENTATIVAS_DA_ANOTACAO = 3;
+
 /**
  * Melhor esforço, e NUNCA lança: quando isto roda a espera JÁ foi cancelada,
  * e anotação que falha não pode desfazer o cancelamento nem derrubar quem
  * chamou (a ingestão de mensagem, o dreno do funil, a retomada do agendador).
+ *
+ * ⚠️⚠️ GRAVA SÓ SE NINGUÉM ACRESCENTOU NADA DESDE A LEITURA (Codex, PR #223).
+ * `steps_executed` é um array que todo escritor lê, acrescenta e regrava — o
+ * `appendResults` do motor inclusive —, e esta anotação pode correr com ele:
+ * a espera marcada dentro de um RAMO é cancelada enquanto o escopo de fora da
+ * MESMA execução ainda roda (ramo em espera não segura o escopo de fora), ou
+ * enquanto uma espera irmã é retomada. Regravando às cegas, o array lido
+ * antes apagaria os passos que o motor acabou de gravar — e são eles que
+ * decidem o desfecho (`sinaisDoHistorico`).
+ *
+ * A cerca é `steps_executed->>N IS NULL`, com N = quantos passos foram lidos:
+ * todo escritor só ACRESCENTA, então "a posição N continua vazia" quer dizer
+ * "ninguém escreveu desde que li". Zero linhas = alguém chegou antes → relê e
+ * tenta de novo; esgotadas as tentativas, DESISTE da anotação. A garantia é
+ * de mão única e é a que importa: esta função nunca apaga passo do motor. O
+ * inverso ainda pode acontecer (o motor leu antes e regrava por cima, e a
+ * anotação some) — custa uma linha explicativa, não o registro da execução.
+ * Fechar esse lado pede append atômico no banco para TODOS os escritores
+ * (uma RPC + o `appendResults`), que é outra obra. Forma do filtro MEDIDA
+ * contra o PostgREST real em 18/09/2026.
  */
 export async function anotarInterrupcao(
   db: SupabaseClient,
@@ -35,36 +58,46 @@ export async function anotarInterrupcao(
 ): Promise<void> {
   if (!logId) return;
   try {
-    const { data, error } = await db
-      .from('automation_logs')
-      .select('steps_executed')
-      .eq('id', logId)
-      .maybeSingle();
-    if (error || !data) return;
+    for (let tentativa = 0; tentativa < TENTATIVAS_DA_ANOTACAO; tentativa++) {
+      const { data, error } = await db
+        .from('automation_logs')
+        .select('steps_executed')
+        .eq('id', logId)
+        .maybeSingle();
+      if (error || !data) return;
 
-    const passos = Array.isArray(data.steps_executed)
-      ? data.steps_executed
-      : [];
-    const { error: erroDaNota } = await db
-      .from('automation_logs')
-      .update({
-        steps_executed: [
-          ...passos,
-          {
-            step_id: stepId ?? '',
-            step_type: 'wait',
-            status: 'skipped',
-            detail: detalhe,
-          },
-        ],
-      })
-      .eq('id', logId);
-    if (erroDaNota) {
-      console.error(
-        '[automations] anotação da interrupção falhou:',
-        erroDaNota.message
-      );
+      const passos = Array.isArray(data.steps_executed)
+        ? data.steps_executed
+        : [];
+      const { data: gravadas, error: erroDaNota } = await db
+        .from('automation_logs')
+        .update({
+          steps_executed: [
+            ...passos,
+            {
+              step_id: stepId ?? '',
+              step_type: 'wait',
+              status: 'skipped',
+              detail: detalhe,
+            },
+          ],
+        })
+        .eq('id', logId)
+        .is(`steps_executed->>${passos.length}`, null)
+        .select('id');
+      if (erroDaNota) {
+        console.error(
+          '[automations] anotação da interrupção falhou:',
+          erroDaNota.message
+        );
+        return;
+      }
+      if (gravadas && gravadas.length > 0) return;
+      // Zero linhas: outro escritor acrescentou no meio. Relê e tenta de novo.
     }
+    console.warn(
+      '[automations] anotação da interrupção: desisti — o registro não parou de mudar'
+    );
   } catch (err) {
     console.error('[automations] anotação da interrupção estourou:', err);
   }

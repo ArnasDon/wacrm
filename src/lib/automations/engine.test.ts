@@ -21,6 +21,11 @@ const h = vi.hoisted(() => ({
     erroNoNegocio: null as string | null,
     /** Status gravados na fila (`markPending`), na ordem. */
     statusDaFila: [] as unknown[],
+    /**
+     * Esperas MARCADAS desta execução já em `cancelled` — o sinal de
+     * "interrompida pela resposta do cliente" que a retomada consulta.
+     */
+    interrupcoesDoLog: [] as Record<string, unknown>[],
     dealSelects: [] as [string, string, unknown][][],
     dealInserts: [] as Record<string, unknown>[],
     automations: [] as Record<string, unknown>[],
@@ -136,6 +141,15 @@ vi.mock('./admin-client', () => {
         state.statusDaFila.push((ops.payload as { status?: unknown })?.status);
         return { data: null, error: null };
       }
+      if (
+        type === 'select' &&
+        ops.filters.some(
+          ([op, k, v]) => op === 'eq' && k === 'status' && v === 'cancelled'
+        )
+      ) {
+        // A pergunta da retomada: "esta execução já foi interrompida?".
+        return { data: state.interrupcoesDoLog, error: null };
+      }
       if (type === 'select') {
         // ⚠️ Respeita o `.neq('id', …)`: é ele que faz a guarda de `fecharLog`
         // ignorar a espera que o cron está processando AGORA. Sem isto o mock
@@ -189,7 +203,10 @@ vi.mock('./admin-client', () => {
       if (type === 'update') {
         state.logUpdates.push(ops.payload as Record<string, unknown>);
         state.updateFiltros.push([...ops.filters]);
-        return { data: null, error: null };
+        // Uma linha de volta: a anotação de interrupção grava com cerca
+        // ("ninguém acrescentou desde que li") e lê o RETURNING para saber se
+        // venceu. Os demais updates ignoram o retorno.
+        return { data: [{ id: 'log1' }], error: null };
       }
       // ⚠️ O que já estava GRAVADO em `steps_executed` antes desta chamada.
       // Configurável porque é a única forma de encenar uma execução que
@@ -241,6 +258,9 @@ vi.mock('./admin-client', () => {
       in: (k: string, v: unknown) => (ops.filters.push(['in', k, v]), b),
       // A guarda de `fecharLog` exclui a espera em curso com `.neq('id', …)`.
       neq: (k: string, v: unknown) => (ops.filters.push(['neq', k, v]), b),
+      not: (k: string, o: string, v: unknown) => (
+        ops.filters.push([`not.${o}`, k, v]), b
+      ),
       // `fecharLog` usa `.or('desfecho.is.null,desfecho.neq.falhou')` para
       // NUNCA REGREDIR um 'falhou' já gravado. O mock só registra: o que os
       // pinos medem é o payload do update, não o filtro do PostgREST.
@@ -337,6 +357,7 @@ beforeEach(() => {
   h.state.erroNaFila = null;
   h.state.erroNoNegocio = null;
   h.state.statusDaFila = [];
+  h.state.interrupcoesDoLog = [];
   h.state.membros = [
     { user_id: 'agente-fallback', full_name: 'Agente Um', email: 'um@cb.test' },
   ];
@@ -2679,6 +2700,34 @@ describe('Aguardar — parar se o cliente responder', () => {
     });
 
     expect(contextoNaFila()._parar_se_responder).toBe('esp-2');
+  });
+
+  it('⚠️⚠️ execução JÁ interrompida pela resposta: a continuação que acorda depois não roda (Codex, PR #223)', async () => {
+    // A espera marcada estava num RAMO; o escopo de fora seguiu e estacionou a
+    // SUA espera — sem marca — um instante depois de o cliente responder. O
+    // cancelamento das irmãs não a viu (ainda não existia); quem a segura é a
+    // retomada, perguntando à fila se a execução já foi interrompida.
+    h.state.automations = [automacaoSimples('a-resume')];
+    h.state.steps = [
+      { ...passoDeTrabalho('s-msg-seguinte', 1), automation_id: 'a-resume' },
+    ];
+    h.state.interrupcoesDoLog = [{ id: 'espera-marcada-cancelada' }];
+
+    await resumePendingExecution({
+      id: 'espera-irma',
+      automation_id: 'a-resume',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-resume',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: {},
+    });
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['cancelled']);
   });
 
   it('⚠️ fila que RECUSA a espera vira falha visível, não "esperando" para sempre', async () => {

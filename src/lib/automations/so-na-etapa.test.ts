@@ -163,7 +163,7 @@ function bancoFalso(opcoes: {
           if (opcoes.erroNasEsperas) return { data: null, error: { message: opcoes.erroNasEsperas } };
           return { data: opcoes.esperas ?? [], error: null };
         }
-        if (op.tipo === 'update') return { data: null, error: null };
+        if (op.tipo === 'update') return { data: [{ id: 'log' }], error: null };
         return { data: { steps_executed: [] }, error: null };
       };
       const b: Record<string, unknown> = {
@@ -171,6 +171,7 @@ function bancoFalso(opcoes: {
         update: (p: unknown) => ((op.tipo = 'update'), (op.payload = p), b),
         eq: (k: string, v: unknown) => (op.filtros.push(['eq', k, v]), b),
         in: (k: string, v: unknown) => (op.filtros.push(['in', k, v]), b),
+        is: () => b,
         order: () => b,
         limit: () => b,
         maybeSingle: () => Promise.resolve().then(resolver),

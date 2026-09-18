@@ -75,7 +75,11 @@ import {
   decidirRetentativa,
   tentativasJaFeitas,
 } from './retentativa';
-import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
+import {
+  contextoDaEspera,
+  execucaoInterrompidaPorResposta,
+  semMarcaDeResposta,
+} from './parar-se-responder';
 import { DETALHE_SAIU_DA_ETAPA, cardSaiuDaEtapa } from './so-na-etapa';
 import { anotarInterrupcao } from './interrupcao';
 import {
@@ -378,6 +382,16 @@ export async function resumePendingExecution(pending: {
   // `cancelled`, não `failed`: cancelamento não é erro e não deve alimentar
   // o painel de falhas.
   if (!automation.is_active) {
+    await markPending(pending.id, 'cancelled');
+    return;
+  }
+
+  // ⚠️ A EXECUÇÃO JÁ FOI INTERROMPIDA PELA RESPOSTA DO CLIENTE? (Codex, PR
+  // #223.) A resposta cancela a espera marcada e as irmãs que estavam na
+  // fila; esta é a continuação que NÃO estava — o escopo de fora que ainda
+  // rodava quando o cliente respondeu e estacionou logo depois. Sem isto ela
+  // acordava e a sequência seguia, com a caixa prometendo parar a automação.
+  if (await execucaoInterrompidaPorResposta(db, pending.log_id)) {
     await markPending(pending.id, 'cancelled');
     return;
   }

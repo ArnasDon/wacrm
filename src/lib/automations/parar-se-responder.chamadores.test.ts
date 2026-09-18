@@ -95,6 +95,16 @@ describe('o motor cuida da MARCA nas duas pontas', () => {
     expect(motor).toMatch(/context:\s*contextoDaEspera\(args\.context,\s*cfg,\s*step\.id\)/)
   })
 
+  it('⚠️ a retomada pergunta se a EXECUÇÃO já foi interrompida, antes de rodar qualquer passo (Codex, PR #223)', () => {
+    // A resposta do cliente cancela a marcada e as irmãs que estavam na fila;
+    // a continuação que estacionou um instante DEPOIS só é barrada aqui.
+    const inicio = motor.indexOf('export async function resumePendingExecution')
+    const corpo = motor.slice(inicio, motor.indexOf('export async function', inicio + 10))
+    const pergunta = corpo.indexOf('execucaoInterrompidaPorResposta(db, pending.log_id)')
+    expect(pergunta).toBeGreaterThan(-1)
+    expect(pergunta).toBeLessThan(corpo.indexOf('executeStepsFrom('))
+  })
+
   it('⚠️ a retomada limpa a marca antes de qualquer passo rodar', () => {
     // Sem isto a marca de uma espera viaja para as seguintes (que o operador
     // pode NÃO ter marcado), para a retentativa e para o `run_automation`.

@@ -685,6 +685,19 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   (`parar-se-responder.chamadores.test.ts`): celular pareado
   (`persistDeviceMessage`), grupo, Instagram e robô ficam de fora — "a
   mensagem de QUEM para a sequência?" é decisão de produto, não conveniência.
+- ⚠️⚠️ **A parada é da EXECUÇÃO (`log_id`), não da linha (Codex, PR #223).**
+  Espera marcada DENTRO DE UM RAMO não é a única ponta viva: ramo em espera
+  não segura o escopo de fora, que segue e estaciona a SUA espera — sem marca
+  — mais adiante. Cancelando só a linha marcada, a irmã acordava e a sequência
+  continuava, com a caixa prometendo "parar a automação" — e espera dentro de
+  ramo é a forma NORMAL das automações deste escritório, então recusar a opção
+  ali não era saída. São duas peças: (1) depois das marcadas, um 2º UPDATE
+  cancela toda espera `pending` dos MESMOS `log_id` (conta + contato); (2) a
+  RETOMADA pergunta `execucaoInterrompidaPorResposta` — o sinal é a própria
+  fila, uma espera MARCADA daquele log em `cancelled` —, que barra a
+  continuação que ainda NÃO estava estacionada quando o cliente respondeu.
+  Falha ABERTA (é a 2ª defesa de uma corrida de segundos). Espera de OUTRA
+  execução do mesmo contato, sem marca, não é tocada — medido.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
   a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
@@ -692,7 +705,7 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   botão Parar): conta + CONTATO + `status = 'pending'`. Espera que o agendador
   já reivindicou (`running`) não é alcançada — corrida de segundos, inerente.
 - ⚠️ **`cancelled`, e o desfecho do log NÃO é tocado** (precedente da 936),
-  mas a interrupção é ANOTADA em `steps_executed` por `interrupcao.ts` (`wait` / `skipped` /
+  mas a interrupção é ANOTADA — uma vez por execução — em `steps_executed` por `interrupcao.ts` (`wait` / `skipped` /
   "interrompida: o cliente respondeu…"): aqui ninguém clicou em nada, e sem a
   anotação a sequência sumiria sem dizer por quê. `sinaisDoHistorico` ignora
   `wait`, então a anotação não muda desfecho nenhum. ⚠️ A execução
@@ -700,6 +713,18 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   ela — `concluida` mentiria, `barrada` também); narrá-la pede um 4º desfecho
   (`interrompida`), com migration no CHECK da 985 e os consumidores — vale
   para os TRÊS cancelamentos, e ficou de fora de propósito.
+- ⚠️⚠️ **A anotação grava COM CERCA: `steps_executed->>N IS NULL`, com N =
+  passos lidos (Codex, PR #223).** Todo escritor daquela coluna lê, acrescenta
+  e regrava — o `appendResults` do motor inclusive —, e a anotação pode correr
+  com ele (o escopo de fora da mesma execução ainda rodando, ou uma irmã sendo
+  retomada). Como todos só ACRESCENTAM, "a posição N continua vazia" = "ninguém
+  escreveu desde que li"; zero linhas → relê e tenta de novo (3×), e depois
+  DESISTE da anotação. A garantia é de mão única, e é a que importa: **a
+  anotação nunca apaga passo do motor** (são eles que decidem o desfecho). O
+  inverso ainda pode acontecer — o motor leu antes e regrava por cima, e some
+  a linha explicativa; fechar esse lado pede append atômico no banco para
+  TODOS os escritores (RPC + `appendResults`), que é outra obra. Forma medida
+  contra o PostgREST real.
 - ⚠️ **Só o booleano `true` liga**, em TODOS os lugares (motor, grade,
   construtor, validação): `"true"` e `1` chegam de JSONB e são truthy — a
   caixa apareceria marcada numa tela e o motor a ignoraria.

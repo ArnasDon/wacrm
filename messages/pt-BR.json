@@ -1788,6 +1788,7 @@
       "saveDraft": "Salvar rascunho",
       "untitled": "Automação sem título",
       "backToAutomations": "Voltar para automações",
+      "backToPipeline": "Voltar ao funil",
       "toasts": {
         "saved": "Automação salva",
         "created": "Automação criada",

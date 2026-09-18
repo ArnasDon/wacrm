@@ -20,6 +20,7 @@ import {
   descreverPasso,
   type NomesConhecidos,
 } from "@/lib/automations/descrever-passo"
+import { urlDoConstrutor } from "@/lib/pipelines/url"
 import { useCan } from "@/hooks/use-can"
 import { GatedButton } from "@/components/ui/gated-button"
 import { Button } from "@/components/ui/button"
@@ -43,12 +44,15 @@ import { cn } from "@/lib/utils"
  * teste.
  */
 export function AutomationsBoard({
+  pipelineId,
   stages,
   automations,
   steps,
   nomes,
   onChanged,
 }: {
+  /** O funil exibido — vai na URL do construtor, para o voltar trazer de volta a ele. */
+  pipelineId: string
   stages: PipelineStage[]
   automations: Automation[]
   /** Passos por automação, já em ordem. Só o 1º e a contagem são exibidos. */
@@ -61,6 +65,10 @@ export function AutomationsBoard({
   const canCreate = useCan("manage-automations")
   const [expandindo, setExpandindo] = useState<Automation | null>(null)
   const [copiando, setCopiando] = useState<string | null>(null)
+  // Criar e editar abrem o construtor COM a origem: sem ela, o voltar de lá
+  // levava à tela de Automações do menu, e não a esta grade (ver
+  // `lib/pipelines/url.ts`).
+  const origem = { funil: pipelineId || null }
 
   const ordenadas = useMemo(
     () => [...stages].sort((a, b) => a.position - b.position),
@@ -112,7 +120,7 @@ export function AutomationsBoard({
                 size="icon-xs"
                 aria-label={t("novaAqui")}
                 title={t("novaAqui")}
-                onClick={() => router.push(`/automations/new?stage=${encodeURIComponent(s.id)}`)}
+                onClick={() => router.push(urlDoConstrutor({ etapa: s.id, origem }))}
                 className="shrink-0 text-muted-foreground hover:text-foreground"
               >
                 <Plus className="h-3.5 w-3.5" />
@@ -130,7 +138,7 @@ export function AutomationsBoard({
               passos={steps[cartao.automation.id] ?? []}
               nomes={nomes}
               copiando={copiando === cartao.automation.id}
-              onAbrir={() => router.push(`/automations/${cartao.automation.id}/edit`)}
+              onAbrir={() => router.push(urlDoConstrutor({ id: cartao.automation.id, origem }))}
               onDuplicar={() => duplicar(cartao.automation)}
               onExpandir={() => setExpandindo(cartao.automation)}
               t={t}

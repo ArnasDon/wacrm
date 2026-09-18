@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { anotarInterrupcao } from './interrupcao';
+import { anotarInterrupcao, execucaoJaInterrompida } from './interrupcao';
 
 // ============================================================
 // A anotação grava COM CERCA: "só se ninguém acrescentou nada desde que li".
@@ -101,6 +101,20 @@ describe('anotarInterrupcao', () => {
     }
   });
 
+  it('⚠️ IDEMPOTENTE por motivo: a execução já anotada não ganha a mesma linha de novo', async () => {
+    // Duas esperas irmãs da mesma execução acordam em horas diferentes com o
+    // card fora da etapa: a segunda NÃO pode contar outra interrupção.
+    const jaLa = { step_id: '', step_type: 'wait', status: 'skipped', detail: 'motivo' };
+    const { db, gravacoes } = logFalso({ leituras: [[PASSO, jaLa]] });
+    await anotarInterrupcao(db, 'log-1', null, 'motivo');
+    expect(gravacoes).toHaveLength(0);
+
+    // Outro MOTIVO na mesma execução é outra informação, e entra.
+    const outro = logFalso({ leituras: [[PASSO, jaLa]] });
+    await anotarInterrupcao(outro.db, 'log-1', null, 'outro motivo');
+    expect(outro.gravacoes).toHaveLength(1);
+  });
+
   it('registro vazio ou que não é lista: a cerca é a posição 0', async () => {
     const { db, gravacoes } = logFalso({ leituras: [null as unknown as unknown[]] });
     await anotarInterrupcao(db, 'log-1', null, 'motivo');
@@ -122,5 +136,54 @@ describe('anotarInterrupcao', () => {
     } finally {
       calado.mockRestore();
     }
+  });
+});
+
+describe('execucaoJaInterrompida — o sinal que a retomada consulta', () => {
+  function filaFalsa(opcoes: { linhas?: { id: string }[]; erro?: string }) {
+    const filtros: [string, string, unknown][] = [];
+    const db = {
+      from() {
+        const b: Record<string, unknown> = {
+          select: () => b,
+          eq: (k: string, v: unknown) => (filtros.push(['eq', k, v]), b),
+          limit: () => b,
+          then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
+            Promise.resolve(
+              opcoes.erro ? { data: null, error: { message: opcoes.erro } } : { data: opcoes.linhas ?? [], error: null }
+            ).then(onF, onR),
+        };
+        return b;
+      },
+    };
+    return { db: db as unknown as SupabaseClient, filtros };
+  }
+
+  it('⚠️⚠️ o sinal é a própria fila: QUALQUER espera desta execução em cancelled', async () => {
+    // Resposta do cliente, card que saiu da etapa, botão Parar, passo "Parar
+    // automação", desativação — em todos, alguém mandou a execução parar, e a
+    // continuação que estacionou depois não pode retomá-la (Codex, PR #223).
+    const { db, filtros } = filaFalsa({ linhas: [{ id: 'p-cancelada' }] });
+    expect(await execucaoJaInterrompida(db, 'log-1')).toBe(true);
+    expect(filtros).toEqual([
+      ['eq', 'log_id', 'log-1'],
+      ['eq', 'status', 'cancelled'],
+    ]);
+  });
+
+  it('sem linha cancelada: a execução segue', async () => {
+    const { db } = filaFalsa({ linhas: [] });
+    expect(await execucaoJaInterrompida(db, 'log-1')).toBe(false);
+  });
+
+  it('sem log não há execução a consultar — nem vai ao banco', async () => {
+    const { db, filtros } = filaFalsa({ linhas: [{ id: 'x' }] });
+    expect(await execucaoJaInterrompida(db, null)).toBe(false);
+    expect(filtros).toHaveLength(0);
+  });
+
+  it('⚠️ falha ABERTA: erro de leitura não trava a retomada de toda automação', async () => {
+    const { db } = filaFalsa({ erro: 'timeout' });
+    expect(await execucaoJaInterrompida(db, 'log-1')).toBe(false);
   });
 });

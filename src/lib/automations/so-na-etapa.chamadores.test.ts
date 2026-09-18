@@ -32,6 +32,9 @@ describe('ponta 1 — a retomada confere a etapa ANTES de rodar qualquer passo',
     // ⚠️ E DEPOIS do freio de `is_active`: automação desligada cancela sem
     // pagar a leitura do card.
     expect(confere).toBeGreaterThan(corpo.indexOf('automation.is_active'))
+    // ⚠️ E DEPOIS do sinal da execução: o card pode ter VOLTADO à etapa, e a
+    // execução antiga acabou mesmo assim (3ª rodada do Codex, PR #223).
+    expect(confere).toBeGreaterThan(corpo.indexOf('execucaoJaInterrompida(db, pending.log_id)'))
   })
 })
 

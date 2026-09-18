@@ -300,6 +300,7 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
 | `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
 | `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
+| `src/app/(dashboard)/inbox/page.tsx` (18/09/2026) | no INSERT de mensagem do CLIENTE na conversa aberta, `setTimeout(avisarExecucoesMudaram, 3000)` — a aba Automações descobre o cancelamento por resposta sem recarregar a página |
 | `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` logo depois do freio de `is_active`: fora da etapa → `cancelled` + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
 | `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
 | `src/components/automations/automation-builder.tsx`, `src/app/(dashboard)/automations/[id]/edit/page.tsx` e `src/app/(dashboard)/pipelines/page.tsx` (voltar ao funil, 18/09/2026) | o voltar do construtor passa por `voltaDoConstrutor(origem)` e o `router.replace` depois de CRIAR por `urlDoConstrutor({ id, origem })` (`src/lib/pipelines/url.ts`): aberto pela grade de automações do funil (`?de=funil&funil=<id>`), o voltar devolve à aba Automações DAQUELE funil, e não à tela de Automações do menu. Um merge que traga o `router.push("/automations")` cru do upstream devolve o bug sem conflito nenhum — há pino em `url.test.ts`. Na página do funil, `?vista=` e `?funil=` são porta de ENTRADA, lidas uma vez na montagem (trocar de aba ou de funil depois não reescreve a URL) |
@@ -693,11 +694,17 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   ramo é a forma NORMAL das automações deste escritório, então recusar a opção
   ali não era saída. São duas peças: (1) depois das marcadas, um 2º UPDATE
   cancela toda espera `pending` dos MESMOS `log_id` (conta + contato); (2) a
-  RETOMADA pergunta `execucaoInterrompidaPorResposta` — o sinal é a própria
-  fila, uma espera MARCADA daquele log em `cancelled` —, que barra a
-  continuação que ainda NÃO estava estacionada quando o cliente respondeu.
-  Falha ABERTA (é a 2ª defesa de uma corrida de segundos). Espera de OUTRA
-  execução do mesmo contato, sem marca, não é tocada — medido.
+  RETOMADA pergunta `execucaoJaInterrompida` (`interrupcao.ts`) — o sinal é a
+  própria fila, QUALQUER espera daquele log em `cancelled` —, que barra a
+  continuação que ainda NÃO estava estacionada quando o cancelamento
+  aconteceu. Vale para os CINCO cancelamentos (resposta, saída da etapa,
+  botão Parar, passo "Parar automação", desativação): em todos, alguém mandou
+  a execução parar. ⚠️ Vem ANTES da conferência de etapa (3ª rodada do Codex):
+  o card pode ter VOLTADO, e ainda assim a execução antiga acabou — senão a
+  espera de fora do corte por data do dreno acordava e a execução antiga
+  seguia ao lado da nova. Falha ABERTA (é a 2ª defesa de uma corrida de
+  segundos). Espera de OUTRA execução do mesmo contato, sem marca, não é
+  tocada — medido.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
   a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
@@ -724,7 +731,18 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   inverso ainda pode acontecer — o motor leu antes e regrava por cima, e some
   a linha explicativa; fechar esse lado pede append atômico no banco para
   TODOS os escritores (RPC + `appendResults`), que é outra obra. Forma medida
-  contra o PostgREST real.
+  contra o PostgREST real. E é IDEMPOTENTE por motivo: a execução que já tem
+  aquela linha `skipped` não ganha outra — duas esperas irmãs que ACORDAM em
+  horas diferentes com o card fora da etapa (ou o dreno seguido da retomada)
+  contariam uma interrupção como duas; a leitura já está em mãos, custa zero.
+- ⚠️ **A aba Automações recarrega ~3 s depois de chegar mensagem do CLIENTE na
+  conversa ABERTA** (`inbox/page.tsx`, `avisarExecucoesMudaram`): o servidor
+  pode ter acabado de cancelar uma espera, e a aba ao lado seguiria dizendo
+  "próximo passo em 27 h" — numa feature cuja graça é confiar que parou
+  sozinha. Com atraso porque o INSERT da mensagem chega ANTES do cancelamento
+  (que roda alguns passos depois na ingestão), e só na conversa aberta porque
+  o mesmo evento recarrega a marca da LISTA inteira — a cada mensagem de
+  qualquer cliente viraria uma consulta por mensagem.
 - ⚠️ **Só o booleano `true` liga**, em TODOS os lugares (motor, grade,
   construtor, validação): `"true"` e `1` chegam de JSONB e são truthy — a
   caixa apareceria marcada numa tela e o motor a ignoraria.

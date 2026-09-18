@@ -100,7 +100,7 @@ describe('o motor cuida da MARCA nas duas pontas', () => {
     // a continuação que estacionou um instante DEPOIS só é barrada aqui.
     const inicio = motor.indexOf('export async function resumePendingExecution')
     const corpo = motor.slice(inicio, motor.indexOf('export async function', inicio + 10))
-    const pergunta = corpo.indexOf('execucaoInterrompidaPorResposta(db, pending.log_id)')
+    const pergunta = corpo.indexOf('execucaoJaInterrompida(db, pending.log_id)')
     expect(pergunta).toBeGreaterThan(-1)
     expect(pergunta).toBeLessThan(corpo.indexOf('executeStepsFrom('))
   })

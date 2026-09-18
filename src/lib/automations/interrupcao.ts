@@ -69,6 +69,20 @@ export async function anotarInterrupcao(
       const passos = Array.isArray(data.steps_executed)
         ? data.steps_executed
         : [];
+      // ⚠️ IDEMPOTENTE por motivo: uma execução é interrompida UMA vez. Quem
+      // chama já deduplica dentro da própria chamada, mas há o caso entre
+      // chamadas — duas esperas irmãs da mesma execução que ACORDAM em horas
+      // diferentes com o card fora da etapa, ou o dreno seguido da retomada —,
+      // e a segunda linha igual contaria uma interrupção como duas. A leitura
+      // já está em mãos: custa zero.
+      const jaAnotada = passos.some(
+        (p) =>
+          !!p &&
+          typeof p === 'object' &&
+          (p as { detail?: unknown }).detail === detalhe &&
+          (p as { status?: unknown }).status === 'skipped'
+      );
+      if (jaAnotada) return;
       const { data: gravadas, error: erroDaNota } = await db
         .from('automation_logs')
         .update({
@@ -100,5 +114,44 @@ export async function anotarInterrupcao(
     );
   } catch (err) {
     console.error('[automations] anotação da interrupção estourou:', err);
+  }
+}
+
+/**
+ * Esta execução já foi interrompida — por QUALQUER cancelamento?
+ *
+ * O SINAL É A PRÓPRIA FILA: uma espera desta execução (`log_id`) em
+ * `cancelled`. Serve a resposta do cliente, o card que saiu da etapa, o botão
+ * Parar, o passo "Parar automação" e a desativação: em todos eles alguém — ou
+ * uma regra — mandou aquela execução parar, e uma continuação que ainda NÃO
+ * estava estacionada naquele instante (o escopo de fora rodando enquanto o
+ * cancelamento acontecia, a retentativa que entrou na fila logo depois, a
+ * espera de fora do corte por data do dreno) não pode retomá-la. É o que fecha
+ * o furo das duas rodadas do Codex no PR #223: sem isto, o card que SAI e
+ * VOLTA à etapa fazia a execução antiga acordar ao lado da nova.
+ *
+ * Sem migration: nenhuma coluna nova. E vem ANTES da conferência de etapa na
+ * retomada — o card pode ter voltado, e ainda assim a execução antiga acabou.
+ *
+ * ⚠️ Falha ABERTA (erro de leitura = "não foi interrompida"): é a segunda
+ * linha de defesa de uma corrida de segundos, e travar a retomada de TODA
+ * automação por um soluço de banco custaria mais do que ela protege.
+ */
+export async function execucaoJaInterrompida(
+  db: SupabaseClient,
+  logId: string | null
+): Promise<boolean> {
+  if (!logId) return false;
+  try {
+    const { data, error } = await db
+      .from('automation_pending_executions')
+      .select('id')
+      .eq('log_id', logId)
+      .eq('status', 'cancelled')
+      .limit(1);
+    if (error) return false;
+    return (data ?? []).length > 0;
+  } catch {
+    return false;
   }
 }

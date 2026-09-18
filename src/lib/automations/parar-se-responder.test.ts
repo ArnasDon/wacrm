@@ -6,7 +6,6 @@ import {
   DETALHE_DA_INTERRUPCAO,
   cancelarEsperasPorResposta,
   contextoDaEspera,
-  execucaoInterrompidaPorResposta,
   semMarcaDeResposta,
 } from './parar-se-responder';
 
@@ -298,34 +297,5 @@ describe('cancelarEsperasPorResposta', () => {
     } finally {
       calado.mockRestore();
     }
-  });
-});
-
-describe('execucaoInterrompidaPorResposta — o sinal que a retomada consulta', () => {
-  it('o sinal é a própria fila: espera MARCADA desta execução em cancelled', async () => {
-    const { db, chamadas } = bancoFalso({ sinal: [{ id: 'p-marcada' }] });
-
-    expect(await execucaoInterrompidaPorResposta(db, 'log-1')).toBe(true);
-    expect(chamadas[0].filtros).toEqual([
-      ['eq', 'log_id', 'log-1'],
-      ['eq', 'status', 'cancelled'],
-      ['not', `context->>${CHAVE_PARAR_SE_RESPONDER}`, 'is', null],
-    ]);
-  });
-
-  it('sem linha: a execução segue', async () => {
-    const { db } = bancoFalso({ sinal: [] });
-    expect(await execucaoInterrompidaPorResposta(db, 'log-1')).toBe(false);
-  });
-
-  it('sem log não há execução a consultar — nem vai ao banco', async () => {
-    const { db, chamadas } = bancoFalso({ sinal: [{ id: 'x' }] });
-    expect(await execucaoInterrompidaPorResposta(db, null)).toBe(false);
-    expect(chamadas).toHaveLength(0);
-  });
-
-  it('⚠️ falha ABERTA: erro de leitura não trava a retomada de toda automação', async () => {
-    const { db } = bancoFalso({ erroNoSinal: 'timeout' });
-    expect(await execucaoInterrompidaPorResposta(db, 'log-1')).toBe(false);
   });
 });

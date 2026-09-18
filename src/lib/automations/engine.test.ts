@@ -2802,6 +2802,21 @@ describe('retomada de automação presa à etapa', () => {
     expect(desfechoGravado()).toBeUndefined();
   });
 
+  it('⚠️⚠️ card VOLTOU à etapa, mas a execução já tinha sido interrompida: a espera irmã não a ressuscita (Codex, 3ª rodada)', async () => {
+    // A saída cancelou a espera do ramo; a espera de fora, estacionada depois
+    // do evento, ficou fora do corte por data. O card reentra (execução NOVA
+    // começa) e ela acorda com o card NA etapa — sem o sinal, a execução
+    // antiga seguiria ao lado da nova, mandando a sequência em dobro.
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+    h.state.interrupcoesDoLog = [{ id: 'espera-do-ramo-cancelada' }];
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['cancelled']);
+  });
+
   it('card ainda em No Show: a sequência segue', async () => {
     h.state.automations = [recuperacao({ parar_ao_sair: true })];
     h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };

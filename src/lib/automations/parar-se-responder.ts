@@ -168,7 +168,7 @@ export async function cancelarEsperasPorResposta(args: {
         .select('id');
       if (erroDasIrmas) {
         // A marcada já foi cancelada; a irmã que escapar aqui ainda é barrada
-        // quando acordar (`execucaoInterrompidaPorResposta`, na retomada).
+        // quando acordar (`execucaoJaInterrompida`, na retomada).
         console.error(
           '[automations] parar-se-responder: cancelamento das irmãs falhou:',
           erroDasIrmas.message
@@ -194,43 +194,5 @@ export async function cancelarEsperasPorResposta(args: {
   } catch (err) {
     console.error('[automations] parar-se-responder estourou:', err);
     return 0;
-  }
-}
-
-/**
- * Esta execução já foi interrompida pela resposta do cliente?
- *
- * O SINAL É A PRÓPRIA FILA: uma espera MARCADA desta execução (`log_id`) em
- * `cancelled`. É o que fecha a fresta que o cancelamento das irmãs não
- * alcança — a continuação que ainda NÃO estava estacionada quando o cliente
- * respondeu (o escopo de fora rodando enquanto a resposta chegava, ou a
- * retentativa que entrou na fila um instante depois). Sem migration: nenhuma
- * coluna nova, e a marca da linha cancelada continua lá.
- *
- * ⚠️ Espera marcada cancelada por OUTRO motivo (botão Parar, passo "Parar
- * automação", card que saiu da etapa) também liga o sinal, e está certo: em
- * todos eles alguém — ou uma regra — mandou aquela execução parar.
- *
- * ⚠️ Falha ABERTA (erro de leitura = "não foi interrompida"): é a segunda
- * linha de defesa de uma corrida de segundos, e travar a retomada de TODA
- * automação por um soluço de banco custaria mais do que ela protege.
- */
-export async function execucaoInterrompidaPorResposta(
-  db: SupabaseClient,
-  logId: string | null
-): Promise<boolean> {
-  if (!logId) return false;
-  try {
-    const { data, error } = await db
-      .from('automation_pending_executions')
-      .select('id')
-      .eq('log_id', logId)
-      .eq('status', 'cancelled')
-      .not(`context->>${CHAVE_PARAR_SE_RESPONDER}`, 'is', null)
-      .limit(1);
-    if (error) return false;
-    return (data ?? []).length > 0;
-  } catch {
-    return false;
   }
 }

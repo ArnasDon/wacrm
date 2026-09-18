@@ -75,13 +75,9 @@ import {
   decidirRetentativa,
   tentativasJaFeitas,
 } from './retentativa';
-import {
-  contextoDaEspera,
-  execucaoInterrompidaPorResposta,
-  semMarcaDeResposta,
-} from './parar-se-responder';
+import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
 import { DETALHE_SAIU_DA_ETAPA, cardSaiuDaEtapa } from './so-na-etapa';
-import { anotarInterrupcao } from './interrupcao';
+import { anotarInterrupcao, execucaoJaInterrompida } from './interrupcao';
 import {
   desfechoDoEscopo,
   desfechoDoRetorno,
@@ -386,12 +382,15 @@ export async function resumePendingExecution(pending: {
     return;
   }
 
-  // ⚠️ A EXECUÇÃO JÁ FOI INTERROMPIDA PELA RESPOSTA DO CLIENTE? (Codex, PR
-  // #223.) A resposta cancela a espera marcada e as irmãs que estavam na
-  // fila; esta é a continuação que NÃO estava — o escopo de fora que ainda
-  // rodava quando o cliente respondeu e estacionou logo depois. Sem isto ela
-  // acordava e a sequência seguia, com a caixa prometendo parar a automação.
-  if (await execucaoInterrompidaPorResposta(db, pending.log_id)) {
+  // ⚠️⚠️ A EXECUÇÃO JÁ FOI INTERROMPIDA? (Codex, PR #223, duas rodadas.) A
+  // resposta do cliente e a saída da etapa cancelam a espera que estava na
+  // fila; esta pode ser a continuação que NÃO estava — o escopo de fora que
+  // ainda rodava e estacionou logo depois, ou a espera fora do corte por data
+  // do dreno. Sem isto ela acordava e a sequência seguia: no caso da etapa,
+  // ao lado da execução NOVA que a reentrada do card iniciou. ANTES da
+  // conferência de etapa, de propósito: o card pode ter voltado, e ainda
+  // assim a execução antiga acabou. Ver `interrupcao.ts`.
+  if (await execucaoJaInterrompida(db, pending.log_id)) {
     await markPending(pending.id, 'cancelled');
     return;
   }

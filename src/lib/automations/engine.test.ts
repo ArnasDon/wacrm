@@ -22,10 +22,10 @@ const h = vi.hoisted(() => ({
     /** Status gravados na fila (`markPending`), na ordem. */
     statusDaFila: [] as unknown[],
     /**
-     * Esperas MARCADAS desta execução já em `cancelled` — o sinal de
-     * "interrompida pela resposta do cliente" que a retomada consulta.
+     * A MARCA durável da execução (`automation_logs.interrompida_em`, 1005) —
+     * o que a retomada e o estacionamento (`cb_estacionar_espera`) consultam.
      */
-    interrupcoesDoLog: [] as Record<string, unknown>[],
+    interrompida: false,
     dealSelects: [] as [string, string, unknown][][],
     dealInserts: [] as Record<string, unknown>[],
     automations: [] as Record<string, unknown>[],
@@ -141,15 +141,6 @@ vi.mock('./admin-client', () => {
         state.statusDaFila.push((ops.payload as { status?: unknown })?.status);
         return { data: null, error: null };
       }
-      if (
-        type === 'select' &&
-        ops.filters.some(
-          ([op, k, v]) => op === 'eq' && k === 'status' && v === 'cancelled'
-        )
-      ) {
-        // A pergunta da retomada: "esta execução já foi interrompida?".
-        return { data: state.interrupcoesDoLog, error: null };
-      }
       if (type === 'select') {
         // ⚠️ Respeita o `.neq('id', …)`: é ele que faz a guarda de `fecharLog`
         // ignorar a espera que o cron está processando AGORA. Sem isto o mock
@@ -213,7 +204,12 @@ vi.mock('./admin-client', () => {
       // atravessou um "Aguardar": a retomada é um processo novo, e o que
       // aconteceu antes da espera só existe nesta coluna.
       return {
-        data: { steps_executed: state.historicoDoLog, status: 'success' },
+        data: {
+          steps_executed: state.historicoDoLog,
+          status: 'success',
+          // A marca da 1005, lida pela retomada.
+          interrompida_em: state.interrompida ? '2026-09-18T12:00:00Z' : null,
+        },
         error: null,
       };
     }
@@ -283,7 +279,23 @@ vi.mock('./admin-client', () => {
         state.fromCalls.push(t);
         return builder(t);
       },
-      rpc: () => Promise.resolve({ error: null }),
+      // `cb_estacionar_espera` (1005) é a ÚNICA porta da fila pelo motor:
+      // registra o que foi mandado, recusa (null) com a execução marcada e
+      // devolve erro quando a fila recusa a linha.
+      rpc: (nome: string, args?: Record<string, unknown>) => {
+        if (nome === 'cb_estacionar_espera') {
+          if (state.erroNaFila) {
+            return Promise.resolve({
+              data: null,
+              error: { message: state.erroNaFila },
+            });
+          }
+          if (state.interrompida) return Promise.resolve({ data: null, error: null });
+          state.esperasEnfileiradas.push(args ?? {});
+          return Promise.resolve({ data: 'espera-nova', error: null });
+        }
+        return Promise.resolve({ data: null, error: null });
+      },
     }),
   };
 });
@@ -357,7 +369,7 @@ beforeEach(() => {
   h.state.erroNaFila = null;
   h.state.erroNoNegocio = null;
   h.state.statusDaFila = [];
-  h.state.interrupcoesDoLog = [];
+  h.state.interrompida = false;
   h.state.membros = [
     { user_id: 'agente-fallback', full_name: 'Agente Um', email: 'um@cb.test' },
   ];
@@ -2099,7 +2111,7 @@ describe('retentativa de passo que falhou (13/09/2026)', () => {
   });
 
   it('⚠️ execução JÁ interrompida não volta à fila pela retentativa (Codex, 4ª rodada)', async () => {
-    h.state.interrupcoesDoLog = [{ id: 'espera-cancelada' }];
+    h.state.interrompida = true;
     await avisoQueFalha(new EvolutionApiError('Error: Connection Closed', 400));
 
     expect(h.state.esperasEnfileiradas).toHaveLength(0);
@@ -2721,7 +2733,7 @@ describe('Aguardar — parar se o cliente responder', () => {
     h.state.steps = [
       { ...passoDeTrabalho('s-msg-seguinte', 1), automation_id: 'a-resume' },
     ];
-    h.state.interrupcoesDoLog = [{ id: 'espera-marcada-cancelada' }];
+    h.state.interrompida = true;
 
     await resumePendingExecution({
       id: 'espera-irma',
@@ -2747,7 +2759,7 @@ describe('Aguardar — parar se o cliente responder', () => {
     h.state.owned = { id: 'c1' };
     h.state.automations = [automacaoSimples()];
     h.state.steps = [esperaMarcada({})];
-    h.state.interrupcoesDoLog = [{ id: 'espera-do-ramo-cancelada' }];
+    h.state.interrompida = true;
 
     await dispara();
 
@@ -2826,6 +2838,8 @@ describe('retomada de automação presa à etapa', () => {
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
     expect(h.state.statusDaFila).toEqual(['cancelled']);
+    // A MARCA da 1005 vai para o registro, com o motivo.
+    expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
     expect(passosGravados().at(-1)).toMatchObject({
       status: 'skipped',
       detail: 'interrompida: o card saiu da etapa desta automação',
@@ -2841,7 +2855,7 @@ describe('retomada de automação presa à etapa', () => {
     // antiga seguiria ao lado da nova, mandando a sequência em dobro.
     h.state.automations = [recuperacao({ parar_ao_sair: true })];
     h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
-    h.state.interrupcoesDoLog = [{ id: 'espera-do-ramo-cancelada' }];
+    h.state.interrompida = true;
 
     await acordar();
 

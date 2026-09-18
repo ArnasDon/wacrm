@@ -118,20 +118,73 @@ export async function anotarInterrupcao(
 }
 
 /**
+ * Os motivos de interrupção — o vocabulário de `automation_logs.interrompida_por`
+ * (CHECK da 1005). Chave nova = migration no CHECK, senão o UPDATE é recusado
+ * e a execução continua sem marca, em silêncio.
+ */
+export type MotivoDeInterrupcao =
+  | 'resposta'
+  | 'etapa'
+  | 'parar'
+  | 'passo'
+  | 'desativacao';
+
+/**
+ * MARCA as execuções como interrompidas — a fonte da verdade (1005).
+ *
+ * ⚠️⚠️ Por que uma COLUNA no registro, e não as linhas da fila (a 1ª versão,
+ * 5ª rodada do Codex no PR #223): há um instante em que a execução está
+ * RODANDO e ainda não tem linha nenhuma na fila — antes da primeira espera —
+ * e um cancelamento nesse instante não tinha onde se gravar; a espera vinha
+ * depois, e se o card voltasse à etapa a execução antiga acordava ao lado da
+ * nova. A marca vive no registro (`log_id`), que existe desde o primeiro
+ * passo, e é consultada em DOIS lugares: pela retomada
+ * (`execucaoJaInterrompida`) e pelo estacionamento, DENTRO da função
+ * `cb_estacionar_espera`, que trava a linha do registro antes de inserir —
+ * fechando o vão entre "perguntar" e "inserir".
+ *
+ * Só a PRIMEIRA marca fica (`interrompida_em is null` no WHERE): quem
+ * interrompeu primeiro é o motivo que vale.
+ *
+ * NUNCA lança. Devolve quantos registros marcou agora.
+ */
+export async function marcarExecucoesInterrompidas(
+  db: SupabaseClient,
+  logIds: (string | null | undefined)[],
+  motivo: MotivoDeInterrupcao
+): Promise<number> {
+  const ids = [
+    ...new Set(logIds.filter((id): id is string => typeof id === 'string')),
+  ];
+  if (ids.length === 0) return 0;
+  try {
+    const { data, error } = await db
+      .from('automation_logs')
+      .update({ interrompida_em: new Date().toISOString(), interrompida_por: motivo })
+      .in('id', ids)
+      .is('interrompida_em', null)
+      .select('id');
+    if (error) {
+      console.error('[automations] marcar interrompida falhou:', error.message);
+      return 0;
+    }
+    return (data ?? []).length;
+  } catch (err) {
+    console.error('[automations] marcar interrompida estourou:', err);
+    return 0;
+  }
+}
+
+/**
  * Esta execução já foi interrompida — por QUALQUER cancelamento?
  *
- * O SINAL É A PRÓPRIA FILA: uma espera desta execução (`log_id`) em
- * `cancelled`. Serve a resposta do cliente, o card que saiu da etapa, o botão
- * Parar, o passo "Parar automação" e a desativação: em todos eles alguém — ou
- * uma regra — mandou aquela execução parar, e uma continuação que ainda NÃO
- * estava estacionada naquele instante (o escopo de fora rodando enquanto o
- * cancelamento acontecia, a retentativa que entrou na fila logo depois, a
- * espera de fora do corte por data do dreno) não pode retomá-la. É o que fecha
- * o furo das duas rodadas do Codex no PR #223: sem isto, o card que SAI e
- * VOLTA à etapa fazia a execução antiga acordar ao lado da nova.
- *
- * Sem migration: nenhuma coluna nova. E vem ANTES da conferência de etapa na
- * retomada — o card pode ter voltado, e ainda assim a execução antiga acabou.
+ * Lê `automation_logs.interrompida_em` (1005): a marca que a resposta do
+ * cliente, a saída da etapa, o botão Parar, o passo "Parar automação" e a
+ * desativação gravam. A continuação que ainda NÃO estava estacionada quando o
+ * cancelamento aconteceu (o escopo de fora rodando, a retentativa, a espera
+ * fora do corte por data do dreno) acorda, pergunta aqui, e não retoma. Vem
+ * ANTES da conferência de etapa na retomada: o card pode ter voltado, e ainda
+ * assim a execução antiga acabou.
  *
  * ⚠️ Falha ABERTA (erro de leitura = "não foi interrompida"): é a segunda
  * linha de defesa de uma corrida de segundos, e travar a retomada de TODA
@@ -144,13 +197,12 @@ export async function execucaoJaInterrompida(
   if (!logId) return false;
   try {
     const { data, error } = await db
-      .from('automation_pending_executions')
-      .select('id')
-      .eq('log_id', logId)
-      .eq('status', 'cancelled')
-      .limit(1);
+      .from('automation_logs')
+      .select('interrompida_em')
+      .eq('id', logId)
+      .maybeSingle();
     if (error) return false;
-    return (data ?? []).length > 0;
+    return Boolean((data as { interrompida_em?: string | null } | null)?.interrompida_em);
   } catch {
     return false;
   }

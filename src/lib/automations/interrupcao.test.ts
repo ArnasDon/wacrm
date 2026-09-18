@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { anotarInterrupcao, execucaoJaInterrompida } from './interrupcao';
+import { anotarInterrupcao, execucaoJaInterrompida, marcarExecucoesInterrompidas } from './interrupcao';
 
 // ============================================================
 // A anotação grava COM CERCA: "só se ninguém acrescentou nada desde que li".
@@ -139,51 +139,82 @@ describe('anotarInterrupcao', () => {
   });
 });
 
-describe('execucaoJaInterrompida — o sinal que a retomada consulta', () => {
-  function filaFalsa(opcoes: { linhas?: { id: string }[]; erro?: string }) {
-    const filtros: [string, string, unknown][] = [];
+describe('a MARCA durável da execução (1005)', () => {
+  function logsFalsos(opcoes: { linha?: Record<string, unknown> | null; marcadas?: { id: string }[]; erro?: string }) {
+    const chamadas: { tipo: string; payload?: unknown; filtros: [string, string, unknown][] }[] = [];
     const db = {
       from() {
+        const op = { tipo: 'select', payload: undefined as unknown, filtros: [] as [string, string, unknown][] };
+        chamadas.push(op);
+        const resolver = () => {
+          if (opcoes.erro) return { data: null, error: { message: opcoes.erro } };
+          if (op.tipo === 'update') return { data: opcoes.marcadas ?? [], error: null };
+          return { data: opcoes.linha === undefined ? null : opcoes.linha, error: null };
+        };
         const b: Record<string, unknown> = {
           select: () => b,
-          eq: (k: string, v: unknown) => (filtros.push(['eq', k, v]), b),
-          limit: () => b,
+          update: (p: unknown) => ((op.tipo = 'update'), (op.payload = p), b),
+          eq: (k: string, v: unknown) => (op.filtros.push(['eq', k, v]), b),
+          in: (k: string, v: unknown) => (op.filtros.push(['in', k, v]), b),
+          is: (k: string, v: unknown) => (op.filtros.push(['is', k, v]), b),
+          maybeSingle: () => Promise.resolve().then(resolver),
           then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
-            Promise.resolve(
-              opcoes.erro ? { data: null, error: { message: opcoes.erro } } : { data: opcoes.linhas ?? [], error: null }
-            ).then(onF, onR),
+            Promise.resolve().then(resolver).then(onF, onR),
         };
         return b;
       },
     };
-    return { db: db as unknown as SupabaseClient, filtros };
+    return { db: db as unknown as SupabaseClient, chamadas };
   }
 
-  it('⚠️⚠️ o sinal é a própria fila: QUALQUER espera desta execução em cancelled', async () => {
-    // Resposta do cliente, card que saiu da etapa, botão Parar, passo "Parar
-    // automação", desativação — em todos, alguém mandou a execução parar, e a
-    // continuação que estacionou depois não pode retomá-la (Codex, PR #223).
-    const { db, filtros } = filaFalsa({ linhas: [{ id: 'p-cancelada' }] });
-    expect(await execucaoJaInterrompida(db, 'log-1')).toBe(true);
-    expect(filtros).toEqual([
-      ['eq', 'log_id', 'log-1'],
-      ['eq', 'status', 'cancelled'],
+  it('⚠️⚠️ marcar: por REGISTRO, com o motivo, e só a PRIMEIRA marca fica', async () => {
+    const { db, chamadas } = logsFalsos({ marcadas: [{ id: 'log-1' }] });
+    const n = await marcarExecucoesInterrompidas(db, ['log-1', null, 'log-1', undefined, 'log-2'], 'resposta');
+
+    expect(n).toBe(1);
+    expect(chamadas[0].tipo).toBe('update');
+    expect(chamadas[0].payload).toMatchObject({ interrompida_por: 'resposta' });
+    expect((chamadas[0].payload as { interrompida_em: string }).interrompida_em).toMatch(/^\d{4}-/);
+    expect(chamadas[0].filtros).toEqual([
+      ['in', 'id', ['log-1', 'log-2']],
+      // Quem interrompeu primeiro é o motivo que vale.
+      ['is', 'interrompida_em', null],
     ]);
   });
 
-  it('sem linha cancelada: a execução segue', async () => {
-    const { db } = filaFalsa({ linhas: [] });
+  it('marcar: sem registro não vai ao banco; erro vira zero, nunca estoura', async () => {
+    const vazio = logsFalsos({});
+    expect(await marcarExecucoesInterrompidas(vazio.db, [null, undefined], 'parar')).toBe(0);
+    expect(vazio.chamadas).toHaveLength(0);
+
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const comErro = logsFalsos({ erro: 'timeout' });
+      await expect(marcarExecucoesInterrompidas(comErro.db, ['log-1'], 'etapa')).resolves.toBe(0);
+    } finally {
+      calado.mockRestore();
+    }
+  });
+
+  it('⚠️⚠️ o sinal é a MARCA do registro: qualquer cancelamento a grava, e a retomada a lê', async () => {
+    const { db, chamadas } = logsFalsos({ linha: { interrompida_em: '2026-09-18T12:00:00Z' } });
+    expect(await execucaoJaInterrompida(db, 'log-1')).toBe(true);
+    expect(chamadas[0].filtros).toEqual([['eq', 'id', 'log-1']]);
+  });
+
+  it('sem marca: a execução segue', async () => {
+    const { db } = logsFalsos({ linha: { interrompida_em: null } });
     expect(await execucaoJaInterrompida(db, 'log-1')).toBe(false);
   });
 
   it('sem log não há execução a consultar — nem vai ao banco', async () => {
-    const { db, filtros } = filaFalsa({ linhas: [{ id: 'x' }] });
+    const { db, chamadas } = logsFalsos({ linha: { interrompida_em: 'x' } });
     expect(await execucaoJaInterrompida(db, null)).toBe(false);
-    expect(filtros).toHaveLength(0);
+    expect(chamadas).toHaveLength(0);
   });
 
   it('⚠️ falha ABERTA: erro de leitura não trava a retomada de toda automação', async () => {
-    const { db } = filaFalsa({ erro: 'timeout' });
+    const { db } = logsFalsos({ erro: 'timeout' });
     expect(await execucaoJaInterrompida(db, 'log-1')).toBe(false);
   });
 });

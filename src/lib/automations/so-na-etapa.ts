@@ -42,7 +42,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { anotarInterrupcao } from './interrupcao';
+import { anotarInterrupcao, marcarExecucoesInterrompidas } from './interrupcao';
 
 export const DETALHE_SAIU_DA_ETAPA =
   'interrompida: o card saiu da etapa desta automação';
@@ -154,38 +154,35 @@ export async function cardSaiuDaEtapa(args: {
   }
 }
 
-interface EsperaCandidata {
+interface ExecucaoCandidata {
   id: string;
-  log_id: string | null;
-  deal: string | null;
+  automation_id: string;
   automations: AutomacaoComGatilho | AutomacaoComGatilho[] | null;
 }
 
 /**
- * Das esperas pendentes do contato, quais este movimento encerra. PURO.
+ * Das execuções VIVAS de automações de etapa deste contato, quais este
+ * movimento encerra. PURO.
  *
- * `negocioAbertoMaisRecente` só é consultado para a espera SEM `deal_id` no
- * contexto (execução disparada à mão): para ela o card é "o aberto mais
- * recente do contato" — a mesma resolução da ponta 1, senão as duas pontas
- * discordariam sobre a mesma espera.
+ * ⚠️ A unidade é a EXECUÇÃO (o registro), não a espera (5ª rodada do Codex,
+ * PR #223): entre o disparo e a primeira espera a execução está rodando e não
+ * tem linha nenhuma na fila — e uma saída nesse instante não tinha onde se
+ * gravar. O registro existe desde o primeiro passo.
  */
-export function esperasQueOMovimentoEncerra(
-  candidatas: EsperaCandidata[],
-  movimento: { dealId: string; toStageId: string },
-  negocioAbertoMaisRecente: string | null
-): EsperaCandidata[] {
-  return candidatas.filter((espera) => {
-    const automacao = Array.isArray(espera.automations)
-      ? espera.automations[0]
-      : espera.automations;
+export function execucoesQueOMovimentoEncerra(
+  candidatas: ExecucaoCandidata[],
+  toStageId: string
+): ExecucaoCandidata[] {
+  return candidatas.filter((execucao) => {
+    const automacao = Array.isArray(execucao.automations)
+      ? execucao.automations[0]
+      : execucao.automations;
     if (!automacao) return false;
     const etapas = etapasQuePrendem(automacao);
     if (!etapas) return false;
     // Entrou em OUTRA etapa que também prende esta automação (o cartão
     // "expandido" na grade): continua dentro.
-    if (!estaFora(etapas, movimento.toStageId)) return false;
-    const cardDaEspera = espera.deal ?? negocioAbertoMaisRecente;
-    return cardDaEspera === movimento.dealId;
+    return estaFora(etapas, toStageId);
   });
 }
 
@@ -216,98 +213,70 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
   /**
    * `criado_em` do evento de funil — o instante em que o card se moveu.
    *
-   * ⚠️⚠️ Só cai a espera que JÁ EXISTIA quando o card saiu (Codex, PR #223).
+   * ⚠️⚠️ Só a execução que JÁ EXISTIA quando o card saiu (Codex, PR #223).
    * Os eventos não são processados em ordem garantida: o aviso imediato e o
-   * cron drenam ao mesmo tempo, cada um reivindicando evento por evento, e o
-   * card que SAI e VOLTA rápido pode ter a reentrada processada ANTES da
-   * saída. Sem este corte, a saída atrasada enxergaria a espera da execução
-   * NOVA — a que a reentrada acabou de iniciar — e a cancelaria: o cliente
-   * voltou para No Show e ficaria sem a sequência, em silêncio. Os dois
-   * carimbos são `now()` do MESMO banco, então a comparação é honesta. A
-   * espera estacionada DEPOIS do evento por uma execução antiga (a própria
-   * automação que moveu o card e esperou em seguida) fica para a ponta 1.
+   * cron drenam ao mesmo tempo, evento por evento, e o card que SAI e VOLTA
+   * rápido pode ter a reentrada processada ANTES da saída. Sem este corte, a
+   * saída atrasada enxergaria a execução NOVA — a que a reentrada acabou de
+   * iniciar — e a mataria: o cliente voltou para No Show e ficaria sem a
+   * sequência, em silêncio. Os dois carimbos são `now()` do MESMO banco.
    */
   movidoEm: string | null;
 }): Promise<number> {
   const { db, accountId, contactId, dealId, toStageId, movidoEm } = args;
   if (!contactId || !dealId || !toStageId) return 0;
   try {
+    // As execuções VIVAS (sem hora de fim) de automações de etapa deste
+    // contato — inclusive a que está RODANDO agora, sem espera nenhuma.
     let consulta = db
-      .from('automation_pending_executions')
-      .select(
-        'id, log_id, deal:context->>deal_id, automations!inner(trigger_type, trigger_config)'
-      )
+      .from('automation_logs')
+      .select('id, automation_id, automations!inner(trigger_type, trigger_config)')
       .eq('account_id', accountId)
       .eq('contact_id', contactId)
-      .eq('status', 'pending')
+      .is('finalizado_em', null)
+      .is('interrompida_em', null)
       .eq('automations.trigger_type', 'deal_stage_changed');
     if (movidoEm) consulta = consulta.lte('created_at', movidoEm);
     const { data, error } = await consulta;
     if (error) {
       console.error(
-        '[automations] so-na-etapa: leitura das esperas falhou:',
+        '[automations] so-na-etapa: leitura das execuções falhou:',
         error.message
       );
       return 0;
     }
-    const candidatas = (data ?? []) as unknown as EsperaCandidata[];
-    if (candidatas.length === 0) return 0;
-
-    // Só paga a consulta do "negócio aberto mais recente" quando há espera
-    // sem card no contexto (execução manual) — o caso raro.
-    let maisRecente: string | null = null;
-    if (candidatas.some((c) => !c.deal)) {
-      const { data: negocio, error: erroDoNegocio } = await db
-        .from('deals')
-        .select('id')
-        .eq('account_id', accountId)
-        .eq('contact_id', contactId)
-        .eq('status', 'open')
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
-      // Sem saber qual é o card dessas esperas, elas ficam para a ponta 1.
-      if (!erroDoNegocio) maisRecente = (negocio?.id as string | undefined) ?? null;
-    }
-
-    const alvos = esperasQueOMovimentoEncerra(
-      candidatas,
-      { dealId, toStageId },
-      maisRecente
+    const alvos = execucoesQueOMovimentoEncerra(
+      (data ?? []) as unknown as ExecucaoCandidata[],
+      toStageId
     );
     if (alvos.length === 0) return 0;
 
+    // ⚠️ O registro não guarda o card. Numa conta em que o contato tem DOIS
+    // negócios abertos em etapas presas, a saída de um marcaria a execução do
+    // outro — aceito e escrito: "um card por contato" é a regra desta casa.
+    const logIds = alvos.map((a) => a.id);
+    const marcadas = await marcarExecucoesInterrompidas(db, logIds, 'etapa');
+
+    // A foto de agora: toda espera pendente dessas execuções cai — sem corte
+    // por data, porque a execução NOVA da reentrada é outro registro.
     const { data: canceladas, error: erroDoCancelamento } = await db
       .from('automation_pending_executions')
       .update({ status: 'cancelled' })
-      .in(
-        'id',
-        alvos.map((a) => a.id)
-      )
+      .in('log_id', logIds)
       .eq('account_id', accountId)
-      // A foto é de instantes atrás: o agendador pode ter reivindicado a
-      // espera no meio. Quem decide é o banco.
       .eq('status', 'pending')
-      .select('id, log_id');
+      .select('id');
     if (erroDoCancelamento) {
       console.error(
         '[automations] so-na-etapa: cancelamento falhou:',
         erroDoCancelamento.message
       );
-      return 0;
     }
 
-    const feitas = (canceladas ?? []) as { id: string; log_id: string | null }[];
-    // Uma anotação por EXECUÇÃO, não por linha: a mesma execução pode ter duas
-    // esperas na fila (a do ramo e a do escopo de fora), e duas linhas iguais
-    // no registro contariam uma saída como duas (Codex, PR #223).
-    const anotadas = new Set<string>();
-    for (const espera of feitas) {
-      if (!espera.log_id || anotadas.has(espera.log_id)) continue;
-      anotadas.add(espera.log_id);
-      await anotarInterrupcao(db, espera.log_id, null, DETALHE_SAIU_DA_ETAPA);
+    for (const logId of logIds) {
+      await anotarInterrupcao(db, logId, null, DETALHE_SAIU_DA_ETAPA);
     }
-    return feitas.length;
+    return marcadas + (canceladas ?? []).length;
   } catch (err) {
     console.error('[automations] so-na-etapa estourou:', err);
     return 0;

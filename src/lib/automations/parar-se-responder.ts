@@ -33,7 +33,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { anotarInterrupcao } from './interrupcao';
+import { anotarInterrupcao, marcarExecucoesInterrompidas } from './interrupcao';
 
 /** Sublinhado inicial: a convenção das chaves internas do contexto. */
 export const CHAVE_PARAR_SE_RESPONDER = '_parar_se_responder';
@@ -156,6 +156,11 @@ export async function cancelarEsperasPorResposta(args: {
           .filter((id): id is string => typeof id === 'string')
       ),
     ];
+    // ⚠️ A MARCA primeiro (1005): é ela que a retomada e o estacionamento
+    // consultam. As linhas da fila são a foto de agora; a marca é o que segura
+    // a continuação que ainda nem existe.
+    await marcarExecucoesInterrompidas(db, execucoes, 'resposta');
+
     let irmas = 0;
     if (execucoes.length > 0) {
       const { data: outras, error: erroDasIrmas } = await db

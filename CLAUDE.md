@@ -694,25 +694,28 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   ramo é a forma NORMAL das automações deste escritório, então recusar a opção
   ali não era saída. São duas peças: (1) depois das marcadas, um 2º UPDATE
   cancela toda espera `pending` dos MESMOS `log_id` (conta + contato); (2) a
-  RETOMADA pergunta `execucaoJaInterrompida` (`interrupcao.ts`) — o sinal é a
-  própria fila, QUALQUER espera daquele log em `cancelled` —, que barra a
-  continuação que ainda NÃO estava estacionada quando o cancelamento
-  aconteceu. Vale para os CINCO cancelamentos (resposta, saída da etapa,
-  botão Parar, passo "Parar automação", desativação): em todos, alguém mandou
-  a execução parar. ⚠️ Vem ANTES da conferência de etapa (3ª rodada do Codex):
-  o card pode ter VOLTADO, e ainda assim a execução antiga acabou — senão a
-  espera de fora do corte por data do dreno acordava e a execução antiga
-  seguia ao lado da nova. Falha ABERTA (é a 2ª defesa de uma corrida de
-  segundos). Espera de OUTRA execução do mesmo contato, sem marca, não é
-  tocada — medido. ⚠️ E o ESTACIONAMENTO faz a mesma pergunta antes dos DOIS
-  inserts da fila (o "Aguardar" e a retentativa; 4ª rodada do Codex): o escopo
-  de fora que ainda rodava quando o cancelamento aconteceu não pode criar uma
-  linha `pending` que a aba Automações mostraria "por dias" e a retomada
-  cancelaria de qualquer jeito. Sem linha, sem zumbi; o passo vira `skipped`
-  e o escopo devolve `partial`, como uma espera estacionada. ⚠️ Toda pergunta
-  por `log_id` na fila (esta, a guarda de `fecharLog`, as irmãs) depende do
-  índice da **1004** — a fila não é podada, e sem ele cada tique do agendador
-  varria o histórico inteiro.
+  MARCA DURÁVEL no registro — `automation_logs.interrompida_em`/`_por`
+  (**1005**), gravada por `marcarExecucoesInterrompidas` em TODOS os cinco
+  cancelamentos (resposta, saída da etapa, botão Parar, passo "Parar
+  automação", desativação) — que a RETOMADA lê (`execucaoJaInterrompida`,
+  ANTES da conferência de etapa: o card pode ter VOLTADO e a execução antiga
+  acabou mesmo assim) e que o ESTACIONAMENTO respeita DENTRO da função
+  `cb_estacionar_espera`. ⚠️⚠️ A marca mora no REGISTRO, e não nas linhas da
+  fila (a 1ª versão, 5ª rodada do Codex): entre o disparo e a primeira espera
+  a execução está RODANDO e não tem linha nenhuma na fila — um cancelamento
+  nesse instante não tinha onde se gravar, e a espera que vinha depois
+  acordava com o card de volta à etapa ao lado da execução nova. O registro
+  existe desde o primeiro passo. ⚠️⚠️ E o motor NUNCA insere na fila
+  direto: os dois estacionamentos (o "Aguardar" e a retentativa) passam por
+  `cb_estacionar_espera`, que trava a linha do registro (`FOR UPDATE`),
+  confere a marca e insere numa transação só — quem marca e quem estaciona se
+  serializam pelo lock; `null` de volta = interrompida, o passo vira
+  `skipped` e o escopo devolve `partial` (sem linha, sem zumbi na aba). Um
+  INSERT direto reabriria o vão entre "perguntar" e "inserir" (4ª rodada);
+  há pino estrutural. Falha ABERTA na leitura da marca (é a 2ª defesa de uma
+  corrida de segundos). Espera de OUTRA execução do mesmo contato, sem marca,
+  não é tocada — medido. ⚠️ Toda pergunta por `log_id` na fila (a guarda de
+  `fecharLog`, as irmãs) depende do índice da **1004** — a fila não é podada.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
   a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
@@ -805,16 +808,20 @@ código novo:
   ficar com DUAS correndo. Há pino estrutural das duas pontas e da ordem
   (`so-na-etapa.chamadores.test.ts`) — o laço do dreno não tem teste de
   comportamento, e "esqueci de chamar" só se pega lendo o fonte.
-- ⚠️⚠️ **A ponta 2 só cancela a espera que JÁ EXISTIA quando o card saiu**
-  (`.lte('created_at', evento.criado_em)`; Codex, PR #223). Os eventos de
+- ⚠️⚠️ **A ponta 2 trabalha por EXECUÇÃO (registro), não por espera** (5ª
+  rodada do Codex): lê os registros VIVOS de automações de etapa do contato
+  (`finalizado_em` e `interrompida_em` nulos), MARCA os das automações presas
+  cujas etapas não incluem o destino (`marcarExecucoesInterrompidas`,
+  motivo `etapa`), cancela toda espera `pending` desses `log_id` e anota uma
+  vez por registro. Só a execução que JÁ EXISTIA quando o card saiu
+  (`.lte('created_at', evento.criado_em)` sobre o REGISTRO): os eventos de
   funil não são processados em ordem garantida — o aviso imediato e o cron
-  drenam ao mesmo tempo, evento por evento —, e no card que SAI e VOLTA rápido
-  a reentrada pode ser processada ANTES da saída. Sem o corte, a saída atrasada
-  cancelaria a execução NOVA que a reentrada acabou de iniciar: o cliente de
-  volta em No Show ficaria sem a sequência, em silêncio. Os dois carimbos são
-  `now()` do mesmo banco. A espera estacionada DEPOIS do evento por execução
-  antiga fica para a ponta 1. E a anotação é UMA por execução (`log_id`), não
-  por linha — ramo + raiz do mesmo log contariam uma saída como duas.
+  drenam ao mesmo tempo —, e no card que SAI e VOLTA rápido a reentrada pode
+  ser processada ANTES da saída; sem o corte, a saída atrasada mataria a
+  execução NOVA da reentrada. A execução que está RODANDO sem espera nenhuma
+  também é marcada — é o furo que a versão por espera deixava. ⚠️ O registro
+  não guarda o card: contato com DOIS negócios abertos em etapas presas teria
+  a execução do outro marcada — aceito e escrito ("um card por contato").
 - ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
   retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
   `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,
@@ -5733,6 +5740,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     com autorização do operador; conferida por consulta (as 2 colunas,
     `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
     idempotente, os 4 cenários da cerca do UPDATE).
+  - **1005_cb_execucao_interrompida** — `automation_logs.interrompida_em` +
+    `interrompida_por` (CHECK com os cinco motivos), o índice parcial das
+    execuções vivas por contato, e a função `cb_estacionar_espera` — a
+    ÚNICA porta da fila pelo motor (trava o registro, confere a marca,
+    insere). ⚠️ Aplicar ANTES do deploy: sem a função todo "Aguardar" falha
+    de forma visível ("function does not exist") — nada sai errado ao
+    cliente, mas nenhuma sequência estaciona. `SECURITY INVOKER`, EXECUTE só
+    do `service_role` (as duas metades do REVOKE, conferidas). ⚠️ PENDENTE de
+    aplicar em produção (escrita no PR #223, 18/09/2026).
   - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
     `automation_pending_executions (log_id)`: a guarda de `fecharLog`, o
     sinal `execucaoJaInterrompida` (retomada E estacionamento) e o
@@ -5740,8 +5756,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     (`done`/`cancelled` ficam para sempre — é o histórico que o sinal lê).
     Aditiva: sem ela tudo responde certo, só devagar; pode entrar antes ou
     depois do deploy. Medido antes: a tabela estava VAZIA em produção (nenhuma
-    automação ativa tinha "Aguardar"). ⚠️ PENDENTE de aplicar em produção
-    (escrita no PR #223, 18/09/2026).
+    automação ativa tinha "Aguardar"). Aplicada em 18/09/2026 pela Management
+    API (histórico `20260918162117`), ANTES do merge do PR #223, com
+    autorização do operador; conferida por consulta ao catálogo (o índice
+    existe ao lado de `idx_automation_pending_due` e `_account`).
   - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
     com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
     antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a

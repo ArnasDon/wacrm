@@ -105,19 +105,14 @@ describe('o motor cuida da MARCA nas duas pontas', () => {
     expect(pergunta).toBeLessThan(corpo.indexOf('executeStepsFrom('))
   })
 
-  it('⚠️ o ESTACIONAMENTO pergunta se a execução já foi interrompida — nos dois inserts da fila (4ª rodada)', () => {
-    // Sem isto, o escopo de fora que ainda rodava quando o cliente respondeu
-    // estacionava uma linha `pending` que a aba mostraria por dias.
+  it('⚠️⚠️ o ESTACIONAMENTO passa SÓ pela função cb_estacionar_espera (1005) — nunca INSERT direto na fila', () => {
+    // A função trava o registro e recusa a execução interrompida NA MESMA
+    // transação. Um INSERT direto reabriria o vão entre "perguntar" e
+    // "inserir" (4ª e 5ª rodadas do Codex).
     const inicio = motor.indexOf('async function executeStepsFrom')
     const corpo = motor.slice(inicio, motor.indexOf('async function runStep', inicio))
-    const inserts = corpo.split("from('automation_pending_executions')").length - 1
-    expect(inserts).toBe(2)
-    const perguntas = corpo.split('execucaoJaInterrompida(db, args.logId)').length - 1
-    expect(perguntas).toBe(2)
-    // E a pergunta vem ANTES do insert, nos dois.
-    expect(corpo.indexOf('execucaoJaInterrompida(db, args.logId)')).toBeLessThan(
-      corpo.indexOf("from('automation_pending_executions')"),
-    )
+    expect(corpo.split("'cb_estacionar_espera'").length - 1).toBe(2)
+    expect(corpo).not.toContain('.insert(')
   })
 
   it('⚠️ a retomada limpa a marca antes de qualquer passo rodar', () => {

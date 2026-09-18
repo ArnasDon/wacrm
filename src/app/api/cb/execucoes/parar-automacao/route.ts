@@ -8,14 +8,15 @@
 // as esperas de TODOS os clientes daquela automação, em silêncio.
 //
 // `cancelled`, nunca `failed`: cancelamento não é erro e não pode alimentar
-// o painel de falhas (decisão da 936). O log da execução NÃO é tocado —
-// é exatamente o que o motor faz nos dois cancelamentos que já existem
-// (passo `stop_automation` e desativação da automação).
+// o painel de falhas (decisão da 936). O desfecho do log NÃO é tocado; desde
+// a 1005 o registro ganha a MARCA `interrompida_em` (motivo `parar`), a mesma
+// dos outros cancelamentos — é ela que a retomada e o estacionamento leem.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/automations/admin-client'
+import { marcarExecucoesInterrompidas } from '@/lib/automations/interrupcao'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   checkRateLimit,
@@ -55,12 +56,21 @@ export async function POST(request: Request) {
       .eq('account_id', ctx.accountId)
       .eq('contact_id', contactId)
       .eq('status', 'pending')
-      .select('id')
+      .select('id, log_id')
 
     if (error) {
       console.error('[execucoes] parar-automacao falhou:', error.message)
       return NextResponse.json({ error: 'db_error' }, { status: 500 })
     }
+
+    // A MARCA no registro (1005): é o que impede a continuação que ainda não
+    // estava na fila — o escopo de fora rodando, a retentativa — de retomar a
+    // execução que o operador acabou de parar.
+    await marcarExecucoesInterrompidas(
+      db,
+      (data ?? []).map((l) => (l as { log_id: string | null }).log_id),
+      'parar',
+    )
 
     // 0 não é erro: a espera pode ter acordado (ou sido cancelada) entre a
     // carga da aba e o clique — a lista é uma foto de segundos atrás.

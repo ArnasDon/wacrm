@@ -187,6 +187,14 @@ describe('cancelarEsperasPorResposta', () => {
     const n = await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' });
 
     expect(n).toBe(2);
+    // A MARCA da 1005 vai para o REGISTRO, antes das irmãs: é ela que a
+    // retomada e o estacionamento consultam.
+    const marca = chamadas.find((c) => c.tabela === 'automation_logs' && c.tipo === 'update');
+    expect(marca?.payload).toMatchObject({ interrompida_por: 'resposta' });
+    expect(marca?.filtros).toEqual([
+      ['in', 'id', ['log-1']],
+      ['is', 'interrompida_em', null],
+    ]);
     const [, dasIrmas] = updatesDaFila(chamadas);
     expect(dasIrmas.payload).toEqual({ status: 'cancelled' });
     // Pela EXECUÇÃO (`log_id`), e com as mesmas cercas: conta, contato, pending.
@@ -218,7 +226,7 @@ describe('cancelarEsperasPorResposta', () => {
 
     await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' });
 
-    const gravadas = notas(chamadas);
+    const gravadas = notas(chamadas).filter((c) => 'steps_executed' in (c.payload as object));
     expect(gravadas.map((g) => g.filtros[0])).toEqual([
       ['eq', 'id', 'log-1'],
       ['eq', 'id', 'log-2'],
@@ -238,7 +246,8 @@ describe('cancelarEsperasPorResposta', () => {
     });
     await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' });
 
-    expect(Object.keys(notas(chamadas)[0].payload as object)).toEqual(['steps_executed']);
+    const daAnotacao = notas(chamadas).find((c) => 'steps_executed' in (c.payload as object));
+    expect(Object.keys(daAnotacao?.payload as object)).toEqual(['steps_executed']);
   });
 
   it('espera sem log: cancela, mas não tem execução para estender nem onde anotar', async () => {

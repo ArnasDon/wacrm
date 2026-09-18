@@ -5,7 +5,7 @@ import {
   DETALHE_SAIU_DA_ETAPA,
   cancelarEsperasAoSairDaEtapa,
   cardSaiuDaEtapa,
-  esperasQueOMovimentoEncerra,
+  execucoesQueOMovimentoEncerra,
   estaFora,
   etapasQuePrendem,
 } from './so-na-etapa';
@@ -75,81 +75,55 @@ describe('estaFora', () => {
   });
 });
 
-describe('esperasQueOMovimentoEncerra', () => {
-  const espera = (id: string, deal: string | null, automations: unknown) => ({
+describe('execucoesQueOMovimentoEncerra', () => {
+  const execucao = (id: string, automations: unknown) => ({
     id,
-    log_id: `log-${id}`,
-    deal,
+    automation_id: `auto-${id}`,
     automations: automations as never,
   });
-  const movimento = { dealId: 'deal-1', toStageId: REUNIAO };
 
-  it('o caso do No Show: presa, mesmo card, foi para fora → encerra', () => {
-    const r = esperasQueOMovimentoEncerra([espera('p1', 'deal-1', presa())], movimento, null);
-    expect(r.map((e) => e.id)).toEqual(['p1']);
+  it('o caso do No Show: execução de automação presa, card foi para fora → encerra', () => {
+    expect(execucoesQueOMovimentoEncerra([execucao('e1', presa())], REUNIAO).map((e) => e.id)).toEqual(['e1']);
   });
 
   it('automação NÃO presa fica — inclusive a de etapa sem a caixa', () => {
-    const r = esperasQueOMovimentoEncerra(
+    const r = execucoesQueOMovimentoEncerra(
       [
-        espera('p1', 'deal-1', { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } }),
-        espera('p2', 'deal-1', { trigger_type: 'calendly_booking', trigger_config: {} }),
+        execucao('e1', { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } }),
+        execucao('e2', { trigger_type: 'calendly_booking', trigger_config: {} }),
       ],
-      movimento,
-      null
+      REUNIAO
     );
     expect(r).toEqual([]);
   });
 
   it('⚠️ card foi para OUTRA etapa que também prende a automação → continua', () => {
-    const r = esperasQueOMovimentoEncerra(
-      [espera('p1', 'deal-1', presa({ stage_ids: [NO_SHOW, REUNIAO] }))],
-      movimento,
-      null
-    );
-    expect(r).toEqual([]);
+    expect(execucoesQueOMovimentoEncerra([execucao('e1', presa({ stage_ids: [NO_SHOW, REUNIAO] }))], REUNIAO)).toEqual([]);
   });
 
-  it('⚠️ espera de OUTRO card do mesmo contato não é tocada', () => {
-    const r = esperasQueOMovimentoEncerra([espera('p1', 'deal-2', presa())], movimento, null);
-    expect(r).toEqual([]);
-  });
-
-  it('execução manual (sem card no contexto): vale o negócio aberto mais recente', () => {
-    const lista = [espera('p1', null, presa())];
-    expect(esperasQueOMovimentoEncerra(lista, movimento, 'deal-1').map((e) => e.id)).toEqual(['p1']);
-    expect(esperasQueOMovimentoEncerra(lista, movimento, 'deal-9')).toEqual([]);
-    // Não deu para saber qual é o card → fica para a conferência da retomada.
-    expect(esperasQueOMovimentoEncerra(lista, movimento, null)).toEqual([]);
-  });
-
-  it('⚠️⚠️ o MESMO lead com VÁRIAS automações estacionadas: o movimento só encerra quem pediu', () => {
+  it('⚠️⚠️ o MESMO lead com VÁRIAS automações: o movimento só encerra quem pediu', () => {
     // Pergunta do operador (18/09/2026): um lead pode ter mais de uma
     // automação rodando — várias na mesma etapa, e outras que NÃO foram
     // marcadas para parar. Medido de ponta a ponta com quatro ao mesmo tempo;
     // este é o pino do recorte.
-    const r = esperasQueOMovimentoEncerra(
+    const r = execucoesQueOMovimentoEncerra(
       [
-        espera('presa-1', 'deal-1', presa()),
-        espera('presa-2', 'deal-1', presa()),
-        espera('mesma-etapa-sem-caixa', 'deal-1', {
+        execucao('presa-1', presa()),
+        execucao('presa-2', presa()),
+        execucao('mesma-etapa-sem-caixa', {
           trigger_type: 'deal_stage_changed',
           trigger_config: { stage_ids: [NO_SHOW], parar_ao_sair: false },
         }),
-        espera('calendly', 'deal-1', { trigger_type: 'calendly_booking', trigger_config: {} }),
-        espera('manual-com-parar-se-responder', null, { trigger_type: 'manual', trigger_config: {} }),
+        execucao('calendly', { trigger_type: 'calendly_booking', trigger_config: {} }),
+        execucao('manual', { trigger_type: 'manual', trigger_config: {} }),
       ],
-      movimento,
-      'deal-1'
+      REUNIAO
     );
-    // As DUAS presas caem (as duas pediram); as outras três seguem — inclusive
-    // a da MESMA etapa que o operador deixou sem a caixa.
     expect(r.map((e) => e.id)).toEqual(['presa-1', 'presa-2']);
   });
 
   it('o embed do PostgREST pode vir como LISTA', () => {
-    const r = esperasQueOMovimentoEncerra([espera('p1', 'deal-1', [presa()])], movimento, null);
-    expect(r.map((e) => e.id)).toEqual(['p1']);
+    expect(execucoesQueOMovimentoEncerra([execucao('e1', [presa()])], REUNIAO).map((e) => e.id)).toEqual(['e1']);
   });
 });
 
@@ -163,9 +137,10 @@ function bancoFalso(opcoes: {
   negocio?: { stage_id?: string; id?: string } | null;
   erroNoNegocio?: string;
   estouraNoNegocio?: boolean;
-  esperas?: unknown[];
-  erroNasEsperas?: string;
-  canceladas?: { id: string; log_id: string | null }[];
+  /** As execuções VIVAS que o SELECT em `automation_logs` devolve. */
+  execucoes?: unknown[];
+  erroNasExecucoes?: string;
+  canceladas?: { id: string }[];
   erroNoCancelamento?: string;
 }) {
   const chamadas: { tabela: string; tipo: string; payload?: unknown; filtros: Filtro[] }[] = [];
@@ -180,15 +155,18 @@ function bancoFalso(opcoes: {
           return { data: opcoes.negocio ?? null, error: null };
         }
         if (tabela === 'automation_pending_executions') {
-          if (op.tipo === 'update') {
-            if (opcoes.erroNoCancelamento) return { data: null, error: { message: opcoes.erroNoCancelamento } };
-            return { data: opcoes.canceladas ?? [], error: null };
-          }
-          if (opcoes.erroNasEsperas) return { data: null, error: { message: opcoes.erroNasEsperas } };
-          return { data: opcoes.esperas ?? [], error: null };
+          if (opcoes.erroNoCancelamento) return { data: null, error: { message: opcoes.erroNoCancelamento } };
+          return { data: opcoes.canceladas ?? [], error: null };
         }
+        // automation_logs: a lista de execuções vivas (select com embed), a
+        // marca (update com `interrompida_por`), a anotação (update com
+        // `steps_executed`) e a leitura para anotar (select por id).
         if (op.tipo === 'update') return { data: [{ id: 'log' }], error: null };
-        return { data: { steps_executed: [] }, error: null };
+        if (op.filtros.some(([o, k]) => o === 'eq' && k === 'id')) {
+          return { data: { steps_executed: [] }, error: null };
+        }
+        if (opcoes.erroNasExecucoes) return { data: null, error: { message: opcoes.erroNasExecucoes } };
+        return { data: opcoes.execucoes ?? [], error: null };
       };
       const b: Record<string, unknown> = {
         select: () => b,
@@ -196,7 +174,7 @@ function bancoFalso(opcoes: {
         eq: (k: string, v: unknown) => (op.filtros.push(['eq', k, v]), b),
         in: (k: string, v: unknown) => (op.filtros.push(['in', k, v]), b),
         lte: (k: string, v: unknown) => (op.filtros.push(['lte', k, v]), b),
-        is: () => b,
+        is: (k: string, v: unknown) => (op.filtros.push(['is', k, v]), b),
         order: () => b,
         limit: () => b,
         maybeSingle: () => Promise.resolve().then(resolver),
@@ -286,93 +264,77 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
     toStageId: REUNIAO,
     movidoEm: MOVIDO_EM,
   };
-  const esperaPresa = { id: 'p1', log_id: 'log-1', deal: 'deal-1', automations: presa() };
+  const execucaoPresa = { id: 'log-1', automation_id: 'auto-1', automations: presa() };
 
-  it('⚠️⚠️ as cercas: conta + CONTATO + pending na leitura; ids + conta + pending no cancelamento', async () => {
+  const updates = (chamadas: { tabela: string; tipo: string; payload?: unknown; filtros: Filtro[] }[], tabela: string) =>
+    chamadas.filter((c) => c.tabela === tabela && c.tipo === 'update');
+
+  it('⚠️⚠️ a unidade é a EXECUÇÃO: lê os registros VIVOS do contato, marca, e só então cancela a fila', async () => {
     const { db, chamadas } = bancoFalso({
-      esperas: [esperaPresa],
-      canceladas: [{ id: 'p1', log_id: 'log-1' }],
+      execucoes: [execucaoPresa],
+      canceladas: [{ id: 'p1' }],
     });
     const n = await cancelarEsperasAoSairDaEtapa({ db, ...evento });
 
-    expect(n).toBe(1);
+    expect(n).toBe(2); // 1 registro marcado + 1 espera cancelada
     const leitura = chamadas[0];
+    expect(leitura.tabela).toBe('automation_logs');
     expect(leitura.filtros).toEqual([
       ['eq', 'account_id', 'acct-1'],
       ['eq', 'contact_id', 'c1'],
-      ['eq', 'status', 'pending'],
+      // Viva: sem hora de fim e ainda não interrompida.
+      ['is', 'finalizado_em', null],
+      ['is', 'interrompida_em', null],
       ['eq', 'automations.trigger_type', 'deal_stage_changed'],
-      // ⚠️ Só o que JÁ EXISTIA quando o card saiu: a saída processada com
-      // atraso não pode cancelar a execução que uma reentrada iniciou.
+      // ⚠️ Só a execução que JÁ EXISTIA quando o card saiu: a saída
+      // processada com atraso não pode matar a que a reentrada iniciou.
       ['lte', 'created_at', MOVIDO_EM],
     ]);
-    const cancelamento = chamadas.find((c) => c.tabela === 'automation_pending_executions' && c.tipo === 'update');
-    expect(cancelamento?.payload).toEqual({ status: 'cancelled' });
-    expect(cancelamento?.filtros).toEqual([
-      ['in', 'id', ['p1']],
+
+    const [marca] = updates(chamadas, 'automation_logs');
+    expect(marca.payload).toMatchObject({ interrompida_por: 'etapa' });
+
+    const [cancelamento] = updates(chamadas, 'automation_pending_executions');
+    expect(cancelamento.payload).toEqual({ status: 'cancelled' });
+    // Pelo REGISTRO, sem corte por data: a execução nova é outro registro.
+    expect(cancelamento.filtros).toEqual([
+      ['in', 'log_id', ['log-1']],
       ['eq', 'account_id', 'acct-1'],
-      // A foto é de instantes atrás: quem decide é o banco.
       ['eq', 'status', 'pending'],
     ]);
   });
 
-  it('anota a interrupção no registro de cada espera cancelada', async () => {
-    const { db, chamadas } = bancoFalso({
-      esperas: [esperaPresa],
-      canceladas: [{ id: 'p1', log_id: 'log-1' }],
-    });
+  it('⚠️⚠️ execução RODANDO sem espera nenhuma na fila também é marcada (5ª rodada do Codex)', async () => {
+    // Entre o disparo e a primeira espera não há linha na fila — e a saída
+    // nesse instante não tinha onde se gravar. O registro existe.
+    const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], canceladas: [] });
+    const n = await cancelarEsperasAoSairDaEtapa({ db, ...evento });
+
+    expect(n).toBe(1);
+    expect(updates(chamadas, 'automation_logs')[0].payload).toMatchObject({ interrompida_por: 'etapa' });
+  });
+
+  it('anota a interrupção no registro de cada execução marcada', async () => {
+    const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], canceladas: [] });
     await cancelarEsperasAoSairDaEtapa({ db, ...evento });
 
-    const nota = chamadas.find((c) => c.tabela === 'automation_logs' && c.tipo === 'update');
+    const nota = updates(chamadas, 'automation_logs').find((c) => 'steps_executed' in (c.payload as object));
     const passos = (nota?.payload as { steps_executed: { detail: string; status: string }[] }).steps_executed;
     expect(passos.at(-1)).toMatchObject({ status: 'skipped', step_type: 'wait', detail: DETALHE_SAIU_DA_ETAPA });
   });
 
-  it('⚠️ UMA anotação por execução: ramo + raiz do mesmo log não viram duas linhas (Codex, PR #223)', async () => {
+  it('nenhuma execução presa: não escreve nada', async () => {
     const { db, chamadas } = bancoFalso({
-      esperas: [esperaPresa, { ...esperaPresa, id: 'p2' }],
-      canceladas: [
-        { id: 'p1', log_id: 'log-1' },
-        { id: 'p2', log_id: 'log-1' },
-        { id: 'p3', log_id: 'log-2' },
-      ],
-    });
-    const n = await cancelarEsperasAoSairDaEtapa({ db, ...evento });
-
-    expect(n).toBe(3);
-    const notas = chamadas.filter((c) => c.tabela === 'automation_logs' && c.tipo === 'update');
-    expect(notas.map((c) => c.filtros[0])).toEqual([
-      ['eq', 'id', 'log-1'],
-      ['eq', 'id', 'log-2'],
-    ]);
-  });
-
-  it('evento sem carimbo (linha antiga da fila): não recorta por data, mas cancela', async () => {
-    const { db, chamadas } = bancoFalso({ esperas: [esperaPresa], canceladas: [{ id: 'p1', log_id: null }] });
-    expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento, movidoEm: null })).toBe(1);
-    expect(chamadas[0].filtros.some(([op]) => op === 'lte')).toBe(false);
-  });
-
-  it('nenhuma espera presa: não escreve nada', async () => {
-    const { db, chamadas } = bancoFalso({
-      esperas: [{ id: 'p1', log_id: 'l', deal: 'deal-1', automations: { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } } }],
+      execucoes: [{ id: 'log-x', automation_id: 'a', automations: { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } } }],
     });
     expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento })).toBe(0);
     expect(chamadas.some((c) => c.tipo === 'update')).toBe(false);
   });
 
-  it('só consulta o negócio mais recente quando há espera SEM card no contexto', async () => {
-    const comCard = bancoFalso({ esperas: [esperaPresa], canceladas: [] });
-    await cancelarEsperasAoSairDaEtapa({ db: comCard.db, ...evento });
-    expect(comCard.chamadas.some((c) => c.tabela === 'deals')).toBe(false);
-
-    const semCard = bancoFalso({
-      esperas: [{ ...esperaPresa, deal: null }],
-      negocio: { id: 'deal-1' },
-      canceladas: [{ id: 'p1', log_id: null }],
-    });
-    expect(await cancelarEsperasAoSairDaEtapa({ db: semCard.db, ...evento })).toBe(1);
-    expect(semCard.chamadas.some((c) => c.tabela === 'deals')).toBe(true);
+  it('evento sem carimbo (linha antiga da fila): não recorta por data, mas segue', async () => {
+    const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], canceladas: [] });
+    expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento, movidoEm: null })).toBe(1);
+    expect(chamadas[0].filtros.some(([op]) => op === 'lte')).toBe(false);
   });
 
   it('evento sem contato, sem card ou sem etapa de destino: nada a fazer, nenhuma consulta', async () => {
@@ -386,10 +348,11 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
   it('⚠️ NUNCA lança: o dreno do funil não pode perder o disparo da etapa nova por causa disto', async () => {
     const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const lendo = bancoFalso({ erroNasEsperas: 'timeout' });
+      const lendo = bancoFalso({ erroNasExecucoes: 'timeout' });
       await expect(cancelarEsperasAoSairDaEtapa({ db: lendo.db, ...evento })).resolves.toBe(0);
-      const cancelando = bancoFalso({ esperas: [esperaPresa], erroNoCancelamento: 'timeout' });
-      await expect(cancelarEsperasAoSairDaEtapa({ db: cancelando.db, ...evento })).resolves.toBe(0);
+      const cancelando = bancoFalso({ execucoes: [execucaoPresa], erroNoCancelamento: 'timeout' });
+      // A marca ficou (1) mesmo com a fila recusando o cancelamento.
+      await expect(cancelarEsperasAoSairDaEtapa({ db: cancelando.db, ...evento })).resolves.toBe(1);
     } finally {
       calado.mockRestore();
     }

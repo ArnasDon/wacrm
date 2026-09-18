@@ -16,7 +16,11 @@ const h = vi.hoisted(() => ({
     ownedCustomField: null as { id: string } | null,
     pipeline: null as { id: string } | null,
     stage: null as { id: string } | null,
-    dealExistente: null as { id: string } | null,
+    dealExistente: null as { id: string; stage_id?: string } | null,
+    /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
+    erroNoNegocio: null as string | null,
+    /** Status gravados na fila (`markPending`), na ordem. */
+    statusDaFila: [] as unknown[],
     dealSelects: [] as [string, string, unknown][][],
     dealInserts: [] as Record<string, unknown>[],
     automations: [] as Record<string, unknown>[],
@@ -113,6 +117,9 @@ vi.mock('./admin-client', () => {
         };
       }
       state.dealSelects.push(ops.filters);
+      if (state.erroNoNegocio) {
+        return { data: null, error: { message: state.erroNoNegocio } };
+      }
       return { data: state.dealExistente, error: null };
     }
     if (table === 'automation_pending_executions') {
@@ -123,6 +130,10 @@ vi.mock('./admin-client', () => {
           return { data: null, error: { message: state.erroNaFila } };
         }
         state.esperasEnfileiradas.push(ops.payload as Record<string, unknown>);
+        return { data: null, error: null };
+      }
+      if (type === 'update') {
+        state.statusDaFila.push((ops.payload as { status?: unknown })?.status);
         return { data: null, error: null };
       }
       if (type === 'select') {
@@ -324,6 +335,8 @@ beforeEach(() => {
   h.state.customValues = [];
   h.state.esperasVivas = [];
   h.state.erroNaFila = null;
+  h.state.erroNoNegocio = null;
+  h.state.statusDaFila = [];
   h.state.membros = [
     { user_id: 'agente-fallback', full_name: 'Agente Um', email: 'um@cb.test' },
   ];
@@ -2682,5 +2695,104 @@ describe('Aguardar — parar se o cliente responder', () => {
     expect(h.state.esperasEnfileiradas).toHaveLength(0);
     expect(statusGravado()).toBe('failed');
     expect(desfechoGravado()?.desfecho).toBe('falhou');
+  });
+});
+
+
+// ============================================================
+// Automação PRESA À ETAPA (18/09/2026): a espera que acorda com o card fora
+// da etapa não retoma nada. Aqui se prende a ponta da RETOMADA — a garantia;
+// o cancelamento imediato no dreno do funil é de `so-na-etapa.test.ts`.
+// ============================================================
+describe('retomada de automação presa à etapa', () => {
+  const NO_SHOW = 'etapa-no-show';
+
+  const recuperacao = (config: Record<string, unknown>) => ({
+    ...automacaoSimples('a-noshow'),
+    name: 'No-Show Recuperação',
+    trigger_type: 'deal_stage_changed',
+    trigger_config: { stage_ids: [NO_SHOW], ...config },
+  });
+
+  async function acordar() {
+    h.state.steps = [
+      { ...passoDeTrabalho('s-msg-4', 1), automation_id: 'a-noshow' },
+    ];
+    await resumePendingExecution({
+      id: 'espera-1',
+      automation_id: 'a-noshow',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-noshow',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { deal_id: 'deal-1', to_stage_id: NO_SHOW },
+    });
+  }
+
+  const passosGravados = () =>
+    h.state.logUpdates
+      .filter((u) => 'steps_executed' in u)
+      .flatMap((u) => u.steps_executed as { step_id: string; detail?: string; status: string }[]);
+
+  it('⚠️⚠️ o cliente REAGENDOU (card saiu da etapa): nada roda, a espera vira cancelled e o motivo fica escrito', async () => {
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: 'etapa-reuniao-agendada' };
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(passosGravados().at(-1)).toMatchObject({
+      status: 'skipped',
+      detail: 'interrompida: o card saiu da etapa desta automação',
+    });
+    // Cancelamento não é desfecho: o precedente da 936.
+    expect(desfechoGravado()).toBeUndefined();
+  });
+
+  it('card ainda em No Show: a sequência segue', async () => {
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
+    expect(h.state.statusDaFila).toEqual(['done']);
+  });
+
+  it('⚠️ card APAGADO conta como fora da etapa', async () => {
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = null;
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['cancelled']);
+  });
+
+  it('⚠️⚠️ automação SEM a opção (gravada antes dela) segue mesmo com o card fora — nada muda retroativamente', async () => {
+    h.state.automations = [recuperacao({})];
+    h.state.dealExistente = { id: 'deal-1', stage_id: 'etapa-reuniao-agendada' };
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
+    expect(h.state.statusDaFila).toEqual(['done']);
+  });
+
+  it('⚠️⚠️ não consegui ler a etapa: falha VISÍVEL — nem segue cobrando, nem cancela calada', async () => {
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.erroNoNegocio = 'timeout';
+
+    await acordar();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['failed']);
+    expect(statusGravado()).toBe('failed');
+    expect(desfechoGravado()?.desfecho).toBe('falhou');
+    expect(horaDeFimGravada()).toBeTruthy();
   });
 });

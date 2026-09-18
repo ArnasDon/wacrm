@@ -300,6 +300,8 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
 | `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
 | `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
+| `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` logo depois do freio de `is_active`: fora da etapa → `cancelled` + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
+| `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
@@ -689,7 +691,7 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   botão Parar): conta + CONTATO + `status = 'pending'`. Espera que o agendador
   já reivindicou (`running`) não é alcançada — corrida de segundos, inerente.
 - ⚠️ **`cancelled`, e o desfecho do log NÃO é tocado** (precedente da 936),
-  mas a interrupção é ANOTADA em `steps_executed` (`wait` / `skipped` /
+  mas a interrupção é ANOTADA em `steps_executed` por `interrupcao.ts` (`wait` / `skipped` /
   "interrompida: o cliente respondeu…"): aqui ninguém clicou em nada, e sem a
   anotação a sequência sumiria sem dizer por quê. `sinaisDoHistorico` ignora
   `wait`, então a anotação não muda desfecho nenhum. ⚠️ A execução
@@ -718,6 +720,79 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   até aqui tudo que não era `success` ganhava o ✗ vermelho, e "parou porque o
   cliente respondeu" — a regra funcionando — era lido como erro. Vale também
   para a condição de ramo vazio da 985.
+
+⚠️⚠️ **Automação PRESA À ETAPA (18/09/2026): "interromper se o card sair
+desta etapa" tem DUAS pontas, e nenhuma dispensa a outra.**
+`src/lib/automations/so-na-etapa.ts` (puro + as duas pontas, com teste),
+`interrupcao.ts` (a anotação, compartilhada com o "parar se responder"), a
+caixa no gatilho de etapa do construtor e `trigger_config.parar_ao_sair` — sem
+migration. Nasceu da recuperação de No Show: dez mensagens com o link de
+agendamento, o cliente agenda na 3ª, a automação do Calendly move o card para
+"Reunião Agendada", e as outras sete saíam assim mesmo. Medido antes: o
+"Aguardar" acordava e seguia, estivesse o card onde estivesse — a única defesa
+era a condição "ainda está na etapa?" escrita à mão depois de CADA espera, com
+o resto aninhado dentro do ramo (dez níveis para dez mensagens). O que morde
+código novo:
+
+- ⚠️⚠️ **Ponta 1, a GARANTIA — `resumePendingExecution` chama
+  `cardSaiuDaEtapa` antes de qualquer passo** (depois do freio de
+  `is_active`). Lê a etapa do BANCO na hora em que a espera acorda — nunca
+  `context.to_stage_id`, que depois de 30 h é história —, então vale para os
+  cinco escritores de etapa, para o que não gera evento e para o card APAGADO
+  (sem card = fora da etapa: fato, não ignorância). O card é o `deal_id` do
+  contexto; sem ele (execução manual), o aberto mais recente do contato — a
+  mesma resolução de `negocioAlvo`.
+- ⚠️⚠️ **Ponta 2, a HONESTIDADE DA TELA — o dreno do funil chama
+  `cancelarEsperasAoSairDaEtapa` para todo evento `deal_stage_changed`**,
+  depois da reivindicação e ANTES das guardas de ciclo/atraso e do despacho
+  (evento velho não DISPARA, mas o card saiu do mesmo jeito). Só com a ponta 1
+  a aba Automações e a marca "tem robô rodando" diriam "próxima mensagem em
+  27 h" sobre quem já reagendou, e o operador iria clicar em Parar — o
+  trabalho manual que isto existe para acabar. Ganho real: o card que SAI e
+  VOLTA antes de a espera acordar recomeça a sequência do zero, em vez de
+  ficar com DUAS correndo. Há pino estrutural das duas pontas e da ordem
+  (`so-na-etapa.chamadores.test.ts`) — o laço do dreno não tem teste de
+  comportamento, e "esqueci de chamar" só se pega lendo o fonte.
+- ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
+  retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
+  `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,
+  cancelar mataria calada a sequência de quem ficou. É o trato que o motor já
+  dá a erro de banco na retomada.
+- ⚠️ **Três condições para PRENDER (`etapasQuePrendem`)**: gatilho
+  `deal_stage_changed`, `parar_ao_sair === true` ESTRITO, e pelo menos uma
+  etapa em `stage_ids` — com a lista vazia o gatilho vale para QUALQUER etapa
+  e "sair" não tem de onde (a caixa nem aparece, e o motor ignora a chave).
+  Entrar em OUTRA etapa da mesma lista (cartão "expandido" na grade) é
+  continuar dentro.
+- ⚠️ **Decisão do operador (18/09/2026): caixa POR AUTOMAÇÃO, que nasce
+  MARCADA nas novas** (`automations/new/page.tsx` semeia `parar_ao_sair:
+  true` no `?stage=`; há pino). Não é regra geral invisível porque existe
+  sequência que DEVE sobreviver à etapa — as boas-vindas de "Contrato
+  Fechado", cujo card vai para o funil do Jurídico. Ausente = `false`:
+  automação gravada antes disto não muda (medido: nenhuma automação de etapa
+  tinha "Aguardar" em produção, então nada mudou retroativamente).
+- ⚠️ **Vale para QUALQUER execução da automação presa, inclusive a disparada
+  pelo "Executar automação"** — de propósito: o card que JÁ estava em No Show
+  quando a automação foi criada é executado à mão, e a sequência tem de parar
+  igual quando ele agendar. O preço: executar à mão para quem NÃO está na
+  etapa manda os passos até o primeiro "Aguardar" e para ali.
+- ⚠️ **A própria automação que move o card se interrompe na espera SEGUINTE**
+  (`move_deal_stage` no meio): os passos até o próximo "Aguardar" saem — a
+  execução está `running`, e o cancelamento só alcança `pending` —, o que vier
+  depois de uma espera, não. A ajuda da caixa manda deixar o "Mover card" por
+  último.
+- ⚠️ **As mesmas cercas e o mesmo registro dos outros cancelamentos**: conta +
+  CONTATO + `pending`; `cancelled`, desfecho intocado, anotação `skipped` em
+  `steps_executed` ("interrompida: o card saiu da etapa…"). O cancelamento do
+  dreno é leitura + UPDATE por ids com `.eq('status','pending')`: a foto é de
+  instantes atrás e quem decide é o banco.
+- ⚠️ **A consulta do dreno usa `automations!inner(...)` com filtro no
+  embutido**, e o recorte é REFEITO em JS (`esperasQueOMovimentoEncerra`,
+  puro): é a armadilha do embed LEFT desta casa — filtro no embutido sem
+  `!inner` devolve a linha com o embutido nulo. Forma MEDIDA contra o
+  PostgREST real, e as duas pontas medidas de ponta a ponta em 18/09 (funil de
+  teste criado e apagado): card sai → espera cancelada na hora; dreno pulado →
+  a espera acorda, cancela, e o passo seguinte NÃO roda.
 
 ⚠️ **Desfecho da execução de automação (985): o fio NARRA o que a automação
 fez.** `automation_logs.desfecho` ('concluida'|'barrada'|'falhou') +

@@ -1904,6 +1904,8 @@
       "stages": {
         "triggerLabel": "Entrou nesta etapa",
         "triggerHelpAll": "Sem etapa escolhida, vale para qualquer etapa.",
+        "pararAoSairLabel": "Interromper se o card sair desta etapa",
+        "pararAoSairHelp": "Se o card for movido para outra etapa — o cliente agendou, alguém arrastou, outra automação moveu —, os passos que ainda faltam não são executados. Desmarque nas sequências que devem continuar depois da etapa. Se esta própria automação move o card, deixe esse passo por último.",
         "scopeLabel": "Só para quem está nesta etapa",
         "scopeHelpAll": "Sem etapa escolhida, vale para o contato em qualquer etapa.",
         "selectedCount": "{count} etapa(s) escolhida(s)",

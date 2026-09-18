@@ -1128,6 +1128,17 @@ export interface InteractiveReplyTriggerConfig {
 export interface DealStageTriggerConfig {
   /** Etapas de destino que disparam. Vazio/ausente = todas. */
   stage_ids?: string[];
+  /**
+   * Interromper a execução se o card SAIR destas etapas (18/09/2026): a
+   * espera que acorda com o card fora da etapa não retoma, e o movimento do
+   * card cancela na hora as esperas que ficaram para trás.
+   *
+   * ⚠️ Ausente = `false`: automação gravada antes disto não muda. A tela
+   * grava `true` nas automações de etapa NOVAS (decisão do operador). Sem
+   * etapa nomeada em `stage_ids` a opção não significa nada e é ignorada.
+   * Ver `automations/so-na-etapa.ts`.
+   */
+  parar_ao_sair?: boolean;
 }
 
 /**

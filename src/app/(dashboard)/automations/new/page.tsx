@@ -62,7 +62,14 @@ function NewAutomationPageInner() {
         name: "",
         description: "",
         trigger_type: "deal_stage_changed" as AutomationTriggerType,
-        trigger_config: { stage_ids: [stage] },
+        // ⚠️ `parar_ao_sair` nasce LIGADO (decisão do operador, 18/09/2026):
+        // quem cria "a automação desta coluna" espera que ela valha enquanto
+        // o card está na coluna — a recuperação de No Show não pode seguir
+        // cobrando quem reagendou. Desmarca-se nas que devem sobreviver à
+        // etapa (boas-vindas de Contrato Fechado, cujo card vai para outro
+        // funil). Só as NOVAS: automação já gravada não tem a chave e não
+        // muda. Ver `automations/so-na-etapa.ts`.
+        trigger_config: { stage_ids: [stage], parar_ao_sair: true },
         channel_ids: [],
         // ⚠️ Escopo VAZIO, e não `[stage]`. São perguntas diferentes: o
         // gatilho é "entrou nesta etapa", o escopo é "está nesta etapa". Com

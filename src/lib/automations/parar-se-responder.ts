@@ -33,6 +33,8 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
+import { anotarInterrupcao } from './interrupcao';
+
 /** Sublinhado inicial: a convenção das chaves internas do contexto. */
 export const CHAVE_PARAR_SE_RESPONDER = '_parar_se_responder';
 
@@ -93,8 +95,8 @@ export function contextoDaEspera<T extends object>(
  *
  * ⚠️ `cancelled`, nunca `failed` (decisão da 936): cancelamento não é erro.
  * O desfecho do log NÃO é tocado — como nos outros cancelamentos —, mas a
- * interrupção é ANOTADA nos passos: aqui ninguém clicou em nada, e sem a
- * anotação a sequência sumiria sem deixar dito por quê.
+ * interrupção é ANOTADA nos passos (`interrupcao.ts`): aqui ninguém clicou em
+ * nada, e sem a anotação a sequência sumiria sem deixar dito por quê.
  *
  * ⚠️ NÃO compara a hora da mensagem com a hora em que a espera nasceu, de
  * propósito. O carimbo da mensagem vem do WhatsApp em SEGUNDOS e o da espera
@@ -138,60 +140,16 @@ export async function cancelarEsperasPorResposta(args: {
       passo: string | null;
     }[];
     for (const espera of canceladas) {
-      await anotarInterrupcao(db, espera.log_id, espera.passo);
+      await anotarInterrupcao(
+        db,
+        espera.log_id,
+        espera.passo,
+        DETALHE_DA_INTERRUPCAO
+      );
     }
     return canceladas.length;
   } catch (err) {
     console.error('[automations] parar-se-responder estourou:', err);
     return 0;
-  }
-}
-
-/**
- * Acrescenta "interrompida: o cliente respondeu" aos passos do registro.
- *
- * `skipped` num passo `wait`: `sinaisDoHistorico` ignora `wait` por inteiro,
- * então a anotação não muda desfecho nenhum. Melhor esforço — a espera JÁ
- * foi cancelada, e anotação que falha não pode desfazer isso nem estourar.
- */
-async function anotarInterrupcao(
-  db: SupabaseClient,
-  logId: string | null,
-  stepId: string | null
-): Promise<void> {
-  if (!logId) return;
-  try {
-    const { data, error } = await db
-      .from('automation_logs')
-      .select('steps_executed')
-      .eq('id', logId)
-      .maybeSingle();
-    if (error || !data) return;
-
-    const passos = Array.isArray(data.steps_executed)
-      ? data.steps_executed
-      : [];
-    const { error: erroDaNota } = await db
-      .from('automation_logs')
-      .update({
-        steps_executed: [
-          ...passos,
-          {
-            step_id: stepId ?? '',
-            step_type: 'wait',
-            status: 'skipped',
-            detail: DETALHE_DA_INTERRUPCAO,
-          },
-        ],
-      })
-      .eq('id', logId);
-    if (erroDaNota) {
-      console.error(
-        '[automations] parar-se-responder: anotação falhou:',
-        erroDaNota.message
-      );
-    }
-  } catch (err) {
-    console.error('[automations] parar-se-responder: anotação estourou:', err);
   }
 }

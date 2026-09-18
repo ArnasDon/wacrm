@@ -1911,6 +1911,8 @@
       "stages": {
         "triggerLabel": "Entered this stage",
         "triggerHelpAll": "With no stage picked it runs for any stage.",
+        "pararAoSairLabel": "Stop if the card leaves this stage",
+        "pararAoSairHelp": "If the card is moved to another stage — the customer booked, someone dragged it, another automation moved it — the remaining steps do not run. Untick it for sequences that must outlive the stage. If this automation moves the card itself, keep that step last.",
         "scopeLabel": "Only for contacts in this stage",
         "scopeHelpAll": "With no stage picked it runs whatever stage the contact is in.",
         "selectedCount": "{count} stage(s) picked",

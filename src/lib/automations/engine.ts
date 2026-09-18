@@ -76,6 +76,8 @@ import {
   tentativasJaFeitas,
 } from './retentativa';
 import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
+import { DETALHE_SAIU_DA_ETAPA, cardSaiuDaEtapa } from './so-na-etapa';
+import { anotarInterrupcao } from './interrupcao';
 import {
   desfechoDoEscopo,
   desfechoDoRetorno,
@@ -377,6 +379,46 @@ export async function resumePendingExecution(pending: {
   // o painel de falhas.
   if (!automation.is_active) {
     await markPending(pending.id, 'cancelled');
+    return;
+  }
+
+  // ⚠️⚠️ AUTOMAÇÃO PRESA À ETAPA (18/09/2026): com "interromper se o card
+  // sair desta etapa" marcado no gatilho, a espera que acorda com o card FORA
+  // da etapa não retoma nada. É a GARANTIA da regra — a etapa é lida do banco
+  // AGORA, então vale para qualquer caminho que tenha movido (ou apagado) o
+  // card; o cancelamento imediato no dreno do funil é só o que mantém a tela
+  // honesta até aqui. Ver `so-na-etapa.ts`.
+  //
+  // Antes disto o "Aguardar" acordava e seguia, estivesse o card onde
+  // estivesse: o cliente de No Show que REAGENDOU na 3ª mensagem recebia as
+  // outras sete cobrando o retorno.
+  const situacao = await cardSaiuDaEtapa({
+    db,
+    automation: automation as Automation,
+    contactId: pending.contact_id,
+    dealId: pending.context?.deal_id,
+  });
+  if (situacao === 'saiu') {
+    // `cancelled`, não `failed`: a regra funcionou, não é erro (936).
+    await markPending(pending.id, 'cancelled');
+    await anotarInterrupcao(db, pending.log_id, null, DETALHE_SAIU_DA_ETAPA);
+    return;
+  }
+  if (situacao === 'erro') {
+    // ⚠️ Não sei onde o card está — e os dois palpites são ruins EM SILÊNCIO:
+    // seguir cobraria quem pode ter reagendado; cancelar mataria calada a
+    // sequência de quem ficou. Falha VISÍVEL (fio, histórico e o bloco de
+    // correções do Meu dia), como o motor já trata erro de banco na retomada.
+    const motivo =
+      'não consegui conferir em que etapa o card está — a sequência foi interrompida para não cobrar quem pode ter saído da etapa';
+    await markPending(pending.id, 'failed');
+    await appendResults(
+      pending.log_id,
+      [{ step_id: '', step_type: 'wait', status: 'failed', detail: motivo }],
+      'failed',
+      motivo
+    );
+    await fecharLog(pending.log_id, 'falhou');
     return;
   }
 

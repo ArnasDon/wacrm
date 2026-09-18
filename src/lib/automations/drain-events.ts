@@ -1,6 +1,7 @@
 import type { CbAutomationEvent } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { runAutomationsForTrigger, type AutomationContext } from './engine'
+import { cancelarEsperasAoSairDaEtapa } from './so-na-etapa'
 
 // ------------------------------------------------------------
 // Drenagem da fila `cb_automation_events` (migration 933).
@@ -182,6 +183,21 @@ export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
       }
       // Outra ponta pegou este evento primeiro. Não é erro.
       if (!reivindicado) continue
+
+      // ⚠️ O card mudou de etapa: as esperas de automação PRESA à etapa que
+      // ele deixou são canceladas JÁ (`so-na-etapa.ts`). ANTES das guardas de
+      // ciclo e de atraso, de propósito: evento velho ou de ciclo não DISPARA
+      // nada, mas o card saiu da etapa do mesmo jeito. Nunca lança; o que
+      // escapar daqui é barrado quando a espera acordar.
+      if (linha.tipo === 'deal_stage_changed') {
+        await cancelarEsperasAoSairDaEtapa({
+          db,
+          accountId: linha.account_id,
+          contactId: linha.contact_id,
+          dealId: linha.deal_id,
+          toStageId: linha.to_stage_id,
+        })
+      }
 
       // Ciclo antes de idade: um encadeamento girando produz eventos frescos,
       // então a guarda de atraso nunca o pegaria.

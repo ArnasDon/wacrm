@@ -229,6 +229,29 @@ describe("validateStepsForActivation", () => {
 });
 
 describe("validateTriggerForActivation", () => {
+  it("gatilho de etapa: parar_ao_sair só aceita booleano", () => {
+    // O motor prende a automação à etapa apenas com `true` estrito — um
+    // "true" gravado seria opção que parece ligada e não age, e a sequência
+    // de No Show seguiria cobrando quem já reagendou.
+    const etapa = ["etapa-1"];
+    for (const valor of [true, false, undefined]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }),
+      ).toEqual([]);
+    }
+    for (const valor of ["true", 1, null]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }).map((i) => i.path),
+      ).toEqual(["trigger.parar_ao_sair"]);
+    }
+  });
+
   it("accepts a valid keyword_match config", () => {
     expect(
       validateTriggerForActivation("keyword_match", {

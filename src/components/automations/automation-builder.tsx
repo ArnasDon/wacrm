@@ -1263,6 +1263,30 @@ function TriggerCard({
                   onChange={(ids) => onConfigChange({ ...config, stage_ids: ids })}
                   vazioLabel={t("stages.triggerHelpAll")}
                 />
+                {/* Automação PRESA À ETAPA (`so-na-etapa.ts`): o card saiu, o
+                    que faltava não roda. ⚠️ Só com etapa nomeada — sem etapa
+                    o gatilho vale para qualquer uma, e "sair da etapa" não tem
+                    de onde; o motor ignora a chave nesse caso, e mostrar a
+                    caixa seria oferecer um controle que não faz nada.
+                    `=== true`, como o motor. */}
+                {((config.stage_ids as string[] | undefined) ?? []).length > 0 && (
+                  <label className="mt-2 flex items-start gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={config.parar_ao_sair === true}
+                      onChange={(e) =>
+                        onConfigChange({ ...config, parar_ao_sair: e.target.checked })
+                      }
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <span>
+                      {t("stages.pararAoSairLabel")}
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                        {t("stages.pararAoSairHelp")}
+                      </span>
+                    </span>
+                  </label>
+                )}
               </div>
             )}
             {/* Lembrete por data (935): "24 horas ANTES da reunião". A hora vem

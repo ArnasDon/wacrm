@@ -360,6 +360,14 @@ export function validateTriggerForActivation(
         message: 'stage ids cannot be empty strings',
       })
     }
+    // ⚠️ Só booleano: o motor prende a automação à etapa apenas com `true`
+    // estrito, e um `"true"` gravado seria opção que parece ligada e não age.
+    if (cfg.parar_ao_sair !== undefined && typeof cfg.parar_ao_sair !== 'boolean') {
+      issues.push({
+        path: 'trigger.parar_ao_sair',
+        message: 'parar_ao_sair must be true or false',
+      })
+    }
   } else if (triggerType === 'date_field_offset') {
     // ⚠️ Aqui a config é OBRIGATÓRIA, ao contrário dos gatilhos de funil.
     // Lá, vazio quer dizer "qualquer etapa" — uma regra legítima. Aqui, sem

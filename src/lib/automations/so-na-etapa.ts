@@ -213,11 +213,26 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
   contactId: string | null;
   dealId: string | null;
   toStageId: string | null;
+  /**
+   * `criado_em` do evento de funil — o instante em que o card se moveu.
+   *
+   * ⚠️⚠️ Só cai a espera que JÁ EXISTIA quando o card saiu (Codex, PR #223).
+   * Os eventos não são processados em ordem garantida: o aviso imediato e o
+   * cron drenam ao mesmo tempo, cada um reivindicando evento por evento, e o
+   * card que SAI e VOLTA rápido pode ter a reentrada processada ANTES da
+   * saída. Sem este corte, a saída atrasada enxergaria a espera da execução
+   * NOVA — a que a reentrada acabou de iniciar — e a cancelaria: o cliente
+   * voltou para No Show e ficaria sem a sequência, em silêncio. Os dois
+   * carimbos são `now()` do MESMO banco, então a comparação é honesta. A
+   * espera estacionada DEPOIS do evento por uma execução antiga (a própria
+   * automação que moveu o card e esperou em seguida) fica para a ponta 1.
+   */
+  movidoEm: string | null;
 }): Promise<number> {
-  const { db, accountId, contactId, dealId, toStageId } = args;
+  const { db, accountId, contactId, dealId, toStageId, movidoEm } = args;
   if (!contactId || !dealId || !toStageId) return 0;
   try {
-    const { data, error } = await db
+    let consulta = db
       .from('automation_pending_executions')
       .select(
         'id, log_id, deal:context->>deal_id, automations!inner(trigger_type, trigger_config)'
@@ -226,6 +241,8 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
       .eq('contact_id', contactId)
       .eq('status', 'pending')
       .eq('automations.trigger_type', 'deal_stage_changed');
+    if (movidoEm) consulta = consulta.lte('created_at', movidoEm);
+    const { data, error } = await consulta;
     if (error) {
       console.error(
         '[automations] so-na-etapa: leitura das esperas falhou:',
@@ -281,7 +298,13 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
     }
 
     const feitas = (canceladas ?? []) as { id: string; log_id: string | null }[];
+    // Uma anotação por EXECUÇÃO, não por linha: a mesma execução pode ter duas
+    // esperas na fila (a do ramo e a do escopo de fora), e duas linhas iguais
+    // no registro contariam uma saída como duas (Codex, PR #223).
+    const anotadas = new Set<string>();
     for (const espera of feitas) {
+      if (!espera.log_id || anotadas.has(espera.log_id)) continue;
+      anotadas.add(espera.log_id);
       await anotarInterrupcao(db, espera.log_id, null, DETALHE_SAIU_DA_ETAPA);
     }
     return feitas.length;

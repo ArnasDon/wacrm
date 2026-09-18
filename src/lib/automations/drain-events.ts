@@ -196,6 +196,9 @@ export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
           contactId: linha.contact_id,
           dealId: linha.deal_id,
           toStageId: linha.to_stage_id,
+          // Só o que já existia quando o card saiu: evento atrasado não pode
+          // cancelar a execução que uma reentrada posterior iniciou.
+          movidoEm: linha.criado_em,
         })
       }
 

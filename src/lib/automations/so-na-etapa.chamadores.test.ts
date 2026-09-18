@@ -45,6 +45,10 @@ describe('ponta 2 — o dreno do funil cancela na hora em que o card sai', () =>
     )
   })
 
+  it('⚠️ passa o instante do movimento — evento atrasado não cancela execução nova (Codex, PR #223)', () => {
+    expect(laco).toMatch(/cancelarEsperasAoSairDaEtapa\(\{[\s\S]{0,400}movidoEm:\s*linha\.criado_em/)
+  })
+
   it('⚠️ ANTES das guardas de ciclo/atraso e do despacho — evento velho não dispara, mas o card saiu', () => {
     const cancela = laco.indexOf('cancelarEsperasAoSairDaEtapa(')
     expect(cancela).toBeGreaterThan(-1)

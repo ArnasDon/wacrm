@@ -779,6 +779,16 @@ código novo:
   ficar com DUAS correndo. Há pino estrutural das duas pontas e da ordem
   (`so-na-etapa.chamadores.test.ts`) — o laço do dreno não tem teste de
   comportamento, e "esqueci de chamar" só se pega lendo o fonte.
+- ⚠️⚠️ **A ponta 2 só cancela a espera que JÁ EXISTIA quando o card saiu**
+  (`.lte('created_at', evento.criado_em)`; Codex, PR #223). Os eventos de
+  funil não são processados em ordem garantida — o aviso imediato e o cron
+  drenam ao mesmo tempo, evento por evento —, e no card que SAI e VOLTA rápido
+  a reentrada pode ser processada ANTES da saída. Sem o corte, a saída atrasada
+  cancelaria a execução NOVA que a reentrada acabou de iniciar: o cliente de
+  volta em No Show ficaria sem a sequência, em silêncio. Os dois carimbos são
+  `now()` do mesmo banco. A espera estacionada DEPOIS do evento por execução
+  antiga fica para a ponta 1. E a anotação é UMA por execução (`log_id`), não
+  por linha — ramo + raiz do mesmo log contariam uma saída como duas.
 - ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
   retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
   `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,

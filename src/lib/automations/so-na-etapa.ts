@@ -118,12 +118,36 @@ export async function cardSaiuDaEtapa(args: {
   automation: AutomacaoComGatilho & { account_id: string };
   contactId: string | null;
   dealId: string | null | undefined;
+  /**
+   * `criado_em` do evento que abriu a ESTADIA (o contexto da execução, 7ª
+   * rodada do Codex). Com ele, a pergunta deixa de ser só "o card está na
+   * etapa?" e passa a ser "o card ainda não se mexeu desde que entrou?":
+   * qualquer `deal_stage_changed` deste card POSTERIOR ao instante encerra a
+   * estadia — mesmo que o card tenha voltado, mesmo que tenha ido para outra
+   * etapa da mesma automação (aí a entrada nova dispara execução nova, e a
+   * antiga sairia em dobro). É o que fecha o caso do evento de entrada
+   * processado DEPOIS da saída. Ausente (execução manual) = só a posição.
+   */
+  eventoEm?: string | null;
 }): Promise<SituacaoNaEtapa> {
   const etapas = etapasQuePrendem(args.automation);
   if (!etapas) return 'nao_se_aplica';
 
-  const { db, automation, contactId, dealId } = args;
+  const { db, automation, contactId, dealId, eventoEm } = args;
   try {
+    if (dealId && eventoEm) {
+      const { data: depois, error: erroDaFila } = await db
+        .from('cb_automation_events')
+        .select('id')
+        .eq('account_id', automation.account_id)
+        .eq('deal_id', dealId)
+        .eq('tipo', 'deal_stage_changed')
+        .gt('criado_em', eventoEm)
+        .limit(1);
+      if (erroDaFila) return 'erro';
+      if ((depois ?? []).length > 0) return 'saiu';
+    }
+
     let etapaAtual: string | null = null;
     if (dealId) {
       const { data, error } = await db

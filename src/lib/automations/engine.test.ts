@@ -19,6 +19,11 @@ const h = vi.hoisted(() => ({
     dealExistente: null as { id: string; stage_id?: string } | null,
     /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
     erroNoNegocio: null as string | null,
+    /**
+     * Movimentos do card POSTERIORES ao evento da execução (a fila
+     * `cb_automation_events`): não vazio = a estadia na etapa acabou.
+     */
+    movimentosDepois: [] as Record<string, unknown>[],
     /** Status gravados na fila (`markPending`), na ordem. */
     statusDaFila: [] as unknown[],
     /**
@@ -110,6 +115,9 @@ vi.mock('./admin-client', () => {
         return { data: null, error: null };
       }
       return { data: state.customValues, error: null };
+    }
+    if (table === 'cb_automation_events') {
+      return { data: state.movimentosDepois, error: null };
     }
     if (table === 'pipelines') return { data: state.pipeline, error: null };
     if (table === 'pipeline_stages') return { data: state.stage, error: null };
@@ -265,6 +273,7 @@ vi.mock('./admin-client', () => {
       // pinos medem é o payload do update, não o filtro do PostgREST.
       or: (expr: string) => (ops.filters.push(['or', 'expr', expr]), b),
       gte: (k: string, v: unknown) => (ops.recorte.push(['gte', k, v]), b),
+      gt: (k: string, v: unknown) => (ops.filters.push(['gt', k, v]), b),
       is: (k: string, v: unknown) => (ops.recorte.push(['is', k, v]), b),
       order: () => b,
       limit: () => b,
@@ -371,6 +380,7 @@ beforeEach(() => {
   h.state.esperasVivas = [];
   h.state.erroNaFila = null;
   h.state.erroNoNegocio = null;
+  h.state.movimentosDepois = [];
   h.state.statusDaFila = [];
   h.state.interrompida = false;
   h.state.membros = [
@@ -2791,6 +2801,28 @@ describe('Aguardar — parar se o cliente responder', () => {
     expect(h.state.statusDaFila).toEqual(['cancelled']);
   });
 
+  it('⚠️⚠️ a execução interrompida NO MEIO do escopo não roda o passo seguinte (7ª rodada)', async () => {
+    // Espera marcada num ramo, escopo de fora ainda rodando: a resposta do
+    // cliente marca o registro, e o passo comum que vinha a seguir — uma
+    // mensagem — não pode sair. A marca é lida antes de cada passo.
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [passoDeTrabalho('s-msg', 0)];
+    h.state.interrompida = true;
+
+    await dispara();
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(statusGravado()).toBe('partial');
+    expect(desfechoGravado()).toBeUndefined();
+    const ultimo = h.state.logUpdates
+      .filter((u) => 'steps_executed' in u)
+      .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+      .at(-1);
+    expect(ultimo).toMatchObject({ status: 'skipped' });
+    expect(ultimo?.detail).toMatch(/já foi interrompida/);
+  });
+
   it('⚠️⚠️ execução JÁ interrompida NÃO estaciona espera nova (Codex, 4ª rodada) — sem linha zumbi na aba', async () => {
     // A resposta do cliente cancelou a espera do ramo enquanto o escopo de
     // fora ainda rodava; ao chegar no SEU "Aguardar", ele não pode criar uma
@@ -2900,6 +2932,78 @@ describe('retomada de automação presa à etapa', () => {
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
     expect(h.state.statusDaFila).toEqual(['cancelled']);
+  });
+
+  it('⚠️⚠️ a ESTADIA acabou (o card se mexeu depois de entrar), mesmo estando de volta: não retoma (7ª rodada)', async () => {
+    // O card saiu e VOLTOU antes de a espera acordar; a posição diz "na
+    // etapa", mas a fila de eventos tem um movimento posterior ao evento que
+    // abriu esta execução. A entrada nova dispara execução nova; a antiga
+    // sairia em dobro.
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+    h.state.movimentosDepois = [{ id: 'ev-saida' }];
+    h.state.steps = [
+      { ...passoDeTrabalho('s-msg-4', 1), automation_id: 'a-noshow' },
+    ];
+
+    await resumePendingExecution({
+      id: 'espera-1',
+      automation_id: 'a-noshow',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-noshow',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+    });
+
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+    expect(h.state.statusDaFila).toEqual(['cancelled']);
+  });
+
+  it('⚠️⚠️ evento de ENTRADA processado depois da SAÍDA: a execução não nasce (7ª rodada)', async () => {
+    // Dois drenos concorrentes (ou o cron atrasado): a entrada chega ao motor
+    // com o card já fora — e a marca de saída não alcança uma execução que
+    // ainda não existia. Sai como "fora do escopo": nem registro ganha.
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: 'etapa-reuniao-agendada' };
+    h.state.steps = [
+      { ...passoDeTrabalho('s-msg-1', 0), automation_id: 'a-noshow' },
+    ];
+
+    const r = await dispararAutomacoes({
+      accountId: ACCOUNT,
+      triggerType: 'deal_stage_changed',
+      contactId: 'c1',
+      context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+    });
+
+    expect(r.executadas).toBe(0);
+    expect(r.foraDoEscopo).toBe(1);
+    expect(h.state.logInserts).toHaveLength(0);
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+  });
+
+  it('entrada processada com o card ainda na etapa e sem movimento posterior: nasce normalmente', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+    h.state.steps = [
+      { ...passoDeTrabalho('s-msg-1', 0), automation_id: 'a-noshow' },
+    ];
+
+    const r = await dispararAutomacoes({
+      accountId: ACCOUNT,
+      triggerType: 'deal_stage_changed',
+      contactId: 'c1',
+      context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+    });
+
+    expect(r.executadas).toBe(1);
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
   });
 
   it('card ainda em No Show: a sequência segue', async () => {

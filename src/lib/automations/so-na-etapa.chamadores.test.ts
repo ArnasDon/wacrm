@@ -38,6 +38,23 @@ describe('ponta 1 — a retomada confere a etapa ANTES de rodar qualquer passo',
   })
 })
 
+describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)', () => {
+  it('dispararAutomacoes chama cardSaiuDaEtapa com evento_em antes de executeAutomation', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function dispararAutomacoes')
+    expect(inicio).toBeGreaterThan(-1)
+    const corpo = motor.slice(inicio, motor.indexOf('export async function', inicio + 10))
+    const confere = corpo.indexOf('cardSaiuDaEtapa(')
+    expect(confere).toBeGreaterThan(-1)
+    expect(corpo.slice(confere, confere + 400)).toMatch(/eventoEm:\s*input\.context\?\.evento_em/)
+    expect(confere).toBeLessThan(corpo.indexOf('executeAutomation('))
+  })
+
+  it('o dreno carimba evento_em no contexto', () => {
+    expect(fonte('lib/automations/drain-events.ts')).toMatch(/evento_em:\s*evento\.criado_em/)
+  })
+})
+
 describe('ponta 2 — o dreno do funil cancela na hora em que o card sai', () => {
   const dreno = fonte('lib/automations/drain-events.ts')
   const laco = dreno.slice(dreno.indexOf('export async function drenarEventosDeFunil'))

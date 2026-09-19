@@ -85,6 +85,9 @@ export function contextoDoEvento(evento: CbAutomationEvent): AutomationContext {
     to_stage_id: evento.to_stage_id,
     from_stage_id: evento.from_stage_id,
     to_status: evento.to_status,
+    // QUANDO o card entrou: amarra a execução a esta estadia na etapa (ver
+    // `AutomationContext.evento_em` e `cardSaiuDaEtapa`).
+    evento_em: evento.criado_em,
     vars: {
       // ⚠️ A cadeia CRESCE aqui, num lugar só. Se o motor também acrescentasse,
       // as duas pontas divergiriam e a guarda passaria a depender de qual

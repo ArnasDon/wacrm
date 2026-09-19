@@ -137,6 +137,9 @@ function bancoFalso(opcoes: {
   negocio?: { stage_id?: string; id?: string } | null;
   erroNoNegocio?: string;
   estouraNoNegocio?: boolean;
+  /** Movimentos do card na fila de eventos DEPOIS do instante perguntado. */
+  movimentosDepois?: { id: string }[];
+  erroNosMovimentos?: string;
   /** As execuções VIVAS que o SELECT em `automation_logs` devolve. */
   execucoes?: unknown[];
   erroNasExecucoes?: string;
@@ -149,6 +152,10 @@ function bancoFalso(opcoes: {
       const op = { tabela, tipo: 'select', payload: undefined as unknown, filtros: [] as Filtro[] };
       chamadas.push(op);
       const resolver = () => {
+        if (tabela === 'cb_automation_events') {
+          if (opcoes.erroNosMovimentos) return { data: null, error: { message: opcoes.erroNosMovimentos } };
+          return { data: opcoes.movimentosDepois ?? [], error: null };
+        }
         if (tabela === 'deals') {
           if (opcoes.estouraNoNegocio) throw new Error('rede caiu');
           if (opcoes.erroNoNegocio) return { data: null, error: { message: opcoes.erroNoNegocio } };
@@ -174,6 +181,7 @@ function bancoFalso(opcoes: {
         eq: (k: string, v: unknown) => (op.filtros.push(['eq', k, v]), b),
         in: (k: string, v: unknown) => (op.filtros.push(['in', k, v]), b),
         lte: (k: string, v: unknown) => (op.filtros.push(['lte', k, v]), b),
+        gt: (k: string, v: unknown) => (op.filtros.push(['gt', k, v]), b),
         is: (k: string, v: unknown) => (op.filtros.push(['is', k, v]), b),
         order: () => b,
         limit: () => b,
@@ -236,6 +244,52 @@ describe('cardSaiuDaEtapa — a espera acordou', () => {
       ['eq', 'contact_id', 'c1'],
       ['eq', 'status', 'open'],
     ]);
+  });
+
+  it('⚠️⚠️ a ESTADIA: movimento do card POSTERIOR ao evento encerra, mesmo com o card de volta (7ª rodada)', async () => {
+    const { db, chamadas } = bancoFalso({ negocio: { stage_id: NO_SHOW }, movimentosDepois: [{ id: 'ev-2' }] });
+    const r = await cardSaiuDaEtapa({
+      db,
+      automation: automacaoPresa,
+      contactId: 'c1',
+      dealId: 'deal-1',
+      eventoEm: '2026-09-18T10:00:00+00:00',
+    });
+    expect(r).toBe('saiu');
+    // A pergunta vai à fila de eventos, pelo card e pela conta, só movimentos
+    // de ETAPA e só os posteriores ao instante da entrada.
+    expect(chamadas[0].tabela).toBe('cb_automation_events');
+    expect(chamadas[0].filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'deal_id', 'deal-1'],
+      ['eq', 'tipo', 'deal_stage_changed'],
+      ['gt', 'criado_em', '2026-09-18T10:00:00+00:00'],
+    ]);
+  });
+
+  it('sem movimento posterior, vale a posição do card', async () => {
+    const { db } = bancoFalso({ negocio: { stage_id: NO_SHOW }, movimentosDepois: [] });
+    expect(
+      await cardSaiuDaEtapa({ db, automation: automacaoPresa, contactId: 'c1', dealId: 'deal-1', eventoEm: '2026-09-18T10:00:00+00:00' })
+    ).toBe('na_etapa');
+  });
+
+  it('execução manual (sem instante de entrada) não pergunta à fila de eventos', async () => {
+    const { db, chamadas } = bancoFalso({ negocio: { stage_id: NO_SHOW }, movimentosDepois: [{ id: 'x' }] });
+    expect(await cardSaiuDaEtapa({ db, automation: automacaoPresa, contactId: 'c1', dealId: 'deal-1' })).toBe('na_etapa');
+    expect(chamadas.some((c) => c.tabela === 'cb_automation_events')).toBe(false);
+  });
+
+  it("⚠️ erro ao ler a fila de eventos também é 'erro'", async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { db } = bancoFalso({ negocio: { stage_id: NO_SHOW }, erroNosMovimentos: 'timeout' });
+      expect(
+        await cardSaiuDaEtapa({ db, automation: automacaoPresa, contactId: 'c1', dealId: 'deal-1', eventoEm: '2026-09-18T10:00:00+00:00' })
+      ).toBe('erro');
+    } finally {
+      calado.mockRestore();
+    }
   });
 
   it("⚠️⚠️ erro de leitura é 'erro' — NUNCA 'na_etapa' nem 'saiu'", async () => {

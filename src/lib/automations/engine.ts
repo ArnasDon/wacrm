@@ -76,7 +76,11 @@ import {
   tentativasJaFeitas,
 } from './retentativa';
 import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
-import { DETALHE_SAIU_DA_ETAPA, cardSaiuDaEtapa } from './so-na-etapa';
+import {
+  DETALHE_SAIU_DA_ETAPA,
+  cardSaiuDaEtapa,
+  etapasQuePrendem,
+} from './so-na-etapa';
 import {
   anotarInterrupcao,
   execucaoJaInterrompida,
@@ -127,6 +131,18 @@ export interface AutomationContext {
   deal_id?: string | null;
   /** Etapa de destino do evento de funil — a que o card ACABOU de entrar. */
   to_stage_id?: string | null;
+  /**
+   * `criado_em` do evento de funil que originou o disparo — QUANDO o card
+   * entrou (7ª rodada do Codex, PR #223). É o que amarra a execução a UMA
+   * estadia do card na etapa: se a fila de eventos tiver um movimento deste
+   * card POSTERIOR a este instante, a estadia acabou — mesmo que o card tenha
+   * voltado —, e a execução não nasce (dispatch) nem retoma. Sem isto, o
+   * evento de entrada processado tarde (dois drenos concorrentes, ou o cron
+   * atrasado) criava a execução DEPOIS de o card já ter saído, fora do
+   * alcance da marca de saída. Atravessa o "Aguardar" como o resto do
+   * contexto. Ausente na execução manual, que não é de estadia nenhuma.
+   */
+  evento_em?: string | null;
   /** Etapa de origem. Nula quando o card foi CRIADO na etapa. */
   from_stage_id?: string | null;
   /** Status de destino, para `deal_status_changed` (`won` | `lost` | `open`). */
@@ -303,6 +319,27 @@ export async function dispararAutomacoes(
         r.foraDoEscopo += 1;
         continue;
       }
+      // ⚠️ AUTOMAÇÃO PRESA À ETAPA: a estadia que este evento abriu ainda está
+      // de pé? O evento de ENTRADA pode ser processado depois da SAÍDA (dois
+      // drenos concorrentes, ou o cron atrasado até 1 h) — e a marca de saída
+      // não alcança uma execução que ainda não existia. Sem isto ela nascia,
+      // mandava a 1ª mensagem a quem já saiu da etapa e, se o card voltasse,
+      // seguia ao lado da execução nova (7ª rodada do Codex, PR #223). Sai
+      // como "fora do escopo": nem registro ganha. Erro de leitura NÃO deixa
+      // passar — cobraria quem pode ter saído; é o mesmo trato da retomada.
+      if (
+        (await cardSaiuDaEtapa({
+          db,
+          automation,
+          contactId: input.contactId ?? null,
+          dealId: input.context?.deal_id,
+          eventoEm: input.context?.evento_em,
+        })) !== 'na_etapa' &&
+        etapasQuePrendem(automation)
+      ) {
+        r.foraDoEscopo += 1;
+        continue;
+      }
       if (input.antesDeExecutar && !preparou) {
         preparou = true;
         try {
@@ -417,6 +454,7 @@ export async function resumePendingExecution(pending: {
     automation: automation as Automation,
     contactId: pending.contact_id,
     dealId: pending.context?.deal_id,
+    eventoEm: pending.context?.evento_em,
   });
   if (situacao === 'saiu') {
     // `cancelled`, não `failed`: a regra funcionou, não é erro (936). A MARCA
@@ -766,6 +804,28 @@ async function executeStepsFrom(
   let fezTrabalho = false;
 
   for (const step of steps as AutomationStep[]) {
+    // ⚠️ A EXECUÇÃO FOI INTERROMPIDA ENQUANTO ESTE ESCOPO RODAVA? (7ª rodada
+    // do Codex, PR #223.) Com a espera marcada num RAMO, o escopo de fora
+    // segue executando — e a resposta do cliente (ou a saída da etapa) que
+    // chegasse nesse meio só era vista no próximo estacionamento: os passos
+    // comuns até lá, inclusive mensagens, saíam depois da interrupção
+    // prometida. Uma leitura por chave primária antes de cada passo; o
+    // "Aguardar" tem a sua própria, dentro de `cb_estacionar_espera`.
+    if (
+      step.step_type !== 'wait' &&
+      (await execucaoJaInterrompida(db, args.logId))
+    ) {
+      results.push({
+        step_id: step.id,
+        step_type: step.step_type,
+        status: 'skipped',
+        detail: 'não executado: a execução já foi interrompida',
+      });
+      status = 'partial';
+      await appendResults(args.logId, results, status, errorMessage);
+      return status;
+    }
+
     // `wait` is the suspension point: enqueue and stop processing this
     // scope. The cron endpoint will pick it up later.
     if (step.step_type === 'wait') {

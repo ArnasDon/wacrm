@@ -714,7 +714,9 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   INSERT direto reabriria o vão entre "perguntar" e "inserir" (4ª rodada);
   há pino estrutural. Falha ABERTA na leitura da marca (é a 2ª defesa de uma
   corrida de segundos). Espera de OUTRA execução do mesmo contato, sem marca,
-  não é tocada — medido. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
+  não é tocada — medido. ⚠️ A automação que GANHA a primeira etapa no
+  construtor nasce com `parar_ao_sair: true` (a mesma semente do `?stage=`;
+  7ª rodada) — só quando a chave ainda não existe. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
   da fila → MARCAR os registros → cancelar DE NOVO por `log_id` (Codex, 6ª
   rodada): entre a foto e a marca um ramo ainda rodando pode ter estacionado
   uma irmã, que a marca impede de retomar mas deixaria `pending` na aba por
@@ -828,6 +830,24 @@ código novo:
   também é marcada — é o furo que a versão por espera deixava. ⚠️ O registro
   não guarda o card: contato com DOIS negócios abertos em etapas presas teria
   a execução do outro marcada — aceito e escrito ("um card por contato").
+- ⚠️⚠️ **A execução nascida de evento é de UMA ESTADIA do card na etapa** (7ª
+  rodada do Codex): o dreno carimba `evento_em` (o `criado_em` do evento de
+  entrada) no contexto, e `cardSaiuDaEtapa` pergunta à fila de eventos se há
+  `deal_stage_changed` deste card POSTERIOR a esse instante — qualquer
+  movimento encerra a estadia, mesmo com o card de volta, mesmo para outra
+  etapa da mesma automação (a entrada nova dispara execução nova; a antiga
+  sairia em dobro). Conferido ao NASCER (`dispararAutomacoes`, antes de
+  `executeAutomation`: execução natimorta sai como "fora do escopo", sem
+  registro) e ao ACORDAR. É o que fecha o evento de ENTRADA processado depois
+  da SAÍDA — dois drenos concorrentes, ou o cron atrasado até 1 h —, que a
+  marca de saída não alcança porque a execução ainda não existia. Execução
+  manual não tem `evento_em`: só a posição do card conta. A poda de 30 dias da
+  fila de eventos é o limite prático da pergunta.
+- ⚠️⚠️ **A marca é lida antes de CADA passo do escopo** (7ª rodada): com a
+  espera marcada num ramo, o escopo de fora segue executando, e a interrupção
+  só era vista no próximo estacionamento — os passos comuns até lá, inclusive
+  mensagens, saíam depois da interrupção prometida. Uma leitura por chave
+  primária por passo; o "Aguardar" tem a sua dentro de `cb_estacionar_espera`.
 - ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
   retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
   `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,

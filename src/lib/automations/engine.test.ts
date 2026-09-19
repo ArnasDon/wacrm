@@ -24,6 +24,15 @@ const h = vi.hoisted(() => ({
      * `cb_automation_events`): não vazio = a estadia na etapa acabou.
      */
     movimentosDepois: [] as Record<string, unknown>[],
+    /** Uma resposta POR CHAMADA à fila de eventos (`'erro'` = a leitura falha); esgotada, vale `movimentosDepois`. */
+    movimentosPorChamada: null as (Record<string, unknown>[] | 'erro')[] | null,
+    /** Preenchido, TODA leitura da fila de eventos devolve este erro. */
+    erroNosMovimentos: null as string | null,
+    /** As conversas do contato (a segunda linha de defesa do "parar se responder" lê por aqui). Vazio = `null`, como antes. */
+    conversasDoContato: [] as { id: string }[],
+    /** Mensagens do CLIENTE gravadas depois de a espera ser estacionada. */
+    respostasDesde: [] as { id: string }[],
+    erroNasRespostas: null as string | null,
     /** Status gravados na fila (`markPending`), na ordem. */
     statusDaFila: [] as unknown[],
     /**
@@ -97,7 +106,11 @@ vi.mock('./admin-client', () => {
         state.updateCalls.push({ table, filters: ops.filters });
         return { data: null, error: null };
       }
-      return { data: null, error: null };
+      return { data: state.conversasDoContato.length > 0 ? state.conversasDoContato : null, error: null };
+    }
+    if (table === 'messages') {
+      if (state.erroNasRespostas) return { data: null, error: { message: state.erroNasRespostas } };
+      return { data: state.respostasDesde, error: null };
     }
     if (table === 'profiles') {
       // round_robin resolve um membro da conta por aqui; `create_task` usa a
@@ -117,7 +130,10 @@ vi.mock('./admin-client', () => {
       return { data: state.customValues, error: null };
     }
     if (table === 'cb_automation_events') {
-      return { data: state.movimentosDepois, error: null };
+      if (state.erroNosMovimentos) return { data: null, error: { message: state.erroNosMovimentos } };
+      const proximo = state.movimentosPorChamada?.shift();
+      if (proximo === 'erro') return { data: null, error: { message: 'fila de eventos fora do ar' } };
+      return { data: proximo ?? state.movimentosDepois, error: null };
     }
     if (table === 'pipelines') return { data: state.pipeline, error: null };
     if (table === 'pipeline_stages') return { data: state.stage, error: null };
@@ -381,6 +397,11 @@ beforeEach(() => {
   h.state.erroNaFila = null;
   h.state.erroNoNegocio = null;
   h.state.movimentosDepois = [];
+  h.state.movimentosPorChamada = null;
+  h.state.erroNosMovimentos = null;
+  h.state.conversasDoContato = [];
+  h.state.respostasDesde = [];
+  h.state.erroNasRespostas = null;
   h.state.statusDaFila = [];
   h.state.interrompida = false;
   h.state.membros = [
@@ -2798,7 +2819,87 @@ describe('Aguardar — parar se o cliente responder', () => {
     });
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(new Set(h.state.statusDaFila)).toEqual(new Set(['cancelled']));
+  });
+
+  describe('SEGUNDA LINHA DE DEFESA na retomada (revisão por duas lentes, 19/09)', () => {
+    const marca: Record<string, unknown> = { _parar_se_responder: 's-wait' };
+    const esperaMarcada = (context: Record<string, unknown>) => ({
+      id: 'espera-1',
+      automation_id: 'a-desf',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-1',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { conversation_id: 'conv-1', ...context },
+      created_at: '2026-09-19T10:00:00+00:00',
+    });
+
+    it('⚠️⚠️ o cliente escreveu depois de a espera marcada ser estacionada: cancela, marca "resposta" e anota — nada é enviado', async () => {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automacaoSimples()];
+      h.state.steps = [passoDeTrabalho('s-msg', 1)];
+      h.state.conversasDoContato = [{ id: 'conv-1' }];
+      h.state.respostasDesde = [{ id: 'm-resposta' }];
+
+      await resumePendingExecution(esperaMarcada(marca));
+
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+      expect(h.state.statusDaFila).toContain('cancelled');
+      expect(h.state.logUpdates.some((u) => u.interrompida_por === 'resposta')).toBe(true);
+      const ultimo = h.state.logUpdates
+        .filter((u) => 'steps_executed' in u)
+        .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+        .at(-1);
+      expect(ultimo?.detail).toMatch(/cliente respondeu/);
+    });
+
+    it('espera marcada, cliente calado: segue normalmente', async () => {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automacaoSimples()];
+      h.state.steps = [passoDeTrabalho('s-msg', 1)];
+      h.state.conversasDoContato = [{ id: 'conv-1' }];
+      h.state.respostasDesde = [];
+
+      await resumePendingExecution(esperaMarcada(marca));
+
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
+    });
+
+    it('espera SEM a caixa: a resposta não é sequer perguntada — a caixa vale só na espera marcada', async () => {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automacaoSimples()];
+      h.state.steps = [passoDeTrabalho('s-msg', 1)];
+      h.state.conversasDoContato = [{ id: 'conv-1' }];
+      h.state.respostasDesde = [{ id: 'm-resposta' }];
+
+      await resumePendingExecution(esperaMarcada({}));
+
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
+    });
+
+    it('⚠️ a leitura das mensagens falhou: falha VISÍVEL (failed/falhou), nunca palpite', async () => {
+      const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+      try {
+        h.state.owned = { id: 'c1' };
+        h.state.automations = [automacaoSimples()];
+        h.state.steps = [passoDeTrabalho('s-msg', 1)];
+        h.state.conversasDoContato = [{ id: 'conv-1' }];
+        h.state.erroNasRespostas = 'timeout';
+
+        await resumePendingExecution(esperaMarcada(marca));
+
+        expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+        expect(h.state.statusDaFila).toContain('failed');
+        expect(statusGravado()).toBe('failed');
+        expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+      } finally {
+        calado.mockRestore();
+      }
+    });
   });
 
   it('⚠️⚠️ a execução interrompida NO MEIO do escopo não roda o passo seguinte (7ª rodada)', async () => {
@@ -2908,7 +3009,7 @@ describe('retomada de automação presa à etapa', () => {
     await acordar();
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(new Set(h.state.statusDaFila)).toEqual(new Set(['cancelled']));
     // A MARCA da 1005 vai para o registro, com o motivo.
     expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
     expect(passosGravados().at(-1)).toMatchObject({
@@ -2931,7 +3032,7 @@ describe('retomada de automação presa à etapa', () => {
     await acordar();
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(new Set(h.state.statusDaFila)).toEqual(new Set(['cancelled']));
   });
 
   it('⚠️⚠️ a ESTADIA acabou (o card se mexeu depois de entrar), mesmo estando de volta: não retoma (7ª rodada)', async () => {
@@ -2960,7 +3061,7 @@ describe('retomada de automação presa à etapa', () => {
     });
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(new Set(h.state.statusDaFila)).toEqual(new Set(['cancelled']));
   });
 
   it('⚠️⚠️ evento de ENTRADA processado depois da SAÍDA: a execução não nasce (7ª rodada)', async () => {
@@ -3006,6 +3107,106 @@ describe('retomada de automação presa à etapa', () => {
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
   });
 
+  it('⚠️⚠️ o card sai ENTRE a conferência do dispatch e o 1º passo: a guarda por passo pega (8ª rodada)', async () => {
+    // A conferência ao nascer viu a estadia de pé; o card saiu antes de o
+    // registro existir (o dreno da saída não tinha o que marcar). A saída
+    // está na fila de eventos, e a pergunta se repete antes de cada passo.
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [recuperacao({ parar_ao_sair: true })];
+      h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+      h.state.movimentosPorChamada = [[], [{ id: 'ev-saida' }]];
+      h.state.steps = [
+        { ...passoDeTrabalho('s-msg-1', 0), automation_id: 'a-noshow' },
+      ];
+
+      const r = await dispararAutomacoes({
+        accountId: ACCOUNT,
+        triggerType: 'deal_stage_changed',
+        contactId: 'c1',
+        context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+      });
+
+      expect(r.executadas).toBe(1);
+      expect(r.emEspera).toBe(1);
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+      expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
+      const ultimo = h.state.logUpdates
+        .filter((u) => 'steps_executed' in u)
+        .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+        .at(-1);
+      expect(ultimo).toMatchObject({ status: 'skipped' });
+      expect(ultimo?.detail).toMatch(/saiu da etapa/);
+    } finally {
+      calado.mockRestore();
+    }
+  });
+
+  it('⚠️ a fila de eventos falha ANTES de um passo: falha visível, nada é enviado (8ª rodada)', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [recuperacao({ parar_ao_sair: true })];
+      h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+      h.state.movimentosPorChamada = [[], 'erro'];
+      h.state.steps = [
+        { ...passoDeTrabalho('s-msg-1', 0), automation_id: 'a-noshow' },
+      ];
+
+      const r = await dispararAutomacoes({
+        accountId: ACCOUNT,
+        triggerType: 'deal_stage_changed',
+        contactId: 'c1',
+        context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+      });
+
+      expect(r.comFalha).toBe(1);
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+      expect(statusGravado()).toBe('failed');
+      expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+      const ultimo = h.state.logUpdates
+        .filter((u) => 'steps_executed' in u)
+        .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+        .at(-1);
+      expect(ultimo).toMatchObject({ status: 'failed' });
+      expect(ultimo?.detail).toMatch(/conferir em que etapa/);
+    } finally {
+      calado.mockRestore();
+    }
+  });
+
+  it('⚠️ a conferência ao NASCER falha: registro failed/falhou com o motivo, nunca descarte em silêncio (8ª rodada)', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [recuperacao({ parar_ao_sair: true })];
+      h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+      h.state.erroNosMovimentos = 'timeout';
+      h.state.steps = [
+        { ...passoDeTrabalho('s-msg-1', 0), automation_id: 'a-noshow' },
+      ];
+
+      const r = await dispararAutomacoes({
+        accountId: ACCOUNT,
+        triggerType: 'deal_stage_changed',
+        contactId: 'c1',
+        context: { deal_id: 'deal-1', to_stage_id: NO_SHOW, evento_em: '2026-09-18T10:00:00+00:00' },
+      });
+
+      expect(r.foraDoEscopo).toBe(0);
+      expect(r.executadas).toBe(1);
+      expect(r.comFalha).toBe(1);
+      expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
+      expect(h.state.logInserts).toHaveLength(1);
+      expect(h.state.logInserts[0]).toMatchObject({ status: 'failed', steps_executed: [] });
+      expect(String(h.state.logInserts[0].error_message)).toMatch(/conferir em que etapa/);
+      expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+    } finally {
+      calado.mockRestore();
+    }
+  });
+
   it('card ainda em No Show: a sequência segue', async () => {
     h.state.automations = [recuperacao({ parar_ao_sair: true })];
     h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
@@ -3023,7 +3224,7 @@ describe('retomada de automação presa à etapa', () => {
     await acordar();
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['cancelled']);
+    expect(new Set(h.state.statusDaFila)).toEqual(new Set(['cancelled']));
   });
 
   it('⚠️⚠️ automação SEM a opção (gravada antes dela) segue mesmo com o card fora — nada muda retroativamente', async () => {

@@ -66,9 +66,21 @@ export async function POST(request: Request) {
     // A MARCA no registro (1005): é o que impede a continuação que ainda não
     // estava na fila — o escopo de fora rodando, a retentativa — de retomar a
     // execução que o operador acabou de parar.
+    // ⚠️ Inclui a execução cuja espera está `running` — reivindicada pelo cron
+    // neste instante: a foto acima não a vê, e sem a marca a retomada em curso
+    // seguiria até a espera seguinte (revisão por duas lentes, 19/09). A linha
+    // `running` não é cancelada (é do cron); a marca faz a retomada parar no
+    // próximo passo.
+    const { data: emCurso } = await db
+      .from('automation_pending_executions')
+      .select('log_id')
+      .eq('automation_id', automationId)
+      .eq('account_id', ctx.accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'running')
     const execucoes = [
       ...new Set(
-        (data ?? [])
+        [...(data ?? []), ...(emCurso ?? [])]
           .map((l) => (l as { log_id: string | null }).log_id)
           .filter((id): id is string => typeof id === 'string'),
       ),
@@ -84,7 +96,7 @@ export async function POST(request: Request) {
     // é tudo o que sobrou.
     let irmas = 0
     if (execucoes.length > 0) {
-      const { data: outras } = await db
+      const { data: outras, error: erroDasIrmas } = await db
         .from('automation_pending_executions')
         .update({ status: 'cancelled' })
         .in('log_id', execucoes)
@@ -92,6 +104,9 @@ export async function POST(request: Request) {
         .eq('contact_id', contactId)
         .eq('status', 'pending')
         .select('id')
+      if (erroDasIrmas) {
+        console.error('[execucoes] parar-automacao: segunda varredura falhou:', erroDasIrmas.message)
+      }
       irmas = (outras ?? []).length
     }
 

@@ -37,12 +37,23 @@
 // hoje é o card que JÁ estava em No Show quando a automação foi criada: o
 // operador a executa à mão, o cliente agenda, e a sequência tem de parar
 // igual. O preço: executar à mão uma automação presa para quem NÃO está na
-// etapa manda os passos até o primeiro "Aguardar" e para ali.
+// etapa não manda nada: a estadia é conferida antes de cada passo, e o 1º já
+// encontra o card fora.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { anotarInterrupcao, marcarExecucoesInterrompidas } from './interrupcao';
+
+/**
+ * O motivo gravado quando a conferência da etapa FALHA (banco fora do ar): a
+ * execução termina `failed`/`falhou`, visível — na retomada e, desde a 8ª
+ * rodada do Codex, também ao nascer (`dispararAutomacoes`). Os dois palpites
+ * são ruins em silêncio: seguir cobraria quem pode ter saído; cancelar calado
+ * mataria a sequência de quem ficou.
+ */
+export const MOTIVO_ETAPA_DESCONHECIDA =
+  'não consegui conferir em que etapa o card está — a sequência foi interrompida para não cobrar quem pode ter saído da etapa';
 
 export const DETALHE_SAIU_DA_ETAPA =
   'interrompida: o card saiu da etapa desta automação';
@@ -144,7 +155,10 @@ export async function cardSaiuDaEtapa(args: {
         .eq('tipo', 'deal_stage_changed')
         .gt('criado_em', eventoEm)
         .limit(1);
-      if (erroDaFila) return 'erro';
+      if (erroDaFila) {
+        console.error('[automations] so-na-etapa: leitura falhou:', erroDaFila.message);
+        return 'erro';
+      }
       if ((depois ?? []).length > 0) return 'saiu';
     }
 
@@ -156,7 +170,10 @@ export async function cardSaiuDaEtapa(args: {
         .eq('id', dealId)
         .eq('account_id', automation.account_id)
         .maybeSingle();
-      if (error) return 'erro';
+      if (error) {
+        console.error('[automations] so-na-etapa: leitura falhou:', error.message);
+        return 'erro';
+      }
       etapaAtual = (data?.stage_id as string | undefined) ?? null;
     } else if (contactId) {
       const { data, error } = await db
@@ -168,7 +185,10 @@ export async function cardSaiuDaEtapa(args: {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (error) return 'erro';
+      if (error) {
+        console.error('[automations] so-na-etapa: leitura falhou:', error.message);
+        return 'erro';
+      }
       etapaAtual = (data?.stage_id as string | undefined) ?? null;
     }
     return estaFora(etapas, etapaAtual) ? 'saiu' : 'na_etapa';
@@ -185,28 +205,29 @@ interface ExecucaoCandidata {
 }
 
 /**
- * Das execuções VIVAS de automações de etapa deste contato, quais este
- * movimento encerra. PURO.
+ * Das execuções VIVAS de automações de etapa deste contato, as de automação
+ * PRESA — que QUALQUER movimento do card encerra. PURO.
  *
  * ⚠️ A unidade é a EXECUÇÃO (o registro), não a espera (5ª rodada do Codex,
  * PR #223): entre o disparo e a primeira espera a execução está rodando e não
  * tem linha nenhuma na fila — e uma saída nesse instante não tinha onde se
  * gravar. O registro existe desde o primeiro passo.
+ *
+ * ⚠️ Entrar em OUTRA etapa da mesma lista (o cartão "expandido" na grade)
+ * TAMBÉM encerra — a mesma régua da estadia (`cardSaiuDaEtapa` com
+ * `eventoEm`): a entrada na etapa nova dispara execução nova, e a antiga
+ * sairia em dobro. Até a revisão de 19/09 esta ponta lia isso como "continuar
+ * dentro" e discordava da retomada.
  */
-export function execucoesQueOMovimentoEncerra(
-  candidatas: ExecucaoCandidata[],
-  toStageId: string
+export function execucoesPresas(
+  candidatas: ExecucaoCandidata[]
 ): ExecucaoCandidata[] {
   return candidatas.filter((execucao) => {
     const automacao = Array.isArray(execucao.automations)
       ? execucao.automations[0]
       : execucao.automations;
     if (!automacao) return false;
-    const etapas = etapasQuePrendem(automacao);
-    if (!etapas) return false;
-    // Entrou em OUTRA etapa que também prende esta automação (o cartão
-    // "expandido" na grade): continua dentro.
-    return estaFora(etapas, toStageId);
+    return etapasQuePrendem(automacao) !== null;
   });
 }
 
@@ -221,8 +242,8 @@ export function execucoesQueOMovimentoEncerra(
  *
  * ⚠️ As MESMAS cercas dos outros cancelamentos: conta + CONTATO +
  * `status = 'pending'`. A execução que está RODANDO (a própria automação
- * presa que moveu o card com `move_deal_stage`) não é alcançada — os passos
- * até o próximo "Aguardar" saem; o que vier depois de uma espera, não.
+ * presa que moveu o card com `move_deal_stage`) é MARCADA e para no passo
+ * seguinte — a estadia é conferida antes de cada passo (8ª rodada).
  *
  * NUNCA lança: roda dentro do dreno do funil, e uma falha aqui não pode
  * custar o disparo das automações da etapa nova. A ponta 1 cobre o que
@@ -269,15 +290,39 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
       );
       return 0;
     }
-    const alvos = execucoesQueOMovimentoEncerra(
-      (data ?? []) as unknown as ExecucaoCandidata[],
-      toStageId
+    const presas = execucoesPresas(
+      (data ?? []) as unknown as ExecucaoCandidata[]
     );
-    if (alvos.length === 0) return 0;
+    if (presas.length === 0) return 0;
 
-    // ⚠️ O registro não guarda o card. Numa conta em que o contato tem DOIS
-    // negócios abertos em etapas presas, a saída de um marcaria a execução do
-    // outro — aceito e escrito: "um card por contato" é a regra desta casa.
+    // ⚠️ O registro não guarda o card, mas a ESPERA guarda (`context.deal_id`):
+    // execução estacionada por OUTRO card do mesmo contato fica de fora. A que
+    // está RODANDO agora, sem espera, não tem como ser distinguida — aceito:
+    // "um card por contato" é a regra desta casa, e a janela é de segundos.
+    // Leitura que falha NÃO marca (a ponta 1 cobre): marcar sem saber de qual
+    // card é poderia matar a sequência do outro.
+    const { data: esperas, error: erroDasEsperas } = await db
+      .from('automation_pending_executions')
+      .select('log_id, card:context->>deal_id')
+      .in(
+        'log_id',
+        presas.map((a) => a.id)
+      )
+      .eq('status', 'pending');
+    if (erroDasEsperas) {
+      console.error(
+        '[automations] so-na-etapa: leitura das esperas falhou:',
+        erroDasEsperas.message
+      );
+      return 0;
+    }
+    const deOutroCard = new Set(
+      ((esperas ?? []) as { log_id: string | null; card: string | null }[])
+        .filter((e) => e.card && e.card !== dealId)
+        .map((e) => e.log_id)
+    );
+    const alvos = presas.filter((a) => !deOutroCard.has(a.id));
+    if (alvos.length === 0) return 0;
     const logIds = alvos.map((a) => a.id);
     const marcadas = await marcarExecucoesInterrompidas(db, logIds, 'etapa');
 
@@ -288,6 +333,7 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
       .update({ status: 'cancelled' })
       .in('log_id', logIds)
       .eq('account_id', accountId)
+      .eq('contact_id', contactId)
       .eq('status', 'pending')
       .select('id');
     if (erroDoCancelamento) {

@@ -1268,21 +1268,15 @@ function TriggerCard({
                 </label>
                 <SeletorDeEtapas
                   value={(config.stage_ids as string[] | undefined) ?? []}
-                  onChange={(ids) =>
-                    onConfigChange({
-                      ...config,
-                      stage_ids: ids,
-                      // A automação que ganha a PRIMEIRA etapa nasce presa a
-                      // ela (a mesma semente do `?stage=`): sem isto, uma
-                      // criada sem etapa e depois apontada para uma ficava
-                      // com a caixa desmarcada — o oposto do padrão das
-                      // novas (Codex, 7ª rodada). Só quando a chave ainda
-                      // não existe: a escolha já feita não é tocada.
-                      ...(ids.length > 0 && config.parar_ao_sair === undefined
-                        ? { parar_ao_sair: true }
-                        : {}),
-                    })
-                  }
+                  // ⚠️ Escolher etapa NÃO semeia `parar_ao_sair`. A automação de
+                  // etapa só NASCE pelo `?stage=` da grade do funil (este
+                  // seletor não oferece o gatilho — ver TRIGGER_OPTIONS), e é
+                  // lá que a semente mora. Aqui, quem mexe na lista de etapas
+                  // é uma automação já gravada — e as existentes não mudam
+                  // (decisão do operador): semear na edição ligaria a
+                  // interrupção numa regra antiga por um simples re-pique de
+                  // etapa. (Uma versão semeava; 8ª rodada.)
+                  onChange={(ids) => onConfigChange({ ...config, stage_ids: ids })}
                   vazioLabel={t("stages.triggerHelpAll")}
                 />
                 {/* Automação PRESA À ETAPA (`so-na-etapa.ts`): o card saiu, o

@@ -190,6 +190,38 @@ export async function marcarExecucoesInterrompidas(
  * linha de defesa de uma corrida de segundos, e travar a retomada de TODA
  * automação por um soluço de banco custaria mais do que ela protege.
  */
+/**
+ * Cancela toda espera PENDENTE de uma execução (por `log_id`) — a segunda
+ * varredura de todo cancelamento, DEPOIS da marca. A marca impede a irmã de
+ * retomar; sem a varredura ela ficaria `pending` na aba até acordar. Nunca
+ * lança; devolve quantas caíram.
+ */
+export async function cancelarEsperasDaExecucao(
+  db: SupabaseClient,
+  logId: string | null | undefined
+): Promise<number> {
+  if (!logId) return 0;
+  try {
+    const { data, error } = await db
+      .from('automation_pending_executions')
+      .update({ status: 'cancelled' })
+      .eq('log_id', logId)
+      .eq('status', 'pending')
+      .select('id');
+    if (error) {
+      console.error(
+        '[automations] cancelamento das esperas da execução falhou:',
+        error.message
+      );
+      return 0;
+    }
+    return (data ?? []).length;
+  } catch (err) {
+    console.error('[automations] cancelamento das esperas da execução estourou:', err);
+    return 0;
+  }
+}
+
 export async function execucaoJaInterrompida(
   db: SupabaseClient,
   logId: string | null

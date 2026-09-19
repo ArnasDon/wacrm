@@ -5,7 +5,7 @@ import {
   DETALHE_SAIU_DA_ETAPA,
   cancelarEsperasAoSairDaEtapa,
   cardSaiuDaEtapa,
-  execucoesQueOMovimentoEncerra,
+  execucoesPresas,
   estaFora,
   etapasQuePrendem,
 } from './so-na-etapa';
@@ -75,30 +75,30 @@ describe('estaFora', () => {
   });
 });
 
-describe('execucoesQueOMovimentoEncerra', () => {
+describe('execucoesPresas', () => {
   const execucao = (id: string, automations: unknown) => ({
     id,
     automation_id: `auto-${id}`,
     automations: automations as never,
   });
 
-  it('o caso do No Show: execução de automação presa, card foi para fora → encerra', () => {
-    expect(execucoesQueOMovimentoEncerra([execucao('e1', presa())], REUNIAO).map((e) => e.id)).toEqual(['e1']);
+  it('o caso do No Show: execução de automação presa → o movimento encerra', () => {
+    expect(execucoesPresas([execucao('e1', presa())]).map((e) => e.id)).toEqual(['e1']);
   });
 
   it('automação NÃO presa fica — inclusive a de etapa sem a caixa', () => {
-    const r = execucoesQueOMovimentoEncerra(
-      [
-        execucao('e1', { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } }),
-        execucao('e2', { trigger_type: 'calendly_booking', trigger_config: {} }),
-      ],
-      REUNIAO
-    );
+    const r = execucoesPresas([
+      execucao('e1', { trigger_type: 'deal_stage_changed', trigger_config: { stage_ids: [NO_SHOW] } }),
+      execucao('e2', { trigger_type: 'calendly_booking', trigger_config: {} }),
+    ]);
     expect(r).toEqual([]);
   });
 
-  it('⚠️ card foi para OUTRA etapa que também prende a automação → continua', () => {
-    expect(execucoesQueOMovimentoEncerra([execucao('e1', presa({ stage_ids: [NO_SHOW, REUNIAO] }))], REUNIAO)).toEqual([]);
+  it('⚠️⚠️ card foi para OUTRA etapa que também prende a automação → TAMBÉM encerra (revisão de 19/09)', () => {
+    // A mesma régua da estadia (`cardSaiuDaEtapa` com `eventoEm`): a entrada
+    // na etapa nova dispara execução nova, e a antiga sairia em dobro. Até
+    // aqui esta ponta lia "continuar dentro" e discordava da retomada.
+    expect(execucoesPresas([execucao('e1', presa({ stage_ids: [NO_SHOW, REUNIAO] }))]).map((e) => e.id)).toEqual(['e1']);
   });
 
   it('⚠️⚠️ o MESMO lead com VÁRIAS automações: o movimento só encerra quem pediu', () => {
@@ -106,24 +106,21 @@ describe('execucoesQueOMovimentoEncerra', () => {
     // automação rodando — várias na mesma etapa, e outras que NÃO foram
     // marcadas para parar. Medido de ponta a ponta com quatro ao mesmo tempo;
     // este é o pino do recorte.
-    const r = execucoesQueOMovimentoEncerra(
-      [
-        execucao('presa-1', presa()),
-        execucao('presa-2', presa()),
-        execucao('mesma-etapa-sem-caixa', {
-          trigger_type: 'deal_stage_changed',
-          trigger_config: { stage_ids: [NO_SHOW], parar_ao_sair: false },
-        }),
-        execucao('calendly', { trigger_type: 'calendly_booking', trigger_config: {} }),
-        execucao('manual', { trigger_type: 'manual', trigger_config: {} }),
-      ],
-      REUNIAO
-    );
+    const r = execucoesPresas([
+      execucao('presa-1', presa()),
+      execucao('presa-2', presa()),
+      execucao('mesma-etapa-sem-caixa', {
+        trigger_type: 'deal_stage_changed',
+        trigger_config: { stage_ids: [NO_SHOW], parar_ao_sair: false },
+      }),
+      execucao('calendly', { trigger_type: 'calendly_booking', trigger_config: {} }),
+      execucao('manual', { trigger_type: 'manual', trigger_config: {} }),
+    ]);
     expect(r.map((e) => e.id)).toEqual(['presa-1', 'presa-2']);
   });
 
   it('o embed do PostgREST pode vir como LISTA', () => {
-    expect(execucoesQueOMovimentoEncerra([execucao('e1', [presa()])], REUNIAO).map((e) => e.id)).toEqual(['e1']);
+    expect(execucoesPresas([execucao('e1', [presa()])]).map((e) => e.id)).toEqual(['e1']);
   });
 });
 
@@ -145,6 +142,9 @@ function bancoFalso(opcoes: {
   erroNasExecucoes?: string;
   canceladas?: { id: string }[];
   erroNoCancelamento?: string;
+  /** As esperas `pending` das execuções candidatas (`log_id` + o card da espera). */
+  esperas?: { log_id: string; card: string | null }[];
+  erroNasEsperas?: string;
 }) {
   const chamadas: { tabela: string; tipo: string; payload?: unknown; filtros: Filtro[] }[] = [];
   const db = {
@@ -162,8 +162,12 @@ function bancoFalso(opcoes: {
           return { data: opcoes.negocio ?? null, error: null };
         }
         if (tabela === 'automation_pending_executions') {
-          if (opcoes.erroNoCancelamento) return { data: null, error: { message: opcoes.erroNoCancelamento } };
-          return { data: opcoes.canceladas ?? [], error: null };
+          if (op.tipo === 'update') {
+            if (opcoes.erroNoCancelamento) return { data: null, error: { message: opcoes.erroNoCancelamento } };
+            return { data: opcoes.canceladas ?? [], error: null };
+          }
+          if (opcoes.erroNasEsperas) return { data: null, error: { message: opcoes.erroNasEsperas } };
+          return { data: opcoes.esperas ?? [], error: null };
         }
         // automation_logs: a lista de execuções vivas (select com embed), a
         // marca (update com `interrompida_por`), a anotação (update com
@@ -354,8 +358,42 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
     expect(cancelamento.filtros).toEqual([
       ['in', 'log_id', ['log-1']],
       ['eq', 'account_id', 'acct-1'],
+      ['eq', 'contact_id', 'c1'],
       ['eq', 'status', 'pending'],
     ]);
+  });
+
+  it('⚠️ o CARD é distinguido pela espera: execução estacionada por OUTRO card do contato fica de fora (revisão de 19/09)', async () => {
+    const outra = { ...execucaoPresa, id: 'log-2' };
+    const { db, chamadas } = bancoFalso({
+      execucoes: [execucaoPresa, outra],
+      esperas: [
+        { log_id: 'log-1', card: evento.dealId },
+        { log_id: 'log-2', card: 'deal-do-juridico' },
+      ],
+      canceladas: [{ id: 'p1' }],
+    });
+    const n = await cancelarEsperasAoSairDaEtapa({ db, ...evento });
+    expect(n).toBe(2);
+    const [marca] = updates(chamadas, 'automation_logs');
+    expect(marca.filtros.find(([, k]) => k === 'id')).toEqual(['in', 'id', ['log-1']]);
+  });
+
+  it('a execução RODANDO (sem espera) não tem card conhecido e é marcada — aceito, um card por contato', async () => {
+    const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], esperas: [], canceladas: [] });
+    expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento })).toBe(1);
+    expect(updates(chamadas, 'automation_logs')[0].payload).toMatchObject({ interrompida_por: 'etapa' });
+  });
+
+  it('⚠️ leitura das esperas falhou: NÃO marca (a ponta 1 cobre) — marcar sem saber o card mataria a sequência do outro', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], erroNasEsperas: 'timeout' });
+      expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento })).toBe(0);
+      expect(chamadas.some((c) => c.tipo === 'update')).toBe(false);
+    } finally {
+      calado.mockRestore();
+    }
   });
 
   it('⚠️⚠️ execução RODANDO sem espera nenhuma na fila também é marcada (5ª rodada do Codex)', async () => {

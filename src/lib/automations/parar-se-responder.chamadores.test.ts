@@ -153,3 +153,43 @@ describe('a ORDEM de todo cancelamento por lote: foto da fila → MARCA → segu
     expect(corpo.indexOf('marcarExecucoesInterrompidas(')).toBeLessThan(corpo.indexOf(".in('log_id'"))
   })
 })
+
+describe('a SEGUNDA LINHA DE DEFESA, na retomada (revisão por duas lentes, 19/09)', () => {
+  it('resumePendingExecution pergunta clienteRespondeuDesde DEPOIS da marca e ANTES da etapa', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function resumePendingExecution')
+    expect(inicio).toBeGreaterThan(-1)
+    const marca = motor.indexOf('execucaoJaInterrompida(db, pending.log_id)', inicio)
+    const resposta = motor.indexOf('clienteRespondeuDesde({', inicio)
+    const etapa = motor.indexOf('cardSaiuDaEtapa({', inicio)
+    expect(marca).toBeGreaterThan(-1)
+    expect(resposta).toBeGreaterThan(marca)
+    expect(etapa).toBeGreaterThan(resposta)
+  })
+
+  it('a régua é gravada_em × created_at da espera, e o cron passa o created_at', () => {
+    const modulo = fonte('lib/automations/parar-se-responder.ts')
+    expect(modulo).toMatch(/\.gt\('gravada_em', desde\)/)
+    expect(modulo).not.toMatch(/\.gt\('created_at'/)
+    expect(fonte('app/api/automations/cron/route.ts')).toMatch(/created_at:\s*\(row\.created_at/)
+  })
+
+  it('o botão Parar e o passo "Parar automação" marcam também a execução cuja espera está RUNNING', () => {
+    for (const arquivo of ['app/api/cb/execucoes/parar-automacao/route.ts', 'lib/automations/engine.ts']) {
+      const s = fonte(arquivo)
+      const running = s.indexOf(".eq('status', 'running')")
+      const marca = s.indexOf("marcarExecucoesInterrompidas(db, execucoes, '", running)
+      expect(running, arquivo).toBeGreaterThan(-1)
+      expect(marca, arquivo).toBeGreaterThan(running)
+    }
+  })
+
+  it('fecharLog não carimba execução interrompida', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('async function fecharLog(')
+    const guarda = motor.indexOf('execucaoJaInterrompida(db, logId)', inicio)
+    const escrita = motor.indexOf(".update({ desfecho })", inicio)
+    expect(guarda).toBeGreaterThan(-1)
+    expect(guarda).toBeLessThan(escrita)
+  })
+})

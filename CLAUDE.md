@@ -301,7 +301,7 @@ upstream sobrescrevê-los:
 | `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
 | `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
 | `src/app/(dashboard)/inbox/page.tsx` (18/09/2026) | no INSERT de mensagem do CLIENTE na conversa aberta, `setTimeout(avisarExecucoesMudaram, 3000)` — a aba Automações descobre o cancelamento por resposta sem recarregar a página |
-| `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` logo depois do freio de `is_active`: fora da etapa → `cancelled` + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
+| `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` depois do freio de `is_active` E da marca de interrupção (`execucaoJaInterrompida`, 1005): fora da etapa (ou estadia encerrada) → `cancelled` + varredura das irmãs + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
 | `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
 | `src/components/automations/automation-builder.tsx`, `src/app/(dashboard)/automations/[id]/edit/page.tsx` e `src/app/(dashboard)/pipelines/page.tsx` (voltar ao funil, 18/09/2026) | o voltar do construtor passa por `voltaDoConstrutor(origem)` e o `router.replace` depois de CRIAR por `urlDoConstrutor({ id, origem })` (`src/lib/pipelines/url.ts`): aberto pela grade de automações do funil (`?de=funil&funil=<id>`), o voltar devolve à aba Automações DAQUELE funil, e não à tela de Automações do menu. Um merge que traga o `router.push("/automations")` cru do upstream devolve o bug sem conflito nenhum — há pino em `url.test.ts`. Na página do funil, `?vista=` e `?funil=` são porta de ENTRADA, lidas uma vez na montagem (trocar de aba ou de funil depois não reescreve a URL) |
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
@@ -714,16 +714,37 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   INSERT direto reabriria o vão entre "perguntar" e "inserir" (4ª rodada);
   há pino estrutural. Falha ABERTA na leitura da marca (é a 2ª defesa de uma
   corrida de segundos). Espera de OUTRA execução do mesmo contato, sem marca,
-  não é tocada — medido. ⚠️ A automação que GANHA a primeira etapa no
-  construtor nasce com `parar_ao_sair: true` (a mesma semente do `?stage=`;
-  7ª rodada) — só quando a chave ainda não existe. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
+  não é tocada — medido. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
   da fila → MARCAR os registros → cancelar DE NOVO por `log_id` (Codex, 6ª
   rodada): entre a foto e a marca um ramo ainda rodando pode ter estacionado
   uma irmã, que a marca impede de retomar mas deixaria `pending` na aba por
   horas. Depois da marca a função não insere mais, então a segunda varredura
-  pega tudo o que sobrou. Vale para os quatro que cancelam por lote (resposta,
-  etapa, botão Parar, passo "Parar automação"). ⚠️ Toda pergunta por `log_id` na fila (a guarda de
+  pega tudo o que sobrou. Vale para os que cancelam por lote (resposta, botão
+  Parar, passo "Parar automação"; a saída de etapa parte dos REGISTROS vivos e
+  faz marca → varredura, sem foto antes). ⚠️ Toda pergunta por `log_id` na fila (a guarda de
   `fecharLog`, as irmãs) depende do índice da **1004** — a fila não é podada.
+- ⚠️⚠️ **Há uma SEGUNDA LINHA DE DEFESA, na retomada** (revisão por duas
+  lentes, 19/09/2026): o cancelamento na ingestão é UM UPDATE, e um soluço do
+  banco no instante da resposta deixava a espera acordar 27 h depois e mandar
+  a mensagem seguinte a quem já tinha respondido, com um `console.error` como
+  único rastro. Ao acordar uma espera MARCADA, `clienteRespondeuDesde` pergunta
+  se há mensagem do cliente (não apagada) na conversa do contato com
+  `messages.gravada_em` (1003, o `now()` da gravação) POSTERIOR ao
+  `created_at` da espera — dois carimbos do mesmo relógio; `messages.created_at`
+  NÃO serve, é o relógio do aparelho. Respondeu → marca `resposta`, cancela,
+  varre as irmãs, anota. Leitura que falha → falha VISÍVEL
+  (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
+  marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
+- ⚠️ **O botão Parar e o passo "Parar automação" marcam também a execução
+  cuja espera está `running`** (reivindicada pelo cron naquele instante): a
+  foto do UPDATE só vê `pending`, e sem a marca a retomada em curso seguia até
+  a espera seguinte. A linha `running` não é cancelada (é do cron); a marca
+  faz a retomada parar no próximo passo.
+- ⚠️ **`fecharLog` não carimba execução interrompida**: a resposta (ou a saída
+  da etapa) que chega durante o ÚLTIMO passo do escopo — depois da leitura da
+  marca — deixava o escopo terminar e o fio dizer "concluiu" sobre execução com
+  `interrompida_por` gravado. O `falhou` de um ramo anterior fica; só não se
+  carimba desfecho nem hora de fim.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
   a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
@@ -848,6 +869,19 @@ código novo:
   só era vista no próximo estacionamento — os passos comuns até lá, inclusive
   mensagens, saíam depois da interrupção prometida. Uma leitura por chave
   primária por passo; o "Aguardar" tem a sua dentro de `cb_estacionar_espera`.
+- ⚠️⚠️ **E a ESTADIA também é conferida antes de cada passo** (8ª rodada): a
+  conferência do dispatch e a criação do registro são DUAS operações, e o
+  card que sai entre elas deixa o dreno sem registro para marcar e o registro
+  sem marca. A saída está gravada na fila de eventos, então `executeStepsFrom`
+  pergunta de novo (`cardSaiuDaEtapa`, só nas presas à etapa — `nao_se_aplica`
+  não consulta nada) com o registro já existente: o que ainda escapa é UM
+  passo cujo envio já estava em voo quando a saída foi gravada, nunca a
+  sequência. `saiu` = marca + foto da fila + `skipped`; `erro` = falha visível.
+- ⚠️ **A conferência que FALHA ao nascer vira registro `failed`/`falhou` com o
+  motivo (`registrarFalhaAoNascer`, `MOTIVO_ETAPA_DESCONHECIDA`), nunca pulo em
+  silêncio** (8ª rodada): o dreno já reivindicou o evento e conta o disparo
+  como entregue, então pular descartaria a automação para sempre sem ninguém
+  ver. É o mesmo desfecho da retomada; o "Executar automação" resolve à mão.
 - ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
   retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
   `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,
@@ -857,8 +891,43 @@ código novo:
   `deal_stage_changed`, `parar_ao_sair === true` ESTRITO, e pelo menos uma
   etapa em `stage_ids` — com a lista vazia o gatilho vale para QUALQUER etapa
   e "sair" não tem de onde (a caixa nem aparece, e o motor ignora a chave).
-  Entrar em OUTRA etapa da mesma lista (cartão "expandido" na grade) é
-  continuar dentro.
+  ⚠️ Entrar em OUTRA etapa da mesma lista (cartão "expandido" na grade)
+  ENCERRA a estadia, nas DUAS pontas (8ª rodada; até aí a ponta 2 lia como
+  "continuar dentro" e discordava da retomada): a entrada na etapa nova
+  dispara execução NOVA, e a antiga sairia em dobro. Qualquer movimento do
+  card acaba com a estadia.
+- ⚠️ **A ÚNICA porta de nascimento da automação de etapa é o `?stage=` da
+  grade do funil** (`TRIGGER_OPTIONS` não oferece `deal_stage_changed`; o
+  gatilho só volta à lista para automação JÁ gravada com ele), e é só lá que
+  a semente mora: o seletor de etapas do construtor NÃO semeia ao editar —
+  semear ali ligaria a interrupção numa regra antiga por um simples re-pique
+  de etapa, contra a decisão de que as existentes não mudam (a 7ª rodada
+  semeava; a 8ª desfez).
+- ⚠️ **A filha acionada por "Acionar automação" NÃO herda a estadia da mãe**
+  (`run_automation` manda `evento_em: null`; 8ª rodada): a mãe pode ter
+  movido o card no meio antes de acionar, e a filha presa à etapa nova leria
+  esse movimento como "saiu" com o card DENTRO dela. Sem o instante vale só a
+  posição, como na execução manual.
+- ⚠️ **Ganho/perdido NÃO encerra a estadia**: o card não sai da etapa (950 —
+  o selo fica na coluna), e `cardSaiuDaEtapa` só olha `deal_stage_changed`.
+  Se o operador quiser "perdido = parar", é decisão nova (passo "Parar
+  automação" na automação de status, ou mover o card). ⚠️ Uma assimetria
+  escrita: a execução manual SEM card no contexto cai na posição do negócio
+  ABERTO mais recente (`negocioAlvo`), então para um card ganho/perdido ela
+  responde "saiu" — a execução por evento, que carrega o card, responde pela
+  etapa. Aceito: executar à mão sobre card fechado é raro.
+- ⚠️ **A pergunta "houve movimento posterior?" só enxerga 30 dias** — a poda
+  de `cb_automation_events` (`podarEventosAntigos`). Espera mais longa que
+  isso fica cega para uma saída-e-volta já podada; a marca da ponta 2 e a
+  posição do card cobrem. `validate.ts` não limita o `amount` do "Aguardar".
+- ⚠️ **A saída da etapa (ponta 2) distingue o CARD pela espera**
+  (`context.deal_id` das linhas `pending`): execução estacionada por OUTRO
+  card do mesmo contato fica de fora. A que está RODANDO agora, sem espera,
+  não tem como ser distinguida (o registro não guarda o card) — aceito: "um
+  card por contato" é a regra desta casa, e a janela é de segundos. E
+  registro anterior à 985 (sem `finalizado_em`, nada retroativo) conta como
+  vivo: a primeira saída de etapa de um contato assim marca e anota um
+  registro morto há semanas, uma vez — cosmético, aceito.
 - ⚠️ **Decisão do operador (18/09/2026): caixa POR AUTOMAÇÃO, que nasce
   MARCADA nas novas** (`automations/new/page.tsx` semeia `parar_ao_sair:
   true` no `?stage=`; há pino). Não é regra geral invisível porque existe
@@ -870,12 +939,12 @@ código novo:
   pelo "Executar automação"** — de propósito: o card que JÁ estava em No Show
   quando a automação foi criada é executado à mão, e a sequência tem de parar
   igual quando ele agendar. O preço: executar à mão para quem NÃO está na
-  etapa manda os passos até o primeiro "Aguardar" e para ali.
-- ⚠️ **A própria automação que move o card se interrompe na espera SEGUINTE**
-  (`move_deal_stage` no meio): os passos até o próximo "Aguardar" saem — a
-  execução está `running`, e o cancelamento só alcança `pending` —, o que vier
-  depois de uma espera, não. A ajuda da caixa manda deixar o "Mover card" por
-  último.
+  etapa não manda nada — a estadia é conferida antes de cada passo (8ª
+  rodada), e o 1º já encontra o card fora.
+- ⚠️ **A própria automação que move o card se interrompe no passo SEGUINTE**
+  (`move_deal_stage` no meio): a estadia é conferida antes de cada passo (8ª
+  rodada; até aí só na espera seguinte, e os passos até lá saíam). A ajuda da
+  caixa manda deixar o "Mover card" por último.
 - ⚠️⚠️ **VÁRIAS automações no mesmo lead: cada uma cai SÓ pelo que ELA
   pediu** (pergunta do operador, medida em 18/09 com quatro estacionadas ao
   mesmo tempo: presa à etapa, mesma etapa SEM a caixa, espera marcada "parar se
@@ -5766,6 +5835,30 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     com autorização do operador; conferida por consulta (as 2 colunas,
     `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
     idempotente, os 4 cenários da cerca do UPDATE).
+  - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
+    com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
+    antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a
+    linha, que NÃO existia: `created_at` recebe o carimbo do WhatsApp na
+    ingestão. Instrumento da verificação do atraso de entrega (PLANO-baileys-7,
+    5.10): `gravada_em − created_at`, por mensagem, todas as conexões, com
+    história — a 1002 guarda só a fronteira atual e o log da Evolution roda a
+    30 MB. Nenhuma linha de código a escreve. Aditiva. Aplicada em
+    17/09/2026 12:39:17 BRT pela Management API (histórico `20260917153917`),
+    20 s ANTES do rollout da imagem `-foto` — o "antes" e o "depois" são
+    medidos com o mesmo instrumento (a fronteira é `2026-09-17 15:39:37+00`).
+  - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
+    `automation_pending_executions (log_id)`: a guarda de `fecharLog` e as
+    varreduras das irmãs (todo cancelamento) perguntam por execução, e a fila
+    não é podada (`done`/`cancelled` ficam para sempre). ⚠️ O cabeçalho do
+    SQL diz que `execucaoJaInterrompida` também lê a fila — era verdade no
+    dia da aplicação; desde a 1005 ela lê `automation_logs.interrompida_em`
+    por chave primária, e o SQL aplicado não foi reescrito (comentário).
+    Aditiva: sem ela tudo responde certo, só devagar; pode entrar antes ou
+    depois do deploy. Medido antes: a tabela estava VAZIA em produção (nenhuma
+    automação ativa tinha "Aguardar"). Aplicada em 18/09/2026 pela Management
+    API (histórico `20260918162117`), ANTES do merge do PR #223, com
+    autorização do operador; conferida por consulta ao catálogo (o índice
+    existe ao lado de `idx_automation_pending_due` e `_account`).
   - **1005_cb_execucao_interrompida** — `automation_logs.interrompida_em` +
     `interrompida_por` (CHECK com os cinco motivos), o índice parcial das
     execuções vivas por contato, e a função `cb_estacionar_espera` — a
@@ -5780,28 +5873,6 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     índice, CHECK) e por e2e contra o banco real: a função estaciona a
     execução limpa, devolve `null` para a marcada, e o CHECK recusa motivo
     fora do vocabulário.
-  - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
-    `automation_pending_executions (log_id)`: a guarda de `fecharLog`, o
-    sinal `execucaoJaInterrompida` (retomada E estacionamento) e o
-    cancelamento das irmãs perguntam por execução, e a fila não é podada
-    (`done`/`cancelled` ficam para sempre — é o histórico que o sinal lê).
-    Aditiva: sem ela tudo responde certo, só devagar; pode entrar antes ou
-    depois do deploy. Medido antes: a tabela estava VAZIA em produção (nenhuma
-    automação ativa tinha "Aguardar"). Aplicada em 18/09/2026 pela Management
-    API (histórico `20260918162117`), ANTES do merge do PR #223, com
-    autorização do operador; conferida por consulta ao catálogo (o índice
-    existe ao lado de `idx_automation_pending_due` e `_account`).
-  - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
-    com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
-    antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a
-    linha, que NÃO existia: `created_at` recebe o carimbo do WhatsApp na
-    ingestão. Instrumento da verificação do atraso de entrega (PLANO-baileys-7,
-    5.10): `gravada_em − created_at`, por mensagem, todas as conexões, com
-    história — a 1002 guarda só a fronteira atual e o log da Evolution roda a
-    30 MB. Nenhuma linha de código a escreve. Aditiva. Aplicada em
-    17/09/2026 12:39:17 BRT pela Management API (histórico `20260917153917`),
-    20 s ANTES do rollout da imagem `-foto` — o "antes" e o "depois" são
-    medidos com o mesmo instrumento (a fronteira é `2026-09-17 15:39:37+00`).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

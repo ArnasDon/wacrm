@@ -50,6 +50,36 @@ describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)'
     expect(confere).toBeLessThan(corpo.indexOf('executeAutomation('))
   })
 
+  it('executeStepsFrom pergunta pela estadia antes de CADA passo, antes de runStep (8ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('async function executeStepsFrom(')
+    expect(inicio).toBeGreaterThan(-1)
+    const laco = motor.indexOf('for (const step of steps as AutomationStep[])', inicio)
+    expect(laco).toBeGreaterThan(-1)
+    const confere = motor.indexOf('cardSaiuDaEtapa(', laco)
+    const roda = motor.indexOf('runStep(step, args)', laco)
+    expect(confere).toBeGreaterThan(-1)
+    expect(roda).toBeGreaterThan(-1)
+    expect(confere).toBeLessThan(roda)
+    // …e o dispatch, quando a conferência FALHA, registra a falha em vez de pular.
+    expect(motor).toMatch(/situacao === 'erro'\) \{\s*await registrarFalhaAoNascer\(/)
+  })
+
+  it('a filha do run_automation NÃO herda a estadia da mãe (evento_em: null)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf("case 'run_automation':")
+    const fim = motor.indexOf("case 'stop_automation':", inicio)
+    expect(motor.slice(inicio, fim)).toMatch(/evento_em:\s*null/)
+  })
+
+  it('a retomada cancelada (saiu) e a desativação varrem as irmãs por log_id, como todo cancelamento', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function resumePendingExecution')
+    const fim = motor.indexOf('export async function', inicio + 10)
+    const corpo = motor.slice(inicio, fim)
+    expect((corpo.match(/cancelarEsperasDaExecucao\(db, pending\.log_id\)/g) ?? []).length).toBeGreaterThanOrEqual(3)
+  })
+
   it('o dreno carimba evento_em no contexto', () => {
     expect(fonte('lib/automations/drain-events.ts')).toMatch(/evento_em:\s*evento\.criado_em/)
   })

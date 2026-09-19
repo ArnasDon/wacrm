@@ -39,6 +39,14 @@ import { anotarInterrupcao, marcarExecucoesInterrompidas } from './interrupcao';
 export const CHAVE_PARAR_SE_RESPONDER = '_parar_se_responder';
 
 /** O texto que fica no registro da execução (tela de histórico da automação). */
+/**
+ * O motivo gravado quando a SEGUNDA linha de defesa não consegue responder
+ * (`clienteRespondeuDesde` devolveu `null`): a execução termina
+ * `failed`/`falhou`, visível — o mesmo trato da conferência de etapa.
+ */
+export const MOTIVO_RESPOSTA_DESCONHECIDA =
+  'não consegui conferir se o cliente respondeu durante a espera — a sequência foi interrompida para não escrever a quem pode ter respondido';
+
 export const DETALHE_DA_INTERRUPCAO =
   'interrompida: o cliente respondeu durante a espera';
 
@@ -199,5 +207,69 @@ export async function cancelarEsperasPorResposta(args: {
   } catch (err) {
     console.error('[automations] parar-se-responder estourou:', err);
     return 0;
+  }
+}
+
+/**
+ * SEGUNDA LINHA DE DEFESA da caixa (revisão por duas lentes, 19/09/2026): a
+ * primeira é `cancelarEsperasPorResposta`, na ingestão — e ela é UM UPDATE.
+ * Um soluço do banco no instante exato em que o cliente responde deixava a
+ * espera acordar 27 h depois e mandar a mensagem 4 a quem já tinha
+ * respondido, com um `console.error` como único rastro. Na retomada de uma
+ * espera MARCADA, o motor pergunta se o cliente escreveu desde que ela foi
+ * estacionada.
+ *
+ * ⚠️ Compara `messages.gravada_em` (1003: o `now()` do banco na gravação) com
+ * o `created_at` da espera (também `now()` do banco) — dois carimbos do MESMO
+ * relógio. `messages.created_at` NÃO serve: a ingestão o sobrescreve com o
+ * relógio do aparelho de quem mandou. Só mensagem do CLIENTE, não apagada,
+ * na(s) conversa(s) do contato nesta conta (uma por contato por conta, 036).
+ *
+ * Devolve `null` quando não consegue responder (erro de leitura) — e o motor
+ * falha VISÍVEL, como na conferência de etapa. Sem contato ou sem o instante
+ * da espera (linha antiga da fila), não há o que conferir: `false`.
+ */
+export async function clienteRespondeuDesde(args: {
+  db: SupabaseClient;
+  accountId: string;
+  contactId: string | null;
+  desde: string | null | undefined;
+}): Promise<boolean | null> {
+  const { db, accountId, contactId, desde } = args;
+  if (!contactId || !desde) return false;
+  try {
+    const { data: conversas, error: erroDaConversa } = await db
+      .from('conversations')
+      .select('id')
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId);
+    if (erroDaConversa) {
+      console.error(
+        '[automations] parar-se-responder: leitura da conversa falhou:',
+        erroDaConversa.message
+      );
+      return null;
+    }
+    const ids = (conversas ?? []).map((c) => (c as { id: string }).id);
+    if (ids.length === 0) return false;
+    const { data, error } = await db
+      .from('messages')
+      .select('id')
+      .in('conversation_id', ids)
+      .eq('sender_type', 'customer')
+      .is('deleted_at', null)
+      .gt('gravada_em', desde)
+      .limit(1);
+    if (error) {
+      console.error(
+        '[automations] parar-se-responder: leitura das mensagens falhou:',
+        error.message
+      );
+      return null;
+    }
+    return (data ?? []).length > 0;
+  } catch (err) {
+    console.error('[automations] parar-se-responder: conferência estourou:', err);
+    return null;
   }
 }

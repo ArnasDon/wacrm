@@ -75,14 +75,23 @@ import {
   decidirRetentativa,
   tentativasJaFeitas,
 } from './retentativa';
-import { contextoDaEspera, semMarcaDeResposta } from './parar-se-responder';
+import {
+  CHAVE_PARAR_SE_RESPONDER,
+  DETALHE_DA_INTERRUPCAO,
+  MOTIVO_RESPOSTA_DESCONHECIDA,
+  clienteRespondeuDesde,
+  contextoDaEspera,
+  semMarcaDeResposta,
+} from './parar-se-responder';
 import {
   DETALHE_SAIU_DA_ETAPA,
+  MOTIVO_ETAPA_DESCONHECIDA,
   cardSaiuDaEtapa,
   etapasQuePrendem,
 } from './so-na-etapa';
 import {
   anotarInterrupcao,
+  cancelarEsperasDaExecucao,
   execucaoJaInterrompida,
   marcarExecucoesInterrompidas,
 } from './interrupcao';
@@ -325,20 +334,30 @@ export async function dispararAutomacoes(
       // não alcança uma execução que ainda não existia. Sem isto ela nascia,
       // mandava a 1ª mensagem a quem já saiu da etapa e, se o card voltasse,
       // seguia ao lado da execução nova (7ª rodada do Codex, PR #223). Sai
-      // como "fora do escopo": nem registro ganha. Erro de leitura NÃO deixa
-      // passar — cobraria quem pode ter saído; é o mesmo trato da retomada.
-      if (
-        (await cardSaiuDaEtapa({
+      // como "fora do escopo": nem registro ganha. ⚠️ Erro de leitura NÃO
+      // deixa passar (cobraria quem pode ter saído) — e também NÃO pula em
+      // silêncio: o dreno já reivindicou o evento e conta o disparo como
+      // entregue, então pular descartaria a automação para sempre sem
+      // ninguém ver. Vira registro `failed`/`falhou` com o motivo, como a
+      // retomada faz (8ª rodada).
+      if (etapasQuePrendem(automation)) {
+        const situacao = await cardSaiuDaEtapa({
           db,
           automation,
           contactId: input.contactId ?? null,
           dealId: input.context?.deal_id,
           eventoEm: input.context?.evento_em,
-        })) !== 'na_etapa' &&
-        etapasQuePrendem(automation)
-      ) {
-        r.foraDoEscopo += 1;
-        continue;
+        });
+        if (situacao === 'saiu') {
+          r.foraDoEscopo += 1;
+          continue;
+        }
+        if (situacao === 'erro') {
+          await registrarFalhaAoNascer(input, automation, MOTIVO_ETAPA_DESCONHECIDA);
+          r.executadas += 1;
+          r.comFalha += 1;
+          continue;
+        }
       }
       if (input.antesDeExecutar && !preparou) {
         preparou = true;
@@ -388,6 +407,8 @@ export async function resumePendingExecution(pending: {
   branch: 'yes' | 'no' | null;
   next_step_position: number;
   context: AutomationContext;
+  /** Quando a espera foi estacionada (`now()` do banco) — a régua da segunda linha de defesa do "parar se responder". */
+  created_at?: string | null;
 }): Promise<void> {
   const db = supabaseAdmin();
   const { data: automation, error } = await db
@@ -421,8 +442,11 @@ export async function resumePendingExecution(pending: {
   if (!automation.is_active) {
     await markPending(pending.id, 'cancelled');
     // A marca (1005): desligar a automação interrompe a execução inteira —
-    // religá-la depois não pode acordar as outras esperas desta execução.
+    // religá-la depois não pode acordar as outras esperas desta execução. E a
+    // varredura das irmãs, como em todo cancelamento: a marca as impede de
+    // retomar, mas sem isto ficariam `pending` na aba até acordarem.
     await marcarExecucoesInterrompidas(db, [pending.log_id], 'desativacao');
+    await cancelarEsperasDaExecucao(db, pending.log_id);
     return;
   }
 
@@ -437,6 +461,49 @@ export async function resumePendingExecution(pending: {
   if (await execucaoJaInterrompida(db, pending.log_id)) {
     await markPending(pending.id, 'cancelled');
     return;
+  }
+
+  // ⚠️ SEGUNDA LINHA DE DEFESA do "parar se o cliente responder" (revisão por
+  // duas lentes, 19/09/2026): o cancelamento na ingestão é UM UPDATE, e um
+  // soluço do banco no instante da resposta deixava esta espera acordar e a
+  // mensagem seguinte sair a quem já tinha respondido. Só para a espera
+  // MARCADA — a caixa vale durante ela —, e ANTES da conferência de etapa.
+  const marcaDeResposta = (pending.context as Record<string, unknown> | null)?.[
+    CHAVE_PARAR_SE_RESPONDER
+  ];
+  if (typeof marcaDeResposta === 'string') {
+    const respondeu = await clienteRespondeuDesde({
+      db,
+      accountId: automation.account_id,
+      contactId: pending.contact_id,
+      desde: pending.created_at,
+    });
+    if (respondeu === null) {
+      // O mesmo trato da conferência de etapa: não sei, e os dois palpites são
+      // ruins em silêncio — falha VISÍVEL.
+      const motivo = MOTIVO_RESPOSTA_DESCONHECIDA;
+      await markPending(pending.id, 'failed');
+      await appendResults(
+        pending.log_id,
+        [{ step_id: '', step_type: 'wait', status: 'failed', detail: motivo }],
+        'failed',
+        motivo
+      );
+      await fecharLog(pending.log_id, 'falhou');
+      return;
+    }
+    if (respondeu) {
+      await marcarExecucoesInterrompidas(db, [pending.log_id], 'resposta');
+      await markPending(pending.id, 'cancelled');
+      await cancelarEsperasDaExecucao(db, pending.log_id);
+      await anotarInterrupcao(
+        db,
+        pending.log_id,
+        marcaDeResposta,
+        DETALHE_DA_INTERRUPCAO
+      );
+      return;
+    }
   }
 
   // ⚠️⚠️ AUTOMAÇÃO PRESA À ETAPA (18/09/2026): com "interromper se o card
@@ -461,6 +528,7 @@ export async function resumePendingExecution(pending: {
     // vem primeiro: é ela que segura as irmãs desta execução.
     await marcarExecucoesInterrompidas(db, [pending.log_id], 'etapa');
     await markPending(pending.id, 'cancelled');
+    await cancelarEsperasDaExecucao(db, pending.log_id);
     await anotarInterrupcao(db, pending.log_id, null, DETALHE_SAIU_DA_ETAPA);
     return;
   }
@@ -469,8 +537,7 @@ export async function resumePendingExecution(pending: {
     // seguir cobraria quem pode ter reagendado; cancelar mataria calada a
     // sequência de quem ficou. Falha VISÍVEL (fio, histórico e o bloco de
     // correções do Meu dia), como o motor já trata erro de banco na retomada.
-    const motivo =
-      'não consegui conferir em que etapa o card está — a sequência foi interrompida para não cobrar quem pode ter saído da etapa';
+    const motivo = MOTIVO_ETAPA_DESCONHECIDA;
     await markPending(pending.id, 'failed');
     await appendResults(
       pending.log_id,
@@ -616,6 +683,43 @@ export async function runAutomationById(args: {
 // ------------------------------------------------------------
 // Internal execution
 // ------------------------------------------------------------
+
+/**
+ * A execução que NÃO PODE nascer por falta de resposta do banco (a conferência
+ * da estadia na etapa falhou) ganha um registro `failed`/`falhou` com o
+ * motivo — o mesmo desfecho da retomada que não consegue conferir a etapa.
+ * Pular em silêncio descartaria a automação para sempre: o dreno já
+ * reivindicou o evento e conta o disparo como entregue (Codex, 8ª rodada do
+ * PR #223). Visível no histórico da automação e no "Já rodou" da conversa; o
+ * "Executar automação" resolve à mão.
+ */
+async function registrarFalhaAoNascer(
+  input: DispatchInput,
+  automation: Automation,
+  motivo: string
+): Promise<void> {
+  const db = supabaseAdmin();
+  const { data: log, error } = await db
+    .from('automation_logs')
+    .insert({
+      automation_id: automation.id,
+      account_id: automation.account_id,
+      user_id: automation.user_id,
+      contact_id: input.contactId ?? null,
+      trigger_event: input.triggerType,
+      channel_id: input.context?.channel_id ?? null,
+      steps_executed: [],
+      status: 'failed',
+      error_message: motivo,
+    })
+    .select('id')
+    .single();
+  if (error || !log) {
+    console.error('[automations] cannot create log for stillborn run:', error);
+    return;
+  }
+  await fecharLog(log.id, 'falhou');
+}
 
 async function executeAutomation(
   input: DispatchInput,
@@ -804,26 +908,67 @@ async function executeStepsFrom(
   let fezTrabalho = false;
 
   for (const step of steps as AutomationStep[]) {
-    // ⚠️ A EXECUÇÃO FOI INTERROMPIDA ENQUANTO ESTE ESCOPO RODAVA? (7ª rodada
-    // do Codex, PR #223.) Com a espera marcada num RAMO, o escopo de fora
-    // segue executando — e a resposta do cliente (ou a saída da etapa) que
-    // chegasse nesse meio só era vista no próximo estacionamento: os passos
-    // comuns até lá, inclusive mensagens, saíam depois da interrupção
-    // prometida. Uma leitura por chave primária antes de cada passo; o
-    // "Aguardar" tem a sua própria, dentro de `cb_estacionar_espera`.
-    if (
-      step.step_type !== 'wait' &&
-      (await execucaoJaInterrompida(db, args.logId))
-    ) {
-      results.push({
-        step_id: step.id,
-        step_type: step.step_type,
-        status: 'skipped',
-        detail: 'não executado: a execução já foi interrompida',
+    if (step.step_type !== 'wait') {
+      // ⚠️ A EXECUÇÃO FOI INTERROMPIDA ENQUANTO ESTE ESCOPO RODAVA? (7ª rodada
+      // do Codex, PR #223.) Com a espera marcada num RAMO, o escopo de fora
+      // segue executando — e a resposta do cliente (ou a saída da etapa) que
+      // chegasse nesse meio só era vista no próximo estacionamento: os passos
+      // comuns até lá, inclusive mensagens, saíam depois da interrupção
+      // prometida. Uma leitura por chave primária antes de cada passo; o
+      // "Aguardar" tem a sua própria, dentro de `cb_estacionar_espera`.
+      if (await execucaoJaInterrompida(db, args.logId)) {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'skipped',
+          detail: 'não executado: a execução já foi interrompida',
+        });
+        status = 'partial';
+        await appendResults(args.logId, results, status, errorMessage);
+        return status;
+      }
+      // ⚠️ E A ESTADIA NA ETAPA AINDA ESTÁ DE PÉ? (8ª rodada do Codex.) A
+      // conferência do dispatch e a criação do registro são DUAS operações:
+      // o card que sai entre elas deixa o dreno sem registro para marcar (a
+      // execução ainda não existia) e o registro sem marca. A saída está
+      // gravada na fila de eventos, então perguntar de novo aqui — com o
+      // registro já existente, antes de cada passo — fecha o vão: o que ainda
+      // pode escapar é UM passo cujo envio já estava em voo quando a saída foi
+      // gravada, nunca a sequência. Custa uma leitura por passo, e só nas
+      // automações presas à etapa (`nao_se_aplica` não consulta nada).
+      const situacao = await cardSaiuDaEtapa({
+        db,
+        automation: args.automation,
+        contactId: args.contactId,
+        dealId: args.context?.deal_id,
+        eventoEm: args.context?.evento_em,
       });
-      status = 'partial';
-      await appendResults(args.logId, results, status, errorMessage);
-      return status;
+      if (situacao === 'saiu') {
+        // A MARCA primeiro (segura as irmãs), depois a foto da fila — a
+        // mesma ordem dos cancelamentos por lote.
+        await marcarExecucoesInterrompidas(db, [args.logId], 'etapa');
+        await cancelarEsperasDaExecucao(db, args.logId);
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'skipped',
+          detail: DETALHE_SAIU_DA_ETAPA,
+        });
+        status = 'partial';
+        await appendResults(args.logId, results, status, errorMessage);
+        return status;
+      }
+      if (situacao === 'erro') {
+        results.push({
+          step_id: step.id,
+          step_type: step.step_type,
+          status: 'failed',
+          detail: MOTIVO_ETAPA_DESCONHECIDA,
+        });
+        status = 'failed';
+        errorMessage = MOTIVO_ETAPA_DESCONHECIDA;
+        break;
+      }
     }
 
     // `wait` is the suspension point: enqueue and stop processing this
@@ -1539,6 +1684,13 @@ async function runStep(
         // acionar A" driblaria a guarda em toda volta.
         context: {
           ...args.context,
+          // ⚠️ A filha NÃO é de estadia nenhuma: `evento_em` é a ENTRADA da
+          // MÃE, e a mãe pode ter movido o card no meio (`move_deal_stage`)
+          // antes de acionar — a filha presa à etapa nova leria esse
+          // movimento como "saiu" com o card DENTRO dela (revisão por duas
+          // lentes, 19/09). Sem o instante vale só a posição do card, como na
+          // execução manual.
+          evento_em: null,
           vars: { ...(args.context.vars ?? {}), _cadeia: passo.cadeia },
         },
         triggerType: args.automation.trigger_type,
@@ -1569,10 +1721,21 @@ async function runStep(
       if (error) throw new Error(`stop_automation falhou: ${error.message}`);
 
       // A marca (1005): a execução parada não retoma pela continuação que
-      // ainda não estava na fila.
+      // ainda não estava na fila. ⚠️ Inclui a execução cuja espera está
+      // `running` — reivindicada pelo cron neste instante: a foto acima não a
+      // vê, e sem a marca a retomada em curso seguiria até a espera seguinte
+      // (revisão por duas lentes, 19/09). A linha `running` não é cancelada
+      // (é do cron); a marca faz a retomada parar no próximo passo.
+      const { data: emCurso } = await db
+        .from('automation_pending_executions')
+        .select('log_id')
+        .eq('automation_id', cfg.automation_id)
+        .eq('account_id', args.automation.account_id)
+        .eq('contact_id', args.contactId)
+        .eq('status', 'running');
       const execucoes = [
         ...new Set(
-          (data ?? [])
+          [...(data ?? []), ...(emCurso ?? [])]
             .map((l) => (l as { log_id?: string | null }).log_id)
             .filter((id): id is string => typeof id === 'string')
         ),
@@ -1585,7 +1748,7 @@ async function runStep(
       // marca ninguém mais insere, então isto pega tudo o que sobrou.
       let irmas = 0;
       if (execucoes.length > 0) {
-        const { data: outras } = await db
+        const { data: outras, error: erroDasIrmas } = await db
           .from('automation_pending_executions')
           .update({ status: 'cancelled' })
           .in('log_id', execucoes)
@@ -1593,6 +1756,12 @@ async function runStep(
           .eq('contact_id', args.contactId)
           .eq('status', 'pending')
           .select('id');
+        if (erroDasIrmas) {
+          console.error(
+            '[automations] stop_automation: segunda varredura falhou:',
+            erroDasIrmas.message
+          );
+        }
         irmas = (outras ?? []).length;
       }
 
@@ -2753,6 +2922,13 @@ async function fecharLog(
   if (!logId) return;
   try {
     const db = supabaseAdmin();
+    // ⚠️ Execução INTERROMPIDA não ganha desfecho nem hora de fim (revisão
+    // por duas lentes, 19/09): a resposta do cliente (ou a saída da etapa) que
+    // chega durante o ÚLTIMO passo do escopo — depois da leitura da marca —
+    // deixa o escopo terminar, e sem isto o fio dizia "concluiu" sobre uma
+    // execução com `interrompida_por` gravado. O 'falhou' de um ramo que
+    // estourou antes fica como está: nada é apagado, só não se carimba.
+    if (await execucaoJaInterrompida(db, logId)) return;
     let consulta = db
       .from('automation_pending_executions')
       .select('id')

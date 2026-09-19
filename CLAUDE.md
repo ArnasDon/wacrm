@@ -2665,7 +2665,7 @@ mensagem. `POST /instance/restart/<instância>` segue como PALIATIVO (drena
 DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
 "Aguardando mensagem" (mensagens que não chegavam ao cliente).
 
-⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1007, 19/09/2026): não é mais
+⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1009, 19/09/2026): não é mais
 jogada fora — o telefone sai do ACERVO, ou ela fica RETIDA até ele aparecer.**
 `src/lib/whatsapp/sem-telefone/` (`modo.ts` puro; `resolver-lid`, `retidas`,
 `historica`, `entregar`, `receber`, `religar`), `ehLidSemTelefone` e a opção
@@ -2735,7 +2735,7 @@ matriz de testes) em `docs/PLANO-lid-sem-telefone.md`. O que morde código novo:
   sempre, que é o que o medidor do `PLANO-baileys-7.md` procura). Nenhuma
   função do módulo lança; exceção na chegada cai na RETENÇÃO, nunca no
   descarte (o estouro pode ter vindo DEPOIS do insert, e a religação
-  deduplica). Banco sem a 1007 é tolerado: a Fase 1 funciona, a retenção vira o
+  deduplica). Banco sem a 1009 é tolerado: a Fase 1 funciona, a retenção vira o
   descarte de hoje, e o erro da tabela ausente sai UMA vez por processo.
 - ⚠️ **O anexo da retida é baixado pela conexão DA RETIDA** (`channelId` no
   item de `semAnexo`, lido com `'channelId' in pendente`, nunca `??`): o LID é
@@ -3185,7 +3185,7 @@ entrega mensagem de grupo. O que morde código novo:
   próprio fonte. Se um dia grupos entrarem nas automações, o import entra ali,
   visível na revisão — não atrás de uma flag.
 - **A regra do `@lid` do 1:1 NÃO vale em grupo.** Lá o LID sem telefone não
-  vira contato (desde a 1007 a mensagem fica RETIDA até o número aparecer —
+  vira contato (desde a 1009 a mensagem fica RETIDA até o número aparecer —
   antes era descartada); aqui o remetente é desnormalizado em
   `messages.group_sender_*`, sem FK e sem criar contato. Em produção 100% dos
   participantes chegam em `@lid`, então aplicar a regra do 1:1 esvaziaria o
@@ -6094,7 +6094,7 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     predicado parcial de `messages` renderizado como
     `sender_type = 'customer' AND deleted_at IS NULL`).
 
-  - **1007_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
+  - **1009_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
     mensagem 1:1 que chegou em `@lid` sem telefone: retida, entregue ou
     duplicada; FECHADA ao navegador; payload só enquanto `retida`) e a função
     `cb_assentar_mensagem_historica` (refaz `aguardando_desde` pela fórmula

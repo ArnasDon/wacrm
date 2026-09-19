@@ -1025,7 +1025,7 @@ Evolution e do CRM abertos. Registrar resultado e data em cada linha.
 | `Closing session` / `Closing stale open session` | log da Evolution | tende a zero após a migração das sessões |
 | `"463"` / `messageStubParameters` | log da Evolution | **zero** — qualquer ocorrência é gatilho de rollback |
 | `DESCARTADA: endereçada por @lid` | log do CRM (`crm_crm`) | **zero** |
-| `RETIDA: endereçada por @lid` (desde a 1007) | log do CRM **e** a tabela `cb_mensagens_sem_telefone` (durável — o log some quando o Swarm recicla a tarefa) | raro (≈ 1 a cada 10 dias, medido em 19/09/2026). `DESCARTADA` passou a significar só "a retenção FALHOU" — esse, sim, tem de ser zero. Causa e conserto: `docs/PLANO-lid-sem-telefone.md` |
+| `RETIDA: endereçada por @lid` (desde a 1009) | log do CRM **e** a tabela `cb_mensagens_sem_telefone` (durável — o log some quando o Swarm recicla a tarefa) | raro (≈ 1 a cada 10 dias, medido em 19/09/2026). `DESCARTADA` passou a significar só "a retenção FALHOU" — esse, sim, tem de ser zero. Causa e conserto: `docs/PLANO-lid-sem-telefone.md` |
 | campos `session-*_1.*` e `lid-mapping-*` | Redis db 8, hashes vivos | aparecem e crescem. **Linha de base (09/09 17:30, depois da limpeza)**: `44982408` (Bancário - Comercial) PN=291, `be282022` (Bancário - Jurídico) PN=35, `200ac9ef` (Trabalhista - Comercial) PN=152, `d1d9caf5` (Trabalhista - Jurídico) PN=140; LID=0 e `lid-mapping`=0 em todos |
 | acks (`MessageUpdate`) e `read` no CRM | banco da Evolution / `messages.status` | continuam chegando |
 | latência de entrada | T21 (consulta em Anexo B) | segundos, não minutos. **Base 09/09: p50 1,2 s, p95 2,1 s** |

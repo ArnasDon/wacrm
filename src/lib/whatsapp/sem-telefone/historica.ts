@@ -18,7 +18,7 @@
 //                           defesa da retomada lê `gravada_em` e cobre.
 //
 // O que ela faz ALÉM do insert é o que a conversa precisa para não mentir —
-// `cb_assentar_mensagem_historica` (1007): refaz `aguardando_desde` (o gatilho
+// `cb_assentar_mensagem_historica` (1009): refaz `aguardando_desde` (o gatilho
 // da 972 conta por ordem de INSERÇÃO), soma a não lida quando cabe, e toca
 // `updated_at`, que é o que faz o realtime corrigir a lista de quem está com
 // a caixa de entrada aberta.

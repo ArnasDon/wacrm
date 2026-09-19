@@ -140,7 +140,7 @@ describe('gravarHistorica', () => {
     expect(b.rpcs).toEqual([]);
   });
 
-  it('a função da 1007 falhando NÃO desfaz a mensagem: ela já está no fio', async () => {
+  it('a função da 1009 falhando NÃO desfaz a mensagem: ela já está no fio', async () => {
     const b = criarBanco();
     b.falhasDeRpc.cb_assentar_mensagem_historica = { code: '42883', message: 'function does not exist' };
     const r = await gravarHistorica(b.db, recuperada(), 'conv-1');

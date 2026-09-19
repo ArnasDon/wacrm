@@ -112,7 +112,7 @@ export function BlocoDeCorrecoes({
 
   /**
    * ⚠️ `retidas: null` é "a rota não conseguiu conferir ESTA parte" (banco
-   * sem a 1007, erro só daquela consulta) — vira `falhou`, nunca zero: zero
+   * sem a 1009, erro só daquela consulta) — vira `falhou`, nunca zero: zero
    * deixaria o bloco dizer "tudo em ordem" sobre pergunta não respondida.
    */
   const mensagensRetidas: EstadoDaFonte =

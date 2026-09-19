@@ -1,5 +1,5 @@
 -- ============================================================
--- 1007 — Mensagem 1:1 que chega em `@lid` SEM telefone deixa de ser jogada
+-- 1009 — Mensagem 1:1 que chega em `@lid` SEM telefone deixa de ser jogada
 -- fora: ou o CRM acha o telefone no próprio acervo, ou a RETÉM até o número
 -- aparecer.
 --
@@ -90,7 +90,7 @@ create table if not exists public.cb_mensagens_sem_telefone (
 );
 
 comment on table public.cb_mensagens_sem_telefone is
-  'Mensagens 1:1 da Evolution que chegaram em @lid sem telefone (1007). retida = aguardando o numero aparecer, com o payload cru; entregue = gravada em messages (pelo acervo, na chegada, ou por religacao); duplicada = a mesma mensagem ja tinha entrado pela via normal. Fechada ao navegador.';
+  'Mensagens 1:1 da Evolution que chegaram em @lid sem telefone (1009). retida = aguardando o numero aparecer, com o payload cru; entregue = gravada em messages (pelo acervo, na chegada, ou por religacao); duplicada = a mesma mensagem ja tinha entrado pela via normal. Fechada ao navegador.';
 
 -- A pergunta do caminho quente: "há retida deste LID?" — feita depois de
 -- CADA mensagem 1:1 gravada. Parcial: a tabela guarda o histórico inteiro,
@@ -155,7 +155,7 @@ as $$
 $$;
 
 comment on function public.cb_assentar_mensagem_historica(uuid, boolean) is
-  'Depois de gravar uma mensagem com carimbo ANTIGO (1007): refaz aguardando_desde pela formula canonica da 972, soma a nao lida quando pedida e toca updated_at. So service_role.';
+  'Depois de gravar uma mensagem com carimbo ANTIGO (1009): refaz aguardando_desde pela formula canonica da 972, soma a nao lida quando pedida e toca updated_at. So service_role.';
 
 revoke execute on function public.cb_assentar_mensagem_historica(uuid, boolean)
   from public, anon, authenticated;
@@ -178,14 +178,14 @@ begin
     where n.nspname = 'public' and c.relname = 'cb_mensagens_sem_telefone'
       and c.relrowsecurity
   ) then
-    raise exception '1007: cb_mensagens_sem_telefone sem RLS ligada';
+    raise exception '1009: cb_mensagens_sem_telefone sem RLS ligada';
   end if;
 
   if exists (
     select 1 from pg_policies
     where schemaname = 'public' and tablename = 'cb_mensagens_sem_telefone'
   ) then
-    raise exception '1007: cb_mensagens_sem_telefone ganhou policy — ela é fechada ao navegador';
+    raise exception '1009: cb_mensagens_sem_telefone ganhou policy — ela é fechada ao navegador';
   end if;
 
   if has_table_privilege('anon', v_tabela, 'SELECT')
@@ -194,21 +194,21 @@ begin
      or has_table_privilege('authenticated', v_tabela, 'INSERT')
      or has_table_privilege('authenticated', v_tabela, 'UPDATE')
      or has_table_privilege('authenticated', v_tabela, 'DELETE') then
-    raise exception '1007: anon/authenticated alcançam cb_mensagens_sem_telefone';
+    raise exception '1009: anon/authenticated alcançam cb_mensagens_sem_telefone';
   end if;
   if not has_table_privilege('service_role', v_tabela, 'SELECT')
      or not has_table_privilege('service_role', v_tabela, 'INSERT')
      or not has_table_privilege('service_role', v_tabela, 'UPDATE') then
-    raise exception '1007: service_role sem acesso a cb_mensagens_sem_telefone';
+    raise exception '1009: service_role sem acesso a cb_mensagens_sem_telefone';
   end if;
 
   if has_function_privilege('anon', v_assinatura, 'EXECUTE')
      or has_function_privilege('authenticated', v_assinatura, 'EXECUTE') then
-    raise exception '1007: anon/authenticated ainda executam cb_assentar_mensagem_historica';
+    raise exception '1009: anon/authenticated ainda executam cb_assentar_mensagem_historica';
   end if;
   if not has_function_privilege('service_role', v_assinatura, 'EXECUTE') then
-    raise exception '1007: service_role perdeu o EXECUTE de cb_assentar_mensagem_historica';
+    raise exception '1009: service_role perdeu o EXECUTE de cb_assentar_mensagem_historica';
   end if;
 
-  raise notice '1007: cb_mensagens_sem_telefone e cb_assentar_mensagem_historica no lugar.';
+  raise notice '1009: cb_mensagens_sem_telefone e cb_assentar_mensagem_historica no lugar.';
 end $$;

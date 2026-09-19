@@ -6,7 +6,7 @@ Documento INTERNO e vivo. Atualizar a cada fase concluída.
 | --- | --- |
 | **Estado** | Em implementação (branch `fix/lid-sem-telefone`). Nada em produção. |
 | **Decisão do operador (19/09/2026)** | Fazer as Fases 1 e 2; a Fase 3 (patch na imagem da Evolution) fica de fora. "Não quero quebrar o que está funcionando" — cautela é requisito. |
-| **Migration** | `1007_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
+| **Migration** | `1009_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
 
 ## 1. O problema, em uma frase
 
@@ -183,7 +183,7 @@ resolveria na hora.
   pelo caminho dos motores; (3) a duplicata deixando de ser filtrada na
   chegada; (4) o anexo perdendo a conexão da retida; (5) o eco do escritório
   contando como não lida. As cinco reprovaram (1, 5, 2, 1 e 1 testes).
-- **T13:** Postgres 16 descartável (Homebrew, só TCP): a 1007 aplica em banco
+- **T13:** Postgres 16 descartável (Homebrew, só TCP): a 1009 aplica em banco
   limpo, é idempotente (2ª passada sem erro) e passou 13 cenários com o
   gatilho REAL da 972 — falso "em atraso" some (C1), atraso verdadeiro volta
   (C2), encerrada e grupo ficam nulos (C3/C4), não lida soma só quando pedido
@@ -197,7 +197,7 @@ resolveria na hora.
   com mais de um telefone, ZERO mensagens de grupo com LID gravado; a consulta
   que resolve o LID custa ~5 ms (varredura de 14,4 mil linhas, tudo em cache).
 - **T18:** NÃO executado — depende de autorização (o preview escreve no banco
-  de produção) e da 1007 aplicada. É também onde se medem, contra o PostgREST
+  de produção) e da 1009 aplicada. É também onde se medem, contra o PostgREST
   real, o `upsert(onConflict)` e o `rpc('cb_assentar_mensagem_historica')`; as
   demais formas de consulta já rodam em produção noutros módulos.
 - **Revisão:** duas lentes independentes (regressão do caminho quente; banco e
@@ -207,7 +207,7 @@ resolveria na hora.
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
    do Codex no HEAD final.
-2. **Operador autoriza** → aplicar a 1007 (aditiva; nada em produção a lê).
+2. **Operador autoriza** → aplicar a 1009 (aditiva; nada em produção a lê).
 3. **Operador autoriza** → merge → deploy automático.
 4. Conferir: `DESCARTADA` deixa de aparecer no log; a primeira ocorrência real
    vira linha em `cb_mensagens_sem_telefone`.
@@ -224,11 +224,11 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Decisão do operador: Fases 1 e 2
 - [x] Análise de risco e matriz de testes (este documento)
 - [x] Fase 1 — código + testes
-- [x] Migration 1007 + teste em Postgres local
+- [x] Migration 1009 + teste em Postgres local
 - [x] Fase 2 — reter, religar, Meu dia + testes
 - [x] Fio em tempo real na ordem do carimbo
 - [x] Portões (T17)
 - [ ] Revisão por duas lentes + PR + Codex no HEAD final
 - [ ] T18 — ponta a ponta no preview (autorização)
-- [ ] 1007 aplicada em produção (autorização)
+- [ ] 1009 aplicada em produção (autorização)
 - [ ] Merge (autorização) + conferência pós-deploy

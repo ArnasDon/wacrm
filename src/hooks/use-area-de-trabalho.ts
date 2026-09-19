@@ -154,7 +154,7 @@ export interface Integracoes {
   webhooks: number;
   /**
    * ⚠️ `null` = "não consegui conferir" — a rota não respondeu esta parte
-   * (banco sem a 1007, erro só desta consulta, servidor antigo no meio de um
+   * (banco sem a 1009, erro só desta consulta, servidor antigo no meio de um
    * deploy). NUNCA zero: zero afirmaria "nenhuma mensagem retida".
    */
   retidas: RetidasNaTela | null;

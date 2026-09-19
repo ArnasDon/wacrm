@@ -95,7 +95,7 @@ describe('resumirCorrecoes', () => {
     expect(r.aoMenos).toBe(false);
   });
 
-  it('mensagem RETIDA sem telefone (1007) vem junto das conexões, antes das agendadas', () => {
+  it('mensagem RETIDA sem telefone (1009) vem junto das conexões, antes das agendadas', () => {
     const r = resumirCorrecoes({
       ...tudoZerado(),
       agendadasFalharam: pronto(1),

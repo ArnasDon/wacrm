@@ -19,6 +19,22 @@
 // ============================================================
 
 /**
+ * O rótulo de reserva do card que nasce sem nome NENHUM — sem nome na ficha,
+ * sem telefone e sem `@usuario`. A coluna é NOT NULL e precisa de alguma
+ * coisa; hoje isso só é alcançável pelo Instagram, quando o perfil ainda não
+ * foi lido.
+ *
+ * ⚠️⚠️ O GATILHO DA 1008 CONHECE ESTE TEXTO, e tem de conhecer: para
+ * `cb_nome_para_titulo` ele parece um nome de gente, então sem o caso especial
+ * o card nasceria "Novo contato" e ficaria assim PARA SEMPRE — o gatilho o
+ * leria como "este título já identifica alguém" e nunca o trocaria pelo nome
+ * que chegasse depois (achado do Codex, PR #225). Trocar este texto exige
+ * migration nova; há pino cobrando os dois lados
+ * (`supabase/migrations/titulo-do-card-1007.test.ts`).
+ */
+export const TITULO_SEM_NOME = "Novo contato";
+
+/**
  * Puro: o pedaço do INSERT/UPDATE que acompanha um título DIGITADO — o texto
  * e a marca juntos, ou NADA quando o título não mudou.
  *

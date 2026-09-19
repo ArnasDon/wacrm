@@ -48,6 +48,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { createDeal } from '@/lib/deals/create-deal';
+import { TITULO_SEM_NOME } from '@/lib/deals/titulo-do-card';
 
 export interface RouteContactArgs {
   /** Client de service-role (a ingestão ignora RLS — o filtro é explícito). */
@@ -163,7 +164,7 @@ export async function routeContactToPipeline(args: RouteContactArgs): Promise<vo
     //
     // Daqui em diante quem mantém o título em dia é o GATILHO da 1007 — ver
     // `src/lib/deals/titulo-do-card.ts`.
-    const titulo = args.contactName?.trim() || 'Novo contato';
+    const titulo = args.contactName?.trim() || TITULO_SEM_NOME;
 
     const resultado = await createDeal({
       db,

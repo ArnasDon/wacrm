@@ -3085,6 +3085,26 @@ morde código novo:
 - **Card sem nome em lugar nenhum fica com o prefixo** (275 no acervo): ali o
   rótulo da conexão é a única informação que o título carrega, e o gatilho o
   conserta na primeira vez que o cliente escrever.
+- ⚠️⚠️ **"Novo contato" (`TITULO_SEM_NOME`) NÃO é nome, e o gatilho tem de
+  saber disso (1008).** É o rótulo de reserva do card que nasce sem nome
+  NENHUM — a coluna é NOT NULL —, e para `cb_nome_para_titulo` ele parece
+  nome de gente: sem o caso especial, o card nasceria "Novo contato" e
+  ficaria assim PARA SEMPRE, porque a régua acima leria "este título já
+  identifica alguém" e o nome que chegasse depois é automático. Incidência
+  ZERO hoje (nenhuma conta do Instagram conectada, nenhuma ficha sem nome), e
+  é justamente o tipo de armadilha que acende sozinha no dia da primeira
+  conexão. O texto vive em DOIS lugares — a constante em TS e a comparação no
+  gatilho —, com pino cobrando os dois; trocá-lo exige migration nova. Quem
+  digitar "Novo contato" à mão fica protegido pelo `titulo_fixado_em`.
+  (Achado do Codex no PR #225.)
+- ⚠️ **No passo `create_deal`, título LITERAL do autor nasce FIXADO; título
+  com `{{…}}` fica solto.** "Caso trabalhista" é texto escolhido para todo
+  card que aquela automação criar, e o gatilho o trocaria pelo nome da pessoa
+  na primeira renomeação deliberada da ficha. `{{vars.agendamento_nome}}` — o
+  único em produção — é derivado de quem está do outro lado e TEM de
+  continuar acompanhando a ficha. Título vazio também fica solto: ali o
+  gatilho é a única chance de o card ganhar um nome. (Achado do Codex no PR
+  #225.)
 - ⚠️ **No INSTAGRAM o chamador cai no `@usuario`** (`persistir.ts`, via
   `identidadeDoContato`): a ficha de lá não tem telefone para servir de
   reserva, e sem a queda quem escreve antes de o perfil ser lido abriria um

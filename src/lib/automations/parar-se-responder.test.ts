@@ -7,6 +7,7 @@ import {
   cancelarEsperasPorResposta,
   contextoDaEspera,
   semMarcaDeResposta,
+  clienteRespondeuDesde,
 } from './parar-se-responder';
 
 describe('contextoDaEspera — o que vai para a fila', () => {
@@ -100,6 +101,11 @@ function bancoFalso(opcoes: {
   /** As esperas MARCADAS em `running` (o cron acabou de reivindicá-las). */
   emCurso?: { id: string; log_id: string | null; passo: string | null }[];
   erroEmCurso?: string;
+  /** A segunda linha de defesa: as conversas do contato e as respostas dele. */
+  conversas?: { id: string }[];
+  erroNaConversa?: string;
+  respostas?: { id: string }[];
+  erroNasRespostas?: string;
 }) {
   const chamadas: Chamada[] = [];
 
@@ -113,6 +119,14 @@ function bancoFalso(opcoes: {
       };
       chamadas.push(op);
       const resolver = () => {
+        if (tabela === 'conversations') {
+          if (opcoes.erroNaConversa) return { data: null, error: { message: opcoes.erroNaConversa } };
+          return { data: opcoes.conversas ?? [], error: null };
+        }
+        if (tabela === 'messages') {
+          if (opcoes.erroNasRespostas) return { data: null, error: { message: opcoes.erroNasRespostas } };
+          return { data: opcoes.respostas ?? [], error: null };
+        }
         if (tabela === 'automation_pending_executions') {
           if (op.tipo === 'select') {
             if (op.filtros.some(([o, k, v]) => o === 'eq' && k === 'status' && v === 'running')) {
@@ -148,6 +162,7 @@ function bancoFalso(opcoes: {
         in: (k: string, v: unknown) => (op.filtros.push(['in', k, v]), b),
         is: (k: string, v: unknown) => (op.filtros.push(['is', k, v]), b),
         not: (k: string, o: string, v: unknown) => (op.filtros.push(['not', k, o, v]), b),
+        gt: (k: string, v: unknown) => (op.filtros.push(['gt', k, v]), b),
         limit: () => b,
         maybeSingle: () => Promise.resolve().then(resolver),
         then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -355,6 +370,60 @@ describe('a espera marcada já RUNNING (Codex, 9ª rodada)', () => {
       expect(await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' })).toBe(1);
       const marca = chamadas.find((c) => c.tabela === 'automation_logs' && c.tipo === 'update');
       expect(marca?.payload).toMatchObject({ interrompida_por: 'resposta' });
+    } finally {
+      calado.mockRestore();
+    }
+  });
+});
+
+describe('clienteRespondeuDesde — a segunda linha de defesa (auditoria pré-Codex, 19/09)', () => {
+  const desde = '2026-09-19T10:00:00+00:00';
+
+  it('⚠️⚠️ só mensagem do CLIENTE, não apagada, gravada DEPOIS da espera, nas conversas do contato nesta conta', async () => {
+    const { db, chamadas } = bancoFalso({ conversas: [{ id: 'conv-1' }, { id: 'conv-2' }], respostas: [{ id: 'm1' }] });
+    expect(await clienteRespondeuDesde({ db, accountId: 'acct-1', contactId: 'c1', desde })).toBe(true);
+    expect(chamadas[0].tabela).toBe('conversations');
+    expect(chamadas[0].filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'contact_id', 'c1'],
+    ]);
+    expect(chamadas[1].tabela).toBe('messages');
+    // Uma mutação que tire `sender_type = customer` faria a mensagem do
+    // ADVOGADO parar a sequência; `gravada_em` (o relógio do banco), nunca
+    // `created_at` (o relógio do aparelho).
+    expect(chamadas[1].filtros).toEqual([
+      ['in', 'conversation_id', ['conv-1', 'conv-2']],
+      ['eq', 'sender_type', 'customer'],
+      ['is', 'deleted_at', null],
+      ['gt', 'gravada_em', desde],
+    ]);
+  });
+
+  it('cliente calado: false', async () => {
+    const { db } = bancoFalso({ conversas: [{ id: 'conv-1' }], respostas: [] });
+    expect(await clienteRespondeuDesde({ db, accountId: 'acct-1', contactId: 'c1', desde })).toBe(false);
+  });
+
+  it('contato sem conversa: false, sem consultar mensagens', async () => {
+    const { db, chamadas } = bancoFalso({ conversas: [], respostas: [{ id: 'm1' }] });
+    expect(await clienteRespondeuDesde({ db, accountId: 'acct-1', contactId: 'c1', desde })).toBe(false);
+    expect(chamadas).toHaveLength(1);
+  });
+
+  it('sem contato ou sem o instante da espera: false, sem ir ao banco', async () => {
+    const { db, chamadas } = bancoFalso({ conversas: [{ id: 'conv-1' }], respostas: [{ id: 'm1' }] });
+    expect(await clienteRespondeuDesde({ db, accountId: 'acct-1', contactId: null, desde })).toBe(false);
+    expect(await clienteRespondeuDesde({ db, accountId: 'acct-1', contactId: 'c1', desde: null })).toBe(false);
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('⚠️ leitura que falha devolve null — o motor decide (falha visível), nunca palpite', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const conversa = bancoFalso({ erroNaConversa: 'timeout' });
+      expect(await clienteRespondeuDesde({ db: conversa.db, accountId: 'acct-1', contactId: 'c1', desde })).toBeNull();
+      const mensagens = bancoFalso({ conversas: [{ id: 'conv-1' }], erroNasRespostas: 'timeout' });
+      expect(await clienteRespondeuDesde({ db: mensagens.db, accountId: 'acct-1', contactId: 'c1', desde })).toBeNull();
     } finally {
       calado.mockRestore();
     }

@@ -168,6 +168,23 @@ export async function marcarExecucoesInterrompidas(
       console.error('[automations] marcar interrompida falhou:', error.message);
       return 0;
     }
+    // ⚠️ A falha JÁ gravada com a hora de fim ADIADA — `fecharLog` adia
+    // `finalizado_em` enquanto uma espera irmã está viva — ficaria invisível
+    // para sempre: nenhum cancelamento fecha o registro, e `fecharLog` cala
+    // para execução marcada (auditoria pré-Codex, 19/09). Publica a hora de
+    // fim dessas, e SÓ dessas: cancelamento sem falha continua sem desfecho.
+    const { error: erroDaHora } = await db
+      .from('automation_logs')
+      .update({ finalizado_em: new Date().toISOString() })
+      .in('id', ids)
+      .eq('desfecho', 'falhou')
+      .is('finalizado_em', null);
+    if (erroDaHora) {
+      console.error(
+        '[automations] hora de fim da falha adiada falhou:',
+        erroDaHora.message
+      );
+    }
     return (data ?? []).length;
   } catch (err) {
     console.error('[automations] marcar interrompida estourou:', err);

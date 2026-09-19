@@ -689,15 +689,23 @@ export async function runAutomationById(args: {
   // Só o que o contexto não trouxe é preenchido.
   let context = args.context;
   if (!context?.deal_id || !context?.evento_em) {
+    // ⚠️ Card e âncora saem da MESMA resolução: o card que o contexto já traz
+    // (a filha herda o da mãe) vai como alvo, e a âncora é o último movimento
+    // DELE — misturar o id herdado com a âncora de um card escolhido à parte
+    // fazia a entrada do próprio card parecer "posterior" (Codex, 12ª rodada).
     const estadia = await estadiaSemEvento({
       db: supabaseAdmin(),
       automation: alvo,
       contactId: args.contactId,
+      dealId: context?.deal_id,
     });
+    // Card e âncora do MESMO negócio: quem escolhe (ou herda) o card manda a
+    // âncora dele. A âncora do chamador só valeria junto com o card do
+    // chamador — e aí este bloco nem roda.
     context = {
       ...context,
       deal_id: context?.deal_id ?? estadia.deal_id,
-      evento_em: context?.evento_em ?? estadia.evento_em,
+      evento_em: estadia.evento_em,
     };
   }
   await executeAutomation(
@@ -1780,11 +1788,19 @@ async function runStep(
         .eq('account_id', args.automation.account_id)
         .eq('contact_id', args.contactId)
         .eq('status', 'running');
+      // ⚠️ MENOS a PRÓPRIA execução (auditoria pré-Codex, 19/09): apontado
+      // para a própria automação ("Parar automação: a si mesma", para cancelar
+      // as suas pendentes e recomeçar), numa retomada o passo enxerga a linha
+      // `running` que é a SUA — marcá-la faria o passo seguinte ser pulado, e
+      // o construtor promete que a execução em curso não se autocancela. As
+      // pendentes dela caem na foto acima, como sempre.
       const execucoes = [
         ...new Set(
           [...(data ?? []), ...(emCurso ?? [])]
             .map((l) => (l as { log_id?: string | null }).log_id)
-            .filter((id): id is string => typeof id === 'string')
+            .filter(
+              (id): id is string => typeof id === 'string' && id !== args.logId
+            )
         ),
       ];
       await marcarExecucoesInterrompidas(db, execucoes, 'passo');

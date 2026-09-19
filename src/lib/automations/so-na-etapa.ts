@@ -301,9 +301,12 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
     if (presas.length === 0) return 0;
 
     // ⚠️ O registro não guarda o card, mas a ESPERA guarda (`context.deal_id`):
-    // execução estacionada por OUTRO card do mesmo contato fica de fora. A que
-    // está RODANDO agora, sem espera, não tem como ser distinguida — aceito:
-    // "um card por contato" é a regra desta casa, e a janela é de segundos.
+    // execução estacionada por OUTRO card do mesmo contato fica de fora. A
+    // espera `running` — reivindicada pelo cron neste instante — conta para a
+    // distinção também (Codex, 12ª rodada): é a única prova de que a execução
+    // é do card A, e sem ela o movimento do card B a matava. A que está
+    // RODANDO sem espera nenhuma não tem como ser distinguida — aceito: "um
+    // card por contato" é a regra desta casa, e a janela é de segundos.
     // Leitura que falha NÃO marca (a ponta 1 cobre): marcar sem saber de qual
     // card é poderia matar a sequência do outro.
     const { data: esperas, error: erroDasEsperas } = await db
@@ -313,7 +316,7 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
         'log_id',
         presas.map((a) => a.id)
       )
-      .eq('status', 'pending');
+      .in('status', ['pending', 'running']);
     if (erroDasEsperas) {
       console.error(
         '[automations] so-na-etapa: leitura das esperas falhou:',
@@ -364,11 +367,16 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
  * automação presa à etapa (Codex, 9ª e 10ª rodadas). Resolve DUAS coisas que
  * o contexto de evento traz de graça e o manual não tem:
  *
- * - o CARD-ALVO (`deal_id`): o negócio ABERTO mais recente do contato que está
- *   numa etapa da automação — é dele que o operador está falando ao clicar —,
- *   senão o aberto mais recente (a conferência de posição dirá "saiu"). Sem o
- *   card no contexto, a saída de etapa (ponta 2) não conseguia dizer de qual
- *   card era a execução, e mover QUALQUER card do contato a matava.
+ * - o CARD-ALVO (`deal_id`): o que o contexto JÁ TROUXE (a filha do
+ *   `run_automation` herda o card da mãe), senão o negócio ABERTO mais recente
+ *   do contato que está numa etapa da automação — é dele que o operador está
+ *   falando ao clicar —, senão o aberto mais recente (a conferência de posição
+ *   dirá "saiu"). Sem o card no contexto, a saída de etapa (ponta 2) não
+ *   conseguia dizer de qual card era a execução, e mover QUALQUER card do
+ *   contato a matava. ⚠️ Card e âncora são do MESMO negócio: escolher o card
+ *   aqui e ancorar noutro (o que a 10ª rodada fazia com o card herdado)
+ *   misturava o id de A com o movimento de B, e a entrada de A na etapa
+ *   parecia "posterior" — a filha morria com o card dentro (Codex, 12ª).
  * - a ÂNCORA (`evento_em`): o último movimento de etapa conhecido DESSE card.
  *   Qualquer movimento POSTERIOR encerra a execução — o card que sai e volta
  *   enquanto ela espera não a acorda ao lado da execução nova da reentrada.
@@ -387,43 +395,48 @@ export async function estadiaSemEvento(args: {
   db: SupabaseClient;
   automation: AutomacaoComGatilho & { account_id: string };
   contactId: string | null;
+  /** O card que o contexto JÁ traz (herdado da mãe): a âncora é resolvida para ele, sem escolher outro. */
+  dealId?: string | null;
 }): Promise<{ deal_id: string | null; evento_em: string | null }> {
   const nada = { deal_id: null, evento_em: null };
-  const { db, automation, contactId } = args;
+  const { db, automation, contactId, dealId } = args;
   const etapas = etapasQuePrendem(automation);
-  if (!etapas || !contactId) return nada;
+  if (!etapas || (!contactId && !dealId)) return nada;
   try {
-    const { data: abertos, error: erroDosCards } = await db
-      .from('deals')
-      .select('id, stage_id')
-      .eq('account_id', automation.account_id)
-      .eq('contact_id', contactId)
-      .eq('status', 'open')
-      .order('created_at', { ascending: false })
-      .limit(20);
-    if (erroDosCards) {
-      console.error('[automations] so-na-etapa: cards do contato falharam:', erroDosCards.message);
-      return nada;
+    let alvoId = dealId ?? null;
+    if (!alvoId) {
+      const { data: abertos, error: erroDosCards } = await db
+        .from('deals')
+        .select('id, stage_id')
+        .eq('account_id', automation.account_id)
+        .eq('contact_id', contactId as string)
+        .eq('status', 'open')
+        .order('created_at', { ascending: false })
+        .limit(20);
+      if (erroDosCards) {
+        console.error('[automations] so-na-etapa: cards do contato falharam:', erroDosCards.message);
+        return nada;
+      }
+      const cards = (abertos ?? []) as { id: string; stage_id: string | null }[];
+      alvoId = (cards.find((c) => !estaFora(etapas, c.stage_id)) ?? cards[0])?.id ?? null;
     }
-    const cards = (abertos ?? []) as { id: string; stage_id: string | null }[];
-    const alvo = cards.find((c) => !estaFora(etapas, c.stage_id)) ?? cards[0];
-    if (!alvo) return nada;
+    if (!alvoId) return nada;
 
     const { data, error } = await db
       .from('cb_automation_events')
       .select('criado_em')
       .eq('account_id', automation.account_id)
-      .eq('deal_id', alvo.id)
+      .eq('deal_id', alvoId)
       .eq('tipo', 'deal_stage_changed')
       .order('criado_em', { ascending: false })
       .limit(1);
     if (error) {
       console.error('[automations] so-na-etapa: âncora da estadia falhou:', error.message);
-      return { deal_id: alvo.id, evento_em: null };
+      return { deal_id: alvoId, evento_em: null };
     }
     const ultimo = (data ?? [])[0] as { criado_em?: string | null } | undefined;
     return {
-      deal_id: alvo.id,
+      deal_id: alvoId,
       evento_em: typeof ultimo?.criado_em === 'string' ? ultimo.criado_em : null,
     };
   } catch (err) {

@@ -65,6 +65,23 @@ describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)'
     expect(motor).toMatch(/situacao === 'erro'\) \{\s*await registrarFalhaAoNascer\(/)
   })
 
+  it('a ponta 2 distingue o card pelas esperas pending E running; o cancelamento fica só em pending (12ª rodada)', () => {
+    const modulo = fonte('lib/automations/so-na-etapa.ts')
+    const inicio = modulo.indexOf('export async function cancelarEsperasAoSairDaEtapa')
+    const leitura = modulo.indexOf("select('log_id, card:context->>deal_id')", inicio)
+    expect(leitura).toBeGreaterThan(-1)
+    expect(modulo.slice(leitura, leitura + 260)).toMatch(/\.in\('status', \['pending', 'running'\]\)/)
+    const cancelamento = modulo.indexOf(".update({ status: 'cancelled' })", leitura)
+    expect(modulo.slice(cancelamento, cancelamento + 300)).toMatch(/\.eq\('status', 'pending'\)/)
+  })
+
+  it('runAutomationById passa o card que o contexto já traz à resolução da estadia (12ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function runAutomationById')
+    const chamada = motor.indexOf('estadiaSemEvento({', inicio)
+    expect(motor.slice(chamada, chamada + 300)).toMatch(/dealId:\s*context\?\.deal_id/)
+  })
+
   it('os TRÊS caminhos de erro fecham por segurança ANTES de marcar (11ª rodada)', () => {
     const motor = fonte('lib/automations/engine.ts')
     // retomada: etapa

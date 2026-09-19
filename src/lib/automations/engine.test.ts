@@ -42,6 +42,8 @@ const h = vi.hoisted(() => ({
      * o que a retomada e o estacionamento (`cb_estacionar_espera`) consultam.
      */
     interrompida: false,
+    /** Registros marcados DURANTE o teste (pelos filtros do UPDATE) — o mock responde a marca por REGISTRO. */
+    logMarcados: new Set<string>(),
     dealSelects: [] as [string, string, unknown][][],
     dealInserts: [] as Record<string, unknown>[],
     automations: [] as Record<string, unknown>[],
@@ -232,6 +234,12 @@ vi.mock('./admin-client', () => {
       if (type === 'update') {
         state.logUpdates.push(ops.payload as Record<string, unknown>);
         state.updateFiltros.push([...ops.filters]);
+        if ('interrompida_por' in (ops.payload as Record<string, unknown>)) {
+          const alvo = ops.filters.find(([op, k]) => (op === 'in' || op === 'eq') && k === 'id')?.[2];
+          for (const id of Array.isArray(alvo) ? alvo : [alvo]) {
+            if (typeof id === 'string') state.logMarcados.add(id);
+          }
+        }
         // Uma linha de volta: a anotação de interrupção grava com cerca
         // ("ninguém acrescentou desde que li") e lê o RETURNING para saber se
         // venceu. Os demais updates ignoram o retorno.
@@ -251,7 +259,10 @@ vi.mock('./admin-client', () => {
           // relê) — sem isto o mock afirmava "não marcada" sobre execução que
           // o próprio motor acabou de marcar.
           interrompida_em:
-            state.interrompida || state.logUpdates.some((u) => 'interrompida_por' in u)
+            state.interrompida ||
+            state.logMarcados.has(
+              String(ops.filters.find(([op, k]) => op === 'eq' && k === 'id')?.[2])
+            )
               ? '2026-09-18T12:00:00Z'
               : null,
         },
@@ -337,7 +348,7 @@ vi.mock('./admin-client', () => {
               error: { message: state.erroNaFila },
             });
           }
-          if (state.interrompida || state.logUpdates.some((u) => 'interrompida_por' in u)) {
+          if (state.interrompida || state.logMarcados.has(String(args?.log_id))) {
             return Promise.resolve({ data: null, error: null });
           }
           state.esperasEnfileiradas.push(args ?? {});
@@ -427,6 +438,7 @@ beforeEach(() => {
   h.state.ultimoMovimento = null;
   h.state.statusDaFila = [];
   h.state.interrompida = false;
+  h.state.logMarcados = new Set();
   h.state.membros = [
     { user_id: 'agente-fallback', full_name: 'Agente Um', email: 'um@cb.test' },
   ];
@@ -2611,6 +2623,40 @@ describe('desfecho: os fechadores que não têm o histórico em mão', () => {
 // Passo "Parar automação": a marca no registro e a segunda varredura (1005).
 // ============================================================
 describe('stop_automation — marca a execução e varre a fila DUAS vezes', () => {
+  it('⚠️⚠️ "Parar automação: a si mesma" numa retomada NÃO marca a própria execução — só as outras (auditoria pré-Codex)', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [
+      { id: 's-stop', automation_id: 'a-desf', position: 1, step_type: 'stop_automation', step_config: { automation_id: 'a-desf' } },
+      passoDeTrabalho('s-msg', 2),
+    ];
+    // Duas esperas `running` da mesma automação para o contato: a desta
+    // execução (o cron acabou de reivindicá-la) e a de OUTRA execução.
+    h.state.esperasVivas = [
+      { id: 'espera-1', log_id: 'log-1' },
+      { id: 'espera-outra', log_id: 'log-outra' },
+    ];
+
+    await resumePendingExecution({
+      id: 'espera-1',
+      automation_id: 'a-desf',
+      account_id: ACCOUNT,
+      user_id: 'u1',
+      contact_id: 'c1',
+      log_id: 'log-1',
+      parent_step_id: null,
+      branch: null,
+      next_step_position: 1,
+      context: { conversation_id: 'conv-1' },
+    });
+
+    expect(h.state.logMarcados.has('log-outra')).toBe(true);
+    expect(h.state.logMarcados.has('log-1')).toBe(false);
+    // …e o passo seguinte da própria execução roda — o construtor promete
+    // que a execução em curso não se autocancela.
+    expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(1);
+  });
+
   it('cancela a foto da fila, MARCA os registros, e cancela de novo por log_id', async () => {
     h.state.owned = { id: 'c1' };
     h.state.automations = [automacaoSimples()];
@@ -3271,6 +3317,8 @@ describe('retomada de automação presa à etapa', () => {
   });
 
   it('⚠️ execução MANUAL ganha a própria estadia: ancorada no último movimento conhecido do contato (9ª rodada)', async () => {
+    // A lista de estacionadas não é zerada entre os testes deste describe.
+    h.state.esperasEnfileiradas = [];
     h.state.owned = { id: 'c1' };
     h.state.automations = [recuperacao({ parar_ao_sair: true })];
     h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
@@ -3293,6 +3341,33 @@ describe('retomada de automação presa à etapa', () => {
     expect(contexto.evento_em).toBe('2026-09-18T09:00:00+00:00');
     // …e o CARD-ALVO (10ª rodada): sem ele, mover qualquer card do contato matava a manual.
     expect(contexto.deal_id).toBe('deal-1');
+  });
+
+  it('⚠️ a filha acionada com o card HERDADO ancora nesse card, não num escolhido à parte (12ª rodada)', async () => {
+    // A lista de estacionadas não é zerada entre os testes deste describe.
+    h.state.esperasEnfileiradas = [];
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-outro', stage_id: NO_SHOW };
+    h.state.ultimoMovimento = { criado_em: '2026-09-18T11:00:00+00:00' };
+    h.state.steps = [
+      { id: 's-wait-0', automation_id: 'a-noshow', position: 0, step_type: 'wait', step_config: { amount: 1, unit: 'days' } },
+    ];
+
+    await runAutomationById({
+      automationId: 'a-noshow',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-1', deal_id: 'deal-herdado', evento_em: null },
+      triggerType: 'deal_stage_changed',
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    const contexto = h.state.esperasEnfileiradas[0].context as { evento_em?: string; deal_id?: string };
+    expect(contexto.deal_id).toBe('deal-herdado');
+    expect(contexto.evento_em).toBe('2026-09-18T11:00:00+00:00');
+    // A lista de cards abertos do contato não é sequer consultada.
+    expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'open'))).toBe(false);
   });
 
   it('card ainda em No Show: a sequência segue', async () => {

@@ -751,7 +751,24 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   cuja espera está `running`** (reivindicada pelo cron naquele instante): a
   foto do UPDATE só vê `pending`, e sem a marca a retomada em curso seguia até
   a espera seguinte. A linha `running` não é cancelada (é do cron); a marca
-  faz a retomada parar no próximo passo.
+  faz a retomada parar no próximo passo. ⚠️ MENOS a PRÓPRIA execução no passo
+  apontado para a própria automação ("Parar automação: a si mesma", para
+  cancelar as suas pendentes e recomeçar): numa retomada a linha `running`
+  que ele enxerga é a sua, e marcá-la pularia o passo seguinte — o construtor
+  promete que a execução em curso não se autocancela (auditoria pré-Codex,
+  19/09; pino no `engine.test`).
+- ⚠️ **`marcarExecucoesInterrompidas` PUBLICA a hora de fim da falha ADIADA**
+  (`desfecho='falhou'` sem `finalizado_em` — o ramo que estourou enquanto uma
+  espera irmã vivia, que `fecharLog` fecharia quando ela acordasse): nenhum
+  cancelamento fecha o registro e `fecharLog` cala para execução marcada, então
+  sem isto a falha ficava invisível para sempre no fio e no Meu dia. Só essas;
+  cancelamento sem falha continua sem desfecho (936).
+- **Conhecido, não tratado** (auditoria pré-Codex): a segunda linha conta
+  mensagem de cliente de QUALQUER transporte (Instagram incluso), e a primeira
+  só roda nos dois caminhos do WhatsApp — só diverge depois da unificação
+  manual de fichas (D4 do Instagram). E linha `running` órfã (processo morto
+  no meio da retomada) não tem recolhedor — pré-existente; o cron só lê
+  `pending`, e o peso do estado `running` cresceu com este PR.
 - ⚠️ **`fecharLog` não carimba execução interrompida**: a resposta (ou a saída
   da etapa) que chega durante o ÚLTIMO passo do escopo — depois da leitura da
   marca — deixava o escopo terminar e o fio dizer "concluiu" sobre execução com
@@ -875,10 +892,12 @@ código novo:
   da SAÍDA — dois drenos concorrentes, ou o cron atrasado até 1 h —, que a
   marca de saída não alcança porque a execução ainda não existia. Execução
   SEM evento (manual, ou acionada por outra automação) ganha a PRÓPRIA
-  estadia (`estadiaSemEvento`, 9ª/10ª rodadas): o CARD-ALVO (o aberto mais
-  recente do contato numa etapa da automação, senão o aberto mais recente —
-  sem ele, mover QUALQUER card do contato matava a manual) e a âncora, o
-  ÚLTIMO movimento de etapa conhecido DESSE card — pelo relógio do BANCO
+  estadia (`estadiaSemEvento`, 9ª–12ª rodadas): o CARD-ALVO (o que o contexto
+  JÁ traz — a filha herda o da mãe —, senão o aberto mais recente do contato
+  numa etapa da automação, senão o aberto mais recente; sem ele, mover
+  QUALQUER card do contato matava a manual) e a âncora, o ÚLTIMO movimento
+  de etapa conhecido DESSE MESMO card (card escolhido aqui e âncora de outro
+  faziam a entrada do próprio card parecer "posterior") — pelo relógio do BANCO
   (`criado_em` de um evento), nunca `now()` do app: a mãe que move o card e
   aciona a filha tem o evento gravado milissegundos antes, e com o relógio
   do app atrasado o próprio movimento pareceria "posterior". Sem card aberto
@@ -945,10 +964,12 @@ código novo:
   isso fica cega para uma saída-e-volta já podada; a marca da ponta 2 e a
   posição do card cobrem. `validate.ts` não limita o `amount` do "Aguardar".
 - ⚠️ **A saída da etapa (ponta 2) distingue o CARD pela espera**
-  (`context.deal_id` das linhas `pending`): execução estacionada por OUTRO
-  card do mesmo contato fica de fora. A que está RODANDO agora, sem espera,
-  não tem como ser distinguida (o registro não guarda o card) — aceito: "um
-  card por contato" é a regra desta casa, e a janela é de segundos. E
+  (`context.deal_id` das linhas `pending` E `running` — a reivindicada pelo
+  cron naquele instante é a única prova de que a execução é do card A; 12ª
+  rodada): execução estacionada por OUTRO card do mesmo contato fica de
+  fora. A que está RODANDO agora, sem espera nenhuma, não tem como ser
+  distinguida (o registro não guarda o card) — aceito: "um card por contato"
+  é a regra desta casa, e a janela é de segundos. E
   registro anterior à 985 (sem `finalizado_em`, nada retroativo) conta como
   vivo: a primeira saída de etapa de um contato assim marca e anota um
   registro morto há semanas, uma vez — cosmético, aceito.

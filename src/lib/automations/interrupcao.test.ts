@@ -182,6 +182,22 @@ describe('a MARCA durável da execução (1005)', () => {
     ]);
   });
 
+  it('⚠️⚠️ marcar PUBLICA a hora de fim da falha adiada (auditoria pré-Codex): `falhou` sem `finalizado_em` ficaria invisível para sempre', async () => {
+    const { db, chamadas } = logsFalsos({ marcadas: [{ id: 'log-1' }] });
+    await marcarExecucoesInterrompidas(db, ['log-1'], 'etapa');
+
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas[1].tipo).toBe('update');
+    expect(Object.keys(chamadas[1].payload as object)).toEqual(['finalizado_em']);
+    // SÓ a falha já gravada e ainda sem hora de fim — cancelamento sem falha
+    // continua sem desfecho (936).
+    expect(chamadas[1].filtros).toEqual([
+      ['in', 'id', ['log-1']],
+      ['eq', 'desfecho', 'falhou'],
+      ['is', 'finalizado_em', null],
+    ]);
+  });
+
   it('marcar: sem registro não vai ao banco; erro vira zero, nunca estoura', async () => {
     const vazio = logsFalsos({});
     expect(await marcarExecucoesInterrompidas(vazio.db, [null, undefined], 'parar')).toBe(0);

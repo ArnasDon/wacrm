@@ -407,6 +407,18 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
     expect(marca.filtros.find(([, k]) => k === 'id')).toEqual(['in', 'id', ['log-1']]);
   });
 
+  it('⚠️ a espera já RUNNING também distingue o card (12ª rodada): a leitura pede pending E running, o cancelamento só pending', async () => {
+    const { db, chamadas } = bancoFalso({
+      execucoes: [execucaoPresa],
+      esperas: [{ log_id: 'log-1', card: 'deal-do-juridico' }],
+      canceladas: [],
+    });
+    expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento })).toBe(0);
+    const leitura = chamadas.find((c) => c.tabela === 'automation_pending_executions' && c.tipo === 'select');
+    expect(leitura?.filtros).toContainEqual(['in', 'status', ['pending', 'running']]);
+    expect(chamadas.some((c) => c.tipo === 'update')).toBe(false);
+  });
+
   it('a execução RODANDO (sem espera) não tem card conhecido e é marcada — aceito, um card por contato', async () => {
     const { db, chamadas } = bancoFalso({ execucoes: [execucaoPresa], esperas: [], canceladas: [] });
     expect(await cancelarEsperasAoSairDaEtapa({ db, ...evento })).toBe(1);
@@ -504,6 +516,19 @@ describe('estadiaSemEvento — a execução sem evento (9ª/10ª rodadas)', () =
       ['eq', 'deal_id', 'deal-noshow'],
       ['eq', 'tipo', 'deal_stage_changed'],
     ]);
+  });
+
+  it('⚠️⚠️ com o card JÁ no contexto (a filha herda o da mãe): a âncora é resolvida para ELE, sem escolher outro (12ª rodada)', async () => {
+    const { db, chamadas } = bancoFalso({
+      negocios: [{ id: 'deal-mais-novo', stage_id: NO_SHOW }],
+      ultimoMovimento: { criado_em: '2026-09-18T11:00:00+00:00' },
+    });
+    expect(await estadiaSemEvento({ db, automation: automacaoPresa, contactId: 'c1', dealId: 'deal-herdado' })).toEqual({
+      deal_id: 'deal-herdado',
+      evento_em: '2026-09-18T11:00:00+00:00',
+    });
+    expect(chamadas.some((c) => c.tabela === 'deals')).toBe(false);
+    expect(chamadas[0].filtros).toContainEqual(['eq', 'deal_id', 'deal-herdado']);
   });
 
   it('nenhum card na etapa: o aberto mais recente (a posição dirá "saiu")', async () => {

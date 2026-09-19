@@ -51,7 +51,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { createClient } from '@/lib/supabase/client';
+
+/** Signed-in user id, or null when signed out. */
+async function fetchMe(): Promise<string | null> {
+  const res = await fetch('/api/auth/me', { cache: 'no-store' });
+  if (!res.ok) return null;
+  const body = (await res.json()) as { user?: { id?: string } };
+  return body.user?.id ?? null;
+}
 
 interface PeekOk {
   ok: true;
@@ -120,11 +127,11 @@ export default function JoinPage() {
         fetch(`/api/invitations/${encodeURIComponent(token)}/peek`, {
           cache: 'no-store',
         }),
-        createClient().auth.getUser(),
+        fetchMe(),
       ]);
       const peekBody = (await peekRes.json()) as PeekResult;
       setPeek(peekBody);
-      setAuthedUserId(authRes.data.user?.id ?? null);
+      setAuthedUserId(authRes);
     } catch (err) {
       console.error('[join] peek error:', err);
       setPeek({ ok: false, reason: 'server_error' });
@@ -145,12 +152,12 @@ export default function JoinPage() {
           fetch(`/api/invitations/${encodeURIComponent(token)}/peek`, {
             cache: 'no-store',
           }),
-          createClient().auth.getUser(),
+          fetchMe(),
         ]);
         const peekBody = (await peekRes.json()) as PeekResult;
         if (cancelled) return;
         setPeek(peekBody);
-        setAuthedUserId(authRes.data.user?.id ?? null);
+        setAuthedUserId(authRes);
       } catch (err) {
         console.error('[join] peek error:', err);
         if (cancelled) return;
@@ -205,7 +212,7 @@ export default function JoinPage() {
   const handleSignOutAndRetry = useCallback(async () => {
     setSigningOut(true);
     try {
-      await createClient().auth.signOut();
+      await fetch('/api/auth/logout', { method: 'POST' });
       // Hard reload so the new auth state propagates everywhere
       // (middleware, AuthProvider). Preserves the invite token in
       // the URL so the rebuilt page renders the signed-out CTA path.

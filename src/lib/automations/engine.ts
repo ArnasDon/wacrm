@@ -16,6 +16,7 @@ import type {
 } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { engineSendText, engineSendTemplate } from './meta-send'
+import { filterHeaders, safeFetch, UnsafeUrlError } from '@/lib/security/safe-fetch'
 
 // ------------------------------------------------------------
 // Public API
@@ -483,13 +484,20 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
       const cfg = step.step_config as SendWebhookStepConfig
       if (!cfg.url) throw new Error('send_webhook needs url')
       const body = cfg.body_template ? interpolate(cfg.body_template, args) : JSON.stringify(args.context)
-      const res = await fetch(cfg.url, {
+      // SSRF guard (GHSA-8jqh-598v-rfxc): public destinations only,
+      // no redirects, header allowlist, timeout + size cap. Re-checked
+      // at run time — the stored config is never trusted.
+      const res = await safeFetch(cfg.url, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', ...(cfg.headers ?? {}) },
+        headers: { ...filterHeaders(cfg.headers), 'content-type': 'application/json' },
         body,
+        timeoutMs: 8_000,
+        maxResponseBytes: 256 * 1024,
+      }).catch((err: Error) => {
+        throw new Error(err instanceof UnsafeUrlError ? `webhook blocked: ${err.message}` : 'webhook failed')
       })
-      if (!res.ok) throw new Error(`webhook returned ${res.status}`)
-      return `webhook ${res.status}`
+      if (!res.ok) throw new Error('webhook returned a non-success status')
+      return 'webhook delivered'
     }
 
     case 'close_conversation': {

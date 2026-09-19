@@ -1,90 +1,41 @@
-import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
-import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account'
+import { scopedCollection } from '@/lib/db/scoped'
+import type { MessageDoc } from '@/lib/db/types'
+import { NotFoundError, ValidationError } from '@/lib/http/errors'
+import { downloadMedia, getMediaUrl } from '@/lib/whatsapp/meta-api'
+import { getWhatsAppCredentials } from '@/lib/whatsapp/store'
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ mediaId: string }> }
-) {
+/**
+ * GET — stream an inbound WhatsApp media file (e.g. a transfer
+ * screenshot) to a signed-in member. The media id must belong to a
+ * message IN THIS ACCOUNT — without that check any member of any
+ * account could fetch arbitrary media ids through our token.
+ */
+export async function GET(_request: Request, ctx: { params: Promise<{ mediaId: string }> }) {
   try {
-    const { mediaId } = await params
+    const auth = await getCurrentAccount()
+    const { mediaId } = await ctx.params
+    if (!/^\d{5,40}$/.test(mediaId)) throw new ValidationError('Invalid media id')
 
-    if (!mediaId) {
-      return NextResponse.json(
-        { error: 'Media ID is required' },
-        { status: 400 }
-      )
-    }
+    const messages = await scopedCollection<MessageDoc>(auth, 'messages')
+    const owned = await messages.findOne({ 'media.id': mediaId }, { projection: { _id: 1, media: 1 } })
+    if (!owned) throw new NotFoundError('Media not found')
 
-    const supabase = await createClient()
-
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser()
-
-    if (authError || !user) {
-      return NextResponse.json(
-        { error: 'Unauthorized' },
-        { status: 401 }
-      )
-    }
-
-    // Resolve the caller's account_id — whatsapp_config is one-per-
-    // account post-multi-user, so a teammate fetching media for a
-    // conversation in the shared inbox needs the account's config,
-    // not their personal (non-existent) row.
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('account_id')
-      .eq('user_id', user.id)
-      .maybeSingle()
-    const accountId = profile?.account_id as string | undefined
-    if (!accountId) {
-      return NextResponse.json(
-        { error: 'Your profile is not linked to an account.' },
-        { status: 403 },
-      )
-    }
-
-    // Fetch and decrypt WhatsApp config
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('*')
-      .eq('account_id', accountId)
-      .single()
-
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: 'WhatsApp not configured' },
-        { status: 400 }
-      )
-    }
-
-    const accessToken = decrypt(config.access_token)
-
-    // Get the download URL from Meta
-    const mediaInfo = await getMediaUrl({ mediaId, accessToken })
-
-    // Download the binary data
-    const { buffer, contentType } = await downloadMedia({
-      downloadUrl: mediaInfo.url,
-      accessToken,
-    })
-
+    const creds = await getWhatsAppCredentials(auth)
+    if (!creds) throw new ValidationError('WhatsApp is not connected')
+    const info = await getMediaUrl({ mediaId, accessToken: creds.accessToken })
+    const { buffer, contentType } = await downloadMedia({ downloadUrl: info.url, accessToken: creds.accessToken })
+    const type = contentType || info.mimeType || 'application/octet-stream'
     return new Response(new Uint8Array(buffer), {
-      status: 200,
       headers: {
-        'Content-Type': contentType || mediaInfo.mimeType || 'application/octet-stream',
-        'Cache-Control': 'public, max-age=86400',
+        'content-type': type,
+        'cache-control': 'private, max-age=3600',
+        // Never render user-supplied files as a page on our origin.
+        'content-disposition': type.startsWith('image/') ? 'inline' : 'attachment',
+        'x-content-type-options': 'nosniff',
       },
     })
-  } catch (error) {
-    console.error('Error in WhatsApp media GET:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch media' },
-      { status: 500 }
-    )
+  } catch (err) {
+    return toErrorResponse(err)
   }
 }

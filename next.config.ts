@@ -54,6 +54,9 @@ const SECURITY_HEADERS = [
 ] as const;
 
 const nextConfig: NextConfig = {
+  // Node-only libraries used by route handlers — keep them out of the
+  // bundler (mongodb is already on Next's built-in list).
+  serverExternalPackages: ['nodemailer'],
   /**
    * Cache-Control policy.
    *
@@ -94,7 +97,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        source: "/api/:path*",
+        // Per-user API responses must never be shared by a CDN.
+        // /api/media/* (public, immutable product photos) sets its own
+        // long-lived Cache-Control and is excluded.
+        source: "/api/:path((?!media/).*)",
         headers: [{ key: "Cache-Control", value: "no-store" }],
       },
       {

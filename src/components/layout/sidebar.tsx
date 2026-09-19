@@ -7,21 +7,21 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import {
+  Bot,
+  Boxes,
   Crown,
-  GitBranch,
   LayoutDashboard,
   LogOut,
   MessageSquare,
-  Radio,
+  Receipt,
   Settings,
   Shield,
+  Store,
   User,
   UserCog,
   Users,
   UsersRound,
-  Workflow,
   X,
-  Zap,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -86,14 +86,15 @@ interface NavItem {
   beta?: boolean;
 }
 
+// Pipelines / Broadcasts / Automations / Flows are still on the
+// legacy Supabase data layer and are hidden until they're migrated.
 const navItems: NavItem[] = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/inbox", label: "Inbox", icon: MessageSquare },
-  { href: "/contacts", label: "Contacts", icon: Users },
-  { href: "/pipelines", label: "Pipelines", icon: GitBranch },
-  { href: "/broadcasts", label: "Broadcasts", icon: Radio },
-  { href: "/automations", label: "Automations", icon: Zap },
-  { href: "/flows", label: "Flows", icon: Workflow, beta: true },
+  { href: "/orders", label: "Orders", icon: Receipt },
+  { href: "/inventory", label: "Inventory", icon: Boxes },
+  { href: "/contacts", label: "Customers", icon: Users },
+  { href: "/sales-rep", label: "AI Sales Rep", icon: Bot },
 ];
 
 const bottomNavItems = [
@@ -120,9 +121,9 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   // (when `profile` is null and the boolean coerces to false), then
   // pop in once the row resolves — visible as a layout jump in the
   // sidebar footer.
-  const accountSharingEnabled =
-    !profileLoading &&
-    !!profile?.beta_features?.includes(ACCOUNT_SHARING_FLAG);
+  // Team accounts are always on now (was a beta flag in the Supabase era).
+  const accountSharingEnabled = !profileLoading && !!profile;
+  void ACCOUNT_SHARING_FLAG;
 
   // Close the drawer when route changes — users opened it to navigate,
   // so once they pick a destination the drawer should get out of the way.
@@ -180,11 +181,20 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             close button is hidden since the sidebar is always-visible. */}
         <div className="flex h-14 shrink-0 items-center justify-between gap-2 border-b border-slate-800 px-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-              <MessageSquare className="h-4 w-4" />
-            </div>
-            <span className="text-sm font-semibold text-white">
-              CRM Template for WhatsApp
+            {account?.hasLogo ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={`/api/settings/business/logo?v=${account.logoVersion}`}
+                alt=""
+                className="h-8 w-8 rounded-lg bg-white object-contain p-0.5"
+              />
+            ) : (
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
+                <Store className="h-4 w-4" />
+              </div>
+            )}
+            <span className="truncate text-sm font-semibold text-white" title={account?.name}>
+              {account?.name ?? "Sales CRM"}
             </span>
           </Link>
           <button
@@ -352,7 +362,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <DropdownMenuItem
                 render={
                   <Link
-                    href="/settings?tab=whatsapp"
+                    href="/settings?tab=business"
                     onClick={onClose}
                     className="text-slate-200 focus:bg-slate-800 focus:text-white"
                   />

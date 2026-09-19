@@ -1,497 +1,131 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { createClient } from '@/lib/supabase/client';
-import { toast } from 'sonner';
-import type { Contact, Tag, ContactTag } from '@/types';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from '@/components/ui/dropdown-menu';
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogDescription,
-  DialogFooter,
-} from '@/components/ui/dialog';
-import {
-  Search,
-  Plus,
-  Upload,
-  MoreHorizontal,
-  Pencil,
-  Trash2,
-  Loader2,
-  Users,
-  ChevronLeft,
-  ChevronRight,
-} from 'lucide-react';
-import { ContactForm } from '@/components/contacts/contact-form';
-import { ContactDetailView } from '@/components/contacts/contact-detail-view';
-import { ImportModal } from '@/components/contacts/import-modal';
-import { useCan } from '@/hooks/use-can';
-import { GatedButton } from '@/components/ui/gated-button';
+import Link from "next/link";
+import { useCallback, useEffect, useState } from "react";
+import { toast } from "sonner";
+import { MessageSquare, Pencil, Plus, Receipt, Search, Users } from "lucide-react";
+import { api } from "@/lib/client/api";
+import { useAuth } from "@/hooks/use-auth";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState, Field, PageHeader, inputCls, textareaCls, timeAgo } from "@/components/sales/kit";
 
-const PAGE_SIZE = 25;
-
-interface ContactWithTags extends Contact {
-  tags?: Tag[];
+interface Contact {
+  _id: string;
+  name: string | null;
+  phone: string;
+  email: string | null;
+  notes: string | null;
+  tags: string[];
+  createdAt: string;
 }
 
 export default function ContactsPage() {
-  const supabase = createClient();
-  const canEdit = useCan('send-messages');
+  const { canSendMessages } = useAuth();
+  const [contacts, setContacts] = useState<Contact[] | null>(null);
+  const [q, setQ] = useState("");
+  const [editing, setEditing] = useState<Contact | "new" | null>(null);
+  const [form, setForm] = useState({ name: "", phone: "", email: "", notes: "" });
+  const [saving, setSaving] = useState(false);
 
-  const [contacts, setContacts] = useState<ContactWithTags[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
-  const [page, setPage] = useState(0);
-  const [totalCount, setTotalCount] = useState(0);
-
-  // Modals
-  const [formOpen, setFormOpen] = useState(false);
-  const [editContact, setEditContact] = useState<Contact | null>(null);
-  const [editContactTags, setEditContactTags] = useState<ContactTag[]>([]);
-  const [detailOpen, setDetailOpen] = useState(false);
-  const [detailContactId, setDetailContactId] = useState<string | null>(null);
-  const [importOpen, setImportOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<Contact | null>(null);
-  const [deleting, setDeleting] = useState(false);
-
-  // All tags for display
-  const [tagsMap, setTagsMap] = useState<Record<string, Tag>>({});
-
-  const fetchTags = useCallback(async () => {
-    const { data } = await supabase.from('tags').select('*');
-    if (data) {
-      const map: Record<string, Tag> = {};
-      data.forEach((t) => (map[t.id] = t));
-      setTagsMap(map);
+  const load = useCallback(async () => {
+    try {
+      setContacts((await api<{ contacts: Contact[] }>(`/api/contacts?q=${encodeURIComponent(q)}`)).contacts);
+    } catch (e) {
+      toast.error((e as Error).message);
     }
-  }, [supabase]);
-
-  const fetchContacts = useCallback(async () => {
-    setLoading(true);
-
-    const from = page * PAGE_SIZE;
-    const to = from + PAGE_SIZE - 1;
-
-    let query = supabase
-      .from('contacts')
-      .select('*', { count: 'exact' })
-      .order('created_at', { ascending: false })
-      .range(from, to);
-
-    if (search.trim()) {
-      const term = `%${search.trim()}%`;
-      query = query.or(`name.ilike.${term},phone.ilike.${term},email.ilike.${term}`);
-    }
-
-    const { data, count, error } = await query;
-
-    if (error) {
-      toast.error('Failed to load contacts');
-      setLoading(false);
-      return;
-    }
-
-    setTotalCount(count ?? 0);
-
-    if (!data || data.length === 0) {
-      setContacts([]);
-      setLoading(false);
-      return;
-    }
-
-    // Fetch tags for these contacts
-    const contactIds = data.map((c) => c.id);
-    const { data: contactTags } = await supabase
-      .from('contact_tags')
-      .select('contact_id, tag_id')
-      .in('contact_id', contactIds);
-
-    const tagsByContact: Record<string, string[]> = {};
-    contactTags?.forEach((ct) => {
-      if (!tagsByContact[ct.contact_id]) tagsByContact[ct.contact_id] = [];
-      tagsByContact[ct.contact_id].push(ct.tag_id);
-    });
-
-    const enriched: ContactWithTags[] = data.map((c) => ({
-      ...c,
-      tags: (tagsByContact[c.id] ?? [])
-        .map((tid) => tagsMap[tid])
-        .filter(Boolean),
-    }));
-
-    setContacts(enriched);
-    setLoading(false);
-  }, [supabase, page, search, tagsMap]);
-
-  // Load-once-on-mount-ish data fetches. Each setter inside runs
-  // inside an async promise completion (Supabase await), not
-  // synchronously in the effect body, so the cascade the lint rule
-  // warns about doesn't apply here.
+  }, [q]);
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchTags();
-  }, [fetchTags]);
+    const t = setTimeout(load, 200);
+    return () => clearTimeout(t);
+  }, [load]);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchContacts();
-  }, [fetchContacts]);
+  const openEditor = (c: Contact | "new") => {
+    setEditing(c);
+    setForm(c === "new" ? { name: "", phone: "", email: "", notes: "" } : { name: c.name ?? "", phone: c.phone, email: c.email ?? "", notes: c.notes ?? "" });
+  };
 
-  function openAddForm() {
-    setEditContact(null);
-    setEditContactTags([]);
-    setFormOpen(true);
-  }
-
-  async function openEditForm(contact: Contact) {
-    const { data } = await supabase
-      .from('contact_tags')
-      .select('*')
-      .eq('contact_id', contact.id);
-    setEditContact(contact);
-    setEditContactTags(data ?? []);
-    setFormOpen(true);
-  }
-
-  function openDetail(contactId: string) {
-    setDetailContactId(contactId);
-    setDetailOpen(true);
-  }
-
-  function confirmDelete(contact: Contact) {
-    setDeleteTarget(contact);
-    setDeleteConfirmOpen(true);
-  }
-
-  async function handleDelete() {
-    if (!deleteTarget) return;
-    setDeleting(true);
-
-    const { error } = await supabase
-      .from('contacts')
-      .delete()
-      .eq('id', deleteTarget.id);
-
-    if (error) {
-      toast.error('Failed to delete contact');
-    } else {
-      toast.success('Contact deleted');
-      fetchContacts();
+  const save = async () => {
+    setSaving(true);
+    try {
+      if (editing === "new") await api("/api/contacts", { body: form });
+      else if (editing) await api(`/api/contacts/${editing._id}`, { method: "PATCH", body: { name: form.name, email: form.email, notes: form.notes } });
+      toast.success("Saved");
+      setEditing(null);
+      void load();
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setSaving(false);
     }
-
-    setDeleting(false);
-    setDeleteConfirmOpen(false);
-    setDeleteTarget(null);
-  }
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
-  const hasNext = page < totalPages - 1;
-  const hasPrev = page > 0;
+  };
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Contacts</h1>
-          <p className="text-sm text-slate-400 mt-1">
-            Manage your contact list. {totalCount > 0 && `${totalCount} total contacts.`}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <GatedButton
-            variant="outline"
-            canAct={canEdit}
-            gateReason="add or import contacts"
-            onClick={() => setImportOpen(true)}
-            className="border-slate-700 text-slate-300 hover:bg-slate-800"
-          >
-            <Upload className="size-4" />
-            Import
-          </GatedButton>
-          <GatedButton
-            canAct={canEdit}
-            gateReason="add or import contacts"
-            onClick={openAddForm}
-            className="bg-primary hover:bg-primary/90 text-primary-foreground"
-          >
-            <Plus className="size-4" />
-            Add Contact
-          </GatedButton>
-        </div>
+    <div className="mx-auto max-w-5xl">
+      <PageHeader
+        title="Customers"
+        description="Everyone who has chatted or bought. Added automatically from WhatsApp."
+        actions={canSendMessages ? <Button onClick={() => openEditor("new")}><Plus className="size-4" /> Add customer</Button> : null}
+      />
+      <div className="relative mb-3 w-full max-w-xs">
+        <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-500" />
+        <input className={`${inputCls} pl-9`} placeholder="Search name, number or email" value={q} onChange={(e) => setQ(e.target.value)} />
       </div>
-
-      {/* Search */}
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 size-4 text-slate-500" />
-        <Input
-          value={search}
-          onChange={(e) => {
-            setSearch(e.target.value);
-            // Reset pagination when the query changes — the result
-            // set shrinks/grows, page N may no longer be valid.
-            setPage(0);
-          }}
-          placeholder="Search by name, phone, or email..."
-          className="pl-8 bg-slate-900 border-slate-700 text-white placeholder:text-slate-500"
-        />
-      </div>
-
-      {/* Table */}
-      <div className="rounded-lg border border-slate-800 overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-slate-800 hover:bg-transparent">
-              <TableHead className="text-slate-400">Name</TableHead>
-              <TableHead className="text-slate-400">Phone</TableHead>
-              <TableHead className="text-slate-400 hidden md:table-cell">Email</TableHead>
-              <TableHead className="text-slate-400 hidden lg:table-cell">Company</TableHead>
-              <TableHead className="text-slate-400 hidden md:table-cell">Tags</TableHead>
-              <TableHead className="text-slate-400 hidden lg:table-cell">Created</TableHead>
-              <TableHead className="text-slate-400 w-12" />
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {loading ? (
-              <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
-                  <div className="flex flex-col items-center gap-2">
-                    <Loader2 className="size-6 animate-spin text-primary" />
-                    <p className="text-sm text-slate-500">Loading contacts...</p>
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : contacts.length === 0 ? (
-              <TableRow className="border-slate-800">
-                <TableCell colSpan={7} className="text-center py-12">
-                  <div className="flex flex-col items-center gap-2">
-                    <Users className="size-8 text-slate-600" />
-                    <p className="text-sm text-slate-500">
-                      {search ? 'No contacts match your search.' : 'No contacts yet.'}
-                    </p>
-                    {!search && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={openAddForm}
-                        className="mt-2 border-slate-700 text-slate-300 hover:bg-slate-800"
-                      >
-                        <Plus className="size-3.5" />
-                        Add your first contact
-                      </Button>
-                    )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ) : (
-              contacts.map((contact) => (
-                <TableRow
-                  key={contact.id}
-                  className="border-slate-800 hover:bg-slate-900/50 cursor-pointer"
-                  onClick={() => openDetail(contact.id)}
-                >
-                  <TableCell className="text-white font-medium">
-                    {contact.name || <span className="text-slate-500 italic">Unnamed</span>}
-                  </TableCell>
-                  <TableCell className="text-slate-300 font-mono text-xs">
-                    {contact.phone}
-                  </TableCell>
-                  <TableCell className="text-slate-400 hidden md:table-cell text-sm">
-                    {contact.email || <span className="text-slate-600">-</span>}
-                  </TableCell>
-                  <TableCell className="text-slate-400 hidden lg:table-cell text-sm">
-                    {contact.company || <span className="text-slate-600">-</span>}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell">
-                    <div className="flex flex-wrap gap-1">
-                      {contact.tags && contact.tags.length > 0 ? (
-                        contact.tags.slice(0, 3).map((tag) => (
-                          <span
-                            key={tag.id}
-                            className="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium"
-                            style={{
-                              backgroundColor: tag.color + '20',
-                              color: tag.color,
-                            }}
-                          >
-                            {tag.name}
-                          </span>
-                        ))
-                      ) : (
-                        <span className="text-slate-600 text-xs">-</span>
-                      )}
-                      {contact.tags && contact.tags.length > 3 && (
-                        <span className="text-[10px] text-slate-500">
-                          +{contact.tags.length - 3}
-                        </span>
-                      )}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-slate-500 text-xs hidden lg:table-cell">
-                    {new Date(contact.created_at).toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      year: 'numeric',
-                    })}
-                  </TableCell>
-                  <TableCell>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger
-                        render={
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-slate-400 hover:text-white"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        }
-                      >
-                        <MoreHorizontal className="size-4" />
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent
-                        align="end"
-                        className="bg-slate-900 border-slate-700"
-                      >
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            openEditForm(contact);
-                          }}
-                          className="text-slate-300 focus:bg-slate-800 focus:text-white"
-                        >
-                          <Pencil className="size-4" />
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator className="bg-slate-700" />
-                        <DropdownMenuItem
-                          variant="destructive"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            confirmDelete(contact);
-                          }}
-                        >
-                          <Trash2 className="size-4" />
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </TableCell>
-                </TableRow>
-              ))
-            )}
-          </TableBody>
-        </Table>
-      </div>
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-xs text-slate-500">
-            Showing {page * PAGE_SIZE + 1}-{Math.min((page + 1) * PAGE_SIZE, totalCount)} of{' '}
-            {totalCount}
-          </p>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="outline"
-              size="icon-sm"
-              disabled={!hasPrev}
-              onClick={() => setPage((p) => p - 1)}
-              className="border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30"
-            >
-              <ChevronLeft className="size-4" />
-            </Button>
-            <span className="text-xs text-slate-400 px-2">
-              Page {page + 1} of {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="icon-sm"
-              disabled={!hasNext}
-              onClick={() => setPage((p) => p + 1)}
-              className="border-slate-700 text-slate-400 hover:bg-slate-800 hover:text-white disabled:opacity-30"
-            >
-              <ChevronRight className="size-4" />
-            </Button>
+      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900/50">
+        {contacts === null ? (
+          <div className="h-48 animate-pulse" />
+        ) : contacts.length === 0 ? (
+          <EmptyState icon={<Users className="size-6" />} title="No customers yet" body="They appear as soon as someone messages your WhatsApp number." />
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[640px] text-sm">
+              <thead>
+                <tr className="border-b border-slate-800 text-left text-xs text-slate-500">
+                  <th className="px-4 py-2.5 font-medium">Name</th>
+                  <th className="px-4 py-2.5 font-medium">WhatsApp</th>
+                  <th className="px-4 py-2.5 font-medium">Email</th>
+                  <th className="px-4 py-2.5 font-medium">Since</th>
+                  <th className="px-4 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800">
+                {contacts.map((c) => (
+                  <tr key={c._id} className="hover:bg-slate-800/30">
+                    <td className="px-4 py-2.5 text-white">{c.name ?? <span className="text-slate-500">No name</span>}</td>
+                    <td className="px-4 py-2.5 text-slate-300">+{c.phone}</td>
+                    <td className="px-4 py-2.5 text-slate-400">{c.email ?? "—"}</td>
+                    <td className="px-4 py-2.5 text-xs text-slate-500">{timeAgo(c.createdAt)}</td>
+                    <td className="px-4 py-2.5">
+                      <div className="flex justify-end gap-1">
+                        <Link href={`/orders?q=${c.phone}`}><Button size="icon-sm" variant="ghost" aria-label="Orders" className="text-slate-400"><Receipt /></Button></Link>
+                        <Link href={`/inbox?q=${c.phone}`}><Button size="icon-sm" variant="ghost" aria-label="Chat" className="text-slate-400"><MessageSquare /></Button></Link>
+                        {canSendMessages && <Button size="icon-sm" variant="ghost" aria-label="Edit" className="text-slate-400" onClick={() => openEditor(c)}><Pencil /></Button>}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Contact Form Dialog */}
-      <ContactForm
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        contact={editContact}
-        contactTags={editContactTags}
-        onSaved={() => {
-          fetchContacts();
-          fetchTags();
-        }}
-      />
-
-      {/* Contact Detail Sheet */}
-      <ContactDetailView
-        open={detailOpen}
-        onOpenChange={setDetailOpen}
-        contactId={detailContactId}
-        onUpdated={fetchContacts}
-      />
-
-      {/* Import Modal */}
-      <ImportModal
-        open={importOpen}
-        onOpenChange={setImportOpen}
-        onImported={fetchContacts}
-      />
-
-      {/* Delete Confirmation */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-slate-200 sm:max-w-sm">
+      <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="border border-slate-800 bg-slate-900 text-slate-100">
           <DialogHeader>
-            <DialogTitle className="text-white">Delete Contact</DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Are you sure you want to delete{' '}
-              <span className="text-slate-200 font-medium">
-                {deleteTarget?.name || deleteTarget?.phone}
-              </span>
-              ? This action cannot be undone.
-            </DialogDescription>
+            <DialogTitle className="text-white">{editing === "new" ? "Add customer" : "Edit customer"}</DialogTitle>
           </DialogHeader>
-          <DialogFooter className="bg-slate-900 border-slate-700">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirmOpen(false)}
-              className="border-slate-700 text-slate-300 hover:bg-slate-800"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDelete}
-              disabled={deleting}
-            >
-              {deleting && <Loader2 className="size-4 animate-spin" />}
-              Delete
-            </Button>
+          <div className="grid gap-3">
+            <Field label="Name"><input className={inputCls} value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} /></Field>
+            <Field label="WhatsApp number" hint={editing === "new" ? "e.g. 0803 123 4567 or +234 803 123 4567" : "Numbers can't be changed"}>
+              <input className={inputCls} value={form.phone} disabled={editing !== "new"} onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))} />
+            </Field>
+            <Field label="Email" hint="Receipts are also emailed here"><input className={inputCls} value={form.email} onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))} /></Field>
+            <Field label="Notes"><textarea className={textareaCls} value={form.notes} onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))} /></Field>
+          </div>
+          <DialogFooter className="border-slate-800 bg-slate-900">
+            <Button variant="ghost" className="text-slate-300" onClick={() => setEditing(null)}>Cancel</Button>
+            <Button onClick={save} disabled={saving || (editing === "new" && !form.phone)}>{saving ? "Saving…" : "Save"}</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

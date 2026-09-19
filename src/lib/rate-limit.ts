@@ -141,7 +141,35 @@ export const RATE_LIMITS = {
    *  while still bounding accidental abuse from a script run in a
    *  loop or a compromised admin session spamming role flips. */
   adminAction: { limit: 30, windowMs: 60_000 },
+  /** Login attempts, keyed per IP and per email separately. */
+  login: { limit: 10, windowMs: 60_000 },
+  /** Account creation per IP. */
+  signup: { limit: 5, windowMs: 10 * 60_000 },
+  /** Password-reset emails per IP and per email. */
+  passwordReset: { limit: 5, windowMs: 15 * 60_000 },
+  /** Outbound AI replies per conversation — stops reply loops
+   *  (e.g. the customer is another bot) from burning API credit. */
+  aiReply: { limit: 8, windowMs: 60_000 },
+  /** Test-connection buttons (AI, email, payments) per user. */
+  integrationTest: { limit: 20, windowMs: 60_000 },
 } as const;
+
+/**
+ * Client IP for rate-limit keys. `X-Forwarded-For` is trivially
+ * spoofable unless a proxy you control overwrites it, so it is only
+ * honoured when TRUST_PROXY=true (set this behind Nginx/Caddy/
+ * Cloudflare/Vercel). Otherwise all callers share one bucket, which
+ * fails safe (tighter), never open.
+ */
+export function getClientIp(request: Request): string {
+  if (process.env.TRUST_PROXY === 'true') {
+    const xff = request.headers.get('x-forwarded-for');
+    if (xff) return xff.split(',')[0].trim();
+    const xri = request.headers.get('x-real-ip');
+    if (xri) return xri.trim();
+  }
+  return 'unknown';
+}
 
 /** Test-only helper. Clears the in-memory state so unit tests don't
  *  leak buckets across files. Not wired up in production code. */

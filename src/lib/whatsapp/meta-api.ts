@@ -949,3 +949,67 @@ export async function downloadMedia(
   const buffer = Buffer.from(await response.arrayBuffer())
   return { buffer, contentType }
 }
+
+// ------------------------------------------------------------
+// Media upload — lets us send generated files (invoice / receipt
+// PDFs) without hosting them at a public URL. Meta keeps uploaded
+// media for 30 days.
+// ------------------------------------------------------------
+
+export interface UploadMediaArgs {
+  phoneNumberId: string
+  accessToken: string
+  data: Uint8Array
+  mimeType: string
+  filename: string
+}
+
+export async function uploadMedia(args: UploadMediaArgs): Promise<{ mediaId: string }> {
+  const { phoneNumberId, accessToken, data, mimeType, filename } = args
+  const form = new FormData()
+  form.append('messaging_product', 'whatsapp')
+  form.append('type', mimeType)
+  form.append('file', new Blob([new Uint8Array(data)], { type: mimeType }), filename)
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/media`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta media upload error: ${response.status}`)
+  }
+  const json = (await response.json()) as { id: string }
+  return { mediaId: json.id }
+}
+
+export interface SendDocumentByIdArgs {
+  phoneNumberId: string
+  accessToken: string
+  to: string
+  mediaId: string
+  filename: string
+  caption?: string
+}
+
+export async function sendDocumentById(args: SendDocumentByIdArgs): Promise<MetaSendResult> {
+  const { phoneNumberId, accessToken, to, mediaId, filename, caption } = args
+  const response = await fetch(`${META_API_BASE}/${phoneNumberId}/messages`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify({
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to,
+      type: 'document',
+      document: { id: mediaId, filename, ...(caption ? { caption } : {}) },
+    }),
+  })
+  if (!response.ok) {
+    await throwMetaError(response, `Meta API error: ${response.status}`)
+  }
+  const data = await response.json()
+  return { messageId: data.messages[0].id }
+}

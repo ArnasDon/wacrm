@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { resumePendingExecution } from '@/lib/automations/engine'
@@ -19,8 +20,10 @@ export async function GET(request: Request) {
   if (!expected) {
     return NextResponse.json({ error: 'cron not configured' }, { status: 503 })
   }
-  const supplied = request.headers.get('x-cron-secret')
-  if (supplied !== expected) {
+  // Constant-time compare, matching /api/flows/cron.
+  const supplied = Buffer.from(request.headers.get('x-cron-secret') ?? '')
+  const expectedBuf = Buffer.from(expected)
+  if (supplied.length !== expectedBuf.length || !timingSafeEqual(supplied, expectedBuf)) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 

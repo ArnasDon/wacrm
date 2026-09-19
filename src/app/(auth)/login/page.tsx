@@ -1,9 +1,9 @@
 "use client";
 
+import { PasswordInput } from "@/components/ui/password-input";
 import { Suspense, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -41,20 +41,21 @@ function LoginPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
-  const supabase = createClient();
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
 
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
+    const res = await fetch("/api/auth/login", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email, password }),
+    }).catch(() => null);
 
-    if (error) {
-      setError(error.message);
+    if (!res || !res.ok) {
+      const body = res ? await res.json().catch(() => null) : null;
+      setError(body?.error ?? "Could not sign in. Check your connection.");
       setLoading(false);
       return;
     }
@@ -63,6 +64,7 @@ function LoginPageInner() {
       router.push(`/join/${encodeURIComponent(inviteToken)}`);
     } else {
       router.push("/dashboard");
+      router.refresh();
     }
   };
 
@@ -121,9 +123,8 @@ function LoginPageInner() {
                   Forgot password?
                 </Link>
               </div>
-              <Input
+              <PasswordInput
                 id="password"
-                type="password"
                 placeholder="Enter your password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}

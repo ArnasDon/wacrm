@@ -102,3 +102,17 @@ export function phoneVariants(sanitized: string): string[] {
 export function isRecipientNotAllowedError(message: string): boolean {
   return /131030|not in allowed list|not in the allowed list/i.test(message)
 }
+
+/**
+ * Normalise a phone number to WhatsApp's digits-only international
+ * form. Local Nigerian numbers ("0803 123 4567") gain the 234
+ * country code; anything already international is left alone.
+ */
+export function toWhatsAppNumber(phone: string, defaultCountryCode = '234'): string {
+  const digits = sanitizePhoneForMeta(phone)
+  if (!digits) return ''
+  if (digits.startsWith('0') && digits.length === 11) {
+    return defaultCountryCode + digits.slice(1)
+  }
+  return digits
+}

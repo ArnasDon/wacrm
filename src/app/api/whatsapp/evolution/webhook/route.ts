@@ -5,13 +5,14 @@ import { timingSafeEqual } from 'crypto';
 import {
   edicaoCifrada,
   extractText,
-  isLidJid,
   isReaction,
   normalizeUpsert,
   parseDeleteEvent,
   unwrapMessage,
   type EvolutionUpsert,
 } from '@/lib/whatsapp/transport/evolution-inbound';
+import { receberSemTelefone } from '@/lib/whatsapp/sem-telefone/receber';
+import { religarRetidas } from '@/lib/whatsapp/sem-telefone/religar';
 import { aceitamAvancoPara } from '@/lib/whatsapp/transport/escada-de-status';
 import {
   PAUSAS_DO_RECIBO_MS,
@@ -195,6 +196,13 @@ export async function POST(request: Request) {
          * dois: ver o portão por tamanho no laço abaixo.)
          */
         ehGrupo?: boolean;
+        /**
+         * A conexão de onde o anexo é baixado, quando NÃO é a deste webhook:
+         * mensagem retida sem telefone pode ser religada por uma mensagem que
+         * chegou por OUTRO número, e a mídia só existe na instância por onde
+         * ela veio. Ausente = `route.channelId`, como sempre foi.
+         */
+        channelId?: string | null;
       }[] = [];
       const paraFoto: NonNullable<PersistedInbound['contato']>[] = [];
 
@@ -296,7 +304,22 @@ export async function POST(request: Request) {
             route.channelId,
           );
           if (!normalized) {
-            registrarDescartePorLid(item, route.channelId);
+            // ---- `@lid` SEM TELEFONE ----
+            // A cópia que o celular pareado reenvia quando a Evolution não
+            // decifrou a mensagem de primeira. Até 19/09/2026 era jogada fora
+            // aqui, com um `console.warn` como único rastro — e num caso
+            // medido era a fala inicial de um lead novo. Agora o telefone é
+            // procurado no acervo; sem ele, a mensagem fica RETIDA até o
+            // número aparecer. Qualquer outro descarte segue calado, como
+            // sempre. Nunca lança. Ver `sem-telefone/receber.ts`.
+            semAnexo.push(
+              ...(await receberSemTelefone({
+                db: supabaseAdmin(),
+                item,
+                rota: route,
+                jaGravada,
+              })),
+            );
             continue;
           }
 
@@ -329,6 +352,29 @@ export async function POST(request: Request) {
               // evita baixar 46 MiB para descobrir que não cabe.
               bytes: mediaBytesOf(item),
             });
+          }
+
+          // ---- RELIGAR ----
+          // Esta mensagem trouxe o PAR (telefone + LID). Se havia fala daquele
+          // LID retida por falta de telefone, ela entra na conversa agora —
+          // tipicamente o eco da resposta do escritório destravando a primeira
+          // mensagem do lead. ⚠️ DEPOIS de tudo desta mensagem, de propósito:
+          // os motores viram exatamente o que veriam sem a retida (é o que
+          // mantém o gatilho "primeira mensagem" igual ao de hoje), e a retida
+          // entra como história. Sai sem consultar nada quando a conversa não
+          // é endereçada por LID; nunca lança. Ver `sem-telefone/religar.ts`.
+          if (gravada) {
+            semAnexo.push(
+              ...(await religarRetidas({
+                db: supabaseAdmin(),
+                accountId: route.accountId,
+                ownerUserId: route.ownerUserId,
+                lidJid: normalized.remoteJidLid,
+                telefoneJid: normalized.remoteJid,
+                conversationId: gravada.conversationId,
+                jaGravada,
+              })),
+            );
           }
         } catch (err) {
           console.error('[evolution/webhook] persist failed:', err);
@@ -376,7 +422,10 @@ export async function POST(request: Request) {
 
           const midia = await resolveEvolutionMedia(
             route.accountId,
-            route.channelId,
+            // `in`, e não `??`: a retida cuja conexão foi APAGADA traz `null`
+            // de propósito, e cair no canal deste webhook buscaria a mídia na
+            // instância errada.
+            'channelId' in pendente ? (pendente.channelId ?? null) : route.channelId,
             pendente.item,
             pendente.contentType,
           );
@@ -774,40 +823,6 @@ export async function POST(request: Request) {
 
   // Any other event (qrcode.updated, send.message echo, …) — just ack.
   return NextResponse.json({ ok: true });
-}
-
-/**
- * Deixa rastro quando uma mensagem é descartada por vir endereçada só por
- * `@lid`.
- *
- * O descarte em si é deliberado e continua: um `@lid` sem telefone não tem
- * como ser ligado a uma conversa, e gravá-lo cria contato fantasma — em
- * 26/07 isso produziu 4 fantasmas com 24 mensagens, e a dedup por 8 dígitos
- * chegou a fundir um deles com um cliente real (commit 9606636).
- *
- * O que NÃO era deliberado é o silêncio. Medido em 27/07 na Evolution de
- * produção: de 143 ecos do aparelho em ~29h, 119 foram descartados assim —
- * 83% —, e não havia log, contador nem qualquer sinal. A perda só apareceu
- * porque o operador comparou o celular com a tela do CRM.
- *
- * Isto não muda comportamento nenhum: só torna a perda contável no log do
- * contêiner, para dimensionar o problema enquanto a saída definitiva (mapa
- * telefone↔LID, ou versão da Evolution que preencha `remoteJidAlt`) não
- * existe.
- */
-function registrarDescartePorLid(item: EvolutionUpsert, channelId: string | null): void {
-  const jid = item.key?.remoteJid;
-  if (!jid || !isLidJid(jid)) return; // descarte por outro motivo
-  console.warn(
-    '[evolution/webhook] mensagem DESCARTADA: endereçada por @lid sem telefone.',
-    JSON.stringify({
-      canal: channelId,
-      remoteJid: jid,
-      messageId: item.key?.id,
-      fromMe: item.key?.fromMe === true,
-      tipo: Object.keys(item.message ?? {})[0] ?? null,
-    }),
-  );
 }
 
 /**

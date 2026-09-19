@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest';
 import {
   parseDeleteEvent,
   detectContentType,
+  ehLidSemTelefone,
   extractText,
   isNonChatJid,
   isReaction,
@@ -326,6 +327,96 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
       'canal',
     );
     expect(out!.remoteJidLid).toBeNull();
+  });
+});
+
+// A cópia que a Baileys 7 emite quando o celular pareado reenvia uma mensagem
+// que ela não conseguiu decifrar: chave só com o LID — sem `remoteJidAlt`, sem
+// `addressingMode`, sem `pushName`. Medida em produção em 19/09/2026 (5 em
+// 3.875; ver docs/PLANO-lid-sem-telefone.md). O telefone vem de FORA da chave,
+// resolvido pelo chamador no acervo do próprio CRM.
+describe('@lid sem telefone — telefone resolvido pelo chamador', () => {
+  const LID = '254833865040050@lid';
+  const TEL = '5583900001111@s.whatsapp.net';
+  const copiaDoCelular = (over: Record<string, unknown> = {}) =>
+    ({
+      key: { remoteJid: LID, fromMe: false, id: 'ACA5A459', ...over },
+      message: { conversation: 'Olá, gostaria de informações' },
+      messageTimestamp: 1789747434,
+    }) satisfies EvolutionUpsert;
+
+  it('reconhece a forma: LID na chave e telefone em campo nenhum', () => {
+    expect(ehLidSemTelefone({ remoteJid: LID, fromMe: false, id: 'X' })).toBe(true);
+    expect(ehLidSemTelefone({ remoteJid: LID, remoteJidAlt: TEL })).toBe(false);
+    expect(ehLidSemTelefone({ remoteJid: TEL, remoteJidAlt: LID })).toBe(false);
+    expect(ehLidSemTelefone({ remoteJid: '120363000000000000@g.us' })).toBe(false);
+    expect(ehLidSemTelefone(undefined)).toBe(false);
+  });
+
+  it('sem a opção, continua NÃO normalizando (o comportamento de sempre)', () => {
+    expect(normalizeUpsert(copiaDoCelular(), 'conta', 'dono', 'canal')).toBeNull();
+    expect(normalizeUpsert(copiaDoCelular(), 'conta', 'dono', 'canal', {})).toBeNull();
+    expect(
+      normalizeUpsert(copiaDoCelular(), 'conta', 'dono', 'canal', { telefoneResolvido: null }),
+    ).toBeNull();
+  });
+
+  it('com o telefone resolvido: usa o telefone, guarda o LID e o carimbo original', () => {
+    const out = normalizeUpsert(copiaDoCelular(), 'conta', 'dono', 'canal', {
+      telefoneResolvido: TEL,
+    });
+    expect(out).not.toBeNull();
+    expect(out!.phone).toBe('5583900001111');
+    expect(out!.remoteJid).toBe(TEL);
+    expect(out!.remoteJidLid).toBe(LID);
+    expect(out!.fromMe).toBe(false);
+    expect(out!.timestamp).toBe(1789747434);
+    expect(out!.text).toBe('Olá, gostaria de informações');
+    // Sem pushName a cópia cai no telefone — e `findOrCreateContact` não
+    // renomeia contato existente para um número.
+    expect(out!.name).toBe('5583900001111');
+  });
+
+  it('o LID NUNCA vira telefone: o que vem de fora precisa ser JID de telefone', () => {
+    for (const torto of [
+      '999999999999999@lid',
+      '120363000000000000@g.us',
+      '5583900001111',
+      'status@broadcast',
+      '@s.whatsapp.net',
+      '',
+    ]) {
+      expect(
+        normalizeUpsert(copiaDoCelular(), 'conta', 'dono', 'canal', { telefoneResolvido: torto }),
+        torto,
+      ).toBeNull();
+    }
+  });
+
+  it('telefone na chave MANDA: o resolvido por fora é ignorado', () => {
+    const outro = '5511988887777@s.whatsapp.net';
+    const out = normalizeUpsert(copiaDoCelular({ remoteJidAlt: TEL }), 'conta', 'dono', 'canal', {
+      telefoneResolvido: outro,
+    });
+    expect(out!.remoteJid).toBe(TEL);
+  });
+
+  it('o resolvido não ressuscita o que é descartado por OUTRO motivo', () => {
+    const opcoes = { telefoneResolvido: TEL };
+    const grupo = { ...copiaDoCelular(), key: { remoteJid: '120363000000000000@g.us', id: 'G' } };
+    expect(normalizeUpsert(grupo, 'conta', 'dono', 'canal', opcoes)).toBeNull();
+    const reacao = { ...copiaDoCelular(), message: REACAO };
+    expect(normalizeUpsert(reacao, 'conta', 'dono', 'canal', opcoes)).toBeNull();
+    const semId = { ...copiaDoCelular(), key: { remoteJid: LID } };
+    expect(normalizeUpsert(semId, 'conta', 'dono', 'canal', opcoes)).toBeNull();
+  });
+
+  it('eco do escritório (fromMe) resolvido continua sendo eco', () => {
+    const out = normalizeUpsert(copiaDoCelular({ fromMe: true }), 'conta', 'dono', 'canal', {
+      telefoneResolvido: TEL,
+    });
+    expect(out!.fromMe).toBe(true);
+    expect(out!.remoteJid).toBe(TEL);
   });
 });
 

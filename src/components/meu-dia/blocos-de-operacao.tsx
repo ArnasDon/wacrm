@@ -32,9 +32,12 @@ import type {
   Negocios as DadosDeNegocios,
   Resultados as DadosDeResultados,
 } from '@/hooks/use-area-de-trabalho';
+import { useChannels } from '@/hooks/use-channels';
+import { channelLabel } from '@/lib/cb-channels/display';
 import { nomeDoContato } from '@/lib/contacts/identidade';
 import { urlDoInbox } from '@/lib/inbox/url';
 import {
+  DIAS_DE_RETIDA_NA_TELA,
   resumirCorrecoes,
   type EstadoDaFonte,
   type EstadoPorFonte,
@@ -102,6 +105,25 @@ export function BlocoDeCorrecoes({
   veContatos: boolean;
 }) {
   const t = useTranslations('MeuDia');
+  // Só para dar NOME à conexão das mensagens retidas. Falha silenciosa e lista
+  // vazia durante a carga (o contrato do hook): aqui o vazio só troca o nome
+  // por um travessão por um instante — não afirma nada.
+  const { channels } = useChannels();
+
+  /**
+   * ⚠️ `retidas: null` é "a rota não conseguiu conferir ESTA parte" (banco
+   * sem a 1007, erro só daquela consulta) — vira `falhou`, nunca zero: zero
+   * deixaria o bloco dizer "tudo em ordem" sobre pergunta não respondida.
+   */
+  const mensagensRetidas: EstadoDaFonte =
+    integracoes.status !== 'pronto'
+      ? { status: integracoes.status }
+      : integracoes.dados.retidas === null
+        ? { status: 'falhou' }
+        : {
+            status: 'pronto',
+            contagem: { quantidade: integracoes.dados.retidas.quantidade },
+          };
 
   const estados: EstadoPorFonte = {
     agendador:
@@ -113,6 +135,7 @@ export function BlocoDeCorrecoes({
           },
     conexoes,
     conexoesAtrasadas,
+    mensagensRetidas,
     agendadasFalharam: fonteDe(correcoes, (c) => c.agendadasFalharam),
     entregaIncerta: fonteDe(correcoes, (c) => c.entregaIncerta),
     automacoesFalharam: fonteDe(correcoes, (c) => c.automacoesFalharam),
@@ -129,10 +152,13 @@ export function BlocoDeCorrecoes({
   // lê `searchParams.get('tab')` e ignora o resto, então `?section=channels`
   // abre a Visão geral — o clique de conserto levaria ao lugar errado sem
   // erro nenhum (Codex, PR #202).
-  const DESTINO: Record<FonteDeCorrecao, { href: string; ve: boolean }> = {
+  const DESTINO: Record<FonteDeCorrecao, { href: string | null; ve: boolean }> = {
     agendador: { href: '/agendadas', ve: veAgendadas },
     conexoes: { href: '/settings?tab=channels', ve: veConexoes },
     conexoesAtrasadas: { href: '/settings?tab=channels', ve: veConexoes },
+    // Sem tela: o conserto não é no CRM, é no CELULAR daquela conexão (a
+    // lista logo abaixo diz qual e a que horas).
+    mensagensRetidas: { href: null, ve: false },
     agendadasFalharam: { href: '/agendadas', ve: veAgendadas },
     entregaIncerta: { href: '/agendadas', ve: veAgendadas },
     automacoesFalharam: { href: '/automations', ve: veAutomacoes },
@@ -149,6 +175,8 @@ export function BlocoDeCorrecoes({
     if (fonte === 'conexoes') return t('fixChannelsDown', { count });
     if (fonte === 'conexoesAtrasadas')
       return t('fixChannelsLagging', { count });
+    if (fonte === 'mensagensRetidas')
+      return t('fixHeldMessages', { count, dias: DIAS_DE_RETIDA_NA_TELA });
     if (fonte === 'agendadasFalharam')
       return t('fixScheduledFailed', { count });
     if (fonte === 'entregaIncerta') return t('fixDeliveryUnsure', { count });
@@ -230,7 +258,7 @@ export function BlocoDeCorrecoes({
             const classes = 'flex items-baseline gap-1.5 text-sm';
             return (
               <li key={a.fonte}>
-                {destino.ve ? (
+                {destino.ve && destino.href ? (
                   <Link
                     href={destino.href}
                     className={cn(classes, 'hover:bg-muted/60 rounded-md')}
@@ -287,6 +315,41 @@ export function BlocoDeCorrecoes({
               );
             })}
           </ul>
+        )}
+
+      {/* ⚠️ As retidas vêm com a CONEXÃO e a HORA: o conserto é olhar o
+          celular daquele número e responder por lá — o eco traz o telefone e a
+          fala entra sozinha na conversa. Sem isso o achado seria um número que
+          não diz onde procurar. Nada de conteúdo nem telefone: a rota é de
+          qualquer membro. */}
+      {integracoes.status === 'pronto' &&
+        integracoes.dados.retidas !== null &&
+        integracoes.dados.retidas.itens.length > 0 && (
+          <div className="border-border mt-2 border-t pt-2">
+            <ul className="space-y-1">
+              {integracoes.dados.retidas.itens.map((r) => (
+                <li
+                  key={`${r.canalId ?? 'sem-conexao'}-${r.recebidaEm}`}
+                  className="min-w-0 truncate text-xs"
+                >
+                  <span className="text-foreground">
+                    {channelLabel(channels, r.canalId) ?? '—'}
+                  </span>
+                  <span className="text-muted-foreground">
+                    {' · '}
+                    {new Date(r.recebidaEm).toLocaleString(undefined, {
+                      day: '2-digit',
+                      month: '2-digit',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                    {r.daEquipe && ` · ${t('heldFromTeam')}`}
+                  </span>
+                </li>
+              ))}
+            </ul>
+            <p className="text-muted-foreground mt-1.5 text-xs">{t('heldHint')}</p>
+          </div>
         )}
 
       {/* A falha parcial é dita SEMPRE, inclusive quando já há achados: o

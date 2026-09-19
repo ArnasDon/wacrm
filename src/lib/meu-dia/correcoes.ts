@@ -18,11 +18,12 @@
 // `resumo-do-dia.tsx`: o que se sabe é o mínimo, não a desigualdade estrita.
 // ============================================================
 
-/** As sete fontes do bloco, na ordem em que a tela as mostra. */
+/** As oito fontes do bloco, na ordem em que a tela as mostra. */
 export type FonteDeCorrecao =
   | 'agendador'
   | 'conexoes'
   | 'conexoesAtrasadas'
+  | 'mensagensRetidas'
   | 'agendadasFalharam'
   | 'entregaIncerta'
   | 'automacoesFalharam'
@@ -43,16 +44,32 @@ export type FonteDeCorrecao =
  * conexão que está de pé e entregando, só que tarde. Vem logo depois dela
  * porque o efeito é parecido: o atendente responde sem enxergar metade da
  * conversa.
+ *
+ * ⚠️ A mensagem RETIDA sem telefone (1007) vem junto das conexões porque é da
+ * mesma família — fala de cliente que NÃO está na tela do CRM —, e antes das
+ * agendadas porque o conserto é de gente e é agora: olhar o celular daquela
+ * conexão e responder por lá (o eco traz o número, e a fala entra sozinha na
+ * conversa). Ver docs/PLANO-lid-sem-telefone.md.
  */
 export const ORDEM_DAS_FONTES: readonly FonteDeCorrecao[] = [
   'agendador',
   'conexoes',
   'conexoesAtrasadas',
+  'mensagensRetidas',
   'agendadasFalharam',
   'entregaIncerta',
   'automacoesFalharam',
   'entradasNaoProcessadas',
 ] as const;
+
+/**
+ * Por quantos dias uma mensagem retida sem telefone ocupa o bloco. Passado
+ * isso ela CONTINUA retida e religável (a tabela não esquece) — só deixa de
+ * ser mostrada: um aviso que ninguém mais pode resolver é o número que o olho
+ * aprende a pular, e ele ensinaria a pular os novos. A rota conta com esta
+ * janela e a tela a ESCREVE — uma constante só, para o texto não mentir.
+ */
+export const DIAS_DE_RETIDA_NA_TELA = 7;
 
 /** O que uma fonte devolve depois de responder. */
 export interface Contagem {

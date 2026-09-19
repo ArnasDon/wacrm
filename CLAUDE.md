@@ -300,6 +300,7 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
 | `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
 | `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
+| `src/app/(dashboard)/inbox/page.tsx` (19/09/2026) | o INSERT do realtime entra no fio por `inserirNaOrdem` (pelo carimbo), não por `[...prev, newMsg]` — mensagem gravada depois de outras mais novas (retida sem telefone, lote drenado fora de ordem) aparecia no FIM até recarregar. Há pino em `ordem-do-fio.test.ts` |
 | `src/app/(dashboard)/inbox/page.tsx` (18/09/2026) | no INSERT de mensagem do CLIENTE na conversa aberta, `setTimeout(avisarExecucoesMudaram, 3000)` — a aba Automações descobre o cancelamento por resposta sem recarregar a página |
 | `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` depois do freio de `is_active` E da marca de interrupção (`execucaoJaInterrompida`, 1005): fora da etapa (ou estadia encerrada) → `cancelled` + varredura das irmãs + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
 | `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
@@ -2664,6 +2665,108 @@ mensagem. `POST /instance/restart/<instância>` segue como PALIATIVO (drena
 DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
 "Aguardando mensagem" (mensagens que não chegavam ao cliente).
 
+⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1007, 19/09/2026): não é mais
+jogada fora — o telefone sai do ACERVO, ou ela fica RETIDA até ele aparecer.**
+`src/lib/whatsapp/sem-telefone/` (`modo.ts` puro; `resolver-lid`, `retidas`,
+`historica`, `entregar`, `receber`, `religar`), `ehLidSemTelefone` e a opção
+`telefoneResolvido` de `normalizeUpsert`, a tabela `cb_mensagens_sem_telefone`,
+a função `cb_assentar_mensagem_historica`, a fonte `mensagensRetidas` do Meu
+dia e `src/lib/inbox/ordem-do-fio.ts`. Plano vivo (causa, medição, riscos e
+matriz de testes) em `docs/PLANO-lid-sem-telefone.md`. O que morde código novo:
+
+- ⚠️⚠️ **A causa NÃO é o WhatsApp omitindo o número — é a Baileys.** Provado
+  no fonte da 7.0.0-rc13 que roda em produção: quando a mensagem FALHA AO
+  DECIFRAR (típico da PRIMEIRA mensagem de contato novo), `sendRetryRequest`
+  chama `requestPlaceholderResend(msgKey)` SEM o `msgData`, e a cópia que o
+  celular pareado reenvia sai com a chave crua do aparelho: só o LID, sem
+  `remoteJidAlt`, sem `addressingMode`, sem `pushName`. O outro chamador
+  (mensagem "unavailable") passa o `msgData` e preserva o telefone. O `master`
+  do upstream tinha a mesma lacuna em 19/09/2026 — atualizar a biblioteca não
+  resolve. Medido em 10 dias: 5 em 3.875 mensagens de cliente; **4 eram
+  DUPLICATA** de mensagem que também chegou normal (o `DESCARTADA` do log era
+  alarme falso) e 1 era a fala inicial de um lead novo, perdida.
+- ⚠️⚠️ **O LID JAMAIS vira `contacts.phone`.** `findExistingContact` casa
+  pelos ÚLTIMOS 8 DÍGITOS — é a armadilha do JID de grupo (906) e o motivo do
+  descarte original (4 contatos fantasmas em 26/07, um fundido com cliente
+  real). O telefone só entra vindo de mensagem REAL já gravada
+  (`messages.remote_jid_lid → remote_jid`: 959 LIDs, ZERO com mais de um
+  telefone) e `normalizeUpsert` recusa como "telefone resolvido" tudo que não
+  termine em `@s.whatsapp.net`.
+- ⚠️⚠️ **DOIS modos de gravar a recuperada (`modo.ts`), e a régua é "ela ainda
+  é a ÚLTIMA da conversa e tem até 5 min?".** `nova` = o caminho normal
+  (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele,
+  motores inclusive; `historica` = só entra no fio. `nova` EXISTE porque a
+  cópia do celular e a cópia normal disputam o `UNIQUE (conversation_id,
+  message_id)`: se a recuperada nunca disparasse motor e chegasse primeiro, a
+  normal seria descartada como duplicata e os motores não rodariam para aquela
+  mensagem — regressão. `historica` NÃO dispara nada porque o robô leria a
+  mensagem antiga DEPOIS das mais novas (um menu consumiria a resposta errada),
+  a IA responderia a algo de horas atrás e a boas-vindas sairia depois de gente
+  já ter respondido. Não saber qual é a última da conversa = `historica`.
+- ⚠️⚠️ **A garantia de que a histórica não dispara nada é ESTRUTURAL**
+  (`historica.chamadores.test.ts`, no desenho de `cb-groups/persist.ts`): o
+  arquivo não importa motores, funil, reabertura, `followConversationChannel`,
+  `registrarEntrega` (mediria "3 horas de atraso" numa conexão sadia) nem
+  `cancelarEsperasPorResposta` (há default-deny; a segunda linha de defesa da
+  retomada lê `gravada_em`, que aqui é AGORA, e cobre). De `inbound-store` só
+  `import type`.
+- ⚠️⚠️ **Mensagem com carimbo ANTIGO engana o gatilho da 972**, que conta por
+  ordem de INSERÇÃO: a fala de 13:03 gravada às 13:05, depois da resposta de
+  13:04, acendia "em atraso" sobre cliente já respondido — e o eco antigo do
+  escritório APAGAVA um atraso verdadeiro. Os dois foram REPRODUZIDOS num
+  Postgres 16 com o gatilho real. Por isso toda histórica chama
+  `cb_assentar_mensagem_historica`: refaz `aguardando_desde` pela fórmula
+  canônica — CÓPIA da do gatilho de mensagem apagada da 972, com teste lendo os
+  dois SQLs —, soma a não lida só para fala de CLIENTE sem resposta de GENTE
+  depois, e toca `updated_at`, que é o que faz o realtime corrigir a lista de
+  quem está com a caixa aberta. Quem criar outro caminho que grave mensagem com
+  `created_at` no passado repete a chamada.
+- ⚠️⚠️ **A religação roda DEPOIS de tudo da mensagem que trouxe o telefone**
+  (na rota, depois do persist, da foto e do anexo). É o que mantém os motores
+  vendo exatamente o que veem hoje: o gatilho "primeira mensagem" continua
+  valendo para a mensagem que CHEGOU normal, e a retida entra como história.
+  Invertendo a ordem, o lead retido nunca mais dispararia a boas-vindas.
+- ⚠️ **Depois de reter, o LID é resolvido DE NOVO** (`receber.ts`): o eco que
+  traz o par pode ter sido gravado enquanto a retenção acontecia. Ou o eco
+  enxerga a retida, ou a retida enxerga o eco — sem a segunda olhada a fala
+  ficaria retida até a mensagem seguinte.
+- ⚠️ **A invariante de tudo: se qualquer peça nova falhar, o comportamento é o
+  de ANTES** — a mensagem não entra e o log diz `DESCARTADA` (o texto de
+  sempre, que é o que o medidor do `PLANO-baileys-7.md` procura). Nenhuma
+  função do módulo lança; exceção na chegada cai na RETENÇÃO, nunca no
+  descarte (o estouro pode ter vindo DEPOIS do insert, e a religação
+  deduplica). Banco sem a 1007 é tolerado: a Fase 1 funciona, a retenção vira o
+  descarte de hoje, e o erro da tabela ausente sai UMA vez por processo.
+- ⚠️ **O anexo da retida é baixado pela conexão DA RETIDA** (`channelId` no
+  item de `semAnexo`, lido com `'channelId' in pendente`, nunca `??`): o LID é
+  da conta do WhatsApp da pessoa, então a fala do número A pode ser destravada
+  por mensagem no número B, e a mídia só existe na instância do A. Conexão
+  apagada (`null`) NÃO cai no canal do webhook.
+- ⚠️ **O payload cru é conteúdo de cliente e existe só enquanto é preciso**:
+  `CHECK ((situacao = 'retida') = (payload IS NOT NULL))`; ao entregar ou
+  marcar duplicada ele é apagado. Tabela FECHADA ao navegador (zero policy,
+  REVOKE das duas metades); o Meu dia lê por rota, e de lá saem só a CONEXÃO e
+  a HORA — nunca conteúdo, telefone ou LID (a rota é de qualquer membro).
+- ⚠️ **No Meu dia, `retidas: null` é "não consegui conferir", nunca zero**
+  (`lerRetidas`, puro): falha SÓ dessa consulta não vira 500 — derrubaria junto
+  Calendly e webhooks, que responderam. A janela é `DIAS_DE_RETIDA_NA_TELA`
+  (7), a mesma constante na rota e no texto; a retida antiga continua
+  religável, só deixa de ocupar a tela.
+- ⚠️ **O fio aberto insere pelo CARIMBO (`inserirNaOrdem`)**, não no fim: a
+  histórica apareceria como a última coisa dita, abaixo de respostas que vieram
+  depois dela, até recarregar. Para mensagem em ordem o resultado é idêntico ao
+  de antes; há pino lendo `inbox/page.tsx`.
+- **Limites aceitos, escritos no plano**: retida que o cliente APAGOU antes de
+  religar entra como se não tivesse sido apagada; citação feita a uma retida
+  fica sem vínculo; lead retido que nunca mais escreve e a quem ninguém responde
+  pelo celular fica retido. Só a Fase 3 (patch na imagem da Evolution:
+  `lidMapping.getPNForLID` antes da troca da linha 1668 — consulta local, sem
+  rede) resolveria na hora; decisão do operador: fora do escopo.
+- **`gravada_em` (1003) da recuperada é AGORA** — é verdade, o CRM gravou tarde
+  —, então ela aparece como atraso grande em `gravada_em − created_at`. Numa
+  medição do atraso de entrega, exclua o que está em
+  `cb_mensagens_sem_telefone.message_id`.
+
 ⚠️ **UI de canal: peças próprias, prefira reusá-las.** `src/hooks/use-channels.ts`
 (uma busca por montagem, falha silenciosa), `src/lib/cb-channels/display.ts`
 (funções puras, com teste) e `src/components/channels/` (`ChannelBadge`,
@@ -3081,8 +3184,9 @@ entrega mensagem de grupo. O que morde código novo:
   `src/lib/cb-groups/persist.ts` não importa os motores, e há teste lendo o
   próprio fonte. Se um dia grupos entrarem nas automações, o import entra ali,
   visível na revisão — não atrás de uma flag.
-- **A regra do `@lid` do 1:1 NÃO vale em grupo.** Lá o LID sem telefone é
-  descartado para não criar contato falso; aqui o remetente é desnormalizado em
+- **A regra do `@lid` do 1:1 NÃO vale em grupo.** Lá o LID sem telefone não
+  vira contato (desde a 1007 a mensagem fica RETIDA até o número aparecer —
+  antes era descartada); aqui o remetente é desnormalizado em
   `messages.group_sender_*`, sem FK e sem criar contato. Em produção 100% dos
   participantes chegam em `@lid`, então aplicar a regra do 1:1 esvaziaria o
   recurso.

@@ -172,6 +172,37 @@ resolveria na hora.
 | T17 | `typecheck`, `lint` (ler "✖ N problems"), suíte em Node 22, `i18n-parity`, `i18n-chaves-usadas`, `build` | portões |
 | T18 | Ponta a ponta no preview com o lead de teste autorizado — **só com autorização**: o preview usa o banco de PRODUÇÃO | manual |
 
+### 6.1 Execução da matriz (19/09/2026)
+
+- **T1–T12, T14–T16:** 131 testes nos 12 arquivos novos (mais 9 casos
+  acrescentados a `evolution-inbound.test.ts` e `correcoes.test.ts`), todos
+  verdes. Suíte inteira em Node 22: **349 arquivos, 4.447 testes, zero falha**.
+- **Mutação** (o teste pega o defeito que diz pegar?): regras quebradas de
+  propósito, uma por vez, e desfeitas — (1) dúvida sobre "qual é a última da
+  conversa" virando `nova` em vez de `historica`; (2) mensagem ANTIGA passando
+  pelo caminho dos motores; (3) a duplicata deixando de ser filtrada na
+  chegada; (4) o anexo perdendo a conexão da retida; (5) o eco do escritório
+  contando como não lida. As cinco reprovaram (1, 5, 2, 1 e 1 testes).
+- **T13:** Postgres 16 descartável (Homebrew, só TCP): a 1007 aplica em banco
+  limpo, é idempotente (2ª passada sem erro) e passou 13 cenários com o
+  gatilho REAL da 972 — falso "em atraso" some (C1), atraso verdadeiro volta
+  (C2), encerrada e grupo ficam nulos (C3/C4), não lida soma só quando pedido
+  (C5/C6), `updated_at` avança (C7); CHECK do payload, UNIQUE, FK composta com
+  `SET NULL (channel_id)`, CASCADE da conta (T1–T5); e os privilégios
+  trocando de papel (`anon`/`authenticated` sem nada, `service_role` com tudo).
+- **T17:** `tsc` limpo; `eslint` sem erro (um aviso PRÉ-EXISTENTE no `main`,
+  `toast` sem uso em `inbox/page.tsx`); `i18n-parity` e `i18n-chaves-usadas`
+  verdes; `next build` com saída 0.
+- **Medição em produção, somente leitura (R2/R14):** 960 LIDs no acervo, ZERO
+  com mais de um telefone, ZERO mensagens de grupo com LID gravado; a consulta
+  que resolve o LID custa ~5 ms (varredura de 14,4 mil linhas, tudo em cache).
+- **T18:** NÃO executado — depende de autorização (o preview escreve no banco
+  de produção) e da 1007 aplicada. É também onde se medem, contra o PostgREST
+  real, o `upsert(onConflict)` e o `rpc('cb_assentar_mensagem_historica')`; as
+  demais formas de consulta já rodam em produção noutros módulos.
+- **Revisão:** duas lentes independentes (regressão do caminho quente; banco e
+  concorrência) antes do PR; Codex no HEAD final antes de qualquer merge.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -192,11 +223,12 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Investigação e causa raiz (19/09)
 - [x] Decisão do operador: Fases 1 e 2
 - [x] Análise de risco e matriz de testes (este documento)
-- [ ] Fase 1 — código + testes
-- [ ] Migration 1007 + teste em Postgres local
-- [ ] Fase 2 — reter, religar, Meu dia + testes
-- [ ] Fio em tempo real na ordem do carimbo
-- [ ] Portões (T17)
-- [ ] PR + Codex
+- [x] Fase 1 — código + testes
+- [x] Migration 1007 + teste em Postgres local
+- [x] Fase 2 — reter, religar, Meu dia + testes
+- [x] Fio em tempo real na ordem do carimbo
+- [x] Portões (T17)
+- [ ] Revisão por duas lentes + PR + Codex no HEAD final
+- [ ] T18 — ponta a ponta no preview (autorização)
 - [ ] 1007 aplicada em produção (autorização)
 - [ ] Merge (autorização) + conferência pós-deploy

@@ -6094,6 +6094,20 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     predicado parcial de `messages` renderizado como
     `sender_type = 'customer' AND deleted_at IS NULL`).
 
+  - **1007_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
+    mensagem 1:1 que chegou em `@lid` sem telefone: retida, entregue ou
+    duplicada; FECHADA ao navegador; payload só enquanto `retida`) e a função
+    `cb_assentar_mensagem_historica` (refaz `aguardando_desde` pela fórmula
+    canônica da 972 depois de um insert com carimbo antigo; `SECURITY
+    INVOKER`, EXECUTE só do `service_role`). Aditiva: nada em produção a lê
+    até o deploy, e o app TOLERA a ausência dela (a Fase 1 funciona, a
+    retenção cai no descarte de sempre, o erro sai uma vez por processo) —
+    mas a regra continua sendo aplicar ANTES do merge. ⚠️ **AINDA NÃO
+    APLICADA** (19/09/2026: PR aberto, esperando autorização do operador);
+    testada num Postgres 16 descartável — banco limpo, idempotente, 13
+    cenários com o gatilho real da 972. Quem aplicar troca esta frase pela
+    data e pelo número do histórico.
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

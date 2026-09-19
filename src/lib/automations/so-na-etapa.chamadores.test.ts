@@ -75,10 +75,10 @@ describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)'
     expect(confere).toBeLessThan(blocoDoWait)
   })
 
-  it('runAutomationById ancora a estadia da execução sem evento antes de executar (9ª rodada)', () => {
+  it('runAutomationById resolve o card-alvo e a âncora da execução sem evento antes de executar (9ª/10ª rodadas)', () => {
     const motor = fonte('lib/automations/engine.ts')
     const inicio = motor.indexOf('export async function runAutomationById')
-    const ancora = motor.indexOf('ancoraDaEstadia({', inicio)
+    const ancora = motor.indexOf('estadiaSemEvento({', inicio)
     const executa = motor.indexOf('await executeAutomation(', inicio)
     expect(ancora).toBeGreaterThan(-1)
     expect(ancora).toBeLessThan(executa)

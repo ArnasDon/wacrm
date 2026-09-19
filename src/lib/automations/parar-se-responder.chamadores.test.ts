@@ -193,6 +193,19 @@ describe('a SEGUNDA LINHA DE DEFESA, na retomada (revisão por duas lentes, 19/0
     expect(running).toBeLessThan(marca)
   })
 
+  it('a conferência da resposta que FALHA para a execução inteira: marca + irmãs, DEPOIS do desfecho (10ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function resumePendingExecution')
+    const falha = motor.indexOf('const motivo = MOTIVO_RESPOSTA_DESCONHECIDA', inicio)
+    const desfecho = motor.indexOf("fecharLog(pending.log_id, 'falhou')", falha)
+    const marca = motor.indexOf("marcarExecucoesInterrompidas(db, [pending.log_id], 'resposta')", falha)
+    const irmas = motor.indexOf('cancelarEsperasDaExecucao(db, pending.log_id)', marca)
+    expect(falha).toBeGreaterThan(-1)
+    expect(desfecho).toBeGreaterThan(falha)
+    expect(marca).toBeGreaterThan(desfecho)
+    expect(irmas).toBeGreaterThan(marca)
+  })
+
   it('fecharLog não carimba execução interrompida', () => {
     const motor = fonte('lib/automations/engine.ts')
     const inicio = motor.indexOf('async function fecharLog(')

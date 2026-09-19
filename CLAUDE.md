@@ -735,6 +735,11 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   varre as irmãs, anota. Leitura que falha → falha VISÍVEL
   (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
   marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
+  ⚠️ Conferência que FALHA (a da resposta ou a da etapa, na retomada) para a
+  EXECUÇÃO inteira, não só a linha: marca + varredura das irmãs, DEPOIS do
+  desfecho `falhou` — `fecharLog` não carimba execução já marcada, e a falha
+  tem de ficar visível (10ª rodada). Na guarda por passo, `erro` só varre as
+  irmãs estacionadas, sem marca, pelo mesmo motivo.
   ⚠️ E a resposta que chega com a espera marcada já `running` (o cron acabou
   de reivindicá-la, DEPOIS de a retomada ter conferido) MARCA a execução sem
   cancelar a linha — que é do cron —, e a retomada em curso para no passo
@@ -867,13 +872,15 @@ código novo:
   da SAÍDA — dois drenos concorrentes, ou o cron atrasado até 1 h —, que a
   marca de saída não alcança porque a execução ainda não existia. Execução
   SEM evento (manual, ou acionada por outra automação) ganha a PRÓPRIA
-  estadia (`ancoraDaEstadia`, 9ª rodada): ancorada no ÚLTIMO movimento de
-  etapa conhecido do contato — pelo relógio do BANCO (`criado_em` de um
-  evento), nunca `now()` do app: a mãe que move o card e aciona a filha tem o
-  evento gravado milissegundos antes, e com o relógio do app atrasado o
-  próprio movimento pareceria "posterior". Sem card no contexto a pergunta é
-  por CONTATO; sem movimento conhecido, `null` = só a posição. A poda de 30
-  dias da fila de eventos é o limite prático da pergunta.
+  estadia (`estadiaSemEvento`, 9ª/10ª rodadas): o CARD-ALVO (o aberto mais
+  recente do contato numa etapa da automação, senão o aberto mais recente —
+  sem ele, mover QUALQUER card do contato matava a manual) e a âncora, o
+  ÚLTIMO movimento de etapa conhecido DESSE card — pelo relógio do BANCO
+  (`criado_em` de um evento), nunca `now()` do app: a mãe que move o card e
+  aciona a filha tem o evento gravado milissegundos antes, e com o relógio
+  do app atrasado o próprio movimento pareceria "posterior". Sem card aberto
+  a pergunta é por CONTATO; sem movimento conhecido, `null` = só a posição.
+  A poda de 30 dias da fila de eventos é o limite prático da pergunta.
 - ⚠️⚠️ **A marca é lida antes de CADA passo do escopo** (7ª rodada): com a
   espera marcada num ramo, o escopo de fora segue executando, e a interrupção
   só era vista no próximo estacionamento — os passos comuns até lá, inclusive
@@ -920,8 +927,8 @@ código novo:
   (`run_automation` manda `evento_em: null`; 8ª rodada): a mãe pode ter
   movido o card no meio antes de acionar, e a filha presa à etapa nova leria
   esse movimento como "saiu" com o card DENTRO dela. Zerado, `runAutomationById`
-  ancora a estadia PRÓPRIA da filha no último movimento conhecido — o da mãe,
-  que não é "posterior" a si mesmo (9ª rodada).
+  ancora a estadia PRÓPRIA da filha no último movimento do card — o da mãe,
+  que não é "posterior" a si mesmo (9ª/10ª rodadas).
 - ⚠️ **Ganho/perdido NÃO encerra a estadia**: o card não sai da etapa (950 —
   o selo fica na coluna), e `cardSaiuDaEtapa` só olha `deal_stage_changed`.
   Se o operador quiser "perdido = parar", é decisão nova (passo "Parar

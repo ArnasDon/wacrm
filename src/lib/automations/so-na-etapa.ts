@@ -361,44 +361,73 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
 /**
  * A ESTADIA de uma execução que NÃO nasce de evento — a manual ("Executar
  * automação") e a acionada por outra automação (`run_automation`) —, para
- * automação presa à etapa: ancorada no ÚLTIMO movimento de etapa conhecido do
- * contato (Codex, 9ª rodada). Qualquer movimento POSTERIOR a ele encerra a
- * execução — o card que sai e volta enquanto ela espera não a acorda ao lado
- * da execução nova que a reentrada dispara.
+ * automação presa à etapa (Codex, 9ª e 10ª rodadas). Resolve DUAS coisas que
+ * o contexto de evento traz de graça e o manual não tem:
  *
- * ⚠️ É o `criado_em` de um evento, nunca `now()` do app: os movimentos são
- * carimbados pelo relógio do BANCO, e a mãe que move o card e aciona a filha
- * no passo seguinte tem o evento gravado milissegundos antes do clique — com
- * o relógio do app atrasado, o próprio movimento que a trouxe pareceria
- * "posterior" e a filha morreria ao nascer.
+ * - o CARD-ALVO (`deal_id`): o negócio ABERTO mais recente do contato que está
+ *   numa etapa da automação — é dele que o operador está falando ao clicar —,
+ *   senão o aberto mais recente (a conferência de posição dirá "saiu"). Sem o
+ *   card no contexto, a saída de etapa (ponta 2) não conseguia dizer de qual
+ *   card era a execução, e mover QUALQUER card do contato a matava.
+ * - a ÂNCORA (`evento_em`): o último movimento de etapa conhecido DESSE card.
+ *   Qualquer movimento POSTERIOR encerra a execução — o card que sai e volta
+ *   enquanto ela espera não a acorda ao lado da execução nova da reentrada.
  *
- * Sem movimento conhecido (contato sem evento nos 30 dias da poda) devolve
- * `null`: vale só a posição do card, como antes. Nunca lança.
+ * ⚠️ A âncora é o `criado_em` de um evento, nunca `now()` do app: os
+ * movimentos são carimbados pelo relógio do BANCO, e a mãe que move o card e
+ * aciona a filha no passo seguinte tem o evento gravado milissegundos antes do
+ * clique — com o relógio do app atrasado, o próprio movimento que a trouxe
+ * pareceria "posterior" e a filha morreria ao nascer.
+ *
+ * Sem card aberto, ou sem movimento conhecido (30 dias da poda), o campo vem
+ * `null` e vale só a posição, como antes. Nunca lança; leitura que falha
+ * devolve tudo `null`.
  */
-export async function ancoraDaEstadia(args: {
+export async function estadiaSemEvento(args: {
   db: SupabaseClient;
   automation: AutomacaoComGatilho & { account_id: string };
   contactId: string | null;
-}): Promise<string | null> {
+}): Promise<{ deal_id: string | null; evento_em: string | null }> {
+  const nada = { deal_id: null, evento_em: null };
   const { db, automation, contactId } = args;
-  if (!etapasQuePrendem(automation) || !contactId) return null;
+  const etapas = etapasQuePrendem(automation);
+  if (!etapas || !contactId) return nada;
   try {
+    const { data: abertos, error: erroDosCards } = await db
+      .from('deals')
+      .select('id, stage_id')
+      .eq('account_id', automation.account_id)
+      .eq('contact_id', contactId)
+      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(20);
+    if (erroDosCards) {
+      console.error('[automations] so-na-etapa: cards do contato falharam:', erroDosCards.message);
+      return nada;
+    }
+    const cards = (abertos ?? []) as { id: string; stage_id: string | null }[];
+    const alvo = cards.find((c) => !estaFora(etapas, c.stage_id)) ?? cards[0];
+    if (!alvo) return nada;
+
     const { data, error } = await db
       .from('cb_automation_events')
       .select('criado_em')
       .eq('account_id', automation.account_id)
-      .eq('contact_id', contactId)
+      .eq('deal_id', alvo.id)
       .eq('tipo', 'deal_stage_changed')
       .order('criado_em', { ascending: false })
       .limit(1);
     if (error) {
       console.error('[automations] so-na-etapa: âncora da estadia falhou:', error.message);
-      return null;
+      return { deal_id: alvo.id, evento_em: null };
     }
     const ultimo = (data ?? [])[0] as { criado_em?: string | null } | undefined;
-    return typeof ultimo?.criado_em === 'string' ? ultimo.criado_em : null;
+    return {
+      deal_id: alvo.id,
+      evento_em: typeof ultimo?.criado_em === 'string' ? ultimo.criado_em : null,
+    };
   } catch (err) {
-    console.error('[automations] so-na-etapa: âncora da estadia estourou:', err);
-    return null;
+    console.error('[automations] so-na-etapa: estadia sem evento estourou:', err);
+    return nada;
   }
 }

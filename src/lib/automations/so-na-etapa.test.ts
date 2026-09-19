@@ -3,9 +3,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   DETALHE_SAIU_DA_ETAPA,
-  ancoraDaEstadia,
   cancelarEsperasAoSairDaEtapa,
   cardSaiuDaEtapa,
+  estadiaSemEvento,
   execucoesPresas,
   estaFora,
   etapasQuePrendem,
@@ -138,8 +138,10 @@ function bancoFalso(opcoes: {
   /** Movimentos do card na fila de eventos DEPOIS do instante perguntado. */
   movimentosDepois?: { id: string }[];
   erroNosMovimentos?: string;
-  /** O último movimento conhecido do contato (a âncora da estadia manual). */
+  /** O último movimento conhecido do card (a âncora da estadia sem evento). */
   ultimoMovimento?: { criado_em: string } | null;
+  /** Os negócios ABERTOS do contato (a lista da estadia sem evento). */
+  negocios?: { id: string; stage_id: string | null }[];
   /** As execuções VIVAS que o SELECT em `automation_logs` devolve. */
   execucoes?: unknown[];
   erroNasExecucoes?: string;
@@ -152,7 +154,7 @@ function bancoFalso(opcoes: {
   const chamadas: { tabela: string; tipo: string; payload?: unknown; filtros: Filtro[] }[] = [];
   const db = {
     from(tabela: string) {
-      const op = { tabela, tipo: 'select', payload: undefined as unknown, filtros: [] as Filtro[] };
+      const op = { tabela, tipo: 'select', payload: undefined as unknown, filtros: [] as Filtro[], limite: 0 };
       chamadas.push(op);
       const resolver = () => {
         if (tabela === 'cb_automation_events') {
@@ -165,6 +167,7 @@ function bancoFalso(opcoes: {
         if (tabela === 'deals') {
           if (opcoes.estouraNoNegocio) throw new Error('rede caiu');
           if (opcoes.erroNoNegocio) return { data: null, error: { message: opcoes.erroNoNegocio } };
+          if (op.limite > 1) return { data: opcoes.negocios ?? [], error: null };
           return { data: opcoes.negocio ?? null, error: null };
         }
         if (tabela === 'automation_pending_executions') {
@@ -194,7 +197,7 @@ function bancoFalso(opcoes: {
         gt: (k: string, v: unknown) => (op.filtros.push(['gt', k, v]), b),
         is: (k: string, v: unknown) => (op.filtros.push(['is', k, v]), b),
         order: () => b,
-        limit: () => b,
+        limit: (n: number) => ((op.limite = n), b),
         maybeSingle: () => Promise.resolve().then(resolver),
         then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
           Promise.resolve().then(resolver).then(onF, onR),
@@ -476,35 +479,57 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
   });
 });
 
-describe('ancoraDaEstadia — a execução sem evento (9ª rodada)', () => {
-  it('ancora no ÚLTIMO movimento de etapa conhecido do contato, pelo relógio do banco', async () => {
-    const { db, chamadas } = bancoFalso({ ultimoMovimento: { criado_em: '2026-09-18T09:00:00+00:00' } });
-    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).toBe('2026-09-18T09:00:00+00:00');
-    expect(chamadas[0].tabela).toBe('cb_automation_events');
+describe('estadiaSemEvento — a execução sem evento (9ª/10ª rodadas)', () => {
+  it('⚠️⚠️ o CARD-ALVO é o aberto mais recente que está numa etapa da automação, e a âncora é o último movimento DELE', async () => {
+    const { db, chamadas } = bancoFalso({
+      negocios: [
+        { id: 'deal-juridico', stage_id: 'etapa-do-juridico' }, // mais novo, fora da etapa
+        { id: 'deal-noshow', stage_id: NO_SHOW },
+      ],
+      ultimoMovimento: { criado_em: '2026-09-18T09:00:00+00:00' },
+    });
+    expect(await estadiaSemEvento({ db, automation: automacaoPresa, contactId: 'c1' })).toEqual({
+      deal_id: 'deal-noshow',
+      evento_em: '2026-09-18T09:00:00+00:00',
+    });
+    expect(chamadas[0].tabela).toBe('deals');
     expect(chamadas[0].filtros).toEqual([
       ['eq', 'account_id', 'acct-1'],
       ['eq', 'contact_id', 'c1'],
+      ['eq', 'status', 'open'],
+    ]);
+    expect(chamadas[1].tabela).toBe('cb_automation_events');
+    expect(chamadas[1].filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'deal_id', 'deal-noshow'],
       ['eq', 'tipo', 'deal_stage_changed'],
     ]);
   });
 
-  it('sem movimento conhecido: null (vale só a posição)', async () => {
-    const { db } = bancoFalso({ ultimoMovimento: null });
-    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).toBeNull();
+  it('nenhum card na etapa: o aberto mais recente (a posição dirá "saiu")', async () => {
+    const { db } = bancoFalso({ negocios: [{ id: 'deal-fora', stage_id: 'outra' }], ultimoMovimento: null });
+    expect(await estadiaSemEvento({ db, automation: automacaoPresa, contactId: 'c1' })).toEqual({ deal_id: 'deal-fora', evento_em: null });
+  });
+
+  it('sem card aberto: tudo null (vale só a posição)', async () => {
+    const { db } = bancoFalso({ negocios: [] });
+    expect(await estadiaSemEvento({ db, automation: automacaoPresa, contactId: 'c1' })).toEqual({ deal_id: null, evento_em: null });
   });
 
   it('automação NÃO presa, ou sem contato: nem consulta', async () => {
-    const { db, chamadas } = bancoFalso({ ultimoMovimento: { criado_em: 'x' } });
-    expect(await ancoraDaEstadia({ db, automation: { ...presa({ parar_ao_sair: false }), account_id: 'acct-1' }, contactId: 'c1' })).toBeNull();
-    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: null })).toBeNull();
+    const { db, chamadas } = bancoFalso({ negocios: [{ id: 'x', stage_id: NO_SHOW }] });
+    expect(await estadiaSemEvento({ db, automation: { ...presa({ parar_ao_sair: false }), account_id: 'acct-1' }, contactId: 'c1' })).toEqual({ deal_id: null, evento_em: null });
+    expect(await estadiaSemEvento({ db, automation: automacaoPresa, contactId: null })).toEqual({ deal_id: null, evento_em: null });
     expect(chamadas).toHaveLength(0);
   });
 
   it('⚠️ leitura que falha devolve null (só a posição), nunca lança', async () => {
     const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {
-      const { db } = bancoFalso({ erroNosMovimentos: 'timeout' });
-      await expect(ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).resolves.toBeNull();
+      const cards = bancoFalso({ erroNoNegocio: 'timeout' });
+      await expect(estadiaSemEvento({ db: cards.db, automation: automacaoPresa, contactId: 'c1' })).resolves.toEqual({ deal_id: null, evento_em: null });
+      const ancora = bancoFalso({ negocios: [{ id: 'deal-1', stage_id: NO_SHOW }], erroNosMovimentos: 'timeout' });
+      await expect(estadiaSemEvento({ db: ancora.db, automation: automacaoPresa, contactId: 'c1' })).resolves.toEqual({ deal_id: 'deal-1', evento_em: null });
     } finally {
       calado.mockRestore();
     }

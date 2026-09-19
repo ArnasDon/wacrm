@@ -90,6 +90,7 @@ vi.mock('./admin-client', () => {
     payload?: unknown;
     filters: [string, string, unknown][];
     recorte?: [string, string, unknown][];
+    limite?: number;
   }) {
     const { table, type } = ops;
     if (table === 'contacts') {
@@ -153,6 +154,11 @@ vi.mock('./admin-client', () => {
       state.dealSelects.push(ops.filters);
       if (state.erroNoNegocio) {
         return { data: null, error: { message: state.erroNoNegocio } };
+      }
+      // A lista dos abertos do contato (`estadiaSemEvento`, limit > 1) vs. a
+      // linha única de todos os outros leitores.
+      if ((ops.limite ?? 0) > 1) {
+        return { data: state.dealExistente ? [state.dealExistente] : [], error: null };
       }
       return { data: state.dealExistente, error: null };
     }
@@ -273,6 +279,7 @@ vi.mock('./admin-client', () => {
       payload: undefined as unknown,
       filters: [] as [string, string, unknown][],
       recorte: [] as [string, string, unknown][],
+      limite: 0 as number,
     };
     const b: Record<string, unknown> = {
       select: () => b,
@@ -297,7 +304,7 @@ vi.mock('./admin-client', () => {
       gt: (k: string, v: unknown) => (ops.filters.push(['gt', k, v]), b),
       is: (k: string, v: unknown) => (ops.recorte.push(['is', k, v]), b),
       order: () => b,
-      limit: () => b,
+      limit: (n: number) => ((ops.limite = n), b),
       single: () => Promise.resolve(resolve(ops)),
       maybeSingle: () => Promise.resolve(resolve(ops)),
       then: (onF: (v: unknown) => unknown, onR?: (e: unknown) => unknown) =>
@@ -2903,6 +2910,10 @@ describe('Aguardar — parar se o cliente responder', () => {
         expect(h.state.statusDaFila).toContain('failed');
         expect(statusGravado()).toBe('failed');
         expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+        // ⚠️ A execução inteira para (10ª rodada): a marca DEPOIS do desfecho, e
+        // as irmãs estacionadas caem.
+        expect(h.state.logUpdates.some((u) => u.interrompida_por === 'resposta')).toBe(true);
+        expect(h.state.statusDaFila).toContain('cancelled');
       } finally {
         calado.mockRestore();
       }
@@ -3262,7 +3273,10 @@ describe('retomada de automação presa à etapa', () => {
     });
 
     expect(h.state.esperasEnfileiradas).toHaveLength(1);
-    expect((h.state.esperasEnfileiradas[0].context as { evento_em?: string }).evento_em).toBe('2026-09-18T09:00:00+00:00');
+    const contexto = h.state.esperasEnfileiradas[0].context as { evento_em?: string; deal_id?: string };
+    expect(contexto.evento_em).toBe('2026-09-18T09:00:00+00:00');
+    // …e o CARD-ALVO (10ª rodada): sem ele, mover qualquer card do contato matava a manual.
+    expect(contexto.deal_id).toBe('deal-1');
   });
 
   it('card ainda em No Show: a sequência segue', async () => {
@@ -3302,7 +3316,8 @@ describe('retomada de automação presa à etapa', () => {
     await acordar();
 
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
-    expect(h.state.statusDaFila).toEqual(['failed']);
+    // A própria espera falha; as irmãs estacionadas caem (10ª rodada).
+    expect(h.state.statusDaFila).toEqual(['failed', 'cancelled']);
     expect(statusGravado()).toBe('failed');
     expect(desfechoGravado()?.desfecho).toBe('falhou');
     expect(horaDeFimGravada()).toBeTruthy();

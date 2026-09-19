@@ -86,8 +86,8 @@ import {
 import {
   DETALHE_SAIU_DA_ETAPA,
   MOTIVO_ETAPA_DESCONHECIDA,
-  ancoraDaEstadia,
   cardSaiuDaEtapa,
+  estadiaSemEvento,
   etapasQuePrendem,
 } from './so-na-etapa';
 import {
@@ -491,6 +491,13 @@ export async function resumePendingExecution(pending: {
         motivo
       );
       await fecharLog(pending.log_id, 'falhou');
+      // ⚠️ A EXECUÇÃO inteira para, não só esta linha (Codex, 10ª rodada): a
+      // espera marcada num ramo tem irmã sem marca na raiz, que acordaria e
+      // mandaria mais mensagens depois de o registro dizer "interrompida por
+      // segurança". A marca DEPOIS do desfecho — `fecharLog` não carimba
+      // execução já marcada, e a falha tem de ficar visível.
+      await marcarExecucoesInterrompidas(db, [pending.log_id], 'resposta');
+      await cancelarEsperasDaExecucao(db, pending.log_id);
       return;
     }
     if (respondeu) {
@@ -547,6 +554,10 @@ export async function resumePendingExecution(pending: {
       motivo
     );
     await fecharLog(pending.log_id, 'falhou');
+    // A execução inteira para (irmãs inclusive), com a marca DEPOIS do
+    // desfecho — o mesmo trato da resposta que não se consegue conferir.
+    await marcarExecucoesInterrompidas(db, [pending.log_id], 'etapa');
+    await cancelarEsperasDaExecucao(db, pending.log_id);
     return;
   }
 
@@ -669,20 +680,24 @@ export async function runAutomationById(args: {
   }
 
   // ⚠️ A execução que não nasce de evento ganha a PRÓPRIA estadia (Codex, 9ª
-  // rodada): sem `evento_em`, o card que saía e voltava enquanto a execução
-  // manual esperava a acordava ao lado da execução nova da reentrada. A âncora
-  // é o último movimento conhecido do contato, pelo relógio do banco — ver
-  // `ancoraDaEstadia`. `null` de volta = sem movimento conhecido: só a posição.
-  const context = args.context?.evento_em
-    ? args.context
-    : {
-        ...args.context,
-        evento_em: await ancoraDaEstadia({
-          db: supabaseAdmin(),
-          automation: alvo,
-          contactId: args.contactId,
-        }),
-      };
+  // e 10ª rodadas): o CARD-ALVO e a âncora que o contexto de evento traz de
+  // graça. Sem `deal_id`, mover QUALQUER card do contato matava a execução
+  // manual; sem `evento_em`, o card que saía e voltava enquanto ela esperava a
+  // acordava ao lado da execução nova da reentrada. Ver `estadiaSemEvento`.
+  // Só o que o contexto não trouxe é preenchido.
+  let context = args.context;
+  if (!context?.deal_id || !context?.evento_em) {
+    const estadia = await estadiaSemEvento({
+      db: supabaseAdmin(),
+      automation: alvo,
+      contactId: args.contactId,
+    });
+    context = {
+      ...context,
+      deal_id: context?.deal_id ?? estadia.deal_id,
+      evento_em: context?.evento_em ?? estadia.evento_em,
+    };
+  }
   await executeAutomation(
     {
       accountId: args.accountId,
@@ -981,6 +996,11 @@ async function executeStepsFrom(
       return status;
     }
     if (situacao === 'erro') {
+      // A irmã estacionada num ramo não pode acordar depois de a execução
+      // parar "para não cobrar quem pode ter saído" (10ª rodada). Sem marca:
+      // o desfecho `falhou` é gravado no fim deste escopo e precisa ficar
+      // visível — a marca faria `fecharLog` calar.
+      await cancelarEsperasDaExecucao(db, args.logId);
       results.push({
         step_id: step.id,
         step_type: step.step_type,
@@ -1710,7 +1730,7 @@ async function runStep(
           // antes de acionar — a filha presa à etapa nova leria esse
           // movimento como "saiu" com o card DENTRO dela (revisão por duas
           // lentes, 19/09). Zerado aqui, `runAutomationById` ancora a estadia
-          // PRÓPRIA da filha no último movimento conhecido (`ancoraDaEstadia`).
+          // PRÓPRIA da filha no último movimento do card (`estadiaSemEvento`).
           evento_em: null,
           vars: { ...(args.context.vars ?? {}), _cadeia: passo.cadeia },
         },

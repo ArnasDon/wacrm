@@ -10,15 +10,16 @@ import path from 'node:path';
 //
 //  1. a tabela é FECHADA ao navegador (RLS ligada, zero policy, REVOKE das
 //     duas metades) — o mesmo racional do `rls-das-tabelas-dos-webhooks`;
-//  2. a fórmula de `aguardando_desde` é a MESMA do gatilho de mensagem
-//     apagada da 972. São duas cópias em SQL; mudou numa, muda na outra —
-//     senão a conversa mostra "em atraso" por uma régua ao receber mensagem
-//     antiga e por outra ao apagar mensagem;
+//  2. a função de `aguardando_desde` usa a MESMA régua de "resposta de gente"
+//     do gatilho da 972 (`sender_id` OU `from_device`, mensagem apagada não
+//     conta) — e NÃO copia o recálculo canônico do gatilho de mensagem
+//     apagada, que ressuscita espera já limpa por um encerramento (medido
+//     pela revisão em 19/09/2026);
 //  3. os nomes que o código TypeScript usa existem no SQL (tabela, colunas,
 //     função e parâmetros): o dublê dos testes imita a forma SUPOSTA.
 //
 // LIMITE DECLARADO: lê o `.sql`. O COMPORTAMENTO foi medido num Postgres 16
-// descartável (13 cenários, com o gatilho REAL da 972) — ver
+// descartável (20 cenários, com o gatilho REAL da 972) — ver
 // docs/PLANO-lid-sem-telefone.md, T13.
 // ============================================================
 
@@ -68,7 +69,8 @@ describe('1009 — a tabela das mensagens sem telefone é fechada ao navegador',
   });
 
   it('a função: REVOKE das duas metades + GRANT de volta ao service_role', () => {
-    const f = 'public\\.cb_assentar_mensagem_historica\\(uuid,\\s*boolean\\)';
+    const f =
+      'public\\.cb_assentar_mensagem_historica\\(uuid,\\s*timestamptz,\\s*boolean,\\s*timestamptz,\\s*boolean\\)';
     expect(
       new RegExp(`revoke\\s+execute\\s+on\\s+function\\s+${f}\\s+from\\s+public,\\s*anon,\\s*authenticated`, 'i').test(
         sql1009,
@@ -92,31 +94,59 @@ describe('1009 — a tabela das mensagens sem telefone é fechada ao navegador',
   });
 });
 
-describe('1009 × 972 — UMA régua de "desde quando o cliente espera"', () => {
-  /** A subconsulta canônica, do `select min(` até fechar — sem espaços nem caixa. */
-  function formula(sql: string): string {
-    const texto = compacto(sql);
-    const ini = texto.indexOf('select min(m.created_at)');
+describe('1009 × 972 — a função desfaz só o que ESTA mensagem estragou', () => {
+  /** O corpo da função, do `as $$` ao `$$;` — sem espaços nem caixa. */
+  const corpo = (() => {
+    const texto = compacto(sql1009);
+    const ini = texto.indexOf('create or replace function public.cb_assentar_mensagem_historica');
     expect(ini).toBeGreaterThan(-1);
-    const fim = texto.indexOf("'-infinity'::timestamptz)", ini);
-    expect(fim).toBeGreaterThan(ini);
-    return texto.slice(ini, fim);
-  }
+    const abre = texto.indexOf('as $$', ini);
+    const fecha = texto.indexOf('$$;', abre + 5);
+    expect(fecha).toBeGreaterThan(abre);
+    return texto.slice(abre, fecha);
+  })();
 
-  it('a fórmula da função é a do gatilho de mensagem apagada, termo a termo', () => {
-    // A 972 tem a fórmula DUAS vezes (gatilho e acervo); a primeira é a do gatilho.
-    expect(formula(sql1009)).toBe(formula(sql972));
-  });
-
-  it('gente = `sender_id` OU `from_device` (o celular pareado), e mensagem apagada não conta', () => {
-    const f = formula(sql1009);
-    expect(f).toContain('(h.sender_id is not null or h.from_device)');
-    expect(f).toContain('m.deleted_at is null');
-    expect(f).toContain('h.deleted_at is null');
+  it('gente = `sender_id` OU `from_device` (o celular pareado), e mensagem apagada não conta — a régua do gatilho da 972', () => {
+    const regua = '(h.sender_id is not null or h.from_device)';
+    expect(compacto(sql972)).toContain(regua);
+    // Duas perguntas "gente respondeu depois?" — uma por ramo (eco e cliente).
+    expect(corpo.split(regua).length - 1).toBe(2);
+    expect(corpo.split('h.deleted_at is null').length - 1).toBe(2);
+    expect(corpo).toContain('m.deleted_at is null');
   });
 
   it('grupo e conversa encerrada ficam NULOS — as duas invariantes que a 972 confere', () => {
-    expect(compacto(sql1009)).toContain("when c.group_id is not null or c.status = 'closed' then null");
+    expect(corpo).toContain("when c.group_id is not null or c.status = 'closed' then null");
+  });
+
+  // ⚠️ O pino do achado da revisão. O recálculo canônico ("a fala de cliente
+  // mais antiga depois da ÚLTIMA resposta de gente") não sabe que ENCERRAR
+  // limpa a espera: ressuscitava o "ok, obrigado" de semanas atrás. A forma
+  // dele é inconfundível — o `max(` da última resposta e o `-infinity`.
+  it('NÃO recalcula a espera do zero: sem `max(h.created_at)` e sem `-infinity`', () => {
+    expect(corpo).not.toContain('max(h.created_at)');
+    expect(corpo).not.toContain('-infinity');
+  });
+
+  it('tudo é relativo ao carimbo DESTA mensagem ou à espera que havia antes dela', () => {
+    expect(corpo).toContain('m.created_at > p_carimbo');
+    expect(corpo).toContain('h.created_at > p_carimbo');
+    expect(corpo).toContain('h.created_at > p_espera_antes');
+    expect(corpo).toContain('when p_espera_antes is null then c.aguardando_desde');
+    expect(corpo).toContain('when p_carimbo > p_espera_antes then');
+    expect(corpo).toContain('else least(p_espera_antes, c.aguardando_desde)');
+    // fala já respondida: desfaz SÓ o que o gatilho acabou de pôr (este carimbo)
+    expect(corpo).toContain('case when c.aguardando_desde = p_carimbo then null else c.aguardando_desde end');
+    expect(corpo).toContain('else least(c.aguardando_desde, p_carimbo)');
+  });
+
+  it('SECURITY INVOKER prova o privilégio trocando de papel, e concede o que confere', () => {
+    const t = compacto(sql1009);
+    expect(t).toContain('security invoker');
+    expect(t).toContain('grant select, update on table public.conversations to service_role');
+    expect(t).toContain('grant select on table public.messages to service_role');
+    expect(t).toContain('set local role service_role');
+    expect(t).toContain('exception when insufficient_privilege');
   });
 });
 
@@ -157,13 +187,25 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
     for (const v of ['acervo', 'religacao']) expect(sql1009).toContain(`'${v}'`);
   });
 
-  it('a função e os DOIS parâmetros que `historica.ts` passa', () => {
+  it('a função e os CINCO parâmetros que `historica.ts` passa — nem um a mais, nem um a menos', () => {
     const historica = ts('lib/whatsapp/sem-telefone/historica.ts');
     expect(historica).toContain("rpc('cb_assentar_mensagem_historica'");
-    for (const p of ['p_conversation_id', 'p_conta_nao_lida']) {
+    const PARAMETROS = ['p_conversation_id', 'p_carimbo', 'p_da_equipe', 'p_espera_antes', 'p_conta_nao_lida'];
+    for (const p of PARAMETROS) {
       expect(sql1009).toContain(p);
-      expect(historica).toContain(p);
+      expect(historica, `${p} em historica.ts`).toContain(`${p}:`);
     }
+    // O PostgREST resolve a função pelos NOMES dos argumentos: um parâmetro a
+    // mais ou a menos no TS dá "function not found", e a histórica entra sem
+    // o acerto da espera — com um erro no log como único rastro.
+    const noTs = [...historica.matchAll(/\b(p_[a-z_]+):/g)].map((m) => m[1]).sort();
+    expect(noTs).toEqual([...PARAMETROS].sort());
+    const assinatura = compacto(sql1009).match(
+      /create or replace function public\.cb_assentar_mensagem_historica\(([^)]*)\)/,
+    );
+    expect(assinatura).not.toBeNull();
+    const noSql = assinatura![1].split(',').map((x) => x.trim().split(' ')[0]).sort();
+    expect(noSql).toEqual([...PARAMETROS].sort());
   });
 
   it('a rota do Meu dia lê as colunas que existem', () => {

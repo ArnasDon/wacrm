@@ -1461,7 +1461,10 @@ docker image inspect ghcr.io/leonardocabralb/evolution-api-lidfix:2.3.2-lidfix@s
 # Medidores no log (o log só cobre desde o último reinício do contêiner)
 timeout 90 docker service logs evolution_evolution --since 24h 2>&1 | grep -cE 'Closing session|Closing stale'
 timeout 90 docker service logs evolution_evolution --since 24h 2>&1 | grep -c '"463"'
-timeout 90 docker service logs crm_crm --since 24h 2>&1 | grep -c 'DESCARTADA: endereçada por @lid'
+timeout 90 docker service logs crm_crm --since 24h 2>&1 | grep -c 'DESCARTADA: endereçada por @lid'   # desde a 1009: só quando a RETENÇÃO falhou — tem de ser zero
+timeout 90 docker service logs crm_crm --since 24h 2>&1 | grep -c 'RETIDA: endereçada por @lid'       # raro (~1 a cada 10 dias)
+# A fonte DURÁVEL das retidas é o banco do CRM (Supabase), não o log, que some quando o Swarm recicla a tarefa:
+#   select situacao, resolvida_por, count(*) from cb_mensagens_sem_telefone group by 1, 2;
 
 # Estado das instâncias (token não impresso). ⚠️ Atrás do portão de licença: 503 até ativar — use o banco.
 curl -s -m 20 -H "apikey: $KEY" https://api.cbadvogados.com/instance/fetchInstances | python3 -c 'import sys,json; [print(i["name"], i["connectionStatus"]) for i in json.load(sys.stdin)]'

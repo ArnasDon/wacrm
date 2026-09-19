@@ -68,15 +68,61 @@ describe('gravarHistorica', () => {
     expect(linha).not.toHaveProperty('from_device');
   });
 
-  it('o caso de 18/09: gente respondeu depois → NÃO conta não lida', async () => {
+  it('o caso de 18/09: gente respondeu depois → NÃO conta não lida, e a função recebe o carimbo e quem falou', async () => {
     const b = criarBanco({ messages: [ecoDoEscritorio()] });
     await gravarHistorica(b.db, recuperada(), 'conv-1');
     expect(b.rpcs).toEqual([
       {
         nome: 'cb_assentar_mensagem_historica',
-        args: { p_conversation_id: 'conv-1', p_conta_nao_lida: false },
+        args: {
+          p_conversation_id: 'conv-1',
+          p_carimbo: CARIMBO_ISO,
+          p_da_equipe: false,
+          p_espera_antes: null,
+          p_conta_nao_lida: false,
+        },
       },
     ]);
+  });
+
+  // O gatilho da 972 LIMPA a espera quando entra resposta de gente, sem olhar
+  // a ordem dos carimbos. Para devolver o que um eco ANTIGO apagou, a função
+  // precisa saber o que havia — lido ANTES do insert.
+  it('a espera de ANTES do insert vai para a função (é o que o gatilho da 972 apaga num eco antigo)', async () => {
+    const b = criarBanco({
+      messages: [],
+      conversations: [{ id: 'conv-1', aguardando_desde: '2026-09-18T16:10:00+00:00' }],
+    });
+    await gravarHistorica(b.db, recuperada({ fromMe: true, providerMessageId: '3EB047' }), 'conv-1');
+    expect(b.rpcs[0].args).toMatchObject({
+      p_da_equipe: true,
+      p_espera_antes: '2026-09-18T16:10:00+00:00',
+    });
+  });
+
+  it('não consegui ler a espera de antes: a função recebe nulo (não devolve nada — o comportamento de hoje)', async () => {
+    const b = criarBanco({ messages: [] });
+    b.falhas.conversations = { message: 'timeout' };
+    const r = await gravarHistorica(b.db, recuperada(), 'conv-1');
+    expect(r.status).toBe('gravada');
+    expect(b.rpcs[0].args.p_espera_antes).toBeNull();
+  });
+
+  it('o gancho `antesDeAssentar` roda DEPOIS do insert e ANTES da função — e só quando a mensagem entrou', async () => {
+    const b = criarBanco({ messages: [] });
+    const passos: string[] = [];
+    await gravarHistorica(b.db, recuperada(), 'conv-1', {
+      antesDeAssentar: async () => {
+        passos.push(`gancho: ${b.tabelas.messages.length} mensagem(ns), ${b.rpcs.length} rpc(s)`);
+      },
+    });
+    expect(passos).toEqual(['gancho: 1 mensagem(ns), 0 rpc(s)']);
+    expect(b.rpcs).toHaveLength(1);
+
+    const dup = criarBanco({ messages: [{ id: 'm0', conversation_id: 'conv-1', message_id: 'ACA5A459' }] });
+    const gancho = vi.fn(async () => {});
+    await gravarHistorica(dup.db, recuperada(), 'conv-1', { antesDeAssentar: gancho });
+    expect(gancho).not.toHaveBeenCalled();
   });
 
   it('ninguém da equipe respondeu depois → conta não lida', async () => {
@@ -138,6 +184,22 @@ describe('gravarHistorica', () => {
     b.falhas.messages = { code: '57014', message: 'statement timeout' };
     expect(await gravarHistorica(b.db, recuperada(), 'conv-1')).toEqual({ status: 'falhou' });
     expect(b.rpcs).toEqual([]);
+  });
+
+  // O `details` de uma violação de CHECK/NOT NULL traz a LINHA recusada, com
+  // o texto do cliente dentro. O log é lido por quem não deveria ler conversa.
+  it('o log da falha leva só o código e a mensagem — nunca o `details` com a linha do cliente', async () => {
+    const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const b = criarBanco();
+    b.falhas.messages = {
+      code: '23514',
+      message: 'new row violates check constraint',
+      details: 'Failing row contains (…, Olá, gostaria de informações, …)',
+    } as never;
+    await gravarHistorica(b.db, recuperada(), 'conv-1');
+    const impresso = JSON.stringify(erro.mock.calls);
+    expect(impresso).toContain('23514');
+    expect(impresso).not.toContain('gostaria de informações');
   });
 
   it('a função da 1009 falhando NÃO desfaz a mensagem: ela já está no fio', async () => {

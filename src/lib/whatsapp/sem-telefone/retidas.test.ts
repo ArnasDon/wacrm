@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { criarBanco } from './banco.test-helper';
 import {
+  MAXIMO_DE_RETIDAS_POR_VEZ,
   marcarDuplicada,
   marcarEntregue,
   reter,
@@ -98,6 +99,19 @@ describe('retidas', () => {
     const r = await retidasDoLid(b.db, 'conta-1', LID);
     expect(r.map((x) => x.providerMessageId)).toEqual(['A', 'B']);
     expect(r[0]).toMatchObject({ channelId: 'canal-1', payload: { n: 'A' } });
+  });
+
+  // Religar roda DENTRO do processamento de uma mensagem normal: um acúmulo
+  // (a conexão que ficou semanas sem religar ninguém) não pode virar uma
+  // rajada de centenas de inserts no caminho dela.
+  it('retidasDoLid tem TETO — as mais antigas primeiro, o resto fica para a mensagem seguinte', async () => {
+    const b = criarBanco();
+    for (let i = 0; i < MAXIMO_DE_RETIDAS_POR_VEZ + 7; i++) {
+      await reter(b.db, ocorrencia({ providerMessageId: `M${String(i).padStart(3, '0')}`, carimboSeg: 1000 + i }), {});
+    }
+    const r = await retidasDoLid(b.db, 'conta-1', LID);
+    expect(r).toHaveLength(MAXIMO_DE_RETIDAS_POR_VEZ);
+    expect(r[0].providerMessageId).toBe('M000');
   });
 
   it('retidasDoLid que FALHA devolve lista vazia — a mensagem normal não paga por isto', async () => {

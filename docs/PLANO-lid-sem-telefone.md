@@ -4,7 +4,7 @@ Documento INTERNO e vivo. Atualizar a cada fase concluída.
 
 | | |
 | --- | --- |
-| **Estado** | Em implementação (branch `fix/lid-sem-telefone`). Nada em produção. |
+| **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (seção 6.2). Nada em produção. |
 | **Decisão do operador (19/09/2026)** | Fazer as Fases 1 e 2; a Fase 3 (patch na imagem da Evolution) fica de fora. "Não quero quebrar o que está funcionando" — cautela é requisito. |
 | **Migration** | `1009_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
 
@@ -86,12 +86,13 @@ Item em `@lid` sem telefone, nesta ordem (`receberSemTelefone`):
   telefone", com a conexão e a hora — "veja no celular". Conta só os últimos
   7 dias (a antiga continua religável; só deixa de ocupar a tela).
 
-### 4.3 Os dois modos de gravação (a decisão mais sensível)
+### 4.3 Os três modos de gravação (a decisão mais sensível)
 
 | Modo | Quando | O que faz |
 | --- | --- | --- |
-| **nova** | a mensagem é a MAIS RECENTE da conversa **e** tem até 5 min | passa pelo caminho normal (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele — motores inclusive |
-| **histórica** | qualquer outro caso (alguém já escreveu depois, ou ela é velha) | só ENTRA no histórico, no lugar certo do fio. **Nenhum motor** (automação, robô, IA), não reabre, não segue canal, não mede atraso de entrega, não abre negócio |
+| **nova** | a mensagem é a MAIS RECENTE da conversa **e** tem até 4 min | passa pelo caminho normal (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele — motores inclusive |
+| **tardia** | é a MAIS RECENTE da conversa, mas tem mais de 4 min (a cópia depende de o celular pareado estar acordado) | entra como história — **nenhum motor** — e a CONVERSA passa a refleti-la: reabre se estava encerrada (sem responsável), prévia canônica e `last_message_at` (`tardia.ts`) |
+| **histórica** | alguém já escreveu depois dela | só ENTRA no histórico, no lugar certo do fio. **Nenhum motor** (automação, robô, IA), não reabre, não segue canal, não mede atraso de entrega, não abre negócio, e a conversa não se mexe |
 
 Por que `nova` dispara os motores: a cópia do celular e a cópia normal (quando
 as duas chegam) disputam o mesmo `UNIQUE (conversation_id, message_id)`. Se a
@@ -100,20 +101,46 @@ descartada como duplicata e os motores não rodariam para aquela mensagem — um
 regressão em relação a hoje. Com `nova`, quem chega primeiro recebe o tratamento
 completo, uma vez só (os motores rodam DEPOIS do insert, e só para quem ganhou).
 
-Por que `histórica` não dispara nada: o robô leria uma mensagem antiga DEPOIS
-das mais novas (um menu consumiria a resposta errada), a IA responderia a algo
-de horas atrás, e a automação de boas-vindas sairia depois de gente já ter
-respondido.
+Por que `tardia` e `histórica` não disparam nada: o robô leria uma mensagem
+antiga DEPOIS das mais novas (um menu consumiria a resposta errada), a IA
+responderia a algo de horas atrás, e a automação de boas-vindas sairia depois de
+gente já ter respondido.
 
-Na histórica, o que acontece além do insert (função `cb_assentar_mensagem_historica`):
+Por que `tardia` existe (achado das duas lentes): tratada como história pura, a
+fala de um cliente cuja conversa estava ENCERRADA entrava sem reabrir, sem
+prévia e sem subir na lista — visível só para quem abrisse a aba Encerradas. O
+argumento da histórica ("reabrir desfaria um encerramento decidido com
+informação mais nova") não vale quando não existe nada mais novo do que ela.
 
-- `aguardando_desde` é **recalculado pela fórmula canônica da 972** (a mesma do
-  gatilho de mensagem apagada). Sem isso o gatilho de INSERT — que conta por
-  ordem de INSERÇÃO — acenderia "em atraso há 3 h" sobre cliente que já foi
-  respondido, ou apagaria um atraso verdadeiro (eco antigo do escritório).
+Por que 4 min e não os 5 do alarme de atraso de entrega (1002): a `nova` chama
+`registrarEntrega`, que mede o atraso DEPOIS da espera de 2 s do `jaGravada` e
+das consultas do caminho. Com o teto colado no limiar, a cópia que chegasse aos
+4:58 acendia "conexão entregando com atraso" numa conexão sadia.
+
+Na tardia e na histórica, o que acontece além do insert (função
+`cb_assentar_mensagem_historica`):
+
+- `aguardando_desde` é **acertado de forma cirúrgica**: a função desfaz só o que
+  ESTA mensagem estragou no gatilho de INSERT da 972, que decide pela ordem de
+  INSERÇÃO — fala de cliente preenche a espera vazia mesmo já respondida, e
+  resposta de gente limpa a espera mesmo que o cliente só tenha escrito depois
+  dela. Para o eco, a função precisa da espera que havia ANTES do insert
+  (`p_espera_antes`, lida em `historica.ts`): depois que o gatilho limpa, o
+  banco não sabe mais o que era. ⚠️ A 1ª versão copiava o recálculo canônico do
+  gatilho de mensagem apagada da 972, e a revisão MEDIU o defeito dele: a
+  fórmula não sabe que ENCERRAR limpa a espera, e ressuscitava o "ok, obrigado"
+  de semanas atrás como espera de 9 dias (o mesmo defeito continua naquele
+  gatilho — fora do escopo).
 - **Não lida +1** só quando é mensagem de CLIENTE sem resposta de gente depois.
 - `updated_at` sempre — é o que faz o realtime corrigir a lista de quem está com
   a caixa de entrada aberta.
+
+**O fio ABERTO continua acrescentando a mensagem do realtime no FIM.** A 1ª
+versão inseria pelo carimbo e foi revertida na revisão: mudava o comportamento
+de TODA mensagem atrasada (não só da recuperada), e na conversa aberta a não
+lida é forçada a zero — a mensagem inserida acima da dobra passaria
+despercebida. No fim, a recuperada aparece como a última bolha, com a hora dela,
+e vai para o lugar do carimbo ao recarregar.
 
 ### 4.4 O que NÃO muda
 
@@ -131,30 +158,48 @@ Na histórica, o que acontece além do insert (função `cb_assentar_mensagem_hi
 | R1 | Quebrar o caminho da mensagem normal | alta | Nenhuma linha dele muda. `normalizeUpsert` ganha parâmetro OPCIONAL. A única adição (religar) roda depois de tudo gravado, em `try/catch`, e nunca lança. Pino de regressão no teste da rota: mensagem com telefone chama os mesmos persistidores com os mesmos argumentos. |
 | R2 | Mensagem cair no contato ERRADO | alta | LID exato, escopo de conta, só 1:1, só JID de telefone, a mais recente. Medido: 0 LIDs ambíguos em 959. O LID jamais vira `phone`. |
 | R3 | Mensagem duplicada no fio | média | `jaGravada` antes de tudo + `UNIQUE (conversation_id, message_id)` como árbitro; quem perde a corrida não faz mais nada. |
-| R4 | Motor disparar em dobro, ou tarde | alta | Só no modo `nova` (mais recente + ≤ 5 min), pelo caminho normal, onde o insert vem antes dos motores. Religação nunca é `nova` na prática (há sempre uma mensagem mais nova: a que trouxe o telefone). |
-| R5 | "Em atraso" falso, ou atraso verdadeiro apagado | média | Recalcular pela fórmula canônica depois de todo insert histórico. Corrida residual (mensagem nova do cliente no mesmo instante do recálculo) aceita: é a MESMA instrução que o gatilho de mensagem apagada roda desde 02/09. |
-| R6 | Alarme falso de "conexão entregando com atraso" (1002) | média | A histórica não chama `registrarEntrega`. A `nova` tem teto de 5 min = o limiar do alarme (que é "maior que 5 min"). |
-| R7 | Lista/fio errados para quem está com a tela aberta | baixa | `updated_at` na conversa faz o realtime convergir a lista; o fio passa a inserir a mensagem atrasada na ORDEM do carimbo (só muda algo quando ela é mais antiga que a última — hoje ela apareceria no fim). |
+| R4 | Motor disparar em dobro, ou tarde | alta | Só no modo `nova` (mais recente + ≤ 4 min), pelo caminho normal, onde o insert vem antes dos motores. Na religação quase sempre há uma mensagem mais nova (a que trouxe o telefone); a exceção é o eco ATRASADO destravando uma fala mais recente, ou o empate no mesmo segundo — nos dois casos a retida é de fato a última, e `nova` é o certo. Default-deny de quem chama o caminho normal (`inbound-store.chamadores.test.ts`). |
+| R5 | "Em atraso" falso, ou atraso verdadeiro apagado | média | Função CIRÚRGICA depois de todo insert histórico: desfaz só o que esta mensagem estragou (20 cenários num Postgres 16 com o gatilho real). NÃO é o recálculo canônico — ele ressuscita espera já limpa por um encerramento (medido pela revisão). Corrida residual: entre ler a espera de antes e assentar (~100 ms) cabe uma resposta real — a função confere "gente respondeu depois da espera?" antes de devolver qualquer coisa. |
+| R6 | Alarme falso de "conexão entregando com atraso" (1002) | média | Tardia e histórica não chamam `registrarEntrega`. A `nova` tem teto de 4 min, com folga de 1 min sobre o limiar do alarme (o atraso é medido depois da espera do `jaGravada`); há teste cobrando a folga. |
+| R7 | Lista/fio errados para quem está com a tela aberta | baixa | `updated_at` na conversa faz o realtime convergir a lista. O fio aberto NÃO muda: a recuperada aparece no fim, com a hora dela, até recarregar — de propósito (inserir pelo carimbo mexia em toda mensagem atrasada e podia esconder a bolha acima da dobra; revertido na revisão). |
 | R8 | Deploy antes da migration | média | Tudo tolera a tabela/função ausentes: a Fase 1 funciona, a retenção cai no descarte de hoje, o religar loga UMA vez por processo. A regra continua: migration antes do merge. |
 | R9 | Bloco do Meu dia degradado | baixa | Falha SÓ da fonte nova vira "não consegui conferir" daquela fonte — nunca 500 da rota inteira (o que derrubaria Calendly e webhooks junto). |
-| R10 | Anexo de retida religada por OUTRA conexão | baixa | O download usa a conexão DA RETIDA, não a do webhook que destravou. Conexão apagada → sem anexo (mensagem entra). |
+| R10 | Anexo de retida religada por OUTRA conexão | baixa | O download usa a conexão DA RETIDA, não a do webhook que destravou. Conexão apagada → o download é PULADO (com canal nulo ele cairia no canal padrão da conta, que nunca viu a mensagem); a mensagem entra sem anexo. Pino lendo a rota. |
 | R11 | "Parar se o cliente responder" (#223) | baixa | A histórica NÃO chama `cancelarEsperasPorResposta` (há default-deny). A segunda linha de defesa lê `gravada_em` (= agora): a espera criada ANTES da religação para — o lado que o projeto já escolheu como seguro ("entre os dois, cancela"); a criada DEPOIS não é afetada. |
 | R12 | Instrumento de atraso (1003) poluído | baixa | A recuperada aparece como atraso grande em `gravada_em − created_at` — é verdade (o CRM gravou tarde). A tabela nova lista quais são, para excluir numa medição. |
 | R13 | Payload (conteúdo de cliente) guardado | média | Tabela sem policy, `REVOKE` de `anon`/`authenticated`, só service role. Payload apagado ao entregar. |
-| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por mensagem 1:1. A resolução do LID só roda no caso raro (sem índice em `messages.remote_jid_lid`, de propósito: não se mexe em índice da tabela quente por ~5 consultas/mês). |
+| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por mensagem 1:1, com teto de 50 retidas por vez. A resolução do LID só roda no caso raro — medido em produção: ~5 ms (varredura de 14,4 mil linhas em cache; sem índice em `messages.remote_jid_lid`, de propósito). |
+| R15 | `first_inbound_message` deixa de disparar para o lead cuja 1ª fala entrou como história | média | Só quando quem destrava é o ECO do escritório (gente já respondeu): a fala retida entra como `customer` antes de o cliente escrever de novo, e a mensagem seguinte dele não é mais "a primeira". Lado ESCOLHIDO — boas-vindas de robô depois de gente responder — e escrito na rota e no CLAUDE.md. Medido em 19/09: nenhuma automação nem fluxo ativo usa o gatilho. Quando quem destrava é o próprio cliente, a mensagem dele é gravada ANTES e o gatilho vale como hoje. |
+| R16 | Mensagem tardia invisível em conversa encerrada | média | Modo `tardia`: reabre (sem responsável), prévia e posição — pelo mesmo helper dos caminhos normais, ENTRE o insert e o acerto da espera. |
+| R17 | `nova` que perde a corrida do `UNIQUE` vira "retida" falsa no Meu dia | baixa | `entregar.ts` confere se a mensagem está na conversa antes de responder `falhou`: está → `duplicada`, nada a reter. |
 
-**Limites conhecidos (aceitos, escritos):** mensagem retida que o cliente APAGOU
-antes de religar entra como se não tivesse sido apagada; citação feita a uma
-retida fica sem vínculo; lead retido que nunca mais escreve e a quem ninguém
-responde pelo celular fica retido (visível no Meu dia por 7 dias) — só a Fase 3
-resolveria na hora.
+**Limites conhecidos (aceitos, escritos):**
+
+- mensagem retida que o cliente APAGOU ou EDITOU antes de religar entra como foi
+  enviada; citação feita a uma retida fica sem vínculo;
+- lead retido que nunca mais escreve e a quem ninguém responde pelo celular fica
+  retido (visível no Meu dia por 7 dias) — só a Fase 3 resolveria na hora;
+- o eco de um envio feito PELO CRM não destrava retida: ele sai no `jaGravada`
+  antes do bloco de religação, e `send-message.ts` não grava `remote_jid_lid`.
+  A retida espera a próxima mensagem do cliente ou um eco do celular pareado;
+- cópia histórica que chega ANTES da cópia normal da mesma mensagem ganha o
+  `UNIQUE`, e a normal é pulada sem rodar motor (exige: cópia sem telefone ×
+  chegar primeiro × alguém ter escrito depois dela em segundos);
+- a tardia e a histórica não emitem o webhook de saída `message.received`
+  (zero endpoints ativos hoje);
+- áudio histórico pode ser recusado pela transcrição se alguém a pedir nos
+  segundos antes de o anexo chegar (a janela de 2 min de `transcrever.ts` conta
+  do `created_at`, que aqui é antigo);
+- retida que NUNCA religa guarda o payload sem prazo, e sem vínculo com ficha
+  (apagar o contato não a alcança) — **decisão pendente do operador**: expirar
+  depois de N dias?
 
 ## 6. Matriz de testes
 
 | # | O quê | Tipo |
 | --- | --- | --- |
 | T1 | `normalizeUpsert` com telefone resolvido: usa o telefone, guarda o LID, recusa LID/grupo/JID torto como "telefone", e sem a opção continua descartando | unidade (puro) |
-| T2 | `modoDaRecuperada`: mais recente × antiga, fronteira dos 5 min, conversa vazia, carimbo igual | unidade (puro) |
+| T2 | `modoDaRecuperada`: nova × tardia × histórica, fronteira dos 4 min (com folga sobre o alarme da 1002), conversa vazia, carimbo igual | unidade (puro) |
 | T3 | `resolverTelefoneDoLid`: a mais recente vence; ignora grupo e JID que não é telefone; escopo de conta; erro → nulo | unidade (banco falso) |
 | T4 | Retidas: inserir idempotente, tabela ausente tolerada, listar só `retida`, marcar com cerca | unidade (banco falso) |
 | T5 | `gravarHistorica`: forma do insert (cliente × celular), 23505 = duplicata sem efeitos, flag de não lida, RPC chamada | unidade (banco falso) |
@@ -165,43 +210,102 @@ resolveria na hora.
 | T10 | Rota: tabela ausente → a mensagem normal continua entrando | rota |
 | T11 | Estrutural: o escritor histórico NÃO importa motores, funil, reabertura, atraso de entrega nem o cancelamento de esperas | leitura do fonte |
 | T12 | Estruturais existentes continuam verdes (canal no insert, reabertura, funil, dono durável, nome fixado, parar-se-responder, transporte) | suíte |
-| T13 | Migration num Postgres 16 limpo: tabela fechada, privilégios (as duas metades), idempotência, FK composta com `SET NULL`, e a função nos cenários R5 (falso atraso some; atraso verdadeiro volta; encerrada/grupo → nulo; não lida) | Postgres local |
+| T13 | Migration num Postgres 16 limpo, só com as concessões dela: tabela fechada, privilégios (as duas metades, trocando de papel), idempotência, FK composta com `SET NULL`, e a função em 14 cenários com o gatilho REAL da 972 — inclusive o achado da revisão (a espera de semanas atrás NÃO ressuscita) e a corrida (resposta real durante a janela vence) | Postgres local |
 | T14 | Texto da migration: RLS ligada, zero policy, `REVOKE` | leitura do SQL |
-| T15 | `inserirNaOrdem` (fio em tempo real) | unidade (puro) |
+| T15 | `tardia`: reabre sem responsável, prévia canônica, posição, nunca lança; a ORDEM insert → reabrir → assentar | unidade (banco falso) |
+| T15b | Default-deny de quem chama o caminho normal de ingestão; a fase de mídia pula a retida de conexão apagada e o item normal segue sem a chave | leitura do fonte |
 | T16 | Meu dia: fonte nova na ordem, ausência = "carregando", chaves nos dois dicionários | unidade + portões de i18n |
 | T17 | `typecheck`, `lint` (ler "✖ N problems"), suíte em Node 22, `i18n-parity`, `i18n-chaves-usadas`, `build` | portões |
 | T18 | Ponta a ponta no preview com o lead de teste autorizado — **só com autorização**: o preview usa o banco de PRODUÇÃO | manual |
 
-### 6.1 Execução da matriz (19/09/2026)
+### 6.1 Execução da matriz (19/09/2026, depois da revisão)
 
-- **T1–T12, T14–T16:** 131 testes nos 12 arquivos novos (mais 9 casos
-  acrescentados a `evolution-inbound.test.ts` e `correcoes.test.ts`), todos
-  verdes. Suíte inteira em Node 22: **349 arquivos, 4.447 testes, zero falha**.
-- **Mutação** (o teste pega o defeito que diz pegar?): regras quebradas de
-  propósito, uma por vez, e desfeitas — (1) dúvida sobre "qual é a última da
-  conversa" virando `nova` em vez de `historica`; (2) mensagem ANTIGA passando
-  pelo caminho dos motores; (3) a duplicata deixando de ser filtrada na
-  chegada; (4) o anexo perdendo a conexão da retida; (5) o eco do escritório
-  contando como não lida. As cinco reprovaram (1, 5, 2, 1 e 1 testes).
-- **T13:** Postgres 16 descartável (Homebrew, só TCP): a 1009 aplica em banco
-  limpo, é idempotente (2ª passada sem erro) e passou 13 cenários com o
-  gatilho REAL da 972 — falso "em atraso" some (C1), atraso verdadeiro volta
-  (C2), encerrada e grupo ficam nulos (C3/C4), não lida soma só quando pedido
-  (C5/C6), `updated_at` avança (C7); CHECK do payload, UNIQUE, FK composta com
-  `SET NULL (channel_id)`, CASCADE da conta (T1–T5); e os privilégios
-  trocando de papel (`anon`/`authenticated` sem nada, `service_role` com tudo).
-- **T17:** `tsc` limpo; `eslint` sem erro (um aviso PRÉ-EXISTENTE no `main`,
-  `toast` sem uso em `inbox/page.tsx`); `i18n-parity` e `i18n-chaves-usadas`
-  verdes; `next build` com saída 0.
+- **Unidade, rota e estruturais:** 124 testes em `sem-telefone/`, 12 na rota,
+  o default-deny novo do caminho normal e os pinos do SQL — todos verdes. Suíte
+  inteira em Node 22, já com o `main` de 19/09 mesclado: **353 arquivos, 4.502
+  testes, zero falha**.
+- **Mutação** (o teste pega o defeito que diz pegar?) — 13 regras quebradas de
+  propósito, uma por vez, e desfeitas; as 13 reprovaram: dúvida sobre "qual é a
+  última" virando `nova`; mensagem ANTIGA passando pelos motores; duplicata não
+  filtrada na chegada; anexo sem a conexão da retida; eco do escritório
+  contando não lida; LID aceito como "telefone resolvido"; a tardia sem
+  reabrir; `nova` que perdeu o `UNIQUE` voltando a ser `falhou`; a conta sem a
+  conferência em JS; a histórica citando `registrarEntrega`; o teto da `nova`
+  colado no alarme da 1002; a rota sem religar; a fase de mídia sem pular a
+  retida de conexão apagada.
+- **T13:** Postgres 16 descartável (Homebrew, só TCP), banco limpo **só com as
+  concessões da própria migration**: aplica, é idempotente (2ª passada sem
+  erro), a conferência troca de papel — e 20 cenários com o gatilho REAL da
+  972: falso "em atraso" some (S1); eco anterior à espera devolve o atraso
+  verdadeiro (S2); eco no meio passa a espera para a fala seguinte (S3/S3b);
+  **o achado da revisão** — a espera de 01/09 que o encerramento limpou NÃO
+  ressuscita, nem por fala (S4) nem por eco (S4b); robô não conta como resposta
+  (S5); encerrada e grupo ficam nulos (S6/S7); a tardia reaberta antes de
+  assentar fica "em atraso" desde o carimbo dela (S6b); resposta real durante a
+  janela vence (S8); espera posterior legítima fica (S9); eco onde ninguém
+  esperava não muda nada (S10); mensagem apagada não conta (S11); CHECK do
+  payload, UNIQUE, FK composta com `SET NULL (channel_id)`, CASCADE (T1–T5); e
+  os privilégios trocando de papel (P).
+- **T17:** `tsc` limpo; `eslint` 0 erros (49 avisos, todos pré-existentes — o
+  único em arquivo desta branch é o `toast` sem uso de `inbox/page.tsx`, que
+  ficou idêntico ao `main`); `i18n-parity` e `i18n-chaves-usadas` verdes;
+  `next build` com saída 0. CI do PR #226 verde no 1º push (replay incluso).
 - **Medição em produção, somente leitura (R2/R14):** 960 LIDs no acervo, ZERO
   com mais de um telefone, ZERO mensagens de grupo com LID gravado; a consulta
-  que resolve o LID custa ~5 ms (varredura de 14,4 mil linhas, tudo em cache).
-- **T18:** NÃO executado — depende de autorização (o preview escreve no banco
-  de produção) e da 1009 aplicada. É também onde se medem, contra o PostgREST
-  real, o `upsert(onConflict)` e o `rpc('cb_assentar_mensagem_historica')`; as
-  demais formas de consulta já rodam em produção noutros módulos.
-- **Revisão:** duas lentes independentes (regressão do caminho quente; banco e
-  concorrência) antes do PR; Codex no HEAD final antes de qualquer merge.
+  que resolve o LID custa ~5 ms.
+- **T18, parte 1 — preview contra a produção, ANTES da 1009 (o cenário "deploy
+  antes da migration"), com autorização do operador:**
+  - sem gravar nada: LID desconhecido → a retenção falha ("Could not find the
+    table…", uma vez) e sai o `DESCARTADA` de sempre, com `tipo: "text"`; a
+    duplicata sem telefone e a duplicata normal saem caladas; conferido por
+    consulta: zero linha nova, zero contato fantasma;
+  - gravando na conversa do lead de teste autorizado: a mensagem NORMAL entrou
+    exatamente como sempre (cliente, `delivered`, canal carimbado, par
+    telefone+LID, não lida 0→1, prévia e `last_message_at`, `aguardando_desde`
+    intocado, nenhum motor, nome da ficha igual) e o log não mostrou erro
+    nenhum; a cópia SEM telefone com carimbo de 20 min atrás foi resolvida pelo
+    acervo e entrou como história — a linha foi aceita pelo esquema REAL de
+    `messages`, no lugar certo do fio, sem mexer em não lida, prévia nem
+    posição, e o erro da função ausente ficou só no log;
+  - telas (operador logado, só leitura): o Meu dia abre com a fonte nova em
+    "1 verificação não respondeu" (a rota devolve `retidas: null` com 200, e
+    Calendly continua respondendo), a caixa de entrada lista normalmente, zero
+    erro no console.
+- **T18, parte 2 — depois da 1009 aplicada:** ver 6.3.
+
+### 6.2 Revisão por duas lentes (19/09/2026) — nenhum P1
+
+Dois revisores independentes, só leitura: **regressão do caminho quente** e
+**banco/concorrência**. Conferido e certo: `normalizeUpsert` sem a opção é
+idêntico ao anterior em 84 combinações de chave × corpo; os itens normais da
+fase de mídia não carregam a chave nova; `religarRetidas` não altera nem derruba
+a mensagem normal; sem ciclo de módulos; exatamente-uma-vez no modo `nova`; a
+rota do Meu dia é compatível nos dois sentidos de deploy; todas as formas de
+consulta têm precedente em produção. O que mudou por causa dela:
+
+| Achado | O que foi feito |
+| --- | --- |
+| **O número 1007 colidia** com a migration do PR #225 (outra sessão, já aplicada em produção) | renumerada para **1009** ANTES de aplicar — sexto caso de branches em paralelo |
+| Fala tardia de cliente, ainda a última, **invisível em conversa encerrada** | modo `tardia` (4.3) |
+| O recálculo canônico **ressuscitava espera já limpa por encerramento** (medido) | função cirúrgica + `p_espera_antes` (4.3, S4/S4b) |
+| `first_inbound_message` deixa de disparar quando o ECO destrava | decisão escrita (R15) — é o lado escolhido; a documentação que afirmava o contrário foi corrigida |
+| `inserirNaOrdem` mexia em TODA mensagem atrasada e podia escondê-la acima da dobra | **revertido**: o fio aberto continua acrescentando no fim |
+| `nova` que perde o `UNIQUE` virava "retida" falsa no Meu dia | `entregar.ts` confere e responde `duplicada` (R17) |
+| Conexão apagada: o anexo cairia no canal padrão, ao contrário do que a doc dizia | o download é pulado (R10) |
+| Teto da `nova` colado no alarme da 1002 | 4 min, com folga testada (R6) |
+| Sem default-deny de quem chama o caminho normal | `inbound-store.chamadores.test.ts` |
+| Escopo de conta do acervo dependia só do `!inner` (invisível ao banco falso) | conferido também em JS, com teste que ignora o filtro |
+| `retidasDoLid` sem teto; log do insert com o `details` (texto do cliente) | `limit(50)`; log só com código e mensagem |
+| Função `SECURITY INVOKER` sem prova trocando de papel | GRANT nas duas tabelas + conferência como `service_role` na migration |
+
+Ficaram como limite escrito (seção 5): o eco de envio do CRM não destrava; a
+histórica que vence a cópia normal; sem `message.received` para a histórica;
+edição de retida; janela da transcrição; retenção do payload sem prazo (decisão
+pendente do operador).
+
+### 6.3 T18, parte 2 — preview contra a produção, DEPOIS da 1009
+
+(preencher depois de aplicar)
 
 ## 7. Ordem de entrada e volta atrás
 
@@ -226,9 +330,12 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Fase 1 — código + testes
 - [x] Migration 1009 + teste em Postgres local
 - [x] Fase 2 — reter, religar, Meu dia + testes
-- [x] Fio em tempo real na ordem do carimbo
+- [x] ~~Fio em tempo real na ordem do carimbo~~ — revertido na revisão (4.3): o fio aberto continua acrescentando no fim
 - [x] Portões (T17)
-- [ ] Revisão por duas lentes + PR + Codex no HEAD final
-- [ ] T18 — ponta a ponta no preview (autorização)
-- [ ] 1009 aplicada em produção (autorização)
+- [x] PR #226 aberto; CI verde no 1º push (replay da migration incluso)
+- [x] Revisão por duas lentes — nenhum P1; achados tratados (6.2)
+- [x] T18, parte 1 — preview contra a produção ANTES da 1009 (6.1)
+- [ ] 1009 aplicada em produção (autorizada pelo operador em 19/09, depois do CI)
+- [ ] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza
+- [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

@@ -69,10 +69,16 @@ export async function resolverTelefoneDoLid(
     // foi medida neste banco.
     for (const linha of data ?? []) {
       const embutida = linha.conversations as
-        | { group_id?: string | null }
-        | { group_id?: string | null }[]
+        | { account_id?: string | null; group_id?: string | null }
+        | { account_id?: string | null; group_id?: string | null }[]
         | null;
       const conversa = Array.isArray(embutida) ? embutida[0] : embutida;
+      // ⚠️ A conta conferida TAMBÉM aqui. O recorte de verdade é o `!inner`
+      // acima — mas se alguém o tirar, o PostgREST passa a devolver mensagem
+      // de OUTRA conta com o embutido nulo, e nenhum teste com banco falso
+      // percebe (ele não lê o texto do `select`). Daqui sai a conversa onde
+      // uma mensagem de cliente vai ser gravada: sem a conta provada, não sai.
+      if (conversa?.account_id !== accountId) continue;
       if (conversa?.group_id) continue;
       const telefoneJid = linha.remote_jid as string | null;
       const conversationId = linha.conversation_id as string | null;

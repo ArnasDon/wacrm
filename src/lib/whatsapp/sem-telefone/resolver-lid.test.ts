@@ -31,6 +31,32 @@ describe('resolverTelefoneDoLid', () => {
     });
   });
 
+  // O recorte de verdade é o `!inner` da consulta — mas o banco falso não lê o
+  // texto do `select`: tirando o `!inner`, todo teste continuaria verde e o
+  // PostgREST real devolveria mensagem de OUTRA conta com o embutido nulo.
+  // Esta é a segunda barreira, em JS, provada com um banco que IGNORA o filtro.
+  it('a conta é conferida TAMBÉM em JS: linha de outra conta (ou sem a conversa embutida) não resolve nada', async () => {
+    const semFiltro = (linhas: Linha[]) => {
+      const q: Record<string, unknown> = {};
+      for (const k of ['select', 'eq', 'like', 'order']) q[k] = () => q;
+      q.limit = () => Promise.resolve({ data: linhas, error: null });
+      return { from: () => q } as never;
+    };
+    expect(
+      await resolverTelefoneDoLid(
+        semFiltro([mensagem({ conversations: { account_id: 'OUTRA-conta', group_id: null } })]),
+        'conta-1',
+        LID,
+      ),
+    ).toBeNull();
+    expect(await resolverTelefoneDoLid(semFiltro([mensagem({ conversations: null })]), 'conta-1', LID)).toBeNull();
+    // Controle: a mesma linha, da conta certa, resolve.
+    expect(await resolverTelefoneDoLid(semFiltro([mensagem()]), 'conta-1', LID)).toEqual({
+      telefoneJid: TEL,
+      conversationId: 'conv-1',
+    });
+  });
+
   it('LID nunca visto: null (a mensagem vai para a retenção)', async () => {
     const b = criarBanco({ messages: [mensagem()] });
     expect(await resolverTelefoneDoLid(b.db, 'conta-1', '111@lid')).toBeNull();

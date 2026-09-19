@@ -2,6 +2,7 @@
 // A mensagem recuperada já tem telefone. Como ela entra?
 //
 //   nova       pelo caminho NORMAL de ingestão, sem mudar uma linha dele;
+//   tardia     como história, e a conversa passa a refleti-la (`tardia.ts`);
 //   historica  só no fio (`historica.ts`).
 //
 // A regra é pura e mora em `modo.ts`; aqui só se pergunta ao banco qual é a
@@ -19,6 +20,7 @@ import {
 
 import { gravarHistorica } from './historica';
 import { modoDaRecuperada, type ModoDaRecuperada } from './modo';
+import { refletirComoUltima } from './tardia';
 
 export type Entrega =
   | { status: 'gravada'; modo: ModoDaRecuperada; messageId: string }
@@ -68,8 +70,12 @@ export async function entregarRecuperada(args: {
           ultimaDaConversaMs: ultima,
         });
 
-  if (modo === 'historica') {
-    const r = await gravarHistorica(db, m, conversationId);
+  if (modo !== 'nova') {
+    const r = await gravarHistorica(db, m, conversationId, {
+      // A `tardia` ainda é a última da conversa: reabre, prévia e posição —
+      // ENTRE o insert e o acerto da espera (ver `tardia.ts`).
+      antesDeAssentar: modo === 'tardia' ? () => refletirComoUltima(db, conversationId) : undefined,
+    });
     return r.status === 'gravada' ? { status: 'gravada', modo, messageId: r.messageId } : r;
   }
 
@@ -80,6 +86,30 @@ export async function entregarRecuperada(args: {
   const gravada = m.fromMe
     ? await persistDeviceMessage(db, m)
     : await persistInboundMessage(db, m);
-  if (!gravada) return { status: 'falhou' };
-  return { status: 'gravada', modo, messageId: gravada.messageId };
+  if (gravada) return { status: 'gravada', modo, messageId: gravada.messageId };
+
+  // ⚠️ `null` tem dois significados, e só um é falha. Se a cópia normal
+  // ganhou a corrida do `UNIQUE`, a mensagem ESTÁ no fio: responder `falhou`
+  // mandava quem chama RETER uma mensagem já entregue — e o Meu dia avisava
+  // "mensagem retida, veja no celular" por até 7 dias sobre conversa completa
+  // (revisão por duas lentes, 19/09/2026).
+  return (await jaEstaNaConversa(db, conversationId, m.providerMessageId))
+    ? { status: 'duplicada' }
+    : { status: 'falhou' };
+}
+
+/** Erro de leitura responde `false`: na dúvida, retém (a religação deduplica). */
+async function jaEstaNaConversa(
+  db: SupabaseClient,
+  conversationId: string,
+  providerMessageId: string
+): Promise<boolean> {
+  const { data, error } = await db
+    .from('messages')
+    .select('id')
+    .eq('conversation_id', conversationId)
+    .eq('message_id', providerMessageId)
+    .limit(1);
+  if (error) return false;
+  return (data ?? []).length > 0;
 }

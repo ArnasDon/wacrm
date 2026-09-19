@@ -100,16 +100,69 @@ describe('entregarRecuperada', () => {
     expect(b.tabelas.messages.some((x) => x.message_id === 'ACA5A459')).toBe(true);
   });
 
-  it('retida religada HORAS depois nunca passa pelos motores, mesmo sendo a última', async () => {
-    const b = criarBanco({ messages: [] });
+  it('TARDIA — horas depois e AINDA a última: sem motor nenhum, mas a conversa ENCERRADA reabre, ganha a prévia e sobe na lista', async () => {
+    const b = criarBanco({
+      messages: [
+        { id: 'velha', conversation_id: 'conv-1', sender_type: 'agent', sender_id: 'u1', deleted_at: null, content_text: 'até logo', content_type: 'text', created_at: iso(-86400) },
+      ],
+      conversations: [
+        { id: 'conv-1', status: 'closed', assigned_agent_id: 'u1', aguardando_desde: null, last_message_text: 'até logo', last_message_at: iso(-86400) },
+      ],
+    });
+    const r = await entregarRecuperada({
+      db: b.db,
+      m: recuperada({ text: 'Preciso falar com vocês' }),
+      conversationId: 'conv-1',
+      agoraMs: ms(3 * 3600),
+    });
+    expect(r).toMatchObject({ status: 'gravada', modo: 'tardia' });
+    // Nenhum motor: o caminho normal não foi chamado.
+    expect(h.persistInboundMessage).not.toHaveBeenCalled();
+    expect(h.persistDeviceMessage).not.toHaveBeenCalled();
+
+    const conversa = b.tabelas.conversations[0];
+    expect(conversa.status).toBe('open');
+    // Cliente reabre SEM responsável — o dono antigo não volta (regra da caixa em duas abas).
+    expect(conversa.assigned_agent_id).toBeNull();
+    expect(conversa.last_message_text).toBe('Preciso falar com vocês');
+    expect(Date.parse(conversa.last_message_at as string)).toBeGreaterThan(ms(-86400));
+
+    // A ordem é a regra: insert → reabrir → acertar a espera. A função do banco
+    // trata encerrada como "ninguém espera"; rodando antes de reabrir, a fala
+    // do cliente ficaria sem o "em atraso".
+    const ordem = b.escritas.map((e) => `${e.op}:${e.tabela}`);
+    const insert = ordem.indexOf('insert:messages');
+    const reabrir = b.escritas.findIndex(
+      (e) => e.tabela === 'conversations' && (e.payload as { status?: string }).status === 'open',
+    );
+    expect(insert).toBeGreaterThanOrEqual(0);
+    expect(reabrir).toBeGreaterThan(insert);
+    expect(b.rpcs).toHaveLength(1);
+    expect(b.rpcs[0].nome).toBe('cb_assentar_mensagem_historica');
+  });
+
+  it('HISTÓRICA (já escreveram depois) NÃO mexe na conversa: encerrada continua encerrada, prévia e posição intactas', async () => {
+    const b = criarBanco({
+      messages: [
+        { id: 'depois', conversation_id: 'conv-1', sender_type: 'agent', from_device: true, deleted_at: null, content_text: 'resolvido!', content_type: 'text', created_at: iso(60) },
+      ],
+      conversations: [
+        { id: 'conv-1', status: 'closed', assigned_agent_id: null, aguardando_desde: null, last_message_text: 'resolvido!', last_message_at: iso(60) },
+      ],
+    });
     const r = await entregarRecuperada({
       db: b.db,
       m: recuperada(),
       conversationId: 'conv-1',
       agoraMs: ms(3 * 3600),
     });
-    expect(r).toMatchObject({ modo: 'historica' });
-    expect(h.persistInboundMessage).not.toHaveBeenCalled();
+    expect(r).toMatchObject({ status: 'gravada', modo: 'historica' });
+    expect(b.tabelas.conversations[0]).toMatchObject({
+      status: 'closed',
+      last_message_text: 'resolvido!',
+      last_message_at: iso(60),
+    });
+    expect(b.escritas.filter((e) => e.tabela === 'conversations')).toEqual([]);
   });
 
   it('NÃO CONSEGUI LER a última da conversa → histórica (a dúvida não arrisca os motores)', async () => {
@@ -137,7 +190,7 @@ describe('entregarRecuperada', () => {
     expect(h.persistInboundMessage).not.toHaveBeenCalled();
   });
 
-  it('o caminho normal desistiu (a OUTRA cópia ganhou o UNIQUE): falhou, sem segunda tentativa', async () => {
+  it('o caminho normal desistiu e a mensagem NÃO está no fio: falhou, sem segunda tentativa (quem chama retém)', async () => {
     h.persistInboundMessage.mockResolvedValue(null);
     const b = criarBanco({ messages: [] });
     const r = await entregarRecuperada({
@@ -149,6 +202,22 @@ describe('entregarRecuperada', () => {
     expect(r).toEqual({ status: 'falhou' });
     expect(h.persistInboundMessage).toHaveBeenCalledTimes(1);
     expect(b.escritas).toEqual([]);
+  });
+
+  it('o caminho normal desistiu porque a OUTRA cópia ganhou o UNIQUE: DUPLICADA — a mensagem está no fio, nada a reter', async () => {
+    const b = criarBanco({ messages: [] });
+    // A cópia normal entra ENTRE a decisão do modo e o insert desta.
+    h.persistInboundMessage.mockImplementation(async () => {
+      b.tabelas.messages.push({ id: 'normal', conversation_id: 'conv-1', message_id: 'ACA5A459', created_at: iso(0) });
+      return null;
+    });
+    const r = await entregarRecuperada({
+      db: b.db,
+      m: recuperada(),
+      conversationId: 'conv-1',
+      agoraMs: ms(5),
+    });
+    expect(r).toEqual({ status: 'duplicada' });
   });
 
   it('histórica que bate no UNIQUE devolve duplicada', async () => {

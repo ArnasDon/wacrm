@@ -358,11 +358,20 @@ export async function POST(request: Request) {
           // Esta mensagem trouxe o PAR (telefone + LID). Se havia fala daquele
           // LID retida por falta de telefone, ela entra na conversa agora —
           // tipicamente o eco da resposta do escritório destravando a primeira
-          // mensagem do lead. ⚠️ DEPOIS de tudo desta mensagem, de propósito:
-          // os motores viram exatamente o que veriam sem a retida (é o que
-          // mantém o gatilho "primeira mensagem" igual ao de hoje), e a retida
-          // entra como história. Sai sem consultar nada quando a conversa não
-          // é endereçada por LID; nunca lança. Ver `sem-telefone/religar.ts`.
+          // mensagem do lead. ⚠️ DEPOIS de gravar esta mensagem e de rodar os
+          // motores dela, de propósito: eles viram exatamente o que veriam sem
+          // a retida, e a retida entra como história. (A foto e o anexo desta
+          // mensagem estão só ENFILEIRADOS aqui; são buscados depois do laço.)
+          // Sai sem consultar nada quando a conversa não é endereçada por LID;
+          // nunca lança. Ver `sem-telefone/religar.ts`.
+          //
+          // ⚠️ Uma consequência escrita: quando quem destrava é o ECO do
+          // escritório, a fala retida entra como mensagem de cliente ANTES de
+          // o cliente escrever de novo — e a mensagem seguinte dele deixa de
+          // ser "a primeira" para o gatilho `first_inbound_message`. É o lado
+          // escolhido: boas-vindas de robô depois de gente já ter respondido.
+          // Quando quem destrava é o próprio cliente, a mensagem DELE foi
+          // gravada antes (acima) e o gatilho vale como hoje.
           if (gravada) {
             semAnexo.push(
               ...(await religarRetidas({
@@ -420,11 +429,19 @@ export async function POST(request: Request) {
             continue; // fica com media_state='pending'
           }
 
+          // ---- RETIDA CUJA CONEXÃO FOI APAGADA ----
+          // A mídia de uma retida só existe na instância por onde ELA chegou.
+          // Com a conexão apagada (`channelId: null` — a chave existe, e é
+          // nula de propósito) não há onde buscar: `resolveEvolutionMedia`
+          // com canal nulo cairia no canal PADRÃO da conta, que nunca viu
+          // esta mensagem. A mensagem entrou; o anexo, não.
+          if ('channelId' in pendente && pendente.channelId == null) continue;
+
           const midia = await resolveEvolutionMedia(
             route.accountId,
-            // `in`, e não `??`: a retida cuja conexão foi APAGADA traz `null`
-            // de propósito, e cair no canal deste webhook buscaria a mídia na
-            // instância errada.
+            // `in`, e não `??`: item normal não carrega a chave e usa o canal
+            // deste webhook, como sempre; a retida usa o DELA — quem destravou
+            // pode ter chegado por outro número.
             'channelId' in pendente ? (pendente.channelId ?? null) : route.channelId,
             pendente.item,
             pendente.contentType,

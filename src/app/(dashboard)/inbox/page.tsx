@@ -24,7 +24,6 @@ import { conversaNoEscopo } from "@/lib/perfis/escopo";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { VoltarAoFunil } from "@/components/inbox/voltar-ao-funil";
 import { avisarExecucoesMudaram } from "@/lib/execucoes/aviso";
-import { inserirNaOrdem } from "@/lib/inbox/ordem-do-fio";
 import { urlDoInbox } from "@/lib/inbox/url";
 import {
   novoPedidoDeSalto,
@@ -440,12 +439,7 @@ function InboxPageInner() {
             const withoutOptimistic = prev.filter(
               (m) => !m.id.startsWith("temp-")
             );
-            // ⚠️ Pelo CARIMBO, não no fim: mensagem pode ser gravada depois de
-            // mensagens mais novas que ela (a fala retida sem telefone, o lote
-            // drenado fora de ordem) — no fim, ela apareceria como a última
-            // coisa dita, abaixo de respostas que vieram DEPOIS dela. Em ordem
-            // (a regra), o resultado é o mesmo de antes. Ver `ordem-do-fio.ts`.
-            return inserirNaOrdem(withoutOptimistic, newMsg);
+            return [...withoutOptimistic, newMsg];
           });
 
           // O cliente respondeu NESTA conversa: o servidor pode ter acabado de

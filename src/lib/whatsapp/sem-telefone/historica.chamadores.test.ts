@@ -63,6 +63,42 @@ describe('historica.ts não dispara motor nenhum', () => {
   });
 });
 
+// A `tardia` é a ÚNICA exceção, e ela é estreita: a recuperada que ainda é a
+// última da conversa REABRE a conversa encerrada (`tardia.ts`) — e só. Motor,
+// funil, canal, atraso de entrega e cancelamento de espera continuam fora.
+describe('tardia.ts reabre e acerta a prévia — e mais nada', () => {
+  const f = fonte('tardia.ts');
+
+  for (const nome of PROIBIDOS.filter((n) => n !== 'reopenClosedConversation')) {
+    it(`não cita ${nome}`, () => {
+      expect(f).not.toContain(nome);
+    });
+  }
+
+  it('reabre pelo MESMO helper dos quatro caminhos normais, sem nomear responsável', () => {
+    expect(f).toContain("from '@/lib/conversations/reopen'");
+    expect(f).toContain('reopenClosedConversation(');
+    // Cliente e celular pareado reabrem SEM responsável: `assignTo` aqui poria
+    // a conversa em nome de alguém que não decidiu nada.
+    expect(f).not.toContain('assignTo');
+  });
+
+  it('a prévia é a canônica (a mais recente pelo carimbo), não o texto desta mensagem', () => {
+    expect(f).toContain('atualizarPreviaDaConversa(');
+    expect(f).not.toContain('last_message_text');
+  });
+});
+
+describe('só a TARDIA reflete na conversa — e quem decide isso é `entregar.ts`', () => {
+  it('`refletirComoUltima` só é chamada em entregar.ts, e só no modo tardia', () => {
+    const entregar = fonte('entregar.ts');
+    expect(entregar).toMatch(/modo === 'tardia'\s*\?\s*\(\)\s*=>\s*refletirComoUltima\(/);
+    for (const arquivo of ['historica.ts', 'receber.ts', 'religar.ts', 'retidas.ts', 'resolver-lid.ts']) {
+      expect(fonte(arquivo), arquivo).not.toContain('refletirComoUltima');
+    }
+  });
+});
+
 describe('quem decide o modo é `entregar.ts` — os dois chamadores passam por ele', () => {
   for (const arquivo of ['receber.ts', 'religar.ts']) {
     it(`${arquivo} entrega por entregarRecuperada, nunca direto`, () => {

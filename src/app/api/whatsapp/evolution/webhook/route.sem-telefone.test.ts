@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi, type MockInstance } from 'vitest';
+import fs from 'node:fs';
+import path from 'node:path';
 
 // ============================================================
 // Mensagem em `@lid` SEM telefone, de ponta a ponta DENTRO da rota: o webhook
@@ -242,12 +244,16 @@ describe('`@lid` sem telefone', () => {
     });
     // O escritório já tinha respondido: história, sem motor e sem não lida.
     expect(persistInboundMessage).not.toHaveBeenCalled();
-    expect(h.banco.rpcs).toEqual([
-      {
-        nome: 'cb_assentar_mensagem_historica',
-        args: { p_conversation_id: 'conv-1', p_conta_nao_lida: false },
+    expect(h.banco.rpcs).toHaveLength(1);
+    expect(h.banco.rpcs[0]).toMatchObject({
+      nome: 'cb_assentar_mensagem_historica',
+      args: {
+        p_conversation_id: 'conv-1',
+        p_carimbo: new Date(AGORA * 1000).toISOString(),
+        p_da_equipe: false,
+        p_conta_nao_lida: false,
       },
-    ]);
+    });
     expect(h.banco.tabelas[RETIDAS][0]).toMatchObject({
       situacao: 'entregue',
       resolvida_por: 'acervo',
@@ -295,8 +301,9 @@ describe('`@lid` sem telefone', () => {
       payload: null,
     });
     // Ninguém da equipe respondeu depois dela: conta não lida.
-    expect(h.banco.rpcs.at(-1)?.args).toEqual({
+    expect(h.banco.rpcs.at(-1)?.args).toMatchObject({
       p_conversation_id: 'conv-1',
+      p_da_equipe: false,
       p_conta_nao_lida: true,
     });
   });
@@ -329,5 +336,31 @@ describe('`@lid` sem telefone', () => {
     await entregar(semTelefone('PRIMEIRA', 0));
     await entregar(semTelefone('PRIMEIRA', 0));
     expect(h.banco.tabelas[RETIDAS]).toHaveLength(1);
+  });
+});
+
+// A fase de mídia é comum a TODA mensagem — por isso o que muda nela é pinado
+// lendo o fonte: o teste de comportamento não distingue "não baixou" de "tentou
+// no canal errado e falhou", e o segundo gasta uma chamada à Evolution contra
+// uma instância que nunca viu a mensagem.
+describe('fase de mídia: a retida cuja conexão foi APAGADA não é buscada no canal padrão', () => {
+  const fonte = fs
+    .readFileSync(path.join(__dirname, 'route.ts'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/^\s*\/\/.*$/gm, '');
+
+  it('o pulo vem ANTES do download, e só vale para quem CARREGA a chave nula', () => {
+    const pulo = fonte.indexOf("if ('channelId' in pendente && pendente.channelId == null) continue;");
+    const download = fonte.indexOf('await resolveEvolutionMedia(');
+    expect(pulo).toBeGreaterThan(-1);
+    expect(download).toBeGreaterThan(pulo);
+  });
+
+  it('item normal continua sem a chave — é o que o mantém no canal do webhook, como sempre', () => {
+    // Os dois `semAnexo.push({ … })` do caminho normal (1:1 e grupo) não podem
+    // ganhar `channelId`: com a chave presente, o `in` passaria a valer.
+    const pushes = fonte.match(/semAnexo\.push\(\{[\s\S]*?\}\);/g) ?? [];
+    expect(pushes.length).toBeGreaterThanOrEqual(2);
+    for (const p of pushes) expect(p).not.toContain('channelId');
   });
 });

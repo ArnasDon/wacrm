@@ -20,6 +20,9 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const TABELA = 'cb_mensagens_sem_telefone';
 
+/** Quantas retidas de um LID uma mensagem normal religa de uma vez. */
+export const MAXIMO_DE_RETIDAS_POR_VEZ = 50;
+
 /** O que identifica a ocorrência — igual nos três desfechos. */
 export interface Ocorrencia {
   accountId: string;
@@ -131,7 +134,10 @@ export async function retidasDoLid(
       .eq('account_id', accountId)
       .eq('lid_jid', lidJid)
       .eq('situacao', 'retida')
-      .order('carimbo', { ascending: true });
+      .order('carimbo', { ascending: true })
+      // Religar roda dentro do processamento de uma mensagem NORMAL: o que
+      // passar do teto entra na mensagem seguinte daquele LID.
+      .limit(MAXIMO_DE_RETIDAS_POR_VEZ);
     if (error) {
       registrarFalha('ler as retidas', error);
       return [];
@@ -152,8 +158,10 @@ export async function retidasDoLid(
 
 /**
  * A mensagem virou linha em `messages`. UPSERT, e não UPDATE: a resolvida NA
- * CHEGADA nunca teve linha aqui (nasce `entregue`, para o registro contar
- * todas as ocorrências), e a religada já tinha (`retida` → `entregue`).
+ * CHEGADA nunca teve linha aqui (nasce `entregue`), e a religada já tinha
+ * (`retida` → `entregue`). ⚠️ O registro conta o que o CRM RECUPEROU ou
+ * RETEVE — a cópia que chega quando a mensagem já está no fio (4 dos 5 casos
+ * medidos) sai calada, sem linha: não houve o que recuperar.
  */
 export async function marcarEntregue(
   db: SupabaseClient,

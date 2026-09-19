@@ -23,15 +23,15 @@
 --     FECHADA ao navegador: sem policy, sem GRANT a `authenticated`. A tela
 --     (bloco de correções do Meu dia) lê por rota, e só contagens.
 --
---   cb_assentar_mensagem_historica(conversa, conta_nao_lida)
+--   cb_assentar_mensagem_historica(conversa, carimbo, da_equipe, espera_antes, conta_nao_lida)
 --     o que a conversa precisa DEPOIS de receber uma mensagem com carimbo
---     ANTIGO. O gatilho da 972 conta por ordem de INSERÇÃO: a fala de 13:03
+--     ANTIGO. O gatilho da 972 decide por ordem de INSERÇÃO: a fala de 13:03
 --     gravada às 13:05, depois da resposta de 13:04, acenderia "em atraso há
 --     2 min" sobre cliente já respondido (e um eco antigo do escritório
---     APAGARIA um atraso verdadeiro). A função refaz `aguardando_desde` pela
---     fórmula canônica — a MESMA do gatilho de mensagem apagada da 972 —,
---     soma a não lida quando pedida e toca `updated_at`, que é o que faz o
---     realtime corrigir a lista de quem está com a caixa de entrada aberta.
+--     APAGARIA um atraso verdadeiro). A função desfaz só o que ESTA mensagem
+--     estragou (ver a seção 2), soma a não lida quando pedida e toca
+--     `updated_at`, que é o que faz o realtime corrigir a lista de quem está
+--     com a caixa de entrada aberta.
 --
 -- Aditiva: nada em produção lê a tabela nem chama a função até o deploy.
 -- O código tolera a ausência das duas (cai no descarte de sempre), mas a
@@ -107,21 +107,48 @@ revoke all on table public.cb_mensagens_sem_telefone from public, anon, authenti
 grant all on table public.cb_mensagens_sem_telefone to service_role;
 
 -- ------------------------------------------------------------
--- 2) A conversa depois de uma mensagem HISTÓRICA.
+-- 2) A conversa depois de uma mensagem HISTÓRICA (carimbo antigo).
 --
 -- SECURITY INVOKER: quem chama é a ingestão (service_role), que já escreve
--- em `conversations` e lê `messages`. UMA instrução — o recálculo enxerga um
--- retrato só do banco.
+-- em `conversations` e lê `messages`. UMA instrução.
 --
--- ⚠️ A fórmula de `aguardando_desde` é CÓPIA da que o gatilho
--- `cb_mensagem_apagada_recalcula_espera` (972) roda: a primeira mensagem viva
--- do cliente depois da última resposta viva de GENTE (`sender_id` OU
--- `from_device` — a régua do Radar). Mudou lá, muda aqui; há teste lendo os
--- dois SQLs. Grupo e conversa encerrada ficam NULOS — as duas invariantes
--- que a própria 972 confere.
+-- O gatilho da 972 (`cb_marcar_aguardando_resposta`) decide a espera pela
+-- ordem de INSERÇÃO, sem olhar o carimbo: fala de cliente PREENCHE a espera
+-- vazia (mesmo que gente já tenha respondido depois dela), e resposta de gente
+-- LIMPA a espera (mesmo que o cliente só tenha escrito depois dela). As duas
+-- mentiras foram reproduzidas num Postgres 16 com o gatilho real. Esta função
+-- roda logo depois do insert e desfaz só o que ESTA mensagem estragou.
+--
+-- ⚠️⚠️ NÃO é o recálculo canônico ("a fala de cliente mais antiga depois da
+-- última resposta de gente"), que é o que o gatilho de mensagem apagada da
+-- 972 roda e o que a primeira versão desta função copiava. A revisão MEDIU o
+-- defeito dele: a fórmula não sabe que ENCERRAR limpa a espera. Conversa que
+-- terminou com um "ok, obrigado" do cliente e foi encerrada — o caso comum —
+-- ressuscitava aquele "obrigado" como espera de 9 dias na primeira histórica
+-- que entrasse depois da reabertura. Por isso a função olha só o carimbo
+-- DESTA mensagem e a espera que havia ANTES do insert (`p_espera_antes`, lida
+-- pelo chamador: depois que o gatilho limpa, o banco não sabe mais o que era).
+--
+--   ECO do escritório (`p_da_equipe`), carimbo T, espera anterior A:
+--     A nula          → ninguém esperava; nada a fazer
+--     T > A           → a resposta vale para o que veio ANTES dela: fica
+--                       esperando quem escreveu DEPOIS de T (ou ninguém)
+--     T <= A          → a resposta é anterior à espera: DEVOLVE A — menos se,
+--                       enquanto isto rodava, gente respondeu de verdade
+--   fala do CLIENTE, carimbo C:
+--     respondida por gente depois de C → a espera não é dela: se o gatilho
+--                       acabou de preenchê-la com C, desfaz
+--     sem resposta    → a espera começou em C, ou antes
+--
+-- Grupo e conversa encerrada ficam NULOS — as duas invariantes que a própria
+-- 972 confere. (A recuperada que ainda é a última da conversa REABRE antes de
+-- chamar isto — `sem-telefone/tardia.ts`.)
 -- ------------------------------------------------------------
 create or replace function public.cb_assentar_mensagem_historica(
   p_conversation_id uuid,
+  p_carimbo         timestamptz,
+  p_da_equipe       boolean,
+  p_espera_antes    timestamptz,
   p_conta_nao_lida  boolean
 )
 returns void
@@ -134,35 +161,61 @@ as $$
         + case when p_conta_nao_lida then 1 else 0 end,
       aguardando_desde = case
         when c.group_id is not null or c.status = 'closed' then null
-        else (
-          select min(m.created_at)
-          from messages m
-          where m.conversation_id = c.id
-            and m.sender_type = 'customer'
-            and m.deleted_at is null
-            and m.created_at > coalesce((
-              select max(h.created_at)
+
+        when p_da_equipe then
+          case
+            when p_espera_antes is null then c.aguardando_desde
+            when p_carimbo > p_espera_antes then (
+              select min(m.created_at)
+              from messages m
+              where m.conversation_id = c.id
+                and m.sender_type = 'customer'
+                and m.deleted_at is null
+                and m.created_at > p_carimbo
+            )
+            when exists (
+              select 1
               from messages h
               where h.conversation_id = c.id
                 and h.sender_type = 'agent'
                 and (h.sender_id is not null or h.from_device)
                 and h.deleted_at is null
-            ), '-infinity'::timestamptz)
-        )
+                and h.created_at > p_espera_antes
+            ) then c.aguardando_desde
+            else least(p_espera_antes, c.aguardando_desde)
+          end
+
+        when exists (
+          select 1
+          from messages h
+          where h.conversation_id = c.id
+            and h.sender_type = 'agent'
+            and (h.sender_id is not null or h.from_device)
+            and h.deleted_at is null
+            and h.created_at > p_carimbo
+        ) then case when c.aguardando_desde = p_carimbo then null else c.aguardando_desde end
+
+        else least(c.aguardando_desde, p_carimbo)
       end,
       updated_at = now()
   where c.id = p_conversation_id;
 $$;
 
-comment on function public.cb_assentar_mensagem_historica(uuid, boolean) is
-  'Depois de gravar uma mensagem com carimbo ANTIGO (1009): refaz aguardando_desde pela formula canonica da 972, soma a nao lida quando pedida e toca updated_at. So service_role.';
+comment on function public.cb_assentar_mensagem_historica(uuid, timestamptz, boolean, timestamptz, boolean) is
+  'Depois de gravar uma mensagem com carimbo ANTIGO (1009): desfaz o que o gatilho da 972 decidiu pela ordem de insercao (espera preenchida por fala ja respondida; espera limpa por eco anterior a ela), soma a nao lida quando pedida e toca updated_at. So service_role.';
 
-revoke execute on function public.cb_assentar_mensagem_historica(uuid, boolean)
+revoke execute on function public.cb_assentar_mensagem_historica(uuid, timestamptz, boolean, timestamptz, boolean)
   from public, anon, authenticated;
 -- Em Postgres o EXECUTE nasce concedido a PUBLIC: o REVOKE acima o tira de
 -- quem chama também — daí o GRANT de volta (no-op em produção, idempotente).
-grant execute on function public.cb_assentar_mensagem_historica(uuid, boolean)
+grant execute on function public.cb_assentar_mensagem_historica(uuid, timestamptz, boolean, timestamptz, boolean)
   to service_role;
+-- SECURITY INVOKER confere o privilégio de TUDO que roda dentro, como quem
+-- chamou. Em produção o service_role já tem as duas tabelas (default privilege
+-- do Supabase); num banco criado do zero, não — e a conferência abaixo troca de
+-- papel para provar. No-op em produção.
+grant select, update on table public.conversations to service_role;
+grant select on table public.messages to service_role;
 
 -- ------------------------------------------------------------
 -- 3) Conferência. Só afirma AUSÊNCIA e o que esta migration concedeu —
@@ -171,7 +224,7 @@ grant execute on function public.cb_assentar_mensagem_historica(uuid, boolean)
 do $$
 declare
   v_tabela     text := 'public.cb_mensagens_sem_telefone';
-  v_assinatura text := 'public.cb_assentar_mensagem_historica(uuid, boolean)';
+  v_assinatura text := 'public.cb_assentar_mensagem_historica(uuid, timestamptz, boolean, timestamptz, boolean)';
 begin
   if not exists (
     select 1 from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -209,6 +262,17 @@ begin
   if not has_function_privilege('service_role', v_assinatura, 'EXECUTE') then
     raise exception '1009: service_role perdeu o EXECUTE de cb_assentar_mensagem_historica';
   end if;
+
+  -- A função é SECURITY INVOKER: o bloco acima roda como DONO e passaria verde
+  -- mesmo com o service_role sem alcançar `conversations`/`messages`. Trocando
+  -- de papel, não passa. (Conversa inexistente: zero linhas, nada é escrito.)
+  begin
+    set local role service_role;
+    perform public.cb_assentar_mensagem_historica(gen_random_uuid(), now(), false, null, false);
+    reset role;
+  exception when insufficient_privilege then
+    raise exception '1009: service_role não consegue executar cb_assentar_mensagem_historica: %', sqlerrm;
+  end;
 
   raise notice '1009: cb_mensagens_sem_telefone e cb_assentar_mensagem_historica no lugar.';
 end $$;

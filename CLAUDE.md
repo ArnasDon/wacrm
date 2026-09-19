@@ -300,7 +300,6 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
 | `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
 | `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
-| `src/app/(dashboard)/inbox/page.tsx` (19/09/2026) | o INSERT do realtime entra no fio por `inserirNaOrdem` (pelo carimbo), não por `[...prev, newMsg]` — mensagem gravada depois de outras mais novas (retida sem telefone, lote drenado fora de ordem) aparecia no FIM até recarregar. Há pino em `ordem-do-fio.test.ts` |
 | `src/app/(dashboard)/inbox/page.tsx` (18/09/2026) | no INSERT de mensagem do CLIENTE na conversa aberta, `setTimeout(avisarExecucoesMudaram, 3000)` — a aba Automações descobre o cancelamento por resposta sem recarregar a página |
 | `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` depois do freio de `is_active` E da marca de interrupção (`execucaoJaInterrompida`, 1005): fora da etapa (ou estadia encerrada) → `cancelled` + varredura das irmãs + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
 | `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
@@ -2668,11 +2667,12 @@ DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
 ⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1009, 19/09/2026): não é mais
 jogada fora — o telefone sai do ACERVO, ou ela fica RETIDA até ele aparecer.**
 `src/lib/whatsapp/sem-telefone/` (`modo.ts` puro; `resolver-lid`, `retidas`,
-`historica`, `entregar`, `receber`, `religar`), `ehLidSemTelefone` e a opção
-`telefoneResolvido` de `normalizeUpsert`, a tabela `cb_mensagens_sem_telefone`,
-a função `cb_assentar_mensagem_historica`, a fonte `mensagensRetidas` do Meu
-dia e `src/lib/inbox/ordem-do-fio.ts`. Plano vivo (causa, medição, riscos e
-matriz de testes) em `docs/PLANO-lid-sem-telefone.md`. O que morde código novo:
+`historica`, `tardia`, `entregar`, `receber`, `religar`), `ehLidSemTelefone` e
+a opção `telefoneResolvido` de `normalizeUpsert`, a tabela
+`cb_mensagens_sem_telefone`, a função `cb_assentar_mensagem_historica` e a
+fonte `mensagensRetidas` do Meu dia. Plano vivo (causa, medição, riscos,
+matriz de testes e os achados da revisão) em `docs/PLANO-lid-sem-telefone.md`.
+O que morde código novo:
 
 - ⚠️⚠️ **A causa NÃO é o WhatsApp omitindo o número — é a Baileys.** Provado
   no fonte da 7.0.0-rc13 que roda em produção: quando a mensagem FALHA AO
@@ -2689,43 +2689,78 @@ matriz de testes) em `docs/PLANO-lid-sem-telefone.md`. O que morde código novo:
   pelos ÚLTIMOS 8 DÍGITOS — é a armadilha do JID de grupo (906) e o motivo do
   descarte original (4 contatos fantasmas em 26/07, um fundido com cliente
   real). O telefone só entra vindo de mensagem REAL já gravada
-  (`messages.remote_jid_lid → remote_jid`: 959 LIDs, ZERO com mais de um
+  (`messages.remote_jid_lid → remote_jid`: 960 LIDs, ZERO com mais de um
   telefone) e `normalizeUpsert` recusa como "telefone resolvido" tudo que não
-  termine em `@s.whatsapp.net`.
-- ⚠️⚠️ **DOIS modos de gravar a recuperada (`modo.ts`), e a régua é "ela ainda
-  é a ÚLTIMA da conversa e tem até 5 min?".** `nova` = o caminho normal
+  termine em `@s.whatsapp.net`. `resolverTelefoneDoLid` confere a CONTA duas
+  vezes — no `!inner` da consulta e de novo em JS: o banco falso dos testes não
+  lê o texto do `select`, então tirar o `!inner` deixaria tudo verde e o
+  PostgREST real devolveria mensagem de outra conta.
+- ⚠️⚠️ **TRÊS modos de gravar a recuperada (`modo.ts`, puro).** `nova` = é a
+  ÚLTIMA da conversa E tem até 4 min → o caminho normal
   (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele,
-  motores inclusive; `historica` = só entra no fio. `nova` EXISTE porque a
-  cópia do celular e a cópia normal disputam o `UNIQUE (conversation_id,
-  message_id)`: se a recuperada nunca disparasse motor e chegasse primeiro, a
-  normal seria descartada como duplicata e os motores não rodariam para aquela
-  mensagem — regressão. `historica` NÃO dispara nada porque o robô leria a
-  mensagem antiga DEPOIS das mais novas (um menu consumiria a resposta errada),
-  a IA responderia a algo de horas atrás e a boas-vindas sairia depois de gente
-  já ter respondido. Não saber qual é a última da conversa = `historica`.
-- ⚠️⚠️ **A garantia de que a histórica não dispara nada é ESTRUTURAL**
-  (`historica.chamadores.test.ts`, no desenho de `cb-groups/persist.ts`): o
-  arquivo não importa motores, funil, reabertura, `followConversationChannel`,
-  `registrarEntrega` (mediria "3 horas de atraso" numa conexão sadia) nem
-  `cancelarEsperasPorResposta` (há default-deny; a segunda linha de defesa da
-  retomada lê `gravada_em`, que aqui é AGORA, e cobre). De `inbound-store` só
-  `import type`.
-- ⚠️⚠️ **Mensagem com carimbo ANTIGO engana o gatilho da 972**, que conta por
+  motores inclusive. `tardia` = é a última, mas chegou tarde demais para os
+  motores → entra como história E a conversa a reflete (`tardia.ts`: reabre se
+  estava encerrada, prévia canônica, `last_message_at`). `historica` = alguém
+  já escreveu depois dela → só entra no fio. `nova` EXISTE porque a cópia do
+  celular e a cópia normal disputam o `UNIQUE (conversation_id, message_id)`:
+  se a recuperada nunca disparasse motor e chegasse primeiro, a normal seria
+  descartada como duplicata e os motores não rodariam para aquela mensagem.
+  `tardia`/`historica` NÃO disparam nada porque o robô leria a mensagem antiga
+  DEPOIS das mais novas, a IA responderia a algo de horas atrás e a
+  boas-vindas sairia depois de gente já ter respondido. `tardia` EXISTE
+  (revisão por duas lentes) porque a cópia do celular depende de o aparelho
+  estar acordado: tratada como história pura, a fala de um cliente cuja
+  conversa estava ENCERRADA entrava sem reabrir — e o argumento "reabrir
+  desfaria um encerramento decidido com informação mais nova" não vale quando
+  não existe nada mais novo do que ela. Não saber qual é a última = `historica`.
+  ⚠️ O teto é **4 min, não os 5 do alarme da 1002**: `registrarEntrega` mede o
+  atraso DEPOIS da espera de 2 s do `jaGravada` e das consultas — há teste
+  cobrando a folga.
+- ⚠️⚠️ **A garantia de que `historica.ts` e `tardia.ts` não disparam motor é
+  ESTRUTURAL** (`historica.chamadores.test.ts`, no desenho de
+  `cb-groups/persist.ts`): nenhum dos dois importa motores, funil,
+  `followConversationChannel`, `registrarEntrega` (mediria "3 horas de atraso"
+  numa conexão sadia) nem `cancelarEsperasPorResposta` (há default-deny; a
+  segunda linha de defesa da retomada lê `gravada_em`, que aqui é AGORA, e
+  cobre). Só `tardia.ts` cita `reopenClosedConversation`, e só `entregar.ts` a
+  chama, no modo `tardia`. ⚠️ E há DEFAULT-DENY de quem chama o caminho normal
+  (`src/lib/whatsapp/inbound-store.chamadores.test.ts`): `persistInboundMessage`
+  e `persistDeviceMessage` são o pacote inteiro (robô, automações, IA, funil,
+  reabertura), e quem os chama dispara tudo por indireção — sem que as outras
+  allowlists percebam, porque o chamador não cita motor nenhum.
+- ⚠️⚠️ **Mensagem com carimbo ANTIGO engana o gatilho da 972**, que decide por
   ordem de INSERÇÃO: a fala de 13:03 gravada às 13:05, depois da resposta de
   13:04, acendia "em atraso" sobre cliente já respondido — e o eco antigo do
   escritório APAGAVA um atraso verdadeiro. Os dois foram REPRODUZIDOS num
   Postgres 16 com o gatilho real. Por isso toda histórica chama
-  `cb_assentar_mensagem_historica`: refaz `aguardando_desde` pela fórmula
-  canônica — CÓPIA da do gatilho de mensagem apagada da 972, com teste lendo os
-  dois SQLs —, soma a não lida só para fala de CLIENTE sem resposta de GENTE
-  depois, e toca `updated_at`, que é o que faz o realtime corrigir a lista de
-  quem está com a caixa aberta. Quem criar outro caminho que grave mensagem com
-  `created_at` no passado repete a chamada.
-- ⚠️⚠️ **A religação roda DEPOIS de tudo da mensagem que trouxe o telefone**
-  (na rota, depois do persist, da foto e do anexo). É o que mantém os motores
-  vendo exatamente o que veem hoje: o gatilho "primeira mensagem" continua
-  valendo para a mensagem que CHEGOU normal, e a retida entra como história.
-  Invertendo a ordem, o lead retido nunca mais dispararia a boas-vindas.
+  `cb_assentar_mensagem_historica`, que desfaz só o que ESTA mensagem estragou,
+  soma a não lida só para fala de CLIENTE sem resposta de GENTE depois, e toca
+  `updated_at` (é o que faz o realtime corrigir a lista de quem está com a
+  caixa aberta). ⚠️⚠️ **A função NÃO é o recálculo canônico** ("a fala de
+  cliente mais antiga depois da última resposta de gente" — o que o gatilho de
+  mensagem apagada da 972 roda, e o que a 1ª versão copiava). A revisão MEDIU o
+  defeito dele: a fórmula não sabe que ENCERRAR limpa a espera, então a
+  conversa que terminou com um "ok, obrigado" e foi encerrada — o caso comum —
+  ressuscitava aquele "obrigado" como espera de 9 dias na primeira histórica
+  depois da reabertura. A função olha só o carimbo DESTA mensagem e a espera
+  que havia ANTES do insert (`p_espera_antes`, lida em `historica.ts` — depois
+  que o gatilho limpa, o banco não sabe mais o que era). Há pino lendo o SQL
+  (sem `max(h.created_at)`, sem `-infinity`) e 20 cenários medidos. ⚠️ O MESMO
+  defeito continua no gatilho de mensagem apagada da 972 (fora do escopo desta
+  correção). Quem criar outro caminho que grave mensagem com `created_at` no
+  passado repete a chamada.
+- ⚠️⚠️ **A religação roda DEPOIS de gravar a mensagem que trouxe o telefone e
+  de rodar os motores dela** (na rota; a foto e o anexo DELA estão só
+  enfileirados nesse ponto). Os motores veem exatamente o que veriam sem a
+  retida, e a retida entra como história. ⚠️ **Uma consequência escrita**:
+  quando quem destrava é o ECO do escritório (o caso de 18/09), a fala retida
+  entra como mensagem de cliente ANTES de o cliente escrever de novo — e a
+  mensagem seguinte dele deixa de ser "a primeira" para `first_inbound_message`
+  (`persistInboundMessage` conta as linhas `customer` da conversa). É o lado
+  escolhido: boas-vindas de robô depois de gente já ter respondido. Quando quem
+  destrava é o próprio cliente, a mensagem DELE é gravada antes e o gatilho vale
+  como hoje. (Medido em 19/09: nenhuma automação nem fluxo ativo usa esse
+  gatilho nesta conta.)
 - ⚠️ **Depois de reter, o LID é resolvido DE NOVO** (`receber.ts`): o eco que
   traz o par pode ter sido gravado enquanto a retenção acontecia. Ou o eco
   enxerga a retida, ou a retida enxerga o eco — sem a segunda olhada a fala
@@ -2735,33 +2770,60 @@ matriz de testes) em `docs/PLANO-lid-sem-telefone.md`. O que morde código novo:
   sempre, que é o que o medidor do `PLANO-baileys-7.md` procura). Nenhuma
   função do módulo lança; exceção na chegada cai na RETENÇÃO, nunca no
   descarte (o estouro pode ter vindo DEPOIS do insert, e a religação
-  deduplica). Banco sem a 1009 é tolerado: a Fase 1 funciona, a retenção vira o
-  descarte de hoje, e o erro da tabela ausente sai UMA vez por processo.
+  deduplica). Banco sem a 1009 é tolerado — MEDIDO contra a produção em 19/09,
+  antes de aplicar: a mensagem normal entra igual, a Fase 1 funciona (a
+  histórica entra e o erro da função ausente vai para o log), a retenção vira o
+  descarte de hoje, e o aviso da tabela ausente sai UMA vez por processo.
+- ⚠️ **`nova` que perde a corrida do `UNIQUE` é `duplicada`, não `falhou`**
+  (`entregar.ts` confere se a mensagem está na conversa): o caminho normal
+  devolve `null` nos dois casos, e responder `falhou` mandava RETER uma
+  mensagem já entregue — o Meu dia avisava "mensagem retida" por até 7 dias
+  sobre conversa completa.
 - ⚠️ **O anexo da retida é baixado pela conexão DA RETIDA** (`channelId` no
   item de `semAnexo`, lido com `'channelId' in pendente`, nunca `??`): o LID é
   da conta do WhatsApp da pessoa, então a fala do número A pode ser destravada
   por mensagem no número B, e a mídia só existe na instância do A. Conexão
-  apagada (`null`) NÃO cai no canal do webhook.
+  APAGADA (`null`) = o download é PULADO: `resolveEvolutionMedia` com canal nulo
+  cairia no canal PADRÃO da conta, que nunca viu a mensagem. Item normal não
+  carrega a chave — é o que o mantém no canal do webhook, e há pino lendo a rota.
 - ⚠️ **O payload cru é conteúdo de cliente e existe só enquanto é preciso**:
   `CHECK ((situacao = 'retida') = (payload IS NOT NULL))`; ao entregar ou
   marcar duplicada ele é apagado. Tabela FECHADA ao navegador (zero policy,
   REVOKE das duas metades); o Meu dia lê por rota, e de lá saem só a CONEXÃO e
-  a HORA — nunca conteúdo, telefone ou LID (a rota é de qualquer membro).
+  a HORA — nunca conteúdo, telefone ou LID (a rota é de qualquer membro). O log
+  de falha do insert leva só código e mensagem: o `details` do PostgREST traz a
+  linha recusada, com o texto do cliente. ⚠️ Retida que NUNCA religa guarda o
+  payload sem prazo, e sem vínculo com ficha (apagar o contato não a alcança) —
+  decisão pendente do operador; o registro conta o que foi recuperado ou
+  retido, não a duplicata que sai calada na chegada.
 - ⚠️ **No Meu dia, `retidas: null` é "não consegui conferir", nunca zero**
   (`lerRetidas`, puro): falha SÓ dessa consulta não vira 500 — derrubaria junto
   Calendly e webhooks, que responderam. A janela é `DIAS_DE_RETIDA_NA_TELA`
   (7), a mesma constante na rota e no texto; a retida antiga continua
-  religável, só deixa de ocupar a tela.
-- ⚠️ **O fio aberto insere pelo CARIMBO (`inserirNaOrdem`)**, não no fim: a
-  histórica apareceria como a última coisa dita, abaixo de respostas que vieram
-  depois dela, até recarregar. Para mensagem em ordem o resultado é idêntico ao
-  de antes; há pino lendo `inbox/page.tsx`.
-- **Limites aceitos, escritos no plano**: retida que o cliente APAGOU antes de
-  religar entra como se não tivesse sido apagada; citação feita a uma retida
-  fica sem vínculo; lead retido que nunca mais escreve e a quem ninguém responde
-  pelo celular fica retido. Só a Fase 3 (patch na imagem da Evolution:
-  `lidMapping.getPNForLID` antes da troca da linha 1668 — consulta local, sem
-  rede) resolveria na hora; decisão do operador: fora do escopo.
+  religável, só deixa de ocupar a tela. `retidasDoLid` religa no máximo 50 por
+  mensagem (roda dentro do processamento de uma mensagem normal).
+- ⚠️ **O fio ABERTO continua acrescentando a mensagem do realtime no FIM — de
+  propósito.** Uma versão desta correção inseria pelo carimbo
+  (`inserirNaOrdem`) e foi REVERTIDA na revisão: mudava o comportamento de
+  TODA mensagem atrasada (lote drenado fora de ordem, cruzamento de 1–2 s com
+  um envio do CRM), e na conversa aberta a não lida é forçada a zero e o
+  auto-scroll só mantém o fim — a mensagem inserida acima da dobra passaria
+  despercebida. No fim, a recuperada aparece como a última bolha, com a hora
+  dela, e vai para o lugar do carimbo ao recarregar.
+- **Limites aceitos, escritos no plano**: retida que o cliente APAGOU ou EDITOU
+  antes de religar entra como foi enviada; citação feita a uma retida fica sem
+  vínculo; a histórica não emite o webhook de saída `message.received`; o eco
+  de um envio feito PELO CRM não destrava retida (sai no `jaGravada` antes do
+  bloco de religação, e `send-message.ts` não grava `remote_jid_lid`) — ela
+  espera a próxima mensagem do cliente ou um eco do celular; cópia histórica
+  que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`, e a
+  normal é pulada sem rodar motor; áudio histórico pode ser recusado pela
+  transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
+  de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
+  mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3
+  (patch na imagem da Evolution: `lidMapping.getPNForLID` antes da troca da
+  linha 1668 — consulta local, sem rede) resolveria na hora; decisão do
+  operador: fora do escopo.
 - **`gravada_em` (1003) da recuperada é AGORA** — é verdade, o CRM gravou tarde
   —, então ela aparece como atraso grande em `gravada_em − created_at`. Numa
   medição do atraso de entrega, exclua o que está em
@@ -6183,19 +6245,27 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     predicado parcial de `messages` renderizado como
     `sender_type = 'customer' AND deleted_at IS NULL`).
 
+  - **1007_cb_titulo_do_card_pelo_nome** e **1008_cb_titulo_de_reserva_nao_e_nome**
+    — o título do card (PR #225, outra sessão). Aplicadas em 19/09/2026
+    (histórico `20260919222628` e `20260919224838`); o que fazem está na seção
+    "O TÍTULO DO CARD é o NOME da pessoa".
   - **1009_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
     mensagem 1:1 que chegou em `@lid` sem telefone: retida, entregue ou
     duplicada; FECHADA ao navegador; payload só enquanto `retida`) e a função
-    `cb_assentar_mensagem_historica` (refaz `aguardando_desde` pela fórmula
-    canônica da 972 depois de um insert com carimbo antigo; `SECURITY
-    INVOKER`, EXECUTE só do `service_role`). Aditiva: nada em produção a lê
-    até o deploy, e o app TOLERA a ausência dela (a Fase 1 funciona, a
-    retenção cai no descarte de sempre, o erro sai uma vez por processo) —
-    mas a regra continua sendo aplicar ANTES do merge. ⚠️ **AINDA NÃO
-    APLICADA** (19/09/2026: PR aberto, esperando autorização do operador);
-    testada num Postgres 16 descartável — banco limpo, idempotente, 13
-    cenários com o gatilho real da 972. Quem aplicar troca esta frase pela
-    data e pelo número do histórico.
+    `cb_assentar_mensagem_historica` (desfaz o que o gatilho da 972 decidiu
+    pela ordem de inserção depois de um insert com carimbo antigo; `SECURITY
+    INVOKER`, EXECUTE só do `service_role`, com a conferência trocando de
+    papel). Aditiva: nada em produção a lê até o deploy, e o app TOLERA a
+    ausência dela (medido em 19/09 contra a produção, antes de aplicar) — mas
+    a regra continua sendo aplicar ANTES do merge. ⚠️ NASCEU como `1007` e
+    COLIDIU com a do título do card, que outra sessão aplicou em produção no
+    mesmo dia — o SEXTO caso de branches em paralelo (906, 963, 966, 989,
+    992). Pego pela revisão em duas lentes e pelo `list_migrations`, ANTES de
+    aplicar; renumerado o arquivo que ainda não estava aplicado (este).
+    ⚠️ **AINDA NÃO APLICADA** (19/09/2026: PR #226 aberto). Testada num
+    Postgres 16 descartável — banco limpo só com as concessões dela,
+    idempotente, 20 cenários com o gatilho real da 972. Quem aplicar troca
+    esta frase pela data e pelo número do histórico.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

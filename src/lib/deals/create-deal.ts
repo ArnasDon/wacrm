@@ -51,10 +51,13 @@ export interface CreateDealArgs {
   conversationId?: string | null;
   title: string;
   /**
-   * Quando GENTE digitou este título (1007). Só a API v1 passa: ali o título
-   * é escrito pelo integrador. O roteador e o passo `create_deal` DERIVAM o
-   * título do nome do contato, e deixam nulo de propósito — é o que permite
-   * ao gatilho da 1007 manter o card em dia quando a ficha ganhar um nome.
+   * Quando GENTE escolheu este título (1007), e por isso o gatilho da 1007
+   * não o troca mais pelo nome da ficha. Passam: o POST da API v1 (o título
+   * vem escrito no corpo) e o passo `create_deal` QUANDO o autor configurou
+   * um título literal, sem `{{…}}`. Deixam NULO de propósito: o roteador de
+   * conexão e o `create_deal` com título interpolado — os dois derivam o
+   * título do nome de alguém, e é isso que permite ao card acompanhar a
+   * ficha quando ela ganhar um nome melhor.
    */
   tituloFixadoEm?: string | null;
   value?: number;

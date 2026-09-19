@@ -3082,9 +3082,14 @@ morde código novo:
   são `AFTER UPDATE OF pipeline_id, stage_id, status`). O `set_updated_at`
   dispara — o acervo da 1007 empurrou 654 cards para o topo de "negócios
   recentes" do Painel por um dia.
-- **Card sem nome em lugar nenhum fica com o prefixo** (259 no acervo): ali o
+- **Card sem nome em lugar nenhum fica com o prefixo** (275 no acervo): ali o
   rótulo da conexão é a única informação que o título carrega, e o gatilho o
   conserta na primeira vez que o cliente escrever.
+- ⚠️ **No INSTAGRAM o chamador cai no `@usuario`** (`persistir.ts`, via
+  `identidadeDoContato`): a ficha de lá não tem telefone para servir de
+  reserva, e sem a queda quem escreve antes de o perfil ser lido abriria um
+  card chamado "Novo contato". No WhatsApp a queda não é necessária — a ficha
+  nasce com `name || phone`.
 
 ⚠️ **Negócio (`deals`) só nasce por `src/lib/deals/create-deal.ts` no servidor.**
 A 908 deu à conexão um funil padrão, e o roteador de entrada

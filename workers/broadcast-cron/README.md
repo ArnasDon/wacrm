@@ -26,4 +26,4 @@ or app bindings, so deploying it does not deploy wacrm to Cloudflare.
    ```
 
 Cloudflare invokes the `scheduled()` handler every minute. The Vercel endpoint
-processes the two oldest pending broadcast recipients each time, one after another.
+processes the ten oldest pending broadcast recipients each time, one after another.

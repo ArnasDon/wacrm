@@ -402,16 +402,19 @@ export async function drainBroadcastQueue(
 
 // Number of messages sent per cron invocation. Cloudflare cron fires once per
 // minute, so this equals the messages-per-minute delivery rate.
-const MESSAGES_PER_RUN = 2;
+const MESSAGES_PER_RUN = 10;
 
-// Pause between the sequential sends within a single run, so the two messages
-// go out one after another rather than back-to-back in the same instant.
+// Pause between the sequential sends within a single run, so the messages go
+// out one after another rather than back-to-back in the same instant.
+// Budget: INTER_MESSAGE_DELAY_MS x (MESSAGES_PER_RUN - 1) must stay well under
+// the route's maxDuration (60s), leaving room for the sends themselves.
 const INTER_MESSAGE_DELAY_MS = 1000;
 
 /**
- * Sends MESSAGES_PER_RUN queued recipients sequentially per invocation.
- * Vercel invokes this endpoint once per minute, which makes the delivery rate
- * predictable and keeps the work within a serverless function's lifetime.
+ * Sends MESSAGES_PER_RUN (10) queued recipients sequentially per invocation.
+ * The cron Worker invokes this endpoint once per minute, so the delivery rate
+ * is 10 messages per minute, which keeps the work within a single request's
+ * lifetime and keeps pacing predictable.
  */
 export async function processBroadcastQueue(
   db: SupabaseClient,
@@ -422,7 +425,7 @@ export async function processBroadcastQueue(
   for (let i = 0; i < MESSAGES_PER_RUN; i++) {
     // Re-select the oldest queued recipient globally each iteration so that
     // (a) simultaneous broadcasts do not multiply the configured rate, and
-    // (b) the second send can come from a different broadcast if the first
+    // (b) a later send can come from a different broadcast if the previous
     //     broadcast just ran out of pending recipients.
     const { data: pendingRecipients } = await db
       .from('broadcast_recipients')

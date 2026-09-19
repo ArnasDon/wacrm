@@ -172,10 +172,10 @@ export async function POST(request: Request) {
     // 6. No immediate drain here — the broadcast is left with every
     //    recipient row 'pending' and status 'sending'. The Cloudflare
     //    Worker's per-minute cron (calling GET /api/broadcasts/cron,
-    //    which processes two globally-oldest-pending recipients
+    //    which processes the ten globally-oldest-pending recipients
     //    per tick) is the only thing that sends messages, so every
     //    broadcast — including its very first message — goes out at a
-    //    paced 2/min. A prior version fired an immediate background
+    //    paced 10/min. A prior version fired an immediate background
     //    burst of up to 45 messages at 1s intervals here; that fast
     //    start is what triggered Meta's rate-limit and "healthy
     //    ecosystem engagement" throttling on the IIA campaign.

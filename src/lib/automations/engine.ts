@@ -490,12 +490,14 @@ export async function resumePendingExecution(pending: {
         'failed',
         motivo
       );
-      await fecharLog(pending.log_id, 'falhou');
       // ⚠️ A EXECUÇÃO inteira para, não só esta linha (Codex, 10ª rodada): a
       // espera marcada num ramo tem irmã sem marca na raiz, que acordaria e
       // mandaria mais mensagens depois de o registro dizer "interrompida por
-      // segurança". A marca DEPOIS do desfecho — `fecharLog` não carimba
-      // execução já marcada, e a falha tem de ficar visível.
+      // segurança". O fechamento vem ANTES da marca e sem a guarda de espera
+      // viva (`fecharLogPorSeguranca`, 11ª rodada): com a irmã ainda viva,
+      // `fecharLog` adiava a hora de fim, e a marca em seguida o calava para
+      // sempre — a falha "visível" nunca chegava ao fio.
+      await fecharLogPorSeguranca(pending.log_id);
       await marcarExecucoesInterrompidas(db, [pending.log_id], 'resposta');
       await cancelarEsperasDaExecucao(db, pending.log_id);
       return;
@@ -553,9 +555,9 @@ export async function resumePendingExecution(pending: {
       'failed',
       motivo
     );
-    await fecharLog(pending.log_id, 'falhou');
-    // A execução inteira para (irmãs inclusive), com a marca DEPOIS do
-    // desfecho — o mesmo trato da resposta que não se consegue conferir.
+    // A execução inteira para (irmãs inclusive): fechamento por segurança
+    // ANTES da marca — o mesmo trato da resposta que não se consegue conferir.
+    await fecharLogPorSeguranca(pending.log_id);
     await marcarExecucoesInterrompidas(db, [pending.log_id], 'etapa');
     await cancelarEsperasDaExecucao(db, pending.log_id);
     return;
@@ -996,10 +998,14 @@ async function executeStepsFrom(
       return status;
     }
     if (situacao === 'erro') {
-      // A irmã estacionada num ramo não pode acordar depois de a execução
-      // parar "para não cobrar quem pode ter saído" (10ª rodada). Sem marca:
-      // o desfecho `falhou` é gravado no fim deste escopo e precisa ficar
-      // visível — a marca faria `fecharLog` calar.
+      // A execução inteira para "para não cobrar quem pode ter saído" (10ª e
+      // 11ª rodadas): nem a irmã estacionada num ramo acorda, nem um escopo
+      // irmão já `running` (outro processo retomando uma espera curta deste
+      // mesmo registro) passa na guarda da marca. O fechamento por segurança
+      // vem ANTES da marca, senão o `fecharLog` do fim do escopo calaria e o
+      // registro ficaria sem hora de fim.
+      await fecharLogPorSeguranca(args.logId);
+      await marcarExecucoesInterrompidas(db, [args.logId], 'etapa');
       await cancelarEsperasDaExecucao(db, args.logId);
       results.push({
         step_id: step.id,
@@ -2952,6 +2958,31 @@ async function sinaisGravados(
   } catch (err) {
     console.error('[automations] sinaisGravados estourou:', err);
     return vazio;
+  }
+}
+
+/**
+ * Fecha o registro de uma execução parada POR SEGURANÇA — a conferência que
+ * não conseguiu responder (a resposta do cliente, a etapa do card): `falhou` e
+ * a hora de fim de uma vez, SEM a guarda de espera viva de `fecharLog`. As
+ * esperas desta execução caem em seguida (marca + varredura), e esperar por
+ * elas deixava o registro sem hora de fim PARA SEMPRE: a marca faz todo
+ * `fecharLog` posterior calar, e o fio só mostra quem tem as duas colunas
+ * (Codex, 11ª rodada). Chamar ANTES de marcar. `falhou` é o pior desfecho e
+ * sempre pode sobrescrever os outros — sem cerca.
+ */
+async function fecharLogPorSeguranca(logId: string | null): Promise<void> {
+  if (!logId) return;
+  try {
+    const { error } = await supabaseAdmin()
+      .from('automation_logs')
+      .update({ desfecho: 'falhou', finalizado_em: new Date().toISOString() })
+      .eq('id', logId);
+    if (error) {
+      console.error('[automations] fecharLogPorSeguranca falhou:', error.message);
+    }
+  } catch (err) {
+    console.error('[automations] fecharLogPorSeguranca estourou:', err);
   }
 }
 

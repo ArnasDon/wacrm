@@ -65,6 +65,26 @@ describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)'
     expect(motor).toMatch(/situacao === 'erro'\) \{\s*await registrarFalhaAoNascer\(/)
   })
 
+  it('os TRÊS caminhos de erro fecham por segurança ANTES de marcar (11ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    // retomada: etapa
+    const etapa = motor.indexOf('const motivo = MOTIVO_ETAPA_DESCONHECIDA')
+    expect(etapa).toBeGreaterThan(-1)
+    const fechaEtapa = motor.indexOf('fecharLogPorSeguranca(pending.log_id)', etapa)
+    const marcaEtapa = motor.indexOf("marcarExecucoesInterrompidas(db, [pending.log_id], 'etapa')", etapa)
+    expect(fechaEtapa).toBeGreaterThan(-1)
+    expect(fechaEtapa).toBeLessThan(marcaEtapa)
+    // guarda por passo
+    const laco = motor.indexOf('for (const step of steps as AutomationStep[])')
+    const erro = motor.indexOf("if (situacao === 'erro') {", laco)
+    const fechaPasso = motor.indexOf('fecharLogPorSeguranca(args.logId)', erro)
+    const marcaPasso = motor.indexOf("marcarExecucoesInterrompidas(db, [args.logId], 'etapa')", erro)
+    const irmasPasso = motor.indexOf('cancelarEsperasDaExecucao(db, args.logId)', marcaPasso)
+    expect(fechaPasso).toBeGreaterThan(erro)
+    expect(marcaPasso).toBeGreaterThan(fechaPasso)
+    expect(irmasPasso).toBeGreaterThan(marcaPasso)
+  })
+
   it('a estadia é conferida ANTES do Aguardar também: a pergunta vem antes do bloco do wait no laço (9ª rodada)', () => {
     const motor = fonte('lib/automations/engine.ts')
     const laco = motor.indexOf('for (const step of steps as AutomationStep[])')

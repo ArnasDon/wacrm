@@ -245,8 +245,15 @@ vi.mock('./admin-client', () => {
         data: {
           steps_executed: state.historicoDoLog,
           status: 'success',
-          // A marca da 1005, lida pela retomada.
-          interrompida_em: state.interrompida ? '2026-09-18T12:00:00Z' : null,
+          // A marca da 1005, lida pela retomada, por `fecharLog` e antes de
+          // cada passo. Vale a flag do teste OU uma marca escrita DURANTE a
+          // execução (os caminhos de erro marcam e depois o fim do escopo
+          // relê) — sem isto o mock afirmava "não marcada" sobre execução que
+          // o próprio motor acabou de marcar.
+          interrompida_em:
+            state.interrompida || state.logUpdates.some((u) => 'interrompida_por' in u)
+              ? '2026-09-18T12:00:00Z'
+              : null,
         },
         error: null,
       };
@@ -330,7 +337,9 @@ vi.mock('./admin-client', () => {
               error: { message: state.erroNaFila },
             });
           }
-          if (state.interrompida) return Promise.resolve({ data: null, error: null });
+          if (state.interrompida || state.logUpdates.some((u) => 'interrompida_por' in u)) {
+            return Promise.resolve({ data: null, error: null });
+          }
           state.esperasEnfileiradas.push(args ?? {});
           return Promise.resolve({ data: 'espera-nova', error: null });
         }
@@ -2909,7 +2918,10 @@ describe('Aguardar — parar se o cliente responder', () => {
         expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
         expect(h.state.statusDaFila).toContain('failed');
         expect(statusGravado()).toBe('failed');
-        expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+        // ⚠️ `falhou` COM hora de fim (11ª rodada): o fechamento por segurança
+        // não espera espera viva nenhuma — senão a marca em seguida o calava
+        // para sempre e a falha nunca chegava ao fio.
+        expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou', finalizado_em: expect.any(String) });
         // ⚠️ A execução inteira para (10ª rodada): a marca DEPOIS do desfecho, e
         // as irmãs estacionadas caem.
         expect(h.state.logUpdates.some((u) => u.interrompida_por === 'resposta')).toBe(true);
@@ -3182,7 +3194,11 @@ describe('retomada de automação presa à etapa', () => {
       expect(r.comFalha).toBe(1);
       expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
       expect(statusGravado()).toBe('failed');
-      expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou' });
+      // Fechada por segurança (11ª rodada): `falhou` COM hora de fim, e a
+      // execução inteira marcada — um escopo irmão `running` para no próximo passo.
+      expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou', finalizado_em: expect.any(String) });
+      expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
+      expect(h.state.statusDaFila).toContain('cancelled');
       const ultimo = h.state.logUpdates
         .filter((u) => 'steps_executed' in u)
         .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
@@ -3318,6 +3334,9 @@ describe('retomada de automação presa à etapa', () => {
     expect(h.state.updateCalls.filter((c) => c.table === 'contacts')).toHaveLength(0);
     // A própria espera falha; as irmãs estacionadas caem (10ª rodada).
     expect(h.state.statusDaFila).toEqual(['failed', 'cancelled']);
+    // …e o registro é fechado por segurança, COM hora de fim, antes da marca (11ª rodada).
+    expect(desfechoGravado()).toMatchObject({ desfecho: 'falhou', finalizado_em: expect.any(String) });
+    expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
     expect(statusGravado()).toBe('failed');
     expect(desfechoGravado()?.desfecho).toBe('falhou');
     expect(horaDeFimGravada()).toBeTruthy();

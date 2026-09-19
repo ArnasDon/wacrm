@@ -197,7 +197,9 @@ describe('a SEGUNDA LINHA DE DEFESA, na retomada (revisão por duas lentes, 19/0
     const motor = fonte('lib/automations/engine.ts')
     const inicio = motor.indexOf('export async function resumePendingExecution')
     const falha = motor.indexOf('const motivo = MOTIVO_RESPOSTA_DESCONHECIDA', inicio)
-    const desfecho = motor.indexOf("fecharLog(pending.log_id, 'falhou')", falha)
+    // O fechamento POR SEGURANÇA (falhou + hora de fim, sem a guarda de espera
+    // viva), e só então a marca — senão o registro ficava sem hora de fim (11ª rodada).
+    const desfecho = motor.indexOf('fecharLogPorSeguranca(pending.log_id)', falha)
     const marca = motor.indexOf("marcarExecucoesInterrompidas(db, [pending.log_id], 'resposta')", falha)
     const irmas = motor.indexOf('cancelarEsperasDaExecucao(db, pending.log_id)', marca)
     expect(falha).toBeGreaterThan(-1)

@@ -735,11 +735,14 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   varre as irmãs, anota. Leitura que falha → falha VISÍVEL
   (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
   marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
-  ⚠️ Conferência que FALHA (a da resposta ou a da etapa, na retomada) para a
-  EXECUÇÃO inteira, não só a linha: marca + varredura das irmãs, DEPOIS do
-  desfecho `falhou` — `fecharLog` não carimba execução já marcada, e a falha
-  tem de ficar visível (10ª rodada). Na guarda por passo, `erro` só varre as
-  irmãs estacionadas, sem marca, pelo mesmo motivo.
+  ⚠️⚠️ Conferência que FALHA (a da resposta ou a da etapa — na retomada e
+  na guarda por passo) para a EXECUÇÃO inteira, não só a linha: fechamento
+  POR SEGURANÇA → marca → varredura das irmãs (10ª/11ª rodadas).
+  `fecharLogPorSeguranca` grava `falhou` E a hora de fim de uma vez, SEM a
+  guarda de espera viva de `fecharLog`: com uma irmã ainda viva, `fecharLog`
+  adiava a hora de fim, e a marca em seguida calava todo `fecharLog`
+  posterior — o registro ficava sem hora de fim para sempre e a falha
+  "visível" nunca chegava ao fio. A ordem é pinada nos três caminhos.
   ⚠️ E a resposta que chega com a espera marcada já `running` (o cron acabou
   de reivindicá-la, DEPOIS de a retomada ter conferido) MARCA a execução sem
   cancelar a linha — que é do cron —, e a retomada em curso para no passo

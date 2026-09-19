@@ -603,6 +603,33 @@ SILÊNCIO se for ignorada — nenhuma delas dá erro.
 São **27**, em três blocos (a antiga 10 foi reescrita como 17). As do bloco A
 travam a ESCRITA da carga: sem elas, não há o que programar.
 
+### ✅ Fechadas pelo operador em 19/09/2026
+
+- **16 — o id da Kommo vira CAMPO PERSONALIZADO**, não coluna. ⚠️ Campo
+  personalizado só existe em CONTATO: ele resolve o id do contato e **não** o
+  id do lead. Para o negócio, a chave vai no `details` do `deal_created`
+  retroativo (`details->>'kommo_lead_id'`), que é invisível na tela e
+  consultável. Preço aceito: sem índice único, a idempotência fica por conta
+  do script (conferir antes de inserir) — o que basta para uma carga que roda
+  sozinha, e não bastaria para duas rodando ao mesmo tempo. O campo nasce num
+  bloco próprio ("Migração"), fora do Geral, para não poluir a ficha.
+- **17 — apagar as linhas de `cb_automation_events` na mesma transação**, com
+  `deals.source = 'manual'`. Mantém a trilha (912), o carimbo de resultado
+  (950) e as FKs de pé.
+- **18 — ganho e perdido pousam em ETAPA**, com `degrau` e `resultado`. Quais
+  etapas, por funil: no de‑para.
+- **9 — histórico real**, um evento por mudança de etapa, `origin='retroativo'`
+  e `reconstructed=true`.
+- **11 — a etapa da Kommo MOVE o card** dos 845 que já existem aqui.
+- **1 e 19 — em aberto, decisão conjunta.** A proposta está em
+  `docs/PLANO-migracao-kommo-de-para.md`, montada sobre a medição de 19/09.
+
+**Escopo declarado pelo operador (19/09):** nome do lead, etapa atual,
+etiquetas, etapas pelas quais passou (histórico), valor do contrato
+(proposta/fechamento) e anotações das conversas. Campos personalizados,
+e‑mail, responsáveis, motivo de perda, tarefas e data de reunião ficaram de
+fora da lista — o que cada um custa está na seção 10 do de‑para.
+
 ### Bloco A — travam a escrita
 
 | # | Decisão | Opções | Recomendação |

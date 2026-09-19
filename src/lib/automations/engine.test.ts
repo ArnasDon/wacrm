@@ -722,6 +722,52 @@ describe('create_deal — um card por contato', () => {
     );
   });
 
+  it('⚠️ título LITERAL do autor nasce FIXADO — o gatilho da 1007 não o troca depois', async () => {
+    // "Caso trabalhista" é texto que o autor da automação escolheu para todo
+    // card que ela criar. Sem a marca, a primeira renomeação deliberada da
+    // ficha o trocaria pelo nome da pessoa, apagando o que ele quis dizer
+    // (achado do Codex, PR #225).
+    h.state.dealExistente = null;
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.dealInserts[0].titulo_fixado_em).toEqual(expect.any(String));
+  });
+
+  it('⚠️ título com {{…}} é DERIVADO de quem está do outro lado: fica SOLTO', async () => {
+    // É o caso real em produção (`{{vars.agendamento_nome}}`, a automação do
+    // Calendly): o título é o nome da pessoa, e tem de continuar acompanhando
+    // a ficha quando alguém corrigir o nome.
+    h.state.dealExistente = null;
+    h.state.steps = [
+      {
+        ...dealStep(),
+        step_config: {
+          pipeline_id: 'p1',
+          stage_id: 'st1',
+          title: '{{vars.agendamento_nome}}',
+        },
+      },
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { vars: { agendamento_nome: 'Vanessa Bezerra' } },
+    });
+
+    expect(h.state.dealInserts[0]).toMatchObject({
+      title: 'Vanessa Bezerra',
+      titulo_fixado_em: null,
+    });
+  });
+
   it("cria o card com source 'automation' quando o contato não tem nenhum", async () => {
     h.state.dealExistente = null;
 

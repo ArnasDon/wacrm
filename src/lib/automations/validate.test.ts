@@ -65,6 +65,22 @@ describe("validateStepsForActivation", () => {
     ]);
   });
 
+  it("wait: parar_se_responder só aceita booleano", () => {
+    // O motor liga a opção apenas com `true` estrito. Um "true" gravado seria
+    // caixa que parece marcada para quem lê o JSON e que o motor ignora.
+    const issues = validateStepsForActivation([
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: true } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: false } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours" } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: "true" } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: 1 } },
+    ]);
+    expect(issues.map((i) => i.path)).toEqual([
+      "steps[3].parar_se_responder",
+      "steps[4].parar_se_responder",
+    ]);
+  });
+
   it("validates webhook URLs", () => {
     const good = validateStepsForActivation([
       {
@@ -213,6 +229,29 @@ describe("validateStepsForActivation", () => {
 });
 
 describe("validateTriggerForActivation", () => {
+  it("gatilho de etapa: parar_ao_sair só aceita booleano", () => {
+    // O motor prende a automação à etapa apenas com `true` estrito — um
+    // "true" gravado seria opção que parece ligada e não age, e a sequência
+    // de No Show seguiria cobrando quem já reagendou.
+    const etapa = ["etapa-1"];
+    for (const valor of [true, false, undefined]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }),
+      ).toEqual([]);
+    }
+    for (const valor of ["true", 1, null]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }).map((i) => i.path),
+      ).toEqual(["trigger.parar_ao_sair"]);
+    }
+  });
+
   it("accepts a valid keyword_match config", () => {
     expect(
       validateTriggerForActivation("keyword_match", {
@@ -365,6 +404,36 @@ describe('régua do Asaas — os passos', () => {
 
   it('"Aguardar" é recusado em qualquer escopo — cada marco é uma automação própria', () => {
     expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), { step_type: 'wait', step_config: { amount: 1, unit: 'minutes' } }])).toHaveLength(1)
+  })
+
+  it('"Acionar automação" e "Iniciar robô" são recusados em qualquer escopo — a entrega pela filha não conta como envio e a filha pode esperar (revisão da 4ª rodada do PR #206)', () => {
+    const acionar = { step_type: 'run_automation', step_config: { automation_id: 'filha' } }
+    const robo = { step_type: 'run_flow', step_config: { flow_id: 'f' } }
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), acionar]).map((i) => i.path)).toEqual(['steps[1].step_type'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [msg('c1'), robo]).map((i) => i.path)).toEqual(['steps[1].step_type'])
+    expect(
+      validateAsaasReguaForActivation('asaas_cobranca_vencida', [
+        { step_type: 'condition', step_config: {}, branches: { yes: [msg('c1')], no: [acionar, robo] } },
+      ]).map((i) => i.path),
+    ).toEqual(['steps[0].no.steps[0].step_type', 'steps[0].no.steps[1].step_type'])
+    // parar continua permitido: não entrega nada ao contato
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vencida', [msg('c1'), { step_type: 'stop_automation', step_config: { automation_id: 'x' } }, { step_type: 'stop_flow', step_config: {} }])).toEqual([])
+    expect(validateAsaasReguaForActivation('keyword_match', [msg(), acionar, robo])).toEqual([])
+  })
+
+  it('modelo, botões e lista são recusados em qualquer escopo — só saem pela Meta, que a varredura não sonda e o motor não cerca (revisão da 4ª rodada do PR #206)', () => {
+    const modelo = { step_type: 'send_template', step_config: { template_name: 'cobranca', language: 'pt_BR', channel_id: 'meta-2' } }
+    const botoes = { step_type: 'send_buttons', step_config: { body: 'x', buttons: [{ id: 'a', title: 'A' }] } }
+    const lista = { step_type: 'send_list', step_config: { body: 'x', button: 'ver', sections: [] } }
+    // o cenário medido: o modelo fixado num número oficial, dentro do ramo — ativava
+    expect(
+      validateAsaasReguaForActivation('asaas_cobranca_vencida', [
+        msg('c1'),
+        { step_type: 'condition', step_config: {}, branches: { yes: [modelo] } },
+      ]).map((i) => i.path),
+    ).toEqual(['steps[1].yes.steps[0].step_type'])
+    expect(validateAsaasReguaForActivation('asaas_cobranca_vence_hoje', [msg('c1'), botoes, lista]).map((i) => i.path)).toEqual(['steps[1].step_type', 'steps[2].step_type'])
+    expect(validateAsaasReguaForActivation('keyword_match', [msg(), modelo, botoes, lista])).toEqual([])
   })
 
   it('outros gatilhos não são tocados', () => {

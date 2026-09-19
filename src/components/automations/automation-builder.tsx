@@ -8,7 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { toast } from "sonner"
 import {
@@ -94,6 +94,7 @@ import { validateChannelScopeForActivation } from "@/lib/automations/validate"
 import { TIPO_DATA } from "@/lib/contacts/campo-data"
 import { uploadAccountMedia, MEDIA_MAX_BYTES_BY_KIND } from "@/lib/storage/upload-media"
 import { CHAT_MEDIA_BUCKET } from "@/lib/storage/buckets"
+import { origemDoConstrutor, urlDoConstrutor, voltaDoConstrutor } from "@/lib/pipelines/url"
 
 /** Os quatro tipos que o passo `send_media` oferece. */
 type MediaKindUI = "image" | "video" | "document" | "audio"
@@ -893,6 +894,10 @@ function SendTemplateFields({
 export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
   const router = useRouter()
   const t = useTranslations("Automations.builder")
+  // Aberto pela grade de automações do funil? Então o voltar devolve à grade
+  // daquele funil; sem origem, à tela de Automações, como sempre. Ver
+  // `lib/pipelines/url.ts`.
+  const origem = origemDoConstrutor(useSearchParams())
   const isEditing = !!initial.id
   const [state, setState] = useState<BuilderInitial>(() =>
     // O mesmo semear do onTypeChange, para a automação JÁ EXISTENTE aberta
@@ -987,7 +992,10 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       }
       toast.success(isEditing ? t("toasts.saved") : t("toasts.created"))
       if (!isEditing && body?.automation?.id) {
-        router.replace(`/automations/${body.automation.id}/edit`)
+        // ⚠️ A origem viaja junto: criar pela coluna do funil, salvar o
+        // rascunho e SÓ ENTÃO voltar é o caminho mais comum, e sem ela o
+        // voltar desta tela de edição caía na tela de Automações.
+        router.replace(urlDoConstrutor({ id: body.automation.id, origem }))
       }
     } finally {
       setSaving(false)
@@ -1002,9 +1010,9 @@ export function AutomationBuilder({ initial }: { initial: BuilderInitial }) {
       <header className="flex flex-shrink-0 items-center gap-2 border-b border-border bg-card/80 px-3 py-3 sm:gap-3 sm:px-4">
         <button
           type="button"
-          onClick={() => router.push("/automations")}
+          onClick={() => router.push(voltaDoConstrutor(origem))}
           className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          aria-label={t("backToAutomations")}
+          aria-label={origem ? t("backToPipeline") : t("backToAutomations")}
         >
           <ArrowLeft className="h-4 w-4" />
         </button>
@@ -1260,9 +1268,41 @@ function TriggerCard({
                 </label>
                 <SeletorDeEtapas
                   value={(config.stage_ids as string[] | undefined) ?? []}
+                  // ⚠️ Escolher etapa NÃO semeia `parar_ao_sair`. A automação de
+                  // etapa só NASCE pelo `?stage=` da grade do funil (este
+                  // seletor não oferece o gatilho — ver TRIGGER_OPTIONS), e é
+                  // lá que a semente mora. Aqui, quem mexe na lista de etapas
+                  // é uma automação já gravada — e as existentes não mudam
+                  // (decisão do operador): semear na edição ligaria a
+                  // interrupção numa regra antiga por um simples re-pique de
+                  // etapa. (Uma versão semeava; 8ª rodada.)
                   onChange={(ids) => onConfigChange({ ...config, stage_ids: ids })}
                   vazioLabel={t("stages.triggerHelpAll")}
                 />
+                {/* Automação PRESA À ETAPA (`so-na-etapa.ts`): o card saiu, o
+                    que faltava não roda. ⚠️ Só com etapa nomeada — sem etapa
+                    o gatilho vale para qualquer uma, e "sair da etapa" não tem
+                    de onde; o motor ignora a chave nesse caso, e mostrar a
+                    caixa seria oferecer um controle que não faz nada.
+                    `=== true`, como o motor. */}
+                {((config.stage_ids as string[] | undefined) ?? []).length > 0 && (
+                  <label className="mt-2 flex items-start gap-2 text-xs text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={config.parar_ao_sair === true}
+                      onChange={(e) =>
+                        onConfigChange({ ...config, parar_ao_sair: e.target.checked })
+                      }
+                      className="mt-0.5 size-4 accent-primary"
+                    />
+                    <span>
+                      {t("stages.pararAoSairLabel")}
+                      <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                        {t("stages.pararAoSairHelp")}
+                      </span>
+                    </span>
+                  </label>
+                )}
               </div>
             )}
             {/* Lembrete por data (935): "24 horas ANTES da reunião". A hora vem
@@ -1705,7 +1745,14 @@ function StepRenderer({
                 {isCondition ? "Condition" : step.step_type === "wait" ? "Wait" : "Action"}
               </div>
               <div className="truncate text-sm font-medium text-foreground">{t(`steps.${meta.label}`)}</div>
-              <div className="truncate text-[11px] text-muted-foreground">{previewFor(step)}</div>
+              <div className="truncate text-[11px] text-muted-foreground">
+                {previewFor(step)}
+                {/* Visível com o passo FECHADO: numa sequência de dez esperas,
+                    é assim que se confere de relance quais param na resposta. */}
+                {step.step_type === "wait" && step.step_config.parar_se_responder === true
+                  ? ` · ${t("config.pararSeResponderResumo")}`
+                  : ""}
+              </div>
             </div>
             <ChevronDown
               className={cn("h-4 w-4 text-muted-foreground transition-transform", expanded && "rotate-180")}
@@ -2618,6 +2665,25 @@ function StepEditor({
               <option value="days">{t("config.units.days")}</option>
             </select>
           </FieldBlock>
+          {/* "Pausar: até a mensagem recebida / cronômetro" do Kommo. Marcada,
+              a resposta do cliente DURANTE esta espera cancela o resto da
+              automação para ele (`parar-se-responder.ts`). ⚠️ `=== true`, como
+              o motor: valor truthy que não é booleano não pode aparecer
+              marcado aqui e ser ignorado lá. */}
+          <label className="col-span-2 flex items-start gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={cfg.parar_se_responder === true}
+              onChange={(e) => set({ parar_se_responder: e.target.checked })}
+              className="mt-0.5 size-4 accent-primary"
+            />
+            <span>
+              {t("config.pararSeResponderLabel")}
+              <span className="mt-0.5 block text-[11px] text-muted-foreground">
+                {t("config.pararSeResponderHelp")}
+              </span>
+            </span>
+          </label>
         </div>
       )
     case "condition":

@@ -285,7 +285,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/conversation-list.tsx` (09/09/2026) | o interruptor **"Buscar também dentro das mensagens"** (`buscarNasMensagens`, desligado por padrão) e o placeholder que muda com ele; `useBuscaEmMensagens` ganhou o 2º parâmetro `ativa` |
 | `src/components/inbox/conversation-list.tsx` (canal, 2026-09-02) | a prop `corDoCanalDaLinha` do `ConversationItem` e a bolinha antes do nome — bolinha, e não trilha, porque a borda esquerda já é da seleção |
 | `src/components/inbox/conversation-list.tsx` (janela, 12/09/2026) | a AMPULHETA da janela de 24h da Meta (991): a prop `canalDeSaidaDaLinha` do `ConversationItem`, `canaisPorId`/`canalPadrao` no pai, o `tTimer` da linha e `COR_DA_AMPULHETA` — ver a seção "Selo da janela de 24h na lista" |
-| `src/app/(dashboard)/inbox/page.tsx` | espelha o termo da busca da lista para o fio — são irmãos, e a página é o único caminho entre eles. Mais o escritor da presença por conversa (963): `useMarcarConversaAberta(activeConversation?.id)` — a página é a dona da seleção |
+| `src/app/(dashboard)/inbox/page.tsx` | espelha o termo da busca da lista para o fio — são irmãos, e a página é o único caminho entre eles. Mais o escritor da presença por conversa (963): `useMarcarConversaAberta(activeConversation?.id)` — a página é a dona da seleção. Mais (14/09/2026) a navegação por HISTÓRICO no celular: abrir conversa pela lista ou pelo "nova conversa" é `push` (`navegacaoAoAbrir`), o botão voltar desfaz o passo (`router.back()`), e um ouvinte de `popstate` fecha ou reabre — um merge que traga o `replace` cru do upstream faz o gesto de voltar do iPhone SAIR da caixa de entrada de novo. Ver a seção "Voltar da conversa pelo HISTÓRICO" |
 | `src/components/inbox/message-thread.tsx` (955/963) | monta o `<ExecutarAutomacaoDialog>` (é o fio que tem o contato; o canal passado é `conversation.channel_id ?? null` — o PR #74 trocou o `activeChannel` resolvido pelo cru DE PROPÓSITO, para a checagem de escopo da rota falhar aberta igual ao motor em conversa sem canal; grupo fica de fora) e os avatares `<AvataresNaConversa>` no cabeçalho, alimentados por `useQuemVeAConversa` |
 | `src/components/inbox/message-thread.tsx` (#84) | a **janela de 24h**: a regra saiu para `src/lib/inbox/janela-24h.ts` (puro, com teste) e os TRÊS caminhos de envio (texto, mídia, interativa) passam por `janelaFechadaAgora()` antes do `fetch` — o portão lê o RELÓGIO no disparo, nunca `sessionInfo.expired` (um `useMemo`: recomputa no tique de 1 min da badge, nunca no instante exato do disparo). Um merge que traga o `sessionInfo` inline do upstream devolve os três buracos de uma vez. Desde 10/09/2026 a janela é **POR NÚMERO**: os dois relógios passam `canalDaJanela` (= `activeChannel`, id + transporte, o mesmo do `expected_channel_id`) — parâmetro OBRIGATÓRIO em `janelaFechada`/`minutosRestantes`, com pino estrutural cobrando o MESMO canal nos dois —, grupo fica fora (`!ehGrupo` em `janelaDe24h`), e a etiqueta fala minutos na última hora (`restanteParaExibir`; antes o ramo de minutos era código morto e a última hora aparecia inteira como "1h restantes") |
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
@@ -296,9 +296,18 @@ upstream sobrescrevê-los:
 | `src/components/pipelines/deal-form.tsx` | além do que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
+| `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
+| `src/app/api/whatsapp/webhook/route.ts` (4ª linha nossa) e `src/lib/whatsapp/inbound-store.ts` | a chamada a `cancelarEsperasPorResposta`, ANTES de `dispatchInboundToFlows` — nos DOIS transportes (há pino estrutural com a ordem) |
+| `src/components/automations/automation-builder.tsx` (18/09/2026) | a caixa "Parar a automação se o cliente responder" no passo Aguardar e o sufixo no resumo do cartão fechado |
+| `src/app/(dashboard)/automations/[id]/logs/page.tsx` | `skipped` com traço NEUTRO em vez do ✗ vermelho (`StepRow`) |
+| `src/app/(dashboard)/inbox/page.tsx` (18/09/2026) | no INSERT de mensagem do CLIENTE na conversa aberta, `setTimeout(avisarExecucoesMudaram, 3000)` — a aba Automações descobre o cancelamento por resposta sem recarregar a página |
+| `src/lib/automations/engine.ts` (etapa, 18/09/2026) | `resumePendingExecution` confere `cardSaiuDaEtapa` depois do freio de `is_active` E da marca de interrupção (`execucaoJaInterrompida`, 1005): fora da etapa (ou estadia encerrada) → `cancelled` + varredura das irmãs + anotação; leitura falhou → falha VISÍVEL. Um merge que traga o resume cru devolve a sequência de No Show cobrando quem reagendou, sem erro nenhum |
+| `src/lib/automations/drain-events.ts`, `src/app/(dashboard)/automations/new/page.tsx`, `src/lib/automations/validate.ts` | a chamada a `cancelarEsperasAoSairDaEtapa` no laço do dreno (arquivo NOSSO, mas o ponto de chamada tem pino); o `parar_ao_sair: true` semeado no `?stage=`; e a validação booleana das duas opções novas |
+| `src/components/automations/automation-builder.tsx`, `src/app/(dashboard)/automations/[id]/edit/page.tsx` e `src/app/(dashboard)/pipelines/page.tsx` (voltar ao funil, 18/09/2026) | o voltar do construtor passa por `voltaDoConstrutor(origem)` e o `router.replace` depois de CRIAR por `urlDoConstrutor({ id, origem })` (`src/lib/pipelines/url.ts`): aberto pela grade de automações do funil (`?de=funil&funil=<id>`), o voltar devolve à aba Automações DAQUELE funil, e não à tela de Automações do menu. Um merge que traga o `router.push("/automations")` cru do upstream devolve o bug sem conflito nenhum — há pino em `url.test.ts`. Na página do funil, `?vista=` e `?funil=` são porta de ENTRADA, lidas uma vez na montagem (trocar de aba ou de funil depois não reescreve a URL) |
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
+| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, `refreshStages`/`refreshDeals` (nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
 | `src/lib/ai/types.ts`, `generate.ts`, `defaults.ts`, `config.ts`, `usage.ts`, `providers/` | o TERCEIRO provedor (`gemini`, 941) e o modo `'radar'` no log de uso — o upstream conhece só openai/anthropic. `structured.ts` e `providers/gemini.ts` são arquivos NOSSOS |
 | `src/components/settings/ai-config.tsx`, `src/app/api/ai/config/route.ts` | a opção Gemini no seletor e na validação do provider |
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
@@ -309,10 +318,12 @@ upstream sobrescrevê-los:
 | `src/lib/ai/types.ts`, `config.ts`, `structured.ts`, `defaults.ts`, `src/lib/cb-radar/worker.ts`, `src/app/api/ai/config/route.ts` | o modelo do Radar separado do modelo de chat (946): `radarModel` no tipo e em `CONFIG_COLUMNS`, o parâmetro `model` do `generateStructured`, `AI_PROVIDER_MODELS`, e a validação do modelo do Radar no save |
 | `src/components/settings/ai-config.tsx` | `<datalist>` de sugestão no campo Modelo e a frase de escopo com link para Integrações |
 | `src/app/(dashboard)/dashboard-shell.tsx` (Meu dia, 12/09/2026) | envolve o layout INTEIRO (menu, cabeçalho, página, heartbeat) na `<PortaDeEntrada key={user.id}>`, abaixo do `if (!user) return null` — nunca renderizar pedaço do app fora dela; e o "Loading..." traduzido (`DashboardShell.loading`) |
+| `dashboard-shell.tsx`, `inbox/page.tsx`, `message-composer.tsx`, `message-thread.tsx` e `src/app/globals.css` (teclado do celular, 14/09/2026) | a altura por `var(--altura-visivel,100dvh)` na casca e na caixa de entrada (um merge que devolva `h-screen`/`100vh` devolve o cabeçalho sumindo com o teclado) e o `useTelaAcimaDoTeclado()` na casca; no compositor, o Enter por `enterEnvia` e a dica por `useMediaQuery(MIDIA_DE_TOQUE)`; no fio, o `data-acima-do-teclado` na raiz, o `onTouchStart`/`onTouchMove` do contêiner (recolhe o teclado) e o `ResizeObserver` que mantém o fim; no CSS, a regra dos 16 px FORA de camada. Ver a seção "O teclado do celular" |
 | `src/hooks/use-auth.tsx` (Meu dia) | `sessionId` no contexto (o `session_id` do token, publicado no MESMO passo que `user`, no init e no listener) e o `signOut` do menu via `sairDesteAparelho` (escopo `local`, D4, 12/09/2026; erro vira toast e não navega) — além do que já era nosso (lente de simulação, perfis, `resolvedUserIdRef`) |
 | `src/components/layout/header.tsx` (Meu dia) | `"/agenda": "agenda"` no `pageTitles`, DEPOIS de `/agendadas` (o mapa casa por `startsWith` na ordem de inserção); e `"/meu-dia": "meuDia"` |
 | `src/components/layout/sidebar.tsx` (Meu dia, F3) | o item `/meu-dia` em `navItems`, fora do catálogo de perfis |
 | `src/middleware.ts` (Meu dia, F3) | `/meu-dia` em `protectedPaths` |
+| `src/app/layout.tsx` (app no celular, 14/09/2026) | `appleWebApp` com `NOME_CURTO_DO_APP` (o nome que o iPhone sugere embaixo do ícone) e a REMOÇÃO do `icons` do upstream: declarado, ele faz o Next ignorar os ícones de arquivo, e o `<head>` sai sem `apple-touch-icon` — um merge que o traga de volta tira o ícone do app instalado sem conflito nenhum (há pino). O manifesto e o ícone são arquivos NOSSOS (`manifest.ts`, `apple-icon.tsx`); ver a seção "App instalado no celular" |
 
 ⚠️ **Qual NÚMERO nesta conversa: o critério é a CONVERSA, nunca a conta.**
 `src/lib/inbox/canais-do-fio.ts` e `src/lib/cb-channels/cores.ts` (puros, com
@@ -646,6 +657,366 @@ tinha relação com ele. O que morde código novo:
 - ⚠️ **O estado da execução vira `partial`**, o mesmo do "Aguardar": é o que
   impede `fecharLog` de carimbar desfecho enquanto a retentativa não rodou.
 
+⚠️⚠️ **"Aguardar — parar se o cliente responder" (18/09/2026): a marca mora
+no `context` DA FILA, e só lá.** `src/lib/automations/parar-se-responder.ts`
+(puro + o cancelamento, com teste), a caixa no passo "Aguardar" do construtor,
+e DOIS pontos de chamada na ingestão. É o "Pausar: até a mensagem recebida /
+cronômetro" do Kommo, no tamanho menor: a saída da resposta leva a "parar".
+Pedido do operador com uma sequência de 10 mensagens de recuperação — o
+cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
+
+- ⚠️⚠️ **A invariante: a marca (`_parar_se_responder` = id do passo
+  "Aguardar") existe APENAS no contexto GRAVADO de uma espera estacionada,
+  nunca num contexto VIVO de execução.** O contexto é copiado de ponta a ponta
+  (a espera seguinte, a retentativa e o `run_automation` herdam
+  `args.context`), então são DUAS defesas: `contextoDaEspera` escreve a decisão
+  a CADA estacionamento (marca ou limpa), e `resumePendingExecution` passa o
+  contexto por `semMarcaDeResposta`. Sem a segunda, a marca vaza para a
+  RETENTATIVA — que reenfileira `args.context` cru, sem passar por
+  `contextoDaEspera` — e uma resposta nos 30 s da retentativa pararia a
+  sequência num ponto que ninguém marcou (medido por mutação: só o pino da
+  retentativa reprova). Por isso a chave NÃO entra no tipo `AutomationContext`.
+- ⚠️⚠️ **`cancelarEsperasPorResposta` roda ANTES do despacho de robôs e
+  automações, nos DOIS caminhos de ingestão** (`persistInboundMessage` da
+  Evolution e o webhook da Meta), sem olhar `flowConsumed`. Depois do despacho,
+  a mensagem cancelaria a espera da automação que ELA MESMA acabou de iniciar;
+  e o cliente respondeu mesmo quando um robô consumiu a resposta (era a fresta
+  do contorno com duas automações: "Nova mensagem recebida" é suprimido nesse
+  caso). Há pino estrutural com a ORDEM e DEFAULT-DENY de chamadores
+  (`parar-se-responder.chamadores.test.ts`): celular pareado
+  (`persistDeviceMessage`), grupo, Instagram e robô ficam de fora — "a
+  mensagem de QUEM para a sequência?" é decisão de produto, não conveniência.
+- ⚠️⚠️ **A parada é da EXECUÇÃO (`log_id`), não da linha (Codex, PR #223).**
+  Espera marcada DENTRO DE UM RAMO não é a única ponta viva: ramo em espera
+  não segura o escopo de fora, que segue e estaciona a SUA espera — sem marca
+  — mais adiante. Cancelando só a linha marcada, a irmã acordava e a sequência
+  continuava, com a caixa prometendo "parar a automação" — e espera dentro de
+  ramo é a forma NORMAL das automações deste escritório, então recusar a opção
+  ali não era saída. São duas peças: (1) depois das marcadas, um 2º UPDATE
+  cancela toda espera `pending` dos MESMOS `log_id` (conta + contato); (2) a
+  MARCA DURÁVEL no registro — `automation_logs.interrompida_em`/`_por`
+  (**1005**), gravada por `marcarExecucoesInterrompidas` em TODOS os cinco
+  cancelamentos (resposta, saída da etapa, botão Parar, passo "Parar
+  automação", desativação) — que a RETOMADA lê (`execucaoJaInterrompida`,
+  ANTES da conferência de etapa: o card pode ter VOLTADO e a execução antiga
+  acabou mesmo assim) e que o ESTACIONAMENTO respeita DENTRO da função
+  `cb_estacionar_espera`. ⚠️⚠️ A marca mora no REGISTRO, e não nas linhas da
+  fila (a 1ª versão, 5ª rodada do Codex): entre o disparo e a primeira espera
+  a execução está RODANDO e não tem linha nenhuma na fila — um cancelamento
+  nesse instante não tinha onde se gravar, e a espera que vinha depois
+  acordava com o card de volta à etapa ao lado da execução nova. O registro
+  existe desde o primeiro passo. ⚠️⚠️ E o motor NUNCA insere na fila
+  direto: os dois estacionamentos (o "Aguardar" e a retentativa) passam por
+  `cb_estacionar_espera`, que trava a linha do registro (`FOR UPDATE`),
+  confere a marca e insere numa transação só — quem marca e quem estaciona se
+  serializam pelo lock; `null` de volta = interrompida, o passo vira
+  `skipped` e o escopo devolve `partial` (sem linha, sem zumbi na aba). Um
+  INSERT direto reabriria o vão entre "perguntar" e "inserir" (4ª rodada);
+  há pino estrutural. Falha ABERTA na leitura da marca (é a 2ª defesa de uma
+  corrida de segundos). Espera de OUTRA execução do mesmo contato, sem marca,
+  não é tocada — medido. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
+  da fila → MARCAR os registros → cancelar DE NOVO por `log_id` (Codex, 6ª
+  rodada): entre a foto e a marca um ramo ainda rodando pode ter estacionado
+  uma irmã, que a marca impede de retomar mas deixaria `pending` na aba por
+  horas. Depois da marca a função não insere mais, então a segunda varredura
+  pega tudo o que sobrou. Vale para os que cancelam por lote (resposta, botão
+  Parar, passo "Parar automação"; a saída de etapa parte dos REGISTROS vivos e
+  faz marca → varredura, sem foto antes). ⚠️ Toda pergunta por `log_id` na fila (a guarda de
+  `fecharLog`, as irmãs) depende do índice da **1004** — a fila não é podada.
+- ⚠️⚠️ **Há uma SEGUNDA LINHA DE DEFESA, na retomada** (revisão por duas
+  lentes, 19/09/2026): o cancelamento na ingestão é UM UPDATE, e um soluço do
+  banco no instante da resposta deixava a espera acordar 27 h depois e mandar
+  a mensagem seguinte a quem já tinha respondido, com um `console.error` como
+  único rastro. Ao acordar uma espera MARCADA, `clienteRespondeuDesde` pergunta
+  se há mensagem do cliente (não apagada) na conversa do contato com
+  `messages.gravada_em` (1003, o `now()` da gravação) POSTERIOR ao
+  `created_at` da espera — dois carimbos do mesmo relógio; `messages.created_at`
+  NÃO serve, é o relógio do aparelho. Respondeu → marca `resposta`, cancela,
+  varre as irmãs, anota. Leitura que falha → falha VISÍVEL
+  (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
+  marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
+  A consulta tem índice PARCIAL próprio (1006), cujo predicado espelha os
+  filtros — mudar um sem o outro deixa o índice de pé e inútil.
+  ⚠️⚠️ Conferência que FALHA (a da resposta ou a da etapa — na retomada e
+  na guarda por passo) para a EXECUÇÃO inteira, não só a linha: fechamento
+  POR SEGURANÇA → marca → varredura das irmãs (10ª/11ª rodadas).
+  `fecharLogPorSeguranca` grava `falhou` E a hora de fim de uma vez, SEM a
+  guarda de espera viva de `fecharLog`: com uma irmã ainda viva, `fecharLog`
+  adiava a hora de fim, e a marca em seguida calava todo `fecharLog`
+  posterior — o registro ficava sem hora de fim para sempre e a falha
+  "visível" nunca chegava ao fio. A ordem é pinada nos três caminhos.
+  ⚠️ E a resposta que chega com a espera marcada já `running` (o cron acabou
+  de reivindicá-la, DEPOIS de a retomada ter conferido) MARCA a execução sem
+  cancelar a linha — que é do cron —, e a retomada em curso para no passo
+  seguinte (9ª rodada; era o mesmo furo do botão Parar).
+- ⚠️ **O botão Parar e o passo "Parar automação" marcam também a execução
+  cuja espera está `running`** (reivindicada pelo cron naquele instante): a
+  foto do UPDATE só vê `pending`, e sem a marca a retomada em curso seguia até
+  a espera seguinte. A linha `running` não é cancelada (é do cron); a marca
+  faz a retomada parar no próximo passo. ⚠️ MENOS a PRÓPRIA execução no passo
+  apontado para a própria automação ("Parar automação: a si mesma", para
+  cancelar as suas pendentes e recomeçar): numa retomada a linha `running`
+  que ele enxerga é a sua, e marcá-la pularia o passo seguinte — o construtor
+  promete que a execução em curso não se autocancela (auditoria pré-Codex,
+  19/09; pino no `engine.test`).
+- ⚠️ **`marcarExecucoesInterrompidas` PUBLICA a hora de fim da falha ADIADA**
+  (`desfecho='falhou'` sem `finalizado_em` — o ramo que estourou enquanto uma
+  espera irmã vivia, que `fecharLog` fecharia quando ela acordasse): nenhum
+  cancelamento fecha o registro e `fecharLog` cala para execução marcada, então
+  sem isto a falha ficava invisível para sempre no fio e no Meu dia. Só essas;
+  cancelamento sem falha continua sem desfecho (936).
+- **Conhecido, não tratado** (auditoria pré-Codex): a segunda linha conta
+  mensagem de cliente de QUALQUER transporte (Instagram incluso), e a primeira
+  só roda nos dois caminhos do WhatsApp — só diverge depois da unificação
+  manual de fichas (D4 do Instagram). E linha `running` órfã (processo morto
+  no meio da retomada) não tem recolhedor — pré-existente; o cron só lê
+  `pending`, e o peso do estado `running` cresceu com este PR.
+- ⚠️ **`fecharLog` não carimba execução interrompida**: a resposta (ou a saída
+  da etapa) que chega durante o ÚLTIMO passo do escopo — depois da leitura da
+  marca — deixava o escopo terminar e o fio dizer "concluiu" sobre execução com
+  `interrompida_por` gravado. O `falhou` de um ramo anterior fica; só não se
+  carimba desfecho nem hora de fim.
+- ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
+  caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
+  a semântica do Kommo, e a tela diz "marque em cada Aguardar da sequência".
+- ⚠️ **As MESMAS cercas dos outros dois cancelamentos** (`stop_automation` e o
+  botão Parar): conta + CONTATO + `status = 'pending'`. Espera que o agendador
+  já reivindicou (`running`) não é alcançada — corrida de segundos, inerente.
+- ⚠️ **`cancelled`, e o desfecho do log NÃO é tocado** (precedente da 936),
+  mas a interrupção é ANOTADA — uma vez por execução — em `steps_executed` por `interrupcao.ts` (`wait` / `skipped` /
+  "interrompida: o cliente respondeu…"): aqui ninguém clicou em nada, e sem a
+  anotação a sequência sumiria sem dizer por quê. `sinaisDoHistorico` ignora
+  `wait`, então a anotação não muda desfecho nenhum. ⚠️ A execução
+  interrompida NÃO aparece no fio nem no "Já rodou" (não há desfecho para
+  ela — `concluida` mentiria, `barrada` também); narrá-la pede um 4º desfecho
+  (`interrompida`), com migration no CHECK da 985 e os consumidores — vale
+  para os TRÊS cancelamentos, e ficou de fora de propósito.
+- ⚠️⚠️ **A anotação grava COM CERCA: `steps_executed->>N IS NULL`, com N =
+  passos lidos (Codex, PR #223).** Todo escritor daquela coluna lê, acrescenta
+  e regrava — o `appendResults` do motor inclusive —, e a anotação pode correr
+  com ele (o escopo de fora da mesma execução ainda rodando, ou uma irmã sendo
+  retomada). Como todos só ACRESCENTAM, "a posição N continua vazia" = "ninguém
+  escreveu desde que li"; zero linhas → relê e tenta de novo (3×), e depois
+  DESISTE da anotação. A garantia é de mão única, e é a que importa: **a
+  anotação nunca apaga passo do motor** (são eles que decidem o desfecho). O
+  inverso ainda pode acontecer — o motor leu antes e regrava por cima, e some
+  a linha explicativa; fechar esse lado pede append atômico no banco para
+  TODOS os escritores (RPC + `appendResults`), que é outra obra. Forma medida
+  contra o PostgREST real. E é IDEMPOTENTE por motivo: a execução que já tem
+  aquela linha `skipped` não ganha outra — duas esperas irmãs que ACORDAM em
+  horas diferentes com o card fora da etapa (ou o dreno seguido da retomada)
+  contariam uma interrupção como duas; a leitura já está em mãos, custa zero.
+- ⚠️ **A aba Automações recarrega ~3 s depois de chegar mensagem do CLIENTE na
+  conversa ABERTA** (`inbox/page.tsx`, `avisarExecucoesMudaram`): o servidor
+  pode ter acabado de cancelar uma espera, e a aba ao lado seguiria dizendo
+  "próximo passo em 27 h" — numa feature cuja graça é confiar que parou
+  sozinha. Com atraso porque o INSERT da mensagem chega ANTES do cancelamento
+  (que roda alguns passos depois na ingestão), e só na conversa aberta porque
+  o mesmo evento recarrega a marca da LISTA inteira — a cada mensagem de
+  qualquer cliente viraria uma consulta por mensagem.
+- ⚠️ **Só o booleano `true` liga**, em TODOS os lugares (motor, grade,
+  construtor, validação): `"true"` e `1` chegam de JSONB e são truthy — a
+  caixa apareceria marcada numa tela e o motor a ignoraria.
+- ⚠️ **O filtro é por caminho JSON no PostgREST**
+  (`.not('context->>_parar_se_responder', 'is', null)`, com o RETURNING
+  `passo:context->>…`). O teste unitário usa banco falso que imita a forma
+  SUPOSTA — a lição do `storage.exists()` —, então a forma foi MEDIDA contra o
+  PostgREST real em 18/09 (espera marcada cancela, a de controle fica, conta
+  errada não alcança). Quem mexer no filtro mede de novo.
+- ⚠️ **O INSERT da espera agora é CONFERIDO** (o Supabase devolve `error`, não
+  lança): fila que recusa a linha vira passo `failed` + desfecho `falhou`, em
+  vez de "waiting…" para sempre sem ninguém para retomar. Era buraco do
+  upstream; a retentativa já conferia o dela.
+- **A chave do resumo muda** (`wait_<unidade>_ou_resposta`, em
+  `descrever-passo.ts`): a grade do funil e a linha do tempo da aba Automações
+  dizem "Aguardar 30 h ou até o cliente responder" sem código próprio. As
+  quatro variantes estão em `VARIANTES` do teste, que cobra os dois dicionários.
+- **A tela de registros da automação pinta `skipped` NEUTRO** (traço cinza):
+  até aqui tudo que não era `success` ganhava o ✗ vermelho, e "parou porque o
+  cliente respondeu" — a regra funcionando — era lido como erro. Vale também
+  para a condição de ramo vazio da 985.
+
+⚠️⚠️ **Automação PRESA À ETAPA (18/09/2026): "interromper se o card sair
+desta etapa" tem DUAS pontas, e nenhuma dispensa a outra.**
+`src/lib/automations/so-na-etapa.ts` (puro + as duas pontas, com teste),
+`interrupcao.ts` (a anotação, compartilhada com o "parar se responder"), a
+caixa no gatilho de etapa do construtor e `trigger_config.parar_ao_sair` — sem
+migration. Nasceu da recuperação de No Show: dez mensagens com o link de
+agendamento, o cliente agenda na 3ª, a automação do Calendly move o card para
+"Reunião Agendada", e as outras sete saíam assim mesmo. Medido antes: o
+"Aguardar" acordava e seguia, estivesse o card onde estivesse — a única defesa
+era a condição "ainda está na etapa?" escrita à mão depois de CADA espera, com
+o resto aninhado dentro do ramo (dez níveis para dez mensagens). O que morde
+código novo:
+
+- ⚠️⚠️ **Ponta 1, a GARANTIA — `resumePendingExecution` chama
+  `cardSaiuDaEtapa` antes de qualquer passo** (depois do freio de
+  `is_active`). Lê a etapa do BANCO na hora em que a espera acorda — nunca
+  `context.to_stage_id`, que depois de 30 h é história —, então vale para os
+  cinco escritores de etapa, para o que não gera evento e para o card APAGADO
+  (sem card = fora da etapa: fato, não ignorância). O card é o `deal_id` do
+  contexto; sem ele (execução manual), o aberto mais recente do contato — a
+  mesma resolução de `negocioAlvo`.
+- ⚠️⚠️ **Ponta 2, a HONESTIDADE DA TELA — o dreno do funil chama
+  `cancelarEsperasAoSairDaEtapa` para todo evento `deal_stage_changed`**,
+  depois da reivindicação e ANTES das guardas de ciclo/atraso e do despacho
+  (evento velho não DISPARA, mas o card saiu do mesmo jeito). Só com a ponta 1
+  a aba Automações e a marca "tem robô rodando" diriam "próxima mensagem em
+  27 h" sobre quem já reagendou, e o operador iria clicar em Parar — o
+  trabalho manual que isto existe para acabar. Ganho real: o card que SAI e
+  VOLTA antes de a espera acordar recomeça a sequência do zero, em vez de
+  ficar com DUAS correndo. Há pino estrutural das duas pontas e da ordem
+  (`so-na-etapa.chamadores.test.ts`) — o laço do dreno não tem teste de
+  comportamento, e "esqueci de chamar" só se pega lendo o fonte.
+- ⚠️⚠️ **A ponta 2 trabalha por EXECUÇÃO (registro), não por espera** (5ª
+  rodada do Codex): lê os registros VIVOS de automações de etapa do contato
+  (`finalizado_em` e `interrompida_em` nulos), MARCA os das automações presas
+  cujas etapas não incluem o destino (`marcarExecucoesInterrompidas`,
+  motivo `etapa`), cancela toda espera `pending` desses `log_id` e anota uma
+  vez por registro. Só a execução que JÁ EXISTIA quando o card saiu
+  (`.lte('created_at', evento.criado_em)` sobre o REGISTRO): os eventos de
+  funil não são processados em ordem garantida — o aviso imediato e o cron
+  drenam ao mesmo tempo —, e no card que SAI e VOLTA rápido a reentrada pode
+  ser processada ANTES da saída; sem o corte, a saída atrasada mataria a
+  execução NOVA da reentrada. A execução que está RODANDO sem espera nenhuma
+  também é marcada — é o furo que a versão por espera deixava. ⚠️ O registro
+  não guarda o card: contato com DOIS negócios abertos em etapas presas teria
+  a execução do outro marcada — aceito e escrito ("um card por contato").
+- ⚠️⚠️ **A execução nascida de evento é de UMA ESTADIA do card na etapa** (7ª
+  rodada do Codex): o dreno carimba `evento_em` (o `criado_em` do evento de
+  entrada) no contexto, e `cardSaiuDaEtapa` pergunta à fila de eventos se há
+  `deal_stage_changed` deste card POSTERIOR a esse instante — qualquer
+  movimento encerra a estadia, mesmo com o card de volta, mesmo para outra
+  etapa da mesma automação (a entrada nova dispara execução nova; a antiga
+  sairia em dobro). Conferido ao NASCER (`dispararAutomacoes`, antes de
+  `executeAutomation`: execução natimorta sai como "fora do escopo", sem
+  registro) e ao ACORDAR. É o que fecha o evento de ENTRADA processado depois
+  da SAÍDA — dois drenos concorrentes, ou o cron atrasado até 1 h —, que a
+  marca de saída não alcança porque a execução ainda não existia. Execução
+  SEM evento (manual, ou acionada por outra automação) ganha a PRÓPRIA
+  estadia (`estadiaSemEvento`, 9ª–12ª rodadas): o CARD-ALVO (o que o contexto
+  JÁ traz — a filha herda o da mãe —, senão o aberto mais recente do contato
+  numa etapa da automação, senão o aberto mais recente; sem ele, mover
+  QUALQUER card do contato matava a manual) e a âncora, o ÚLTIMO movimento
+  de etapa conhecido DESSE MESMO card (card escolhido aqui e âncora de outro
+  faziam a entrada do próprio card parecer "posterior") — pelo relógio do BANCO
+  (`criado_em` de um evento), nunca `now()` do app: a mãe que move o card e
+  aciona a filha tem o evento gravado milissegundos antes, e com o relógio
+  do app atrasado o próprio movimento pareceria "posterior". Sem card aberto
+  a pergunta é por CONTATO; sem movimento conhecido, `null` = só a posição.
+  A poda de 30 dias da fila de eventos é o limite prático da pergunta. As
+  consultas por card e por contato têm índice próprio (1006): rodam antes de
+  cada passo de toda automação presa.
+- ⚠️⚠️ **A marca é lida antes de CADA passo do escopo** (7ª rodada): com a
+  espera marcada num ramo, o escopo de fora segue executando, e a interrupção
+  só era vista no próximo estacionamento — os passos comuns até lá, inclusive
+  mensagens, saíam depois da interrupção prometida. Uma leitura por chave
+  primária por passo; o "Aguardar" tem a sua dentro de `cb_estacionar_espera`.
+- ⚠️⚠️ **E a ESTADIA também é conferida antes de cada passo** (8ª rodada): a
+  conferência do dispatch e a criação do registro são DUAS operações, e o
+  card que sai entre elas deixa o dreno sem registro para marcar e o registro
+  sem marca. A saída está gravada na fila de eventos, então `executeStepsFrom`
+  pergunta de novo (`cardSaiuDaEtapa`, só nas presas à etapa — `nao_se_aplica`
+  não consulta nada) com o registro já existente: o que ainda escapa é UM
+  passo cujo envio já estava em voo quando a saída foi gravada, nunca a
+  sequência. `saiu` = marca + foto da fila + `skipped`; `erro` = falha visível.
+  ⚠️ Vale também ANTES do "Aguardar" (9ª rodada): a automação presa cujo 1º
+  passo é uma espera estacionava sem conferir a etapa — a execução manual
+  sobre card fora da etapa aparecia "aguardando" e acordava se ele entrasse.
+- ⚠️ **A conferência que FALHA ao nascer vira registro `failed`/`falhou` com o
+  motivo (`registrarFalhaAoNascer`, `MOTIVO_ETAPA_DESCONHECIDA`), nunca pulo em
+  silêncio** (8ª rodada): o dreno já reivindicou o evento e conta o disparo
+  como entregue, então pular descartaria a automação para sempre sem ninguém
+  ver. É o mesmo desfecho da retomada; o "Executar automação" resolve à mão.
+- ⚠️⚠️ **Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`**, e a
+  retomada falha de forma VISÍVEL (espera `failed`, log `failed` + desfecho
+  `falhou`, motivo escrito): seguir cobraria quem pode ter reagendado,
+  cancelar mataria calada a sequência de quem ficou. É o trato que o motor já
+  dá a erro de banco na retomada.
+- ⚠️ **Três condições para PRENDER (`etapasQuePrendem`)**: gatilho
+  `deal_stage_changed`, `parar_ao_sair === true` ESTRITO, e pelo menos uma
+  etapa em `stage_ids` — com a lista vazia o gatilho vale para QUALQUER etapa
+  e "sair" não tem de onde (a caixa nem aparece, e o motor ignora a chave).
+  ⚠️ Entrar em OUTRA etapa da mesma lista (cartão "expandido" na grade)
+  ENCERRA a estadia, nas DUAS pontas (8ª rodada; até aí a ponta 2 lia como
+  "continuar dentro" e discordava da retomada): a entrada na etapa nova
+  dispara execução NOVA, e a antiga sairia em dobro. Qualquer movimento do
+  card acaba com a estadia.
+- ⚠️ **A ÚNICA porta de nascimento da automação de etapa é o `?stage=` da
+  grade do funil** (`TRIGGER_OPTIONS` não oferece `deal_stage_changed`; o
+  gatilho só volta à lista para automação JÁ gravada com ele), e é só lá que
+  a semente mora: o seletor de etapas do construtor NÃO semeia ao editar —
+  semear ali ligaria a interrupção numa regra antiga por um simples re-pique
+  de etapa, contra a decisão de que as existentes não mudam (a 7ª rodada
+  semeava; a 8ª desfez).
+- ⚠️ **A filha acionada por "Acionar automação" NÃO herda a estadia da mãe**
+  (`run_automation` manda `evento_em: null`; 8ª rodada): a mãe pode ter
+  movido o card no meio antes de acionar, e a filha presa à etapa nova leria
+  esse movimento como "saiu" com o card DENTRO dela. Zerado, `runAutomationById`
+  ancora a estadia PRÓPRIA da filha no último movimento do card — o da mãe,
+  que não é "posterior" a si mesmo (9ª/10ª rodadas).
+- ⚠️ **Ganho/perdido NÃO encerra a estadia**: o card não sai da etapa (950 —
+  o selo fica na coluna), e `cardSaiuDaEtapa` só olha `deal_stage_changed`.
+  Se o operador quiser "perdido = parar", é decisão nova (passo "Parar
+  automação" na automação de status, ou mover o card). ⚠️ Uma assimetria
+  escrita: a execução manual SEM card no contexto cai na posição do negócio
+  ABERTO mais recente (`negocioAlvo`), então para um card ganho/perdido ela
+  responde "saiu" — a execução por evento, que carrega o card, responde pela
+  etapa. Aceito: executar à mão sobre card fechado é raro.
+- ⚠️ **A pergunta "houve movimento posterior?" só enxerga 30 dias** — a poda
+  de `cb_automation_events` (`podarEventosAntigos`). Espera mais longa que
+  isso fica cega para uma saída-e-volta já podada; a marca da ponta 2 e a
+  posição do card cobrem. `validate.ts` não limita o `amount` do "Aguardar".
+- ⚠️ **A saída da etapa (ponta 2) distingue o CARD pela espera**
+  (`context.deal_id` das linhas `pending` E `running` — a reivindicada pelo
+  cron naquele instante é a única prova de que a execução é do card A; 12ª
+  rodada): execução estacionada por OUTRO card do mesmo contato fica de
+  fora. A que está RODANDO agora, sem espera nenhuma, não tem como ser
+  distinguida (o registro não guarda o card) — aceito: "um card por contato"
+  é a regra desta casa, e a janela é de segundos. E
+  registro anterior à 985 (sem `finalizado_em`, nada retroativo) conta como
+  vivo: a primeira saída de etapa de um contato assim marca e anota um
+  registro morto há semanas, uma vez — cosmético, aceito.
+- ⚠️ **Decisão do operador (18/09/2026): caixa POR AUTOMAÇÃO, que nasce
+  MARCADA nas novas** (`automations/new/page.tsx` semeia `parar_ao_sair:
+  true` no `?stage=`; há pino). Não é regra geral invisível porque existe
+  sequência que DEVE sobreviver à etapa — as boas-vindas de "Contrato
+  Fechado", cujo card vai para o funil do Jurídico. Ausente = `false`:
+  automação gravada antes disto não muda (medido: nenhuma automação de etapa
+  tinha "Aguardar" em produção, então nada mudou retroativamente).
+- ⚠️ **Vale para QUALQUER execução da automação presa, inclusive a disparada
+  pelo "Executar automação"** — de propósito: o card que JÁ estava em No Show
+  quando a automação foi criada é executado à mão, e a sequência tem de parar
+  igual quando ele agendar. O preço: executar à mão para quem NÃO está na
+  etapa não manda nada — a estadia é conferida antes de cada passo (8ª
+  rodada), e o 1º já encontra o card fora.
+- ⚠️ **A própria automação que move o card se interrompe no passo SEGUINTE**
+  (`move_deal_stage` no meio): a estadia é conferida antes de cada passo (8ª
+  rodada; até aí só na espera seguinte, e os passos até lá saíam). A ajuda da
+  caixa manda deixar o "Mover card" por último.
+- ⚠️⚠️ **VÁRIAS automações no mesmo lead: cada uma cai SÓ pelo que ELA
+  pediu** (pergunta do operador, medida em 18/09 com quatro estacionadas ao
+  mesmo tempo: presa à etapa, mesma etapa SEM a caixa, espera marcada "parar se
+  responder", espera comum). Cliente responde → só a marcada; card sai da
+  etapa → só a presa (a da MESMA etapa sem a caixa segue); "Parar" da aba → só
+  a automação clicada. É o que o recorte garante: a resposta age por MARCA +
+  `log_id` (a execução), a etapa por `etapasQuePrendem` de CADA automação, e o
+  botão por `automation_id`. ⚠️ Consequência: automação acionada por OUTRA
+  ("Acionar automação") é execução própria, com registro próprio — parar a mãe
+  não para a filha; quem encadeia marca as esperas em cada uma.
+- ⚠️ **As mesmas cercas e o mesmo registro dos outros cancelamentos**: conta +
+  CONTATO + `pending`; `cancelled`, desfecho intocado, anotação `skipped` em
+  `steps_executed` ("interrompida: o card saiu da etapa…"). O cancelamento do
+  dreno é leitura + UPDATE por ids com `.eq('status','pending')`: a foto é de
+  instantes atrás e quem decide é o banco.
+- ⚠️ **A consulta do dreno usa `automations!inner(...)` com filtro no
+  embutido**, e o recorte é REFEITO em JS (`esperasQueOMovimentoEncerra`,
+  puro): é a armadilha do embed LEFT desta casa — filtro no embutido sem
+  `!inner` devolve a linha com o embutido nulo. Forma MEDIDA contra o
+  PostgREST real, e as duas pontas medidas de ponta a ponta em 18/09 (funil de
+  teste criado e apagado): card sai → espera cancelada na hora; dreno pulado →
+  a espera acorda, cancela, e o passo seguinte NÃO roda.
+
 ⚠️ **Desfecho da execução de automação (985): o fio NARRA o que a automação
 fez.** `automation_logs.desfecho` ('concluida'|'barrada'|'falhou') +
 `finalizado_em`, `src/lib/automations/estado-da-execucao.ts` e
@@ -731,6 +1102,20 @@ novo:
 - ⚠️ **Cor de texto em par claro/escuro**, sempre (`text-red-700
   dark:text-red-300`): medido no tema claro, `text-red-300` sozinho dava
   luminosidade 76 sobre fundo 99 — ilegível justamente no aviso de falha.
+  ⚠️⚠️ **E a segunda metade do par está INERTE hoje — o par funciona por
+  acidente, pela PRIMEIRA.** Medido em 16/09/2026: o variant é
+  `@custom-variant dark (&:is(.dark *))` (globals.css, linha 39), o modo
+  escuro é marcado por `html[data-mode="dark"]` (use-theme.tsx), e não
+  existe **UM** elemento com a classe `.dark` na página — `text-amber-700
+  dark:text-amber-300` resolve para `amber-700` no escuro. São **111** usos
+  de `dark:text-*` no repo na mesma situação. Consequência prática: escolha
+  a PRIMEIRA cor sabendo que ela vale nos dois modos (`amber-700` mede 4,90
+  de contraste no claro e 4,17 no escuro; `amber-500` dá 9,84 no escuro e
+  **2,08** no claro, ilegível). Continue escrevendo o par — ele fica certo
+  no dia em que alguém consertar o variant —, mas **não conte com ele**.
+  Consertar é uma linha (`&:is(.dark *, html[data-mode="dark"] *)`) e muda
+  a cor de 111 lugares de uma vez: é decisão própria, com revisão de tela,
+  nunca carona de outro PR.
 - ⚠️ **A 985 fechou o `anon` em `automation_logs`**, que a 931 não alcançou
   (tabela do upstream): ele tinha INSERT/UPDATE/DELETE/TRUNCATE, com a RLS
   como única barreira.
@@ -2133,6 +2518,152 @@ rotas em `src/app/api/v1/`. O que morde código novo:
 - **Grupo continua fora da v1** (`.is('group_id', null)` nas conversas), e a
   agendada resolve canal por `cb_groups` quando a conversa é de grupo.
 
+⚠️ **Saúde das conexões tem TRÊS eixos, e o terceiro é "está entregando EM
+DIA?" (1002).** `src/lib/cb-channels/atraso-de-entrega.ts` (puro, com teste),
+as colunas `entrega_carimbo_em`/`entrega_recebida_em` em `cb_channels`, o
+ramo `lagging` de `toneFor` e a linha âmbar no popover do cabeçalho. Os dois
+eixos antigos (o estado que o provedor reporta × o frescor dessa informação)
+respondem a MESMA pergunta — "está DE PÉ?" —, e foi por esse vão que passou o
+episódio de 16/09/2026: a conexão Bancário - Comercial ficou `open`, com o
+webhook apontado para cá e o frescor novo (verde nos dois, com verdade)
+enquanto o WhatsApp entregava à Evolution com **29 minutos** de atraso. Quem
+percebeu foi o operador, estranhando o relógio da mensagem na tela. O que
+morde código novo:
+
+- ⚠️⚠️ **A fronteira SÓ AVANÇA, e não é conservadorismo: conexão represada
+  drena o backlog FORA DE ORDEM.** Medido no mesmo dia, a Evolution gravou em
+  sequência os carimbos 11:36, 11:30, 11:23, 11:30, 11:29, 11:04, 11:04,
+  11:03. Guardando "a última mensagem que chegou", a de 11:04 apagaria o
+  alarme que a de 11:36 acabou de acender, e a tela piscaria entre "em dia" e
+  "atrasada" a cada 30 s no meio do episódio. A cerca é do BANCO
+  (`entrega_carimbo_em.lt.<novo>` no UPDATE), nunca ler-então-escrever: o
+  webhook responde 200 e trabalha em `after()`, então duas mensagens do mesmo
+  canal podem ser processadas em paralelo.
+- ⚠️ **`atrasoSeg` NULO é "não sei", nunca zero.** Conexão sem medição não
+  acusa nada — é a régua de `falhou` no `use-channel-health`, e vale aqui
+  pelo mesmo motivo: zero afirmaria "entrega instantânea" sobre quem ninguém
+  mediu. NADA é retroativo: `messages.created_at` guarda o carimbo do
+  WhatsApp (a ingestão o sobrescreve) e o instante da gravação não existe no
+  acervo — um backfill teria de inventar um dos dois lados.
+- ⚠️⚠️ **TODA condição de gravação vive no WHERE, nunca só em memória, e a
+  condição não pode depender do VALOR LIDO.** O espaçamento da escrita
+  atrasada é um predicado SQL; a transição que APAGA o alarme dispensa o
+  espaçamento e leva `entrega_carimbo_em < corteDoAlarme(agora)` — "a
+  fronteira guardada ainda é um alarme aceso", que é coluna contra
+  CONSTANTE. Três formas foram tentadas e as duas primeiras estão erradas,
+  em direções opostas (Codex, 4ª e 5ª rodadas do PR #220):
+  1. **Sem cerca**, com o argumento de que o ramo era "auto-limitante" —
+     só vale SEQUENCIALMENTE; concorrentes leem todos a mesma fronteira
+     atrasada e todos escrevem.
+  2. **Compare-and-swap do valor lido** — atômico, mas PERDE a amostra
+     saudável que corre com uma atrasada mais nova: a atrasada grava
+     primeiro e a saudável não casa mais o valor original. Se era ela que
+     encerrava o backlog, o alarme fica aceso até a medição expirar.
+  3. **O corte do alarme** — a saudável que perde a corrida ainda casa (a
+     fronteira nova continua atrasada) e a segunda saudável não casa (a
+     fronteira já ficou recente). Provado em Postgres real nos dois
+     cenários.
+  ⚠️ "A fronteira guardada está atrasada" seria `recebida - carimbo >
+  limiar`, comparação entre DUAS COLUNAS que o filtro do PostgREST não faz.
+  O corte existe porque o bypass só interessa com o alarme ACESO, e alarme
+  aceso já exige medição FRESCA (`recebida` ≈ agora) — então
+  `agora - carimbo > limiar` diz a mesma coisa contra uma constante. O
+  SELECT anterior decide se VALE tentar; quem serializa é sempre o banco.
+- ⚠️⚠️ **A medição TEM VALIDADE (1 h), e sem ela o alarme nunca apaga.** A
+  régua olhava só o atraso histórico: uma amostra atrasada seguida de
+  silêncio mantinha `warn/lagging` para sempre, e o cabeçalho e o Meu dia
+  afirmariam "esta conexão está entregando tarde" horas depois da última
+  mensagem. `alarmeDeAtraso` (atraso **E** frescor) é o que a tela e o
+  `toneFor` usam; `entregaAtrasada` sozinha fala da AMOSTRA, não do
+  presente, e confundir as duas é o defeito (Codex, 3ª rodada do PR #220).
+  Uma hora é a folga medida: a conexão do episódio recebia ~1,26 msg/min, e
+  a mais parada do escritório passa até uma hora sem mensagem em silêncio
+  NORMAL. ⚠️ O que este eixo NÃO detecta, de propósito: a conexão que trava
+  de vez e PARA de receber — ali a medição envelhece e o alarme apaga, e
+  dizer "está atrasada" a partir de uma amostra de ontem seria inventar.
+  "Não chega mensagem há tempo demais" é outro alarme, e precisaria do
+  padrão de tráfego esperado de cada conexão para não gritar de madrugada.
+- ⚠️⚠️ **A TELA lê `detail === 'lagging'`, nunca reavalia a régua.**
+  Recalcular no render precisa de `Date.now()`, que é chamada impura e o
+  React Compiler REPROVA (erro de lint, não aviso) — e uma segunda cópia da
+  régua pode discordar do glifo ao lado, que é pior que as duas caladas.
+- ⚠️⚠️ **`lagging` NÃO impede ENVIAR, e isso vale para toda guarda de
+  saída.** `vivaParaEnviar` (`asaas/varrer-regua.ts`) aceita `ok` e os
+  amarelos de `ENVIA_MESMO_EM_AMARELO` = {`webhook`, `lagging`} — os dois
+  descrevem a ENTRADA. Sem isso, a régua de cobrança pulava a conexão e não
+  cobrava ninguém por ela: o episódio de 16/09 teria adiado em silêncio as
+  cobranças do dia (Codex, PR #220). `pairing`/`stale`/`lastError`
+  continuam fora. Quem criar um amarelo novo decide, por escrito, de que
+  lado ele fica.
+- ⚠️ **O espaçamento de 1 min entre gravações não é economia de banco, é o
+  REALTIME.** Todo UPDATE em `cb_channels` dispara o `postgres_changes` que
+  `use-channel-health` assina, e o hook responde refazendo a sonda. Sem
+  espaçar, a rajada de um backlog drenando — dezenas de mensagens num minuto,
+  exatamente quando o alarme importa — faria a tela sondar dezenas de vezes
+  por minuto.
+- ⚠️ **Carimbo no FUTURO além de 2 min é recusado.** Ele vem do aparelho de
+  quem enviou; aceitar relógio torto trava a fronteira à frente do nosso
+  relógio e mascara atraso real até o tempo alcançá-la.
+- ⚠️⚠️ **GRUPO fica de fora, e é escolha escrita.** A ingestão de grupo tem
+  caminho próprio (`cb-groups/persist.ts`) e lá o `channel_id` gravado é o do
+  webhook que CHEGOU PRIMEIRO — com os dois números do escritório no mesmo
+  grupo, o WhatsApp entrega às duas instâncias e o UNIQUE descarta a segunda.
+  Creditar por ali daria sempre ao número mais RÁPIDO a medição e deixaria de
+  medir o LENTO, que é o que precisa ser detectado.
+- ⚠️ **São QUATRO call sites de `registrarEntrega`**, um por caminho de
+  ingestão: `persistInboundMessage` e `persistDeviceMessage` (Evolution), o
+  webhook da Meta e `instagram/persistir.ts`. O celular pareado CONTA — a
+  mensagem passou pelo WhatsApp e voltou pelo webhook, e é por onde o
+  escritório mais fala (948 pelo aparelho contra 8 digitadas no CRM). Quem
+  criar um 5º caminho de ingestão repete a chamada, senão aquela conexão
+  simplesmente deixa de ser medida, sem erro nenhum.
+- ⚠️ **`registrarEntrega` NUNCA lança** — é o que torna seguro o `await` no
+  caminho da ingestão. `catch` para o que o supabase-js lança (rede) e leitura
+  do `error` para o que ele devolve (erro de banco não lança).
+- **O limiar é 5 min, folgado de propósito**: nos 10 dias anteriores ao
+  episódio o atraso normal ficou em 0,0–0,1 min (segundos) e os episódios
+  foram de 9 a 50 min. Não há nada na faixa do meio, então o limiar não
+  precisa ser fino — precisa não dar falso positivo.
+- ⚠️ **No Meu dia é fonte SEPARADA de "conexão fora do ar"**
+  (`conexoesAtrasadas`), nunca somada: o conserto é outro (uma precisa
+  reparear, a outra que a sessão reinicie) e a frase "N conexões fora do ar"
+  seria FALSA sobre uma conexão de pé que está entregando, só que tarde. E o
+  teste ali é `detail === 'lagging'`, não `tone === 'warn'` — `warn` também
+  cobre `stale`/`pairing`/`lastError`, que são transitórios e encheriam o
+  bloco de alarme que se resolve sozinho.
+- ⚠️ **`tone_*` e `detail_*` são chaves MONTADAS** e escapam do portão de
+  i18n do CI. `rotulo-da-saude.test.ts` é o pino, e ele COLHE a lista de
+  motivos do próprio `toneFor` em vez de digitá-la — lista à mão divergiria
+  na primeira mudança da régua, que é o defeito que ele existe para impedir.
+
+⚠️ **O atraso de entrega NÃO é bug do CRM — é UMA LINHA da Evolution 2.4, e
+o restart não o conserta (só esvazia a fila).** Uma versão desta nota dizia
+"o atraso está entre o WhatsApp e o Baileys" — era a metade errada. Provado
+por três vias em 17/09/2026 (o fonte recuperado do `dist/main.js.map`, o
+cronômetro no endpoint `chat/fetchProfilePictureUrl`, a assinatura no log):
+o `BaileysMessageProcessor` passa todo `messages.upsert` por um `concatMap`
+(UM lote por vez; os recibos NÃO passam por ali), e dentro do handler há
+`await this.profilePicture(received.key.remoteJid)` — consulta de rede ao
+WhatsApp feita com o **LID**, que o servidor não responde (7 de 8 estouram),
+enquanto 30 linhas antes a própria Evolution já trocou o LID pelo telefone em
+`messageRaw.key.remoteJid`. A Baileys 7 espera `defaultQueryTimeoutMs` =
+**60 s**, e a Evolution não o configura. Resultado: **1 mensagem por minuto
+por conexão**, nos dois sentidos (o eco do celular pareado paga igual —
+intervalos de 120/181/241/362 s no log são múltiplos de 60). Só vira atraso
+quando o tráfego passa de 1/min — daí "intermitente e rotativo" desde 10/09,
+dia seguinte ao upgrade (a Baileys 7 tornou o LID o endereçamento padrão:
+681 mensagens em LID × 0 por telefone na Trabalhista-Jurídico em 48 h). O
+campo que a consulta preenche (`profilePicUrl` do `contacts.update`) o CRM
+NUNCA lê — a foto vem da 973. **Conserto:**
+`docker/evolution-cb/foto-de-perfil-por-telefone-com-teto.patch` (consulta
+pelo telefone + teto de 5 s só naquele chamador); o `develop` do upstream em
+17/09 ainda tem o defeito. **Verificação:** `docs/PLANO-baileys-7.md`, 5.10 —
+o instrumento é `messages.gravada_em` (1003), `gravada_em − created_at` por
+mensagem. `POST /instance/restart/<instância>` segue como PALIATIVO (drena
+16 min em 1 min, medido em 16/09). ⚠️ **Voltar de versão da imagem está
+DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
+"Aguardando mensagem" (mensagens que não chegavam ao cliente).
+
 ⚠️ **UI de canal: peças próprias, prefira reusá-las.** `src/hooks/use-channels.ts`
 (uma busca por montagem, falha silenciosa), `src/lib/cb-channels/display.ts`
 (funções puras, com teste) e `src/components/channels/` (`ChannelBadge`,
@@ -2277,6 +2808,23 @@ e as três já morderam de verdade.
   — o segundo só age em somente-leitura, quando o microfone não é
   renderizado); a dica do ✨ some ali (`hidden sm:block`), senão vira três
   linhas de 10px embaixo de um compositor que já ocupa duas.
+  ⚠️ **A formatação (N, I, S, </>) sobe para a linha dos botões no celular
+  QUANDO CABE** (pedido do operador, 15/09/2026): com `formatacaoNaLinha`, os
+  marcadores aparecem ali a partir de 390 px (`min-[390px]:max-sm:`) e a
+  linha própria some. A condição existe porque a conta é de pixel: a 390 px
+  sobram 366 px, e a linha com os quatro marcadores ocupa 358. O botão de
+  modelos do número oficial (`mostraModelos`) toma esse espaço, e as telas
+  abaixo de 390 px não o têm: nesses casos a formatação volta à linha
+  própria. Quem acrescentar botão a essa linha refaz a conta, senão gravar,
+  agendar e enviar descem para uma terceira linha.
+  ⚠️ **A etiqueta da hora agendada tem linha própria no celular**
+  (`etiquetaEmLinhaPropria` do `SeletorDeHorario`, ligada só no compositor
+  principal): ao lado do relógio ela não cabia a 390 px — medido em
+  15/09/2026, o botão de agendar descia para uma linha a mais, com ou sem a
+  formatação. Com `order-first` ela empata com a caixa de texto, e a ordem do
+  código (a caixa vem antes) a põe logo abaixo dela; `basis-full` a leva a
+  uma linha inteira. Escolha do operador: a peça de segurança do agendamento
+  fica mais visível, e só enquanto há hora escolhida.
 - ⚠️ **Filho direto do `DialogContent` precisa de `min-w-0` quando carrega
   texto com `truncate`.** O `DialogContent` é `grid`, e item de grid nasce
   com `min-width: auto`; `truncate` é `nowrap`, então o intrínseco do filho
@@ -2285,6 +2833,65 @@ e as três já morderam de verdade.
   tela. O `min-w-0` no wrapper direto devolve o clamp e o `truncate` volta a
   funcionar. (Primo do caso `<ScrollArea>`/flex acima — mesma família:
   `min-width: auto` anulando o limite do pai.)
+
+⚠️ **O teclado do celular (14/09/2026): a conversa fica ACIMA dele, e o
+ajuste só liga dentro do fio.** `src/lib/celular/teclado.ts` (puro, com
+teste), `src/hooks/use-tela-acima-do-teclado.ts` (montado na casca), a regra
+dos 16 px no fim do `globals.css` e o `data-acima-do-teclado` na raiz do
+`message-thread.tsx`. Nasceu do relato do operador com o CRM instalado no
+iPhone: ao tocar na caixa de mensagem o cabeçalho da conversa subia para fora
+da tela e só voltava rolando, não havia como recolher o teclado, e, recolhido,
+a tela ficava "desconfigurada". O que morde código novo:
+
+- ⚠️⚠️ **A altura da casca e da caixa de entrada sai de `--altura-visivel`,
+  com queda em `100dvh` — nunca `h-screen`/`100vh`.** `100vh` não encolhe com
+  o teclado: o iPhone empurra a página inteira para cima até a caixa
+  aparecer, e o cabeçalho (o nome do cliente e o número por onde a resposta
+  sai) vai junto. O hook escreve a variável com a área visível, e a casca
+  DESCE junto com o empurrão (`relative top-[var(--deslocamento-visivel)]`,
+  com `visualViewport.pageTop`); `window.scrollTo(0, 0)` só roda ao SAIR do
+  ajuste. Tela nova de altura cheia usa a mesma variável. ⚠️ `pageTop`, NUNCA
+  só o `offsetTop`: este é contado da janela e fica em zero quando o iPhone
+  revela a caixa ROLANDO a janela, e a casca ficaria acima da área visível
+  pela rolagem inteira (Codex, PR #219). Pelo mesmo motivo o hook relê na
+  rolagem da janela, que não dispara o `scroll` do `visualViewport`.
+- ⚠️⚠️ **A regra NÃO compara a área visível com `window.innerHeight`.** A
+  primeira versão (PR #214) só agia com 120 px de diferença, e o print do
+  operador no iPhone no dia seguinte (15/09/2026) mostrou a tela exatamente
+  como antes do ajuste. A causa mais provável — não medida, porque o
+  navegador do computador não tem teclado virtual — é a janela encolher junto
+  com o teclado no app instalado. Hoje, num aparelho de toque e com o foco no
+  fio, a casca mede SEMPRE a área visível: sem teclado ela é a tela inteira.
+  ⚠️ `top` e nunca `transform` na casca: transform faria todo `fixed` de
+  dentro dela se posicionar pela casca. Há pinos em `teclado.test.ts`.
+- ⚠️⚠️ **O ajuste só age com o foco DENTRO de `[data-acima-do-teclado]`**
+  (hoje, só o fio). Fora dele — formulário de outra tela, diálogo, o painel
+  do contato no celular — o empurrão do iPhone é o que revela o campo acima
+  do teclado, e desfazê-lo esconderia o campo em que a pessoa digita. Marcar
+  outra área é decisão a testar no aparelho.
+- ⚠️ **O hook lê no `requestAnimationFrame`**: no `focusout` o foco ainda não
+  chegou ao próximo campo, e ler ali diria "saiu da conversa" numa simples
+  troca de campo. Pinça de zoom (`visualViewport.scale` diferente de 1) não
+  ajusta nem desfaz, senão brigaria com o dedo.
+- ⚠️ **Encolher o fio pela base esconde as últimas mensagens**, porque o
+  `scrollTop` fica onde estava: um `ResizeObserver` no contêiner mantém no fim
+  quem estava colado no fim. A dependência é a CONVERSA, porque o contêiner
+  só existe com conversa aberta.
+- ⚠️⚠️ **Letra de 16 px em todo campo de aparelho de toque**, numa regra FORA
+  de camada no `globals.css`: abaixo disso o iPhone amplia a tela ao tocar no
+  campo e não desfaz. Sem camada ela vence as utilidades do Tailwind (`text-sm`
+  mora em `@layer utilities`); movida para `@layer base`, perderia para o
+  `text-sm`, e o zoom voltaria sem erro nenhum. A consulta é a de
+  `MIDIA_DE_TOQUE`, e há teste.
+- **No toque, o retorno pula linha e só o botão envia** (`enterEnvia`,
+  decisão do operador): o teclado do celular não tem Shift+Enter. A dica da
+  caixa troca para `typeMessagePlaceholderTouch`, que não fala de Shift+Enter.
+- **Arrastar a conversa para BAIXO recolhe o teclado** (`arrastoRecolheTeclado`,
+  o gesto do WhatsApp, pedido do operador); para cima não, porque é o gesto de
+  quem continua escrevendo. Mora no `onTouchMove` do contêiner, junto do
+  `liberarSalto`.
+- ⚠️ **O navegador do computador não testa nada disso**: a emulação de celular
+  não abre teclado virtual. A verificação é no aparelho, depois do deploy.
 
 ⚠️ **QUEM ABRE NEGÓCIO: os dois sentidos da conversa, decididos por GENTE.**
 Até 2026-08-31 só a mensagem RECEBIDA chamava `routeContactToPipeline` (que
@@ -2379,6 +2986,41 @@ id; a página recarrega a lista e navega por `?c=`. O que morde código novo:
   precisa saber que existe conversa legítima com a coluna nula.
 - **A rota confere POSSE do canal, não escopo de perfil** — nenhuma rota
   deste projeto valida `canalNoEscopo` hoje. Ver o comentário no arquivo.
+
+⚠️ **Voltar da conversa pelo HISTÓRICO, no celular (14/09/2026).**
+`src/lib/inbox/voltar-no-celular.ts` (puro, com teste) e a página do inbox.
+Pedido do operador, com o CRM instalado no iPhone: voltar da conversa para a
+lista arrastando da borda esquerda, como no WhatsApp. O que morde código
+novo:
+
+- ⚠️⚠️ **O gesto do iPhone e o botão voltar do Android andam no HISTÓRICO, e
+  a caixa de entrada abria a conversa com `replace`** — sem passo nenhum, o
+  gesto SAÍA da caixa de entrada em vez de fechar a conversa. Agora, no
+  celular (`!ehDesktop`), abrir a conversa a partir da lista é `router.push`
+  (`navegacaoAoAbrir`), no clique da lista E na conversa criada pelo botão
+  "nova conversa". No computador continua `replace`: lá lista e conversa
+  convivem, e um passo por clique faria o voltar do navegador percorrer o
+  dia inteiro de conversas.
+- ⚠️ **Não é arrasto feito à mão em JavaScript**: ele disputaria a borda da
+  tela com o gesto do próprio sistema. É dar ao sistema o passo que o gesto
+  desfaz.
+- ⚠️⚠️ **Quem fecha a conversa no gesto é um ouvinte de `popstate`**
+  (`aoAndarNoHistorico`): URL sem `?c=` com conversa na tela, fecha; URL com
+  outra conversa, reabre pelo caminho do deep link (ref limpa +
+  `resyncToken`). Num ouvinte, e não num efeito sobre `deepLinkConvId`,
+  porque `setState` síncrono no corpo de efeito é erro do React Compiler — e
+  `replace` não dispara `popstate`, então trocar de conversa não passa por
+  ali.
+- ⚠️ **O botão voltar da tela DESFAZ o passo (`router.back()`)** quando a
+  abertura o criou (`abriuComPassoRef`). Com `replace`, sobrariam duas
+  entradas da lista, e o gesto seguinte "não faria nada" antes de sair da
+  caixa de entrada. Recarregar a página zera a ref, e aí o botão volta ao
+  `replace` de sempre.
+- **`limparConversaAberta` é o que o botão e o `popstate` têm em comum**, e
+  não mexe na URL. Rodar duas vezes (o `router.back()` também dispara o
+  ouvinte) é inofensivo.
+- ⚠️ **O navegador do computador testa a mecânica** (histórico, `popstate`,
+  push × replace); o arrasto em si, só no aparelho.
 
 ⚠️ **Negócio (`deals`) só nasce por `src/lib/deals/create-deal.ts` no servidor.**
 A 908 deu à conexão um funil padrão, e o roteador de entrada
@@ -3086,8 +3728,9 @@ Meta Ads) leem daqui. O que morde código novo:
   do React Compiler que já derrubou PR); resposta atrasada é descartada
   pela chave.
 - **O DESEMPENHO (Fase 2, `src/components/funil/desempenho.tsx`) carrega a
-  RPC UMA vez para `[desde do período anterior, hoje)`** e recorta as duas
-  coortes em TS (`resumoDoPeriodo` × 2 + `comparar`). Funil sem etapa em
+  RPC UMA vez para `[desde do período anterior, hoje)`** e recorta os dois
+  resumos no modo escolhido (`resumoNoModo` × 2 + `comparar` — por período no
+  padrão; ver "DOIS MODOS DE CONTAGEM", abaixo). Funil sem etapa em
   `lead` → estado "configure" (abre Gerenciar funil); período sem coorte →
   zeros com a nota, NUNCA o "configure". Os cinco baldes da situação
   aparecem, "fora do funil" inclusive. Gráfico de barras = Tremor
@@ -3096,16 +3739,24 @@ Meta Ads) leem daqui. O que morde código novo:
   vendorizar mais um Tremor para isso. Números em pt-BR fixo
   (`apresentacao.ts`), como `currency.ts`.
 - **A SAÚDE (Fase 3, `saude.tsx` + `mapa-de-calor.tsx` +
-  `grafico-de-conversao.tsx`) são doze coortes MENSAIS pelo mês de entrada**,
-  numa carga só. A cor do mapa é RELATIVA À LINHA (D6) e a escala é
-  calculada SEM as coortes pequenas (`< COORTE_PEQUENA`, 5): 100% sobre um
-  lead dominaria o ano inteiro. Coorte pequena mostra o número apagado com
-  o motivo no `title`; mês sem coorte é "—", nunca 0%.
+  `grafico-de-conversao.tsx`) são doze MESES numa carga só** — por período no
+  padrão (o que aconteceu em cada mês) e coortes mensais pelo mês de entrada
+  no modo sob demanda. A cor do mapa é RELATIVA À LINHA (D6) e a escala é
+  calculada SEM as células pequenas (`< COORTE_PEQUENA`, 5): 100% sobre um
+  lead dominaria o ano inteiro. Célula pequena mostra o número apagado com
+  o motivo no `title`; mês sem dado é "—", nunca 0%. ⚠️ A régua da célula é
+  por MODO (`linhasDoMapa(…, modo)`): na coorte, as entradas do mês; por
+  período, o DENOMINADOR da taxa (as reuniões do mês, para reunião →
+  proposta) — pelas entradas, um mês com 0 entradas e 5 contratos de leads
+  antigos ficava apagado e um mês com 6 entradas e 1/1 entrava na escala com
+  100% (revisão do PR #224).
 - ⚠️ **"Em andamento" no mapa é a coorte com lead SEM DESFECHO, não o mês
   corrente** (Codex, PR #122). Agosto com 6 abertos ainda muda em setembro,
   e setembro com tudo resolvido já é final — marcar o calendário tirava o
   aviso justamente de quem precisava dele. A marca é a CONTAGEM visível
-  ("6 em aberto") sob o rótulo do mês, e sai de `CoorteMensal.emAberto`.
+  ("6 em aberto") sob o rótulo do mês, e sai de `CoorteMensal.emAberto` —
+  SÓ no modo por entrada: por período ela é 0 e não aparece (mês passado é
+  final).
 - ⚠️⚠️ **`etapasCarregadas` é prop OBRIGATÓRIA de `Desempenho` e `Saude`, e
   o motivo é o efeito passivo de sempre**: a página carrega as etapas DEPOIS
   da seleção, então `stages` é `[]` durante a carga — o MESMO `[]` de um
@@ -3167,6 +3818,50 @@ Meta Ads) leem daqui. O que morde código novo:
   o ponto da linha caía no preto padrão do SVG, sem erro nenhum. Medido no
   CSS compilado — `.fill-sky-500` tinha ZERO ocorrências (Codex, PR #123).
   Mesma armadilha da `PALETA_DE_CANAIS`.
+- ⚠️⚠️ **DOIS MODOS DE CONTAGEM desde 18/09/2026, e o padrão é POR PERÍODO**
+  (`src/lib/funil/por-periodo.ts`, puro e testado; `use-modo-de-contagem.ts`;
+  `seletor-de-modo.tsx`). Pedido do operador: "se eu tive 10 reuniões
+  marcadas no mês passado e 5 contratos fechados esse mês, quando eu olhar
+  para as métricas desse mês eu preciso ver os 5 contratos". A coorte
+  ("por mês de entrada") continua, sob demanda. O que morde código novo:
+  - **Por período conta a PRIMEIRA vez que o negócio alcançou o degrau**
+    (`FatosDoNegocio.alcancouEm`, regra 7 da trajetória): bater duas vezes
+    em "Reunião Agendada" conta uma vez, e o degrau pulado ganha a data de
+    quem o alcançou. Perda é datada pelo COMEÇO da estadia atual em perda
+    (`perdidoDesde`, regra 8 da trajetória: o primeiro passo de perda depois
+    do último passo com degrau) — NUNCA por `naEtapaDesde`, que é a última
+    entrada na etapa atual e movia a perda de agosto para setembro quando o
+    escritório reclassificava No Show → Perdido (revisão do PR #224); quem
+    voltou da perda não é perda em mês nenhum, e quem se perdeu de novo conta
+    na segunda vez. Dinheiro = contrato alcançado no período que continua
+    fechado. Sem avanço/em andamento/fora do funil são a foto dos que
+    ENTRARAM no período — iguais nos dois modos. Tabela campo a campo na
+    seção 3.5 do plano; pinos em `por-periodo.test.ts`. A preferência mora em
+    `localStorage` (`wacrm:pipelines:funil:modo`, parse por `lerModo`).
+  - ⚠️⚠️ **A taxa por período é razão de FLUXO e PODE PASSAR DE 100%**
+    (5 contratos de reuniões de agosto ÷ 2 reuniões de setembro). Decisão do
+    operador: mostrar como é, com a nota na tela — nunca `Math.min(1, …)`.
+    Por isso os dois gráficos de taxa ganharam teto redondo e marcas
+    rotuladas (`eixoDasTaxas`): o recharts não corta o dado (sem
+    `allowDataOverflow` ele ALARGA o domínio), mas deixava o ponto acima de
+    100% numa faixa sem marca nem grade, e o Tremor inventava as marcas.
+  - ⚠️⚠️ **"Custo dos perdidos" multiplica os ENTRANTES do período já
+    perdidos (`perdidosDosEntrantes`), nunca `perdidos`.** Por período
+    `perdidos` é fluxo — perda de lead de QUALQUER mês — e, vezes o custo por
+    lead deste período, o card passava do próprio investimento (R$ 250 de
+    perdidos sobre R$ 100 investidos; revisão do PR #224). Na coorte os dois
+    números são o mesmo.
+  - ⚠️ **"Primeira vez" exige a trajetória INTEIRA**, que a RPC já devolve
+    para todo negócio com evento no intervalo. Truncar o trajeto ao período
+    faria a reentrada contar de novo.
+  - `coortesMensais` exige o `modo` (obrigatório de propósito); `emAberto` só
+    existe na coorte — por período o mês passado é final.
+  - `funilDeContagens` e `emAbertoDe` (`coorte.ts`) são a montagem ÚNICA das
+    taxas e dos baldes, usada pelos dois modos: cópia divergiria e a tela
+    leria taxas calculadas de jeitos diferentes conforme o seletor.
+  - A origem do evento NÃO é filtrada: evento `retroativo` (a carga da Kommo)
+    conta na data que carregar. É o contrato escrito no plano ("Contrato com a
+    migração da Kommo").
 - **META ADS (Fase 4, 976): o CRM só LÊ, e o token é o único segredo.**
   `src/lib/meta-ads/`: `janela-de-sync.ts`, `atribuicao.ts` e `cartao.ts`
   são puros e testados; `cliente.ts` faz I/O (os testes cobrem os ajudantes
@@ -3731,11 +4426,27 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   corpo é 403; 404 também significa "id de outra conta"; a cota é da CONTA
   do Asaas, sem cabeçalho `RateLimit-*` (medido) — o 429 encerra o ciclo
   sem retentar.** Toda mensagem de erro passa por `semSegredo()`.
+  ⚠️⚠️ **O bloqueio por cota também chega como 403** (medido em produção em
+  14/09/2026: "Seu acesso foi temporariamente bloqueado por exceder o
+  limite de requisições…"), o MESMO status da falta de permissão.
+  `codigoDoErro` recebe a DESCRIÇÃO e lê o 403 de bloqueio como `limite`
+  (casada sem acento; nenhum `code` de cota é documentado); o resto segue
+  `sem_permissao`. Lido como permissão, o cartão mandava mexer na chave, o
+  passo dos Parcelamentos se calava fingindo falta da permissão e o webhook
+  ia a estado terminal. Se o Asaas trocar a frase, o 403 de cota volta a
+  cair em `sem_permissao` — sem regressão, só a leitura antiga.
+  ⚠️ **Toda mensagem de `AsaasError` começa pelo PEDIDO** (`GET /payments →
+  403: …`, montado em `pedir()`), SEM a query — filtro de busca pode levar
+  dado do cliente. Em 14/09 o log do bloqueio não dizia qual pedido o levou,
+  e é o caminho que separa a prova de identidade em `/customers` da listagem
+  de `/payments` quando se investiga quem estourou o limite.
 - ⚠️ **`cb/asaas` está no laço LENTO do `docker-stack.yml`, e o CI não relê
   o `command` do agendador**: só vale depois de `docker stack deploy` manual
   na VPS, com o `crm.env` carregado (as três linhas). Até lá, o botão
   "Sincronizar" do cartão é o único ciclo. O rodízio é por
-  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho.
+  `last_sync_attempt_at`, carimbado ANTES de qualquer trabalho. (Deploy
+  feito em 13/09/2026: o agendador roda desde 12:56 BRT com `cb/asaas` no
+  laço lento — conferido na VPS em 14/09.)
 - **Toda leitura do banco PAGINA** (`contacts` já passa de 700; a importação
   do Atlas, avisada pelo operador, passa disso). As listas do cartão são
   montadas em memória por `listas.ts` (puro) e paginadas na rota — a
@@ -3826,12 +4537,22 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   determinística (retentativa e concorrente reencontram o webhook pela URL
   em vez de criar um segundo). `obter()` do cliente devolve `null` SÓ no 404
   — 2xx sem corpo LANÇA — e o 404 de uma cobrança só vira `deleted` com o
-  CLIENTE dela respondendo 200 (a cerca da reconciliação). O balde da rota é
+  CLIENTE dela respondendo 200 (a cerca da reconciliação). ⚠️ A releitura da
+  RÉGUA (`reconfirmar`, varrer-regua.ts) marcava apagada SEM essa cerca até
+  14/09/2026: hoje as duas usam a mesma, e os dois 404 juntos param a
+  varredura como `conta_trocada`, sem travar nada. O balde da rota é
   POR CONTA e só depois do cabeçalho conferir. Reaproveita antes de criar (id nosso → PUT; mesma URL → PUT; só
   então POST) — trocar a chave não pode dobrar as entregas. Fila
   interrompida é religada UMA vez pelo cron (`webhook_religado_em`); a
   segunda vira `interrompido` ("precisa de atenção"), e só um gesto de gente
-  (Religar ou Ativar) zera o marcador. O estado `erro` (o Asaas recusou a
+  (Religar ou Ativar) zera o marcador. ⚠️ **Rede e `limite` NUNCA viram
+  estado que espera gente — nem na criação, nem no RELIGAR**
+  (`conferirWebhook`): a falha é gravada com o estado ANTERIOR, o
+  `webhook_religado_em` não é carimbado e o ciclo seguinte tenta de novo.
+  Antes, toda falha do religar virava `interrompido`, e o cartão afirmava "o
+  CRM já religou uma vez" sobre um pedido que nem chegou ao Asaas (Codex, 4ª
+  rodada do PR #206). Somado ao 403 de cota lido como `limite`, é o que
+  impede um soluço de cota de travar o aviso na hora. O estado `erro` (o Asaas recusou a
   criação) é retentado pelo cron uma vez por dia (`RETENTAR_ERRO_MS`): a
   primeira criação real acontece depois do merge, e uma lista de eventos
   recusada não pode travar a integração até alguém clicar. Desconectar APAGA o webhook no Asaas antes de
@@ -3861,6 +4582,38 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   de cada trava (`deps.relogio`; `janelaFechou`), e o log de um disparo
   nunca responde por outra trava do ciclo (`logsConsumidos`) — dois
   clientes do Asaas no mesmo contato saem em sequência (Codex, 3ª rodada).
+  ⚠️⚠️ **A automação que MANDA é escolhida de novo DEPOIS da releitura**,
+  sobre o `cruzaram` RELIDO e pelo mesmo comparador da seleção
+  (`porMaiorMarco`, exportado de `regua.ts` — uma cópia só), com a conexão
+  conferida de novo com ELA; daí em diante travas, janela, canal, contexto e
+  `medir()` usam essa, nunca `grupo.automacao`. Com a do grupo montado sobre
+  o espelho, a parcela do maior marco paga entre a sincronização e o
+  disparo deixava a escolhida sem parcela: tudo virava `absorvida`, nada
+  saía e a trava do marco menor ficava gasta (23505 no ciclo seguinte, e
+  amanhã o dia-alvo já passou). A escolhida com a conexão caída é pulada SEM
+  travar — nunca cai para uma automação menor, que mandaria o texto errado.
+  `dias_de_atraso` sai das parcelas da automação que manda, a mais antiga à
+  frente (na ordem do banco, o marco de 30 dias dizia "3 dias"). (Codex, 4ª
+  rodada do PR #206.)
+  ⚠️ **O lembrete relido passa pela MESMA cerca da seleção
+  (`cabeNoLembrete`: vencimento nos dias do lembrete, não só o status)** — a
+  PENDING de hoje que o Asaas PRORROGOU mandava "vence hoje" com a data
+  futura e travava o lembrete do dia novo. E o "vence hoje" da COBRANÇA é
+  `venceNoDia` (vencimento hoje OU nos dias que o lembrete cobre hoje): na
+  segunda o lembrete cobre sábado e domingo, e a PENDING do sábado de quem
+  tem marco na segunda sumia do dia. Os dias vêm do `somente_dias_uteis` DA
+  AUTOMAÇÃO do lembrete, nunca `true` fixo (em dias corridos, a do sábado já
+  foi lembrada no sábado, e somá-la repetia a trava `vence_hoje` — 23505 no
+  grupo; pino "dias CORRIDOS"). (Codex, 4ª rodada do PR #206.)
+  ⚠️⚠️ **Mas quem responde "esse lembrete já saiu?" é a TRAVA, nunca a
+  configuração de hoje** (`semLembreteTravado`): lembrado o sábado em dias
+  corridos e ligado "só dias úteis" antes de segunda, a segunda volta a
+  cobrir o sábado — a parcela entrava de novo no INSERT do grupo, o 23505
+  recusava a cobrança do marco (ou o lembrete da parcela de segunda) e o
+  `continue` lia "outro processo pegou" o dia inteiro. As parcelas com trava
+  `vence_hoje` para aquele vencimento saem da mensagem e da trava nos DOIS
+  caminhos; no do lembrete a conferência vem ANTES da releitura, para não
+  gastar GET no Asaas a cada ciclo com quem já foi lembrado (Codex, PR #212).
   A mensagem sai pelo caminho do ROBÔ (`dispararAutomacoes` →
   `engineSendText`): não reabre encerrada, não zera `aguardando_desde`, não
   mexe em não lidas (D16; pino default-deny em `regua.chamadores.test.ts`).
@@ -3875,7 +4628,22 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   não dispara; a trava vale para a automação que enviou
   E para a que foi absorvida no mesmo dia (`absorvida`), e o lembrete usa
   `tipo = 'vence_hoje'`/`marco = 0`. `reservado` há mais de 10 min é órfã
-  (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ **`na_fila`
+  (sem log → apagada; com log → `incerto`, nunca reenviada). ⚠️ A órfã sem
+  log sai JUNTO com as `absorvida` do MESMO INSERT (mesma conta, cliente e
+  automação e o MESMO `criado_em` — o `now()` é um por transação), e só
+  DEPOIS de a própria órfã sair: sozinhas, elas davam 23505 ao grupo do
+  ciclo seguinte e nada saía o dia inteiro; se o dono fechou a trava no meio,
+  a cerca `resultado = 'reservado'` não apaga nada e a `vence_hoje` absorvida
+  FICA (é ela que impede o lembrete em dobro). Falha ao apagar as irmãs vira
+  só `console.warn` (revisão da 4ª rodada do PR #206). ⚠️ **`enviado` é
+  QUALQUER passo que entrega ao contato com sucesso**
+  (`PASSOS_QUE_FALAM_COM_O_CONTATO` em `regua.ts`: mensagem, mídia, botões,
+  lista, modelo), em `resultadoDoLog` e portanto na reconciliação do
+  `na_fila` — um ramo de condição pode rodar só a mídia, e a trava fechava
+  `barrada`/`falhou` sobre cliente cobrado, fora do intervalo mínimo.
+  `send_to_number` (avisa OUTRO número) e `send_webhook` ficam fora, e por
+  isso não é o `PASSOS_DE_ENVIO` da retentativa (Codex, 4ª rodada do PR
+  #206). ⚠️ **`na_fila`
   existe por causa da RETENTATIVA do motor (PR #205)**: um envio que a
   Evolution RECUSA (4xx) volta para a fila e roda de novo em 30 s / 5 min,
   FORA da varredura — a trava guarda `automation_log_id` e a varredura
@@ -3910,12 +4678,30 @@ decisões D1–D20 e os números da conta real). O que morde código novo:
   cerca é de conexão por QR CODE (`kind = 'evolution'`, `connected`):
   Instagram e Meta no passo dariam `falhou` determinístico consumindo a
   trava. A ficha ligada SEM telefone (só Instagram, 989) é pulada sem
-  travar (`semTelefone`). O seletor de conexão do passo aparece SEMPRE nos
+  travar (`semTelefone`). ⚠️ **"Tem telefone" é o predicado do REMETENTE do
+  robô** — `isValidE164(sanitizePhoneForMeta(telefone))`, o de
+  `engineSendText`, conferido antes do desvio de transporte (vale para a
+  Evolution) —, nunca régua própria: com ">= 8 dígitos", o número com zero
+  na frente ou os 18 dígitos de um JID de grupo passavam na varredura, eram
+  recusados no envio e a trava fechava `falhou` sem nova chance depois de o
+  telefone ser corrigido. Pino estrutural em `regua.chamadores.test.ts`,
+  lendo os dois fontes SEM comentários (Codex, 4ª rodada do PR #206).
+  ⚠️ **Nos dois gatilhos, `validate.ts` recusa em qualquer escopo
+  `run_automation`/`run_flow` e `send_template`/`send_buttons`/
+  `send_list`.** A entrega pela FILHA fica no log dela (a trava vira
+  `barrada`), a filha pode ter "Aguardar" e retomar sem reconfirmar o
+  pagamento, e a cerca de conexão do motor olha o gatilho DA FILHA; e os
+  passos só-Meta, fixados num número oficial, saíam por conexão que a
+  varredura não sondou e que o motor não cerca (a trava que falha fechado
+  mora só no `send_message`) — sem conexão, falhavam sempre e gastavam a
+  trava. ⚠️ Vale só na ATIVAÇÃO e na edição: automação da régua gravada
+  antes da regra não é pulada pela varredura — conferir antes de ligar a
+  régua (revisão da 4ª rodada do PR #206). O seletor de conexão do passo aparece SEMPRE nos
   gatilhos da régua, mesmo com uma conexão só (`reguaDoAsaas` no contexto
   do construtor) — senão a automação criada à mão nunca ligava; a
-  ativação exige pelo menos um `send_message` (é dele que vem a conexão e
-  o `enviado` da trava — só `send_media` ativava e era pulada em todo
-  ciclo); e o motor, nesses gatilhos, lança em vez de cair no padrão
+  ativação exige pelo menos um `send_message` (é dele que vem a conexão —
+  só `send_media` ativava e era pulada em todo ciclo; o `enviado` da trava,
+  desde a 4ª rodada, vem de qualquer passo que entrega ao contato); e o motor, nesses gatilhos, lança em vez de cair no padrão
   (`resolveEngineChannelPreferring` cai em silêncio no canal da conversa —
   numa cobrança isso é o link de pagamento saindo por outro número).
   "Assinar como" (`automations.assinatura_personalizada`, D18) é prefixo
@@ -4505,6 +5291,82 @@ morde código novo:
   acontecer. Entra quando a integração tratar `invitee.canceled` — até lá o
   bloco é só `cb_meetings` e diz por quê.
 
+⚠️ **Telas que se atualizam ao VOLTAR para o app (14/09/2026).**
+`src/lib/celular/ao-voltar.ts` (puro, com teste) e
+`src/hooks/use-ao-voltar-para-o-app.ts`, chamado em Tarefas, Meu dia, Funil e
+Contatos. O CRM instalado no celular não tem botão de recarregar nem "puxar
+para atualizar": a caixa de entrada já se atualizava no `visibilitychange`,
+as outras quatro não — quem voltava do WhatsApp uma hora depois via a lista
+de uma hora atrás, sem aviso nenhum. O que morde código novo:
+
+- ⚠️⚠️ **O recarregar passado ao hook precisa ser SILENCIOSO**, mantendo a
+  tela até a resposta chegar. Tarefas ganhou `recarregarEmSilencio` (mantém a
+  lista e as páginas abertas, e uma falha não troca a lista pelo aviso de
+  erro); Contatos, `fetchContacts({ silencioso: true, preservarSelecao: true })`;
+  o Funil, uma recarga própria sobre `buscarEtapas`/`buscarNegocios`. ⚠️ No
+  Funil, NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
+  perde a rolagem e o retorno do inbox.
+- ⚠️⚠️ **A recarga silenciosa de Contatos PODA a seleção** às linhas que
+  continuam na página (`podarSelecao`). A página pode ter mudado enquanto a
+  pessoa estava fora, e a ação em massa age sobre `selected` inteiro: id que
+  saiu da tela e continuou marcado seria apagado sem ninguém o ver marcado
+  (Codex, PR #216).
+- ⚠️ **A volta em Contatos recarrega também o catálogo de etiquetas**
+  (`fetchTags`): sem ele, etiqueta criada por outro membro sumia da linha, a
+  renomeada ficava com o nome velho e a apagada seguia filtrando a lista.
+  ⚠️⚠️ E o `fetchTags` troca o mapa SÓ quando o conteúdo mudou (`igual ? prev
+  : map`): `fetchContacts` depende de `tagsMap`, e um mapa novo com o mesmo
+  conteúdo refaria a lista inteira com spinner e seleção zerada a cada volta
+  (Codex, PR #216, 2ª rodada). ⚠️⚠️ Quando o catálogo MUDOU de fato, o efeito
+  da lista percebe que só ele mudou — a página, a busca e o filtro são os
+  mesmos (`chaveDaListaRef`) — e refaz em silêncio e com a seleção; senão
+  quem preparava uma ação em massa perdia a seleção inteira (3ª rodada).
+- ⚠️⚠️ **No Funil, a volta recarrega o QUADRO, o CATÁLOGO DE FUNIS e as
+  AUTOMAÇÕES, e só grava com o mesmo funil aberto** (`funilAbertoRef`) **e
+  nenhuma mudança no meio do caminho** (`versaoDoQuadroRef`, que o arrasto,
+  `refreshDeals`, `refreshStages`, `refreshPipelines`, `refreshAutomations` E a
+  troca de funil avançam). Tudo o que ela lê tem variante com `null` na FALHA —
+  `buscarEtapas`, `buscarNegocios`, `buscarFunis`, `buscarAutomacoes` e o
+  `falhou` de `loadPassosENomes` —, porque voltar ao app antes de a rede do
+  celular voltar esvaziava o quadro, apagava a lista de funis e a seleção, ou
+  trocava os nomes dos cartões por "(apagado)". Funil apagado lá fora sai da
+  seleção, e a troca carrega o primeiro que sobrou. ⚠️ As gravações acontecem
+  JUNTAS, depois de uma única conferência: gravando a troca de funil antes, a
+  própria troca avançaria a versão e descartaria as automações. Motivos, das
+  quatro rodadas do Codex no PR #216: trocar de funil com a recarga no ar
+  deixava o quadro de B com os dados de A (e A → B → A passava pela cerca do
+  funil); a recarga que saiu antes de um arrasto devolvia o card à etapa
+  antiga; e o catálogo e as automações ficavam velhos até reabrir a tela.
+  Quem criar outro caminho que mexa nesses estados avança a versão também. Os
+  `load*` continuam devolvendo vazio para quem já os chamava.
+- ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
+  (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
+  hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de
+  propósito. Desempenho e Saúde são relatórios que afirmam números (a
+  escolha do Meu dia), e na Lista a tabela sem linhas durante a carga é o
+  que impede mudar a etapa de um negócio com a recarga no ar, a corrida que
+  o quadro precisou cercar com a versão (Codex, PR #216, 3ª rodada).
+  ⚠️⚠️ **E o que não é trajetória vai JUNTO** (Codex, merge do PR #216). O
+  Desempenho recarrega também o gasto dos anúncios (`useGastosDeAnuncios`
+  ganhou `recarregar`, com a versão DENTRO da chave): só as trajetórias
+  misturava leads novos com o gasto de antes da sincronização, e o custo por
+  lead e o CAC saíam errados. A Lista recarrega também o catálogo de campos,
+  blocos e perfis (`versaoDoCatalogo`) e as conexões — esses EM SILÊNCIO,
+  por serem rótulos: recarga do catálogo que falha mantém o que está na tela
+  (vazio tiraria as colunas de campo da tabela), e as conexões usam o
+  `recarregarEmSilencio` do `useChannels`, que descarta a falha. O
+  `recarregar` comum trocaria a lista boa pelo vazio e apagaria os nomes da
+  coluna Conexão até a volta seguinte.
+- **O Meu dia é a exceção deliberada**: chama o mesmo `atualizarTudo` do
+  botão, e os blocos piscam "carregando". A tela AFIRMA ("tudo em ordem",
+  "0 vencidas"), e afirmar sobre número velho é pior que piscar.
+- **Só recarrega depois de 30 s fora** (`AUSENCIA_QUE_RECARREGA_MS`): olhada
+  rápida em outro app não queima consulta (o funil busca todos os negócios do
+  quadro). Relógio andando para trás não recarrega.
+- **A função mais recente é lida por ref**: passar uma arrow nova a cada
+  render não re-assina o evento. Tela nova que ganhe o hook entra no pino de
+  `ao-voltar.test.ts`.
+
 ⚠️ **Dois testes novos fecham buracos de i18n que o portão do CI não
 alcança.** `src/lib/automations/rotulo-do-gatilho.test.ts` e
 `src/components/settings/rotulo-da-secao.test.ts`. Os dois rótulos são
@@ -4538,6 +5400,53 @@ marca do projeto original. O que morde código novo:
   de `SignupPage.description` e `Settings.invite.whatsappMessage`); onde não
   é, a frase diz "este CRM". Merge do upstream reintroduz "wacrm" em toda
   chave nova.
+
+⚠️ **App instalado no celular (14/09/2026): o manifesto existe por causa do
+ESCOPO.** `src/app/manifest.ts`, `src/app/apple-icon.tsx`,
+`NOME_CURTO_DO_APP` e `TAMANHOS_DO_ICONE` em `src/lib/marca.ts`, e o pino
+`src/app/manifest.test.ts`. Plano vivo em `docs/PLANO-app-no-celular.md`. O
+que morde código novo:
+
+- ⚠️⚠️ **`scope: "/"` não é detalhe.** Sem manifesto, o iPhone decide sozinho
+  quais endereços são do app, a partir da página em que a pessoa instalou
+  (regra não documentada) — e abrir uma conversa, que só troca `/inbox` por
+  `/inbox?c=…`, já cobria a tela com a moldura de navegador (X em cima;
+  voltar, recarregar e "abrir no Safari" embaixo; print do operador,
+  14/09). Estreitar o escopo devolve a moldura, e há pino.
+- ⚠️ **O iPhone lê manifesto e ícone NA INSTALAÇÃO.** Mudança de nome, ícone,
+  escopo ou tela de abertura não chega a quem já instalou: é apagar o ícone
+  e adicionar de novo, com login de novo (o app instalado guarda o login
+  separado do Safari). Avisar o operador a cada mudança aqui.
+- ⚠️ **O ícone é fundo até a borda, sem canto arredondado e sem
+  transparência** (`apple-icon.tsx`): o iPhone arredonda sozinho e pinta
+  transparência de preto. Não reaproveitar o desenho do `icon.tsx` (a aba do
+  navegador), que tem canto arredondado.
+- ⚠️ **`TAMANHOS_DO_ICONE` alimenta os DOIS lados** — os arquivos que o
+  `apple-icon` gera e os `src` do manifesto. Tamanho que só um lado conhece
+  vira ícone quebrado, sem erro. O endereço é `/apple-icon/<lado>`, a forma
+  que o `generateImageMetadata` dá.
+- ⚠️⚠️ **`metadata.icons` no layout DESLIGA os ícones de arquivo.** O Next só
+  injeta o `icon.tsx` e o `apple-icon.tsx` no `<head>` quando o metadata não
+  declara `icons` (`resolve-metadata.js`, `if (!resolvedMetadata.icons)`).
+  O upstream declarava `icons: { icon: [{ url: "/icon" }] }`, e com ele o
+  manifesto e as imagens saíam perfeitos e o `<head>` saía SEM
+  `apple-touch-icon` — medido em 14/09/2026; o iPhone improvisaria o ícone.
+  Foi removido, e há pino. A documentação do Next diz que o ícone de arquivo
+  "tem prioridade" — para `icons` é o contrário.
+- **O nome embaixo do ícone é `NEXT_PUBLIC_APP_SHORT_NAME`**, build-arg como o
+  nome longo ("CB CRM" no `pipeline.yml`, decisão do operador). Sem ele vale
+  o `NOME_DO_APP`, que o iPhone corta.
+- **Abre em `/inbox`** (decisão do operador: no celular o uso é atender). O
+  `id: "/"` fixo impede que trocar a tela de abertura faça o Android tratar o
+  app como outro. Quem abre deslogado passa pelo login e cai no Painel — o
+  login não guarda a página de origem.
+- **O logo do escritório ficou para depois** (decisão do operador): o ícone é
+  o símbolo genérico. Quando vier, entra por configuração (a regra da marca,
+  acima), nunca como arquivo do escritório no código — e cada pessoa
+  reinstala o ícone.
+- **Link recebido no WhatsApp abre no Safari, não no app instalado**: o
+  iPhone não deixa link abrir app da Tela de Início. Não tem conserto do
+  nosso lado.
 
 ⚠️ **`scripts/produto-gate.test.ts` reprova a nossa infraestrutura em código
 que viaja.** Proíbe `cbadvogados`, `CBAdvNet`, o IP da VPS, o ref do
@@ -4599,10 +5508,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   `parseGroupInfo` lê as duas formas.
 - ⚠️ **`GROUP_UPDATE` só entra em `WEBHOOK_EVENTS` DEPOIS do upgrade**: a 2.3.2
   recusa a lista inteira com evento desconhecido (conferido em 28/07/2026).
-- Operação (estado em 09/09/2026 21:11): a imagem é a NOSSA,
-  `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b…`
-  (commit `e273b904` do `develop` + patch da citação do cliente + `prisma.config.ts`
-  dentro — `docker/evolution-cb/`), SEMPRE por digest; `TELEMETRY_ENABLED=false`;
+- Operação (estado em 17/09/2026 12:39 BRT): a imagem é a NOSSA,
+  `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto@sha256:a7d56788…`
+  (commit `e273b904` do `develop` + patch da citação do cliente + patch da
+  foto de perfil + `prisma.config.ts` dentro — `docker/evolution-cb/`), SEMPRE
+  por digest; `TELEMETRY_ENABLED=false`;
   a licença está ativa (tabela `RuntimeConfig` do banco `evolution`); a stack
   completa está em `ops/vps/evolution-stack.yml` (= `/root/evolution-stack.yml`,
   segredos em `/root/evolution.env`), e `docker stack deploy` da Evolution só
@@ -4611,6 +5521,18 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   compartilhado com outros serviços); o log da Evolution morre no reinício do
   contêiner; o cron `docker image prune -af` apaga as imagens de rollback na
   madrugada seguinte (são públicas, voltam com `pull`).
+  ⚠️ **Desde 17/09/2026 12:39 BRT a imagem carrega DOIS patches** (o da
+  citação e o da foto de perfil que travava a fila de entrada — ver "O atraso
+  de entrega NÃO é bug do CRM", acima). Trocada por `docker service update
+  --image …@sha256:a7d56788…` (stop-first: 17 s de troca, as 4 conexões
+  voltaram `open` em < 1 min, `prisma migrate deploy` sem pendência). Rollback
+  = o digest anterior, `…citacao@sha256:dc0f4e8b…` (mesmo commit, mesmas
+  migrations). O `.yml` da stack acompanha o digest. ⚠️⚠️ **Trocar o
+  contêiner com a fila de entrada represada PERDE a fila para o CRM** (a
+  Baileys acka ao servidor ANTES do handler; medido em 17/09: os ~27 min
+  represados da Bancário-Comercial ficaram só no celular). Reinício de
+  contêiner ou troca de imagem SÓ com `entrega_recebida_em − entrega_carimbo_em`
+  da 1002 em ~0 s em todas as conexões.
 
 - ⚠️ **Recibo fora de ordem (medido 09/09/2026, primeira mensagem depois do
   upgrade)**: a 2.4 emite `SERVER_ACK` DEPOIS do `DELIVERY_ACK` da mesma
@@ -5007,6 +5929,67 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   todos os arquivos passaram a ter 4 dígitos (PR #209) — a 999 nasceu
   `999_` e virou `0999_` no merge. As entradas desta lista seguem com o
   nome da época em que foram aplicadas.
+  - **1002_cb_atraso_de_entrega** — `cb_channels.entrega_carimbo_em` e
+    `entrega_recebida_em`: a fronteira de entrega por conexão, que a sonda de
+    saúde lê para o terceiro eixo (ver a seção própria). Aditiva — o app
+    anterior não as lê e degrada sem alarme. Aplicada em 16/09/2026 pela
+    Management API (histórico `20260916164400`), ANTES do merge do PR #220,
+    com autorização do operador; conferida por consulta (as 2 colunas,
+    `anon` sem SELECT) e testada antes num Postgres 16 limpo (banco vazio,
+    idempotente, os 4 cenários da cerca do UPDATE).
+  - **1003_cb_gravada_em_na_mensagem** — `messages.gravada_em timestamptz`
+    com `DEFAULT now()` (ADD sem default, SET DEFAULT depois: as linhas
+    antigas ficam NULL, "não medido"). É o instante em que o CRM gravou a
+    linha, que NÃO existia: `created_at` recebe o carimbo do WhatsApp na
+    ingestão. Instrumento da verificação do atraso de entrega (PLANO-baileys-7,
+    5.10): `gravada_em − created_at`, por mensagem, todas as conexões, com
+    história — a 1002 guarda só a fronteira atual e o log da Evolution roda a
+    30 MB. Nenhuma linha de código a escreve. Aditiva. Aplicada em
+    17/09/2026 12:39:17 BRT pela Management API (histórico `20260917153917`),
+    20 s ANTES do rollout da imagem `-foto` — o "antes" e o "depois" são
+    medidos com o mesmo instrumento (a fronteira é `2026-09-17 15:39:37+00`).
+  - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
+    `automation_pending_executions (log_id)`: a guarda de `fecharLog` e as
+    varreduras das irmãs (todo cancelamento) perguntam por execução, e a fila
+    não é podada (`done`/`cancelled` ficam para sempre). ⚠️ O cabeçalho do
+    SQL diz que `execucaoJaInterrompida` também lê a fila — era verdade no
+    dia da aplicação; desde a 1005 ela lê `automation_logs.interrompida_em`
+    por chave primária, e o SQL aplicado não foi reescrito (comentário).
+    Aditiva: sem ela tudo responde certo, só devagar; pode entrar antes ou
+    depois do deploy. Medido antes: a tabela estava VAZIA em produção (nenhuma
+    automação ativa tinha "Aguardar"). Aplicada em 18/09/2026 pela Management
+    API (histórico `20260918162117`), ANTES do merge do PR #223, com
+    autorização do operador; conferida por consulta ao catálogo (o índice
+    existe ao lado de `idx_automation_pending_due` e `_account`).
+  - **1005_cb_execucao_interrompida** — `automation_logs.interrompida_em` +
+    `interrompida_por` (CHECK com os cinco motivos), o índice parcial das
+    execuções vivas por contato, e a função `cb_estacionar_espera` — a
+    ÚNICA porta da fila pelo motor (trava o registro, confere a marca,
+    insere). ⚠️ Aplicar ANTES do deploy: sem a função todo "Aguardar" falha
+    de forma visível ("function does not exist") — nada sai errado ao
+    cliente, mas nenhuma sequência estaciona. `SECURITY INVOKER`, EXECUTE só
+    do `service_role` (as duas metades do REVOKE, conferidas). Aplicada em
+    19/09/2026 pela Management API (histórico `20260919185044`), ANTES do
+    merge do PR #223, com autorização do operador e depois de o replay do CI
+    passar; conferida por consulta ao catálogo (colunas, função, privilégios,
+    índice, CHECK) e por e2e contra o banco real: a função estaciona a
+    execução limpa, devolve `null` para a marcada, e o CHECK recusa motivo
+    fora do vocabulário.
+  - **1006_cb_indices_da_estadia_e_da_resposta** — três índices para as duas
+    consultas novas do PR #223: `messages (conversation_id, gravada_em desc)`
+    PARCIAL em `sender_type = 'customer' and deleted_at is null` (a segunda
+    linha de defesa — o predicado ESPELHA os filtros de `clienteRespondeuDesde`,
+    senão o planejador ignora o índice; pino em `indices-1006.test.ts`) e
+    `cb_automation_events (account_id, deal_id|contact_id, tipo, criado_em
+    desc)` (a estadia, que roda antes de cada passo de toda automação presa).
+    Aditiva, idempotente, pode entrar antes ou depois do deploy; o CREATE
+    INDEX em `messages` segura as escritas por alguns segundos (Codex, 13ª
+    rodada). Aplicada em 19/09/2026 pela Management API (histórico
+    `20260919205923`), DEPOIS do replay verde do CI e com autorização do
+    operador; conferida por consulta ao catálogo (os três índices, com o
+    predicado parcial de `messages` renderizado como
+    `sender_type = 'customer' AND deleted_at IS NULL`).
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

@@ -298,8 +298,18 @@ export async function conferirWebhook(
       patch.webhook_religado_em = carimbo;
       console.warn(`[asaas] fila do webhook da conta ${accountId} estava interrompida — religada uma vez`);
     } catch (e) {
+      const codigo = codigoDe(e);
+      // ⚠️ Rede e cota são PASSAGEIRAS: o estado anterior fica, o marcador do
+      // religar não é carimbado e o ciclo seguinte tenta religar de novo — o
+      // mesmo tratamento da criação. Antes, qualquer falha virava
+      // `interrompido`, e o cartão afirmava "o CRM já religou uma vez" sobre
+      // um religar que nem chegou ao Asaas (Codex, 4ª rodada do PR #206).
+      if (codigo === "rede" || codigo === "limite") {
+        await gravarFalha(admin, accountId, config.webhook_state, codigo, carimbo);
+        return { ok: false, codigo };
+      }
       estado = "interrompido";
-      patch.webhook_erro = codigoDe(e);
+      patch.webhook_erro = codigo;
     }
   } else {
     estado = decisao;

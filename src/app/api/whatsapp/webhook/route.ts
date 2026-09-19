@@ -9,6 +9,7 @@ import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { cancelarEsperasPorResposta } from '@/lib/automations/parar-se-responder'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -28,6 +29,7 @@ import {
   followConversationChannel,
   gravarComCanal,
 } from '@/lib/cb-channels/stamp'
+import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega'
 
 // The `after()` callback in POST runs within this route's max duration.
 // Inbound processing can fan out to per-media Meta verification calls, so
@@ -900,6 +902,12 @@ async function processMessage(
   // então isto roda uma vez por mensagem.
   if (canalGravado && insertedRows && insertedRows.length > 0) {
     await followConversationChannel(supabaseAdmin(), conversation.id, canalGravado)
+
+    // A fronteira de entrega da conexão (1002). Dentro do mesmo `if` da
+    // reentrega de propósito: o carimbo de uma mensagem reentregue é
+    // ANTIGO, e embora a régua "só avança" já o descarte, medir o que não
+    // acabou de chegar não tem sentido nenhum aqui.
+    await registrarEntrega(supabaseAdmin(), canalGravado, parseInt(message.timestamp))
   }
 
   // A customer writing again re-opens the thread (issue #409). Kept as a
@@ -912,6 +920,17 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // O cliente respondeu: as esperas marcadas "parar se o cliente responder"
+  // deste contato são canceladas. ⚠️ ANTES do despacho de robôs e automações,
+  // e sem olhar `flowConsumed` — ver `parar-se-responder.ts` (depois, esta
+  // mesma mensagem cancelaria a espera da automação que ela acabou de
+  // iniciar). Gêmeo do `persistInboundMessage` da Evolution; nunca lança.
+  await cancelarEsperasPorResposta({
+    db: supabaseAdmin(),
+    accountId,
+    contactId: contactRecord.id,
+  })
 
   // ============================================================
   // Flow runner dispatch.

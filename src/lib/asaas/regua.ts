@@ -63,6 +63,22 @@ export type ResultadoDaTrava = (typeof RESULTADOS_DA_TRAVA)[number];
  */
 export const RESULTADOS_QUE_CONTAM_COMO_ENVIO: ReadonlySet<string> = new Set(["enviado", "na_fila", "incerto"]);
 
+/**
+ * Os passos do motor que ENTREGAM ao contato: o sucesso de qualquer um deles
+ * é a prova de que a cobrança chegou. ⚠️ Só o `send_message` contava, e um
+ * ramo de condição pode rodar só a mídia (`validate.ts` a aceita com a
+ * conexão): a execução fechava `barrada`, e o cliente cobrado ficava fora do
+ * intervalo mínimo (Codex, 4ª rodada do PR #206). FICAM FORA o
+ * `send_to_number` (avisa OUTRO número, a equipe) e o `send_webhook` (fala
+ * com um sistema) — por isso não é o `PASSOS_DE_ENVIO` da retentativa, que
+ * inclui o `send_to_number`. Botões, lista e modelo contam: se deram certo, o
+ * cliente recebeu, e contar a mais só faz a régua mandar MENOS. ⚠️ Contar
+ * não é permitir: `validateAsaasReguaForActivation` RECUSA esses três na
+ * régua (só saem pela Meta, e a régua é QR Code) — estão aqui para o log de
+ * uma automação gravada antes da recusa não virar `barrada` sobre entrega.
+ */
+export const PASSOS_QUE_FALAM_COM_O_CONTATO: ReadonlySet<string> = new Set(["send_message", "send_media", "send_buttons", "send_list", "send_template"]);
+
 /** Feriados nacionais de data FIXA (MM-DD). Os móveis ficam fora da v1 (§8). */
 export const FERIADOS_NACIONAIS_FIXOS = ["01-01", "04-21", "05-01", "09-07", "10-12", "11-02", "11-15", "11-20", "12-25"] as const;
 
@@ -179,6 +195,23 @@ export function diasDoLembrete(hoje: string, somenteDiasUteis: boolean): string[
   const dias: string[] = [];
   for (let d = somarDias(diaUtilAnterior(hoje), 1); d <= hoje; d = somarDias(d, 1)) dias.push(d);
   return dias;
+}
+
+/**
+ * Puro: a parcela cabe no lembrete de hoje? Vencimento entre os dias do
+ * lembrete (`diasDoLembrete`) e PENDING — ou já OVERDUE quando o vencimento
+ * caiu no fim de semana (o Asaas pode marcar vencida antes de o lembrete
+ * empurrado sair, C7). ⚠️ É a cerca da SELEÇÃO e também a da linha RELIDA no
+ * Asaas: a releitura olhava só o status, e a PENDING de hoje que o Asaas
+ * PRORROGOU para o fim do mês (a sincronização só a relê amanhã) mandava
+ * "vence hoje" com a data futura na linha — e a trava gravada com o
+ * vencimento novo barrava por 23505 o lembrete legítimo no dia certo (Codex,
+ * 4ª rodada do PR #206).
+ */
+export function cabeNoLembrete(p: Pick<ParcelaDoEspelho, "status" | "deleted" | "vencimento">, dias: ReadonlySet<string>, hoje: string): boolean {
+  if (p.deleted || !dias.has(p.vencimento)) return false;
+  const classe = classificar(p.status, p.deleted);
+  return classe === "a_vencer" || (classe === "vencida" && p.vencimento < hoje);
 }
 
 /**
@@ -330,9 +363,24 @@ export function vencidasDoCliente(parcelas: readonly ParcelaDoEspelho[]): Parcel
   return parcelas.filter((p) => ehDevida(classificar(p.status, p.deleted))).sort((a, b) => (a.vencimento < b.vencimento ? -1 : a.vencimento > b.vencimento ? 1 : 0));
 }
 
+/**
+ * A ordem de escolha entre automações de cobrança: MAIOR marco primeiro,
+ * empate pelo menor id. ⚠️ Uma cópia só — `agruparPorCliente` escolhe por ela
+ * sobre o espelho, e a varredura escolhe DE NOVO por ela depois da releitura
+ * no Asaas (a parcela do maior marco pode ter sido paga no meio). Duas
+ * cópias do comparador divergiriam em silêncio.
+ */
+export function porMaiorMarco(a: Pick<AutomacaoDaRegua, "marco" | "id">, b: Pick<AutomacaoDaRegua, "marco" | "id">): number {
+  return b.marco - a.marco || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0);
+}
+
 export interface GrupoDeCobranca {
   asaasCustomerId: string;
-  /** a automação de MAIOR marco entre as que cruzaram hoje (a que manda a mensagem) */
+  /**
+   * a automação de MAIOR marco entre as que cruzaram hoje NO ESPELHO da
+   * seleção — ⚠️ não é necessariamente a que manda: a varredura a re-escolhe
+   * sobre as parcelas RELIDAS (`porMaiorMarco`, Codex, 4ª rodada do PR #206)
+   */
   automacao: AutomacaoDaRegua;
   /** parcela → o marco que ela cruzou hoje (para as travas) */
   cruzaram: { parcela: ParcelaDoEspelho; automacao: AutomacaoDaRegua }[];
@@ -370,7 +418,7 @@ export function agruparPorCliente(
   // passado. A trava da parcela fica com o maior marco; o menor não precisa
   // de trava própria: no ciclo seguinte do mesmo dia o grupo bate na trava
   // do maior (23505) e sai, e amanhã o dia-alvo do menor já não é hoje.
-  const ordenadas = automacoes.filter((a) => a.tipo === "atraso").sort((a, b) => b.marco - a.marco || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const ordenadas = automacoes.filter((a) => a.tipo === "atraso").sort(porMaiorMarco);
   for (const automacao of ordenadas) {
     const c = { ...ctx, somenteDiasUteis: automacao.somenteDiasUteis };
     if (!opcoes.semJanela && !janelaAberta(agora, ctx.hoje, automacao.horaEnvio, ctx.fuso)) continue;
@@ -417,11 +465,7 @@ export function agruparLembretes(
   if (dias.size === 0) return [];
   const grupos = new Map<string, GrupoDeLembrete>();
   for (const p of parcelas) {
-    if (p.deleted || !dias.has(p.vencimento)) continue;
-    // PENDING, ou já OVERDUE quando o vencimento caiu no fim de semana (o
-    // Asaas pode marcar vencida antes de o lembrete empurrado sair — C7).
-    const classe = classificar(p.status, p.deleted);
-    if (classe !== "a_vencer" && !(classe === "vencida" && p.vencimento < ctx.hoje)) continue;
+    if (!cabeNoLembrete(p, dias, ctx.hoje)) continue;
     if (clientesComMarcoHoje.has(p.asaas_customer_id)) continue;
     const g = grupos.get(p.asaas_customer_id) ?? { asaasCustomerId: p.asaas_customer_id, automacao: lembrete, venceHoje: [] };
     g.venceHoje.push(p);
@@ -432,7 +476,8 @@ export function agruparLembretes(
 
 /**
  * Puro: o que o log da automação diz que aconteceu → o resultado da trava.
- * `enviado` só com o `send_message` bem-sucedido e a execução concluída;
+ * `enviado` com um passo que ENTREGA ao contato bem-sucedido
+ * (`PASSOS_QUE_FALAM_COM_O_CONTATO`), qualquer que seja o desfecho;
  * `barrada` (condição) e `falhou` vêm do desfecho; sem log = a automação
  * não rodou (desligada entre a seleção e o disparo, ou fora do escopo).
  *
@@ -455,7 +500,7 @@ export function resultadoDoLog(
   // DEPOIS do `send_message` fecha o log como `falhou`, mas a mensagem SAIU
   // — registrá-la como `falhou` a tiraria do intervalo mínimo e outro marco
   // cobraria o cliente cedo demais (Codex, PR #206).
-  const enviou = log.steps_executed.some((s) => s.step_type === "send_message" && s.status === "success");
+  const enviou = log.steps_executed.some((s) => PASSOS_QUE_FALAM_COM_O_CONTATO.has(s.step_type) && s.status === "success");
   if (enviou) return "enviado";
   if (log.desfecho === "falhou") return "falhou";
   if (log.desfecho === "barrada") return "barrada";

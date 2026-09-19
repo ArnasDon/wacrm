@@ -88,6 +88,20 @@ describe('descreverPasso — variantes que viram chaves diferentes', () => {
     const r = descreverPasso(passo('wait', { amount: 24, unit: 'hours' }))
     expect(r).toEqual({ chave: 'wait_hours', valores: { quantidade: 24 }, alvoSumiu: false })
   })
+
+  it('espera que para na resposta do cliente tem chave PRÓPRIA', () => {
+    const r = descreverPasso(passo('wait', { amount: 30, unit: 'hours', parar_se_responder: true }))
+    expect(r.chave).toBe('wait_hours_ou_resposta')
+  })
+
+  it('só o booleano true liga a variante — como o motor', () => {
+    // `"true"` e `1` são truthy; o motor os ignora, e a grade dizer "ou até o
+    // cliente responder" sobre uma espera que NÃO para seria a tela mentindo.
+    for (const valor of ['true', 1, {}, null]) {
+      const r = descreverPasso(passo('wait', { amount: 1, unit: 'days', parar_se_responder: valor }))
+      expect(r.chave).toBe('wait_days')
+    }
+  })
 })
 
 describe('descreverPasso — texto', () => {
@@ -146,6 +160,13 @@ const VARIANTES: Array<[string, Record<string, unknown>]> = [
   ['wait', { unit: 'minutes' }],
   ['wait', { unit: 'hours' }],
   ['wait', { unit: 'days' }],
+  // "Parar se o cliente responder" troca a CHAVE, não só o texto: sem estas
+  // quatro linhas o cartão da grade mostraria
+  // `Pipelines.automacoes.resumo.wait_hours_ou_resposta`, cru.
+  ['wait', { unit: 'seconds', parar_se_responder: true }],
+  ['wait', { unit: 'minutes', parar_se_responder: true }],
+  ['wait', { unit: 'hours', parar_se_responder: true }],
+  ['wait', { unit: 'days', parar_se_responder: true }],
 ]
 
 function resumoDoDicionario(arquivo: string): Record<string, string> {

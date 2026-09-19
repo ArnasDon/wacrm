@@ -28,6 +28,7 @@ import {
 import { patchDeSituacao } from "@/lib/conversations/situacao";
 import { acharNoFio } from "@/lib/inbox/achados-no-fio";
 import { semAcento, TERMO_MINIMO } from "@/lib/inbox/busca-em-mensagens";
+import { arrastoRecolheTeclado } from "@/lib/celular/teclado";
 import {
   DESTAQUE_DO_SALTO_MS,
   seletorDoAlvo,
@@ -1380,6 +1381,53 @@ export function MessageThread({
     }
   }, [messages, leadEvents, notas, execucoesDoFio]);
 
+  // ⚠️ O teclado do celular ENCOLHE o fio: com ele aberto, a casca passa a
+  // medir só a área visível (`useTelaAcimaDoTeclado`). Encolher pela base
+  // esconde justamente as últimas mensagens, porque o `scrollTop` fica onde
+  // estava — então quem estava colado no fim continua no fim. Observado pelo
+  // TAMANHO, e não por efeito de `messages`: nada na lista mudou.
+  // ⚠️ A conversa é a dependência porque o contêiner só existe com conversa
+  // aberta: com dependência estável o efeito rodaria uma vez, com o ref ainda
+  // nulo, e não voltaria mais (a mesma lição do `onWheel`, mais abaixo).
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const observador = new ResizeObserver(() => {
+      if (saltoAtivoRef.current || !coladoNoFimRef.current) return;
+      el.scrollTop = el.scrollHeight;
+    });
+    observador.observe(el);
+    return () => observador.disconnect();
+  }, [conversation?.id]);
+
+  /**
+   * Arrastar a conversa PARA BAIXO com o dedo — rumo às mensagens antigas —
+   * recolhe o teclado do celular, como no WhatsApp. Sem isso não havia como
+   * recolhê-lo (relato do operador, 14/09/2026). Só para baixo: arrastar para
+   * cima, rumo ao fim, é o gesto de quem continua escrevendo.
+   * E arrastar continua sendo agir: solta o salto da busca, como a roda.
+   */
+  const inicioDoToqueRef = useRef<number | null>(null);
+  const aoTocarNoFio = useCallback((e: React.TouchEvent) => {
+    inicioDoToqueRef.current = e.touches[0]?.clientY ?? null;
+  }, []);
+  const aoArrastarOFio = useCallback(
+    (e: React.TouchEvent) => {
+      liberarSalto();
+      if (!arrastoRecolheTeclado(inicioDoToqueRef.current, e.touches[0]?.clientY)) {
+        return;
+      }
+      const foco = document.activeElement;
+      if (
+        foco instanceof HTMLTextAreaElement ||
+        foco instanceof HTMLInputElement
+      ) {
+        foco.blur();
+      }
+    },
+    [liberarSalto],
+  );
+
   /**
    * Rola até o alvo e o deixa no meio da tela.
    *
@@ -2234,7 +2282,13 @@ export function MessageThread({
     // clipped and the hover toolbar overlaps the Tags panel. Letting the
     // root shrink lets the bubbles' break-words / max-w caps apply.
     // Issue #257.
-    <div className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}>
+    // ⚠️ `data-acima-do-teclado` marca a área que o `useTelaAcimaDoTeclado`
+    // mantém acima do teclado do celular — sem a marca o ajuste nunca liga,
+    // sem erro nenhum (há pino em `src/lib/celular/teclado.test.ts`).
+    <div
+      data-acima-do-teclado=""
+      className={cn("flex min-w-0 flex-1 flex-col", DOODLE_BG_CLASSES)}
+    >
       {/* Header — solid card surface sits on top of the doodle so the
           name/avatar/dropdowns stay legible. */}
       <div className="flex items-center justify-between gap-2 border-b border-border bg-card px-3 py-3 sm:px-4">
@@ -2643,7 +2697,8 @@ export function MessageThread({
       <div
         ref={scrollRef}
         onWheel={liberarSalto}
-        onTouchMove={liberarSalto}
+        onTouchStart={aoTocarNoFio}
+        onTouchMove={aoArrastarOFio}
         onScroll={anotarPosicao}
         className="flex-1 overflow-y-auto px-4 py-4"
       >

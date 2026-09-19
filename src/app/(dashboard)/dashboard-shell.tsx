@@ -11,6 +11,7 @@ import { PresenceHeartbeat } from '@/components/presence/presence-heartbeat';
 import { TelaBloqueada } from '@/components/auth/tela-bloqueada';
 import { FaixaDeSimulacao } from '@/components/auth/faixa-de-simulacao';
 import { PortaDeEntrada } from '@/components/entrada/porta-de-entrada';
+import { useTelaAcimaDoTeclado } from '@/hooks/use-tela-acima-do-teclado';
 import { ROTA_DA_TELA, TODAS_AS_TELAS } from '@/lib/perfis/catalogo';
 import { podeVerTela, telaDoCaminho } from '@/lib/perfis/visibilidade';
 
@@ -28,6 +29,10 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   // always visible and this stays at `false` (ignored by the component).
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const closeSidebar = useCallback(() => setSidebarOpen(false), []);
+
+  // A conversa acima do teclado do celular (ver `src/lib/celular/teclado.ts`).
+  // Aqui, e não na página do inbox, porque é a casca que mede a altura.
+  useTelaAcimaDoTeclado();
 
   useEffect(() => {
     if (!loading && !user) {
@@ -93,7 +98,16 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   return (
     <PortaDeEntrada key={user.id} userId={user.id}>
       {(entradaPendente) => (
-        <div className="bg-background flex h-screen overflow-hidden">
+        // ⚠️ `--altura-visivel` é a área acima do teclado do celular
+        // (`useTelaAcimaDoTeclado`), com queda em `100dvh`. Com `h-screen`, o
+        // teclado aberto empurrava a página inteira para cima e o cabeçalho
+        // da conversa sumia (relato do operador no iPhone, 14/09/2026).
+        // ⚠️ E o `top` acompanha o empurrão (`--deslocamento-visivel`): se o
+        // iPhone mantém a área visível deslocada, a casca desce junto e o
+        // topo fica na tela (print do operador, 15/09/2026). `relative` +
+        // `top`, NUNCA `transform`: transform faria todo `fixed` de dentro da
+        // casca se posicionar por ela. Sem a variável, `top` volta a `auto`.
+        <div className="bg-background relative top-[var(--deslocamento-visivel)] flex h-[var(--altura-visivel,100dvh)] overflow-hidden">
           {/* Reports this tab's online/away presence once we know a user is
             signed in. Headless — renders nothing. */}
           {!entradaPendente && <PresenceHeartbeat />}

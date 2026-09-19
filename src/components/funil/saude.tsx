@@ -4,28 +4,39 @@ import { Loader2, Settings } from "lucide-react";
 import { useTranslations } from "next-intl";
 
 import { Button } from "@/components/ui/button";
+import { useModoDeContagem } from "@/hooks/use-modo-de-contagem";
 import { useTrajetorias } from "@/hooks/use-trajetorias";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { formatarPercentual, paraPontosPercentuais } from "@/lib/funil/apresentacao";
 import { classificarEtapas, type Degrau } from "@/lib/funil/degraus";
 import { inicioDoMesLocal } from "@/lib/funil/periodo";
+import { periodoSemAtividade } from "@/lib/funil/por-periodo";
 import { COORTE_PEQUENA, coortesMensais, linhasDoMapa, type TransicaoDoHistorico } from "@/lib/funil/saude";
 import { fatosDoNegocio } from "@/lib/funil/trajetoria";
 import type { Pipeline, PipelineStage } from "@/types";
 
 import { GraficoDeConversao, type SerieDeConversao } from "./grafico-de-conversao";
 import { MapaDeCalor, type LinhaDoMapaDeCalor } from "./mapa-de-calor";
+import { SeletorDeModo } from "./seletor-de-modo";
 
 /**
- * A vista de SAÚDE (Fase 3 do plano): doze coortes mensais (pelo mês da
- * ENTRADA no funil), a conversão por transição ao longo do tempo e o mapa
- * de calor com cor relativa à linha. Conta em `src/lib/funil/saude.ts`.
+ * A vista de SAÚDE (Fase 3 do plano): doze meses, a conversão por transição
+ * ao longo do tempo e o mapa de calor com cor relativa à linha. Conta em
+ * `src/lib/funil/saude.ts`.
  *
- * UMA carga da RPC para `[1º dia de 11 meses atrás, hoje)` — o que a coorte
+ * DOIS modos (18/09/2026, o mesmo seletor do Desempenho): "por período" — o
+ * padrão, cada mês mostra o que ACONTECEU nele, e mês passado é número final
+ * — e "por mês de entrada", em que cada mês é a COORTE de quem entrou nele.
+ *
+ * UMA carga da RPC para `[1º dia de 11 meses atrás, hoje)`, que serve aos
+ * dois. O que segue vale para a COORTE: o que a coorte
  * de cada mês fez depois conta até hoje. Coorte com lead ainda SEM DESFECHO
  * é "em andamento" e traz a contagem sob o mês — não é o mês corrente: a
  * coorte de agosto com três leads abertos segue mudando em setembro, e o
- * mês corrente com tudo resolvido já é final (Codex, PR #122). Coorte
- * pequena (< 5) fica apagada e fora da escala de cor.
+ * mês corrente com tudo resolvido já é final (Codex, PR #122). Célula
+ * pequena (< 5 na base da taxa) fica apagada e fora da escala de cor — por
+ * período a base é o degrau de partida do mês, não as entradas (revisão do
+ * PR #224); os textos do `title` e da legenda mudam com o modo por isso.
  */
 
 const MESES = 12;
@@ -68,10 +79,16 @@ export function Saude({
   const t = useTranslations("Pipelines.funil.saude");
   const tDesempenho = useTranslations("Pipelines.funil.desempenho");
   const tDegraus = useTranslations("Pipelines.funil.degraus");
+  const [modo, setModo] = useModoDeContagem();
+  const porPeriodo = modo === "periodo";
 
   const agora = new Date();
   const desde = inicioDoMesLocal(agora.getFullYear(), agora.getMonth() - (MESES - 1));
   const { linhas, carregando, falhou, recarregar } = useTrajetorias(pipeline.id, { desde, ate: null });
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora refaz as coortes. Com o `recarregar` comum, que
+  // pisca o carregando — é relatório, afirma números (a escolha do Meu dia).
+  useAoVoltarParaOApp(recarregar);
 
   const classificacao = classificarEtapas(stages);
   const rotuloDoDegrau = (d: Degrau) =>
@@ -121,8 +138,8 @@ export function Saude({
   }
 
   const fatos = (linhas ?? []).map((l) => fatosDoNegocio(l, pipeline.id, classificacao));
-  const coortes = coortesMensais(fatos, classificacao, MESES, agora);
-  const mapa = linhasDoMapa(coortes, classificacao);
+  const coortes = coortesMensais(fatos, classificacao, MESES, agora, modo);
+  const mapa = linhasDoMapa(coortes, classificacao, modo);
   // "jul/26", não "jul. de 26": são doze colunas lado a lado.
   const rotuloDoMes = (d: Date) =>
     `${d.toLocaleDateString(undefined, { month: "short" }).replace(".", "")}/${String(d.getFullYear()).slice(-2)}`;
@@ -134,6 +151,10 @@ export function Saude({
     emAberto: c.emAberto,
   }));
   const totalDeEntradas = coortes.reduce((s, c) => s + c.resumo.entradas, 0);
+  // Por período, "nenhum lead entrou" não é tela vazia: o contrato do lead
+  // de treze meses atrás está no mapa. A faixa só aparece quando NADA
+  // aconteceu em mês nenhum — a mesma régua do Desempenho.
+  const semNada = porPeriodo ? coortes.every((c) => periodoSemAtividade(c.resumo)) : totalDeEntradas === 0;
 
   const series: SerieDeConversao[] = mapa.map((linha) => ({
     chave: `${linha.transicao.de}-${linha.transicao.para}${linha.transicao.global ? "-global" : ""}`,
@@ -147,20 +168,24 @@ export function Saude({
     rotulo: rotuloDaTransicao(linha.transicao),
     celulas: linha.taxas.map((taxa, i) => ({
       taxa,
-      posicao: coortes[i].pequena ? null : linha.escala(taxa),
-      entradas: coortes[i].resumo.entradas,
-      pequena: coortes[i].pequena,
+      posicao: linha.pequenas[i] ? null : linha.escala(taxa),
+      base: linha.bases[i],
+      pequena: linha.pequenas[i],
     })),
   }));
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-xs text-muted-foreground">
-        {t("periodo", { meses: MESES })} · {t("entradas", { n: totalDeEntradas })}
-      </p>
-      {totalDeEntradas === 0 && (
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SeletorDeModo modo={modo} onChange={setModo} />
+        <p className="text-xs text-muted-foreground">
+          {porPeriodo ? t("periodoPorAtividade", { meses: MESES }) : t("periodo", { meses: MESES })} ·{" "}
+          {t("entradas", { n: totalDeEntradas })}
+        </p>
+      </div>
+      {semNada && (
         <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-          {t("semCoortes")}
+          {porPeriodo ? t("semAtividade") : t("semCoortes")}
         </p>
       )}
 
@@ -185,7 +210,9 @@ export function Saude({
             {t("mapa.titulo")} <span className="font-normal normal-case">· {t("mapa.subtitulo")}</span>
           </h3>
           <span className="text-[11px] text-muted-foreground">
-            {t("mapa.legenda", { minimo: COORTE_PEQUENA })}
+            {porPeriodo
+              ? t("mapa.legendaPorPeriodo", { minimo: COORTE_PEQUENA })
+              : t("mapa.legenda", { minimo: COORTE_PEQUENA })}
           </span>
         </div>
         {linhasDoCalor.length === 0 ? (
@@ -195,13 +222,19 @@ export function Saude({
             meses={meses}
             linhas={linhasDoCalor}
             formatarTaxa={formatarPercentual}
-            tituloDaCelula={(mes, taxa, entradas) => t("mapa.celula", { mes, taxa, n: entradas })}
+            tituloDaCelula={(mes, taxa, base) =>
+              porPeriodo ? t("mapa.celulaPorPeriodo", { mes, taxa, n: base }) : t("mapa.celula", { mes, taxa, n: base })
+            }
             rotuloEmAndamento={(n) => t("mapa.emAndamento", { n })}
             rotuloEmAberto={(n) => t("mapa.emAberto", { n })}
-            rotuloPequena={t("mapa.pequena", { minimo: COORTE_PEQUENA })}
+            rotuloPequena={
+              porPeriodo ? t("mapa.pequenaPorPeriodo", { minimo: COORTE_PEQUENA }) : t("mapa.pequena", { minimo: COORTE_PEQUENA })
+            }
           />
         )}
-        <p className="mt-3 text-[11px] text-muted-foreground">{t("fonte", { funil: pipeline.name })}</p>
+        <p className="mt-3 text-[11px] text-muted-foreground">
+          {porPeriodo ? t("fontePorPeriodo", { funil: pipeline.name }) : t("fonte", { funil: pipeline.name })}
+        </p>
       </section>
     </div>
   );

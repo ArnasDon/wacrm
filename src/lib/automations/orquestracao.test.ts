@@ -72,6 +72,7 @@ vi.mock('./admin-client', () => {
       delete: () => ((ops.type = 'delete'), b),
       upsert: (p: unknown) => ((ops.type = 'upsert'), (ops.payload = p), b),
       eq: (k: string, v: unknown) => (ops.filters.push(['eq', k, v]), b),
+      in: (k: string, v: unknown) => (ops.filters.push(['in', k, v]), b),
       gte: () => b,
       is: () => b,
       order: () => b,
@@ -160,10 +161,11 @@ describe('resumePendingExecution — desativar PARA o que está parado', () => {
     await resumePendingExecution(parada())
 
     const pend = h.state.updates.filter((u) => u.table === 'automation_pending_executions')
-    expect(pend).toHaveLength(1)
+    // A própria espera + a varredura das irmãs por `log_id` (revisão de 19/09).
+    expect(pend).toHaveLength(2)
     // `cancelled`, NÃO `failed`: cancelamento não é erro e não pode alimentar
     // o painel de falhas.
-    expect(pend[0].payload).toEqual({ status: 'cancelled' })
+    expect(pend.map((u) => u.payload)).toEqual([{ status: 'cancelled' }, { status: 'cancelled' }])
     // E não chegou a buscar passo nenhum — parou antes de executar.
     expect(h.state.fromCalls).not.toContain('automation_steps')
   })

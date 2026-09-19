@@ -22,7 +22,7 @@
 // olhando.
 // ============================================================
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { useAuth } from '@/hooks/use-auth';
 import { createClient } from '@/lib/supabase/client';
@@ -97,6 +97,12 @@ export interface TarefasDaTela {
   temMaisConcluidas: boolean;
   carregarMaisConcluidas: () => void;
   recarregar: () => void;
+  /**
+   * Recarrega MANTENDO a lista na tela e as páginas já abertas: é o de quem
+   * volta para o app (`useAoVoltarParaOApp`). O `recarregar` comum liga o
+   * "carregando", que troca a lista pelo spinner.
+   */
+  recarregarEmSilencio: () => void;
 }
 
 export function useTarefas(visao: VisaoDeTarefas): TarefasDaTela {
@@ -111,9 +117,20 @@ export function useTarefas(visao: VisaoDeTarefas): TarefasDaTela {
   const [totalConcluidas, setTotalConcluidas] = useState(0);
   const [paginas, setPaginas] = useState(1);
   const [token, setToken] = useState(0);
+  /**
+   * A próxima consulta é SILENCIOSA (pedida por `recarregarEmSilencio`): a
+   * lista fica na tela até a resposta chegar, e uma falha não a troca pelo
+   * aviso de erro — o que está na tela era verdade quando chegou.
+   */
+  const silenciosaRef = useRef(false);
 
   const recarregar = useCallback(() => {
     setPaginas(1);
+    setToken((t) => t + 1);
+  }, []);
+
+  const recarregarEmSilencio = useCallback(() => {
+    silenciosaRef.current = true;
     setToken((t) => t + 1);
   }, []);
 
@@ -138,9 +155,11 @@ export function useTarefas(visao: VisaoDeTarefas): TarefasDaTela {
     if (!accountId || !userId) return;
     const supabase = createClient();
     let cancelado = false;
+    const silenciosa = silenciosaRef.current;
+    silenciosaRef.current = false;
 
     (async () => {
-      setCarregando(true);
+      if (!silenciosa) setCarregando(true);
 
       /** O recorte da visão, aplicado igual nas duas consultas. */
       const recortar = <T extends { eq: (c: string, v: string) => T }>(q: T): T => {
@@ -179,7 +198,7 @@ export function useTarefas(visao: VisaoDeTarefas): TarefasDaTela {
           '[useTarefas] falha ao carregar:',
           pend.error?.message ?? conc.error?.message,
         );
-        setFalhou(true);
+        if (!silenciosa) setFalhou(true);
         setCarregando(false);
         return;
       }
@@ -240,5 +259,6 @@ export function useTarefas(visao: VisaoDeTarefas): TarefasDaTela {
     temMaisConcluidas: concluidas.length < totalConcluidas,
     carregarMaisConcluidas,
     recarregar,
+    recarregarEmSilencio,
   };
 }

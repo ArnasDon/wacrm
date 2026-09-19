@@ -1,6 +1,7 @@
 "use client";
 
 import { BarChart } from "@/components/tremor/bar-chart";
+import { eixoDasTaxas } from "@/lib/funil/apresentacao";
 
 export interface LinhaDeTaxa {
   transicao: string;
@@ -33,6 +34,10 @@ export function GraficoDeTaxas({
     [rotuloAtual]: l.atual,
     [rotuloAnterior]: l.anterior,
   }));
+  // 100 enquanto couber; na contagem por período a taxa pode passar disso, e
+  // o teto redondo com marcas rotuladas substitui as marcas que o Tremor
+  // inventava sozinho acima do `maxValue` (ver `eixoDasTaxas`).
+  const { teto } = eixoDasTaxas(linhas.flatMap((l) => [l.atual, l.anterior]));
 
   return (
     <BarChart
@@ -43,7 +48,7 @@ export function GraficoDeTaxas({
       layout="vertical"
       valueFormatter={(v) => (v == null ? "—" : `${v.toFixed(1)}%`)}
       minValue={0}
-      maxValue={100}
+      maxValue={teto}
       yAxisWidth={190}
       showLegend
       legendPosition="right"

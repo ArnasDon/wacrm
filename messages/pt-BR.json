@@ -333,6 +333,7 @@
       "readOnlyPlaceholder": "Somente leitura — visualizadores podem consultar, mas não responder",
       "sessionExpiredPlaceholder": "Sessão expirada - use um modelo",
       "typeMessagePlaceholder": "Digite uma mensagem... (Shift+Enter para nova linha)",
+      "typeMessagePlaceholderTouch": "Digite uma mensagem...",
       "readOnlyTitle": "Somente leitura — seu papel não permite enviar mensagens",
       "recording": "Gravando… {current} / {max}",
       "cancel": "Cancelar",
@@ -1245,6 +1246,10 @@
         "wait_minutes": "Aguardar {quantidade} min",
         "wait_hours": "Aguardar {quantidade} h",
         "wait_days": "Aguardar {quantidade} dias",
+        "wait_seconds_ou_resposta": "Aguardar {quantidade} s ou até o cliente responder",
+        "wait_minutes_ou_resposta": "Aguardar {quantidade} min ou até o cliente responder",
+        "wait_hours_ou_resposta": "Aguardar {quantidade} h ou até o cliente responder",
+        "wait_days_ou_resposta": "Aguardar {quantidade} dias ou até o cliente responder",
         "condition": "Verificar uma condição",
         "send_webhook": "Disparar webhook",
         "close_conversation": "Encerrar a conversa",
@@ -1304,7 +1309,9 @@
           "deLeads": "de {n} leads",
           "contratosFechados": "{n} contrato(s) fechado(s)",
           "semFechados": "nenhum contrato fechado",
-          "porContrato": "por contrato"
+          "porContrato": "por contrato",
+          "noPeriodo": "alcançados no período",
+          "contratosSobreLeads": "contratos ÷ leads do período"
         },
         "funil": {
           "titulo": "Funil de eficiência",
@@ -1312,7 +1319,8 @@
           "dasEntradas": "{pct} das entradas",
           "doAnterior": "{pct} de {degrau}",
           "semEtapa": "Sem etapa correspondente",
-          "etapas": "Etapas: {nomes}"
+          "etapas": "Etapas: {nomes}",
+          "notaPorPeriodo": "Cada degrau conta quem o alcançou pela primeira vez no período. As taxas comparam o que aconteceu no mesmo período e podem passar de 100% quando os contratos vêm de leads de meses anteriores — a conversão lead a lead está em “Por mês de entrada”."
         },
         "negativos": {
           "titulo": "Negativos e em aberto",
@@ -1324,7 +1332,9 @@
           "emAndamento": "Em andamento",
           "emAndamentoDesc": "{n} em {degrau}",
           "foraDoFunil": "Fora do funil",
-          "foraDoFunilDesc": "Movidos para etapa sem degrau"
+          "foraDoFunilDesc": "Movidos para etapa sem degrau",
+          "notaPorPeriodo": "Perdas que aconteceram no período: quem está perdido hoje, no mês em que caiu na perda atual (recuperado e perdido de novo conta na segunda vez). A porcentagem é sobre as entradas do período e pode passar de 100% quando as perdas vêm de leads de meses anteriores. Sem avanço, em andamento e fora do funil são a situação de hoje dos leads que entraram no período.",
+          "dasEntradas": "{pct} das entradas do período"
         },
         "taxas": {
           "titulo": "Taxas de conversão entre degraus",
@@ -1348,6 +1358,7 @@
           "porLead": "investimento ÷ leads",
           "porContrato": "investimento ÷ contratos",
           "porPerdido": "custo por lead × perdidos",
+          "porPerdidoNoPeriodo": "custo por lead × leads do período já perdidos",
           "semFunil": "{valor} em {n} campanha(s) sem funil atribuído no período — atribua em Integrações para o custo por lead ficar certo.",
           "naoConectado": "Conecte o Meta Ads em Integrações para ver investimento, custo por lead e CAC.",
           "falhou": "Não foi possível ler o investimento em anúncios agora. Os números de custo ficam de fora até a próxima tentativa.",
@@ -1356,12 +1367,15 @@
           "colCampanha": "Campanha",
           "colGasto": "Gasto no período",
           "semGasto": "Nenhum gasto neste período nas campanhas deste funil."
-        }
+        },
+        "periodoPorAtividade": "Conta o que aconteceu no período (cada lead uma vez por degrau)",
+        "semAtividade": "Nada aconteceu neste funil no período: nenhum lead entrou, avançou ou foi perdido."
       },
       "saude": {
         "periodo": "Últimos {meses} meses, pelo mês de entrada no funil",
         "entradas": "{n} entradas no total",
         "semCoortes": "Nenhum lead entrou no funil nos últimos meses. A Saúde ganha sentido com meses de operação.",
+        "semAtividade": "Nada aconteceu neste funil nos últimos meses: nenhum lead entrou, avançou ou foi perdido. A Saúde ganha sentido com meses de operação.",
         "fonte": "Etapas pelo mapeamento do funil {funil}. Mês com leads ainda sem desfecho é coorte em andamento: a taxa pode mudar, e o número sob o mês diz quantos.",
         "conversao": {
           "titulo": "Conversão por degrau ao longo do tempo",
@@ -1371,11 +1385,16 @@
           "titulo": "Mapa de saúde do funil",
           "subtitulo": "cor relativa ao histórico de cada linha",
           "legenda": "verde = melhor mês da linha · vermelho = pior · apagado = menos de {minimo} leads",
+          "legendaPorPeriodo": "verde = melhor mês da linha · vermelho = pior · apagado = taxa sobre menos de {minimo} no mês",
           "celula": "{mes}: {taxa} · {n} lead(s)",
+          "celulaPorPeriodo": "{mes}: {taxa} · sobre {n} no mês",
           "emAndamento": "{n, plural, one {# lead ainda sem desfecho} other {# leads ainda sem desfecho}} — a taxa deste mês ainda pode mudar",
           "emAberto": "{n} em aberto",
-          "pequena": "menos de {minimo} leads: taxa pouco confiável"
-        }
+          "pequena": "menos de {minimo} leads: taxa pouco confiável",
+          "pequenaPorPeriodo": "taxa sobre menos de {minimo} no mês: pouco confiável"
+        },
+        "periodoPorAtividade": "Últimos {meses} meses, pelo mês em que cada avanço aconteceu",
+        "fontePorPeriodo": "Etapas pelo mapeamento do funil {funil}. Cada mês mostra o que aconteceu nele; mês encerrado não muda mais, e o mês corrente ainda está em curso. A taxa pode passar de 100% quando os contratos do mês vêm de leads anteriores."
       },
       "lista": {
         "colunas": {
@@ -1411,6 +1430,13 @@
         "editar": "Editar negócio",
         "ordenarPor": "Ordenar por {coluna}",
         "toastEtapaFalhou": "Não foi possível mover o negócio. A lista foi recarregada."
+      },
+      "modo": {
+        "rotulo": "Contar",
+        "periodo": "Por período",
+        "entrada": "Por mês de entrada",
+        "dicaPeriodo": "Conta o que aconteceu no período, venha o lead de quando vier: o contrato fechado este mês aparece neste mês. Cada lead conta uma vez por degrau, na primeira vez que o alcançou.",
+        "dicaEntrada": "Conta os leads que entraram no período e tudo o que eles fizeram até hoje (coorte). Nenhuma taxa passa de 100%."
       }
     },
     "analytics": {
@@ -1787,6 +1813,7 @@
       "saveDraft": "Salvar rascunho",
       "untitled": "Automação sem título",
       "backToAutomations": "Voltar para automações",
+      "backToPipeline": "Voltar ao funil",
       "toasts": {
         "saved": "Automação salva",
         "created": "Automação criada",
@@ -1849,6 +1876,9 @@
         "titleLabel": "Título",
         "amountLabel": "Quantidade",
         "unitLabel": "Unidade",
+        "pararSeResponderLabel": "Parar a automação se o cliente responder durante esta espera",
+        "pararSeResponderHelp": "Se o cliente mandar qualquer mensagem enquanto esta espera estiver contando, os passos seguintes desta automação não são executados para ele. Vale só para esta espera: marque em cada Aguardar da sequência.",
+        "pararSeResponderResumo": "para se o cliente responder",
         "units": {
           "seconds": "Segundos",
           "minutes": "Minutos",
@@ -1896,6 +1926,8 @@
       "stages": {
         "triggerLabel": "Entrou nesta etapa",
         "triggerHelpAll": "Sem etapa escolhida, vale para qualquer etapa.",
+        "pararAoSairLabel": "Interromper se o card sair desta etapa",
+        "pararAoSairHelp": "Se o card for movido para outra etapa — o cliente agendou, alguém arrastou, outra automação moveu —, os passos que ainda faltam não são executados. Desmarque nas sequências que devem continuar depois da etapa. Se esta própria automação move o card, deixe esse passo por último.",
         "scopeLabel": "Só para quem está nesta etapa",
         "scopeHelpAll": "Sem etapa escolhida, vale para o contato em qualquer etapa.",
         "selectedCount": "{count} etapa(s) escolhida(s)",
@@ -3795,12 +3827,15 @@
     "detail_webhook": "conectada, mas o CRM não está recebendo",
     "detail_lastError": "último erro registrado",
     "detail_incomplete": "faltam credenciais — refaça a conexão",
+    "detail_lagging": "conectada, mas entregando com atraso",
     "kind_meta": "API oficial · Meta",
     "kind_evolution": "Não oficial · QR Code",
     "kind_instagram": "Direct · Instagram",
     "connectedFor": "conectada há {tempo}",
     "checkedAgo": "verificada há {tempo}",
-    "neverChecked": "ainda não verificada"
+    "neverChecked": "ainda não verificada",
+    "deliveryLag": "Entregando com {tempo} de atraso",
+    "lagMeasured": "medido há {tempo}"
   },
   "LeadEvents": {
     "title": "Histórico",
@@ -4342,6 +4377,7 @@
     "fixCountAtLeast": "pelo menos {count}",
     "fixSchedulerDown": "O agendador está parado — nada dispara sozinho",
     "fixChannelsDown": "{count, plural, =1 {1 conexão fora do ar} other {{count} conexões fora do ar}}",
+    "fixChannelsLagging": "{count, plural, =1 {1 conexão entregando com atraso} other {{count} conexões entregando com atraso}}",
     "fixScheduledFailed": "{count, plural, =1 {1 mensagem agendada falhou} other {{count} mensagens agendadas falharam}}",
     "fixDeliveryUnsure": "{count, plural, =1 {1 agendada com entrega incerta — confira antes de reenviar} other {{count} agendadas com entrega incerta — confira antes de reenviar}}",
     "fixAutomationsFailed": "{count, plural, =1 {1 automação falhou hoje} other {{count} automações falharam hoje}}",

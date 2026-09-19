@@ -147,7 +147,7 @@ Todos apontam para `82.25.76.63` e entram pelo `websecure`.
 | `postgres` | `postgres_postgres` | `postgres:14` | 1 |
 | `redis` | `redis_redis` | `redis:latest` | 1 |
 | `pgvector` | `pgvector_pgvector` | `pgvector/pgvector:pg16` | 1 |
-| `evolution` | `evolution_evolution` | `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao` (por digest) | 1 |
+| `evolution` | `evolution_evolution` | `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto` (por digest) | 1 |
 | `crm` | `crm_crm` | `ghcr.io/leonardocabralb/cb-crm:<sha>` | 1 |
 | `crm` | `crm_agendador` | `curlimages/curl:8.11.1` | 1 |
 | `n8n` | `n8n_n8n_editor` / `_webhook` / `_worker` | `n8nio/n8n:latest` | 1 / 1 / 1 |
@@ -155,16 +155,24 @@ Todos apontam para `82.25.76.63` e entram pelo `websecure`.
 | `portainer` | `portainer_portainer` / `_agent` | `portainer/*` | 1 / global |
 | `openclaw` | `openclaw_openclaw-gateway` | `ghcr.io/openclaw/openclaw:latest` | 1 |
 
-⚠️ **A Evolution é uma IMAGEM NOSSA**, não a oficial — desde **09/09/2026
-21:11**: `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao@sha256:dc0f4e8b12de706414609464131b4099de5f0dd29d16bd011b74206089ff1adf`
+⚠️ **A Evolution é uma IMAGEM NOSSA**, não a oficial — desde **17/09/2026
+12:39**: `ghcr.io/leonardocabralb/evolution-api-cb:2.4.0-e273b904-citacao-foto@sha256:a7d56788ba127de3c7f759e57addf97bb54c71fedb1e955ab60d672753924126`
 (Evolution **2.4.0** / Baileys **7.0.0-rc13**, construída pelo workflow
 `.github/workflows/evolution-cb.yml` a partir do commit `e273b904` do
-`develop` oficial, com o patch da citação do cliente e o `prisma.config.ts`
-dentro — ver `docker/evolution-cb/README.md`). O pacote no GHCR é **público**:
-a VPS a puxou sem `docker login`. Restaurar com a `evoapicloud/evolution-api:homolog`
+`develop` oficial, com DOIS patches — a citação do cliente e a foto de perfil
+que travava a fila de entrada em 1 msg/min (`docs/PLANO-baileys-7.md`, 5.10) —
+e o `prisma.config.ts` dentro — ver `docker/evolution-cb/README.md`). De
+09/09 21:11 a 17/09 12:39 rodou a `…-citacao@sha256:dc0f4e8b12de706414609464131b4099de5f0dd29d16bd011b74206089ff1adf`
+(só o primeiro patch), que é o **rollback curto** de hoje: mesmo commit, mesmas
+migrations, `docker service update --image <ela> evolution_evolution`, sem
+mount — e devolve o teto de 1 msg/min. ⚠️ Qualquer troca de imagem só com a
+fronteira de entrega da 1002 em ~0 s em todas as conexões: a Baileys confirma
+a mensagem ao servidor ANTES do handler, e o que está na fila em memória morre
+com o contêiner (medido em 17/09). O pacote no GHCR é **público**: a VPS o
+puxou sem `docker login`. Restaurar com a `evoapicloud/evolution-api:homolog`
 oficial exige montar `/root/evolution/prisma.config.ts` em `/evolution/prisma.config.ts`
-(sem ele o Prisma 7 não migra e o serviço entra em laço) e perde a citação do
-cliente; restaurar com a 2.3.2 (`lidfix`) traz de volta o "Aguardando mensagem".
+(sem ele o Prisma 7 não migra e o serviço entra em laço) e perde os dois
+patches; restaurar com a 2.3.2 (`lidfix`) traz de volta o "Aguardando mensagem".
 A 2.4 exige **licença** (gratuita, cadastro no `/manager`); a ativação fica na
 tabela `RuntimeConfig` do banco `evolution` — restaurado o banco, ela volta;
 banco novo = cadastrar de novo. O label `com.docker.stack.image` ainda diz

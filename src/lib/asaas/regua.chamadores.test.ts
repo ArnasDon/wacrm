@@ -46,4 +46,22 @@ describe("a régua do Asaas sai pelo caminho do robô (D16)", () => {
     expect(varredura).not.toContain("engineSendText(");
     expect(varredura).not.toContain("from(\"messages\")");
   });
+
+  // ⚠️ "A ficha tem telefone?" na varredura é o MESMO predicado do remetente
+  // do robô: telefone que passa lá e é recusado aqui grava a trava do marco e
+  // termina `falhou` sem nova chance (Codex, 4ª rodada do PR #206). Se o
+  // remetente mudar de régua, este pino avisa que a varredura acompanha.
+  // ⚠️ Lido SEM comentários, e casando a FORMA do uso: o docstring de
+  // `lerClientesLigados` cita o predicado por extenso, e um `toContain` sobre
+  // o fonte cru ficava verde com a régua própria de volta no código (revisão
+  // da 4ª rodada do PR #206).
+  it("a varredura confere o telefone com o predicado do remetente do robô", () => {
+    const semComentarios = (arquivo: string) => fs.readFileSync(arquivo, "utf8").replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+    const varredura = semComentarios(path.join(RAIZ, "varrer-regua.ts"));
+    const remetente = semComentarios(path.join(RAIZ, "..", "flows", "meta-send.ts"));
+    expect(varredura).toMatch(/!isValidE164\(sanitizePhoneForMeta\(telefone\)\)/);
+    expect(varredura).not.toMatch(/telefone\.replace\(/);
+    expect(remetente).toMatch(/const sanitized = sanitizePhoneForMeta\(contact\.phone\)/);
+    expect(remetente).toMatch(/!isValidE164\(sanitized\)/);
+  });
 });

@@ -16,6 +16,7 @@ import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
+import { cancelarEsperasPorResposta } from '@/lib/automations/parar-se-responder';
 import { dispatchInboundToFlows } from '@/lib/flows/engine';
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply';
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver';
@@ -23,6 +24,7 @@ import {
   followConversationChannel,
   gravarComCanal,
 } from '@/lib/cb-channels/stamp';
+import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega';
 
 /** A message from any transport, reduced to what persistence needs. */
 export interface NormalizedInbound {
@@ -326,6 +328,13 @@ export async function persistDeviceMessage(
   // insert acima; o que faltava era a conversa.
   await followConversationChannel(db, conversation.id, m.channelId ?? null);
 
+  // A fronteira de entrega (1002). O celular pareado CONTA: a mensagem
+  // passou pelo WhatsApp e voltou pelo webhook, exatamente como a do
+  // cliente, então mede o mesmo caminho. É o que mantém a medição viva nas
+  // conexões por onde o escritório mais fala do que ouve — medido em
+  // produção, a equipe manda 948 pelo aparelho contra 8 digitadas no CRM.
+  await registrarEntrega(db, m.channelId ?? null, m.timestamp);
+
   // Funil padrão da conexão — ver o cabeçalho de `pipeline-routing.ts`.
   // Nunca lança, e sai no primeiro SELECT quando a conexão não tem funil.
   await routeContactToPipeline({
@@ -465,8 +474,24 @@ export async function persistInboundMessage(
     await followConversationChannel(db, conversation.id, canalGravado);
   }
 
+  // A fronteira de entrega da conexão (1002). Mensagem do CLIENTE é a
+  // medição mais fiel que existe: o carimbo é de quando ele apertou enviar,
+  // e estamos no instante da gravação. Ver `atraso-de-entrega.ts`.
+  await registrarEntrega(db, canalGravado, m.timestamp);
+
   // ---- downstream engines (parity with the Meta webhook) ----
   const inboundText = m.text ?? '';
+
+  // O cliente respondeu: as esperas marcadas "parar se o cliente responder"
+  // deste contato são canceladas. ⚠️ ANTES do despacho de robôs e automações,
+  // e sem olhar `flowConsumed` — ver `parar-se-responder.ts` (depois, esta
+  // mesma mensagem cancelaria a espera da automação que ela acabou de
+  // iniciar). Nunca lança.
+  await cancelarEsperasPorResposta({
+    db,
+    accountId: m.accountId,
+    contactId: contact.id,
+  });
 
   const flowResult = await dispatchInboundToFlows({
     accountId: m.accountId,

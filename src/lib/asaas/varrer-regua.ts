@@ -5,6 +5,7 @@ import { dispararAutomacoes, type ResultadoDoDisparo } from "@/lib/automations/e
 import { loadStepsTree } from "@/lib/automations/steps-tree";
 import { probeChannels } from "@/lib/cb-channels/health";
 import { isUniqueViolation } from "@/lib/contacts/dedupe";
+import { isValidE164, sanitizePhoneForMeta } from "@/lib/whatsapp/phone-utils";
 
 import { aplicarCobranca } from "./aplicar";
 import type { ClienteAsaas } from "./cliente";
@@ -16,12 +17,15 @@ import {
   agruparLembretes,
   agruparPorCliente,
   aindaPagavel,
+  cabeNoLembrete,
   dentroDoIntervalo,
   diaAlvoDoMarco,
+  diasDoLembrete,
   entrouNaRegua,
   janelaAberta,
   lerAutomacaoDaRegua,
   montarVariaveis,
+  porMaiorMarco,
   RECOLHER_NA_FILA_MS,
   RECOLHER_TRAVA_MS,
   RESULTADOS_QUE_CONTAM_COMO_ENVIO,
@@ -66,7 +70,8 @@ import {
  *     não tem conversa, e o passo `send_message` não a cria), com o canal
  *     do passo e sem pino.
  *  7. Dispara SÓ a automação carimbada (`automation_id` no contexto) e mede
- *     pelo `automation_logs` — `enviado` só com o `send_message` bem-sucedido;
+ *     pelo `automation_logs` — `enviado` com um passo que ENTREGA ao contato
+ *     bem-sucedido (`PASSOS_QUE_FALAM_COM_O_CONTATO`);
  *     `na_fila` quando o motor reenfileirou (a trava guarda o id do log para
  *     o passo 1b). Grupos do mesmo contato em SEQUÊNCIA (o log não guarda
  *     contexto). ⚠️ `enviado`, `na_fila` e `incerto` contam como "cobrado"
@@ -238,8 +243,26 @@ async function reguaAindaLigada(admin: SupabaseClient, accountId: string): Promi
  * do PR #206).
  */
 export function vivaParaEnviar(c: { tone: string; detail: string | null }): boolean {
-  return c.tone === "ok" || (c.tone === "warn" && c.detail === "webhook");
+  return c.tone === "ok" || (c.tone === "warn" && ENVIA_MESMO_EM_AMARELO.has(c.detail ?? ""));
 }
+
+/**
+ * Os amarelos que NÃO dizem nada sobre ENVIAR.
+ *
+ * ⚠️ `lagging` (1002) entrou aqui, e a razão é a mesma do `webhook`: os dois
+ * descrevem a ENTRADA. Atraso de entrega mede quanto o WhatsApp demorou para
+ * passar a mensagem do cliente à Evolution; o envio é outra direção — uma
+ * chamada nossa ao provedor, que não espera nada daquela fila. Deixar
+ * `lagging` de fora fazia a régua pular a conexão e NÃO cobrar ninguém por
+ * ela: no episódio de 16/09/2026, que durou a manhã toda, as cobranças do
+ * dia teriam sido silenciosamente adiadas por uma latência de entrada
+ * (Codex, PR #220).
+ *
+ * `pairing`, `stale` e `lastError` continuam FORA — elas não provam que o
+ * envio sai, e travar o marco por elas deixava a trava em `falhou` com a
+ * mensagem sem sair.
+ */
+const ENVIA_MESMO_EM_AMARELO = new Set(["webhook", "lagging"]);
 
 async function saudePadrao(admin: SupabaseClient, accountId: string): Promise<Map<string, boolean> | null> {
   const mapa = new Map<string, boolean>();
@@ -308,6 +331,13 @@ async function conexoesDaConta(admin: SupabaseClient, accountId: string): Promis
  * em `falhou` no `engineSendText`, sem nova chance depois de o telefone ser
  * corrigido (Codex, 2ª rodada do PR #206). Sem telefone = pulado sem travar,
  * contado em `semTelefone`.
+ * ⚠️ "Tem telefone" é o MESMO predicado do remetente do robô
+ * (`engineSendText`: `isValidE164(sanitizePhoneForMeta(...))`, conferido
+ * antes do desvio de transporte, então vale para a Evolution). Com uma régua
+ * própria (">= 8 dígitos"), o número com zero na frente ou os 18 dígitos de
+ * um JID de grupo passavam aqui e eram recusados lá — a trava do marco
+ * fechava `falhou` sem nova chance depois de o telefone ser corrigido
+ * (Codex, 4ª rodada do PR #206).
  */
 async function lerClientesLigados(admin: SupabaseClient, accountId: string, saida: ResultadoDaRegua): Promise<Map<string, ClienteLigado>> {
   const linhas = await lerTudo<{ asaas_customer_id: string; contact_id: string; nome: string | null }>(
@@ -333,7 +363,7 @@ async function lerClientesLigados(admin: SupabaseClient, accountId: string, said
   const mapa = new Map<string, ClienteLigado>();
   for (const l of linhas) {
     const telefone = telefones.get(l.contact_id) ?? null;
-    if (!telefone || telefone.replace(/\D/g, "").length < 8) {
+    if (!telefone || !isValidE164(sanitizePhoneForMeta(telefone))) {
       saida.semTelefone += 1;
       continue;
     }
@@ -385,19 +415,31 @@ async function lerEnviosRecentes(admin: SupabaseClient, accountId: string, desde
  * Travas `reservado` há mais de 10 min sem desfecho: com log da automação
  * para o contato criado depois da trava, pode ter saído (`incerto`, nunca
  * reenviado); sem log, nada rodou — apagada, e o ciclo seguinte tenta.
+ *
+ * ⚠️ Apagada JUNTO com as `absorvida` do MESMO grupo: elas saíram do mesmo
+ * INSERT (o marco menor e o "vence hoje" que a mensagem levaria), e sozinhas
+ * o ciclo seguinte batia 23505 nelas, o `continue` lia "outro processo pegou"
+ * e nada saía o dia inteiro — nem a cobrança, nem o lembrete (o cliente segue
+ * com marco hoje); amanhã o dia-alvo já passou (revisão da 4ª rodada do PR
+ * #206). "Mesmo grupo" = mesma conta, cliente e automação e o MESMO
+ * `criado_em`: `DEFAULT now()` é o instante da transação, igual para todas as
+ * linhas de um INSERT e diferente entre INSERTs. A irmã só sai DEPOIS de a
+ * própria órfã sair: se o processo dono fechou a trava no meio (`enviado`),
+ * a cerca `resultado = 'reservado'` não apaga nada — e a `vence_hoje`
+ * absorvida TEM de ficar, é ela que impede o lembrete de sair em dobro.
  */
 async function recolherOrfas(admin: SupabaseClient, accountId: string, agora: Date): Promise<number> {
   const corte = new Date(agora.getTime() - RECOLHER_TRAVA_MS).toISOString();
   const { data, error } = await admin
     .from("cb_asaas_regua_envios")
-    .select("id, automation_id, contact_id, criado_em")
+    .select("id, asaas_customer_id, automation_id, contact_id, criado_em")
     .eq("account_id", accountId)
     .eq("resultado", "reservado")
     .lt("criado_em", corte)
     .limit(200);
   if (error) throw new Error(`órfãs: ${error.message}`);
   let recolhidas = 0;
-  for (const t of (data ?? []) as { id: string; automation_id: string | null; contact_id: string | null; criado_em: string }[]) {
+  for (const t of (data ?? []) as { id: string; asaas_customer_id: string; automation_id: string | null; contact_id: string | null; criado_em: string }[]) {
     let temLog = false;
     if (t.automation_id && t.contact_id) {
       const { data: logs, error: erroLog } = await admin
@@ -420,7 +462,20 @@ async function recolherOrfas(admin: SupabaseClient, accountId: string, agora: Da
     if (temLog) {
       await admin.from("cb_asaas_regua_envios").update({ resultado: "incerto", detalhe: "trava sem desfecho, com execução registrada", finalizado_em: agora.toISOString() }).eq("id", t.id).eq("resultado", "reservado");
     } else {
-      await admin.from("cb_asaas_regua_envios").delete().eq("id", t.id).eq("resultado", "reservado");
+      const { data: apagada } = await admin.from("cb_asaas_regua_envios").delete().eq("id", t.id).eq("resultado", "reservado").select("id");
+      if ((apagada?.length ?? 0) > 0) {
+        let irmas = admin
+          .from("cb_asaas_regua_envios")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("asaas_customer_id", t.asaas_customer_id)
+          .eq("criado_em", t.criado_em)
+          .eq("resultado", "absorvida")
+          .is("finalizado_em", null);
+        irmas = t.automation_id ? irmas.eq("automation_id", t.automation_id) : irmas.is("automation_id", null);
+        const { error: erroIrmas } = await irmas;
+        if (erroIrmas) console.warn(`[asaas] régua: a trava ${t.id} foi recolhida, mas as absorvidas do grupo ficaram:`, erroIrmas.message);
+      }
     }
     recolhidas++;
   }
@@ -512,7 +567,15 @@ async function conversaDoContato(admin: SupabaseClient, accountId: string, conta
   throw new Error(`conversa: não foi possível criar (${erroNova?.message ?? "?"})`);
 }
 
-/** Relê cada parcela no Asaas e aplica ao espelho; devolve as que continuam como o chamador quer. */
+/**
+ * Relê cada parcela no Asaas e aplica ao espelho; devolve as que continuam
+ * como o chamador quer.
+ * ⚠️ 404 na cobrança só vira "apagada" com o CLIENTE dela respondendo — a
+ * mesma cerca de `reconciliar` (sincronizar.ts): os dois 404 juntos são a
+ * chave de OUTRA conta, e marcar apagado ali esvaziaria o espelho e calaria
+ * o aviso na conversa de quem ainda deve. A varredura para como
+ * `conta_trocada`, sem travar nada.
+ */
 async function reconfirmar(
   admin: SupabaseClient,
   accountId: string,
@@ -526,7 +589,9 @@ async function reconfirmar(
     const bruta = await cliente.obter<unknown>(`/payments/${p.asaas_payment_id}`);
     const lida = bruta ? lerCobranca(bruta) : null;
     if (!lida) {
-      await admin.from("cb_asaas_cobrancas").update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm }).eq("account_id", accountId).eq("asaas_payment_id", p.asaas_payment_id);
+      if ((await cliente.obter<unknown>(`/customers/${p.asaas_customer_id}`)) === null) throw new ParadaDaVarredura("conta_trocada");
+      const { error } = await admin.from("cb_asaas_cobrancas").update({ deleted: true, visto_em: vistoEm, updated_at: vistoEm }).eq("account_id", accountId).eq("asaas_payment_id", p.asaas_payment_id);
+      if (error) throw new Error(`cobrança apagada: ${error.message}`);
       continue;
     }
     await aplicarCobranca(admin, accountId, lida, vistoEm);
@@ -546,6 +611,30 @@ async function reconfirmar(
     if (aceita(atual)) vivas.push(atual);
   }
   return vivas;
+}
+
+/**
+ * As parcelas "vence hoje" que AINDA não têm trava de lembrete para aquele
+ * vencimento. ⚠️ Quem sabe se o lembrete de uma parcela já saiu é a TRAVA,
+ * nunca a configuração de hoje: com o lembrete em dias corridos o sábado é
+ * lembrado no sábado, e se alguém liga "só dias úteis" antes de segunda, a
+ * segunda passa a cobrir o sábado de novo. A parcela entrava no INSERT do
+ * grupo com a chave que já existe, o 23505 recusava o grupo INTEIRO — a
+ * cobrança do marco (ou o lembrete da parcela de segunda) — e o `continue`
+ * lia "outro processo pegou" o dia todo (Codex, PR #212). Quem já foi
+ * lembrado sai da mensagem e da trava, como no caso dos dias corridos.
+ */
+async function semLembreteTravado(admin: SupabaseClient, accountId: string, parcelas: readonly ParcelaDoEspelho[]): Promise<ParcelaDoEspelho[]> {
+  if (parcelas.length === 0) return [];
+  const { data, error } = await admin
+    .from("cb_asaas_regua_envios")
+    .select("cobranca_id, vencimento")
+    .eq("account_id", accountId)
+    .eq("tipo", "vence_hoje")
+    .in("cobranca_id", parcelas.map((p) => p.id));
+  if (error) throw new Error(`travas de lembrete: ${error.message}`);
+  const travadas = new Set(((data ?? []) as { cobranca_id: string; vencimento: string }[]).map((t) => `${t.cobranca_id}|${t.vencimento}`));
+  return parcelas.filter((p) => !travadas.has(`${p.id}|${p.vencimento}`));
 }
 
 interface LinhaDaTrava {
@@ -674,6 +763,17 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       lista.push(p);
       porCliente.set(p.asaas_customer_id, lista);
     }
+    const automacaoPorId = new Map(validas.map((a) => [a.id, a]));
+    // Os dias que o LEMBRETE cobre hoje — o mesmo `find` e o mesmo
+    // `somenteDiasUteis` de `agruparLembretes`, para a releitura aplicar a
+    // MESMA cerca da seleção (`cabeNoLembrete`). ⚠️ O `somenteDiasUteis` é o
+    // DA AUTOMAÇÃO, nunca `true` fixo: com o lembrete em dias corridos, a
+    // PENDING do sábado já foi lembrada no sábado, e somá-la ao "vence hoje"
+    // da cobrança de segunda repetia a trava `vence_hoje` — 23505 no grupo
+    // inteiro, e a cobrança do marco não saía (revisão da 4ª rodada do PR
+    // #206; pino em varrer-regua.test.ts, "dias CORRIDOS").
+    const lembreteDaConta = validas.find((a) => a.tipo === "vence_hoje");
+    const diasDoLembreteHoje: ReadonlySet<string> = new Set(lembreteDaConta ? diasDoLembrete(ctx.hoje, lembreteDaConta.somenteDiasUteis) : []);
 
     // ---- as cobranças por marco (passos 3 a 7)
     const grupos = agruparPorCliente(validas, parcelas, ctx, agora);
@@ -692,9 +792,12 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       const ligado = clientes.get(grupo.asaasCustomerId);
       if (!ligado) continue;
       if (enviadosHoje.has(grupo.asaasCustomerId)) continue; // no máximo UMA por cliente por dia
-      const automacao = validas.find((a) => a.id === grupo.automacao.id);
-      if (!automacao) continue;
-      if (saude.get(automacao.channelId) !== true) {
+      // PRÉ-checagem barata, antes de gastar GET no Asaas: pula só quando
+      // NENHUMA automação do grupo tem conexão viva. A que manda é escolhida
+      // depois da releitura, e a saúde é refeita com ela.
+      const doGrupo = [...new Set(grupo.cruzaram.map((c) => c.automacao.id))].flatMap((id) => automacaoPorId.get(id) ?? []);
+      if (doGrupo.length === 0) continue;
+      if (!doGrupo.some((a) => saude.get(a.channelId) === true)) {
         saida.semConexao += 1;
         continue;
       }
@@ -704,11 +807,14 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       // sincronização e o disparo sair como "em aberto" no texto (Codex, 2ª
       // rodada do PR #206). O espelho é atualizado no caminho.
       const dia = ctx.hoje;
+      // ⚠️ "Vence hoje" para a cobrança é o que o LEMBRETE cobriria hoje, não
+      // só `vencimento === hoje`: o cliente com marco hoje cede o lembrete
+      // (`comMarcoHoje`), e na segunda o lembrete cobre sábado e domingo — a
+      // PENDING do sábado sumia do dia, sem lembrete e fora da cobrança (Codex,
+      // 4ª rodada do PR #206). Só o ramo "a vencer": a vencida já está nas vencidas.
+      const venceNoDia = (p: ParcelaDoEspelho) => classificar(p.status, p.deleted) === "a_vencer" && (p.vencimento === dia || diasDoLembreteHoje.has(p.vencimento));
       const idsCruzaram = new Set(grupo.cruzaram.map((c) => c.parcela.id));
-      const naMensagem = (porCliente.get(grupo.asaasCustomerId) ?? []).filter((p) => {
-        const classe = classificar(p.status, p.deleted);
-        return idsCruzaram.has(p.id) || ehDevida(classe) || (classe === "a_vencer" && p.vencimento === dia);
-      });
+      const naMensagem = (porCliente.get(grupo.asaasCustomerId) ?? []).filter((p) => idsCruzaram.has(p.id) || ehDevida(classificar(p.status, p.deleted)) || venceNoDia(p));
       const frescas = await reconfirmar(admin, accountId, cliente, naMensagem, () => true, vistoEm);
       const marcoDe = new Map(grupo.cruzaram.map((c) => [c.parcela.id, c.automacao]));
       // A linha FRESCA passa pelas mesmas cercas da seleção: ainda devida,
@@ -721,7 +827,21 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         return ehDevida(classificar(p.status, p.deleted)) && entrouNaRegua(p, ctx.reguaAtivadaEm) && aindaPagavel(p, dia) && diaAlvoDoMarco(p, a.marco, { ...ctx, somenteDiasUteis: a.somenteDiasUteis }) === dia;
       });
       if (cruzaram.length === 0) continue;
-      const venceHoje = frescas.filter((p) => classificar(p.status, p.deleted) === "a_vencer" && p.vencimento === dia);
+      // ⚠️ A automação que MANDA sai do `cruzaram` RELIDO, não do grupo montado
+      // sobre o espelho: quando a parcela do MAIOR marco é paga entre a
+      // sincronização e o disparo, a escolhida velha não tem mais parcela
+      // nenhuma — toda linha virava `absorvida`, nada era disparado e a trava
+      // do marco menor ficava gasta para sempre (o ciclo seguinte batia 23505
+      // e amanhã o dia-alvo já passou). A ordem é a mesma da seleção
+      // (`porMaiorMarco`), e a saúde é conferida de novo com a escolhida
+      // (Codex, 4ª rodada do PR #206).
+      const automacao = cruzaram.flatMap((p) => automacaoPorId.get(marcoDe.get(p.id)?.id ?? "") ?? []).sort(porMaiorMarco)[0];
+      if (!automacao) continue;
+      if (saude.get(automacao.channelId) !== true) {
+        saida.semConexao += 1;
+        continue;
+      }
+      const venceHoje = await semLembreteTravado(admin, accountId, frescas.filter(venceNoDia));
       // 5) o intervalo mínimo (D11, 13/09)
       const absorvida = dentroDoIntervalo(ultimaCobranca.get(grupo.asaasCustomerId) ?? null, dia, config.regua_intervalo_dias, fuso);
       if (!(await reguaAindaLigada(admin, accountId))) {
@@ -735,8 +855,8 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         continue;
       }
       const linhas: LinhaDaTrava[] = cruzaram.map((p) => {
-        const a = marcoDe.get(p.id) ?? grupo.automacao;
-        const daMensagem = a.id === grupo.automacao.id && !absorvida;
+        const a = marcoDe.get(p.id) ?? automacao;
+        const daMensagem = a.id === automacao.id && !absorvida;
         return {
           account_id: accountId,
           cobranca_id: p.id,
@@ -744,18 +864,18 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
           tipo: "atraso",
           marco: a.marco,
           vencimento: p.vencimento,
-          automation_id: grupo.automacao.id,
-          automation_nome: grupo.automacao.nome,
+          automation_id: automacao.id,
+          automation_nome: automacao.nome,
           contact_id: ligado.contact_id,
           resultado: daMensagem ? "reservado" : "absorvida",
-          detalhe: absorvida ? `intervalo mínimo de ${config.regua_intervalo_dias} dias` : daMensagem ? null : `absorvida pelo marco de ${grupo.automacao.marco} dias`,
+          detalhe: absorvida ? `intervalo mínimo de ${config.regua_intervalo_dias} dias` : daMensagem ? null : `absorvida pelo marco de ${automacao.marco} dias`,
         };
       });
       // a parcela que vence hoje entra na mensagem e fica travada como lembrete
       // absorvido (D17, uma mensagem só) — só quando a cobrança SAI: absorvida
       // pelo intervalo, o lembrete segue livre para o passo 8
       for (const p of absorvida ? [] : venceHoje) {
-        linhas.push({ account_id: accountId, cobranca_id: p.id, asaas_customer_id: grupo.asaasCustomerId, tipo: "vence_hoje", marco: 0, vencimento: p.vencimento, automation_id: grupo.automacao.id, automation_nome: grupo.automacao.nome, contact_id: ligado.contact_id, resultado: "absorvida", detalhe: `absorvida pela cobrança de ${grupo.automacao.marco} dias` });
+        linhas.push({ account_id: accountId, cobranca_id: p.id, asaas_customer_id: grupo.asaasCustomerId, tipo: "vence_hoje", marco: 0, vencimento: p.vencimento, automation_id: automacao.id, automation_nome: automacao.nome, contact_id: ligado.contact_id, resultado: "absorvida", detalhe: `absorvida pela cobrança de ${automacao.marco} dias` });
       }
       const ids = await travar(admin, linhas);
       if (ids === null) continue; // outro processo pegou
@@ -770,7 +890,13 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
       // 6) a conversa, o contexto e o disparo
       const vencidas = resumirDivida(vencidasDoCliente(frescas), agora, config.vencidas_listadas_em, fuso).vencidas;
       const conversationId = await conversaDoContato(admin, accountId, ligado.contact_id, automacao.channelId);
-      const vars = montarVariaveis({ clienteNome: ligado.nome, escritorioNome: escritorio, vencidas, cruzaram, venceHoje, hoje: dia, agora, fuso });
+      // `dias_de_atraso` é `cruzaram[0]`: as parcelas da automação que manda
+      // vêm primeiro (a mais antiga delas à frente). Na ordem do banco (UUID),
+      // a mensagem do marco de 30 dias dizia "3 dias" metade das vezes (Codex,
+      // 4ª rodada do PR #206).
+      const daQueManda = (p: ParcelaDoEspelho) => Number(marcoDe.get(p.id)?.id === automacao.id);
+      const cruzaramNaMensagem = [...cruzaram].sort((a, b) => daQueManda(b) - daQueManda(a) || (a.vencimento < b.vencimento ? -1 : a.vencimento > b.vencimento ? 1 : 0));
+      const vars = montarVariaveis({ clienteNome: ligado.nome, escritorioNome: escritorio, vencidas, cruzaram: cruzaramNaMensagem, venceHoje, hoje: dia, agora, fuso });
       const carimbo = new Date().toISOString();
       const disparo = await disparar({
         accountId,
@@ -779,7 +905,7 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         context: { automation_id: automacao.id, conversation_id: conversationId, channel_id: automacao.channelId, vars },
       });
       // 7) o desfecho, pelo log
-      const { resultado, detalhe, logId } = await medir(admin, grupo.automacao.id, ligado.contact_id, carimbo, disparo, logsConsumidos);
+      const { resultado, detalhe, logId } = await medir(admin, automacao.id, ligado.contact_id, carimbo, disparo, logsConsumidos);
       if (logId) logsConsumidos.add(logId);
       await fecharTravas(admin, ids, resultado, detalhe, new Date().toISOString(), logId);
       if (resultado === "enviado" || resultado === "na_fila") {
@@ -806,8 +932,17 @@ export async function varrerRegua(admin: SupabaseClient, accountId: string, deps
         continue;
       }
       const dia = ctx.hoje;
-      // reconfirma: quem pagou por Pix de manhã não recebe lembrete à tarde
-      const venceHoje = await reconfirmar(admin, accountId, cliente, grupo.venceHoje, (p) => { const c = classificar(p.status, p.deleted); return c === "a_vencer" || (c === "vencida" && p.vencimento < dia); }, vistoEm);
+      // reconfirma: quem pagou por Pix de manhã não recebe lembrete à tarde.
+      // ⚠️ A linha RELIDA passa pela MESMA cerca da seleção — vencimento nos
+      // dias do lembrete, não só o status: a PENDING de hoje que o Asaas
+      // prorrogou mandava "vence hoje" com a data futura e travava o lembrete
+      // legítimo do dia novo por 23505 (Codex, 4ª rodada do PR #206).
+      // A trava de lembrete que JÁ existe é conferida ANTES da releitura: a
+      // parcela lembrada não entra no grupo (senão o 23505 levava a outra
+      // junto) e não gasta GET no Asaas a cada ciclo do dia (Codex, PR #212).
+      const aLembrar = await semLembreteTravado(admin, accountId, grupo.venceHoje);
+      if (aLembrar.length === 0) continue;
+      const venceHoje = await reconfirmar(admin, accountId, cliente, aLembrar, (p) => cabeNoLembrete(p, diasDoLembreteHoje, dia), vistoEm);
       if (venceHoje.length === 0) continue;
       if (!(await reguaAindaLigada(admin, accountId))) {
         saida.desligadaNoMeio = true;

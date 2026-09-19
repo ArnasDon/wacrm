@@ -44,6 +44,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { useAgendadorSaude } from '@/hooks/use-agendador-saude';
 import { useAreaDeTrabalho } from '@/hooks/use-area-de-trabalho';
+import { useAoVoltarParaOApp } from '@/hooks/use-ao-voltar-para-o-app';
 import { useAuth } from '@/hooks/use-auth';
 import { useCan } from '@/hooks/use-can';
 import { useChannelHealth } from '@/hooks/use-channel-health';
@@ -266,6 +267,27 @@ function AreaDeTrabalho({
           },
         };
 
+  // Conexão de pé, ouvindo, sem erro — e entregando tarde (1002). Fonte
+  // SEPARADA da de cima: o conserto é outro, e somá-las faria a frase
+  // "fora do ar" mentir sobre uma conexão que está entregando.
+  //
+  // ⚠️ O teste é `detail === 'lagging'`, não `tone === 'warn'`: `warn`
+  // também cobre `stale`, `pairing` e `lastError`, que são transitórios e
+  // encheriam o bloco de alarme que se resolve sozinho — e um bloco que
+  // acende à toa é um bloco que se aprende a ignorar.
+  const conexoesAtrasadas: EstadoDaFonte = conexoesCarregando
+    ? { status: 'carregando' }
+    : conexoesFalharam
+      ? { status: 'falhou' }
+      : {
+          status: 'pronto',
+          contagem: {
+            quantidade: canaisVisiveis(acesso, channels).filter(
+              (c) => c.detail === 'lagging'
+            ).length,
+          },
+        };
+
   const veTarefas = podeVerTela(acesso, 'tarefas');
   const veContatos = podeVerTela(acesso, 'contacts');
   const veInbox = podeVerTela(acesso, 'inbox');
@@ -304,6 +326,13 @@ function AreaDeTrabalho({
     recarregarConexoes();
     recarregarAgendador();
   };
+
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora faz o mesmo que o "Atualizar". ⚠️ Os blocos voltam
+  // a "carregando" por um instante, como no botão — e é o certo aqui: esta tela
+  // AFIRMA ("tudo em ordem", "0 vencidas"), e afirmar sobre números velhos
+  // seria pior que piscar.
+  useAoVoltarParaOApp(atualizarTudo);
 
   const carregando = [
     resumo.novidades,
@@ -428,6 +457,7 @@ function AreaDeTrabalho({
               correcoes={area.correcoes}
               integracoes={area.integracoes}
               conexoes={conexoes}
+              conexoesAtrasadas={conexoesAtrasadas}
               agendadorParado={
                 saude === null ? null : agendadorEstaParado(saude)
               }

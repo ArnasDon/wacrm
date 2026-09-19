@@ -34,6 +34,13 @@ export interface ChannelHealth {
   checkedAt: string | null;
   detail: string | null;
   webhookOk: boolean | null;
+  /**
+   * Nível 3 (1002): quanto a última mensagem levou do WhatsApp até aqui, em
+   * segundos. `null` = nunca medido nesta conexão — "não sei", nunca zero.
+   */
+  atrasoSeg: number | null;
+  /** Quando essa medição foi feita (ISO). */
+  atrasoMedidoEm: string | null;
 }
 
 const POLL_MS = 30_000;

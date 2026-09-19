@@ -1,0 +1,43 @@
+diff --git a/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts b/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
+index d37e41d..f2b09a5 100644
+--- a/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
++++ b/src/api/integrations/channel/whatsapp/whatsapp.baileys.service.ts
+@@ -1696,7 +1696,19 @@ export class BaileysStartupService extends ChannelStartupService {
+           } = {
+             remoteJid: received.key.remoteJid,
+             pushName: received.key.fromMe ? '' : received.key.fromMe == null ? '' : received.pushName,
+-            profilePicUrl: (await this.profilePicture(received.key.remoteJid)).profilePictureUrl,
++            /**
++             * Look the picture up by the PHONE number, with a short timeout.
++             *
++             * This runs inside BaileysMessageProcessor's concatMap, which
++             * handles one upsert batch at a time: anything awaited here holds
++             * every message of the instance behind it. The server does not
++             * answer the picture query for most `@lid` JIDs, and without a
++             * timeout Baileys waits its defaultQueryTimeoutMs (60 s) — one
++             * message per minute per instance, measured on 2026-09-17.
++             * `messageRaw.key.remoteJid` already carries the phone number when
++             * the LID was resolved (swapped above); the timeout caps the rest.
++             */
++            profilePicUrl: (await this.profilePicture(messageRaw.key.remoteJid, 5_000)).profilePictureUrl,
+             instanceId: this.instanceId,
+           };
+ 
+@@ -2276,11 +2288,15 @@ export class BaileysStartupService extends ChannelStartupService {
+     );
+   }
+ 
+-  public async profilePicture(number: string) {
++  /**
++   * `timeoutMs` caps the query; omitted, Baileys applies its own default
++   * (defaultQueryTimeoutMs, 60 s). The inbound path passes a short one.
++   */
++  public async profilePicture(number: string, timeoutMs?: number) {
+     const jid = createJid(number);
+ 
+     try {
+-      const profilePictureUrl = await this.client.profilePictureUrl(jid, 'image');
++      const profilePictureUrl = await this.client.profilePictureUrl(jid, 'image', timeoutMs);
+ 
+       return { wuid: jid, profilePictureUrl };
+     } catch {

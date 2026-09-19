@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { Suspense, useState, useEffect, useRef, useCallback } from "react";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type {
   Automation,
@@ -34,6 +35,7 @@ import { Label } from "@/components/ui/label";
 import { GitBranch, Plus, ChevronDown, Settings } from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
+import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import {
   VISTA_PADRAO,
   vistaVigente,
@@ -63,6 +65,7 @@ import {
   type CamposDoCard,
 } from "@/lib/pipelines/campos-do-card";
 import { gravarRetorno, lerRetorno } from "@/lib/pipelines/retorno";
+import { lerUrlDoFunil } from "@/lib/pipelines/url";
 import { CamposDoCardPopover } from "@/components/pipelines/campos-do-card-popover";
 
 // Pipeline creation is admin-class (settings-tier write under
@@ -84,9 +87,28 @@ const SPEC_DEFAULT_STAGES = [
   { name: "Won", color: "#22c55e", position: 4 }, // green
 ];
 
+// `useSearchParams` (a volta do construtor de automações pede aba e funil
+// pela URL) pede um Suspense em página estática — o mesmo embrulho do inbox
+// e de `/automations/new`. Medido em 18/09/2026: HOJE o build passaria sem
+// ele, porque a casca do painel só monta a página depois do login, no
+// navegador; o embrulho segura o dia em que ela renderizar no servidor.
 export default function PipelinesPage() {
+  return (
+    <Suspense fallback={null}>
+      <PipelinesPageInner />
+    </Suspense>
+  );
+}
+
+function PipelinesPageInner() {
   const t = useTranslations("Pipelines.page");
   const tAuto = useTranslations("Pipelines.automacoes");
+  const searchParams = useSearchParams();
+  // Porta de ENTRADA (`?vista=` e `?funil=`), lida UMA vez na montagem: é por
+  // ela que o voltar do construtor de automações devolve o operador à grade
+  // do funil de onde saiu. Trocar de aba ou de funil depois não reescreve a
+  // URL (ver `lib/pipelines/url.ts`).
+  const [pedidoDaUrl] = useState(() => lerUrlDoFunil(searchParams));
   const supabase = createClient();
   const canEditSettings = useCan("edit-settings");
   const canCreateDeals = useCan("send-messages");
@@ -164,7 +186,9 @@ export default function PipelinesPage() {
   /** "leads" = o Kanban de sempre; "automacoes" = a grade estilo Kommo. */
   // "leads" é o QUADRO (o id ficou pelo diff mínimo; o rótulo virou "Quadro"
   // quando a lista chegou, na Fase 1 do funil comercial).
-  const [vistaEscolhida, setVista] = useState<VistaDoFunil>(VISTA_PADRAO);
+  const [vistaEscolhida, setVista] = useState<VistaDoFunil>(
+    pedidoDaUrl.vista ?? VISTA_PADRAO,
+  );
   // ⚠️ A aba vigente é resolvida no RENDER, nunca guardada por efeito: a
   // lente de simulação de perfil troca o papel com a tela montada, e uma aba
   // proibida que sobrevivesse até o efeito rodar mostraria o Desempenho da
@@ -186,32 +210,64 @@ export default function PipelinesPage() {
   // Guard against double-seeding (React StrictMode double-effect in dev).
   const seedAttempted = useRef(false);
 
-  const loadPipelines = useCallback(async () => {
+  /**
+   * O catálogo de funis. `null` = a consulta FALHOU — o motivo do
+   * `buscarEtapas`: voltar ao app com a rede ainda voltando não pode apagar a
+   * lista de funis e a seleção (Codex, PR #216, 4ª rodada). Quem já usava
+   * `loadPipelines` continua recebendo `[]`.
+   */
+  const buscarFunis = useCallback(async (): Promise<Pipeline[] | null> => {
     const { data, error } = await supabase
       .from("pipelines")
       .select("*")
       .order("created_at");
     if (error) {
       console.error("Failed to load pipelines:", error.message);
-      return [];
+      return null;
     }
-    return data ?? [];
+    return (data ?? []) as Pipeline[];
   }, [supabase]);
 
-  const loadStages = useCallback(
-    async (pipelineId: string) => {
-      const { data } = await supabase
+  const loadPipelines = useCallback(
+    async (): Promise<Pipeline[]> => (await buscarFunis()) ?? [],
+    [buscarFunis],
+  );
+
+  /**
+   * As etapas do funil. `null` = a consulta FALHOU, que é diferente de "funil
+   * sem etapa" (`[]`): a recarga de quem volta ao app mantém o quadro na
+   * falha em vez de esvaziá-lo (Codex, PR #216). Quem já usava `loadStages`
+   * continua recebendo `[]`.
+   */
+  const buscarEtapas = useCallback(
+    async (pipelineId: string): Promise<PipelineStage[] | null> => {
+      const { data, error } = await supabase
         .from("pipeline_stages")
         .select("*")
         .eq("pipeline_id", pipelineId)
         .order("position");
-      return data ?? [];
+      if (error) {
+        console.error("Failed to load stages:", error.message);
+        return null;
+      }
+      return (data ?? []) as PipelineStage[];
     },
     [supabase],
   );
 
-  const loadDeals = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[]> => {
+  const loadStages = useCallback(
+    async (pipelineId: string): Promise<PipelineStage[]> =>
+      (await buscarEtapas(pipelineId)) ?? [],
+    [buscarEtapas],
+  );
+
+  /**
+   * Os negócios do quadro. `null` = as duas consultas falharam (o select do
+   * quadro e o plano B) — mesmo motivo do `buscarEtapas`. Quem já usava
+   * `loadDeals` continua recebendo `[]`, com o toast.
+   */
+  const buscarNegocios = useCallback(
+    async (pipelineId: string): Promise<DealDoQuadro[] | null> => {
       // A MESMA consulta para os dois selects: qualquer mudança de escopo
       // (filtro, ordem) vale automaticamente no plano B — divergir os dois é
       // exatamente o tipo de bug que só aparece quando ninguém está olhando.
@@ -245,7 +301,9 @@ export default function PipelinesPage() {
       if (erroBasico) {
         // ⚠️ O plano B também pode falhar (rede, RLS) — descartar ESTE erro
         // reproduzia o defeito original: colunas "vazias" com cara de funil
-        // sem negócio. Toast + lista vazia explícita, como o handleDealMoved.
+        // sem negócio. Toast + `null`: o `loadDeals` o converte na lista
+        // vazia explícita de sempre, e a recarga da volta ao app mantém o
+        // quadro.
         console.error("Failed to load deals (select básico):", {
           message: erroBasico.message,
           details: erroBasico.details,
@@ -253,11 +311,17 @@ export default function PipelinesPage() {
           code: erroBasico.code,
         });
         toast.error(t("toastFailedLoadDeals"));
-        return [];
+        return null;
       }
       return mapear(basico);
     },
     [supabase, t],
+  );
+
+  const loadDeals = useCallback(
+    async (pipelineId: string): Promise<DealDoQuadro[]> =>
+      (await buscarNegocios(pipelineId)) ?? [],
+    [buscarNegocios],
   );
 
   // Falha em silêncio → lista vazia. A etiqueta some e o painel diz "nenhuma";
@@ -272,17 +336,25 @@ export default function PipelinesPage() {
   // Calendly, e o operador foi procurá-la no funil e não achou. Quem decide
   // o que vira cartão é `montarGrade`; o raio do Kanban continua contando só
   // o que dispara na etapa (`contarAtivasNaEtapa` ignora os outros gatilhos).
-  const loadAutomations = useCallback(async () => {
+  const buscarAutomacoes = useCallback(async (): Promise<Automation[] | null> => {
     const { data, error } = await supabase
       .from("automations")
       .select("*")
       .order("created_at", { ascending: false });
     if (error) {
       console.error("Failed to load stage automations:", error.message);
-      return [];
+      return null;
     }
     return (data ?? []) as Automation[];
   }, [supabase]);
+
+  // A carga de sempre vira a lista vazia do fail-open acima; só a volta ao
+  // app usa o `null` de `buscarAutomacoes`, para não apagar a grade numa
+  // falha passageira (Codex, PR #216, 4ª rodada).
+  const loadAutomations = useCallback(
+    async (): Promise<Automation[]> => (await buscarAutomacoes()) ?? [],
+    [buscarAutomacoes],
+  );
 
   /**
    * Passos + os nomes que os cartões exibem.
@@ -292,7 +364,9 @@ export default function PipelinesPage() {
    * automação exigiria uma consulta por linha.
    *
    * Falha em silêncio, como o resto desta página: sem os passos o cartão
-   * mostra "sem ações", que é menos ruim que um quadro que não abre.
+   * mostra "sem ações", que é menos ruim que um quadro que não abre. O
+   * `falhou` diz se alguma das quatro consultas caiu: a carga de sempre o
+   * ignora; a volta ao app não grava por cima do que já está na tela.
    */
   const loadPassosENomes = useCallback(
     async (lista: Automation[]) => {
@@ -319,6 +393,9 @@ export default function PipelinesPage() {
         Object.fromEntries((linhas ?? []).map((r) => [r.id, r.name]));
 
       return {
+        falhou: Boolean(
+          passosRes.error || tagsRes.error || etapasRes.error || fluxosRes.error,
+        ),
         passos: porAutomacao,
         nomes: {
           tags: mapear(tagsRes.data as { id: string; name: string }[] | null),
@@ -387,9 +464,13 @@ export default function PipelinesPage() {
         // que o perfil o alcance (o retorno é conferido contra `visiveis`).
         // O registro tem prazo curto (ver retorno.ts) — vencido, cai no
         // primeiro da lista como sempre.
+        // O funil pedido pela URL (a volta do construtor de automações) vem
+        // antes: é o pedido mais novo, e não expira como o retorno.
         const doRetorno = lerRetorno()?.pipelineId;
+        const daUrl = pedidoDaUrl.funil;
         setSelectedPipelineId((prev) => {
           if (prev && visiveis.some((p) => p.id === prev)) return prev;
+          if (daUrl && visiveis.some((p) => p.id === daUrl)) return daUrl;
           if (doRetorno && visiveis.some((p) => p.id === doRetorno))
             return doRetorno;
           return visiveis[0].id;
@@ -402,7 +483,7 @@ export default function PipelinesPage() {
     return () => {
       cancelled = true;
     };
-  }, [loadPipelines, seedDefaultPipeline, acesso]);
+  }, [loadPipelines, seedDefaultPipeline, acesso, pedidoDaUrl]);
 
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
@@ -434,7 +515,18 @@ export default function PipelinesPage() {
     };
   }, [selectedPipelineId, loadStages, loadDeals]);
 
+  /**
+   * Versão das mudanças LOCAIS da página. Toda ação que mexe por aqui nos
+   * negócios, nas etapas, nos funis ou nas automações (arrastar, salvar,
+   * apagar, editar) a avança — e a troca de funil também —, e a recarga da
+   * volta ao app só grava se a versão ainda for a de quando partiu. Sem isso,
+   * uma recarga que saiu ANTES de um arrasto voltava DEPOIS dele e devolvia o
+   * card à etapa antiga, e nada recarregaria de novo (Codex, PR #216).
+   */
+  const versaoDoQuadroRef = useRef(0);
+
   const refreshAutomations = useCallback(async () => {
+    versaoDoQuadroRef.current += 1;
     const lista = await loadAutomations();
     setAutomations(lista);
     const extra = await loadPassosENomes(lista);
@@ -461,6 +553,7 @@ export default function PipelinesPage() {
   }, [loadAutomations, loadPassosENomes]);
 
   const refreshPipelines = useCallback(async () => {
+    versaoDoQuadroRef.current += 1;
     const list = funisVisiveis(acesso, await loadPipelines());
     setPipelines(list);
     if (list.length === 0) setSelectedPipelineId("");
@@ -470,16 +563,86 @@ export default function PipelinesPage() {
 
   const refreshStages = useCallback(async () => {
     if (!selectedPipelineId) return;
+    versaoDoQuadroRef.current += 1;
     setStages(await loadStages(selectedPipelineId));
   }, [loadStages, selectedPipelineId]);
 
   const refreshDeals = useCallback(async () => {
     if (!selectedPipelineId) return;
+    versaoDoQuadroRef.current += 1;
     setDeals(await loadDeals(selectedPipelineId));
   }, [loadDeals, selectedPipelineId]);
 
+  // O app instalado no celular não tem botão de recarregar: voltar para ele
+  // depois de um tempo fora atualiza o quadro do funil aberto, a lista de
+  // funis e as automações. ⚠️ As cercas (todas menos a primeira, das quatro
+  // rodadas do Codex no PR #216):
+  // - NUNCA a carga inicial: ela liga o `loading`, que desmonta o quadro e
+  //   perde a rolagem e o retorno do inbox (ver retorno.ts);
+  // - resposta de funil que já não está aberto, ou que partiu antes de uma
+  //   mudança local ou de uma troca de funil, é DESCARTADA (`valeAinda`):
+  //   desfaria o arrasto, o salvamento ou a troca;
+  // - consulta que FALHOU não grava nada por cima: voltar ao app antes de a
+  //   rede do celular voltar esvaziava o quadro, apagava a lista de funis ou
+  //   trocava os nomes dos cartões por "(apagado)";
+  // - as gravações vão JUNTAS, depois de uma única conferência: gravando a
+  //   troca de funil antes, a própria troca avançaria a versão e descartaria
+  //   as automações.
+  const funilAbertoRef = useRef(selectedPipelineId);
+  useEffect(() => {
+    funilAbertoRef.current = selectedPipelineId;
+    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
+    // ar passava pela cerca do funil (é A de novo e a versão não andava), e
+    // a resposta velha gravava por cima da carga nova de A (Codex, PR #216,
+    // 3ª rodada).
+    versaoDoQuadroRef.current += 1;
+  }, [selectedPipelineId]);
+  useAoVoltarParaOApp(() => {
+    const funil = selectedPipelineId;
+    const versao = versaoDoQuadroRef.current;
+    const valeAinda = () =>
+      versaoDoQuadroRef.current === versao && funilAbertoRef.current === funil;
+    void (async () => {
+      const [funis, etapas, negocios, automacoes] = await Promise.all([
+        buscarFunis(),
+        funil ? buscarEtapas(funil) : Promise.resolve(null),
+        funil ? buscarNegocios(funil) : Promise.resolve(null),
+        buscarAutomacoes(),
+      ]);
+      const extra = automacoes ? await loadPassosENomes(automacoes) : null;
+      if (!valeAinda()) return;
+
+      // As automações (a grade e os indicadores do quadro) não têm realtime.
+      if (automacoes && extra && !extra.falhou) {
+        setAutomations(automacoes);
+        setSteps(extra.passos);
+        setNomes(extra.nomes);
+      }
+
+      // O catálogo: o funil criado ou renomeado lá fora aparece, e o apagado
+      // (ou tirado do perfil) sai da seleção — a troca carrega o quadro do
+      // primeiro que sobrou, e o quadro do funil que sumiu não é gravado.
+      if (funis) {
+        const visiveis = funisVisiveis(acesso, funis);
+        setPipelines(visiveis);
+        if (!visiveis.some((p) => p.id === funil)) {
+          setSelectedPipelineId(visiveis[0]?.id ?? "");
+          return;
+        }
+      }
+
+      if (etapas && negocios) {
+        setStages(etapas);
+        setDeals(negocios);
+      }
+    })();
+  });
+
   const handleDealMoved = useCallback(
     async (dealId: string, newStageId: string) => {
+      // Mudança local: a recarga da volta ao app que estiver no ar já não
+      // pode gravar por cima (ver `versaoDoQuadroRef`).
+      versaoDoQuadroRef.current += 1;
       // Optimistic update — board already animated; just persist.
       // ⚠️ Espelho do gatilho da 950: entrar numa etapa marcada carimba
       // ganho/perdido NO BANCO (BEFORE trigger, mesma escrita). Sem refletir
@@ -796,6 +959,7 @@ export default function PipelinesPage() {
         />
       ) : vista === "automacoes" && podeAutomacoes ? (
         <AutomationsBoard
+          pipelineId={selectedPipelineId}
           stages={stages}
           automations={automations}
           steps={steps}

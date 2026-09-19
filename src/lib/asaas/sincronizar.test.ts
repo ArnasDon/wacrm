@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { encrypt } from "@/lib/whatsapp/encryption";
 
-import { AsaasError } from "./cliente";
+import { AsaasError, criarClienteAsaas } from "./cliente";
 import { dubleDoAsaas, dubleDoSupabase, type EstadoDoDuble, type PedidosAoAsaas, type RespostasDoAsaas } from "./duble.test-helper";
 import { FICHAS_POR_CICLO, listagemDiariaDevida, listagemSuspeita, RECOLHER_CICLO_MS, sincronizarAsaas } from "./sincronizar";
 
@@ -601,6 +601,41 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
     expect(r2).toMatchObject({ ok: true });
     expect(registro.pedidos.filter((p) => p.startsWith("/installments/"))).toHaveLength(1);
     expect(estado2.tabelas.cb_asaas_cobrancas.every((c) => c.parcela_total === null)).toBe(true);
+  });
+
+  it("403 de BLOQUEIO POR COTA no passo dos Parcelamentos (medido em produção em 14/09/2026): o ciclo PARA com `limite` — não finge que falta a permissão Parcelamentos e segue falando com o Asaas bloqueado", async () => {
+    const estado = estadoInicial(
+      {
+        cb_asaas_clientes: [{ id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "A", contatos_recusados: [], candidatos: [], deleted: false, vinculo_origem: "desvinculado", contact_id: null, visto_em: "2026-09-14T06:00:00Z" }],
+        cb_asaas_cobrancas: [
+          { id: "p1", account_id: CONTA, asaas_payment_id: "pay_1", asaas_customer_id: "cus_A", status: "OVERDUE", deleted: false, valor: 1, vencimento: "2026-09-01", parcelamento_id: "ins_1", parcela_numero: 1, parcela_total: null, visto_em: "2026-09-14T06:00:00Z" },
+          { id: "p2", account_id: CONTA, asaas_payment_id: "pay_2", asaas_customer_id: "cus_A", status: "OVERDUE", deleted: false, valor: 1, vencimento: "2026-09-01", parcelamento_id: "ins_2", parcela_numero: 1, parcela_total: null, visto_em: "2026-09-14T06:00:00Z" },
+        ],
+      },
+      { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
+    );
+    const base: RespostasDoAsaas = {
+      listas: { [LISTA_VENCIDAS]: [cobranca("pay_1", "cus_A", { installment: "ins_1", installmentNumber: 1 }), cobranca("pay_2", "cus_A", { installment: "ins_2", installmentNumber: 1 })], [LISTA_VENCE_HOJE]: [] },
+      recursos: { "/customers/cus_A": clienteAsaas("cus_A", "A") },
+    };
+    const registro: PedidosAoAsaas = { pedidos: [] };
+    const asaas = dubleDoAsaas(base, registro);
+    const obter = asaas.obter.bind(asaas);
+    // o cliente de VERDADE classifica o 403 que o Asaas devolveu
+    const bloqueado = criarClienteAsaas("$aact_prod_chave_de_teste_0000", {
+      fetchFn: (async () => new Response(JSON.stringify({ errors: [{ code: "x", description: "Seu acesso foi temporariamente bloqueado por exceder o limite de requisições. Tente novamente dentro de alguns minutos." }] }), { status: 403, headers: { "Content-Type": "application/json" } })) as unknown as typeof fetch,
+    });
+    asaas.obter = async <T,>(caminho: string): Promise<T | null> => {
+      if (caminho.startsWith("/installments/")) {
+        registro.pedidos.push(caminho);
+        return bloqueado.obter<T>(caminho);
+      }
+      return obter<T>(caminho);
+    };
+    const r = await sincronizarAsaas(dubleDoSupabase(estado), CONTA, { agora: AGORA, cliente: () => asaas });
+    expect(r).toEqual({ ok: false, codigo: "limite" });
+    expect(estado.tabelas.cb_asaas_config[0]).toMatchObject({ status: "erro", last_error: "limite", sincronizando_desde: null });
+    expect(registro.pedidos.filter((p) => p.startsWith("/installments/"))).toHaveLength(1);
   });
 
   it("a etiqueta que falha na criação vira `etiqueta_pendente` e é refeita no ciclo seguinte — só ela", async () => {

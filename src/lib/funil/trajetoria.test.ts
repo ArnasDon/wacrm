@@ -362,3 +362,174 @@ describe("created_at nulo não derruba a carga", () => {
     expect(lerLinha({ deal_id: "d1", pipeline_id: "p1", stage_id: "s1", value: "muito" })).toBeNull();
   });
 });
+
+describe("alcancouEm — a data de cada degrau (regra 7, contagem por período)", () => {
+  const datas = (l: LinhaDeTrajetoria) =>
+    fatosDoNegocio(l, FUNIL, CLASSIFICACAO).alcancouEm.map((d) => d?.toISOString() ?? null);
+
+  it("um item por degrau; nunca alcançado = nulo", () => {
+    expect(datas(linha({ deal_id: "a" }))).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      null,
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("o PULO dá ao degrau pulado a data de quem o alcançou", () => {
+    const l = linha({
+      deal_id: "b",
+      stage_id: "proposta",
+      trajeto: [
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("proposta", "2026-09-05T12:00:00+00:00"),
+      ],
+    });
+    expect(datas(l)).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      "2026-09-05T12:00:00.000Z",
+      null,
+    ]);
+  });
+
+  it("REENTRAR na etapa não muda a data: vale a primeira vez", () => {
+    const l = linha({
+      deal_id: "c",
+      stage_id: "reuniao",
+      trajeto: [
+        passo("avulso", "2026-08-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("reuniao", "2026-08-10T12:00:00+00:00"),
+        passo("desq", "2026-08-20T12:00:00+00:00"),
+        passo("reuniao", "2026-09-15T12:00:00+00:00"),
+      ],
+    });
+    expect(datas(l)[2]).toBe("2026-08-10T12:00:00.000Z");
+  });
+
+  it("perda e etapa sem degrau não dão data a ninguém; entrar direto em perda deixa tudo nulo", () => {
+    const l = linha({
+      deal_id: "d",
+      stage_id: "desq",
+      trajeto: [passo("desq", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    expect(datas(l)).toEqual([null, null, null, null, null]);
+    const estacionado = linha({
+      deal_id: "e",
+      stage_id: "parking",
+      trajeto: [passo("parking", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    expect(datas(estacionado)).toEqual([null, null, null, null, null]);
+  });
+
+  it("só contam os passos DESTE funil; trajeto fora de ordem é ordenado antes", () => {
+    const l = linha({
+      deal_id: "f",
+      stage_id: "mql1",
+      trajeto: [
+        passo("mql1", "2026-09-09T12:00:00+00:00"),
+        passo("contrato", "2026-09-02T12:00:00+00:00", OUTRO),
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+      ],
+    });
+    expect(datas(l)).toEqual([
+      "2026-09-01T12:00:00.000Z",
+      "2026-09-09T12:00:00.000Z",
+      null,
+      null,
+      null,
+    ]);
+  });
+
+  it("monotônica: a data do degrau k nunca é posterior à do degrau k+1", () => {
+    const l = linha({
+      deal_id: "g",
+      stage_id: "contrato",
+      trajeto: [
+        passo("avulso", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("contrato", "2026-09-03T12:00:00+00:00"),
+        passo("mql1", "2026-09-04T12:00:00+00:00"),
+        passo("contrato", "2026-09-08T12:00:00+00:00"),
+      ],
+    });
+    const d = fatosDoNegocio(l, FUNIL, CLASSIFICACAO).alcancouEm.map((x) => x?.getTime() ?? null);
+    for (let k = 0; k + 1 < d.length; k++) {
+      if (d[k] !== null && d[k + 1] !== null) expect(d[k]!).toBeLessThanOrEqual(d[k + 1]!);
+    }
+    // voltar para MQL depois do contrato não "desalcança" nem redata nada
+    expect(d[1]).toBe(new Date("2026-09-03T12:00:00Z").getTime());
+  });
+});
+
+describe("perdidoDesde — o começo da estadia em perda (regra 8)", () => {
+  const desde = (l: LinhaDeTrajetoria) =>
+    fatosDoNegocio(l, FUNIL, CLASSIFICACAO).perdidoDesde?.toISOString() ?? null;
+
+  it("trocar de etapa de perda NÃO muda a data; `naEtapaDesde` muda", () => {
+    const l = linha({
+      deal_id: "p1",
+      stage_id: "desq",
+      trajeto: [
+        passo("avulso", "2026-08-02T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("noshow", "2026-08-20T12:00:00+00:00"),
+        passo("desq", "2026-09-05T12:00:00+00:00"),
+      ],
+    });
+    const f = fatosDoNegocio(l, FUNIL, CLASSIFICACAO);
+    expect(f.perdidoDesde?.toISOString()).toBe("2026-08-20T12:00:00.000Z");
+    expect(f.naEtapaDesde?.toISOString()).toBe("2026-09-05T12:00:00.000Z");
+  });
+
+  it("recuperado e perdido de novo: vale a segunda estadia", () => {
+    const l = linha({
+      deal_id: "p2",
+      stage_id: "noshow",
+      trajeto: [
+        passo("avulso", "2026-08-02T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("desq", "2026-08-10T12:00:00+00:00"),
+        passo("reuniao", "2026-09-01T12:00:00+00:00"),
+        passo("noshow", "2026-10-03T12:00:00+00:00"),
+      ],
+    });
+    expect(desde(l)).toBe("2026-10-03T12:00:00.000Z");
+  });
+
+  it("passo sem classe no meio da estadia é transparente, como em alcancouEm", () => {
+    const l = linha({
+      deal_id: "p3",
+      stage_id: "desq",
+      trajeto: [
+        passo("avulso", "2026-08-02T12:00:00+00:00", FUNIL, "deal_created"),
+        passo("noshow", "2026-08-20T12:00:00+00:00"),
+        passo("parking", "2026-09-01T12:00:00+00:00"),
+        passo("desq", "2026-10-05T12:00:00+00:00"),
+      ],
+    });
+    expect(desde(l)).toBe("2026-08-20T12:00:00.000Z");
+  });
+
+  it("fora da perda é nulo; entrar direto em perda é a própria criação", () => {
+    expect(desde(linha({ deal_id: "p4" }))).toBeNull();
+    const direto = linha({
+      deal_id: "p5",
+      stage_id: "desq",
+      trajeto: [passo("desq", "2026-09-01T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    expect(desde(direto)).toBe("2026-09-01T12:00:00.000Z");
+  });
+
+  it("etapa de perda atual SEM evento de entrada cai em `naEtapaDesde` (a criação)", () => {
+    const l = linha({
+      deal_id: "p6",
+      stage_id: "desq",
+      created_at: "2026-06-10T12:00:00+00:00",
+      trajeto: [passo("avulso", "2026-06-10T12:00:00+00:00", FUNIL, "deal_created")],
+    });
+    const f = fatosDoNegocio(l, FUNIL, CLASSIFICACAO);
+    expect(f.classeAtual).toBe("perda");
+    expect(f.perdidoDesde?.toISOString()).toBe("2026-06-10T12:00:00.000Z");
+    expect(f.perdidoDesde?.getTime()).toBe(f.naEtapaDesde?.getTime());
+  });
+});

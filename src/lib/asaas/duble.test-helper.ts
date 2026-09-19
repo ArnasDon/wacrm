@@ -74,18 +74,20 @@ const DEFAULTS: Record<string, Linha> = {
 };
 
 /** As colunas GERADAS que o banco derivaria do payload. */
-function derivadas(tabela: string, linha: Linha): Linha {
+function derivadas(tabela: string, linha: Linha, instante: string): Linha {
   const extra: Linha = {};
   if (tabela === "contacts" && typeof linha.phone === "string") extra.phone_normalized = linha.phone.replace(/\D/g, "");
   if (tabela === "tags" && typeof linha.name === "string") extra.name_key = linha.name.trim().normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
-  // `criado_em DEFAULT now()` da trava da régua (998): a varredura filtra por ela.
-  if (tabela === "cb_asaas_regua_envios" && linha.criado_em === undefined) extra.criado_em = new Date().toISOString();
+  // `criado_em DEFAULT now()` da trava da régua (998): a varredura filtra por
+  // ela. ⚠️ `now()` é o instante da TRANSAÇÃO — as linhas de um INSERT só têm
+  // o MESMO valor, e é assim que o recolhimento de órfã acha as irmãs do grupo.
+  if (tabela === "cb_asaas_regua_envios" && linha.criado_em === undefined) extra.criado_em = instante;
   return extra;
 }
 
 /** A linha como o INSERT a criaria: defaults, id e colunas geradas. */
-function normalizarLinha(tabela: string, linha: Linha): Linha {
-  const nova: Linha = { ...(DEFAULTS[tabela] ?? {}), ...linha, ...derivadas(tabela, linha) };
+function normalizarLinha(tabela: string, linha: Linha, instante: string): Linha {
+  const nova: Linha = { ...(DEFAULTS[tabela] ?? {}), ...linha, ...derivadas(tabela, linha, instante) };
   if (nova.id === undefined) nova.id = idDeTeste(tabela.replace(/[^a-z]/g, "").slice(0, 4));
   return nova;
 }
@@ -193,16 +195,21 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
       }
       const cruas = (Array.isArray(payload) ? payload : [payload]) as Linha[];
       const inseridas: Linha[] = [];
+      // o `now()` do comando: um instante só para todas as linhas. ⚠️ É o
+      // relógio REAL: teste que simula ciclos em dias diferentes move o relógio
+      // do sistema junto (`vi.setSystemTime`, como o `deps()` de
+      // varrer-regua.test.ts), senão o resultado depende do calendário.
+      const instante = new Date().toISOString();
       // ⚠️ Como o Postgres: um INSERT de VÁRIAS linhas é um comando só —
       // 23505 em qualquer uma recusa todas (é a trava de grupo da régua).
       if (op === "insert") {
         const uniques = UNIQUES[nome] ?? [];
-        const novas = cruas.map((c) => normalizarLinha(nome, c));
+        const novas = cruas.map((c) => normalizarLinha(nome, c, instante));
         const conflito = novas.some((n, i) => uniques.some((u) => linhas.some((l) => conflita(nome, l, n, u)) || novas.slice(0, i).some((m) => conflita(nome, m, n, u))));
         if (conflito) return { data: null, error: { message: "duplicate key value violates unique constraint", code: "23505" }, count: null };
       }
       for (const crua of cruas) {
-        const nova = normalizarLinha(nome, crua);
+        const nova = normalizarLinha(nome, crua, instante);
         const uniques = UNIQUES[nome] ?? [];
         const existente = linhas.find((l) => uniques.some((u) => conflita(nome, l, nova, u)));
         if (existente) {
@@ -211,7 +218,7 @@ export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
           // ⚠️ Como o PostgREST: o upsert só escreve as colunas PRESENTES no
           // payload — as ausentes mantêm o valor (é o que `vista_vencida_em`
           // e o vínculo dependem).
-          Object.assign(existente, crua, derivadas(nome, crua), { id: existente.id });
+          Object.assign(existente, crua, derivadas(nome, crua, instante), { id: existente.id });
           inseridas.push(existente);
         } else {
           linhas.push(nova);

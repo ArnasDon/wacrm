@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { diasDoPeriodo, type CampanhaMapeada, type GastoDoDia } from "@/lib/meta-ads/atribuicao";
 import type { Intervalo } from "@/lib/funil/periodo";
@@ -14,7 +14,11 @@ import { createClient } from "@/lib/supabase/client";
  * uma sincronização.
  *
  * Mesmo desenho do `useTrajetorias`: `carregando` DERIVADO da chave do
- * pedido, setState só no `.then`, resposta atrasada descartada.
+ * pedido, setState só no `.then`, resposta atrasada descartada — e a mesma
+ * `versao` dentro da chave, que o `recarregar` sobe (a volta ao app, no
+ * Desempenho). Recarregar liga o `carregando` e esconde os cartões de
+ * investimento até a resposta, de propósito: é a escolha de piscar das
+ * trajetórias, porque a tela afirma custo por lead e CAC.
  *
  * ⚠️ **Consulta que falhou, ou que não coube, NÃO vira número** — devolve
  * `falhou`, e o Desempenho diz que não conseguiu ler. É a mesma regra do
@@ -40,11 +44,14 @@ export function useGastosDeAnuncios(intervalo: Intervalo): {
   carregando: boolean;
   conectado: boolean;
   falhou: boolean;
+  /** Refaz as duas consultas (campanhas e gasto) do mesmo intervalo. */
+  recarregar: () => void;
 } {
   const supabase = createClient();
   const [resultado, setResultado] = useState<Resultado | null>(null);
+  const [versao, setVersao] = useState(0);
   const dias = diasDoPeriodo(intervalo, new Date());
-  const chave = `${dias.desde ?? ""}|${dias.ate ?? ""}`;
+  const chave = `${dias.desde ?? ""}|${dias.ate ?? ""}|${versao}`;
 
   useEffect(() => {
     let ativo = true;
@@ -103,6 +110,8 @@ export function useGastosDeAnuncios(intervalo: Intervalo): {
     };
   }, [supabase, chave, dias.desde, dias.ate]);
 
+  const recarregar = useCallback(() => setVersao((v) => v + 1), []);
+
   const vigente = resultado !== null && resultado.chave === chave;
   const falhou = vigente && resultado.falhou;
   return {
@@ -113,6 +122,7 @@ export function useGastosDeAnuncios(intervalo: Intervalo): {
     // "não conectado" (mandaria conectar o que já está conectado).
     conectado: vigente && !falhou && resultado.campanhas.length > 0,
     falhou,
+    recarregar,
   };
 }
 

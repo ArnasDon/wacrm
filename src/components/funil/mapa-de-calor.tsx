@@ -4,18 +4,19 @@
  * O mapa de saúde: linhas = transições, colunas = meses, cor RELATIVA À
  * LINHA (decisão D6: o melhor mês da transição é verde e o pior é vermelho —
  * escala absoluta pintaria "Lead → Contrato" de vermelho o ano inteiro).
- * Coorte pequena fica apagada, com o motivo no `title`; coorte com lead
- * ainda sem desfecho traz "N em aberto" sob o mês (a taxa dela ainda pode
- * mudar — e isso vale para agosto tanto quanto para o mês corrente). Tabela
- * HTML pura — não há biblioteca para desenhar isto, e a rolagem horizontal
- * fica no contêiner, nunca na página.
+ * Célula pequena (a base da taxa abaixo do piso) fica apagada, com o motivo
+ * no `title`; coorte com lead ainda sem desfecho traz "N em aberto" sob o
+ * mês (a taxa dela ainda pode mudar — e isso vale para agosto tanto quanto
+ * para o mês corrente). Tabela HTML pura — não há biblioteca para desenhar
+ * isto, e a rolagem horizontal fica no contêiner, nunca na página.
  */
 export interface CelulaDoMapa {
   /** fração 0..1 ou nulo (sem denominador) */
   taxa: number | null;
   /** 0..1 relativo à linha ou nulo */
   posicao: number | null;
-  entradas: number;
+  /** o que a taxa divide (entradas da coorte, ou o degrau de partida no mês) — vai para o `title` */
+  base: number;
   pequena: boolean;
 }
 
@@ -44,7 +45,7 @@ export function MapaDeCalor({
   meses: { chave: string; rotulo: string; emAberto: number }[];
   linhas: LinhaDoMapaDeCalor[];
   formatarTaxa: (taxa: number | null) => string;
-  tituloDaCelula: (mes: string, taxa: string, entradas: number) => string;
+  tituloDaCelula: (mes: string, taxa: string, base: number) => string;
   /** o `title` da contagem: explica que a taxa do mês ainda pode mudar */
   rotuloEmAndamento: (emAberto: number) => string;
   /** o texto visível sob o mês ("3 em aberto") */
@@ -85,7 +86,7 @@ export function MapaDeCalor({
                         : "rounded-md px-1 py-2 text-center font-medium tabular-nums text-foreground"
                     }
                     style={apagada ? undefined : { backgroundColor: corDaCelula(c.posicao) }}
-                    title={`${tituloDaCelula(meses[i]?.rotulo ?? "", texto, c.entradas)}${c.pequena ? ` · ${rotuloPequena}` : ""}`}
+                    title={`${tituloDaCelula(meses[i]?.rotulo ?? "", texto, c.base)}${c.pequena ? ` · ${rotuloPequena}` : ""}`}
                   >
                     {c.taxa === null ? "—" : texto}
                   </td>

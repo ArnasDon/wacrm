@@ -137,7 +137,9 @@ export async function cardSaiuDaEtapa(args: {
    * estadia — mesmo que o card tenha voltado, mesmo que tenha ido para outra
    * etapa da mesma automação (aí a entrada nova dispara execução nova, e a
    * antiga sairia em dobro). É o que fecha o caso do evento de entrada
-   * processado DEPOIS da saída. Ausente (execução manual) = só a posição.
+   * processado DEPOIS da saída. Sem card no contexto (execução manual, ou
+   * acionada por outra automação — `ancoraDaEstadia`), a pergunta é por
+   * CONTATO: qualquer card dele que se mexa encerra. Ausente = só a posição.
    */
   eventoEm?: string | null;
 }): Promise<SituacaoNaEtapa> {
@@ -146,12 +148,15 @@ export async function cardSaiuDaEtapa(args: {
 
   const { db, automation, contactId, dealId, eventoEm } = args;
   try {
-    if (dealId && eventoEm) {
-      const { data: depois, error: erroDaFila } = await db
+    if (eventoEm && (dealId || contactId)) {
+      const base = db
         .from('cb_automation_events')
         .select('id')
-        .eq('account_id', automation.account_id)
-        .eq('deal_id', dealId)
+        .eq('account_id', automation.account_id);
+      const porCard = dealId
+        ? base.eq('deal_id', dealId)
+        : base.eq('contact_id', contactId as string);
+      const { data: depois, error: erroDaFila } = await porCard
         .eq('tipo', 'deal_stage_changed')
         .gt('criado_em', eventoEm)
         .limit(1);
@@ -350,5 +355,50 @@ export async function cancelarEsperasAoSairDaEtapa(args: {
   } catch (err) {
     console.error('[automations] so-na-etapa estourou:', err);
     return 0;
+  }
+}
+
+/**
+ * A ESTADIA de uma execução que NÃO nasce de evento — a manual ("Executar
+ * automação") e a acionada por outra automação (`run_automation`) —, para
+ * automação presa à etapa: ancorada no ÚLTIMO movimento de etapa conhecido do
+ * contato (Codex, 9ª rodada). Qualquer movimento POSTERIOR a ele encerra a
+ * execução — o card que sai e volta enquanto ela espera não a acorda ao lado
+ * da execução nova que a reentrada dispara.
+ *
+ * ⚠️ É o `criado_em` de um evento, nunca `now()` do app: os movimentos são
+ * carimbados pelo relógio do BANCO, e a mãe que move o card e aciona a filha
+ * no passo seguinte tem o evento gravado milissegundos antes do clique — com
+ * o relógio do app atrasado, o próprio movimento que a trouxe pareceria
+ * "posterior" e a filha morreria ao nascer.
+ *
+ * Sem movimento conhecido (contato sem evento nos 30 dias da poda) devolve
+ * `null`: vale só a posição do card, como antes. Nunca lança.
+ */
+export async function ancoraDaEstadia(args: {
+  db: SupabaseClient;
+  automation: AutomacaoComGatilho & { account_id: string };
+  contactId: string | null;
+}): Promise<string | null> {
+  const { db, automation, contactId } = args;
+  if (!etapasQuePrendem(automation) || !contactId) return null;
+  try {
+    const { data, error } = await db
+      .from('cb_automation_events')
+      .select('criado_em')
+      .eq('account_id', automation.account_id)
+      .eq('contact_id', contactId)
+      .eq('tipo', 'deal_stage_changed')
+      .order('criado_em', { ascending: false })
+      .limit(1);
+    if (error) {
+      console.error('[automations] so-na-etapa: âncora da estadia falhou:', error.message);
+      return null;
+    }
+    const ultimo = (data ?? [])[0] as { criado_em?: string | null } | undefined;
+    return typeof ultimo?.criado_em === 'string' ? ultimo.criado_em : null;
+  } catch (err) {
+    console.error('[automations] so-na-etapa: âncora da estadia estourou:', err);
+    return null;
   }
 }

@@ -147,7 +147,33 @@ export async function cancelarEsperasPorResposta(args: {
       log_id: string | null;
       passo: string | null;
     }[];
-    if (canceladas.length === 0) return 0;
+
+    // ⚠️ A espera marcada que o cron ACABOU de reivindicar está `running`, e a
+    // foto acima não a vê. A resposta que chega depois de a retomada ter
+    // conferido `clienteRespondeuDesde` e antes do passo seguinte ficava sem
+    // marca — a sequência continuava (Codex, 9ª rodada). A linha é do cron e
+    // NÃO é cancelada; a MARCA no registro faz a retomada em curso parar no
+    // próximo passo. Leitura que falha não trava nada: a marca das canceladas
+    // segue abaixo.
+    const { data: emCursoData, error: erroEmCurso } = await db
+      .from('automation_pending_executions')
+      .select(`id, log_id, passo:context->>${CHAVE_PARAR_SE_RESPONDER}`)
+      .eq('account_id', accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'running')
+      .not(`context->>${CHAVE_PARAR_SE_RESPONDER}`, 'is', null);
+    if (erroEmCurso) {
+      console.error(
+        '[automations] parar-se-responder: leitura das esperas em curso falhou:',
+        erroEmCurso.message
+      );
+    }
+    const emCurso = (emCursoData ?? []) as unknown as {
+      id: string;
+      log_id: string | null;
+      passo: string | null;
+    }[];
+    if (canceladas.length === 0 && emCurso.length === 0) return 0;
 
     // ⚠️⚠️ A PARADA É DA EXECUÇÃO, não da linha (Codex, PR #223). Uma espera
     // marcada DENTRO DE UM RAMO não é a única ponta viva da execução: ramo em
@@ -159,7 +185,7 @@ export async function cancelarEsperasPorResposta(args: {
     // recusar a opção ali não era saída. `log_id` é a identidade da execução.
     const execucoes = [
       ...new Set(
-        canceladas
+        [...canceladas, ...emCurso]
           .map((c) => c.log_id)
           .filter((id): id is string => typeof id === 'string')
       ),
@@ -193,7 +219,7 @@ export async function cancelarEsperasPorResposta(args: {
 
     // Uma anotação por EXECUÇÃO, com o passo da primeira espera marcada dela.
     const anotadas = new Set<string>();
-    for (const espera of canceladas) {
+    for (const espera of [...canceladas, ...emCurso]) {
       if (!espera.log_id || anotadas.has(espera.log_id)) continue;
       anotadas.add(espera.log_id);
       await anotarInterrupcao(

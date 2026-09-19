@@ -3,6 +3,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
   DETALHE_SAIU_DA_ETAPA,
+  ancoraDaEstadia,
   cancelarEsperasAoSairDaEtapa,
   cardSaiuDaEtapa,
   execucoesPresas,
@@ -137,6 +138,8 @@ function bancoFalso(opcoes: {
   /** Movimentos do card na fila de eventos DEPOIS do instante perguntado. */
   movimentosDepois?: { id: string }[];
   erroNosMovimentos?: string;
+  /** O último movimento conhecido do contato (a âncora da estadia manual). */
+  ultimoMovimento?: { criado_em: string } | null;
   /** As execuções VIVAS que o SELECT em `automation_logs` devolve. */
   execucoes?: unknown[];
   erroNasExecucoes?: string;
@@ -154,6 +157,9 @@ function bancoFalso(opcoes: {
       const resolver = () => {
         if (tabela === 'cb_automation_events') {
           if (opcoes.erroNosMovimentos) return { data: null, error: { message: opcoes.erroNosMovimentos } };
+          if (!op.filtros.some(([o]) => o === 'gt')) {
+            return { data: opcoes.ultimoMovimento ? [opcoes.ultimoMovimento] : [], error: null };
+          }
           return { data: opcoes.movimentosDepois ?? [], error: null };
         }
         if (tabela === 'deals') {
@@ -276,6 +282,25 @@ describe('cardSaiuDaEtapa — a espera acordou', () => {
     expect(
       await cardSaiuDaEtapa({ db, automation: automacaoPresa, contactId: 'c1', dealId: 'deal-1', eventoEm: '2026-09-18T10:00:00+00:00' })
     ).toBe('na_etapa');
+  });
+
+  it('⚠️ sem card no contexto mas com instante (execução manual ancorada): a pergunta é por CONTATO (9ª rodada)', async () => {
+    const { db, chamadas } = bancoFalso({ negocio: { stage_id: NO_SHOW }, movimentosDepois: [{ id: 'ev-2' }] });
+    const r = await cardSaiuDaEtapa({
+      db,
+      automation: automacaoPresa,
+      contactId: 'c1',
+      dealId: null,
+      eventoEm: '2026-09-18T10:00:00+00:00',
+    });
+    expect(r).toBe('saiu');
+    expect(chamadas[0].tabela).toBe('cb_automation_events');
+    expect(chamadas[0].filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'contact_id', 'c1'],
+      ['eq', 'tipo', 'deal_stage_changed'],
+      ['gt', 'criado_em', '2026-09-18T10:00:00+00:00'],
+    ]);
   });
 
   it('execução manual (sem instante de entrada) não pergunta à fila de eventos', async () => {
@@ -445,6 +470,41 @@ describe('cancelarEsperasAoSairDaEtapa — o card mudou de etapa', () => {
       const cancelando = bancoFalso({ execucoes: [execucaoPresa], erroNoCancelamento: 'timeout' });
       // A marca ficou (1) mesmo com a fila recusando o cancelamento.
       await expect(cancelarEsperasAoSairDaEtapa({ db: cancelando.db, ...evento })).resolves.toBe(1);
+    } finally {
+      calado.mockRestore();
+    }
+  });
+});
+
+describe('ancoraDaEstadia — a execução sem evento (9ª rodada)', () => {
+  it('ancora no ÚLTIMO movimento de etapa conhecido do contato, pelo relógio do banco', async () => {
+    const { db, chamadas } = bancoFalso({ ultimoMovimento: { criado_em: '2026-09-18T09:00:00+00:00' } });
+    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).toBe('2026-09-18T09:00:00+00:00');
+    expect(chamadas[0].tabela).toBe('cb_automation_events');
+    expect(chamadas[0].filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'contact_id', 'c1'],
+      ['eq', 'tipo', 'deal_stage_changed'],
+    ]);
+  });
+
+  it('sem movimento conhecido: null (vale só a posição)', async () => {
+    const { db } = bancoFalso({ ultimoMovimento: null });
+    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).toBeNull();
+  });
+
+  it('automação NÃO presa, ou sem contato: nem consulta', async () => {
+    const { db, chamadas } = bancoFalso({ ultimoMovimento: { criado_em: 'x' } });
+    expect(await ancoraDaEstadia({ db, automation: { ...presa({ parar_ao_sair: false }), account_id: 'acct-1' }, contactId: 'c1' })).toBeNull();
+    expect(await ancoraDaEstadia({ db, automation: automacaoPresa, contactId: null })).toBeNull();
+    expect(chamadas).toHaveLength(0);
+  });
+
+  it('⚠️ leitura que falha devolve null (só a posição), nunca lança', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { db } = bancoFalso({ erroNosMovimentos: 'timeout' });
+      await expect(ancoraDaEstadia({ db, automation: automacaoPresa, contactId: 'c1' })).resolves.toBeNull();
     } finally {
       calado.mockRestore();
     }

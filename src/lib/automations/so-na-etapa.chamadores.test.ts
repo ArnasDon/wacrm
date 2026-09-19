@@ -65,6 +65,25 @@ describe('o DISPATCH confere a estadia antes de criar a execução (7ª rodada)'
     expect(motor).toMatch(/situacao === 'erro'\) \{\s*await registrarFalhaAoNascer\(/)
   })
 
+  it('a estadia é conferida ANTES do Aguardar também: a pergunta vem antes do bloco do wait no laço (9ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const laco = motor.indexOf('for (const step of steps as AutomationStep[])')
+    const confere = motor.indexOf('cardSaiuDaEtapa(', laco)
+    const blocoDoWait = motor.indexOf("if (step.step_type === 'wait') {", laco)
+    expect(confere).toBeGreaterThan(-1)
+    expect(blocoDoWait).toBeGreaterThan(-1)
+    expect(confere).toBeLessThan(blocoDoWait)
+  })
+
+  it('runAutomationById ancora a estadia da execução sem evento antes de executar (9ª rodada)', () => {
+    const motor = fonte('lib/automations/engine.ts')
+    const inicio = motor.indexOf('export async function runAutomationById')
+    const ancora = motor.indexOf('ancoraDaEstadia({', inicio)
+    const executa = motor.indexOf('await executeAutomation(', inicio)
+    expect(ancora).toBeGreaterThan(-1)
+    expect(ancora).toBeLessThan(executa)
+  })
+
   it('a filha do run_automation NÃO herda a estadia da mãe (evento_em: null)', () => {
     const motor = fonte('lib/automations/engine.ts')
     const inicio = motor.indexOf("case 'run_automation':")

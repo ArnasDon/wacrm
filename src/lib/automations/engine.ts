@@ -86,6 +86,7 @@ import {
 import {
   DETALHE_SAIU_DA_ETAPA,
   MOTIVO_ETAPA_DESCONHECIDA,
+  ancoraDaEstadia,
   cardSaiuDaEtapa,
   etapasQuePrendem,
 } from './so-na-etapa';
@@ -667,12 +668,27 @@ export async function runAutomationById(args: {
     };
   }
 
+  // ⚠️ A execução que não nasce de evento ganha a PRÓPRIA estadia (Codex, 9ª
+  // rodada): sem `evento_em`, o card que saía e voltava enquanto a execução
+  // manual esperava a acordava ao lado da execução nova da reentrada. A âncora
+  // é o último movimento conhecido do contato, pelo relógio do banco — ver
+  // `ancoraDaEstadia`. `null` de volta = sem movimento conhecido: só a posição.
+  const context = args.context?.evento_em
+    ? args.context
+    : {
+        ...args.context,
+        evento_em: await ancoraDaEstadia({
+          db: supabaseAdmin(),
+          automation: alvo,
+          contactId: args.contactId,
+        }),
+      };
   await executeAutomation(
     {
       accountId: args.accountId,
       triggerType: args.triggerType,
       contactId: args.contactId,
-      context: args.context,
+      context,
     },
     alvo,
     args.rotuloDoDisparo ?? 'run_automation'
@@ -908,67 +924,72 @@ async function executeStepsFrom(
   let fezTrabalho = false;
 
   for (const step of steps as AutomationStep[]) {
-    if (step.step_type !== 'wait') {
-      // ⚠️ A EXECUÇÃO FOI INTERROMPIDA ENQUANTO ESTE ESCOPO RODAVA? (7ª rodada
-      // do Codex, PR #223.) Com a espera marcada num RAMO, o escopo de fora
-      // segue executando — e a resposta do cliente (ou a saída da etapa) que
-      // chegasse nesse meio só era vista no próximo estacionamento: os passos
-      // comuns até lá, inclusive mensagens, saíam depois da interrupção
-      // prometida. Uma leitura por chave primária antes de cada passo; o
-      // "Aguardar" tem a sua própria, dentro de `cb_estacionar_espera`.
-      if (await execucaoJaInterrompida(db, args.logId)) {
-        results.push({
-          step_id: step.id,
-          step_type: step.step_type,
-          status: 'skipped',
-          detail: 'não executado: a execução já foi interrompida',
-        });
-        status = 'partial';
-        await appendResults(args.logId, results, status, errorMessage);
-        return status;
-      }
-      // ⚠️ E A ESTADIA NA ETAPA AINDA ESTÁ DE PÉ? (8ª rodada do Codex.) A
-      // conferência do dispatch e a criação do registro são DUAS operações:
-      // o card que sai entre elas deixa o dreno sem registro para marcar (a
-      // execução ainda não existia) e o registro sem marca. A saída está
-      // gravada na fila de eventos, então perguntar de novo aqui — com o
-      // registro já existente, antes de cada passo — fecha o vão: o que ainda
-      // pode escapar é UM passo cujo envio já estava em voo quando a saída foi
-      // gravada, nunca a sequência. Custa uma leitura por passo, e só nas
-      // automações presas à etapa (`nao_se_aplica` não consulta nada).
-      const situacao = await cardSaiuDaEtapa({
-        db,
-        automation: args.automation,
-        contactId: args.contactId,
-        dealId: args.context?.deal_id,
-        eventoEm: args.context?.evento_em,
+    // ⚠️ A EXECUÇÃO FOI INTERROMPIDA ENQUANTO ESTE ESCOPO RODAVA? (7ª rodada
+    // do Codex, PR #223.) Com a espera marcada num RAMO, o escopo de fora
+    // segue executando — e a resposta do cliente (ou a saída da etapa) que
+    // chegasse nesse meio só era vista no próximo estacionamento: os passos
+    // comuns até lá, inclusive mensagens, saíam depois da interrupção
+    // prometida. Uma leitura por chave primária antes de cada passo comum; o
+    // "Aguardar" tem a sua própria, dentro de `cb_estacionar_espera`.
+    if (
+      step.step_type !== 'wait' &&
+      (await execucaoJaInterrompida(db, args.logId))
+    ) {
+      results.push({
+        step_id: step.id,
+        step_type: step.step_type,
+        status: 'skipped',
+        detail: 'não executado: a execução já foi interrompida',
       });
-      if (situacao === 'saiu') {
-        // A MARCA primeiro (segura as irmãs), depois a foto da fila — a
-        // mesma ordem dos cancelamentos por lote.
-        await marcarExecucoesInterrompidas(db, [args.logId], 'etapa');
-        await cancelarEsperasDaExecucao(db, args.logId);
-        results.push({
-          step_id: step.id,
-          step_type: step.step_type,
-          status: 'skipped',
-          detail: DETALHE_SAIU_DA_ETAPA,
-        });
-        status = 'partial';
-        await appendResults(args.logId, results, status, errorMessage);
-        return status;
-      }
-      if (situacao === 'erro') {
-        results.push({
-          step_id: step.id,
-          step_type: step.step_type,
-          status: 'failed',
-          detail: MOTIVO_ETAPA_DESCONHECIDA,
-        });
-        status = 'failed';
-        errorMessage = MOTIVO_ETAPA_DESCONHECIDA;
-        break;
-      }
+      status = 'partial';
+      await appendResults(args.logId, results, status, errorMessage);
+      return status;
+    }
+    // ⚠️ E A ESTADIA NA ETAPA AINDA ESTÁ DE PÉ? (8ª rodada do Codex.) A
+    // conferência do dispatch e a criação do registro são DUAS operações:
+    // o card que sai entre elas deixa o dreno sem registro para marcar (a
+    // execução ainda não existia) e o registro sem marca. A saída está
+    // gravada na fila de eventos, então perguntar de novo aqui — com o
+    // registro já existente, antes de cada passo — fecha o vão: o que ainda
+    // pode escapar é UM passo cujo envio já estava em voo quando a saída foi
+    // gravada, nunca a sequência. Custa uma leitura por passo, e só nas
+    // automações presas à etapa (`nao_se_aplica` não consulta nada).
+    // ⚠️ Inclusive antes do "Aguardar" (9ª rodada): sem isto, a automação
+    // presa cujo 1º passo é uma espera estacionava sem conferir a etapa — a
+    // execução manual sobre card fora da etapa aparecia "aguardando", e
+    // acordava se o card entrasse.
+    const situacao = await cardSaiuDaEtapa({
+      db,
+      automation: args.automation,
+      contactId: args.contactId,
+      dealId: args.context?.deal_id,
+      eventoEm: args.context?.evento_em,
+    });
+    if (situacao === 'saiu') {
+      // A MARCA primeiro (segura as irmãs), depois a foto da fila — a
+      // mesma ordem dos cancelamentos por lote.
+      await marcarExecucoesInterrompidas(db, [args.logId], 'etapa');
+      await cancelarEsperasDaExecucao(db, args.logId);
+      results.push({
+        step_id: step.id,
+        step_type: step.step_type,
+        status: 'skipped',
+        detail: DETALHE_SAIU_DA_ETAPA,
+      });
+      status = 'partial';
+      await appendResults(args.logId, results, status, errorMessage);
+      return status;
+    }
+    if (situacao === 'erro') {
+      results.push({
+        step_id: step.id,
+        step_type: step.step_type,
+        status: 'failed',
+        detail: MOTIVO_ETAPA_DESCONHECIDA,
+      });
+      status = 'failed';
+      errorMessage = MOTIVO_ETAPA_DESCONHECIDA;
+      break;
     }
 
     // `wait` is the suspension point: enqueue and stop processing this
@@ -1684,12 +1705,12 @@ async function runStep(
         // acionar A" driblaria a guarda em toda volta.
         context: {
           ...args.context,
-          // ⚠️ A filha NÃO é de estadia nenhuma: `evento_em` é a ENTRADA da
-          // MÃE, e a mãe pode ter movido o card no meio (`move_deal_stage`)
+          // ⚠️ A filha NÃO herda a estadia da MÃE: `evento_em` é a ENTRADA
+          // dela, e a mãe pode ter movido o card no meio (`move_deal_stage`)
           // antes de acionar — a filha presa à etapa nova leria esse
           // movimento como "saiu" com o card DENTRO dela (revisão por duas
-          // lentes, 19/09). Sem o instante vale só a posição do card, como na
-          // execução manual.
+          // lentes, 19/09). Zerado aqui, `runAutomationById` ancora a estadia
+          // PRÓPRIA da filha no último movimento conhecido (`ancoraDaEstadia`).
           evento_em: null,
           vars: { ...(args.context.vars ?? {}), _cadeia: passo.cadeia },
         },

@@ -97,6 +97,9 @@ function bancoFalso(opcoes: {
   /** Linhas devolvidas pelo SELECT da fila (o sinal da execução). */
   sinal?: { id: string }[];
   erroNoSinal?: string;
+  /** As esperas MARCADAS em `running` (o cron acabou de reivindicá-las). */
+  emCurso?: { id: string; log_id: string | null; passo: string | null }[];
+  erroEmCurso?: string;
 }) {
   const chamadas: Chamada[] = [];
 
@@ -112,6 +115,10 @@ function bancoFalso(opcoes: {
       const resolver = () => {
         if (tabela === 'automation_pending_executions') {
           if (op.tipo === 'select') {
+            if (op.filtros.some(([o, k, v]) => o === 'eq' && k === 'status' && v === 'running')) {
+              if (opcoes.erroEmCurso) return { data: null, error: { message: opcoes.erroEmCurso } };
+              return { data: opcoes.emCurso ?? [], error: null };
+            }
             if (opcoes.erroNoSinal) return { data: null, error: { message: opcoes.erroNoSinal } };
             return { data: opcoes.sinal ?? [], error: null };
           }
@@ -211,7 +218,10 @@ describe('cancelarEsperasPorResposta', () => {
     const n = await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' });
 
     expect(n).toBe(0);
-    expect(chamadas).toHaveLength(1);
+    // A foto das pendentes + a leitura das marcadas em curso (9ª rodada); nada
+    // de marca nem de irmãs.
+    expect(chamadas).toHaveLength(2);
+    expect(chamadas.filter((c) => c.tabela === 'automation_logs')).toHaveLength(0);
   });
 
   it('UMA anotação por execução, com o passo da primeira espera marcada', async () => {
@@ -303,6 +313,48 @@ describe('cancelarEsperasPorResposta', () => {
       await expect(
         cancelarEsperasPorResposta({ db, accountId: 'a', contactId: 'c' })
       ).resolves.toBe(1);
+    } finally {
+      calado.mockRestore();
+    }
+  });
+});
+
+describe('a espera marcada já RUNNING (Codex, 9ª rodada)', () => {
+  it('⚠️⚠️ marca e anota a execução, sem cancelar a linha — que é do cron', async () => {
+    const { db, chamadas } = bancoFalso({
+      canceladas: [],
+      emCurso: [{ id: 'p-running', log_id: 'log-running', passo: 's-wait' }],
+      irmas: [],
+    });
+    await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' });
+
+    const marcas = chamadas.filter((c) => c.tabela === 'automation_logs' && c.tipo === 'update' && (c.payload as { interrompida_por?: string })?.interrompida_por === 'resposta');
+    expect(marcas).toHaveLength(1);
+    expect(marcas[0].filtros.find(([, k]) => k === 'id')).toEqual(['in', 'id', ['log-running']]);
+    // A linha `running` não é tocada: só `pending` cai (a foto e a varredura das irmãs).
+    const naFila = chamadas.filter((c) => c.tabela === 'automation_pending_executions' && c.tipo === 'update');
+    for (const u of naFila) expect(u.filtros).toContainEqual(['eq', 'status', 'pending']);
+    // E a leitura das em curso é POR conta + contato + running + marca.
+    const leitura = chamadas.find((c) => c.tabela === 'automation_pending_executions' && c.tipo === 'select');
+    expect(leitura?.filtros).toEqual([
+      ['eq', 'account_id', 'acct-1'],
+      ['eq', 'contact_id', 'c1'],
+      ['eq', 'status', 'running'],
+      ['not', 'context->>_parar_se_responder', 'is', null],
+    ]);
+  });
+
+  it('leitura das em curso falhou: as canceladas seguem marcadas normalmente', async () => {
+    const calado = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const { db, chamadas } = bancoFalso({
+        canceladas: [{ id: 'p1', log_id: 'log-1', passo: 's-wait' }],
+        erroEmCurso: 'timeout',
+        irmas: [],
+      });
+      expect(await cancelarEsperasPorResposta({ db, accountId: 'acct-1', contactId: 'c1' })).toBe(1);
+      const marca = chamadas.find((c) => c.tabela === 'automation_logs' && c.tipo === 'update');
+      expect(marca?.payload).toMatchObject({ interrompida_por: 'resposta' });
     } finally {
       calado.mockRestore();
     }

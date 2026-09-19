@@ -184,6 +184,15 @@ describe('a SEGUNDA LINHA DE DEFESA, na retomada (revisão por duas lentes, 19/0
     }
   })
 
+  it('a resposta do cliente marca também a execução cuja espera marcada está RUNNING (9ª rodada)', () => {
+    const modulo = fonte('lib/automations/parar-se-responder.ts')
+    const inicio = modulo.indexOf('export async function cancelarEsperasPorResposta')
+    const running = modulo.indexOf(".eq('status', 'running')", inicio)
+    const marca = modulo.indexOf("marcarExecucoesInterrompidas(db, execucoes, 'resposta')", inicio)
+    expect(running).toBeGreaterThan(-1)
+    expect(running).toBeLessThan(marca)
+  })
+
   it('fecharLog não carimba execução interrompida', () => {
     const motor = fonte('lib/automations/engine.ts')
     const inicio = motor.indexOf('async function fecharLog(')

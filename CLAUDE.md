@@ -735,6 +735,10 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   varre as irmãs, anota. Leitura que falha → falha VISÍVEL
   (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
   marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
+  ⚠️ E a resposta que chega com a espera marcada já `running` (o cron acabou
+  de reivindicá-la, DEPOIS de a retomada ter conferido) MARCA a execução sem
+  cancelar a linha — que é do cron —, e a retomada em curso para no passo
+  seguinte (9ª rodada; era o mesmo furo do botão Parar).
 - ⚠️ **O botão Parar e o passo "Parar automação" marcam também a execução
   cuja espera está `running`** (reivindicada pelo cron naquele instante): a
   foto do UPDATE só vê `pending`, e sem a marca a retomada em curso seguia até
@@ -862,8 +866,14 @@ código novo:
   registro) e ao ACORDAR. É o que fecha o evento de ENTRADA processado depois
   da SAÍDA — dois drenos concorrentes, ou o cron atrasado até 1 h —, que a
   marca de saída não alcança porque a execução ainda não existia. Execução
-  manual não tem `evento_em`: só a posição do card conta. A poda de 30 dias da
-  fila de eventos é o limite prático da pergunta.
+  SEM evento (manual, ou acionada por outra automação) ganha a PRÓPRIA
+  estadia (`ancoraDaEstadia`, 9ª rodada): ancorada no ÚLTIMO movimento de
+  etapa conhecido do contato — pelo relógio do BANCO (`criado_em` de um
+  evento), nunca `now()` do app: a mãe que move o card e aciona a filha tem o
+  evento gravado milissegundos antes, e com o relógio do app atrasado o
+  próprio movimento pareceria "posterior". Sem card no contexto a pergunta é
+  por CONTATO; sem movimento conhecido, `null` = só a posição. A poda de 30
+  dias da fila de eventos é o limite prático da pergunta.
 - ⚠️⚠️ **A marca é lida antes de CADA passo do escopo** (7ª rodada): com a
   espera marcada num ramo, o escopo de fora segue executando, e a interrupção
   só era vista no próximo estacionamento — os passos comuns até lá, inclusive
@@ -877,6 +887,9 @@ código novo:
   não consulta nada) com o registro já existente: o que ainda escapa é UM
   passo cujo envio já estava em voo quando a saída foi gravada, nunca a
   sequência. `saiu` = marca + foto da fila + `skipped`; `erro` = falha visível.
+  ⚠️ Vale também ANTES do "Aguardar" (9ª rodada): a automação presa cujo 1º
+  passo é uma espera estacionava sem conferir a etapa — a execução manual
+  sobre card fora da etapa aparecia "aguardando" e acordava se ele entrasse.
 - ⚠️ **A conferência que FALHA ao nascer vira registro `failed`/`falhou` com o
   motivo (`registrarFalhaAoNascer`, `MOTIVO_ETAPA_DESCONHECIDA`), nunca pulo em
   silêncio** (8ª rodada): o dreno já reivindicou o evento e conta o disparo
@@ -906,8 +919,9 @@ código novo:
 - ⚠️ **A filha acionada por "Acionar automação" NÃO herda a estadia da mãe**
   (`run_automation` manda `evento_em: null`; 8ª rodada): a mãe pode ter
   movido o card no meio antes de acionar, e a filha presa à etapa nova leria
-  esse movimento como "saiu" com o card DENTRO dela. Sem o instante vale só a
-  posição, como na execução manual.
+  esse movimento como "saiu" com o card DENTRO dela. Zerado, `runAutomationById`
+  ancora a estadia PRÓPRIA da filha no último movimento conhecido — o da mãe,
+  que não é "posterior" a si mesmo (9ª rodada).
 - ⚠️ **Ganho/perdido NÃO encerra a estadia**: o card não sai da etapa (950 —
   o selo fica na coluna), e `cardSaiuDaEtapa` só olha `deal_stage_changed`.
   Se o operador quiser "perdido = parar", é decisão nova (passo "Parar

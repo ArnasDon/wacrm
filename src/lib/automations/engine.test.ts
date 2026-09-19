@@ -28,6 +28,8 @@ const h = vi.hoisted(() => ({
     movimentosPorChamada: null as (Record<string, unknown>[] | 'erro')[] | null,
     /** Preenchido, TODA leitura da fila de eventos devolve este erro. */
     erroNosMovimentos: null as string | null,
+    /** O último movimento conhecido do contato — a âncora da estadia manual (consulta SEM `gt`). */
+    ultimoMovimento: null as { criado_em: string } | null,
     /** As conversas do contato (a segunda linha de defesa do "parar se responder" lê por aqui). Vazio = `null`, como antes. */
     conversasDoContato: [] as { id: string }[],
     /** Mensagens do CLIENTE gravadas depois de a espera ser estacionada. */
@@ -131,6 +133,9 @@ vi.mock('./admin-client', () => {
     }
     if (table === 'cb_automation_events') {
       if (state.erroNosMovimentos) return { data: null, error: { message: state.erroNosMovimentos } };
+      if (!ops.filters.some(([op]) => op === 'gt')) {
+        return { data: state.ultimoMovimento ? [state.ultimoMovimento] : [], error: null };
+      }
       const proximo = state.movimentosPorChamada?.shift();
       if (proximo === 'erro') return { data: null, error: { message: 'fila de eventos fora do ar' } };
       return { data: proximo ?? state.movimentosDepois, error: null };
@@ -366,6 +371,7 @@ import {
   resumePendingExecution,
   runAutomationsForTrigger,
   triggerMatches,
+  runAutomationById,
 } from './engine';
 import { engineSendText } from './meta-send';
 import type { Automation, KeywordMatchTriggerConfig } from '@/types';
@@ -402,6 +408,7 @@ beforeEach(() => {
   h.state.conversasDoContato = [];
   h.state.respostasDesde = [];
   h.state.erroNasRespostas = null;
+  h.state.ultimoMovimento = null;
   h.state.statusDaFila = [];
   h.state.interrompida = false;
   h.state.membros = [
@@ -3205,6 +3212,57 @@ describe('retomada de automação presa à etapa', () => {
     } finally {
       calado.mockRestore();
     }
+  });
+
+  it('⚠️⚠️ execução MANUAL com o card FORA da etapa e o 1º passo "Aguardar": não estaciona, interrompe (9ª rodada)', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: 'etapa-reuniao-agendada' };
+    h.state.steps = [
+      { id: 's-wait-0', automation_id: 'a-noshow', position: 0, step_type: 'wait', step_config: { amount: 1, unit: 'days' } },
+      { ...passoDeTrabalho('s-msg-1', 1), automation_id: 'a-noshow' },
+    ];
+
+    const r = await runAutomationById({
+      automationId: 'a-noshow',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-1' },
+      triggerType: 'deal_stage_changed',
+      rotuloDoDisparo: 'manual',
+    });
+
+    expect(r.ok).toBe(true);
+    expect(h.state.esperasEnfileiradas).toHaveLength(0);
+    expect(h.state.logUpdates.some((u) => u.interrompida_por === 'etapa')).toBe(true);
+    const ultimo = h.state.logUpdates
+      .filter((u) => 'steps_executed' in u)
+      .flatMap((u) => u.steps_executed as { status: string; detail?: string }[])
+      .at(-1);
+    expect(ultimo).toMatchObject({ status: 'skipped', step_type: 'wait' });
+    expect(ultimo?.detail).toMatch(/saiu da etapa/);
+  });
+
+  it('⚠️ execução MANUAL ganha a própria estadia: ancorada no último movimento conhecido do contato (9ª rodada)', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [recuperacao({ parar_ao_sair: true })];
+    h.state.dealExistente = { id: 'deal-1', stage_id: NO_SHOW };
+    h.state.ultimoMovimento = { criado_em: '2026-09-18T09:00:00+00:00' };
+    h.state.steps = [
+      { id: 's-wait-0', automation_id: 'a-noshow', position: 0, step_type: 'wait', step_config: { amount: 1, unit: 'days' } },
+    ];
+
+    await runAutomationById({
+      automationId: 'a-noshow',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-1' },
+      triggerType: 'deal_stage_changed',
+      rotuloDoDisparo: 'manual',
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    expect((h.state.esperasEnfileiradas[0].context as { evento_em?: string }).evento_em).toBe('2026-09-18T09:00:00+00:00');
   });
 
   it('card ainda em No Show: a sequência segue', async () => {

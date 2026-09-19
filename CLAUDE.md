@@ -3247,9 +3247,15 @@ morde código novo:
   são `AFTER UPDATE OF pipeline_id, stage_id, status`). O `set_updated_at`
   dispara — o acervo da 1007 empurrou 654 cards para o topo de "negócios
   recentes" do Painel por um dia.
-- **Card sem nome em lugar nenhum fica com o prefixo** (275 no acervo): ali o
-  rótulo da conexão é a única informação que o título carrega, e o gatilho o
-  conserta na primeira vez que o cliente escrever.
+- ⚠️ **NENHUM título gerado carrega mais o prefixo da conexão (1009).** A 1007
+  deixou de fora os 275 cards sem nome em lugar nenhum, com o argumento de que
+  ali o rótulo da conexão era a única informação do título. Visto no quadro, o
+  argumento caiu: são justamente os leads mais RECENTES — quem ainda não
+  respondeu —, então ocupavam o topo de "Contato Avulso" e o operador
+  continuava vendo uma parede de "Bancário - Comercial — <número>". Hoje sobra
+  o telefone puro, e o gatilho troca por nome quando o cliente escrever. A
+  conexão continua na pílula do card. (Decisão do operador em 19/09/2026,
+  depois de ver a tela — ele havia recusado isto duas vezes antes de ver.)
 - ⚠️⚠️ **"Novo contato" (`TITULO_SEM_NOME`) NÃO é nome, e o gatilho tem de
   saber disso (1008).** É o rótulo de reserva do card que nasce sem nome
   NENHUM — a coluna é NOT NULL —, e para `cb_nome_para_titulo` ele parece

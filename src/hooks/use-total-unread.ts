@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { buscarPaginado } from "@/lib/supabase/paginar";
 import type { Conversation } from "@/types";
 
 /**
@@ -31,15 +32,33 @@ export function useTotalUnread(): number {
     // inteiro e ele pararia de significar qualquer coisa. Grupo mostra o
     // próprio contador na linha dele, dentro da lista.
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select("id, unread_count")
-        .is("group_id", null);
-      if (cancelled || error || !data) return;
+      // ⚠️⚠️ PAGINADA desde 19/09/2026, e aqui o corte de 1000 do PostgREST
+      // era PIOR que na lista do inbox: sem `order`, ele escolhe as linhas
+      // ARBITRARIAMENTE (seq scan), então a conversa com não lidas podia
+      // simplesmente não vir — o badge do menu subcontava sem erro nenhum.
+      // `null` = não dá para confiar: o contador fica como está em vez de
+      // afirmar um número menor.
+      const { linhas } = await buscarPaginado<{
+        id: string;
+        unread_count: number;
+      }>(async (de, ate) => {
+        const { data, error, count } = await supabase
+          .from("conversations")
+          .select("id, unread_count", { count: "exact" })
+          .is("group_id", null)
+          .order("id", { ascending: true })
+          .range(de, ate);
+        return {
+          data: (data ?? null) as { id: string; unread_count: number }[] | null,
+          error,
+          count,
+        };
+      });
+      if (cancelled || !linhas) return;
 
       const map = new Map<string, number>();
       let sum = 0;
-      for (const row of data as { id: string; unread_count: number }[]) {
+      for (const row of linhas) {
         const n = row.unread_count ?? 0;
         map.set(row.id, n);
         if (n > 0) sum += 1;

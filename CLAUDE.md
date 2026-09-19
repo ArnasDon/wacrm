@@ -3403,6 +3403,47 @@ conceder. Três decisões, e o que morde código novo:
   deixava evidentes. ⚠️ Vale para os QUATRO perfis não-admin da conta — os
   dois "Gestor" incluídos, que são `agent`.
 
+⚠️⚠️ **APAGAR CONTATO não apaga o que aponta para ele — 14 tabelas ficam com
+o ponteiro pendurado, e `deals` é uma delas.** Medido no catálogo em
+19/09/2026 (`pg_constraint`, as 25 FKs que referenciam `contacts`). São dois
+grupos, e os dois mordem:
+
+- **CASCADE (vai junto, some sem aviso):** `conversations` — e, por ela, TODAS
+  as mensagens —, `contact_tags`, `contact_custom_values`, `cb_tasks`,
+  `cb_conversation_notes` e `cb_automation_reminders`.
+- **SET NULL (fica órfão):** `deals`, `cb_lead_events`, `cb_calendly_eventos`,
+  `cb_meetings`, `cb_reunioes_transcritas`, `cb_asaas_clientes`,
+  `cb_asaas_regua_envios`, `cb_automation_events`, `cb_webhook_eventos`,
+  `automation_logs`, `automation_pending_executions`, `broadcast_recipients`,
+  `flow_runs` e `notifications`.
+
+O sintoma visível é o negócio: card com `contact_id` nulo **renderiza em
+branco no Kanban** e não abre conversa nenhuma. Os invisíveis são piores —
+`cb_lead_events` é a trilha que o funil comercial lê, e `cb_calendly_eventos`
+é o log que diz de quem era o agendamento.
+
+⚠️⚠️ **E `merge_duplicate_contacts` (022/0922) NÃO cobre as tabelas `cb_*`.**
+Ela reaponta nove — `conversations`, `cb_conversation_notes`, `deals`,
+`broadcast_recipients`, `automation_logs`, `automation_pending_executions`,
+`contact_tags`, `contact_custom_values` e `flow_runs` (esta só quando o status
+não é `active`) — e então apaga o perdedor. Tudo o que nasceu depois dela fica
+de fora: a trilha, o Calendly, as reuniões, as transcrições, o Asaas, a fila de
+automação, os webhooks e os avisos viram órfãos, e **as tarefas e os lembretes
+do perdedor são APAGADOS** pelo CASCADE. Ela é `SECURITY DEFINER` sem
+argumento — roda sobre TODAS as contas de uma vez, agrupando por
+`(account_id, phone_normalized)` EXATO, então não enxerga as duas grafias do
+nono dígito (é o que `variantesDoNonoDigito` resolve). Hoje só o
+`service_role` executa (o `REVOKE` da 913/915 fechou `anon` e `authenticated`).
+
+**A receita de fusão, então, é:** reapontar TODAS as referências do perdedor
+para o sobrevivente (as 14 do SET NULL mais as 6 do CASCADE, cada uma com a
+sua regra de conflito — `contact_tags` e `contact_custom_values` têm único por
+`(contato, X)` e precisam do `NOT EXISTS`) → mover os campos que faltarem na
+ficha sobrevivente → apagar o negócio duplicado EXPLICITAMENTE, se não for
+para reaproveitá-lo → só então apagar o contato. Quem acrescentar tabela com
+`contact_id` acrescenta a linha na função de fusão no MESMO PR; não há teste
+estrutural cobrando isso ainda.
+
 ⚠️ **O editor de perfis NASCE PREENCHIDO e agrupa por ÁREA (2026-09-03).**
 `src/lib/perfis/editor.ts` (puro, com teste) e
 `src/components/settings/areas-do-perfil.tsx`. Pedido do operador ("a aba de

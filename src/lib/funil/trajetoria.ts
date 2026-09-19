@@ -33,6 +33,12 @@ import {
  *     entrou numa etapa de degrau ≥ k (`alcancouEm`). É o que a contagem
  *     "por período" usa (`por-periodo.ts`): os 5 contratos fechados este mês
  *     aparecem neste mês, mesmo que os leads tenham entrado no mês passado.
+ *  8. (19/09/2026) A PERDA também tem data própria: a entrada na ESTADIA
+ *     atual em perda — o primeiro passo de perda depois do último passo com
+ *     degrau (`perdidoDesde`). `naEtapaDesde` não serve para isso: é a última
+ *     entrada na etapa ATUAL, e reclassificar a perda (No Show → Perdido,
+ *     quando o escritório desiste de reagendar) movia a perda de agosto para
+ *     setembro na contagem por período (revisão do PR #224).
  *
  * ⚠️ O mapeamento é lido HOJE, sobre a história inteira — remapear uma etapa
  * reescreve o passado de propósito (o operador configura depois e vê o
@@ -250,6 +256,14 @@ export interface FatosDoNegocio {
   /** regra 5. */
   /** nulo só quando não há passo AQUI nem `created_at` — ver o tipo da linha. */
   naEtapaDesde: Date | null;
+  /**
+   * Regra 8: quando está em perda, desde quando está NESTA estadia em perda
+   * (a primeira etapa de perda depois do último passo com degrau; trocar de
+   * etapa de perda não muda a data). Passo sem classe é transparente, como
+   * em `alcancouEm`. Nulo fora da perda; sem passo de perda registrado, cai
+   * em `naEtapaDesde`.
+   */
+  perdidoDesde: Date | null;
   situacao: Situacao;
   /** chegou ao último degrau (conta como contrato mesmo se voltou depois). */
   alcancouContrato: boolean;
@@ -306,6 +320,21 @@ export function fatosDoNegocio(
       break;
     }
   }
+  const desdeAtual = naEtapaDesde ?? (linha.created_at ? new Date(linha.created_at) : null);
+
+  // Regra 8: do fim para o começo, enquanto os passos forem de perda — o
+  // mais antigo deles é o começo da estadia. Um passo com degrau encerra a
+  // busca; passo sem classe não conta para nenhum lado.
+  let perdidoDesde: Date | null = null;
+  if (classeAtual === "perda") {
+    for (let i = aqui.length - 1; i >= 0; i--) {
+      const etapa = aqui[i].etapa;
+      const classe = etapa ? classificacao.classeDaEtapa.get(etapa) : undefined;
+      if (classe === "perda") perdidoDesde = new Date(aqui[i].em);
+      else if (classe) break;
+    }
+    if (perdidoDesde === null) perdidoDesde = desdeAtual;
+  }
 
   return {
     linha,
@@ -316,7 +345,8 @@ export function fatosDoNegocio(
     alcancouEm,
     etapaAtual,
     classeAtual,
-    naEtapaDesde: naEtapaDesde ?? (linha.created_at ? new Date(linha.created_at) : null),
+    naEtapaDesde: desdeAtual,
+    perdidoDesde,
     situacao: situacaoDe(classeAtual, degrauMaximo),
     alcancouContrato: degrauMaximo === indiceDoDegrau("contrato"),
   };

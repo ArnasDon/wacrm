@@ -10,6 +10,7 @@ import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { formatarPercentual, paraPontosPercentuais } from "@/lib/funil/apresentacao";
 import { classificarEtapas, type Degrau } from "@/lib/funil/degraus";
 import { inicioDoMesLocal } from "@/lib/funil/periodo";
+import { periodoSemAtividade } from "@/lib/funil/por-periodo";
 import { COORTE_PEQUENA, coortesMensais, linhasDoMapa, type TransicaoDoHistorico } from "@/lib/funil/saude";
 import { fatosDoNegocio } from "@/lib/funil/trajetoria";
 import type { Pipeline, PipelineStage } from "@/types";
@@ -32,8 +33,10 @@ import { SeletorDeModo } from "./seletor-de-modo";
  * de cada mês fez depois conta até hoje. Coorte com lead ainda SEM DESFECHO
  * é "em andamento" e traz a contagem sob o mês — não é o mês corrente: a
  * coorte de agosto com três leads abertos segue mudando em setembro, e o
- * mês corrente com tudo resolvido já é final (Codex, PR #122). Coorte
- * pequena (< 5) fica apagada e fora da escala de cor.
+ * mês corrente com tudo resolvido já é final (Codex, PR #122). Célula
+ * pequena (< 5 na base da taxa) fica apagada e fora da escala de cor — por
+ * período a base é o degrau de partida do mês, não as entradas (revisão do
+ * PR #224); os textos do `title` e da legenda mudam com o modo por isso.
  */
 
 const MESES = 12;
@@ -136,7 +139,7 @@ export function Saude({
 
   const fatos = (linhas ?? []).map((l) => fatosDoNegocio(l, pipeline.id, classificacao));
   const coortes = coortesMensais(fatos, classificacao, MESES, agora, modo);
-  const mapa = linhasDoMapa(coortes, classificacao);
+  const mapa = linhasDoMapa(coortes, classificacao, modo);
   // "jul/26", não "jul. de 26": são doze colunas lado a lado.
   const rotuloDoMes = (d: Date) =>
     `${d.toLocaleDateString(undefined, { month: "short" }).replace(".", "")}/${String(d.getFullYear()).slice(-2)}`;
@@ -148,6 +151,10 @@ export function Saude({
     emAberto: c.emAberto,
   }));
   const totalDeEntradas = coortes.reduce((s, c) => s + c.resumo.entradas, 0);
+  // Por período, "nenhum lead entrou" não é tela vazia: o contrato do lead
+  // de treze meses atrás está no mapa. A faixa só aparece quando NADA
+  // aconteceu em mês nenhum — a mesma régua do Desempenho.
+  const semNada = porPeriodo ? coortes.every((c) => periodoSemAtividade(c.resumo)) : totalDeEntradas === 0;
 
   const series: SerieDeConversao[] = mapa.map((linha) => ({
     chave: `${linha.transicao.de}-${linha.transicao.para}${linha.transicao.global ? "-global" : ""}`,
@@ -161,9 +168,9 @@ export function Saude({
     rotulo: rotuloDaTransicao(linha.transicao),
     celulas: linha.taxas.map((taxa, i) => ({
       taxa,
-      posicao: coortes[i].pequena ? null : linha.escala(taxa),
-      entradas: coortes[i].resumo.entradas,
-      pequena: coortes[i].pequena,
+      posicao: linha.pequenas[i] ? null : linha.escala(taxa),
+      base: linha.bases[i],
+      pequena: linha.pequenas[i],
     })),
   }));
 
@@ -176,9 +183,9 @@ export function Saude({
           {t("entradas", { n: totalDeEntradas })}
         </p>
       </div>
-      {totalDeEntradas === 0 && (
+      {semNada && (
         <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-          {t("semCoortes")}
+          {porPeriodo ? t("semAtividade") : t("semCoortes")}
         </p>
       )}
 
@@ -203,7 +210,9 @@ export function Saude({
             {t("mapa.titulo")} <span className="font-normal normal-case">· {t("mapa.subtitulo")}</span>
           </h3>
           <span className="text-[11px] text-muted-foreground">
-            {t("mapa.legenda", { minimo: COORTE_PEQUENA })}
+            {porPeriodo
+              ? t("mapa.legendaPorPeriodo", { minimo: COORTE_PEQUENA })
+              : t("mapa.legenda", { minimo: COORTE_PEQUENA })}
           </span>
         </div>
         {linhasDoCalor.length === 0 ? (
@@ -213,10 +222,14 @@ export function Saude({
             meses={meses}
             linhas={linhasDoCalor}
             formatarTaxa={formatarPercentual}
-            tituloDaCelula={(mes, taxa, entradas) => t("mapa.celula", { mes, taxa, n: entradas })}
+            tituloDaCelula={(mes, taxa, base) =>
+              porPeriodo ? t("mapa.celulaPorPeriodo", { mes, taxa, n: base }) : t("mapa.celula", { mes, taxa, n: base })
+            }
             rotuloEmAndamento={(n) => t("mapa.emAndamento", { n })}
             rotuloEmAberto={(n) => t("mapa.emAberto", { n })}
-            rotuloPequena={t("mapa.pequena", { minimo: COORTE_PEQUENA })}
+            rotuloPequena={
+              porPeriodo ? t("mapa.pequenaPorPeriodo", { minimo: COORTE_PEQUENA }) : t("mapa.pequena", { minimo: COORTE_PEQUENA })
+            }
           />
         )}
         <p className="mt-3 text-[11px] text-muted-foreground">

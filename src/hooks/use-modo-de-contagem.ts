@@ -27,7 +27,8 @@ export function useModoDeContagem(): [ModoDeContagem, (modo: ModoDeContagem) => 
     try {
       window.localStorage.setItem(CHAVE_DO_MODO, proximo);
     } catch {
-      // preferência por dispositivo: sem storage, vale só nesta sessão
+      // preferência por dispositivo: sem storage, vale até esta vista
+      // desmontar — a outra vista lê o storage ao montar e cai no padrão
     }
   };
   return [modo, mudar];

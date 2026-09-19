@@ -207,8 +207,11 @@ export function Desempenho({
 
   const investimento = gastoDoPeriodo(anuncios.gastos, anuncios.campanhas, pipeline.id, diasDoPeriodo(intervalo, agora));
   // CAC divide por contrato EM PÉ: com "alcançou contrato", um distrato
-  // dividia o investimento por um número inflado (revisão do PR #123).
-  const custo = custos(investimento.total, atual.entradas, atual.fechadosAgora, atual.perdidos);
+  // dividia o investimento por um número inflado (revisão do PR #123). O
+  // custo dos perdidos multiplica os ENTRANTES do período já perdidos: por
+  // período `perdidos` é fluxo (perda de lead de qualquer mês) e, vezes o
+  // custo por lead deste período, passava do investimento (revisão do #224).
+  const custo = custos(investimento.total, atual.entradas, atual.fechadosAgora, atual.perdidosDosEntrantes);
   const moeda = (v: number | null) => (v === null ? "—" : formatCurrency(v));
 
   return (
@@ -328,7 +331,7 @@ export function Desempenho({
                   title={t("investimento.custoDosPerdidos")}
                   value={moeda(custo.custoDosPerdidos)}
                   icon={UserMinus}
-                  subtitle={t("investimento.porPerdido")}
+                  subtitle={porPeriodo ? t("investimento.porPerdidoNoPeriodo") : t("investimento.porPerdido")}
                 />
               </div>
               {investimento.semFunil.total > 0 && (

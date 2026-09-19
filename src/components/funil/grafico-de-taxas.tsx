@@ -35,7 +35,8 @@ export function GraficoDeTaxas({
     [rotuloAnterior]: l.anterior,
   }));
   // 100 enquanto couber; na contagem por período a taxa pode passar disso, e
-  // com o eixo cravado a barra era cortada na borda (ver `eixoDasTaxas`).
+  // o teto redondo com marcas rotuladas substitui as marcas que o Tremor
+  // inventava sozinho acima do `maxValue` (ver `eixoDasTaxas`).
   const { teto } = eixoDasTaxas(linhas.flatMap((l) => [l.atual, l.anterior]));
 
   return (

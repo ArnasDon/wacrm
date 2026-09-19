@@ -228,7 +228,7 @@ describe("dinheiro e perda por período", () => {
     expect(set.perdidos).toBe(1);
   });
 
-  it("perdido duas vezes na MESMA etapa: vale a última entrada, e conta uma vez só", () => {
+  it("perdido, recuperado e perdido de novo: vale a segunda estadia, e conta uma vez só", () => {
     const fatos = fatosDe([
       negocio("e", [
         p("contato-avulso", "2026-08-02T10:00:00-03:00", "deal_created"),
@@ -239,6 +239,48 @@ describe("dinheiro e perda por período", () => {
     ]);
     expect(resumoPorPeriodo(fatos, C, AGOSTO, AGORA).perdidos).toBe(0);
     expect(resumoPorPeriodo(fatos, C, SETEMBRO, AGORA).perdidos).toBe(1);
+  });
+
+  it("trocar de etapa de perda NÃO move a perda de mês (No Show em agosto → Desqualificado em setembro)", () => {
+    const fatos = fatosDe([
+      negocio("f", [
+        p("contato-avulso", "2026-08-02T10:00:00-03:00", "deal_created"),
+        p("no-show", "2026-08-20T10:00:00-03:00"),
+        p("desqualificado", "2026-09-05T10:00:00-03:00"),
+      ]),
+    ]);
+    const ago = resumoPorPeriodo(fatos, C, AGOSTO, AGORA);
+    expect(ago.perdidos).toBe(1);
+    // a linha por etapa é a etapa de perda ATUAL
+    expect(ago.perdasPorEtapa.find((x) => x.etapaId === "desqualificado")?.n).toBe(1);
+    expect(ago.perdasPorEtapa.find((x) => x.etapaId === "no-show")?.n).toBe(0);
+    expect(resumoPorPeriodo(fatos, C, SETEMBRO, AGORA).perdidos).toBe(0);
+  });
+
+  it("`perdidosDosEntrantes` é a foto dos entrantes: é o que o custo dos perdidos multiplica", () => {
+    // 5 leads de agosto perdidos em setembro; 2 leads novos em setembro
+    const fatos = fatosDe([
+      ...[1, 2, 3, 4, 5].map((i) =>
+        negocio(`v${i}`, [
+          p("contato-avulso", `2026-08-0${i}T10:00:00-03:00`, "deal_created"),
+          p("desqualificado", `2026-09-0${i}T10:00:00-03:00`),
+        ]),
+      ),
+      ...[1, 2].map((i) =>
+        negocio(`e${i}`, [p("contato-avulso", `2026-09-1${i}T10:00:00-03:00`, "deal_created")]),
+      ),
+    ]);
+    const set = resumoPorPeriodo(fatos, C, SETEMBRO, AGORA);
+    expect(set.entradas).toBe(2);
+    expect(set.perdidos).toBe(5); // fluxo: passa das entradas (250%)
+    expect(set.perdidosDosEntrantes).toBe(0); // nenhum dos 2 de setembro se perdeu
+    const ago = resumoPorPeriodo(fatos, C, AGOSTO, AGORA);
+    expect(ago.perdidos).toBe(0);
+    expect(ago.perdidosDosEntrantes).toBe(5);
+    // na coorte os dois números são o mesmo
+    const coorte = resumoDoPeriodo(fatos, C, AGOSTO, AGORA);
+    expect(coorte.perdidos).toBe(5);
+    expect(coorte.perdidosDosEntrantes).toBe(coorte.perdidos);
   });
 
   it("os leads que ENTRARAM no período seguem com a foto de hoje (igual à coorte)", () => {

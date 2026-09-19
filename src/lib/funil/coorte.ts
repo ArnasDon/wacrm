@@ -60,6 +60,15 @@ export interface ResumoDoPeriodo {
   /** uma linha por etapa de perda, na ordem do funil, inclusive com zero. */
   perdasPorEtapa: PerdaPorEtapa[];
   perdidos: number;
+  /**
+   * Entrantes do período que estão perdidos HOJE. Na coorte é o próprio
+   * `perdidos`; por período os dois divergem — `perdidos` é fluxo (perda de
+   * lead de qualquer mês) e este é a foto dos entrantes, como sem avanço e
+   * em andamento. É o que o "custo dos perdidos" multiplica: custo por lead
+   * do período × perdas de leads de OUTROS meses passava do investimento
+   * (revisão do PR #224).
+   */
+  perdidosDosEntrantes: number;
   semAvanco: number;
   emAndamento: number;
   /** em andamento por degrau ATUAL (o "pipeline ativo" da referência = proposta). */
@@ -164,6 +173,7 @@ export function resumoDoPeriodo(
     n: coorte.filter((f) => f.situacao === "perdido" && f.etapaAtual === etapa.id).length,
   }));
 
+  const perdidos = coorte.filter((f) => f.situacao === "perdido").length;
   // Duas contas diferentes de propósito: o DEGRAU conta quem alcançou
   // contrato (é o funil de eficiência); o DINHEIRO conta o que está fechado.
   const fechados = coorte.filter((f) => f.alcancouContrato).length;
@@ -176,7 +186,8 @@ export function resumoDoPeriodo(
     transicoes,
     global,
     perdasPorEtapa,
-    perdidos: coorte.filter((f) => f.situacao === "perdido").length,
+    perdidos,
+    perdidosDosEntrantes: perdidos,
     ...emAbertoDe(coorte),
     fechados,
     fechadosAgora: emPe.length,

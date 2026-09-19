@@ -150,16 +150,64 @@ describe("linhas do mapa de saúde", () => {
 
   it("uma taxa por mês e a escala calculada SEM as coortes pequenas", () => {
     const meses = coortesMensais(FATOS, CLASSIFICACAO, 3, AGORA, "entrada");
-    const linhas = linhasDoMapa(meses, CLASSIFICACAO);
+    const linhas = linhasDoMapa(meses, CLASSIFICACAO, "entrada");
     const leadMql = linhas[0];
     // julho (1 lead, 100%) e setembro (2 leads, 0%) são pequenas: só agosto (0,4) entra no min/max
     expect(leadMql.taxas).toEqual([1, 0.4, 0]);
+    expect(leadMql.bases).toEqual([1, 5, 2]);
+    expect(leadMql.pequenas).toEqual([true, false, true]);
     expect(leadMql.escala(0.4)).toBe(0.5);
     expect(leadMql.escala(1)).toBe(0.5);
     expect(leadMql.escala(null)).toBeNull();
     const global = linhas[2];
     expect(global.transicao.global).toBe(true);
     expect(global.taxas).toEqual([0, 0.2, 0]);
+  });
+});
+
+describe("linhas do mapa por PERÍODO: a célula pequena é pelo DENOMINADOR da taxa", () => {
+  // setembro: 0 entradas, mas 5 leads de agosto viram MQL em setembro e 4
+  // deles fecham em setembro — medição real (4/5), que "poucas entradas"
+  // apagaria. Julho: 6 entradas, UMA vira MQL e fecha — 1/1 = 100% sobre um
+  // denominador de 1, que entrava na escala como o verde da linha (revisão
+  // do PR #224).
+  const LINHAS_DE_FLUXO: LinhaDeTrajetoria[] = [
+    ...[1, 2, 3, 4, 5].map((i) =>
+      negocio(`a${i}`, [
+        ["lead", d(7, i)],
+        ["mql", d(8, 1, i)],
+        ...(i < 5 ? ([["contrato", d(8, 2, i)]] as [string, Date][]) : []),
+      ]),
+    ),
+    negocio("j1", [["lead", d(6, 1)], ["mql", d(6, 2)], ["contrato", d(6, 3)]]),
+    ...[2, 3, 4, 5, 6].map((i) => negocio(`j${i}`, [["lead", d(6, i)]])),
+  ];
+  const fatos = LINHAS_DE_FLUXO.map((l) => fatosDoNegocio(l, FUNIL, CLASSIFICACAO));
+  const meses = coortesMensais(fatos, CLASSIFICACAO, 3, AGORA, "periodo");
+  const mqlContrato = linhasDoMapa(meses, CLASSIFICACAO, "periodo")[1];
+
+  it("setembro tem 0 entradas e NÃO é pequena para mql → contrato (5 no degrau de partida)", () => {
+    expect(meses[2].resumo.entradas).toBe(0);
+    expect(mqlContrato.bases).toEqual([1, 0, 5]);
+    expect(mqlContrato.taxas).toEqual([1, null, 0.8]);
+    expect(mqlContrato.pequenas).toEqual([true, true, false]);
+  });
+
+  it("julho (6 entradas, 1/1 = 100%) fica FORA da escala; setembro é a única célula confiável", () => {
+    expect(meses[0].resumo.entradas).toBe(6);
+    // um valor confiável só: sem melhor nem pior — e o 100% de julho não manda na cor
+    expect(mqlContrato.escala(0.8)).toBe(0.5);
+    expect(mqlContrato.escala(1)).toBe(0.5);
+  });
+
+  it("por mês de entrada a régua continua sendo a coorte", () => {
+    const porEntrada = linhasDoMapa(
+      coortesMensais(fatos, CLASSIFICACAO, 3, AGORA, "entrada"),
+      CLASSIFICACAO,
+      "entrada",
+    )[1];
+    expect(porEntrada.bases).toEqual([6, 5, 0]);
+    expect(porEntrada.pequenas).toEqual([false, false, true]);
   });
 });
 

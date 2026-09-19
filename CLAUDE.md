@@ -3361,8 +3361,9 @@ Meta Ads) leem daqui. O que morde código novo:
   do React Compiler que já derrubou PR); resposta atrasada é descartada
   pela chave.
 - **O DESEMPENHO (Fase 2, `src/components/funil/desempenho.tsx`) carrega a
-  RPC UMA vez para `[desde do período anterior, hoje)`** e recorta as duas
-  coortes em TS (`resumoDoPeriodo` × 2 + `comparar`). Funil sem etapa em
+  RPC UMA vez para `[desde do período anterior, hoje)`** e recorta os dois
+  resumos no modo escolhido (`resumoNoModo` × 2 + `comparar` — por período no
+  padrão; ver "DOIS MODOS DE CONTAGEM", abaixo). Funil sem etapa em
   `lead` → estado "configure" (abre Gerenciar funil); período sem coorte →
   zeros com a nota, NUNCA o "configure". Os cinco baldes da situação
   aparecem, "fora do funil" inclusive. Gráfico de barras = Tremor
@@ -3371,16 +3372,24 @@ Meta Ads) leem daqui. O que morde código novo:
   vendorizar mais um Tremor para isso. Números em pt-BR fixo
   (`apresentacao.ts`), como `currency.ts`.
 - **A SAÚDE (Fase 3, `saude.tsx` + `mapa-de-calor.tsx` +
-  `grafico-de-conversao.tsx`) são doze coortes MENSAIS pelo mês de entrada**,
-  numa carga só. A cor do mapa é RELATIVA À LINHA (D6) e a escala é
-  calculada SEM as coortes pequenas (`< COORTE_PEQUENA`, 5): 100% sobre um
-  lead dominaria o ano inteiro. Coorte pequena mostra o número apagado com
-  o motivo no `title`; mês sem coorte é "—", nunca 0%.
+  `grafico-de-conversao.tsx`) são doze MESES numa carga só** — por período no
+  padrão (o que aconteceu em cada mês) e coortes mensais pelo mês de entrada
+  no modo sob demanda. A cor do mapa é RELATIVA À LINHA (D6) e a escala é
+  calculada SEM as células pequenas (`< COORTE_PEQUENA`, 5): 100% sobre um
+  lead dominaria o ano inteiro. Célula pequena mostra o número apagado com
+  o motivo no `title`; mês sem dado é "—", nunca 0%. ⚠️ A régua da célula é
+  por MODO (`linhasDoMapa(…, modo)`): na coorte, as entradas do mês; por
+  período, o DENOMINADOR da taxa (as reuniões do mês, para reunião →
+  proposta) — pelas entradas, um mês com 0 entradas e 5 contratos de leads
+  antigos ficava apagado e um mês com 6 entradas e 1/1 entrava na escala com
+  100% (revisão do PR #224).
 - ⚠️ **"Em andamento" no mapa é a coorte com lead SEM DESFECHO, não o mês
   corrente** (Codex, PR #122). Agosto com 6 abertos ainda muda em setembro,
   e setembro com tudo resolvido já é final — marcar o calendário tirava o
   aviso justamente de quem precisava dele. A marca é a CONTAGEM visível
-  ("6 em aberto") sob o rótulo do mês, e sai de `CoorteMensal.emAberto`.
+  ("6 em aberto") sob o rótulo do mês, e sai de `CoorteMensal.emAberto` —
+  SÓ no modo por entrada: por período ela é 0 e não aparece (mês passado é
+  final).
 - ⚠️⚠️ **`etapasCarregadas` é prop OBRIGATÓRIA de `Desempenho` e `Saude`, e
   o motivo é o efeito passivo de sempre**: a página carrega as etapas DEPOIS
   da seleção, então `stages` é `[]` durante a carga — o MESMO `[]` de um
@@ -3451,18 +3460,30 @@ Meta Ads) leem daqui. O que morde código novo:
   - **Por período conta a PRIMEIRA vez que o negócio alcançou o degrau**
     (`FatosDoNegocio.alcancouEm`, regra 7 da trajetória): bater duas vezes
     em "Reunião Agendada" conta uma vez, e o degrau pulado ganha a data de
-    quem o alcançou. Perda é datada pela ÚLTIMA entrada na etapa de perda
-    em que o negócio ESTÁ (`naEtapaDesde`); quem voltou da perda não é perda
-    em mês nenhum. Dinheiro = contrato alcançado no período que continua
+    quem o alcançou. Perda é datada pelo COMEÇO da estadia atual em perda
+    (`perdidoDesde`, regra 8 da trajetória: o primeiro passo de perda depois
+    do último passo com degrau) — NUNCA por `naEtapaDesde`, que é a última
+    entrada na etapa atual e movia a perda de agosto para setembro quando o
+    escritório reclassificava No Show → Perdido (revisão do PR #224); quem
+    voltou da perda não é perda em mês nenhum, e quem se perdeu de novo conta
+    na segunda vez. Dinheiro = contrato alcançado no período que continua
     fechado. Sem avanço/em andamento/fora do funil são a foto dos que
     ENTRARAM no período — iguais nos dois modos. Tabela campo a campo na
-    seção 3.5 do plano; pinos em `por-periodo.test.ts`.
+    seção 3.5 do plano; pinos em `por-periodo.test.ts`. A preferência mora em
+    `localStorage` (`wacrm:pipelines:funil:modo`, parse por `lerModo`).
   - ⚠️⚠️ **A taxa por período é razão de FLUXO e PODE PASSAR DE 100%**
     (5 contratos de reuniões de agosto ÷ 2 reuniões de setembro). Decisão do
     operador: mostrar como é, com a nota na tela — nunca `Math.min(1, …)`.
-    Por isso os dois gráficos de taxa deixaram de travar o eixo em 100
-    (`eixoDasTaxas`): travado, a barra era cortada na borda e o ponto da
-    linha saía do gráfico sem aviso.
+    Por isso os dois gráficos de taxa ganharam teto redondo e marcas
+    rotuladas (`eixoDasTaxas`): o recharts não corta o dado (sem
+    `allowDataOverflow` ele ALARGA o domínio), mas deixava o ponto acima de
+    100% numa faixa sem marca nem grade, e o Tremor inventava as marcas.
+  - ⚠️⚠️ **"Custo dos perdidos" multiplica os ENTRANTES do período já
+    perdidos (`perdidosDosEntrantes`), nunca `perdidos`.** Por período
+    `perdidos` é fluxo — perda de lead de QUALQUER mês — e, vezes o custo por
+    lead deste período, o card passava do próprio investimento (R$ 250 de
+    perdidos sobre R$ 100 investidos; revisão do PR #224). Na coorte os dois
+    números são o mesmo.
   - ⚠️ **"Primeira vez" exige a trajetória INTEIRA**, que a RPC já devolve
     para todo negócio com evento no intervalo. Truncar o trajeto ao período
     faria a reentrada contar de novo.

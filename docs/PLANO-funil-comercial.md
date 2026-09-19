@@ -321,11 +321,13 @@ entrou, com o instante de cada entrada (`cb_lead_events`), mais a etapa atual.
    percentuais contra o período anterior.
 10. **Entrada por dia** = coorte agrupada pelo dia local da entrada
     (`localDayKey` de `dashboard/date-utils.ts`).
-11. **12 meses** = doze coortes mensais (mês da entrada). Coortes recentes
-    ainda em andamento aparecem marcadas ("N leads em aberto"); célula com
-    coorte pequena (< 5 leads) fica apagada com a nota "poucos leads" — taxa
-    sobre 2 leads é ruído, e a referência pinta 100% e 0% com a mesma
-    confiança.
+11. **12 meses** = doze meses — por período (o padrão desde 18/09, seção
+    3.5) cada mês mostra o que aconteceu nele; por mês de entrada, doze
+    coortes mensais. Coorte recente ainda em andamento aparece marcada
+    ("N leads em aberto", só no modo por entrada); célula PEQUENA fica
+    apagada com a nota "poucos leads" — taxa sobre 2 é ruído, e a referência
+    pinta 100% e 0% com a mesma confiança. A régua da célula é a base da
+    taxa: as entradas da coorte, ou o degrau de partida do mês por período.
 
 ⚠️ **A LISTA filtra por outra data, de propósito (D3):** a coluna "Data" da
 referência é a chegada do lead; no CRM o equivalente operacional é
@@ -386,14 +388,18 @@ src/lib/funil/                                    (assinaturas MEDIDAS no códig
                     configurado, etapas}
   trajetoria.ts     fatosDoNegocio(linha, pipelineId, classificacao) → {linha, noFunil,
                     transferidoPara, entradaEm, degrauMaximo, etapaAtual, classeAtual,
-                    naEtapaDesde, situacao, alcancouContrato}; aplicarMudancaDeEtapa (otimista)
+                    naEtapaDesde, perdidoDesde, alcancouEm, situacao, alcancouContrato};
+                    aplicarMudancaDeEtapa (otimista)
   periodo.ts        presets → {desde, ate} local; periodoAnterior (dias de calendário)
   coorte.ts         resumoDoPeriodo(fatos, classificacao, intervalo, agora) → contagens por
                     degrau, perdas por etapa, sem avanço, em andamento, taxas, entradas por
-                    dia; comparar(atual, anterior)
-  saude.ts          coortesMensais(fatos, classificacao, meses, agora) → coortes; escalaRelativa,
-                    transicoesDoHistorico, linhasDoMapa (a cor por célula é corDaCelula, e ela
-                    mora no componente mapa-de-calor.tsx)
+                    dia; funilDeContagens e emAbertoDe (a montagem única dos dois modos);
+                    comparar(atual, anterior)
+  por-periodo.ts    resumoPorPeriodo / resumoNoModo(modo, …) (seção 3.5), periodoSemAtividade,
+                    lerModo, MODO_PADRAO, CHAVE_DO_MODO
+  saude.ts          coortesMensais(fatos, classificacao, meses, agora, modo) → meses; escalaRelativa,
+                    transicoesDoHistorico, linhasDoMapa(meses, classificacao, modo) (a cor por
+                    célula é corDaCelula, e ela mora no componente mapa-de-calor.tsx)
   lista.ts          catálogo de colunas, ordenar, filtrar (busca/etapa/situação/período), linhasDoCsv
   apresentacao.ts   percentual, variação e pontos percentuais em pt-BR fixo
   carregar.ts       laço paginado da RPC (order + range + count) — I/O, não é módulo puro
@@ -435,23 +441,39 @@ por dispositivo em `localStorage` (`wacrm:pipelines:funil:modo`; parse, nunca
 | Leads (`entradas`) | entrou no funil no período | idem |
 | Degrau k (`porDegrau`) | alcançou k pela 1ª vez no período (`alcancouEm[k]`) | da coorte, alcançou k até hoje (`degrauMaximo`) |
 | Taxas e transições | razão de FLUXO do período — pode passar de 100% | conversão da coorte — nunca passa de 100% |
-| Perdas por etapa | está em perda hoje E entrou nela no período (`naEtapaDesde`) | da coorte, está em perda hoje |
+| Perdas por etapa | está em perda hoje E a estadia atual em perda começou no período (`perdidoDesde`, regra 8) — trocar de etapa de perda não muda o mês; a linha é a etapa de perda ATUAL | da coorte, está em perda hoje |
 | Dinheiro (valor, ticket, CAC) | alcançou contrato no período E continua fechado | da coorte, continua fechado |
+| Custo dos perdidos | custo por lead do período × entrantes do período perdidos hoje (`perdidosDosEntrantes`) — nunca × `perdidos`, que é fluxo e passava do investimento | custo por lead × perdidos da coorte (o mesmo número) |
 | Sem avanço / em andamento / fora do funil | foto de hoje de quem ENTROU no período | idem (é a mesma foto) |
 | "N em aberto" (Saúde) | não existe: mês passado é final | coorte com lead sem desfecho |
-| Coorte pequena (Saúde) | por entradas do mês, como na coorte | por entradas |
+| Célula pequena (Saúde) | pelo DENOMINADOR da taxa no mês (reunião → proposta: as reuniões do mês; a global: as entradas) | por entradas da coorte |
 
 Armadilhas que a implementação carrega:
 
 - A RPC devolve a trajetória INTEIRA de todo negócio com evento no intervalo
   carregado; "primeira vez" só é primeira olhando a história toda. Paginar
   ou truncar o trajeto ao período faria a reentrada contar de novo.
-- Os gráficos de taxa não podem travar o eixo em 100 (`eixoDasTaxas`,
-  `apresentacao.ts`): a barra era cortada na borda e o ponto da linha saía do
-  gráfico, sem aviso.
+- Os gráficos de taxa ganharam teto redondo e marcas rotuladas
+  (`eixoDasTaxas`, `apresentacao.ts`). O recharts não corta o dado — sem
+  `allowDataOverflow` ele ALARGA o domínio até o valor —, mas com
+  `domain=[0,100]` e `ticks` fixos o ponto acima de 100% ficava numa faixa
+  sem rótulo nem grade, e o Tremor inventava as marcas (uma versão desta
+  nota dizia que a barra era cortada; a revisão do PR #224 mediu no fonte da
+  lib).
 - `coortesMensais` exige o `modo` — um chamador novo não pode cair na coorte
   sem escolher.
 - Eventos `retroativo` contam na data que carregam (a carga da Kommo).
+- Os cinco baldes NÃO somam as entradas por período (e não devem): fechado
+  e perdido são fluxo do período, os outros três são a foto dos entrantes.
+  A nota de "Negativos" diz de quem é cada número, e "% das entradas do
+  período" pode passar de 100%.
+- "Lead" ≠ entradas quando o negócio entra DIRETO em perda num mês e vira
+  lead em outro (raro: card nasce em `default_stage_id`): a entrada é do
+  primeiro mês e o degrau Lead, do segundo. Aceito; o subtítulo "contratos ÷
+  leads do período" é aproximado nesse caso.
+- `naEtapaDesde`/`perdidoDesde` caem em `created_at` quando a etapa atual
+  não tem evento (o gatilho da 912 engole falha em escrita de servidor): a
+  perda cai no mês de criação — o mesmo furo da coorte, só que datado.
 
 ## 4. Decisões a tomar (com recomendação)
 
@@ -461,7 +483,7 @@ como hipótese.
 
 | # | Decisão | Recomendação | Por quê |
 | --- | --- | --- | --- |
-| **D3** | Data do período: painel por **entrada no funil** (coorte); lista por **criação do negócio** | como está na seção 3.2 | a coorte é o que torna as taxas consistentes; a criação é o que a lista operacional espera |
+| **D3** | Data do período: painel por **entrada no funil** (coorte); lista por **criação do negócio** | como está na seção 3.2 — ⚠️ SUPERADA no painel em 18/09/2026: o padrão passou a ser POR PERÍODO (seção 3.5), e a coorte ficou sob demanda; a lista continua por criação | a coorte é o que torna as taxas consistentes; a criação é o que a lista operacional espera |
 | **D4** | Período anterior = **mesma duração imediatamente anterior** ou mês/ano-calendário anterior inteiro | mesma duração (frase da referência) | "Este mês" com 3 dias comparado com um mês inteiro mentiria em -90% |
 | **D5** | Colunas padrão da lista | padrão = colunas fixas + nenhum campo personalizado (o seletor de colunas liga e persiste por membro) | 18 colunas vazias de largada só fariam a tabela rolar; ligar uma vez persiste. (O filtro "só alto valor" saiu por decisão do operador; se voltar, "Tamanho da Dívida" precisa virar campo `number` antes — hoje é texto livre) |
 | **D6** | Mapa de calor: cor **relativa à linha** (melhor mês verde, pior vermelho, por transição) ou escala absoluta | relativa por linha, com coorte pequena apagada | absoluta pinta "Lead → Contrato" de vermelho em todo mês (2–9%) e não informa nada; o título da referência diz "relativa ao histórico", o render dela parece absoluto |
@@ -1018,6 +1040,23 @@ só 14 mudanças de etapa no total — a operação real começa na semana de
 Avulso", um manual em "Proposta Realizada"): conta como dois leads, e é o
 único caminho de inflar a contagem (o formulário manual de negócio não
 confere se o contato já tem card; router, automação e API v1 conferem).
+
+**Revisão de 19/09 (o Codex estava sem cota; duas revisões adversariais
+próprias, matemática e UI).** Três P2 corrigidos no mesmo PR, cada um com
+pino: (1) a perda MIGRAVA de mês quando o negócio trocava de etapa de perda
+(No Show em agosto → Perdido em setembro apagava a perda de agosto) — a data
+passou a ser o começo da estadia em perda (`perdidoDesde`, regra 8); (2) na
+Saúde por período a célula "pequena" e a escala liam as ENTRADAS do mês, que
+não são denominador de taxa nenhuma naquele modo — passaram a ler o
+denominador da transição (`linhasDoMapa(…, modo)`); (3) "Custo dos perdidos"
+multiplicava o custo por lead do período por perdas de leads de qualquer mês
+e passava do investimento — multiplica os entrantes do período já perdidos
+(`perdidosDosEntrantes`). Mais: a nota de Negativos avisa que "% das
+entradas" pode passar de 100%; a faixa de vazio da Saúde olha atividade, não
+só entradas; o motivo escrito do `eixoDasTaxas` estava errado (o recharts
+alarga o domínio, não corta) e foi reescrito aqui, no CLAUDE.md e no código;
+"stage" → "step" no inglês onde é degrau. Sem achado P1; lint, typecheck,
+i18n e os 4.143 testes verdes nas duas revisões.
 
 ### Fase 7 — Ciclo de vendas (próxima)
 

@@ -32,14 +32,21 @@ import type { FatosDoNegocio } from "./trajetoria";
  *    "Reunião Agendada" conta UMA vez (na primeira, e nunca de novo em outro
  *    mês), e quem fecha contrato sem passar por Proposta conta em Proposta na
  *    data do contrato.
- *  - PERDA = está numa etapa de perda HOJE e entrou nela no período. Quem foi
- *    desqualificado e voltou ao funil não é perda em mês nenhum — a mesma
+ *  - PERDA = está numa etapa de perda HOJE e a estadia atual em perda começou
+ *    no período (`perdidoDesde`, regra 8 da trajetória). Trocar de etapa de
+ *    perda (No Show → Perdido) não move a perda de mês; quem foi recuperado e
+ *    se perdeu de novo conta na segunda vez, e some da primeira — a mesma
  *    régua da coorte ("perda é onde está hoje"), agora datada.
  *  - DINHEIRO (valor fechado, ticket, e o CAC que a tela deriva) = contrato
  *    alcançado no período que CONTINUA fechado hoje. O distrato conta no
  *    degrau e some do dinheiro, como na coorte.
  *  - SEM AVANÇO / EM ANDAMENTO / FORA DO FUNIL = a foto de hoje dos leads que
  *    ENTRARAM no período. Não são fluxo, e por isso não mudam entre os modos.
+ *  - CUSTO DOS PERDIDOS (a tela) = custo por lead do período × entrantes do
+ *    período que estão perdidos hoje (`perdidosDosEntrantes`), nunca ×
+ *    `perdidos`: este é fluxo (perda de lead de qualquer mês) e, multiplicado
+ *    pelo custo por lead DESTE período, passava do próprio investimento
+ *    (revisão do PR #224).
  *
  * ⚠️⚠️ AS TAXAS AQUI SÃO RAZÃO DE FLUXO, NÃO CONVERSÃO DE COORTE: contratos do
  * período ÷ reuniões do período. Numa conta pequena o numerador vem de leads
@@ -93,10 +100,11 @@ export function resumoPorPeriodo(
   );
   const { porDegrau, transicoes, global } = funilDeContagens(alcancaram, entradas, classificacao);
 
-  // Perda datada: a ÚLTIMA entrada na etapa de perda em que o negócio está
-  // (`naEtapaDesde`). Quem saiu da perda não entra — `situacao` é de hoje.
+  // Perda datada pelo começo da estadia atual em perda (`perdidoDesde`), não
+  // pela última troca de etapa dentro dela. Quem saiu da perda não entra —
+  // `situacao` é de hoje. A linha por etapa é a etapa de perda ATUAL.
   const perdidosNoPeriodo = fatos.filter(
-    (f) => f.situacao === "perdido" && noPeriodo(f.naEtapaDesde, intervalo),
+    (f) => f.situacao === "perdido" && noPeriodo(f.perdidoDesde, intervalo),
   );
   const perdasPorEtapa: PerdaPorEtapa[] = classificacao.porClasse.perda.map((etapa) => ({
     etapaId: etapa.id,
@@ -117,6 +125,7 @@ export function resumoPorPeriodo(
     global,
     perdasPorEtapa,
     perdidos: perdidosNoPeriodo.length,
+    perdidosDosEntrantes: entrantes.filter((f) => f.situacao === "perdido").length,
     ...emAbertoDe(entrantes),
     fechados: alcancaram[contrato],
     fechadosAgora: emPe.length,

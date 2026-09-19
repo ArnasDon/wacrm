@@ -1329,7 +1329,7 @@
           "emAndamentoDesc": "{n} em {degrau}",
           "foraDoFunil": "Fora do funil",
           "foraDoFunilDesc": "Movidos para etapa sem degrau",
-          "notaPorPeriodo": "Perdas que aconteceram no período (só quem continua perdido). Sem avanço, em andamento e fora do funil são a situação de hoje dos leads que entraram no período.",
+          "notaPorPeriodo": "Perdas que aconteceram no período: quem está perdido hoje, no mês em que caiu na perda atual (recuperado e perdido de novo conta na segunda vez). A porcentagem é sobre as entradas do período e pode passar de 100% quando as perdas vêm de leads de meses anteriores. Sem avanço, em andamento e fora do funil são a situação de hoje dos leads que entraram no período.",
           "dasEntradas": "{pct} das entradas do período"
         },
         "taxas": {
@@ -1354,6 +1354,7 @@
           "porLead": "investimento ÷ leads",
           "porContrato": "investimento ÷ contratos",
           "porPerdido": "custo por lead × perdidos",
+          "porPerdidoNoPeriodo": "custo por lead × leads do período já perdidos",
           "semFunil": "{valor} em {n} campanha(s) sem funil atribuído no período — atribua em Integrações para o custo por lead ficar certo.",
           "naoConectado": "Conecte o Meta Ads em Integrações para ver investimento, custo por lead e CAC.",
           "falhou": "Não foi possível ler o investimento em anúncios agora. Os números de custo ficam de fora até a próxima tentativa.",
@@ -1370,6 +1371,7 @@
         "periodo": "Últimos {meses} meses, pelo mês de entrada no funil",
         "entradas": "{n} entradas no total",
         "semCoortes": "Nenhum lead entrou no funil nos últimos meses. A Saúde ganha sentido com meses de operação.",
+        "semAtividade": "Nada aconteceu neste funil nos últimos meses: nenhum lead entrou, avançou ou foi perdido. A Saúde ganha sentido com meses de operação.",
         "fonte": "Etapas pelo mapeamento do funil {funil}. Mês com leads ainda sem desfecho é coorte em andamento: a taxa pode mudar, e o número sob o mês diz quantos.",
         "conversao": {
           "titulo": "Conversão por degrau ao longo do tempo",
@@ -1379,10 +1381,13 @@
           "titulo": "Mapa de saúde do funil",
           "subtitulo": "cor relativa ao histórico de cada linha",
           "legenda": "verde = melhor mês da linha · vermelho = pior · apagado = menos de {minimo} leads",
+          "legendaPorPeriodo": "verde = melhor mês da linha · vermelho = pior · apagado = taxa sobre menos de {minimo} no mês",
           "celula": "{mes}: {taxa} · {n} lead(s)",
+          "celulaPorPeriodo": "{mes}: {taxa} · sobre {n} no mês",
           "emAndamento": "{n, plural, one {# lead ainda sem desfecho} other {# leads ainda sem desfecho}} — a taxa deste mês ainda pode mudar",
           "emAberto": "{n} em aberto",
-          "pequena": "menos de {minimo} leads: taxa pouco confiável"
+          "pequena": "menos de {minimo} leads: taxa pouco confiável",
+          "pequenaPorPeriodo": "taxa sobre menos de {minimo} no mês: pouco confiável"
         },
         "periodoPorAtividade": "Últimos {meses} meses, pelo mês em que cada avanço aconteceu",
         "fontePorPeriodo": "Etapas pelo mapeamento do funil {funil}. Cada mês mostra o que aconteceu nele; mês encerrado não muda mais, e o mês corrente ainda está em curso. A taxa pode passar de 100% quando os contratos do mês vêm de leads anteriores."

@@ -25,6 +25,7 @@ export interface CoorteMensal extends MesDoHistorico {
   resumo: ResumoDoPeriodo;
   /** ainda sem desfecho: sem avanço + em andamento. */
   emAberto: number;
+  /** poucas ENTRADAS no mês (< COORTE_PEQUENA) — a régua da coorte; a célula do mapa tem a sua (`linhasDoMapa`). */
   pequena: boolean;
 }
 
@@ -53,6 +54,8 @@ export function coortesMensais(
       ...mes,
       resumo,
       emAberto: modo === "entrada" ? resumo.semAvanco + resumo.emAndamento : 0,
+      // Poucas ENTRADAS no mês. Na coorte é a régua de tudo; por período o
+      // mapa apaga célula a célula pelo denominador da taxa (`linhasDoMapa`).
       pequena: coortePequena(resumo.entradas),
     };
   });
@@ -85,25 +88,52 @@ export interface LinhaDoMapa {
   transicao: TransicaoDoHistorico;
   /** uma taxa (fração) por mês, na ordem das coortes; nula sem denominador. */
   taxas: (number | null)[];
-  /** 0..1 relativo à LINHA, calculado SEM as coortes pequenas (regra 11). */
+  /**
+   * O que a taxa de cada mês DIVIDE: por período, o degrau de partida no mês
+   * (as reuniões do mês, para reunião → proposta; a global divide pelas
+   * entradas); por mês de entrada, a coorte inteira.
+   */
+  bases: number[];
+  /** célula apagada e fora da escala: base menor que `COORTE_PEQUENA` (regra 11). */
+  pequenas: boolean[];
+  /** 0..1 relativo à LINHA, calculado SEM as células pequenas (regra 11). */
   escala: (v: number | null) => number | null;
 }
 
 /**
- * Uma linha por transição, com a escala de cor própria. Coorte pequena
- * entra com a taxa (a célula mostra o número, apagado) mas fica FORA do
- * min/max — 100% sobre um lead dominaria a escala do ano inteiro.
+ * Uma linha por transição, com a escala de cor própria. Célula pequena entra
+ * com a taxa (o número aparece, apagado) mas fica FORA do min/max — 100%
+ * sobre um lead dominaria a escala do ano inteiro.
+ *
+ * ⚠️ A régua da célula depende do MODO. Por mês de entrada a base de toda
+ * taxa é a coorte (`entradas`). Por período cada taxa divide pelo degrau de
+ * partida NO MÊS, e as entradas não são denominador de nada: um setembro
+ * com 0 entradas, 3 reuniões e 5 contratos ficava apagado sobre uma medição
+ * real, e um julho com 6 entradas e UMA reunião que virou contrato entrava
+ * na escala com 100% sobre um denominador de 1 — o verde da linha (revisão
+ * do PR #224). Por isso a base sai da própria transição.
  */
-export function linhasDoMapa(coortes: readonly CoorteMensal[], classificacao: Classificacao): LinhaDoMapa[] {
+export function linhasDoMapa(
+  coortes: readonly CoorteMensal[],
+  classificacao: Classificacao,
+  modo: ModoDeContagem,
+): LinhaDoMapa[] {
   return transicoesDoHistorico(classificacao).map((transicao) => {
-    const taxas = coortes.map((c) => {
+    const celulas = coortes.map((c) => {
       const t = transicao.global
         ? c.resumo.global
         : c.resumo.transicoes.find((x) => x.de === transicao.de && x.para === transicao.para);
-      return t?.taxa ?? null;
+      const base = modo === "periodo" ? (t?.denominador ?? 0) : c.resumo.entradas;
+      return { taxa: t?.taxa ?? null, base, pequena: coortePequena(base) };
     });
-    const confiaveis = taxas.map((t, i) => (coortes[i].pequena ? null : t));
-    return { transicao, taxas, escala: escalaRelativa(confiaveis) };
+    const confiaveis = celulas.map((c) => (c.pequena ? null : c.taxa));
+    return {
+      transicao,
+      taxas: celulas.map((c) => c.taxa),
+      bases: celulas.map((c) => c.base),
+      pequenas: celulas.map((c) => c.pequena),
+      escala: escalaRelativa(confiaveis),
+    };
   });
 }
 

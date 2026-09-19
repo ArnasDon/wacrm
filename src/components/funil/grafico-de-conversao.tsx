@@ -46,7 +46,9 @@ export function GraficoDeConversao({
     return linha;
   });
   // 0–100 enquanto couber; por período a taxa pode passar de 100%, e com o
-  // domínio cravado o ponto saía do gráfico (ver `eixoDasTaxas`).
+  // domínio cravado o ponto ficava acima da última marca rotulada, numa faixa
+  // sem grade (o recharts alarga o domínio, mas não as marcas — ver
+  // `eixoDasTaxas`).
   const eixo = eixoDasTaxas(series.flatMap((s) => s.valores));
 
   return (

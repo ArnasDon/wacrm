@@ -64,10 +64,14 @@ const PASSOS_DO_EIXO = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
 /**
  * O eixo dos gráficos de taxa, em pontos percentuais. 0–100 de 25 em 25
  * enquanto couber — é o de sempre. ⚠️ Na contagem POR PERÍODO a taxa é razão
- * de fluxo e pode passar de 100% (`por-periodo.ts`): com o eixo cravado em
- * 100 a barra era cortada na borda e o ponto da linha saía do gráfico, sem
- * nada avisando que o número era maior do que o desenho. O teto sobe em
- * passos redondos, com no máximo seis marcas.
+ * de fluxo e pode passar de 100% (`por-periodo.ts`). O recharts NÃO corta o
+ * dado: sem `allowDataOverflow` ele ALARGA o domínio até o valor
+ * (`extendDomain`, `util/isDomainSpecifiedByUser.js`) — mas alargava sem
+ * marca: com `domain=[0,100]` e `ticks=[0..100]` o ponto acima de 100% ficava
+ * numa faixa sem rótulo nem grade, e o Tremor inventava as marcas por conta
+ * própria. Aqui o teto é redondo e as marcas são rotuladas: até seis marcas
+ * enquanto o maior valor cabe em 50.000 pp; acima disso o passo para de
+ * crescer e sobram mais marcas, sem relevância prática.
  */
 export function eixoDasTaxas(valores: readonly (number | null)[]): { teto: number; ticks: number[] } {
   const maior = Math.max(

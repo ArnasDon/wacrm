@@ -32,6 +32,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
+import { identidadeDoContato } from '@/lib/contacts/identidade';
 import { followConversationChannel } from '@/lib/cb-channels/stamp';
 import { registrarEntrega } from '@/lib/cb-channels/atraso-de-entrega';
 import { isUniqueViolation } from '@/lib/contacts/dedupe';
@@ -445,7 +446,12 @@ async function gravarMensagem(
     accountId: ctx.accountId,
     channelId: ctx.channelId,
     contactId: contato.id,
-    contactName: nome,
+    // ⚠️ Queda no `@usuario` (1007): o título do card é o nome e nada mais,
+    // e a ficha do Instagram não tem telefone para servir de reserva — sem
+    // isto, quem escreve antes de o perfil ser lido abriria um card chamado
+    // "Novo contato". No WhatsApp esta queda não existe porque lá a ficha
+    // nasce com `name || phone`.
+    contactName: nome ?? identidadeDoContato(contato),
     conversationId: conversation.id,
   });
 

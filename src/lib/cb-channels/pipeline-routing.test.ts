@@ -210,9 +210,12 @@ describe('routeContactToPipeline', () => {
     expect(inserts[0]).toMatchObject({ conversation_id: 'conversa-9' });
   });
 
-  it('o título junta o canal e o contato', async () => {
-    // `contact_id` é SET NULL quando o contato é apagado — sem o nome no
-    // título o card ficaria sem nenhuma identificação.
+  it('⚠️ o título é SÓ O NOME da pessoa — o rótulo da conexão não entra (1007)', async () => {
+    // Era "<conexão> — <nome>" até 19/09/2026. O prefixo se pagava como
+    // identificação de reserva (o `contact_id` é SET NULL quando o contato é
+    // apagado), mas medido no quadro do escritório ele custava mais: em 549
+    // dos 962 cards o "nome" era o telefone, e 95 nomeavam uma conexão que já
+    // tinha sido renomeada. O nome identifica melhor, e sobrevive ao SET NULL.
     const { db, inserts } = makeDb({
       channel: CANAL_CONFIGURADO,
       account: { owner_user_id: 'dono-da-conta' },
@@ -220,10 +223,25 @@ describe('routeContactToPipeline', () => {
 
     await routeContactToPipeline({ db, ...BASE });
 
-    expect(inserts[0]).toMatchObject({ title: 'Trabalhista — Maria Silva' });
+    expect(inserts[0]).toMatchObject({ title: 'Maria Silva' });
   });
 
-  it('contato sem nome ainda gera título utilizável', async () => {
+  it('ficha sem nome nasce com o TELEFONE no título, e o gatilho da 1007 conserta depois', async () => {
+    // Não é caso de borda: é o normal quando o escritório aborda primeiro
+    // pelo celular pareado. `findOrCreateContact` grava `name || phone`, então
+    // `contactName` já chega como o número — nenhum dos 5 chamadores precisou
+    // mudar por causa da 1007.
+    const { db, inserts } = makeDb({
+      channel: CANAL_CONFIGURADO,
+      account: { owner_user_id: 'dono-da-conta' },
+    });
+
+    await routeContactToPipeline({ db, ...BASE, contactName: '558599704949' });
+
+    expect(inserts[0]).toMatchObject({ title: '558599704949' });
+  });
+
+  it('sem nome NENHUM o título não fica vazio — a coluna é NOT NULL', async () => {
     const { db, inserts } = makeDb({
       channel: CANAL_CONFIGURADO,
       account: { owner_user_id: 'dono-da-conta' },
@@ -231,7 +249,18 @@ describe('routeContactToPipeline', () => {
 
     await routeContactToPipeline({ db, ...BASE, contactName: null });
 
-    expect(inserts[0]).toMatchObject({ title: 'Trabalhista' });
+    expect(inserts[0]).toMatchObject({ title: 'Novo contato' });
+  });
+
+  it('o card nasce SEM a marca de título fixado — é o que deixa o gatilho seguir a ficha', async () => {
+    const { db, inserts } = makeDb({
+      channel: CANAL_CONFIGURADO,
+      account: { owner_user_id: 'dono-da-conta' },
+    });
+
+    await routeContactToPipeline({ db, ...BASE });
+
+    expect(inserts[0]).toMatchObject({ titulo_fixado_em: null });
   });
 
   it('falha na checagem de duplicata não cria nada nem lança', async () => {

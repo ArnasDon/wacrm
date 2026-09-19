@@ -22,6 +22,7 @@ import { ok, fail, badRequest, toApiErrorResponse } from '@/lib/api/v1/respond';
 import { DEAL_STATUSES, serializeDeal } from '@/lib/api/v1/deals';
 import { drenarEventosDeFunil } from '@/lib/automations/drain-events';
 import { ehUuid } from '@/lib/tasks/validar';
+import { escritaDoTituloManual } from '@/lib/deals/titulo-do-card';
 
 export async function GET(
   request: Request,
@@ -75,7 +76,11 @@ export async function PATCH(
     if (body.title !== undefined) {
       const title = typeof body.title === 'string' ? body.title.trim() : '';
       if (!title) throw badRequest("'title' must be a non-empty string");
-      update.title = title;
+      // Título escrito no corpo é escolha de quem chamou, e FIXA o card
+      // (1007): o gatilho que mantém o título igual ao nome da ficha não o
+      // troca mais. `antes = null` porque aqui não há foto de tela a
+      // comparar — quem mandou o campo quis mandá-lo.
+      Object.assign(update, escritaDoTituloManual(null, title, new Date().toISOString()));
     }
 
     if (body.value !== undefined) {

@@ -1,5 +1,5 @@
 // ============================================================
-// `cb_mensagens_sem_telefone` (1009): o registro DURÁVEL de cada mensagem que
+// `cb_mensagens_sem_telefone` (1010): o registro DURÁVEL de cada mensagem que
 // chegou em `@lid` sem telefone.
 //
 //   retida     o telefone ainda não é conhecido — o payload cru fica guardado;
@@ -75,7 +75,7 @@ export function semMidiaEmbutida(payload: unknown): unknown {
   return { ...item, message };
 }
 
-/** Banco sem a 1009 (deploy antes da migration): avisa UMA vez por processo. */
+/** Banco sem a 1010 (deploy antes da migration): avisa UMA vez por processo. */
 let avisouTabelaAusente = false;
 function registrarFalha(onde: string, error: { code?: string; message?: string }): void {
   const ausente = error.code === '42P01' || error.code === 'PGRST205';
@@ -176,7 +176,7 @@ export async function marcarEntregue(
         situacao: 'entregue',
         resolvida_por: resolvidaPor,
         message_id: messageId,
-        // Conteúdo de cliente: existe só enquanto é necessário (CHECK da 1009).
+        // Conteúdo de cliente: existe só enquanto é necessário (CHECK da 1010).
         payload: null,
         resolvida_em: new Date().toISOString(),
       },

@@ -6,7 +6,7 @@ Documento INTERNO e vivo. Atualizar a cada fase concluída.
 | --- | --- |
 | **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (seção 6.2). Nada em produção. |
 | **Decisão do operador (19/09/2026)** | Fazer as Fases 1 e 2; a Fase 3 (patch na imagem da Evolution) fica de fora. "Não quero quebrar o que está funcionando" — cautela é requisito. |
-| **Migration** | `1009_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
+| **Migration** | `1010_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
 
 ## 1. O problema, em uma frase
 
@@ -253,7 +253,7 @@ e vai para o lugar do carimbo ao recarregar.
 - **Medição em produção, somente leitura (R2/R14):** 960 LIDs no acervo, ZERO
   com mais de um telefone, ZERO mensagens de grupo com LID gravado; a consulta
   que resolve o LID custa ~5 ms.
-- **T18, parte 1 — preview contra a produção, ANTES da 1009 (o cenário "deploy
+- **T18, parte 1 — preview contra a produção, ANTES da 1010 (o cenário "deploy
   antes da migration"), com autorização do operador:**
   - sem gravar nada: LID desconhecido → a retenção falha ("Could not find the
     table…", uma vez) e sai o `DESCARTADA` de sempre, com `tipo: "text"`; a
@@ -271,7 +271,7 @@ e vai para o lugar do carimbo ao recarregar.
     "1 verificação não respondeu" (a rota devolve `retidas: null` com 200, e
     Calendly continua respondendo), a caixa de entrada lista normalmente, zero
     erro no console.
-- **T18, parte 2 — depois da 1009 aplicada:** ver 6.3.
+- **T18, parte 2 — depois da 1010 aplicada:** ver 6.3.
 
 ### 6.2 Revisão por duas lentes (19/09/2026) — nenhum P1
 
@@ -285,7 +285,7 @@ consulta têm precedente em produção. O que mudou por causa dela:
 
 | Achado | O que foi feito |
 | --- | --- |
-| **O número 1007 colidia** com a migration do PR #225 (outra sessão, já aplicada em produção) | renumerada para **1009** ANTES de aplicar — sexto caso de branches em paralelo |
+| **O número da migration colidia** — nasceu 1007 (colidiu com o PR #225), virou 1009 (colidiu com o PR #228, mesclado enquanto este estava aberto; pego pelo CI) | hoje é **1010**; as duas colisões pegas ANTES de aplicar — sexto e sétimo casos de branches em paralelo |
 | Fala tardia de cliente, ainda a última, **invisível em conversa encerrada** | modo `tardia` (4.3) |
 | O recálculo canônico **ressuscitava espera já limpa por encerramento** (medido) | função cirúrgica + `p_espera_antes` (4.3, S4/S4b) |
 | `first_inbound_message` deixa de disparar quando o ECO destrava | decisão escrita (R15) — é o lado escolhido; a documentação que afirmava o contrário foi corrigida |
@@ -303,7 +303,7 @@ histórica que vence a cópia normal; sem `message.received` para a histórica;
 edição de retida; janela da transcrição; retenção do payload sem prazo (decisão
 pendente do operador).
 
-### 6.3 T18, parte 2 — preview contra a produção, DEPOIS da 1009
+### 6.3 T18, parte 2 — preview contra a produção, DEPOIS da 1010
 
 (preencher depois de aplicar)
 
@@ -311,7 +311,7 @@ pendente do operador).
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
    do Codex no HEAD final.
-2. **Operador autoriza** → aplicar a 1009 (aditiva; nada em produção a lê).
+2. **Operador autoriza** → aplicar a 1010 (aditiva; nada em produção a lê).
 3. **Operador autoriza** → merge → deploy automático.
 4. Conferir: `DESCARTADA` deixa de aparecer no log; a primeira ocorrência real
    vira linha em `cb_mensagens_sem_telefone`.
@@ -328,14 +328,14 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Decisão do operador: Fases 1 e 2
 - [x] Análise de risco e matriz de testes (este documento)
 - [x] Fase 1 — código + testes
-- [x] Migration 1009 + teste em Postgres local
+- [x] Migration 1010 + teste em Postgres local
 - [x] Fase 2 — reter, religar, Meu dia + testes
 - [x] ~~Fio em tempo real na ordem do carimbo~~ — revertido na revisão (4.3): o fio aberto continua acrescentando no fim
 - [x] Portões (T17)
 - [x] PR #226 aberto; CI verde no 1º push (replay da migration incluso)
 - [x] Revisão por duas lentes — nenhum P1; achados tratados (6.2)
-- [x] T18, parte 1 — preview contra a produção ANTES da 1009 (6.1)
-- [ ] 1009 aplicada em produção (autorizada pelo operador em 19/09, depois do CI)
+- [x] T18, parte 1 — preview contra a produção ANTES da 1010 (6.1)
+- [ ] 1010 aplicada em produção (autorizada pelo operador em 19/09, depois do CI)
 - [ ] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

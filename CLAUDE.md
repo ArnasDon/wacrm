@@ -2664,7 +2664,7 @@ mensagem. `POST /instance/restart/<instância>` segue como PALIATIVO (drena
 DESCARTADO por decisão do operador**: a atual foi escolhida para resolver o
 "Aguardando mensagem" (mensagens que não chegavam ao cliente).
 
-⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1009, 19/09/2026): não é mais
+⚠️ **Mensagem 1:1 em `@lid` SEM telefone (1010, 19/09/2026): não é mais
 jogada fora — o telefone sai do ACERVO, ou ela fica RETIDA até ele aparecer.**
 `src/lib/whatsapp/sem-telefone/` (`modo.ts` puro; `resolver-lid`, `retidas`,
 `historica`, `tardia`, `entregar`, `receber`, `religar`), `ehLidSemTelefone` e
@@ -2770,7 +2770,7 @@ O que morde código novo:
   sempre, que é o que o medidor do `PLANO-baileys-7.md` procura). Nenhuma
   função do módulo lança; exceção na chegada cai na RETENÇÃO, nunca no
   descarte (o estouro pode ter vindo DEPOIS do insert, e a religação
-  deduplica). Banco sem a 1009 é tolerado — MEDIDO contra a produção em 19/09,
+  deduplica). Banco sem a 1010 é tolerado — MEDIDO contra a produção em 19/09,
   antes de aplicar: a mensagem normal entra igual, a Fase 1 funciona (a
   histórica entra e o erro da função ausente vai para o log), a retenção vira o
   descarte de hoje, e o aviso da tabela ausente sai UMA vez por processo.
@@ -3336,7 +3336,7 @@ entrega mensagem de grupo. O que morde código novo:
   próprio fonte. Se um dia grupos entrarem nas automações, o import entra ali,
   visível na revisão — não atrás de uma flag.
 - **A regra do `@lid` do 1:1 NÃO vale em grupo.** Lá o LID sem telefone não
-  vira contato (desde a 1009 a mensagem fica RETIDA até o número aparecer —
+  vira contato (desde a 1010 a mensagem fica RETIDA até o número aparecer —
   antes era descartada); aqui o remetente é desnormalizado em
   `messages.group_sender_*`, sem FK e sem criar contato. Em produção 100% dos
   participantes chegam em `@lid`, então aplicar a regra do 1:1 esvaziaria o
@@ -6245,11 +6245,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     predicado parcial de `messages` renderizado como
     `sender_type = 'customer' AND deleted_at IS NULL`).
 
-  - **1007_cb_titulo_do_card_pelo_nome** e **1008_cb_titulo_de_reserva_nao_e_nome**
-    — o título do card (PR #225, outra sessão). Aplicadas em 19/09/2026
-    (histórico `20260919222628` e `20260919224838`); o que fazem está na seção
-    "O TÍTULO DO CARD é o NOME da pessoa".
-  - **1009_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
+  - **1007_cb_titulo_do_card_pelo_nome**, **1008_cb_titulo_de_reserva_nao_e_nome**
+    e **1009_cb_tira_o_prefixo_que_sobrou** — o título do card (PRs #225 e
+    #228, outra sessão). Aplicadas em 19/09/2026 (histórico `20260919222628`,
+    `20260919224838` e `20260919232435`); o que fazem está na seção "O TÍTULO
+    DO CARD é o NOME da pessoa".
+  - **1010_cb_mensagens_sem_telefone** — `cb_mensagens_sem_telefone` (a
     mensagem 1:1 que chegou em `@lid` sem telefone: retida, entregue ou
     duplicada; FECHADA ao navegador; payload só enquanto `retida`) e a função
     `cb_assentar_mensagem_historica` (desfaz o que o gatilho da 972 decidiu
@@ -6257,11 +6258,16 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     INVOKER`, EXECUTE só do `service_role`, com a conferência trocando de
     papel). Aditiva: nada em produção a lê até o deploy, e o app TOLERA a
     ausência dela (medido em 19/09 contra a produção, antes de aplicar) — mas
-    a regra continua sendo aplicar ANTES do merge. ⚠️ NASCEU como `1007` e
-    COLIDIU com a do título do card, que outra sessão aplicou em produção no
-    mesmo dia — o SEXTO caso de branches em paralelo (906, 963, 966, 989,
-    992). Pego pela revisão em duas lentes e pelo `list_migrations`, ANTES de
-    aplicar; renumerado o arquivo que ainda não estava aplicado (este).
+    a regra continua sendo aplicar ANTES do merge. ⚠️ NASCEU como `1007`,
+    virou `1009` e só então `1010`: colidiu DUAS vezes no mesmo dia com as
+    migrations do título do card (1007/1008 do PR #225 e 1009 do PR #228), que
+    outra sessão foi mesclando e aplicando em produção enquanto este PR estava
+    aberto — o SEXTO e o SÉTIMO casos de branches em paralelo (906, 963, 966,
+    989, 992). A primeira foi pega pela revisão em duas lentes e pelo
+    `list_migrations`; a segunda, pelo CI do PR (o replay estoura com
+    `schema_migrations_pkey`, e `nomes-das-migrations.test.ts` reprova) — as
+    duas ANTES de aplicar, e é para isso que a ordem "CI verde → aplicar"
+    existe. Renumerado sempre o arquivo que ainda não estava aplicado (este).
     ⚠️ **AINDA NÃO APLICADA** (19/09/2026: PR #226 aberto). Testada num
     Postgres 16 descartável — banco limpo só com as concessões dela,
     idempotente, 20 cenários com o gatilho real da 972. Quem aplicar troca

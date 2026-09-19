@@ -13,7 +13,7 @@ import path from 'node:path';
 // nenhum: cita só estas duas funções).
 //
 // Default-deny: arquivo novo que as chame reprova aqui até entrar na lista,
-// por decisão visível no diff. (Nasceu com a 1009: `sem-telefone/entregar.ts`
+// por decisão visível no diff. (Nasceu com a 1010: `sem-telefone/entregar.ts`
 // virou o primeiro chamador fora da rota — achado da revisão por duas lentes.)
 // ============================================================
 

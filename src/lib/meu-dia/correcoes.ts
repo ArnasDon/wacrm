@@ -45,7 +45,7 @@ export type FonteDeCorrecao =
  * porque o efeito é parecido: o atendente responde sem enxergar metade da
  * conversa.
  *
- * ⚠️ A mensagem RETIDA sem telefone (1009) vem junto das conexões porque é da
+ * ⚠️ A mensagem RETIDA sem telefone (1010) vem junto das conexões porque é da
  * mesma família — fala de cliente que NÃO está na tela do CRM —, e antes das
  * agendadas porque o conserto é de gente e é agora: olhar o celular daquela
  * conexão e responder por lá (o eco traz o número, e a fala entra sozinha na

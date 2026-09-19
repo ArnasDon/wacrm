@@ -92,7 +92,7 @@ export async function GET() {
     // `/api/cb/webhooks` já faz. Sem embed: filtro em recurso embutido é a
     // armadilha de `filtros.ts`, e aqui nem seria preciso.
     // Mensagens de WhatsApp RETIDAS por terem chegado em `@lid` sem telefone
-    // (1009) — também fechada ao navegador. Daqui saem a contagem e, das mais
+    // (1010) — também fechada ao navegador. Daqui saem a contagem e, das mais
     // recentes, só a CONEXÃO e a HORA: é o que diz ao operador em qual
     // celular olhar. Nada de conteúdo, telefone ou LID — a rota é de qualquer
     // membro.
@@ -125,7 +125,7 @@ export async function GET() {
     // ⚠️ A falha SÓ das retidas não vira 500: derrubaria junto a contagem do
     // Calendly e dos webhooks, que responderam. Vira `null` — "não consegui
     // conferir" DAQUELA fonte, que a tela trata como tal (nunca como zero).
-    // É também o que acontece num banco sem a 1009 (deploy antes da migration).
+    // É também o que acontece num banco sem a 1010 (deploy antes da migration).
     if (retidas.error) {
       console.error('[cb/meu-dia/pendencias] retidas:', retidas.error.message);
     }

@@ -120,7 +120,7 @@ describe('retidas', () => {
     expect(await retidasDoLid(b.db, 'conta-1', LID)).toEqual([]);
   });
 
-  it('tabela AUSENTE (deploy antes da 1009) avisa UMA vez por processo, não a cada mensagem', async () => {
+  it('tabela AUSENTE (deploy antes da 1010) avisa UMA vez por processo, não a cada mensagem', async () => {
     const erro = vi.spyOn(console, 'error').mockImplementation(() => {});
     const b = criarBanco();
     b.falhas[TABELA] = { code: '42P01', message: 'relation does not exist' };

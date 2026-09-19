@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 // ============================================================
-// A 1009 guarda o PAYLOAD de mensagens de cliente (enquanto retidas) e cria a
+// A 1010 guarda o PAYLOAD de mensagens de cliente (enquanto retidas) e cria a
 // função que reescreve `conversations.aguardando_desde`. Três coisas que a
 // conferência DENTRO da migration não alcança, e que este teste — que roda no
 // job `verificar`, portão do deploy — cobra:
@@ -31,15 +31,15 @@ const semComentarios = (sql: string) =>
     .join('\n');
 const compacto = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
-const sql1009 = semComentarios(ler('1009_cb_mensagens_sem_telefone.sql'));
+const sql1010 = semComentarios(ler('1010_cb_mensagens_sem_telefone.sql'));
 const sql972 = semComentarios(ler('0972_cb_aguardando_resposta.sql'));
 const TABELA = 'cb_mensagens_sem_telefone';
 
-describe('1009 — a tabela das mensagens sem telefone é fechada ao navegador', () => {
+describe('1010 — a tabela das mensagens sem telefone é fechada ao navegador', () => {
   it('tem ENABLE ROW LEVEL SECURITY', () => {
     expect(
       new RegExp(`alter\\s+table\\s+public\\.${TABELA}\\s+enable\\s+row\\s+level\\s+security`, 'i').test(
-        sql1009,
+        sql1010,
       ),
     ).toBe(true);
   });
@@ -49,22 +49,22 @@ describe('1009 — a tabela das mensagens sem telefone é fechada ao navegador',
       new RegExp(
         `revoke\\s+all\\s+on\\s+table\\s+public\\.${TABELA}\\s+from\\s+public,\\s*anon,\\s*authenticated`,
         'i',
-      ).test(sql1009),
+      ).test(sql1010),
     ).toBe(true);
     expect(
       new RegExp(`grant[^;]*\\bon\\s+table\\s+public\\.${TABELA}\\b[^;]*\\b(authenticated|anon)\\b`, 'i').test(
-        sql1009,
+        sql1010,
       ),
     ).toBe(false);
   });
 
   it('não cria policy nenhuma', () => {
-    expect(/create\s+policy/i.test(sql1009)).toBe(false);
+    expect(/create\s+policy/i.test(sql1010)).toBe(false);
   });
 
   it('concede ao service_role POR ESCRITO (o default do Supabase não existe em banco novo)', () => {
     expect(
-      new RegExp(`grant\\s+all\\s+on\\s+table\\s+public\\.${TABELA}\\s+to\\s+service_role`, 'i').test(sql1009),
+      new RegExp(`grant\\s+all\\s+on\\s+table\\s+public\\.${TABELA}\\s+to\\s+service_role`, 'i').test(sql1010),
     ).toBe(true);
   });
 
@@ -73,31 +73,31 @@ describe('1009 — a tabela das mensagens sem telefone é fechada ao navegador',
       'public\\.cb_assentar_mensagem_historica\\(uuid,\\s*timestamptz,\\s*boolean,\\s*timestamptz,\\s*boolean\\)';
     expect(
       new RegExp(`revoke\\s+execute\\s+on\\s+function\\s+${f}\\s+from\\s+public,\\s*anon,\\s*authenticated`, 'i').test(
-        sql1009,
+        sql1010,
       ),
     ).toBe(true);
-    expect(new RegExp(`grant\\s+execute\\s+on\\s+function\\s+${f}\\s+to\\s+service_role`, 'i').test(sql1009)).toBe(
+    expect(new RegExp(`grant\\s+execute\\s+on\\s+function\\s+${f}\\s+to\\s+service_role`, 'i').test(sql1010)).toBe(
       true,
     );
   });
 
   it('o payload existe se, e somente se, a linha está retida (conteúdo de cliente só enquanto é preciso)', () => {
-    expect(compacto(sql1009)).toContain("check ((situacao = 'retida') = (payload is not null))");
+    expect(compacto(sql1010)).toContain("check ((situacao = 'retida') = (payload is not null))");
   });
 
   it('o UNIQUE é TOTAL — índice parcial não serve de alvo ao ON CONFLICT do PostgREST (lição da 903)', () => {
-    expect(compacto(sql1009)).toContain('unique (account_id, provider_message_id)');
+    expect(compacto(sql1010)).toContain('unique (account_id, provider_message_id)');
   });
 
   it('SET NULL com a coluna NOMEADA: apagar a conexão não pode tentar zerar account_id (lição da 966)', () => {
-    expect(compacto(sql1009)).toContain('on delete set null (channel_id)');
+    expect(compacto(sql1010)).toContain('on delete set null (channel_id)');
   });
 });
 
-describe('1009 × 972 — a função desfaz só o que ESTA mensagem estragou', () => {
+describe('1010 × 972 — a função desfaz só o que ESTA mensagem estragou', () => {
   /** O corpo da função, do `as $$` ao `$$;` — sem espaços nem caixa. */
   const corpo = (() => {
-    const texto = compacto(sql1009);
+    const texto = compacto(sql1010);
     const ini = texto.indexOf('create or replace function public.cb_assentar_mensagem_historica');
     expect(ini).toBeGreaterThan(-1);
     const abre = texto.indexOf('as $$', ini);
@@ -141,7 +141,7 @@ describe('1009 × 972 — a função desfaz só o que ESTA mensagem estragou', (
   });
 
   it('SECURITY INVOKER prova o privilégio trocando de papel, e concede o que confere', () => {
-    const t = compacto(sql1009);
+    const t = compacto(sql1010);
     expect(t).toContain('security invoker');
     expect(t).toContain('grant select, update on table public.conversations to service_role');
     expect(t).toContain('grant select on table public.messages to service_role');
@@ -171,7 +171,7 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
       'message_id',
       'resolvida_em',
     ]) {
-      expect(new RegExp(`^\\s+${coluna}\\s`, 'm').test(sql1009), `coluna ${coluna} na 1009`).toBe(true);
+      expect(new RegExp(`^\\s+${coluna}\\s`, 'm').test(sql1010), `coluna ${coluna} na 1010`).toBe(true);
       expect(retidas, `${coluna} em retidas.ts`).toContain(coluna);
     }
     // O alvo do upsert é o UNIQUE, coluna por coluna.
@@ -181,10 +181,10 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
   it('os valores de situação e de resolvida_por', () => {
     const retidas = ts('lib/whatsapp/sem-telefone/retidas.ts');
     for (const v of ['retida', 'entregue', 'duplicada']) {
-      expect(sql1009).toContain(`'${v}'`);
+      expect(sql1010).toContain(`'${v}'`);
       expect(retidas).toContain(`'${v}'`);
     }
-    for (const v of ['acervo', 'religacao']) expect(sql1009).toContain(`'${v}'`);
+    for (const v of ['acervo', 'religacao']) expect(sql1010).toContain(`'${v}'`);
   });
 
   it('a função e os CINCO parâmetros que `historica.ts` passa — nem um a mais, nem um a menos', () => {
@@ -192,7 +192,7 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
     expect(historica).toContain("rpc('cb_assentar_mensagem_historica'");
     const PARAMETROS = ['p_conversation_id', 'p_carimbo', 'p_da_equipe', 'p_espera_antes', 'p_conta_nao_lida'];
     for (const p of PARAMETROS) {
-      expect(sql1009).toContain(p);
+      expect(sql1010).toContain(p);
       expect(historica, `${p} em historica.ts`).toContain(`${p}:`);
     }
     // O PostgREST resolve a função pelos NOMES dos argumentos: um parâmetro a
@@ -200,7 +200,7 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
     // o acerto da espera — com um erro no log como único rastro.
     const noTs = [...historica.matchAll(/\b(p_[a-z_]+):/g)].map((m) => m[1]).sort();
     expect(noTs).toEqual([...PARAMETROS].sort());
-    const assinatura = compacto(sql1009).match(
+    const assinatura = compacto(sql1010).match(
       /create or replace function public\.cb_assentar_mensagem_historica\(([^)]*)\)/,
     );
     expect(assinatura).not.toBeNull();
@@ -211,7 +211,7 @@ describe('os nomes que o TypeScript usa existem no SQL', () => {
   it('a rota do Meu dia lê as colunas que existem', () => {
     const rota = ts('app/api/cb/meu-dia/pendencias/route.ts');
     expect(rota).toContain(`'${TABELA}'`);
-    expect(sql1009).toMatch(/^\s+recebida_em\s/m);
+    expect(sql1010).toMatch(/^\s+recebida_em\s/m);
     expect(rota).toContain('recebida_em');
   });
 });

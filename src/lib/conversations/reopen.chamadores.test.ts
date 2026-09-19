@@ -31,7 +31,7 @@ describe('reabre: os caminhos de mensagem decididos por gente', () => {
     { arquivo: 'lib/whatsapp/send-message.ts', quem: 'núcleo de envio (compositor, ficha, agendada, API v1)' },
     { arquivo: 'lib/instagram/persistir.ts', quem: 'ingestão (Instagram Direct)' },
     // A mensagem recuperada sem telefone que AINDA é a última da conversa
-    // (1009): quem encerrou o fez sem vê-la. A histórica comum não reabre —
+    // (1010): quem encerrou o fez sem vê-la. A histórica comum não reabre —
     // ver `sem-telefone/modo.ts`.
     { arquivo: 'lib/whatsapp/sem-telefone/tardia.ts', quem: 'recuperada tardia, ainda a última (Evolution)' },
   ]

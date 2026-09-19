@@ -203,7 +203,7 @@ describe('REGRESSÃO — a mensagem com telefone é tratada exatamente como ante
     expect(from.mock.calls.map((c) => c[0])).not.toContain(RETIDAS);
   });
 
-  it('o banco SEM a 1009 (deploy antes da migration) não custa a mensagem normal', async () => {
+  it('o banco SEM a 1010 (deploy antes da migration) não custa a mensagem normal', async () => {
     h.banco.falhas[RETIDAS] = { code: '42P01', message: 'relation does not exist' };
     await entregar(comum('NORMAL-2', 590));
     expect(persistInboundMessage).toHaveBeenCalledTimes(1);
@@ -323,7 +323,7 @@ describe('`@lid` sem telefone', () => {
     expect(h.banco.rpcs.at(-1)?.args.p_conta_nao_lida).toBe(false);
   });
 
-  it('sem a 1009 no banco: o comportamento e o aviso de SEMPRE', async () => {
+  it('sem a 1010 no banco: o comportamento e o aviso de SEMPRE', async () => {
     h.banco.falhas[RETIDAS] = { code: '42P01', message: 'relation does not exist' };
     await entregar(semTelefone('PRIMEIRA', 0));
     expect(h.banco.tabelas.messages).toEqual([]);

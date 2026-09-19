@@ -194,7 +194,7 @@ describe('receberSemTelefone', () => {
     });
   });
 
-  it('a retenção FALHOU (ex.: deploy antes da 1009) → o comportamento e o aviso de SEMPRE', async () => {
+  it('a retenção FALHOU (ex.: deploy antes da 1010) → o comportamento e o aviso de SEMPRE', async () => {
     const b = criarBanco({ messages: [] });
     b.falhas[RETIDAS] = { code: '42P01', message: 'relation does not exist' };
     expect(await chamar(b, copiaDoCelular())).toEqual([]);

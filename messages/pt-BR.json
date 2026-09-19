@@ -1305,7 +1305,9 @@
           "deLeads": "de {n} leads",
           "contratosFechados": "{n} contrato(s) fechado(s)",
           "semFechados": "nenhum contrato fechado",
-          "porContrato": "por contrato"
+          "porContrato": "por contrato",
+          "noPeriodo": "alcançados no período",
+          "contratosSobreLeads": "contratos ÷ leads do período"
         },
         "funil": {
           "titulo": "Funil de eficiência",
@@ -1313,7 +1315,8 @@
           "dasEntradas": "{pct} das entradas",
           "doAnterior": "{pct} de {degrau}",
           "semEtapa": "Sem etapa correspondente",
-          "etapas": "Etapas: {nomes}"
+          "etapas": "Etapas: {nomes}",
+          "notaPorPeriodo": "Cada degrau conta quem o alcançou pela primeira vez no período. As taxas comparam o que aconteceu no mesmo período e podem passar de 100% quando os contratos vêm de leads de meses anteriores — a conversão lead a lead está em “Por mês de entrada”."
         },
         "negativos": {
           "titulo": "Negativos e em aberto",
@@ -1325,7 +1328,9 @@
           "emAndamento": "Em andamento",
           "emAndamentoDesc": "{n} em {degrau}",
           "foraDoFunil": "Fora do funil",
-          "foraDoFunilDesc": "Movidos para etapa sem degrau"
+          "foraDoFunilDesc": "Movidos para etapa sem degrau",
+          "notaPorPeriodo": "Perdas que aconteceram no período: quem está perdido hoje, no mês em que caiu na perda atual (recuperado e perdido de novo conta na segunda vez). A porcentagem é sobre as entradas do período e pode passar de 100% quando as perdas vêm de leads de meses anteriores. Sem avanço, em andamento e fora do funil são a situação de hoje dos leads que entraram no período.",
+          "dasEntradas": "{pct} das entradas do período"
         },
         "taxas": {
           "titulo": "Taxas de conversão entre degraus",
@@ -1349,6 +1354,7 @@
           "porLead": "investimento ÷ leads",
           "porContrato": "investimento ÷ contratos",
           "porPerdido": "custo por lead × perdidos",
+          "porPerdidoNoPeriodo": "custo por lead × leads do período já perdidos",
           "semFunil": "{valor} em {n} campanha(s) sem funil atribuído no período — atribua em Integrações para o custo por lead ficar certo.",
           "naoConectado": "Conecte o Meta Ads em Integrações para ver investimento, custo por lead e CAC.",
           "falhou": "Não foi possível ler o investimento em anúncios agora. Os números de custo ficam de fora até a próxima tentativa.",
@@ -1357,12 +1363,15 @@
           "colCampanha": "Campanha",
           "colGasto": "Gasto no período",
           "semGasto": "Nenhum gasto neste período nas campanhas deste funil."
-        }
+        },
+        "periodoPorAtividade": "Conta o que aconteceu no período (cada lead uma vez por degrau)",
+        "semAtividade": "Nada aconteceu neste funil no período: nenhum lead entrou, avançou ou foi perdido."
       },
       "saude": {
         "periodo": "Últimos {meses} meses, pelo mês de entrada no funil",
         "entradas": "{n} entradas no total",
         "semCoortes": "Nenhum lead entrou no funil nos últimos meses. A Saúde ganha sentido com meses de operação.",
+        "semAtividade": "Nada aconteceu neste funil nos últimos meses: nenhum lead entrou, avançou ou foi perdido. A Saúde ganha sentido com meses de operação.",
         "fonte": "Etapas pelo mapeamento do funil {funil}. Mês com leads ainda sem desfecho é coorte em andamento: a taxa pode mudar, e o número sob o mês diz quantos.",
         "conversao": {
           "titulo": "Conversão por degrau ao longo do tempo",
@@ -1372,11 +1381,16 @@
           "titulo": "Mapa de saúde do funil",
           "subtitulo": "cor relativa ao histórico de cada linha",
           "legenda": "verde = melhor mês da linha · vermelho = pior · apagado = menos de {minimo} leads",
+          "legendaPorPeriodo": "verde = melhor mês da linha · vermelho = pior · apagado = taxa sobre menos de {minimo} no mês",
           "celula": "{mes}: {taxa} · {n} lead(s)",
+          "celulaPorPeriodo": "{mes}: {taxa} · sobre {n} no mês",
           "emAndamento": "{n, plural, one {# lead ainda sem desfecho} other {# leads ainda sem desfecho}} — a taxa deste mês ainda pode mudar",
           "emAberto": "{n} em aberto",
-          "pequena": "menos de {minimo} leads: taxa pouco confiável"
-        }
+          "pequena": "menos de {minimo} leads: taxa pouco confiável",
+          "pequenaPorPeriodo": "taxa sobre menos de {minimo} no mês: pouco confiável"
+        },
+        "periodoPorAtividade": "Últimos {meses} meses, pelo mês em que cada avanço aconteceu",
+        "fontePorPeriodo": "Etapas pelo mapeamento do funil {funil}. Cada mês mostra o que aconteceu nele; mês encerrado não muda mais, e o mês corrente ainda está em curso. A taxa pode passar de 100% quando os contratos do mês vêm de leads anteriores."
       },
       "lista": {
         "colunas": {
@@ -1412,6 +1426,13 @@
         "editar": "Editar negócio",
         "ordenarPor": "Ordenar por {coluna}",
         "toastEtapaFalhou": "Não foi possível mover o negócio. A lista foi recarregada."
+      },
+      "modo": {
+        "rotulo": "Contar",
+        "periodo": "Por período",
+        "entrada": "Por mês de entrada",
+        "dicaPeriodo": "Conta o que aconteceu no período, venha o lead de quando vier: o contrato fechado este mês aparece neste mês. Cada lead conta uma vez por degrau, na primeira vez que o alcançou.",
+        "dicaEntrada": "Conta os leads que entraram no período e tudo o que eles fizeram até hoje (coorte). Nenhuma taxa passa de 100%."
       }
     },
     "analytics": {

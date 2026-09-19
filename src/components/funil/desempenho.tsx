@@ -21,6 +21,7 @@ import { useTranslations } from "next-intl";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { Button } from "@/components/ui/button";
 import { useGastosDeAnuncios } from "@/hooks/use-gastos-de-anuncios";
+import { useModoDeContagem } from "@/hooks/use-modo-de-contagem";
 import { useTrajetorias } from "@/hooks/use-trajetorias";
 import { useAoVoltarParaOApp } from "@/hooks/use-ao-voltar-para-o-app";
 import { formatCurrency } from "@/lib/currency";
@@ -32,7 +33,7 @@ import {
   paraPontosPercentuais,
   sinalArredondado,
 } from "@/lib/funil/apresentacao";
-import { comparar, resumoDoPeriodo } from "@/lib/funil/coorte";
+import { comparar } from "@/lib/funil/coorte";
 import { DEGRAUS, classificarEtapas, type Degrau } from "@/lib/funil/degraus";
 import {
   duracaoEmDias,
@@ -41,11 +42,13 @@ import {
   type Personalizado,
   type Preset,
 } from "@/lib/funil/periodo";
+import { periodoSemAtividade, resumoNoModo } from "@/lib/funil/por-periodo";
 import { fatosDoNegocio } from "@/lib/funil/trajetoria";
 import type { Pipeline, PipelineStage } from "@/types";
 
 import { GraficoDeEntradas } from "./grafico-de-entradas";
 import { GraficoDeTaxas, type LinhaDeTaxa } from "./grafico-de-taxas";
+import { SeletorDeModo } from "./seletor-de-modo";
 import { SeletorDePeriodo } from "./seletor-de-periodo";
 
 /**
@@ -53,8 +56,13 @@ import { SeletorDePeriodo } from "./seletor-de-periodo";
  * com comparação contra o período anterior de mesma duração. Toda a conta
  * mora em `src/lib/funil/coorte.ts`; aqui só apresentação.
  *
- * - UMA carga da RPC para `[desde do período anterior, hoje)`: a coorte é
- *   quem ENTROU no período, e o que ela fez depois conta até hoje (regra 2).
+ * - DOIS modos de contagem (18/09/2026, `por-periodo.ts`): "por período" — o
+ *   padrão, conta o que ACONTECEU no período, venha o lead de quando vier — e
+ *   "por mês de entrada" — a coorte: quem ENTROU no período, e o que fez até
+ *   hoje (regra 2). A tela só escolhe o modo; a conta é de `resumoNoModo`.
+ * - UMA carga da RPC para `[desde do período anterior, hoje)`, que serve aos
+ *   dois modos: ela traz todo negócio criado OU com evento no intervalo, com
+ *   a trajetória INTEIRA.
  * - Funil sem etapa em `lead` → estado "configure", com o atalho para Funis.
  *   Período sem coorte → zeros com a nota, NUNCA o estado "configure".
  * - Os cinco baldes da situação aparecem, inclusive "fora do funil" —
@@ -98,6 +106,8 @@ export function Desempenho({
 
   const [preset, setPreset] = useState<Preset>("este_mes");
   const [personalizado, setPersonalizado] = useState<Personalizado>({ desde: "", ate: "" });
+  const [modo, setModo] = useModoDeContagem();
+  const porPeriodo = modo === "periodo";
 
   const agora = new Date();
   const intervalo = intervaloDoPreset(preset, agora, personalizado);
@@ -152,8 +162,8 @@ export function Desempenho({
   }
 
   const fatos = (linhas ?? []).map((l) => fatosDoNegocio(l, pipeline.id, classificacao));
-  const atual = resumoDoPeriodo(fatos, classificacao, intervalo, agora);
-  const resumoAnterior = anterior ? resumoDoPeriodo(fatos, classificacao, anterior, agora) : null;
+  const atual = resumoNoModo(modo, fatos, classificacao, intervalo, agora);
+  const resumoAnterior = anterior ? resumoNoModo(modo, fatos, classificacao, anterior, agora) : null;
   const comparacao = comparar(atual, resumoAnterior);
   const dias = duracaoEmDias(intervalo, agora);
 
@@ -191,26 +201,35 @@ export function Desempenho({
   const penultimo = [...DEGRAUS].reverse().find((d, i) => i > 0 && classificacao.porClasse[d].length > 0);
   const emPenultimo = penultimo ? (atual.emAndamentoPorDegrau[penultimo] ?? 0) : 0;
   const pctDosLeads = (n: number) => formatarPercentual(atual.entradas > 0 ? n / atual.entradas : null);
+  // Por período, "nenhum lead entrou" não é tela vazia: contrato e perda de
+  // lead antigo contam. A nota só aparece quando NADA aconteceu.
+  const vazio = porPeriodo ? periodoSemAtividade(atual) : atual.entradas === 0;
 
   const investimento = gastoDoPeriodo(anuncios.gastos, anuncios.campanhas, pipeline.id, diasDoPeriodo(intervalo, agora));
   // CAC divide por contrato EM PÉ: com "alcançou contrato", um distrato
-  // dividia o investimento por um número inflado (revisão do PR #123).
-  const custo = custos(investimento.total, atual.entradas, atual.fechadosAgora, atual.perdidos);
+  // dividia o investimento por um número inflado (revisão do PR #123). O
+  // custo dos perdidos multiplica os ENTRANTES do período já perdidos: por
+  // período `perdidos` é fluxo (perda de lead de qualquer mês) e, vezes o
+  // custo por lead deste período, passava do investimento (revisão do #224).
+  const custo = custos(investimento.total, atual.entradas, atual.fechadosAgora, atual.perdidosDosEntrantes);
   const moeda = (v: number | null) => (v === null ? "—" : formatCurrency(v));
 
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SeletorDePeriodo
-          preset={preset}
-          personalizado={personalizado}
-          onChange={(p, pers) => {
-            setPreset(p);
-            setPersonalizado(pers);
-          }}
-        />
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <SeletorDePeriodo
+            preset={preset}
+            personalizado={personalizado}
+            onChange={(p, pers) => {
+              setPreset(p);
+              setPersonalizado(pers);
+            }}
+          />
+          <SeletorDeModo modo={modo} onChange={setModo} />
+        </div>
         <p className="text-xs text-muted-foreground">
-          {t("periodoPorEntrada")} ·{" "}
+          {porPeriodo ? t("periodoPorAtividade") : t("periodoPorEntrada")} ·{" "}
           {anterior && dias !== null ? t("comparacaoCom", { dias }) : t("semComparacao")}
         </p>
       </div>
@@ -229,9 +248,9 @@ export function Desempenho({
         </div>
       ) : (
         <>
-          {atual.entradas === 0 && (
+          {vazio && (
             <p className="rounded-lg border border-dashed border-border px-3 py-2 text-xs text-muted-foreground">
-              {t("semCoorte")}
+              {porPeriodo ? t("semAtividade") : t("semCoorte")}
             </p>
           )}
 
@@ -251,7 +270,9 @@ export function Desempenho({
               delta={deltaDeContagem(comparacao.fechados.variacao)}
               subtitle={
                 comparacao.fechados.variacao === null
-                  ? t("cards.deLeads", { n: atual.entradas })
+                  ? porPeriodo
+                    ? t("cards.noPeriodo")
+                    : t("cards.deLeads", { n: atual.entradas })
                   : undefined
               }
             />
@@ -260,7 +281,13 @@ export function Desempenho({
               value={formatarPercentual(atual.global?.taxa ?? null)}
               icon={Percent}
               delta={deltaDeTaxa(comparacao.global?.pp ?? null)}
-              subtitle={comparacao.global?.pp == null ? t("cards.deLeads", { n: atual.entradas }) : undefined}
+              subtitle={
+                comparacao.global?.pp == null
+                  ? porPeriodo
+                    ? t("cards.contratosSobreLeads")
+                    : t("cards.deLeads", { n: atual.entradas })
+                  : undefined
+              }
             />
             <MetricCard
               title={t("cards.valorFechado")}
@@ -304,7 +331,7 @@ export function Desempenho({
                   title={t("investimento.custoDosPerdidos")}
                   value={moeda(custo.custoDosPerdidos)}
                   icon={UserMinus}
-                  subtitle={t("investimento.porPerdido")}
+                  subtitle={porPeriodo ? t("investimento.porPerdidoNoPeriodo") : t("investimento.porPerdido")}
                 />
               </div>
               {investimento.semFunil.total > 0 && (
@@ -347,6 +374,11 @@ export function Desempenho({
                 {t("funil.entradas", { n: atual.entradas })}
               </span>
             </div>
+            {porPeriodo && (
+              // Razão de fluxo, não conversão de coorte: pode passar de 100%
+              // (decisão do operador: mostrar como é, e dizer o que é).
+              <p className="mb-3 text-[11px] text-muted-foreground">{t("funil.notaPorPeriodo")}</p>
+            )}
             {/* Cinco cartões tingidos com a cor do degrau e uma seta entre eles
                 (a referência do operador). A seta é SÓ seta: a taxa fica dentro
                 do cartão, e a queda em número ("−15") foi descartada por decisão
@@ -417,9 +449,22 @@ export function Desempenho({
                 {t("negativos.perdidos", { n: atual.perdidos })}
               </span>
             </div>
+            {porPeriodo && (
+              <p className="mb-3 text-[11px] text-muted-foreground">{t("negativos.notaPorPeriodo")}</p>
+            )}
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
               {atual.perdasPorEtapa.map((p) => (
-                <Balde key={p.etapaId} titulo={p.nome} n={p.n} pct={pctDosLeads(p.n)} descricao={t("negativos.perdaDesc")} tom="perda" />
+                <Balde
+                  key={p.etapaId}
+                  titulo={p.nome}
+                  n={p.n}
+                  pct={pctDosLeads(p.n)}
+                  // Por período a perda pode ser de lead de outro mês: o
+                  // percentual é sobre as ENTRADAS do período, não "dos leads".
+                  rotuloDoPct={porPeriodo ? "dasEntradas" : "dosLeads"}
+                  descricao={t("negativos.perdaDesc")}
+                  tom="perda"
+                />
               ))}
               <Balde
                 titulo={t("negativos.semAvanco")}
@@ -524,12 +569,15 @@ function Balde({
   titulo,
   n,
   pct,
+  rotuloDoPct = "dosLeads",
   descricao,
   tom,
 }: {
   titulo: string;
   n: number;
   pct: string;
+  /** qual frase acompanha o percentual — chaves LITERAIS, o portão de i18n as vê */
+  rotuloDoPct?: "dosLeads" | "dasEntradas";
   descricao: string;
   tom: "perda" | "neutro" | "ativo";
 }) {
@@ -546,7 +594,9 @@ function Balde({
         {titulo}
       </div>
       <div className={`mt-1 text-2xl font-semibold tabular-nums ${cor}`}>{n}</div>
-      <div className="mt-1 text-xs text-muted-foreground">{t("negativos.dosLeads", { pct })}</div>
+      <div className="mt-1 text-xs text-muted-foreground">
+        {rotuloDoPct === "dasEntradas" ? t("negativos.dasEntradas", { pct }) : t("negativos.dosLeads", { pct })}
+      </div>
       {descricao && <div className="mt-1 text-[11px] text-muted-foreground">{descricao}</div>}
     </div>
   );

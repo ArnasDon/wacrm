@@ -59,6 +59,32 @@ export function rotuloCurtoDoDia(chave: string): string {
   return m ? `${m[3]}/${m[2]}` : chave;
 }
 
+const PASSOS_DO_EIXO = [25, 50, 100, 250, 500, 1000, 2500, 5000, 10000];
+
+/**
+ * O eixo dos gráficos de taxa, em pontos percentuais. 0–100 de 25 em 25
+ * enquanto couber — é o de sempre. ⚠️ Na contagem POR PERÍODO a taxa é razão
+ * de fluxo e pode passar de 100% (`por-periodo.ts`). O recharts NÃO corta o
+ * dado: sem `allowDataOverflow` ele ALARGA o domínio até o valor
+ * (`extendDomain`, `util/isDomainSpecifiedByUser.js`) — mas alargava sem
+ * marca: com `domain=[0,100]` e `ticks=[0..100]` o ponto acima de 100% ficava
+ * numa faixa sem rótulo nem grade, e o Tremor inventava as marcas por conta
+ * própria. Aqui o teto é redondo e as marcas são rotuladas: até seis marcas
+ * enquanto o maior valor cabe em 50.000 pp; acima disso o passo para de
+ * crescer e sobram mais marcas, sem relevância prática.
+ */
+export function eixoDasTaxas(valores: readonly (number | null)[]): { teto: number; ticks: number[] } {
+  const maior = Math.max(
+    0,
+    ...valores.filter((v): v is number => v !== null && Number.isFinite(v)),
+  );
+  const passo = PASSOS_DO_EIXO.find((p) => maior / p <= 5) ?? PASSOS_DO_EIXO[PASSOS_DO_EIXO.length - 1];
+  const teto = Math.max(100, Math.ceil(maior / passo) * passo);
+  const ticks: number[] = [];
+  for (let v = 0; v <= teto; v += passo) ticks.push(v);
+  return { teto, ticks };
+}
+
 /** Uma fração 0..1 vira 0..100 com uma casa, para o eixo do gráfico de taxas. */
 export function paraPontosPercentuais(fracao: number | null): number | null {
   return fracao === null ? null : Math.round(fracao * 1000) / 10;

@@ -735,6 +735,8 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   varre as irmãs, anota. Leitura que falha → falha VISÍVEL
   (`MOTIVO_RESPOSTA_DESCONHECIDA`), o mesmo trato da etapa. Só na espera
   marcada, depois da marca e antes da etapa (pino). O cron passa `created_at`.
+  A consulta tem índice PARCIAL próprio (1006), cujo predicado espelha os
+  filtros — mudar um sem o outro deixa o índice de pé e inútil.
   ⚠️⚠️ Conferência que FALHA (a da resposta ou a da etapa — na retomada e
   na guarda por passo) para a EXECUÇÃO inteira, não só a linha: fechamento
   POR SEGURANÇA → marca → varredura das irmãs (10ª/11ª rodadas).
@@ -902,7 +904,9 @@ código novo:
   aciona a filha tem o evento gravado milissegundos antes, e com o relógio
   do app atrasado o próprio movimento pareceria "posterior". Sem card aberto
   a pergunta é por CONTATO; sem movimento conhecido, `null` = só a posição.
-  A poda de 30 dias da fila de eventos é o limite prático da pergunta.
+  A poda de 30 dias da fila de eventos é o limite prático da pergunta. As
+  consultas por card e por contato têm índice próprio (1006): rodam antes de
+  cada passo de toda automação presa.
 - ⚠️⚠️ **A marca é lida antes de CADA passo do escopo** (7ª rodada): com a
   espera marcada num ramo, o escopo de fora segue executando, e a interrupção
   só era vista no próximo estacionamento — os passos comuns até lá, inclusive
@@ -5918,6 +5922,16 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     índice, CHECK) e por e2e contra o banco real: a função estaciona a
     execução limpa, devolve `null` para a marcada, e o CHECK recusa motivo
     fora do vocabulário.
+  - **1006_cb_indices_da_estadia_e_da_resposta** — três índices para as duas
+    consultas novas do PR #223: `messages (conversation_id, gravada_em desc)`
+    PARCIAL em `sender_type = 'customer' and deleted_at is null` (a segunda
+    linha de defesa — o predicado ESPELHA os filtros de `clienteRespondeuDesde`,
+    senão o planejador ignora o índice; pino em `indices-1006.test.ts`) e
+    `cb_automation_events (account_id, deal_id|contact_id, tipo, criado_em
+    desc)` (a estadia, que roda antes de cada passo de toda automação presa).
+    Aditiva, idempotente, pode entrar antes ou depois do deploy; o CREATE
+    INDEX em `messages` segura as escritas por alguns segundos (Codex, 13ª
+    rodada). Aplicação em produção: ver o estado no PR.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

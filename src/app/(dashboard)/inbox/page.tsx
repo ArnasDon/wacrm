@@ -23,6 +23,7 @@ import { useAuth } from "@/hooks/use-auth";
 import { conversaNoEscopo } from "@/lib/perfis/escopo";
 import { MessageThread } from "@/components/inbox/message-thread";
 import { VoltarAoFunil } from "@/components/inbox/voltar-ao-funil";
+import { avisarExecucoesMudaram } from "@/lib/execucoes/aviso";
 import { urlDoInbox } from "@/lib/inbox/url";
 import {
   novoPedidoDeSalto,
@@ -440,6 +441,19 @@ function InboxPageInner() {
             );
             return [...withoutOptimistic, newMsg];
           });
+
+          // O cliente respondeu NESTA conversa: o servidor pode ter acabado de
+          // cancelar uma automação ("Aguardar — parar se o cliente
+          // responder"), e a aba Automações aberta ao lado continuaria
+          // dizendo "próximo passo em 27 h" até alguém recarregar — sobre uma
+          // feature cuja graça é o operador poder confiar que parou sozinha.
+          // ⚠️ Com atraso: o INSERT da mensagem chega ANTES do cancelamento,
+          // que roda alguns passos depois na ingestão. Só a conversa ABERTA:
+          // o mesmo evento recarrega a marca da lista inteira, e dispará-lo a
+          // cada mensagem de qualquer cliente seria uma consulta por mensagem.
+          if (newMsg.sender_type === "customer") {
+            window.setTimeout(avisarExecucoesMudaram, 3000);
+          }
         }
 
         // Update conversation list preview. We need to know *synchronously*

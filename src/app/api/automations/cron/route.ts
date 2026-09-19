@@ -112,6 +112,7 @@ export async function GET(request: Request) {
       branch: (row.branch as 'yes' | 'no' | null) ?? null,
       next_step_position: row.next_step_position as number,
       context: (row.context as AutomationContext) ?? {},
+      created_at: (row.created_at as string | null) ?? null,
     })
     processed++
   }

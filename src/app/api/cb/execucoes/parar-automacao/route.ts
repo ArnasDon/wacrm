@@ -8,14 +8,15 @@
 // as esperas de TODOS os clientes daquela automação, em silêncio.
 //
 // `cancelled`, nunca `failed`: cancelamento não é erro e não pode alimentar
-// o painel de falhas (decisão da 936). O log da execução NÃO é tocado —
-// é exatamente o que o motor faz nos dois cancelamentos que já existem
-// (passo `stop_automation` e desativação da automação).
+// o painel de falhas (decisão da 936). O desfecho do log NÃO é tocado; desde
+// a 1005 o registro ganha a MARCA `interrompida_em` (motivo `parar`), a mesma
+// dos outros cancelamentos — é ela que a retomada e o estacionamento leem.
 // ============================================================
 
 import { NextResponse } from 'next/server'
 
 import { supabaseAdmin } from '@/lib/automations/admin-client'
+import { marcarExecucoesInterrompidas } from '@/lib/automations/interrupcao'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import {
   checkRateLimit,
@@ -55,16 +56,63 @@ export async function POST(request: Request) {
       .eq('account_id', ctx.accountId)
       .eq('contact_id', contactId)
       .eq('status', 'pending')
-      .select('id')
+      .select('id, log_id')
 
     if (error) {
       console.error('[execucoes] parar-automacao falhou:', error.message)
       return NextResponse.json({ error: 'db_error' }, { status: 500 })
     }
 
+    // A MARCA no registro (1005): é o que impede a continuação que ainda não
+    // estava na fila — o escopo de fora rodando, a retentativa — de retomar a
+    // execução que o operador acabou de parar.
+    // ⚠️ Inclui a execução cuja espera está `running` — reivindicada pelo cron
+    // neste instante: a foto acima não a vê, e sem a marca a retomada em curso
+    // seguiria até a espera seguinte (revisão por duas lentes, 19/09). A linha
+    // `running` não é cancelada (é do cron); a marca faz a retomada parar no
+    // próximo passo.
+    const { data: emCurso } = await db
+      .from('automation_pending_executions')
+      .select('log_id')
+      .eq('automation_id', automationId)
+      .eq('account_id', ctx.accountId)
+      .eq('contact_id', contactId)
+      .eq('status', 'running')
+    const execucoes = [
+      ...new Set(
+        [...(data ?? []), ...(emCurso ?? [])]
+          .map((l) => (l as { log_id: string | null }).log_id)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    ]
+    await marcarExecucoesInterrompidas(db, execucoes, 'parar')
+
+    // ⚠️ SEGUNDA VARREDURA, por registro, DEPOIS da marca (Codex, 6ª rodada
+    // do PR #223): entre a foto do UPDATE acima e a marca, um ramo da mesma
+    // execução ainda rodando pode ter estacionado uma irmã. A marca a impede
+    // de RETOMAR, mas ela ficaria `pending` — e a aba diria "aguardando" por
+    // horas sobre uma automação que o operador acabou de parar. Depois da
+    // marca, `cb_estacionar_espera` já não insere: o que esta varredura pega
+    // é tudo o que sobrou.
+    let irmas = 0
+    if (execucoes.length > 0) {
+      const { data: outras, error: erroDasIrmas } = await db
+        .from('automation_pending_executions')
+        .update({ status: 'cancelled' })
+        .in('log_id', execucoes)
+        .eq('account_id', ctx.accountId)
+        .eq('contact_id', contactId)
+        .eq('status', 'pending')
+        .select('id')
+      if (erroDasIrmas) {
+        console.error('[execucoes] parar-automacao: segunda varredura falhou:', erroDasIrmas.message)
+      }
+      irmas = (outras ?? []).length
+    }
+
     // 0 não é erro: a espera pode ter acordado (ou sido cancelada) entre a
     // carga da aba e o clique — a lista é uma foto de segundos atrás.
-    return NextResponse.json({ ok: true, canceladas: (data ?? []).length })
+    return NextResponse.json({ ok: true, canceladas: (data ?? []).length + irmas })
   } catch (err) {
     return toErrorResponse(err)
   }

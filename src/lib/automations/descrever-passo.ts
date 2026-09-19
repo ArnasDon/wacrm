@@ -139,8 +139,14 @@ export function descreverPasso(passo: PassoResumivel, nomes: NomesConhecidos = {
 
     case 'wait': {
       const w = cfg as unknown as WaitStepConfig
+      // "Aguardar 30 h" e "Aguardar 30 h ou até o cliente responder" são
+      // passos DIFERENTES para quem lê a grade ou a linha do tempo da
+      // conversa: no segundo, a resposta do cliente encerra o que vem depois.
+      // Chave própria (e não sufixo colado na tela) porque a frase muda de
+      // forma entre os idiomas. `=== true`, como o motor.
+      const sufixo = w.parar_se_responder === true ? '_ou_resposta' : ''
       return {
-        chave: `wait_${w.unit ?? 'hours'}`,
+        chave: `wait_${w.unit ?? 'hours'}${sufixo}`,
         valores: { quantidade: Number(w.amount ?? 0) },
         alvoSumiu: false,
       }

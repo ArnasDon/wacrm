@@ -65,6 +65,22 @@ describe("validateStepsForActivation", () => {
     ]);
   });
 
+  it("wait: parar_se_responder só aceita booleano", () => {
+    // O motor liga a opção apenas com `true` estrito. Um "true" gravado seria
+    // caixa que parece marcada para quem lê o JSON e que o motor ignora.
+    const issues = validateStepsForActivation([
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: true } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: false } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours" } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: "true" } },
+      { step_type: "wait", step_config: { amount: 1, unit: "hours", parar_se_responder: 1 } },
+    ]);
+    expect(issues.map((i) => i.path)).toEqual([
+      "steps[3].parar_se_responder",
+      "steps[4].parar_se_responder",
+    ]);
+  });
+
   it("validates webhook URLs", () => {
     const good = validateStepsForActivation([
       {
@@ -213,6 +229,29 @@ describe("validateStepsForActivation", () => {
 });
 
 describe("validateTriggerForActivation", () => {
+  it("gatilho de etapa: parar_ao_sair só aceita booleano", () => {
+    // O motor prende a automação à etapa apenas com `true` estrito — um
+    // "true" gravado seria opção que parece ligada e não age, e a sequência
+    // de No Show seguiria cobrando quem já reagendou.
+    const etapa = ["etapa-1"];
+    for (const valor of [true, false, undefined]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }),
+      ).toEqual([]);
+    }
+    for (const valor of ["true", 1, null]) {
+      expect(
+        validateTriggerForActivation("deal_stage_changed", {
+          stage_ids: etapa,
+          parar_ao_sair: valor,
+        }).map((i) => i.path),
+      ).toEqual(["trigger.parar_ao_sair"]);
+    }
+  });
+
   it("accepts a valid keyword_match config", () => {
     expect(
       validateTriggerForActivation("keyword_match", {

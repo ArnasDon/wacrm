@@ -108,6 +108,8 @@ describe('contextoDoEvento', () => {
       to_stage_id: 'st-depois',
       from_stage_id: 'st-antes',
       to_status: null,
+      // QUANDO o card entrou — a estadia que a execução presa à etapa honra.
+      evento_em: evento().criado_em,
       // A cadeia começa aqui, com este próprio evento — ver a suíte
       // "cadeia anti-ciclo" abaixo.
       vars: { _cadeia: ['deal:deal-1|stage:st-depois'] },

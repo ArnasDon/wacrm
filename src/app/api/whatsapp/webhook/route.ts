@@ -9,6 +9,7 @@ import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
+import { cancelarEsperasPorResposta } from '@/lib/automations/parar-se-responder'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
@@ -919,6 +920,17 @@ async function processMessage(
   // so the broadcast's `replied_count` advances (via the aggregate
   // trigger installed in migration 003).
   await flagBroadcastReplyIfAny(accountId, contactRecord.id)
+
+  // O cliente respondeu: as esperas marcadas "parar se o cliente responder"
+  // deste contato são canceladas. ⚠️ ANTES do despacho de robôs e automações,
+  // e sem olhar `flowConsumed` — ver `parar-se-responder.ts` (depois, esta
+  // mesma mensagem cancelaria a espera da automação que ela acabou de
+  // iniciar). Gêmeo do `persistInboundMessage` da Evolution; nunca lança.
+  await cancelarEsperasPorResposta({
+    db: supabaseAdmin(),
+    accountId,
+    contactId: contactRecord.id,
+  })
 
   // ============================================================
   // Flow runner dispatch.

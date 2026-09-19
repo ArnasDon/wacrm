@@ -1510,13 +1510,33 @@ async function runStep(
 
       // A marca (1005): a execução parada não retoma pela continuação que
       // ainda não estava na fila.
-      await marcarExecucoesInterrompidas(
-        db,
-        (data ?? []).map((l) => (l as { log_id?: string | null }).log_id),
-        'passo'
-      );
+      const execucoes = [
+        ...new Set(
+          (data ?? [])
+            .map((l) => (l as { log_id?: string | null }).log_id)
+            .filter((id): id is string => typeof id === 'string')
+        ),
+      ];
+      await marcarExecucoesInterrompidas(db, execucoes, 'passo');
 
-      const n = (data ?? []).length;
+      // ⚠️ Segunda varredura por registro, DEPOIS da marca (Codex, 6ª rodada):
+      // a irmã estacionada entre a foto do UPDATE acima e a marca não retoma
+      // (a marca a barra), mas ficaria `pending` na aba até acordar. Depois da
+      // marca ninguém mais insere, então isto pega tudo o que sobrou.
+      let irmas = 0;
+      if (execucoes.length > 0) {
+        const { data: outras } = await db
+          .from('automation_pending_executions')
+          .update({ status: 'cancelled' })
+          .in('log_id', execucoes)
+          .eq('account_id', args.automation.account_id)
+          .eq('contact_id', args.contactId)
+          .eq('status', 'pending')
+          .select('id');
+        irmas = (outras ?? []).length;
+      }
+
+      const n = (data ?? []).length + irmas;
       return n === 0
         ? 'nada parado (nenhuma espera pendente)'
         : `${n} espera(s) cancelada(s)`;

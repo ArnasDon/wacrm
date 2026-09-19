@@ -139,6 +139,9 @@ vi.mock('./admin-client', () => {
       }
       if (type === 'update') {
         state.statusDaFila.push((ops.payload as { status?: unknown })?.status);
+        // Registrado também em `updateCalls`, com os filtros: é como o pino do
+        // `stop_automation` confere as cercas da varredura.
+        state.updateCalls.push({ table, filters: ops.filters, payload: ops.payload });
         return { data: null, error: null };
       }
       if (type === 'select') {
@@ -2547,6 +2550,42 @@ describe('desfecho: os fechadores que não têm o histórico em mão', () => {
     await dispara();
 
     expect(desfechoGravado()?.desfecho).toBe('concluida');
+  });
+});
+
+// ============================================================
+// Passo "Parar automação": a marca no registro e a segunda varredura (1005).
+// ============================================================
+describe('stop_automation — marca a execução e varre a fila DUAS vezes', () => {
+  it('cancela a foto da fila, MARCA os registros, e cancela de novo por log_id', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automacaoSimples()];
+    h.state.steps = [
+      {
+        id: 's-parar',
+        automation_id: 'a-desf',
+        step_type: 'stop_automation',
+        position: 0,
+        parent_step_id: null,
+        step_config: { automation_id: 'a-alvo' },
+      },
+    ];
+
+    await dispara();
+
+    const naFila = h.state.updateCalls.filter(
+      (c) => c.table === 'automation_pending_executions'
+    );
+    // Duas varreduras na fila: a foto (por automação + contato) e a segunda,
+    // por registro, DEPOIS da marca.
+    expect(naFila.length).toBeGreaterThanOrEqual(1);
+    expect(naFila[0].filters).toEqual(
+      expect.arrayContaining([
+        ['eq', 'automation_id', 'a-alvo'],
+        ['eq', 'contact_id', 'c1'],
+        ['eq', 'status', 'pending'],
+      ])
+    );
   });
 });
 

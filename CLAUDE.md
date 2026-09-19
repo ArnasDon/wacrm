@@ -714,7 +714,13 @@ cliente respondia na 3ª e recebia as outras sete. O que morde código novo:
   INSERT direto reabriria o vão entre "perguntar" e "inserir" (4ª rodada);
   há pino estrutural. Falha ABERTA na leitura da marca (é a 2ª defesa de uma
   corrida de segundos). Espera de OUTRA execução do mesmo contato, sem marca,
-  não é tocada — medido. ⚠️ Toda pergunta por `log_id` na fila (a guarda de
+  não é tocada — medido. ⚠️ A ORDEM em todo cancelamento é: cancelar a foto
+  da fila → MARCAR os registros → cancelar DE NOVO por `log_id` (Codex, 6ª
+  rodada): entre a foto e a marca um ramo ainda rodando pode ter estacionado
+  uma irmã, que a marca impede de retomar mas deixaria `pending` na aba por
+  horas. Depois da marca a função não insere mais, então a segunda varredura
+  pega tudo o que sobrou. Vale para os quatro que cancelam por lote (resposta,
+  etapa, botão Parar, passo "Parar automação"). ⚠️ Toda pergunta por `log_id` na fila (a guarda de
   `fecharLog`, as irmãs) depende do índice da **1004** — a fila não é podada.
 - ⚠️ **Vale só DURANTE a espera marcada.** Resposta que chega numa espera sem a
   caixa (a pausa de 30 s entre duas mensagens, por exemplo) não para nada — é
@@ -5747,8 +5753,13 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     insere). ⚠️ Aplicar ANTES do deploy: sem a função todo "Aguardar" falha
     de forma visível ("function does not exist") — nada sai errado ao
     cliente, mas nenhuma sequência estaciona. `SECURITY INVOKER`, EXECUTE só
-    do `service_role` (as duas metades do REVOKE, conferidas). ⚠️ PENDENTE de
-    aplicar em produção (escrita no PR #223, 18/09/2026).
+    do `service_role` (as duas metades do REVOKE, conferidas). Aplicada em
+    19/09/2026 pela Management API (histórico `20260919185044`), ANTES do
+    merge do PR #223, com autorização do operador e depois de o replay do CI
+    passar; conferida por consulta ao catálogo (colunas, função, privilégios,
+    índice, CHECK) e por e2e contra o banco real: a função estaciona a
+    execução limpa, devolve `null` para a marcada, e o CHECK recusa motivo
+    fora do vocabulário.
   - **1004_cb_indice_da_fila_por_execucao** — índice cheio em
     `automation_pending_executions (log_id)`: a guarda de `fecharLog`, o
     sinal `execucaoJaInterrompida` (retomada E estacionamento) e o

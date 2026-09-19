@@ -124,3 +124,32 @@ describe('o motor cuida da MARCA nas duas pontas', () => {
     expect(corpo).toMatch(/context:\s*semMarcaDeResposta\(pending\.context/)
   })
 })
+
+describe('a ORDEM de todo cancelamento por lote: foto da fila → MARCA → segunda varredura por log_id (6ª rodada)', () => {
+  // Entre a foto e a marca, um ramo ainda rodando pode estacionar uma irmã: a
+  // marca a impede de retomar, mas só a segunda varredura a tira da aba.
+  const casos = [
+    { arquivo: 'app/api/cb/execucoes/parar-automacao/route.ts', inicio: 'export async function POST' },
+    { arquivo: 'lib/automations/engine.ts', inicio: "case 'stop_automation': {" },
+    { arquivo: 'lib/automations/parar-se-responder.ts', inicio: 'export async function cancelarEsperasPorResposta' },
+  ]
+  for (const { arquivo, inicio } of casos) {
+    it(`${arquivo}: marca antes de varrer por log_id`, () => {
+      const src = fonte(arquivo)
+      const a = src.indexOf(inicio)
+      expect(a).toBeGreaterThan(-1)
+      const corpo = src.slice(a, a + 6000)
+      const marca = corpo.indexOf('marcarExecucoesInterrompidas(')
+      const varredura = corpo.indexOf(".in('log_id'")
+      expect(marca).toBeGreaterThan(-1)
+      expect(varredura).toBeGreaterThan(marca)
+    })
+  }
+
+  it('a saída da etapa (dreno) marca antes de cancelar por log_id', () => {
+    const src = fonte('lib/automations/so-na-etapa.ts')
+    const a = src.indexOf('export async function cancelarEsperasAoSairDaEtapa')
+    const corpo = src.slice(a)
+    expect(corpo.indexOf('marcarExecucoesInterrompidas(')).toBeLessThan(corpo.indexOf(".in('log_id'"))
+  })
+})

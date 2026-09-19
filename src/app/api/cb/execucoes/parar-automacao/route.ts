@@ -66,15 +66,38 @@ export async function POST(request: Request) {
     // A MARCA no registro (1005): é o que impede a continuação que ainda não
     // estava na fila — o escopo de fora rodando, a retentativa — de retomar a
     // execução que o operador acabou de parar.
-    await marcarExecucoesInterrompidas(
-      db,
-      (data ?? []).map((l) => (l as { log_id: string | null }).log_id),
-      'parar',
-    )
+    const execucoes = [
+      ...new Set(
+        (data ?? [])
+          .map((l) => (l as { log_id: string | null }).log_id)
+          .filter((id): id is string => typeof id === 'string'),
+      ),
+    ]
+    await marcarExecucoesInterrompidas(db, execucoes, 'parar')
+
+    // ⚠️ SEGUNDA VARREDURA, por registro, DEPOIS da marca (Codex, 6ª rodada
+    // do PR #223): entre a foto do UPDATE acima e a marca, um ramo da mesma
+    // execução ainda rodando pode ter estacionado uma irmã. A marca a impede
+    // de RETOMAR, mas ela ficaria `pending` — e a aba diria "aguardando" por
+    // horas sobre uma automação que o operador acabou de parar. Depois da
+    // marca, `cb_estacionar_espera` já não insere: o que esta varredura pega
+    // é tudo o que sobrou.
+    let irmas = 0
+    if (execucoes.length > 0) {
+      const { data: outras } = await db
+        .from('automation_pending_executions')
+        .update({ status: 'cancelled' })
+        .in('log_id', execucoes)
+        .eq('account_id', ctx.accountId)
+        .eq('contact_id', contactId)
+        .eq('status', 'pending')
+        .select('id')
+      irmas = (outras ?? []).length
+    }
 
     // 0 não é erro: a espera pode ter acordado (ou sido cancelada) entre a
     // carga da aba e o clique — a lista é uma foto de segundos atrás.
-    return NextResponse.json({ ok: true, canceladas: (data ?? []).length })
+    return NextResponse.json({ ok: true, canceladas: (data ?? []).length + irmas })
   } catch (err) {
     return toErrorResponse(err)
   }

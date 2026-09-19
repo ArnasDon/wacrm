@@ -4380,6 +4380,7 @@
     "fixChannelsLagging": "{count, plural, =1 {1 connection delivering late} other {{count} connections delivering late}}",
     "fixHeldMessages": "{count, plural, =1 {1 message arrived without a phone number and is on hold} other {{count} messages arrived without a phone number and are on hold}} (last {dias} days)",
     "heldFromTeam": "sent by the team",
+    "heldHeading": "Held messages without a phone number",
     "heldHint": "WhatsApp delivered these messages without the number of whoever wrote them, so the CRM kept them aside. Check the phone of the connection shown: once someone replies from it, or the client writes again, they join the conversation on their own.",
     "fixScheduledFailed": "{count, plural, =1 {1 scheduled message failed} other {{count} scheduled messages failed}}",
     "fixDeliveryUnsure": "{count, plural, =1 {1 scheduled message with unsure delivery — check before resending} other {{count} scheduled messages with unsure delivery — check before resending}}",

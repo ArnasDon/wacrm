@@ -326,6 +326,10 @@ export function BlocoDeCorrecoes({
         integracoes.dados.retidas !== null &&
         integracoes.dados.retidas.itens.length > 0 && (
           <div className="border-border mt-2 border-t pt-2">
+            {/* Com título: os detalhes ficam ABAIXO de todos os achados, e sem
+                ele a conexão e a hora eram lidas como detalhe da linha de cima
+                (visto na tela, em 19/09/2026). */}
+            <p className="text-muted-foreground mb-1 text-xs font-medium">{t('heldHeading')}</p>
             <ul className="space-y-1">
               {integracoes.dados.retidas.itens.map((r) => (
                 <li

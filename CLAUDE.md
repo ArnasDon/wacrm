@@ -6274,10 +6274,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `schema_migrations_pkey`, e `nomes-das-migrations.test.ts` reprova) — as
     duas ANTES de aplicar, e é para isso que a ordem "CI verde → aplicar"
     existe. Renumerado sempre o arquivo que ainda não estava aplicado (este).
-    ⚠️ **AINDA NÃO APLICADA** (19/09/2026: PR #226 aberto). Testada num
-    Postgres 16 descartável — banco limpo só com as concessões dela,
-    idempotente, 20 cenários com o gatilho real da 972. Quem aplicar troca
-    esta frase pela data e pelo número do histórico.
+    Aplicada em 19/09/2026 pela Management API (histórico `20260919234759`),
+    ANTES do merge do PR #226, com autorização do operador e DEPOIS de o replay
+    do CI passar; conferida por consulta ao catálogo (RLS ligada, zero policy,
+    `anon`/`authenticated` sem nada, `service_role` com tudo, a função com os
+    cinco parâmetros e EXECUTE só do `service_role`) e por e2e contra o banco
+    real, no preview: tardia, nova, histórica, retida, Meu dia, religação e
+    reentrega (plano, 6.3). Testada antes num Postgres 16 descartável — banco
+    limpo só com as concessões dela, idempotente, 20 cenários com o gatilho
+    real da 972.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

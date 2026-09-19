@@ -4380,6 +4380,7 @@
     "fixChannelsLagging": "{count, plural, =1 {1 conexão entregando com atraso} other {{count} conexões entregando com atraso}}",
     "fixHeldMessages": "{count, plural, =1 {1 mensagem chegou sem telefone e está retida} other {{count} mensagens chegaram sem telefone e estão retidas}} (últimos {dias} dias)",
     "heldFromTeam": "enviada pela equipe",
+    "heldHeading": "Mensagens retidas sem telefone",
     "heldHint": "O WhatsApp entregou estas mensagens sem o número de quem escreveu, e o CRM as guardou. Veja no celular da conexão indicada: quando alguém responder por lá, ou o cliente escrever de novo, elas entram sozinhas na conversa.",
     "fixScheduledFailed": "{count, plural, =1 {1 mensagem agendada falhou} other {{count} mensagens agendadas falharam}}",
     "fixDeliveryUnsure": "{count, plural, =1 {1 agendada com entrega incerta — confira antes de reenviar} other {{count} agendadas com entrega incerta — confira antes de reenviar}}",

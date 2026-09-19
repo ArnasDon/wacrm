@@ -4,9 +4,9 @@ Documento INTERNO e vivo. Atualizar a cada fase concluída.
 
 | | |
 | --- | --- |
-| **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (seção 6.2). Nada em produção. |
+| **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (6.2) e testado no preview contra a produção (6.1 e 6.3). Em produção: só a migration 1010 (aditiva, sem leitor até o deploy). |
 | **Decisão do operador (19/09/2026)** | Fazer as Fases 1 e 2; a Fase 3 (patch na imagem da Evolution) fica de fora. "Não quero quebrar o que está funcionando" — cautela é requisito. |
-| **Migration** | `1010_cb_mensagens_sem_telefone.sql` — aditiva. Aplicar ANTES do merge. |
+| **Migration** | `1010_cb_mensagens_sem_telefone.sql` — aditiva. **Aplicada em 19/09/2026** (histórico `20260919234759`), antes do merge. |
 
 ## 1. O problema, em uma frase
 
@@ -303,9 +303,33 @@ histórica que vence a cópia normal; sem `message.received` para a histórica;
 edição de retida; janela da transcrição; retenção do payload sem prazo (decisão
 pendente do operador).
 
-### 6.3 T18, parte 2 — preview contra a produção, DEPOIS da 1010
+### 6.3 T18, parte 2 — preview contra a produção, DEPOIS da 1010 (19/09/2026, 20:48–20:55 BRT)
 
-(preencher depois de aplicar)
+Servidor local da branch contra o banco de produção, webhook simulado só para o
+lead de teste autorizado, nenhum motor ativo para ele (conferido antes:
+nenhuma automação de mensagem, fluxo, IA nem webhook de saída). É aqui que as
+duas formas sem precedente foram medidas contra o PostgREST REAL: o
+`upsert(onConflict)` do registro e o `rpc('cb_assentar_mensagem_historica')`
+com os cinco argumentos nomeados — as duas funcionaram de primeira.
+
+| Cenário | Resultado medido |
+| --- | --- |
+| **Tardia** — conversa ENCERRADA de propósito; cópia sem telefone de 10 min atrás, ainda a última | log `modo: tardia`; a conversa **reabriu** (sem responsável), prévia e `last_message_at` novos, não lida +1, `aguardando_desde` = o carimbo da mensagem; registro `entregue`/`acervo` sem payload; nenhuma execução de automação |
+| **Nova** — cópia sem telefone de agora | log `modo: nova`; entrou pelo caminho normal (prévia, posição, não lida +1); registro `entregue`/`acervo` |
+| **Histórica** — cópia de 20 min atrás, com mensagens mais novas no fio | log `modo: historica`; no lugar do carimbo; prévia e posição INTOCADAS; não lida +1 (ninguém respondeu depois); a espera recuou para o carimbo dela |
+| **Retida** — LID que o acervo não conhece | log `RETIDA`; linha `retida` com o payload (chave + texto), conexão carimbada; nada em `messages`; nenhum contato fantasma |
+| **Meu dia com a retida** | a rota devolve só `{ canalId, recebidaEm, daEquipe }`; a tela mostra "1 mensagem chegou sem telefone e está retida (últimos 7 dias)", o título **Mensagens retidas sem telefone**, "Bancário - Comercial · 19/09, 20:50" e a orientação. ⚠️ O título nasceu aqui: sem ele a conexão e a hora eram lidas como detalhe da linha de cima ("entradas não viraram atendimento") |
+| **Religar** — mensagem normal trazendo o telefone daquele LID | a normal entrou primeiro; log `retida RELIGADA … historica`; a retida entrou na conversa certa com a hora ORIGINAL; registro `entregue`/`religacao`, payload APAGADO; Meu dia voltou a zero retidas |
+| **Reentrega** da retida já religada | saiu calada; nada mudou |
+| **Fio** (conversa aberta por URL) | as recuperadas na ordem do carimbo, com o rótulo da conexão; zero erro novo no console |
+
+**Limpeza** (autorizada): apagadas as 7 mensagens de teste e as 4 linhas do
+registro, por id exato; a conversa voltou ao retrato — `open`, não lida 0, sem
+responsável, canal fixado, `aguardando_desde` de 14/09, prévia e posição pela
+última mensagem REAL (um aviso de agendamento das 20:07, que chegou durante a
+janela e não é desta sessão). Conferido por consulta: zero `TESTE-E2E-%`, zero
+linha no registro, zero contato ou mensagem com o LID falso, negócio, eventos do
+lead, notificações e logs de automação iguais ao retrato.
 
 ## 7. Ordem de entrada e volta atrás
 
@@ -335,7 +359,7 @@ Evolution) — escrita em produção, só com autorização.
 - [x] PR #226 aberto; CI verde no 1º push (replay da migration incluso)
 - [x] Revisão por duas lentes — nenhum P1; achados tratados (6.2)
 - [x] T18, parte 1 — preview contra a produção ANTES da 1010 (6.1)
-- [ ] 1010 aplicada em produção (autorizada pelo operador em 19/09, depois do CI)
-- [ ] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza
+- [x] 1010 aplicada em produção em 19/09/2026 20:47 BRT (histórico `20260919234759`), autorizada pelo operador, DEPOIS do CI verde; conferida no catálogo
+- [x] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza conferida
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

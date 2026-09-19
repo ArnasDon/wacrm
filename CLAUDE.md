@@ -5931,7 +5931,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     desc)` (a estadia, que roda antes de cada passo de toda automação presa).
     Aditiva, idempotente, pode entrar antes ou depois do deploy; o CREATE
     INDEX em `messages` segura as escritas por alguns segundos (Codex, 13ª
-    rodada). Aplicação em produção: ver o estado no PR.
+    rodada). Aplicada em 19/09/2026 pela Management API (histórico
+    `20260919205923`), DEPOIS do replay verde do CI e com autorização do
+    operador; conferida por consulta ao catálogo (os três índices, com o
+    predicado parcial de `messages` renderizado como
+    `sender_type = 'customer' AND deleted_at IS NULL`).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

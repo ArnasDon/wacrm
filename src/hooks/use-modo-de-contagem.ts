@@ -4,7 +4,16 @@ import { useState } from "react";
 
 import { CHAVE_DO_MODO, lerModo, MODO_PADRAO, type ModoDeContagem } from "@/lib/funil/por-periodo";
 
-/** Preferência por dispositivo. Só roda no cliente: as vistas nascem fechadas. */
+/**
+ * Preferência por dispositivo, lida no INICIALIZADOR do estado. Isso só é
+ * seguro porque a página nunca chega ao HTML do servidor: a casca
+ * (`dashboard-shell.tsx`) devolve o spinner enquanto `loading`/
+ * `profileLoading` — que nascem `true` — não resolvem no cliente, e as vistas
+ * do funil montam depois disso, com `window` presente. É o mesmo padrão das
+ * colunas da Lista (`lista-de-leads.tsx`). Se um dia a casca deixar a página
+ * no HTML do servidor, isto vira hydration mismatch (Codex, PR #224): a
+ * saída é `useSyncExternalStore` com `getServerSnapshot` devolvendo o padrão.
+ */
 function lerModoGravado(): ModoDeContagem {
   if (typeof window === "undefined") return MODO_PADRAO;
   try {

@@ -185,6 +185,9 @@ export async function POST(request: Request) {
       pipelineId: body.pipeline_id,
       stageId: body.stage_id,
       title,
+      // O título veio escrito no corpo: é escolha de quem chamou, e o
+      // gatilho da 1007 não o troca depois pelo nome da ficha.
+      tituloFixadoEm: new Date().toISOString(),
       value,
       source: 'manual',
     });

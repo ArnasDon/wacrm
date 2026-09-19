@@ -293,7 +293,7 @@ upstream sobrescrevê-los:
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
 | `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
-| `src/components/pipelines/deal-form.tsx` | além do que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
 | `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
@@ -313,7 +313,7 @@ upstream sobrescrevê-los:
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
 | `src/components/layout/sidebar.tsx`, `header.tsx`, `src/middleware.ts` | a aba `/radar` (item de navegação, título do cabeçalho e rota protegida) |
 | `src/lib/api-keys/scopes.ts`, `docs/public-api.md`, `src/components/settings/api-keys-settings.tsx` | os doze escopos das features do fork (tarefas/agendadas/negócios/reuniões/anotações/campos personalizados) e a rolagem da lista no diálogo — o upstream tem só os 8 originais |
-| `src/lib/deals/create-deal.ts` | devolve `deal` (a linha inserida), não só `ok/created` — a rota v1 serializa a resposta a partir dele |
+| `src/lib/deals/create-deal.ts` | devolve `deal` (a linha inserida), não só `ok/created` — a rota v1 serializa a resposta a partir dele —, e aceita `tituloFixadoEm` (1007): a v1 fixa o título, o roteador e o passo `create_deal` derivam |
 | `src/components/settings/settings-sections.ts`, `settings-chip.tsx`, `src/app/(dashboard)/settings/page.tsx` | a seção `integracoes` no rail e a variante `err` (vermelha) do chip |
 | `src/lib/ai/types.ts`, `config.ts`, `structured.ts`, `defaults.ts`, `src/lib/cb-radar/worker.ts`, `src/app/api/ai/config/route.ts` | o modelo do Radar separado do modelo de chat (946): `radarModel` no tipo e em `CONFIG_COLUMNS`, o parâmetro `model` do `generateStructured`, `AI_PROVIDER_MODELS`, e a validação do modelo do Radar no save |
 | `src/components/settings/ai-config.tsx` | `<datalist>` de sugestão no campo Modelo e a frase de escopo com link para Integrações |
@@ -3021,6 +3021,70 @@ novo:
   ouvinte) é inofensivo.
 - ⚠️ **O navegador do computador testa a mecânica** (histórico, `popstate`,
   push × replace); o arrasto em si, só no aparelho.
+
+⚠️ **O TÍTULO DO CARD é o NOME da pessoa, e ele acompanha a ficha (1007).**
+`src/lib/deals/titulo-do-card.ts` (puro, com teste), a coluna
+`deals.titulo_fixado_em` e o gatilho `cb_titulo_do_card_segue_a_ficha` em
+`contacts`. Pedido do operador (19/09/2026), olhando o Kanban: o card dizia
+"Bancário - Comercial — 558599704949" e a ficha, "Vanessa Bezerra". O que
+morde código novo:
+
+- ⚠️ **O título nasce com o NOME e nada mais** (`routeContactToPipeline`). O
+  prefixo "<conexão> — " saiu, e a justificativa dele (identificação de
+  reserva para depois do `ON DELETE SET NULL` do contato) não se pagava:
+  medido, **549 dos 962** cards traziam o TELEFONE no lugar do nome — o que
+  acontece SEMPRE que o escritório aborda primeiro pelo celular pareado,
+  porque a ficha nasce com `name || phone` e o `pushName` de uma mensagem
+  nossa (o nome do próprio advogado) é descartado de propósito — e **95**
+  nomeavam "Comercial - Bancário", rótulo que a conexão não usa desde 02/09.
+  O card já mostra a conexão numa pílula. Sem nome na ficha, `contactName`
+  JÁ é o telefone, então nenhum dos 5 chamadores precisou mudar.
+- ⚠️⚠️ **Quem mantém o título em dia é um GATILHO no banco, nunca código.**
+  `contacts.name` tem escritores demais — Evolution, Meta, API v1, CSV,
+  ficha, formulário, passo de automação, Calendly, Asaas — e espelhar em TS
+  é garantir que um deles fique de fora. É a lição da 1000.
+- ⚠️⚠️ **Mas ele NÃO segue a ficha sempre, e a exceção é o coração da
+  feature.** Título que ainda NÃO tem nome (é o telefone) é trocado por
+  qualquer nome de verdade; título que JÁ identifica alguém só muda quando o
+  nome novo foi ESCOLHIDO (`nome_fixado_em`: Calendly, Asaas, gente
+  digitando). Nasceu de uma medição feita antes de escrever o código: **26**
+  cards guardavam o nome do CONTRATO ("Mamedes Candido de Oliveira Junior",
+  "José Almino de Araújo") enquanto a ficha já tinha o apelido do perfil
+  ("@Macol", "J.A.A.") — o Asaas cria a ficha com o nome completo e a
+  primeira mensagem do cliente o substituía, e o card congelado era a última
+  cópia viva do nome bom. Seguir a ficha cegamente rebaixaria os 26, que é o
+  oposto do que a feature existe para fazer.
+- ⚠️ **A ficha criada pelo Asaas nasce com o nome FIXADO** (decisão do
+  operador, 19/09/2026): `criar-ficha.ts` grava a marca da 999, e o acervo da
+  1007 marcou as 263 fichas `vinculo_origem = 'criada'` e devolveu os 27
+  nomes já rebaixados. ⚠️ SÓ as `criada`: as ligadas por telefone/CPF já
+  existiam com o nome do WhatsApp, e carimbar o nome do contrato nelas
+  trocaria um nome que ninguém pediu para trocar. E só com `nome_fixado_em`
+  nula — nome escolhido à mão fica.
+- ⚠️ **`deals.titulo_fixado_em` é gravada por quem DIGITA o título** (lápis
+  do card, POST e PATCH da v1), com a régua de `escritaDoNomeManual`: **só
+  quando o título MUDOU**. O formulário reenvia todo campo em cada
+  salvamento, então regravar sempre congelaria o card que ninguém batizou —
+  e, com a tela aberta durante um rename do gatilho, devolveria o título
+  ANTIGO já fixado. Teste estrutural default-deny:
+  `titulo-do-card.chamadores.test.ts` (todo escritor de `deals.title` declara
+  se FIXA, DERIVA ou RESPEITA).
+- ⚠️ **O Calendly continua vencendo o título escrito à mão** (decisão do
+  operador, 19/09/2026, reafirmando a de 14/09): `renomearCardAberto` NÃO
+  olha a marca. Quem "consertar" isso está revertendo a decisão.
+- **Só o card ABERTO mais recente** — a régua do Calendly (um contato é um
+  telefone; o card fechado de meses atrás pode ser de outra pessoa). O alvo é
+  escolhido ANTES de olhar a marca: com o recente fixado e um antigo solto,
+  nada é renomeado — renomear o antigo seria mexer num card sobre o qual a
+  mudança de nome nada diz.
+- **Renomear não deixa rastro**: a trilha da 912 não guarda título, e um
+  UPDATE só de `title` não dispara nem a trilha nem a fila do funil (as duas
+  são `AFTER UPDATE OF pipeline_id, stage_id, status`). O `set_updated_at`
+  dispara — o acervo da 1007 empurrou 654 cards para o topo de "negócios
+  recentes" do Painel por um dia.
+- **Card sem nome em lugar nenhum fica com o prefixo** (259 no acervo): ali o
+  rótulo da conexão é a única informação que o título carrega, e o gatilho o
+  conserta na primeira vez que o cliente escrever.
 
 ⚠️ **Negócio (`deals`) só nasce por `src/lib/deals/create-deal.ts` no servidor.**
 A 908 deu à conexão um funil padrão, e o roteador de entrada

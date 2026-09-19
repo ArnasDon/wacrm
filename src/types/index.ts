@@ -886,6 +886,12 @@ export interface Deal {
   source?: DealSource;
   assigned_to?: string;
   title: string;
+  /**
+   * Quando GENTE digitou o título (1007). NULO = o título acompanha o nome
+   * da ficha, por um gatilho no banco. Preenchido, nenhum caminho automático
+   * o troca — ver `src/lib/deals/titulo-do-card.ts`.
+   */
+  titulo_fixado_em?: string | null;
   value: number;
   currency?: string;
   notes?: string;

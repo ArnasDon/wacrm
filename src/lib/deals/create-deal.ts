@@ -50,6 +50,13 @@ export interface CreateDealArgs {
    */
   conversationId?: string | null;
   title: string;
+  /**
+   * Quando GENTE digitou este título (1007). Só a API v1 passa: ali o título
+   * é escrito pelo integrador. O roteador e o passo `create_deal` DERIVAM o
+   * título do nome do contato, e deixam nulo de propósito — é o que permite
+   * ao gatilho da 1007 manter o card em dia quando a ficha ganhar um nome.
+   */
+  tituloFixadoEm?: string | null;
   value?: number;
   source: DealSource;
 }
@@ -150,6 +157,7 @@ export async function createDeal(args: CreateDealArgs): Promise<CreateDealResult
       channel_id: channelId ?? null,
       conversation_id: args.conversationId ?? null,
       title: args.title,
+      titulo_fixado_em: args.tituloFixadoEm ?? null,
       value: args.value ?? 0,
       currency: DEFAULT_CURRENCY,
       status: 'open',

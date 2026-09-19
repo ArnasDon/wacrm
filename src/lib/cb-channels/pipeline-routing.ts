@@ -96,7 +96,7 @@ export async function routeContactToPipeline(args: RouteContactArgs): Promise<vo
     // mais nada — nenhuma consulta a `deals`.
     const { data: canal, error: canalErr } = await db
       .from('cb_channels')
-      .select('label, default_pipeline_id, default_stage_id')
+      .select('default_pipeline_id, default_stage_id')
       .eq('id', channelId)
       .eq('account_id', accountId)
       .maybeSingle();
@@ -146,11 +146,24 @@ export async function routeContactToPipeline(args: RouteContactArgs): Promise<vo
       .eq('id', accountId)
       .maybeSingle();
 
-    const nome = args.contactName?.trim();
-    const rotulo = (canal.label as string | null)?.trim();
-    // Canal e contato no título de propósito: `contact_id` é SET NULL quando
-    // o contato é apagado, e sem isto o card ficaria sem nenhuma identificação.
-    const titulo = [rotulo, nome].filter(Boolean).join(' — ') || 'Novo contato';
+    // ⚠️ SÓ O NOME DA PESSOA (1007). Até 19/09/2026 o título era
+    // "<conexão> — <nome>", e o prefixo se justificava como identificação de
+    // reserva para depois de o contato ser apagado (`contact_id` é SET NULL).
+    // Medido no quadro do escritório, ele custava mais do que dava: em 549
+    // dos 962 cards o "nome" era o TELEFONE — o que acontece SEMPRE quando é
+    // o escritório que aborda primeiro, porque a ficha nasce com
+    // `name || phone` e o `pushName` de uma mensagem nossa é o nome do
+    // próprio advogado, descartado de propósito —, e 95 cards nomeavam
+    // "Comercial - Bancário", rótulo que a conexão não usa desde 02/09: o
+    // canal no título envelhece. O card já mostra a conexão numa pílula, e o
+    // nome identifica melhor que o canal, inclusive depois do SET NULL.
+    //
+    // Sem nome na ficha, `contactName` JÁ é o telefone (o `name || phone` do
+    // `findOrCreateContact`), então nenhum dos 5 chamadores precisou mudar.
+    //
+    // Daqui em diante quem mantém o título em dia é o GATILHO da 1007 — ver
+    // `src/lib/deals/titulo-do-card.ts`.
+    const titulo = args.contactName?.trim() || 'Novo contato';
 
     const resultado = await createDeal({
       db,

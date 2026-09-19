@@ -37,7 +37,7 @@ export async function PATCH(request: Request, { params }: Params) {
       await providers.updateMany({ _id: { $ne: id } }, { $set: { isDefault: false } })
       set.isDefault = true
     }
-    const updated = await providers.findOneAndUpdate({ _id: id }, { $set: { ...set, lastTestOk: null } })
+    const updated = await providers.findOneAndUpdate({ _id: id }, { $set: { ...set, lastTestOk: null, lastTestError: null } })
     return NextResponse.json({ provider: shapeProvider(updated!) })
   } catch (err) {
     return toErrorResponse(err)
@@ -92,7 +92,7 @@ export async function POST(_request: Request, { params }: Params) {
     } catch (err) {
       message = err instanceof AIProviderError ? err.message : 'Could not reach the provider'
     }
-    await providers.updateById(id, { $set: { lastTestAt: new Date(), lastTestOk: ok } })
+    await providers.updateById(id, { $set: { lastTestAt: new Date(), lastTestOk: ok, lastTestError: ok ? null : message } })
     return NextResponse.json({ ok, message, latencyMs: Date.now() - started })
   } catch (err) {
     return toErrorResponse(err)

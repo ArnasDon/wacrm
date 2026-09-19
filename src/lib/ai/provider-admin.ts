@@ -16,6 +16,7 @@ export function shapeProvider(p: AIProviderDoc) {
     apiKeyMasked: p.apiKeyEnc ? maskSecret(decrypt(p.apiKeyEnc)) : null,
     lastTestAt: p.lastTestAt,
     lastTestOk: p.lastTestOk,
+    lastTestError: p.lastTestError ?? null,
   }
 }
 

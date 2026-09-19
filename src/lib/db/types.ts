@@ -349,6 +349,8 @@ export interface AIProviderDoc extends ScopedDoc {
   isDefault: boolean
   lastTestAt: Date | null
   lastTestOk: boolean | null
+  /** The provider's own error text from the last failed test. */
+  lastTestError?: string | null
 }
 
 export interface AIRunDoc extends ScopedDoc {

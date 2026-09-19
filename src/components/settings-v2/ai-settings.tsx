@@ -3,7 +3,7 @@
 import { PasswordInput } from "@/components/ui/password-input";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle2, ExternalLink, Loader2, Plus, Star, Trash2, XCircle, Zap } from "lucide-react";
+import { CheckCircle2, ExternalLink, Loader2, Plus, RefreshCw, Star, Trash2, XCircle, Zap } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { AI_PRESETS, getPreset } from "@/lib/ai/presets";
 import { Button } from "@/components/ui/button";
@@ -21,6 +21,7 @@ interface Provider {
   apiKeyMasked: string | null;
   lastTestAt: string | null;
   lastTestOk: boolean | null;
+  lastTestError: string | null;
 }
 
 const CATEGORY_LABEL = { paid: "Paid APIs", open_source: "Open-source models (hosted)", local: "Self-hosted (free)" } as const;
@@ -32,8 +33,29 @@ function AddDialog({ open, onOpenChange, onAdded }: { open: boolean; onOpenChang
   const [model, setModel] = useState(preset.defaultModel);
   const [baseUrl, setBaseUrl] = useState(preset.baseUrl ?? "");
   const [saving, setSaving] = useState(false);
+  const [liveModels, setLiveModels] = useState<string[] | null>(null);
+  const [loadingModels, setLoadingModels] = useState(false);
+  const [modelsError, setModelsError] = useState<string | null>(null);
+
+  const loadLiveModels = async () => {
+    setLoadingModels(true);
+    setModelsError(null);
+    try {
+      const r = await api<{ models: string[] }>("/api/settings/ai-providers/models", {
+        body: { preset: presetId, apiKey: apiKey || null, baseUrl: baseUrl || null },
+      });
+      setLiveModels(r.models);
+      if (r.models.length && !r.models.includes(model)) setModel(r.models[0]);
+    } catch (e) {
+      setModelsError((e as Error).message);
+    } finally {
+      setLoadingModels(false);
+    }
+  };
 
   useEffect(() => {
+    setLiveModels(null);
+    setModelsError(null);
     const p = getPreset(presetId)!;
     setModel(p.defaultModel);
     setBaseUrl(p.baseUrl ?? "");
@@ -87,12 +109,18 @@ function AddDialog({ open, onOpenChange, onAdded }: { open: boolean; onOpenChang
               <PasswordInput autoComplete="off" className={inputCls} value={apiKey} onChange={(e) => setApiKey(e.target.value.trim())} />
             </Field>
           )}
-          <Field label="Model" hint="Type any model id the provider supports.">
-            <input className={inputCls} list={`models-${preset.id}`} value={model} onChange={(e) => setModel(e.target.value.trim())} />
+          <Field label="Model" hint={liveModels ? `${liveModels.length} models available for this key — type to search.` : "Type any model id, or load the provider's current list."}>
+            <div className="flex gap-2">
+              <input className={inputCls} list={`models-${preset.id}`} value={model} onChange={(e) => setModel(e.target.value.trim())} />
+              <Button type="button" variant="outline" className="h-9 shrink-0 border-slate-700 bg-slate-900 text-slate-200" disabled={loadingModels || (preset.requiresKey && !apiKey)} onClick={loadLiveModels}>
+                {loadingModels ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Load models
+              </Button>
+            </div>
             <datalist id={`models-${preset.id}`}>
-              {preset.suggestedModels.map((m) => <option key={m} value={m} />)}
+              {(liveModels ?? preset.suggestedModels).map((m) => <option key={m} value={m} />)}
             </datalist>
           </Field>
+          {modelsError ? <p className="rounded-md border border-red-500/30 bg-red-500/5 px-2.5 py-1.5 text-[11px] break-words text-red-300">{modelsError}</p> : null}
           {preset.suggestedModels.length > 1 && (
             <div className="flex flex-wrap gap-1.5">
               {preset.suggestedModels.map((m) => (
@@ -115,6 +143,23 @@ export function AISettings() {
   const [adding, setAdding] = useState(false);
   const [testing, setTesting] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, string>>({});
+  const [liveModels, setLiveModels] = useState<Record<string, string[]>>({});
+  const [loadingModels, setLoadingModels] = useState<string | null>(null);
+
+  const loadModelsFor = async (p: Provider) => {
+    setLoadingModels(p.id);
+    try {
+      const r = await api<{ models: string[] }>("/api/settings/ai-providers/models", { body: { providerId: p.id } });
+      setLiveModels((cur) => ({ ...cur, [p.id]: r.models }));
+      toast.success(`${r.models.length} models available for this key`);
+      if (!r.models.includes(p.model)) toast.warning(`"${p.model}" is not in the list — pick a current model`);
+    } catch (e) {
+      setResults((cur) => ({ ...cur, [p.id]: (e as Error).message }));
+      toast.error((e as Error).message);
+    } finally {
+      setLoadingModels(null);
+    }
+  };
 
   const load = () => api<{ providers: Provider[] }>("/api/settings/ai-providers").then((d) => setProviders(d.providers)).catch((e) => toast.error(e.message));
   useEffect(() => {
@@ -178,18 +223,28 @@ export function AISettings() {
                     <p className="text-xs text-slate-500">
                       {p.apiKeyMasked ?? "no key"}{p.baseUrl ? ` · ${p.baseUrl}` : ""}
                     </p>
-                    {results[p.id] ? <p className="mt-0.5 text-[11px] text-slate-400">{results[p.id]}</p> : null}
+                    {results[p.id] || (p.lastTestOk === false && p.lastTestError) ? (
+                      <p className={`mt-1 rounded-md border px-2 py-1 text-[11px] break-words ${p.lastTestOk === false ? "border-red-500/30 bg-red-500/5 text-red-300" : "border-slate-800 text-slate-400"}`}>
+                        {results[p.id] ?? p.lastTestError}
+                      </p>
+                    ) : null}
                   </div>
-                  <div className="w-52">
-                    {preset && preset.suggestedModels.length > 0 ? (
+                  <div className="flex w-full items-center gap-1 sm:w-72">
+                    {(liveModels[p.id] ?? preset?.suggestedModels ?? []).length > 0 ? (
                       <NativeSelect
                         value={p.model}
                         onChange={(v) => changeModel(p, v)}
-                        options={[...new Set([p.model, ...preset.suggestedModels])].map((m) => ({ value: m, label: m }))}
+                        options={[...new Set([p.model, ...(liveModels[p.id] ?? preset?.suggestedModels ?? [])])].map((m) => ({
+                          value: m,
+                          label: liveModels[p.id] && !liveModels[p.id].includes(m) ? `${m} (not available)` : m,
+                        }))}
                       />
                     ) : (
-                      <span className="text-xs text-slate-300">{p.model}</span>
+                      <span className="flex-1 truncate text-xs text-slate-300">{p.model}</span>
                     )}
+                    <Button size="icon-sm" variant="ghost" aria-label="Load current models" title="Load the models this key can use" className="shrink-0 text-slate-400" disabled={loadingModels === p.id} onClick={() => loadModelsFor(p)}>
+                      {loadingModels === p.id ? <Loader2 className="animate-spin" /> : <RefreshCw />}
+                    </Button>
                   </div>
                   <div className="flex gap-1">
                     <Button size="sm" variant="outline" className="border-slate-700 bg-slate-900 text-slate-200" onClick={() => test(p)} disabled={testing === p.id}>

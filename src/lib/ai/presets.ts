@@ -121,18 +121,21 @@ export const AI_PRESETS: AIPreset[] = [
   },
   {
     id: 'nvidia',
-    label: 'NVIDIA NIM (Llama, Nemotron, Kimi, Qwen)',
+    label: 'NVIDIA NIM (GPT-OSS, Nemotron, Kimi, DeepSeek)',
     kind: 'openai_compatible',
     category: 'open_source',
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     customBaseUrl: false,
     requiresKey: true,
-    defaultModel: 'meta/llama-3.3-70b-instruct',
+    // Checked against the live catalogue; availability varies per
+    // account — "Load models" in Settings shows what YOUR key can use.
+    defaultModel: 'openai/gpt-oss-20b',
     suggestedModels: [
-      'meta/llama-3.3-70b-instruct',
+      'openai/gpt-oss-20b',
       'nvidia/llama-3.1-nemotron-70b-instruct',
-      'moonshotai/kimi-k2-instruct',
-      'qwen/qwen2.5-coder-32b-instruct',
+      'nvidia/nemotron-3-super-120b-a12b',
+      'deepseek-ai/deepseek-v4-flash-0731',
+      'moonshotai/kimi-k3',
     ],
     keyHelpUrl: 'https://build.nvidia.com',
   },

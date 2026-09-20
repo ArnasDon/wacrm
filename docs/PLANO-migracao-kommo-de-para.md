@@ -170,8 +170,9 @@ Bancário). Medido:
 | um card por pessoa | 12.387 | 0 |
 | **um card por pessoa e área** ← escolhido | **12.389** | **2** |
 
-**298 leads não viram card** — eles existem só como histórico (eventos na
-trilha do card sobrevivente).
+**298 leads não viram card** — e o teste de esforço de 20/09 mostrou que
+"só histórico" não é executável como estava escrito. ⚠️ **PERGUNTA EM ABERTO —
+ver a seção 6b.**
 
 **Quem sobrevive:** o lead mais recente entre os **abertos**; não havendo
 aberto, o mais recente de todos. É o que responde "onde essa pessoa está hoje".
@@ -212,6 +213,40 @@ contato" mora no código, conferida por cada chamador antes do insert, e o
 carga.**
 
 ---
+
+## 6b. ⚠️ Em aberto: o que fazer com os 298 leads sem card
+
+Todo evento de funil precisa de um `deal_id` que EXISTA. Não há chave
+estrangeira, então um id inventado entra no banco — mas a trajetória some das
+três vistas do funil (fica só na ficha do contato). E pendurar os eventos no
+card sobrevivente faz o funil contar um contrato que não tem card: um contato
+com um lead antigo GANHO e um lead novo ABERTO viraria um card parado em
+"Entrada Avulsa" afirmando que alcançou contrato.
+
+Medido em 20/09, os 298 se repartem assim:
+
+| Situação do lead extra | Leads |
+| --- | ---: |
+| Ganho | 123 |
+| Perdido | 71 |
+| **Aberto** | **104** — dos quais 28 pousam em etapa com `resultado` e fecham sozinhos |
+
+Sobram **76** que virariam um segundo card ABERTO da mesma pessoa na mesma
+área — exatamente o que a decisão C existe para evitar.
+
+**As três saídas:**
+
+- **(1) Card para todos os 298** (total 12.687). Métrica íntegra, nada some.
+  Custo: 76 pessoas com dois cards abertos. O CRM tolera isso — as automações
+  agem sobre o negócio aberto mais recente, então não há disparo em dobro —,
+  mas o Kanban mostra a mesma pessoa duas vezes.
+- **(2) Card só para os que tiveram desfecho** (194 + 28 = 222; total 12.611) e
+  a trajetória dos 76 abertos fundida no card sobrevivente. Dois leads abertos
+  da mesma pessoa na mesma área são a duplicata que a Kommo fabricava, e fundir
+  a jornada deles é o que descreve a realidade. É a recomendação.
+- **(3) Manter "só histórico"** com id inventado: a história dos 298 desaparece
+  do Desempenho e da Saúde, ficando só na ficha.
+
 
 ## 7. Etiquetas — reusa 8, cria 1
 
@@ -302,6 +337,13 @@ mais fariam o inbox cortar em silêncio.
 13.196 com telefone → **12.979 pessoas**. Do lado de cá, **1.150 dos 1.209**
 contatos recebem dado da Kommo; 59 a Kommo não conhece.
 
+⚠️⚠️ **`contacts.phone` é SÓ DÍGITOS COM DDI**, nunca o texto da Kommo. Gravado
+com separadores ("+55 83 98874-5316"), a ficha entra no banco normalmente e **a
+primeira mensagem daquele cliente é descartada em silêncio — e todas as
+seguintes, para sempre.** A busca não acha a ficha, o INSERT leva violação do
+índice único, a recuperação falha igual, e a ingestão desiste sem gravar; o
+WhatsApp já respondeu 200 e não retenta.
+
 **Os 4 ambíguos não são fundidos.** Cada um nasce como ficha nova, e a lista
 dos 4 (com nome e número) vai para o operador no ensaio. Fundir duas pessoas é
 irreversível — leva a conversa e todas as mensagens junto —, e um dos quatro é
@@ -313,6 +355,14 @@ DDD 82 contra DDD 15: gente diferente.
 | `5911…1769` | `5511…1769` | "59" onde devia ser "55" — erro de digitação |
 | `5555…1315` (15 díg.) | `5555…1315` (12) | número malformado |
 | `5548…9154` (14 díg.) | `5548…9154` (13) | um dígito a mais |
+
+⚠️ **E eles têm um custo que o teste de esforço mediu:** com dois registros cujo
+sufixo de 8 dígitos bate, a resolução de contato da ingestão é
+**não-determinística** — a consulta não ordena e devolve o primeiro que passar
+no teste tolerante, e a escolha pode INVERTER de um dia para o outro (qualquer
+UPDATE move a tupla no heap). A mensagem do cliente pode ir para a conversa do
+outro. O conserto é de CÓDIGO (preferir o telefone exato antes do tolerante) e
+está na lista de consertos do plano principal.
 
 **Nome:** o da Kommo vence nos que existem nos dois lados e fica **FIXADO**
 (`contacts.nome_fixado_em`), exceto nos **297** já fixados à mão. Sem fixar, o
@@ -347,11 +397,11 @@ trabalhista nunca foi registrado na Kommo.
 
 | Campo da Kommo | Preenchidos | Destino |
 | --- | ---: | --- |
-| O email (contato) | **1.906** | `contacts.email` — ⚠️ tem ESPELHO no banco (1000/1001) |
-| Campanha | 1.224 | campo de Traqueamento |
-| Conjunto anuncios | 1.224 | campo de Traqueamento |
-| anuncio | 1.224 | campo de Traqueamento |
-| Tamanho da dívida | **2.813** | campo "Tamanho da Divida" |
+| O email (contato) | **1.906** | `contacts.email` — ⚠️ SÓ onde está vazio (ver abaixo) |
+| Campanha | 1.224 | `nome_da_campanha` |
+| Conjunto anuncios | 1.224 | `nome_do_conjunto` |
+| anuncio | 1.224 | `nome_do_anuncio` |
+| Tamanho da dívida | **2.813** | `tamanho_da_divida` |
 | — | — | ⭐ **id do contato da Kommo**, em bloco próprio "Migração" |
 
 **Nada mais.** Ficam de fora: Marcou reunião onde (1.371), URL Reunião (1.331),
@@ -363,9 +413,28 @@ contem (298), Demitida (302), Tempo da demissão (302), Grávida (13).
 contato. Ele vai em `cb_lead_events.details->>'kommo_lead_id'`, invisível na
 tela e consultável.
 
-⚠️ **Uma pessoa com 2 leads tem 2 valores** para "Tamanho da Divida" e para os
-campos de anúncio. O campo é do CONTATO. Regra da carga: vence o do **lead
-sobrevivente** (o mesmo que virou card).
+⚠️⚠️ **A carga resolve o campo por `field_key` e ABORTA se algum faltar —
+nunca cria pelo nome.** Os quatro já existem. Criar "pelo nome da Kommo" geraria
+campo NOVO sem colidir: os 3.672 valores de anúncio pousariam em chaves que
+ninguém lê, `{{contact.origem}}` continuaria vazio no aviso que o advogado
+recebe a cada agendamento, e "Tamanho da Divida" ganharia um segundo campo com
+o mesmo rótulo na ficha. São 6.485 valores fora de alcance, sem erro nenhum.
+
+⚠️⚠️ **A carga escreve SOMENTE nesta allowlist** e aborta em qualquer outro
+destino. `Data e Hora Reunião` e `Link Reunião` são do Calendly — **106 valores
+vivos** — e não são território da Kommo.
+
+⚠️⚠️ **O e-mail entra por UM lado só, e só onde está vazio.** `contacts.email`
+tem espelho no banco (migrations 1000/1001): gravar os dois lados dá violação de
+índice e derruba o lote. E o CRM tem **54** e-mails hoje — do Calendly e do
+Asaas, os mais recentes da base —, contra um da Kommo de até 15 meses atrás.
+Sobrescrevê-los faria o vínculo automático do tl;dv casar pelo e-mail errado.
+
+⚠️ **Uma pessoa com 2 leads tem 2 valores.** O campo é do CONTATO. Regra:
+vence o valor NÃO-VAZIO mais recente entre TODOS os leads da pessoa (ordem por
+`updated_at` do lead, desempate pelo id), e nunca se grava linha vazia. Nos três
+campos de anúncio, os três vêm do MESMO lead — o mais recente com qualquer um
+deles preenchido —, para não fabricar uma tripla que nunca existiu.
 
 ---
 

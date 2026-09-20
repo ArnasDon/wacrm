@@ -212,6 +212,13 @@ mudança de etapa — está em "Entradas e saídas da Kommo", mais abaixo.
 
 ### Campos personalizados — de LEAD (Kommo) para CONTATO (CB CRM)
 
+> ⚠️⚠️ **LEVANTAMENTO SUPERADO — não é instrução.** O que migra está em
+> `docs/PLANO-migracao-kommo-de-para.md`, seção 11, que é a fonte de
+> verdade. Esta tabela é a foto do que EXISTE na Kommo, levantada em
+> 14/09. Lida como mapa, ela manda a carga escrever em `Data e Hora
+> Reunião` e `Link Reunião` — que são do Calendly, têm 106 valores vivos e
+> não são território da Kommo.
+
 ⚠️ No CB CRM campo personalizado só existe em **contato**. Os tipos agora são
 `text`, `datetime`, `select` e `number` (948) — lista da Kommo pode virar
 `select` em vez de texto solto.
@@ -509,93 +516,280 @@ para as etapas por onde o lead PASSOU, não só para a atual.
 ⚠️ A varredura leva ~12 min a 5 req/s e passa do teto de 400 páginas do
 `api.mjs`: `historico.mjs --continuar` retoma de onde parou.
 
+## O teste de esforço de 20/09/2026
+
+Com as decisões fechadas e antes de escrever uma linha da carga, o conjunto foi
+submetido a seis lentes lendo o código real — trilha e funil, gatilhos e fila,
+contatos e conversas, campos personalizados, escala, e integrações vivas — cada
+achado refutado por um segundo leitor que tentou derrubá-lo no arquivo.
+
+**60 achados sobreviveram, 58 confirmados linha a linha. 8 escreveriam dado
+errado em produção.** O que eles mudaram no plano:
+
+| | O que se descobriu | Onde isso mudou o plano |
+| --- | --- | --- |
+| 1 | **A decisão 17 não é executável**: o PostgREST não tem transação de várias instruções | contrato A.1 — RPC por lote |
+| 2 | **Transação única derruba o CRM** na 64ª linha (estouro de subtransação) | contrato A.1 — lotes de 1.000–2.000 |
+| 3 | **Os gatilhos escrevem trilha datada de hoje** com `reconstructed = false`: ela cai no fio do cliente, ancora "na etapa desde" e acende "ganhos hoje" no Meu dia | contrato A.5 — reparo por lote |
+| 4 | **Falta o evento de criação**: ~1.100 leads nunca mudaram de etapa e ficariam invisíveis nas três vistas do funil | contrato C.12 |
+| 5 | **Telefone com separadores faz a ingestão DESCARTAR a mensagem do cliente**, para sempre e em silêncio | contrato D.18 |
+| 6 | **Os 4 telefones ambíguos tornam a resolução de contato não-determinística** — a mensagem pode ir para a ficha errada, e alternar | conserto de código 3 |
+| 7 | **O Kanban renderiza os 8.400 cards de uma vez** — o #227 consertou o dado, não o render | conserto de código 1 |
+| 8 | **O disparo "todos os contatos" corta em 1.000** — e a exclusão pela etiqueta `kommo`, que era a rede da decisão 21, corta junto | conserto de código 2 |
+
+**Três correções factuais ao próprio plano**, que estavam mentindo:
+
+- O CRM tem **54** contatos com e-mail, não 1 nem zero — são os do Calendly e do
+  Asaas, os mais recentes da base. O e-mail da Kommo não pode sobrescrevê-los.
+- A tabela de campos personalizados das linhas 220-236 é **levantamento
+  superado**, não instrução. A fonte de verdade do que migra é o de-para. Lida
+  como instrução, ela mandaria a carga sobrescrever os **106 valores vivos** de
+  `Data e Hora Reunião` e `Link Reunião`, que são do Calendly.
+- A conferência que existia para pegar a trilha escrita pelos gatilhos
+  procurava evento **anterior** ao dia da carga — e as linhas dos gatilhos são
+  de hoje. Ela passava verde exatamente sobre o defeito que existia para pegar.
+
+**Duas coisas que a carga não controla e o operador precisa saber:**
+
+- **O roteador de funil está VIVO em 5 das 7 conexões.** Os cards que a carga
+  NÃO criar ganham card automaticamente na primeira mensagem trocada — inclusive
+  os leads que o operador decidiu deixar só como histórico. Zerar
+  `default_pipeline_id` durante a janela é barato e sem perda (o roteador
+  dispara por ESTADO, não por evento).
+- **A automação do Calendly, a única ligada, passa a TRANSFERIR card entre
+  funis.** O passo 5 vê que já existe card em qualquer funil e desiste; o passo
+  6 move esse card para Bancário - Comercial › Reunião Agendada — arrancando do
+  Trabalhista o card de um cliente que agendou uma reunião. Hoje o risco é
+  quase nulo (quase todos os 976 cards já são do Bancário); depois da carga, a
+  maioria dos 12.687 está fora do Bancário. Ela tem de ser desligada na janela,
+  e o comportamento do passo 6 decidido por escrito antes de religar.
+
+
 ## Contrato de carga
 
-Levantado em 19/09 lendo o código, com revisão adversarial. Cada regra falha em
-SILÊNCIO se for ignorada — nenhuma delas dá erro.
+Levantado em 19/09 lendo o código e **reescrito em 20/09** depois do teste de
+esforço (seção anterior). Cada regra falha em SILÊNCIO se for ignorada —
+nenhuma delas dá erro.
 
-**Forma da escrita**
+### A. A mecânica da escrita
 
-1. **UM INSERT por negócio, já no estado FINAL.** Nenhum `UPDATE` de
-   `pipeline_id`/`stage_id`/`status` depois: cada um deles dispara a trilha
-   (912), a fila (933) e o carimbo de resultado (950). Replayar a trajetória
-   por updates sucessivos dispararia a esteira inteira por lead.
-   ⚠️ Isto **conflita com a decisão 11** ("a etapa da Kommo move o card
-   daqui"), que é um UPDATE por definição — ver a decisão 17.
-2. **São SEIS gatilhos em `deals`**, não dois: `set_updated_at` (0001),
-   `cb_deals_log_event` e `..._update` (912), `cb_deals_enfileira_evento` e
-   `..._update` (933) e `cb_deals_aplica_resultado_trigger` (**BEFORE** INSERT
-   OR UPDATE OF stage_id, 950). O último reescreve `NEW.status` a partir do
-   `resultado` da etapa e **vence** o status que a carga mandar.
-3. **Nenhuma linha em `cb_automation_events`.** Apagar na mesma transação, não
-   marcar como processada (`cardSaiuDaEtapa` ignora `processado_em`). O DELETE
-   precisa ser estreito — `origem = 'sistema' AND criado_em >= now()` da
-   própria transação —, senão apaga o evento legítimo de um card que alguém
-   arrastou na mesma janela.
+⚠️⚠️ **1. A carga escreve POR LOTE, por uma função no banco
+(`SECURITY DEFINER`) — nunca por INSERT solto do PostgREST, nunca numa
+transação única.** As duas formas óbvias estão erradas, em direções opostas:
 
-**`deals`**
+- **INSERT solto pelo supabase-js**: o PostgREST não tem transação de várias
+  instruções. Inserir os cards numa requisição e apagar `cb_automation_events`
+  noutra são duas transações, com uma janela real entre os commits em que o
+  agendador (que drena a cada 15 s) enxerga e reivindica os eventos. A
+  atomicidade que a decisão 17 promete **não existe** por esse caminho.
+- **Uma transação única para tudo**: por volta da **64ª linha** de `deals` o
+  Postgres estoura o cache de subtransações (cada gatilho abre a sua), e a
+  partir daí toda leitura concorrente — webhook, tela, cron — paga uma consulta
+  de SLRU por tupla. A carga leva minutos a dezenas de minutos nesse estado, e
+  o CRM inteiro fica progressivamente mais lento, sem erro e sem log.
 
-4. `account_id`; `user_id = accounts.owner_user_id` (nunca o login de quem
-   roda: `contacts.user_id` cascateia de `auth.users`); `assigned_to` é
-   `profiles.id`, não o id do login; o par `(stage_id, pipeline_id)` conferido
-   no script (a FK é COMPOSTA e devolve 23503 cru).
-5. **`created_at` = a data real da Kommo**, sempre. E `updated_at` também: o
-   `PipelineAnalytics` do cabeçalho do Kanban conta "ganhos/perdidos este mês"
-   por `updated_at ?? created_at`.
-6. `source`: a escolha tem três consequências. `'channel'` ativa o índice
-   único parcial da 911 (um card por contato) e **falha com 23505** nos 749
-   contatos que já têm card; `'automation'` escapa da fila da 933 no INSERT
-   mas grava procedência falsa na trilha; `'manual'` não faz nem uma coisa nem
-   outra. Não há valor para "veio da Kommo".
-7. `currency` pode ficar no default — o app formata em BRL e não lê a coluna.
+A forma que resolve as duas: **uma chamada de RPC por lote de 1.000 a 2.000
+cards**, e dentro de cada chamada, na mesma transação curta: inserir o lote →
+reparar os eventos que os gatilhos escreveram → apagar as linhas de
+`cb_automation_events` daquele lote. Cada commit zera a contagem de
+subtransações. **Nunca `ALTER TABLE ... DISABLE TRIGGER`.**
 
-**`cb_lead_events`**
+⚠️⚠️ **2. Todo recorte de reparo e de limpeza é POR ID, nunca por janela de
+tempo.** `deal_id = ANY(<ids do lote>)` (ou `contact_id = ANY(...)`). O recorte
+por `criado_em >= now()` que a versão anterior deste contrato mandava usar é
+mais largo que a carga: um agendamento do Calendly que chegue na janela tem o
+`deal_stage_changed` dele apagado junto. Hoje isso não deixa de disparar nada
+(as automações de etapa estão desligadas), mas a mesma tabela é o que
+`cardSaiuDaEtapa` consulta para responder "o card saiu da etapa?" — e o
+operador vai religar as automações depois da carga.
 
-8. Toda linha leva `account_id`, `deal_id`, **`contact_id`** (é por ele que a
-   ficha lê a trilha — sem ele os 15 meses ficam invisíveis na tela),
-   `occurred_at` explícito, `origin = 'retroativo'`, **`reconstructed = true`**,
-   **`to_pipeline_id`** e `to_stage_id`, mais os rótulos e a posição da etapa
-   (a semente da 912 é o gabarito das COLUNAS — não do conteúdo: ela aponta
-   para a etapa ATUAL, que num lead com 15 meses de trajeto seria mentira).
-9. Um evento **por mudança de etapa**, não dois por lead. Ganho e perda da
-   Kommo viram `stage_changed` para uma etapa com `degrau` — `status_changed`
-   não é lido pelo funil.
-10. **Desempate de ordem:** a Kommo carimba em segundos e a RPC ordena por
-    `(occurred_at, id)`; dois movimentos do mesmo lead no mesmo segundo saem
-    em ordem sorteada. A carga desempata com microssegundos incrementais na
-    ordem em que a Kommo devolveu.
-11. A trilha é append-only por desenho (`authenticated` só tem SELECT), mas a
-    service role mantém UPDATE/DELETE — é por lá que se limpa o que os
-    gatilhos escreverem por cima.
+⚠️⚠️ **3. A idempotência é GARANTIDA PELO BANCO, não conferida pelo script.**
+`deals.kommo_lead_id` com índice único parcial, criado ANTES da carga. Sem
+ele, a pergunta "já migrei este lead?" vira 12.389 varreduras completas sobre
+uma tabela de ~62.000 linhas, e quem pular a pergunta duplica 28.316 eventos em
+silêncio. O id do CONTATO continua no campo personalizado (decisão 16) —
+**mas ele responde por contato, não por lead**, e por isso não serve de chave
+de reexecução para `deals`.
 
-**Contato, etiqueta e campo**
+**4. São SEIS gatilhos em `deals`**, não dois: `set_updated_at` (0001),
+`cb_deals_log_event` e `..._update` (912), `cb_deals_enfileira_evento` e
+`..._update` (933) e `cb_deals_aplica_resultado_trigger` (**BEFORE** INSERT OR
+UPDATE OF stage_id, 950). O último reescreve `NEW.status` a partir do
+`resultado` da etapa e **vence** o status que a carga mandar.
 
-12. Casar por `mesmoNumero` sobre TODOS os candidatos do sufixo, numa consulta
-    ordenada. Um só candidato → liga; nenhum → cria; mais de um → "para
+⚠️ **5. Os gatilhos escrevem trilha PRÓPRIA, datada de hoje e com
+`reconstructed = false`** — e é ela que aparece no fio do cliente, que ancora
+"na etapa desde" (a ordenação PADRÃO da Lista) e que acende "ganhos hoje" no
+Meu dia. Cada lote tem de **reparar** o que os seus gatilhos escreveram, na
+mesma transação:
+
+```sql
+UPDATE cb_lead_events
+   SET occurred_at = <data real do fato na Kommo>,
+       origin = 'retroativo',
+       reconstructed = true
+ WHERE deal_id = ANY(<ids do lote>)
+   AND origin = 'sistema'
+   AND event_type IN ('deal_created', 'stage_changed', 'status_changed');
+```
+
+O `tag_added` do gatilho da 912 grava `deal_id` NULO e é alcançado por
+`contact_id = ANY(...)`, com `AND origin <> 'usuario'` — os 1.150 contatos que
+já existem aqui podem ter ação real de operador na mesma janela.
+
+**6. UM INSERT por negócio, já no estado FINAL.** Nenhum `UPDATE` de
+`pipeline_id`/`stage_id`/`status` depois. A decisão 11 (a etapa da Kommo move o
+card dos 1.150 que já existem aqui) é um UPDATE por definição e entra na mesma
+função de lote, com o mesmo reparo da regra 5.
+
+### B. `deals`
+
+7. `account_id`; **`user_id = accounts.owner_user_id`**, resolvido uma vez no
+   início e **sem queda** (`if (!dono) throw`) — nunca o login de quem roda:
+   `contacts.user_id`, `conversations.user_id` e `custom_fields.user_id`
+   cascateiam de `auth.users`, e apagar aquele login FORA do app (o passo
+   normal de offboarding) levaria os 12.980 contatos, as conversas e todas as
+   mensagens junto. `assigned_to` fica NULO (decisão 12).
+8. **`created_at` = a data real da Kommo**, sempre — a coluna é anulável com
+   default e aceita valor explícito. E `updated_at` também: o cabeçalho do
+   Kanban conta "ganhos/perdidos este mês" por `updated_at ?? created_at`.
+9. `source = 'manual'`. `'channel'` ativaria o índice único parcial da 911 e
+   falharia com 23505 nos contatos que já têm card; `'automation'` escaparia da
+   fila da 933 no INSERT mas gravaria procedência falsa na trilha.
+10. O par `(stage_id, pipeline_id)` conferido no script — a FK é COMPOSTA e
+    devolve 23503 cru.
+11. `currency` pode ficar no default: o app formata em BRL e não lê a coluna.
+
+### C. `cb_lead_events`
+
+⚠️⚠️ **12. Um `deal_created` retroativo por card, SEMPRE** — e não só um evento
+por mudança de etapa, como dizia a versão anterior. A RPC do funil só enxerga
+negócio que tenha ao menos um evento, e **~1.100 leads nunca mudaram de etapa
+na Kommo**: sem o evento de criação eles ficam invisíveis na Lista, no
+Desempenho e na Saúde, aparecendo só no Kanban. E, para todos os outros, a
+entrada no funil passaria a ser datada pelo PRIMEIRO MOVIMENTO em vez da
+criação, inflando a transição lead→MQL para perto de 100% nos 15 meses
+históricos. O evento leva `occurred_at` = a criação real, `to_stage_id` = a
+etapa inicial (o campo `from` do 1º `lead_status_changed`; sem movimento, a
+etapa atual) e `to_pipeline_id` = o funil daquela etapa.
+
+13. Toda linha leva `account_id`, `deal_id`, **`contact_id`** (é por ele que a
+    ficha lê a trilha), `occurred_at` explícito, `origin = 'retroativo'`,
+    **`reconstructed = true`**, **`to_pipeline_id`** e `to_stage_id`, mais os
+    rótulos e a posição da etapa.
+    ⚠️ O CHECK de forma aceita `stage_changed` **sem** `to_pipeline_id`. Se a
+    carga esquecer essa coluna, os 28.316 eventos passam no banco e ficam
+    **invisíveis para o funil inteiro**, em silêncio — a ficha do contato
+    continua mostrando a história completa, e as duas telas discordam sem nada
+    ligando uma à outra.
+⚠️ **14. Movimento entre FUNIS é `pipeline_changed`, nunca `stage_changed`.**
+    Vale para os 240 do CONTATO SEG. TRAB e para os 183 do Onboarding
+    bancário. É o único tipo que `direcaoDoMovimento` recusa ler como
+    "avanço"/"retorno" — escrito como `stage_changed`, a ficha compara a
+    posição de uma etapa do funil comercial com a de outra do jurídico, que são
+    réguas distintas, e afirma uma direção que não existe. É também o que o
+    gatilho real grava. Leva `from_pipeline_id`/`to_pipeline_id`,
+    `from_stage_id`/`to_stage_id`, as duas posições e os rótulos.
+15. Ganho e perda da Kommo viram movimento para uma etapa com `degrau` —
+    `status_changed` não é lido pelo funil.
+16. **Desempate de ordem:** a Kommo carimba em segundos e a RPC ordena por
+    `(occurred_at, id)`; dois movimentos do mesmo lead no mesmo segundo saem em
+    ordem sorteada. A carga desempata com microssegundos incrementais na ordem
+    em que a Kommo devolveu.
+17. **Os 298 leads "só histórico" precisam de um `deal_id` que exista.** Não há
+    FK, então um id sintético não estoura — mas o evento órfão some do funil, e
+    pendurá-lo no card sobrevivente faz o funil contar um contrato que não tem
+    card (um contato com um lead antigo ganho e um novo aberto viraria um card
+    em "Entrada Avulsa" com `alcancouContrato = true`). **Decisão tomada: criar
+    card para os 298 também**, com o status e a etapa finais deles — não há
+    órfão nem fusão, e a métrica fica íntegra. Isso leva o total de cards de
+    12.389 para **12.687**, e são 298 cards fechados a mais no Kanban.
+
+### D. Contato, etiqueta, campo
+
+⚠️⚠️ **18. `contacts.phone` é SÓ DÍGITOS COM DDI**, exatamente o que
+`digitosDoTelefone` produz — nunca o texto da Kommo. Gravado com separadores
+(`+55 83 98874-5316`), a ficha entra no banco normalmente e **a primeira
+mensagem daquele cliente é descartada em silêncio, e todas as seguintes, para
+sempre**: a busca por telefone não acha a ficha, o INSERT leva 23505 do índice
+único, a recuperação falha pelo mesmo motivo, e a ingestão desiste sem gravar.
+O WhatsApp já respondeu 200 — não há retentativa. Vale para os dois
+transportes, para o Calendly e para o Asaas. Conferência de pré-voo sobre o
+conjunto a inserir e de pós-voo sobre a tabela.
+
+19. Casar por `mesmoNumero` sobre TODOS os candidatos do sufixo, numa consulta
+    **ordenada**. Um só candidato → liga; nenhum → cria; mais de um → "para
     confirmar".
-13. Etiqueta por `resolveImportTagIds` + `assignImportedContactTags` (upsert
-    idempotente em lotes), com `userId = accounts.owner_user_id`. **Nunca**
-    `tag-events.ts`. ⚠️ O INSERT direto foge do gatilho das AUTOMAÇÕES e
-    **não** do gatilho de AUDITORIA: `cb_contact_tags_log_event` grava uma
-    linha `tag_added` datada de hoje, com `reconstructed = false` — ou seja,
-    no fio do cliente. São dezenas de milhares.
-14. Campo de data (`Data e Hora Reunião`, `Data da Proposta`) vai em ISO com
-    `Z`: o cast do banco engole erro e devolve NULL, ou lê no fuso do
-    servidor e erra por 3 horas, sem aviso.
-15. E-mail entra só por `contacts.email`; o campo "E-mail" fica fora do mapa.
+20. **Toda escrita é reexecutável**: `ON CONFLICT ... DO NOTHING` (ou
+    `DO UPDATE`) e o id resolvido por SELECT em seguida, **nunca pelo
+    RETURNING**, que vem vazio para quem perdeu a corrida. Em `contacts` a
+    cláusula `WHERE phone_normalized <> ''` é obrigatória, porque o índice é
+    parcial. A carga roda com a ingestão viva: entre apurar "estes contatos não
+    têm conversa" e escrever, qualquer um deles pode mandar mensagem.
+21. Etiqueta por INSERT direto em `contact_tags`, com
+    `userId = accounts.owner_user_id`. **Nunca** `tag-events.ts`. ⚠️ O INSERT
+    direto foge do gatilho das AUTOMAÇÕES e **não** do de AUDITORIA: são
+    dezenas de milhares de linhas `tag_added` datadas de hoje, que a regra 5
+    repara.
+⚠️ **22. Os campos personalizados são resolvidos por `field_key`, e a carga
+    ABORTA se algum faltar — nunca cria pelo nome.** As chaves de destino:
+    `tamanho_da_divida`, `nome_da_campanha`, `nome_do_conjunto`,
+    `nome_do_anuncio`. Criar "pelo nome da Kommo" gera campo NOVO sem colidir:
+    os 3.672 valores de anúncio pousariam em chaves que ninguém lê, e
+    `{{contact.origem}}` — que a ÚNICA automação ligada hoje usa no aviso ao
+    advogado — continuaria vazio. Em "Tamanho da Divida" nasceria um segundo
+    campo com o mesmo rótulo na ficha. Total: 6.485 valores fora de alcance,
+    sem erro nenhum.
+⚠️ **23. A carga escreve SOMENTE nos `field_key` de uma allowlist explícita** e
+    aborta em qualquer outro destino. `Data e Hora Reunião` e `Link Reunião`
+    são do Calendly — hoje com **106 valores vivos** — e não são território da
+    Kommo.
+⚠️ **24. O e-mail entra por UM lado só.** `contacts.email` tem espelho no banco
+    (1000/1001): gravar os dois lados dá 23505 e derruba o lote. A carga grava
+    `contacts.email` e deixa o gatilho criar o valor do campo.
+    ⚠️ E **só onde está vazio**: são **54** e-mails no CRM hoje, os mais
+    recentes e melhores da base (Calendly e Asaas), e o da Kommo tem até 15
+    meses. Upsert com `EXCLUDED.email` nulo APAGARIA a ficha e a linha do campo
+    espelhado.
+25. **`cb_conversation_notes` leva `contact_id`**, não só `conversation_id`:
+    sem ele a anotação some da ficha de `/contatos` — exatamente onde o
+    advogado vai procurar o histórico — e não pode ser fixada.
+26. Campo de data vai em ISO com `Z`: o cast do banco engole erro e devolve
+    NULL, ou lê no fuso do servidor e erra por 3 horas, sem aviso.
+⚠️ **27. Fixar o nome exige um SNAPSHOT antes e um filtro mais estrito que
+    `nomeParaFixar`**, que só recusa NÚMERO. Rótulos automáticos da Kommo
+    ("Lead 12345", "Contato WhatsApp") ficariam congelados para sempre, e nos
+    1.150 já existentes o nome que a equipe lê hoje seria destruído sem cópia.
+    `CREATE TABLE cb_kommo_nomes_antes AS SELECT id, name, nome_fixado_em FROM
+    contacts WHERE account_id = <conta>` custa uma linha e torna tudo
+    reversível. Nos 1.150, só sobrescrever quando o nome atual estiver vazio ou
+    for telefone; o resto vira CSV para o operador decidir.
 
-**Conferências do ensaio (fase 3) e do pós-carga (fase 6)**
+### E. Conferências do ensaio (fase 3) e do pós-carga (fase 6)
 
-16. `cb_lead_events` retroativo com `to_pipeline_id` ou `to_stage_id` nulo = 0.
-17. `cb_lead_events` com `reconstructed = false` e `occurred_at` anterior ao
-    dia da carga = 0 (pega o que os gatilhos escreveram por cima).
-18. `deals` com `created_at` nulo ou igual ao dia da carga = 0.
-19. `cb_automation_events` com `processado_em` nulo = 0, e nenhuma linha da
-    janela da carga.
-20. Nenhum negócio importado sem ao menos um evento apontando para o funil
-    dele (senão ele some da Lista, do Desempenho e da Saúde).
-21. Abrir o Meu dia **no dia** da carga: o bloco "ganhos" tem de estar zerado.
-22. Taxa acima de 100% no modo por período é razão de fluxo e está CERTA —
+28. `cb_lead_events` retroativo com `to_pipeline_id` ou `to_stage_id` nulo = 0.
+29. **`cb_lead_events` com `reconstructed = false`, `origin = 'sistema'` e
+    `deal_id`/`contact_id` da carga = 0.** ⚠️ A versão anterior desta
+    conferência procurava evento com `occurred_at` **anterior** ao dia da
+    carga — e as linhas dos gatilhos são de HOJE, então ela passava verde sobre
+    o defeito que existia para pegar.
+30. Nº de `deal_created` retroativos = nº de cards; `min(occurred_at)` por card
+    = `deals.created_at`.
+31. `deals` com `created_at` nulo ou igual ao dia da carga = 0.
+32. `cb_automation_events` da janela da carga = 0, medido por
+    `count: 'exact', head: true` — **nunca** pelo retorno do DELETE, que não
+    conta o que saiu.
+33. Nenhum card importado sem ao menos um evento apontando para o funil dele.
+34. `select count(*) from contacts where phone ~ '[^0-9+]'` = 0.
+35. `contacts`, `conversations` e `custom_fields` com
+    `user_id <> accounts.owner_user_id` = 0.
+36. `cb_conversation_notes` com `contact_id` nulo = o mesmo de antes da carga.
+37. `contact_custom_values` agrupado por `field_key`: nenhuma chave nova,
+    nenhum `*_2`, e `data_e_hora_reuniao`/`link_reuniao` com os mesmos 106.
+38. Abrir o Meu dia **no dia** da carga: o bloco "ganhos" zerado.
+39. Consulta de colisão de sufixo de 8 dígitos: qualquer par devolvido é uma
+    ficha que o WhatsApp vai resolver por sorteio.
+40. Taxa acima de 100% no modo por período é razão de fluxo e está CERTA —
     não "consertar".
 
 ## Decisões — 23 das 27 fechadas
@@ -690,69 +884,124 @@ as contagens e as regras. Esta seção é o índice.
 
 ### Consertos de código antes da carga (não são decisões)
 
-- ✅ **Paginar o quadro do funil, a lista de conversas e o contador de não
-  lidas** — feito no [PR #227](https://github.com/leonardocabralb/CB-CRM/pull/227)
-  (`src/lib/supabase/paginar.ts`). Os três cortavam em 1.000 linhas sem avisar,
-  e o contador não lidas nem ordenava — com 12.980 contatos e 8.400 cards num
-  funil, os três passariam a mentir. **O PR precisa estar mesclado antes da
-  carga.**
-- [ ] **Migration do campo de id da Kommo** (decisão 16) e do bloco "Migração".
-- [ ] **Medir a leitura do funil com volume real** no ensaio: abrir o
-  Desempenho de um funil com ~8.400 negócios faz 9 chamadas sequenciais à RPC,
-  cada uma trazendo o trajeto inteiro em jsonb. O teto é 25.000 negócios por
-  funil, e acima dele as três vistas caem em "falhou". A margem caiu de ~90×
-  para ~3×.
+✅ **Paginar o quadro do funil, a lista de conversas e o contador de não lidas**
+— feito no [PR #227](https://github.com/leonardocabralb/CB-CRM/pull/227)
+(`src/lib/supabase/paginar.ts`), **mesclado em 20/09**. Os três cortavam em
+1.000 linhas sem avisar.
+
+Os cinco abaixo saíram do teste de esforço. Nenhum é da migração — são defeitos
+que já existem e que a carga torna graves.
+
+- [ ] **1. Teto por coluna no Kanban** (`pipeline-board.tsx`). O #227 consertou
+      o DADO, não o RENDER: a tela monta um componente React e um registro do
+      dnd-kit por card, e a coluna "Perdido" (2.719) estica a página para
+      centenas de milhares de pixels. No computador trava a thread principal;
+      no app do iPhone, o provável é ser morto. **A tela principal do funil
+      deixa de abrir.** O padrão já existe no repositório
+      (`lista-de-leads.tsx`, `PAGINA = 100` + "carregar mais") e não pede
+      dependência nova. O contador do cabeçalho vem de `deals.length` e
+      continua certo.
+- [ ] **2. Paginar as quatro consultas de audiência do disparo** e chunkear
+      `fetchCustomValueIndex` (`use-broadcast-sending.ts`). As duas andam
+      JUNTAS, no mesmo PR: consertar só a audiência leva o `.in()` a uma URL de
+      ~480 KB e faz o índice de campos truncar — e aí o cliente recebe
+      "Olá , sobre sua dívida de ". `linhas === null` tem de ABORTAR o disparo.
+- [ ] **3. Preferir o telefone EXATO em `findExistingContact`**
+      (`dedupe.ts`). Hoje a consulta busca pelo sufixo de 8 dígitos **sem
+      `.order()`** e devolve o primeiro que passar no teste tolerante: com os 4
+      pares ambíguos, a mensagem do cliente pode ser anexada à ficha errada — e
+      a escolha pode INVERTER de um dia para o outro, porque qualquer UPDATE
+      numa das linhas move a tupla no heap. Preferir o exato antes do tolerante
+      não muda nada onde não há colisão e torna a resolução determinística.
+- [ ] **4. Agregar no banco o painel do funil** (`dashboard/queries.ts`). O
+      cartão "Valor do funil" e o donut por etapa somam no máximo 1.000
+      negócios abertos e publicam o resultado como total: um número plausível,
+      estável entre recarregamentos, e errado para baixo. O mínimo aceitável é
+      `count: 'exact'` e ESCONDER o cartão quando o count passar do que veio —
+      a régua que o Meu dia já usa.
+- [ ] **5. Busca no servidor nos seletores de contato** (`deal-form.tsx`,
+      `task-form.tsx`). Os dois carregam `contacts` sem limite e já estão
+      cortados hoje; com 12.980 contatos, do meio do alfabeto em diante o
+      cliente não aparece — e o operador cadastra de novo, gerando a ficha
+      duplicada que a carga passou semanas evitando. O padrão a copiar é
+      `seletor-de-cliente.tsx` (busca digitada com debounce + `.limit`), e o
+      comentário do próprio `task-form.tsx` já mandava fazer isso.
+
+**Migrations que a carga exige** (nenhuma delas é dado — dado é a fase 2c):
+
+- [ ] **`deals.kommo_lead_id`** com índice único parcial: é o que torna a
+      reexecução garantida pelo banco (contrato A.3).
+- [ ] **A função de lote** (`SECURITY DEFINER`) que insere os cards, repara a
+      trilha dos gatilhos e apaga `cb_automation_events` na mesma transação
+      curta (contrato A.1). `REVOKE` de PUBLIC **e** dos papéis, com `GRANT`
+      de volta só para `service_role` — as duas metades, conferidas.
+
+**Medir no ensaio, não antes:** abrir o Desempenho de um funil com ~8.400
+negócios faz 9 chamadas sequenciais à RPC, cada uma trazendo o trajeto inteiro
+em jsonb. O teto é 25.000 negócios por funil, e acima dele as três vistas caem
+em "falhou". A margem caiu de ~90× para ~3×.
 
 
 ## Fases
 
-- [x] **1. Levantamento** — refeito em 14/09/2026, conferido contra o código
-      de 19/09/2026 (este documento).
-- [ ] **2. Decisões e de‑para** — as 27 decisões fechadas num arquivo de mapa
-      versionado (sem dado de cliente: ids de funil, etapa, campo, tag e
-      usuário). **Entra junto: a ESTRUTURA final das 28 etapas** (criar,
-      renomear, reposicionar — depois da carga fica caro, trava 12) e o
-      `resultado` de cada uma, que o gatilho da 950 lê no INSERT.
-- [ ] **2b. Migration do id da Kommo** (decisão 16) e os dois consertos de
-      paginação. Sem a primeira, a carga não é reexecutável; sem os segundos,
-      o Kanban mente depois da carga.
-- [ ] **3. Ensaio** — a carga rodando contra um Postgres local com o schema do
-      replay e o bruto da Kommo, com relatório de diferença e as 7
-      conferências do contrato de carga. Não existe banco de homologação: o
-      `.env.local` aponta para a produção. **Medir aqui também o lado da
-      LEITURA** (o tempo de abrir o Desempenho com ~8.400 negócios).
-- [ ] **4. Religar entradas e saídas** — formulários e Typebot passam a chamar
+- [x] **1. Levantamento** — refeito em 14/09/2026, remedido em 19/09 e
+      conferido contra o código de 20/09 (este documento).
+- [x] **2. Decisões e de-para** — fechadas em 19–20/09 pelo operador e
+      gravadas em `docs/PLANO-migracao-kommo-de-para.md`, que é o mapa: as
+      tabelas por etapa, os degraus, as etiquetas, a regra do card e o que é
+      descartado.
+- [x] **2a. Teste de esforço** — as decisões contra o código real, seis lentes
+      com refutação adversarial. 60 achados, 8 que bloqueiam. Estão na seção
+      "O teste de esforço de 20/09/2026" e reescreveram o contrato de carga.
+- [ ] **2b. Consertos de código** — os cinco da seção anterior, mais as duas
+      migrations (`deals.kommo_lead_id` e a função de lote). Nenhum deles é da
+      migração: são defeitos que já existem e que a carga torna graves.
+- [ ] **2c. Estrutura em produção** — as 6 etapas novas, os degraus das 34, o
+      `resultado` de "Desqualificado", o campo do id da Kommo e o bloco
+      "Migração". É DADO, não migration. ⚠️ Marcar os degraus faz o Desempenho
+      e a Saúde **começarem a funcionar para os 976 negócios que já existem** —
+      hoje as duas telas dizem "configure". É desejável, e é visível.
+- [ ] **3. Piloto em produção** — 25 a 40 leads escolhidos para cobrir cada
+      variação uma vez (contato novo × existente, colapso de leads, etapa
+      criada × existente, ganho × perdido × aberto, com e sem anotação, com e
+      sem valor, um dos 4 ambíguos), rodando **a carga de verdade com um
+      filtro**, nunca um script à parte. Pré-requisito: o **livro-razão** de
+      desfazer, escrito e ensaiado ANTES — cada linha criada, com tabela e id,
+      gravada conforme escreve; desfazer é lê-lo de trás para frente, na ordem
+      da receita de fusão do CLAUDE.md (apagar o negócio explicitamente antes
+      do contato). Rodar DUAS vezes seguidas prova a idempotência.
+      **Conferir na tela**, não só no banco.
+- [ ] **4. Ensaio com volume** — a carga inteira contra um Postgres local com o
+      schema do replay, para o que o piloto não vê: o estouro de subtransação,
+      o tempo, o Kanban com 8.400 cards e o corte do disparo. Não existe banco
+      de homologação — o `.env.local` aponta para a produção.
+- [ ] **5. Religar entradas e saídas** — formulários e Typebot passam a chamar
       o CB CRM (webhooks de entrada da 982), e os 5 webhooks de conversão
-      ganham substituto, antes da carga final. Entra aqui o "Reassinar" do
-      Calendly, se a Fase 8 do funil (que passa a receber `invitee.canceled`)
-      entrar antes.
-- [ ] **5. Carga** — idempotente, por partes (contatos → tags → campos →
-      negócios → eventos → anotações), com o id da Kommo carimbado e o
-      contrato de carga obedecido. Reexecutada no dia do corte para o delta.
-- [ ] **6. Conferência** — as contagens dos dois lados, as conferências do
-      contrato, amostra na tela, e o relatório do funil comercial
-      antes/depois. **Mapear os `degrau` das 28 etapas é pré-requisito
-      DESTA fase**, não da carga: enquanto eles forem nulos, o Desempenho e a
-      Saúde mostram "configure" e não há o que conferir.
-- [ ] **7. Desligar** — a equipe para de usar a Kommo; revogar token e chave
+      ganham substituto, antes da carga final.
+- [ ] **6. Carga** — por lote, idempotente, na ordem contatos → etiquetas →
+      campos → negócios → eventos → conversas → anotações. ⚠️ Na janela:
+      zerar `default_pipeline_id` das 5 conexões (o roteador cria card sozinho)
+      e desligar a automação do Calendly. Reexecutada no dia do corte para o
+      delta.
+- [ ] **7. Conferência** — as 13 conferências do contrato, as contagens dos
+      dois lados, amostra na tela e o relatório do funil antes/depois.
+- [ ] **8. Desligar** — a equipe para de usar a Kommo; revogar token e chave
       secreta da integração.
 
 **Ordem em relação às Fases 7 e 8 do funil comercial:** a Fase 7 (ciclo de
-vendas) pode vir depois — ela lê a trilha que já estará lá —, e serve bem como
-instrumento da fase 6 daqui. A Fase 8 (mapas de reunião) precisa vir ANTES se
-a decisão 27 for "linhas sintéticas": escrever registro num log cujo leitor
-ainda não existe é adivinhar a forma que ele vai esperar.
+vendas) pode vir depois — ela lê a trilha que já estará lá — e serve bem como
+instrumento da conferência. A Fase 8 (mapas de reunião) precisa vir ANTES se a
+decisão 27 for "linhas sintéticas".
 
-⚠️ **Esta medição vale por poucos dias.** Os dois lados mudam ~30 leads por
-dia — em 19/09 o CB CRM já estava com 1.196 contatos e 960 negócios, contra os
-1.024/766 de 14/09. Remedir (os 5 passos do topo) antes de escrever a carga. A
-saída da varredura de 14/09 **não existe mais** (era scratchpad de sessão), e
-a varredura completa leva ~6 min mais ~12 min do histórico.
+⚠️ **A medição vale por poucos dias.** Os dois lados mudam ~30 leads por dia:
+em 14/09 o CB CRM tinha 1.024 contatos, em 19/09 tinha 1.196, em 20/09 tinha
+1.212. Remedir antes de escrever a carga. A varredura completa leva ~6 min mais
+~12 min do histórico.
 
 ## Credenciais
 
 `KOMMO_TOKEN` e `KOMMO_API_BASE` no `.env.local` (gitignored). ⚠️ O token
-**expira em 30/09/2026** — faltam **11 dias** em 19/09, e a fase 5 não termina
+**expira em 30/09/2026** — faltam **10 dias** em 20/09, e a fase 5 não termina
 antes. Gerar um novo na integração da Kommo é pré-requisito da remedição, não
 só da carga. Ele foi colado num chat durante o levantamento de 02/09 —
 **revogar na Kommo ao fim da migração**, junto com a chave secreta da

@@ -52,6 +52,14 @@ export interface AiConfig {
    *  WhatsApp session window open. Falls back to
    *  DEFAULT_COMMERCIAL_WELCOME_MESSAGE when null/empty. */
   commercialWelcomeMessage?: string | null
+  /** Non-null only when the account has a commercial leads calendar
+   *  configured (migration 046) — used purely as a prompt-building
+   *  signal (buildSystemPrompt's `commercialCalendarConfigured`) so the
+   *  model is told to actually book via tools vs. fall back to the
+   *  link/email flow. The full scheduling config (busy calendars,
+   *  business hours, etc.) is loaded separately by
+   *  getCommercialCalendarConfig when a tool call actually runs. */
+  commercialCalendarId?: string | null
 }
 
 /** A single conversation turn in the shape both providers accept. */

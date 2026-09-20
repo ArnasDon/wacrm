@@ -81,6 +81,16 @@ export function AiConfig() {
   const [commercialSystemPrompt, setCommercialSystemPrompt] = useState('');
   const [commercialBookingUrl, setCommercialBookingUrl] = useState('');
   const [commercialWelcomeMessage, setCommercialWelcomeMessage] = useState('');
+  // Real scheduling (service-account calendar) — see docs/eter-agent-config.md.
+  const [commercialCalendarId, setCommercialCalendarId] = useState('');
+  const [commercialBusyCalendarIds, setCommercialBusyCalendarIds] = useState('');
+  const [commercialDurationMin, setCommercialDurationMin] = useState(30);
+  const [commercialTimezone, setCommercialTimezone] = useState('Europe/Lisbon');
+  const [commercialHoursStart, setCommercialHoursStart] = useState('09:00');
+  const [commercialHoursEnd, setCommercialHoursEnd] = useState('18:00');
+  const [commercialMinLeadMin, setCommercialMinLeadMin] = useState(120);
+  const [commercialBufferMin, setCommercialBufferMin] = useState(15);
+  const [commercialMaxDaysAhead, setCommercialMaxDaysAhead] = useState(10);
 
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
@@ -110,6 +120,24 @@ export function AiConfig() {
         setCommercialSystemPrompt(data.commercial_system_prompt ?? '');
         setCommercialBookingUrl(data.commercial_booking_url ?? '');
         setCommercialWelcomeMessage(data.commercial_welcome_message ?? '');
+        setCommercialCalendarId(data.commercial_calendar_id ?? '');
+        setCommercialBusyCalendarIds(
+          Array.isArray(data.commercial_busy_calendar_ids)
+            ? data.commercial_busy_calendar_ids.join(', ')
+            : '',
+        );
+        setCommercialDurationMin(data.commercial_meeting_duration_min ?? 30);
+        setCommercialTimezone(data.commercial_timezone ?? 'Europe/Lisbon');
+        {
+          const monWindow = data.commercial_business_hours?.mon?.[0] as
+            | [string, string]
+            | undefined;
+          setCommercialHoursStart(monWindow?.[0] ?? '09:00');
+          setCommercialHoursEnd(monWindow?.[1] ?? '18:00');
+        }
+        setCommercialMinLeadMin(data.commercial_min_lead_time_min ?? 120);
+        setCommercialBufferMin(data.commercial_buffer_min ?? 15);
+        setCommercialMaxDaysAhead(data.commercial_max_business_days_ahead ?? 10);
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
         setKeyEdited(false);
@@ -165,6 +193,18 @@ export function AiConfig() {
     commercial_system_prompt: commercialSystemPrompt.trim() || null,
     commercial_booking_url: commercialBookingUrl.trim() || null,
     commercial_welcome_message: commercialWelcomeMessage.trim() || null,
+    commercial_calendar_id: commercialCalendarId.trim() || null,
+    commercial_busy_calendar_ids: commercialBusyCalendarIds
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean),
+    commercial_meeting_duration_min: commercialDurationMin,
+    commercial_timezone: commercialTimezone.trim() || 'Europe/Lisbon',
+    commercial_business_hours_start: commercialHoursStart,
+    commercial_business_hours_end: commercialHoursEnd,
+    commercial_min_lead_time_min: commercialMinLeadMin,
+    commercial_buffer_min: commercialBufferMin,
+    commercial_max_business_days_ahead: commercialMaxDaysAhead,
   });
 
   const handleTest = async () => {
@@ -237,6 +277,15 @@ export function AiConfig() {
         setCommercialSystemPrompt('');
         setCommercialBookingUrl('');
         setCommercialWelcomeMessage('');
+        setCommercialCalendarId('');
+        setCommercialBusyCalendarIds('');
+        setCommercialDurationMin(30);
+        setCommercialTimezone('Europe/Lisbon');
+        setCommercialHoursStart('09:00');
+        setCommercialHoursEnd('18:00');
+        setCommercialMinLeadMin(120);
+        setCommercialBufferMin(15);
+        setCommercialMaxDaysAhead(10);
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -572,6 +621,141 @@ export function AiConfig() {
               <p className="text-xs text-muted-foreground">
                 {t('commercialWelcomeHint')}
               </p>
+            </div>
+
+            <div className="space-y-2 rounded-md border border-border p-3">
+              <p className="text-sm font-medium text-foreground">
+                {t('commercialSchedulingTitle')}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {t('commercialSchedulingDesc')}
+              </p>
+
+              <div className="grid gap-4 pt-2 sm:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-calendar-id">
+                    {t('commercialCalendarId')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-calendar-id"
+                    value={commercialCalendarId}
+                    onChange={(e) => setCommercialCalendarId(e.target.value)}
+                    placeholder="c_....@group.calendar.google.com"
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-busy-ids">
+                    {t('commercialBusyCalendarIds')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-busy-ids"
+                    value={commercialBusyCalendarIds}
+                    onChange={(e) => setCommercialBusyCalendarIds(e.target.value)}
+                    placeholder="primary, c_....@group.calendar.google.com"
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                {t('commercialCalendarHint')}
+              </p>
+
+              <div className="grid gap-4 pt-2 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-duration">
+                    {t('commercialDuration')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-duration"
+                    type="number"
+                    min={5}
+                    value={commercialDurationMin}
+                    onChange={(e) => setCommercialDurationMin(Math.max(5, Number(e.target.value) || 30))}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-buffer">
+                    {t('commercialBuffer')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-buffer"
+                    type="number"
+                    min={0}
+                    value={commercialBufferMin}
+                    onChange={(e) => setCommercialBufferMin(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-min-lead">
+                    {t('commercialMinLead')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-min-lead"
+                    type="number"
+                    min={0}
+                    value={commercialMinLeadMin}
+                    onChange={(e) => setCommercialMinLeadMin(Math.max(0, Number(e.target.value) || 0))}
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-4 pt-2 sm:grid-cols-3">
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-hours-start">
+                    {t('commercialHoursStart')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-hours-start"
+                    value={commercialHoursStart}
+                    onChange={(e) => setCommercialHoursStart(e.target.value)}
+                    placeholder="09:00"
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-hours-end">
+                    {t('commercialHoursEnd')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-hours-end"
+                    value={commercialHoursEnd}
+                    onChange={(e) => setCommercialHoursEnd(e.target.value)}
+                    placeholder="18:00"
+                    disabled={disabled}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="ai-commercial-max-days">
+                    {t('commercialMaxDaysAhead')}
+                  </Label>
+                  <Input
+                    id="ai-commercial-max-days"
+                    type="number"
+                    min={1}
+                    value={commercialMaxDaysAhead}
+                    onChange={(e) => setCommercialMaxDaysAhead(Math.max(1, Number(e.target.value) || 10))}
+                    disabled={disabled}
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-2">
+                <Label htmlFor="ai-commercial-timezone">
+                  {t('commercialTimezone')}
+                </Label>
+                <Input
+                  id="ai-commercial-timezone"
+                  value={commercialTimezone}
+                  onChange={(e) => setCommercialTimezone(e.target.value)}
+                  placeholder="Europe/Lisbon"
+                  disabled={disabled}
+                  className="max-w-xs"
+                />
+              </div>
             </div>
           </CardContent>
         </Card>

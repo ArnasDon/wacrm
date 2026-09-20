@@ -16,10 +16,11 @@ interface AiConfigRow {
   commercial_mode_enabled: boolean
   commercial_booking_url: string | null
   commercial_welcome_message: string | null
+  commercial_calendar_id: string | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -87,6 +88,7 @@ export async function loadAiConfig(
     commercialSystemPrompt: row.commercial_system_prompt,
     commercialBookingUrl: row.commercial_booking_url,
     commercialWelcomeMessage: row.commercial_welcome_message,
+    commercialCalendarId: row.commercial_calendar_id,
   }
 }
 

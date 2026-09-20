@@ -309,6 +309,57 @@ export async function getBusySlots(
   return busy.map((b) => ({ start: new Date(b.start), end: new Date(b.end) }))
 }
 
+/**
+ * Bloco 3-A — query Google's `freeBusy` endpoint for SEVERAL calendars
+ * at once, returning each one's busy intervals separately. Used to
+ * check a proposed slot is free across both the commercial leads
+ * calendar AND a personal/team calendar it must never collide with
+ * (`ai_configs.commercial_busy_calendar_ids`) — a single `freeBusy`
+ * request already supports multiple `items`, so this is one round trip
+ * regardless of list length, not N calls to `getBusySlots`.
+ *
+ * A calendar id the caller (or the impersonated service account) can't
+ * read comes back from Google as an entry with an `errors` array and no
+ * `busy` list — treated as "unknown/unavailable", not "free", by
+ * returning an empty busy array for the KEY only ever set to an empty
+ * array (defensive default), never throwing: a single misconfigured
+ * calendar id must not take down availability for every other one.
+ */
+export async function getFreeBusyForCalendars(
+  accessToken: string,
+  calendarIds: readonly string[],
+  range: { start: Date; end: Date },
+  http: HttpClient = defaultHttp,
+): Promise<Record<string, BusyInterval[]>> {
+  const uniqueIds = Array.from(new Set(calendarIds.filter((id) => id.trim().length > 0)))
+  const result: Record<string, BusyInterval[]> = {}
+  if (uniqueIds.length === 0) return result
+
+  const res = await googleFetch(http, `${CALENDAR_API_BASE}/freeBusy`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      timeMin: range.start.toISOString(),
+      timeMax: range.end.toISOString(),
+      items: uniqueIds.map((id) => ({ id })),
+    }),
+  })
+  if (!res.ok) throw await parseGoogleError(res)
+
+  const data = (await res.json().catch(() => null)) as {
+    calendars?: Record<string, { busy?: { start: string; end: string }[] }>
+  } | null
+
+  for (const id of uniqueIds) {
+    const busy = data?.calendars?.[id]?.busy ?? []
+    result[id] = busy.map((b) => ({ start: new Date(b.start), end: new Date(b.end) }))
+  }
+  return result
+}
+
 export interface CalendarEventInput {
   summary: string
   description?: string

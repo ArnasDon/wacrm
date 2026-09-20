@@ -1,0 +1,145 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+const h = vi.hoisted(() => ({
+  findCommercialSlots: vi.fn(),
+  bookCommercialSlot: vi.fn(),
+}))
+
+vi.mock('@/lib/calendar/commercial-availability', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/calendar/commercial-availability')>(
+    '@/lib/calendar/commercial-availability',
+  )
+  return {
+    ...actual,
+    findCommercialSlots: h.findCommercialSlots,
+    bookCommercialSlot: h.bookCommercialSlot,
+  }
+})
+
+import {
+  checkCommercialAvailabilityHandler,
+  bookCommercialMeetingHandler,
+  createCommercialToolExecutor,
+} from './commercial'
+import { CommercialCalendarNotConfiguredError } from '@/lib/calendar/commercial-availability'
+import type { ToolHandlerContext } from './context'
+
+const ctx: ToolHandlerContext = {
+  db: {} as never,
+  accountId: 'acct-1',
+  conversationId: 'conv-1',
+  contactId: 'contact-1',
+  defaultNotifyUserId: null,
+}
+
+beforeEach(() => {
+  vi.clearAllMocks()
+})
+
+describe('checkCommercialAvailabilityHandler', () => {
+  it('returns the slots as JSON, ready for the model to propose', async () => {
+    h.findCommercialSlots.mockResolvedValue({
+      config: { timezone: 'Europe/Lisbon', meetingDurationMin: 30 },
+      slots: [
+        { start: new Date('2026-09-15T09:00:00Z'), end: new Date('2026-09-15T09:30:00Z') },
+      ],
+    })
+    const result = await checkCommercialAvailabilityHandler(ctx)
+    expect(result.isError).toBe(false)
+    const parsed = JSON.parse(result.content)
+    expect(parsed.slots).toHaveLength(1)
+    expect(parsed.timezone).toBe('Europe/Lisbon')
+  })
+
+  it('tells the model not to invent a time when there are no free slots', async () => {
+    h.findCommercialSlots.mockResolvedValue({
+      config: { timezone: 'Europe/Lisbon', meetingDurationMin: 30 },
+      slots: [],
+    })
+    const result = await checkCommercialAvailabilityHandler(ctx)
+    expect(result.isError).toBe(false)
+    const parsed = JSON.parse(result.content)
+    expect(parsed.slots).toEqual([])
+    expect(parsed.note).toMatch(/não inventes/i)
+  })
+
+  it('returns a clean tool error (not a thrown exception) when no calendar is configured', async () => {
+    h.findCommercialSlots.mockRejectedValue(new CommercialCalendarNotConfiguredError())
+    const result = await checkCommercialAvailabilityHandler(ctx)
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/pede o email/i)
+  })
+
+  it('rethrows an unexpected error (not swallowed as a config issue)', async () => {
+    h.findCommercialSlots.mockRejectedValue(new Error('network blew up'))
+    await expect(checkCommercialAvailabilityHandler(ctx)).rejects.toThrow('network blew up')
+  })
+})
+
+describe('bookCommercialMeetingHandler', () => {
+  const validInput = { starts_at: '2026-09-15T09:00:00Z', lead_email: 'lead@example.com' }
+
+  it('books successfully and reports it back to the model', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'booked', eventId: 'evt-1', htmlLink: null })
+    const result = await bookCommercialMeetingHandler(ctx, validInput)
+    expect(result.isError).toBe(false)
+    expect(h.bookCommercialSlot).toHaveBeenCalledWith(
+      ctx.db,
+      expect.objectContaining({
+        accountId: 'acct-1',
+        contactId: 'contact-1',
+        conversationId: 'conv-1',
+        leadEmail: 'lead@example.com',
+      }),
+    )
+  })
+
+  it('reports a conflict as a tool error telling the model to re-propose, never a crash', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'conflict' })
+    const result = await bookCommercialMeetingHandler(ctx, validInput)
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/check_commercial_availability/)
+    expect(result.content).toMatch(/não digas que já está marcado/i)
+  })
+
+  it('reports not_configured as a tool error steering the model to the email/link fallback', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'not_configured' })
+    const result = await bookCommercialMeetingHandler(ctx, validInput)
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/pede o email/i)
+  })
+
+  it('rejects a malformed starts_at without calling bookCommercialSlot', async () => {
+    const result = await bookCommercialMeetingHandler(ctx, { ...validInput, starts_at: 'not-a-date' })
+    expect(result.isError).toBe(true)
+    expect(h.bookCommercialSlot).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid email without calling bookCommercialSlot', async () => {
+    const result = await bookCommercialMeetingHandler(ctx, { ...validInput, lead_email: 'not-an-email' })
+    expect(result.isError).toBe(true)
+    expect(h.bookCommercialSlot).not.toHaveBeenCalled()
+  })
+
+  it('rejects a missing lead_email without calling bookCommercialSlot', async () => {
+    const result = await bookCommercialMeetingHandler(ctx, { starts_at: validInput.starts_at })
+    expect(result.isError).toBe(true)
+    expect(h.bookCommercialSlot).not.toHaveBeenCalled()
+  })
+})
+
+describe('createCommercialToolExecutor', () => {
+  it('routes check_commercial_availability and book_commercial_meeting to their handlers', async () => {
+    h.findCommercialSlots.mockResolvedValue({ config: { timezone: 'Europe/Lisbon' }, slots: [] })
+    const executor = createCommercialToolExecutor(ctx)
+    const result = await executor({ id: 'call-1', name: 'check_commercial_availability', input: {} })
+    expect(result.isError).toBe(false)
+  })
+
+  it('returns a tool error for an unknown tool name instead of throwing', async () => {
+    const executor = createCommercialToolExecutor(ctx)
+    const result = await executor({ id: 'call-1', name: 'book_meeting', input: {} })
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/desconhecida/i)
+  })
+})

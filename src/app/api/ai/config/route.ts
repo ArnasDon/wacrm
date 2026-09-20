@@ -9,6 +9,10 @@ import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { validateAiCredentials } from '@/lib/ai/validate'
 import { embedTexts } from '@/lib/ai/embeddings'
 import { AiError, type AiProvider } from '@/lib/ai/types'
+import { validateBusinessHours, BusinessHoursError } from '@/lib/calendar/business-hours'
+
+const TIME_RE = /^([01]\d|2[0-3]):([0-5]\d)$/
+const WEEKDAYS_MON_FRI = ['mon', 'tue', 'wed', 'thu', 'fri'] as const
 
 function bad(message: string) {
   return NextResponse.json({ error: message }, { status: 400 })
@@ -30,7 +34,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, commercial_busy_calendar_ids, commercial_meeting_duration_min, commercial_timezone, commercial_business_hours, commercial_min_lead_time_min, commercial_buffer_min, commercial_max_business_days_ahead',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -152,6 +156,112 @@ export async function POST(request: Request) {
       }
     }
 
+    // Bloco 3-A — commercial-mode scheduling (migration 046). All
+    // optional and only touched when the form sends them, mirroring
+    // handoff_agent_id/the commercial fields above — a partial save
+    // never wipes them.
+    const commercialCalendarIdProvided = 'commercial_calendar_id' in body
+    const commercialCalendarId =
+      typeof body.commercial_calendar_id === 'string' && body.commercial_calendar_id.trim()
+        ? body.commercial_calendar_id.trim()
+        : null
+
+    const commercialBusyCalendarIdsProvided = 'commercial_busy_calendar_ids' in body
+    let commercialBusyCalendarIds: string[] = []
+    if (commercialBusyCalendarIdsProvided) {
+      const raw = body.commercial_busy_calendar_ids
+      if (Array.isArray(raw)) {
+        commercialBusyCalendarIds = raw.filter((v): v is string => typeof v === 'string' && v.trim() !== '').map((v) => v.trim())
+      } else if (typeof raw === 'string') {
+        commercialBusyCalendarIds = raw
+          .split(',')
+          .map((v) => v.trim())
+          .filter(Boolean)
+      } else {
+        return bad('commercial_busy_calendar_ids must be an array or a comma-separated string')
+      }
+    }
+
+    const commercialDurationProvided = 'commercial_meeting_duration_min' in body
+    let commercialDuration = 30
+    if (commercialDurationProvided) {
+      commercialDuration = Number(body.commercial_meeting_duration_min)
+      if (!Number.isFinite(commercialDuration) || commercialDuration <= 0) {
+        return bad('commercial_meeting_duration_min must be a positive number')
+      }
+      commercialDuration = Math.floor(commercialDuration)
+    }
+
+    const commercialTimezoneProvided = 'commercial_timezone' in body
+    const commercialTimezone =
+      typeof body.commercial_timezone === 'string' && body.commercial_timezone.trim()
+        ? body.commercial_timezone.trim()
+        : 'Europe/Lisbon'
+
+    // Business hours are exposed to the settings UI as a single
+    // Mon–Fri start/end pair (`commercial_business_hours_start/end`)
+    // rather than the raw per-weekday JSON — that's the actual shape
+    // Ricardo asked for ("dias de semana, das 09h00 às 18h00"). The
+    // stored column is still the full BusinessHours JSONB so
+    // calculateAvailability can consume it directly.
+    const commercialHoursProvided =
+      'commercial_business_hours_start' in body || 'commercial_business_hours_end' in body
+    let commercialBusinessHours: ReturnType<typeof validateBusinessHours> | undefined
+    if (commercialHoursProvided) {
+      const start =
+        typeof body.commercial_business_hours_start === 'string'
+          ? body.commercial_business_hours_start.trim()
+          : '09:00'
+      const end =
+        typeof body.commercial_business_hours_end === 'string'
+          ? body.commercial_business_hours_end.trim()
+          : '18:00'
+      if (!TIME_RE.test(start) || !TIME_RE.test(end)) {
+        return bad('commercial_business_hours_start/end must be "HH:MM"')
+      }
+      if (end <= start) {
+        return bad('commercial_business_hours_end must be after commercial_business_hours_start')
+      }
+      const hours: Record<string, [string, string][]> = {}
+      for (const day of WEEKDAYS_MON_FRI) hours[day] = [[start, end]]
+      try {
+        commercialBusinessHours = validateBusinessHours(hours)
+      } catch (err) {
+        if (err instanceof BusinessHoursError) return bad(err.message)
+        throw err
+      }
+    }
+
+    const commercialMinLeadProvided = 'commercial_min_lead_time_min' in body
+    let commercialMinLead = 120
+    if (commercialMinLeadProvided) {
+      commercialMinLead = Number(body.commercial_min_lead_time_min)
+      if (!Number.isFinite(commercialMinLead) || commercialMinLead < 0) {
+        return bad('commercial_min_lead_time_min must be a non-negative number')
+      }
+      commercialMinLead = Math.floor(commercialMinLead)
+    }
+
+    const commercialBufferProvided = 'commercial_buffer_min' in body
+    let commercialBuffer = 15
+    if (commercialBufferProvided) {
+      commercialBuffer = Number(body.commercial_buffer_min)
+      if (!Number.isFinite(commercialBuffer) || commercialBuffer < 0) {
+        return bad('commercial_buffer_min must be a non-negative number')
+      }
+      commercialBuffer = Math.floor(commercialBuffer)
+    }
+
+    const commercialMaxDaysProvided = 'commercial_max_business_days_ahead' in body
+    let commercialMaxDays = 10
+    if (commercialMaxDaysProvided) {
+      commercialMaxDays = Number(body.commercial_max_business_days_ahead)
+      if (!Number.isFinite(commercialMaxDays) || commercialMaxDays <= 0) {
+        return bad('commercial_max_business_days_ahead must be a positive number')
+      }
+      commercialMaxDays = Math.floor(commercialMaxDays)
+    }
+
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
 
     // Embeddings key (optional, for semantic KB search): a non-empty
@@ -251,6 +361,14 @@ export async function POST(request: Request) {
     if (commercialPromptProvided) shared.commercial_system_prompt = commercialSystemPrompt
     if (commercialWelcomeProvided) shared.commercial_welcome_message = commercialWelcomeMessage
     if (commercialBookingUrlProvided) shared.commercial_booking_url = commercialBookingUrl
+    if (commercialCalendarIdProvided) shared.commercial_calendar_id = commercialCalendarId
+    if (commercialBusyCalendarIdsProvided) shared.commercial_busy_calendar_ids = commercialBusyCalendarIds
+    if (commercialDurationProvided) shared.commercial_meeting_duration_min = commercialDuration
+    if (commercialTimezoneProvided) shared.commercial_timezone = commercialTimezone
+    if (commercialHoursProvided) shared.commercial_business_hours = commercialBusinessHours
+    if (commercialMinLeadProvided) shared.commercial_min_lead_time_min = commercialMinLead
+    if (commercialBufferProvided) shared.commercial_buffer_min = commercialBuffer
+    if (commercialMaxDaysProvided) shared.commercial_max_business_days_ahead = commercialMaxDays
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {

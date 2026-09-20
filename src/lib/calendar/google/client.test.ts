@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import {
   refreshAccessToken,
   getBusySlots,
+  getFreeBusyForCalendars,
   createEvent,
   updateEvent,
   deleteEvent,
@@ -92,6 +93,63 @@ describe('getBusySlots', () => {
       http,
     )
     expect(busy).toEqual([])
+  })
+})
+
+describe('getFreeBusyForCalendars', () => {
+  it('returns busy intervals keyed by calendar id, for multiple calendars in one request', async () => {
+    const http = mockHttp(
+      ok({
+        calendars: {
+          primary: { busy: [{ start: '2026-08-20T09:00:00Z', end: '2026-08-20T09:30:00Z' }] },
+          'leads@group.calendar.google.com': {
+            busy: [{ start: '2026-08-20T11:00:00Z', end: '2026-08-20T11:30:00Z' }],
+          },
+        },
+      }),
+    )
+    const result = await getFreeBusyForCalendars(
+      'at-1',
+      ['primary', 'leads@group.calendar.google.com'],
+      { start: new Date('2026-08-20T00:00:00Z'), end: new Date('2026-08-21T00:00:00Z') },
+      http,
+    )
+    expect(result.primary).toEqual([
+      { start: new Date('2026-08-20T09:00:00Z'), end: new Date('2026-08-20T09:30:00Z') },
+    ])
+    expect(result['leads@group.calendar.google.com']).toEqual([
+      { start: new Date('2026-08-20T11:00:00Z'), end: new Date('2026-08-20T11:30:00Z') },
+    ])
+
+    const [, init] = vi.mocked(http.fetch).mock.calls[0]
+    const body = JSON.parse(init!.body as string)
+    expect(body.items).toEqual([{ id: 'primary' }, { id: 'leads@group.calendar.google.com' }])
+  })
+
+  it('de-duplicates repeated calendar ids into a single request item', async () => {
+    const http = mockHttp(ok({ calendars: { primary: { busy: [] } } }))
+    await getFreeBusyForCalendars(
+      'at-1',
+      ['primary', 'primary'],
+      { start: new Date(), end: new Date() },
+      http,
+    )
+    const [, init] = vi.mocked(http.fetch).mock.calls[0]
+    const body = JSON.parse(init!.body as string)
+    expect(body.items).toEqual([{ id: 'primary' }])
+  })
+
+  it('returns an empty object and makes no request for an empty calendar list', async () => {
+    const http = mockHttp()
+    const result = await getFreeBusyForCalendars('at-1', [], { start: new Date(), end: new Date() }, http)
+    expect(result).toEqual({})
+    expect(http.fetch).not.toHaveBeenCalled()
+  })
+
+  it('defaults a calendar with no busy field to an empty array rather than throwing', async () => {
+    const http = mockHttp(ok({ calendars: { primary: {} } }))
+    const result = await getFreeBusyForCalendars('at-1', ['primary'], { start: new Date(), end: new Date() }, http)
+    expect(result.primary).toEqual([])
   })
 })
 

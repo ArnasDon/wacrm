@@ -2,7 +2,7 @@ import { supabaseAdmin } from './admin-client'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
-import { generateReply } from './generate'
+import { generateReply, generateReplyWithTools } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary } from './handoff'
 import { logAiUsage } from './usage'
@@ -14,6 +14,8 @@ import {
   sendCommercialFallback,
   sendCommercialWelcomeIfNeeded,
 } from './commercial'
+import { COMMERCIAL_TOOLS } from './tools/commercial-schema'
+import { createCommercialToolExecutor } from './tools/handlers/commercial'
 import type { GenerateResult } from './types'
 
 interface DispatchArgs {
@@ -143,6 +145,7 @@ export async function dispatchInboundToAiReply(
       mode: isCommercial ? 'commercial_reply' : 'auto_reply',
       knowledge,
       commercialBookingUrl: isCommercial ? config.commercialBookingUrl : undefined,
+      commercialCalendarConfigured: isCommercial ? !!config.commercialCalendarId : undefined,
     })
 
     // The 24h-window guarantee (see sendCommercialWelcomeIfNeeded above)
@@ -155,7 +158,29 @@ export async function dispatchInboundToAiReply(
     // rethrow so the outer catch handles it the way it always has.
     let generation: GenerateResult
     try {
-      generation = await generateReply({ config, systemPrompt, messages })
+      if (isCommercial) {
+        // Bloco 3-A — real scheduling. The commercial persona gets its
+        // own small tool set (check_commercial_availability /
+        // book_commercial_meeting, against the dedicated leads
+        // calendar) via the agentic tool-calling loop. Non-commercial
+        // conversations never take this branch — they keep calling
+        // plain `generateReply` exactly as before, no tools at all.
+        generation = await generateReplyWithTools({
+          config,
+          systemPrompt,
+          messages,
+          tools: COMMERCIAL_TOOLS,
+          executor: createCommercialToolExecutor({
+            db,
+            accountId,
+            conversationId,
+            contactId,
+            defaultNotifyUserId: config.handoffAgentId ?? null,
+          }),
+        })
+      } else {
+        generation = await generateReply({ config, systemPrompt, messages })
+      }
     } catch (err) {
       if (isCommercial) {
         console.error(

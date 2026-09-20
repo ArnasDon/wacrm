@@ -73,14 +73,26 @@ export function buildSystemPrompt(args: {
   /** Knowledge-base excerpts retrieved for the current question. */
   knowledge?: string[]
   /**
-   * Bloco 3-A — scheduling link handed to a qualified commercial lead.
-   * Only meaningful when `mode === 'commercial_reply'`. When null/empty
-   * the prompt instructs the model to ask for the lead's email and say
-   * the team will follow up, instead of inventing a link.
+   * Bloco 3-A — scheduling link handed to a qualified commercial lead
+   * when there is NO real calendar wired up
+   * (`commercialCalendarConfigured` false). Only meaningful when
+   * `mode === 'commercial_reply'`. When both this and
+   * `commercialCalendarConfigured` are falsy, the prompt instructs the
+   * model to ask for the lead's email and say the team will follow up,
+   * instead of inventing a link.
    */
   commercialBookingUrl?: string | null
+  /**
+   * Bloco 3-A — true when the account has a real leads calendar wired
+   * up (`ai_configs.commercial_calendar_id`, migration 046). When true,
+   * the model is instructed to book directly via
+   * check_commercial_availability / book_commercial_meeting (see
+   * src/lib/ai/tools/commercial-schema.ts) instead of handing over a
+   * link. Only meaningful when `mode === 'commercial_reply'`.
+   */
+  commercialCalendarConfigured?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, commercialBookingUrl } = args
+  const { userPrompt, mode, knowledge, commercialBookingUrl, commercialCalendarConfigured } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -103,11 +115,15 @@ export function buildSystemPrompt(args: {
         'Apresenta-te de forma breve como assistente da empresa (usa o nome e o tom que constam no contexto de negócio abaixo, se estiverem definidos) e agradece o interesse pelo anúncio. ' +
         'Qualifica o lead com poucas perguntas, uma de cada vez, sem parecer um interrogatório: que empresa ou negócio tem, que problema quer resolver, e (quando fizer sentido) quantas mensagens ou contactos recebe por dia. ' +
         'Pede sempre o email de contacto antes de propor uma reunião. ' +
-        (commercialBookingUrl && commercialBookingUrl.trim()
-          ? `Depois de teres o email, envia este link de agendamento para a pessoa escolher o horário que lhe for melhor: ${commercialBookingUrl.trim()}.`
-          : 'Ainda não há um link de agendamento configurado: depois de teres o email, diz que a equipa entra em contacto para combinar um horário. Nunca inventes um link.') +
-        ' Não marques, remarques nem canceles reuniões directamente, mesmo que tenhas essa capacidade disponível — no modo comercial a tua função é qualificar e entregar o link (ou recolher o email), nunca agendar em nome de ninguém. ' +
-        'Mantém um tom directo e humano, em português de Portugal, nunca prometas resultados nem inventes preços ou condições que não estejam no contexto de negócio abaixo.',
+        (commercialCalendarConfigured
+          ? 'Depois de teres o email, usa a ferramenta check_commercial_availability para veres 2 ou 3 horários REALMENTE livres e propõe-os concretamente ao lead (nunca perguntes "quando te dá jeito" nem inventes um horário). ' +
+            'Quando o lead escolher uma das horas propostas, chama book_commercial_meeting com essa hora e o email dele para marcar a reunião de imediato — a Google envia o convite automaticamente. ' +
+            'Se book_commercial_meeting devolver um conflito (a hora deixou de estar livre), pede desculpa brevemente, chama check_commercial_availability outra vez e propõe outra hora — nunca digas que já está marcado se a ferramenta não confirmar. ' +
+            'Nunca marques uma reunião sem teres primeiro confirmado o email do lead.'
+          : commercialBookingUrl && commercialBookingUrl.trim()
+            ? `Depois de teres o email, envia este link de agendamento para a pessoa escolher o horário que lhe for melhor: ${commercialBookingUrl.trim()}.`
+            : 'Ainda não há calendário nem link de agendamento configurados: depois de teres o email, diz que a equipa entra em contacto para combinar um horário. Nunca inventes um link nem uma hora.') +
+        ' Mantém um tom directo e humano, em português de Portugal, nunca prometas resultados nem inventes preços ou condições que não estejam no contexto de negócio abaixo.',
     )
   }
 

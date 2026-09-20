@@ -62,6 +62,59 @@ automaticamente, e notifica o `handoff_agent_id` configurado via
 `notify_admin` — nunca falha em silêncio nem deixa o agente a tentar
 repetidamente contra uma ligação morta.
 
+## Bloco 3-A — agenda comercial (Google Service Account)
+
+Modo comercial para leads de anúncios Meta Click to WhatsApp
+(`ai_configs.commercial_mode_enabled`, ver
+`src/lib/ai/commercial.ts` / `src/lib/calendar/commercial-availability.ts`).
+Marca reuniões directamente no calendário de leads dedicado, mas SÓ
+quando a hora está livre em TODOS os calendários configurados
+(`ai_configs.commercial_busy_calendar_ids`) — nunca no calendário
+pessoal.
+
+Auth completamente separada do fluxo OAuth acima: uma única Google
+Service Account com domain-wide delegation, a impersonar
+`geral@etergrowth.com` (mesmo padrão do projecto "Gestor - Eter
+Growth", `tools/google-calendar/setup-leads-calendar.ts`). Sem
+`googleapis`/`google-auth-library` como dependência — o JWT-bearer é
+assinado à mão com `node:crypto` em
+`src/lib/calendar/google/service-account.ts`.
+
+```bash
+# Conteúdo JSON da service account (Google Cloud Console → IAM →
+# Service Accounts → chave), OU um caminho absoluto para esse ficheiro
+# (útil em dev local; em produção normalmente o valor JSON completo).
+# NUNCA commitar o ficheiro nem colar o conteúdo em código.
+GOOGLE_SERVICE_ACCOUNT_JSON=<conteúdo JSON da chave, ou caminho absoluto para o ficheiro>
+# Campos obrigatórios dentro desse JSON: client_email, private_key.
+
+# Utilizador Workspace impersonado pela service account (domain-wide
+# delegation tem de já autorizar este client id para o scope do
+# Calendar). Default quando omitido: geral@etergrowth.com.
+GMAIL_IMPERSONATE_USER=geral@etergrowth.com
+```
+
+**Setup na Google Admin Console** (uma vez, fora deste repo): Security
+→ Access and data control → API controls → Domain-wide Delegation →
+associar o Client ID da service account aos scopes
+`https://www.googleapis.com/auth/calendar.freebusy` e
+`https://www.googleapis.com/auth/calendar.events`. Sem isto, todo o
+agendamento comercial falha com `invalid_grant`/`unauthorized_client`
+— `getServiceAccountAccessToken` traduz esse erro num `CalendarError`
+com `code: 'invalid_grant'` e uma mensagem que aponta para este passo.
+
+O calendário de destino (`ai_configs.commercial_calendar_id`) e a
+lista de calendários verificados
+(`ai_configs.commercial_busy_calendar_ids`) já vêm com um valor por
+omissão sensato na migração 046 — o calendário "Eter | Leads WhatsApp"
+existente e o "primary" do utilizador impersonado — mas são editáveis
+por conta em Settings → Agente IA.
+
+Se `commercial_calendar_id` estiver vazio para uma conta, o agente
+comercial não tenta agendar: cai para o link de `commercial_booking_url`
+(quando configurado) ou pede o email e diz que a equipa entra em
+contacto.
+
 ## Tool-calling / agent loop (Fase 2)
 
 Ambas opcionais — têm defaults sensatos em `src/lib/ai/defaults.ts`.

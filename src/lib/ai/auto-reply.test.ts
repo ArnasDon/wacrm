@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
   buildConversationContext: vi.fn(),
   retrieveKnowledge: vi.fn(),
   generateReply: vi.fn(),
+  generateReplyWithTools: vi.fn(),
   engineSendText: vi.fn(),
   state: {
     conv: null as Record<string, unknown> | null,
@@ -24,7 +25,14 @@ const h = vi.hoisted(() => ({
 vi.mock('./config', () => ({ loadAiConfig: h.loadAiConfig }))
 vi.mock('./context', () => ({ buildConversationContext: h.buildConversationContext }))
 vi.mock('./knowledge', () => ({ retrieveKnowledge: h.retrieveKnowledge }))
-vi.mock('./generate', () => ({ generateReply: h.generateReply }))
+vi.mock('./generate', () => ({
+  generateReply: h.generateReply,
+  generateReplyWithTools: h.generateReplyWithTools,
+}))
+vi.mock('./tools/commercial-schema', () => ({ COMMERCIAL_TOOLS: [] }))
+vi.mock('./tools/handlers/commercial', () => ({
+  createCommercialToolExecutor: vi.fn(() => vi.fn()),
+}))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
@@ -117,6 +125,13 @@ beforeEach(() => {
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
   h.generateReply.mockResolvedValue({ text: 'Hello!', handoff: false })
+  h.generateReplyWithTools.mockResolvedValue({
+    text: 'Hello!',
+    handoff: false,
+    usage: null,
+    iterations: 1,
+    hitIterationLimit: false,
+  })
   h.engineSendText.mockResolvedValue({ whatsapp_message_id: 'm1' })
 })
 
@@ -323,16 +338,18 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
       commercialConfig({ systemPrompt: 'NEVER USE ME', commercialSystemPrompt: 'Somos a Acme Growth.' }),
     )
     await dispatchInboundToAiReply(ARGS)
-    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    const systemPrompt = h.generateReplyWithTools.mock.calls[0][0].systemPrompt as string
     expect(systemPrompt).toContain('Somos a Acme Growth.')
     expect(systemPrompt).not.toContain('NEVER USE ME')
+    // No calendar configured on this fixture (commercialCalendarId
+    // unset) → falls back to the link, per commercialBookingUrl.
     expect(systemPrompt).toContain('https://cal.com/acme/intro')
   })
 
   it('sends the fixed fallback (and still counts as "replied") when the AI call throws in commercial mode', async () => {
     h.state.conv = commercialConv()
     h.loadAiConfig.mockResolvedValue(commercialConfig())
-    h.generateReply.mockRejectedValue(new Error('provider timed out'))
+    h.generateReplyWithTools.mockRejectedValue(new Error('provider timed out'))
     const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 
     await dispatchInboundToAiReply(ARGS)
@@ -355,7 +372,13 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
   it('sends the fixed fallback when the model returns no usable text (and no handoff) in commercial mode', async () => {
     h.state.conv = commercialConv()
     h.loadAiConfig.mockResolvedValue(commercialConfig())
-    h.generateReply.mockResolvedValue({ text: '', handoff: false })
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: false,
+      usage: null,
+      iterations: 1,
+      hitIterationLimit: false,
+    })
     const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
 
     await dispatchInboundToAiReply(ARGS)
@@ -371,7 +394,13 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
   it('does NOT send the extra fallback on a genuine handoff signal — welcome already opened the window', async () => {
     h.state.conv = commercialConv()
     h.loadAiConfig.mockResolvedValue(commercialConfig())
-    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: true,
+      usage: null,
+      iterations: 1,
+      hitIterationLimit: false,
+    })
 
     await dispatchInboundToAiReply(ARGS)
 
@@ -379,6 +408,30 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
     // and does not additionally send a fallback message.
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
+
+  it('routes commercial mode through generateReplyWithTools with the commercial tool set, never plain generateReply', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.generateReplyWithTools).toHaveBeenCalledTimes(1)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools.mock.calls[0][0]).toMatchObject({
+      tools: [], // mocked COMMERCIAL_TOOLS
+    })
+    expect(typeof h.generateReplyWithTools.mock.calls[0][0].executor).toBe('function')
+  })
+
+  it('tells the model to book directly via tools when a commercial calendar is configured', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ commercialCalendarId: 'leads@group.calendar.google.com' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReplyWithTools.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('check_commercial_availability')
+    expect(systemPrompt).toContain('book_commercial_meeting')
   })
 
   it('a non-exception generateReply failure does not affect a NON-commercial conversation (existing behaviour, rethrown to outer catch)', async () => {

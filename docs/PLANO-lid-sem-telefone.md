@@ -199,9 +199,13 @@ e vai para o lugar do carimbo ao recarregar.
   `persistInboundMessage`, mas a rota só anota "religar este LID" quando a função
   VOLTA, depois dos motores: processo que morre nesse vão deixa a retida retida
   até a próxima mensagem daquele LID (visível no Meu dia). Aceito — ver 6.7;
-- cópia histórica que chega ANTES da cópia normal da mesma mensagem ganha o
-  `UNIQUE`, e a normal é pulada sem rodar motor (exige: cópia sem telefone ×
-  chegar primeiro × alguém ter escrito depois dela em segundos);
+- cópia histórica OU TARDIA que chega ANTES da cópia normal da mesma mensagem
+  ganha o `UNIQUE`, e a normal é pulada sem rodar motor. ⚠️ A condição é mais
+  larga do que a 1ª versão deste texto dizia (revisão final, 6.9): não precisa
+  "alguém ter escrito depois dela em segundos" — basta a cópia do celular chegar
+  primeiro E já ter mais de 4 min (a `tardia`). Acontece quando o celular do
+  CLIENTE fica offline e a retentativa dele demora; a conversa reflete a fala
+  (reabre, prévia, não lida), mas robô, automação e funil não rodam para ela;
 - a tardia e a histórica não emitem o webhook de saída `message.received`
   (zero endpoints ativos hoje);
 - áudio histórico pode ser recusado pela transcrição se alguém a pedir nos
@@ -524,6 +528,108 @@ não reentrega nesse caso.
 (serverless). Se o produto for instalado assim, este é o primeiro item a
 revisitar, e o conserto é o do terceiro ponto.
 
+### 6.8 Depois do merge (19/09/2026, 21:56 BRT em diante) — o que entrou, a conferência e a 5ª rodada no preview
+
+**O merge não foi combinado.** O PR #226 foi mesclado às 21:56 BRT pela conta
+`devgabrielslv` (colaborador com permissão de escrita), sem autorização do
+operador — confirmado por ele depois. Head `5a61ed6`, merge `545af27`. Seis
+minutos depois a mesma conta mesclou o #227 (paginação do quadro e da caixa de
+entrada, de outra sessão): `4a7e658`. ⚠️ Merge no `main` é deploy de produção.
+
+- O #227 não toca em nenhum arquivo desta correção, e o código dela no `main` é
+  idêntico ao testado (`git diff 5a61ed6 origin/main` vazio em
+  `src/lib/whatsapp`, `src/app/api/whatsapp`, Meu dia e `supabase/migrations`).
+- Rollouts conferidos no log do Actions: `Service crm_crm converged` às 22:01:37
+  (#226) e às 22:07:44 BRT (#227).
+- As migrations 1010 e 1011 já estavam aplicadas — a ordem "migration antes do
+  deploy" valeu por sorte, não por combinação.
+
+**Conferência pós-deploy, por dado (sem SSH):** de 22:08 a 23:40 BRT entraram 3
+mensagens de cliente, 5 do celular pareado e 1 do robô, todas gravadas com atraso
+de até 7 s (`gravada_em − created_at`): o caminho normal está são com o código
+novo. `cb_mensagens_sem_telefone` tinha ZERO linhas reais — nenhuma ocorrência
+ainda (o esperado é ~1 a cada 2 dias). O `DESCARTADA` do log da VPS não foi
+conferido (SSH não autorizado nesta conversa).
+
+**5ª rodada no preview (23:42–23:45 BRT), o que ainda não tinha sido testado de
+ponta a ponta** — webhook LOCAL, banco real, só o lead de teste, LIDs fictícios:
+
+| Cenário | O que aconteceu |
+|---|---|
+| G10 — ECO do escritório (`fromMe`) sem telefone, LID desconhecido | `RETIDA` com `from_me = true`; a rota do Meu dia devolveu só `{canalId, recebidaEm, daEquipe: true}`. A mensagem normal que trouxe o par a religou como `agent` pelo celular (`from_device`), modo `historica`, 2,5 s depois. `aguardando_desde` foi de 14/09 para o carimbo da fala do cliente POSTERIOR ao eco — o ramo do eco da 1011, contra o banco real: sem a função, o eco apagaria a espera de quem acabou de escrever. Não lida: +1, só a do cliente. |
+| G11 — UM lote `[sem telefone de LID desconhecido, normal com o par]` | 1º item `RETIDA`; 2º entrou normal; a retida foi `RELIGADA` no MESMO webhook, depois de todos os itens (`gravada_em` 42,53 s → 44,18 s), modo `historica`. A espera recuou para o carimbo da retida (mais antiga e sem resposta depois) — a verdade. |
+| G12 — UM lote na ordem inversa `[normal com o par, sem telefone MAIS NOVA]` | O par nasceu no 1º item; o 2º foi `RESOLVIDA pelo acervo` dentro do próprio lote, modo `nova`, e virou a última da conversa. |
+| Reentrega do lote do G11 (mesmos ids e carimbos) | 200; nenhuma mensagem a mais, nenhuma não lida a mais, nenhuma linha do módulo no log — a duplicata sai calada. |
+
+Limpeza por id exato (6 mensagens + 3 linhas do registro) e a conversa de volta
+ao retrato, inclusive o `last_message_at` exato (o retrato guardava o relógio do
+app, `…27.885`; derivado do `created_at` da mensagem sairia `…27.832`). Nenhum
+vestígio dos LIDs fictícios. ⚠️ Efeito colateral aceito das simulações pelo
+caminho NORMAL: a fronteira de entrega da 1002 da conexão de teste avançou para
+o carimbo da simulação (atraso de segundos, "em dia"); ela só avança, e a próxima
+mensagem real a leva adiante.
+
+**O que NÃO dá para testar de ponta a ponta, e por quê** (coberto por teste de
+unidade, de rota e pelos cenários no Postgres local):
+
+- A ocorrência REAL — depende de uma falha de decifragem na Baileys.
+- O download do anexo de uma recuperada: a mensagem fictícia não existe na
+  Evolution, e pedir a mídia faria a Evolution de PRODUÇÃO tentar baixar de uma
+  URL falsa e pedir re-upload ao celular de um id que não existe.
+- A conexão apagada (`channelId: null`) — exigiria apagar uma conexão real.
+- Dois processos Node ao mesmo tempo (deploy `start-first`) e a morte do
+  processo no meio do `after()`.
+- O webhook de PRODUÇÃO com mensagem simulada — não autorizado.
+
+### 6.9 Revisão final por duas lentes, DEPOIS do merge (20/09/2026) — nenhum P0 nem P1
+
+Dois revisores independentes, só leitura, sobre o PR inteiro
+(`631d064..5a61ed6`, 34 arquivos). Cada achado abaixo foi conferido no código
+antes de entrar aqui. ⚠️ Nada foi mudado no código por causa desta revisão: a
+correção já está em produção, e qualquer conserto é PR novo, com decisão do
+operador (merge = deploy).
+
+**Lente A — "não quebrar o que funcionava": nada acima de P3.** As provas que
+ela rodou: `git diff -w` e `-b` da rota dão os mesmos 176 sinais (o corpo da fase
+de anexos mudou só de indentação); `normalizeUpsert` de antes × de depois
+comparados em **29.703 combinações** de chave, `fromMe`, corpo, carimbo, canal e
+`pushName` — sem a opção, com `{}` e com `{telefoneResolvido: null}` —, **zero
+diferenças**; 18 arquivos / 262 testes verdes em Node 22; diff VAZIO em
+`inbound-store.ts`, `send-message.ts`, recibos, grupos, conexões, foto de perfil,
+reabertura, caixa de entrada, robôs, automações e IA. O custo por mensagem normal
+é o do R14 (uma consulta indexada por LID por lote, depois de todos os itens
+gravados) — zero só para conversa que não é endereçada por LID e para a segunda
+leva sem `comResto`.
+
+**Lente B — concorrência, falha parcial e integridade: nenhum P0/P1; 2 P2 de
+borda e notas.** Idempotência, duas religações do mesmo LID, a corrida do modo,
+todos os ramos do SQL da 1011 (com as concessões), o laço do resto, as cercas do
+resolvedor de LID e a privacidade do payload: nada encontrado além do que segue.
+
+| # | Achado | Gravidade | Situação |
+|---|---|---|---|
+| B-A2 | **"Alguém escreveu depois" conta MÁQUINA.** A consulta da última mensagem (`entregar.ts`) não olha quem escreveu: se depois da fala do cliente só saiu mensagem de robô, disparo ou automação, o modo é `historica` — e, com a conversa ENCERRADA, a fala entra sem reabrir (visível só na aba Encerradas, com a não lida somada). O argumento da histórica ("reabrir desfaria um encerramento decidido com informação mais nova") não vale quando depois dela só falou máquina. Variante: quem respondeu depois foi uma pessoa PELO CRM (não pelo celular) — a não lida não é somada, e a premissa "quem respondeu viu a mensagem" só vale para resposta pelo celular. | P2, borda | Não é regressão (antes a mensagem era descartada). **Inalcançável hoje nesta conta** (medido em 20/09): nenhuma máquina escreve em conversa de cliente — a única automação ativa só tem `send_to_number` para o advogado, não há robô, a IA está desligada e a régua do Asaas também. Passa a ser alcançável com as sequências planejadas e com a régua ligada. Refino proposto: decidir `tardia` × `historica` pela última mensagem do CLIENTE ou de GENTE, mantendo `nova` pela última de TODAS (o robô não pode ler a fala antiga depois da própria mensagem). **Decisão do operador.** |
+| B-A1 | **A religação apaga o payload ANTES de o anexo ser baixado.** `marcarEntregue` grava `payload: null` e só depois o anexo entra na fila; se o download falha (Evolution fora, Storage, deploy no meio), a bolha fica "indisponível" — o mesmo destino do anexo NORMAL que falha, mas aqui existia uma cópia durável das chaves da mídia e ela foi descartada cedo. | P2, borda | Raro × raro (retida com mídia × download que falha). A recuperação manual continua possível pelo banco da Evolution (~30 dias), como em qualquer anexo perdido. Conserto possível: manter o payload da retida COM mídia até o download terminar — pede migration (o CHECK `retida = payload`). **Decisão do operador.** |
+| A-7 / B-A3 | **Rota de transição** (`whatsapp_config`, `route.channelId` nulo): o anexo da recuperada é sempre pulado, porque o nulo é lido como "conexão apagada"; a mensagem normal da mesma instalação baixa pelo canal padrão. | P3 | Inalcançável aqui (as 4 conexões estão em `cb_channels`). Importa para o produto instalado por terceiros. |
+| B-A4 | A fila por LID não tem contador de tentativas nem expiração: a retida que falha SEMPRE é tentada a cada mensagem daquele LID; com 10 ou mais presas na cabeça, a cauda nunca é lida. | P3 | Exige insert que falhe de forma determinística — `normalizeUpsert` não devolve nulo para item retido. |
+| B-A5 | Falha parcial: insert certo + `marcarEntregue` falho → o Meu dia acusa "retida" sobre conversa completa por até 7 dias, e a religação seguinte carimba `duplicada`; insert certo + processo morto antes da função → o efeito do gatilho da 972 fica sem acerto para aquela mensagem. Nenhuma mensagem se perde. | P3 | A família já aceita (morte do processo). |
+| B-A6 | `jaGravada` não filtra por conta (defeito de base ANTIGO da rota); na religação um "já existe" leva a `marcarDuplicada`, que apaga o payload. | P3 | Só em instalação com duas contas trocando mensagem entre si. |
+| A-1 | O eco do aparelho SEM telefone paga os 2 s do `jaGravada(id, true)` dentro do laço dos itens: os itens seguintes do MESMO lote esperam. | P3 | Só lote com mais de um item e eco sem telefone. |
+| A-2 | `ehJidDeTelefone` usa `endsWith`: aceitaria `…@lid@s.whatsapp.net`. | P3 | As duas fontes reais não produzem essa forma. Endurecimento barato (regex estrita). |
+| A-5 | `retidas.itens` da rota do Meu dia não passa pelo recorte de conexões do perfil: pela aba Network, um membro restrito vê conexão e hora de retida fora do escopo dele (na tela o bloco é só de admin). | P3 | Sem conteúdo, telefone nem LID. Endurecimento: devolver os itens só a admin. |
+
+Duas suspeitas NÃO confirmadas, registradas para quem voltar aqui: dois ecos
+retidos, ambos anteriores à espera ativa, entregues por dois religadores ao mesmo
+tempo (a espera verdadeira se perderia — a janela praticamente não abre); e
+`historica`/`tardia` gravarem na conversa onde o par foi visto enquanto a `nova`
+grava pela conversa do telefone (divergem se alguém editou o telefone da ficha
+para o número de outra pessoa).
+
+O que só se garante MEDINDO, e continua sem medição possível: a função SQL contra
+o gatilho da 972 (há pino de texto + os 20 cenários no Postgres local; se alguém
+mudar o gatilho, a comparação `c.aguardando_desde = p_carimbo` quebra em
+silêncio) e o download do anexo de uma retida contra a Evolution real.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -534,7 +640,10 @@ revisitar, e o conserto é o do terceiro ponto.
    vira linha em `cb_mensagens_sem_telefone`.
 
 Volta atrás: reverter o merge (o deploy refaz a imagem anterior). A migration
-fica — tabela e função sem leitor não fazem nada.
+fica — tabela e função sem leitor não fazem nada. ⚠️ Se houver linha `retida` na
+tabela no momento da volta, o payload dela fica lá sem código nenhum para
+entregá-lo ou apagá-lo: conferir `cb_mensagens_sem_telefone` antes de reverter, e
+entregar ou apagar à mão (revisão final, 6.9).
 
 Opcional, depois: recuperar a fala do lead de 18/09 (o payload está no banco da
 Evolution) — escrita em produção, só com autorização.
@@ -559,5 +668,10 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Codex, 2ª rodada (HEAD `3ebab6a`): P1 corrigido (religação fora do laço), P2 aceito por escrito (6.5)
 - [x] Codex, 3ª rodada (HEAD `7ebc9fe`): 2 P2 corrigidos — empate de carimbo é história; o resto das retidas é drenado depois dos anexos do lote (6.6); preview contra a produção refeito e limpo
 - [x] Codex, 4ª rodada (HEAD `5a61ed6`): nenhum P1; 1 P2 aceito por escrito — o vão entre o insert do par e a anotação da religação (6.7)
-- [ ] Codex no HEAD final
-- [ ] Merge (autorização) + conferência pós-deploy
+- [x] Codex no HEAD final (`5a61ed6`) — é a 4ª rodada (6.7)
+- [x] Merge em 19/09/2026 21:56 BRT — ⚠️ feito por `devgabrielslv` SEM autorização do operador (6.8); deploy convergiu às 22:01:37 BRT
+- [x] Conferência pós-deploy por dado: caminho normal são (9 mensagens reais, atraso ≤ 7 s); nenhuma ocorrência real ainda (6.8)
+- [x] 5ª rodada no preview: eco retido, os dois lotes mistos e a reentrega, com limpeza conferida (6.8)
+- [x] Revisão final por duas lentes — nenhum P0/P1; 2 P2 de borda e notas, com decisão do operador (6.9)
+- [ ] Conferência no log da VPS: `DESCARTADA` deixa de aparecer; a primeira ocorrência real vira linha em `cb_mensagens_sem_telefone`
+- [ ] Decisões do operador: refino B-A2 (máquina não conta como "alguém escreveu depois"), B-A1 (payload da mídia até o download), os três endurecimentos P3, prazo de expiração do payload de retida, recuperação da fala de 18/09

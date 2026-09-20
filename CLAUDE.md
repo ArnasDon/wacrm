@@ -2855,8 +2855,20 @@ O que morde código novo:
   de um envio feito PELO CRM não destrava retida (sai no `jaGravada` antes do
   bloco de religação, e `send-message.ts` não grava `remote_jid_lid`) — ela
   espera a próxima mensagem do cliente ou um eco do celular; cópia histórica
-  que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`, e a
-  normal é pulada sem rodar motor; a decisão do modo NÃO é atômica — mensagem
+  OU TARDIA que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`,
+  e a normal é pulada sem rodar motor (para a tardia basta chegar primeiro e ter
+  mais de 4 min — o celular do cliente offline atrasando a retentativa);
+  ⚠️ "alguém escreveu depois" conta MÁQUINA: a consulta da última mensagem
+  (`entregar.ts`) não olha quem escreveu, então fala de cliente seguida só de
+  robô, disparo ou automação entra como `historica` — e, com a conversa
+  ENCERRADA, sem reabrir (revisão final, plano 6.9; inalcançável em 20/09/2026,
+  quando nenhuma máquina escrevia em conversa de cliente nesta conta; passa a
+  valer com sequências e régua ligadas — o refino, `tardia` × `historica` pela
+  última mensagem do cliente ou de GENTE, é decisão pendente do operador); o
+  payload da retida é apagado ANTES de o anexo dela ser baixado — download que
+  falha na religação tem o destino do anexo normal que falha (recuperação à mão
+  pela Evolution), embora ali existisse cópia durável das chaves (idem, 6.9);
+  a decisão do modo NÃO é atômica — mensagem
   mais nova gravada por OUTRO webhook nos ~100 ms entre olhar "qual é a última"
   e o insert faz a `nova` passar pelos motores depois dela (a mesma desordem
   que duas mensagens normais quase simultâneas já têm hoje: a ingestão não

@@ -197,6 +197,12 @@ export async function religarRetidas(args: PedidoDeReligacao): Promise<Religacao
  * sobrar continua retido e a próxima mensagem daquele LID tenta de novo — o
  * destino de qualquer retida que falha. NUNCA lança (`religarRetidas` não
  * lança).
+ *
+ * ⚠️ Efeito colateral da leitura "a partir da mais antiga": a retida que FALHOU
+ * numa passada volta na página seguinte e é tentada de novo — no máximo uma vez
+ * por passada, e só enquanto houver cauda a drenar. Não há laço SOBRE a falha
+ * (falha sozinha não ganha passada), e repetir é seguro: `jaGravada` e o
+ * `UNIQUE` da conversa tornam a entrega idempotente.
  */
 export async function religarOResto(args: PedidoDeReligacao): Promise<AnexoDaRecuperada[]> {
   const anexos: AnexoDaRecuperada[] = [];

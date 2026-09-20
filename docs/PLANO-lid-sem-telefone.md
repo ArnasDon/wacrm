@@ -426,9 +426,13 @@ até `MAXIMO_DE_PASSADAS_DO_RESTO` (5 → 60 retidas de um LID por lote) e para
 quando a página não vem cheia ou quando uma passada não resolve ninguém (cabeça
 da fila presa por falha de banco: a passada seguinte leria as mesmas linhas). O
 que falha continua com o destino de sempre — segue retida, e a próxima mensagem
-daquele LID tenta de novo; o resto existe para quem nunca foi TENTADO, não para
-repetir falha em laço. O caso comum (uma página ou menos) não paga nada: a
-segunda leva não consulta o banco.
+daquele LID tenta de novo; o resto existe para quem nunca foi TENTADO, e falhar
+não rende passada. (Efeito colateral da leitura "a partir da mais antiga":
+havendo cauda, a que falhou volta na página seguinte e é tentada de novo, no
+máximo uma vez por passada — idempotente pelo `jaGravada` e pelo `UNIQUE`. Uma
+primeira versão deste texto dizia que ela "não é tentada de novo"; não era
+exato.) O caso comum (uma página ou menos) não paga nada: a segunda leva não
+consulta o banco.
 
 Testes: 8 de unidade (`religar.test.ts`: página cheia avisa, página incompleta
 não, drenagem completa em ordem, anexos de todas as passadas com a conexão de

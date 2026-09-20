@@ -351,8 +351,11 @@ describe('mais retidas do que uma página', () => {
     expect(await religarRetidas(pedido(b, { jaGravada }))).toMatchObject({ haMais: true, resolvidas: 9 });
     await religarOResto(pedido(b, { jaGravada }));
     // A cauda (R011–R014) entrou, embora a R001 continue na frente dela na fila.
-    // ⚠️ A R001 NÃO é repetida em laço: o resto existe para quem nunca foi
-    // TENTADO; a que falhou tem o destino de sempre (a próxima mensagem do LID).
+    // ⚠️ A R001 volta na página do resto (a leitura parte sempre da mais antiga)
+    // e é tentada mais UMA vez — mas falhar não rende passada: com a página
+    // incompleta o laço acaba, e ela fica com o destino de sempre (a próxima
+    // mensagem do LID).
+    expect(jaGravada.mock.calls.filter(([id]) => id === 'R001')).toHaveLength(2);
     expect(retidasAinda(b)).toEqual(['R001']);
     expect(Object.entries(situacoes(b)).filter(([, x]) => x === 'entregue')).toHaveLength(13);
   });

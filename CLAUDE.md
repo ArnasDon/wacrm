@@ -2786,10 +2786,13 @@ O que morde código novo:
   nunca. É trabalho LIMITADO (`MAXIMO_DE_PASSADAS_DO_RESTO`, 5 → 60 retidas de um
   LID por lote) e para quando uma passada não resolve ninguém: `retidasDoLid` lê
   sempre a partir da mais antiga ainda retida, então sem progresso a passada
-  seguinte leria as mesmas linhas. ⚠️ O resto é para quem nunca foi TENTADO, não
-  para repetir falha em laço: a retida que FALHA segue retida até a próxima
-  mensagem daquele LID, como sempre. O caso comum (uma página ou menos) não
-  consulta nada a mais. ⚠️ **Uma consequência escrita**:
+  seguinte leria as mesmas linhas. ⚠️ O resto é para quem nunca foi TENTADO:
+  falhar não rende passada, e a retida que FALHA segue retida até a próxima
+  mensagem daquele LID, como sempre — com UM efeito colateral da leitura "a
+  partir da mais antiga": havendo cauda, a que falhou volta na página seguinte
+  e é tentada de novo (no máximo uma vez por passada; idempotente pelo
+  `jaGravada` e pelo `UNIQUE`). O caso comum (uma página ou menos) não consulta
+  nada a mais. ⚠️ **Uma consequência escrita**:
   quando quem destrava é o ECO do escritório (o caso de 18/09), a fala retida
   entra como mensagem de cliente ANTES de o cliente escrever de novo — e a
   mensagem seguinte dele deixa de ser "a primeira" para `first_inbound_message`

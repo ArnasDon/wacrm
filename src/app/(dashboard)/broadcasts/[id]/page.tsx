@@ -122,6 +122,15 @@ const RECIPIENT_STATUSES: readonly RecipientStatus[] = [
 ];
 
 /**
+ * How many recipient rows the table below loads. This is a sample of
+ * the audience, not all of it — a broadcast can carry thousands, and
+ * this page refetches every 5s while one is sending. Status tallies
+ * are counted in the DB instead (see fetchData), so they stay correct
+ * for audiences larger than this.
+ */
+const RECIPIENT_SAMPLE_SIZE = 1000;
+
+/**
  * CSV export helper — RFC 4180 quoting. Quote every field so
  * commas/newlines/quotes round-trip cleanly.
  */
@@ -158,6 +167,10 @@ export default function BroadcastDetailPage() {
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // Status tallies come from the DB, not from `recipients` — see
+  // fetchData below for why counting the fetched array is wrong.
+  const [pendingCount, setPendingCount] = useState(0);
+  const [failedCount, setFailedCount] = useState(0);
 
   async function fetchData() {
     try {
@@ -172,14 +185,42 @@ export default function BroadcastDetailPage() {
       if (bcError) throw bcError;
       setBroadcast(bc);
 
+      // The recipient table is a *sample*, not the whole audience.
+      // PostgREST caps an unbounded select at 1000 rows, so this used
+      // to truncate silently; the range makes that limit explicit and
+      // documented. A broadcast can carry thousands of recipients, and
+      // this refetches every 5s while sending, so pulling all of them
+      // (each with a joined contact) would be far too heavy.
       const { data: recs, error: recsError } = await supabase
         .from('broadcast_recipients')
         .select('*, contact:contacts(*)')
         .eq('broadcast_id', broadcastId)
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .range(0, RECIPIENT_SAMPLE_SIZE - 1);
 
       if (recsError) throw recsError;
       setRecipients(recs ?? []);
+
+      // Tallies must come from the DB. Counting `recs` would inherit
+      // the cap above and under-report — which is how "Cancel Pending
+      // (1000)" came to be shown for a 2774-recipient broadcast, on a
+      // button whose server-side action cancels every pending row.
+      // `head: true` returns the count alone, with no rows, so this
+      // stays cheap on the 5s poll.
+      const [{ count: pending }, { count: failed }] = await Promise.all([
+        supabase
+          .from('broadcast_recipients')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'pending'),
+        supabase
+          .from('broadcast_recipients')
+          .select('*', { count: 'exact', head: true })
+          .eq('broadcast_id', broadcastId)
+          .eq('status', 'failed'),
+      ]);
+      setPendingCount(pending ?? 0);
+      setFailedCount(failed ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : t('notFound'));
     } finally {
@@ -215,15 +256,6 @@ export default function BroadcastDetailPage() {
   // two fewer hooks than the render once data arrived, which is a hard
   // React error ("Rendered more hooks than during the previous
   // render") that crashed this page on every load.
-  const pendingCount = useMemo(
-    () => recipients.filter((r) => r.status === 'pending').length,
-    [recipients],
-  );
-
-  const failedCount = useMemo(
-    () => recipients.filter((r) => r.status === 'failed').length,
-    [recipients],
-  );
 
   function handleExport() {
     if (!broadcast) return;

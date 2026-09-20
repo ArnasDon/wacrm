@@ -9,6 +9,7 @@ import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { syncMetaAdLeadToCrm } from '@/lib/crm/sync'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -775,6 +776,23 @@ async function processMessage(
   // that decision reads the row fresh from the DB. Best-effort/never
   // throws (see persistAdReferral's doc comment).
   await persistAdReferral(conversation, message.referral, convResult.created)
+
+  // Bloco 3-A — one-way CRM sync (Twenty). Only when this referral is
+  // a genuine ad click (persistAdReferral only stamps source='meta_ad'
+  // for `source_type === 'ad'` — see its doc comment). Fire-and-forget:
+  // syncMetaAdLeadToCrm never throws and is intentionally NOT awaited,
+  // so a slow/down Twenty can never delay or break this webhook (see
+  // that function's header for the full fail-safe contract). It does
+  // its own account-level `crm_sync_enabled` check internally, so this
+  // call site doesn't need to know whether the feature is even on.
+  if (message.referral?.source_type === 'ad') {
+    void syncMetaAdLeadToCrm({
+      db: supabaseAdmin(),
+      accountId,
+      conversationId: conversation.id,
+      contactId: contactRecord.id,
+    })
+  }
 
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.

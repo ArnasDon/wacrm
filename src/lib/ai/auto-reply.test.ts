@@ -19,6 +19,9 @@ const h = vi.hoisted(() => ({
     // (WHERE commercial_welcome_sent_at IS NULL) wins the race. false
     // simulates "already sent" / "lost the race".
     welcomeClaimed: true as boolean,
+    // The contact's phone number, looked up by dispatchInboundToAiReply
+    // to decide team-list membership (isCommercialConversation).
+    contactPhone: '351911111111' as string | null,
   },
 }))
 
@@ -47,6 +50,16 @@ vi.mock('./admin-client', () => ({
             Promise.resolve({ data: h.state.autoResponders, error: null }),
         }
         return chain
+      }
+      if (table === 'contacts') {
+        return {
+          select: () => ({
+            eq: () => ({
+              maybeSingle: () =>
+                Promise.resolve({ data: { phone: h.state.contactPhone }, error: null }),
+            }),
+          }),
+        }
       }
       // conversations
       return {
@@ -121,6 +134,7 @@ beforeEach(() => {
   h.state.updatePayload = null
   h.state.rpcCalls = []
   h.state.welcomeClaimed = true
+  h.state.contactPhone = '351911111111'
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -224,10 +238,18 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
 })
 
 describe('dispatchInboundToAiReply — handoff', () => {
-  it('disables auto-reply, writes a summary, and does not send on handoff', async () => {
+  it('sends the handoff notice to the customer, disables auto-reply, and writes a summary — never leaves the customer without a word', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
-    expect(h.engineSendText).not.toHaveBeenCalled()
+    // The notice goes out (never the substantive AI reply, since there
+    // wasn't one) — a handoff must never be silent.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        aiGenerated: false,
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+      }),
+    )
     expect(h.state.rpcCalls).toHaveLength(0)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(
@@ -235,6 +257,15 @@ describe('dispatchInboundToAiReply — handoff', () => {
     )
     // No handoff target configured → conversation left unassigned.
     expect(h.state.updatePayload).not.toHaveProperty('assigned_agent_id')
+  })
+
+  it('uses the configured handoff_message instead of the default when set', async () => {
+    h.loadAiConfig.mockResolvedValue(aiConfig({ handoffMessage: 'Mensagem à medida do handoff.' }))
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Mensagem à medida do handoff.' }),
+    )
   })
 
   it('routes to the configured handoff agent on handoff', async () => {
@@ -249,7 +280,13 @@ describe('dispatchInboundToAiReply — handoff', () => {
 })
 
 // ============================================================
-// Bloco 3-A — commercial mode (Meta Click-to-WhatsApp ad leads).
+// Bloco 3-A — commercial mode.
+//
+// A partir desta migração, o modo comercial é o comportamento POR
+// OMISSÃO para qualquer conversa (venha de um anúncio ou de uma
+// mensagem directa) desde que a conta o tenha ligado. A única excepção
+// é um número na lista da equipa (`teamPhoneNumbers`), que continua a
+// apanhar o assistente interno.
 // ============================================================
 function commercialConv(overrides: Record<string, unknown> = {}) {
   return {
@@ -272,16 +309,74 @@ function commercialConfig(overrides: Partial<AiConfig> = {}): AiConfig {
   })
 }
 
-describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
-  it('is a no-op change for a conversation NOT from a meta_ad referral, even with commercial mode on', async () => {
+describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', () => {
+  it('uma conversa vinda de mensagem directa (source "direct") também apanha o modo comercial quando a conta o tem ligado', async () => {
     h.state.conv = commercialConv({ source: 'direct' })
     h.loadAiConfig.mockResolvedValue(commercialConfig())
     await dispatchInboundToAiReply(ARGS)
-    // No welcome update captured — only the normal auto-reply path ran.
+    // Duas mensagens: a boas-vindas comercial + a resposta substantiva,
+    // exactamente como uma conversa vinda do anúncio.
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools).toHaveBeenCalledTimes(1)
+  })
+
+  it('um número da lista da equipa apanha o assistente interno, mesmo com o modo comercial ligado', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.state.contactPhone = '+351 912 345 678'
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ teamPhoneNumbers: ['351912345678'] }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    // Nenhuma boas-vindas comercial — só a resposta normal via
+    // generateReply (persona interna), sem ferramentas comerciais.
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({ text: 'Hello!' }),
     )
+  })
+
+  it('um número FORA da lista da equipa apanha o modo comercial', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.state.contactPhone = '351900000004'
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ teamPhoneNumbers: ['351912345678'] }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReplyWithTools).toHaveBeenCalledTimes(1)
+    expect(h.generateReply).not.toHaveBeenCalled()
+  })
+
+  it('lista da equipa vazia manda toda a gente para o modo comercial', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.state.contactPhone = '351900000004'
+    h.loadAiConfig.mockResolvedValue(commercialConfig({ teamPhoneNumbers: [] }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReplyWithTools).toHaveBeenCalledTimes(1)
+    expect(h.generateReply).not.toHaveBeenCalled()
+  })
+
+  it('a comparação de números da equipa ignora espaços, "+" e zeros à frente (normalizePhone)', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.state.contactPhone = '00351 91 234 5678'
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ teamPhoneNumbers: ['+351 912 345 678'] }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
+  })
+
+  it('desligar commercial_mode_enabled repõe o comportamento normal para toda a gente, mesmo vindo do anúncio', async () => {
+    h.state.conv = commercialConv({ source: 'meta_ad' })
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ commercialModeEnabled: false }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
+    expect(h.generateReply).toHaveBeenCalledTimes(1)
   })
 
   it('sends the immediate welcome message before generating the AI reply, then still sends the AI reply', async () => {
@@ -296,7 +391,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
       expect.objectContaining({
         conversationId: 'conv-1',
         aiGenerated: false,
-        text: expect.stringContaining('anúncio'),
+        text: expect.stringContaining('Obrigado por nos contactares'),
       }),
     )
     expect(h.engineSendText).toHaveBeenNthCalledWith(
@@ -404,9 +499,16 @@ describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
 
     await dispatchInboundToAiReply(ARGS)
 
-    // Only the welcome went out; the pause/handoff path runs as normal
-    // and does not additionally send a fallback message.
-    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    // The welcome went out, then the handoff notice (never a silent
+    // handoff) — but no extra fallback beyond those two.
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        aiGenerated: false,
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+      }),
+    )
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
   })
 

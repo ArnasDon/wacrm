@@ -115,8 +115,8 @@ export function buildSystemPrompt(args: {
 
   if (mode === 'commercial_reply') {
     parts.push(
-      'Bloco 3-A — modo comercial: a pessoa acabou de clicar num anúncio Click to WhatsApp do Facebook/Instagram e escreveu pela primeira vez. ' +
-        'Apresenta-te de forma breve como assistente da empresa (usa o nome e o tom que constam no contexto de negócio abaixo, se estiverem definidos) e agradece o interesse pelo anúncio. ' +
+      'Bloco 3-A — modo comercial: esta é a primeira mensagem de alguém que não conhecemos, tenha vindo de um anúncio Click to WhatsApp ou escrito directamente para este número. ' +
+        'Apresenta-te de forma breve como assistente da empresa (usa o nome e o tom que constam no contexto de negócio abaixo, se estiverem definidos) e agradece o contacto. ' +
         'Qualifica o lead com poucas perguntas, uma de cada vez, sem parecer um interrogatório: que empresa ou negócio tem, que problema quer resolver, e (quando fizer sentido) quantas mensagens ou contactos recebe por dia. ' +
         'Pede sempre o email de contacto antes de propor uma reunião. ' +
         (commercialCalendarConfigured
@@ -127,7 +127,8 @@ export function buildSystemPrompt(args: {
           : commercialBookingUrl && commercialBookingUrl.trim()
             ? `Depois de teres o email, envia este link de agendamento para a pessoa escolher o horário que lhe for melhor: ${commercialBookingUrl.trim()}.`
             : 'Ainda não há calendário nem link de agendamento configurados: depois de teres o email, diz que a equipa entra em contacto para combinar um horário. Nunca inventes um link nem uma hora.') +
-        ' Mantém um tom directo e humano, em português de Portugal, nunca prometas resultados nem inventes preços ou condições que não estejam no contexto de negócio abaixo.',
+        ' Mantém um tom directo e humano, em português de Portugal, nunca prometas resultados nem inventes preços ou condições que não estejam no contexto de negócio abaixo. ' +
+        `Não passes a conversa para a equipa só porque perguntam quem és, o que é isto, ou com quem estão a falar — responde com naturalidade, dizendo que estás a escrever em nome da empresa. Só respondas com exactamente ${HANDOFF_SENTINEL} quando a pessoa pedir de forma inequívoca para falar com alguém da equipa ou uma pessoa real, ou quando a conversa precisar mesmo de uma decisão humana que não consigas tomar com o que sabes.`,
     )
   }
 

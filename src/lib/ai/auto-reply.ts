@@ -4,7 +4,7 @@ import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
 import { generateReply, generateReplyWithTools } from './generate'
 import { buildSystemPrompt } from './defaults'
-import { buildHandoffSummary } from './handoff'
+import { buildHandoffSummary, sendHandoffNotice } from './handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
@@ -89,12 +89,18 @@ export async function dispatchInboundToAiReply(
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
 
-    // Bloco 3-A — commercial mode. Gated on all three: the conversation
-    // came from a Meta ad referral, the account turned the persona on,
-    // and a commercial prompt is actually configured. Any one missing
-    // and this is `false`, and everything below behaves EXACTLY like
-    // today for every non-commercial conversation.
-    const isCommercial = isCommercialConversation(conv, config)
+    // Bloco 3-A — commercial mode is now the DEFAULT persona for anyone
+    // who writes, from an ad referral or directly, once the account
+    // turned it on and configured a commercial prompt. The only
+    // exception is a phone number on the team list
+    // (`config.teamPhoneNumbers`), which always gets the internal
+    // persona instead — see isCommercialConversation.
+    const { data: contactRow } = await db
+      .from('contacts')
+      .select('phone')
+      .eq('id', contactId)
+      .maybeSingle()
+    const isCommercial = isCommercialConversation(config, contactRow?.phone ?? null)
 
     if (isCommercial) {
       // Sent FIRST, unconditionally, before any AI call — guarantees a
@@ -237,12 +243,22 @@ export async function dispatchInboundToAiReply(
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on
-      // this thread and hand it to a human. We (a) pause the bot here
-      // (sticky until re-enabled), (b) route the conversation to the
-      // configured handoff agent — null leaves it in the shared queue —
-      // and (c) leave a short internal note so whoever picks it up has
-      // context. Assigning fires the `on_conversation_assigned` trigger,
-      // which notifies the agent.
+      // this thread and hand it to a human. A handoff must never be
+      // silent: the customer gets a short heads-up FIRST, in either
+      // persona, before the bot goes quiet (see sendHandoffNotice's doc
+      // comment — this used to leave people talking to no one). Then we
+      // (a) pause the bot here (sticky until re-enabled), (b) route the
+      // conversation to the configured handoff agent — null leaves it
+      // in the shared queue — and (c) leave a short internal note so
+      // whoever picks it up has context. Assigning fires the
+      // `on_conversation_assigned` trigger, which notifies the agent.
+      await sendHandoffNotice({
+        accountId,
+        conversationId,
+        contactId,
+        configOwnerUserId,
+        handoffMessage: config.handoffMessage,
+      })
       const summary = buildHandoffSummary({
         messages,
         replyCount: conv.ai_reply_count ?? 0,

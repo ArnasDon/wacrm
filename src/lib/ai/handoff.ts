@@ -1,8 +1,59 @@
+import { engineSendText } from '@/lib/flows/meta-send'
 import type { ChatMessage } from './types'
 
 /** Longest the quoted customer message runs before we ellipsize it —
  *  keeps the internal note to a glanceable one-liner. */
 const MAX_QUOTE_LEN = 160
+
+/**
+ * Fixed message sent to the customer immediately BEFORE the AI goes
+ * silent and hands the conversation off to a human — in either
+ * persona (commercial or internal). Used whenever the account hasn't
+ * set its own `ai_configs.handoff_message`.
+ *
+ * A silent handoff previously left the customer talking to no one: the
+ * bot would stop replying with zero warning. This message closes that
+ * gap and is sent unconditionally on every handoff, not just the
+ * commercial one.
+ */
+export const DEFAULT_HANDOFF_MESSAGE =
+  'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.'
+
+interface HandoffNoticeArgs {
+  accountId: string
+  conversationId: string
+  contactId: string
+  configOwnerUserId: string
+  handoffMessage: string | null | undefined
+}
+
+/**
+ * Send the "a human is taking over" notice to the customer before the
+ * bot goes silent. Never throws — a failed send here must not block
+ * the rest of the handoff (pausing auto-reply, assigning the agent),
+ * same discipline as sendCommercialWelcomeIfNeeded /
+ * sendCommercialFallback in commercial.ts.
+ */
+export async function sendHandoffNotice(args: HandoffNoticeArgs): Promise<void> {
+  const { accountId, conversationId, contactId, configOwnerUserId, handoffMessage } = args
+  try {
+    const text =
+      handoffMessage && handoffMessage.trim() ? handoffMessage.trim() : DEFAULT_HANDOFF_MESSAGE
+    await engineSendText({
+      accountId,
+      userId: configOwnerUserId,
+      conversationId,
+      contactId,
+      text,
+      aiGenerated: false,
+    })
+  } catch (err) {
+    console.error(
+      '[ai auto-reply] handoff notice send failed:',
+      err instanceof Error ? err.message : err,
+    )
+  }
+}
 
 /**
  * Build the short internal note the auto-reply bot leaves on a

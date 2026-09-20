@@ -66,6 +66,21 @@ export interface AiConfig {
    *  business hours, etc.) is loaded separately by
    *  getCommercialCalendarConfig when a tool call actually runs. */
   commercialCalendarId?: string | null
+  /**
+   * Números de telefone da equipa (formato internacional, comparados
+   * com `normalizePhone` — ver src/lib/whatsapp/phone-utils.ts) que
+   * apanham SEMPRE o assistente interno (`systemPrompt`), nunca o modo
+   * comercial, mesmo com `commercialModeEnabled` ligado. Vazio (o valor
+   * por omissão) significa que toda a gente apanha o modo comercial —
+   * ver isCommercialConversation em src/lib/ai/commercial.ts.
+   */
+  teamPhoneNumbers?: string[]
+  /**
+   * Mensagem enviada ao utilizador ANTES de a IA se calar e passar a
+   * conversa para a equipa (handoff), em qualquer dos dois modos. Nulo
+   * usa DEFAULT_HANDOFF_MESSAGE (src/lib/ai/handoff.ts).
+   */
+  handoffMessage?: string | null
 }
 
 /** A single conversation turn in the shape both providers accept. */

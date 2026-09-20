@@ -1,36 +1,41 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { engineSendText } from '@/lib/flows/meta-send'
+import { normalizePhone, phonesMatch } from '@/lib/whatsapp/phone-utils'
 import type { AiConfig } from './types'
 
 // ============================================================
-// Bloco 3-A — commercial mode for Meta Click-to-WhatsApp ad leads.
+// Bloco 3-A — commercial mode.
 //
-// A conversation is "commercial" when it originated from a Meta ad
-// referral (`conversations.source = 'meta_ad'`, persisted by the
-// webhook from the inbound message's `referral` object — see
-// src/app/api/whatsapp/webhook/route.ts) AND the account has both
-// turned the persona on (`ai_configs.commercial_mode_enabled`) AND
-// configured a commercial system prompt. All three must hold — this
-// is the single gate `dispatchInboundToAiReply` (auto-reply.ts) checks
-// before switching personas, so a conversation that isn't fully
-// configured behaves EXACTLY like today, unchanged.
+// O número de WhatsApp da Eter está num anúncio pago (público), por
+// isso QUALQUER pessoa que escreva, venha do anúncio ou directamente,
+// é um desconhecido para o negócio. A conversa é "comercial" POR
+// OMISSÃO, desde que a conta tenha ligado a persona
+// (`ai_configs.commercial_mode_enabled`) e configurado um prompt
+// comercial. A ÚNICA excepção é um número que conste na lista da
+// equipa (`ai_configs.team_phone_numbers`) — esses continuam a apanhar
+// o assistente interno (`systemPrompt`), independentemente da origem
+// da conversa. Lista vazia = toda a gente comercial (comportamento
+// seguro por omissão). Ver `dispatchInboundToAiReply` (auto-reply.ts).
 // ============================================================
 
-export interface CommercialConversationInfo {
-  source: string | null
-  commercial_welcome_sent_at: string | null
-}
-
 export function isCommercialConversation(
-  conv: CommercialConversationInfo,
-  config: Pick<AiConfig, 'commercialModeEnabled' | 'commercialSystemPrompt'>,
+  config: Pick<AiConfig, 'commercialModeEnabled' | 'commercialSystemPrompt' | 'teamPhoneNumbers'>,
+  contactPhone: string | null | undefined,
 ): boolean {
-  return (
-    conv.source === 'meta_ad' &&
-    config.commercialModeEnabled === true &&
-    !!config.commercialSystemPrompt &&
-    config.commercialSystemPrompt.trim().length > 0
-  )
+  if (config.commercialModeEnabled !== true) return false
+  if (!config.commercialSystemPrompt || !config.commercialSystemPrompt.trim()) return false
+
+  const team = config.teamPhoneNumbers ?? []
+  if (team.length > 0 && contactPhone && normalizePhone(contactPhone).length > 0) {
+    // phonesMatch (not raw equality) so a trunk-0 or country-code
+    // formatting difference between the stored contact number and the
+    // team list still matches — same tolerance already used elsewhere
+    // for comparing WhatsApp numbers (see phone-utils.ts).
+    const isTeamMember = team.some((n) => phonesMatch(n, contactPhone))
+    if (isTeamMember) return false
+  }
+
+  return true
 }
 
 /**
@@ -41,7 +46,7 @@ export function isCommercialConversation(
  * required by Bloco 3-A.
  */
 export const DEFAULT_COMMERCIAL_WELCOME_MESSAGE =
-  'Olá! Obrigado por nos contactares a partir do anúncio. 😊 ' +
+  'Olá! Obrigado por nos contactares. 😊 ' +
   'Somos a equipa comercial e estamos aqui para perceber melhor o teu negócio e ver como podemos ajudar. ' +
   'Em que empresa ou projecto estás, e que problema gostavas de resolver?'
 

@@ -70,6 +70,29 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   /**
+   * @anthropic-ai/claude-agent-sdk ships its native CLI binary as a
+   * set of optional, platform-specific packages (linux-x64,
+   * linux-x64-musl, darwin-arm64, ...) that it resolves at runtime
+   * via require.resolve, not a static import. Next's standalone
+   * output tracing (@vercel/nft) only follows static/dynamic-string
+   * requires it can see, so it never picks up the platform package
+   * that actually gets installed, and the image ships without the
+   * binary the SDK needs to spawn Claude Code.
+   *
+   * Explicitly include the whole @anthropic-ai/claude-agent-sdk*
+   * family for every route that ends up calling the SDK, so the
+   * binary (whichever platform variant npm installed) lands in
+   * .next/standalone/node_modules.
+   */
+  outputFileTracingIncludes: {
+    "/api/whatsapp/webhook": ["./node_modules/@anthropic-ai/claude-agent-sdk*/**"],
+    "/api/ai/config": ["./node_modules/@anthropic-ai/claude-agent-sdk*/**"],
+    "/api/ai/test": ["./node_modules/@anthropic-ai/claude-agent-sdk*/**"],
+    "/api/ai/draft": ["./node_modules/@anthropic-ai/claude-agent-sdk*/**"],
+    "/api/ai/playground": ["./node_modules/@anthropic-ai/claude-agent-sdk*/**"],
+  },
+
+  /**
    * Cross-origin dev access (Next.js 16).
    *
    * Next 16 blocks requests to dev-only resources (`/_next/*` internals,

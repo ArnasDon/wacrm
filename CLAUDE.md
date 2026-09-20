@@ -2861,7 +2861,15 @@ O que morde código novo:
   e o insert faz a `nova` passar pelos motores depois dela (a mesma desordem
   que duas mensagens normais quase simultâneas já têm hoje: a ingestão não
   serializa por conversa, e fechar isso é travar a conversa dentro de
-  `persistInboundMessage`, o caminho quente); áudio histórico pode ser recusado pela
+  `persistInboundMessage`, o caminho quente); o PAR fica durável no insert de
+  dentro de `persistInboundMessage`, mas a rota só anota "religar este LID"
+  quando a função VOLTA (depois dos motores) — processo que morre nesse vão
+  deixa a retida retida até a próxima mensagem daquele LID, visível no Meu dia
+  (Codex, 4ª rodada; aceito: aqui `maxDuration = 60` é decorativo e a morte só
+  vem de deploy ou queda, numa janela de segundos, e a Evolution não reentrega
+  porque o 200 sai ANTES do `after()`. ⚠️ Numa hospedagem que CORTE o `after()`
+  isso deixa de ser raro — o conserto de verdade é anotar o par antes dos
+  motores, dentro do caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
   mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3

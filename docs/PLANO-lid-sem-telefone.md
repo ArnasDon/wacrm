@@ -195,6 +195,10 @@ e vai para o lugar do carimbo ao recarregar.
   nos ~100 ms entre olhar "qual é a última" e o insert faz a `nova` passar pelos
   motores depois dela — a mesma desordem que duas mensagens normais quase
   simultâneas já têm hoje (a ingestão não serializa por conversa);
+- o par (telefone + LID) fica durável no insert de dentro de
+  `persistInboundMessage`, mas a rota só anota "religar este LID" quando a função
+  VOLTA, depois dos motores: processo que morre nesse vão deixa a retida retida
+  até a próxima mensagem daquele LID (visível no Meu dia). Aceito — ver 6.7;
 - cópia histórica que chega ANTES da cópia normal da mesma mensagem ganha o
   `UNIQUE`, e a normal é pulada sem rodar motor (exige: cópia sem telefone ×
   chegar primeiro × alguém ter escrito depois dela em segundos);
@@ -482,6 +486,44 @@ teste, e limpo no fim:**
 Portões no HEAD desta rodada: `tsc` limpo, `eslint` 0 erros (os mesmos 49 avisos
 de antes), suíte inteira em Node 22 — 353 arquivos, 4.521 testes.
 
+### 6.7 Codex, 4ª rodada (HEAD `5a61ed6`) — nenhum P1; 1 P2 aceito por escrito
+
+**P2 — "religar depois de um insert com o par sobreviver a um corte".** O par
+fica durável no insert de dentro de `persistInboundMessage`, que roda ANTES dos
+motores (robô, automações, IA, webhooks de saída); a rota só faz
+`paraReligar.set(...)` quando a função volta. Se o processo morre nesse vão, o
+par está gravado e as retidas daquele LID continuam retidas; e uma reentrega do
+mesmo webhook não conserta, porque sai no `jaGravada` antes de chegar ali.
+
+**O que é verdade:** tudo acima. **O que não vale nesta instalação:** o achado
+supõe o corte de 60 s do `after()` e a reentrega do webhook. A rota declara
+`maxDuration = 60`, mas a produção é o `standalone` do Next em contêiner — sem
+corte de duração (medido em 27/08/2026; está no CLAUDE.md) —, então a morte só
+vem de deploy ou queda; e o 200 sai ANTES de o `after()` rodar, logo a Evolution
+não reentrega nesse caso.
+
+**Por que fica aceito, sem mudar código:**
+
+- Não é perda. A mensagem segue retida, aparece no Meu dia por 7 dias ("veja no
+  celular") e é religada pela próxima mensagem daquele LID, do cliente ou do
+  celular — o mesmo destino de qualquer religação que falha, já escrito.
+- Exige duas coisas raras ao mesmo tempo: haver retida (medido: ~1 a cada 10
+  dias) E o processo morrer numa janela de segundos (esta conta não tem fluxo
+  ativo, e a única automação ativa não é de mensagem: o vão é curto).
+- O conserto de verdade — anotar o par de forma durável ANTES dos motores —
+  mora dentro de `persistInboundMessage`, o caminho quente que esta correção se
+  comprometeu a não tocar, e sustentou por quatro rodadas.
+- A alternativa barata (agir no ramo do `jaGravada`) acrescenta uma consulta ao
+  eco de TODO envio feito pelo CRM, precisa de outra para achar a conversa, e
+  aqui nem consertaria o cenário descrito, porque não há reentrega. O que ela
+  traria é outra coisa — o eco de um envio do CRM passar a destravar retida —,
+  que é ampliar a feature, não fechar este achado. Fica anotado como melhoria
+  possível, com decisão própria.
+
+⚠️ **Onde isto deixa de ser raro:** numa hospedagem que CORTE o `after()`
+(serverless). Se o produto for instalado assim, este é o primeiro item a
+revisitar, e o conserto é o do terceiro ponto.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -516,5 +558,6 @@ Evolution) — escrita em produção, só com autorização.
 - [x] 1011 aplicada em produção em 19/09/2026 21:08 BRT (histórico `20260920000843`), depois do CI verde; eco do escritório testado no preview e limpo
 - [x] Codex, 2ª rodada (HEAD `3ebab6a`): P1 corrigido (religação fora do laço), P2 aceito por escrito (6.5)
 - [x] Codex, 3ª rodada (HEAD `7ebc9fe`): 2 P2 corrigidos — empate de carimbo é história; o resto das retidas é drenado depois dos anexos do lote (6.6); preview contra a produção refeito e limpo
+- [x] Codex, 4ª rodada (HEAD `5a61ed6`): nenhum P1; 1 P2 aceito por escrito — o vão entre o insert do par e a anotação da religação (6.7)
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

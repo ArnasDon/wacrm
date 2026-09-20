@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/client";
 import {
   CONVERSATION_SELECT,
   normalizeConversations,
+  type RawConversation,
 } from "@/lib/inbox/conversations";
+import { buscarPaginado } from "@/lib/supabase/paginar";
 import {
   aplicarFiltros,
   canalDaConversa,
@@ -290,33 +292,50 @@ export function ConversationList({
     let cancelled = false;
 
     (async () => {
-      const { data, error } = await supabase
-        .from("conversations")
-        .select(CONVERSATION_SELECT)
-        // ⚠️ `nullsFirst: false` é load-bearing desde os grupos (906). Em
-        // ordem DECRESCENTE o Postgres põe NULL PRIMEIRO por padrão, e um
-        // grupo sincronizado em que ninguém falou ainda tem
-        // `last_message_at` nulo. Sem isto, ligar o interruptor num número
-        // com 58 grupos empurra as conversas ativas para baixo de 58 linhas
-        // vazias — o inbox vira inútil no exato instante em que o operador
-        // liga o recurso.
-        .order("last_message_at", { ascending: false, nullsFirst: false });
+      // ⚠️⚠️ PAGINADA desde 19/09/2026. Era uma consulta só, sem `range` e
+      // sem `count`, e o PostgREST corta em ~1000 linhas SEM AVISAR: passando
+      // de mil conversas, a caixa de entrada esconderia o excedente em
+      // silêncio, a busca (que atravessa as abas) deixaria de achar cliente
+      // que existe, e o contador "Exibindo N de M" mentiria. A consulta de
+      // `deals` logo abaixo já paginava por esta razão; esta, não. Hoje são
+      // ~970 conversas, crescendo ~30 por semana.
+      const resultado = await buscarPaginado<RawConversation>(
+        async (de, ate) => {
+          const { data, error, count } = await supabase
+            .from("conversations")
+            .select(CONVERSATION_SELECT, { count: "exact" })
+            // ⚠️ `nullsFirst: false` é load-bearing desde os grupos (906). Em
+            // ordem DECRESCENTE o Postgres põe NULL PRIMEIRO por padrão, e um
+            // grupo sincronizado em que ninguém falou ainda tem
+            // `last_message_at` nulo. Sem isto, ligar o interruptor num número
+            // com 58 grupos empurra as conversas ativas para baixo de 58 linhas
+            // vazias — o inbox vira inútil no exato instante em que o operador
+            // liga o recurso.
+            .order("last_message_at", { ascending: false, nullsFirst: false })
+            // ⚠️ E o desempate por `id`: as conversas SEM mensagem empatam
+            // todas em NULL, que é exatamente onde a página quebra.
+            .order("id", { ascending: true })
+            .range(de, ate);
+          return { data: (data ?? null) as RawConversation[] | null, error, count };
+        },
+      );
 
       if (cancelled) return;
 
-      if (error) {
+      if (!resultado.linhas) {
         // Supabase errors have non-enumerable properties — log fields explicitly
         console.error("Failed to fetch conversations:", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
+          motivo: resultado.motivo,
+          message: resultado.erro?.message,
+          details: resultado.erro?.details,
+          hint: resultado.erro?.hint,
+          code: resultado.erro?.code,
         });
         setLoading(false);
         return;
       }
 
-      onConversationsLoadedRef.current(normalizeConversations(data ?? []));
+      onConversationsLoadedRef.current(normalizeConversations(resultado.linhas));
       setLoading(false);
     })();
 
@@ -343,43 +362,30 @@ export function ConversationList({
     // a truncagem — passar de 1000 negócios derrubava o filtro de etapa para
     // sempre (achado da revisão do PR #71); agora o count fecha o laço.
     // `linhas: null` = não dá para confiar (erro, ou dado mudando no meio).
-    const buscarDeals = async (): Promise<{
-      linhas: { contact_id: string | null; stage_id: string | null }[] | null;
-    }> => {
-      const PAGINA = 1000;
-      const acumulado: { contact_id: string | null; stage_id: string | null }[] =
-        [];
-      let total: number | null = null;
-      for (let pagina = 0; pagina < 25; pagina++) {
-        const de = pagina * PAGINA;
-        const { data, error, count } = await supabase
-          .from("deals")
-          .select("contact_id, stage_id", { count: "exact" })
-          // ⚠️ `range` sem `order` é LIMIT/OFFSET sobre ordem INDEFINIDA
-          // (#25): um card arrastado entre duas páginas muda de posição no
-          // seq scan e a página seguinte repete/omite linhas — o contato
-          // omitido some de "Funil: X" e passa a casar "Sem negócio", sem
-          // erro em lugar nenhum. `id` é PK: estável e barato.
-          .order("id", { ascending: true })
-          .range(de, de + PAGINA - 1);
-        if (error || !data) return { linhas: null };
-        acumulado.push(...(data as typeof acumulado));
-        total = count ?? total;
-        if (total == null) {
-          // Sem contagem não há como fechar o laço: página CHEIA pode ter
-          // continuação, e devolver o acumulado afirmaria completude sem
-          // prova — o contrato deste bloco é "linhas: null = não confiar".
-          return { linhas: data.length < PAGINA ? acumulado : null };
-        }
-        if (acumulado.length >= total || data.length < PAGINA) {
+    // O laço saiu daqui para `src/lib/supabase/paginar.ts` em 19/09/2026, ao
+    // consertar o quadro do funil e a lista de conversas, que não paginavam.
+    const buscarDeals = () =>
+      buscarPaginado<{ contact_id: string | null; stage_id: string | null }>(
+        async (de, ate) => {
+          const { data, error, count } = await supabase
+            .from("deals")
+            .select("contact_id, stage_id", { count: "exact" })
+            // ⚠️ `range` sem `order` é LIMIT/OFFSET sobre ordem INDEFINIDA
+            // (#25): um card arrastado entre duas páginas muda de posição no
+            // seq scan e a página seguinte repete/omite linhas — o contato
+            // omitido some de "Funil: X" e passa a casar "Sem negócio", sem
+            // erro em lugar nenhum. `id` é PK: estável e barato.
+            .order("id", { ascending: true })
+            .range(de, ate);
           return {
-            linhas: acumulado.length < total ? null : acumulado,
+            data: (data ?? null) as
+              | { contact_id: string | null; stage_id: string | null }[]
+              | null,
+            error,
+            count,
           };
-        }
-      }
-      // 25k+ negócios: admitir que não coube é melhor que recortar errado.
-      return { linhas: null };
-    };
+        },
+      );
 
     (async () => {
       const [tagsRes, profilesRes, etapasRes, funisRes, dealsRes] =

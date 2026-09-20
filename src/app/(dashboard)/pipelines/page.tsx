@@ -3,6 +3,7 @@
 import { Suspense, useState, useEffect, useRef, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { buscarPaginado } from "@/lib/supabase/paginar";
 import type {
   Automation,
   AutomationStep,
@@ -271,49 +272,77 @@ function PipelinesPageInner() {
       // A MESMA consulta para os dois selects: qualquer mudança de escopo
       // (filtro, ordem) vale automaticamente no plano B — divergir os dois é
       // exatamente o tipo de bug que só aparece quando ninguém está olhando.
+      //
+      // ⚠️⚠️ PAGINADA desde 19/09/2026. Antes era uma consulta só, sem
+      // `range` e sem `count`: o PostgREST corta em ~1000 linhas SEM AVISAR,
+      // então um funil com mais de mil cards mostrava os 1.000 mais RECENTES
+      // e contava errado nas colunas, em silêncio. A lista de conversas já
+      // paginava a consulta de `deals` por esta exata razão
+      // (`conversation-list.tsx`); o quadro, não. Hoje o maior funil tem
+      // centenas de cards — a migração da Kommo traz mais de 8 mil para um
+      // deles (`docs/PLANO-migracao-kommo.md`, trava 11).
       const buscar = (select: string) =>
-        supabase
-          .from("deals")
-          .select(select)
-          .eq("pipeline_id", pipelineId)
-          .order("created_at", { ascending: false });
-      const mapear = (linhas: unknown) =>
-        ((linhas ?? []) as RawDealDoQuadro[]).map(normalizarDealDoQuadro);
+        buscarPaginado<RawDealDoQuadro>(async (de, ate) => {
+          const { data, error, count } = await supabase
+            .from("deals")
+            .select(select, { count: "exact" })
+            .eq("pipeline_id", pipelineId)
+            // ⚠️ O desempate por `id` é o que torna a paginação estável: dois
+            // cards com o MESMO `created_at` (a carga da Kommo vai ter muitos)
+            // ficam em ordem indefinida entre uma página e outra, e aí um
+            // deles some do quadro e outro vem duas vezes.
+            .order("created_at", { ascending: false })
+            .order("id", { ascending: true })
+            .range(de, ate);
+          return { data: (data ?? null) as RawDealDoQuadro[] | null, error, count };
+        });
 
       if (!embedDoQuadroRecusado) {
-        const { data, error } = await buscar(DEAL_SELECT_DO_QUADRO);
-        if (!error) return mapear(data);
+        const doQuadro = await buscar(DEAL_SELECT_DO_QUADRO);
+        if (doQuadro.linhas) return doQuadro.linhas.map(normalizarDealDoQuadro);
+        if (!doQuadro.erro) {
+          // Não foi o PostgREST recusando o embed: a coleção mudou no meio da
+          // leitura, ou passou do teto. Repetir com o select básico daria o
+          // mesmo — o quadro admite que não sabe, em vez de desenhar meia
+          // lista com cara de lista inteira.
+          console.error("Failed to load deals (paginação):", {
+            motivo: doQuadro.motivo,
+          });
+          toast.error(t("toastFailedLoadDeals"));
+          return null;
+        }
         // ⚠️ Um embed recusado pelo PostgREST não pode derrubar o Kanban: sem
         // este plano B o quadro abriria VAZIO, sem mensagem nenhuma. Loga (os
         // campos do erro do Supabase não são enumeráveis) e refaz com o
         // select antigo — o quadro fica de pé, sem conversa/etiquetas nos
         // cards (e negócio pré-910 volta a abrir o formulário no clique).
         console.error("Failed to load deals (select do quadro):", {
-          message: error.message,
-          details: error.details,
-          hint: error.hint,
-          code: error.code,
+          message: doQuadro.erro.message,
+          details: doQuadro.erro.details,
+          hint: doQuadro.erro.hint,
+          code: doQuadro.erro.code,
         });
         embedDoQuadroRecusado = true;
       }
 
-      const { data: basico, error: erroBasico } = await buscar(DEAL_SELECT_BASICO);
-      if (erroBasico) {
+      const basico = await buscar(DEAL_SELECT_BASICO);
+      if (!basico.linhas) {
         // ⚠️ O plano B também pode falhar (rede, RLS) — descartar ESTE erro
         // reproduzia o defeito original: colunas "vazias" com cara de funil
         // sem negócio. Toast + `null`: o `loadDeals` o converte na lista
         // vazia explícita de sempre, e a recarga da volta ao app mantém o
         // quadro.
         console.error("Failed to load deals (select básico):", {
-          message: erroBasico.message,
-          details: erroBasico.details,
-          hint: erroBasico.hint,
-          code: erroBasico.code,
+          motivo: basico.motivo,
+          message: basico.erro?.message,
+          details: basico.erro?.details,
+          hint: basico.erro?.hint,
+          code: basico.erro?.code,
         });
         toast.error(t("toastFailedLoadDeals"));
         return null;
       }
-      return mapear(basico);
+      return basico.linhas.map(normalizarDealDoQuadro);
     },
     [supabase, t],
   );

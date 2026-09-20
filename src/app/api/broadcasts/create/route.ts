@@ -42,66 +42,45 @@ export async function POST(request: Request) {
       );
     }
 
-    // 3. Resolve audience contacts
-    let contacts: any[] = [];
-    if (audience.type === 'all') {
-      const { data } = await supabase.from('contacts').select('*');
-      contacts = data ?? [];
-    } else if (audience.type === 'tags' && Array.isArray(audience.tagIds) && audience.tagIds.length > 0) {
-      const { data: contactTags } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.tagIds);
+    // 3. Resolve the audience entirely in SQL (migration 041). The
+    //    route only ever needs contact.id, so no contact rows cross
+    //    the wire — this also sidesteps PostgREST's default 1000-row
+    //    cap that used to silently truncate large tag audiences, and
+    //    the request-URL bloat from a giant `.in('id', ids)`.
+    const audienceArgs = {
+      p_audience_type: audience.type,
+      p_tag_ids: audience.type === 'tags' ? audience.tagIds ?? null : null,
+      p_custom_field_id:
+        audience.type === 'custom_field' ? audience.customField?.fieldId ?? null : null,
+      p_custom_field_operator:
+        audience.type === 'custom_field' ? audience.customField?.operator ?? null : null,
+      p_custom_field_value:
+        audience.type === 'custom_field' ? audience.customField?.value ?? null : null,
+      p_csv_phones:
+        audience.type === 'csv' && Array.isArray(audience.csvContacts)
+          ? audience.csvContacts.map((c: any) => c.phone).filter(Boolean)
+          : null,
+      p_exclude_tag_ids:
+        audience.excludeTagIds && audience.excludeTagIds.length > 0
+          ? audience.excludeTagIds
+          : null,
+    };
 
-      if (contactTags && contactTags.length > 0) {
-        const uniqueIds = [...new Set(contactTags.map((ct) => ct.contact_id))];
-        const { data } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('id', uniqueIds);
-        contacts = data ?? [];
-      }
-    } else if (audience.type === 'custom_field' && audience.customField) {
-      const { fieldId, operator, value } = audience.customField;
-      let query = supabase
-        .from('contact_custom_values')
-        .select('contact_id')
-        .eq('custom_field_id', fieldId);
+    const { data: audienceCount, error: countErr } = await supabase.rpc(
+      'count_audience',
+      audienceArgs,
+    );
 
-      if (operator === 'is') query = query.eq('value', value);
-      else if (operator === 'is_not') query = query.neq('value', value);
-      else if (operator === 'contains') query = query.ilike('value', `%${value}%`);
-
-      const { data: matches } = await query;
-      if (matches && matches.length > 0) {
-        const contactIds = [...new Set(matches.map((m) => m.contact_id))];
-        const { data } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('id', contactIds);
-        contacts = data ?? [];
-      }
-    } else if (audience.type === 'csv' && Array.isArray(audience.csvContacts)) {
-      const phones = audience.csvContacts.map((c: any) => c.phone).filter(Boolean);
-      if (phones.length > 0) {
-        const { data } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('phone', phones);
-        contacts = data ?? [];
-      }
+    if (countErr) {
+      console.error('[broadcast-create] Error counting audience:', countErr);
+      return NextResponse.json(
+        { error: `Failed to resolve audience: ${countErr.message}` },
+        { status: 500 },
+      );
     }
 
-    if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-      const { data: excludeRows } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.excludeTagIds);
-      const excludedIds = new Set((excludeRows ?? []).map((r) => r.contact_id));
-      contacts = contacts.filter((c) => !excludedIds.has(c.id));
-    }
-
-    if (contacts.length === 0) {
+    const totalRecipients = Number(audienceCount ?? 0);
+    if (totalRecipients === 0) {
       return NextResponse.json(
         { error: 'No recipients found for this audience' },
         { status: 400 },
@@ -126,7 +105,7 @@ export async function POST(request: Request) {
           ...(headerMediaUrl ? { headerMediaUrl: headerMediaUrl.trim() } : {}),
         },
         status: 'sending',
-        total_recipients: contacts.length,
+        total_recipients: totalRecipients,
         sent_count: 0,
         delivered_count: 0,
         read_count: 0,
@@ -144,27 +123,45 @@ export async function POST(request: Request) {
       );
     }
 
-    // 5. Insert recipient rows with status 'pending'
-    const recipientRows = contacts.map((contact) => ({
-      broadcast_id: broadcast.id,
-      contact_id: contact.id,
-      status: 'pending' as const,
-    }));
+    // 5. Enqueue recipient rows with status 'pending', resolved and
+    //    inserted server-side in one statement (migration 041) —
+    //    replaces the old chunked client-side insert loop.
+    const { data: enqueuedCount, error: rErr } = await supabase.rpc(
+      'enqueue_broadcast_recipients',
+      {
+        p_broadcast_id: broadcast.id,
+        ...audienceArgs,
+      },
+    );
 
-    const INSERT_CHUNK = 200;
-    for (let i = 0; i < recipientRows.length; i += INSERT_CHUNK) {
-      const batch = recipientRows.slice(i, i + INSERT_CHUNK);
-      const { error: rErr } = await supabase
-        .from('broadcast_recipients')
-        .insert(batch);
-      if (rErr) {
-        await supabase
-          .from('broadcasts')
-          .update({ status: 'failed', failed_count: contacts.length })
-          .eq('id', broadcast.id);
-        return NextResponse.json(
-          { error: `Failed to enqueue recipients: ${rErr.message}` },
-          { status: 500 },
+    if (rErr) {
+      await supabase
+        .from('broadcasts')
+        .update({ status: 'failed', failed_count: totalRecipients })
+        .eq('id', broadcast.id);
+      return NextResponse.json(
+        { error: `Failed to enqueue recipients: ${rErr.message}` },
+        { status: 500 },
+      );
+    }
+
+    // enqueue_broadcast_recipients returns the number of rows it
+    // actually inserted, which is the authoritative recipient count —
+    // count_audience() and the enqueue are two separate point-in-time
+    // reads, so a contact added/removed/retagged in between can leave
+    // totalRecipients (predicted) disagreeing with what was really
+    // enqueued. Reconcile broadcasts.total_recipients only when they
+    // differ, so the common case stays a single insert statement.
+    const actualRecipients = Number(enqueuedCount ?? totalRecipients);
+    if (actualRecipients !== totalRecipients) {
+      const { error: reconcileErr } = await supabase
+        .from('broadcasts')
+        .update({ total_recipients: actualRecipients })
+        .eq('id', broadcast.id);
+      if (reconcileErr) {
+        console.error(
+          '[broadcast-create] Error reconciling total_recipients:',
+          reconcileErr,
         );
       }
     }
@@ -182,7 +179,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       success: true,
       broadcastId: broadcast.id,
-      total_recipients: contacts.length,
+      total_recipients: actualRecipients,
     });
   } catch (error) {
     console.error('[broadcast-create] Exception in POST:', error);

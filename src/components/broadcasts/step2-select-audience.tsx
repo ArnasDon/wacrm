@@ -128,76 +128,47 @@ export function Step2SelectAudience({
   }, [audience.type]);
 
   const fetchEstimatedCount = useCallback(async () => {
+    // Partially-configured audience — wait for the user to finish.
+    if (
+      (audience.type === 'tags' && (!audience.tagIds || audience.tagIds.length === 0)) ||
+      (audience.type === 'custom_field' &&
+        (!audience.customField?.fieldId || !audience.customField.value)) ||
+      (audience.type === 'csv' && (!audience.csvContacts || audience.csvContacts.length === 0))
+    ) {
+      setEstimatedCount(null);
+      return;
+    }
+
     setLoadingCount(true);
     try {
       const supabase = createClient();
 
-      // Base query — produces the superset before exclude is applied.
-      let baseIds: Set<string> | null = null; // null means "all contacts"
+      // Resolved entirely server-side (migration 041) so a large tag
+      // or custom-field audience can't silently truncate at
+      // PostgREST's default 1000-row cap.
+      const { data, error } = await supabase.rpc('count_audience', {
+        p_audience_type: audience.type,
+        p_tag_ids: audience.type === 'tags' ? audience.tagIds ?? null : null,
+        p_custom_field_id:
+          audience.type === 'custom_field' ? audience.customField?.fieldId ?? null : null,
+        p_custom_field_operator:
+          audience.type === 'custom_field' ? audience.customField?.operator ?? null : null,
+        p_custom_field_value:
+          audience.type === 'custom_field' ? audience.customField?.value ?? null : null,
+        p_csv_phones:
+          audience.type === 'csv' && audience.csvContacts
+            ? audience.csvContacts.map((c) => c.phone).filter(Boolean)
+            : null,
+        p_exclude_tag_ids:
+          audience.excludeTagIds && audience.excludeTagIds.length > 0
+            ? audience.excludeTagIds
+            : null,
+      });
 
-      if (audience.type === 'all') {
-        // Handled below — full-table count adjusted by excludes.
-      } else if (
-        audience.type === 'tags' &&
-        audience.tagIds &&
-        audience.tagIds.length > 0
-      ) {
-        const { data } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.tagIds);
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
-      } else if (
-        audience.type === 'custom_field' &&
-        audience.customField?.fieldId &&
-        audience.customField.value
-      ) {
-        const { fieldId, operator, value } = audience.customField;
-        let q = supabase
-          .from('contact_custom_values')
-          .select('contact_id')
-          .eq('custom_field_id', fieldId);
-        if (operator === 'is') q = q.eq('value', value);
-        else if (operator === 'is_not') q = q.neq('value', value);
-        else q = q.ilike('value', `%${value}%`);
-        const { data } = await q;
-        baseIds = new Set((data ?? []).map((r) => r.contact_id));
-      } else if (
-        audience.type === 'csv' &&
-        audience.csvContacts &&
-        audience.csvContacts.length > 0
-      ) {
-        setEstimatedCount(audience.csvContacts.length);
-        return;
-      } else {
-        // Partially-configured audience — wait for the user to finish.
-        setEstimatedCount(null);
-        return;
+      if (error) {
+        console.error('[step2] count_audience failed:', error);
       }
-
-      // Apply exclude tags
-      let excludeSet: Set<string> | null = null;
-      if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-        const { data: excludeRows } = await supabase
-          .from('contact_tags')
-          .select('contact_id')
-          .in('tag_id', audience.excludeTagIds);
-        excludeSet = new Set((excludeRows ?? []).map((r) => r.contact_id));
-      }
-
-      if (baseIds) {
-        const effective = [...baseIds].filter(
-          (id) => !excludeSet?.has(id),
-        );
-        setEstimatedCount(effective.length);
-      } else {
-        // "All" — fetch the total, then subtract exclude set if any.
-        const { count } = await supabase
-          .from('contacts')
-          .select('*', { count: 'exact', head: true });
-        const total = count ?? 0;
-        setEstimatedCount(excludeSet ? Math.max(0, total - excludeSet.size) : total);
-      }
+      setEstimatedCount(error ? null : Number(data ?? 0));
     } finally {
       setLoadingCount(false);
     }

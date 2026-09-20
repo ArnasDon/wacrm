@@ -54,29 +54,66 @@ export function Step4ScheduleSend({
   useEffect(() => {
     async function calculateReach() {
       setLoadingReach(true);
+
+      // Resolved entirely server-side (migration 041) so a large tag
+      // audience can't silently truncate at PostgREST's default
+      // 1000-row cap.
+      //
+      // NOTE: on a failed RPC this intentionally (a) leaves the
+      // previously-displayed estimate in place rather than writing 0,
+      // and (b) leaves loadingReach TRUE instead of clearing it in a
+      // `finally` — a failed count must never render as a confident
+      // zero (see route.ts / step2's same rule), and the component
+      // has no null-handling branch to render an explicit "unknown"
+      // state. Staying in the loading state forever on failure is the
+      // truthful representation with the state this component already
+      // has: the count never resolved.
+      let rpcFailed = false;
       try {
         const supabase = createClient();
 
         if (audience.type === 'all') {
-          const { count } = await supabase
-            .from('contacts')
-            .select('*', { count: 'exact', head: true });
-          setEstimatedReach(count ?? 0);
+          const { data, error } = await supabase.rpc('count_audience', {
+            p_audience_type: 'all',
+          });
+          if (error) {
+            console.error('[step4] count_audience (all) failed:', error);
+            rpcFailed = true;
+          } else {
+            setEstimatedReach(Number(data ?? 0));
+          }
         } else if (audience.type === 'tags' && audience.tagIds && audience.tagIds.length > 0) {
-          const { data: contactTags } = await supabase
-            .from('contact_tags')
-            .select('contact_id')
-            .in('tag_id', audience.tagIds);
-
-          const uniqueIds = new Set((contactTags ?? []).map((ct) => ct.contact_id));
-          setEstimatedReach(uniqueIds.size);
+          const { data, error } = await supabase.rpc('count_audience', {
+            p_audience_type: 'tags',
+            p_tag_ids: audience.tagIds,
+          });
+          if (error) {
+            console.error('[step4] count_audience (tags) failed:', error);
+            rpcFailed = true;
+          } else {
+            setEstimatedReach(Number(data ?? 0));
+          }
         } else if (audience.type === 'csv' && audience.csvContacts) {
-          setEstimatedReach(audience.csvContacts.length);
+          const { data, error } = await supabase.rpc('count_audience', {
+            p_audience_type: 'csv',
+            p_csv_phones: audience.csvContacts.map((c) => c.phone).filter(Boolean),
+          });
+          if (error) {
+            console.error('[step4] count_audience (csv) failed:', error);
+            rpcFailed = true;
+          } else {
+            setEstimatedReach(Number(data ?? 0));
+          }
         } else {
           setEstimatedReach(0);
         }
+      } catch (err) {
+        console.error('[step4] count_audience threw:', err);
+        rpcFailed = true;
       } finally {
-        setLoadingReach(false);
+        if (!rpcFailed) {
+          setLoadingReach(false);
+        }
       }
     }
 
@@ -191,7 +228,7 @@ export function Step4ScheduleSend({
           <DialogTrigger
             render={
               <Button
-                disabled={!name.trim() || isProcessing}
+                disabled={!name.trim() || isProcessing || loadingReach}
                 className="bg-primary text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
               />
             }

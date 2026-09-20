@@ -78,6 +78,18 @@ vi.mock('@/lib/whatsapp/inbound-store', () => {
 
 vi.mock('@/lib/webhooks/deliver', () => ({ dispatchWebhookEvent: vi.fn(async () => {}) }));
 
+// A fase de anexos começa resolvendo a conexão de onde baixar. Aqui ela só
+// REGISTRA que chegou lá (e por qual conexão) e desiste do download — é o que
+// deixa um teste cobrar a ORDEM entre religar e buscar anexo.
+vi.mock('@/lib/cb-channels/resolve', () => ({
+  resolveChannelForConversation: vi.fn(
+    async (_db: unknown, _conta: string, conversa: { channel_id: string | null }) => {
+      h.ordem.push(`anexo:${conversa.channel_id}`);
+      return null;
+    },
+  ),
+}));
+
 import { persistDeviceMessage, persistInboundMessage } from '@/lib/whatsapp/inbound-store';
 import { criarBanco } from '@/lib/whatsapp/sem-telefone/banco.test-helper';
 
@@ -406,6 +418,83 @@ describe('a religação roda DEPOIS de todos os itens do lote gravados', () => {
     });
   });
 
+  // Codex, PR #226 (3ª rodada): com mais retidas do que UMA página, a cauda —
+  // as falas mais RECENTES do lead — ficava esperando outra mensagem daquele
+  // LID, que pode nunca vir.
+  it('mais retidas do que uma página: a 1ª página entra ANTES dos anexos do lote, o RESTO depois — no mesmo webhook', async () => {
+    const retida = (n: number, over: Linha = {}): Linha => {
+      const id = `R${String(n).padStart(3, '0')}`;
+      return {
+        id: `ret-${id}`,
+        account_id: 'conta-1',
+        channel_id: 'canal-1',
+        lid_jid: LID,
+        provider_message_id: id,
+        from_me: false,
+        tipo: 'text',
+        situacao: 'retida',
+        carimbo: new Date((AGORA + n) * 1000).toISOString(),
+        payload: {
+          key: { remoteJid: LID, fromMe: false, id },
+          message: { conversation: `fala ${id}` },
+          messageTimestamp: AGORA + n,
+        },
+        ...over,
+      };
+    };
+    h.banco.tabelas[RETIDAS] = Array.from({ length: 12 }, (_, i) => retida(i + 1));
+    // A 12ª — na CAUDA — é um documento que chegou por OUTRA conexão.
+    h.banco.tabelas[RETIDAS][11] = retida(12, {
+      channel_id: 'canal-2',
+      tipo: 'document',
+      payload: {
+        key: { remoteJid: LID, fromMe: false, id: 'R012' },
+        message: { documentMessage: { mimetype: 'application/pdf', fileLength: '1000' } },
+        messageTimestamp: AGORA + 12,
+      },
+    });
+
+    const push = h.banco.tabelas.messages.push.bind(h.banco.tabelas.messages);
+    h.banco.tabelas.messages.push = (...linhas: Linha[]) => {
+      for (const l of linhas) {
+        if (String(l.message_id).startsWith('R0')) h.ordem.push(`historica:${l.message_id}`);
+      }
+      return push(...linhas);
+    };
+
+    // A mensagem ATUAL que traz o telefone — com uma foto.
+    await entregar(
+      comum('ATUAL-FOTO', 120, {
+        message: { imageMessage: { mimetype: 'image/jpeg', fileLength: '2000' } },
+        messageType: 'imageMessage',
+      }),
+    );
+
+    expect(h.ordem).toEqual([
+      'normal:ATUAL-FOTO',
+      ...Array.from({ length: 10 }, (_, i) => `historica:R${String(i + 1).padStart(3, '0')}`),
+      'anexo:canal-1', // a foto da mensagem ATUAL não esperou a cauda
+      'historica:R011',
+      'historica:R012',
+      'anexo:canal-2', // …e o documento da cauda é buscado na conexão DELE
+    ]);
+    expect(h.banco.tabelas[RETIDAS].every((r) => r.situacao === 'entregue')).toBe(true);
+  });
+
+  it('uma página ou menos: a segunda leva não consulta NADA — o caso de sempre não paga pela cauda', async () => {
+    await entregar(semTelefone('RETIDA-1', 0));
+    let consultas = 0;
+    const from = h.banco.db.from.bind(h.banco.db);
+    (h.banco.db as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      if (t === RETIDAS) consultas++;
+      return from(t);
+    };
+    await entregar(comum('ATUAL', 120));
+    // Uma leitura das retidas + o `marcarEntregue` da que entrou. Nenhuma a mais.
+    expect(consultas).toBe(2);
+    expect(h.banco.tabelas[RETIDAS][0].situacao).toBe('entregue');
+  });
+
   it('lendo o fonte: `religarRetidas` é chamada FORA do laço dos itens, e antes da fase de anexos', () => {
     const fonte = fs
       .readFileSync(path.join(__dirname, 'route.ts'), 'utf8')
@@ -414,13 +503,32 @@ describe('a religação roda DEPOIS de todos os itens do lote gravados', () => {
     const lacoDosItens = fonte.indexOf('for (const item of items) {');
     const lacoDeReligar = fonte.indexOf('for (const [lidJid, alvo] of paraReligar) {');
     const chamada = fonte.indexOf('await religarRetidas(');
-    const faseDeAnexos = fonte.indexOf('for (const pendente of semAnexo) {');
+    const faseDeAnexos = fonte.indexOf('for (const pendente of filaDeAnexos) {');
     expect(lacoDosItens).toBeGreaterThan(-1);
     expect(lacoDeReligar).toBeGreaterThan(lacoDosItens);
     expect(chamada).toBeGreaterThan(lacoDeReligar);
     expect(faseDeAnexos).toBeGreaterThan(chamada);
     // Uma chamada só no arquivo — e ela está depois do laço dos itens.
     expect(fonte.split('religarRetidas(').length - 1).toBe(1);
+  });
+
+  it('lendo o fonte: o RESTO das retidas é drenado na SEGUNDA leva — depois dos anexos do lote, e pelo MESMO corpo', () => {
+    const fonte = fs
+      .readFileSync(path.join(__dirname, 'route.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const levas = fonte.indexOf("for (const leva of ['lote', 'resto'] as const) {");
+    const resto = fonte.indexOf('await religarOResto(');
+    const corpo = fonte.indexOf('for (const pendente of filaDeAnexos) {');
+    expect(levas).toBeGreaterThan(fonte.indexOf('await religarRetidas('));
+    // Dentro do laço das levas e ANTES do corpo: na leva 'lote' o `if` não entra,
+    // então o resto só roda com os anexos do lote já buscados.
+    expect(resto).toBeGreaterThan(levas);
+    expect(corpo).toBeGreaterThan(resto);
+    expect(fonte).toContain("if (leva === 'resto') {");
+    // Um corpo só: a segunda leva não ganhou uma cópia da fase de anexos.
+    expect(fonte.split('for (const pendente of').length - 1).toBe(1);
+    expect(fonte.split('religarOResto(').length - 1).toBe(1);
   });
 });
 

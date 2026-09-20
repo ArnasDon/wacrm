@@ -21,13 +21,27 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 const TABELA = 'cb_mensagens_sem_telefone';
 
 /**
- * Quantas retidas de um LID um lote do webhook religa de uma vez. Religar roda
- * ENTRE gravar as mensagens atuais e buscar os anexos delas: cada retida são
- * ~6 idas ao banco, então o teto é o que limita o atraso do anexo de uma
- * mensagem ATUAL. O que passar dele entra no lote seguinte daquele LID. (Um
- * lead costuma ter 1 a 3 falas retidas antes de alguém responder.)
+ * Quantas retidas de um LID UMA passada religa. A primeira passada roda ENTRE
+ * gravar as mensagens atuais e buscar os anexos delas: cada retida são ~6 idas
+ * ao banco, então o teto é o que limita o atraso do anexo de uma mensagem
+ * ATUAL. (Um lead costuma ter 1 a 3 falas retidas antes de alguém responder.)
+ *
+ * ⚠️ O que passar dele NÃO espera outra mensagem daquele LID (Codex, PR #226,
+ * 3ª rodada): a rota drena o resto DEPOIS da fase de anexos do lote, em
+ * passadas deste mesmo tamanho (`religarOResto`, em `religar.ts`). Esperar a
+ * mensagem seguinte deixava a cauda retida para sempre quando o cliente não
+ * voltava a escrever — justamente as falas mais RECENTES dele.
  */
 export const MAXIMO_DE_RETIDAS_POR_VEZ = 10;
+
+/**
+ * Quantas passadas A MAIS a rota faz por LID, depois da fase de anexos. Com a
+ * primeira, são 60 retidas de um mesmo LID por lote — número que só uma
+ * sessão de criptografia quebrada por horas produziria. Trabalho limitado de
+ * propósito: além disso, o resto fica para a próxima mensagem daquele LID,
+ * como qualquer retida que falha.
+ */
+export const MAXIMO_DE_PASSADAS_DO_RESTO = 5;
 
 /** O que identifica a ocorrência — igual nos três desfechos. */
 export interface Ocorrencia {
@@ -125,8 +139,10 @@ export async function reter(
 
 /**
  * As retidas de um LID, da mais antiga para a mais nova — é a ordem em que
- * entram no fio. Falha = lista vazia (nunca lança): quem chama está no
- * caminho de uma mensagem NORMAL, que não pode pagar por isto.
+ * entram no fio —, até `MAXIMO_DE_RETIDAS_POR_VEZ`. Sempre a partir da MAIS
+ * ANTIGA ainda retida: a que foi entregue sai do conjunto, então chamar de
+ * novo devolve a página seguinte. Falha = lista vazia (nunca lança): quem
+ * chama está no caminho de uma mensagem NORMAL, que não pode pagar por isto.
  */
 export async function retidasDoLid(
   db: SupabaseClient,
@@ -141,8 +157,8 @@ export async function retidasDoLid(
       .eq('lid_jid', lidJid)
       .eq('situacao', 'retida')
       .order('carimbo', { ascending: true })
-      // Religar roda dentro do processamento de uma mensagem NORMAL: o que
-      // passar do teto entra na mensagem seguinte daquele LID.
+      // Uma PÁGINA: o que passar do teto é drenado pela rota nas passadas
+      // seguintes (`religarOResto`), depois da fase de anexos do lote.
       .limit(MAXIMO_DE_RETIDAS_POR_VEZ);
     if (error) {
       registrarFalha('ler as retidas', error);

@@ -5,12 +5,14 @@
 // Puro, sem I/O. É a decisão mais sensível da correção — ver
 // docs/PLANO-lid-sem-telefone.md, 4.3.
 //
-//   nova       é a ÚLTIMA da conversa e acabou de ser enviada: passa pelo
-//              caminho normal de ingestão, motores inclusive.
+//   nova       é a ÚLTIMA da conversa (carimbo ESTRITAMENTE maior que o de
+//              qualquer outra) e acabou de ser enviada: passa pelo caminho
+//              normal de ingestão, motores inclusive.
 //   tardia     é a ÚLTIMA da conversa, mas chegou tarde demais para os
 //              motores: entra como história E a conversa passa a refleti-la
 //              (reabre se estava encerrada, prévia, posição na lista).
-//   historica  alguém já escreveu depois dela: só entra no fio, no lugar do
+//   historica  alguém já escreveu depois dela — ou NO MESMO SEGUNDO, que é
+//              não saber quem veio antes: só entra no fio, no lugar do
 //              carimbo. Nenhum motor, e a conversa não se mexe.
 //
 // ⚠️⚠️ Por que `nova` EXISTE (e não "recuperada nunca dispara motor"): a cópia
@@ -56,7 +58,8 @@ export function modoDaRecuperada(args: {
   carimboMs: number;
   agoraMs: number;
   /**
-   * O `created_at` da mensagem mais recente da conversa, em ms. `null` =
+   * O `created_at` da mensagem mais recente da conversa, em ms — de OUTRA
+   * mensagem: quem chama já conferiu que esta não está gravada. `null` =
    * conversa SEM mensagem nenhuma (resposta do banco, não ignorância: quem
    * não conseguiu ler escolhe `historica` sem perguntar aqui).
    */
@@ -64,9 +67,22 @@ export function modoDaRecuperada(args: {
 }): ModoDaRecuperada {
   const { carimboMs, agoraMs, ultimaDaConversaMs } = args;
   // Alguém — cliente, equipe ou robô — já escreveu DEPOIS dela: é história.
-  // `>=` e não `>`: o carimbo do WhatsApp vem em SEGUNDOS, e a rajada do
-  // cliente empata no mesmo segundo; empate é "continua sendo a última".
-  const ehAUltima = ultimaDaConversaMs === null || carimboMs >= ultimaDaConversaMs;
+  //
+  // ⚠️⚠️ `>` e não `>=`: EMPATE é história (Codex, PR #226, 3ª rodada). O
+  // carimbo do WhatsApp vem em SEGUNDOS, então duas falas da mesma rajada
+  // empatam — e quem chama já tirou a duplicata do caminho, logo o carimbo
+  // igual é de OUTRA mensagem, que já passou pelos motores (ou é a cópia
+  // normal DESTA, gravada entre a conferência e a leitura: aí o `UNIQUE`
+  // responde `duplicada`, em qualquer modo). Dentro do mesmo
+  // segundo não há como saber qual veio antes, e a regra da casa é "não saber
+  // qual é a última = não arrisca os motores": com `>=`, a fala RETIDA de uma
+  // rajada ("oi" / "quero agendar", no mesmo segundo) era religada como `nova`
+  // DEPOIS de a irmã dela já ter iniciado o robô — e o menu consumia o "oi"
+  // atrasado como resposta ("opção inválida" para quem acabou de chegar). O
+  // preço do `>` é o caso espelhado (a recuperada era mesmo a última da
+  // rajada): ela entra no fio sem motor, e a irmã do mesmo segundo já
+  // acordou robô, IA, funil e a caixa de entrada por ela.
+  const ehAUltima = ultimaDaConversaMs === null || carimboMs > ultimaDaConversaMs;
   if (!ehAUltima) return 'historica';
   return agoraMs - carimboMs <= IDADE_MAXIMA_DA_NOVA_MS ? 'nova' : 'tardia';
 }

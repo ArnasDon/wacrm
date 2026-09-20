@@ -104,7 +104,7 @@ describe('retidas', () => {
   // Religar roda DENTRO do processamento de uma mensagem normal: um acúmulo
   // (a conexão que ficou semanas sem religar ninguém) não pode virar uma
   // rajada de centenas de inserts no caminho dela.
-  it('retidasDoLid tem TETO — as mais antigas primeiro, o resto fica para a mensagem seguinte', async () => {
+  it('retidasDoLid devolve UMA página — as mais antigas primeiro; o resto sai nas passadas seguintes (`religarOResto`)', async () => {
     const b = criarBanco();
     for (let i = 0; i < MAXIMO_DE_RETIDAS_POR_VEZ + 7; i++) {
       await reter(b.db, ocorrencia({ providerMessageId: `M${String(i).padStart(3, '0')}`, carimboSeg: 1000 + i }), {});

@@ -11,6 +11,14 @@
 // retida que falha não segura as outras nem a mensagem que a destravou. Falha
 // = a retida continua retida, e a próxima mensagem daquele LID tenta de novo.
 //
+// ⚠️ Em DUAS etapas, e a rota é quem as separa: `religarRetidas` é UMA página
+// (`MAXIMO_DE_RETIDAS_POR_VEZ`), antes da fase de anexos do lote — o teto é o
+// que limita o atraso do anexo de uma mensagem ATUAL; `religarOResto` drena as
+// páginas seguintes DEPOIS dos anexos do lote. Sem a segunda, o lead com mais
+// retidas que o teto ficava com a cauda — as falas mais RECENTES — presa até
+// escrever de novo, e quem não escreve de novo ficava assim para sempre
+// (Codex, PR #226, 3ª rodada).
+//
 // ⚠️ A conexão é a DA RETIDA, não a do webhook que destravou: o LID é da conta
 // do WhatsApp da pessoa, então a fala que chegou pelo número A pode ser
 // destravada por uma mensagem no número B — e o anexo só existe na instância
@@ -27,7 +35,13 @@ import {
 } from '@/lib/whatsapp/transport/evolution-inbound';
 
 import { entregarRecuperada } from './entregar';
-import { marcarDuplicada, marcarEntregue, retidasDoLid } from './retidas';
+import {
+  MAXIMO_DE_PASSADAS_DO_RESTO,
+  MAXIMO_DE_RETIDAS_POR_VEZ,
+  marcarDuplicada,
+  marcarEntregue,
+  retidasDoLid,
+} from './retidas';
 
 /** A pergunta "esta mensagem já está no banco?" — a da rota, para não haver duas. */
 export type JaGravada = (providerMessageId: string, esperarCorrida?: boolean) => Promise<boolean>;
@@ -54,7 +68,7 @@ export function anexoDe(
   return { item, contentType, messageId, bytes: mediaBytesOf(item), channelId };
 }
 
-export async function religarRetidas(args: {
+export interface PedidoDeReligacao {
   db: SupabaseClient;
   accountId: string;
   ownerUserId: string;
@@ -66,16 +80,40 @@ export async function religarRetidas(args: {
   conversationId: string;
   jaGravada: JaGravada;
   agoraMs?: number;
-}): Promise<AnexoDaRecuperada[]> {
+}
+
+/** O que UMA passada pelas retidas de um LID fez. */
+export interface Religacao {
+  anexos: AnexoDaRecuperada[];
+  /**
+   * A página veio CHEIA: pode haver mais retidas daquele LID. Quem drena o
+   * resto é `religarOResto`, que a rota chama depois da fase de anexos.
+   */
+  haMais: boolean;
+  /**
+   * Quantas SAÍRAM de `retida` nesta passada (entregues ou duplicadas). Zero
+   * com a página cheia = a cabeça da fila está presa (banco falhando): pedir a
+   * página seguinte devolveria as mesmas linhas.
+   */
+  resolvidas: number;
+}
+
+const NADA_A_RELIGAR: Religacao = { anexos: [], haMais: false, resolvidas: 0 };
+
+/** UMA página das retidas daquele LID — as mais antigas primeiro. */
+export async function religarRetidas(args: PedidoDeReligacao): Promise<Religacao> {
   const { db, accountId, ownerUserId, lidJid, telefoneJid, conversationId, jaGravada } = args;
   // Conversa não migrada para LID (o campo nem vem) não tem o que religar —
   // e sai antes de qualquer consulta.
-  if (!lidJid || !isLidJid(lidJid)) return [];
-  if (!telefoneJid || !telefoneJid.endsWith('@s.whatsapp.net')) return [];
+  if (!lidJid || !isLidJid(lidJid)) return NADA_A_RELIGAR;
+  if (!telefoneJid || !telefoneJid.endsWith('@s.whatsapp.net')) return NADA_A_RELIGAR;
 
   const anexos: AnexoDaRecuperada[] = [];
+  let haMais = false;
+  let resolvidas = 0;
   try {
     const retidas = await retidasDoLid(db, accountId, lidJid);
+    haMais = retidas.length >= MAXIMO_DE_RETIDAS_POR_VEZ;
     for (const retida of retidas) {
       try {
         const item = retida.payload as EvolutionUpsert;
@@ -93,6 +131,7 @@ export async function religarRetidas(args: {
         // A cópia NORMAL da mesma mensagem pode ter entrado depois da retenção.
         if (await jaGravada(m.providerMessageId, false)) {
           await marcarDuplicada(db, retida.id);
+          resolvidas++;
           continue;
         }
 
@@ -104,6 +143,7 @@ export async function religarRetidas(args: {
         });
         if (entrega.status === 'duplicada') {
           await marcarDuplicada(db, retida.id);
+          resolvidas++;
           continue;
         }
         if (entrega.status === 'falhou') continue; // segue retida; a próxima tenta
@@ -122,6 +162,7 @@ export async function religarRetidas(args: {
           'religacao',
           entrega.messageId
         );
+        resolvidas++;
         console.info(
           '[evolution/sem-telefone] mensagem retida RELIGADA à conversa.',
           JSON.stringify({ messageId: m.providerMessageId, modo: entrega.modo })
@@ -140,6 +181,29 @@ export async function religarRetidas(args: {
       '[evolution/sem-telefone] religar falhou:',
       err instanceof Error ? err.message : err
     );
+  }
+  return { anexos, haMais, resolvidas };
+}
+
+/**
+ * O RESTO das retidas de um LID cuja primeira página veio cheia: as páginas
+ * seguintes, até `MAXIMO_DE_PASSADAS_DO_RESTO`. A rota chama DEPOIS da fase de
+ * anexos do lote — história não atrasa o anexo de mensagem atual — e busca os
+ * anexos que saírem daqui numa segunda leva.
+ *
+ * Para quando a página não vem cheia (acabou) ou quando uma passada não
+ * resolve NINGUÉM: `retidasDoLid` lê sempre a partir da mais antiga ainda
+ * retida, então sem progresso a passada seguinte leria as mesmas linhas. O que
+ * sobrar continua retido e a próxima mensagem daquele LID tenta de novo — o
+ * destino de qualquer retida que falha. NUNCA lança (`religarRetidas` não
+ * lança).
+ */
+export async function religarOResto(args: PedidoDeReligacao): Promise<AnexoDaRecuperada[]> {
+  const anexos: AnexoDaRecuperada[] = [];
+  for (let passada = 0; passada < MAXIMO_DE_PASSADAS_DO_RESTO; passada++) {
+    const pagina = await religarRetidas(args);
+    anexos.push(...pagina.anexos);
+    if (!pagina.haMais || pagina.resolvidas === 0) break;
   }
   return anexos;
 }

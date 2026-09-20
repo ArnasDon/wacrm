@@ -90,9 +90,9 @@ Item em `@lid` sem telefone, nesta ordem (`receberSemTelefone`):
 
 | Modo | Quando | O que faz |
 | --- | --- | --- |
-| **nova** | a mensagem é a MAIS RECENTE da conversa **e** tem até 4 min | passa pelo caminho normal (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele — motores inclusive |
+| **nova** | a mensagem é a MAIS RECENTE da conversa — carimbo ESTRITAMENTE maior que o de qualquer outra — **e** tem até 4 min | passa pelo caminho normal (`persistInboundMessage`/`persistDeviceMessage`), sem mudar uma linha dele — motores inclusive |
 | **tardia** | é a MAIS RECENTE da conversa, mas tem mais de 4 min (a cópia depende de o celular pareado estar acordado) | entra como história — **nenhum motor** — e a CONVERSA passa a refleti-la: reabre se estava encerrada (sem responsável), prévia canônica e `last_message_at` (`tardia.ts`) |
-| **histórica** | alguém já escreveu depois dela | só ENTRA no histórico, no lugar certo do fio. **Nenhum motor** (automação, robô, IA), não reabre, não segue canal, não mede atraso de entrega, não abre negócio, e a conversa não se mexe |
+| **histórica** | alguém já escreveu depois dela — ou NO MESMO SEGUNDO (empate = não saber quem veio antes) | só ENTRA no histórico, no lugar certo do fio. **Nenhum motor** (automação, robô, IA), não reabre, não segue canal, não mede atraso de entrega, não abre negócio, e a conversa não se mexe |
 
 Por que `nova` dispara os motores: a cópia do celular e a cópia normal (quando
 as duas chegam) disputam o mesmo `UNIQUE (conversation_id, message_id)`. Se a
@@ -105,6 +105,15 @@ Por que `tardia` e `histórica` não disparam nada: o robô leria uma mensagem
 antiga DEPOIS das mais novas (um menu consumiria a resposta errada), a IA
 responderia a algo de horas atrás, e a automação de boas-vindas sairia depois de
 gente já ter respondido.
+
+Por que EMPATE de carimbo é história (Codex, 3ª rodada — 6.6): o carimbo do
+WhatsApp vem em segundos, então duas falas da mesma rajada empatam; e como quem
+chama já tirou a duplicata do caminho, o carimbo igual é de OUTRA mensagem, que
+já passou pelos motores. Dentro do mesmo segundo não há como saber qual veio
+antes, e a regra desta correção é "não saber qual é a última = não arrisca os
+motores". O preço é o caso espelhado (a recuperada era mesmo a última da rajada):
+ela entra no fio sem motor — e a irmã do mesmo segundo já acordou robô, IA, funil
+e a caixa de entrada por ela.
 
 Por que `tardia` existe (achado das duas lentes): tratada como história pura, a
 fala de um cliente cuja conversa estava ENCERRADA entrava sem reabrir, sem
@@ -168,7 +177,7 @@ e vai para o lugar do carimbo ao recarregar.
 | R11 | "Parar se o cliente responder" (#223) | baixa | A histórica NÃO chama `cancelarEsperasPorResposta` (há default-deny). A segunda linha de defesa lê `gravada_em` (= agora): a espera criada ANTES da religação para — o lado que o projeto já escolheu como seguro ("entre os dois, cancela"); a criada DEPOIS não é afetada. |
 | R12 | Instrumento de atraso (1003) poluído | baixa | A recuperada aparece como atraso grande em `gravada_em − created_at` — é verdade (o CRM gravou tarde). A tabela nova lista quais são, para excluir numa medição. |
 | R13 | Payload (conteúdo de cliente) guardado | média | Tabela sem policy, `REVOKE` de `anon`/`authenticated`, só service role. Payload apagado ao entregar. |
-| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por LID por LOTE do webhook, depois de todos os itens gravados, com teto de 10 retidas por vez. A resolução do LID só roda no caso raro — medido em produção: ~5 ms (varredura de 14,4 mil linhas em cache; sem índice em `messages.remote_jid_lid`, de propósito). |
+| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por LID por LOTE do webhook, depois de todos os itens gravados, com teto de 10 retidas por PÁGINA. Só o LID com mais retidas que uma página paga mais: o resto é drenado DEPOIS da fase de anexos do lote, em até 5 passadas (6.6). A resolução do LID só roda no caso raro — medido em produção: ~5 ms (varredura de 14,4 mil linhas em cache; sem índice em `messages.remote_jid_lid`, de propósito). |
 | R15 | `first_inbound_message` deixa de disparar para o lead cuja 1ª fala entrou como história | média | Só quando quem destrava é o ECO do escritório (gente já respondeu): a fala retida entra como `customer` antes de o cliente escrever de novo, e a mensagem seguinte dele não é mais "a primeira". Lado ESCOLHIDO — boas-vindas de robô depois de gente responder — e escrito na rota e no CLAUDE.md. Medido em 19/09: nenhuma automação nem fluxo ativo usa o gatilho. Quando quem destrava é o próprio cliente, a mensagem dele é gravada ANTES e o gatilho vale como hoje. |
 | R16 | Mensagem tardia invisível em conversa encerrada | média | Modo `tardia`: reabre (sem responsável), prévia e posição — pelo mesmo helper dos caminhos normais, ENTRE o insert e o acerto da espera. |
 | R17 | `nova` que perde a corrida do `UNIQUE` vira "retida" falsa no Meu dia | baixa | `entregar.ts` confere se a mensagem está na conversa antes de responder `falhou`: está → `duplicada`, nada a reter. |
@@ -390,6 +399,85 @@ fechá-la exige travar a conversa DENTRO de `persistInboundMessage`, o caminho
 quente que esta correção prometeu não tocar. Frequência estimada: uma janela de
 ~100 ms num caminho que roda ~1 vez a cada 10 dias.
 
+### 6.6 Codex, 3ª rodada (HEAD `7ebc9fe`) — 2 P2, os dois corrigidos
+
+**P2 — empate de carimbo era tratado como "continua sendo a última".** Com `>=`,
+a fala RETIDA de uma rajada ("oi" / "quero agendar", no mesmo segundo) era
+religada como `nova` DEPOIS de a irmã dela já ter passado pelos motores — o robô
+iniciado pela irmã consumia a fala atrasada como resposta ao menu. **Corrigido:**
+`modo.ts` passou a exigir carimbo ESTRITAMENTE maior (`>`); empate é `historica`,
+inclusive horas depois (nunca `tardia`: a irmã do mesmo segundo ou veio pelo
+caminho normal, ou foi tardia — as duas reabrem e sobem a conversa —, ou era
+história porque já havia algo mais novo). Vale para os dois chamadores, a chegada
+e a religação. Testes: três casos novos em `modo.test.ts` (empate recente, empate
+de horas, 1 ms à frente).
+
+**P2 — a cauda acima do teto ficava retida até OUTRA mensagem daquele LID.** Com
+mais de 10 retidas e uma única mensagem trazendo o telefone, a rota religava as
+10 mais antigas e nada agendava o resto — que são justamente as falas mais
+RECENTES do lead; para quem não escreve de novo, "a próxima mensagem" é nunca.
+**Corrigido, como trabalho limitado de continuação:** `religarRetidas` passou a
+ser UMA página e a dizer se `haMais` (e quantas `resolvidas`); a rota guarda em
+`comResto` o LID cuja página veio cheia e chama `religarOResto` numa SEGUNDA leva
+da fase de anexos — depois dos anexos do lote (mensagem atual primeiro, história
+depois), pelo MESMO corpo da fase de anexos (sem cópia: o laço ganhou um laço de
+fora, e o `git diff -w` mostra só o invólucro). `religarOResto` repete a página
+até `MAXIMO_DE_PASSADAS_DO_RESTO` (5 → 60 retidas de um LID por lote) e para
+quando a página não vem cheia ou quando uma passada não resolve ninguém (cabeça
+da fila presa por falha de banco: a passada seguinte leria as mesmas linhas). O
+que falha continua com o destino de sempre — segue retida, e a próxima mensagem
+daquele LID tenta de novo; o resto existe para quem nunca foi TENTADO, não para
+repetir falha em laço. O caso comum (uma página ou menos) não paga nada: a
+segunda leva não consulta o banco.
+
+Testes: 8 de unidade (`religar.test.ts`: página cheia avisa, página incompleta
+não, drenagem completa em ordem, anexos de todas as passadas com a conexão de
+cada retida, teto de passadas, parada sem progresso, falha na cabeça não prende a
+cauda, leitura que falha no meio), 2 de comportamento na rota (12 retidas + uma
+mensagem atual com foto: `normal → 10 históricas → anexo do lote → 2 históricas →
+anexo da cauda, na conexão DELA`; e "uma página ou menos: a segunda leva não
+consulta nada") e 1 pino lendo a rota. **Mutação:** 6 regras quebradas de
+propósito, uma por vez — `>` de volta a `>=`; `haMais` sempre falso; sem a parada
+por falta de progresso; sem o teto de passadas; o resto drenado ANTES dos anexos
+do lote; a rota esquecendo quem tem resto —, as 6 reprovaram.
+
+⚠️ Registro de um erro meu nesta rodada: o primeiro teste de "falha na cabeça da
+fila" esperava que a retida que falhou fosse tentada de novo dentro do mesmo
+lote. Não é o contrato (nem deveria ser — seria repetir falha em laço): o teste
+estava errado, o código não. Foi corrigido o TESTE, com o motivo escrito nele.
+
+**Preview contra a produção (19/09/2026, 21:41–21:44 BRT), só com o lead de
+teste, e limpo no fim:**
+
+- **G9 — empate.** Duas cópias sem telefone com o MESMO carimbo (10 min atrás),
+  LID conhecido: a 1ª entrou `tardia`, a 2ª `historica` (log do módulo). Nenhuma
+  passou por motor.
+- **G8 + G5 — a pilha.** 12 cópias sem telefone de um LID desconhecido num lote
+  só → 12 linhas `RETIDA`; uma mensagem normal do lead trazendo aquele LID → as
+  12 `RELIGADA` no MESMO webhook, na ordem 01…12, todas `historica`. No banco: a
+  ordem de gravação (`gravada_em`) bate com a do carimbo; o registro ficou com 14
+  linhas, todas `entregue`, 12 por religação e 2 pelo acervo, NENHUMA com payload.
+- **Motores:** `automation_logs` do contato ficou em 1 antes e depois (só há uma
+  automação ativa na conta, de gatilho `calendly_booking`, e nenhum fluxo).
+- **Não lidas:** com a conversa ABERTA no navegador do preview o contador ficou em
+  1 depois de 14 falas recuperadas — a conversa aberta força a não lida a zero
+  (4.3). Medido em seguida com a conversa FECHADA no navegador: uma histórica →
+  1 → 2, exatamente +1, sem mexer em `last_message_at` nem em `aguardando_desde`.
+- **Limpeza conferida:** 16 mensagens e 15 linhas do registro apagadas por id
+  exato; a conversa voltou ao retrato (aberta, 0 não lidas, sem responsável,
+  `aguardando_desde` de 14/09, prévia e posição pela última mensagem REAL, 110
+  mensagens); 1 negócio aberto, 4 eventos do lead, 1 log de automação, 0 esperas;
+  nenhum vestígio dos LIDs fictícios no acervo.
+- ⚠️ **Uma diferença em relação ao primeiro retrato do dia, que eu não tinha
+  registrado:** `contacts.updated_at` do lead de teste está em 19/09 23:04 UTC, e
+  não no 14/09 original. Não é desta rodada (não se mexeu nela): vem da primeira
+  simulação de mensagem NORMAL do dia (6.1) — o caminho normal toca a linha do
+  contato, como faria qualquer mensagem real dele. Nenhum CAMPO da ficha difere
+  (nome, `nome_fixado_em`, `avatar_checked_at` iguais).
+
+Portões no HEAD desta rodada: `tsc` limpo, `eslint` 0 erros (os mesmos 49 avisos
+de antes), suíte inteira em Node 22 — 353 arquivos, 4.521 testes.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -423,5 +511,6 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Codex, 1ª rodada (HEAD `50748ba`): 1 P2, corrigido na migration 1011 (6.4)
 - [x] 1011 aplicada em produção em 19/09/2026 21:08 BRT (histórico `20260920000843`), depois do CI verde; eco do escritório testado no preview e limpo
 - [x] Codex, 2ª rodada (HEAD `3ebab6a`): P1 corrigido (religação fora do laço), P2 aceito por escrito (6.5)
+- [x] Codex, 3ª rodada (HEAD `7ebc9fe`): 2 P2 corrigidos — empate de carimbo é história; o resto das retidas é drenado depois dos anexos do lote (6.6); preview contra a produção refeito e limpo
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

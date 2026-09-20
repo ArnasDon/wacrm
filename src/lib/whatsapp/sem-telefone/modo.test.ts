@@ -35,10 +35,29 @@ describe('modoDaRecuperada', () => {
     ).toBe('nova');
   });
 
-  it('empate no mesmo segundo (rajada do cliente) conta como a última', () => {
+  // ⚠️ Codex, PR #226 (3ª rodada). O carimbo do WhatsApp vem em segundos: a
+  // rajada do cliente empata, e quem chama já tirou a duplicata do caminho —
+  // o carimbo igual é de OUTRA mensagem, que já passou pelos motores. Com
+  // `>=` a fala RETIDA da rajada era religada como `nova` depois de a irmã
+  // dela ter iniciado o robô, e o menu consumia a fala atrasada como resposta.
+  it('EMPATE no mesmo segundo (rajada do cliente) é HISTÓRIA: não dá para saber quem veio antes, e a dúvida não arrisca os motores', () => {
     const carimbo = AGORA - seg(3);
     expect(
       modoDaRecuperada({ carimboMs: carimbo, agoraMs: AGORA, ultimaDaConversaMs: carimbo }),
+    ).toBe('historica');
+  });
+
+  it('empate horas depois também é história, nunca TARDIA — a irmã do mesmo segundo já reabriu e subiu a conversa', () => {
+    const carimbo = AGORA - seg(3 * 3600);
+    expect(
+      modoDaRecuperada({ carimboMs: carimbo, agoraMs: AGORA, ultimaDaConversaMs: carimbo }),
+    ).toBe('historica');
+  });
+
+  it('um milissegundo À FRENTE da última já basta: é ela a mais nova', () => {
+    const carimbo = AGORA - seg(3);
+    expect(
+      modoDaRecuperada({ carimboMs: carimbo, agoraMs: AGORA, ultimaDaConversaMs: carimbo - 1 }),
     ).toBe('nova');
   });
 

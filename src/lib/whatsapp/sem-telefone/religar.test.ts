@@ -7,13 +7,15 @@ const h = vi.hoisted(() => ({
 vi.mock('@/lib/whatsapp/inbound-store', () => h);
 
 import { criarBanco, type Banco, type Linha } from './banco.test-helper';
-import { religarRetidas } from './religar';
+import { religarOResto, religarRetidas } from './religar';
+import { MAXIMO_DE_PASSADAS_DO_RESTO, MAXIMO_DE_RETIDAS_POR_VEZ } from './retidas';
 
 const RETIDAS = 'cb_mensagens_sem_telefone';
 const LID = '254833865040050@lid';
 const TEL = '5583900001111@s.whatsapp.net';
 const CARIMBO = 1789747434; // 2026-09-18T16:03:54Z
 const ms = (seg: number) => (CARIMBO + seg) * 1000;
+const NADA = { anexos: [], haMais: false, resolvidas: 0 };
 const iso = (seg: number) => new Date(ms(seg)).toISOString();
 
 /** Uma linha `retida`, como `reter` a grava. */
@@ -74,7 +76,7 @@ describe('religarRetidas', () => {
     const b = criarBanco({ [RETIDAS]: [retida('A', 0)] });
     const from = vi.spyOn(b.db, 'from');
     for (const lidJid of [null, undefined, '', TEL, '120363000000000000@g.us']) {
-      expect(await chamar(b, { lidJid })).toEqual([]);
+      expect(await chamar(b, { lidJid })).toEqual(NADA);
     }
     expect(from).not.toHaveBeenCalled();
   });
@@ -83,7 +85,7 @@ describe('religarRetidas', () => {
     const b = criarBanco({ [RETIDAS]: [retida('A', 0)] });
     const from = vi.spyOn(b.db, 'from');
     for (const telefoneJid of [null, undefined, LID, '5583900001111', '120363000000000000@g.us']) {
-      expect(await chamar(b, { telefoneJid })).toEqual([]);
+      expect(await chamar(b, { telefoneJid })).toEqual(NADA);
     }
     expect(from).not.toHaveBeenCalled();
     expect(b.tabelas[RETIDAS][0].situacao).toBe('retida');
@@ -91,7 +93,7 @@ describe('religarRetidas', () => {
 
   it('sem retida daquele LID: uma consulta, nenhuma escrita', async () => {
     const b = criarBanco({ [RETIDAS]: [retida('A', 0, { lid_jid: '999@lid' })] });
-    expect(await chamar(b)).toEqual([]);
+    expect(await chamar(b)).toEqual(NADA);
     expect(b.escritas).toEqual([]);
   });
 
@@ -147,7 +149,8 @@ describe('religarRetidas', () => {
       .fn()
       .mockRejectedValueOnce(new Error('rede fora'))
       .mockResolvedValue(false);
-    await expect(chamar(b, { jaGravada })).resolves.toEqual([]);
+    // Só a B saiu de `retida`: é o que conta como progresso da passada.
+    await expect(chamar(b, { jaGravada })).resolves.toEqual({ anexos: [], haMais: false, resolvidas: 1 });
     const porId = Object.fromEntries(b.tabelas[RETIDAS].map((l) => [l.provider_message_id, l.situacao]));
     expect(porId).toEqual({ A: 'retida', B: 'entregue' });
   });
@@ -172,7 +175,7 @@ describe('religarRetidas', () => {
       messages: [gatilho()],
       [RETIDAS]: [retida('DOC', 0, { channel_id: 'canal-DA-RETIDA', payload })],
     });
-    const anexos = await chamar(b);
+    const { anexos } = await chamar(b);
     expect(anexos).toEqual([
       {
         item: payload,
@@ -196,7 +199,9 @@ describe('religarRetidas', () => {
       messages: [gatilho()],
       [RETIDAS]: [retida('IMG', 0, { channel_id: null, payload })],
     });
-    const [anexo] = await chamar(b);
+    const {
+      anexos: [anexo],
+    } = await chamar(b);
     expect(anexo.channelId).toBeNull();
     expect('channelId' in anexo).toBe(true);
   });
@@ -225,7 +230,137 @@ describe('religarRetidas', () => {
   it('leitura das retidas que FALHA: lista vazia, sem lançar — a mensagem normal não paga por isto', async () => {
     const b = criarBanco({ messages: [gatilho()] });
     b.falhas[RETIDAS] = { code: '42P01', message: 'relation does not exist' };
-    await expect(chamar(b)).resolves.toEqual([]);
+    await expect(chamar(b)).resolves.toEqual(NADA);
     expect(b.tabelas.messages).toHaveLength(1);
+  });
+});
+
+// ============================================================
+// Mais retidas do que UMA página (Codex, PR #226, 3ª rodada). A página é o que
+// limita o atraso do anexo de uma mensagem atual; o RESTO não pode esperar a
+// próxima mensagem daquele LID — para quem não escreve de novo, isso é nunca, e
+// a cauda são justamente as falas mais RECENTES dele.
+// ============================================================
+describe('mais retidas do que uma página', () => {
+  beforeEach(() => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
+    h.persistInboundMessage.mockReset().mockResolvedValue(null);
+    h.persistDeviceMessage.mockReset().mockResolvedValue(null);
+  });
+  afterEach(() => vi.restoreAllMocks());
+
+  /** `n` retidas, uma por segundo, com ids que ordenam como o carimbo. */
+  const pilha = (n: number) =>
+    Array.from({ length: n }, (_, i) => retida(`R${String(i + 1).padStart(3, '0')}`, i));
+  const situacoes = (b: Banco) =>
+    Object.fromEntries(b.tabelas[RETIDAS].map((l) => [l.provider_message_id, l.situacao]));
+  const retidasAinda = (b: Banco) =>
+    b.tabelas[RETIDAS].filter((l) => l.situacao === 'retida').map((l) => l.provider_message_id);
+
+  function pedido(b: Banco, over: Partial<Parameters<typeof religarOResto>[0]> = {}) {
+    return {
+      db: b.db,
+      accountId: 'conta-1',
+      ownerUserId: 'dono-1',
+      lidJid: LID,
+      telefoneJid: TEL,
+      conversationId: 'conv-1',
+      jaGravada: vi.fn().mockResolvedValue(false),
+      agoraMs: ms(601),
+      ...over,
+    };
+  }
+
+  it('a primeira passada religa UMA página — as mais antigas — e avisa que HÁ MAIS', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(MAXIMO_DE_RETIDAS_POR_VEZ + 2) });
+    const r = await religarRetidas(pedido(b));
+    expect(r).toMatchObject({ haMais: true, resolvidas: MAXIMO_DE_RETIDAS_POR_VEZ });
+    expect(retidasAinda(b)).toEqual(['R011', 'R012']);
+  });
+
+  it('página que NÃO vem cheia: não há mais — a rota nem chama a segunda etapa', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(MAXIMO_DE_RETIDAS_POR_VEZ - 1) });
+    expect(await religarRetidas(pedido(b))).toMatchObject({ haMais: false, resolvidas: 9 });
+    expect(retidasAinda(b)).toEqual([]);
+  });
+
+  it('religarOResto drena TODAS as páginas seguintes, na ordem do carimbo — sem esperar outra mensagem', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(25) });
+    await religarRetidas(pedido(b)); // a página que roda antes dos anexos do lote
+    expect(retidasAinda(b)).toHaveLength(15);
+
+    await religarOResto(pedido(b));
+    expect(retidasAinda(b)).toEqual([]);
+    const falas = b.tabelas.messages.filter((m) => m.sender_type === 'customer');
+    expect(falas.map((m) => m.message_id)).toEqual(pilha(25).map((l) => l.provider_message_id));
+    // Todas como HISTÓRIA: há mensagem mais nova na conversa (a que trouxe o telefone).
+    expect(h.persistInboundMessage).not.toHaveBeenCalled();
+  });
+
+  it('devolve os ANEXOS de todas as passadas, cada um com a conexão da SUA retida', async () => {
+    const comDoc = (l: Linha, canal: string): Linha => ({
+      ...l,
+      channel_id: canal,
+      payload: {
+        ...(l.payload as Linha),
+        message: { documentMessage: { mimetype: 'application/pdf', fileLength: '1000' } },
+      },
+    });
+    const linhas = pilha(23);
+    linhas[12] = comDoc(linhas[12], 'canal-A'); // cai na 1ª passada do resto
+    linhas[21] = comDoc(linhas[21], 'canal-B'); // cai na 2ª
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: linhas });
+    await religarRetidas(pedido(b));
+    const anexos = await religarOResto(pedido(b));
+    expect(anexos.map((a) => [a.contentType, a.channelId])).toEqual([
+      ['document', 'canal-A'],
+      ['document', 'canal-B'],
+    ]);
+  });
+
+  it('é trabalho LIMITADO: para no teto de passadas, e o que sobra continua retido para a próxima mensagem', async () => {
+    const total = MAXIMO_DE_RETIDAS_POR_VEZ * (MAXIMO_DE_PASSADAS_DO_RESTO + 1) + 7;
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(total) });
+    await religarRetidas(pedido(b));
+    const from = vi.spyOn(b.db, 'from');
+    await religarOResto(pedido(b));
+    const leituras = from.mock.calls.filter(([t]) => t === RETIDAS).length;
+    // Uma leitura de página por passada + um `marcarEntregue` por retida.
+    expect(leituras).toBe(MAXIMO_DE_PASSADAS_DO_RESTO * (1 + MAXIMO_DE_RETIDAS_POR_VEZ));
+    expect(retidasAinda(b)).toHaveLength(7);
+    // As que sobraram são as mais NOVAS — a ordem do fio foi respeitada até onde deu.
+    expect(retidasAinda(b)[0]).toBe(`R${String(total - 6).padStart(3, '0')}`);
+  });
+
+  it('passada que não resolve NINGUÉM para o laço: a cabeça presa não vira leitura repetida', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(30) });
+    b.falhas.messages = { code: '57014', message: 'canceling statement due to statement timeout' };
+    const from = vi.spyOn(b.db, 'from');
+    await expect(religarOResto(pedido(b))).resolves.toEqual([]);
+    expect(from.mock.calls.filter(([t]) => t === RETIDAS)).toHaveLength(1);
+    expect(retidasAinda(b)).toHaveLength(30);
+  });
+
+  it('retida que FALHA na cabeça da fila não prende a CAUDA — e ela mesma segue retida, para a próxima mensagem', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(14) });
+    const jaGravada = vi.fn(async (id: string) => {
+      if (id === 'R001') throw new Error('rede fora');
+      return false;
+    });
+    expect(await religarRetidas(pedido(b, { jaGravada }))).toMatchObject({ haMais: true, resolvidas: 9 });
+    await religarOResto(pedido(b, { jaGravada }));
+    // A cauda (R011–R014) entrou, embora a R001 continue na frente dela na fila.
+    // ⚠️ A R001 NÃO é repetida em laço: o resto existe para quem nunca foi
+    // TENTADO; a que falhou tem o destino de sempre (a próxima mensagem do LID).
+    expect(retidasAinda(b)).toEqual(['R001']);
+    expect(Object.entries(situacoes(b)).filter(([, x]) => x === 'entregue')).toHaveLength(13);
+  });
+
+  it('leitura que falha no meio: devolve o que já tinha, sem lançar', async () => {
+    const b = criarBanco({ messages: [gatilho()], [RETIDAS]: pilha(25) });
+    await religarRetidas(pedido(b));
+    b.falhas[RETIDAS] = { code: '57014', message: 'timeout' };
+    await expect(religarOResto(pedido(b))).resolves.toEqual([]);
   });
 });

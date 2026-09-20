@@ -2713,6 +2713,13 @@ O que morde código novo:
   conversa estava ENCERRADA entrava sem reabrir — e o argumento "reabrir
   desfaria um encerramento decidido com informação mais nova" não vale quando
   não existe nada mais novo do que ela. Não saber qual é a última = `historica`.
+  ⚠️⚠️ **"A última" é carimbo ESTRITAMENTE maior (`>`), e EMPATE é história**
+  (Codex, PR #226, 3ª rodada). O carimbo do WhatsApp vem em segundos, então a
+  rajada do cliente empata — e quem chama já tirou a duplicata do caminho, logo
+  o carimbo igual é de OUTRA mensagem, que já passou pelos motores. Com `>=`, a
+  fala RETIDA da rajada era religada como `nova` depois de a irmã ter iniciado o
+  robô, e o menu consumia a fala atrasada como resposta. Nunca `tardia` no
+  empate: a irmã do mesmo segundo já reabriu e subiu a conversa.
   ⚠️ O teto é **4 min, não os 5 do alarme da 1002**: `registrarEntrega` mede o
   atraso DEPOIS da espera de 2 s do `jaGravada` e das consultas — há teste
   cobrando a folga.
@@ -2768,7 +2775,21 @@ O que morde código novo:
   religa é a rota. Vem antes da fase de anexos (os anexos das religadas entram
   na mesma fila), e `MAXIMO_DE_RETIDAS_POR_VEZ` (10) é o que limita o atraso do
   anexo de uma mensagem atual. Há pino lendo a rota e teste de lote. Os motores
-  veem exatamente o que veriam sem a retida, e a retida entra como história. ⚠️ **Uma consequência escrita**:
+  veem exatamente o que veriam sem a retida, e a retida entra como história.
+  ⚠️⚠️ **Essa primeira passada é UMA PÁGINA, e o resto NÃO espera outra
+  mensagem daquele LID** (Codex, 3ª rodada): `religarRetidas` diz se `haMais`, a
+  rota guarda o LID em `comResto`, e `religarOResto` drena as páginas seguintes
+  na SEGUNDA leva da fase de anexos — depois dos anexos do lote, pelo MESMO
+  corpo (a fase de anexos virou `for (const leva of ['lote','resto'])`; não há
+  cópia dela, e há pino). Esperar "a próxima mensagem" deixava presa a cauda —
+  as falas mais RECENTES do lead —, e para quem não escreve de novo isso é
+  nunca. É trabalho LIMITADO (`MAXIMO_DE_PASSADAS_DO_RESTO`, 5 → 60 retidas de um
+  LID por lote) e para quando uma passada não resolve ninguém: `retidasDoLid` lê
+  sempre a partir da mais antiga ainda retida, então sem progresso a passada
+  seguinte leria as mesmas linhas. ⚠️ O resto é para quem nunca foi TENTADO, não
+  para repetir falha em laço: a retida que FALHA segue retida até a próxima
+  mensagem daquele LID, como sempre. O caso comum (uma página ou menos) não
+  consulta nada a mais. ⚠️ **Uma consequência escrita**:
   quando quem destrava é o ECO do escritório (o caso de 18/09), a fala retida
   entra como mensagem de cliente ANTES de o cliente escrever de novo — e a
   mensagem seguinte dele deixa de ser "a primeira" para `first_inbound_message`

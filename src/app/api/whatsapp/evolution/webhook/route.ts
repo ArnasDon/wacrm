@@ -12,7 +12,7 @@ import {
   type EvolutionUpsert,
 } from '@/lib/whatsapp/transport/evolution-inbound';
 import { receberSemTelefone } from '@/lib/whatsapp/sem-telefone/receber';
-import { religarRetidas } from '@/lib/whatsapp/sem-telefone/religar';
+import { religarOResto, religarRetidas } from '@/lib/whatsapp/sem-telefone/religar';
 import { aceitamAvancoPara } from '@/lib/whatsapp/transport/escada-de-status';
 import {
   PAUSAS_DO_RECIBO_MS,
@@ -399,152 +399,185 @@ export async function POST(request: Request) {
       // limita o quanto isso pode atrasar o anexo de uma mensagem atual. Sai sem
       // consultar nada para conversa que não é endereçada por LID; nunca lança.
       //
+      // ⚠️ É UMA página por LID. O LID cuja página veio cheia entra em
+      // `comResto`, e o resto dele é drenado na SEGUNDA leva da fase de anexos,
+      // mais abaixo — nunca aqui, que atrasaria o anexo da mensagem atual, e
+      // nunca "na próxima mensagem daquele LID", que para quem não escreve de
+      // novo é nunca (Codex, PR #226, 3ª rodada).
+      //
       // ⚠️ Uma consequência escrita: quando quem destrava é o ECO do escritório,
       // a fala retida entra como mensagem de cliente ANTES de o cliente escrever
       // de novo — e a mensagem seguinte dele deixa de ser "a primeira" para o
       // gatilho `first_inbound_message`. É o lado escolhido: boas-vindas de robô
       // depois de gente já ter respondido. Quando quem destrava é o próprio
       // cliente, a mensagem DELE já foi gravada e o gatilho vale como hoje.
+      const pedidoDeReligacao = (
+        lidJid: string,
+        alvo: { telefoneJid: string; conversationId: string },
+      ) => ({
+        db: supabaseAdmin(),
+        accountId: route.accountId,
+        ownerUserId: route.ownerUserId,
+        lidJid,
+        telefoneJid: alvo.telefoneJid,
+        conversationId: alvo.conversationId,
+        jaGravada,
+      });
+      const comResto = new Map<string, { telefoneJid: string; conversationId: string }>();
       for (const [lidJid, alvo] of paraReligar) {
         try {
-          semAnexo.push(
-            ...(await religarRetidas({
-              db: supabaseAdmin(),
-              accountId: route.accountId,
-              ownerUserId: route.ownerUserId,
-              lidJid,
-              telefoneJid: alvo.telefoneJid,
-              conversationId: alvo.conversationId,
-              jaGravada,
-            })),
-          );
+          const pagina = await religarRetidas(pedidoDeReligacao(lidJid, alvo));
+          semAnexo.push(...pagina.anexos);
+          if (pagina.haMais) comResto.set(lidJid, alvo);
         } catch (err) {
           console.error('[evolution/webhook] religar as retidas falhou:', err);
         }
       }
 
-      for (const pendente of semAnexo) {
-        try {
-          // ---- MAIOR QUE O BUCKET ----
-          // ⚠️ Vem ANTES de tudo, inclusive do adiamento de grupo: baixar um
-          // arquivo que o Storage vai recusar gasta banda e memória para
-          // terminar em "Documento indisponível", que não explica nada. Com
-          // `too_large` gravado, a bolha diz o NOME do arquivo e o motivo, e
-          // `podeBaixarAnexo` esconde o botão que nunca funcionaria.
-          //
-          // Vale para 1:1 e para grupo. Até 2026-09-09 o `media_state` era só
-          // de grupo — e `too_large` não tinha escritor nenhum, embora a rota
-          // de download já o lesse.
-          if (anexoGrandeDemais(pendente.bytes)) {
-            // ⚠️ Os dois passos (marcar + apagar o ponteiro com as chaves de
-            // decifragem) moram no helper de propósito — soltos aqui, eles já
-            // divergiram da rota de download em um PR. Ver `anexo-grande.ts`.
-            await marcarAnexoGrandeDemais({
-              db: supabaseAdmin(),
-              messageId: pendente.messageId,
-              filename: nomeDeArquivoDeclarado(pendente.item),
-              limparPonteiro: !!pendente.ehGrupo,
-            });
-            continue;
+      // ---- A FASE DE ANEXOS, em DUAS LEVAS ----
+      // 'lote'   as mensagens deste webhook e a primeira página de religadas —
+      //          a fila de sempre;
+      // 'resto'  só existe para o LID com MAIS retidas que uma página: as
+      //          páginas seguintes são religadas AGORA, com os anexos do lote já
+      //          buscados (mensagem atual primeiro, história depois), e os
+      //          anexos delas passam pelo MESMO corpo abaixo. Sem LID em
+      //          `comResto` — o caso de sempre — a leva é vazia e não consulta
+      //          nada.
+      let filaDeAnexos = semAnexo;
+      for (const leva of ['lote', 'resto'] as const) {
+        if (leva === 'resto') {
+          filaDeAnexos = [];
+          for (const [lidJid, alvo] of comResto) {
+            try {
+              filaDeAnexos.push(...(await religarOResto(pedidoDeReligacao(lidJid, alvo))));
+            } catch (err) {
+              console.error('[evolution/webhook] religar o resto das retidas falhou:', err);
+            }
           }
+        }
+        for (const pendente of filaDeAnexos) {
+          try {
+            // ---- MAIOR QUE O BUCKET ----
+            // ⚠️ Vem ANTES de tudo, inclusive do adiamento de grupo: baixar um
+            // arquivo que o Storage vai recusar gasta banda e memória para
+            // terminar em "Documento indisponível", que não explica nada. Com
+            // `too_large` gravado, a bolha diz o NOME do arquivo e o motivo, e
+            // `podeBaixarAnexo` esconde o botão que nunca funcionaria.
+            //
+            // Vale para 1:1 e para grupo. Até 2026-09-09 o `media_state` era só
+            // de grupo — e `too_large` não tinha escritor nenhum, embora a rota
+            // de download já o lesse.
+            if (anexoGrandeDemais(pendente.bytes)) {
+              // ⚠️ Os dois passos (marcar + apagar o ponteiro com as chaves de
+              // decifragem) moram no helper de propósito — soltos aqui, eles já
+              // divergiram da rota de download em um PR. Ver `anexo-grande.ts`.
+              await marcarAnexoGrandeDemais({
+                db: supabaseAdmin(),
+                messageId: pendente.messageId,
+                filename: nomeDeArquivoDeclarado(pendente.item),
+                limparPonteiro: !!pendente.ehGrupo,
+              });
+              continue;
+            }
 
-          // Em GRUPO o anexo grande fica sob demanda ("toque para baixar"),
-          // e só ele: no 1:1 o comportamento segue exatamente como era.
-          // Tamanho desconhecido conta como pequeno de propósito — o WhatsApp
-          // expira a mídia no servidor dele, então na dúvida é melhor gastar
-          // banda agora do que descobrir semanas depois que o comprovante do
-          // cliente não existe mais em lugar nenhum.
-          if (
-            pendente.ehGrupo &&
-            pendente.bytes != null &&
-            pendente.bytes > LIMITE_DOWNLOAD_AUTOMATICO_BYTES
-          ) {
-            continue; // fica com media_state='pending'
-          }
+            // Em GRUPO o anexo grande fica sob demanda ("toque para baixar"),
+            // e só ele: no 1:1 o comportamento segue exatamente como era.
+            // Tamanho desconhecido conta como pequeno de propósito — o WhatsApp
+            // expira a mídia no servidor dele, então na dúvida é melhor gastar
+            // banda agora do que descobrir semanas depois que o comprovante do
+            // cliente não existe mais em lugar nenhum.
+            if (
+              pendente.ehGrupo &&
+              pendente.bytes != null &&
+              pendente.bytes > LIMITE_DOWNLOAD_AUTOMATICO_BYTES
+            ) {
+              continue; // fica com media_state='pending'
+            }
 
-          // ---- RETIDA CUJA CONEXÃO FOI APAGADA ----
-          // A mídia de uma retida só existe na instância por onde ELA chegou.
-          // Com a conexão apagada (`channelId: null` — a chave existe, e é
-          // nula de propósito) não há onde buscar: `resolveEvolutionMedia`
-          // com canal nulo cairia no canal PADRÃO da conta, que nunca viu
-          // esta mensagem. A mensagem entrou; o anexo, não.
-          if ('channelId' in pendente && pendente.channelId == null) continue;
+            // ---- RETIDA CUJA CONEXÃO FOI APAGADA ----
+            // A mídia de uma retida só existe na instância por onde ELA chegou.
+            // Com a conexão apagada (`channelId: null` — a chave existe, e é
+            // nula de propósito) não há onde buscar: `resolveEvolutionMedia`
+            // com canal nulo cairia no canal PADRÃO da conta, que nunca viu
+            // esta mensagem. A mensagem entrou; o anexo, não.
+            if ('channelId' in pendente && pendente.channelId == null) continue;
 
-          const midia = await resolveEvolutionMedia(
-            route.accountId,
-            // `in`, e não `??`: item normal não carrega a chave e usa o canal
-            // deste webhook, como sempre; a retida usa o DELA — quem destravou
-            // pode ter chegado por outro número.
-            'channelId' in pendente ? (pendente.channelId ?? null) : route.channelId,
-            pendente.item,
-            pendente.contentType,
-          );
+            const midia = await resolveEvolutionMedia(
+              route.accountId,
+              // `in`, e não `??`: item normal não carrega a chave e usa o canal
+              // deste webhook, como sempre; a retida usa o DELA — quem destravou
+              // pode ter chegado por outro número.
+              'channelId' in pendente ? (pendente.channelId ?? null) : route.channelId,
+              pendente.item,
+              pendente.contentType,
+            );
 
-          if (!midia) {
-            // `failed` continua SÓ em grupo: é o estado que acende o botão
-            // de tentar de novo, e a rota de download sob demanda só existe
-            // para grupo. Marcar 1:1 aqui prometeria um botão que não há.
-            // (Diferente do `too_large` do portão acima, que não oferece
-            // botão nenhum — só explica.)
+            if (!midia) {
+              // `failed` continua SÓ em grupo: é o estado que acende o botão
+              // de tentar de novo, e a rota de download sob demanda só existe
+              // para grupo. Marcar 1:1 aqui prometeria um botão que não há.
+              // (Diferente do `too_large` do portão acima, que não oferece
+              // botão nenhum — só explica.)
+              if (pendente.ehGrupo) {
+                await supabaseAdmin()
+                  .from('messages')
+                  .update({ media_state: 'failed' })
+                  .eq('id', pendente.messageId);
+              }
+              continue;
+            }
+
+            const { error } = await supabaseAdmin()
+              .from('messages')
+              .update({
+                media_url: midia.url,
+                // O nome como o remetente enviou (969) e o mime que a Evolution
+                // declarou. Os dois chegavam até aqui e eram descartados: o
+                // documento aparecia como "Documento" na bolha e `media_type`
+                // ficava NULL em 100% das linhas deste transporte.
+                // ⚠️ Só escreve o nome quando ele existe — sobrescrever com NULL
+                // apagaria o que outro caminho tivesse gravado antes.
+                ...(midia.filename ? { media_filename: midia.filename } : {}),
+                media_type: midia.mime,
+                // Baixou: o anexo está no nosso Storage e o balão para de
+                // oferecer o botão.
+                ...(pendente.ehGrupo ? { media_state: null } : {}),
+              })
+              .eq('id', pendente.messageId);
+            if (error) {
+              console.error(
+                '[evolution/webhook] anexo baixado mas não pôde ser ligado à mensagem:',
+                error.message,
+              );
+              continue;
+            }
+
+            // Ponteiro cumpriu o papel: o arquivo está no nosso Storage e não
+            // se busca de novo. Apagar não é faxina — o payload do Baileys
+            // carrega as CHAVES DE DECIFRAGEM da mídia, e guardá-las depois de
+            // não precisar mais é superfície de risco de graça. Sobram na
+            // tabela só os anexos realmente pendentes ou falhos.
             if (pendente.ehGrupo) {
               await supabaseAdmin()
-                .from('messages')
-                .update({ media_state: 'failed' })
-                .eq('id', pendente.messageId);
+                .from('cb_message_media_ref')
+                .delete()
+                .eq('message_id', pendente.messageId);
             }
-            continue;
-          }
-
-          const { error } = await supabaseAdmin()
-            .from('messages')
-            .update({
-              media_url: midia.url,
-              // O nome como o remetente enviou (969) e o mime que a Evolution
-              // declarou. Os dois chegavam até aqui e eram descartados: o
-              // documento aparecia como "Documento" na bolha e `media_type`
-              // ficava NULL em 100% das linhas deste transporte.
-              // ⚠️ Só escreve o nome quando ele existe — sobrescrever com NULL
-              // apagaria o que outro caminho tivesse gravado antes.
-              ...(midia.filename ? { media_filename: midia.filename } : {}),
-              media_type: midia.mime,
-              // Baixou: o anexo está no nosso Storage e o balão para de
-              // oferecer o botão.
-              ...(pendente.ehGrupo ? { media_state: null } : {}),
-            })
-            .eq('id', pendente.messageId);
-          if (error) {
-            console.error(
-              '[evolution/webhook] anexo baixado mas não pôde ser ligado à mensagem:',
-              error.message,
-            );
-            continue;
-          }
-
-          // Ponteiro cumpriu o papel: o arquivo está no nosso Storage e não
-          // se busca de novo. Apagar não é faxina — o payload do Baileys
-          // carrega as CHAVES DE DECIFRAGEM da mídia, e guardá-las depois de
-          // não precisar mais é superfície de risco de graça. Sobram na
-          // tabela só os anexos realmente pendentes ou falhos.
-          if (pendente.ehGrupo) {
-            await supabaseAdmin()
-              .from('cb_message_media_ref')
-              .delete()
-              .eq('message_id', pendente.messageId);
-          }
-        } catch (err) {
-          // A mensagem já está gravada — aqui só se perde o anexo.
-          console.error('[evolution/webhook] anexo falhou:', err);
-          if (pendente.ehGrupo) {
-            // O `catch` de fora não protege o que roda DENTRO dele: sem este
-            // try, uma falha aqui escaparia do laço e mataria os anexos dos
-            // itens seguintes.
-            try {
-              await supabaseAdmin()
-                .from('messages')
-                .update({ media_state: 'failed' })
-                .eq('id', pendente.messageId);
-            } catch {
-              // Nada a fazer: o anexo já estava perdido.
+          } catch (err) {
+            // A mensagem já está gravada — aqui só se perde o anexo.
+            console.error('[evolution/webhook] anexo falhou:', err);
+            if (pendente.ehGrupo) {
+              // O `catch` de fora não protege o que roda DENTRO dele: sem este
+              // try, uma falha aqui escaparia do laço e mataria os anexos dos
+              // itens seguintes.
+              try {
+                await supabaseAdmin()
+                  .from('messages')
+                  .update({ media_state: 'failed' })
+                  .eq('id', pendente.messageId);
+              } catch {
+                // Nada a fazer: o anexo já estava perdido.
+              }
             }
           }
         }

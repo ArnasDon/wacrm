@@ -20,8 +20,14 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 const TABELA = 'cb_mensagens_sem_telefone';
 
-/** Quantas retidas de um LID uma mensagem normal religa de uma vez. */
-export const MAXIMO_DE_RETIDAS_POR_VEZ = 50;
+/**
+ * Quantas retidas de um LID um lote do webhook religa de uma vez. Religar roda
+ * ENTRE gravar as mensagens atuais e buscar os anexos delas: cada retida são
+ * ~6 idas ao banco, então o teto é o que limita o atraso do anexo de uma
+ * mensagem ATUAL. O que passar dele entra no lote seguinte daquele LID. (Um
+ * lead costuma ter 1 a 3 falas retidas antes de alguém responder.)
+ */
+export const MAXIMO_DE_RETIDAS_POR_VEZ = 10;
 
 /** O que identifica a ocorrência — igual nos três desfechos. */
 export interface Ocorrencia {

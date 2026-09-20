@@ -339,6 +339,91 @@ describe('`@lid` sem telefone', () => {
   });
 });
 
+// O achado P1 do Codex no PR #226: religar são várias idas ao banco por retida.
+// Dentro do laço dos itens, o lote que destravasse muitas delas atrasaria — e,
+// num corte do `after()`, PERDERIA — os itens seguintes do mesmo lote, que é a
+// perda que as duas fases da rota existem para impedir.
+describe('a religação roda DEPOIS de todos os itens do lote gravados', () => {
+  /** Um lote: vários itens no MESMO webhook. */
+  const lote = (...itens: { data: Linha }[]) => ({
+    event: 'messages.upsert',
+    instance: INSTANCIA,
+    data: itens.map((i) => i.data),
+  });
+
+  it('[a que destrava, outra mensagem atual]: as DUAS atuais entram antes de qualquer retida', async () => {
+    await entregar(semTelefone('RETIDA-1', 0));
+    await entregar(semTelefone('RETIDA-2', 10));
+    expect(h.banco.tabelas[RETIDAS]).toHaveLength(2);
+
+    const push = h.banco.tabelas.messages.push.bind(h.banco.tabelas.messages);
+    h.banco.tabelas.messages.push = (...linhas: Linha[]) => {
+      for (const l of linhas) {
+        if (String(l.message_id).startsWith('RETIDA')) h.ordem.push(`historica:${l.message_id}`);
+      }
+      return push(...linhas);
+    };
+    await entregar(lote(comum('ATUAL-A', 120), comum('ATUAL-B', 125)));
+
+    expect(h.ordem).toEqual([
+      'normal:ATUAL-A',
+      'normal:ATUAL-B',
+      'historica:RETIDA-1',
+      'historica:RETIDA-2',
+    ]);
+    expect(h.banco.tabelas[RETIDAS].map((r) => r.situacao)).toEqual(['entregue', 'entregue']);
+  });
+
+  it('três mensagens do MESMO cliente no lote são UMA consulta às retidas, não três', async () => {
+    let consultas = 0;
+    const from = h.banco.db.from.bind(h.banco.db);
+    (h.banco.db as unknown as { from: (t: string) => unknown }).from = (t: string) => {
+      if (t === RETIDAS) consultas++;
+      return from(t);
+    };
+    await entregar(lote(comum('A', 120), comum('B', 121), comum('C', 122)));
+    expect(persistInboundMessage).toHaveBeenCalledTimes(3);
+    expect(consultas).toBe(1);
+  });
+
+  it('a corrida retenção × eco DENTRO de um lote: a retida é religada pela rota, depois do laço', async () => {
+    // [a cópia sem telefone, o eco que traz o par] — na ordem em que a Evolution
+    // pode entregá-los. A cópia fica retida (o par ainda não existe) e o eco,
+    // gravado logo depois no MESMO lote, a destrava.
+    await entregar(
+      lote(
+        semTelefone('PRIMEIRA', 0),
+        comum('3EB0-ECO', 17, {
+          key: { remoteJid: TEL, remoteJidAlt: LID, fromMe: true, id: '3EB0-ECO' },
+        }),
+      ),
+    );
+    expect(h.banco.tabelas.messages.map((m) => m.message_id).sort()).toEqual(['3EB0-ECO', 'PRIMEIRA']);
+    expect(h.banco.tabelas[RETIDAS][0]).toMatchObject({
+      situacao: 'entregue',
+      resolvida_por: 'religacao',
+      payload: null,
+    });
+  });
+
+  it('lendo o fonte: `religarRetidas` é chamada FORA do laço dos itens, e antes da fase de anexos', () => {
+    const fonte = fs
+      .readFileSync(path.join(__dirname, 'route.ts'), 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    const lacoDosItens = fonte.indexOf('for (const item of items) {');
+    const lacoDeReligar = fonte.indexOf('for (const [lidJid, alvo] of paraReligar) {');
+    const chamada = fonte.indexOf('await religarRetidas(');
+    const faseDeAnexos = fonte.indexOf('for (const pendente of semAnexo) {');
+    expect(lacoDosItens).toBeGreaterThan(-1);
+    expect(lacoDeReligar).toBeGreaterThan(lacoDosItens);
+    expect(chamada).toBeGreaterThan(lacoDeReligar);
+    expect(faseDeAnexos).toBeGreaterThan(chamada);
+    // Uma chamada só no arquivo — e ela está depois do laço dos itens.
+    expect(fonte.split('religarRetidas(').length - 1).toBe(1);
+  });
+});
+
 // A fase de mídia é comum a TODA mensagem — por isso o que muda nela é pinado
 // lendo o fonte: o teste de comportamento não distingue "não baixou" de "tentou
 // no canal errado e falhou", e o segundo gasta uma chamada à Evolution contra

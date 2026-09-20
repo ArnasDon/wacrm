@@ -168,7 +168,7 @@ e vai para o lugar do carimbo ao recarregar.
 | R11 | "Parar se o cliente responder" (#223) | baixa | A histórica NÃO chama `cancelarEsperasPorResposta` (há default-deny). A segunda linha de defesa lê `gravada_em` (= agora): a espera criada ANTES da religação para — o lado que o projeto já escolheu como seguro ("entre os dois, cancela"); a criada DEPOIS não é afetada. |
 | R12 | Instrumento de atraso (1003) poluído | baixa | A recuperada aparece como atraso grande em `gravada_em − created_at` — é verdade (o CRM gravou tarde). A tabela nova lista quais são, para excluir numa medição. |
 | R13 | Payload (conteúdo de cliente) guardado | média | Tabela sem policy, `REVOKE` de `anon`/`authenticated`, só service role. Payload apagado ao entregar. |
-| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por mensagem 1:1, com teto de 50 retidas por vez. A resolução do LID só roda no caso raro — medido em produção: ~5 ms (varredura de 14,4 mil linhas em cache; sem índice em `messages.remote_jid_lid`, de propósito). |
+| R14 | Carga no banco | baixa | Uma consulta indexada (índice parcial `situacao='retida'`) por LID por LOTE do webhook, depois de todos os itens gravados, com teto de 10 retidas por vez. A resolução do LID só roda no caso raro — medido em produção: ~5 ms (varredura de 14,4 mil linhas em cache; sem índice em `messages.remote_jid_lid`, de propósito). |
 | R15 | `first_inbound_message` deixa de disparar para o lead cuja 1ª fala entrou como história | média | Só quando quem destrava é o ECO do escritório (gente já respondeu): a fala retida entra como `customer` antes de o cliente escrever de novo, e a mensagem seguinte dele não é mais "a primeira". Lado ESCOLHIDO — boas-vindas de robô depois de gente responder — e escrito na rota e no CLAUDE.md. Medido em 19/09: nenhuma automação nem fluxo ativo usa o gatilho. Quando quem destrava é o próprio cliente, a mensagem dele é gravada ANTES e o gatilho vale como hoje. |
 | R16 | Mensagem tardia invisível em conversa encerrada | média | Modo `tardia`: reabre (sem responsável), prévia e posição — pelo mesmo helper dos caminhos normais, ENTRE o insert e o acerto da espera. |
 | R17 | `nova` que perde a corrida do `UNIQUE` vira "retida" falsa no Meu dia | baixa | `entregar.ts` confere se a mensagem está na conversa antes de responder `falhou`: está → `duplicada`, nada a reter. |
@@ -182,6 +182,10 @@ e vai para o lugar do carimbo ao recarregar.
 - o eco de um envio feito PELO CRM não destrava retida: ele sai no `jaGravada`
   antes do bloco de religação, e `send-message.ts` não grava `remote_jid_lid`.
   A retida espera a próxima mensagem do cliente ou um eco do celular pareado;
+- a decisão do modo não é atômica: mensagem mais nova gravada por OUTRO webhook
+  nos ~100 ms entre olhar "qual é a última" e o insert faz a `nova` passar pelos
+  motores depois dela — a mesma desordem que duas mensagens normais quase
+  simultâneas já têm hoje (a ingestão não serializa por conversa);
 - cópia histórica que chega ANTES da cópia normal da mesma mensagem ganha o
   `UNIQUE`, e a normal é pulada sem rodar motor (exige: cópia sem telefone ×
   chegar primeiro × alguém ter escrito depois dela em segundos);
@@ -295,7 +299,7 @@ consulta têm precedente em produção. O que mudou por causa dela:
 | Teto da `nova` colado no alarme da 1002 | 4 min, com folga testada (R6) |
 | Sem default-deny de quem chama o caminho normal | `inbound-store.chamadores.test.ts` |
 | Escopo de conta do acervo dependia só do `!inner` (invisível ao banco falso) | conferido também em JS, com teste que ignora o filtro |
-| `retidasDoLid` sem teto; log do insert com o `details` (texto do cliente) | `limit(50)`; log só com código e mensagem |
+| `retidasDoLid` sem teto; log do insert com o `details` (texto do cliente) | teto por vez (hoje 10 — ver 6.5); log só com código e mensagem |
 | Função `SECURITY INVOKER` sem prova trocando de papel | GRANT nas duas tabelas + conferência como `service_role` na migration |
 
 Ficaram como limite escrito (seção 5): o eco de envio do CRM não destrava; a
@@ -363,6 +367,29 @@ irmão (eco ANTERIOR à espera) já tinha a guarda.
   dentro da função, com a linha da conversa travada (outra obra; o efeito é o selo
   "em atraso" errado até a próxima mensagem, nunca mensagem perdida).
 
+### 6.5 Codex, 2ª rodada (HEAD `3ebab6a`) — 1 P1 corrigido, 1 P2 aceito por escrito
+
+**P1 — a religação rodava DENTRO do laço dos itens da rota.** Religar são ~6 idas
+ao banco por retida; o lote que destravasse muitas atrasaria — e, num corte do
+`after()`, perderia — os itens seguintes do mesmo lote, que é a perda que as duas
+fases da rota existem para impedir. **Corrigido:** a rota só ANOTA o par no laço
+(`paraReligar`, um por LID) e religa depois de todos os itens gravados, antes da
+fase de anexos; `receberSemTelefone` passou a DEVOLVER o pedido de religação em
+vez de executá-lo; o teto caiu de 50 para 10 retidas por vez (é o que limita o
+atraso do anexo de uma mensagem atual). Testes: lote `[a que destrava, outra
+atual]` — as duas atuais entram antes de qualquer retida; três mensagens do mesmo
+cliente = UMA consulta às retidas; a corrida retenção × eco dentro de um lote; e
+um pino lendo a rota (a chamada fica fora do laço e antes da fase de anexos).
+
+**P2 — a decisão do modo não é atômica.** Se OUTRO webhook grava uma mensagem mais
+nova nos ~100 ms entre `ultimaDaConversa()` e o insert, uma `nova` passa pelos
+motores depois dela. **Aceito por escrito (seção 5):** é a mesma desordem que duas
+mensagens normais quase simultâneas já têm hoje — cada webhook roda o seu `after()`
+sem serializar por conversa —, então a `nova` herda essa propriedade, não a cria; e
+fechá-la exige travar a conversa DENTRO de `persistInboundMessage`, o caminho
+quente que esta correção prometeu não tocar. Frequência estimada: uma janela de
+~100 ms num caminho que roda ~1 vez a cada 10 dias.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -395,5 +422,6 @@ Evolution) — escrita em produção, só com autorização.
 - [x] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza conferida
 - [x] Codex, 1ª rodada (HEAD `50748ba`): 1 P2, corrigido na migration 1011 (6.4)
 - [x] 1011 aplicada em produção em 19/09/2026 21:08 BRT (histórico `20260920000843`), depois do CI verde; eco do escritório testado no preview e limpo
+- [x] Codex, 2ª rodada (HEAD `3ebab6a`): P1 corrigido (religação fora do laço), P2 aceito por escrito (6.5)
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

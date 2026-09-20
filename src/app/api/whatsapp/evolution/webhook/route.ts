@@ -205,6 +205,12 @@ export async function POST(request: Request) {
         channelId?: string | null;
       }[] = [];
       const paraFoto: NonNullable<PersistedInbound['contato']>[] = [];
+      /**
+       * LIDs cujo telefone apareceu NESTE lote → a conversa onde religar as
+       * falas retidas daquele LID. Um por LID: três mensagens do mesmo cliente
+       * no lote são UMA consulta às retidas, não três.
+       */
+      const paraReligar = new Map<string, { telefoneJid: string; conversationId: string }>();
 
       for (const item of items) {
         try {
@@ -312,14 +318,21 @@ export async function POST(request: Request) {
             // procurado no acervo; sem ele, a mensagem fica RETIDA até o
             // número aparecer. Qualquer outro descarte segue calado, como
             // sempre. Nunca lança. Ver `sem-telefone/receber.ts`.
-            semAnexo.push(
-              ...(await receberSemTelefone({
-                db: supabaseAdmin(),
-                item,
-                rota: route,
-                jaGravada,
-              })),
-            );
+            const chegada = await receberSemTelefone({
+              db: supabaseAdmin(),
+              item,
+              rota: route,
+              jaGravada,
+            });
+            semAnexo.push(...chegada.anexos);
+            // Ficou retida e o acervo JÁ conhece o LID (o eco entrou no meio):
+            // religa com as demais, depois do laço.
+            if (chegada.religar) {
+              paraReligar.set(chegada.religar.lidJid, {
+                telefoneJid: chegada.religar.telefoneJid,
+                conversationId: chegada.religar.conversationId,
+              });
+            }
             continue;
           }
 
@@ -354,39 +367,59 @@ export async function POST(request: Request) {
             });
           }
 
-          // ---- RELIGAR ----
-          // Esta mensagem trouxe o PAR (telefone + LID). Se havia fala daquele
-          // LID retida por falta de telefone, ela entra na conversa agora —
-          // tipicamente o eco da resposta do escritório destravando a primeira
-          // mensagem do lead. ⚠️ DEPOIS de gravar esta mensagem e de rodar os
-          // motores dela, de propósito: eles viram exatamente o que veriam sem
-          // a retida, e a retida entra como história. (A foto e o anexo desta
-          // mensagem estão só ENFILEIRADOS aqui; são buscados depois do laço.)
-          // Sai sem consultar nada quando a conversa não é endereçada por LID;
-          // nunca lança. Ver `sem-telefone/religar.ts`.
-          //
-          // ⚠️ Uma consequência escrita: quando quem destrava é o ECO do
-          // escritório, a fala retida entra como mensagem de cliente ANTES de
-          // o cliente escrever de novo — e a mensagem seguinte dele deixa de
-          // ser "a primeira" para o gatilho `first_inbound_message`. É o lado
-          // escolhido: boas-vindas de robô depois de gente já ter respondido.
-          // Quando quem destrava é o próprio cliente, a mensagem DELE foi
-          // gravada antes (acima) e o gatilho vale como hoje.
-          if (gravada) {
-            semAnexo.push(
-              ...(await religarRetidas({
-                db: supabaseAdmin(),
-                accountId: route.accountId,
-                ownerUserId: route.ownerUserId,
-                lidJid: normalized.remoteJidLid,
-                telefoneJid: normalized.remoteJid,
-                conversationId: gravada.conversationId,
-                jaGravada,
-              })),
-            );
+          // Esta mensagem trouxe o PAR (telefone + LID): anota para religar as
+          // retidas daquele LID — DEPOIS do laço, nunca aqui (ver abaixo).
+          if (gravada && normalized.remoteJidLid && normalized.remoteJid) {
+            paraReligar.set(normalized.remoteJidLid, {
+              telefoneJid: normalized.remoteJid,
+              conversationId: gravada.conversationId,
+            });
           }
         } catch (err) {
           console.error('[evolution/webhook] persist failed:', err);
+        }
+      }
+
+      // ---- RELIGAR ----
+      // Alguma mensagem deste lote trouxe o PAR (telefone + LID). Se havia fala
+      // daquele LID retida por falta de telefone, ela entra na conversa agora —
+      // tipicamente o eco da resposta do escritório destravando a primeira
+      // mensagem do lead.
+      //
+      // ⚠️⚠️ DEPOIS de TODOS os itens do lote gravados, nunca dentro do laço
+      // acima (Codex, PR #226). Religar são várias idas ao banco por retida; no
+      // meio do laço, o lote que destravasse muitas delas atrasaria — e, num
+      // corte do `after()`, PERDERIA — os itens seguintes do mesmo lote, que é
+      // a perda que as duas fases existem para impedir: mensagem ATUAL primeiro,
+      // história depois. De quebra, os motores de todo o lote já rodaram
+      // exatamente como rodariam sem a retida, e ela entra como história.
+      //
+      // Vem antes da fase de anexos só para os anexos das religadas entrarem na
+      // mesma fila; o teto de retidas por vez (`MAXIMO_DE_RETIDAS_POR_VEZ`)
+      // limita o quanto isso pode atrasar o anexo de uma mensagem atual. Sai sem
+      // consultar nada para conversa que não é endereçada por LID; nunca lança.
+      //
+      // ⚠️ Uma consequência escrita: quando quem destrava é o ECO do escritório,
+      // a fala retida entra como mensagem de cliente ANTES de o cliente escrever
+      // de novo — e a mensagem seguinte dele deixa de ser "a primeira" para o
+      // gatilho `first_inbound_message`. É o lado escolhido: boas-vindas de robô
+      // depois de gente já ter respondido. Quando quem destrava é o próprio
+      // cliente, a mensagem DELE já foi gravada e o gatilho vale como hoje.
+      for (const [lidJid, alvo] of paraReligar) {
+        try {
+          semAnexo.push(
+            ...(await religarRetidas({
+              db: supabaseAdmin(),
+              accountId: route.accountId,
+              ownerUserId: route.ownerUserId,
+              lidJid,
+              telefoneJid: alvo.telefoneJid,
+              conversationId: alvo.conversationId,
+              jaGravada,
+            })),
+          );
+        } catch (err) {
+          console.error('[evolution/webhook] religar as retidas falhou:', err);
         }
       }
 

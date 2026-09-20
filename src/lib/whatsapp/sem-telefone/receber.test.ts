@@ -46,6 +46,8 @@ function chamar(b: Banco, item: EvolutionUpsert, jaGravada = vi.fn().mockResolve
   return receberSemTelefone({ db: b.db, item, rota: ROTA, jaGravada, agoraMs: ms(seg) });
 }
 
+const NADA = { anexos: [], religar: null };
+
 describe('receberSemTelefone', () => {
   let aviso: MockInstance<(...args: unknown[]) => void>;
   beforeEach(() => {
@@ -75,7 +77,7 @@ describe('receberSemTelefone', () => {
       it(nome, async () => {
         const b = criarBanco({ messages: [parConhecido()] });
         const jaGravada = vi.fn();
-        expect(await chamar(b, item, jaGravada)).toEqual([]);
+        expect(await chamar(b, item, jaGravada)).toEqual(NADA);
         expect(jaGravada).not.toHaveBeenCalled();
         expect(b.escritas).toEqual([]);
         expect(avisos()).toEqual([]);
@@ -85,7 +87,7 @@ describe('receberSemTelefone', () => {
 
   it('DUPLICATA (a cópia normal já entrou — 4 dos 5 casos medidos): sai calada, sem alarme falso', async () => {
     const b = criarBanco({ messages: [parConhecido()] });
-    expect(await chamar(b, copiaDoCelular(), vi.fn().mockResolvedValue(true))).toEqual([]);
+    expect(await chamar(b, copiaDoCelular(), vi.fn().mockResolvedValue(true))).toEqual(NADA);
     expect(b.escritas).toEqual([]);
     expect(h.persistInboundMessage).not.toHaveBeenCalled();
     expect(avisos()).toEqual([]);
@@ -100,7 +102,7 @@ describe('receberSemTelefone', () => {
 
   it('O CASO DE 18/09: o escritório já tinha respondido → a fala ENTRA como história, sem motor', async () => {
     const b = criarBanco({ messages: [parConhecido()] });
-    expect(await chamar(b, copiaDoCelular())).toEqual([]);
+    expect(await chamar(b, copiaDoCelular())).toEqual(NADA);
 
     const fala = b.tabelas.messages.find((m) => m.message_id === 'ACA5A459')!;
     expect(fala).toMatchObject({
@@ -144,7 +146,8 @@ describe('receberSemTelefone', () => {
     const item = copiaDoCelular({
       message: { documentMessage: { mimetype: 'application/pdf', fileLength: '43407' } },
     });
-    const anexos = await chamar(b, item);
+    const { anexos, religar } = await chamar(b, item);
+    expect(religar).toBeNull();
     expect(anexos).toHaveLength(1);
     expect(anexos[0]).toMatchObject({
       item,
@@ -158,7 +161,7 @@ describe('receberSemTelefone', () => {
   it('LID DESCONHECIDO (lead novo, ninguém respondeu ainda) → RETIDA, com o payload cru', async () => {
     const b = criarBanco({ messages: [] });
     const item = copiaDoCelular();
-    expect(await chamar(b, item)).toEqual([]);
+    expect(await chamar(b, item)).toEqual(NADA);
     expect(b.tabelas[RETIDAS]).toHaveLength(1);
     expect(b.tabelas[RETIDAS][0]).toMatchObject({
       situacao: 'retida',
@@ -184,20 +187,23 @@ describe('receberSemTelefone', () => {
       if (t === RETIDAS && !b.tabelas.messages.length) b.tabelas.messages.push(parConhecido());
       return from(t);
     };
-    await chamar(b, copiaDoCelular());
-    expect(b.tabelas.messages.some((m) => m.message_id === 'ACA5A459')).toBe(true);
-    expect(b.tabelas[RETIDAS]).toHaveLength(1);
-    expect(b.tabelas[RETIDAS][0]).toMatchObject({
-      situacao: 'entregue',
-      resolvida_por: 'religacao',
-      payload: null,
+    const r = await chamar(b, copiaDoCelular());
+    // ⚠️ Aqui só se DESCOBRE que há o que religar. Quem religa é a rota, depois
+    // de gravar todos os itens do lote (Codex, PR #226) — a retida continua
+    // retida, e a mensagem ainda não entrou.
+    expect(r).toEqual({
+      anexos: [],
+      religar: { lidJid: LID, telefoneJid: TEL, conversationId: 'conv-1' },
     });
+    expect(b.tabelas[RETIDAS]).toHaveLength(1);
+    expect(b.tabelas[RETIDAS][0]).toMatchObject({ situacao: 'retida' });
+    expect(b.tabelas.messages.some((m) => m.message_id === 'ACA5A459')).toBe(false);
   });
 
   it('a retenção FALHOU (ex.: deploy antes da 1010) → o comportamento e o aviso de SEMPRE', async () => {
     const b = criarBanco({ messages: [] });
     b.falhas[RETIDAS] = { code: '42P01', message: 'relation does not exist' };
-    expect(await chamar(b, copiaDoCelular())).toEqual([]);
+    expect(await chamar(b, copiaDoCelular())).toEqual(NADA);
     const descarte = aviso.mock.calls.find((c) => String(c[0]).includes('DESCARTADA'))!;
     expect(String(descarte[0])).toBe(
       '[evolution/webhook] mensagem DESCARTADA: endereçada por @lid sem telefone.'
@@ -216,14 +222,14 @@ describe('receberSemTelefone', () => {
   it('`jaGravada` que LANÇA não perde a mensagem: ela vai para a retenção', async () => {
     const b = criarBanco({ messages: [] });
     const jaGravada = vi.fn().mockRejectedValue(new Error('rede fora'));
-    await expect(chamar(b, copiaDoCelular(), jaGravada)).resolves.toEqual([]);
+    await expect(chamar(b, copiaDoCelular(), jaGravada)).resolves.toEqual(NADA);
     expect(b.tabelas[RETIDAS][0]).toMatchObject({ situacao: 'retida' });
   });
 
   it('estouro DEPOIS do insert (um motor, no modo nova) não vira "DESCARTADA": retém, e a religação deduplica', async () => {
     const b = criarBanco({ messages: [parConhecido({ created_at: iso(-3600) })] });
     h.persistInboundMessage.mockRejectedValue(new Error('motor estourou'));
-    await expect(chamar(b, copiaDoCelular(), undefined, 8)).resolves.toEqual([]);
+    await expect(chamar(b, copiaDoCelular(), undefined, 8)).resolves.toEqual(NADA);
     expect(b.tabelas[RETIDAS][0]).toMatchObject({ situacao: 'retida' });
     expect(avisos().some((a) => a.includes('DESCARTADA'))).toBe(false);
   });

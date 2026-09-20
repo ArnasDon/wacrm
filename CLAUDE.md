@@ -2758,10 +2758,17 @@ O que morde código novo:
   cabeçalho da 1011 (fala de cliente chegando entre a leitura da espera e o
   insert de um eco; ou entre o insert de uma fala já respondida e a função):
   fechá-las pede o insert DENTRO da função, com a linha da conversa travada.
-- ⚠️⚠️ **A religação roda DEPOIS de gravar a mensagem que trouxe o telefone e
-  de rodar os motores dela** (na rota; a foto e o anexo DELA estão só
-  enfileirados nesse ponto). Os motores veem exatamente o que veriam sem a
-  retida, e a retida entra como história. ⚠️ **Uma consequência escrita**:
+- ⚠️⚠️ **A religação roda DEPOIS de TODOS os itens do lote gravados — nunca
+  dentro do laço dos itens da rota** (`paraReligar`, um por LID; Codex, PR
+  #226). Religar são ~6 idas ao banco por retida: no meio do laço, o lote que
+  destravasse muitas atrasaria — e, num corte do `after()`, PERDERIA — os itens
+  seguintes do mesmo lote, a perda que as duas fases da rota existem para
+  impedir (mensagem atual primeiro, história depois). Por isso `receberSemTelefone`
+  também só DEVOLVE o pedido (`religar`) quando a segunda olhada acha o par; quem
+  religa é a rota. Vem antes da fase de anexos (os anexos das religadas entram
+  na mesma fila), e `MAXIMO_DE_RETIDAS_POR_VEZ` (10) é o que limita o atraso do
+  anexo de uma mensagem atual. Há pino lendo a rota e teste de lote. Os motores
+  veem exatamente o que veriam sem a retida, e a retida entra como história. ⚠️ **Uma consequência escrita**:
   quando quem destrava é o ECO do escritório (o caso de 18/09), a fala retida
   entra como mensagem de cliente ANTES de o cliente escrever de novo — e a
   mensagem seguinte dele deixa de ser "a primeira" para `first_inbound_message`
@@ -2809,8 +2816,7 @@ O que morde código novo:
   (`lerRetidas`, puro): falha SÓ dessa consulta não vira 500 — derrubaria junto
   Calendly e webhooks, que responderam. A janela é `DIAS_DE_RETIDA_NA_TELA`
   (7), a mesma constante na rota e no texto; a retida antiga continua
-  religável, só deixa de ocupar a tela. `retidasDoLid` religa no máximo 50 por
-  mensagem (roda dentro do processamento de uma mensagem normal).
+  religável, só deixa de ocupar a tela.
 - ⚠️ **O fio ABERTO continua acrescentando a mensagem do realtime no FIM — de
   propósito.** Uma versão desta correção inseria pelo carimbo
   (`inserirNaOrdem`) e foi REVERTIDA na revisão: mudava o comportamento de
@@ -2826,7 +2832,12 @@ O que morde código novo:
   bloco de religação, e `send-message.ts` não grava `remote_jid_lid`) — ela
   espera a próxima mensagem do cliente ou um eco do celular; cópia histórica
   que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`, e a
-  normal é pulada sem rodar motor; áudio histórico pode ser recusado pela
+  normal é pulada sem rodar motor; a decisão do modo NÃO é atômica — mensagem
+  mais nova gravada por OUTRO webhook nos ~100 ms entre olhar "qual é a última"
+  e o insert faz a `nova` passar pelos motores depois dela (a mesma desordem
+  que duas mensagens normais quase simultâneas já têm hoje: a ingestão não
+  serializa por conversa, e fechar isso é travar a conversa dentro de
+  `persistInboundMessage`, o caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
   mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3

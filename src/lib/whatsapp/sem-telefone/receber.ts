@@ -38,7 +38,7 @@ import {
 } from '@/lib/whatsapp/transport/evolution-inbound';
 
 import { entregarRecuperada } from './entregar';
-import { anexoDe, religarRetidas, type AnexoDaRecuperada, type JaGravada } from './religar';
+import { anexoDe, type AnexoDaRecuperada, type JaGravada } from './religar';
 import { resolverTelefoneDoLid } from './resolver-lid';
 import { marcarEntregue, reter, type Ocorrencia } from './retidas';
 
@@ -80,12 +80,24 @@ function avisarDescarte(o: Ocorrencia): void {
   );
 }
 
+/** O que a rota faz com o que saiu daqui. */
+export interface ResultadoDaChegada {
+  /** O anexo a buscar, quando a mensagem ENTROU e tem mídia. */
+  anexos: AnexoDaRecuperada[];
+  /**
+   * A mensagem ficou RETIDA e, na segunda olhada, o acervo já conhecia o LID:
+   * há o que religar. ⚠️ Quem religa é a ROTA, depois de gravar TODOS os itens
+   * do lote — nunca aqui, no meio do laço dela (Codex, PR #226): religar são
+   * várias idas ao banco por retida, e os itens seguintes do lote esperariam.
+   */
+  religar: { lidJid: string; telefoneJid: string; conversationId: string } | null;
+}
+
+const NADA: ResultadoDaChegada = { anexos: [], religar: null };
+
 /**
- * Devolve os anexos a buscar — os das mensagens que ENTRARAM e têm mídia
- * (mais de um só quando a retenção destrava outras retidas do mesmo LID).
- * Lista vazia também para o que não é assunto daqui: item com telefone,
- * grupo, reação, edição cifrada, chave sem id — o descarte silencioso de
- * sempre.
+ * `NADA` também para o que não é assunto daqui: item com telefone, grupo,
+ * reação, edição cifrada, chave sem id — o descarte silencioso de sempre.
  */
 export async function receberSemTelefone(args: {
   db: SupabaseClient;
@@ -93,11 +105,11 @@ export async function receberSemTelefone(args: {
   rota: RotaDeEntrada;
   jaGravada: JaGravada;
   agoraMs?: number;
-}): Promise<AnexoDaRecuperada[]> {
+}): Promise<ResultadoDaChegada> {
   const { db, item, rota, jaGravada } = args;
   const id = item.key?.id;
-  if (!id || !ehLidSemTelefone(item.key)) return [];
-  if (isReaction(item.message) || isSecretEncrypted(item.message)) return [];
+  if (!id || !ehLidSemTelefone(item.key)) return NADA;
+  if (isReaction(item.message) || isSecretEncrypted(item.message)) return NADA;
 
   const agoraMs = args.agoraMs ?? Date.now();
   const lidJid = item.key!.remoteJid!;
@@ -116,7 +128,7 @@ export async function receberSemTelefone(args: {
   try {
     // 1. A duplicata. `fromMe` espera a corrida do envio do próprio CRM, como
     //    a rota faz com qualquer eco.
-    if (await jaGravada(id, fromMe)) return [];
+    if (await jaGravada(id, fromMe)) return NADA;
 
     // 2–3. O acervo conhece o LID?
     const achado = await resolverTelefoneDoLid(db, rota.accountId, lidJid);
@@ -133,7 +145,7 @@ export async function receberSemTelefone(args: {
         conversationId: achado.conversationId,
         agoraMs,
       });
-      if (entrega.status === 'duplicada') return [];
+      if (entrega.status === 'duplicada') return NADA;
       if (entrega.status === 'gravada') {
         await marcarEntregue(db, ocorrencia, 'acervo', entrega.messageId);
         console.info(
@@ -141,7 +153,7 @@ export async function receberSemTelefone(args: {
           JSON.stringify({ messageId: id, modo: entrega.modo })
         );
         const anexo = anexoDe(item, m.contentType, entrega.messageId, rota.channelId);
-        return anexo ? [anexo] : [];
+        return { anexos: anexo ? [anexo] : [], religar: null };
       }
     }
     // Tinha telefone e mesmo assim não entrou (banco, normalização): cai na
@@ -156,11 +168,11 @@ export async function receberSemTelefone(args: {
     );
   }
 
-  // 4. Reter. Daqui para baixo nada lança (`reter`, `resolverTelefoneDoLid` e
-  //    `religarRetidas` engolem o próprio erro).
+  // 4. Reter. Daqui para baixo nada lança (`reter` e `resolverTelefoneDoLid`
+  //    engolem o próprio erro).
   if (!(await reter(db, ocorrencia, item))) {
     avisarDescarte(ocorrencia);
-    return [];
+    return NADA;
   }
   console.warn(
     '[evolution/sem-telefone] mensagem RETIDA: endereçada por @lid sem telefone.',
@@ -168,18 +180,13 @@ export async function receberSemTelefone(args: {
   );
 
   // A corrida retenção × eco. Só quando o LID era DESCONHECIDO: se ele já era
-  // conhecido e a entrega falhou, tentar de novo agora daria na mesma.
-  if (lidConhecido) return [];
+  // conhecido e a entrega falhou, tentar de novo agora daria na mesma. Aqui só
+  // se DESCOBRE que há o que religar; quem religa é a rota, depois do lote.
+  if (lidConhecido) return NADA;
   const depois = await resolverTelefoneDoLid(db, rota.accountId, lidJid);
-  if (!depois) return [];
-  return religarRetidas({
-    db,
-    accountId: rota.accountId,
-    ownerUserId: rota.ownerUserId,
-    lidJid,
-    telefoneJid: depois.telefoneJid,
-    conversationId: depois.conversationId,
-    jaGravada,
-    agoraMs,
-  });
+  if (!depois) return NADA;
+  return {
+    anexos: [],
+    religar: { lidJid, telefoneJid: depois.telefoneJid, conversationId: depois.conversationId },
+  };
 }

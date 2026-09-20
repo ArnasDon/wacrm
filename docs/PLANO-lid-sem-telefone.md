@@ -331,6 +331,30 @@ janela e não é desta sessão). Conferido por consulta: zero `TESTE-E2E-%`, zer
 linha no registro, zero contato ou mensagem com o LID falso, negócio, eventos do
 lead, notificações e logs de automação iguais ao retrato.
 
+### 6.4 Codex, 1ª rodada (HEAD `50748ba`) — 1 achado (P2), corrigido
+
+**Eco posterior à espera × resposta concorrente** (`cb_assentar_mensagem_historica`):
+no ramo "o eco tem carimbo T e a espera de antes (A) começou ANTES de T", a função
+punha a espera na fala de cliente mais antiga depois de T sem perguntar se ela já
+tinha sido respondida. Entre `historica.ts` ler A e chamar a função cabe uma
+resposta REAL da equipe: o gatilho da 972 limpa a espera (certo) e a função a
+reescrevia com a fala já respondida — "em atraso" sobre cliente atendido. O ramo
+irmão (eco ANTERIOR à espera) já tinha a guarda.
+
+- **Correção:** migration **1011** (a 1010 já estava aplicada): mesma assinatura, o
+  ramo passa a contar só a fala de cliente SEM resposta de gente depois dela.
+- **Prova:** Postgres 16 local — o cenário do Codex REPRODUZ com a função da 1010
+  ("a resposta real foi desfeita") e passa com a 1011; controles (sem resposta de
+  gente, a fala continua esperando; robô não conta); 1010 + 1011 num banco limpo,
+  a 1011 duas vezes; os 20 cenários de 6.1 verdes. Pinos do corpo passaram a ler a
+  1011.
+- **Varredura da família** (as outras janelas entre ler a espera e assentar): o
+  ramo do eco anterior à espera e os dois ramos do cliente já se defendem
+  perguntando "gente respondeu depois?" NA HORA da função. Sobraram duas corridas
+  de UMA ida ao banco, escritas no cabeçalho da 1011 — fechá-las pede o insert
+  dentro da função, com a linha da conversa travada (outra obra; o efeito é o selo
+  "em atraso" errado até a próxima mensagem, nunca mensagem perdida).
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -361,5 +385,7 @@ Evolution) — escrita em produção, só com autorização.
 - [x] T18, parte 1 — preview contra a produção ANTES da 1010 (6.1)
 - [x] 1010 aplicada em produção em 19/09/2026 20:47 BRT (histórico `20260919234759`), autorizada pelo operador, DEPOIS do CI verde; conferida no catálogo
 - [x] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza conferida
+- [x] Codex, 1ª rodada (HEAD `50748ba`): 1 P2, corrigido na migration 1011 (6.4)
+- [ ] 1011 aplicada em produção (aditiva; depois do CI)
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

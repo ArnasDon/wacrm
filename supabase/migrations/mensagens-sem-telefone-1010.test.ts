@@ -32,6 +32,10 @@ const semComentarios = (sql: string) =>
 const compacto = (s: string) => s.replace(/\s+/g, ' ').trim().toLowerCase();
 
 const sql1010 = semComentarios(ler('1010_cb_mensagens_sem_telefone.sql'));
+// ⚠️ A função foi REDEFINIDA pela 1011 (a 1010 já estava aplicada quando o
+// Codex achou a corrida do eco). Os pinos do CORPO leem a definição VIGENTE —
+// pinar a da 1010 seria vigiar um texto que o banco já não executa.
+const sql1011 = semComentarios(ler('1011_cb_historica_eco_e_resposta_concorrente.sql'));
 const sql972 = semComentarios(ler('0972_cb_aguardando_resposta.sql'));
 const TABELA = 'cb_mensagens_sem_telefone';
 
@@ -95,9 +99,9 @@ describe('1010 — a tabela das mensagens sem telefone é fechada ao navegador',
 });
 
 describe('1010 × 972 — a função desfaz só o que ESTA mensagem estragou', () => {
-  /** O corpo da função, do `as $$` ao `$$;` — sem espaços nem caixa. */
+  /** O corpo VIGENTE da função (1011), do `as $$` ao `$$;` — sem espaços nem caixa. */
   const corpo = (() => {
-    const texto = compacto(sql1010);
+    const texto = compacto(sql1011);
     const ini = texto.indexOf('create or replace function public.cb_assentar_mensagem_historica');
     expect(ini).toBeGreaterThan(-1);
     const abre = texto.indexOf('as $$', ini);
@@ -109,10 +113,35 @@ describe('1010 × 972 — a função desfaz só o que ESTA mensagem estragou', (
   it('gente = `sender_id` OU `from_device` (o celular pareado), e mensagem apagada não conta — a régua do gatilho da 972', () => {
     const regua = '(h.sender_id is not null or h.from_device)';
     expect(compacto(sql972)).toContain(regua);
-    // Duas perguntas "gente respondeu depois?" — uma por ramo (eco e cliente).
-    expect(corpo.split(regua).length - 1).toBe(2);
-    expect(corpo.split('h.deleted_at is null').length - 1).toBe(2);
+    // Três perguntas "gente respondeu depois?": o eco POSTERIOR à espera (a da
+    // 1011), o eco ANTERIOR a ela, e a fala do cliente.
+    expect(corpo.split(regua).length - 1).toBe(3);
+    expect(corpo.split('h.deleted_at is null').length - 1).toBe(3);
     expect(corpo).toContain('m.deleted_at is null');
+  });
+
+  // O achado do Codex no PR #226: no ramo do eco POSTERIOR à espera, a fala de
+  // cliente que fica "esperando" tem de ser uma que NINGUÉM respondeu depois —
+  // senão a resposta real que chega entre a leitura da espera e esta função é
+  // desfeita, e o cliente atendido aparece "em atraso". Reproduzido e
+  // consertado num Postgres 16 com o gatilho real.
+  it('eco posterior à espera: só conta a fala de cliente SEM resposta de gente depois dela', () => {
+    const ramo = corpo.slice(corpo.indexOf('when p_carimbo > p_espera_antes then'));
+    const ate = ramo.indexOf('when exists');
+    expect(ate).toBeGreaterThan(-1);
+    const subconsulta = ramo.slice(0, ate);
+    expect(subconsulta).toContain('m.created_at > p_carimbo');
+    expect(subconsulta).toContain('and not exists (');
+    expect(subconsulta).toContain('h.created_at > m.created_at');
+  });
+
+  it('a 1011 só troca o CORPO: mesma assinatura da 1010, e confere que sobrou UMA função', () => {
+    const assinatura = (sql: string) =>
+      compacto(sql).match(/create or replace function public\.cb_assentar_mensagem_historica\(([^)]*)\)/)?.[1];
+    expect(assinatura(sql1011)).toBeTruthy();
+    expect(assinatura(sql1011)).toBe(assinatura(sql1010));
+    expect(compacto(sql1011)).toContain("p.proname = 'cb_assentar_mensagem_historica'");
+    expect(compacto(sql1011)).toContain('set local role service_role');
   });
 
   it('grupo e conversa encerrada ficam NULOS — as duas invariantes que a 972 confere', () => {

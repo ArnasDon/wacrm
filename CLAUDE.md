@@ -2748,7 +2748,16 @@ O que morde código novo:
   (sem `max(h.created_at)`, sem `-infinity`) e 20 cenários medidos. ⚠️ O MESMO
   defeito continua no gatilho de mensagem apagada da 972 (fora do escopo desta
   correção). Quem criar outro caminho que grave mensagem com `created_at` no
-  passado repete a chamada.
+  passado repete a chamada. ⚠️ **A definição VIGENTE da função é a da 1011**, não
+  a da 1010 (que já estava aplicada quando o Codex achou a corrida): no ramo do
+  eco POSTERIOR à espera, só conta a fala de cliente que NINGUÉM respondeu depois
+  dela — sem isso, a resposta real que chegasse entre a leitura de
+  `p_espera_antes` e a função era desfeita, e o cliente atendido aparecia "em
+  atraso" (reproduzido num Postgres 16 com a função da 1010). Os pinos do corpo
+  leem a 1011. Duas corridas de UMA ida ao banco ficaram de fora, escritas no
+  cabeçalho da 1011 (fala de cliente chegando entre a leitura da espera e o
+  insert de um eco; ou entre o insert de uma fala já respondida e a função):
+  fechá-las pede o insert DENTRO da função, com a linha da conversa travada.
 - ⚠️⚠️ **A religação roda DEPOIS de gravar a mensagem que trouxe o telefone e
   de rodar os motores dela** (na rota; a foto e o anexo DELA estão só
   enfileirados nesse ponto). Os motores veem exatamente o que veriam sem a
@@ -6283,6 +6292,17 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     reentrega (plano, 6.3). Testada antes num Postgres 16 descartável — banco
     limpo só com as concessões dela, idempotente, 20 cenários com o gatilho
     real da 972.
+
+  - **1011_cb_historica_eco_e_resposta_concorrente** — só troca o CORPO de
+    `cb_assentar_mensagem_historica` (mesma assinatura e privilégios): no ramo
+    do eco posterior à espera, a fala de cliente que fica "esperando" tem de
+    ser uma que ninguém respondeu depois (achado do Codex no PR #226).
+    Migration nova porque a 1010 já estava aplicada. Confere que sobrou UMA
+    função com esse nome e prova o EXECUTE trocando de papel. Aditiva — nada em
+    produção chama a função até o deploy. ⚠️ **AINDA NÃO APLICADA** (19/09/2026);
+    testada num Postgres 16 descartável: o defeito reproduz com a função da
+    1010 e some com a 1011, idempotente, os 20 cenários anteriores verdes.
+    Quem aplicar troca esta frase pela data e pelo número do histórico.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

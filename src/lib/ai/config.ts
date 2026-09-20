@@ -3,9 +3,11 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import type { AiConfig } from './types'
 
 interface AiConfigRow {
-  provider: 'openai' | 'anthropic'
+  provider: 'openai' | 'anthropic' | 'claude-agent-sdk'
   model: string
-  api_key: string
+  // Nullable: 'claude-agent-sdk' accounts have no per-account key at
+  // all — see migration 047_claude_agent_sdk_provider.sql.
+  api_key: string | null
   system_prompt: string | null
   is_active: boolean
   auto_reply_enabled: boolean
@@ -52,10 +54,14 @@ export async function loadAiConfig(
   // The Playground passes requireActive:false so an admin can test the
   // agent before flipping the master switch on.
   if (requireActive && !row.is_active) return null
-  // Defensive: the column is NOT NULL, but a partial write / manual DB
-  // edit could leave it empty. Treat a missing key as "not configured"
-  // rather than letting decrypt() throw on null.
-  if (!row.api_key) return null
+  // Defensive: for 'openai'/'anthropic' the column is effectively
+  // required (BYO key) — a partial write / manual DB edit leaving it
+  // empty means "not configured", same as before. 'claude-agent-sdk'
+  // never has a per-account key at all (it authenticates with the
+  // service's own CLAUDE_CODE_OAUTH_TOKEN — see
+  // providers/claude-agent-sdk.ts), so a null key there is the normal,
+  // expected shape, not a broken config.
+  if (row.provider !== 'claude-agent-sdk' && !row.api_key) return null
 
   // The embeddings key is optional and independent of the chat key —
   // a corrupt/undecryptable one should downgrade to lexical KB, not
@@ -77,7 +83,8 @@ export async function loadAiConfig(
   return {
     provider: row.provider,
     model: row.model,
-    apiKey: decrypt(row.api_key),
+    // '' for claude-agent-sdk (never read — see providers/claude-agent-sdk.ts).
+    apiKey: row.api_key ? decrypt(row.api_key) : '',
     systemPrompt: row.system_prompt,
     isActive: row.is_active,
     autoReplyEnabled: row.auto_reply_enabled,

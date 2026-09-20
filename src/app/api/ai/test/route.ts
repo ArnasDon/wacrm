@@ -27,9 +27,9 @@ export async function POST(request: Request) {
     }
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'claude-agent-sdk') {
       return NextResponse.json(
-        { error: 'provider must be "openai" or "anthropic"' },
+        { error: 'provider must be "openai", "anthropic", or "claude-agent-sdk"' },
         { status: 400 },
       )
     }
@@ -38,27 +38,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'model is required' }, { status: 400 })
     }
 
-    const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
-    let apiKeyPlain = rawKey
-    if (!apiKeyPlain) {
-      const { data: existing } = await supabase
-        .from('ai_configs')
-        .select('api_key')
-        .eq('account_id', accountId)
-        .maybeSingle()
-      if (!existing?.api_key) {
-        return NextResponse.json(
-          { error: 'Enter an API key to test.' },
-          { status: 400 },
-        )
-      }
-      try {
-        apiKeyPlain = decrypt(existing.api_key)
-      } catch {
-        return NextResponse.json(
-          { error: 'Stored API key could not be decrypted — re-enter your key.' },
-          { status: 400 },
-        )
+    // "claude-agent-sdk" has no per-account key — it authenticates with
+    // the service's own CLAUDE_CODE_OAUTH_TOKEN (see
+    // providers/claude-agent-sdk.ts), so there's nothing to look up or
+    // decrypt here; validateAiCredentials below checks the env var
+    // itself and produces a clear error if it's missing.
+    let apiKeyPlain = ''
+    if (provider !== 'claude-agent-sdk') {
+      const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
+      apiKeyPlain = rawKey
+      if (!apiKeyPlain) {
+        const { data: existing } = await supabase
+          .from('ai_configs')
+          .select('api_key')
+          .eq('account_id', accountId)
+          .maybeSingle()
+        if (!existing?.api_key) {
+          return NextResponse.json(
+            { error: 'Enter an API key to test.' },
+            { status: 400 },
+          )
+        }
+        try {
+          apiKeyPlain = decrypt(existing.api_key)
+        } catch {
+          return NextResponse.json(
+            { error: 'Stored API key could not be decrypted — re-enter your key.' },
+            { status: 400 },
+          )
+        }
       }
     }
 

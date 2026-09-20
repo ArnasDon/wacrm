@@ -1,6 +1,19 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { generateReply, parseGeneration } from './generate'
+import { generateReply, generateReplyWithTools, parseGeneration } from './generate'
 import { AiError, type AiConfig } from './types'
+
+// vi.mock calls are hoisted above imports by vitest's transform, so
+// this takes effect before generate.ts's own import of the module
+// runs. The claude-agent-sdk provider spawns a real subprocess via the
+// Agent SDK when unmocked — generate.test.ts must never do that.
+// Everything else (openai/anthropic) stays on real fetch mocking,
+// unchanged.
+const generateClaudeAgentSdkMock = vi.fn()
+const runClaudeAgentSdkToolLoopMock = vi.fn()
+vi.mock('./providers/claude-agent-sdk', () => ({
+  generateClaudeAgentSdk: (...args: unknown[]) => generateClaudeAgentSdkMock(...args),
+  runClaudeAgentSdkToolLoop: (...args: unknown[]) => runClaudeAgentSdkToolLoopMock(...args),
+}))
 
 function config(overrides: Partial<AiConfig> = {}): AiConfig {
   return {
@@ -190,5 +203,71 @@ describe('generateReply — Anthropic', () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body)
     expect(body.messages[0].role).toBe('user')
     expect(body.messages).toHaveLength(1)
+  })
+})
+
+describe('generateReply / generateReplyWithTools — provider dispatch', () => {
+  beforeEach(() => {
+    generateClaudeAgentSdkMock.mockReset()
+    runClaudeAgentSdkToolLoopMock.mockReset()
+  })
+
+  it('routes an account configured with provider="claude-agent-sdk" to the Agent SDK adapter, not OpenAI/Anthropic', async () => {
+    generateClaudeAgentSdkMock.mockResolvedValue({ text: 'Olá!', usage: null })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReply({
+      config: config({ provider: 'claude-agent-sdk', apiKey: '' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Olá' }],
+    })
+
+    expect(generateClaudeAgentSdkMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled() // never hits OpenAI/Anthropic's HTTP endpoints
+    expect(res.text).toBe('Olá!')
+  })
+
+  it('routes the commercial tool loop to the Agent SDK adapter when provider="claude-agent-sdk"', async () => {
+    runClaudeAgentSdkToolLoopMock.mockResolvedValue({
+      text: 'Tenho as 09:00 livre.',
+      usage: null,
+      iterations: 2,
+      hitIterationLimit: false,
+    })
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const res = await generateReplyWithTools({
+      config: config({ provider: 'claude-agent-sdk', apiKey: '' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Quero marcar reunião' }],
+      tools: [],
+      executor: async () => ({ content: 'ok', isError: false }),
+    })
+
+    expect(runClaudeAgentSdkToolLoopMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(res.text).toBe('Tenho as 09:00 livre.')
+    expect(res.iterations).toBe(2)
+  })
+
+  it('still routes provider="openai"/"anthropic" to their own adapters, unaffected by the new provider', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue(
+        okResponse({
+          choices: [{ message: { content: 'Hi from OpenAI' } }],
+          usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+        }),
+      ),
+    )
+    const res = await generateReply({
+      config: config({ provider: 'openai' }),
+      systemPrompt: 'sys',
+      messages: [{ role: 'user', content: 'Hello' }],
+    })
+    expect(res.text).toBe('Hi from OpenAI')
+    expect(generateClaudeAgentSdkMock).not.toHaveBeenCalled()
   })
 })

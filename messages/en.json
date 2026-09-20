@@ -1659,6 +1659,7 @@
       "provider": "Provider",
       "model": "Model",
       "apiKey": "API key",
+      "eterSubscriptionNotice": "Uses the Eter Growth Claude subscription — no key to enter. Make sure CLAUDE_CODE_OAUTH_TOKEN is set in this deployment's environment (see docs/eter-agent-config.md).",
       "testKey": "Test key",
       "testSuccess": "Key works — the provider responded.",
       "testRejected": "The provider rejected the request.",

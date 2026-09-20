@@ -6,7 +6,13 @@
 // whether the account is on OpenAI or Anthropic.
 // ============================================================
 
-export type AiProvider = 'openai' | 'anthropic'
+/**
+ * 'claude-agent-sdk' is the Eter subscription path (see
+ * providers/claude-agent-sdk.ts): authenticated with the service's own
+ * `CLAUDE_CODE_OAUTH_TOKEN`, never a per-account `api_key`. 'openai' /
+ * 'anthropic' stay exactly as they were — bring-your-own-key, unchanged.
+ */
+export type AiProvider = 'openai' | 'anthropic' | 'claude-agent-sdk'
 
 /**
  * Account AI setup, decrypted and ready to use. Produced by

@@ -82,9 +82,13 @@ export async function POST(request: Request) {
     if (!body || typeof body !== 'object') return bad('Invalid request body')
 
     const provider = body.provider as AiProvider
-    if (provider !== 'openai' && provider !== 'anthropic') {
-      return bad('provider must be "openai" or "anthropic"')
+    if (provider !== 'openai' && provider !== 'anthropic' && provider !== 'claude-agent-sdk') {
+      return bad('provider must be "openai", "anthropic", or "claude-agent-sdk"')
     }
+    // "claude-agent-sdk" authenticates with the service's own
+    // CLAUDE_CODE_OAUTH_TOKEN (see providers/claude-agent-sdk.ts) —
+    // there is no per-account key to collect or store for it.
+    const requiresApiKey = provider !== 'claude-agent-sdk'
     const model = typeof body.model === 'string' ? body.model.trim() : ''
     if (!model) return bad('model is required')
 
@@ -280,17 +284,23 @@ export async function POST(request: Request) {
       .eq('account_id', accountId)
       .maybeSingle()
 
-    let apiKeyPlain: string
-    if (rawKey) {
-      apiKeyPlain = rawKey
-    } else if (existing?.api_key) {
-      try {
-        apiKeyPlain = decrypt(existing.api_key)
-      } catch {
-        return bad('Stored API key could not be decrypted — re-enter your key.')
+    // "claude-agent-sdk" has no per-account key at all (see
+    // `requiresApiKey` above) — `apiKeyPlain` stays '' and is simply
+    // ignored by that provider's adapter (providers/claude-agent-sdk.ts
+    // reads CLAUDE_CODE_OAUTH_TOKEN from the service's own environment).
+    let apiKeyPlain = ''
+    if (requiresApiKey) {
+      if (rawKey) {
+        apiKeyPlain = rawKey
+      } else if (existing?.api_key) {
+        try {
+          apiKeyPlain = decrypt(existing.api_key)
+        } catch {
+          return bad('Stored API key could not be decrypted — re-enter your key.')
+        }
+      } else {
+        return bad('api_key is required')
       }
-    } else {
-      return bad('api_key is required')
     }
 
     // Only spend a provider round-trip when the credentials that affect
@@ -391,7 +401,10 @@ export async function POST(request: Request) {
       const { error: insErr } = await supabase.from('ai_configs').insert({
         account_id: accountId,
         created_by: userId,
-        api_key: encryptedKey, // guaranteed non-null: rawKey required when no existing row
+        // Non-null for 'openai'/'anthropic' (rawKey required above when
+        // there's no existing row); null for 'claude-agent-sdk', which
+        // has no per-account key at all — see migration 047.
+        api_key: encryptedKey,
         ...shared,
       })
       if (insErr) {

@@ -1,5 +1,109 @@
 # EterWA agent — variáveis de ambiente adicionais
 
+## Provider "claude-agent-sdk" — subscrição Claude Code da Eter (Bloco 3-A)
+
+Novo provider de IA (`ai_configs.provider = 'claude-agent-sdk'`), a par
+de `openai`/`anthropic` (BYO-key, inalterados). Fala com o Claude via
+`@anthropic-ai/claude-agent-sdk` (`query()`) em vez da Messages API
+crua — ver `src/lib/ai/providers/claude-agent-sdk.ts` para o
+racional completo e as guardas de segurança.
+
+**Não é uma chave por conta.** Autentica-se pela subscrição Claude
+Code da própria Eter, com uma única variável partilhada por todo o
+serviço:
+
+```bash
+# EXACTAMENTE o mesmo token já em produção para o AI SDR
+# (tools/ai-sdr no repo "Gestor - Eter Growth"), lido de
+# /etc/ai-sdr/.env pelos units systemd desse worker (EnvironmentFile=,
+# ver tools/ai-sdr/deploy/ai-sdr-heartbeat.service). NÃO gerar um token
+# novo — copiar o mesmo valor para o ambiente do container EterWA.
+# Só se esse token deixar de existir/for revogado é que se gera um novo
+# com "claude setup-token" (requer sessão Claude Code activa).
+CLAUDE_CODE_OAUTH_TOKEN=
+```
+
+Sem esta variável, qualquer chamada a este provider falha de forma
+explícita (`AiError`, code `missing_oauth_token`) — nunca em silêncio
+— com uma mensagem que aponta para esta secção.
+
+### Wiring no Docker (proposta — por fazer no deploy real)
+
+O `Dockerfile` actual (`output: standalone` do Next.js) não precisa de
+nenhum passo extra de instalação: o pacote
+`@anthropic-ai/claude-agent-sdk` traz o seu próprio executável bundled
+(não depende do CLI `claude` estar instalado globalmente na imagem —
+ver `pathToClaudeCodeExecutable` no SDK, "usa o executável embutido se
+omitido"). O que falta é só levar a variável de ambiente para dentro do
+container, ao lado das outras variáveis de runtime (nunca como `ARG`/
+`ENV` no `Dockerfile` — essas ficam gravadas na imagem):
+
+```yaml
+# docker-compose.yml — mesmo padrão do resto das variáveis de runtime
+# (SUPABASE_SERVICE_ROLE_KEY, ENCRYPTION_KEY, etc.), nunca em `build:`.
+services:
+  eterwa:
+    env_file:
+      - .env.production   # ou: environment: [ "CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}" ]
+```
+
+**Risco não validado nesta sessão** (documentado, não resolvido — ver
+relatório da tarefa que introduziu este provider): o `Dockerfile` usa
+`.next/standalone`, que só copia para a imagem final os ficheiros que o
+Next consegue rastrear estaticamente a partir dos `import`/`require`
+do código. O AI SDR (Bun, sem pruning de `node_modules`) nunca teve
+este problema — não é uma referência directa aqui. Se o build de
+produção acusar módulos em falta do Agent SDK/MCP em runtime, a
+correcção é adicionar `outputFileTracingIncludes` no `next.config.ts`
+para as rotas que importam `@/lib/ai/providers/claude-agent-sdk`
+(`src/app/api/whatsapp/webhook/route.ts`, `src/app/api/ai/config/route.ts`,
+`src/app/api/ai/test/route.ts`, `src/app/api/ai/draft/route.ts`,
+`src/app/api/ai/playground/route.ts`), apontando para
+`node_modules/@anthropic-ai/claude-agent-sdk/**`. Não foi possível
+confirmar isto com um `docker build` real nesta sessão (regra do
+projecto: sem build/deploy na máquina local).
+
+## Bloco 3-A — CRM Twenty (sincronização num só sentido, leads de anúncio)
+
+Quando uma conversa nasce de um clique num anúncio Meta Click-to-
+WhatsApp (`conversations.source = 'meta_ad'`), o EterWA cria a Pessoa
+correspondente no Twenty CRM — ver `src/lib/crm/sync.ts`
+(`syncMetaAdLeadToCrm`) e `src/lib/crm/twenty-client.ts`. Ligação
+**apenas EterWA → Twenty**, nunca o inverso, e **desligada por
+omissão** (`ai_configs.crm_sync_enabled = false`, migração 048).
+
+Credenciais — mesmo padrão de autenticação já documentado em
+`/Users/ricardo/twenty-crm/API.md` (Bearer token), lidas do ambiente
+do serviço, nunca por conta na base de dados:
+
+```bash
+# Mesma instância https://crm.etergrowth.com já usada pela skill /crm.
+TWENTY_BASE_URL=https://crm.etergrowth.com
+# Mesmo valor de /Users/ricardo/twenty-crm/.env (TWENTY_API_KEY) —
+# NUNCA copiar para logs, ficheiros temporários ou este documento.
+TWENTY_API_KEY=
+```
+
+Sem estas duas variáveis, `syncMetaAdLeadToCrm` regista o erro em log
+(sem dados pessoais) e não afecta a conversa — ver a secção "fail-safe"
+no cabeçalho de `sync.ts`.
+
+**O que É feito:** Pessoa (nome + telefone, a partir do que o WhatsApp
+dá na primeira mensagem). **O que NÃO é feito:** nenhuma Empresa é
+criada — o campo `origemContacto` que motivou esta ligação só existe em
+Company no Twenty, e não há dados suficientes numa primeira mensagem de
+WhatsApp para inventar uma empresa. Actualizar o registo mais tarde com
+email/empresa (quando o agente comercial os obtiver) fica documentado
+como TODO em `sync.ts`, por implementar.
+
+**Nota de arquitectura por resolver:** este ficheiro chama
+`db.from('ai_configs'|'conversations'|'contacts')` directamente, o que
+vai contra a "regra dura" descrita mais abaixo neste documento
+("nunca chamar `supabase.from(...)` directamente — passa sempre por
+`src/lib/eter/repo/*.repo.ts`"). Não foi refeito para passar pelo
+padrão de repo nesta sessão por prioridade de prazo (Agent SDK primeiro
+— ver relatório da tarefa); fica identificado para follow-up.
+
 ## Google Calendar (Fase 2 — em uso)
 
 `src/lib/calendar/google/client.ts` (`googleOAuthCredentialsFromEnv`) lê

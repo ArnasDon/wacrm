@@ -41,12 +41,19 @@ const HANDOFF_QUEUE = '__queue__';
 const PROVIDER_LABEL: Record<AiProvider, string> = {
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  'claude-agent-sdk': 'Claude (subscrição Eter)',
 };
 
 const KEY_PLACEHOLDER: Record<AiProvider, string> = {
   openai: 'sk-...',
   anthropic: 'sk-ant-...',
+  'claude-agent-sdk': '',
 };
+
+/** No per-account key for this provider — it authenticates with the
+ *  Eter subscription (CLAUDE_CODE_OAUTH_TOKEN in the service's own
+ *  environment, see src/lib/ai/providers/claude-agent-sdk.ts). */
+const PROVIDER_USES_ETER_SUBSCRIPTION = (p: AiProvider) => p === 'claude-agent-sdk';
 
 export function AiConfig() {
   const { accountId, accountRole, profileLoading } = useAuth();
@@ -169,11 +176,15 @@ export function AiConfig() {
     const isDefaultModel =
       model === AI_PROVIDER_DEFAULT_MODEL.openai ||
       model === AI_PROVIDER_DEFAULT_MODEL.anthropic ||
+      model === AI_PROVIDER_DEFAULT_MODEL['claude-agent-sdk'] ||
       model.trim() === '';
     if (isDefaultModel) setModel(AI_PROVIDER_DEFAULT_MODEL[next]);
   };
 
-  const keyPayload = () => (keyEdited ? apiKey.trim() : undefined);
+  // No key to send for the Eter-subscription provider — see
+  // PROVIDER_USES_ETER_SUBSCRIPTION.
+  const keyPayload = () =>
+    PROVIDER_USES_ETER_SUBSCRIPTION(provider) ? undefined : keyEdited ? apiKey.trim() : undefined;
 
   // undefined = leave unchanged; '' typed = null (clear); text = set.
   const embeddingsKeyPayload = () =>
@@ -234,7 +245,7 @@ export function AiConfig() {
       toast.error(t('missingModel'));
       return;
     }
-    if (!configured && !keyEdited) {
+    if (!PROVIDER_USES_ETER_SUBSCRIPTION(provider) && !configured && !keyEdited) {
       toast.error(t('missingApiKey'));
       return;
     }
@@ -348,6 +359,9 @@ export function AiConfig() {
                     <SelectItem value="anthropic">
                       {PROVIDER_LABEL.anthropic}
                     </SelectItem>
+                    <SelectItem value="claude-agent-sdk">
+                      {PROVIDER_LABEL['claude-agent-sdk']}
+                    </SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -364,43 +378,14 @@ export function AiConfig() {
               </div>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="ai-key">{t('apiKey')}</Label>
-              <div className="flex gap-2">
-                <div className="relative flex-1">
-                  <Input
-                    id="ai-key"
-                    type={showKey ? 'text' : 'password'}
-                    value={apiKey}
-                    onChange={(e) => {
-                      setApiKey(e.target.value);
-                      setKeyEdited(true);
-                    }}
-                    onFocus={() => {
-                      if (!keyEdited && hasStoredKey) {
-                        setApiKey('');
-                        setKeyEdited(true);
-                      }
-                    }}
-                    placeholder={KEY_PLACEHOLDER[provider]}
-                    disabled={disabled}
-                    autoComplete="off"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowKey((s) => !s)}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
-                    tabIndex={-1}
-                  >
-                    {showKey ? (
-                      <EyeOff className="h-4 w-4" />
-                    ) : (
-                      <Eye className="h-4 w-4" />
-                    )}
-                  </button>
-                </div>
+            {PROVIDER_USES_ETER_SUBSCRIPTION(provider) ? (
+              <div className="space-y-2 rounded-md border border-dashed p-3">
+                <p className="text-sm text-muted-foreground">
+                  {t('eterSubscriptionNotice')}
+                </p>
                 <Button
                   variant="outline"
+                  size="sm"
                   onClick={handleTest}
                   disabled={disabled || testing}
                 >
@@ -412,7 +397,57 @@ export function AiConfig() {
                   {t('testKey')}
                 </Button>
               </div>
-            </div>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="ai-key">{t('apiKey')}</Label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      id="ai-key"
+                      type={showKey ? 'text' : 'password'}
+                      value={apiKey}
+                      onChange={(e) => {
+                        setApiKey(e.target.value);
+                        setKeyEdited(true);
+                      }}
+                      onFocus={() => {
+                        if (!keyEdited && hasStoredKey) {
+                          setApiKey('');
+                          setKeyEdited(true);
+                        }
+                      }}
+                      placeholder={KEY_PLACEHOLDER[provider]}
+                      disabled={disabled}
+                      autoComplete="off"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowKey((s) => !s)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                      tabIndex={-1}
+                    >
+                      {showKey ? (
+                        <EyeOff className="h-4 w-4" />
+                      ) : (
+                        <Eye className="h-4 w-4" />
+                      )}
+                    </button>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={handleTest}
+                    disabled={disabled || testing}
+                  >
+                    {testing ? (
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    ) : (
+                      <CheckCircle2 className="mr-2 h-4 w-4" />
+                    )}
+                    {t('testKey')}
+                  </Button>
+                </div>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="ai-embeddings-key">

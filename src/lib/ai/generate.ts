@@ -8,6 +8,7 @@ import {
 import { HANDOFF_SENTINEL, aiRequestTimeoutMs } from './defaults'
 import { generateOpenAi, runOpenAiToolLoop } from './providers/openai'
 import { generateAnthropic, runAnthropicToolLoop } from './providers/anthropic'
+import { generateClaudeAgentSdk, runClaudeAgentSdkToolLoop } from './providers/claude-agent-sdk'
 import type { ToolDefinition } from './tools/schema'
 import type { ToolExecutor } from './tools/loop-types'
 
@@ -42,6 +43,9 @@ export async function generateReply(args: GenerateArgs): Promise<GenerateResult>
       break
     case 'anthropic':
       result = await generateAnthropic(providerArgs)
+      break
+    case 'claude-agent-sdk':
+      result = await generateClaudeAgentSdk(providerArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {
@@ -97,6 +101,9 @@ export async function generateReplyWithTools(
       break
     case 'anthropic':
       result = await runAnthropicToolLoop(loopArgs)
+      break
+    case 'claude-agent-sdk':
+      result = await runClaudeAgentSdkToolLoop(loopArgs)
       break
     default:
       throw new AiError(`Unsupported AI provider: ${config.provider}`, {

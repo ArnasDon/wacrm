@@ -1659,6 +1659,7 @@
       "provider": "공급자",
       "model": "모델",
       "apiKey": "API 키",
+      "eterSubscriptionNotice": "Eter Growth의 Claude 구독을 사용합니다 — 입력할 키가 없습니다. 이 배포 환경에 CLAUDE_CODE_OAUTH_TOKEN이 설정되어 있는지 확인하세요 (docs/eter-agent-config.md 참고).",
       "testKey": "키 테스트",
       "testSuccess": "키가 정상 작동합니다 — 공급자가 응답했습니다.",
       "testRejected": "공급자가 요청을 거부했습니다.",

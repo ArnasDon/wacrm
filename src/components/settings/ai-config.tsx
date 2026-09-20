@@ -76,6 +76,12 @@ export function AiConfig() {
   const [handoffAgentId, setHandoffAgentId] = useState('');
   const [members, setMembers] = useState<AccountMember[]>([]);
 
+  // Bloco 3-A — commercial mode (Meta Click-to-WhatsApp ad leads).
+  const [commercialModeEnabled, setCommercialModeEnabled] = useState(false);
+  const [commercialSystemPrompt, setCommercialSystemPrompt] = useState('');
+  const [commercialBookingUrl, setCommercialBookingUrl] = useState('');
+  const [commercialWelcomeMessage, setCommercialWelcomeMessage] = useState('');
+
   // Guard keyed on the account (not a bare boolean) so an in-place
   // account switch — ownership transfer, multi-account membership —
   // refetches instead of showing the previous account's config. Mirrors
@@ -100,6 +106,10 @@ export function AiConfig() {
         setAutoReplyEnabled(data.auto_reply_enabled);
         setMaxPerConversation(data.auto_reply_max_per_conversation ?? 3);
         setHandoffAgentId(data.handoff_agent_id ?? '');
+        setCommercialModeEnabled(Boolean(data.commercial_mode_enabled));
+        setCommercialSystemPrompt(data.commercial_system_prompt ?? '');
+        setCommercialBookingUrl(data.commercial_booking_url ?? '');
+        setCommercialWelcomeMessage(data.commercial_welcome_message ?? '');
         setHasStoredKey(Boolean(data.has_key));
         setApiKey(data.has_key ? MASKED_KEY : '');
         setKeyEdited(false);
@@ -151,6 +161,10 @@ export function AiConfig() {
     auto_reply_enabled: autoReplyEnabled,
     auto_reply_max_per_conversation: maxPerConversation,
     handoff_agent_id: handoffAgentId || null,
+    commercial_mode_enabled: commercialModeEnabled,
+    commercial_system_prompt: commercialSystemPrompt.trim() || null,
+    commercial_booking_url: commercialBookingUrl.trim() || null,
+    commercial_welcome_message: commercialWelcomeMessage.trim() || null,
   });
 
   const handleTest = async () => {
@@ -219,6 +233,10 @@ export function AiConfig() {
         setAutoReplyEnabled(false);
         setSystemPrompt('');
         setHandoffAgentId('');
+        setCommercialModeEnabled(false);
+        setCommercialSystemPrompt('');
+        setCommercialBookingUrl('');
+        setCommercialWelcomeMessage('');
       } else {
         const data = await res.json();
         toast.error(data.error ?? t('removeFailed'));
@@ -482,6 +500,78 @@ export function AiConfig() {
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t('commercialTitle')}</CardTitle>
+            <CardDescription>{t('commercialDesc')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between gap-4 rounded-md border border-border p-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">
+                  {t('commercialEnable')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {t('commercialEnableDesc')}
+                </p>
+              </div>
+              <Switch
+                checked={commercialModeEnabled}
+                onCheckedChange={setCommercialModeEnabled}
+                disabled={disabled || !autoReplyEnabled}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-commercial-prompt">{t('commercialPrompt')}</Label>
+              <Textarea
+                id="ai-commercial-prompt"
+                value={commercialSystemPrompt}
+                onChange={(e) => setCommercialSystemPrompt(e.target.value)}
+                placeholder={t('commercialPromptPlaceholder')}
+                rows={4}
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('commercialPromptHint')}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-commercial-booking-url">
+                {t('commercialBookingUrl')}
+              </Label>
+              <Input
+                id="ai-commercial-booking-url"
+                value={commercialBookingUrl}
+                onChange={(e) => setCommercialBookingUrl(e.target.value)}
+                placeholder="https://cal.com/eter-growth/intro"
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('commercialBookingUrlHint')}
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="ai-commercial-welcome">
+                {t('commercialWelcome')}
+              </Label>
+              <Textarea
+                id="ai-commercial-welcome"
+                value={commercialWelcomeMessage}
+                onChange={(e) => setCommercialWelcomeMessage(e.target.value)}
+                placeholder={t('commercialWelcomePlaceholder')}
+                rows={3}
+                disabled={disabled}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t('commercialWelcomeHint')}
+              </p>
             </div>
           </CardContent>
         </Card>

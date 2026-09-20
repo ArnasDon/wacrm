@@ -54,7 +54,44 @@ export const bookCommercialMeetingTool: ToolDefinition = {
   },
 }
 
+// ============================================================
+// Bloco 3-A — save_lead_details, para o modelo registar nome, email e
+// motivo de contacto do lead assim que os aprender. É a peça do
+// código (não do prompt) que impede o handoff sem estes três dados:
+// a trava propriamente dita vive em src/lib/ai/commercial-handoff.ts,
+// lida pela dispatchInboundToAiReply (auto-reply.ts) sempre que o
+// modelo emite o sinal de handoff — esta tool é só a forma de o
+// modelo alimentar essa trava com o que vai aprendendo na conversa.
+// ============================================================
+
+export const saveLeadDetailsTool: ToolDefinition = {
+  name: 'save_lead_details',
+  description:
+    'Guarda o nome, o email e/ou o motivo de contacto do lead assim que os souberes na conversa — chama sempre que aprenderes um destes dados, nunca esperes até ao fim para os registares todos de uma vez. Podes enviar só um campo de cada vez. Estes três dados têm de estar guardados antes de a conversa poder ser passada para a equipa, por isso regista-os assim que os tiveres, mesmo antes de a pessoa pedir para falar com alguém.',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: {
+        type: 'string',
+        description: 'Nome da pessoa com quem estás a falar.',
+      },
+      email: {
+        type: 'string',
+        description: 'Email de contacto da pessoa.',
+      },
+      escalation_reason: {
+        type: 'string',
+        description:
+          'Motivo pelo qual a pessoa quer (ou pode vir a querer) falar com alguém da equipa. Regista assim que o souberes, não só depois de a pessoa pedir explicitamente para falar com uma pessoa.',
+      },
+    },
+    required: [],
+    additionalProperties: false,
+  },
+}
+
 export const COMMERCIAL_TOOLS: readonly ToolDefinition[] = [
   checkCommercialAvailabilityTool,
   bookCommercialMeetingTool,
+  saveLeadDetailsTool,
 ]

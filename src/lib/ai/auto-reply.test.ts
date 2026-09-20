@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AiConfig } from './types'
+import { __resetRateLimitForTests } from '@/lib/rate-limit'
 
 // Shared, hoisted mock state so the module mocks can close over it.
 const h = vi.hoisted(() => ({
@@ -22,6 +23,11 @@ const h = vi.hoisted(() => ({
     // The contact's phone number, looked up by dispatchInboundToAiReply
     // to decide team-list membership (isCommercialConversation).
     contactPhone: '351911111111' as string | null,
+    // Bloco 3-A / migração 050 — nome e email do contacto, lidos pela
+    // trava de handoff (checkHandoffReadiness) junto com
+    // conversations.escalation_reason.
+    contactName: 'Ricardo Contacto' as string | null,
+    contactEmail: 'contacto@example.com' as string | null,
   },
 }))
 
@@ -56,7 +62,14 @@ vi.mock('./admin-client', () => ({
           select: () => ({
             eq: () => ({
               maybeSingle: () =>
-                Promise.resolve({ data: { phone: h.state.contactPhone }, error: null }),
+                Promise.resolve({
+                  data: {
+                    phone: h.state.contactPhone,
+                    name: h.state.contactName,
+                    email: h.state.contactEmail,
+                  },
+                  error: null,
+                }),
             }),
           }),
         }
@@ -124,6 +137,13 @@ function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
 }
 
 beforeEach(() => {
+  // Este ficheiro cresceu para dezenas de testes que chamam
+  // dispatchInboundToAiReply com a mesma accountId ('acct-1') — sem
+  // isto, o limitador de taxa real (checkRateLimit, não mockado) ia
+  // acumulando chamadas entre testes e acabava por bloquear os
+  // últimos testes do ficheiro, sem relação nenhuma com o que estão a
+  // validar.
+  __resetRateLimitForTests()
   h.state.conv = {
     assigned_agent_id: null,
     ai_autoreply_disabled: false,
@@ -135,6 +155,8 @@ beforeEach(() => {
   h.state.rpcCalls = []
   h.state.welcomeClaimed = true
   h.state.contactPhone = '351911111111'
+  h.state.contactName = 'Ricardo Contacto'
+  h.state.contactEmail = 'contacto@example.com'
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -295,6 +317,13 @@ function commercialConv(overrides: Record<string, unknown> = {}) {
     ai_reply_count: 0,
     source: 'meta_ad',
     commercial_welcome_sent_at: null,
+    // Bloco 3-A / migração 050 — por omissão os dados de handoff já
+    // estão completos, para os testes de modo comercial existentes
+    // (que não são sobre a trava de handoff) continuarem a exercer o
+    // comportamento normal de sempre. Os testes da trava propriamente
+    // dita sobrepõem estes campos explicitamente.
+    escalation_reason: 'Quer saber mais sobre os serviços da Eter.',
+    handoff_blocked_attempts: 0,
     ...overrides,
   }
 }
@@ -547,5 +576,165 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
     await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
     expect(h.engineSendText).not.toHaveBeenCalled()
     errorSpy.mockRestore()
+  })
+})
+
+// ============================================================
+// Bloco 3-A / migração 050 — trava do handoff comercial.
+//
+// Regra do Ricardo: o agente comercial nunca desliga o auto-reply nem
+// marca a conversa como passada sem ter nome, email e motivo
+// registados. É uma trava em código (commercial-handoff.ts), não só
+// no prompt. O modo interno (números da equipa) não é afectado — os
+// testes deste bloco usam sempre `commercialConfig()`.
+// ============================================================
+describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, motivo)', () => {
+  beforeEach(() => {
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: true,
+      usage: null,
+      iterations: 1,
+      hitIterationLimit: false,
+    })
+  })
+
+  it('bloqueia o handoff quando falta o email — pede o que falta e não desliga o auto-reply', async () => {
+    h.state.conv = commercialConv()
+    h.state.contactEmail = null
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Boas-vindas + o pedido do que falta — nunca a mensagem fixa de
+    // handoff.
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        aiGenerated: false,
+        text: expect.stringContaining('o teu email'),
+      }),
+    )
+    expect(h.state.updatePayload).toEqual({ handoff_blocked_attempts: 1 })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+  })
+
+  it('bloqueia o handoff quando falta o nome', async () => {
+    h.state.conv = commercialConv()
+    h.state.contactName = null
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: expect.stringContaining('o teu nome') }),
+    )
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+  })
+
+  it('bloqueia o handoff quando falta o motivo de escalada', async () => {
+    h.state.conv = commercialConv({ escalation_reason: null })
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: expect.stringContaining('o motivo do que precisas') }),
+    )
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+  })
+
+  it('deixa passar o handoff normalmente quando nome, email e motivo estão todos registados', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+      }),
+    )
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).not.toHaveProperty('handoff_incomplete')
+  })
+
+  it('duas tentativas bloqueadas seguidas fazem o handoff passar incompleto à terceira (válvula de escape)', async () => {
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    // 1ª tentativa — bloqueada, conta sobe para 1.
+    h.state.conv = commercialConv({ escalation_reason: null, handoff_blocked_attempts: 0 })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toEqual({ handoff_blocked_attempts: 1 })
+    expect(h.engineSendText).toHaveBeenCalledTimes(2) // boas-vindas + pedido
+
+    // 2ª tentativa — ainda bloqueada, conta sobe para 2. A boas-vindas
+    // já foi enviada na conversa real, por isso já não repete aqui.
+    h.engineSendText.mockClear()
+    h.state.welcomeClaimed = false
+    h.state.conv = commercialConv({ escalation_reason: null, handoff_blocked_attempts: 1 })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.state.updatePayload).toEqual({ handoff_blocked_attempts: 2 })
+    expect(h.engineSendText).toHaveBeenCalledTimes(1) // só o pedido
+
+    // 3ª tentativa — válvula de escape: passa mesmo incompleto, em vez
+    // de prender a pessoa a repetir dados que não quer dar.
+    h.engineSendText.mockClear()
+    h.state.conv = commercialConv({ escalation_reason: null, handoff_blocked_attempts: 2 })
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenCalledTimes(1) // a mensagem de handoff
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+      }),
+    )
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      handoff_incomplete: true,
+    })
+  })
+
+  it('respeita max_handoff_blocked_attempts configurado na conta em vez do valor por omissão', async () => {
+    h.state.welcomeClaimed = false
+    h.state.conv = commercialConv({ escalation_reason: null, handoff_blocked_attempts: 1 })
+    h.loadAiConfig.mockResolvedValue(commercialConfig({ maxHandoffBlockedAttempts: 1 }))
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Com o limite da conta em 1, uma conversa que já tem 1 bloqueio
+    // força a passagem nesta tentativa, em vez de esperar por 2.
+    expect(h.state.updatePayload).toMatchObject({
+      ai_autoreply_disabled: true,
+      handoff_incomplete: true,
+    })
+  })
+
+  it('o modo interno (número da equipa) nunca passa pela trava, mesmo sem nome/email/motivo', async () => {
+    h.state.conv = commercialConv({ source: 'direct', escalation_reason: null })
+    h.state.contactPhone = '351912345678'
+    h.state.contactName = null
+    h.state.contactEmail = null
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ teamPhoneNumbers: ['351912345678'] }),
+    )
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Assistente interno, sem boas-vindas comercial: handoff normal,
+    // sem qualquer bloqueio, exactamente como antes desta migração.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+      }),
+    )
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).not.toHaveProperty('handoff_incomplete')
   })
 })

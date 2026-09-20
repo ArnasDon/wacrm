@@ -21,10 +21,11 @@ interface AiConfigRow {
   commercial_calendar_id: string | null
   team_phone_numbers: string[] | null
   handoff_message: string | null
+  max_handoff_blocked_attempts: number | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message, max_handoff_blocked_attempts'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -100,6 +101,10 @@ export async function loadAiConfig(
     commercialCalendarId: row.commercial_calendar_id,
     teamPhoneNumbers: row.team_phone_numbers ?? [],
     handoffMessage: row.handoff_message,
+    // NOT NULL DEFAULT 2 na base de dados (migração 050) — o ?? aqui é
+    // só defesa extra para linhas antigas escritas antes da coluna
+    // existir ou literais de teste que não a definem.
+    maxHandoffBlockedAttempts: row.max_handoff_blocked_attempts ?? 2,
   }
 }
 

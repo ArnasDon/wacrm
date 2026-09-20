@@ -5,6 +5,12 @@ import { retrieveKnowledge } from './knowledge'
 import { generateReply, generateReplyWithTools } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary, sendHandoffNotice } from './handoff'
+import {
+  checkHandoffReadiness,
+  buildMissingInfoNudge,
+  shouldForceHandoffThrough,
+  DEFAULT_MAX_HANDOFF_BLOCKED_ATTEMPTS,
+} from './commercial-handoff'
 import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
@@ -78,7 +84,7 @@ export async function dispatchInboundToAiReply(
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select(
-        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at',
+        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at, escalation_reason, handoff_blocked_attempts',
       )
       .eq('id', conversationId)
       .maybeSingle()
@@ -97,7 +103,7 @@ export async function dispatchInboundToAiReply(
     // persona instead — see isCommercialConversation.
     const { data: contactRow } = await db
       .from('contacts')
-      .select('phone')
+      .select('phone, name, email')
       .eq('id', contactId)
       .maybeSingle()
     const isCommercial = isCommercialConversation(config, contactRow?.phone ?? null)
@@ -242,6 +248,57 @@ export async function dispatchInboundToAiReply(
     }
 
     if (handoff || !text) {
+      // Regra do Ricardo (migração 050) — modo comercial APENAS: nunca
+      // passar a conversa para a equipa sem nome, email e motivo
+      // registados (save_lead_details). Esta trava vive em código, não
+      // só no prompt, porque um prompt cede a quem insista. O modo
+      // interno (números da equipa) nunca passa por aqui — mantém-se
+      // exactamente como antes desta migração.
+      let handoffIncomplete = false
+      if (isCommercial) {
+        const readiness = checkHandoffReadiness({
+          contactName: contactRow?.name,
+          contactEmail: contactRow?.email,
+          escalationReason: conv.escalation_reason as string | null | undefined,
+        })
+        if (!readiness.ready) {
+          const attemptsSoFar = (conv.handoff_blocked_attempts as number | null) ?? 0
+          const maxAttempts =
+            config.maxHandoffBlockedAttempts ?? DEFAULT_MAX_HANDOFF_BLOCKED_ATTEMPTS
+          if (!shouldForceHandoffThrough(attemptsSoFar, maxAttempts)) {
+            // Bloqueado: NÃO desliga o auto-reply, NÃO marca a conversa
+            // como passada. Regista a tentativa (sem dados pessoais —
+            // só os nomes dos campos em falta) e pede o que falta.
+            console.warn(
+              `[ai auto-reply] commercial mode: handoff bloqueado (tentativa ${
+                attemptsSoFar + 1
+              }/${maxAttempts}) — em falta: ${readiness.missing.join(', ')}.`,
+            )
+            await db
+              .from('conversations')
+              .update({ handoff_blocked_attempts: attemptsSoFar + 1 })
+              .eq('id', conversationId)
+            await engineSendText({
+              accountId,
+              userId: configOwnerUserId,
+              conversationId,
+              contactId,
+              text: buildMissingInfoNudge(readiness.missing),
+              aiGenerated: false,
+            })
+            return
+          }
+          // Válvula de escape: já bloqueámos vezes suficientes seguidas
+          // — deixa passar mesmo incompleto, para não prender alguém
+          // irritado num ciclo a pedir dados que não quer dar.
+          console.warn(
+            '[ai auto-reply] commercial mode: handoff a passar INCOMPLETO após tentativas bloqueadas repetidas — em falta:',
+            readiness.missing.join(', '),
+          )
+          handoffIncomplete = true
+        }
+      }
+
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human. A handoff must never be
       // silent: the customer gets a short heads-up FIRST, in either
@@ -271,6 +328,9 @@ export async function dispatchInboundToAiReply(
       // isn't already owned — never stomp an existing human assignment.
       if (config.handoffAgentId && !conv.assigned_agent_id) {
         update.assigned_agent_id = config.handoffAgentId
+      }
+      if (handoffIncomplete) {
+        update.handoff_incomplete = true
       }
       await db.from('conversations').update(update).eq('id', conversationId)
       return

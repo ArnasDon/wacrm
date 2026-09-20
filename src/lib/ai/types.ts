@@ -81,6 +81,17 @@ export interface AiConfig {
    * usa DEFAULT_HANDOFF_MESSAGE (src/lib/ai/handoff.ts).
    */
   handoffMessage?: string | null
+  /**
+   * Regra do Ricardo (migração 050): no modo comercial, um handoff sem
+   * nome, email e motivo registados é BLOQUEADO em código (ver
+   * src/lib/ai/commercial-handoff.ts), não só no prompt. Esta é a
+   * válvula de escape — quantas tentativas bloqueadas SEGUIDAS na
+   * mesma conversa antes de deixar passar de qualquer forma (marcando
+   * `conversations.handoff_incomplete = true`), para nunca prender
+   * alguém irritado a repetir dados que não quer dar. Undefined/null
+   * cai no DEFAULT_MAX_HANDOFF_BLOCKED_ATTEMPTS (2).
+   */
+  maxHandoffBlockedAttempts?: number | null
 }
 
 /** A single conversation turn in the shape both providers accept. */

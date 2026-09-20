@@ -118,6 +118,72 @@ export async function bookCommercialMeetingHandler(
 }
 
 /**
+ * Handler for save_lead_details — persists whatever the model has
+ * learned about the lead (name, email, escalation reason) onto
+ * `contacts` / `conversations`. Every field is individually optional
+ * (the model reports what it knows as it learns it), but at least one
+ * must be present. This is the write side of the handoff gate in
+ * commercial-handoff.ts: dispatchInboundToAiReply reads back
+ * `contacts.name` / `contacts.email` / `conversations.escalation_reason`
+ * before letting a handoff go through.
+ */
+export async function saveLeadDetailsHandler(
+  ctx: ToolHandlerContext,
+  input: Record<string, unknown>,
+): Promise<ToolExecutionResult> {
+  const name = optionalString(input, 'name')
+  const email = optionalString(input, 'email')
+  const escalationReason = optionalString(input, 'escalation_reason')
+
+  if (!name && !email && !escalationReason) {
+    return {
+      isError: true,
+      content:
+        'Não enviaste nenhum dado para guardar. Envia pelo menos um de: name, email, escalation_reason.',
+    }
+  }
+
+  if (email && !EMAIL_RE.test(email)) {
+    return {
+      isError: true,
+      content: `"email" não parece um email válido: "${email}". Confirma o email com a pessoa antes de o guardares.`,
+    }
+  }
+
+  try {
+    if ((name || email) && ctx.contactId) {
+      const contactUpdate: Record<string, unknown> = {}
+      if (name) contactUpdate.name = name
+      if (email) contactUpdate.email = email
+      const { error } = await ctx.db.from('contacts').update(contactUpdate).eq('id', ctx.contactId)
+      if (error) throw error
+    }
+    if (escalationReason && ctx.conversationId) {
+      const { error } = await ctx.db
+        .from('conversations')
+        .update({ escalation_reason: escalationReason })
+        .eq('id', ctx.conversationId)
+      if (error) throw error
+    }
+  } catch (err) {
+    return {
+      isError: true,
+      content: `Falha ao guardar os dados: ${err instanceof Error ? err.message : 'erro desconhecido'}.`,
+    }
+  }
+
+  const saved: string[] = []
+  if (name) saved.push('name')
+  if (email) saved.push('email')
+  if (escalationReason) saved.push('escalation_reason')
+
+  return {
+    isError: false,
+    content: JSON.stringify({ saved }),
+  }
+}
+
+/**
  * Build the `ToolExecutor` for `COMMERCIAL_TOOLS` (commercial-schema.ts),
  * bound to one account/conversation context for a single agent turn —
  * mirrors `createEterToolExecutor` (handlers/index.ts) but for this
@@ -130,6 +196,8 @@ export function createCommercialToolExecutor(ctx: ToolHandlerContext): ToolExecu
         return checkCommercialAvailabilityHandler(ctx)
       case 'book_commercial_meeting':
         return bookCommercialMeetingHandler(ctx, call.input)
+      case 'save_lead_details':
+        return saveLeadDetailsHandler(ctx, call.input)
       default:
         return {
           isError: true,

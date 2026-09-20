@@ -19,6 +19,7 @@ vi.mock('@/lib/calendar/commercial-availability', async () => {
 import {
   checkCommercialAvailabilityHandler,
   bookCommercialMeetingHandler,
+  saveLeadDetailsHandler,
   createCommercialToolExecutor,
 } from './commercial'
 import { CommercialCalendarNotConfiguredError } from '@/lib/calendar/commercial-availability'
@@ -128,6 +129,98 @@ describe('bookCommercialMeetingHandler', () => {
   })
 })
 
+describe('saveLeadDetailsHandler', () => {
+  function makeDb() {
+    const updates: { table: string; payload: Record<string, unknown>; id: string }[] = []
+    const db = {
+      from: (table: string) => ({
+        update: (payload: Record<string, unknown>) => ({
+          eq: (_col: string, id: string) => {
+            updates.push({ table, payload, id })
+            return Promise.resolve({ error: null })
+          },
+        }),
+      }),
+    }
+    return { db, updates }
+  }
+
+  function ctxWith(db: unknown): ToolHandlerContext {
+    return {
+      db: db as never,
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      contactId: 'contact-1',
+      defaultNotifyUserId: null,
+    }
+  }
+
+  it('saves the name onto contacts and reports it back to the model', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), { name: 'Ricardo' })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.content)).toEqual({ saved: ['name'] })
+    expect(updates).toEqual([{ table: 'contacts', payload: { name: 'Ricardo' }, id: 'contact-1' }])
+  })
+
+  it('saves the email onto contacts', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), { email: 'lead@example.com' })
+    expect(result.isError).toBe(false)
+    expect(updates).toEqual([
+      { table: 'contacts', payload: { email: 'lead@example.com' }, id: 'contact-1' },
+    ])
+  })
+
+  it('saves the escalation reason onto conversations, not contacts', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), {
+      escalation_reason: 'Quer falar de preços com um humano.',
+    })
+    expect(result.isError).toBe(false)
+    expect(updates).toEqual([
+      {
+        table: 'conversations',
+        payload: { escalation_reason: 'Quer falar de preços com um humano.' },
+        id: 'conv-1',
+      },
+    ])
+  })
+
+  it('saves all three at once, one write per table', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), {
+      name: 'Ricardo',
+      email: 'ricardo@example.com',
+      escalation_reason: 'Quer falar com alguém sobre preços.',
+    })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.content)).toEqual({ saved: ['name', 'email', 'escalation_reason'] })
+    expect(updates).toHaveLength(2)
+    expect(updates.find((u) => u.table === 'contacts')?.payload).toEqual({
+      name: 'Ricardo',
+      email: 'ricardo@example.com',
+    })
+    expect(updates.find((u) => u.table === 'conversations')?.payload).toEqual({
+      escalation_reason: 'Quer falar com alguém sobre preços.',
+    })
+  })
+
+  it('rejects an invalid email without writing anything', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), { email: 'not-an-email' })
+    expect(result.isError).toBe(true)
+    expect(updates).toEqual([])
+  })
+
+  it('rejects a call with no fields at all', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), {})
+    expect(result.isError).toBe(true)
+    expect(updates).toEqual([])
+  })
+})
+
 describe('createCommercialToolExecutor', () => {
   it('routes check_commercial_availability and book_commercial_meeting to their handlers', async () => {
     h.findCommercialSlots.mockResolvedValue({ config: { timezone: 'Europe/Lisbon' }, slots: [] })
@@ -141,5 +234,15 @@ describe('createCommercialToolExecutor', () => {
     const result = await executor({ id: 'call-1', name: 'book_meeting', input: {} })
     expect(result.isError).toBe(true)
     expect(result.content).toMatch(/desconhecida/i)
+  })
+
+  it('routes save_lead_details to its handler', async () => {
+    const executor = createCommercialToolExecutor(ctx)
+    const result = await executor({ id: 'call-1', name: 'save_lead_details', input: {} })
+    // ctx.db is {} here — no fields sent, so it must fail on validation
+    // before ever touching the db, proving the routing reached the
+    // right handler.
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/não enviaste nenhum dado/i)
   })
 })

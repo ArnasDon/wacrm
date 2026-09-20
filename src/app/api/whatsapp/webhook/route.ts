@@ -70,6 +70,26 @@ interface WhatsAppMessage {
   }
   /** Present when the customer swipe-replies to one of our messages. */
   context?: { id: string }
+  /**
+   * Bloco 3-A — present when this message is the result of the
+   * customer tapping a Meta "Click to WhatsApp" ad or post. Meta's
+   * shape is loosely documented and fields can be missing depending on
+   * the ad/post type, so every field here is optional and every read
+   * of it downstream must be defensive (see persistAdReferral below).
+   */
+  referral?: {
+    source_type?: string
+    source_id?: string
+    source_url?: string
+    headline?: string
+    body?: string
+    /** Click id — needed later for the Conversions API. Personal/
+     *  tracking data: never log this in plaintext. */
+    ctwa_clid?: string
+    media_type?: string
+    image_url?: string
+    video_url?: string
+  }
 }
 
 interface WhatsAppWebhookEntry {
@@ -584,6 +604,66 @@ async function lookupInternalIdByMetaId(
 }
 
 /**
+ * Bloco 3-A — persist the Meta ad/post referral (if any) onto the
+ * conversation it opened or continued.
+ *
+ * Only `source_type === 'ad'` is treated as a commercial lead —
+ * `'post'` referrals (organic post taps) don't get the commercial
+ * persona today. Defensive by design: `message.referral` and every
+ * field on it can be absent depending on the ad type Meta sends, so
+ * this never assumes a shape and never throws — a failure here must
+ * not break the rest of the inbound cascade (contact/conversation
+ * already exist by the time this runs).
+ *
+ * - New conversation + fresh ad referral → stamp `source = 'meta_ad'`
+ *   and `first_referral_at = now()`.
+ * - Existing conversation + a NEW ad referral (the lead clicked another
+ *   ad into the same thread) → refresh ad_id/ctwa_clid/text, but never
+ *   overwrite an already-set `first_referral_at` — that column always
+ *   records the FIRST click that opened the relationship, not the most
+ *   recent one.
+ *
+ * PRIVACY: `ctwa_clid` and the referral text are lead-identifying
+ * data — never interpolate them into a log line, only `error.message`
+ * from a failed write.
+ */
+async function persistAdReferral(
+  conversation: { id: string; first_referral_at?: string | null },
+  referral: WhatsAppMessage['referral'],
+  isNewConversation: boolean,
+): Promise<void> {
+  if (!referral || referral.source_type !== 'ad') return
+
+  try {
+    const update: Record<string, unknown> = {
+      source: 'meta_ad',
+      ad_id: referral.source_id ?? null,
+      ctwa_clid: referral.ctwa_clid ?? null,
+      referral_headline: referral.headline ?? null,
+      referral_body: referral.body ?? null,
+      referral_source_url: referral.source_url ?? null,
+    }
+    if (isNewConversation || !conversation.first_referral_at) {
+      update.first_referral_at = new Date().toISOString()
+    }
+
+    const { error } = await supabaseAdmin()
+      .from('conversations')
+      .update(update)
+      .eq('id', conversation.id)
+
+    if (error) {
+      console.error('[webhook] failed to persist ad referral:', error.message)
+    }
+  } catch (err) {
+    console.error(
+      '[webhook] unexpected error persisting ad referral:',
+      err instanceof Error ? err.message : err,
+    )
+  }
+}
+
+/**
  * Persist an inbound reaction. WhatsApp reactions are not new messages —
  * they're per-(target, actor) state. We upsert / delete on
  * `message_reactions`, never write a row into `messages`.
@@ -687,6 +767,14 @@ async function processMessage(
       contact_id: contactRecord.id,
     })
   }
+
+  // Bloco 3-A — persist the Meta ad referral (if any) before anything
+  // else touches this conversation, so `source='meta_ad'` is already in
+  // place by the time the AI auto-reply dispatch (below) decides which
+  // persona to use. Awaited (not fire-and-forget) for the same reason —
+  // that decision reads the row fresh from the DB. Best-effort/never
+  // throws (see persistAdReferral's doc comment).
+  await persistAdReferral(conversation, message.referral, convResult.created)
 
   // Reactions short-circuit here — they aren't messages. We never insert
   // into `messages`, never bump unread_count, never update last_message_text.

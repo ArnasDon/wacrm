@@ -14,6 +14,10 @@ const h = vi.hoisted(() => ({
     claim: true as boolean,
     updatePayload: null as Record<string, unknown> | null,
     rpcCalls: [] as { name: string; args: unknown }[],
+    // Bloco 3-A — whether the atomic "claim the welcome send" UPDATE
+    // (WHERE commercial_welcome_sent_at IS NULL) wins the race. false
+    // simulates "already sent" / "lost the race".
+    welcomeClaimed: true as boolean,
   },
 }))
 
@@ -46,7 +50,24 @@ vi.mock('./admin-client', () => ({
         }),
         update: (payload: Record<string, unknown>) => {
           h.state.updatePayload = payload
-          return { eq: () => Promise.resolve({ error: null }) }
+          // Two call shapes land here:
+          //   1) `.update(x).eq('id', id)` — awaited directly (the
+          //      handoff-pause update). `eqChain` is thenable.
+          //   2) `.update(x).eq('id', id).is(col, null).select('id')` —
+          //      the Bloco 3-A atomic welcome-claim (commercial.ts).
+          const eqChain: Record<string, unknown> = {
+            eq: () => eqChain,
+            is: () => ({
+              select: () =>
+                Promise.resolve({
+                  data: h.state.welcomeClaimed ? [{ id: 'conv-1' }] : [],
+                  error: null,
+                }),
+            }),
+            then: (resolve: (v: unknown) => unknown) =>
+              resolve({ error: null }),
+          }
+          return eqChain
         },
       }
     },
@@ -91,6 +112,7 @@ beforeEach(() => {
   h.state.claim = true
   h.state.updatePayload = null
   h.state.rpcCalls = []
+  h.state.welcomeClaimed = true
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -208,5 +230,167 @@ describe('dispatchInboundToAiReply — handoff', () => {
       ai_autoreply_disabled: true,
       assigned_agent_id: 'agent-7',
     })
+  })
+})
+
+// ============================================================
+// Bloco 3-A — commercial mode (Meta Click-to-WhatsApp ad leads).
+// ============================================================
+function commercialConv(overrides: Record<string, unknown> = {}) {
+  return {
+    assigned_agent_id: null,
+    ai_autoreply_disabled: false,
+    ai_reply_count: 0,
+    source: 'meta_ad',
+    commercial_welcome_sent_at: null,
+    ...overrides,
+  }
+}
+
+function commercialConfig(overrides: Partial<AiConfig> = {}): AiConfig {
+  return aiConfig({
+    commercialModeEnabled: true,
+    commercialSystemPrompt: 'Somos a Acme Growth.',
+    commercialBookingUrl: 'https://cal.com/acme/intro',
+    commercialWelcomeMessage: null,
+    ...overrides,
+  })
+}
+
+describe('dispatchInboundToAiReply — Bloco 3-A commercial mode', () => {
+  it('is a no-op change for a conversation NOT from a meta_ad referral, even with commercial mode on', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+    // No welcome update captured — only the normal auto-reply path ran.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+  })
+
+  it('sends the immediate welcome message before generating the AI reply, then still sends the AI reply', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+
+    // Two sends: the instant welcome, then the substantive AI reply.
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        conversationId: 'conv-1',
+        aiGenerated: false,
+        text: expect.stringContaining('anúncio'),
+      }),
+    )
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: 'Hello!', aiGenerated: true }),
+    )
+  })
+
+  it('uses the configured commercial_welcome_message instead of the default when set', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ commercialWelcomeMessage: 'Olá! Mensagem à medida.' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ text: 'Olá! Mensagem à medida.' }),
+    )
+  })
+
+  it('does not resend the welcome once commercial_welcome_sent_at is already set', async () => {
+    h.state.conv = commercialConv({
+      commercial_welcome_sent_at: '2026-09-01T00:00:00.000Z',
+    })
+    h.state.welcomeClaimed = false // the atomic claim loses — already sent
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+
+    // Only the substantive AI reply goes out — no second welcome.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.engineSendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: 'Hello!' }),
+    )
+  })
+
+  it('builds the commercial system prompt from commercialSystemPrompt, not the normal systemPrompt', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ systemPrompt: 'NEVER USE ME', commercialSystemPrompt: 'Somos a Acme Growth.' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    const systemPrompt = h.generateReply.mock.calls[0][0].systemPrompt as string
+    expect(systemPrompt).toContain('Somos a Acme Growth.')
+    expect(systemPrompt).not.toContain('NEVER USE ME')
+    expect(systemPrompt).toContain('https://cal.com/acme/intro')
+  })
+
+  it('sends the fixed fallback (and still counts as "replied") when the AI call throws in commercial mode', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    h.generateReply.mockRejectedValue(new Error('provider timed out'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Welcome + fallback — both sends land, nothing throws out of
+    // dispatchInboundToAiReply (it must never throw).
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        aiGenerated: false,
+        text: expect.stringContaining('Recebemos a tua mensagem'),
+      }),
+    )
+    // The reply-cap RPC is never reached on the failure path.
+    expect(h.state.rpcCalls).toHaveLength(0)
+    errorSpy.mockRestore()
+  })
+
+  it('sends the fixed fallback when the model returns no usable text (and no handoff) in commercial mode', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    h.generateReply.mockResolvedValue({ text: '', handoff: false })
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenCalledTimes(2)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: expect.stringContaining('Recebemos a tua mensagem') }),
+    )
+    warnSpy.mockRestore()
+  })
+
+  it('does NOT send the extra fallback on a genuine handoff signal — welcome already opened the window', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    h.generateReply.mockResolvedValue({ text: '', handoff: true })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    // Only the welcome went out; the pause/handoff path runs as normal
+    // and does not additionally send a fallback message.
+    expect(h.engineSendText).toHaveBeenCalledTimes(1)
+    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+  })
+
+  it('a non-exception generateReply failure does not affect a NON-commercial conversation (existing behaviour, rethrown to outer catch)', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
+    h.loadAiConfig.mockResolvedValue(aiConfig()) // commercial mode off
+    h.generateReply.mockRejectedValue(new Error('boom'))
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    // Must not throw out of dispatchInboundToAiReply — the outer
+    // try/catch swallows it, same as before this feature existed.
+    await expect(dispatchInboundToAiReply(ARGS)).resolves.toBeUndefined()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    errorSpy.mockRestore()
   })
 })

@@ -334,3 +334,32 @@ export const ETER_AGENT_TOOLS: readonly ToolDefinition[] = [
   escalateToHumanTool,
   sendReminderTool,
 ]
+
+// ------------------------------------------------------------
+// Bloco 3-A — commercial-mode tool exclusion.
+//
+// The commercial persona (see src/lib/ai/commercial.ts /
+// src/lib/ai/defaults.ts `mode: 'commercial_reply'`) qualifies a lead
+// and hands over a scheduling link — it must never book, move, or
+// cancel a meeting on someone's behalf. `getEterAgentTools` is how any
+// caller that wires ETER_AGENT_TOOLS into a model turn should build its
+// tool list, so this exclusion is enforced in one place.
+//
+// NOTE (as of this migration): nothing in the webhook/auto-reply
+// cascade calls `generateReplyWithTools` / `createEterToolExecutor`
+// yet — `dispatchInboundToAiReply` (auto-reply.ts) only calls the
+// plain-text `generateReply`, tools and all. This helper is added so
+// that whenever the agentic tool loop IS wired into that inbound path,
+// the commercial exclusion is already correct and covered by a test,
+// rather than something a future change has to remember to add.
+// ------------------------------------------------------------
+export const COMMERCIAL_MODE_DISABLED_TOOL_NAMES: ReadonlySet<string> = new Set([
+  'book_meeting',
+  'reschedule',
+  'cancel_booking',
+])
+
+export function getEterAgentTools(opts: { commercial: boolean }): readonly ToolDefinition[] {
+  if (!opts.commercial) return ETER_AGENT_TOOLS
+  return ETER_AGENT_TOOLS.filter((tool) => !COMMERCIAL_MODE_DISABLED_TOOL_NAMES.has(tool.name))
+}

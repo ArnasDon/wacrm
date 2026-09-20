@@ -9,6 +9,12 @@ import { logAiUsage } from './usage'
 import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
+import {
+  isCommercialConversation,
+  sendCommercialFallback,
+  sendCommercialWelcomeIfNeeded,
+} from './commercial'
+import type { GenerateResult } from './types'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -69,7 +75,9 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select(
+        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at',
+      )
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
@@ -78,6 +86,30 @@ export async function dispatchInboundToAiReply(
     // Cheap early-out; the authoritative cap check is the atomic claim
     // below (this read can race a concurrent inbound).
     if (conv.ai_reply_count >= config.autoReplyMaxPerConversation) return
+
+    // Bloco 3-A — commercial mode. Gated on all three: the conversation
+    // came from a Meta ad referral, the account turned the persona on,
+    // and a commercial prompt is actually configured. Any one missing
+    // and this is `false`, and everything below behaves EXACTLY like
+    // today for every non-commercial conversation.
+    const isCommercial = isCommercialConversation(conv, config)
+
+    if (isCommercial) {
+      // Sent FIRST, unconditionally, before any AI call — guarantees a
+      // reply lands inside WhatsApp's 24h session window even if the AI
+      // generation below is slow, times out, or fails outright. See
+      // sendCommercialWelcomeIfNeeded's doc comment for why. Never
+      // throws, so a send failure here still lets the AI reply below
+      // attempt to run.
+      await sendCommercialWelcomeIfNeeded({
+        db,
+        accountId,
+        conversationId,
+        contactId,
+        configOwnerUserId,
+        welcomeMessage: config.commercialWelcomeMessage,
+      })
+    }
 
     const messages = await buildConversationContext(db, conversationId)
     if (messages.length === 0) return
@@ -107,22 +139,48 @@ export async function dispatchInboundToAiReply(
     )
 
     const systemPrompt = buildSystemPrompt({
-      userPrompt: config.systemPrompt,
-      mode: 'auto_reply',
+      userPrompt: isCommercial ? config.commercialSystemPrompt ?? null : config.systemPrompt,
+      mode: isCommercial ? 'commercial_reply' : 'auto_reply',
       knowledge,
+      commercialBookingUrl: isCommercial ? config.commercialBookingUrl : undefined,
     })
 
-    const { text, handoff, usage } = await generateReply({
-      config,
-      systemPrompt,
-      messages,
-    })
+    // The 24h-window guarantee (see sendCommercialWelcomeIfNeeded above)
+    // extends to the substantive reply too: if the provider call throws
+    // (network error, invalid key, or the AiError timeout wrapper in
+    // aiRequestTimeoutMs) we must not leave the lead in silence — send a
+    // short fixed fallback instead of letting the exception bubble to
+    // this function's outer catch (which would just log and return).
+    // Non-commercial conversations keep today's behaviour exactly:
+    // rethrow so the outer catch handles it the way it always has.
+    let generation: GenerateResult
+    try {
+      generation = await generateReply({ config, systemPrompt, messages })
+    } catch (err) {
+      if (isCommercial) {
+        console.error(
+          '[ai auto-reply] commercial mode: geração falhou ou expirou — a enviar fallback:',
+          err instanceof Error ? err.message : err,
+        )
+        await sendCommercialFallback({
+          accountId,
+          conversationId,
+          contactId,
+          configOwnerUserId,
+        })
+        return
+      }
+      throw err
+    }
+    const { text, handoff, usage } = generation
 
     // Record token spend on the account's BYO key. Fire-and-forget so it
     // never adds latency to the customer-facing send: `logAiUsage`
     // swallows its own errors, so the floating promise can't reject.
     // Logged regardless of handoff — the provider call happened either
-    // way.
+    // way. Always logged as 'auto_reply' — the DB CHECK constraint
+    // (migration 033) doesn't know about the commercial persona, which
+    // is a prompt/behaviour variant, not a different billing bucket.
     void logAiUsage(db, {
       accountId,
       conversationId,
@@ -131,6 +189,26 @@ export async function dispatchInboundToAiReply(
       model: config.model,
       usage,
     })
+
+    // Commercial mode additionally guarantees a reply when the model
+    // came back with nothing usable (empty text, no handoff signal) —
+    // the same 24h-window reasoning as the try/catch above, just for the
+    // "succeeded but said nothing" failure mode instead of a thrown
+    // error. A genuine handoff (explicit sentinel) is NOT covered here:
+    // that's a deliberate "a human should take this" decision, not a
+    // failure, and the welcome message already opened the window.
+    if (isCommercial && !handoff && !text) {
+      console.warn(
+        '[ai auto-reply] commercial mode: o modelo não devolveu texto — a enviar fallback.',
+      )
+      await sendCommercialFallback({
+        accountId,
+        conversationId,
+        contactId,
+        configOwnerUserId,
+      })
+      return
+    }
 
     if (handoff || !text) {
       // The model can't (or shouldn't) answer — stop auto-replying on

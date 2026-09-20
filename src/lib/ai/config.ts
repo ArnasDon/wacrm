@@ -12,10 +12,14 @@ interface AiConfigRow {
   auto_reply_max_per_conversation: number
   handoff_agent_id: string | null
   embeddings_api_key: string | null
+  commercial_system_prompt: string | null
+  commercial_mode_enabled: boolean
+  commercial_booking_url: string | null
+  commercial_welcome_message: string | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -79,6 +83,10 @@ export async function loadAiConfig(
     autoReplyMaxPerConversation: row.auto_reply_max_per_conversation,
     handoffAgentId: row.handoff_agent_id,
     embeddingsApiKey,
+    commercialModeEnabled: row.commercial_mode_enabled,
+    commercialSystemPrompt: row.commercial_system_prompt,
+    commercialBookingUrl: row.commercial_booking_url,
+    commercialWelcomeMessage: row.commercial_welcome_message,
   }
 }
 

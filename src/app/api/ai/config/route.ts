@@ -30,7 +30,7 @@ export async function GET() {
       // `api_key` is selected only to derive `has_key` — it is stripped
       // out below and never returned to the client.
       .select(
-        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key',
+        'provider, model, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, api_key, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message',
       )
       .eq('account_id', accountId)
       .maybeSingle()
@@ -112,6 +112,44 @@ export async function POST(request: Request) {
         .maybeSingle()
       if (!member) return bad('handoff_agent_id must be a member of this account')
       handoffAgentId = rawHandoff
+    }
+
+    // Bloco 3-A — commercial mode fields. All optional; only touched
+    // when the form actually sends them (mirrors handoff_agent_id
+    // above), so a partial save from an older client build can't wipe
+    // them.
+    const commercialModeProvided = 'commercial_mode_enabled' in body
+    const commercialModeEnabled = body.commercial_mode_enabled === true
+
+    const commercialPromptProvided = 'commercial_system_prompt' in body
+    const commercialSystemPrompt =
+      typeof body.commercial_system_prompt === 'string' && body.commercial_system_prompt.trim()
+        ? body.commercial_system_prompt.trim()
+        : null
+
+    const commercialWelcomeProvided = 'commercial_welcome_message' in body
+    const commercialWelcomeMessage =
+      typeof body.commercial_welcome_message === 'string' &&
+      body.commercial_welcome_message.trim()
+        ? body.commercial_welcome_message.trim()
+        : null
+
+    const commercialBookingUrlProvided = 'commercial_booking_url' in body
+    let commercialBookingUrl: string | null = null
+    if (commercialBookingUrlProvided) {
+      const raw =
+        typeof body.commercial_booking_url === 'string' ? body.commercial_booking_url.trim() : ''
+      if (raw) {
+        try {
+          const parsed = new URL(raw)
+          if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+            return bad('commercial_booking_url must be an http(s) URL')
+          }
+        } catch {
+          return bad('commercial_booking_url must be a valid URL')
+        }
+        commercialBookingUrl = raw
+      }
     }
 
     const rawKey = typeof body.api_key === 'string' ? body.api_key.trim() : ''
@@ -209,6 +247,10 @@ export async function POST(request: Request) {
     // Only touch the handoff target when the form actually sent the field,
     // so a partial save (e.g. flipping a toggle) doesn't wipe it.
     if (handoffProvided) shared.handoff_agent_id = handoffAgentId
+    if (commercialModeProvided) shared.commercial_mode_enabled = commercialModeEnabled
+    if (commercialPromptProvided) shared.commercial_system_prompt = commercialSystemPrompt
+    if (commercialWelcomeProvided) shared.commercial_welcome_message = commercialWelcomeMessage
+    if (commercialBookingUrlProvided) shared.commercial_booking_url = commercialBookingUrl
     if (rawEmbeddingsKey) {
       shared.embeddings_api_key = encrypt(rawEmbeddingsKey)
     } else if (clearEmbeddingsKey) {

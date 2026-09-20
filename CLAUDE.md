@@ -6299,10 +6299,14 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     ser uma que ninguém respondeu depois (achado do Codex no PR #226).
     Migration nova porque a 1010 já estava aplicada. Confere que sobrou UMA
     função com esse nome e prova o EXECUTE trocando de papel. Aditiva — nada em
-    produção chama a função até o deploy. ⚠️ **AINDA NÃO APLICADA** (19/09/2026);
-    testada num Postgres 16 descartável: o defeito reproduz com a função da
-    1010 e some com a 1011, idempotente, os 20 cenários anteriores verdes.
-    Quem aplicar troca esta frase pela data e pelo número do histórico.
+    produção chama a função até o deploy. Aplicada em 19/09/2026 pela
+    Management API (histórico `20260920000843`), ANTES do merge do PR #226 e
+    DEPOIS de o replay do CI passar; conferida no catálogo (UMA função, a mesma
+    assinatura, o corpo com a guarda, `SECURITY INVOKER`, EXECUTE só do
+    `service_role`) e por e2e no preview contra o banco real — o eco do
+    escritório sem telefone (plano, 6.4). Testada antes num Postgres 16
+    descartável: o defeito reproduz com a função da 1010 e some com a 1011,
+    idempotente, os 20 cenários anteriores verdes.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

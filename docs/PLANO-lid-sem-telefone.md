@@ -4,9 +4,9 @@ Documento INTERNO e vivo. Atualizar a cada fase concluída.
 
 | | |
 | --- | --- |
-| **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (6.2) e testado no preview contra a produção (6.1 e 6.3). Em produção: só a migration 1010 (aditiva, sem leitor até o deploy). |
+| **Estado** | PR #226 aberto (branch `fix/lid-sem-telefone`). Revisado por duas lentes (6.2) e testado no preview contra a produção (6.1 e 6.3). Em produção: só as migrations 1010 e 1011 (aditivas, sem leitor até o deploy). |
 | **Decisão do operador (19/09/2026)** | Fazer as Fases 1 e 2; a Fase 3 (patch na imagem da Evolution) fica de fora. "Não quero quebrar o que está funcionando" — cautela é requisito. |
-| **Migration** | `1010_cb_mensagens_sem_telefone.sql` — aditiva. **Aplicada em 19/09/2026** (histórico `20260919234759`), antes do merge. |
+| **Migrations** | `1010_cb_mensagens_sem_telefone.sql` (histórico `20260919234759`) e `1011_cb_historica_eco_e_resposta_concorrente.sql` (`20260920000843`) — aditivas, **aplicadas em 19/09/2026**, antes do merge. |
 
 ## 1. O problema, em uma frase
 
@@ -348,6 +348,14 @@ irmão (eco ANTERIOR à espera) já tinha a guarda.
   gente, a fala continua esperando; robô não conta); 1010 + 1011 num banco limpo,
   a 1011 duas vezes; os 20 cenários de 6.1 verdes. Pinos do corpo passaram a ler a
   1011.
+- **Em produção:** 1011 aplicada em 19/09/2026 21:08 BRT (histórico
+  `20260920000843`), depois do CI verde; conferida no catálogo. E o caminho que
+  faltava exercitar contra o banco real — o ECO do escritório sem telefone
+  (`fromMe`) — foi testado no preview: entrou como `agent`/`from_device`/`sent`
+  com o canal carimbado, modo `tardia`, sem contar não lida; a espera de 14/09
+  foi encerrada pela regra nova (a "resposta" do escritório é posterior a ela e
+  ninguém escreveu depois); registro `entregue`/`acervo`. Limpo e conferido: a
+  conversa voltou ao retrato.
 - **Varredura da família** (as outras janelas entre ler a espera e assentar): o
   ramo do eco anterior à espera e os dois ramos do cliente já se defendem
   perguntando "gente respondeu depois?" NA HORA da função. Sobraram duas corridas
@@ -386,6 +394,6 @@ Evolution) — escrita em produção, só com autorização.
 - [x] 1010 aplicada em produção em 19/09/2026 20:47 BRT (histórico `20260919234759`), autorizada pelo operador, DEPOIS do CI verde; conferida no catálogo
 - [x] T18, parte 2 — reter, religar, tardia e Meu dia no preview (6.3) + limpeza conferida
 - [x] Codex, 1ª rodada (HEAD `50748ba`): 1 P2, corrigido na migration 1011 (6.4)
-- [ ] 1011 aplicada em produção (aditiva; depois do CI)
+- [x] 1011 aplicada em produção em 19/09/2026 21:08 BRT (histórico `20260920000843`), depois do CI verde; eco do escritório testado no preview e limpo
 - [ ] Codex no HEAD final
 - [ ] Merge (autorização) + conferência pós-deploy

@@ -598,66 +598,84 @@ SILÊNCIO se for ignorada — nenhuma delas dá erro.
 22. Taxa acima de 100% no modo por período é razão de fluxo e está CERTA —
     não "consertar".
 
-## Decisões pendentes
+## Decisões — 23 das 27 fechadas
 
-São **27**, em três blocos (a antiga 10 foi reescrita como 17). As do bloco A
-travam a ESCRITA da carga: sem elas, não há o que programar.
+As 27 (a antiga 10 foi reescrita como 17) estão fechadas, menos as do bloco C,
+que dependem da data do corte. **O mapa da carga é
+`docs/PLANO-migracao-kommo-de-para.md`** — é lá que estão as tabelas por etapa,
+as contagens e as regras. Esta seção é o índice.
 
-### ✅ Fechadas pelo operador em 19/09/2026
+### ✅ Fechadas pelo operador em 19–20/09/2026
 
-- **16 — o id da Kommo vira CAMPO PERSONALIZADO**, não coluna. ⚠️ Campo
-  personalizado só existe em CONTATO: ele resolve o id do contato e **não** o
-  id do lead. Para o negócio, a chave vai no `details` do `deal_created`
-  retroativo (`details->>'kommo_lead_id'`), que é invisível na tela e
-  consultável. Preço aceito: sem índice único, a idempotência fica por conta
-  do script (conferir antes de inserir) — o que basta para uma carga que roda
-  sozinha, e não bastaria para duas rodando ao mesmo tempo. O campo nasce num
-  bloco próprio ("Migração"), fora do Geral, para não poluir a ficha.
+**Estrutura e funil (bloco A)**
+
+- **1 e 19 — o de‑para das 70 etapas e o desenho FINAL dos funis.** 28 etapas
+  hoje → **34**: criar 4 no Trabalhista ‑ Comercial (Ag. Demissão, Pediu
+  Demissão, Foi Demitido, Perdido) e 2 no Trabalhista ‑ Jurídico (Pendente
+  Documento, Em Elaboração). Bancário ‑ Comercial e ‑ Jurídico não ganham etapa
+  nenhuma; o Comercial ganha os 11 `degrau` e um `resultado = perdido` em
+  "Desqualificado", que hoje está nulo. Os 240 leads da etiqueta CONTATO SEG.
+  TRAB — 234 deles contratos protocolados — vão para Trabalhista ‑ Jurídico ›
+  Contato de Emergência, menos os 2 em descarte.
+- **18 — ganho e perdido pousam em ETAPA**, com `degrau` e `resultado`. Os 171
+  "Ganho" do Trabalhista vão para Protocolado; os 2.719 em descarte, para a
+  nova "Perdido".
+- **9 — histórico real**: um evento por mudança de etapa (28.316),
+  `origin='retroativo'`, `reconstructed=true`.
+- **11 — a etapa da Kommo MOVE o card** dos que já existem aqui (1.150 dos
+  1.209 contatos daqui recebem dado).
+- **16 — o id da Kommo vira CAMPO PERSONALIZADO** de contato, num bloco próprio
+  "Migração". ⚠️ Campo personalizado só existe em CONTATO: o id do LEAD vai em
+  `cb_lead_events.details->>'kommo_lead_id'`. Preço aceito: sem índice único, a
+  idempotência fica por conta do script — o que basta para uma carga que roda
+  sozinha, e não bastaria para duas ao mesmo tempo.
 - **17 — apagar as linhas de `cb_automation_events` na mesma transação**, com
   `deals.source = 'manual'`. Mantém a trilha (912), o carimbo de resultado
   (950) e as FKs de pé.
-- **18 — ganho e perdido pousam em ETAPA**, com `degrau` e `resultado`. Quais
-  etapas, por funil: no de‑para.
-- **9 — histórico real**, um evento por mudança de etapa, `origin='retroativo'`
-  e `reconstructed=true`.
-- **11 — a etapa da Kommo MOVE o card** dos 845 que já existem aqui.
-- **1 e 19 — em aberto, decisão conjunta.** A proposta está em
-  `docs/PLANO-migracao-kommo-de-para.md`, montada sobre a medição de 19/09.
 
-**Escopo declarado pelo operador (19/09):** nome do lead, etapa atual,
-etiquetas, etapas pelas quais passou (histórico), valor do contrato
-(proposta/fechamento) e anotações das conversas. Campos personalizados,
-e‑mail, responsáveis, motivo de perda, tarefas e data de reunião ficaram de
-fora da lista — o que cada um custa está na seção 10 do de‑para.
+**A REGRA DO CARD — fechada em 20/09, e é a que conserta o defeito da Kommo**
 
-### Bloco A — travam a escrita
+- **Um card por PESSOA e por ÁREA** (Trabalhista × Bancário): **12.389 cards**,
+  2 pessoas com dois, **298 leads que viram só histórico**. Sobrevive o lead
+  mais recente entre os ABERTOS; não havendo aberto, o mais recente de todos.
+  "Pessoa" é o telefone pela régua do nono dígito (`variantesDoNonoDigito`),
+  **nunca** os últimos 8 de `phonesMatch` — medido: pelos últimos 8, 14 sufixos
+  teriam mais de uma pessoa, 13 com DDD ou DDI diferente.
+  ⚠️ Na Kommo, **266 pessoas têm mais de um lead** (566 leads), 85 com mais de
+  um ABERTO, e uma delas tem **13 leads na mesma etapa** — ela preencheu o
+  formulário 13 vezes. Cada lead era elegível para a própria sequência, e é daí
+  que vinha a mensagem repetida para o mesmo número. Aqui, `contacts` (telefone)
+  e `conversations` (036) fundem por índice único do Postgres; o **negócio não**
+  — a regra "um card por contato" mora no código, e é responsabilidade da carga.
 
-| # | Decisão | Opções | Recomendação |
-| --- | --- | --- | --- |
-| 16 | **Onde carimbar o id da Kommo** (sem isso a carga não é reexecutável — trava 10) | migration nova com `contacts.kommo_contact_id` + `deals.kommo_lead_id`, índice único parcial · campo personalizado · nada (carga de uma passada só) | **migration**: some da tela, é a única que sobrevive a uma carga interrompida no meio, e `deals` não tem alternativa (campo personalizado só existe em contato) |
-| 17 | **Como a carga passa pelos gatilhos** (reescreve a antiga 10) | (a) apagar as linhas de `cb_automation_events` na MESMA transação · (b) `source='automation'` no INSERT (escapa da fila, grava procedência falsa) · (c) `SET session_replication_role='replica'` (desliga os 6 gatilhos e as FKs; exige conexão direta ao Postgres, não passa por PostgREST) · ~~pausar todas as automações~~ · ~~limpar a fila antes do agendador~~ (são 15 s, não 60) | **(a)**, e a carga insere com `source='manual'`. Mantém 912, 950 e as FKs de pé e não deixa rastro na fila. O DELETE é estreito (`origem='sistema'` + `criado_em >= now()` da transação) |
-| 18 | **Ganho e perdido da Kommo → qual ETAPA, em cada funil de destino** (o funil não lê `deals.status`) | usar as que já existem ("Protocolado"/`ganho`, "Não Respondeu"/`perdido`, "Perdido", "Desqualificado - Sem Direito") · criar etapas próprias de destino | a etapa escolhida precisa das DUAS marcas: `degrau='contrato'`/`'perda'` **e** `resultado='ganho'`/`'perdido'`. Sem a segunda, os 5.621 perdidos ficam `status='open'` e voltam a ser alvo das automações |
-| 9 | **Data dos eventos de funil** (era uma decisão com três opções; hoje só uma funciona) | histórico real (27.610 mudanças, `origin='retroativo'`) · ~~só criação e fechamento~~ · ~~nenhum evento~~ | **histórico real.** "Só criação e fechamento" crava as transições intermediárias em 100% nos meses históricos; "nenhum evento" some com o lead da Lista, do Desempenho e da Saúde |
-| 1 | **De‑para dos funis e das 70 etapas**, com o `degrau` de cada uma das 28 do destino | tabela acima, a preencher — incluindo o que vira TAG e a etapa de ganho/perda da 18 | é aqui que se decide se "Reunião Agendada BOT" é `reuniao` e "Proposta" é `proposta` — sem isso a Fase 7 (ciclo de vendas) nasce vazia para os 15 meses |
-| 19 | **O desenho atual dos 4 funis (28 etapas) é o final?** | sim · a migração é a hora de reestruturar | decidir AGORA: depois da carga, apagar etapa mapeada exige tirar o degrau antes, e isso apaga a história dela do funil (trava 12) |
-| 11 | **Os 845 leads abertos de quem já tem card aqui** | a etapa da Kommo MOVE o card daqui · o card daqui fica e o lead vira histórico · caso a caso | **mover** — mas repare que mover é UPDATE, o que contraria a regra 1 do contrato de carga: são 845 updates que precisam da mesma proteção (transação com o DELETE da fila) e de eventos retroativos próprios, senão esses 845 "alcançam" os degraus HOJE |
+**O que entra (bloco B)**
 
-### Bloco B — mudam o que o cliente e a equipe veem
+- **2 — migrar os 5.791 fechados** (46%): é deles que sai o histórico do funil.
+- **8 e 20 — o nome da Kommo vence e fica FIXADO** (`nome_fixado_em`), exceto
+  nos 297 já fixados à mão. Todo nome passa por `nomeParaFixar`, que recusa
+  número.
+- **5 e 21 — reusa 8 etiquetas, cria só `kommo`** (cor `#6b7280`). As outras 23
+  da Kommo não são criadas. A No‑Show sai da ETAPA, não de etiqueta.
+- **3 — 283 conversas novas, nascendo ENCERRADA**, para abrigar as 543
+  anotações; `autor_nome` da Kommo preservado, `author_user_id` nulo,
+  `created_at` original. **Não** houve migration anulando `conversation_id`.
+- **25 — o `price` é valor de PROPOSTA e vem em TODOS os leads.** Os 171 ganhos
+  valem R$ 0 e o funil Trabalhista inteiro não tem valor nenhum: o Desempenho
+  vai mostrar R$ 0,00 de valor fechado nos meses históricos, e isso é o dado.
+- **22 — os 4 telefones ambíguos NÃO são fundidos**: nascem fichas novas, e a
+  lista dos 4 vai para o operador no ensaio.
+- **4 — campos**: entram e‑mail (1.906), Campanha/Conjunto/anuncio (1.224 cada),
+  "Tamanho da Divida" (2.813) e o id da Kommo. Os outros 13 ficam de fora.
+- **6 — consertar os 43 nomes corrompidos** (reinterpretação de bytes).
+- **7 — os 29 contatos sem telefone não migram.**
+- **12 — nenhum responsável.** Gabriel Queiroz responde por 64% dos leads e não
+  é membro do CB CRM.
+- **13 — motivo de perda descartado**: 1.122 dos 5.701 têm motivo, e é sempre o
+  mesmo.
+- **15 — as 118 tarefas abertas são descartadas.**
 
-| # | Decisão | Opções | Recomendação |
-| --- | --- | --- | --- |
-| 8 | **Nos 979 que existem nos dois, quem vence?** | CB CRM · Kommo · por campo | Kommo no nome (640 divergem; o daqui é o push name do WhatsApp), **exceto nos 29 fixados**. E-mail e empresa preenchem buraco. Tag e campo somam |
-| 20 | **O nome importado fica FIXADO?** (sem fixar, dura até a próxima mensagem do cliente) | fixar todos · fixar só onde o nome da Kommo parece nome de gente · não fixar | fixar — senão o trabalho do SDR de 15 meses é apagado pelo push name em poucos dias. Todo nome passa por `nomeParaFixar`, que recusa número |
-| 3 | **Anotações sem conversa** (412 de lead + 5 de contato) | `deals.notes` concatenado · ~~criar conversa vazia~~ · migration anulando `conversation_id` | **migration**: a FK é MATCH SIMPLE, então basta `DROP NOT NULL`; a ficha já lê por `contact_id`, e autor e data ficam preservados. "Conversa vazia" está fora: a lista do inbox não pagina (trava 11) |
-| 21 | **Etiqueta de origem nos importados** | criar uma tag `kommo` · não criar | **criar** — é o que permite excluí-los de um disparo "para todos", que passa de 1.196 para ~12.900 destinatários. É o precedente do Asaas |
-| 2 | **Migrar os 5.791 fechados (46%)?** | sim · só os 170 ganhos · não | sim: é deles que sai o histórico do funil. Com a 18 resolvida, eles entram como perda/contrato datados |
-| 25 | **O `price` da Kommo é honorário ou tamanho da dívida?** (R$ 10,46 mi em 423 leads) | honorário → `deals.value` · dívida → campo "Tamanho da Divida" | os 170 ganhos têm valor ZERO; carregar dívida em `value` faria o Desempenho mostrar "valor fechado" que não é receita. O ticket médio sai **R$ 0,00** (não "—") nos meses históricos de qualquer jeito |
-| 22 | **Contato cujo sufixo bate mas o número não** | lista "para confirmar" revisada à mão (como o Asaas) · criar ficha nova | "para confirmar": fundir duas pessoas é irreversível |
-| 4 | 6 campos sem destino | criar · descartar | — |
-| 5 | Criar as 25 tags que faltam? | todas · acima de N usos · nenhuma | — |
-| 6 | Consertar os 43 nomes corrompidos? | sim · não | sim, é reinterpretação de bytes |
-| 7 | 28 sem telefone e contatos sem lead | descartar · migrar | — |
-| 13 | Motivo de perda (1.122) | campo `select` novo · tag · descartar | — |
+### ⏳ Em aberto — dependem da data do corte
+
 
 ### Bloco C — o corte e a operação
 
@@ -665,24 +683,26 @@ fora da lista — o que cada um custa está na seção 10 do de‑para.
 | --- | --- | --- | --- |
 | 23 | **A carga roda com o CRM em uso?** | janela de baixo movimento, resolvendo colisão na ida · parar o que der (agendador) e aceitar o resto | não dá para congelar: a ingestão do WhatsApp e o Calendly são dirigidos por quem manda mensagem. A carga tem de nascer tolerante |
 | 24 | **Quais automações podem estar LIGADAS na janela da carga** | nenhuma · só as que não são de etapa | nenhuma automação de etapa e nenhuma com "Aguardar" ativa. Hoje as 8 estão desligadas — conferir na véspera |
-| 12 | **Responsáveis** | mapear usuário → membro · deixar sem responsável | Gabriel Queiroz responde por 8.088 leads e não é membro. `assigned_to` é `profiles.id` |
 | 26 | **Régua do Asaas** | desligar durante a carga e o ciclo seguinte · deixar como está | a carga liga clientes que hoje estão em "Sem ficha"; eles nunca passaram pela curadoria dos 38 da lista de exceção |
 | 27 | **Reuniões históricas da Kommo** (1.199 com data) | só o campo "Data e Hora Reunião" (uma por contato — perde as repetidas) · linhas sintéticas em `cb_calendly_eventos` (fiel, mas inventa registro num log de integração) | decidir junto com a Fase 8 do funil: se for linha sintética, a Fase 8 precisa existir ANTES da carga. ⚠️ Data FUTURA no campo arma o gatilho de lembrete quando o relógio a alcança |
 | 14 | **O corte** | — | quais entradas religar primeiro (n8n/Typebot → webhooks de entrada da 982), quem substitui os 5 webhooks de conversão, quanto tempo os dois convivem, quando a equipe para de mover card na Kommo |
-| 15 | As 118 tarefas abertas | migrar (944) · descartar | — |
 | 28 | **Onde a carga vive** | `scripts/kommo/` · módulo em `src/lib/migracao/` chamado por script | em `src/` ela herda de graça os pinos de dono durável e nome fixado, que hoje NÃO a alcançam (trava 8) |
 
 ### Consertos de código antes da carga (não são decisões)
 
-- **Paginar o quadro do funil** (`pipelines/page.tsx`): hoje corta em 1.000
-  cards sem avisar. Com 8.381 no Trabalhista, o Kanban passa a mentir.
-- **Paginar a lista de conversas do inbox**, se a decisão 3 for "conversa
-  vazia" — e o contador de não lidas (`use-total-unread.ts`), que lê
-  `conversations` sem `order` e sem `limit`.
-- **Medir a leitura do funil com volume real** no ensaio: abrir o Desempenho
-  de um funil com ~8.400 negócios faz 9 chamadas sequenciais à RPC, cada uma
-  trazendo o trajeto inteiro em jsonb. O teto é 25.000 negócios por funil, e
-  acima dele as três vistas caem em "falhou". A margem caiu de ~90× para ~3×.
+- ✅ **Paginar o quadro do funil, a lista de conversas e o contador de não
+  lidas** — feito no [PR #227](https://github.com/leonardocabralb/CB-CRM/pull/227)
+  (`src/lib/supabase/paginar.ts`). Os três cortavam em 1.000 linhas sem avisar,
+  e o contador não lidas nem ordenava — com 12.980 contatos e 8.400 cards num
+  funil, os três passariam a mentir. **O PR precisa estar mesclado antes da
+  carga.**
+- [ ] **Migration do campo de id da Kommo** (decisão 16) e do bloco "Migração".
+- [ ] **Medir a leitura do funil com volume real** no ensaio: abrir o
+  Desempenho de um funil com ~8.400 negócios faz 9 chamadas sequenciais à RPC,
+  cada uma trazendo o trajeto inteiro em jsonb. O teto é 25.000 negócios por
+  funil, e acima dele as três vistas caem em "falhou". A margem caiu de ~90×
+  para ~3×.
+
 
 ## Fases
 

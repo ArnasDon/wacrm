@@ -2855,13 +2855,33 @@ O que morde código novo:
   de um envio feito PELO CRM não destrava retida (sai no `jaGravada` antes do
   bloco de religação, e `send-message.ts` não grava `remote_jid_lid`) — ela
   espera a próxima mensagem do cliente ou um eco do celular; cópia histórica
-  que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`, e a
-  normal é pulada sem rodar motor; a decisão do modo NÃO é atômica — mensagem
+  OU TARDIA que chega ANTES da cópia normal da mesma mensagem ganha o `UNIQUE`,
+  e a normal é pulada sem rodar motor (para a tardia basta chegar primeiro e ter
+  mais de 4 min — o celular do cliente offline atrasando a retentativa);
+  ⚠️ "alguém escreveu depois" conta MÁQUINA: a consulta da última mensagem
+  (`entregar.ts`) não olha quem escreveu, então fala de cliente seguida só de
+  robô, disparo ou automação entra como `historica` — e, com a conversa
+  ENCERRADA, sem reabrir (revisão final, plano 6.9; inalcançável em 20/09/2026,
+  quando nenhuma máquina escrevia em conversa de cliente nesta conta; passa a
+  valer com sequências e régua ligadas — o refino, `tardia` × `historica` pela
+  última mensagem do cliente ou de GENTE, é decisão pendente do operador); o
+  payload da retida é apagado ANTES de o anexo dela ser baixado — download que
+  falha na religação tem o destino do anexo normal que falha (recuperação à mão
+  pela Evolution), embora ali existisse cópia durável das chaves (idem, 6.9);
+  a decisão do modo NÃO é atômica — mensagem
   mais nova gravada por OUTRO webhook nos ~100 ms entre olhar "qual é a última"
   e o insert faz a `nova` passar pelos motores depois dela (a mesma desordem
   que duas mensagens normais quase simultâneas já têm hoje: a ingestão não
   serializa por conversa, e fechar isso é travar a conversa dentro de
-  `persistInboundMessage`, o caminho quente); áudio histórico pode ser recusado pela
+  `persistInboundMessage`, o caminho quente); o PAR fica durável no insert de
+  dentro de `persistInboundMessage`, mas a rota só anota "religar este LID"
+  quando a função VOLTA (depois dos motores) — processo que morre nesse vão
+  deixa a retida retida até a próxima mensagem daquele LID, visível no Meu dia
+  (Codex, 4ª rodada; aceito: aqui `maxDuration = 60` é decorativo e a morte só
+  vem de deploy ou queda, numa janela de segundos, e a Evolution não reentrega
+  porque o 200 sai ANTES do `after()`. ⚠️ Numa hospedagem que CORTE o `after()`
+  isso deixa de ser raro — o conserto de verdade é anotar o par antes dos
+  motores, dentro do caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
   mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3

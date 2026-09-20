@@ -31,6 +31,7 @@ import { NextResponse } from 'next/server';
 import { supabaseAdmin } from '@/lib/automations/admin-client';
 import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
 import { RECOLHER_CLAIM_MS } from '@/lib/calendly/claim';
+import { DIAS_DE_RETIDA_NA_TELA } from '@/lib/meu-dia/correcoes';
 import { checkRateLimit, rateLimitResponse } from '@/lib/rate-limit';
 
 /** A aba pede na abertura e no "Atualizar"; 30/min cobre várias abas. */
@@ -90,9 +91,27 @@ export async function GET() {
     // composta com o webhook — o recorte é direto, como a rota
     // `/api/cb/webhooks` já faz. Sem embed: filtro em recurso embutido é a
     // armadilha de `filtros.ts`, e aqui nem seria preciso.
-    const [calendly, webhooks] = await Promise.all([
+    // Mensagens de WhatsApp RETIDAS por terem chegado em `@lid` sem telefone
+    // (1010) — também fechada ao navegador. Daqui saem a contagem e, das mais
+    // recentes, só a CONEXÃO e a HORA: é o que diz ao operador em qual
+    // celular olhar. Nada de conteúdo, telefone ou LID — a rota é de qualquer
+    // membro.
+    const desde = new Date(
+      Date.now() - DIAS_DE_RETIDA_NA_TELA * 24 * 3600_000
+    ).toISOString();
+    const retidasDoPeriodo = db
+      .from('cb_mensagens_sem_telefone')
+      .select('channel_id, recebida_em, from_me', { count: 'exact' })
+      .eq('account_id', ctx.accountId)
+      .eq('situacao', 'retida')
+      .gte('recebida_em', desde)
+      .order('recebida_em', { ascending: false })
+      .limit(5);
+
+    const [calendly, webhooks, retidas] = await Promise.all([
       parado('cb_calendly_eventos'),
       parado('cb_webhook_eventos'),
+      retidasDoPeriodo,
     ]);
 
     if (calendly.error || webhooks.error) {
@@ -103,11 +122,29 @@ export async function GET() {
       return NextResponse.json({ error: 'db_error' }, { status: 500 });
     }
 
+    // ⚠️ A falha SÓ das retidas não vira 500: derrubaria junto a contagem do
+    // Calendly e dos webhooks, que responderam. Vira `null` — "não consegui
+    // conferir" DAQUELA fonte, que a tela trata como tal (nunca como zero).
+    // É também o que acontece num banco sem a 1010 (deploy antes da migration).
+    if (retidas.error) {
+      console.error('[cb/meu-dia/pendencias] retidas:', retidas.error.message);
+    }
+
     return NextResponse.json({
       naoProcessadas: {
         calendly: calendly.count ?? 0,
         webhooks: webhooks.count ?? 0,
       },
+      retidas: retidas.error
+        ? null
+        : {
+            quantidade: retidas.count ?? (retidas.data ?? []).length,
+            itens: (retidas.data ?? []).map((r) => ({
+              canalId: (r.channel_id as string | null) ?? null,
+              recebidaEm: r.recebida_em as string,
+              daEquipe: r.from_me === true,
+            })),
+          },
     });
   } catch (err) {
     return toErrorResponse(err);

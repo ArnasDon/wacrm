@@ -95,6 +95,26 @@ describe('resumirCorrecoes', () => {
     expect(r.aoMenos).toBe(false);
   });
 
+  it('mensagem RETIDA sem telefone (1010) vem junto das conexões, antes das agendadas', () => {
+    const r = resumirCorrecoes({
+      ...tudoZerado(),
+      agendadasFalharam: pronto(1),
+      mensagensRetidas: pronto(2),
+      conexoesAtrasadas: pronto(1),
+    });
+    expect(r.achados.map((a) => a.fonte)).toEqual([
+      'conexoesAtrasadas',
+      'mensagensRetidas',
+      'agendadasFalharam',
+    ]);
+  });
+
+  it('retidas que a rota NÃO conseguiu conferir impedem o "tudo em ordem"', () => {
+    const r = resumirCorrecoes({ ...tudoZerado(), mensagensRetidas: { status: 'falhou' } });
+    expect(r.situacao).toBe('incompleto');
+    expect(r.naoConferidas).toEqual(['mensagensRetidas']);
+  });
+
   it('a ordem declarada não tem repetição nem sobra', () => {
     const vistas = new Set<FonteDeCorrecao>(ORDEM_DAS_FONTES);
     expect(vistas.size).toBe(ORDEM_DAS_FONTES.length);

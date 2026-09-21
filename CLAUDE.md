@@ -653,7 +653,7 @@ tinha relação com ele. O que morde código novo:
   depois 5 min): invertendo, um provedor que recusa sempre — uma conexão
   apagada — reenfileiraria para sempre, queimando ciclo do agendador e
   nunca mostrando a falha a ninguém. A espera real é esta MAIS o tique do
-  cron (~1 min no laço rápido).
+  cron (~15 s no laço rápido — MEDIDO no `docker-stack.yml` em 21/09/2026).
 - ⚠️ **O estado da execução vira `partial`**, o mesmo do "Aguardar": é o que
   impede `fecharLog` de carimbar desfecho enquanto a retentativa não rodou.
 
@@ -2508,9 +2508,10 @@ rotas em `src/app/api/v1/`. O que morde código novo:
   cobre `source='channel'` — a regra semântica é de código.
 - **Escrita de negócio pela API chama `drenarEventosDeFunil()`** (fire-and-
   forget), como a tela faz: sem isso a automação de etapa espera o próximo
-  batimento do agendador — o laço RÁPIDO do `docker-stack.yml`, `sleep 60`
-  (uma versão desta nota dizia "15 min", que é o laço LENTO; o próprio #74
-  mediu e corrigiu `lembretes.ts` e `DEPLOY-VPS.md`, e esta linha ficou).
+  batimento do agendador — o laço RÁPIDO do `docker-stack.yml`, hoje
+  `sleep 15` (esta linha já disse "15 min", que é o laço LENTO, e depois
+  "sleep 60"; o valor foi MEDIDO no arquivo em 21/09/2026 — é o terceiro
+  número que esta nota carrega, então confira antes de citá-la).
 - **Nome carimbado vem de `resolveApiAuthor`** (`src/lib/api/v1/authorship.ts`):
   usuário de auditoria da v1, com queda para o DONO da conta quando aquele
   já saiu — e `membro: false` quando nem o dono resolve. Quem exigir um

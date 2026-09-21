@@ -2773,7 +2773,8 @@
         "reprocessado": "Processado de novo: {resultado}.",
         "reprocessarFalhou": "Não foi possível processar de novo.",
         "jaProcessado": "Este agendamento já foi processado — repetir mandaria a mesma mensagem outra vez.",
-        "aindaProcessando": "Este agendamento está sendo processado agora. Espere um instante e tente de novo."
+        "aindaProcessando": "Este agendamento está sendo processado agora. Espere um instante e tente de novo.",
+        "agendamentoCancelado": "Esta reunião foi cancelada no Calendly — reprocessar avisaria o advogado e moveria o card por um horário que não vai acontecer."
       },
       "tldv": {
         "desc": "Conecte o tl;dv para o CRM buscar as reuniões gravadas e a transcrição completa de cada uma. A cada ciclo do agendador (15 minutos de espera mais o tempo das outras rotas) ele puxa as reuniões dos últimos 7 dias, liga cada uma ao cliente pelo e-mail do convidado, e a transcrição aparece na aba Reuniões da ficha do cliente.",

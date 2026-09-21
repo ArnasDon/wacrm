@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { RECOLHER_CLAIM_MS, TETO_DE_PROCESSAMENTO_MS } from "./claim";
-import { TETO_DO_CANCELAMENTO_MS, campoDoLembrete, mesmaReuniao, processarCancelamento } from "./cancelamento";
+import { TETO_DO_CANCELAMENTO_MS, campoDoLembrete, houveCancelamento, mesmaReuniao, processarCancelamento } from "./cancelamento";
 import { EVENTO_CANCELADO, type Cancelamento } from "./payload";
 
 // ------------------------------------------------------------
@@ -317,5 +317,47 @@ describe("os tetos do cancelamento", () => {
     // Senão "cadeado velho" deixa de significar "dono morto", e outro
     // processo toma a linha de um cancelamento ainda vivo.
     expect(TETO_DO_CANCELAMENTO_MS).toBeLessThan(RECOLHER_CLAIM_MS);
+  });
+});
+
+describe("a espera cobre o orçamento INTEIRO", () => {
+  it("CRÍTICO: a última espera também tem a sua leitura", () => {
+    // Com `teto / intervalo` puro, as leituras paravam em 235 s de um
+    // orçamento de 240 s — e um agendamento que terminasse nesses 5 s finais
+    // era dado como perdido, definitivamente (Codex, PR #235, 4ª rodada).
+    const emProcessamento = { contact_id: null, resultado: "recebido", processando_desde: "2026-09-21T01:00:00Z" };
+    const { db, leituras } = bancoFalso({ original: emProcessamento });
+    return processarCancelamento(db, "conta-1", CANCELAMENTO, {
+      esperar: async () => {},
+      tetoDeEsperaMs: 10_000, // 2 esperas de 5 s => 3 leituras (0 s, 5 s, 10 s)
+    }).then(() => {
+      expect(leituras()).toBe(3);
+    });
+  });
+});
+
+describe("houveCancelamento", () => {
+  const banco = (data: unknown, error: unknown = null) =>
+    ({
+      from: () => {
+        const b: Record<string, unknown> = {
+          select: () => b,
+          eq: () => b,
+          maybeSingle: async () => ({ data, error }),
+        };
+        return b;
+      },
+    }) as unknown as SupabaseClient;
+
+  it("acha o cancelamento do mesmo invitee", async () => {
+    expect(await houveCancelamento(banco({ id: "x" }), "c", "u")).toBe(true);
+  });
+
+  it("sem cancelamento, devolve false", async () => {
+    expect(await houveCancelamento(banco(null), "c", "u")).toBe(false);
+  });
+
+  it("CRÍTICO: erro de banco devolve null — quem chama falha FECHADA", async () => {
+    expect(await houveCancelamento(banco(null, { message: "boom" }), "c", "u")).toBeNull();
   });
 });

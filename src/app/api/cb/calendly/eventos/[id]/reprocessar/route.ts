@@ -4,6 +4,7 @@ import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
 import { comTetoDeProcessamento, liberarClaim, motivoDaRecusa, reivindicarEvento } from "@/lib/calendly/claim";
 import { gravarResultado, processarAgendamento } from "@/lib/calendly/processar";
+import { houveCancelamento } from "@/lib/calendly/cancelamento";
 import { agendamentoDaLinha, varsDaLinha } from "@/lib/calendly/reprocessar";
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from "@/lib/rate-limit";
 
@@ -64,6 +65,24 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
 
     // O carimbo do NOSSO claim — a cerca de toda escrita daqui para baixo.
     const claimIso = String(linha.processando_desde);
+
+    // ⚠️⚠️ AGENDAMENTO CANCELADO NÃO SE REPROCESSA (Codex, PR #235). A linha
+    // que terminou `sem_contato` continua reprocessável de propósito — o
+    // operador arruma a ficha e clica. Só que, se a reunião foi DESMARCADA
+    // no meio, repetir roda a automação inteira: avisa o advogado, move o
+    // card para "Reunião Agendada" e grava a data de uma reunião que não vai
+    // acontecer — e os lembretes voltam armados, sem trava nenhuma.
+    //
+    // Falha FECHADA: não conseguindo conferir, recusa. Recusar é reversível
+    // (basta clicar de novo); disparar não é.
+    const cancelado = await houveCancelamento(admin, ctx.accountId, String(linha.invitee_uri ?? ""));
+    if (cancelado !== false) {
+      await liberarClaim(admin, id, String(linha.processando_desde));
+      return NextResponse.json(
+        { error: cancelado === null ? "db_error" : "agendamento_cancelado" },
+        { status: cancelado === null ? 500 : 409 },
+      );
+    }
 
     const agendamento = agendamentoDaLinha(linha);
     if (!agendamento) {

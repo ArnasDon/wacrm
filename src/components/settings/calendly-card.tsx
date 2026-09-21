@@ -235,7 +235,9 @@ export function CalendlyCard() {
             ? t("calendly.jaProcessado")
             : corpo?.error === "ainda_processando"
               ? t("calendly.aindaProcessando")
-              : t("calendly.reprocessarFalhou"),
+              : corpo?.error === "agendamento_cancelado"
+                ? t("calendly.agendamentoCancelado")
+                : t("calendly.reprocessarFalhou"),
         );
         // O estado da linha mudou (outro já processou, ou está processando):
         // a lista na tela é uma foto de antes do clique.

@@ -4,7 +4,7 @@ import type { DateFieldTriggerConfig } from "@/types";
 
 import { TETO_DE_PROCESSAMENTO_MS } from "./claim";
 import type { ProcessamentoDoAgendamento } from "./processar";
-import { EVENTO_AGENDADO, type Cancelamento } from "./payload";
+import { EVENTO_AGENDADO, EVENTO_CANCELADO, type Cancelamento } from "./payload";
 
 // ------------------------------------------------------------
 // Reunião CANCELADA no Calendly (1013): desarmar os lembretes.
@@ -56,6 +56,35 @@ export function campoDoLembrete(triggerConfig: unknown): string | null {
   return typeof cfg.custom_field_id === "string" && cfg.custom_field_id.trim() !== ""
     ? cfg.custom_field_id
     : null;
+}
+
+/**
+ * Existe cancelamento gravado para este invitee?
+ *
+ * ⚠️ É a guarda do "Processar de novo" (Codex, PR #235). Um agendamento que
+ * terminou `sem_contato` continua reprocessável: o operador arruma a ficha,
+ * clica, e a automação do Calendly roda INTEIRA — avisa o advogado, move o
+ * card para "Reunião Agendada" e grava a data — por uma reunião que foi
+ * desmarcada. Os lembretes voltariam junto, sem trava nenhuma.
+ *
+ * `null` = não deu para saber. Quem chama FALHA FECHADA: recusar o
+ * reprocessamento é reversível (o operador clica de novo); disparar a
+ * automação de uma reunião cancelada não é.
+ */
+export async function houveCancelamento(
+  db: SupabaseClient,
+  accountId: string,
+  inviteeUri: string,
+): Promise<boolean | null> {
+  const { data, error } = await db
+    .from("cb_calendly_eventos")
+    .select("id")
+    .eq("account_id", accountId)
+    .eq("evento", EVENTO_CANCELADO)
+    .eq("invitee_uri", inviteeUri)
+    .maybeSingle();
+  if (error) return null;
+  return !!data;
 }
 
 const ignorado = (detalhe: string, contactId: string | null = null): ProcessamentoDoAgendamento => ({
@@ -125,7 +154,11 @@ export async function processarCancelamento(
   // digitado (Codex, PR #235, duas rodadas). Relê até o agendamento sair do
   // processamento ou o orçamento acabar.
   const teto = opcoes.tetoDeEsperaMs ?? TETO_DE_ESPERA_MS;
-  const tentativas = Math.max(1, Math.ceil(teto / ESPERA_ENTRE_LEITURAS_MS));
+  // ⚠️ `+ 1` porque a ÚLTIMA espera também precisa da sua leitura: com
+  // `teto / intervalo` puro, as leituras param em 235 s de um orçamento de
+  // 240 s, e um agendamento que termina nesses 5 s finais era dado como
+  // perdido (Codex, PR #235, 4ª rodada).
+  const tentativas = Math.max(1, Math.floor(teto / ESPERA_ENTRE_LEITURAS_MS) + 1);
   const esperar = opcoes.esperar ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let contactId: string | null = null;
   let aindaProcessando = false;

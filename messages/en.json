@@ -2780,7 +2780,8 @@
         "reprocessado": "Processed again: {resultado}.",
         "reprocessarFalhou": "Could not process it again.",
         "jaProcessado": "This booking already ran — repeating it would send the same message again.",
-        "aindaProcessando": "This booking is being processed right now. Wait a moment and try again."
+        "aindaProcessando": "This booking is being processed right now. Wait a moment and try again.",
+        "agendamentoCancelado": "This meeting was canceled in Calendly — reprocessing would notify the lawyer and move the card for a slot that will not happen."
       },
       "tldv": {
         "desc": "Connect tl;dv so the CRM fetches recorded meetings and the full transcript of each one. Every scheduler cycle (a 15-minute wait plus the time the other routes take) it pulls the last 7 days of meetings, links each to the client by the invitee's e-mail, and the transcript shows up in the Meetings tab of the client's profile.",

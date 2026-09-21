@@ -4365,6 +4365,14 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     (`CODIGOS_CONHECIDOS`, em `calendly-card.tsx`), senão cai no texto
     genérico "erro do Calendly" — com a tradução existindo e no lugar certo.
     Há pino estrutural.
+  - ⚠️⚠️ **AGENDAMENTO CANCELADO NÃO SE REPROCESSA.** A linha que terminou
+    `sem_contato` continua em `RESULTADOS_REPROCESSAVEIS` de propósito — o
+    operador arruma a ficha e clica em "Processar de novo". Se a reunião foi
+    DESMARCADA no meio, repetir roda a automação INTEIRA (avisa o advogado,
+    move o card para "Reunião Agendada", grava a data) por um horário que
+    não vai acontecer, e os lembretes voltam sem trava. A rota consulta
+    `houveCancelamento` e FALHA FECHADA: não conseguindo conferir, recusa —
+    recusar é reversível, disparar não (Codex, PR #235).
   - ⚠️ **CONHECIDO, NÃO TRATADO:** conta SEM nenhum lembrete por data no
     momento do cancelamento não guarda exclusão nenhuma (a trava é por
     AUTOMAÇÃO), e um lembrete criado depois — antes do horário cancelado —

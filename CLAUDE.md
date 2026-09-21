@@ -1751,10 +1751,15 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   nesse intervalo (botão, automação, lote da 1018) deixava a mensagem nova
   numa conversa encerrada, fora da caixa (Codex, PR #232). Funciona porque
   os seis chamadores gravam a mensagem ANTES: encerrou antes do UPDATE, ele
-  reabre; encerrou depois, o encerramento enxerga a mensagem. Preço medido:
-  ~12 ms de rede por mensagem, 0,16 ms no banco, sem escrita nem gatilho
-  quando a conversa está aberta. Caminho novo de mensagem chama DEPOIS de
-  gravar; há pino em `reopen.chamadores.test.ts` contra o atalho voltar.
+  reabre; encerrou depois, foi decisão tomada com a mensagem já gravada
+  (exceção: o encerramento em LOTE, que confere a folga de 2 min numa foto
+  velha — o conserto é no lote). Reabrir por mensagem do CLIENTE leva a hora
+  dela (`clienteEsperaDesde`) e devolve `aguardando_desde` no mesmo UPDATE:
+  o encerramento no meio a apagava (972) e a conversa voltava sem o selo
+  "em atraso". Preço medido: ~12 ms de rede por mensagem, 0,16 ms no banco,
+  sem escrita nem gatilho quando a conversa está aberta. Caminho novo de
+  mensagem chama DEPOIS de gravar; há pino em `reopen.chamadores.test.ts`
+  contra o atalho voltar.
 - ⚠️ **Quem reabre fica responsável; encerrar solta o responsável.** O envio
   pelo núcleo reabre com `assignTo: senderUserId` (nulo na API por chave);
   o cabeçalho do fio usa `patchDeSituacao`; o passo `close_conversation`

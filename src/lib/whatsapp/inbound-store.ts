@@ -420,6 +420,7 @@ export async function persistInboundMessage(
   // mensagem sem número (o `persistDeviceMessage` e o grupo já gravavam
   // assim). `gravarComCanal` repete SEM canal se a conexão foi apagada no
   // meio — senão a FK estouraria e a mensagem do cliente se perderia.
+  const criadaEm = new Date(m.timestamp * 1000).toISOString();
   const { resultado: gravacao, canal: canalGravado } = await gravarComCanal(
     m.channelId ?? null,
     (canal) =>
@@ -440,7 +441,7 @@ export async function persistInboundMessage(
           reply_to_message_id: replyToId,
           from_me: false,
           status: 'delivered',
-          created_at: new Date(m.timestamp * 1000).toISOString(),
+          created_at: criadaEm,
         })
         .select('id')
         .single(),
@@ -465,8 +466,9 @@ export async function persistInboundMessage(
 
   // O cliente escreveu de novo numa conversa encerrada: ela volta à caixa de
   // entrada (paridade com o webhook da Meta — até 2026-09-02 só ele reabria,
-  // e produção roda Evolution). Ver `reopen.ts`.
-  await reopenClosedConversation(db, conversation);
+  // e produção roda Evolution). Ver `reopen.ts` — inclusive por que a hora da
+  // mensagem vai junto.
+  await reopenClosedConversation(db, conversation, { clienteEsperaDesde: criadaEm });
 
   // A conversa "segue o cliente" (a menos que fixada), pelo canal que FICOU
   // gravado na mensagem — nulo se a conexão foi apagada no meio.

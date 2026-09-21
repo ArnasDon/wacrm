@@ -57,8 +57,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * existe para impedir (achado do Codex no PR #232). Agora o UPDATE roda
  * SEMPRE, e o `status = 'closed'` no WHERE é quem responde. Como todo
  * chamador grava a mensagem ANTES, vale nas duas ordens: encerrou antes do
- * UPDATE, ele vê `closed` e reabre; encerrou depois, o encerramento já
- * enxerga a mensagem gravada (e o de lote a poupa pelos 2 minutos).
+ * UPDATE, ele vê `closed` e reabre; encerrou depois, foi uma decisão tomada
+ * com a mensagem já gravada. ⚠️ Uma exceção, de milissegundos e fora daqui:
+ * o encerramento em LOTE (1018–1021) confere a folga de 2 minutos sobre a
+ * foto do começo do comando, e trava a linha só depois — o UPDATE daqui vê a
+ * versão ainda aberta, não espera, e o lote encerra por cima. O conserto
+ * mora no lote (repetir a conferência no UPDATE dele).
  * Por isso o parâmetro é só o `id`: um `status` aqui convidaria a
  * reintroduzir o atalho.
  *
@@ -71,6 +75,17 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * só cobriria Meta e Instagram; os outros quatro caminhos precisariam de uma
  * RPC irmã, e no compositor ela esbarraria na RLS do operador e na
  * auto-notificação do gatilho de atribuição.
+ *
+ * ⚠️ **Reabrir por mensagem do CLIENTE devolve a marca de espera**
+ * (`clienteEsperaDesde`, a hora da mensagem). A mensagem acende
+ * `aguardando_desde` pelo gatilho da 972 no INSERT, e encerrar a APAGA
+ * (`cb_encerrar_limpa_espera`). Se o encerramento cai entre gravar e reabrir
+ * — a janela que este conserto passou a cobrir —, a conversa voltava aberta
+ * sem o selo "em atraso", invisível ao chip e ao Meu dia até o cliente
+ * escrever de novo (revisão adversarial da correção, 21/09/2026). Vai no
+ * MESMO UPDATE cercado: só vale quando a conversa estava de fato encerrada,
+ * e é o valor que o gatilho teria gravado (`created_at` da mensagem).
+ * Celular pareado e envio do CRM não passam — resposta de gente não espera.
  *
  * ⚠️ "Quem reabre fica responsável" continua valendo SÓ para quem reabre: o
  * `assigned_agent_id` está no mesmo UPDATE, cercado pelo mesmo
@@ -87,12 +102,13 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export async function reopenClosedConversation(
   db: SupabaseClient,
   conversation: { id: string },
-  opts: { assignTo?: string | null } = {},
+  opts: { assignTo?: string | null; clienteEsperaDesde?: string } = {},
 ): Promise<boolean> {
   const patch: Record<string, unknown> = {
     status: 'open',
     assigned_agent_id: opts.assignTo ?? null,
     updated_at: new Date().toISOString(),
+    ...(opts.clienteEsperaDesde ? { aguardando_desde: opts.clienteEsperaDesde } : {}),
   }
 
   const { error, count } = await db

@@ -65,6 +65,22 @@ describe('reabre: os caminhos de mensagem decididos por gente', () => {
     expect(src).toMatch(/\.eq\('status', 'closed'\)/)
   })
 
+  it('reabrir por mensagem do CLIENTE leva a hora dela; resposta de gente, não', () => {
+    // Sem a hora, um encerramento entre gravar e reabrir deixava a conversa
+    // aberta sem `aguardando_desde` (encerrar apaga a marca) — fora do selo
+    // "em atraso", do chip e do Meu dia.
+    expect(fonte('app/api/whatsapp/webhook/route.ts')).toMatch(
+      /reopenClosedConversation\([\s\S]{0,120}clienteEsperaDesde: criadaEm/,
+    )
+    const inbound = fonte('lib/whatsapp/inbound-store.ts')
+    const inicio = inbound.indexOf('export async function persistDeviceMessage')
+    const fim = inbound.indexOf('export async function persistInboundMessage')
+    expect(inbound.slice(fim)).toMatch(/reopenClosedConversation\([\s\S]{0,120}clienteEsperaDesde: criadaEm/)
+    expect(inbound.slice(inicio, fim)).not.toContain('clienteEsperaDesde')
+    expect(fonte('lib/instagram/persistir.ts')).toMatch(/ev\.ehEco \? \{\} : \{ clienteEsperaDesde: quando \}/)
+    expect(fonte('lib/whatsapp/send-message.ts')).not.toContain('clienteEsperaDesde')
+  })
+
   it('o núcleo de envio reabre ATRIBUINDO a quem enviou', () => {
     // A regra do operador: quem reabre fica responsável. `senderUserId` é
     // nulo no envio por chave de API, e aí não há quem nomear.

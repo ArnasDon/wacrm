@@ -824,6 +824,7 @@ async function processMessage(
   // insert — senão a FK estouraria e a mensagem do cliente se perderia.
   // `canalGravado` é o que ficou na linha (null = conta sem conexão, ou canal
   // apagado no meio).
+  const criadaEm = new Date(parseInt(message.timestamp) * 1000).toISOString()
   const { resultado: gravacao, canal: canalGravado } = await gravarComCanal(
     channelId,
     (canal) =>
@@ -846,7 +847,7 @@ async function processMessage(
             media_filename: mediaFilename,
             message_id: message.id,
             status: 'delivered',
-            created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
+            created_at: criadaEm,
             reply_to_message_id: replyToInternalId,
             // Only populated for content_type='interactive'. Migration 010
             // added the column; null for every other content_type so existing
@@ -914,7 +915,7 @@ async function processMessage(
   // separate conditional statement rather than a `status` field on the
   // update above so the write can be gated on the row's CURRENT status in
   // SQL — see the helper for why that matters.
-  await reopenClosedConversation(supabaseAdmin(), conversation)
+  await reopenClosedConversation(supabaseAdmin(), conversation, { clienteEsperaDesde: criadaEm })
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate

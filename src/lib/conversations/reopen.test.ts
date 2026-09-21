@@ -181,3 +181,35 @@ describe('reopenClosedConversation — quem reabre fica responsável (2026-09-02
     expect(calls.filter((c) => c.payload && 'assigned_agent_id' in c.payload)).toHaveLength(1)
   })
 })
+
+describe('reopenClosedConversation — a marca de espera do cliente (972)', () => {
+  // Encerrar APAGA `aguardando_desde` (cb_encerrar_limpa_espera). Com o
+  // UPDATE rodando sempre, o encerramento que cai entre gravar a mensagem e
+  // reabrir é coberto — mas a conversa voltava SEM o selo "em atraso",
+  // porque a marca que o INSERT acendeu já tinha sido apagada.
+  it('mensagem do cliente devolve aguardando_desde no MESMO UPDATE cercado', async () => {
+    const { client, calls } = stubClient()
+
+    await reopenClosedConversation(
+      client,
+      { id: 'conv-1' },
+      { clienteEsperaDesde: '2026-09-21T14:00:00.000Z' },
+    )
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0].payload).toMatchObject({
+      status: 'open',
+      aguardando_desde: '2026-09-21T14:00:00.000Z',
+    })
+    expect(calls[0].filters).toContainEqual(['status', 'closed'])
+  })
+
+  it('sem ela (celular pareado, envio do CRM) a coluna não é tocada', async () => {
+    // Resposta de gente não espera ninguém: o INSERT dela já limpou a marca.
+    const { client, calls } = stubClient()
+
+    await reopenClosedConversation(client, { id: 'conv-1' }, { assignTo: 'user-ana' })
+
+    expect(calls[0].payload).not.toHaveProperty('aguardando_desde')
+  })
+})

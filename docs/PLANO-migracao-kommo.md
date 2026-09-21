@@ -895,6 +895,15 @@ O WhatsApp já respondeu 200 — não há retentativa. Vale para os dois
 transportes, para o Calendly e para o Asaas. Conferência de pré-voo sobre o
 conjunto a inserir e de pós-voo sobre a tabela.
 
+✅ **Fechada no CRM em 21/09 (1024, PR próprio):** `findExistingContact` passou
+a buscar pelos DÍGITOS (`phone_normalized`), então a ficha gravada com
+separadores volta a ser achada — pela busca e pela releitura. A chave única de
+`contacts` virou a grafia CANÔNICA do nono dígito, e todo INSERT de ficha no
+servidor relê a vencedora no 23505 (`fichaQueVenceu`, com nova tentativa se a
+leitura falhar). A regra "só dígitos com DDI" continua valendo para a carga: é
+o que mantém `contacts.phone` limpo, mas deixou de ser a única coisa entre um
+separador e a mensagem perdida.
+
 ⚠️⚠️ **18b. Lead SEM telefone aproveitável NÃO vira card — e nunca vira card
 ÓRFÃO.** Medido em 21/09: são **32 leads** (0,25%): 16 sem contato nenhum e 16
 cujo contato não tem telefone com 10+ dígitos. Sem pessoa não há `contacts`
@@ -952,9 +961,12 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
     confirmar".
 20. **Toda escrita é reexecutável**: `ON CONFLICT ... DO NOTHING` (ou
     `DO UPDATE`) e o id resolvido por SELECT em seguida, **nunca pelo
-    RETURNING**, que vem vazio para quem perdeu a corrida. Em `contacts` a
-    cláusula `WHERE phone_normalized <> ''` é obrigatória, porque o índice é
-    parcial. A carga roda com a ingestão viva: entre apurar "estes contatos não
+    RETURNING**, que vem vazio para quem perdeu a corrida. ⚠️ Em `contacts`,
+    desde a 1024, o `ON CONFLICT` é **SEM alvo**: há dois índices únicos
+    parciais (a grafia exata da 0022 e a canônica do nono dígito da 1024), e
+    um alvo nomeado só absorve o seu — a irmã criada pela ingestão no meio
+    abortaria o lote inteiro. (Até a 1023 a regra mandava nomear o alvo com
+    `WHERE phone_normalized <> ''`.) A carga roda com a ingestão viva: entre apurar "estes contatos não
     têm conversa" e escrever, qualquer um deles pode mandar mensagem.
 21. Etiqueta por INSERT direto em `contact_tags`, com
     `userId = accounts.owner_user_id`. **Nunca** `tag-events.ts`. ⚠️ O INSERT

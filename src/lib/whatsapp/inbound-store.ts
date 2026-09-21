@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
@@ -96,9 +96,10 @@ async function findOrCreateContact(
   name: string
 ): Promise<{ contact: ContactRow; wasCreated: boolean } | null> {
   // ⚠️ `falhou` deliberadamente NÃO derruba a ingestão (mesma decisão do
-  // webhook da Meta): perder a mensagem do cliente é pior que arriscar uma
-  // ficha duplicada de variante de tronco — o backstop 23505 abaixo cobre o
-  // duplicado exato. Caminhos de GENTE respondem 500 em vez disso.
+  // webhook da Meta): perder a mensagem do cliente é pior. Se a ficha existir
+  // e a busca tiver falhado, o índice CANÔNICO (1024) recusa o INSERT abaixo
+  // — inclusive a irmã do nono dígito — e o 23505 relê a vencedora. Caminhos
+  // de GENTE respondem 500 em vez disso.
   const existing = (await findExistingContact(db, accountId, phone)).contato;
   if (existing) {
     // ⚠️ Nunca RENOMEAR contato existente para um número: o `name` cai para o
@@ -130,7 +131,9 @@ async function findOrCreateContact(
 
   if (error) {
     if (isUniqueViolation(error)) {
-      const raced = (await findExistingContact(db, accountId, phone)).contato;
+      // A ficha que venceu a corrida (índice exato ou canônico) — relida com
+      // nova tentativa se a leitura falhar, para a mensagem não se perder.
+      const raced = (await fichaQueVenceu(db, accountId, phone)).contato;
       if (raced) return { contact: raced as ContactRow, wasCreated: false };
     }
     console.error('[inbound-store] create contact failed:', error);
@@ -301,6 +304,13 @@ export async function persistDeviceMessage(
     return null;
   }
 
+  // A equipe falou numa conversa encerrada: ela volta à caixa de entrada.
+  // Sem responsável — não há usuário do CRM por trás do celular pareado
+  // (`sender_id` nulo), só um advogado digitando. LOGO DEPOIS de gravar: a
+  // janela até aqui decide qual encerramento a reabertura desfaz. Ver
+  // `reopen.ts`.
+  await reopenClosedConversation(db, conversation);
+
   await db
     .from('conversations')
     .update({
@@ -309,11 +319,6 @@ export async function persistDeviceMessage(
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id);
-
-  // A equipe falou numa conversa encerrada: ela volta à caixa de entrada.
-  // Sem responsável — não há usuário do CRM por trás do celular pareado
-  // (`sender_id` nulo), só um advogado digitando. Ver `reopen.ts`.
-  await reopenClosedConversation(db, conversation);
 
   // A conversa segue o número por onde a EQUIPE acabou de falar — a mesma
   // regra que já valia quando quem escrevia era o cliente, e o mesmo
@@ -453,6 +458,11 @@ export async function persistInboundMessage(
     return null;
   }
 
+  // O cliente escreveu de novo numa conversa encerrada: ela volta à caixa de
+  // entrada (paridade com o webhook da Meta — até 2026-09-02 só ele reabria,
+  // e produção roda Evolution). LOGO DEPOIS de gravar. Ver `reopen.ts`.
+  await reopenClosedConversation(db, conversation);
+
   await db
     .from('conversations')
     .update({
@@ -462,11 +472,6 @@ export async function persistInboundMessage(
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversation.id);
-
-  // O cliente escreveu de novo numa conversa encerrada: ela volta à caixa de
-  // entrada (paridade com o webhook da Meta — até 2026-09-02 só ele reabria,
-  // e produção roda Evolution). Ver `reopen.ts`.
-  await reopenClosedConversation(db, conversation);
 
   // A conversa "segue o cliente" (a menos que fixada), pelo canal que FICOU
   // gravado na mensagem — nulo se a conexão foi apagada no meio.

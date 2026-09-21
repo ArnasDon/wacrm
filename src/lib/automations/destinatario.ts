@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 
 /**
  * Ficha + conversa de um NÚMERO, quando o CRM precisa falar com ele e ainda
@@ -67,8 +67,9 @@ export async function resolverDestinatario(
       .select('id')
       .single()
     if (error || !criado) {
-      // Corrida com uma entrada do mesmo número: o índice único (022) recusou.
-      const de_novo = isUniqueViolation(error) ? (await findExistingContact(db, accountId, digitos)).contato : null
+      // Corrida com uma entrada do mesmo número (ou da irmã do nono dígito): o
+      // índice único recusou — o exato da 022 ou o canônico da 1024.
+      const de_novo = isUniqueViolation(error) ? (await fichaQueVenceu(db, accountId, digitos)).contato : null
       if (!de_novo) throw new Error(`destinatário: não foi possível criar o contato (${error?.message ?? '?'})`)
       contactId = de_novo.id
     } else {

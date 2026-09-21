@@ -62,6 +62,7 @@ import { useTranslations } from 'next-intl';
 import { identidadeDoContato } from '@/lib/contacts/identidade';
 import { campoDoEmail, emailMudou, emailNormalizado } from '@/lib/contacts/email-espelhado';
 import { escritaDoNomeManual } from '@/lib/contacts/nome-fixado';
+import { isUniqueViolation } from '@/lib/contacts/dedupe';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -389,7 +390,11 @@ export function ContactDetailView({
       .eq('id', contactId);
 
     if (error) {
-      toast.error(t('toastUpdateFailed'));
+      // 23505: o telefone novo é a mesma pessoa de OUTRA ficha — a mesma
+      // grafia, ou a irmã com/sem o nono dígito (índice canônico, 1024). O
+      // genérico "falha ao atualizar" não dizia por quê, e o UPDATE é um só:
+      // nome, e-mail e empresa editados junto também não foram gravados.
+      toast.error(isUniqueViolation(error) ? t('toastPhoneConflict') : t('toastUpdateFailed'));
     } else {
       toast.success(t('toastUpdated'));
       // O gatilho já copiou o e-mail para o campo espelhado; a aba de campos

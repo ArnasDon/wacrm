@@ -68,7 +68,15 @@ vi.mock('@supabase/supabase-js', () => ({
           }
         case 'conversations':
           // findOrCreateConversation: select().eq().eq().order().limit()
+          // reopenClosedConversation: update().eq('id').eq('status','closed'),
+          // que roda a toda mensagem desde que o atalho sobre o status lido no
+          // começo da requisição saiu (Codex, PR #232). 0 linhas = aberta.
           return {
+            update: () => ({
+              eq: () => ({
+                eq: () => Promise.resolve({ error: null, count: 0 }),
+              }),
+            }),
             select: () => ({
               eq: () => ({
                 eq: () => ({

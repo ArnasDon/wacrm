@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { ClienteAsaas, PaginaDoAsaas } from "./cliente";
+import { telefoneCanonico } from "@/lib/contacts/telefone";
 
 /**
  * DUBLÊS para os testes da sincronização — um Supabase em memória com o
@@ -32,7 +33,8 @@ interface Filtro {
 
 /** UNIQUEs que o dublê simula (23505 no insert; alvo do upsert). */
 const UNIQUES: Record<string, string[][]> = {
-  contacts: [["account_id", "phone_normalized"]],
+  // O exato da 022 e o CANÔNICO da 1024 (a irmã do nono dígito também colide).
+  contacts: [["account_id", "phone_normalized"], ["account_id", "telefone_canonico"]],
   cb_asaas_clientes: [["account_id", "asaas_customer_id"]],
   cb_asaas_cobrancas: [["account_id", "asaas_payment_id"]],
   cb_asaas_regua_envios: [["cobranca_id", "tipo", "marco", "vencimento"]],
@@ -76,7 +78,10 @@ const DEFAULTS: Record<string, Linha> = {
 /** As colunas GERADAS que o banco derivaria do payload. */
 function derivadas(tabela: string, linha: Linha, instante: string): Linha {
   const extra: Linha = {};
-  if (tabela === "contacts" && typeof linha.phone === "string") extra.phone_normalized = linha.phone.replace(/\D/g, "");
+  if (tabela === "contacts" && typeof linha.phone === "string") {
+    extra.phone_normalized = linha.phone.replace(/\D/g, "");
+    extra.telefone_canonico = telefoneCanonico(linha.phone);
+  }
   if (tabela === "tags" && typeof linha.name === "string") extra.name_key = linha.name.trim().normalize("NFD").replace(/\p{Mn}/gu, "").toLowerCase();
   // `criado_em DEFAULT now()` da trava da régua (998): a varredura filtra por
   // ela. ⚠️ `now()` é o instante da TRANSAÇÃO — as linhas de um INSERT só têm
@@ -163,6 +168,16 @@ function conflita(tabela: string, a: Linha, b: Linha, colunas: string[]): boolea
 
 export function dubleDoSupabase(estado: EstadoDoDuble): SupabaseClient {
   const tabela = (nome: string) => (estado.tabelas[nome] ??= []);
+
+  // Linha SEMEADA pelo teste não passa pelo INSERT: as colunas geradas de
+  // `contacts` são derivadas aqui, como o banco faria. A busca de ficha filtra
+  // por `phone_normalized` desde a 1024 — sem isto, toda ficha semeada ficaria
+  // invisível a ela.
+  for (const l of estado.tabelas.contacts ?? []) {
+    if (typeof l.phone !== "string") continue;
+    if (l.phone_normalized === undefined) l.phone_normalized = l.phone.replace(/\D/g, "");
+    if (l.telefone_canonico === undefined) l.telefone_canonico = telefoneCanonico(l.phone);
+  }
 
   function from(nome: string) {
     const filtros: Filtro[] = [];

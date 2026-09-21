@@ -4,7 +4,7 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing'
@@ -877,6 +877,12 @@ async function processMessage(
     return
   }
 
+  // A customer writing again re-opens the thread (issue #409) — LOGO DEPOIS
+  // de gravar, antes do bump, do canal e da entrega: o encerramento que cair
+  // entre a mensagem e a reabertura é desfeito por ela, então essa janela
+  // tem de ser uma ida ao banco, não quatro (Codex, PR #238). Ver `reopen.ts`.
+  await reopenClosedConversation(supabaseAdmin(), conversation)
+
   // Update conversation. The unread bump is done DB-side (migration 040's
   // bump_conversation_on_inbound) rather than as a read-modify-write of the
   // snapshot loaded above: two inbound messages for the same conversation
@@ -909,12 +915,6 @@ async function processMessage(
     // acabou de chegar não tem sentido nenhum aqui.
     await registrarEntrega(supabaseAdmin(), canalGravado, parseInt(message.timestamp))
   }
-
-  // A customer writing again re-opens the thread (issue #409). Kept as a
-  // separate conditional statement rather than a `status` field on the
-  // update above so the write can be gated on the row's CURRENT status in
-  // SQL — see the helper for why that matters.
-  await reopenClosedConversation(supabaseAdmin(), conversation)
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
@@ -1380,12 +1380,12 @@ async function findOrCreateContact(
 
   if (createError) {
     // Lost a race: a concurrent inbound delivery (or another path)
-    // created this contact between our lookup and insert, and the
-    // unique index (migration 022) rejected the duplicate. Re-resolve
-    // the existing row instead of dropping the message.
+    // created this contact between our lookup and insert, and the unique
+    // index rejected the duplicate — o canônico da 1024 inclusive, que barra
+    // a irmã do nono dígito. Relê a ficha que VENCEU (com nova tentativa se a
+    // leitura falhar) em vez de descartar a mensagem do cliente.
     if (isUniqueViolation(createError)) {
-      const raced = (await findExistingContact(supabaseAdmin(), accountId, phone))
-        .contato
+      const raced = (await fichaQueVenceu(supabaseAdmin(), accountId, phone)).contato
       if (raced) return { contact: raced, wasCreated: false }
     }
     console.error('Error creating contact:', createError)

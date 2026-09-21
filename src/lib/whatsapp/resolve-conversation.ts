@@ -20,7 +20,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
@@ -133,10 +133,11 @@ export async function resolveConversationByPhone(
       .single();
 
     if (createErr || !created) {
-      // Lost a race against a concurrent inbound/API create — the
-      // unique index (migration 022) rejected the duplicate. Re-resolve.
+      // Lost a race against a concurrent inbound/API create — the unique
+      // index (exato da 022 ou canônico da 1024) rejected the duplicate.
+      // Re-resolve the winner.
       if (isUniqueViolation(createErr)) {
-        const raced = (await findExistingContact(db, accountId, sanitized))
+        const raced = (await fichaQueVenceu(db, accountId, sanitized))
           .contato;
         if (raced) {
           contactId = raced.id;

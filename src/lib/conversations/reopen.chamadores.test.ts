@@ -55,6 +55,45 @@ describe('reabre: os caminhos de mensagem decididos por gente', () => {
     expect(src.slice(fim)).toContain('reopenClosedConversation')
   })
 
+  it('a reabertura NÃO confia no status que o chamador leu (Codex, PR #232)', () => {
+    // O atalho `if (conversation.status !== 'closed') return false` lia a
+    // linha carregada no começo da requisição: um encerramento no meio fazia
+    // a mensagem nova cair numa conversa encerrada sem reabri-la. Quem decide
+    // é o UPDATE condicional (`.eq('status', 'closed')`), sempre.
+    const src = fonte('lib/conversations/reopen.ts')
+    expect(src).not.toMatch(/conversation\.status/)
+    expect(src).toMatch(/\.eq\('status', 'closed'\)/)
+  })
+
+  it('reabre na instrução SEGUINTE ao INSERT da mensagem (Codex, PR #238)', () => {
+    // O UPDATE desfaz qualquer encerramento confirmado antes dele; o que cai
+    // entre gravar e reabrir é um encerramento POSTERIOR à mensagem que seria
+    // atropelado. Cada caminho reabre antes das outras escritas na conversa
+    // (bump, prévia, canal, entrega), para a janela ser uma ida ao banco.
+    const antes = (src: string, primeiro: string, depois: string) => {
+      const a = src.indexOf(primeiro)
+      const b = src.indexOf(depois)
+      expect(a, primeiro).toBeGreaterThan(-1)
+      expect(b, depois).toBeGreaterThan(-1)
+      expect(a).toBeLessThan(b)
+    }
+
+    const meta = fonte('app/api/whatsapp/webhook/route.ts')
+    antes(meta, 'reopenClosedConversation(supabaseAdmin()', "'bump_conversation_on_inbound'")
+    antes(meta, 'reopenClosedConversation(supabaseAdmin()', 'followConversationChannel(supabaseAdmin()')
+
+    const inbound = fonte('lib/whatsapp/inbound-store.ts')
+    const inicio = inbound.indexOf('export async function persistDeviceMessage')
+    const fim = inbound.indexOf('export async function persistInboundMessage')
+    antes(inbound.slice(inicio, fim), 'reopenClosedConversation(', 'last_message_text:')
+    antes(inbound.slice(fim), 'reopenClosedConversation(', 'last_message_text:')
+
+    antes(fonte('lib/whatsapp/send-message.ts'), 'reopenClosedConversation(db, conversation', 'last_message_text: lastMessageText')
+
+    const insta = fonte('lib/instagram/persistir.ts')
+    antes(insta, 'reopenClosedConversation(', "'bump_conversation_on_inbound'")
+  })
+
   it('o núcleo de envio reabre ATRIBUINDO a quem enviou', () => {
     // A regra do operador: quem reabre fica responsável. `senderUserId` é
     // nulo no envio por chave de API, e aí não há quem nomear.

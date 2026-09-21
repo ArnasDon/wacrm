@@ -953,6 +953,7 @@
       "readOnlyHint": "Seu perfil é somente leitura",
       "toastPhoneRequired": "O número de telefone é obrigatório",
       "toastUpdateFailed": "Falha ao atualizar contato",
+      "toastPhoneConflict": "Já existe outra ficha com este número (com ou sem o nono dígito). Nada foi salvo.",
       "toastUpdated": "Contato atualizado",
       "toastNotAuthenticated": "Não autenticado",
       "toastNoteAddFailed": "Falha ao adicionar nota",

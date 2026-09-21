@@ -3,7 +3,7 @@ import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import { createClient } from '@/lib/supabase/server'
 import { canSendMessages, isAccountRole } from '@/lib/auth/roles'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { marcaDoNomeManual } from '@/lib/contacts/nome-fixado'
 import { isValidE164, sanitizePhoneForMeta } from '@/lib/whatsapp/phone-utils'
 import { pinConversationChannel } from '@/lib/cb-channels/stamp'
@@ -244,9 +244,10 @@ async function resolverContato(
   if (novo) return { contato: novo, criou: true }
 
   // Corrida com a ingestão: o cliente escreveu no exato instante em que o
-  // operador abria a conversa. O contato dele é o certo.
+  // operador abria a conversa (na mesma grafia ou na irmã do nono dígito —
+  // o índice canônico da 1024 barra as duas). O contato dele é o certo.
   if (error && isUniqueViolation(error)) {
-    const correu = await findExistingContact(admin, accountId, digitos)
+    const correu = await fichaQueVenceu(admin, accountId, digitos)
     if (correu.contato) return { contato: correu.contato, criou: false }
     if (correu.falhou) return { erro: 'LOOKUP_FAILED' }
   }

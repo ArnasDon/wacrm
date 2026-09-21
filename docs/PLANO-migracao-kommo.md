@@ -761,6 +761,33 @@ O WhatsApp já respondeu 200 — não há retentativa. Vale para os dois
 transportes, para o Calendly e para o Asaas. Conferência de pré-voo sobre o
 conjunto a inserir e de pós-voo sobre a tabela.
 
+⚠️⚠️ **18b. Lead SEM telefone aproveitável NÃO vira card — e nunca vira card
+ÓRFÃO.** Medido em 21/09: são **32 leads** (0,25%): 16 sem contato nenhum e 16
+cujo contato não tem telefone com 10+ dígitos. Sem pessoa não há `contacts`
+(o CHECK da 989 exige telefone OU Instagram), e sem contato o card nasceria com
+`deals.contact_id` NULO — que o Kanban **desenha em branco** e que não abre
+conversa nenhuma (é a armadilha já documentada no CLAUDE.md para o roteador de
+grupo). A carga PULA esses leads e emite a lista dos não migrados, com o
+motivo, para o operador decidir caso a caso.
+
+⚠️ **E a carga NÃO tenta salvar o telefone do campo NOME**, embora dê vontade:
+em 8 deles o número está no nome do lead ou do contato ("83998185823",
+"(51) 98060-8345", "+55 91 99190-9141"), porque quem cadastrou digitou no campo
+errado. Adivinhar ali é inventar identidade — e `findExistingContact` casa
+pelos ÚLTIMOS 8 DÍGITOS, então um número reconstruído errado FUNDE a ficha com
+a de um cliente real, que é o dano irreversível desta migração.
+
+⚠️⚠️ **DOIS deles têm desfecho real e precisam de decisão do operador ANTES do
+corte** — sem telefone eles somem do funil de fechados:
+| Lead | Nome | Etapa | O que é |
+| --- | --- | --- | --- |
+| #27593737 | Kailane Silva Gomes | Trabalhista › Protocolado | contrato (a etapa carimba `ganho`); o contato se chama "91985184761" |
+| #27963311 | Lead #27963311 | Trabalhista › Ganho | ganho; o contato se chama "Luzia" |
+O conserto barato é **na Kommo, antes do corte**: preencher o telefone dos dois
+contatos. Aí eles entram pela porta normal, sem exceção no código. O resto dos
+32 é lixo declarado ("APAGAR" ×3, "Teste" ×3, "test4", "Autolead: Teste",
+"Lead #NNNNN") e pode ser descartado sem perda.
+
 19. Casar por `mesmoNumero` sobre TODOS os candidatos do sufixo, numa consulta
     **ordenada**. Um só candidato → liga; nenhum → cria; mais de um → "para
     confirmar".
@@ -1055,16 +1082,11 @@ em "falhou". A margem caiu de ~90× para ~3×.
       estado "configure" e passou a medir — `LEAD 272 → MQL 53 → REUNIÃO 53 →
       PROPOSTA 0 → CONTRATO 0` —, exatamente como esta linha avisava que
       aconteceria. É a mudança que a equipe vê.
-- [ ] **3. Piloto em produção** — 25 a 40 leads escolhidos para cobrir cada
-      variação uma vez (contato novo × existente, colapso de leads, etapa
-      criada × existente, ganho × perdido × aberto, com e sem anotação, com e
-      sem valor, um dos 4 ambíguos), rodando **a carga de verdade com um
-      filtro**, nunca um script à parte. Pré-requisito: o **livro-razão** de
-      desfazer, escrito e ensaiado ANTES — cada linha criada, com tabela e id,
-      gravada conforme escreve; desfazer é lê-lo de trás para frente, na ordem
-      da receita de fusão do CLAUDE.md (apagar o negócio explicitamente antes
-      do contato). Rodar DUAS vezes seguidas prova a idempotência.
-      **Conferir na tela**, não só no banco.
+- [ ] **3. Piloto em produção** — **os 31 leads já escolhidos**, rodando **a
+      carga de verdade com um filtro**, nunca um script à parte. Pré-requisito
+      que não se dispensa: o **livro-razão** de desfazer, escrito e ensaiado
+      ANTES. Rodar DUAS vezes prova a idempotência; conferir **na tela**, não só
+      no banco. Ver a seção "O piloto — os 31 leads", no fim.
 - [ ] **4. Ensaio com volume** — a carga inteira contra um Postgres local com o
       schema do replay, para o que o piloto não vê: o estouro de subtransação,
       o tempo, o Kanban com 8.400 cards e o corte do disparo. Não existe banco
@@ -1091,6 +1113,39 @@ decisão 27 for "linhas sintéticas".
 em 14/09 o CB CRM tinha 1.024 contatos, em 19/09 tinha 1.196, em 20/09 tinha
 1.212. Remedir antes de escrever a carga. A varredura completa leva ~6 min mais
 ~12 min do histórico.
+
+## O piloto — os 31 leads, escolhidos em 21/09
+
+Escolhidos por COBERTURA, não à mão: `escolher-piloto.py` (scratchpad, não
+versionado — lê dado de cliente) enumera **31 variações** e escolhe o menor
+conjunto que cobre **cada uma três vezes**, com leads diferentes.
+
+⚠️ **Três vezes, e não uma, de propósito.** Cobrir cada variação uma vez dá
+**8 leads** — isso é cobertura de tabela, não piloto. O que quebra uma carga
+costuma ser a INTERAÇÃO entre variações: a pessoa com vários leads que TAMBÉM
+tem um extra com desfecho; o contato que já existe aqui E muda de etapa; a
+etapa nova que recebe um lead sem nenhuma mudança de etapa no histórico. Com
+três amostras por variação as interações aparecem sem inflar o piloto.
+
+As 31 variações cobertas: contato novo × existente · desfecho aberto × ganho ×
+perdido × fecha-ao-pousar · área trabalhista × bancário · as **6 etapas novas**
+(Ag. Demissão, Pediu Demissão, Foi Demitido, Pendente Documento, Em Elaboração,
+Perdido) × etapa existente · com e sem anotação · com e sem valor · sem
+mudança de etapa × trajetória longa · sobrevivente-com-extras ×
+extra-com-desfecho × extra-aberto-fundido · telefone ambíguo pelos 8 dígitos ·
+etiquetas SEG. TRAB e Rescindido · campo de anúncio · tamanho da dívida ·
+e-mail · **lead sem telefone (que não pode virar card — regra 18b)**.
+
+⚠️ O conjunto inclui o lead **#27179365, do próprio operador** ("Leonardo
+Cabral Baptista"), que é o contato de teste autorizado para envio real.
+
+**Conferir na tela, não só no banco** — e rodar DUAS vezes seguidas, que é a
+prova de idempotência.
+
+**Pré-requisito que não se dispensa:** o **livro-razão** de desfazer, escrito e
+ensaiado ANTES — cada linha criada, com tabela e id, gravada conforme escreve;
+desfazer é lê-lo de trás para frente, na ordem da receita de fusão do CLAUDE.md
+(apagar o negócio explicitamente antes do contato).
 
 ## Credenciais
 

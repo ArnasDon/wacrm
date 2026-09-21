@@ -134,8 +134,14 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
       // ⚠️ Falha FECHADA: sem poder conferir, esta automação fica para o
       // ciclo seguinte (a janela dura 1 hora e o laço roda a cada ~15 s).
       // Mandar aviso de reunião cancelada é pior que atrasar um lembrete.
+      //
+      // ⚠️ SÓ para lembrete de CAMPO. Com `fonte: 'reuniao'` o alvo vem de
+      // `cb_meetings`, e um cancelamento do Calendly no mesmo instante
+      // mataria o lembrete de uma reunião do CRM que continua de pé — a RPC
+      // da agenda já exclui a que está `cancelada`, que é o caminho dela
+      // (Codex, PR #236).
       let lista = encontrados
-      if (encontrados.length > 0) {
+      if (!daAgenda && encontrados.length > 0) {
         const { data: cancelados, error: erroCancelados } = await db
           .from('cb_calendly_eventos')
           .select('contact_id, inicio')

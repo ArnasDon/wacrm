@@ -423,3 +423,14 @@ describe('poda das travas', () => {
     expect(fonte).toMatch(/90 \* 86_400_000/)
   })
 })
+
+describe('o filtro do cancelamento é só do lembrete por CAMPO', () => {
+  it('CRÍTICO: lembrete de AGENDA não passa pelo filtro do Calendly', async () => {
+    // Com `fonte: 'reuniao'` o alvo vem de `cb_meetings`. Um cancelamento do
+    // Calendly no mesmo instante mataria o lembrete de uma reunião do CRM
+    // que continua de pé — e a RPC da agenda já exclui a `cancelada`, que é
+    // o caminho dela (Codex, PR #236).
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
+    expect(fonte).toMatch(/if \(!daAgenda && encontrados\.length > 0\)/)
+  })
+})

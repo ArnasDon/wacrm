@@ -37,6 +37,11 @@ comprador), D8 (`CLAUDE.md` saneado).
 
 **D5 foi respondida na prática:** o `ko.json` foi removido.
 
+**D9 (proteção contra repasse) foi respondida nesta sessão** (2026-09-21):
+telemetria de ativação DECLARADA + detecção de duplicata por impressão
+digital; backdoor oculto e QUALQUER coleta de dado pessoal do comprador
+DESCARTADOS. Ver D9 (seção 3) e a Fase 6.6.
+
 ### O que foi entregue
 
 - `src/lib/auth/destino-seguro.ts` (+teste), `src/app/auth/callback/route.ts`
@@ -175,6 +180,37 @@ a memória das armadilhas), ou entregar uma versão saneada como
 `docs/ARQUITETURA.md` (aumenta o valor percebido e reduz suporte, mas exige
 curadoria a cada versão). **Recomendação: versão saneada, gerada com
 critério na Fase 4.5.**
+
+**D9 — Proteção contra repasse (anti-pirataria).** Respondida nesta sessão
+(2026-09-21). A proteção é em CAMADAS, e a camada técnica é DETECÇÃO, nunca
+bloqueio:
+
+1. **Contrato é a camada principal** (D3): dono do código definido e por
+   escrito, licença de uso não-exclusiva e intransferível amarrada ao
+   CNPJ/instalação, sigilo, multa pré-fixada, registro no INPI.
+2. **Marca d'água por comprador**: "Licenciado para <empresa>" na tela e no
+   `LICENSE`, mais marcas discretas que variam por cliente — dizem de quem
+   uma cópia saiu.
+3. **Telemetria de ativação DECLARADA, com detecção de duplicata** (Fase
+   6.6): a instalação avisa o servidor de licença com chave + impressão
+   digital + domínio + versão; a MESMA chave em dois fingerprints acende a
+   bandeira. É o "ativada em duas VPSs", e não precisa de dado pessoal —
+   quem separa as instalações é o fingerprint.
+4. **A assinatura de atualizações é a alavanca comercial** (Fase 6.4): quem
+   repassa perde as correções.
+
+⚠️ **DESCARTADO, por escrito:** backdoor OCULTO e QUALQUER coleta do dado
+pessoal dos usuários finais do comprador (nomes de cadastro, contatos,
+clientes). São dados de TERCEIROS — num CRM jurídico, clientes sob sigilo —,
+e enviá-los, ainda mais escondido, é (a) violação de LGPD, transferência sem
+base legal nem transparência; (b) provável crime; (c) por ser oculto, PROVA
+DE MÁ-FÉ que anula a proteção contratual que a estratégia inteira existe para
+sustentar — a peça feita para blindar o código viraria a que afunda o caso.
+E não serve ao objetivo: "mesma licença, dois installs" já sai do fingerprint
+(item 3); o nome do usuário não acrescenta nada ao caso de pirataria e só
+adiciona passivo (você viraria controlador de dado de terceiro, responsável
+se vazar). A detecção para no METADADO da instalação, nunca no conteúdo do
+comprador.
 
 ## 4. Princípios de execução
 
@@ -831,6 +867,51 @@ com os papéis trocados.
 Reservado. `LICENSE` com os termos das nossas adições; `NOTICE` com o
 copyright MIT do wacrm e a lista do que veio dele. Texto é seu.
 
+#### 6.6 Telemetria de ativação e detecção de duplicata (D9)
+
+**Objetivo.** Ver que uma licença foi ativada e perceber quando a MESMA
+licença passa a rodar em duas instalações (o sinal de repasse).
+
+**Contexto.** A11: self-hosted com código-fonte, então todo check é
+removível — isto é DETECTOR, não trava, e o valor de removê-lo é contratual
+(D9, camada 1). A licença da Evolution que a produção já roda é o precedente
+na própria stack: heartbeat com versão, contadores agregados e IP, e
+explicitamente SEM mensagens, contatos ou dado pessoal. Copiar essa
+disciplina.
+
+**Mudança.** Um endpoint no servidor de licença (fora deste repositório, ou
+rota dedicada) que recebe, no boot e num heartbeat esparso (~24h):
+- `licenca` — a chave emitida ao comprador;
+- `fingerprint` — hash estável e NÃO-pessoal da instalação (ref do Supabase
+  + domínio, ou um UUID gravado uma vez em config);
+- `dominio` — o `SITE_URL`;
+- `versao` — a versão do produto.
+
+Nada além dos quatro. Painel: uma linha por fingerprint (licença,
+fingerprint, domínio, versão, `primeira_vez`, `ultima_vez`); a régua da
+duplicata é "licença com mais de um fingerprint ativo → bandeira". Declarado
+no contrato e no `docs/INSTALACAO.md` ("este sistema confere a licença com
+<fornecedor>").
+
+**Resultado esperado.** Ativação visível no painel; duplicata acende com
+data; a marca d'água (D9) diz de quem a cópia saiu — prova suficiente para o
+jurídico acionar a multa, sem nunca ler dado do cliente do comprador.
+
+**Risco e raio de explosão.** ALTO se o check FALHAR FECHADO. Servidor de
+licença fora do ar NÃO pode desligar o WhatsApp do comprador: isso transfere
+o seu risco de infraestrutura para o cliente honesto e é o tipo de coisa que
+gera processo. Falha ABERTA, sempre — a mesma disciplina do gate de licença
+da Evolution, que só barra a API HTTP e deixa a ingestão dos webhooks entrar.
+O payload não ganha campo novo sem revisão: qualquer coisa além dos quatro
+acima é candidata a dado pessoal.
+
+**Validação.** Duas instalações de teste com a MESMA chave acendem a bandeira
+no painel; derrubar o servidor de licença NÃO afeta o envio nem o recebimento
+de mensagem na instalação.
+
+**Reversão.** Aditivo e opcional: a instalação funciona sem alcançar o
+servidor. Desligar é parar de exigir o ping — nada no comprador quebra.
+
 ---
 
 ### Fase 7 — Instalador
@@ -909,6 +990,7 @@ deploy` manual.
 - [ ] Instalação limpa percorrida do zero, anotações incorporadas ao guia (F5)
 - [ ] `migrations` no `needs` do `deploy` (F5)
 - [ ] `cb-crm-produto` gerado por workflow com gate de strings verde (F6.1, F6.2)
+- [ ] Telemetria de ativação declarada: fingerprint + detecção de duplicata, falha aberta, só os quatro campos (F6.6, D9)
 - [ ] Tag `v1.0.0`, versões alinhadas (F6.3)
 - [ ] `LICENSE`/`NOTICE` decididos (D3)
 - [ ] `scripts/instalar.sh` e `scripts/deploy.sh` usados na F5 (F7)

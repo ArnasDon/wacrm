@@ -6,8 +6,7 @@ import {
   deslocamentoEmMs,
   janelaDeBusca,
   larguraDaJanela,
-  motivoDeConfigInvalida,
-} from './lembretes';
+  motivoDeConfigInvalida, travaDeveSerDevolvida } from './lembretes';
 import { paraEntradaLocal, deEntradaLocal } from '@/lib/contacts/campo-data';
 import type { DateFieldTriggerConfig } from '@/types';
 
@@ -341,5 +340,27 @@ describe('⚠️ deslocamento "limpo" — null e string vazia (952)', () => {
     expect(solto({ fonte: 'reuniao', offset_hours: 'abc', direction: 'antes' })).toMatch(
       /inválido/,
     )
+  })
+})
+
+describe('travaDeveSerDevolvida', () => {
+  const r = (x: Partial<{ erro: string; executadas: number }>) => ({ executadas: 0, ...x })
+
+  it('CRÍTICO: recusado pelo recorte devolve a trava — senão o lembrete se perde para sempre', () => {
+    // O escopo de etapa dos quatro lembretes do escritório barra o disparo
+    // enquanto o card não chegou a "Reunião Agendada". A trava já está
+    // gravada nesse ponto, e a poda dela é de 90 dias.
+    expect(travaDeveSerDevolvida(r({ executadas: 0 }))).toBe(true)
+  })
+
+  it('alguma automação rodou: a trava FICA (lembrete em dobro é pior que perdido)', () => {
+    expect(travaDeveSerDevolvida(r({ executadas: 1 }))).toBe(false)
+  })
+
+  it('CRÍTICO: disparo que estourou no meio mantém a trava', () => {
+    // `erro` é o catch do dispatch, que pode vir DEPOIS de uma automação já
+    // ter mandado mensagem. Devolver a trava aqui mandaria de novo.
+    expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 0 }))).toBe(false)
+    expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 2 }))).toBe(false)
   })
 })

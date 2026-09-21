@@ -2677,6 +2677,7 @@
         "colStatus": "Status",
         "colFunil": "Pipeline",
         "motivo": {
+          "assinatura_incompleta": "the Calendly webhook subscription does not receive cancellations — click Re-subscribe",
           "token_invalido": "Meta rejected the token",
           "sem_permissao": "the token lacks ads_read on this account",
           "conta_nao_encontrada": "ad account not found",
@@ -2732,6 +2733,7 @@
           "recebido": "received",
           "disparado": "automation fired",
           "em_espera": "waiting (the automation stopped at a Wait step)",
+          "cancelado": "meeting canceled — reminders disarmed",
           "sem_automacao": "no automation listens to this event",
           "sem_contato": "phone matches no contact",
           "sem_telefone": "no phone in the booking",

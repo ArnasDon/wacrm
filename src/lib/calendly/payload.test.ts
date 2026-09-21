@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { eventoDoCorpo, lerAgendamento, normalizarRotulo, telefoneDoAgendamento } from "./payload";
+import { eventoDoCorpo, lerAgendamento, lerCancelamento, normalizarRotulo, telefoneDoAgendamento } from "./payload";
 
 /** A forma do exemplo oficial (`Webhook Payload`, doc do Calendly). */
 function corpo(extra: Record<string, unknown> = {}, evento: Record<string, unknown> = {}) {
@@ -166,5 +166,50 @@ describe("telefoneDoAgendamento (D1)", () => {
 describe("normalizarRotulo", () => {
   it("tira acento e caixa", () => {
     expect(normalizarRotulo("  Número de TELEFONE ")).toBe("numero de telefone");
+  });
+});
+
+describe("lerCancelamento", () => {
+  const corpo = (payload: Record<string, unknown>) => ({ event: "invitee.canceled", payload });
+
+  it("lê o invitee, o horário e o motivo", () => {
+    const c = lerCancelamento(
+      corpo({
+        uri: "https://api.calendly.com/scheduled_events/E1/invitees/I1",
+        name: "Joel",
+        email: "joel@x.com",
+        cancellation: { reason: "imprevisto" },
+        scheduled_event: { start_time: "2026-09-25T17:00:00Z", event_type: "T1", name: "Reunião" },
+      }),
+    );
+    expect(c).toMatchObject({
+      inviteeUri: "https://api.calendly.com/scheduled_events/E1/invitees/I1",
+      nome: "Joel",
+      email: "joel@x.com",
+      inicio: "2026-09-25T17:00:00Z",
+      eventoUri: "T1",
+      reagendado: false,
+      motivo: "imprevisto",
+    });
+  });
+
+  it("CRÍTICO: reagendamento é reconhecido pelos DOIS sinais", () => {
+    // Nenhum dos dois é garantido pelo Calendly, e tratar um reagendamento
+    // como cancelamento puro calaria o lembrete da reunião NOVA.
+    expect(lerCancelamento(corpo({ uri: "u", rescheduled: true }))?.reagendado).toBe(true);
+    expect(lerCancelamento(corpo({ uri: "u", new_invitee: "https://api.calendly.com/…/I2" }))?.reagendado).toBe(true);
+    expect(lerCancelamento(corpo({ uri: "u" }))?.reagendado).toBe(false);
+  });
+
+  it("outro evento, corpo torto ou sem invitee devolve null", () => {
+    expect(lerCancelamento({ event: "invitee.created", payload: { uri: "u" } })).toBeNull();
+    expect(lerCancelamento(corpo({}))).toBeNull();
+    expect(lerCancelamento(null)).toBeNull();
+    expect(lerCancelamento({ event: "invitee.canceled" })).toBeNull();
+  });
+
+  it("nome vem do name, ou de first+last, ou é nulo", () => {
+    expect(lerCancelamento(corpo({ uri: "u", first_name: "Ana", last_name: "Lima" }))?.nome).toBe("Ana Lima");
+    expect(lerCancelamento(corpo({ uri: "u" }))?.nome).toBeNull();
   });
 });

@@ -164,3 +164,31 @@ export function motivoDeConfigInvalida(cfg: DateFieldTriggerConfig): string | nu
   }
   return null
 }
+
+/**
+ * Depois do disparo: a trava deve ser DEVOLVIDA (apagada)?
+ *
+ * ⚠️⚠️ A trava da 935 é gravada ANTES do disparo — o INSERT é a própria
+ * reivindicação, e tem de ser, senão dois ciclos sobrepostos mandam a mesma
+ * mensagem duas vezes. Só que o disparo ainda passa pelos RECORTES do motor
+ * (conexão, gatilho, escopo de etapa), e um lembrete recusado ali ficava com
+ * a trava gravada e NUNCA MAIS saía: a poda é de 90 dias, muito depois da
+ * reunião, e a varredura contava o caso como "repetido". Silencioso e
+ * definitivo.
+ *
+ * Medido em 20/09/2026: os quatro lembretes do escritório têm escopo de
+ * etapa ("Reunião Agendada"), e o card só chega lá no 5º passo da automação
+ * do Calendly — depois de uma chamada de rede. Um ciclo do cron caindo nessa
+ * janela de segundos perdia os quatro lembretes daquele cliente.
+ *
+ * A régua é "NADA rodou, e o disparo não estourou no meio":
+ *   - `executadas === 0` garante que nenhuma automação chegou a rodar, logo
+ *     nenhuma mensagem saiu — devolver a trava é seguro e o ciclo seguinte
+ *     tenta de novo, dentro da mesma janela.
+ *   - `erro` preenchido é o catch do dispatch, que pode ter estourado DEPOIS
+ *     de uma automação já ter mandado alguma coisa. Ali a trava FICA:
+ *     lembrete perdido é ruim, lembrete em dobro é pior.
+ */
+export function travaDeveSerDevolvida(r: { erro?: string; executadas: number }): boolean {
+  return !r.erro && r.executadas === 0
+}

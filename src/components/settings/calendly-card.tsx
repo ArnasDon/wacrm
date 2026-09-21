@@ -51,7 +51,7 @@ const CODIGOS_CONHECIDOS = new Set([
   "webhook_desativado",
 ]);
 
-const RESULTADOS = new Set(["recebido", "disparado", "em_espera", "sem_automacao", "sem_contato", "sem_telefone", "ignorado", "falhou"]);
+const RESULTADOS = new Set(["recebido", "disparado", "em_espera", "cancelado", "sem_automacao", "sem_contato", "sem_telefone", "ignorado", "falhou"]);
 const ORIGENS = new Set(["sms", "pergunta", "heuristica"]);
 
 export function CalendlyCard() {

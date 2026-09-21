@@ -1,7 +1,7 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
 import { supabaseAdmin } from './admin-client'
-import { runAutomationsForTrigger } from './engine'
-import { janelaDeBusca, motivoDeConfigInvalida } from './lembretes'
+import { dispararAutomacoes } from './engine'
+import { janelaDeBusca, motivoDeConfigInvalida, travaDeveSerDevolvida } from './lembretes'
 
 // ------------------------------------------------------------
 // Varredura do gatilho de lembrete por data (migration 935).
@@ -24,6 +24,13 @@ export interface ResultadoDaVarredura {
   disparados: number
   /** Já disparados antes para o mesmo (automação, contato, valor). */
   repetidos: number
+  /**
+   * A trava foi devolvida: o motor recusou o disparo nos recortes (quase
+   * sempre o escopo de etapa) e nada saiu, então o ciclo seguinte tenta de
+   * novo. Sem isto o lembrete se perdia para sempre — ver
+   * `travaDeveSerDevolvida`.
+   */
+  devolvidos: number
   falhas: number
 }
 
@@ -33,6 +40,7 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
     examinadas: 0,
     disparados: 0,
     repetidos: 0,
+    devolvidos: 0,
     falhas: 0,
   }
   try {
@@ -110,12 +118,20 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
         // ⚠️ A TRAVA VEM ANTES DO DISPARO, e o INSERT é a própria
         // reivindicação. Ler-depois-escrever abriria janela para dois ciclos
         // sobrepostos mandarem o mesmo lembrete duas vezes ao cliente.
-        const { error: erroTrava } = await db.from('cb_automation_reminders').insert({
-          account_id: bruta.account_id,
-          automation_id: bruta.id,
-          contact_id: alvo.contact_id,
-          valor: alvo.valor,
-        })
+        const { data: trava, error: erroTrava } = await db
+          .from('cb_automation_reminders')
+          .insert({
+            account_id: bruta.account_id,
+            automation_id: bruta.id,
+            contact_id: alvo.contact_id,
+            valor: alvo.valor,
+            // `motivo` separa esta linha da que o CANCELAMENTO do Calendly
+            // pré-arma (1013): lá `disparado_em` estaria preenchido sem
+            // envio nenhum.
+            motivo: 'disparo',
+          })
+          .select('id')
+          .maybeSingle()
 
         if (erroTrava) {
           // 23505 = já disparou para este (automação, contato, valor).
@@ -129,7 +145,7 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
           continue
         }
 
-        await runAutomationsForTrigger({
+        const resultado = await dispararAutomacoes({
           accountId: bruta.account_id,
           triggerType: 'date_field_offset',
           contactId: alvo.contact_id,
@@ -147,6 +163,33 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
             vars: { _lembrete_valor: alvo.valor },
           },
         })
+
+        // ⚠️ RECORTE NÃO PODE QUEIMAR A TRAVA. O disparo passa por conexão,
+        // gatilho e escopo de etapa DEPOIS de a trava estar gravada; recusado
+        // ali, nada saiu e o lembrete ficaria perdido para sempre. Devolve-se
+        // a linha — pelo ID dela, nunca pela chave, para não alcançar por
+        // engano uma trava pré-armada por cancelamento.
+        if (travaDeveSerDevolvida(resultado)) {
+          const id = trava?.id as string | undefined
+          if (!id) {
+            // Sem o id não há como devolver com segurança. Não é falha de
+            // execução: a mensagem não saiu, e o registro fica como estava.
+            console.warn('[automations] lembrete barrado sem id de trava:', bruta.id)
+            saida.repetidos += 1
+            continue
+          }
+          const { error: erroDevolucao } = await db
+            .from('cb_automation_reminders')
+            .delete()
+            .eq('id', id)
+          if (erroDevolucao) {
+            console.error('[automations] devolução da trava falhou', bruta.id, erroDevolucao)
+            saida.falhas += 1
+            continue
+          }
+          saida.devolvidos += 1
+          continue
+        }
         saida.disparados += 1
       }
     }

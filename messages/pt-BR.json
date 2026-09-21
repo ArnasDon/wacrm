@@ -2670,6 +2670,7 @@
         "colStatus": "Status",
         "colFunil": "Funil",
         "motivo": {
+          "assinatura_incompleta": "a assinatura do webhook no Calendly não recebe cancelamentos — clique em Reassinar",
           "token_invalido": "a Meta recusou o token",
           "sem_permissao": "o token não tem permissão ads_read nesta conta",
           "conta_nao_encontrada": "conta de anúncios não encontrada",
@@ -2725,6 +2726,7 @@
           "recebido": "recebido",
           "disparado": "automação disparada",
           "em_espera": "em espera (a automação parou num passo Aguardar)",
+          "cancelado": "reunião cancelada — lembretes desarmados",
           "sem_automacao": "nenhuma automação escuta este evento",
           "sem_contato": "telefone não é de nenhum contato",
           "sem_telefone": "sem telefone no agendamento",

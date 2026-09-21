@@ -4323,6 +4323,60 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
 `trigger-meta.ts`, builder + `calendly-trigger-config.tsx`). Plano vivo em
 `docs/PLANO-integracao-calendly.md`. O que morde código novo:
 
+- ⚠️⚠️ **REUNIÃO CANCELADA DESARMA OS LEMBRETES (1013, 20/09/2026), e o
+  desarme NÃO apaga a data da ficha.** Até aqui só `invitee.created` era
+  assinado: o cancelamento era invisível, a data continuava no campo do
+  contato, o card continuava em "Reunião Agendada" — e os quatro lembretes
+  saíam, inclusive "sua reunião começa em 10 minutos", com o link de um
+  evento cancelado. `src/lib/calendly/cancelamento.ts` (puro + o I/O, com
+  teste) e o caminho próprio na rota do webhook. O que morde código novo:
+  - ⚠️⚠️ **REAGENDAR TAMBÉM CANCELA**, e a ordem das duas entregas não é
+    garantida. São DUAS guardas, e nenhuma dispensa a outra: `reagendado`
+    (o `rescheduled` do invitee OU o `new_invitee`) e, independente dela,
+    `mesmaReuniao` — só se desarma o lembrete cujo valor GRAVADO NA FICHA
+    ainda é o instante da reunião cancelada. Sem a segunda, um
+    `invitee.created` processado primeiro deixaria a ficha com o horário
+    novo e o cancelamento calaria o lembrete de uma reunião que existe.
+  - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
+    em vez de apagar o campo de data. Apagar destruiria a informação da
+    ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras
+    que leem aquele campo. A trava é por `(automação, contato, VALOR)`,
+    então reagendamento re-arma sozinho. A linha leva `motivo:
+    'cancelamento'` (1013): sem a coluna, `disparado_em` afirmaria envio que
+    nunca houve.
+  - ⚠️ **Os lembretes DESLIGADOS também são desarmados**, de propósito: um
+    ligado antes do horário da reunião mandaria o aviso de um evento
+    cancelado.
+  - ⚠️⚠️ **A LISTA DE EVENTOS É FIXADA NA CRIAÇÃO da assinatura.** Quem já
+    estava conectado continua recebendo só `invitee.created` até apertar
+    **Reassinar** — e o sintoma é ausência, não erro. Por isso
+    `conferirAssinatura` compara os eventos vivos com `EVENTOS_ASSINADOS` e
+    grava `status='erro'` + `last_error='assinatura_incompleta'`, que é o
+    que põe o aviso na tela ao lado do botão que conserta. Ele só limpa esse
+    código específico — erro de outra causa não some de carona.
+  - ⚠️ **O cancelamento não cria ficha, não dispara automação e não move o
+    card.** Tirar o card de "Reunião Agendada" é decisão de produto (para
+    qual etapa?) e ficou de fora.
+
+- ⚠️⚠️ **A TRAVA DO LEMBRETE É DEVOLVIDA quando o recorte barra o disparo
+  (1013).** `travaDeveSerDevolvida` (puro, em `lembretes.ts`) e a varredura.
+  A trava da 935 é gravada ANTES do disparo — o INSERT é a reivindicação, e
+  tem de ser —, mas o disparo ainda passa por conexão, gatilho e ESCOPO DE
+  ETAPA: recusado ali, a linha ficava gravada e o lembrete NUNCA MAIS saía
+  (a poda é de 90 dias, muito depois da reunião), com a varredura contando o
+  caso como "repetido". Medido em 20/09/2026: os quatro lembretes do
+  escritório são presos a "Reunião Agendada", e o card só chega lá no 5º
+  passo da automação do Calendly, depois de uma chamada de rede — um ciclo
+  do cron caindo nessa janela perdia os quatro.
+  - ⚠️ A régua é `!erro && executadas === 0`: nada rodou, logo nada saiu.
+    `erro` preenchido é o catch do dispatch, que pode ter estourado DEPOIS
+    de uma automação ter mandado mensagem — ali a trava FICA. Lembrete
+    perdido é ruim; lembrete em dobro é pior.
+  - ⚠️ A devolução é pelo **id** da linha inserida, nunca pela chave: pela
+    chave ela poderia alcançar uma trava PRÉ-ARMADA por cancelamento.
+  - ⚠️ A varredura passou a usar `dispararAutomacoes` (que devolve o
+    resultado) no lugar de `runAutomationsForTrigger` (que devolve `void`).
+
 - ⚠️⚠️ **A ficha do cliente NASCE do agendamento (08/09/2026)** — revisão da
   D2, decidida pelo operador. Telefone que não é de nenhum contato deixa de
   ser `sem_contato`: `processarAgendamento` chama `resolverDestinatario` (o

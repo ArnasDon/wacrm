@@ -5,7 +5,7 @@ import { decrypt, encrypt } from "@/lib/whatsapp/encryption";
 
 import { gerarChaveDeAssinatura, gerarTokenDeWebhook } from "./assinatura";
 import { CalendlyError, criarClienteCalendly, type ClienteCalendly, type EscopoDaAssinatura } from "./cliente";
-import { EVENTO_AGENDADO } from "./payload";
+import { EVENTO_AGENDADO, EVENTO_CANCELADO } from "./payload";
 
 /**
  * Conectar, reassinar e desconectar o Calendly — o I/O da integração.
@@ -26,7 +26,14 @@ import { EVENTO_AGENDADO } from "./payload";
  * retenta por 24h e desativa a assinatura, em silêncio.
  */
 
-export const EVENTOS_ASSINADOS = [EVENTO_AGENDADO];
+/**
+ * ⚠️ O CANCELAMENTO entrou em 20/09/2026 (1013), e a assinatura JÁ CRIADA no
+ * Calendly não muda sozinha: quem está conectado desde antes continua
+ * recebendo só `invitee.created` até apertar "Reassinar" no cartão da
+ * integração. Sem isso a correção não chega a rodar — o Calendly nem entrega
+ * o evento.
+ */
+export const EVENTOS_ASSINADOS = [EVENTO_AGENDADO, EVENTO_CANCELADO];
 
 export function urlDoWebhook(origem: string, token: string): string {
   return `${origem.replace(/\/+$/, "")}/api/cb/calendly/webhook/${token}`;
@@ -276,7 +283,7 @@ export async function conferirAssinatura(
 ): Promise<void> {
   const { data: config } = await admin
     .from("cb_calendly_config")
-    .select("access_token, webhook_uri, webhook_state, status")
+    .select("access_token, webhook_uri, webhook_state, status, last_error")
     .eq("account_id", accountId)
     .maybeSingle();
   if (!config?.webhook_uri) return;
@@ -294,6 +301,28 @@ export async function conferirAssinatura(
       await admin
         .from("cb_calendly_config")
         .update({ webhook_state: viva.estado, updated_at: agora })
+        .eq("account_id", accountId);
+    }
+
+    // ⚠️⚠️ A assinatura de pé pode estar INCOMPLETA, e esse é o modo de
+    // falha SILENCIOSO desta integração: a lista de eventos é fixada na
+    // CRIAÇÃO, então quem assinou antes de 20/09/2026 continua recebendo só
+    // `invitee.created` — o cancelamento nunca chega, os lembretes de uma
+    // reunião cancelada saem do mesmo jeito, e nada na tela sugere que falta
+    // um clique. Aqui isso vira erro VISÍVEL, com o botão "Reassinar" ao
+    // lado, que é exatamente o conserto.
+    const faltando = EVENTOS_ASSINADOS.filter((e) => !viva.eventos.includes(e));
+    if (faltando.length > 0) {
+      await admin
+        .from("cb_calendly_config")
+        .update({ status: "erro", last_error: "assinatura_incompleta", updated_at: agora })
+        .eq("account_id", accountId);
+    } else if (config.status === "erro" && config.last_error === "assinatura_incompleta") {
+      // Reassinou: some o aviso. Só este código é limpo — outro erro
+      // gravado aqui é de outra coisa e não se apaga de carona.
+      await admin
+        .from("cb_calendly_config")
+        .update({ status: "ok", last_error: null, updated_at: agora })
         .eq("account_id", accountId);
     }
   } catch (e) {

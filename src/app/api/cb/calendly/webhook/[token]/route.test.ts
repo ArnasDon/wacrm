@@ -16,6 +16,7 @@ const h = vi.hoisted(() => ({
     upserts: [] as Record<string, unknown>[],
     updates: [] as { table: string; payload: Record<string, unknown> }[],
     processados: [] as unknown[],
+    cancelamentos: [] as unknown[],
     gravados: [] as unknown[],
   },
 }));
@@ -43,6 +44,13 @@ vi.mock("@/lib/automations/admin-client", () => {
 });
 
 vi.mock("@/lib/whatsapp/encryption", () => ({ decrypt: (s: string) => s.replace(/^enc:/, "") }));
+
+vi.mock("@/lib/calendly/cancelamento", () => ({
+  processarCancelamento: vi.fn(async (_db: unknown, accountId: string, c: unknown) => {
+    h.state.cancelamentos.push({ accountId, c });
+    return { resultado: "cancelado", detalhe: "1 lembrete(s) desarmado(s)", contactId: "c1" };
+  }),
+}));
 
 vi.mock("@/lib/calendly/processar", () => ({
   processarAgendamento: vi.fn(async (_db: unknown, accountId: string, agendamento: unknown) => {
@@ -104,6 +112,7 @@ beforeEach(() => {
   h.state.upserts = [];
   h.state.updates = [];
   h.state.processados = [];
+  h.state.cancelamentos = [];
   h.state.gravados = [];
 });
 
@@ -167,12 +176,47 @@ describe("POST /api/cb/calendly/webhook/[token]", () => {
     expect(h.state.processados).toHaveLength(0);
   });
 
-  it("evento que não é agendamento → 200 ignorado, nada gravado (4xx desativaria a assinatura)", async () => {
-    const corpo = JSON.stringify({ event: "invitee.canceled", payload: { uri: "x", name: "y" } });
+  it("evento que o CRM não trata → 200 ignorado, nada gravado (4xx desativaria a assinatura)", async () => {
+    // ⚠️ Até a 1013 este teste usava `invitee.canceled` como exemplo de
+    // "evento estranho". Ele passou a ser TRATADO (desarma os lembretes),
+    // então o exemplo mudou — o que se prova aqui continua sendo que um
+    // evento fora dos dois assinados não vira linha nem 4xx.
+    const corpo = JSON.stringify({ event: "routing_form_submission.created", payload: { uri: "x" } });
     const r = await chamar(corpo, assinado(corpo));
     expect(r.status).toBe(200);
     expect(r.corpo).toEqual({ ok: true, ignorado: true });
     expect(h.state.upserts).toHaveLength(0);
+  });
+
+  it("CANCELAMENTO: grava a linha própria e desarma em after() (1013)", async () => {
+    const corpo = JSON.stringify({
+      event: "invitee.canceled",
+      payload: {
+        uri: "https://api.calendly.com/scheduled_events/E1/invitees/I1",
+        name: "Joel",
+        scheduled_event: { start_time: "2026-09-25T17:00:00Z" },
+      },
+    });
+    const r = await chamar(corpo, assinado(corpo));
+    expect(r.status).toBe(200);
+    expect(r.corpo).toEqual({ ok: true, cancelamento: true });
+    // a linha é do evento de CANCELAMENTO, não do agendamento
+    expect(h.state.upserts).toHaveLength(1);
+    expect(h.state.upserts[0]).toMatchObject({ evento: "invitee.canceled", resultado: "recebido" });
+    expect(h.state.cancelamentos).toHaveLength(1);
+    // e o agendamento NÃO foi processado por este caminho
+    expect(h.state.processados).toHaveLength(0);
+  });
+
+  it("CANCELAMENTO reentregue (UNIQUE recusou) → 200 duplicado, sem desarmar de novo", async () => {
+    h.state.upsertDevolve = [];
+    const corpo = JSON.stringify({
+      event: "invitee.canceled",
+      payload: { uri: "u", scheduled_event: { start_time: "2026-09-25T17:00:00Z" } },
+    });
+    const r = await chamar(corpo, assinado(corpo));
+    expect(r.corpo).toEqual({ ok: true, duplicado: true });
+    expect(h.state.cancelamentos).toHaveLength(0);
   });
 
   it("JSON inválido com assinatura válida → 400", async () => {

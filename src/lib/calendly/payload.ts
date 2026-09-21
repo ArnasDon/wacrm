@@ -23,6 +23,21 @@ import { digitosDoTelefone, pareceTelefone } from "@/lib/contacts/telefone";
 
 export const EVENTO_AGENDADO = "invitee.created";
 
+/**
+ * O cancelamento (1013). Assinado desde 20/09/2026 por um motivo estreito: é
+ * ele que DESARMA os lembretes de reunião. Sem ele o CRM não sabia que a
+ * reunião caiu, a data continuava no campo do contato, e os quatro lembretes
+ * saíam do mesmo jeito — inclusive "sua reunião começa em 10 minutos", com o
+ * link de um evento cancelado.
+ *
+ * ⚠️ REAGENDAR TAMBÉM CANCELA. O Calendly desfaz o invitee antigo e cria um
+ * novo, então um `invitee.canceled` de reagendamento chega junto com o
+ * `invitee.created` do horário novo — e a ORDEM entre os dois não é
+ * garantida. Por isso `reagendado` existe aqui, e por isso quem processa
+ * confere também o VALOR gravado na ficha antes de desarmar.
+ */
+export const EVENTO_CANCELADO = "invitee.canceled";
+
 export interface PerguntaRespondida {
   pergunta: string;
   resposta: string;
@@ -182,5 +197,61 @@ export function lerAgendamento(corpo: unknown, opcoes: OpcoesDeLeitura = {}): Ag
     reagendado: !!texto(payload.old_invitee),
     fusoDoConvidado: texto(payload.timezone),
     perguntas,
+  };
+}
+
+export interface Cancelamento {
+  evento: typeof EVENTO_CANCELADO;
+  /** `payload.uri` — o MESMO invitee do agendamento, e a chave do log. */
+  inviteeUri: string;
+  nome: string | null;
+  email: string | null;
+  /**
+   * `scheduled_event.start_time` da reunião que caiu. É a chave do desarme:
+   * só se desarma o lembrete cujo valor gravado na ficha for este instante.
+   */
+  inicio: string | null;
+  eventoUri: string | null;
+  eventoNome: string | null;
+  /**
+   * O cliente REAGENDOU (não desistiu): o Calendly marca `rescheduled` e/ou
+   * aponta `new_invitee`. Aqui não se desarma nada — o horário novo chega no
+   * `invitee.created` do invitee novo, que re-arma a trava sozinho (a chave
+   * da 935 inclui o VALOR).
+   */
+  reagendado: boolean;
+  /** `cancellation.reason`, quando o cliente escreve um motivo. */
+  motivo: string | null;
+}
+
+/**
+ * Lê o corpo de um `invitee.canceled`. Puro, e separado de `lerAgendamento`
+ * de propósito: o `Agendamento` carrega telefone, perguntas e variáveis que
+ * um cancelamento não usa, e alargá-lo faria o caminho do agendamento
+ * responder por um evento que ele não trata.
+ */
+export function lerCancelamento(corpo: unknown): Cancelamento | null {
+  const raiz = objeto(corpo);
+  if (!raiz || raiz.event !== EVENTO_CANCELADO) return null;
+  const payload = objeto(raiz.payload);
+  if (!payload) return null;
+  const inviteeUri = texto(payload.uri);
+  if (!inviteeUri) return null;
+
+  const evento = objeto(payload.scheduled_event);
+  const cancelamento = objeto(payload.cancellation);
+
+  return {
+    evento: EVENTO_CANCELADO,
+    inviteeUri,
+    nome: texto(payload.name) ?? texto([texto(payload.first_name), texto(payload.last_name)].filter(Boolean).join(" ")),
+    email: texto(payload.email),
+    inicio: evento ? texto(evento.start_time) : null,
+    eventoUri: evento ? texto(evento.event_type) : null,
+    eventoNome: evento ? texto(evento.name) : null,
+    // Os dois sinais, porque nenhum é garantido: `rescheduled` é o booleano
+    // do invitee, `new_invitee` é para onde ele foi.
+    reagendado: payload.rescheduled === true || !!texto(payload.new_invitee),
+    motivo: cancelamento ? texto(cancelamento.reason) : null,
   };
 }

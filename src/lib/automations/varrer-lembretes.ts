@@ -31,6 +31,15 @@ import {
  */
 const TETO_DE_CANCELADOS = PAGINA
 
+/**
+ * Quantos alvos entram numa consulta de cancelamentos. Cada alvo põe na URL do
+ * GET um contato (~37 caracteres) e um instante (~28): 40 alvos dão ~2,6 KB,
+ * folgado sob os ~8 KB que proxy e PostgREST aceitam — a mesma régua de
+ * `IDS_POR_CONSULTA` (100 UUIDs sozinhos) em `use-broadcast-sending.ts`, com
+ * a segunda lista somada.
+ */
+const ALVOS_POR_CONSULTA = 40
+
 export interface ResultadoDaVarredura {
   /** Automações de lembrete examinadas neste ciclo. */
   examinadas: number
@@ -172,22 +181,36 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
         // (os dois da mesma requisição, logo da mesma transação) cai na falha
         // FECHADA de sempre: a automação espera o ciclo seguinte. Mandar
         // aviso de reunião cancelada é pior que atrasar um lembrete.
-        const contatos = [...new Set(encontrados.map((a) => a.contact_id))]
-        // Valor que não parseia não casa com cancelamento nenhum: `inicio`
-        // vem do Calendly sempre em ISO, e `mesmaReuniao` só cai na igualdade
-        // de texto quando um dos lados NÃO parseia. Fica de fora da consulta
-        // sem perder nada — e sem derrubar a consulta inteira num cast
-        // inválido de `timestamptz`.
-        const instantes = [
-          ...new Set(
-            encontrados
-              .map((a) => Date.parse(a.valor))
-              .filter((ms) => Number.isFinite(ms))
-              .map((ms) => new Date(ms).toISOString()),
-          ),
-        ]
-        let cancelados: { contact_id: string; inicio: string | null }[] = []
-        if (instantes.length > 0) {
+        // ⚠️ E EM FATIAS de alvos (Codex, PR #237). O `.in()` viaja na URL do
+        // GET: cada contato custa ~37 caracteres e cada instante ~28, e com
+        // ~120 alvos as duas listas passavam dos ~8 KB que proxy e PostgREST
+        // aceitam — a requisição era recusada, a falha fechada se repetia a
+        // cada ciclo enquanto os alvos estavam na janela, e os lembretes
+        // EXPIRAVAM sem sair. Cada par (contato, horário) de um alvo cai em
+        // UMA fatia só, e a consulta daquela fatia leva o contato E o
+        // horário dele — então nenhum cancelamento que casa com um alvo fica
+        // de fora. Cada fatia é UMA consulta, com a contagem da mesma
+        // fotografia; qualquer uma que falhar derruba o ciclo inteiro desta
+        // automação (falha fechada).
+        const cancelados: { contact_id: string; inicio: string | null }[] = []
+        let leituraFalhou = false
+        for (let i = 0; i < encontrados.length; i += ALVOS_POR_CONSULTA) {
+          const fatia = encontrados.slice(i, i + ALVOS_POR_CONSULTA)
+          const contatos = [...new Set(fatia.map((a) => a.contact_id))]
+          // Valor que não parseia não casa com cancelamento nenhum: `inicio`
+          // vem do Calendly sempre em ISO, e `mesmaReuniao` só cai na
+          // igualdade de texto quando um dos lados NÃO parseia. Fica de fora
+          // da consulta sem perder nada — e sem derrubar a consulta inteira
+          // num cast inválido de `timestamptz`.
+          const instantes = [
+            ...new Set(
+              fatia
+                .map((a) => Date.parse(a.valor))
+                .filter((ms) => Number.isFinite(ms))
+                .map((ms) => new Date(ms).toISOString()),
+            ),
+          ]
+          if (instantes.length === 0) continue
           const {
             data,
             error: erroCancelados,
@@ -204,13 +227,17 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
             console.error(
               '[automations] leitura dos cancelados falhou ou veio incompleta',
               bruta.id,
-              { count, lidas: data?.length ?? null },
+              { count, lidas: data?.length ?? null, fatia: i / ALVOS_POR_CONSULTA },
               erroCancelados,
             )
-            saida.falhas += 1
-            continue
+            leituraFalhou = true
+            break
           }
-          cancelados = data as { contact_id: string; inicio: string | null }[]
+          cancelados.push(...(data as { contact_id: string; inicio: string | null }[]))
+        }
+        if (leituraFalhou) {
+          saida.falhas += 1
+          continue
         }
         lista = semOsCancelados(encontrados, cancelados)
         saida.cancelados += encontrados.length - lista.length

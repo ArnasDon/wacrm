@@ -437,7 +437,7 @@ describe('a leitura dos cancelamentos é UMA consulta estreita', () => {
     // Recorte SEMÂNTICO — de onde se monta o recorte até quem o consome —, e
     // não por número de caracteres: um comentário a mais empurrava o `if`
     // para fora da janela e o pino reprovava código correto.
-    const inicio = fonte.indexOf('const instantes')
+    const inicio = fonte.indexOf('const fatia = encontrados.slice')
     const fim = fonte.indexOf('semOsCancelados(encontrados')
     expect(inicio).toBeGreaterThan(-1)
     expect(fim).toBeGreaterThan(inicio)
@@ -451,6 +451,15 @@ describe('a leitura dos cancelamentos é UMA consulta estreita', () => {
     expect(trecho).not.toContain('buscarPaginado')
     // valor que não parseia fica FORA da consulta (não pode derrubar o cast)
     expect(trecho).toMatch(/Number\.isFinite/)
+    // ⚠️ as listas saem da FATIA, nunca de todos os alvos: com ~120 alvos a
+    // URL do GET passava de ~8 KB e a falha fechada se repetia até os
+    // lembretes expirarem (Codex, PR #237)
+    expect(trecho).toMatch(/fatia\.map\(\(a\) => a\.contact_id\)/)
+    expect(trecho).not.toMatch(/encontrados\.map\(\(a\) => a\.contact_id\)/)
+    expect(fonte).toMatch(/const ALVOS_POR_CONSULTA = \d+/)
+    const tamanho = Number(/const ALVOS_POR_CONSULTA = (\d+)/.exec(fonte)?.[1])
+    // 37 (uuid) + 28 (instante) por alvo tem de caber folgado em ~8 KB
+    expect(tamanho * (37 + 28)).toBeLessThan(6000)
   })
 })
 

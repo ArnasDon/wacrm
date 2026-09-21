@@ -6421,6 +6421,34 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     UNIQUE, `account_id` e o WHERE — os três predicados que o bloco de
     conferência da própria migration cobra).
 
+  - **1014_cb_kommo_carga_em_lote** — a carga da Kommo: o schema
+    `migracao_kommo` com o **livro-razão** e as funções
+    `cb_kommo_carregar_lote` / `cb_kommo_desfazer`.
+    ⚠️⚠️ **A função DESLIGA os gatilhos de `deals` e `contact_tags` DENTRO da
+    transação do lote** — não repara a trilha depois. Duas medições
+    escolheram: (1) `ALTER TABLE ... DISABLE TRIGGER` é **DDL transacional**,
+    então o rollback religa sozinho e não existe "desligado e esquecido"; (2)
+    é a ÚNICA forma de a carga gravar `updated_at` com a data da Kommo, porque
+    `set_updated_at` é BEFORE UPDATE sem lista de colunas e sobrescreve com
+    `now()` (medido: pedindo 2024-03-15 a coluna vira a data de hoje). A trava
+    é `ShareRowExclusive`, não ACCESS EXCLUSIVE — leitor não espera. As FKs
+    ficam de pé (são gatilhos internos), ao contrário de
+    `session_replication_role = 'replica'`, que as derruba junto.
+    ⚠️ Com os gatilhos calados a função DEVE escrever à mão o `status` (o que
+    a 950 faz), o `updated_at` e a trilha retroativa.
+    ⚠️ O livro-razão mora em `migracao_kommo`, **não em `public`**: lá herdaria
+    a concessão padrão do Supabase e nasceria legível do navegador com id e
+    nome de todo contato. Ele guarda `detalhe jsonb` para a chave que não cabe
+    num uuid (`contact_tags` é (contato, etiqueta) — sem isso o desfazer
+    tiraria as etiquetas que o escritório aplicou à mão).
+    ⚠️ `cb_lead_events.deal_id` não tem FK, então o desfazer apaga a trilha
+    EXPLICITAMENTE antes do card; no card movido, só o que a carga escreveu,
+    recortado pela procedência em `details`.
+    Aplicada em 21/09/2026 (histórico `20260921023141`), DEPOIS de o replay do
+    CI passar no commit exato e de dois ensaios contra a produção em
+    transação encerrada com ROLLBACK: carga + reexecução (idempotente) e
+    carga + desfazer (o banco volta ao estado anterior, card movido inclusive).
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

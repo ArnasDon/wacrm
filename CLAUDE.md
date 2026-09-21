@@ -1743,6 +1743,18 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   não lidas somadas): eles ficam de fora por padrão, e incluí-los exige
   `p_incluir_grupos => true`, por escrito. Quem for encerrar grupo pela TELA
   paga o mesmo preço, sem aviso nenhum.
+- ⚠️⚠️ **Quem decide "está encerrada?" é o BANCO, nunca o objeto do
+  chamador** (21/09/2026). `reopenClosedConversation` recebe só o `id` e roda
+  o UPDATE condicional (`.eq('status', 'closed')`) a TODA mensagem. Havia um
+  atalho sobre o status lido no COMEÇO da requisição — segundos antes, na
+  ingestão com anexo ou no envio que espera o provedor —, e um encerramento
+  nesse intervalo (botão, automação, lote da 1018) deixava a mensagem nova
+  numa conversa encerrada, fora da caixa (Codex, PR #232). Funciona porque
+  os seis chamadores gravam a mensagem ANTES: encerrou antes do UPDATE, ele
+  reabre; encerrou depois, o encerramento enxerga a mensagem. Preço medido:
+  ~12 ms de rede por mensagem, 0,16 ms no banco, sem escrita nem gatilho
+  quando a conversa está aberta. Caminho novo de mensagem chama DEPOIS de
+  gravar; há pino em `reopen.chamadores.test.ts` contra o atalho voltar.
 - ⚠️ **Quem reabre fica responsável; encerrar solta o responsável.** O envio
   pelo núcleo reabre com `assignTo: senderUserId` (nulo na API por chave);
   o cabeçalho do fio usa `patchDeSituacao`; o passo `close_conversation`

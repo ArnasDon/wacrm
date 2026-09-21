@@ -314,7 +314,11 @@ function sendPathDb(
           return builder;
         },
         update: (row: Record<string, unknown>) => {
-          if (table === 'conversations') captured.conversation = row;
+          // Só a escrita da PRÉVIA: a reabertura (`reopen.ts`) roda sempre
+          // depois dela e, capturada, apagaria o que estes testes conferem.
+          if (table === 'conversations' && 'last_message_text' in row) {
+            captured.conversation = row;
+          }
           return builder;
         },
         maybeSingle: async () => ({ data: null, error: null }),

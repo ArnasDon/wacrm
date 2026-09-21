@@ -12,12 +12,15 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * significar "não há nada a fazer" — logo QUALQUER mensagem nova (recebida,
  * enviada pelo CRM, pelo celular pareado, agendada, pela API) a reabre.
  *
- * ⚠️ QUATRO caminhos chamam isto, e há teste estrutural cobrando cada um
- * (`reopen.chamadores.test.ts`): a ingestão da Meta (`webhook/route.ts`), a
- * ingestão da Evolution e o celular pareado (`inbound-store.ts`, DUAS
- * funções) e o núcleo de envio (`send-message.ts`). Até 2026-09-02 só o
- * primeiro chamava — e produção roda Evolution: a regra existia e não valia
- * para nenhuma mensagem real.
+ * ⚠️ SEIS caminhos chamam isto, em cinco arquivos, e há teste estrutural
+ * cobrando cada um (`reopen.chamadores.test.ts`): a ingestão da Meta
+ * (`webhook/route.ts`), a ingestão da Evolution e o celular pareado
+ * (`inbound-store.ts`, DUAS funções), o núcleo de envio (`send-message.ts`),
+ * o Instagram (`instagram/persistir.ts`) e a recuperada tardia
+ * (`sem-telefone/tardia.ts`). Até 2026-09-02 só o primeiro chamava — e
+ * produção roda Evolution: a regra existia e não valia para nenhuma mensagem
+ * real. Todos chamam DEPOIS de gravar a mensagem, e isso é parte do contrato
+ * (ver "quem decide é o banco", abaixo).
  *
  * ⚠️ Broadcast, automação, fluxo e resposta de IA NÃO reabrem, de propósito.
  * Ficam de fora por não passarem por nenhum dos quatro caminhos, sem uma
@@ -42,32 +45,63 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * nenhum caminho devolve conversa aberta com esse dono velho — reabrir por
  * gente nomeia gente, reabrir sem gente escreve NULL aqui.
  *
+ * ⚠️⚠️ **Quem decide se a conversa está encerrada é o BANCO, nunca o objeto
+ * do chamador** (21/09/2026). Até aqui havia um atalho —
+ * `if (conversation.status !== 'closed') return false` — sobre a linha que o
+ * chamador leu no COMEÇO da requisição, segundos antes (a ingestão baixa
+ * anexo, o núcleo de envio espera o provedor). Um encerramento que caísse
+ * entre aquela leitura e a gravação da mensagem — o botão Encerrar, a
+ * automação, o encerramento em lote da 1018 — fazia a mensagem nova chegar
+ * numa conversa ENCERRADA e o atalho pular a reabertura: a mensagem do
+ * cliente ficava escondida da caixa, que é exatamente o que esta função
+ * existe para impedir (achado do Codex no PR #232). Agora o UPDATE roda
+ * SEMPRE, e o `status = 'closed'` no WHERE é quem responde. Como todo
+ * chamador grava a mensagem ANTES, vale nas duas ordens: encerrou antes do
+ * UPDATE, ele vê `closed` e reabre; encerrou depois, o encerramento já
+ * enxerga a mensagem gravada (e o de lote a poupa pelos 2 minutos).
+ * Por isso o parâmetro é só o `id`: um `status` aqui convidaria a
+ * reintroduzir o atalho.
+ *
+ * O preço, MEDIDO em 21/09/2026: uma ida ao banco por mensagem gravada, onde
+ * antes só havia quando a conversa já estava encerrada — ~12 ms da VPS ao
+ * Supabase numa conexão reaproveitada (9–27 ms em 15 amostras), e 0,16 ms no
+ * banco (busca pela chave primária, a linha aberta não casa o filtro: nada é
+ * travado, gravado nem disparado — sem gatilho, sem evento de realtime). A
+ * alternativa, dobrar a reabertura dentro da RPC `bump_conversation_on_inbound`,
+ * só cobriria Meta e Instagram; os outros quatro caminhos precisariam de uma
+ * RPC irmã, e no compositor ela esbarraria na RLS do operador e na
+ * auto-notificação do gatilho de atribuição.
+ *
+ * ⚠️ "Quem reabre fica responsável" continua valendo SÓ para quem reabre: o
+ * `assigned_agent_id` está no mesmo UPDATE, cercado pelo mesmo
+ * `status = 'closed'` — um envio numa conversa aberta não rouba a
+ * atribuição de quem está com ela (há teste cobrando o filtro).
+ *
+ * Devolve `true` quando a conversa foi de fato reaberta (a contagem de
+ * linhas do UPDATE), `false` quando já estava aberta/pendente ou a escrita
+ * falhou. Nenhum chamador usa o retorno hoje.
+ *
  * Mora num módulo próprio para ser testável sem a rota inteira e para todo
  * caminho novo de mensagem ganhar o comportamento chamando uma função só.
  */
 export async function reopenClosedConversation(
   db: SupabaseClient,
-  conversation: { id: string; status?: string | null },
+  conversation: { id: string },
   opts: { assignTo?: string | null } = {},
 ): Promise<boolean> {
-  // Aberta/pendente é o caso comum — pular a ida ao banco mantém a ingestão
-  // tão barata quanto era.
-  if (conversation.status !== 'closed') return false
-
   const patch: Record<string, unknown> = {
     status: 'open',
     assigned_agent_id: opts.assignTo ?? null,
     updated_at: new Date().toISOString(),
   }
 
-  const { error } = await db
+  const { error, count } = await db
     .from('conversations')
-    .update(patch)
+    .update(patch, { count: 'exact' })
     .eq('id', conversation.id)
-    // Conferido de novo em SQL, não só no `if` acima: a linha do chamador foi
-    // lida no começo da requisição, e duas entregas concorrentes segurando um
-    // `status: 'closed'` velho não podem escrever 'open' por cima de quem
-    // acabou de encerrar a conversa de novo no meio delas.
+    // A ÚNICA pergunta "está encerrada?" — atômica, na linha de agora. Sob
+    // READ COMMITTED, se outra transação estiver mexendo na linha, o UPDATE
+    // espera e reavalia o filtro na versão nova.
     .eq('status', 'closed')
 
   if (error) {
@@ -78,5 +112,5 @@ export async function reopenClosedConversation(
     return false
   }
 
-  return true
+  return (count ?? 0) > 0
 }

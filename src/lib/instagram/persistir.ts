@@ -412,10 +412,7 @@ async function gravarMensagem(
 
   // Gente reabre — o cliente escrevendo, ou o escritório respondendo pelo
   // app do Instagram. Sem responsável: quem reabre por aqui não é membro.
-  await reopenClosedConversation(
-    db,
-    conversation as { id: string; status?: string | null }
-  );
+  await reopenClosedConversation(db, { id: conversation.id });
   await followConversationChannel(db, conversation.id, ctx.channelId);
 
   // A fronteira de entrega da conexão (1002). Sem `timestampMs` não há o

@@ -55,6 +55,16 @@ describe('reabre: os caminhos de mensagem decididos por gente', () => {
     expect(src.slice(fim)).toContain('reopenClosedConversation')
   })
 
+  it('a reabertura NÃO confia no status que o chamador leu (Codex, PR #232)', () => {
+    // O atalho `if (conversation.status !== 'closed') return false` lia a
+    // linha carregada no começo da requisição: um encerramento no meio fazia
+    // a mensagem nova cair numa conversa encerrada sem reabri-la. Quem decide
+    // é o UPDATE condicional (`.eq('status', 'closed')`), sempre.
+    const src = fonte('lib/conversations/reopen.ts')
+    expect(src).not.toMatch(/conversation\.status/)
+    expect(src).toMatch(/\.eq\('status', 'closed'\)/)
+  })
+
   it('o núcleo de envio reabre ATRIBUINDO a quem enviou', () => {
     // A regra do operador: quem reabre fica responsável. `senderUserId` é
     // nulo no envio por chave de API, e aí não há quem nomear.

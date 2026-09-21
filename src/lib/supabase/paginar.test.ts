@@ -43,6 +43,33 @@ function fonte(
 }
 
 describe("buscarPaginado", () => {
+  // ⚠️⚠️ Invariante 5 do módulo: a página seguinte só é pedida DEPOIS de a
+  // anterior voltar. Paralelizar páginas por OFFSET pula linha que já existia
+  // quando a coleção recebe inserção no meio da leitura (Codex, PR #247).
+  it("pede a página seguinte só depois de a anterior voltar", async () => {
+    const pedidas: number[] = [];
+    const soltar: Array<() => void> = [];
+    const total = 2 * PAGINA + 3;
+    const promessa = buscarPaginado<Linha>((de) => {
+      pedidas.push(de);
+      const quantas = de < 2 * PAGINA ? PAGINA : 3;
+      return new Promise<RespostaDaPagina<Linha>>((ok) =>
+        soltar.push(() => ok({ data: linhas(de, quantas), error: null, count: total })),
+      );
+    });
+
+    for (let pagina = 1; pagina <= 3; pagina++) {
+      await new Promise((r) => setTimeout(r, 0));
+      // Só a página corrente foi pedida — nenhuma adiantada.
+      expect(pedidas).toHaveLength(pagina);
+      soltar[pagina - 1]();
+    }
+    const r = await promessa;
+    expect(r.motivo).toBeNull();
+    expect(r.linhas).toHaveLength(total);
+  });
+
+
   it("devolve a página única quando ela vem curta", async () => {
     const { pagina, chamadas } = fonte([linhas(0, 12)], 12);
     const r = await buscarPaginado(pagina);

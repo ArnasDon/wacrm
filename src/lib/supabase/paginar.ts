@@ -28,6 +28,18 @@
  *     impedir.
  *  4. **Teto de páginas.** Acima dele, admitir que não coube é melhor que
  *     recortar errado em silêncio.
+ *  5. **As páginas vão EM FILA, uma depois da outra.** Não é descuido: foi
+ *     paralelizado em 21/09/2026 (PR #247) e desfeito na mesma noite, por
+ *     duas anotações do Codex. Páginas por OFFSET pedidas JUNTAS não
+ *     compartilham a foto do banco, e podem vê-la em ordem inversa à dos
+ *     offsets: se o offset 2000 responde ANTES de uma inserção na posição
+ *     1500 e o 1000 responde DEPOIS, a linha que estava na posição 1999 não
+ *     vem em página nenhuma — uma linha que JÁ EXISTIA, não a nova —, e a
+ *     página seguinte devolve outra repetida, fechando a contagem. Num
+ *     disparo, é um destinatário pulado em silêncio. Em fila, a página de
+ *     offset maior nunca vê o banco antes da menor, e a inserção no meio só
+ *     repete linha ou perde a NOVA. Quem precisar de velocidade aqui troca
+ *     OFFSET por chave (keyset), não paraleliza.
  *
  * ⚠️ `src/lib/funil/carregar.ts` tem uma cópia deste laço e NÃO foi migrada
  * de propósito: ela faz o parse de cada linha (`lerLinha`) dentro do laço e

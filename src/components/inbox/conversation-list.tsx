@@ -216,6 +216,14 @@ export function ConversationList({
     "carregando" | "ok" | "indisponivel"
   >("carregando");
   const [temPerfis, setTemPerfis] = useState(false);
+  // Os CATÁLOGOS do painel (etiquetas, perfis, etapas, funis) já chegaram —
+  // é o que a semente do filtro padrão espera para limpar id morto. Separado
+  // de `etapasStatus` DE PROPÓSITO: aquele depende também de TODOS os
+  // negócios da conta (5.224 em 21/09/2026, seis páginas), e a semente
+  // esperava por eles mesmo quando o padrão nem recorta por etapa — a caixa
+  // de entrada ficava no spinner até o último negócio chegar. Só vai de
+  // `false` a `true`, como `etapasStatus` só sai de "carregando".
+  const [catalogosProntos, setCatalogosProntos] = useState(false);
   // `contact_id` → etapas dos negócios dele. Busca separada porque `deals` NÃO
   // vem no CONVERSATION_SELECT — e não pode vir: aquele select é compartilhado
   // com a API pública v1, e embutir negócio ali mudaria o contrato público.
@@ -387,18 +395,22 @@ export function ConversationList({
         },
       );
 
+    // As duas cargas saem JUNTAS, mas são ASSENTADAS em dois tempos: os
+    // catálogos (quatro consultas pequenas) liberam a semente do filtro
+    // padrão; os negócios (a consulta grande) liberam só o recorte por etapa.
+    const catalogos = Promise.all([
+      supabase.from("tags").select("*").order("name"),
+      supabase.from("profiles").select("*").order("full_name"),
+      supabase
+        .from("pipeline_stages")
+        .select("*")
+        .order("position", { ascending: true }),
+      supabase.from("pipelines").select("id, name"),
+    ]);
+    const negocios = buscarDeals();
+
     (async () => {
-      const [tagsRes, profilesRes, etapasRes, funisRes, dealsRes] =
-        await Promise.all([
-          supabase.from("tags").select("*").order("name"),
-          supabase.from("profiles").select("*").order("full_name"),
-          supabase
-            .from("pipeline_stages")
-            .select("*")
-            .order("position", { ascending: true }),
-          supabase.from("pipelines").select("id, name"),
-          buscarDeals(),
-        ]);
+      const [tagsRes, profilesRes, etapasRes, funisRes] = await catalogos;
       if (cancelled) return;
 
       if (tagsRes.data) setTags(tagsRes.data as Tag[]);
@@ -418,7 +430,10 @@ export function ConversationList({
         );
       }
 
-      const { linhas } = dealsRes;
+      setCatalogosProntos(true);
+
+      const { linhas } = await negocios;
+      if (cancelled) return;
       setEtapasStatus(linhas && etapasRes.data ? "ok" : "indisponivel");
       if (linhas) setEtapaPorContato(mapaDeEtapasPorContato(linhas));
     })();
@@ -723,9 +738,19 @@ export function ConversationList({
       semeouPadraoRef.current = true;
       return;
     }
-    // `indisponivel` também passa: esperar para sempre seria pior, e o aviso
-    // de `stageFilterUnavailable` já explica a lista sem recorte de etapa.
-    if (etapasStatus === "carregando") return;
+    // Espera os CATÁLOGOS (a limpeza de órfãos precisa deles), e não os
+    // negócios: padrão que recorta por etapa ou funil segura o spinner por
+    // conta própria depois de semeado (`aguardandoEtapas`), e o que não
+    // recorta não tem por que esperar. Catálogo que falhou também passa —
+    // esperar para sempre seria pior, e catálogo vazio não limpa nada.
+    // ⚠️ As CONEXÕES são catálogo também, e chegam por outra rota
+    // (`/api/cb/channels`), às vezes depois das quatro consultas acima: sem
+    // esperá-las, o padrão com uma conexão apagada era semeado com o id
+    // morto (catálogo vazio não limpa nada), a caixa abria vazia, e a
+    // resposta das conexões não consertava mais — a semente é de uma vez só
+    // (Codex, PR #247). Enquanto os negócios eram esperados, eles chegavam
+    // depois e escondiam a corrida.
+    if (!catalogosProntos || canaisCarregando) return;
     semeouPadraoRef.current = true;
     // ⚠️ Só semeia sobre o recorte INTACTO. A consulta demora alguns
     // centésimos e o operador pode ter clicado em "Não lidas" nesse meio —
@@ -757,7 +782,8 @@ export function ConversationList({
     salvosCarregando,
     filtroPadraoId,
     filtrosSalvos,
-    etapasStatus,
+    catalogosProntos,
+    canaisCarregando,
     catalogosDoFiltro,
   ]);
 
@@ -768,12 +794,16 @@ export function ConversationList({
    * ler um durante o render dá tela desatualizada. Não precisa — as duas
    * condições abaixo VIRAM FALSAS por conta própria assim que a semente pode
    * ter rodado (`salvosCarregando` cai quando a consulta volta, e
-   * `etapasStatus` sai de "carregando" e nunca volta a ele).
+   * `catalogosProntos` só vai de falso a verdadeiro, e `canaisCarregando`
+   * de verdadeiro a falso). O padrão que recorta
+   * por etapa passa a segurar a lista por `aguardandoEtapas` no render da
+   * semente. Sobra, como antes desta mudança, o render em que os catálogos
+   * chegam e o efeito da semente ainda não rodou.
    */
   const esperandoPadrao =
     !etapaInicial &&
     (salvosCarregando ||
-      (filtroPadraoId !== null && etapasStatus === "carregando"));
+      (filtroPadraoId !== null && (!catalogosProntos || canaisCarregando)));
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

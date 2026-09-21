@@ -2075,6 +2075,17 @@ novo:
   recorte INTACTO. Reaplicar faria o filtro que o operador acabou de limpar
   voltar sozinho; semear por cima de uma escolha feita nos centésimos em que a
   consulta voltava desfaria o que a pessoa acabou de fazer.
+  ⚠️⚠️ Ela espera os CATÁLOGOS (etiquetas, perfis, etapas, funis) e as
+  CONEXÕES — e NÃO os negócios (21/09/2026). Esperando os negócios, a caixa
+  ficava no spinner até a última das seis páginas (5.224 negócios) mesmo com
+  um padrão que só recorta por conexão; o padrão que recorta por etapa ou
+  funil segura a lista sozinho depois de semeado (`aguardandoEtapas`). E as
+  conexões chegam por OUTRA rota (`/api/cb/channels`), às vezes depois dos
+  catálogos: semeado antes delas, um padrão com conexão apagada ficava com o
+  id morto (catálogo vazio não limpa nada) e a caixa abria vazia, sem
+  conserto — a semente é de uma vez só (Codex, PR #247). Quem acrescentar
+  catálogo ao `limparOrfaos` acrescenta a espera dele aqui e em
+  `esperandoPadrao`.
 - ⚠️ **`?etapa=` do funil VENCE o padrão**, e a lista SEGURA o spinner enquanto
   o padrão pode entrar (`esperandoPadrao`). Sem a espera, o inbox pinta as 176
   conversas e pula para 8 um segundo depois; sem a precedência, a faixa "Voltar

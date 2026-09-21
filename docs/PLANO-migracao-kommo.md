@@ -592,7 +592,16 @@ A forma que resolve as duas: **uma chamada de RPC por lote de 1.000 a 2.000
 cards**, e dentro de cada chamada, na mesma transação curta: inserir o lote →
 reparar os eventos que os gatilhos escreveram → apagar as linhas de
 `cb_automation_events` daquele lote. Cada commit zera a contagem de
-subtransações. **Nunca `ALTER TABLE ... DISABLE TRIGGER`.**
+subtransações.
+
+⚠️⚠️ **A frase "nunca `ALTER TABLE ... DISABLE TRIGGER`" que estava aqui foi
+RETIRADA em 21/09** (achado do Codex no PR #232): ela contradiz a tabela de
+saídas medidas da regra 5, onde desligar gatilho é a única opção que dispensa
+o reparo E mata o estouro de subtransação. **A escolha entre reparar e
+desligar é decisão de projeto da 1013** — as duas metades deste plano têm de
+dizer a mesma coisa, e até a 1013 existir a decisão está ABERTA. O que o lote
+por RPC resolve continua valendo de qualquer jeito: transação curta, commit
+frequente.
 
 ⚠️⚠️ **2. Todo recorte de reparo e de limpeza é POR ID, nunca por janela de
 tempo.** `deal_id = ANY(<ids do lote>)` (ou `contact_id = ANY(...)`). O recorte
@@ -671,7 +680,19 @@ rollback):**
 
 Medidos lado a lado no mesmo lote (um card novo + um card movido que já tinha
 1 linha de trilha): anti-join e piso de tempo acharam as mesmas **3** linhas a
-reparar e contaminaram **0** antigas. Os dois resolvem o P1.
+reparar e contaminaram **0** antigas. Os dois resolvem o P1 — o do HISTÓRICO.
+
+⚠️⚠️ **Mas nenhum dos dois isola de ESCRITOR CONCORRENTE, e a coluna "isola"
+da tabela acima diz respeito só ao histórico** (achado do Codex no PR #232).
+Nem o anti-join nem o piso de tempo identificam a transação que escreveu: um
+operador que aplique uma etiqueta a um contato do lote DEPOIS da foto de ids
+(ou depois do piso) cria um evento que as duas cercas englobam — e o reparo o
+data com a data da Kommo e o marca `reconstructed = true`, que é o mesmo dano
+do P1, agora vindo da janela em vez do passado. Com o CRM vivo durante a
+carga, isso não é hipótese: são 265 contatos com evento de etiqueta hoje.
+Quem escolher reparar tem de fechar isso — por marca de lote gravada pelo
+próprio gatilho, ou quiesceendo a escrita concorrente. Quem escolher desligar
+o gatilho não tem o problema.
 
 ⚠️ `session_replication_role = 'replica'` silencia os SEIS gatilhos de uma vez
 (0 eventos, 0 linhas de fila, e o `status` fica `open` — o carimbo da 950
@@ -881,9 +902,25 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
     `nomeParaFixar`**, que só recusa NÚMERO. Rótulos automáticos da Kommo
     ("Lead 12345", "Contato WhatsApp") ficariam congelados para sempre, e nos
     1.150 já existentes o nome que a equipe lê hoje seria destruído sem cópia.
-    `CREATE TABLE cb_kommo_nomes_antes AS SELECT id, name, nome_fixado_em FROM
-    contacts WHERE account_id = <conta>` custa uma linha e torna tudo
-    reversível. Nos 1.150, só sobrescrever quando o nome atual estiver vazio ou
+    O snapshot custa uma linha e torna tudo reversível — **mas não em `public`
+    e não sem fechar os papéis**. ⚠️⚠️ `CREATE TABLE ... AS` em `public` nasce
+    com a concessão padrão do Supabase para `anon`/`authenticated` e **sem
+    RLS**: a tabela teria id e nome de TODO contato, legível do navegador, sem
+    nem o recorte de conta que as outras tabelas têm. É o mesmo buraco que a
+    901, a 906 e a 912 abriram e que a 931 fechou (achado do Codex no PR
+    #232). A forma correta é schema próprio, fora do que o PostgREST expõe, e
+    o REVOKE nas DUAS metades:
+
+    ```sql
+    CREATE SCHEMA IF NOT EXISTS migracao_kommo;
+    REVOKE ALL ON SCHEMA migracao_kommo FROM PUBLIC, anon, authenticated;
+    CREATE TABLE migracao_kommo.nomes_antes AS
+      SELECT id, name, nome_fixado_em FROM contacts WHERE account_id = <conta>;
+    REVOKE ALL ON TABLE migracao_kommo.nomes_antes FROM PUBLIC, anon, authenticated;
+    ```
+
+    Vale para TODA tabela de apoio da carga, o livro-razão de desfazer
+    inclusive — ele guarda id de contato e de negócio da conta inteira. Nos 1.150, só sobrescrever quando o nome atual estiver vazio ou
     for telefone; o resto vira CSV para o operador decidir.
 
 ### E. Conferências do ensaio (fase 3) e do pós-carga (fase 6)

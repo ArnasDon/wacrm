@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { cartaoDoCalendly, type ConfigDoCalendly, type EventoDoCalendly } from "./cartao";
+import { cartaoDoCalendly, type ConfigDoCalendly, type EventoDoCalendly , type ResultadoDoEvento } from "./cartao";
 
 const config: ConfigDoCalendly = {
   user_name: "Leonardo",
@@ -67,4 +67,38 @@ describe("cartaoDoCalendly", () => {
     expect(c.estado).toBe("erro");
     expect(c.erro).toBe("token_invalido");
   });
+});
+
+// ------------------------------------------------------------
+// ⚠️ CHAVES MONTADAS: o cartão pede `calendly.resultado.${r}` e
+// `calendly.motivo.${codigo}`, e os dois portões de i18n do CI são CEGOS para
+// isso — a paridade só compara os dois dicionários entre si (ficam iguais e
+// errados do mesmo jeito) e o de chaves usadas só enxerga literal. Foi assim
+// que `assinatura_incompleta` nasceu dentro de `metaAds.motivo` e passou
+// verde nos dois (Codex, PR #235). Este teste é o que cobra.
+// ------------------------------------------------------------
+describe("as chaves montadas do cartão existem nos dois dicionários", () => {
+  const RESULTADOS: ResultadoDoEvento[] = [
+    "recebido",
+    "disparado",
+    "em_espera",
+    "cancelado",
+    "sem_automacao",
+    "sem_contato",
+    "sem_telefone",
+    "ignorado",
+    "falhou",
+  ];
+
+  for (const arquivo of ["messages/pt-BR.json", "messages/en.json"]) {
+    it(`${arquivo} tem resultado.* e motivo.assinatura_incompleta sob calendly`, async () => {
+      const { readFileSync } = await import("node:fs");
+      const d = JSON.parse(readFileSync(arquivo, "utf-8"));
+      const calendly = d.Settings.integracoes.calendly;
+      for (const r of RESULTADOS) {
+        expect(calendly.resultado?.[r], `falta calendly.resultado.${r}`).toBeTruthy();
+      }
+      expect(calendly.motivo?.assinatura_incompleta, "falta calendly.motivo.assinatura_incompleta").toBeTruthy();
+    });
+  }
 });

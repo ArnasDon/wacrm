@@ -2,12 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LARGURA_MS,
+  semOsCancelados,
   PISO_ANTES_MS,
   deslocamentoEmMs,
   janelaDeBusca,
   larguraDaJanela,
-  motivoDeConfigInvalida,
-} from './lembretes';
+  motivoDeConfigInvalida, travaDeveSerDevolvida } from './lembretes';
 import { paraEntradaLocal, deEntradaLocal } from '@/lib/contacts/campo-data';
 import type { DateFieldTriggerConfig } from '@/types';
 
@@ -341,5 +341,72 @@ describe('⚠️ deslocamento "limpo" — null e string vazia (952)', () => {
     expect(solto({ fonte: 'reuniao', offset_hours: 'abc', direction: 'antes' })).toMatch(
       /inválido/,
     )
+  })
+})
+
+describe('travaDeveSerDevolvida', () => {
+  const r = (x: Partial<{ erro: string; executadas: number }>) => ({ executadas: 0, ...x })
+
+  it('CRÍTICO: recusado pelo recorte devolve a trava — senão o lembrete se perde para sempre', () => {
+    // O escopo de etapa dos quatro lembretes do escritório barra o disparo
+    // enquanto o card não chegou a "Reunião Agendada". A trava já está
+    // gravada nesse ponto, e a poda dela é de 90 dias.
+    expect(travaDeveSerDevolvida(r({ executadas: 0 }))).toBe(true)
+  })
+
+  it('alguma automação rodou: a trava FICA (lembrete em dobro é pior que perdido)', () => {
+    expect(travaDeveSerDevolvida(r({ executadas: 1 }))).toBe(false)
+  })
+
+  it('CRÍTICO: disparo que estourou no meio mantém a trava', () => {
+    // `erro` é o catch do dispatch, que pode vir DEPOIS de uma automação já
+    // ter mandado mensagem. Devolver a trava aqui mandaria de novo.
+    expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 0 }))).toBe(false)
+    expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 2 }))).toBe(false)
+  })
+})
+
+describe('semOsCancelados', () => {
+  const alvo = (contact_id: string, valor: string) => ({ contact_id, valor })
+
+  it('CRÍTICO: tira o horário que um cancelamento travou, seja de qual automação for', () => {
+    // A trava do cancelamento é gravada por automação EXISTENTE; um lembrete
+    // criado depois não teria trava nenhuma e mandaria o aviso de uma reunião
+    // desmarcada (Codex, PR #235). Por isso a pergunta é (contato, valor).
+    const alvos = [alvo('c1', 'T17'), alvo('c2', 'T18')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T18')])
+  })
+
+  it('mesmo contato, OUTRO horário, continua valendo', () => {
+    const alvos = [alvo('c1', 'T17'), alvo('c1', 'T19')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c1', 'T19')])
+  })
+
+  it('mesmo horário, OUTRO contato, continua valendo', () => {
+    expect(semOsCancelados([alvo('c2', 'T17')], [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T17')])
+  })
+
+  it('sem cancelamento nenhum, a lista passa inteira', () => {
+    const alvos = [alvo('c1', 'T17')]
+    expect(semOsCancelados(alvos, [])).toEqual(alvos)
+  })
+})
+
+describe('poda das travas', () => {
+  it('CRÍTICO: a marca de CANCELAMENTO vive muito mais que a de disparo', async () => {
+    // Ela só serve quando o horário DESMARCADO chega à janela do lembrete.
+    // Podada aos 90 dias, uma reunião cancelada com mais antecedência que
+    // isso perderia a marca antes da hora — e o aviso do evento cancelado
+    // voltaria a sair, porque a data continua na ficha (Codex, PR #235).
+    const { PODA_DO_DISPARO_MS, PODA_DO_CANCELAMENTO_MS } = await import('./varrer-lembretes')
+    expect(PODA_DO_DISPARO_MS).toBe(90 * 86_400_000)
+    expect(PODA_DO_CANCELAMENTO_MS).toBeGreaterThan(365 * 86_400_000)
+  })
+
+  it('e a poda de 90 dias é CERCADA pelo motivo (pino estrutural)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8').replace(/\/\/.*$/gm, '')
+    expect(fonte).toMatch(/PODA_DO_DISPARO_MS[\s\S]{0,200}?\.eq\('motivo', 'disparo'\)/)
+    expect(fonte).toMatch(/PODA_DO_CANCELAMENTO_MS[\s\S]{0,200}?\.eq\('motivo', 'cancelamento'\)/)
   })
 })

@@ -1,7 +1,12 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
 import { supabaseAdmin } from './admin-client'
-import { runAutomationsForTrigger } from './engine'
-import { janelaDeBusca, motivoDeConfigInvalida } from './lembretes'
+import { dispararAutomacoes } from './engine'
+import {
+  janelaDeBusca,
+  motivoDeConfigInvalida,
+  semOsCancelados,
+  travaDeveSerDevolvida,
+} from './lembretes'
 
 // ------------------------------------------------------------
 // Varredura do gatilho de lembrete por data (migration 935).
@@ -24,6 +29,15 @@ export interface ResultadoDaVarredura {
   disparados: number
   /** Já disparados antes para o mesmo (automação, contato, valor). */
   repetidos: number
+  /**
+   * A trava foi devolvida: o motor recusou o disparo nos recortes (quase
+   * sempre o escopo de etapa) e nada saiu, então o ciclo seguinte tenta de
+   * novo. Sem isto o lembrete se perdia para sempre — ver
+   * `travaDeveSerDevolvida`.
+   */
+  devolvidos: number
+  /** Horários que um CANCELAMENTO do Calendly já travou (1013). */
+  cancelados: number
   falhas: number
 }
 
@@ -33,6 +47,8 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
     examinadas: 0,
     disparados: 0,
     repetidos: 0,
+    devolvidos: 0,
+    cancelados: 0,
     falhas: 0,
   }
   try {
@@ -106,16 +122,55 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
         continue
       }
 
-      for (const alvo of (alvos ?? []) as { contact_id: string; valor: string }[]) {
+      const encontrados = (alvos ?? []) as { contact_id: string; valor: string }[]
+
+      // ⚠️⚠️ HORÁRIO CANCELADO NÃO RECEBE LEMBRETE, venha de qual automação
+      // vier. O desarme do Calendly (1013) pré-arma uma trava por automação
+      // EXISTENTE e deixa a data na ficha; um lembrete criado depois do
+      // cancelamento nasceria sem trava e mandaria o aviso de uma reunião
+      // desmarcada (Codex, PR #235). A pergunta aqui é por (contato, valor).
+      //
+      // ⚠️ Falha FECHADA: sem poder conferir, esta automação fica para o
+      // ciclo seguinte (a janela dura 1 hora e o laço roda a cada ~15 s).
+      // Mandar aviso de reunião cancelada é pior que atrasar um lembrete.
+      let lista = encontrados
+      if (encontrados.length > 0) {
+        const { data: cancelados, error: erroCancelados } = await db
+          .from('cb_automation_reminders')
+          .select('contact_id, valor')
+          .eq('account_id', bruta.account_id)
+          .eq('motivo', 'cancelamento')
+          .in('contact_id', [...new Set(encontrados.map((a) => a.contact_id))])
+        if (erroCancelados) {
+          console.error('[automations] leitura dos cancelados falhou', bruta.id, erroCancelados)
+          saida.falhas += 1
+          continue
+        }
+        lista = semOsCancelados(
+          encontrados,
+          (cancelados ?? []) as { contact_id: string; valor: string }[],
+        )
+        saida.cancelados += encontrados.length - lista.length
+      }
+
+      for (const alvo of lista) {
         // ⚠️ A TRAVA VEM ANTES DO DISPARO, e o INSERT é a própria
         // reivindicação. Ler-depois-escrever abriria janela para dois ciclos
         // sobrepostos mandarem o mesmo lembrete duas vezes ao cliente.
-        const { error: erroTrava } = await db.from('cb_automation_reminders').insert({
-          account_id: bruta.account_id,
-          automation_id: bruta.id,
-          contact_id: alvo.contact_id,
-          valor: alvo.valor,
-        })
+        const { data: trava, error: erroTrava } = await db
+          .from('cb_automation_reminders')
+          .insert({
+            account_id: bruta.account_id,
+            automation_id: bruta.id,
+            contact_id: alvo.contact_id,
+            valor: alvo.valor,
+            // `motivo` separa esta linha da que o CANCELAMENTO do Calendly
+            // pré-arma (1013): lá `disparado_em` estaria preenchido sem
+            // envio nenhum.
+            motivo: 'disparo',
+          })
+          .select('id')
+          .maybeSingle()
 
         if (erroTrava) {
           // 23505 = já disparou para este (automação, contato, valor).
@@ -129,7 +184,7 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
           continue
         }
 
-        await runAutomationsForTrigger({
+        const resultado = await dispararAutomacoes({
           accountId: bruta.account_id,
           triggerType: 'date_field_offset',
           contactId: alvo.contact_id,
@@ -147,6 +202,38 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
             vars: { _lembrete_valor: alvo.valor },
           },
         })
+
+        // ⚠️ RECORTE NÃO PODE QUEIMAR A TRAVA. O disparo passa por conexão,
+        // gatilho e escopo de etapa DEPOIS de a trava estar gravada; recusado
+        // ali, nada saiu e o lembrete ficaria perdido para sempre. Devolve-se
+        // a linha — pelo ID dela, nunca pela chave, para não alcançar por
+        // engano uma trava pré-armada por cancelamento.
+        if (travaDeveSerDevolvida(resultado)) {
+          const id = trava?.id as string | undefined
+          if (!id) {
+            // Sem o id não há como devolver com segurança. Não é falha de
+            // execução: a mensagem não saiu, e o registro fica como estava.
+            console.warn('[automations] lembrete barrado sem id de trava:', bruta.id)
+            saida.repetidos += 1
+            continue
+          }
+          const { error: erroDevolucao } = await db
+            .from('cb_automation_reminders')
+            .delete()
+            .eq('id', id)
+            // ⚠️ SÓ a trava de disparo. Entre o INSERT acima e esta linha, o
+            // cancelamento de uma reunião (1013) pode ter PROMOVIDO esta
+            // mesma linha para `cancelamento` — apagá-la devolveria o
+            // lembrete de um evento cancelado à fila (Codex, PR #235).
+            .eq('motivo', 'disparo')
+          if (erroDevolucao) {
+            console.error('[automations] devolução da trava falhou', bruta.id, erroDevolucao)
+            saida.falhas += 1
+            continue
+          }
+          saida.devolvidos += 1
+          continue
+        }
         saida.disparados += 1
       }
     }
@@ -155,6 +242,16 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
   }
   return saida
 }
+
+/** 90 dias: tempo de sobra para investigar, curto para não virar arquivo. */
+export const PODA_DO_DISPARO_MS = 90 * 86_400_000
+
+/**
+ * ⚠️ 400 dias para a marca de CANCELAMENTO: ela precisa sobreviver até o
+ * horário desmarcado passar, e o Calendly deixa marcar com meses de
+ * antecedência. Mais do que um ano cobre qualquer agenda plausível.
+ */
+export const PODA_DO_CANCELAMENTO_MS = 400 * 86_400_000
 
 /**
  * Poda travas antigas. 90 dias: tempo de sobra para investigar "por que este
@@ -165,17 +262,40 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
  */
 export async function podarLembretesAntigos(): Promise<number> {
   try {
-    const corte = new Date(Date.now() - 90 * 86_400_000).toISOString()
-    const { data, error } = await supabaseAdmin()
+    const db = supabaseAdmin()
+    const agora = Date.now()
+    let podados = 0
+
+    // Trava de DISPARO: 90 dias, como sempre.
+    const { data: disparos, error: erroDisparos } = await db
       .from('cb_automation_reminders')
       .delete()
-      .lt('disparado_em', corte)
+      .lt('disparado_em', new Date(agora - PODA_DO_DISPARO_MS).toISOString())
+      .eq('motivo', 'disparo')
       .select('id')
-    if (error) {
-      console.error('[automations] poda de lembretes falhou', error)
+    if (erroDisparos) {
+      console.error('[automations] poda de lembretes falhou', erroDisparos)
       return 0
     }
-    return data?.length ?? 0
+    podados += disparos?.length ?? 0
+
+    // ⚠️⚠️ Trava de CANCELAMENTO vive MUITO mais, e não é capricho: ela é
+    // gravada quando a reunião é desmarcada, mas só serve quando o horário
+    // CANCELADO chega à janela do lembrete. Reunião desmarcada com mais de
+    // 90 dias de antecedência perderia a marca antes da hora, e o aviso de
+    // um evento cancelado voltaria a sair — a data continua na ficha de
+    // propósito (Codex, PR #235).
+    const { data: cancelamentos, error: erroCancelamentos } = await db
+      .from('cb_automation_reminders')
+      .delete()
+      .lt('disparado_em', new Date(agora - PODA_DO_CANCELAMENTO_MS).toISOString())
+      .eq('motivo', 'cancelamento')
+      .select('id')
+    if (erroCancelamentos) {
+      console.error('[automations] poda dos cancelamentos falhou', erroCancelamentos)
+      return podados
+    }
+    return podados + (cancelamentos?.length ?? 0)
   } catch {
     return 0
   }

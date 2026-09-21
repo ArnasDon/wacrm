@@ -38,6 +38,11 @@ interface Resposta {
 
 
 const CODIGOS_CONHECIDOS = new Set([
+  // ⚠️ Lista FECHADA: código fora dela cai no texto genérico. Foi o que
+  // aconteceu com `assinatura_incompleta` — a tradução existia e a tela
+  // mostrava "erro do Calendly", sem a instrução de reassinar, exatamente
+  // quando ela importa (Codex, PR #235).
+  "assinatura_incompleta",
   "token_invalido",
   "sem_permissao",
   "nao_encontrado",
@@ -51,7 +56,7 @@ const CODIGOS_CONHECIDOS = new Set([
   "webhook_desativado",
 ]);
 
-const RESULTADOS = new Set(["recebido", "disparado", "em_espera", "sem_automacao", "sem_contato", "sem_telefone", "ignorado", "falhou"]);
+const RESULTADOS = new Set(["recebido", "disparado", "em_espera", "cancelado", "sem_automacao", "sem_contato", "sem_telefone", "ignorado", "falhou"]);
 const ORIGENS = new Set(["sms", "pergunta", "heuristica"]);
 
 export function CalendlyCard() {
@@ -230,7 +235,9 @@ export function CalendlyCard() {
             ? t("calendly.jaProcessado")
             : corpo?.error === "ainda_processando"
               ? t("calendly.aindaProcessando")
-              : t("calendly.reprocessarFalhou"),
+              : corpo?.error === "agendamento_cancelado"
+                ? t("calendly.agendamentoCancelado")
+                : t("calendly.reprocessarFalhou"),
         );
         // O estado da linha mudou (outro já processou, ou está processando):
         // a lista na tela é uma foto de antes do clique.

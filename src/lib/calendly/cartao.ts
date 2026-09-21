@@ -22,6 +22,8 @@ export type ResultadoDoEvento =
   | "disparado"
   /** a automação parou num passo "Aguardar"; o resto fica no histórico dela (978) */
   | "em_espera"
+  /** reunião cancelada no Calendly: os lembretes daquele horário foram desarmados (1013) */
+  | "cancelado"
   | "sem_automacao"
   | "sem_contato"
   | "sem_telefone"
@@ -66,6 +68,7 @@ export function cartaoDoCalendly(config: ConfigDoCalendly | null, eventos: reado
     recebido: 0,
     disparado: 0,
     em_espera: 0,
+    cancelado: 0,
     sem_automacao: 0,
     sem_contato: 0,
     sem_telefone: 0,

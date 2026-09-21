@@ -2,7 +2,8 @@ import { NextResponse, after } from "next/server";
 
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { verificarAssinatura } from "@/lib/calendly/assinatura";
-import { eventoDoCorpo, lerAgendamento } from "@/lib/calendly/payload";
+import { EVENTO_CANCELADO, eventoDoCorpo, lerAgendamento, lerCancelamento } from "@/lib/calendly/payload";
+import { TETO_DO_CANCELAMENTO_MS, processarCancelamento } from "@/lib/calendly/cancelamento";
 import { comTetoDeProcessamento } from "@/lib/calendly/claim";
 import { gravarResultado, processarAgendamento } from "@/lib/calendly/processar";
 import { variaveisDoAgendamento } from "@/lib/calendly/variaveis";
@@ -28,9 +29,11 @@ import { decrypt } from "@/lib/whatsapp/encryption";
  *      quando o telefone ainda não é de nenhum contato (08/09/2026) — ver
  *      `processar.ts`.
  *
- * Evento que não é `invitee.created` (assinatura feita à mão com outros
- * eventos) responde 200 e não grava: 4xx faria o Calendly retentar por 24h
- * e desativar a assinatura inteira, inclusive para os agendamentos.
+ * São DOIS eventos assinados desde 20/09/2026: `invitee.created` (o caminho
+ * acima) e `invitee.canceled`, que não cria nada e só DESARMA os lembretes
+ * daquele horário (1013). Qualquer outro evento responde 200 e não grava:
+ * 4xx faria o Calendly retentar por 24h e desativar a assinatura inteira,
+ * inclusive para os agendamentos.
  */
 export async function POST(request: Request, { params }: { params: Promise<{ token: string }> }) {
   const { token } = await params;
@@ -68,6 +71,87 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
   }
 
   const evento = eventoDoCorpo(corpo);
+
+  // ------------------------------------------------------------
+  // CANCELAMENTO (1013): caminho próprio, curto.
+  //
+  // Ele não cria ficha, não dispara automação e não mexe no card: só
+  // DESARMA os lembretes daquele horário (ver `cancelamento.ts`). Mesma
+  // mecânica do agendamento no resto — grava a linha com o cadeado, responde
+  // 200 e processa em `after()` —, porque o Calendly reenvia por 24h e a
+  // segunda cópia não pode refazer o trabalho.
+  // ------------------------------------------------------------
+  if (evento === EVENTO_CANCELADO) {
+    const cancelamento = lerCancelamento(corpo);
+    if (!cancelamento) {
+      console.info(`[calendly] cancelamento sem forma conhecida na conta ${config.account_id}`);
+      return NextResponse.json({ ok: true, ignorado: true });
+    }
+
+    const claimDoCancelamento = new Date().toISOString();
+    const { data: linha, error: erroLinha } = await admin
+      .from("cb_calendly_eventos")
+      .upsert(
+        {
+          account_id: config.account_id,
+          evento: cancelamento.evento,
+          invitee_uri: cancelamento.inviteeUri,
+          event_type_uri: cancelamento.eventoUri,
+          event_type_nome: cancelamento.eventoNome,
+          nome: cancelamento.nome,
+          email: cancelamento.email,
+          inicio: cancelamento.inicio,
+          resultado: "recebido",
+          processando_desde: claimDoCancelamento,
+        },
+        { onConflict: "account_id,evento,invitee_uri", ignoreDuplicates: true },
+      )
+      .select("id");
+    if (erroLinha) {
+      console.error("[calendly] não foi possível gravar o cancelamento:", erroLinha.message);
+      return NextResponse.json({ error: "db_error" }, { status: 500 });
+    }
+    const idDoCancelamento = linha?.[0]?.id as string | undefined;
+    if (!idDoCancelamento) return NextResponse.json({ ok: true, duplicado: true });
+
+    await admin
+      .from("cb_calendly_config")
+      .update({ last_event_at: new Date().toISOString(), webhook_state: "active" })
+      .eq("account_id", config.account_id);
+
+    const contaDoCancelamento = config.account_id as string;
+    after(async () => {
+      const db = supabaseAdmin();
+      try {
+        // ⚠️ Teto PRÓPRIO, maior que o do agendamento: o cancelamento pode
+        // ficar esperando o agendamento terminar de ser processado, e com o
+        // teto padrão ele se cortaria no meio da própria espera.
+        const r = await comTetoDeProcessamento(
+          processarCancelamento(db, contaDoCancelamento, cancelamento),
+          TETO_DO_CANCELAMENTO_MS,
+        );
+        await gravarResultado(
+          db,
+          idDoCancelamento,
+          r.pronto
+            ? r.valor
+            : { resultado: "falhou", detalhe: "o cancelamento passou do teto de processamento", contactId: null },
+          claimDoCancelamento,
+        );
+      } catch (e) {
+        console.error("[calendly] cancelamento estourou:", e);
+        await gravarResultado(
+          db,
+          idDoCancelamento,
+          { resultado: "falhou", detalhe: e instanceof Error ? e.message : "erro desconhecido", contactId: null },
+          claimDoCancelamento,
+        );
+      }
+    });
+
+    return NextResponse.json({ ok: true, cancelamento: true });
+  }
+
   const agendamento = lerAgendamento(corpo, { perguntaTelefone: config.pergunta_telefone });
   if (!agendamento) {
     console.info(`[calendly] evento ignorado (${evento ?? "sem event"}) na conta ${config.account_id}`);

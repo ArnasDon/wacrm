@@ -12,6 +12,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const h = vi.hoisted(() => ({
   state: {
     linha: null as Record<string, unknown> | null,
+    cancelado: false as boolean | null,
     erroClaim: null as { message: string } | null,
     erroLeitura: null as { message: string } | null,
     claims: 0,
@@ -81,6 +82,10 @@ vi.mock("@/lib/rate-limit", async (orig) => {
   return { ...real, checkRateLimit: () => ({ success: true, limit: 1, remaining: 1, reset: 0 }) };
 });
 
+vi.mock("@/lib/calendly/cancelamento", () => ({
+  houveCancelamento: vi.fn(async () => h.state.cancelado),
+}));
+
 vi.mock("@/lib/calendly/processar", () => ({
   processarAgendamento: vi.fn(async (_db: unknown, accountId: string, agendamento: unknown, vars: unknown) => {
     if (h.state.processarLanca) throw new Error("motor caiu");
@@ -125,6 +130,7 @@ const chamar = async () => {
 };
 
 beforeEach(() => {
+  h.state.cancelado = false;
   h.state.linha = linhaBase();
   h.state.erroClaim = null;
   h.state.erroLeitura = null;
@@ -219,5 +225,33 @@ describe("POST /api/cb/calendly/eventos/[id]/reprocessar", () => {
     h.state.papel = "agent";
     expect((await chamar()).status).toBe(403);
     expect(h.state.claims).toBe(0);
+  });
+});
+
+describe("agendamento CANCELADO não se reprocessa", () => {
+  it("CRÍTICO: recusa com 409 e não chama o motor", async () => {
+    // Repetir rodaria a automação inteira — aviso ao advogado, card para
+    // "Reunião Agendada", data gravada — por uma reunião desmarcada, e os
+    // lembretes voltariam armados (Codex, PR #235, 4ª rodada).
+    h.state.cancelado = true;
+    const r = await chamar();
+    expect(r.status).toBe(409);
+    expect(r.corpo).toEqual({ error: "agendamento_cancelado" });
+    expect(h.state.processados).toHaveLength(0);
+  });
+
+  it("CRÍTICO: não conseguindo conferir, RECUSA (falha fechada)", async () => {
+    // Recusar é reversível — o operador clica de novo. Disparar não é.
+    h.state.cancelado = null;
+    const r = await chamar();
+    expect(r.status).toBe(500);
+    expect(h.state.processados).toHaveLength(0);
+  });
+
+  it("sem cancelamento, reprocessa normalmente", async () => {
+    h.state.cancelado = false;
+    const r = await chamar();
+    expect(r.status).toBe(200);
+    expect(h.state.processados).toHaveLength(1);
   });
 });

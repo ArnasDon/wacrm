@@ -2683,7 +2683,7 @@
         "colStatus": "Status",
         "colFunil": "Pipeline",
         "motivo": {
-          "token_invalido": "Meta rejected the token",
+              "token_invalido": "Meta rejected the token",
           "sem_permissao": "the token lacks ads_read on this account",
           "conta_nao_encontrada": "ad account not found",
           "conta_invalida": "invalid account id (use act_… or digits only)",
@@ -2738,6 +2738,7 @@
           "recebido": "received",
           "disparado": "automation fired",
           "em_espera": "waiting (the automation stopped at a Wait step)",
+          "cancelado": "meeting canceled — reminders disarmed",
           "sem_automacao": "no automation listens to this event",
           "sem_contato": "phone matches no contact",
           "sem_telefone": "no phone in the booking",
@@ -2750,6 +2751,7 @@
           "heuristica": "detected question"
         },
         "motivo": {
+          "assinatura_incompleta": "the Calendly webhook subscription does not receive cancellations — click Re-subscribe",
           "token_invalido": "Calendly rejected the token",
           "sem_permissao": "Calendly refused (permission, or plan without webhooks)",
           "nao_encontrado": "resource not found on Calendly",
@@ -2784,7 +2786,8 @@
         "reprocessado": "Processed again: {resultado}.",
         "reprocessarFalhou": "Could not process it again.",
         "jaProcessado": "This booking already ran — repeating it would send the same message again.",
-        "aindaProcessando": "This booking is being processed right now. Wait a moment and try again."
+        "aindaProcessando": "This booking is being processed right now. Wait a moment and try again.",
+        "agendamentoCancelado": "This meeting was canceled in Calendly — reprocessing would notify the lawyer and move the card for a slot that will not happen."
       },
       "tldv": {
         "desc": "Connect tl;dv so the CRM fetches recorded meetings and the full transcript of each one. Every scheduler cycle (a 15-minute wait plus the time the other routes take) it pulls the last 7 days of meetings, links each to the client by the invitee's e-mail, and the transcript shows up in the Meetings tab of the client's profile.",

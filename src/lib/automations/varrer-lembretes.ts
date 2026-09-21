@@ -1,4 +1,5 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
+import { buscarPaginado } from '@/lib/supabase/paginar'
 import { supabaseAdmin } from './admin-client'
 import { dispararAutomacoes } from './engine'
 import {
@@ -142,21 +143,48 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
       // (Codex, PR #236).
       let lista = encontrados
       if (!daAgenda && encontrados.length > 0) {
-        const { data: cancelados, error: erroCancelados } = await db
-          .from('cb_calendly_eventos')
-          .select('contact_id, inicio')
-          .eq('account_id', bruta.account_id)
-          .eq('evento', 'invitee.canceled')
-          .in('contact_id', [...new Set(encontrados.map((a) => a.contact_id))])
-        if (erroCancelados) {
-          console.error('[automations] leitura dos cancelados falhou', bruta.id, erroCancelados)
+        // ⚠️⚠️ PAGINADA, e leitura incompleta conta como FALHA (Codex, PR
+        // #236). Os eventos de cancelamento nunca são podados, e o PostgREST
+        // corta em ~1000 linhas SEM AVISAR: `error` volta nulo e a lista vem
+        // com cara de inteira. Numa conta madura, o cancelamento que casa
+        // com o alvo deste ciclo podia simplesmente não vir — e aí
+        // `semOsCancelados` manteria o alvo, e o lembrete da reunião
+        // CANCELADA sairia para o cliente. `null` de `buscarPaginado` é o
+        // contrato de "não confie", e aqui ele cai na falha FECHADA de
+        // sempre: a automação espera o ciclo seguinte.
+        const contatos = [...new Set(encontrados.map((a) => a.contact_id))]
+        const {
+          linhas: cancelados,
+          erro: erroCancelados,
+          motivo: motivoCancelados,
+        } = await buscarPaginado<{ contact_id: string; inicio: string | null }>(
+          async (inicioDaPagina, fimDaPagina) => {
+            const { data, error, count } = await db
+              .from('cb_calendly_eventos')
+              .select('contact_id, inicio', { count: 'exact' })
+              .eq('account_id', bruta.account_id)
+              .eq('evento', 'invitee.canceled')
+              .in('contact_id', contatos)
+              .order('id', { ascending: true })
+              .range(inicioDaPagina, fimDaPagina)
+            return {
+              data: (data ?? null) as { contact_id: string; inicio: string | null }[] | null,
+              error,
+              count,
+            }
+          },
+        )
+        if (!cancelados) {
+          console.error(
+            '[automations] leitura dos cancelados falhou',
+            bruta.id,
+            motivoCancelados,
+            erroCancelados,
+          )
           saida.falhas += 1
           continue
         }
-        lista = semOsCancelados(
-          encontrados,
-          (cancelados ?? []) as { contact_id: string; inicio: string | null }[],
-        )
+        lista = semOsCancelados(encontrados, cancelados)
         saida.cancelados += encontrados.length - lista.length
       }
 

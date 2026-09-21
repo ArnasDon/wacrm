@@ -424,6 +424,23 @@ describe('poda das travas', () => {
   })
 })
 
+describe('a leitura dos cancelamentos é PAGINADA', () => {
+  it('CRÍTICO: a busca de invitee.canceled passa por buscarPaginado e falha fechada', () => {
+    // Os eventos de cancelamento nunca são podados, e o PostgREST corta em
+    // ~1000 linhas sem avisar (`error` nulo, lista com cara de inteira). Sem
+    // o laço paginado, o cancelamento que casa com o alvo do ciclo pode não
+    // vir e o lembrete da reunião CANCELADA sai para o cliente (Codex, PR
+    // #236). `null` do laço é "não confie" e tem de cair na falha fechada.
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
+    const trecho = fonte.slice(fonte.indexOf("'invitee.canceled'") - 1200, fonte.indexOf("'invitee.canceled'") + 900)
+    expect(trecho).toContain('buscarPaginado')
+    expect(trecho).toMatch(/\.order\('id'/)
+    expect(trecho).toMatch(/\.range\(/)
+    expect(trecho).toMatch(/count: 'exact'/)
+    expect(trecho).toMatch(/if \(!cancelados\)/)
+  })
+})
+
 describe('o filtro do cancelamento é só do lembrete por CAMPO', () => {
   it('CRÍTICO: lembrete de AGENDA não passa pelo filtro do Calendly', async () => {
     // Com `fonte: 'reuniao'` o alvo vem de `cb_meetings`. Um cancelamento do

@@ -1,4 +1,5 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
+import { PAGINA } from '@/lib/supabase/paginar'
 import { supabaseAdmin } from './admin-client'
 import { dispararAutomacoes } from './engine'
 import {
@@ -21,6 +22,23 @@ import {
 // e o cron já é o lugar onde o tempo passa. Enfileirar seria dar uma volta
 // para chegar no mesmo ponto.
 // ------------------------------------------------------------
+
+/**
+ * Quantos cancelamentos cabem na leitura de UM ciclo de UMA automação. É o
+ * corte do PostgREST (`PAGINA`, ~1000): a consulta é estreitada às duplas
+ * (contato, horário) da janela, então o resultado real é de poucas linhas, e
+ * passar disto é tratado como leitura incompleta — falha fechada.
+ */
+const TETO_DE_CANCELADOS = PAGINA
+
+/**
+ * Quantos alvos entram numa consulta de cancelamentos. Cada alvo põe na URL do
+ * GET um contato (~37 caracteres) e um instante (~28): 40 alvos dão ~2,6 KB,
+ * folgado sob os ~8 KB que proxy e PostgREST aceitam — a mesma régua de
+ * `IDS_POR_CONSULTA` (100 UUIDs sozinhos) em `use-broadcast-sending.ts`, com
+ * a segunda lista somada.
+ */
+const ALVOS_POR_CONSULTA = 40
 
 export interface ResultadoDaVarredura {
   /** Automações de lembrete examinadas neste ciclo. */
@@ -142,21 +160,86 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
       // (Codex, PR #236).
       let lista = encontrados
       if (!daAgenda && encontrados.length > 0) {
-        const { data: cancelados, error: erroCancelados } = await db
-          .from('cb_calendly_eventos')
-          .select('contact_id, inicio')
-          .eq('account_id', bruta.account_id)
-          .eq('evento', 'invitee.canceled')
-          .in('contact_id', [...new Set(encontrados.map((a) => a.contact_id))])
-        if (erroCancelados) {
-          console.error('[automations] leitura dos cancelados falhou', bruta.id, erroCancelados)
+        // ⚠️⚠️ UMA consulta, ESTREITA, com a contagem da MESMA fotografia do
+        // banco — e leitura incompleta conta como FALHA. Três rodadas do
+        // Codex chegaram aqui (PR #236 e #237), cada uma derrubando a anterior:
+        //  1. sem paginar, o PostgREST corta em ~1000 linhas SEM AVISAR e o
+        //     cancelamento que casa com o alvo podia não vir — os eventos
+        //     nunca são podados;
+        //  2. paginando por `id`, que é uuid aleatório, uma linha nova caía
+        //     numa página já lida;
+        //  3. paginando por `recebido_em`, o FILTRO continuava mutável:
+        //     `contact_id` nasce nulo, é preenchido depois e vira nulo quando
+        //     o contato é apagado (ON DELETE SET NULL), então uma linha podia
+        //     SAIR do recorte entre duas páginas e empurrar outra para trás.
+        // Qualquer paginação por deslocamento sobre este recorte tem a mesma
+        // fresta. A saída é não precisar paginar: o que interessa são só os
+        // cancelamentos das duplas (contato, horário) DESTE ciclo — a janela
+        // dura no máximo 1 hora —, e `inicio` é `timestamptz`, então o
+        // `.in()` compara INSTANTES, exatamente como `mesmaReuniao`. O
+        // resultado cabe numa página; se um dia não couber, `count > length`
+        // (os dois da mesma requisição, logo da mesma transação) cai na falha
+        // FECHADA de sempre: a automação espera o ciclo seguinte. Mandar
+        // aviso de reunião cancelada é pior que atrasar um lembrete.
+        // ⚠️ E EM FATIAS de alvos (Codex, PR #237). O `.in()` viaja na URL do
+        // GET: cada contato custa ~37 caracteres e cada instante ~28, e com
+        // ~120 alvos as duas listas passavam dos ~8 KB que proxy e PostgREST
+        // aceitam — a requisição era recusada, a falha fechada se repetia a
+        // cada ciclo enquanto os alvos estavam na janela, e os lembretes
+        // EXPIRAVAM sem sair. Cada par (contato, horário) de um alvo cai em
+        // UMA fatia só, e a consulta daquela fatia leva o contato E o
+        // horário dele — então nenhum cancelamento que casa com um alvo fica
+        // de fora. Cada fatia é UMA consulta, com a contagem da mesma
+        // fotografia; qualquer uma que falhar derruba o ciclo inteiro desta
+        // automação (falha fechada).
+        const cancelados: { contact_id: string; inicio: string | null }[] = []
+        let leituraFalhou = false
+        for (let i = 0; i < encontrados.length; i += ALVOS_POR_CONSULTA) {
+          const fatia = encontrados.slice(i, i + ALVOS_POR_CONSULTA)
+          const contatos = [...new Set(fatia.map((a) => a.contact_id))]
+          // Valor que não parseia não casa com cancelamento nenhum: `inicio`
+          // vem do Calendly sempre em ISO, e `mesmaReuniao` só cai na
+          // igualdade de texto quando um dos lados NÃO parseia. Fica de fora
+          // da consulta sem perder nada — e sem derrubar a consulta inteira
+          // num cast inválido de `timestamptz`.
+          const instantes = [
+            ...new Set(
+              fatia
+                .map((a) => Date.parse(a.valor))
+                .filter((ms) => Number.isFinite(ms))
+                .map((ms) => new Date(ms).toISOString()),
+            ),
+          ]
+          if (instantes.length === 0) continue
+          const {
+            data,
+            error: erroCancelados,
+            count,
+          } = await db
+            .from('cb_calendly_eventos')
+            .select('contact_id, inicio', { count: 'exact' })
+            .eq('account_id', bruta.account_id)
+            .eq('evento', 'invitee.canceled')
+            .in('contact_id', contatos)
+            .in('inicio', instantes)
+            .range(0, TETO_DE_CANCELADOS - 1)
+          if (erroCancelados || !data || count == null || count > data.length) {
+            console.error(
+              '[automations] leitura dos cancelados falhou ou veio incompleta',
+              bruta.id,
+              { count, lidas: data?.length ?? null, fatia: i / ALVOS_POR_CONSULTA },
+              erroCancelados,
+            )
+            leituraFalhou = true
+            break
+          }
+          cancelados.push(...(data as { contact_id: string; inicio: string | null }[]))
+        }
+        if (leituraFalhou) {
           saida.falhas += 1
           continue
         }
-        lista = semOsCancelados(
-          encontrados,
-          (cancelados ?? []) as { contact_id: string; inicio: string | null }[],
-        )
+        lista = semOsCancelados(encontrados, cancelados)
         saida.cancelados += encontrados.length - lista.length
       }
 

@@ -424,6 +424,45 @@ describe('poda das travas', () => {
   })
 })
 
+describe('a leitura dos cancelamentos é UMA consulta estreita', () => {
+  it('CRÍTICO: estreita às duplas (contato, horário), sem paginar, e falha fechada se vier incompleta', () => {
+    // Três rodadas do Codex (PR #236 e #237): sem paginar, o corte de ~1000
+    // do PostgREST perdia o cancelamento; paginando por `id` (uuid) ou por
+    // `recebido_em`, o filtro por `contact_id` — que MUDA: nasce nulo e vira
+    // nulo com ON DELETE SET NULL — deixava uma linha sair do recorte entre
+    // páginas. A saída é uma consulta só, estreitada também por `inicio`
+    // (timestamptz: compara instantes, como `mesmaReuniao`), com a contagem
+    // da mesma requisição cobrando que nada ficou de fora.
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
+    // Recorte SEMÂNTICO — de onde se monta o recorte até quem o consome —, e
+    // não por número de caracteres: um comentário a mais empurrava o `if`
+    // para fora da janela e o pino reprovava código correto.
+    const inicio = fonte.indexOf('const fatia = encontrados.slice')
+    const fim = fonte.indexOf('semOsCancelados(encontrados')
+    expect(inicio).toBeGreaterThan(-1)
+    expect(fim).toBeGreaterThan(inicio)
+    const trecho = fonte.slice(inicio, fim)
+    expect(trecho).toContain("'invitee.canceled'")
+    expect(trecho).toMatch(/\.in\('contact_id'/)
+    expect(trecho).toMatch(/\.in\('inicio', instantes\)/)
+    expect(trecho).toMatch(/count: 'exact'/)
+    expect(trecho).toMatch(/count > data\.length/)
+    // e nada de paginação por deslocamento sobre este recorte mutável
+    expect(trecho).not.toContain('buscarPaginado')
+    // valor que não parseia fica FORA da consulta (não pode derrubar o cast)
+    expect(trecho).toMatch(/Number\.isFinite/)
+    // ⚠️ as listas saem da FATIA, nunca de todos os alvos: com ~120 alvos a
+    // URL do GET passava de ~8 KB e a falha fechada se repetia até os
+    // lembretes expirarem (Codex, PR #237)
+    expect(trecho).toMatch(/fatia\.map\(\(a\) => a\.contact_id\)/)
+    expect(trecho).not.toMatch(/encontrados\.map\(\(a\) => a\.contact_id\)/)
+    expect(fonte).toMatch(/const ALVOS_POR_CONSULTA = \d+/)
+    const tamanho = Number(/const ALVOS_POR_CONSULTA = (\d+)/.exec(fonte)?.[1])
+    // 37 (uuid) + 28 (instante) por alvo tem de caber folgado em ~8 KB
+    expect(tamanho * (37 + 28)).toBeLessThan(6000)
+  })
+})
+
 describe('o filtro do cancelamento é só do lembrete por CAMPO', () => {
   it('CRÍTICO: lembrete de AGENDA não passa pelo filtro do Calendly', async () => {
     // Com `fonte: 'reuniao'` o alvo vem de `cb_meetings`. Um cancelamento do

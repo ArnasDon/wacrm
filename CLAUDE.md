@@ -3266,11 +3266,26 @@ e números em `docs/PLANO-migracao-kommo.md`. O que morde código novo:
   agora" e cancelaria a sequência. Consequência: `gravada_em IS NULL` não
   distingue mais "antes da 1003" de "importado" — quem precisar saber
   pergunta ao registro.
-- ⚠️⚠️ **Teto de 700 mensagens por conversa, mantendo as mais RECENTES.** O
+- ⚠️⚠️ **Teto de 600 mensagens por conversa, mantendo as mais RECENTES.** O
   fio carrega a conversa inteira em ordem crescente, sem paginar, e o
   PostgREST corta em 1000 linhas (`max_rows` MEDIDO: 1000): o que passasse
-  sumiria pelo lado das mensagens de HOJE. 1.884 mensagens antigas de 8 fichas
-  ficaram de fora por isso; trazê-las exige paginar o fio antes.
+  sumiria pelo lado das mensagens de HOJE. 600, e não 700: as conversas
+  cortadas são as dos clientes mais ativos, e 300 de folga seriam semanas.
+  2.961 mensagens antigas de 13 fichas ficaram de fora; trazê-las exige o fio
+  buscar as mais recentes antes (defeito que já existia para qualquer
+  conversa acima de 1000).
+- ⚠️⚠️ **As travas são pegas no COMEÇO do lote, `messages` e depois
+  `conversations`** (a ordem do gatilho da 0972), com `lock_timeout` de 1 s.
+  A primeira versão travava linhas de `conversations` e só depois a tabela, e
+  a ingestão viva que chegasse no meio fechava um ciclo com o lote — o
+  detector abortava a INGESTÃO (mensagem de cliente perdida, com a Evolution
+  já respondida). Achado da revisão adversarial, antes de aplicar.
+- **Apagada e editada entram marcadas** (`deleted_at`/`deleted_by`,
+  `edited_at` — da edição comum e da cifrada da 2.4), como a ingestão
+  guardaria. Entre cópias repetidas da mesma mensagem, a MAIS ANTIGA; figurinha
+  fica de fora (sem arquivo viraria "Foto indisponível"). "Celular" no
+  histórico quer dizer celular, WhatsApp Web ou a integração antiga — é o que
+  `persistDeviceMessage` faria, e não há sinal confiável para separar.
 - **A conversa que não existia nasce ENCERRADA** (dono durável, sem
   responsável, sem não lida); a encerrada existente só ganha prévia quando o
   histórico é mais novo que ela, com `set_updated_at` calado — o desfazer do
@@ -3287,9 +3302,15 @@ e números em `docs/PLANO-migracao-kommo.md`. O que morde código novo:
   por idade, a página troca a prévia e soma não lida NA TELA (nunca no banco)
   até recarregar — por isso a carga grande roda fora do expediente.
 - ⚠️ **Desfazer: `cb_desfazer_historico_whatsapp` ANTES de
-  `cb_kommo_desfazer`.** Conversa com mensagem fica presa no desfazer da
-  carga; e a linha deste backfill não pode ir para o `livro_razao` — o
-  desfazer da Kommo aborta em tabela que não conhece.
+  `cb_kommo_desfazer`** (conversa com mensagem fica presa no desfazer da
+  carga) **e antes de `cb_desfazer_encerramento_em_lote`** (que devolveria a
+  espera da foto a uma conversa cuja prévia o backfill trocou). Ele anda EM
+  PEDAÇOS (`p_limite`, repetir até `terminou`), sem DDL em `messages`, e só
+  apaga a conversa que o backfill criou se ninguém a tocou — pergunta ao
+  CATÁLOGO que tabela aponta para ela (`cb_historico_conversa_apontada`), para
+  não levar pelo CASCADE uma agendada pendente. Retém a mensagem importada que
+  uma mensagem de fora cita. A linha deste backfill não pode ir para o
+  `livro_razao` — o desfazer da Kommo aborta em tabela que não conhece.
 
 ⚠️ **Iniciar conversa pelo CRM (`POST /api/cb/conversas/abrir`).** Botão no
 cabeçalho da lista do inbox → `nova-conversa-dialog.tsx`. ABRE, não envia:

@@ -1551,9 +1551,11 @@ Evolution:
 | --- | ---: |
 | Mensagens 1:1 de 2026 nas duas fontes, sem repetição | 126.225 |
 | Das fichas COM CARD nos 4 funis, a trazer | 71.306 (997 fichas) |
-| Prontas depois da normalização e do teto | **69.105 (996 fichas)** |
-| Fora pelo teto de 700 por conversa (as mais antigas de 8 fichas) | 1.884 |
-| Fora por tipo que vira bolha vazia (contato, álbum, botões) | 296 |
+| Prontas depois da normalização e do teto | **67.969 (996 fichas)** |
+| Fora pelo teto de 600 por conversa (as mais antigas de 13 fichas) | 2.961 |
+| Fora por tipo que vira bolha vazia ou sem arquivo (contato, álbum, botões, figurinha) | 355 |
+| Fora porque a cópia mais antiga é de 2025 (reenvio em laço de dezembro) | 15 |
+| Editadas, que entram marcadas | 355 |
 | Sem telefone identificável (LID puro, jun–set) — não atribuíveis | ~26,7 mil |
 
 Validado contra a Kommo em 7 clientes do Bancário - Comercial: **799 × 790**.
@@ -1565,6 +1567,13 @@ lista de tipos permitidos, confere o carimbo, e escreve por lote pela
 no cabeçalho da migration e na seção "Histórico importado do WhatsApp" do
 CLAUDE.md. Desfazer: `cb_desfazer_historico_whatsapp` — ANTES do
 `cb_kommo_desfazer`.
+
+**Revisão adversarial antes de aplicar (21/09, 4 lentes):** as travas
+passaram para o começo do lote (evita impasse com a ingestão viva), o desfazer
+anda em pedaços e só apaga conversa intocada, apagada/editada entram marcadas,
+cópia repetida escolhe a mais antiga, o teto caiu de 700 para 600 e o
+carregador nunca parte uma ficha entre lotes. Perdas registradas: reações, o
+único envio com erro (entra como enviado) e a figurinha.
 
 **Limites aceitos:** anexo sem arquivo (a Evolution não guardou a mídia; o CDN
 do WhatsApp expira em ~30 dias); o Trabalhista antes de junho não existe em

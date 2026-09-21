@@ -7,9 +7,9 @@ fase e no diário do fim.
 | | |
 | --- | --- |
 | **Estado** | Fases 0, 1 e 2 concluídas. **Fase 1** (Next 16.3.5, `npm audit` 12 → 0) em produção desde 21/09/2026 15:08Z (PR #239). **Fase 2** (função de disparo, migration `1030`, `channel_id` respeitado) **em produção desde 21/09/2026 17:33Z** (PR #242), pós-deploy conferido. **Pausado a pedido do operador antes da Fase 3.** |
-| **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. |
+| **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. ⚠️ **Ele ANDOU (medido em 21/09/2026): `upstream/main` = `aee1b01f`, 2 commits novos** — `b9969fa2` (#586: exige `+` e código do país em telefone digitado e na API; 21 arquivos) e `f8a1cc72` (chaves do modal de importação em `pt`/`es`). Estão FORA deste plano até a decisão P9 (seção 8). |
 | **Pedido do operador (21/09/2026)** | Trazer todas as atualizações como COMPLEMENTO ou CORREÇÃO, nunca retrocesso. BSUID por último (é o mais complexo e o de maior risco). Toda correção é **medida contra o nosso código**, **revisada em duas lentes** e **testada no preview, na prática**. Merge e migration estão autorizados quando o teste exigir. Só depois da validação passa-se à fase seguinte. |
-| **PR #229** | Aberto por `devgabrielslv` com head em `ArnasDon/wacrm:main`. **Não tem como ser mesclado**: resolver conflito ali seria commitar no upstream. Fica aberto até a decisão P1 (seção 8). |
+| **PR #229** | Aberto por `devgabrielslv` com head em `ArnasDon/wacrm:main`. **Não tinha como ser mesclado**: resolver conflito ali seria commitar no upstream, e o conteúdo dele muda sozinho (a origem é uma branch viva). **FECHADO em 21/09/2026 por decisão do operador (P1)**, com comentário apontando para este plano — fechar o PR não descarta o conteúdo: ele entra pelas fases daqui, e a worktree `.claude/worktrees/merge-upstream` fica de pé para isso. |
 | **Migrations deste plano** | Faixa **`1030+`** (decisão da Fase 0 — a sessão da Kommo aplicou a 1023 hoje e segue criando números; já houve 7 colisões de branches em paralelo). Migration do upstream aplicada SEM mudança entra na faixa `00xx` preservando a ordem deles: `040→0043`, `041→(não usada)`, `042→0045`. |
 
 ## 1. O problema, em uma frase
@@ -178,7 +178,7 @@ quebrar, sabe-se qual.
 
 | Fase | O que entra (PR upstream) | Valor hoje (medido) | Complexidade | Risco | Migration | Estado |
 | --- | --- | --- | --- | --- | --- | --- |
-| **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (falta só a decisão P1) |
+| **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (P1 decidida em 21/09: #229 fechado) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
 | **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
 | **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir) | Moderado | Baixa | Baixo | — | pendente |
@@ -203,7 +203,9 @@ quebrar, sabe-se qual.
       mudaram.
 - [x] Linha de base na worktree: `typecheck`, `lint`, suíte em Node 22, portões
       de i18n — os números de referência para atribuir qualquer vermelho depois.
-- [ ] Decisão P1 (o #229).
+- [x] Decisão P1 (o #229): **fechado em 21/09/2026** por ordem do operador, com
+      comentário explicando por que não pode ser mesclado e apontando para este
+      plano. A worktree fica de pé — é por ela que as correções seguem entrando.
 
 **Resultado (21/09/2026) — linha de base sobre `7a1dbb4`:**
 
@@ -778,7 +780,10 @@ nosso (já contém os ports). Apagar de novo: `ko.json`, `pt.json`, `es.json`,
 `ci.yml`/`migrations.yml`, e os arquivos `040/041/042` deles (substituídos).
 **Prova:** `git diff main <merge>` só lista sobras esperadas, cada uma revisada.
 Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge de
-2026-09-DD" no `CLAUDE.md`, e fechar o #229 com comentário apontando para cá.
+2026-09-DD" no `CLAUDE.md`. (O #229 já foi fechado em 21/09, decisão P1.)
+⚠️ Se a P9 decidir trazer os 2 commits novos do original, o alvo do merge deixa
+de ser `80c3f9a` e passa a ser o commit que os contém — e as medições da seção
+2 são refeitas para a diferença.
 
 **Resultado:** — (a preencher)
 
@@ -786,7 +791,7 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 
 | # | Decisão | Proposta | Trava qual fase |
 | --- | --- | --- | --- |
-| P1 | Fechar o #229 agora (com comentário apontando para este plano) ou só no fim | Agora — evita que alguém tente mesclá-lo | nenhuma |
+| P1 | ~~Fechar o #229 agora (com comentário apontando para este plano) ou só no fim~~ | ✅ FECHADO em 21/09/2026 por ordem do operador ("siga com sua orientação e feche o PR, mantendo a worktree do plano com todas as correções ainda pendentes — pra que possamos ir corrigindo por aqui") | — |
 | P2 | Notificação: respeitar o perfil e deixar grupo de fora | Sim | 8 |
 | P3 | Apagar `pt.json`/`es.json` depois de aproveitar as traduções | Sim | 10 |
 | P4 | BSUID: `NULL` + CHECK alargado, em vez de `''` | `NULL` | 11 |
@@ -794,6 +799,7 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 | P6 | Alguma fase a DESCARTAR? (a 9 é inerte hoje) | Manter todas | — |
 | P7 | `agentRules: false` (o `next dev` da 16.3 não reescreve o `AGENTS.md`) — ou aceitar o bloco que o Next gera e commitá-lo | Manter desligado | nenhuma (já aplicado na Fase 1, reversível em uma linha) |
 | P8 | ~~Restaurar para 4 as não lidas da conversa que o teste da Fase 1 abriu por engano~~ | ✅ feito em 21/09 (o operador: "faça o que precisar para o teste prático e2e") | — |
+| P9 | Os 2 commits que o original publicou DEPOIS do alvo (`b9969fa2` #586 e `f8a1cc72`): fase extra antes do fechamento, ou próximo ciclo? | A decidir na retomada. ⚠️ O #586 **exige `+` e código do país** em telefone digitado e na API — a nossa regra (`digitosDoTelefone`) faz o contrário de propósito: completa o 55 no número brasileiro sem `+`, que é como o escritório digita. E ele mexe nos MESMOS arquivos da Fase 3a (`dedupe.ts`, `import-modal.tsx`, `broadcast-csv.ts`) e no `broadcast-core.ts` da Fase 2. Medir contra o nosso código antes de qualquer coisa | 3a (se entrar junto) ou 12 |
 
 ## 9. Diário
 
@@ -803,3 +809,4 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 | 21/09/2026 | 1 | Dependências do upstream aplicadas: `npm audit` 12 → 0. As duas lentes não acharam P0. A Lente 2 pegou o `next dev` da 16.3 reescrevendo o `AGENTS.md` (→ `agentRules: false`). A Lente 1 mostrou que o teste em `next dev` não exercitava o roteador novo (→ refeito num build de produção local: limpo). Dois erros MEUS de teste viraram regra do protocolo: abrir conversa de cliente real zera as não lidas, e painel oculto congela o `requestAnimationFrame`. |
 | 21/09/2026 | 2 | A função de disparo NUNCA tinha executado (42702) — e as duas lentes acharam o que o upstream não tem: os parâmetros por destinatário chegavam em 2-D pelo PostgREST (Lente 1) e a rota descartava o `channel_id` (Lente 2). Na 2ª passada, a Lente 1 derrubou uma medição MINHA ("23502") feita num dublê com `NOT NULL` que a produção não tem. Ordem com migration: rascunho → replay verde no commit exato → `1030` aplicada (`20260921164342`) → teste prático: 5 recusas em 400 sem gravar nada, o PRIMEIRO 202 do endpoint, params como lista pelo PostgREST real → chave de teste revogada na hora (0 chaves ativas). Achado fora do escopo: a Meta aceitou e depois falhou a ENTREGA do modelo de Marketing fora da janela, e o motivo se perdeu — é o defeito da Fase 5, que ganhou um caso de teste real. |
 | 21/09/2026 | 2 (fecho) | Codex SEM COTA no HEAD → terceira revisão independente no lugar dele: nenhum P0/P1; os 2 P2 e 3 P3 corrigidos (pino do salto núcleo → resolvedor, `null` = ausente, ordem da validação, mensagem do `verify-schema`, doc), 1 P3 corrigido em parte (o pino do filtro por conta entrou; o `error` descartado e o `status` não conferido de `resolveMetaChannel` viraram cartão) e 2 P3 aceitos por escrito. Merge 17:27Z, rollout 17:33Z na primeira tentativa. Pós-deploy: a sonda inverteu (rota antiga → rota nova; `GET` sem → com `channel_id`), saúde e ingestão conferidas, zero chaves ativas. **Operador pediu pausa antes da Fase 3.** |
+| 21/09/2026 | 0 (P1) | **#229 FECHADO** por ordem do operador, com comentário explicando por que não podia ser mesclado (origem = o `main` do próprio original; conteúdo que muda sozinho; 19 PRs num deploy só) e apontando para este plano. A worktree fica de pé para as correções seguirem por aqui. Na conferência, o original tinha ANDADO: `upstream/main` = `aee1b01f`, 2 commits depois do alvo — o #586 (exige `+` e código do país; 21 arquivos, vários da Fase 3a) virou a decisão P9. |

@@ -26,6 +26,8 @@ const h = vi.hoisted(() => ({
     rpcMover: [] as Record<string, unknown>[],
     /** Roda depois de cada `cb_atualizar_negocio` — encena o card mudando de status no meio da execução. */
     depoisDeMover: null as null | (() => void),
+    /** Preenchido, `cb_atualizar_negocio` RECUSA com este motivo (a guarda do status esperado, 1031). */
+    rpcMoverRecusa: null as string | null,
     /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
     erroNoNegocio: null as string | null,
     /**
@@ -374,6 +376,9 @@ vi.mock('./admin-client', () => {
         }
         if (nome === 'cb_atualizar_negocio') {
           state.rpcMover.push(args ?? {});
+          if (state.rpcMoverRecusa) {
+            return Promise.resolve({ data: [{ ok: false, motivo: state.rpcMoverRecusa }], error: null });
+          }
           state.depoisDeMover?.();
           return Promise.resolve({ data: [{ ok: true, motivo: null }], error: null });
         }
@@ -438,6 +443,7 @@ beforeEach(() => {
   h.state.dealPorStatus = null;
   h.state.rpcMover = [];
   h.state.depoisDeMover = null;
+  h.state.rpcMoverRecusa = null;
   h.state.dealSelects = [];
   h.state.dealInserts = [];
   h.state.automations = [];
@@ -696,7 +702,13 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     });
 
     expect(h.state.rpcMover).toHaveLength(1);
-    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-lead', p_status: null });
+    expect(h.state.rpcMover[0]).toMatchObject({
+      p_deal_id: 'd-perdido',
+      p_stage_id: 'etapa-lead',
+      p_status: null,
+      // Achado pela BUSCA como perdido: a RPC só escreve se ele continua perdido.
+      p_status_esperado: 'lost',
+    });
   });
 
   it('com card aberto, o aberto vence — o perdido nem é consultado', async () => {
@@ -712,7 +724,7 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
       context: {},
     });
 
-    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-aberto' });
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-aberto', p_status_esperado: 'open' });
     expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'lost'))).toBe(false);
   });
 
@@ -753,6 +765,9 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     });
 
     expect(h.state.rpcMover.map((r) => r.p_deal_id)).toEqual(['d-contrato', 'd-contrato']);
+    // O 2º "Mover" vai no card FIXADO — alvo explícito, sem a guarda da busca:
+    // ele acabou de ser ganho pelo passo anterior, e isso é esperado.
+    expect(h.state.rpcMover.map((r) => r.p_status_esperado)).toEqual(['open', null]);
   });
 
   it('o card fixado NÃO vaza para a automação seguinte do mesmo disparo', async () => {
@@ -790,6 +805,47 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
 
     expect(h.state.rpcMover).toHaveLength(0);
     expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'won'))).toBe(false);
+  });
+
+  it('o card do EVENTO de funil é alvo explícito — vai sem a guarda da busca', async () => {
+    // O gatilho de etapa carrega o card exato que se moveu, e ele pode estar
+    // ganho (entrou em "Contrato Fechado"): levá-lo ao funil do Jurídico é
+    // legítimo. A guarda é só para o card que a BUSCA achou.
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { won: { id: 'd-evento' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-juridico')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { deal_id: 'd-evento' },
+    });
+
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-evento', p_status_esperado: null });
+  });
+
+  it('CRÍTICO: a RPC recusou (o card mudou de status no meio) — a execução para ali, com o motivo no registro', async () => {
+    // Codex, PR #245: marcado ganho entre a busca e a escrita, o card não pode
+    // ir para a etapa do comercial. A recusa é da RPC (a guarda mora no
+    // UPDATE); aqui se cobra que o motor não siga adiante com aquele card.
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido' } };
+    h.state.rpcMoverRecusa = 'o negocio deixou de estar lost durante a automacao';
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead'), { ...moverPara('etapa-mql'), id: 's-mover-2', position: 1 }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    // O 2º "Mover" não roda: passo recusado encerra a execução.
+    expect(h.state.rpcMover).toHaveLength(1);
+    expect(JSON.stringify(h.state.logUpdates)).toContain('deixou de estar lost');
   });
 });
 

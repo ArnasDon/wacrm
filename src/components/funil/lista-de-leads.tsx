@@ -295,13 +295,17 @@ export function ListaDeLeads({
         .from("deals")
         .update({ stage_id: stageId })
         .eq("id", dealId)
-        .select("id");
+        .select("id, status");
       if (error || !data || data.length === 0) {
         toast.error(t("toastEtapaFalhou"));
         atualizarLinha(dealId, () => antes);
         recarregar();
         return;
       }
+      // O status que o banco gravou vence o espelho: a lista é uma foto, e o
+      // gatilho decide pelo que está gravado (ver o quadro; Codex, PR #245).
+      const gravado = (data[0].status as string | null) ?? null;
+      atualizarLinha(dealId, (l) => (l.stage_id === stageId ? { ...l, status: gravado } : l));
       avisarDrenagemDeFunil();
       onDealChanged();
     },

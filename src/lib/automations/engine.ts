@@ -1708,13 +1708,6 @@ async function runStep(
       const cfg = step.step_config as MoveDealStepConfig;
       const alvo = await negocioAlvo(db, args);
       if (!alvo) throw new Error('nenhum negócio aberto ou perdido para este contato');
-      // ⚠️ O card desta execução fica FIXADO no contexto (1031): sem isto
-      // cada passo procura de novo, e depois de um passo que fecha o card
-      // (entrar em "Contrato Fechado" o ganha) o "Mover" seguinte cairia no
-      // PERDIDO de outro funil do mesmo contato — a Kommo trouxe um card por
-      // pessoa e por área. Viaja para o "Aguardar" junto com o resto do
-      // contexto.
-      if (!args.context.deal_id) args.context.deal_id = alvo;
 
       const ehMover = step.step_type === 'move_deal_stage';
       if (ehMover && !cfg.stage_id)
@@ -1734,12 +1727,17 @@ async function runStep(
       // transação dá para carimbar a cadeia que o trigger copia para o evento
       // — é ela que impede X→Y→X de girar para sempre.
       const { data, error } = await db.rpc('cb_atualizar_negocio', {
-        p_deal_id: alvo,
+        p_deal_id: alvo.id,
         p_account_id: args.automation.account_id,
         p_pipeline_id: null,
         p_stage_id: ehMover ? cfg.stage_id : null,
         p_status: ehMover ? null : cfg.status,
         p_cadeia: cadeiaDoContexto(args),
+        // ⚠️ Card achado pela BUSCA só é escrito no status em que foi achado
+        // (1031). Entre a busca e a escrita alguém pode tê-lo marcado ganho —
+        // e o ganho nunca é alvo: sem a guarda, o "Mover" arrastaria de volta
+        // ao comercial o card do cliente que acabou de fechar (Codex, PR #245).
+        p_status_esperado: alvo.statusVisto,
       });
       if (error) throw new Error(`${step.step_type} falhou: ${error.message}`);
       const r = Array.isArray(data) ? data[0] : data;
@@ -1747,6 +1745,14 @@ async function runStep(
         throw new Error(
           `${step.step_type} recusado: ${r?.motivo ?? 'motivo desconhecido'}`
         );
+
+      // ⚠️ O card desta execução fica FIXADO no contexto (1031): sem isto
+      // cada passo procura de novo, e depois de um passo que fecha o card
+      // (entrar em "Contrato Fechado" o ganha) o "Mover" seguinte cairia no
+      // PERDIDO de outro funil do mesmo contato — a Kommo trouxe um card por
+      // pessoa e por área. Viaja para o "Aguardar" junto com o resto do
+      // contexto.
+      if (!args.context.deal_id) args.context.deal_id = alvo.id;
 
       return ehMover
         ? `negócio movido para ${cfg.stage_id}`
@@ -2618,12 +2624,12 @@ async function negocioAtualDoContexto(
   args: ExecuteArgs
 ): Promise<{ stage_id: string; status: string } | null> {
   const db = supabaseAdmin();
-  const id = await negocioAlvo(db, args);
-  if (!id) return null;
+  const alvo = await negocioAlvo(db, args);
+  if (!alvo) return null;
   const { data, error } = await db
     .from('deals')
     .select('stage_id, status')
-    .eq('id', id)
+    .eq('id', alvo.id)
     .eq('account_id', args.automation.account_id)
     .maybeSingle();
   if (error) {
@@ -2673,12 +2679,17 @@ function stepChannel(
  * que foi transferido para o funil do Jurídico): o aviso do Calendly de um
  * cliente que marca outra reunião arrastaria o card do caso dele para o
  * comercial. Lá, "nenhum negócio" continua sendo a resposta.
+ *
+ * `statusVisto` é o status em que a BUSCA achou o card (nulo quando o alvo
+ * veio do contexto): quem escreve o repassa à RPC, que só escreve se ele não
+ * mudou no meio — é o que mantém o ganho fora do alcance mesmo quando alguém
+ * fecha o card entre a busca e a escrita.
  */
 async function negocioAlvo(
   db: ReturnType<typeof supabaseAdmin>,
   args: ExecuteArgs
-): Promise<string | null> {
-  if (args.context.deal_id) return args.context.deal_id;
+): Promise<{ id: string; statusVisto: 'open' | 'lost' | null } | null> {
+  if (args.context.deal_id) return { id: args.context.deal_id, statusVisto: null };
   if (!args.contactId) return null;
   for (const status of ['open', 'lost'] as const) {
     const { data, error } = await db
@@ -2691,7 +2702,7 @@ async function negocioAlvo(
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(`busca do negócio falhou: ${error.message}`);
-    if (data?.id) return data.id as string;
+    if (data?.id) return { id: data.id as string, statusVisto: status };
   }
   return null;
 }

@@ -3055,6 +3055,15 @@ O que morde código novo:
   do caso para o comercial antes da 1031. Escopo (`stageInScope`) e estadia
   (`so-na-etapa.ts`) continuam só com card ABERTO, de propósito: perdido não
   "está" em etapa nenhuma para esses dois.
+  ⚠️⚠️ **O card achado pela BUSCA só é escrito no status em que foi achado**
+  (`p_status_esperado`, o 7º argumento da RPC na 1031): `negocioAlvo` devolve
+  o id E o status visto, e o UPDATE só casa se o status não mudou. Sem isso,
+  quem marcasse o card como ganho entre a busca e a escrita teria o card
+  ARRASTADO de volta ao comercial — o CASE protege o status, não a etapa
+  (Codex, PR #245, 3ª rodada). Card do contexto (evento de funil, ou o já
+  fixado) vai com `null`: é alvo explícito, e o ganho que entrou em "Contrato
+  Fechado" pode seguir para o Jurídico. A recusa encerra a execução com o
+  motivo no registro.
 - ⚠️⚠️ **O card da execução fica FIXADO no contexto** no primeiro "Mover
   card"/"Marcar status" (`context.deal_id`, e viaja para o "Aguardar"). Sem
   isso cada passo procurava de novo, e depois de um passo que FECHA o card o
@@ -3066,7 +3075,12 @@ O que morde código novo:
   o status (sem tocar etapa) e o gatilho passa reto — de propósito.
 - **`src/lib/pipelines/resultado.ts` é ESPELHO do gatilho** (para o selo
   aparecer sem refetch). Quem mudar a regra muda nos DOIS, e o teste fixa o
-  comportamento MEDIDO em produção.
+  comportamento MEDIDO em produção. ⚠️ Ele é só o palpite OTIMISTA do quadro e
+  da lista do funil: os dois gravam com `.select('id, status')` e trocam o
+  palpite pelo status que o BANCO gravou, e o painel da conversa (que espera a
+  escrita) usa direto o do banco. O quadro não tem realtime: o status em
+  memória pode ser de antes de outro operador fechar o card, e o gatilho
+  decide pelo que está gravado (Codex, PR #245).
 - Ganho/perdido **não some com nada**: card fica na coluna (selo), conversa
   intocada; sai das métricas de aberto e entra em "Ganhos no mês".
 
@@ -6857,9 +6871,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     numa etapa neutra, sem troca de status no mesmo update e com a etapa
     achada, volta `open`; ganho continua ganho) e `cb_atualizar_negocio` (a
     RPC das automações da 934: mover para etapa neutra reabre o perdido na
-    mesma escrita, inclusive para a etapa em que ele já está). Assinaturas e
-    privilégios iguais. Decisão do operador em 21/09/2026 (ver a seção "Etapa
-    com RESULTADO"). Aplicada ANTES do merge, depois do replay do CI.
+    mesma escrita, inclusive para a etapa em que ele já está; e só escreve no
+    card achado pela busca se ele continua no status visto). ⚠️ A RPC muda de
+    ASSINATURA — ganha `p_status_esperado text DEFAULT NULL` —, por isso
+    DROP + CREATE; quem chama sem ele (o app anterior) cai no DEFAULT. A
+    conferência CHAMA as duas funções com dado real, num subbloco desfeito por
+    `P1031` (a guarda recusa, a RPC reabre, o gatilho reabre, o ganho fica).
+    Ensaiada contra a produção numa transação desfeita antes de aplicar.
+    Decisão do operador em 21/09/2026 (ver a seção "Etapa com RESULTADO").
+    Aplicada ANTES do merge, depois do replay do CI.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

@@ -46,7 +46,6 @@ import { ResponsavelMenu } from '@/components/inbox/painel/responsavel-menu';
 import { CopiarLinkDaConversa } from '@/components/inbox/copiar-link-da-conversa';
 import { useExecucoesDoContato } from '@/hooks/use-execucoes-do-contato';
 import { useExecucoesDoFio } from '@/hooks/use-execucoes-do-fio';
-import { statusAoEntrarNaEtapa } from '@/lib/pipelines/resultado';
 import { avisarDrenagemDeFunil } from '@/lib/automations/avisar-drenagem';
 import { CampoComSalvamento } from '@/components/contacts/campo-com-salvamento';
 import { MenuDeBlocos } from '@/components/contacts/menu-de-blocos';
@@ -705,7 +704,7 @@ export function PainelDoContato({
         .from('deals')
         .update(patch)
         .eq('id', deal.id)
-        .select('id');
+        .select('id, status');
       setNegocioOcupado(false);
       if (error || !linhas || linhas.length === 0) {
         toast.error(tSidebar('dealSaveError'));
@@ -721,19 +720,18 @@ export function PainelDoContato({
       }
       // Ancora o cartão no negócio mexido — ver `ultimoNegocioMexido`.
       setUltimoNegocioMexido(deal.id);
-      // Espelho do gatilho da 950: entrar em etapa marcada carimba o
-      // status. O BANCO já gravou (BEFORE trigger, mesma escrita); aqui só
-      // refletimos para o selo aparecer sem esperar refetch.
-      const carimbo = patch.stage_id
-        ? statusAoEntrarNaEtapa(allStages, patch.stage_id, deal.status, patch.status)
-        : null;
+      // O status que o BANCO gravou: o gatilho da 950/1031 carimba ganho,
+      // perdido ou a reabertura na MESMA escrita, e decide pelo que está
+      // gravado — não pelo `deal.status` desta tela, que pode ser de antes de
+      // outro operador mexer no card (Codex, PR #245).
+      const statusGravado = linhas[0].status as DealStatus;
       setDeals((prev) =>
         prev.map((d) =>
           d.id === deal.id
             ? {
                 ...d,
                 ...patch,
-                ...(carimbo ? { status: carimbo } : {}),
+                status: statusGravado,
                 // O NULL que o banco recebeu vira `undefined` no estado — o
                 // tipo `Deal` só conhece opcional, e para o render dá no
                 // mesmo (input vazio).

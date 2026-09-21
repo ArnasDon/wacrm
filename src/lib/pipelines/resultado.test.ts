@@ -101,4 +101,15 @@ describe("gatilho da 1031 — a regra escrita no SQL", () => {
       /status\s+=\s+CASE\s+WHEN p_status IS NULL\s+AND p_stage_id IS NOT NULL\s+AND v_resultado IS NULL\s+AND status = 'lost'\s+THEN 'open'\s+ELSE coalesce\(p_status, status\)\s+END/,
     );
   });
+
+  // O CASE protege só o STATUS: o card que a BUSCA do motor achou tem de
+  // continuar no status em que foi achado, senão a ETAPA muda assim mesmo — e
+  // o card de quem fechou no meio voltaria ao comercial (Codex, PR #245).
+  it("a RPC só escreve no card achado pela busca se ele continua no status visto", () => {
+    expect(sql).toMatch(/DROP FUNCTION IF EXISTS cb_atualizar_negocio\(uuid, uuid, uuid, uuid, text, jsonb\);/);
+    expect(sql).toMatch(/p_status_esperado text DEFAULT NULL/);
+    expect(sql).toMatch(
+      /WHERE id = p_deal_id AND account_id = p_account_id\s+(--[^\n]*\n\s*)*AND \(p_status_esperado IS NULL OR status = p_status_esperado\);\s+IF NOT FOUND THEN/,
+    );
+  });
 });

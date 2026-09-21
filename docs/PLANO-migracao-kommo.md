@@ -1260,20 +1260,20 @@ em "falhou". A margem caiu de ~90× para ~3×.
 - [x] **3. Piloto em produção — FEITO em 21/09, e ele DERRUBOU a 1014.**
       Os 33 leads, a carga de verdade com filtro, duas passadas, conferência na
       tela e desfazer. Resultado na seção "O piloto — os 33 leads".
-- [ ] **4. Ensaio com volume** — a carga inteira contra um Postgres local com o
-      schema do replay, para o que o piloto não vê: o estouro de subtransação,
-      o tempo, o Kanban com 8.400 cards e o corte do disparo. Não existe banco
-      de homologação — o `.env.local` aponta para a produção.
+- [x] **4. Ensaio com volume — SUBSTITUÍDO pela revisão adversarial + a carga
+      em lotes.** O estouro de subtransação não chegou a ser risco: com os
+      gatilhos silenciados dentro do lote não há subtransação para estourar, e
+      os 20 lotes de 250 cards rodaram em 0,4–0,6 s cada. O Kanban cheio foi
+      medido na tela DEPOIS da carga (3.645 negócios no Trabalhista -
+      Comercial, com a paginação de 100 do PR #231 segurando o render).
 - [ ] **5. Religar entradas e saídas** — formulários e Typebot passam a chamar
       o CB CRM (webhooks de entrada da 982), e os 5 webhooks de conversão
-      ganham substituto, antes da carga final.
-- [ ] **6. Carga** — por lote, idempotente, na ordem contatos → etiquetas →
-      campos → negócios → eventos → conversas → anotações. ⚠️ Na janela:
-      zerar `default_pipeline_id` das 5 conexões (o roteador cria card sozinho)
-      e desligar a automação do Calendly. Reexecutada no dia do corte para o
-      delta.
-- [ ] **7. Conferência** — as 13 conferências do contrato, as contagens dos
-      dois lados, amostra na tela e o relatório do funil antes/depois.
+      ganham substituto, antes do corte. **Continua pendente** — a carga rodou
+      antes dela de propósito: ela é reexecutável, e o delta do dia do corte é
+      uma segunda passada.
+- [x] **6. Carga — FEITA em 21/09/2026**, no recorte que o operador fechou no
+      mesmo dia. Detalhes e números na seção "A carga — 21/09/2026".
+- [x] **7. Conferência — FEITA**, no banco e na tela. Mesma seção.
 - [ ] **8. Desligar** — a equipe para de usar a Kommo; revogar token e chave
       secreta da integração.
 
@@ -1367,3 +1367,121 @@ antes. Gerar um novo na integração da Kommo é pré-requisito da remedição, 
 só da carga. Ele foi colado num chat durante o levantamento de 02/09 —
 **revogar na Kommo ao fim da migração**, junto com a chave secreta da
 integração.
+
+## A carga — 21/09/2026
+
+### O recorte que o operador fechou
+
+Pedido dele, no meio da execução: *"para diminuir sua carga, vamos limitar um
+pouco as informações"* — só os leads **da qualificação para frente**. Traduzido
+contra as etapas de destino e medido sobre os 12.714 leads vivos:
+
+| Funil | Entra | Leads |
+| --- | --- | ---: |
+| Trabalhista ‑ Comercial | Ag. Demissão · Pediu Demissão · Foi Demitido · Qualificado · Link Enviado · Contrato Assinado · Protocolado · Desqualificado‑Sem Direito | **3.392** |
+| Trabalhista ‑ Jurídico | tudo | **416** |
+| Bancário ‑ Comercial | Recebeu Link · Reunião Agendada · Reunião Qualificada · No Show · Reunião Sem Proposta · Proposta Realizada · Contrato Fechado | **509** |
+| Bancário ‑ Jurídico | tudo | **524** |
+
+**Fica de fora: 7.873** — a etapa de ENTRADA dos dois funis (Entrada Avulsa
+344, Lead‑Type e Forms 255, Contato Avulso 2) e as três colunas de PERDA (Não
+Respondeu 1.571, Perdido trabalhista 2.719, Perdido bancário 2.982).
+
+⚠️⚠️ **A consequência foi posta antes da decisão e o operador escolheu assim:
+sem as perdas, o denominador some e as taxas históricas ficam perto de 100%.**
+Medido depois, no "Total" do Desempenho trabalhista: LEAD 4.069 → MQL 3.701
+(**91,0%**). A alternativa oferecida era trazer as perdas (12.113 cards) ou só
+as dos últimos 6 meses.
+
+⚠️ **O funil Onboarding entra inteiro, e isso foi levantado pelo operador**
+("os clientes que mandaram documentos e passaram por contrato fechado não estão
+em cliente ativo, mas são clientes ativos"). Já estava coberto pelo de‑para, e
+agora está MEDIDO: as 4 etapas vivas do Onboarding — iniciar onboarding 52,
+documentos solicitados 36, docs com pendência 16, Onboarding Finalizado 78 —
+pousam todas em **Bancário ‑ Jurídico › Cliente Ativo**, que por isso soma 416
+e não 234. Só o único "descarte" fica de fora. E a trilha deles PASSA por
+"Contrato Fechado", que é o que faz o contrato contar no funil comercial.
+
+### O que a revisão adversarial achou antes de a carga rodar
+
+Cinco lentes sobre a 1016 e o carregador, cada achado refutado por um segundo
+leitor: **18 levantados, 15 confirmados**. Os que mudavam dado em produção
+viraram a **1017** (banco) e correções no carregador:
+
+| | Achado | O que teria acontecido |
+| --- | --- | --- |
+| **P0** | A carga **nunca olhava `deals`** | 562 das 4.635 pessoas já tinham negócio aqui; a carga criaria 583 cards por cima. A decisão 11 ("a etapa da Kommo MOVE o card") tinha o ramo de UPDATE pronto na 1014, atrás do campo `deal_id`, e ninguém o alimentava |
+| P1 | O gatilho do título (1007) escrevia em `deals` no passo de PESSOAS | `updated_at = hoje` nos cards que já existiam, fora do livro-razão. A 1016 dizia que a ordem pessoas→cards resolvia — resolve para o card que a carga CRIA, não para os 983 que já existiam |
+| P1 | O desfazer apagava do livro as linhas que ele **reteve** | cliente que escreve durante a carga impede a ficha de sair; a linha saía do livro assim mesmo, e a segunda tentativa respondia "0 linhas" sobre uma ficha de pé |
+| P1 | O sobrevivente era recalculado do DUMP a cada execução | no delta do corte, um lead FUNDIDO podia virar sobrevivente e ganhar card próprio — dois cards para a mesma pessoa, sem nada no banco impedindo |
+| P1 | Rótulo automático da Kommo virava nome **FIXADO** | 415 fichas presas em "Lead #21438851", "." ou "oi" para sempre: os três caminhos de ingestão respeitam `nome_fixado_em` (999) e o `pushName` nunca mais corrigiria |
+| P1 | Os 12.308 eventos nasciam **mudos** | `useLeadEventText` faz `?? '—'`: a aba Histórico leria "Transferido de — (—) para — (—)" doze mil vezes |
+
+**E um achado que saiu da conferência à mão, não da revisão:** o lead com a
+etiqueta CONTATO SEG. TRAB e SEM histórico nascia já no jurídico, então a
+trilha nunca passava por Protocolado e **o contrato sumia do Desempenho do
+comercial** — o oposto do que a seção 6 do de‑para promete. A etapa inicial de
+reserva passou a ser a etapa MAPEADA do lead, e a perna final virou o
+`pipeline_changed` da regra 14. São 67 contratos.
+
+### O que rodou
+
+Janela aberta (os 5 `default_pipeline_id` zerados e a automação do Calendly
+desligada) e **devolvida idêntica** no fim.
+
+| Passo | Resultado |
+| --- | --- |
+| **pessoas** | 3.874 fichas · 71 nomes · 577 e‑mails · 5.691 valores de campo · 12 lotes de ~0,3 s |
+| **cards** | **4.219 criados + 562 MOVIDOS** · 12.307 eventos · 10.415 etiquetas · 20 lotes de 0,4–0,6 s |
+| **conversas** | 216 conversas encerradas · 473 anotações |
+| **2ª passada** | **0 / 0 / 0** — 4.781 `ja_migrado`, 473 anotações reconhecidas como repetidas |
+
+**Conferências:** 0 telefone com separador · 0 dono errado · 0 card sem
+contato · 0 fora de BRL · 0 evento sem destino · 0 evento sem rótulo · 0 card
+datado de hoje · 0 gatilho desligado · **1** par de cards ABERTOS no mesmo
+funil, o mesmo que já existia antes da carga.
+
+⚠️ **Três números da conferência precisam de leitura, e nenhum é defeito.** Os
+562 cards MOVIDOS têm **duas** criações (a do CRM, de quando o roteador os
+abriu, e a retroativa da Kommo) e trilha própria anterior — por isso
+`trilha_por_gatilho` dá 570 e `data_da_criacao_diverge` dá 562. Nenhum desses
+eventos é de hoje: a conferência 29 procura escrita de gatilho DURANTE a carga,
+e essa é zero. E `dois_cards_no_mesmo_funil` = 93 são 79 pares `won+won` e 13
+`open+won` — a regra 6b ("lead com desfecho ganha card próprio").
+
+### Na tela
+
+- **Trabalhista ‑ Comercial: 3.645 negócios.** Ag. Demissão 886, Pediu Demissão
+  1.152. Cards com nome real e as etiquetas `kommo`/`Trabalhista`/`Formulário`.
+- **Desempenho, Total:** LEAD 4.069 → MQL 3.701 (91,0%) → PROPOSTA 1.194
+  (32,3%) → **CONTRATO 1.008** (84,4%). Valor fechado R$ 48.000 — o funil
+  trabalhista nunca registrou honorário na Kommo, como a seção 10 do de‑para
+  avisava.
+- **Desempenho, este mês:** 364 leads, 16 contratos. O Meu dia abriu com
+  "Nada de novo" — a carga não inundou ninguém.
+- **Aba Histórico de uma ficha:** "Transferido de Trabalhista ‑ Jurídico (Em
+  Elaboração) para Trabalhista ‑ Comercial (Protocolado)", datado de out/2025,
+  marcado RETROATIVO.
+
+⚠️ **O cabeçalho do Kanban conta "ganhos no mês" por `updated_at`, que na Kommo
+é "última vez que alguém tocou", não "ganho em".** O Trabalhista ‑ Comercial
+mostra 136 ganhos no mês. É a melhor aproximação disponível e foi o que a regra
+8 do contrato pediu — a alternativa (deixar `updated_at` no dia da carga) poria
+os 677 ganhos todos neste mês.
+
+### O que a carga NÃO fez
+
+- Os **20 leads sem telefone aproveitável** do recorte não viraram card (regra
+  18b), com a lista emitida. Dois deles têm desfecho e o operador já decidiu
+  deixá-los de fora: #27593737 (Kailane, Protocolado) e #27963311 (Ganho).
+- **Reuniões históricas** (decisão 27) e os campos fora da allowlist continuam
+  fora.
+- **A Fase 5 não foi feita.** A Kommo continua recebendo ~30 leads/dia, e o
+  delta do dia do corte é uma segunda passada da mesma carga.
+
+### Desfazer
+
+O livro-razão tem **26.170 linhas** e `cb_kommo_desfazer` (1017) sabe reverter
+as nove tabelas. Ele é REPETÍVEL: a linha cujo objeto não pôde sair — ficha que
+ganhou conversa porque o cliente escreveu durante a carga — **fica no livro** e
+sai na tentativa seguinte.

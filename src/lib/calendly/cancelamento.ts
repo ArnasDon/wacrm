@@ -68,10 +68,20 @@ const ignorado = (detalhe: string, contactId: string | null = null): Processamen
  * agendamento. Devolve o mesmo formato, para `gravarResultado` servir aos
  * dois caminhos.
  */
+export interface OpcoesDoCancelamento {
+  /** Quantas vezes reler o agendamento que ainda está sendo processado. */
+  tentativas?: number;
+  /** Injetável para o teste não dormir de verdade. */
+  esperar?: (ms: number) => Promise<void>;
+}
+
+const ESPERA_PADRAO_MS = 5_000;
+
 export async function processarCancelamento(
   db: SupabaseClient,
   accountId: string,
   c: Cancelamento,
+  opcoes: OpcoesDoCancelamento = {},
 ): Promise<ProcessamentoDoAgendamento> {
   if (c.reagendado) {
     return ignorado("reagendamento: o horário novo chega no invitee.created e re-arma sozinho");
@@ -84,19 +94,44 @@ export async function processarCancelamento(
   // já resolveu o contato. Não se refaz a busca por telefone — ela pode dar
   // outro resultado hoje, e o desarme tem de valer para quem recebeu o
   // agendamento, não para quem o telefone acharia agora.
-  const { data: original, error: erroOriginal } = await db
-    .from("cb_calendly_eventos")
-    .select("contact_id")
-    .eq("account_id", accountId)
-    .eq("evento", EVENTO_AGENDADO)
-    .eq("invitee_uri", c.inviteeUri)
-    .maybeSingle();
-  if (erroOriginal) {
-    return { resultado: "falhou", detalhe: `leitura do agendamento original falhou: ${erroOriginal.message}`, contactId: null };
+  // ⚠️⚠️ O AGENDAMENTO PODE AINDA ESTAR SENDO PROCESSADO. A rota responde 200
+  // ao Calendly e processa em `after()` (criar ficha, disparar automação):
+  // quem marca e cancela em seguida chega aqui com `contact_id` ainda nulo, e
+  // desistir nesse instante deixaria os lembretes ARMADOS — a linha do
+  // cancelamento já existe, então a reentrega do Calendly não tenta de novo.
+  // Medido em produção: o processamento do agendamento leva 1,4 a 3,5 s.
+  // Por isso relê algumas vezes antes de desistir (Codex, PR #235).
+  const tentativas = Math.max(1, opcoes.tentativas ?? 3);
+  const esperar = opcoes.esperar ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  let contactId: string | null = null;
+  let aindaProcessando = false;
+  for (let i = 0; i < tentativas; i += 1) {
+    const { data: original, error: erroOriginal } = await db
+      .from("cb_calendly_eventos")
+      .select("contact_id, resultado, processando_desde")
+      .eq("account_id", accountId)
+      .eq("evento", EVENTO_AGENDADO)
+      .eq("invitee_uri", c.inviteeUri)
+      .maybeSingle();
+    if (erroOriginal) {
+      return { resultado: "falhou", detalhe: `leitura do agendamento original falhou: ${erroOriginal.message}`, contactId: null };
+    }
+    contactId = (original?.contact_id as string | null) ?? null;
+    if (contactId) break;
+    // Só espera enquanto houver por que esperar: linha em processamento (ou
+    // ainda sem desfecho). Agendamento já finalizado SEM contato não muda.
+    aindaProcessando =
+      !!original &&
+      (original.processando_desde != null || original.resultado === "recebido");
+    if (!aindaProcessando || i === tentativas - 1) break;
+    await esperar(ESPERA_PADRAO_MS);
   }
-  const contactId = (original?.contact_id as string | null) ?? null;
   if (!contactId) {
-    return ignorado("o agendamento cancelado não tem contato no log");
+    return ignorado(
+      aindaProcessando
+        ? "o agendamento ainda estava sendo processado e não tinha contato — os lembretes podem ter ficado armados"
+        : "o agendamento cancelado não tem contato no log",
+    );
   }
 
   // ⚠️ TODAS as automações de lembrete da conta, LIGADAS OU NÃO. Uma
@@ -155,10 +190,19 @@ export async function processarCancelamento(
       valor: a.valor,
       motivo: "cancelamento",
     })),
-    // A chave é TOTAL (935), então serve de alvo do ON CONFLICT. Repetir a
-    // entrega do Calendly não pode virar erro: a trava já estar lá é
-    // exatamente o resultado desejado.
-    { onConflict: "automation_id,contact_id,valor", ignoreDuplicates: true },
+    // ⚠️⚠️ PROMOVE a linha que já existe (sem `ignoreDuplicates`), e isso é
+    // load-bearing: a varredura insere a trava ANTES de disparar e a DEVOLVE
+    // quando o recorte barra. Ignorando o conflito, um cancelamento que
+    // corresse com a varredura não deixava marca nenhuma — a varredura
+    // apagava a linha em seguida e o ciclo seguinte mandava o lembrete da
+    // reunião cancelada (Codex, PR #235). Promovida para `cancelamento`, a
+    // devolução não a alcança (ela só apaga `motivo = 'disparo'`).
+    //
+    // O preço, escrito: uma trava que JÁ tinha disparado e depois é
+    // cancelada perde o rótulo "disparo". `disparado_em` não é tocado (não
+    // vai no payload), e o que o `motivo` precisa garantir é o contrário —
+    // nunca afirmar envio que não houve.
+    { onConflict: "automation_id,contact_id,valor" },
   );
   if (erroTrava) {
     return { resultado: "falhou", detalhe: `não foi possível desarmar os lembretes: ${erroTrava.message}`, contactId };

@@ -182,6 +182,11 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
             .from('cb_automation_reminders')
             .delete()
             .eq('id', id)
+            // ⚠️ SÓ a trava de disparo. Entre o INSERT acima e esta linha, o
+            // cancelamento de uma reunião (1013) pode ter PROMOVIDO esta
+            // mesma linha para `cancelamento` — apagá-la devolveria o
+            // lembrete de um evento cancelado à fila (Codex, PR #235).
+            .eq('motivo', 'disparo')
           if (erroDevolucao) {
             console.error('[automations] devolução da trava falhou', bruta.id, erroDevolucao)
             saida.falhas += 1

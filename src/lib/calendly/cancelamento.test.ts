@@ -23,7 +23,9 @@ const CANCELAMENTO: Cancelamento = {
 };
 
 interface Dados {
-  original?: { contact_id: string | null } | null;
+  original?: Record<string, unknown> | null;
+  /** Leituras sucessivas do agendamento original (para a reléitura). */
+  leituras?: (Record<string, unknown> | null)[];
   erroOriginal?: { message: string } | null;
   automacoes?: { id: string; trigger_config: unknown }[];
   erroAutomacoes?: { message: string } | null;
@@ -34,6 +36,8 @@ interface Dados {
 
 function bancoFalso(dados: Dados) {
   const travas: Record<string, unknown>[] = [];
+  const opcoesDoUpsert: unknown[] = [];
+  let leu = 0;
   const db = {
     from(tabela: string) {
       const resposta = () => {
@@ -45,12 +49,19 @@ function bancoFalso(dados: Dados) {
         select: () => b,
         eq: () => b,
         in: () => b,
-        maybeSingle: async () => ({
-          data: dados.original === undefined ? null : dados.original,
-          error: dados.erroOriginal ?? null,
-        }),
-        upsert: async (linhas: Record<string, unknown>[]) => {
+        maybeSingle: async () => {
+          const i = leu;
+          leu += 1;
+          const data = dados.leituras
+            ? (dados.leituras[Math.min(i, dados.leituras.length - 1)] ?? null)
+            : dados.original === undefined
+              ? null
+              : dados.original;
+          return { data, error: dados.erroOriginal ?? null };
+        },
+        upsert: async (linhas: Record<string, unknown>[], opcoes?: unknown) => {
           travas.push(...linhas);
+          opcoesDoUpsert.push(opcoes);
           return { error: dados.erroTrava ?? null };
         },
         then: (f: (v: unknown) => unknown) => Promise.resolve(resposta()).then(f),
@@ -58,7 +69,7 @@ function bancoFalso(dados: Dados) {
       return b;
     },
   } as unknown as SupabaseClient;
-  return { db, travas };
+  return { db, travas, opcoesDoUpsert, leituras: () => leu };
 }
 
 const LEMBRETE = (id: string, campo: string) => ({
@@ -203,5 +214,74 @@ describe("processarCancelamento", () => {
       erroTrava: { message: "23505 não, outro" },
     });
     expect((await processarCancelamento(trava.db, "c1", CANCELAMENTO)).resultado).toBe("falhou");
+  });
+});
+
+describe("processarCancelamento — corridas (Codex, PR #235)", () => {
+  const semDormir = { esperar: async () => {} };
+
+  it("CRÍTICO: agendamento AINDA EM PROCESSAMENTO é relido antes de desistir", async () => {
+    // A rota responde 200 ao Calendly e processa em after(): quem marca e
+    // cancela em seguida chega aqui com `contact_id` ainda nulo. Desistir no
+    // primeiro olhar deixaria os lembretes armados, e a reentrega do
+    // Calendly não tenta de novo (a linha do cancelamento já existe).
+    const { db, travas, leituras } = bancoFalso({
+      leituras: [
+        { contact_id: null, resultado: "recebido", processando_desde: "2026-09-21T01:00:00Z" },
+        { contact_id: null, resultado: "recebido", processando_desde: "2026-09-21T01:00:00Z" },
+        { contact_id: "contato-1", resultado: "disparado", processando_desde: null },
+      ],
+      automacoes: [LEMBRETE("a24", "campo-data")],
+      valores: [{ custom_field_id: "campo-data", value: "2026-09-25T17:00:00Z" }],
+    });
+    const r = await processarCancelamento(db, "conta-1", CANCELAMENTO, semDormir);
+    expect(leituras()).toBe(3);
+    expect(r.resultado).toBe("cancelado");
+    expect(travas).toHaveLength(1);
+  });
+
+  it("agendamento JÁ FINALIZADO sem contato não fica relendo à toa", async () => {
+    const { db, leituras } = bancoFalso({
+      original: { contact_id: null, resultado: "sem_telefone", processando_desde: null },
+    });
+    const r = await processarCancelamento(db, "conta-1", CANCELAMENTO, semDormir);
+    expect(leituras()).toBe(1);
+    expect(r.resultado).toBe("ignorado");
+  });
+
+  it("esgotadas as tentativas, o detalhe DIZ que os lembretes podem ter ficado armados", async () => {
+    const { db } = bancoFalso({
+      original: { contact_id: null, resultado: "recebido", processando_desde: "2026-09-21T01:00:00Z" },
+    });
+    const r = await processarCancelamento(db, "conta-1", CANCELAMENTO, { ...semDormir, tentativas: 2 });
+    expect(r.resultado).toBe("ignorado");
+    expect(r.detalhe).toContain("podem ter ficado armados");
+  });
+
+  it("CRÍTICO: o upsert PROMOVE a trava existente — nunca ignora o conflito", async () => {
+    // A varredura insere a trava ANTES de disparar e a DEVOLVE quando o
+    // recorte barra. Ignorando o conflito, um cancelamento concorrente não
+    // deixava marca e a devolução apagava tudo: o ciclo seguinte mandaria o
+    // lembrete da reunião cancelada.
+    const { db, opcoesDoUpsert } = bancoFalso({
+      original: { contact_id: "contato-1" },
+      automacoes: [LEMBRETE("a24", "campo-data")],
+      valores: [{ custom_field_id: "campo-data", value: "2026-09-25T17:00:00Z" }],
+    });
+    await processarCancelamento(db, "conta-1", CANCELAMENTO, semDormir);
+    expect(opcoesDoUpsert).toHaveLength(1);
+    expect((opcoesDoUpsert[0] as { ignoreDuplicates?: boolean })?.ignoreDuplicates).toBeUndefined();
+    expect((opcoesDoUpsert[0] as { onConflict?: string })?.onConflict).toBe("automation_id,contact_id,valor");
+  });
+});
+
+describe("a devolução da trava não alcança o cancelamento (pino estrutural)", () => {
+  it("varrer-lembretes só apaga a linha com motivo = 'disparo'", async () => {
+    // As duas correções se cruzam nesta linha: sem a cerca, a devolução
+    // apagaria uma trava PROMOVIDA por cancelamento. O comportamento não tem
+    // teste de banco, então o que segura é ler o fonte.
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync("src/lib/automations/varrer-lembretes.ts", "utf-8").replace(/\/\/.*$/gm, "");
+    expect(fonte).toMatch(/\.delete\(\)[\s\S]{0,200}?\.eq\('motivo', 'disparo'\)/);
   });
 });

@@ -320,10 +320,18 @@ export async function conferirAssinatura(
     } else if (config.status === "erro" && config.last_error === "assinatura_incompleta") {
       // Reassinou: some o aviso. Só este código é limpo — outro erro
       // gravado aqui é de outra coisa e não se apaga de carona.
-      await admin
+      //
+      // ⚠️ "conectado", NUNCA "ok": o CHECK de `cb_calendly_config.status`
+      // (0977) só aceita 'conectado' e 'erro'. Com "ok" o UPDATE é recusado
+      // (23514), o erro do Supabase não lança, e o cartão ficaria vermelho
+      // para sempre mesmo depois de reassinar (Codex, PR #235).
+      const { error: erroLimpeza } = await admin
         .from("cb_calendly_config")
-        .update({ status: "ok", last_error: null, updated_at: agora })
+        .update({ status: "conectado", last_error: null, updated_at: agora })
         .eq("account_id", accountId);
+      if (erroLimpeza) {
+        console.error("[calendly] não foi possível limpar o aviso de assinatura incompleta:", erroLimpeza.message);
+      }
     }
   } catch (e) {
     const codigo = codigoDe(e);

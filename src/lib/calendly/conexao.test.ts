@@ -66,7 +66,10 @@ describe("conferirAssinatura — assinatura incompleta", () => {
   it("reassinou: o aviso some sozinho na conferência seguinte", async () => {
     const { db, updates } = bancoFalso({ ...CONFIG, status: "erro", last_error: "assinatura_incompleta" });
     await conferirAssinatura(db, "conta-1", { cliente: clienteCom([...EVENTOS_ASSINADOS]) });
-    expect(updates).toContainEqual(expect.objectContaining({ status: "ok", last_error: null }));
+    // ⚠️ "conectado", não "ok": o CHECK do 0977 só aceita 'conectado'|'erro',
+    // e "ok" seria recusado em silêncio — o cartão ficaria vermelho para
+    // sempre depois de reassinar (Codex, PR #235).
+    expect(updates).toContainEqual(expect.objectContaining({ status: "conectado", last_error: null }));
   });
 
   it("⚠️ NÃO apaga erro de outra causa de carona", async () => {

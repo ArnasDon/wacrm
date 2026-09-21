@@ -74,6 +74,16 @@ export interface ResultadoPaginado<T> {
  *
  * `pagina(de, ate)` monta a consulta com o `order` e o `count: 'exact'` de
  * quem chama e devolve a resposta crua do Supabase.
+ *
+ * ⚠️ A primeira página vai SOZINHA — é a contagem dela que diz quantas faltam
+ * —, e as seguintes saem JUNTAS. Em fila, cada página esperava a anterior
+ * voltar: o quadro do funil Trabalhista (3.669 cards, 4 páginas) levava 4×
+ * o tempo de uma, e os 5.224 negócios do filtro da caixa de entrada, 6×
+ * (medido em 21/09/2026). As respostas são ASSENTADAS na ordem, pela mesma
+ * régua de antes — a contagem mais recente manda, a página curta prova o fim
+ * —, então o resultado é o mesmo da leitura em fila; só o tempo muda. Se a
+ * coleção CRESCEU no meio (a última página prevista veio cheia e o acumulado
+ * ainda não alcança a contagem), o resto segue uma a uma, até o teto.
  */
 export async function buscarPaginado<T>(
   pagina: (de: number, ate: number) => PromiseLike<RespostaDaPagina<T>>,
@@ -81,9 +91,8 @@ export async function buscarPaginado<T>(
   const acumulado: T[] = [];
   let total: number | null = null;
 
-  for (let n = 0; n < MAX_PAGINAS; n++) {
-    const de = n * PAGINA;
-    const { data, error, count } = await pagina(de, de + PAGINA - 1);
+  /** Acrescenta uma página. Devolve o resultado se a leitura TERMINOU. */
+  const assentar = ({ data, error, count }: RespostaDaPagina<T>): ResultadoPaginado<T> | null => {
     if (error || !data) return { linhas: null, erro: error ?? null, motivo: "erro" };
 
     acumulado.push(...data);
@@ -105,6 +114,33 @@ export async function buscarPaginado<T>(
         ? { linhas: acumulado, erro: null, motivo: null }
         : { linhas: null, erro: null, motivo: "incompleto" };
     }
+    return null;
+  };
+
+  const intervalo = (n: number) => pagina(n * PAGINA, n * PAGINA + PAGINA - 1);
+
+  const fim = assentar(await intervalo(0));
+  if (fim) return fim;
+
+  // Aqui `total` existe (sem contagem, a 1ª página já teria decidido). Se a
+  // contagem já passa do teto, pedir as 24 páginas seguintes só para
+  // descartá-las seria carga à toa no banco.
+  const previstas = Math.ceil((total ?? 0) / PAGINA);
+  if (previstas > MAX_PAGINAS) return { linhas: null, erro: null, motivo: "teto" };
+
+  let n = 1;
+  const respostas = await Promise.all(
+    Array.from({ length: Math.max(previstas - 1, 0) }, (_, i) => intervalo(i + 1)),
+  );
+  for (const resposta of respostas) {
+    n++;
+    const terminou = assentar(resposta);
+    if (terminou) return terminou;
+  }
+
+  for (; n < MAX_PAGINAS; n++) {
+    const terminou = assentar(await intervalo(n));
+    if (terminou) return terminou;
   }
 
   return { linhas: null, erro: null, motivo: "teto" };

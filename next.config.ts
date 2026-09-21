@@ -74,6 +74,18 @@ const nextConfig: NextConfig = {
   output: "standalone",
 
   /**
+   * ⚠️ O `next dev` da 16.3 REESCREVE o `AGENTS.md` rastreado sempre que
+   * detecta um agente de IA (`generate-agent-files.js`) — medido em
+   * 21/09/2026: o arquivo mudou um segundo depois de o servidor subir. Aqui
+   * isso morde de dois jeitos: toda worktree com dev server fica suja e a
+   * mudança pega carona em commit alheio (já aconteceu com outra coisa, PR
+   * #42), e o `CLAUDE.md` abre com `@AGENTS.md` — deixar um pacote escrever
+   * ali é deixá-lo escrever nas instruções que todo agente do projeto lê.
+   * O `AGENTS.md` fica escrito por gente. Só vale no `next dev`.
+   */
+  agentRules: false,
+
+  /**
    * Cross-origin dev access (Next.js 16).
    *
    * Next 16 blocks requests to dev-only resources (`/_next/*` internals,

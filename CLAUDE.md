@@ -6710,7 +6710,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   - **1024_cb_telefone_canonico** — ⚠️ **aplicada DEPOIS do deploy**, a
     exceção da 981: ela RESTRINGE, e o app anterior (CSV do disparo casando
     por grafia) derrubaria a campanha no intervalo; o app novo não depende
-    dela. `contacts.telefone_canonico` (coluna
+    dela. Aplicada em 21/09/2026 (histórico `20260921152713`), com a VPS já
+    rodando o merge do #240 (`9a22d6a`); conferido: coluna e índice no
+    catálogo, 2.840 fichas com a chave ganhando o 9, zero pares, e a
+    ingestão gravando segundos depois. `contacts.telefone_canonico` (coluna
     GERADA: só dígitos e, no celular brasileiro de 12 dígitos, com o nono
     dígito) + índice único parcial `(account_id, telefone_canonico)`: o mesmo
     celular nas duas grafias deixa de poder virar duas fichas. Redefine

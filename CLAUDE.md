@@ -6734,6 +6734,22 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     imediatamente antes: 5.106 fichas, zero pares, 2.839 ganham a chave com o
     9. Ver a seção "Chave única do telefone".
 
+  - **1030_cb_funcao_de_disparo_executavel** — `create_broadcast_with_recipients`
+    passa a EXECUTAR (RETURNING qualificado, upstream #536) e a gravar os
+    parâmetros por destinatário como lista (`p_template_params JSONB`, pareado
+    por ordinalidade — achado nosso). Apaga as duas formas antigas (a de 8 e a
+    de 9 com `JSONB[]`). Aplicada em 21/09/2026 pela Management API (histórico
+    `20260921164342`), ANTES do merge do PR #242 e DEPOIS de o replay do CI
+    passar no commit exato; conferida no catálogo (UMA função, a assinatura
+    final, EXECUTE só do `service_role`) — a própria conferência CHAMOU a
+    função no Postgres 17 da produção e se desfez — e por e2e no preview contra
+    o banco real (plano do merge do upstream, Fase 2): o primeiro 202 da
+    história de `POST /api/v1/broadcasts`.
+    ⚠️ **O número pula para 1030 DE PROPÓSITO**: a faixa `1030+` é do
+    `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
+    números no mesmo dia — as 1025/1026 são dela). **Não existem 1027–1029**:
+    não "preencher" a lacuna.
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

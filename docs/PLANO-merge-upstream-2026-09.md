@@ -6,7 +6,7 @@ fase e no diário do fim.
 
 | | |
 | --- | --- |
-| **Estado** | Fases 0 e 1 concluídas — **a Fase 1 (Next 16.3.5, `npm audit` 12 → 0) está EM PRODUÇÃO desde 21/09/2026 15:08Z** (PR #239). **Fase 2 (função de disparo, migration `1030`) em curso.** |
+| **Estado** | Fases 0 e 1 concluídas — **a Fase 1 (Next 16.3.5, `npm audit` 12 → 0) está EM PRODUÇÃO desde 21/09/2026 15:08Z** (PR #239). **Fase 2 (função de disparo): migration `1030` APLICADA e teste prático APROVADO em 21/09 — PR #242 na revisão final (Codex → merge).** |
 | **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. |
 | **Pedido do operador (21/09/2026)** | Trazer todas as atualizações como COMPLEMENTO ou CORREÇÃO, nunca retrocesso. BSUID por último (é o mais complexo e o de maior risco). Toda correção é **medida contra o nosso código**, **revisada em duas lentes** e **testada no preview, na prática**. Merge e migration estão autorizados quando o teste exigir. Só depois da validação passa-se à fase seguinte. |
 | **PR #229** | Aberto por `devgabrielslv` com head em `ArnasDon/wacrm:main`. **Não tem como ser mesclado**: resolver conflito ali seria commitar no upstream. Fica aberto até a decisão P1 (seção 8). |
@@ -180,7 +180,7 @@ quebrar, sabe-se qual.
 | --- | --- | --- | --- | --- | --- | --- |
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (falta só a decisão P1) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
-| **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` | 🔄 em curso |
+| **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | 🔄 validada na prática; PR #242 na revisão final |
 | **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir) | Moderado | Baixa | Baixo | — | pendente |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
@@ -480,7 +480,48 @@ rotulada "TESTE"; a campanha criada pela chamada direta ao PostgREST (que nasce
 `sending` com destinatário `pending` e botão "Retomar" na tela) é APAGADA por
 id na mesma hora.
 
-**Resultado:** — (a preencher depois do teste prático)
+**Resultado (21/09/2026) — ✅ validada na prática; ⚠️ um achado fora do escopo, levado à Fase 5**
+
+| Passo | Resultado |
+| --- | --- |
+| Replay do CI no commit exato (`01eb764b`) | verde nas duas etapas |
+| Colisão de número | nenhuma: histórico até a `1026` (sessão da Kommo); nenhum arquivo em `1027–1030` no `origin/main` nem na branch do #241 |
+| Chaves de API ativas ANTES de aplicar (o pior caso da janela) | UMA no banco inteiro — a de teste desta fase |
+| `1030` aplicada pela Management API | histórico **`20260921164342`**. Depois: UMA função, `(…,uuid[],jsonb,uuid)`, RETURNING qualificado e SEM o cru, `USING (ord)`, `SECURITY DEFINER`, EXECUTE só do `service_role`. A conferência CHAMOU a função no Postgres 17 da produção (a conta tem 2+ contatos → provou o pareamento lá) e não deixou nada: 0 linhas em `broadcasts` |
+| Canal presente e INVÁLIDO (`42`, lista, `'   '`) | **400** `bad_request` ×3 |
+| UUID inexistente · canal Evolution DA PRÓPRIA conta | **400** `meta_channel_required` ×2 |
+| Depois das cinco recusas | 0 campanhas, 0 destinatários |
+| Disparo REAL ao lead de teste (`lembrete_reuniao_kckkhz`, `pt_BR`, canal oficial pedido por escrito) | **202** — a primeira resposta de sucesso da história deste endpoint — com `channel_id`. No banco: campanha COM `channel_id`; destinatário = a ficha do lead (achada, não recriada); `template_params = []` como LISTA; `wamid` gravado e `sent_at` 16:45:32Z (a Meta ACEITOU). `GET /broadcasts/{id}` → 200 com `channel_id` e as contagens |
+| Pelo PostgREST de verdade, 1 contato × 2 parâmetros | 200; gravado `["Ana","10h"]`, `Array.isArray` verdadeiro, contato certo; campanha apagada por id (1 linha), 0 destinatário sobrando |
+| Chave de teste | REVOGADA logo depois do disparo, antes do Codex e do merge: o uso seguinte devolve 401, e o banco ficou com ZERO chaves ativas — até o deploy ninguém alcança a rota antiga da produção |
+
+Todos os pedidos saíram de `localhost:3130`. O que ficou no banco: UMA campanha,
+rotulada "TESTE Fase 2 — merge do upstream (disparo real ao lead de teste)".
+
+⚠️⚠️ **O que o teste achou e NÃO é desta fase: a Meta ACEITOU e depois FALHOU a
+entrega — e o motivo se perdeu.** Segundos depois do `sent`, o destinatário
+virou `failed` (a campanha fechou `sent` com `failed_count = 1`): foi o status
+`failed` da Meta chegando pelo webhook da PRODUÇÃO, que o espelha no
+destinatário pelo `wamid` — o que, de quebra, provou o espelho e o gatilho de
+contagem sobre uma campanha criada pela função nova. `error_message` ficou NULO:
+`handleStatusUpdate` grava só o status e descarta o `errors[]`. É exatamente o
+defeito da **Fase 5** (#535), agora com um caso real. O código desta mensagem
+não é recuperável: o payload não é logado, e a Meta não tem consulta de status.
+
+O que dá para afirmar, medido: o MESMO modelo foi ENTREGUE ao MESMO contato pelo
+MESMO número em 12/09 22:07Z — seis minutos depois de o lead escrever, com a
+janela de atendimento ABERTA. Hoje a janela está fechada (a última mensagem dele
+ao número oficial é de 12/09) e o modelo é da categoria **Marketing**. Hipótese
+mais provável, NÃO confirmada: os limites da própria Meta para marketing fora
+da janela (a família dos códigos 131049 "engajamento saudável", 131050 "o
+usuário parou o marketing desta empresa" e 130472 "número em experimento") —
+falha assíncrona, decidida do lado de lá, que nenhum código nosso alcança. Não
+dá para excluir outra causa (pagamento, 131042) sem o código.
+
+**Consequência para o escritório, fora deste plano:** campanha de Marketing para
+quem não escreveu nas últimas 24 h pode simplesmente não ser entregue — e hoje a
+tela só diz "falhou". → Vira o teste prático da Fase 5: repetir ESTE disparo com
+o motivo sendo gravado (um `failed` real, sem precisar simular).
 
 ### Fase 3 — Correções pequenas e independentes
 
@@ -547,6 +588,15 @@ Falha da Evolution não preenche essas colunas — dizer isso no código.
 **Teste no preview:** POST assinado LOCAL com `statuses[failed]` + `errors[0]`
 sobre uma mensagem de teste do canal oficial → colunas gravadas, bolha mostra o
 motivo; depois `delivered` → o motivo fica. Limpeza: restaurar a mensagem.
+⚠️ **Há um `failed` REAL à mão (achado da Fase 2, 21/09):** o disparo do modelo
+de Marketing `lembrete_reuniao_kckkhz` ao lead de teste, FORA da janela de 24 h,
+foi aceito pela Meta e falhou na entrega, e o motivo se perdeu porque o webhook
+o descarta. Depois do deploy desta fase, repetir aquele disparo (chave de API de
+teste, criada e revogada na hora) e ler o motivo gravado em
+`broadcast_recipients.error_message` — é a prova de ponta a ponta com a Meta de
+verdade, e responde a pergunta que a Fase 2 deixou aberta (131049? 131050?
+130472? 131042?). ⚠️ O webhook que recebe esse status é o da PRODUÇÃO — por
+isso só depois do deploy.
 
 **Resultado:** — (a preencher)
 
@@ -699,3 +749,4 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 | --- | --- | --- |
 | 21/09/2026 | 0 | Medições da seção 2; estratégia "portar primeiro"; worktree criada; o #232 entrou no `main` no meio da medição sem mudar os conflitos. Linha de base: 362 arquivos / 4.710 testes verdes; `npm audit` com 12 vulnerabilidades (1 crítica). |
 | 21/09/2026 | 1 | Dependências do upstream aplicadas: `npm audit` 12 → 0. As duas lentes não acharam P0. A Lente 2 pegou o `next dev` da 16.3 reescrevendo o `AGENTS.md` (→ `agentRules: false`). A Lente 1 mostrou que o teste em `next dev` não exercitava o roteador novo (→ refeito num build de produção local: limpo). Dois erros MEUS de teste viraram regra do protocolo: abrir conversa de cliente real zera as não lidas, e painel oculto congela o `requestAnimationFrame`. |
+| 21/09/2026 | 2 | A função de disparo NUNCA tinha executado (42702) — e as duas lentes acharam o que o upstream não tem: os parâmetros por destinatário chegavam em 2-D pelo PostgREST (Lente 1) e a rota descartava o `channel_id` (Lente 2). Na 2ª passada, a Lente 1 derrubou uma medição MINHA ("23502") feita num dublê com `NOT NULL` que a produção não tem. Ordem com migration: rascunho → replay verde no commit exato → `1030` aplicada (`20260921164342`) → teste prático: 5 recusas em 400 sem gravar nada, o PRIMEIRO 202 do endpoint, params como lista pelo PostgREST real → chave de teste revogada na hora (0 chaves ativas). Achado fora do escopo: a Meta aceitou e depois falhou a ENTREGA do modelo de Marketing fora da janela, e o motivo se perdeu — é o defeito da Fase 5, que ganhou um caso de teste real. |

@@ -29,8 +29,13 @@ export default function ForgotPasswordPage() {
     setError(null);
     setLoading(true);
 
+    // The emailed link returns to /auth/callback, which exchanges it
+    // for a recovery session and forwards to /reset-password (issue
+    // #592). Supabase must allow this origin under Authentication →
+    // URL Configuration → Redirect URLs, or it silently falls back to
+    // its Site URL; see docs/auth-emails.md.
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${window.location.origin}/auth/callback?next=/reset-password`,
+      redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent("/reset-password")}`,
     });
 
     if (error) {

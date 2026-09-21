@@ -37,6 +37,15 @@ function LoginPageInner() {
   // page to accept rather than to /dashboard.
   const inviteToken = searchParams.get("invite");
   const t = useTranslations("LoginPage");
+  // Set by /auth/callback when an emailed link (confirmation, password
+  // reset) could not be turned into a session — see src/lib/auth/callback.ts.
+  const linkError = searchParams.get("error");
+  const linkErrorMessage =
+    linkError === "link_expired"
+      ? t("linkExpired")
+      : linkError === "link_invalid"
+        ? t("linkInvalid")
+        : null;
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -96,6 +105,11 @@ function LoginPageInner() {
         </CardHeader>
         <CardContent>
           <form onSubmit={handleLogin} className="flex flex-col gap-4">
+            {linkErrorMessage && !error && (
+              <div className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+                {linkErrorMessage}
+              </div>
+            )}
             {error && (
               <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3 text-sm text-red-400">
                 {error}

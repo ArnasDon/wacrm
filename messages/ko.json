@@ -12,7 +12,9 @@
     "signingIn": "로그인 중...",
     "signIn": "로그인",
     "noAccount": "계정이 없으신가요?",
-    "createAccount": "계정 만들기"
+    "createAccount": "계정 만들기",
+    "linkExpired": "링크가 만료되었습니다. 비밀번호를 재설정하려면 “비밀번호를 잊으셨나요?”에서 새 링크를 요청하세요. 이메일 인증 중이었다면 다시 가입해 주세요.",
+    "linkInvalid": "이 링크로는 로그인할 수 없습니다. 이메일 인증 중이었다면 이미 인증이 완료되었을 수 있으니 아래에서 로그인하세요. 비밀번호 재설정은 새 링크를 요청한 뒤 요청한 브라우저에서 열어 주세요."
   },
   "Sidebar": {
     "title": "WhatsApp용 CRM 템플릿",
@@ -1925,6 +1927,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "전송 중...",
     "sendLink": "재설정 링크 보내기"
+  },
+  "ResetPasswordPage": {
+    "title": "새 비밀번호 설정",
+    "desc": "계정의 새 비밀번호를 입력하세요.",
+    "passwordLabel": "새 비밀번호",
+    "passwordPlaceholder": "6자 이상",
+    "confirmPasswordLabel": "새 비밀번호 확인",
+    "confirmPasswordPlaceholder": "새 비밀번호를 다시 입력하세요",
+    "submit": "비밀번호 변경",
+    "saving": "변경 중...",
+    "passwordsMismatch": "비밀번호가 일치하지 않습니다",
+    "passwordTooShort": "비밀번호는 6자 이상이어야 합니다",
+    "checking": "링크를 확인하는 중...",
+    "expiredTitle": "이 링크는 더 이상 유효하지 않습니다",
+    "expiredDesc": "비밀번호 재설정 링크는 한 번만 사용할 수 있으며 잠시 후 만료됩니다. 새 링크를 요청한 뒤 요청한 브라우저에서 열어 주세요.",
+    "requestNewLink": "새 링크 요청",
+    "backToSignIn": "로그인으로 돌아가기",
+    "successTitle": "비밀번호가 변경되었습니다",
+    "successDesc": "새 비밀번호로 로그인되었습니다.",
+    "continueToDashboard": "대시보드로 이동"
   },
   "JoinPage": {
     "fail": {

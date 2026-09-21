@@ -3,7 +3,7 @@ import { NextResponse, after } from "next/server";
 import { supabaseAdmin } from "@/lib/automations/admin-client";
 import { verificarAssinatura } from "@/lib/calendly/assinatura";
 import { EVENTO_CANCELADO, eventoDoCorpo, lerAgendamento, lerCancelamento } from "@/lib/calendly/payload";
-import { processarCancelamento } from "@/lib/calendly/cancelamento";
+import { TETO_DO_CANCELAMENTO_MS, processarCancelamento } from "@/lib/calendly/cancelamento";
 import { comTetoDeProcessamento } from "@/lib/calendly/claim";
 import { gravarResultado, processarAgendamento } from "@/lib/calendly/processar";
 import { variaveisDoAgendamento } from "@/lib/calendly/variaveis";
@@ -123,7 +123,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ tok
     after(async () => {
       const db = supabaseAdmin();
       try {
-        const r = await comTetoDeProcessamento(processarCancelamento(db, contaDoCancelamento, cancelamento));
+        // ⚠️ Teto PRÓPRIO, maior que o do agendamento: o cancelamento pode
+        // ficar esperando o agendamento terminar de ser processado, e com o
+        // teto padrão ele se cortaria no meio da própria espera.
+        const r = await comTetoDeProcessamento(
+          processarCancelamento(db, contaDoCancelamento, cancelamento),
+          TETO_DO_CANCELAMENTO_MS,
+        );
         await gravarResultado(
           db,
           idDoCancelamento,

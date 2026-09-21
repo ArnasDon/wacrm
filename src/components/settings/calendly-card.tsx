@@ -38,6 +38,11 @@ interface Resposta {
 
 
 const CODIGOS_CONHECIDOS = new Set([
+  // ⚠️ Lista FECHADA: código fora dela cai no texto genérico. Foi o que
+  // aconteceu com `assinatura_incompleta` — a tradução existia e a tela
+  // mostrava "erro do Calendly", sem a instrução de reassinar, exatamente
+  // quando ela importa (Codex, PR #235).
+  "assinatura_incompleta",
   "token_invalido",
   "sem_permissao",
   "nao_encontrado",

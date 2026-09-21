@@ -391,3 +391,22 @@ describe('semOsCancelados', () => {
     expect(semOsCancelados(alvos, [])).toEqual(alvos)
   })
 })
+
+describe('poda das travas', () => {
+  it('CRÍTICO: a marca de CANCELAMENTO vive muito mais que a de disparo', async () => {
+    // Ela só serve quando o horário DESMARCADO chega à janela do lembrete.
+    // Podada aos 90 dias, uma reunião cancelada com mais antecedência que
+    // isso perderia a marca antes da hora — e o aviso do evento cancelado
+    // voltaria a sair, porque a data continua na ficha (Codex, PR #235).
+    const { PODA_DO_DISPARO_MS, PODA_DO_CANCELAMENTO_MS } = await import('./varrer-lembretes')
+    expect(PODA_DO_DISPARO_MS).toBe(90 * 86_400_000)
+    expect(PODA_DO_CANCELAMENTO_MS).toBeGreaterThan(365 * 86_400_000)
+  })
+
+  it('e a poda de 90 dias é CERCADA pelo motivo (pino estrutural)', async () => {
+    const { readFileSync } = await import('node:fs')
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8').replace(/\/\/.*$/gm, '')
+    expect(fonte).toMatch(/PODA_DO_DISPARO_MS[\s\S]{0,200}?\.eq\('motivo', 'disparo'\)/)
+    expect(fonte).toMatch(/PODA_DO_CANCELAMENTO_MS[\s\S]{0,200}?\.eq\('motivo', 'cancelamento'\)/)
+  })
+})

@@ -82,3 +82,28 @@ describe("conferirAssinatura — assinatura incompleta", () => {
     expect(EVENTOS_ASSINADOS).toEqual(["invitee.created", "invitee.canceled"]);
   });
 });
+
+// ------------------------------------------------------------
+// ⚠️ A tela só traduz código que esteja na lista FECHADA
+// `CODIGOS_CONHECIDOS`; fora dela, cai no texto genérico "erro do Calendly".
+// `assinatura_incompleta` nasceu de fora: a tradução existia, estava no
+// lugar certo, e mesmo assim o operador não veria a instrução de reassinar —
+// exatamente quando ela importa (Codex, PR #235). Pino estrutural, porque a
+// lista mora num .tsx e importá-la aqui arrastaria a árvore de React.
+// ------------------------------------------------------------
+describe("o código de assinatura incompleta chega traduzido na tela", () => {
+  it("está na lista fechada do cartão", async () => {
+    const { readFileSync } = await import("node:fs");
+    const fonte = readFileSync("src/components/settings/calendly-card.tsx", "utf-8");
+    const lista = fonte.slice(fonte.indexOf("const CODIGOS_CONHECIDOS"), fonte.indexOf("]", fonte.indexOf("const CODIGOS_CONHECIDOS")));
+    expect(lista).toContain('"assinatura_incompleta"');
+  });
+
+  it("e tem tradução nos dois dicionários", async () => {
+    const { readFileSync } = await import("node:fs");
+    for (const arquivo of ["messages/pt-BR.json", "messages/en.json"]) {
+      const d = JSON.parse(readFileSync(arquivo, "utf-8"));
+      expect(d.Settings.integracoes.calendly.motivo.assinatura_incompleta, arquivo).toBeTruthy();
+    }
+  });
+});

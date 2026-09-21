@@ -4348,10 +4348,28 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     desmarcada (`semOsCancelados`, puro e testado; Codex, PR #235). Falha
     FECHADA — não conseguindo conferir, a automação fica para o ciclo
     seguinte.
-  - ⚠️ **A espera pelo agendamento em processamento é de 2 MINUTOS**, não de
-    10 segundos: o processamento medido leva 1,4 a 3,5 s, mas o cadeado dele
-    permite até 4 min, e desistir aqui é DEFINITIVO (a linha do cancelamento
-    já existe, a reentrega do Calendly não tenta de novo).
+  - ⚠️⚠️ **A espera pelo agendamento em processamento é DERIVADA de
+    `TETO_DE_PROCESSAMENTO_MS`, nunca digitada.** Duas versões erraram o
+    número (10 s, depois 2 min) enquanto o agendamento pode legitimamente
+    rodar até 4 min: no vão, o cancelamento desiste e o agendamento AINDA
+    grava a data. Desistir aqui é DEFINITIVO — a linha do cancelamento já
+    existe, e a reentrega do Calendly não tenta de novo. O cancelamento tem
+    teto PRÓPRIO (`TETO_DO_CANCELAMENTO_MS`), maior que a espera e menor que
+    `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens.
+  - ⚠️⚠️ **A marca de cancelamento NÃO é podada aos 90 dias** como a de
+    disparo (400 dias): ela só serve quando o horário DESMARCADO chega à
+    janela do lembrete, e a data continua na ficha de propósito. Reunião
+    cancelada com mais de 90 dias de antecedência perderia a marca antes da
+    hora e o aviso voltaria a sair.
+  - ⚠️ **Código de erro novo entra na lista FECHADA da tela**
+    (`CODIGOS_CONHECIDOS`, em `calendly-card.tsx`), senão cai no texto
+    genérico "erro do Calendly" — com a tradução existindo e no lugar certo.
+    Há pino estrutural.
+  - ⚠️ **CONHECIDO, NÃO TRATADO:** conta SEM nenhum lembrete por data no
+    momento do cancelamento não guarda exclusão nenhuma (a trava é por
+    AUTOMAÇÃO), e um lembrete criado depois — antes do horário cancelado —
+    sai. Inalcançável nesta conta (os quatro existem); fechar pede guardar o
+    horário cancelado em lugar próprio. O `detalhe` do evento diz isso.
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
-import { campoDoLembrete, mesmaReuniao, processarCancelamento } from "./cancelamento";
+import { RECOLHER_CLAIM_MS, TETO_DE_PROCESSAMENTO_MS } from "./claim";
+import { TETO_DO_CANCELAMENTO_MS, campoDoLembrete, mesmaReuniao, processarCancelamento } from "./cancelamento";
 import { EVENTO_CANCELADO, type Cancelamento } from "./payload";
 
 // ------------------------------------------------------------
@@ -300,5 +301,21 @@ describe("a devolução da trava não alcança o cancelamento (pino estrutural)"
     const { readFileSync } = await import("node:fs");
     const fonte = readFileSync("src/lib/automations/varrer-lembretes.ts", "utf-8").replace(/\/\/.*$/gm, "");
     expect(fonte).toMatch(/\.delete\(\)[\s\S]{0,200}?\.eq\('motivo', 'disparo'\)/);
+  });
+});
+
+describe("os tetos do cancelamento", () => {
+  it("CRÍTICO: espera o agendamento pelo TETO DELE, sem número digitado", () => {
+    // Duas versões erraram digitando o valor (10 s e depois 2 min) enquanto
+    // `comTetoDeProcessamento` deixa o agendamento ir até 4 min: no vão, o
+    // cancelamento desiste e o agendamento AINDA grava a data (Codex, PR
+    // #235, duas rodadas). O teto do cancelamento tem de acomodar a espera.
+    expect(TETO_DO_CANCELAMENTO_MS).toBeGreaterThan(TETO_DE_PROCESSAMENTO_MS);
+  });
+
+  it("CRÍTICO: e fica abaixo do recolhimento do cadeado", () => {
+    // Senão "cadeado velho" deixa de significar "dono morto", e outro
+    // processo toma a linha de um cancelamento ainda vivo.
+    expect(TETO_DO_CANCELAMENTO_MS).toBeLessThan(RECOLHER_CLAIM_MS);
   });
 });

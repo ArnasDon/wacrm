@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import type { DateFieldTriggerConfig } from "@/types";
 
+import { TETO_DE_PROCESSAMENTO_MS } from "./claim";
 import type { ProcessamentoDoAgendamento } from "./processar";
 import { EVENTO_AGENDADO, type Cancelamento } from "./payload";
 
@@ -78,14 +79,25 @@ export interface OpcoesDoCancelamento {
 const ESPERA_ENTRE_LEITURAS_MS = 5_000;
 
 /**
- * ⚠️ Dois minutos, não dez segundos (Codex, PR #235). O processamento do
- * agendamento MEDIDO leva 1,4 a 3,5 s, mas o cadeado dele (`claim.ts`)
- * permite até 4 minutos — uma automação com passo de rede pode passar
- * folgadamente dos 10 s da primeira versão. E desistir aqui é DEFINITIVO: a
- * linha do cancelamento já existe, então a reentrega do Calendly não tenta
- * de novo. Fica abaixo do teto de processamento do próprio cancelamento.
+ * ⚠️⚠️ O orçamento de espera é o TETO DO AGENDAMENTO, derivado e não
+ * digitado (Codex, PR #235, duas rodadas). O processamento MEDIDO leva 1,4 a
+ * 3,5 s, mas `comTetoDeProcessamento` permite que ele vá até 4 min: parar
+ * antes disso deixa um vão em que o agendamento AINDA VAI gravar o contato e
+ * a data, e o cancelamento já terá desistido. E desistir aqui é DEFINITIVO —
+ * a linha do cancelamento existe, então a reentrega do Calendly não tenta de
+ * novo. Duas versões erraram por digitar o número (10 s, depois 2 min); o
+ * valor agora acompanha a constante.
  */
-const TETO_DE_ESPERA_MS = 120_000;
+const TETO_DE_ESPERA_MS = TETO_DE_PROCESSAMENTO_MS;
+
+/**
+ * O teto do PRÓPRIO cancelamento, que a rota passa a `comTetoDeProcessamento`.
+ *
+ * ⚠️ Tem de ser MAIOR que a espera acima (senão o cancelamento se corta
+ * esperando) e MENOR que `RECOLHER_CLAIM_MS` (senão "cadeado velho" deixa de
+ * significar "dono morto"). Há teste cobrando as duas margens.
+ */
+export const TETO_DO_CANCELAMENTO_MS = TETO_DE_ESPERA_MS + 60_000;
 
 export async function processarCancelamento(
   db: SupabaseClient,
@@ -174,7 +186,17 @@ export async function processarCancelamento(
     .map((a) => ({ id: a.id as string, campo: campoDoLembrete(a.trigger_config) }))
     .filter((a): a is { id: string; campo: string } => !!a.campo);
   if (lembretes.length === 0) {
-    return ignorado("nenhum lembrete por data nesta conta", contactId);
+    // ⚠️ CONHECIDO, NÃO TRATADO (Codex, PR #235): sem nenhum lembrete por
+    // data, não há onde gravar a exclusão — a trava da 935 é por AUTOMAÇÃO.
+    // Se um lembrete for criado depois disto e antes do horário cancelado,
+    // ele sai. Fechar de vez pede guardar o horário cancelado em lugar
+    // próprio (tabela ou coluna), e não a trava por automação. Inalcançável
+    // nesta conta hoje: os quatro lembretes existem. O detalhe diz isso na
+    // tela para o caso não ficar invisível.
+    return ignorado(
+      "nenhum lembrete por data nesta conta — se um for criado antes do horário cancelado, ele sairá",
+      contactId,
+    );
   }
 
   const campos = [...new Set(lembretes.map((l) => l.campo))];

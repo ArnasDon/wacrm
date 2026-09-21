@@ -243,6 +243,16 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
   return saida
 }
 
+/** 90 dias: tempo de sobra para investigar, curto para não virar arquivo. */
+export const PODA_DO_DISPARO_MS = 90 * 86_400_000
+
+/**
+ * ⚠️ 400 dias para a marca de CANCELAMENTO: ela precisa sobreviver até o
+ * horário desmarcado passar, e o Calendly deixa marcar com meses de
+ * antecedência. Mais do que um ano cobre qualquer agenda plausível.
+ */
+export const PODA_DO_CANCELAMENTO_MS = 400 * 86_400_000
+
 /**
  * Poda travas antigas. 90 dias: tempo de sobra para investigar "por que este
  * cliente não recebeu?", e curto o bastante para a tabela não virar arquivo.
@@ -252,17 +262,40 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
  */
 export async function podarLembretesAntigos(): Promise<number> {
   try {
-    const corte = new Date(Date.now() - 90 * 86_400_000).toISOString()
-    const { data, error } = await supabaseAdmin()
+    const db = supabaseAdmin()
+    const agora = Date.now()
+    let podados = 0
+
+    // Trava de DISPARO: 90 dias, como sempre.
+    const { data: disparos, error: erroDisparos } = await db
       .from('cb_automation_reminders')
       .delete()
-      .lt('disparado_em', corte)
+      .lt('disparado_em', new Date(agora - PODA_DO_DISPARO_MS).toISOString())
+      .eq('motivo', 'disparo')
       .select('id')
-    if (error) {
-      console.error('[automations] poda de lembretes falhou', error)
+    if (erroDisparos) {
+      console.error('[automations] poda de lembretes falhou', erroDisparos)
       return 0
     }
-    return data?.length ?? 0
+    podados += disparos?.length ?? 0
+
+    // ⚠️⚠️ Trava de CANCELAMENTO vive MUITO mais, e não é capricho: ela é
+    // gravada quando a reunião é desmarcada, mas só serve quando o horário
+    // CANCELADO chega à janela do lembrete. Reunião desmarcada com mais de
+    // 90 dias de antecedência perderia a marca antes da hora, e o aviso de
+    // um evento cancelado voltaria a sair — a data continua na ficha de
+    // propósito (Codex, PR #235).
+    const { data: cancelamentos, error: erroCancelamentos } = await db
+      .from('cb_automation_reminders')
+      .delete()
+      .lt('disparado_em', new Date(agora - PODA_DO_CANCELAMENTO_MS).toISOString())
+      .eq('motivo', 'cancelamento')
+      .select('id')
+    if (erroCancelamentos) {
+      console.error('[automations] poda dos cancelamentos falhou', erroCancelamentos)
+      return podados
+    }
+    return podados + (cancelamentos?.length ?? 0)
   } catch {
     return 0
   }

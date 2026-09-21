@@ -109,13 +109,26 @@ describe('ramosDaBuscaDeContato', () => {
 
   it('termo sem dígito não gera ramo de telefone', () => {
     // A agulha vazia: `%%` casaria todo telefone da conta.
-    expect(ramosDaBuscaDeContato('ana')).not.toContain('phone.ilike');
+    expect(ramosDaBuscaDeContato('ana')).not.toContain('phone_normalized.ilike');
   });
 
   it('telefone mascarado vira dígito, nas duas grafias do nono', () => {
     const ramos = ramosDaBuscaDeContato('(83) 98874-5316')!;
-    expect(ramos).toContain('phone.ilike."%83988745316%"');
-    expect(ramos).toContain('phone.ilike."%8388745316%"');
+    expect(ramos).toContain('phone_normalized.ilike."%83988745316%"');
+    expect(ramos).toContain('phone_normalized.ilike."%8388745316%"');
+  });
+
+  it('⚠️ o ramo de telefone é SEMPRE sobre a coluna gerada, nunca sobre `phone`', () => {
+    // `phone` guarda o que foi DIGITADO: o formulário de contato preserva a
+    // pontuação, e em "+55 (83) 98874-5316" os dígitos não são contíguos —
+    // um padrão de dígitos nunca casa. A ficha sem nome fica inalcançável
+    // pelos dois seletores. Medido: 1 dos 1.214 contatos da produção já está
+    // assim. `phone_normalized` é coluna gerada e só tem dígitos (022).
+    const ramos = ramosDaBuscaDeContato('98874-5316')!;
+    for (const ramo of ramos.split(',')) {
+      expect(ramo.startsWith('phone.ilike')).toBe(false);
+    }
+    expect(ramos).toContain('phone_normalized.ilike');
   });
 
   it('os ramos são separados por vírgula, como o .or() espera', () => {

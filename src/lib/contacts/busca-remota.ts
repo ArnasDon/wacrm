@@ -145,12 +145,19 @@ export function ramosDaBuscaDeContato(termo: string): string | null {
   const arroba = limpo.replace(/^@/, '').trim();
   if (arroba) ramos.push(`instagram_username.ilike.${paraIlike(arroba)}`);
 
-  // Telefone casa por DÍGITO contra DÍGITO: a coluna guarda "5583…" sem
-  // máscara e o operador digita "(83) 98874-5316". Comparar o termo cru
-  // exigiria digitá-lo exatamente como foi gravado.
+  // ⚠️⚠️ Telefone casa contra `phone_normalized`, NUNCA contra `phone`.
+  // `phone` guarda o que o escritório DIGITOU — o formulário de contato
+  // preserva a pontuação —, então "+55 (83) 98874-5316" não tem os dígitos
+  // contíguos e um padrão de dígitos nunca casa com ele. A ficha continua no
+  // banco e some da busca; se ela não tiver nome, fica inalcançável pelos
+  // dois seletores. `phone_normalized` é coluna GERADA
+  // (`regexp_replace(phone, '\D', '', 'g')`, migration 022), sempre só
+  // dígitos, e é a mesma chave do índice único e do `upsertCsvContacts`.
+  // Medido em 20/09/2026: 1 dos 1.214 contatos da produção já está assim.
+  // (Achado do Codex no PR #231.)
   const digitos = limpo.replace(/\D/g, '');
   for (const grafia of variantesDoTermoTelefonico(digitos)) {
-    ramos.push(`phone.ilike.${paraIlike(grafia)}`);
+    ramos.push(`phone_normalized.ilike.${paraIlike(grafia)}`);
   }
 
   return ramos.join(',');

@@ -131,7 +131,21 @@ export function PipelineBoard({
     funil: string;
     porEtapa: Record<string, number>;
   }>({ funil: pipelineId, porEtapa: {} });
-  const limitesDoFunil = limites.funil === pipelineId ? limites.porEtapa : {};
+  // `useMemo` para o `{}` do ramo vazio não ganhar identidade nova a cada
+  // render — sem ele, o efeito que alimenta `limitesRef` rodaria sempre.
+  const limitesDoFunil = useMemo(
+    () => (limites.funil === pipelineId ? limites.porEtapa : {}),
+    [limites, pipelineId],
+  );
+  /**
+   * Espelho dos tetos para `navegarParaInbox` ler sem virar dependência dele
+   * — ver o porquê lá. Efeito passivo basta: o valor só precisa estar em dia
+   * quando o operador CLICA, que é muito depois de qualquer commit.
+   */
+  const limitesRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    limitesRef.current = limitesDoFunil;
+  }, [limitesDoFunil]);
   /**
    * O último card solto. Só existe para `cardsDaColuna` poder trazê-lo para
    * dentro do teto — ver o porquê lá.
@@ -201,6 +215,16 @@ export function PipelineBoard({
         pipelineId,
         scrollLeft: quadro?.scrollLeft ?? 0,
         scrollTop: quadro?.closest("main")?.scrollTop ?? 0,
+        // ⚠️ Os tetos viajam junto com a rolagem: quem abriu a conversa a
+        // partir do card 150 volta, sem eles, para um quadro de 100 — o card
+        // de origem não existe e o `scrollTop` é grampeado pela altura menor.
+        //
+        // ⚠️ Lido por REF, nunca por dependência: `limitesDoFunil` ganha
+        // identidade nova a cada render, e pô-lo aqui desestabilizaria este
+        // callback — que é o que segura o `memo` do DealCard e impede os
+        // ~120 cards de redesenharem a cada tecla digitada num diálogo irmão
+        // (o achado da revisão do PR #71, registrado logo acima).
+        limites: limitesRef.current,
       });
       router.push(urlDoInbox({ ...destino, de: "funil" }));
     },
@@ -245,6 +269,14 @@ export function PipelineBoard({
     // novo — marcado antes, a segunda passada pularia a restauração.
     let raf2 = 0;
     const raf1 = requestAnimationFrame(() => {
+      // ⚠️ Os tetos voltam ANTES da rolagem, e é por isso que eles ficam no
+      // PRIMEIRO quadro: restaurar 150 cards numa coluna muda a altura do
+      // quadro, e o `scrollTo` do segundo mediria a altura menor e seria
+      // grampeado. Aqui dentro, e não no corpo do efeito, porque `setState`
+      // síncrono em efeito é ERRO do React Compiler neste projeto.
+      if (Object.keys(retorno.limites).length > 0) {
+        setLimites({ funil: retorno.pipelineId, porEtapa: retorno.limites });
+      }
       raf2 = requestAnimationFrame(() => {
         // ⚠️ `behavior: "instant"` é obrigatório: `.pipeline-scroll` tem
         // `scroll-behavior: smooth` no styled-jsx abaixo, e restaurar

@@ -52,7 +52,13 @@ describe("desserializarRetorno — registro de sessionStorage é entrada não co
   it("rolagem inválida (string, NaN, negativa, ausente) vira 0 — restaura o funil e abre no topo", () => {
     expect(
       desserializarRetorno(registro({ scrollLeft: "x", scrollTop: null }), AGORA),
-    ).toEqual({ pipelineId: "p1", scrollLeft: 0, scrollTop: 0, em: AGORA });
+    ).toEqual({
+      pipelineId: "p1",
+      scrollLeft: 0,
+      scrollTop: 0,
+      limites: {},
+      em: AGORA,
+    });
     expect(
       desserializarRetorno(registro({ scrollLeft: -5 }), AGORA)?.scrollLeft,
     ).toBe(0);
@@ -63,7 +69,50 @@ describe("desserializarRetorno — registro de sessionStorage é entrada não co
       pipelineId: "p1",
       scrollLeft: 320,
       scrollTop: 1024,
+      limites: {},
       em: AGORA,
     });
+  });
+
+  // ------------------------------------------------------------
+  // Os tetos por coluna (PR #231). Sem eles, a rolagem restaurada cai sobre
+  // um quadro mais curto do que o que o operador deixou: o card de onde ele
+  // saiu não está renderizado e o `scrollTop` é grampeado.
+  // ------------------------------------------------------------
+
+  it("os tetos por coluna sobrevivem à ida e volta", () => {
+    const lido = desserializarRetorno(
+      registro({ limites: { etapa1: 300, etapa2: 100 } }),
+      AGORA,
+    );
+    expect(lido?.limites).toEqual({ etapa1: 300, etapa2: 100 });
+  });
+
+  it("registro antigo, sem o campo, volta com o mapa VAZIO — nunca indefinido", () => {
+    // O registro pode ter sido gravado pela versão anterior, que estava na
+    // aba do operador quando o deploy entrou. `undefined` aqui viraria
+    // `Object.keys(undefined)` no quadro.
+    expect(desserializarRetorno(registro(), AGORA)?.limites).toEqual({});
+  });
+
+  it("teto estragado é descartado SOZINHO, sem derrubar o registro", () => {
+    // Perder a restauração de uma coluna é muito mais barato que perder a
+    // rolagem da jornada inteira.
+    const lido = desserializarRetorno(
+      registro({
+        limites: { boa: 200, texto: "300", zero: 0, negativa: -1, quebrada: 1.5, "": 100 },
+      }),
+      AGORA,
+    );
+    expect(lido).not.toBeNull();
+    expect(lido?.limites).toEqual({ boa: 200 });
+    expect(lido?.scrollLeft).toBe(320);
+  });
+
+  it("`limites` que não é objeto não derruba o registro", () => {
+    for (const lixo of ["x", 7, null, true]) {
+      const lido = desserializarRetorno(registro({ limites: lixo }), AGORA);
+      expect(lido?.limites).toEqual({});
+    }
   });
 });

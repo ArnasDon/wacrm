@@ -207,6 +207,18 @@ as que voltam a conflitar):
   - Máquina nova: `nvm use` na raiz. Quem usa **asdf** precisa de
     `legacy_version_file = yes` no `~/.asdfrc` para ele respeitar o `.nvmrc`.
 
+- ⚠️ **`agentRules: false` no `next.config.ts` (21/09/2026, Next 16.3.5).** A
+  16.3 estreou a geração automática de regras para agentes: o `next dev`
+  REESCREVE o `AGENTS.md` rastreado sempre que detecta um agente de IA (log:
+  "Generated AGENTS.md for AI agents"). Medido na Fase 1 do
+  `docs/PLANO-merge-upstream-2026-09.md`: o arquivo mudou um segundo depois de
+  o servidor subir. Desligado por dois motivos: toda worktree com dev server
+  ficaria suja (e mudança alheia já pegou carona em PR), e este `CLAUDE.md`
+  abre com `@AGENTS.md` — um pacote escreveria nas instruções que todo agente
+  do projeto lê. **O `next.config.ts` já diverge do upstream: um merge que
+  traga o deles cru tira a linha**, e o sintoma é ` M AGENTS.md` aparecendo
+  sozinho no `git status` de quem só subiu o servidor.
+
 - ⚠️ **Um workflow só: `.github/workflows/pipeline.yml`.** O `ci.yml` e o
   `migrations.yml` eram DO UPSTREAM e foram removidos; as três etapas
   (verificar → migrations → deploy) viraram jobs de um arquivo nosso, com o

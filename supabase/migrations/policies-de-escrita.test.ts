@@ -61,8 +61,8 @@ const ESPERADAS = [
 const CRIA = /CREATE\s+POLICY\s+(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
 const APAGA = /DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
 // ALTER POLICY troca o PREDICADO e nunca o comando — é assim que a 1032
-// reescreveu as três FOR ALL daqui (`account_id IN (SELECT
-// cb_contas_do_usuario('admin'…))`). Sem lê-lo, o teste abaixo conferiria o
+// reescreveu as três FOR ALL daqui (`… = ANY (ARRAY(SELECT
+// cb_contas_do_usuario('admin'…)))`). Sem lê-lo, o teste abaixo conferiria o
 // corpo da 964, que já não é o que o banco tem.
 const ALTERA = /ALTER\s+POLICY\s+(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
 

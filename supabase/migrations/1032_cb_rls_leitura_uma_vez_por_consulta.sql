@@ -7,13 +7,15 @@
 -- não pode ser incorporada à consulta — e cada chamada faz uma busca em
 -- `profiles` e decodifica o JWT de novo (`auth.uid()`). Numa leitura do quadro
 -- do funil (card + contato + etiquetas + conversa, por card) isso dá dezenas
--- de milhares de chamadas. MEDIDO em produção em 21/09/2026, com a RLS real
--- (`SET ROLE authenticated` + claims do dono da conta):
---   · página do quadro do Trabalhista (1.000 de 3.669 cards): 1.071 ms com a
---     regra por linha × 212 ms sem RLS × 227 ms com a pergunta feita uma vez;
---   · negócios do filtro de etapa da caixa de entrada: 178 ms × 6 ms — é a
---     consulta do CRM que mais ocupa o banco (2.645 chamadas, média 320 ms);
---   · página da lista de conversas: 278 ms × 58 ms.
+-- de milhares de chamadas. MEDIDO em produção em 21/09/2026 pela RLS de
+-- verdade (`SET ROLE authenticated` + claims do dono da conta), as policies
+-- antigas e as desta migration na MESMA transação, desfeita no fim:
+--   · página do quadro do Trabalhista (1.000 de 3.669 cards): 886 ms × 232 ms
+--     (224 ms sem RLS nenhuma — o que sobra é o custo da própria consulta);
+--   · negócios do filtro de etapa da caixa de entrada: 28 ms × 1 ms — é a
+--     consulta do CRM que mais ocupa o banco (2.645 chamadas, média 320 ms,
+--     com a contagem de cada página);
+--   · página da lista de conversas: 261 ms × 69 ms.
 -- O funil Trabalhista - Comercial levava ~9 s para abrir e a caixa de
 -- entrada ~4,5 s; o resto do tempo é o mesmo custo multiplicado.
 --
@@ -23,6 +25,16 @@
 -- de hierarquia, mesma tabela, mesmo `auth.uid()`; conta nula não casa em
 -- nenhuma das duas. A conferência no fim compara as duas funções para todo
 -- usuário × toda conta × todo papel do banco em que é aplicada.
+--
+-- ⚠️⚠️ A FORMA É `= ANY (ARRAY(SELECT …))`, NUNCA `IN (SELECT …)`. As duas
+-- dizem a mesma coisa, e a primeira versão desta migration usava `IN`.
+-- Medida pela RLS de verdade, ela só levava o quadro de 886 a 566 ms: nas 17
+-- policies que perguntam pela tabela-mãe (`contact_tags` → `contacts`,
+-- `messages` → `conversations`, …), o `IN (SELECT fn())` DENTRO do EXISTS é
+-- desdobrado pelo planejador numa semi-junção, e a função volta a rodar UMA
+-- VEZ POR LINHA (`loops=7428` no plano, 290 ms só nas etiquetas). Subconsulta
+-- `ARRAY(...)` nunca é desdobrada: vira um InitPlan, calculado uma vez por
+-- consulta, e `= ANY(array)` ainda pode usar índice.
 --
 -- ⚠️ POR QUE AS DE "TODOS OS COMANDOS" (FOR ALL) ENTRAM JUNTO: policy FOR ALL
 -- vale também para SELECT, e as permissivas são somadas com OU na ordem do
@@ -105,56 +117,56 @@ GRANT EXECUTE ON FUNCTION public.cb_contas_do_usuario(public.account_role_enum)
 -- account_invitations
 ALTER POLICY account_invitations_modify ON public.account_invitations
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))
  )
  WITH CHECK (
-  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))
  );
 ALTER POLICY account_invitations_select ON public.account_invitations
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))
  );
 
 -- accounts
 ALTER POLICY accounts_select ON public.accounts
  USING (
-  (id IN ( SELECT public.cb_contas_do_usuario()))
+  (id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- ai_configs
 ALTER POLICY ai_configs_select ON public.ai_configs
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- ai_knowledge_chunks
 ALTER POLICY ai_knowledge_chunks_select ON public.ai_knowledge_chunks
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- ai_knowledge_documents
 ALTER POLICY ai_knowledge_documents_select ON public.ai_knowledge_documents
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- ai_usage_log
 ALTER POLICY ai_usage_log_select ON public.ai_usage_log
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))
  );
 
 -- api_keys
 ALTER POLICY api_keys_select ON public.api_keys
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- automation_logs
 ALTER POLICY automation_logs_select ON public.automation_logs
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- automation_steps
@@ -162,24 +174,24 @@ ALTER POLICY automation_steps_modify ON public.automation_steps
  USING (
   (EXISTS ( SELECT 1
      FROM automations a
-    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM automations a
-    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  );
 ALTER POLICY automation_steps_select ON public.automation_steps
  USING (
   (EXISTS ( SELECT 1
      FROM automations a
-    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- automations
 ALTER POLICY automations_select ON public.automations
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- broadcast_recipients
@@ -187,138 +199,138 @@ ALTER POLICY broadcast_recipients_modify ON public.broadcast_recipients
  USING (
   (EXISTS ( SELECT 1
      FROM broadcasts b
-    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM broadcasts b
-    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  );
 ALTER POLICY broadcast_recipients_select ON public.broadcast_recipients
  USING (
   (EXISTS ( SELECT 1
      FROM broadcasts b
-    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- broadcasts
 ALTER POLICY broadcasts_select ON public.broadcasts
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_availability
 ALTER POLICY cb_availability_select ON public.cb_availability
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_channels
 ALTER POLICY cb_channels_select ON public.cb_channels
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_conversa_aberta
 ALTER POLICY cb_conversa_aberta_select ON public.cb_conversa_aberta
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_conversation_favorites
 ALTER POLICY cb_conversation_favorites_select ON public.cb_conversation_favorites
  USING (
-  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+  ((user_id = ( SELECT auth.uid())) AND (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))
  );
 
 -- cb_conversation_insights
 ALTER POLICY cb_conversation_insights_select ON public.cb_conversation_insights
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_conversation_notes
 ALTER POLICY cb_conversation_notes_select ON public.cb_conversation_notes
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_groups
 ALTER POLICY cb_groups_select ON public.cb_groups
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_grupos_de_campos
 ALTER POLICY cb_grupos_de_campos_select ON public.cb_grupos_de_campos
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_inbox_filtro_padrao
 ALTER POLICY cb_inbox_filtro_padrao_select ON public.cb_inbox_filtro_padrao
  USING (
-  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+  ((user_id = ( SELECT auth.uid())) AND (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))
  );
 
 -- cb_inbox_saved_filters
 ALTER POLICY cb_inbox_saved_filters_select ON public.cb_inbox_saved_filters
  USING (
-  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+  ((user_id = ( SELECT auth.uid())) AND (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))
  );
 
 -- cb_lead_events
 ALTER POLICY cb_lead_events_select ON public.cb_lead_events
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_media_library
 ALTER POLICY cb_media_library_select ON public.cb_media_library
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_meetings
 ALTER POLICY cb_meetings_select ON public.cb_meetings
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_meta_ads_campanhas
 ALTER POLICY cb_meta_ads_campanhas_select ON public.cb_meta_ads_campanhas
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_meta_ads_gastos
 ALTER POLICY cb_meta_ads_gastos_select ON public.cb_meta_ads_gastos
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_perfis_de_acesso
 ALTER POLICY cb_perfis_select ON public.cb_perfis_de_acesso
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_reunioes_transcritas
 ALTER POLICY cb_reunioes_transcritas_select ON public.cb_reunioes_transcritas
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_scheduled_messages
 ALTER POLICY cb_scheduled_messages_select ON public.cb_scheduled_messages
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- cb_tasks
 ALTER POLICY cb_tasks_select ON public.cb_tasks
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- contact_custom_values
@@ -326,18 +338,18 @@ ALTER POLICY contact_custom_values_modify ON public.contact_custom_values
  USING (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  );
 ALTER POLICY contact_custom_values_select ON public.contact_custom_values
  USING (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- contact_tags
@@ -345,42 +357,42 @@ ALTER POLICY contact_tags_modify ON public.contact_tags
  USING (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  );
 ALTER POLICY contact_tags_select ON public.contact_tags
  USING (
   (EXISTS ( SELECT 1
      FROM contacts c
-    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- contacts
 ALTER POLICY contacts_select ON public.contacts
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- conversations
 ALTER POLICY conversations_select ON public.conversations
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- custom_fields
 ALTER POLICY custom_fields_select ON public.custom_fields
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- deals
 ALTER POLICY deals_select ON public.deals
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- flow_nodes
@@ -388,18 +400,18 @@ ALTER POLICY flow_nodes_modify ON public.flow_nodes
  USING (
   (EXISTS ( SELECT 1
      FROM flows f
-    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM flows f
-    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  );
 ALTER POLICY flow_nodes_select ON public.flow_nodes
  USING (
   (EXISTS ( SELECT 1
      FROM flows f
-    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- flow_run_events
@@ -407,25 +419,25 @@ ALTER POLICY flow_run_events_select ON public.flow_run_events
  USING (
   (EXISTS ( SELECT 1
      FROM flow_runs r
-    WHERE ((r.id = flow_run_events.flow_run_id) AND (r.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((r.id = flow_run_events.flow_run_id) AND (r.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- flow_runs
 ALTER POLICY flow_runs_select ON public.flow_runs
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- flows
 ALTER POLICY flows_select ON public.flows
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- member_presence
 ALTER POLICY member_presence_select ON public.member_presence
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- message_reactions
@@ -434,26 +446,26 @@ ALTER POLICY message_reactions_modify ON public.message_reactions
   (EXISTS ( SELECT 1
      FROM (messages m
        JOIN conversations c ON ((c.id = m.conversation_id)))
-    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM (messages m
        JOIN conversations c ON ((c.id = m.conversation_id)))
-    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  );
 ALTER POLICY message_reactions_select ON public.message_reactions
  USING (
   (EXISTS ( SELECT 1
      FROM (messages m
        JOIN conversations c ON ((c.id = m.conversation_id)))
-    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- message_templates
 ALTER POLICY message_templates_select ON public.message_templates
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- messages
@@ -461,18 +473,18 @@ ALTER POLICY messages_modify ON public.messages
  USING (
   (EXISTS ( SELECT 1
      FROM conversations c
-    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM conversations c
-    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum)))))))
  );
 ALTER POLICY messages_select ON public.messages
  USING (
   (EXISTS ( SELECT 1
      FROM conversations c
-    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- pipeline_stages
@@ -480,54 +492,54 @@ ALTER POLICY pipeline_stages_modify ON public.pipeline_stages
  USING (
   (EXISTS ( SELECT 1
      FROM pipelines p
-    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  )
  WITH CHECK (
   (EXISTS ( SELECT 1
      FROM pipelines p
-    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))))))
  );
 ALTER POLICY pipeline_stages_select ON public.pipeline_stages
  USING (
   (EXISTS ( SELECT 1
      FROM pipelines p
-    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))))
  );
 
 -- pipelines
 ALTER POLICY pipelines_select ON public.pipelines
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- profiles
 ALTER POLICY profiles_select ON public.profiles
  USING (
-  ((( SELECT auth.uid()) = user_id) OR (account_id IN ( SELECT public.cb_contas_do_usuario())))
+  ((( SELECT auth.uid()) = user_id) OR (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario()))))
  );
 
 -- quick_replies
 ALTER POLICY quick_replies_select ON public.quick_replies
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- tags
 ALTER POLICY tags_select ON public.tags
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- webhook_endpoints
 ALTER POLICY webhook_endpoints_select ON public.webhook_endpoints
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- whatsapp_config
 ALTER POLICY whatsapp_config_select ON public.whatsapp_config
  USING (
-  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+  (account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))
  );
 
 -- ============================================================

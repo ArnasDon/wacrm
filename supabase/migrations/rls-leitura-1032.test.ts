@@ -4,8 +4,8 @@ import path from 'node:path';
 
 // ============================================================
 // 1032 — as regras de LEITURA perguntam "de quais contas sou membro" UMA vez
-// por consulta (`account_id IN (SELECT cb_contas_do_usuario())`), e não a
-// cada linha lida (`is_account_member(account_id)`).
+// por consulta (`account_id = ANY (ARRAY(SELECT cb_contas_do_usuario()))`), e
+// não a cada linha lida (`is_account_member(account_id)`).
 //
 // O que este pino segura:
 //
@@ -16,12 +16,15 @@ import path from 'node:path';
 // 2. A 1032 altera TODA policy de leitura que chamava a antiga (nem uma a
 //    menos: a que ficasse para trás seguiria somando o custo por linha na
 //    mesma tabela), só policy que existe, e trava com `lock_timeout`.
-// 3. No FIM do replay nenhuma policy de leitura chama `is_account_member`.
-//    Não é regra de segurança — a forma por linha é CORRETA, só lenta —, e é
-//    por isso que volta sem ninguém notar: a regressão não quebra tela
-//    nenhuma, só devolve o funil de 9 s. O caminho provável é um merge do
-//    upstream com tabela nova (as policies da 017 são dele) — o conserto é
-//    escrever a forma da 1032.
+// 3. No FIM do replay nenhuma policy de leitura pergunta por linha — nem com
+//    `is_account_member`, nem com `IN (SELECT cb_contas_do_usuario())`, que
+//    DENTRO de um EXISTS o planejador desdobra numa semi-junção e volta a
+//    chamar a função a cada linha (medido: `loops=7428`). Não é regra de
+//    segurança — as duas formas são CORRETAS, só lentas —, e é por isso que
+//    volta sem ninguém notar: a regressão não quebra tela nenhuma, só devolve
+//    o funil de 9 s. O caminho provável é um merge do upstream com tabela
+//    nova (as policies da 017 são dele) — o conserto é escrever a forma da
+//    1032.
 //
 // LIMITE DECLARADO: isto lê os `.sql`. Policy criada por `EXECUTE` dentro de
 // um bloco DO é invisível — por isso a própria 1032 confere o CATÁLOGO ao
@@ -83,10 +86,13 @@ function replay(ate?: string): Map<string, Politica> {
   return vivas;
 }
 
+/** A pergunta feita por linha: a função antiga, ou a nova num `IN (SELECT …)`. */
+const POR_LINHA = /is_account_member|\bIN\s*\(\s*SELECT\s+(?:public\.)?cb_contas_do_usuario/i;
+
 /** As policies de LEITURA (SELECT e FOR ALL) que ainda perguntam por linha. */
 function leituraPorLinha(vivas: Map<string, Politica>): string[] {
   return [...vivas]
-    .filter(([, p]) => (p.cmd === 'SELECT' || p.cmd === 'ALL') && /is_account_member/.test(p.corpo))
+    .filter(([, p]) => (p.cmd === 'SELECT' || p.cmd === 'ALL') && POR_LINHA.test(p.corpo))
     .map(([chave]) => chave)
     .sort();
 }
@@ -134,19 +140,27 @@ describe('1032 — a leitura pergunta a conta uma vez por consulta', () => {
     expect(alteradas).toEqual(antes);
   });
 
-  it('nenhuma ALTER da 1032 carrega a forma antiga, e a trava vem antes da primeira', () => {
+  it('nenhuma ALTER da 1032 pergunta por linha, e a trava vem antes da primeira', () => {
     for (const m of SQL_1032.matchAll(ALTERA)) {
-      expect(corpoDe(SQL_1032, m), `${m[3]}.${m[1] ?? m[2]}`).not.toMatch(/is_account_member/);
+      const corpo = corpoDe(SQL_1032, m);
+      expect(corpo, `${m[3]}.${m[1] ?? m[2]}`).not.toMatch(POR_LINHA);
+      expect(corpo, `${m[3]}.${m[1] ?? m[2]}`).toMatch(/=\s*ANY\s*\(\s*ARRAY\s*\(\s*SELECT\s+public\.cb_contas_do_usuario/i);
     }
     const trava = SQL_1032.search(/SET\s+LOCAL\s+lock_timeout/i);
     expect(trava).toBeGreaterThanOrEqual(0);
     expect(trava).toBeLessThan(SQL_1032.search(/ALTER\s+POLICY\s+\w+\s+ON/i));
   });
 
-  it('no FIM do replay nenhuma policy de leitura chama is_account_member', () => {
+  it('no FIM do replay nenhuma policy de leitura pergunta por linha', () => {
     // Policy de leitura NOVA (tabela nova, merge do upstream) escreve:
-    //   account_id IN (SELECT public.cb_contas_do_usuario())
+    //   account_id = ANY (ARRAY(SELECT public.cb_contas_do_usuario()))
     // e, para papel mínimo, cb_contas_do_usuario('admin'::public.account_role_enum).
     expect(leituraPorLinha(replay())).toEqual([]);
+  });
+
+  it('o detector da forma por linha pega as duas formas — senão o teste acima não prova nada', () => {
+    expect(POR_LINHA.test('is_account_member(account_id)')).toBe(true);
+    expect(POR_LINHA.test('(account_id IN ( SELECT public.cb_contas_do_usuario()))')).toBe(true);
+    expect(POR_LINHA.test('(account_id = ANY (ARRAY( SELECT public.cb_contas_do_usuario())))')).toBe(false);
   });
 });

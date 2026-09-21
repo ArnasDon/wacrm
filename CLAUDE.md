@@ -3652,12 +3652,13 @@ Confira as duas metades, como no caso das funções: que o `anon` perdeu, **e**
 que `authenticated`/`service_role` não perderam.
 
 ⚠️⚠️ **Policy de LEITURA pergunta a conta UMA vez por consulta (1032):
-`account_id IN (SELECT public.cb_contas_do_usuario())`, nunca
+`account_id = ANY (ARRAY(SELECT public.cb_contas_do_usuario()))`, nunca
 `is_account_member(account_id)`.** A antiga é `SECURITY DEFINER` (o
 planejador não a incorpora) e, numa policy, roda POR LINHA lida — uma busca
-em `profiles` e uma leitura do JWT a cada chamada. Medido em 21/09/2026 com a
-RLS real: a página do quadro do funil Trabalhista levava 1.071 ms contra
-212 ms sem RLS, e a forma por consulta dá 227 ms; o funil abria em ~9 s e a
+em `profiles` e uma leitura do JWT a cada chamada. Medido em 21/09/2026 pela
+RLS de verdade, as duas formas na mesma transação desfeita: a página do
+quadro do funil Trabalhista cai de 886 para 232 ms (224 ms sem RLS
+nenhuma), a lista de conversas de 261 para 69 ms; o funil abria em ~9 s e a
 caixa de entrada em ~4,5 s. Quem vê o quê NÃO muda: mesma escada de papéis,
 mesma tabela, mesmo `auth.uid()` (pino em `rls-leitura-1032.test.ts`; a
 migration compara as duas funções para todo usuário × conta × papel). O que
@@ -3665,6 +3666,17 @@ morde código novo:
 
 - **Tabela nova com policy de leitura escreve a forma da 1032**, com papel
   mínimo quando precisar: `cb_contas_do_usuario('admin'::public.account_role_enum)`.
+- ⚠️⚠️ **`= ANY (ARRAY(SELECT …))`, e NÃO `IN (SELECT …)`** — as duas dizem a
+  mesma coisa, e a diferença só aparece no plano. Numa policy que pergunta
+  pela tabela-mãe (`EXISTS (SELECT 1 FROM contacts c WHERE c.id = … AND
+  c.account_id IN (SELECT fn()))` — são 17, `messages` inclusive), o
+  planejador desdobra o `IN` numa semi-junção DENTRO do EXISTS e a função
+  volta a rodar por linha: a primeira versão da 1032 usava `IN` e só levou o
+  quadro de 886 a 566 ms (`loops=7428` no plano). `ARRAY(...)` nunca é
+  desdobrada — vira InitPlan, calculado uma vez. O pino reprova as duas
+  formas por linha. Quem MEDIR uma policy nova mede pela RLS (`SET ROLE
+  authenticated` + claims), nunca escrevendo o predicado à mão como
+  `postgres`: foi assim que a 1ª versão pareceu dar 227 ms.
   `is_account_member` continua nas policies de ESCRITA (INSERT/UPDATE/DELETE),
   avaliadas por linha ESCRITA — uma por vez na prática.
 - ⚠️ **FOR ALL vale também para SELECT, e as permissivas somam com OU**: uma
@@ -6840,8 +6852,8 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `cb_contas_do_usuario(papel)` (SECURITY DEFINER, EXECUTE para anon,
     authenticated e service_role — as policies são `TO public`) e as 61
     policies de LEITURA (SELECT e FOR ALL, 52 tabelas) reescritas por `ALTER
-    POLICY` para `account_id IN (SELECT …)` — ver "Policy de LEITURA pergunta
-    a conta UMA vez por consulta". ⚠️ É **1032** porque a **1031** é da branch
+    POLICY` para `account_id = ANY (ARRAY(SELECT …))` — ver "Policy de LEITURA
+    pergunta a conta UMA vez por consulta". ⚠️ É **1032** porque a **1031** é da branch
     `feat/perdido-pode-voltar` (ainda não mesclada), e 1025–1027 foram
     aplicadas por outras frentes antes de chegar ao `main`. Ensaiada em
     produção numa transação desfeita (8 usuários × 52 tabelas: o resultado da
@@ -7241,9 +7253,10 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
   diretório em 4, ela ordena fora do lugar no replay — e o teste
   `nomes-das-migrations.test.ts` reprova.
 - ❌ Renomear/renumerar migration já aplicada.
-- ❌ Policy de LEITURA nova com `is_account_member(account_id)` — ela roda
-  por linha lida. Use `account_id IN (SELECT public.cb_contas_do_usuario())`
-  (1032); o pino `rls-leitura-1032.test.ts` reprova a forma antiga.
+- ❌ Policy de LEITURA nova com `is_account_member(account_id)` ou com
+  `IN (SELECT cb_contas_do_usuario())` — as duas rodam por linha. Use
+  `account_id = ANY (ARRAY(SELECT public.cb_contas_do_usuario()))` (1032); o
+  pino `rls-leitura-1032.test.ts` reprova as duas.
 - ❌ Conferir privilégio numa migration sem tê-lo CONCEDIDO ali. O que vem do
   *default privilege* do Supabase não existe em banco novo — nove migrations
   nossas reprovaram por isso na primeira vez que o CI as reaplicou do zero.

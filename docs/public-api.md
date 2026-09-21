@@ -459,7 +459,15 @@ The `201` response includes `channel_id` — the number the message
 `POST /api/v1/broadcasts` also accepts `channel_id`, but it must be an
 official Meta number (broadcasts are template-only). Omitted, it picks
 the first usable Meta number (account default first). If the account has
-none, the call returns `meta_channel_required`.
+none, the call returns `meta_channel_required`. A `channel_id` that is
+not a usable Meta number **of this account** returns the same
+`meta_channel_required` (400) — it never falls back to another number,
+and nothing is sent.
+
+> Requires migration `1030`. Before it, every call to this endpoint
+> failed with `500 Failed to create broadcast` (the database function
+> behind it could not execute), and per-recipient `params` with two or
+> more values could not be stored.
 
 ### `GET /api/v1/tasks`
 

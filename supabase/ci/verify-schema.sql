@@ -120,6 +120,49 @@ BEGIN
     END IF;
   END;
 
+  -- ⚠️ A função de disparo (1030): no FIM do replay tem de sobrar UMA — a de
+  -- NOVE parâmetros, com `p_template_params JSONB` e o RETURNING qualificado.
+  -- O corpo de uma função plpgsql só é analisado quando a instrução RODA:
+  -- 0040, 0041 e 0940 aplicaram limpas com um `RETURNING id, contact_id` que
+  -- estoura 42702 na primeira chamada, e o replay passou verde nas três.
+  --
+  -- A asserção equivalente do upstream faz `::regprocedure` na assinatura de
+  -- OITO parâmetros, que aqui não existe (a 0940 a apaga) — o cast estouraria
+  -- com um erro cru. E a 041 deles, aplicada crua, ressuscita esse overload:
+  -- uma chamada sem o canal cairia na função que não carimba
+  -- `broadcasts.channel_id`. ⚠️ Este replay nunca CHAMA a função (o banco não
+  -- tem conta para a FK) — quem a chama é a conferência da própria 1030, em
+  -- todo banco que tenha dado.
+  DECLARE
+    v_quantas  integer;
+    v_disparo  regprocedure;
+    v_def      text;
+  BEGIN
+    SELECT count(*) INTO v_quantas
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public' AND p.proname = 'create_broadcast_with_recipients';
+    IF v_quantas <> 1 THEN
+      RAISE EXCEPTION
+        'create_broadcast_with_recipients tem % assinatura(s) no fim do replay (esperado 1) — a 041 do upstream entrou crua, ou a 1030 não aplicou?',
+        v_quantas;
+    END IF;
+    -- `to_regprocedure` devolve NULL em vez de estourar; o NULL é tratado
+    -- aqui, senão o LIKE abaixo daria NULL e o IF passaria calado.
+    v_disparo := to_regprocedure(
+      'public.create_broadcast_with_recipients(uuid,uuid,text,text,text,integer,uuid[],jsonb,uuid)'
+    );
+    IF v_disparo IS NULL THEN
+      RAISE EXCEPTION
+        'a função de disparo que sobrou não é a de nove parâmetros com p_template_params JSONB (1030)';
+    END IF;
+    v_def := pg_get_functiondef(v_disparo);
+    IF v_def NOT LIKE '%RETURNING id, broadcast_recipients.contact_id%'
+       OR v_def LIKE '%RETURNING id, contact_id%' THEN
+      RAISE EXCEPTION
+        'create_broadcast_with_recipients continua com o RETURNING ambíguo — a 1030 não aplicou, ou alguém a recriou crua depois';
+    END IF;
+  END;
+
   RAISE NOTICE 'schema verification passed';
 END
 $$;

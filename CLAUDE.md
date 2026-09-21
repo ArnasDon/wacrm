@@ -289,6 +289,8 @@ upstream sobrescrevê-los:
 | `src/lib/ai/{auto-reply,config,knowledge,usage}.ts` | agente por canal, interruptor, RAG por canal |
 | `src/lib/whatsapp/broadcast-core.ts` + rotas de template | `resolveMetaChannel` no lugar do espelho |
 | `src/lib/api/v1/conversations.ts`, `src/lib/api-keys/scopes.ts` | `channel_id` nos serializers, escopo `channels:read` |
+| `src/app/api/v1/broadcasts/route.ts` (21/09/2026) | o `channel_id` do corpo chegando a `createBroadcast` — a rota do upstream o DESCARTA, e `docs/public-api.md`, `docs/mcp.md` e a ferramenta `send_broadcast` do `mcp-server` prometem que ele vale. Ninguém viu enquanto o endpoint devolvia 500 em toda chamada (a função de disparo não executava, 1030); com dois números oficiais a campanha sairia pelo que `resolveMetaChannel` escolhesse, sem erro. O núcleo falha FECHADO (canal inválido = 400 `meta_channel_required`, nada enviado). Pino: `src/app/api/v1/broadcasts/route.test.ts` |
+| `supabase/ci/verify-schema.sql` | as DUAS asserções nossas: policies de escrita de disparo/regras (964) e a função de disparo (1030: UMA assinatura, a de NOVE parâmetros com `p_template_params JSONB`, RETURNING qualificado). ⚠️ O upstream confere a de OITO por `::regprocedure` — aceita crua, o cast estoura no replay e TRAVA o deploy. Manter a nossa; o arquivo continua com UMA instrução |
 | `src/components/automations/automation-builder.tsx`, `src/components/flows/{flow-builder,flow-editor-state}.tsx` | escopo de canal editável (multi-select / select), canais no contexto do editor, validação de canal no cliente |
 | páginas de `automations`, `flows`, `broadcasts`, `dashboard` | etiqueta e filtro de canal, coluna de canal nos históricos, filtro do painel |
 | `src/components/broadcasts/step{1,4}-*.tsx`, `src/hooks/use-broadcast-sending.ts` | canal escolhido no passo 1, `channel_id` no corpo da API e na linha de `broadcasts`. No hook, mais: `marcarDestinatario` (update conferido pelo retorno, #15) e o `ownerUserId` do `upsertCsvContacts` (ver a decisão do merge de 2026-09-05 acima) |
@@ -6183,6 +6185,16 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   upstream traz migration nova com 3 dígitos: renomeie para 4 no merge** — o
   teste reprova até isso acontecer. Nas listas abaixo as migrations aparecem
   pelo número ("a 912"), que continua identificando o arquivo `0912_`.
+  ⚠️⚠️ **UMA exceção: a `041_fix_broadcast_contact_id_ambiguity.sql` DELES é
+  APAGADA, não renomeada** (não confundir com a nossa `0041_broadcast_resume`,
+  que é a 038 deles). Ela recria `create_broadcast_with_recipients` com OITO
+  parâmetros — o overload que a 0940 apagou de propósito. Renomeada para
+  `0044_`, o replay passa (a 0940 roda depois e a apaga), mas a PRODUÇÃO aplica
+  por ordem CRONOLÓGICA e ficaria com as duas: chamada sem `p_channel_id` cai na
+  que não carimba o canal. Medido num Postgres 16 em 21/09/2026. O conserto
+  equivalente — e maior — é a nossa **1030**; o pino é
+  `supabase/migrations/funcao-de-disparo-1030.test.ts`, e o
+  `verify-schema.sql` reprova o replay com duas assinaturas.
 - ⚠️ **Evitar colisão de número com o upstream:** como o original também numera
   em sequência, se criarmos `0037_...` e o upstream criar `037_...`, colidem no
   merge. **Nossas migrations próprias usam a faixa reservada `0900+`** (e, a
@@ -6818,6 +6830,35 @@ reprovavam por falta de dado, não por defeito.
   Para "o DROP não levou nada junto", guarde a contagem ANTES numa **variável**
   do bloco e compare — nunca um número absoluto, e nunca `CREATE TEMP TABLE`
   (sem guarda ele estoura na segunda passada e quebra a idempotência).
+
+**3. Função plpgsql nova (ou recriada) tem de ser CHAMADA pela conferência.**
+
+O corpo de uma função plpgsql só é analisado quando a instrução RODA:
+`CREATE FUNCTION` aceita nome ambíguo, coluna que não existe e tipo errado, e o
+replay passa verde. `create_broadcast_with_recipients` atravessou TRÊS
+migrations (0040, 0041, 0940) com um `RETURNING id, contact_id` que estoura
+42702 na primeira chamada — colide com a coluna de saída do `RETURNS TABLE` — e
+ninguém viu, porque nada a tinha chamado com sucesso. Só a 1030 (21/09/2026)
+consertou, e achou um SEGUNDO defeito que só a execução mostra.
+
+  ✅ **Regra:** a conferência chama a função num subbloco que se DESFAZ por
+  exceção própria (`RAISE EXCEPTION USING ERRCODE = 'P1030'` + `EXCEPTION WHEN
+  SQLSTATE 'P1030'`) — nada sobra no banco. Banco vazio pula com `RAISE NOTICE`
+  (regra 2). Modelo: `1030_cb_funcao_de_disparo_executavel.sql`.
+
+  ⚠️ **Função chamada pelo PostgREST se testa PELO CAMINHO DELE**: ele monta os
+  argumentos nomeados com `json_to_recordset(corpo) AS _(arg <tipo>, …)`, e o
+  TIPO decide o que chega. Com `JSONB[]`, o `string[][]` do app virava um array
+  de DUAS dimensões (2+ valores derrubavam a chamada; 1 valor gravava texto em
+  vez de lista). Chamar a função com `ARRAY['[…]'::jsonb]` direto passa verde
+  sobre exatamente esse defeito. Lista de listas = argumento `JSONB`.
+
+  ⚠️ **Ler o que a função inseriu exige OUTRA instrução.** Dentro da MESMA
+  instrução SQL, a consulta de fora não enxerga a linha que a função acabou de
+  gravar (a foto da instrução é anterior ao INSERT): um `… LATERAL funcao(…) f
+  JOIN tabela t ON t.id = f.id` devolve ZERO linhas, e a conferência acusa a
+  função certa. Já mordeu na própria 1030. `SELECT … INTO v_id FROM funcao(…)`
+  e, na instrução seguinte, `SELECT … FROM tabela WHERE id = v_id`.
 
 **Como conferir antes de abrir o PR:** `supabase db start` na raiz do projeto
 reaplica tudo do zero, igual ao CI. Exige Docker rodando e ~2 GB livres.

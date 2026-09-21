@@ -23,8 +23,19 @@
 -- "existe um perfil meu na conta x com papel >= papel"; a forma nova é
 -- "x está no conjunto das contas em que tenho papel >= papel". Mesmo `CASE`
 -- de hierarquia, mesma tabela, mesmo `auth.uid()`; conta nula não casa em
--- nenhuma das duas. A conferência no fim compara as duas funções para todo
--- usuário × toda conta × todo papel do banco em que é aplicada.
+-- nenhuma das duas. A conferência logo depois da função compara as duas
+-- para todo usuário do banco, em todo papel (ver o custo dela, abaixo).
+--
+-- ⚠️⚠️ A CONFERÊNCIA DE EQUIVALÊNCIA FOI REESCRITA DEPOIS DE APLICADA
+-- (Codex, PR #246). A versão aplicada em produção (histórico
+-- 20260921220626) percorria usuário × conta × papel e rodava DEPOIS das
+-- ALTER: aqui eram 160 casos em 175 ms, mas numa instalação com mil usuários
+-- e mil contas seriam 4 milhões de chamadas, com a trava EXCLUSIVA das 52
+-- tabelas presa o tempo todo — `lock_timeout` limita só a ESPERA pela trava,
+-- não o que se faz com ela. Hoje ela roda ANTES das ALTER e é LINEAR no
+-- número de usuários; a sonda de privilégio do fim virou EXPLAIN (confere
+-- os privilégios sem varrer tabela). O que a migration MUDA no banco — a
+-- função e as 61 policies — é idêntico ao aplicado; só a verificação mudou.
 --
 -- ⚠️⚠️ A FORMA É `= ANY (ARRAY(SELECT …))`, NUNCA `IN (SELECT …)`. As duas
 -- dizem a mesma coisa, e a primeira versão desta migration usava `IN`.
@@ -107,6 +118,77 @@ REVOKE ALL ON FUNCTION public.cb_contas_do_usuario(public.account_role_enum)
   FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.cb_contas_do_usuario(public.account_role_enum)
   TO anon, authenticated, service_role;
+
+-- ============================================================
+-- Conferência 1 — ANTES das ALTER, sem trava de tabela nenhuma: as duas
+-- perguntas dão a MESMA resposta para todo usuário × todo papel deste banco.
+--
+-- ⚠️ O custo é LINEAR no número de usuários, e é por construção, não por
+-- amostragem. `is_account_member(x, papel)` é um EXISTS sobre os perfis do
+-- PRÓPRIO usuário com `account_id = x` (017): fora das contas dos perfis
+-- dele, é falso sem precisar perguntar. Então a equivalência em TODAS as
+-- contas se reduz a
+--   (i)   nas contas dos perfis dele, as duas respostas batem;
+--   (ii)  a função nova não devolve conta fora dos perfis dele;
+--   (iii) numa conta de fora (a primeira que aparecer), as duas batem na
+--         prática — a guarda contra uma `is_account_member` que um dia
+--         deixe de ser só isso.
+-- `profiles.user_id` é único, então cada usuário custa três comparações por
+-- papel. A primeira versão percorria usuário × conta × papel (ver o
+-- cabeçalho). Em banco vazio não há o que comparar.
+-- ============================================================
+DO $$
+DECLARE
+  u uuid;
+  a uuid;
+  r public.account_role_enum;
+  v_fora uuid;
+  v_casos int := 0;
+BEGIN
+  FOR u IN SELECT p.user_id FROM public.profiles p WHERE p.user_id IS NOT NULL LOOP
+    PERFORM set_config(
+      'request.jwt.claims',
+      json_build_object('sub', u, 'role', 'authenticated')::text,
+      true
+    );
+    SELECT ac.id INTO v_fora
+      FROM public.accounts ac
+     WHERE NOT EXISTS (
+       SELECT 1 FROM public.profiles p WHERE p.user_id = u AND p.account_id = ac.id
+     )
+     LIMIT 1;
+    FOREACH r IN ARRAY enum_range(NULL::public.account_role_enum) LOOP
+      -- (ii)
+      IF EXISTS (
+        SELECT 1
+          FROM public.cb_contas_do_usuario(r) AS x(conta)
+         WHERE NOT EXISTS (
+           SELECT 1 FROM public.profiles p WHERE p.user_id = u AND p.account_id = x.conta
+         )
+      ) THEN
+        RAISE EXCEPTION '1032: cb_contas_do_usuario devolve conta fora dos perfis do usuário % (papel %)', u, r;
+      END IF;
+      -- (i) e (iii)
+      FOR a IN
+        SELECT p.account_id FROM public.profiles p WHERE p.user_id = u AND p.account_id IS NOT NULL
+        UNION
+        SELECT v_fora WHERE v_fora IS NOT NULL
+      LOOP
+        IF public.is_account_member(a, r)
+           IS DISTINCT FROM (a IN (SELECT public.cb_contas_do_usuario(r))) THEN
+          RAISE EXCEPTION '1032: divergência para usuário %, conta %, papel %', u, a, r;
+        END IF;
+        v_casos := v_casos + 1;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+  PERFORM set_config('request.jwt.claims', '', true);
+  IF v_casos = 0 THEN
+    RAISE NOTICE '1032: banco vazio, nada a comparar.';
+  ELSE
+    RAISE NOTICE '1032: % comparações (usuário × conta dele ou uma de fora × papel) idênticas.', v_casos;
+  END IF;
+END $$;
 
 -- ============================================================
 -- As 61 policies de leitura (SELECT e FOR ALL), geradas do catálogo de
@@ -543,10 +625,11 @@ ALTER POLICY whatsapp_config_select ON public.whatsapp_config
  );
 
 -- ============================================================
--- Conferência.
+-- Conferência do que as ALTER deixaram (a 1, de equivalência, já rodou lá
+-- em cima, antes de qualquer trava).
 -- ============================================================
 
--- 1) Nenhuma policy de LEITURA do schema public ainda pergunta por linha.
+-- 2) Nenhuma policy de LEITURA do schema public ainda pergunta por linha.
 DO $$
 DECLARE
   v_sobrou text;
@@ -562,7 +645,7 @@ BEGIN
   END IF;
 END $$;
 
--- 2) Quem avalia as policies consegue executar a função; PUBLIC não.
+-- 3) Quem avalia as policies consegue executar a função; PUBLIC não.
 DO $$
 BEGIN
   IF NOT has_function_privilege('authenticated', 'public.cb_contas_do_usuario(public.account_role_enum)', 'EXECUTE')
@@ -580,46 +663,21 @@ BEGIN
   END IF;
 END $$;
 
--- 3) As duas perguntas dão a MESMA resposta para todo usuário × toda conta ×
---    todo papel deste banco. Em banco vazio não há o que comparar.
-DO $$
-DECLARE
-  u record;
-  a uuid;
-  r public.account_role_enum;
-  v_casos int := 0;
-BEGIN
-  FOR u IN SELECT DISTINCT user_id FROM public.profiles WHERE user_id IS NOT NULL LOOP
-    PERFORM set_config(
-      'request.jwt.claims',
-      json_build_object('sub', u.user_id, 'role', 'authenticated')::text,
-      true
-    );
-    FOR a IN SELECT id FROM public.accounts LOOP
-      FOREACH r IN ARRAY enum_range(NULL::public.account_role_enum) LOOP
-        IF public.is_account_member(a, r)
-           IS DISTINCT FROM (a IN (SELECT public.cb_contas_do_usuario(r))) THEN
-          RAISE EXCEPTION '1032: divergência para usuário %, conta %, papel %', u.user_id, a, r;
-        END IF;
-        v_casos := v_casos + 1;
-      END LOOP;
-    END LOOP;
-  END LOOP;
-  PERFORM set_config('request.jwt.claims', '', true);
-  IF v_casos = 0 THEN
-    RAISE NOTICE '1032: banco vazio, nada a comparar.';
-  ELSE
-    RAISE NOTICE '1032: % combinações (usuário × conta × papel) idênticas.', v_casos;
-  END IF;
-END $$;
-
 -- 4) As policies novas RODAM como authenticated (a função é chamada de dentro
---    da RLS com o privilégio de quem consulta). Tabela sem SELECT para
---    authenticated neste banco é pulada — esta migration não concede nem
---    confere privilégio de tabela.
+--    da RLS com o privilégio de quem consulta, e as policies por tabela-mãe
+--    leem a tabela-mãe com esse mesmo privilégio). EXPLAIN, e não a consulta:
+--    o EXPLAIN inicia o executor, que confere o SELECT de toda tabela da
+--    consulta — as das policies inclusive — e o EXECUTE de toda função, mas
+--    não varre linha nenhuma. A versão anterior fazia `count(*)` com as
+--    travas presas: numa base de milhões de mensagens, segundos de sistema
+--    parado. Provado num Postgres 16 descartável: sem SELECT na tabela-mãe e
+--    sem EXECUTE na função, o EXPLAIN recusa com `insufficient_privilege`.
+--    Tabela sem SELECT para authenticated neste banco é pulada — esta
+--    migration não concede nem confere privilégio de tabela.
 DO $$
 DECLARE
   t text;
+  v_plano text;
 BEGIN
   FOREACH t IN ARRAY ARRAY['deals', 'contacts', 'contact_tags', 'conversations', 'messages', 'profiles'] LOOP
     IF NOT has_table_privilege('authenticated', 'public.' || t, 'SELECT') THEN
@@ -628,7 +686,7 @@ BEGIN
     END IF;
     BEGIN
       SET LOCAL ROLE authenticated;
-      EXECUTE format('SELECT count(*) FROM public.%I', t);
+      EXECUTE format('EXPLAIN SELECT count(*) FROM public.%I', t) INTO v_plano;
       RESET ROLE;
     EXCEPTION WHEN insufficient_privilege THEN
       RESET ROLE;

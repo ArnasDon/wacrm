@@ -3661,7 +3661,9 @@ quadro do funil Trabalhista cai de 886 para 232 ms (224 ms sem RLS
 nenhuma), a lista de conversas de 261 para 69 ms; o funil abria em ~9 s e a
 caixa de entrada em ~4,5 s. Quem vê o quê NÃO muda: mesma escada de papéis,
 mesma tabela, mesmo `auth.uid()` (pino em `rls-leitura-1032.test.ts`; a
-migration compara as duas funções para todo usuário × conta × papel). O que
+migration compara as duas funções para todo usuário e todo papel, ANTES das
+ALTER). Aplicada em produção em 21/09/2026 e medida depois pela RLS de
+verdade: quadro 250 ms, conversas 74–84 ms, negócios da caixa 7–10 ms. O que
 morde código novo:
 
 - **Tabela nova com policy de leitura escreve a forma da 1032**, com papel
@@ -3695,6 +3697,16 @@ morde código novo:
   lock_timeout` (a 1032 usa 5 s), senão uma transação longa em `messages`
   enfileira o sistema inteiro atrás dela. Aplicada pela Management API, a
   migration roda como UM bloco — medido: o `SET LOCAL` vale até o fim.
+  ⚠️⚠️ **E `lock_timeout` limita só a ESPERA pela trava, não o que se faz com
+  ela**: tudo o que roda DEPOIS da primeira ALTER, na mesma transação, roda
+  com a trava exclusiva de todas as tabelas já alteradas. A conferência que a
+  1032 aplicou em produção percorria usuário × conta × papel ali dentro —
+  160 casos aqui, 4 milhões numa instalação com mil usuários e mil contas —
+  e fechava com `count(*)` em `messages` (Codex, PR #246). Verificação cara
+  vai ANTES da primeira ALTER; depois dela, só catálogo e EXPLAIN (o EXPLAIN
+  confere o SELECT de toda tabela da consulta, as das policies inclusive, e o
+  EXECUTE de toda função, sem varrer linha — provado num Postgres 16
+  descartável). Há pino.
 
 ⚠️ **A 903 removeu dois índices únicos.** `message_templates(user_id, name,
 language)` e `ai_configs(account_id)` viraram pares de índices **parciais**
@@ -6857,8 +6869,17 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `feat/perdido-pode-voltar` (ainda não mesclada), e 1025–1027 foram
     aplicadas por outras frentes antes de chegar ao `main`. Ensaiada em
     produção numa transação desfeita (8 usuários × 52 tabelas: o resultado da
-    RLS, o predicado antigo e o novo idênticos em todas). A aplicação e a
-    conferência depois dela estão no PR.
+    RLS, o predicado antigo e o novo idênticos em todas). Aplicada em
+    21/09/2026 pela Management API (histórico `20260921220626`), com
+    autorização do operador e DEPOIS do replay do CI; conferida no catálogo
+    (nenhuma policy de leitura por linha, 61 na forma nova, EXECUTE sem
+    PUBLIC) e pela RLS de cada um dos 4 membros da conta (as mesmas contagens
+    da verdade da conta em 15 tabelas; outra conta e `anon` não veem nada).
+    ⚠️ A CONFERÊNCIA foi reescrita DEPOIS de aplicada (Codex, PR #246): a
+    aplicada era quadrática e rodava com as travas presas; a do arquivo é
+    linear, roda antes das ALTER, e passou contra a produção em 81 ms. O que
+    a migration MUDA no banco é idêntico ao aplicado — só os blocos de
+    verificação diferem do registrado no histórico.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

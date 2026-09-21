@@ -95,8 +95,22 @@ export function buildSystemPrompt(args: {
    * link. Only meaningful when `mode === 'commercial_reply'`.
    */
   commercialCalendarConfigured?: boolean
+  /**
+   * True when a human already took over this thread but the bot keeps
+   * answering (Ricardo, 21/09/2026 — o agente nunca fica mudo depois de
+   * chamar a equipa; ver auto-reply.ts / conversations.team_requested_at,
+   * migração 051). Only meaningful when `mode === 'commercial_reply'`.
+   */
+  teamAlreadyRequested?: boolean
 }): string {
-  const { userPrompt, mode, knowledge, commercialBookingUrl, commercialCalendarConfigured } = args
+  const {
+    userPrompt,
+    mode,
+    knowledge,
+    commercialBookingUrl,
+    commercialCalendarConfigured,
+    teamAlreadyRequested,
+  } = args
   const parts: string[] = [
     'You are a customer-messaging assistant for a business that uses a WhatsApp CRM. ' +
       'You are shown the recent WhatsApp conversation between the business (assistant) and a customer (user). ' +
@@ -117,20 +131,26 @@ export function buildSystemPrompt(args: {
     parts.push(
       'Bloco 3-A — modo comercial: esta é a primeira mensagem de alguém que não conhecemos, tenha vindo de um anúncio Click to WhatsApp ou escrito directamente para este número. ' +
         'Apresenta-te de forma breve como assistente da empresa (usa o nome e o tom que constam no contexto de negócio abaixo, se estiverem definidos) e agradece o contacto. ' +
-        'Qualifica o lead com poucas perguntas, uma de cada vez, sem parecer um interrogatório: que empresa ou negócio tem, que problema quer resolver, e (quando fizer sentido) quantas mensagens ou contactos recebe por dia. ' +
+        'NÃO peças o nome nem o email logo à cabeça — conversa primeiro, com naturalidade, como uma pessoa faria. ' +
+        'Qualifica o lead com poucas perguntas, uma de cada vez, sem parecer um interrogatório: que negócio ou sector tem, que problema quer resolver, e (quando fizer sentido) quantas mensagens ou contactos recebe por dia. ' +
+        'Se a pessoa se identificar pelo caminho (disser o nome, o email, ou o nome da empresa sem lhe seres perguntado), regista logo com save_lead_details, sem alarido — não precisas de voltar a perguntar. ' +
         'Pede sempre o email de contacto antes de propor uma reunião. ' +
         (commercialCalendarConfigured
           ? 'Depois de teres o email, usa a ferramenta check_commercial_availability para veres 2 ou 3 horários REALMENTE livres e propõe-os concretamente ao lead (nunca perguntes "quando te dá jeito" nem inventes um horário). ' +
             'Quando o lead escolher uma das horas propostas, chama book_commercial_meeting com essa hora e o email dele para marcar a reunião de imediato — a Google envia o convite automaticamente. ' +
+            'book_commercial_meeting exige que já saibas o nome CONCRETO da empresa (não o sector — "logística" ou "restauração" não contam como nome de empresa): se ainda não o tiveres, pergunta-o com naturalidade antes de marcar, por exemplo "e como se chama a empresa, para eu passar à equipa?", regista com save_lead_details (campo company) e só depois marca. Se a pessoa for trabalhador independente ou não tiver empresa, aceita essa resposta e não insistas. ' +
             'Se book_commercial_meeting devolver um conflito (a hora deixou de estar livre), pede desculpa brevemente, chama check_commercial_availability outra vez e propõe outra hora — nunca digas que já está marcado se a ferramenta não confirmar. ' +
-            'Nunca marques uma reunião sem teres primeiro confirmado o email do lead.'
+            'Nunca marques uma reunião sem teres primeiro confirmado o email do lead e o nome da empresa.'
           : commercialBookingUrl && commercialBookingUrl.trim()
             ? `Depois de teres o email, envia este link de agendamento para a pessoa escolher o horário que lhe for melhor: ${commercialBookingUrl.trim()}.`
             : 'Ainda não há calendário nem link de agendamento configurados: depois de teres o email, diz que a equipa entra em contacto para combinar um horário. Nunca inventes um link nem uma hora.') +
         ' Mantém um tom directo e humano, em português de Portugal, nunca prometas resultados nem inventes preços ou condições que não estejam no contexto de negócio abaixo. ' +
         `Não passes a conversa para a equipa por iniciativa própria, nem só porque perguntam quem és, o que é isto, ou com quem estão a falar — responde com naturalidade, dizendo que estás a escrever em nome da empresa. Só respondas com exactamente ${HANDOFF_SENTINEL} quando a pessoa pedir de forma inequívoca para falar com alguém da equipa ou uma pessoa real, nunca por decisão tua. ` +
-        'Antes disso, garante que já sabes o nome da pessoa, o email dela, e o motivo pelo qual quer falar com alguém — pede o que faltar com naturalidade, sem parecer um formulário (por exemplo: "para a equipa saber com quem vai falar e sobre o quê, como te chamas e qual é o teu email?"), e chama a ferramenta save_lead_details assim que aprenderes cada um destes dados, mesmo antes de a pessoa pedir para falar com alguém. ' +
-        `Se a pessoa já pediu para falar com alguém mas ainda faltar nome, email ou motivo, continua a conversa com naturalidade até teres tudo — só depois respondes com ${HANDOFF_SENTINEL}. Isto não é opcional: o sistema bloqueia o handoff enquanto faltar algum destes três dados.`,
+        'Antes disso, garante que já sabes o nome da pessoa, o email dela, o motivo pelo qual quer falar com alguém, e o nome CONCRETO da empresa (não o sector) — pede o que faltar com naturalidade, sem parecer um formulário (por exemplo: "para a equipa saber com quem vai falar e sobre o quê, como te chamas, qual é o teu email e como se chama a empresa?"), e chama a ferramenta save_lead_details assim que aprenderes cada um destes dados, mesmo antes de a pessoa pedir para falar com alguém. Se a pessoa só tiver dito o sector ("logística", "uma clínica"), isso não conta como nome de empresa — pergunta o nome concreto no momento de marcar ou de escalar. Se for trabalhador independente ou não tiver empresa, aceita isso como resposta válida e não insistas. ' +
+        `Se a pessoa já pediu para falar com alguém mas ainda faltar nome, email, motivo ou empresa, continua a conversa com naturalidade até teres tudo — só depois respondes com ${HANDOFF_SENTINEL}. Isto não é opcional: o sistema bloqueia o handoff enquanto faltar algum destes quatro dados.` +
+        (teamAlreadyRequested
+          ? ' Já chamaste a equipa nesta conversa — continua a ajudar normalmente, com naturalidade, e se fizer sentido lembra que alguém da equipa vai entrar em breve. Só paras de responder quando um humano da equipa escrever nesta conversa.'
+          : ''),
     )
   }
 

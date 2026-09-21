@@ -12,6 +12,7 @@ describe('checkHandoffReadiness', () => {
       contactName: 'Ricardo',
       contactEmail: 'ricardo@example.com',
       escalationReason: 'Quer falar de preços.',
+      contactCompany: 'Acme Lda',
     })
     expect(result).toEqual({ ready: true, missing: [] })
   })
@@ -21,6 +22,7 @@ describe('checkHandoffReadiness', () => {
       contactName: 'Ricardo',
       contactEmail: null,
       escalationReason: 'Quer falar de preços.',
+      contactCompany: 'Acme Lda',
     })
     expect(result.ready).toBe(false)
     expect(result.missing).toEqual(['email'])
@@ -31,6 +33,7 @@ describe('checkHandoffReadiness', () => {
       contactName: undefined,
       contactEmail: 'ricardo@example.com',
       escalationReason: 'Quer falar de preços.',
+      contactCompany: 'Acme Lda',
     })
     expect(result.ready).toBe(false)
     expect(result.missing).toEqual(['name'])
@@ -41,9 +44,28 @@ describe('checkHandoffReadiness', () => {
       contactName: 'Ricardo',
       contactEmail: 'ricardo@example.com',
       escalationReason: null,
+      contactCompany: 'Acme Lda',
     })
     expect(result.ready).toBe(false)
     expect(result.missing).toEqual(['reason'])
+
+    const missingCompanyOnly = checkHandoffReadiness({
+      contactName: 'Ricardo',
+      contactEmail: 'ricardo@example.com',
+      escalationReason: 'Quer falar de preços.',
+      contactCompany: null,
+    })
+    expect(missingCompanyOnly.ready).toBe(false)
+    expect(missingCompanyOnly.missing).toEqual(['company'])
+
+    const sectorIsNotACompany = checkHandoffReadiness({
+      contactName: 'Ricardo',
+      contactEmail: 'ricardo@example.com',
+      escalationReason: 'Quer falar de preços.',
+      contactCompany: '   ',
+    })
+    expect(sectorIsNotACompany.ready).toBe(false)
+    expect(sectorIsNotACompany.missing).toEqual(['company'])
   })
 
   it('treats blank/whitespace-only strings the same as missing', () => {
@@ -51,9 +73,10 @@ describe('checkHandoffReadiness', () => {
       contactName: '   ',
       contactEmail: '',
       escalationReason: '  ',
+      contactCompany: '   ',
     })
     expect(result.ready).toBe(false)
-    expect(result.missing).toEqual(['name', 'email', 'reason'])
+    expect(result.missing).toEqual(['name', 'email', 'reason', 'company'])
   })
 
   it('flags all three when everything is missing', () => {
@@ -61,8 +84,9 @@ describe('checkHandoffReadiness', () => {
       contactName: null,
       contactEmail: null,
       escalationReason: null,
+      contactCompany: null,
     })
-    expect(result.missing).toEqual(['name', 'email', 'reason'])
+    expect(result.missing).toEqual(['name', 'email', 'reason', 'company'])
   })
 })
 
@@ -80,6 +104,18 @@ describe('buildMissingInfoNudge', () => {
   it('joins three missing fields with commas and a final "e"', () => {
     const text = buildMissingInfoNudge(['name', 'email', 'reason'])
     expect(text).toContain('o teu nome, o teu email e o motivo do que precisas')
+  })
+
+  it('mentions the company name when it is the missing field', () => {
+    const text = buildMissingInfoNudge(['company'])
+    expect(text).toContain('preciso só de o nome da empresa,')
+  })
+
+  it('joins four missing fields (incluindo empresa) com vírgulas e um "e" final', () => {
+    const text = buildMissingInfoNudge(['name', 'email', 'reason', 'company'])
+    expect(text).toContain(
+      'o teu nome, o teu email, o motivo do que precisas e o nome da empresa',
+    )
   })
 
   it('explains why the data is needed, so it never reads like a bare form', () => {

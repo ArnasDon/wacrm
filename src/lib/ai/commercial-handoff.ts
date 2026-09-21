@@ -15,12 +15,16 @@
 // quer dar.
 // ============================================================
 
-export type MissingHandoffField = 'name' | 'email' | 'reason'
+export type MissingHandoffField = 'name' | 'email' | 'reason' | 'company'
 
 export interface HandoffReadinessInput {
   contactName: string | null | undefined
   contactEmail: string | null | undefined
   escalationReason: string | null | undefined
+  /** Nome concreto da empresa do lead — NÃO o sector (ver defaults.ts).
+   *  Ricardo pediu isto a 21/09/2026: sem saber a empresa concreta, não
+   *  sabe com quem vai falar na reunião. */
+  contactCompany: string | null | undefined
 }
 
 export interface HandoffReadiness {
@@ -42,6 +46,7 @@ export function checkHandoffReadiness(input: HandoffReadinessInput): HandoffRead
   if (!input.contactName || !input.contactName.trim()) missing.push('name')
   if (!input.contactEmail || !input.contactEmail.trim()) missing.push('email')
   if (!input.escalationReason || !input.escalationReason.trim()) missing.push('reason')
+  if (!input.contactCompany || !input.contactCompany.trim()) missing.push('company')
   return { ready: missing.length === 0, missing }
 }
 
@@ -49,6 +54,7 @@ const MISSING_FIELD_LABELS: Record<MissingHandoffField, string> = {
   name: 'o teu nome',
   email: 'o teu email',
   reason: 'o motivo do que precisas',
+  company: 'o nome da empresa',
 }
 
 /**

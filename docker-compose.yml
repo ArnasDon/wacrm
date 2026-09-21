@@ -22,6 +22,21 @@ services:
     # healthcheck below.
     environment:
       PORT: 3000
+    # Bloco 3-A — Google service account key for the commercial
+    # calendar (domain-wide delegation, geral@etergrowth.com). Lives
+    # OUTSIDE the app/git tree on the host (never baked into the image
+    # — `.dockerignore`'s `.env*` rule doesn't even cover this path,
+    # since it's not an env file) and is mounted read-only.
+    # `GOOGLE_SA_HOST_PATH` (set in `.env.local`, NOT committed) points
+    # at the real key file on THIS host; it defaults to `/dev/null` so
+    # `docker compose up` still works for anyone who hasn't configured
+    # Bloco 3-A's commercial calendar — the feature only errors if a
+    # conversation actually tries to use it (see
+    # loadServiceAccountFromEnv in service-account.ts), never at boot.
+    # `.env.local`'s own `GOOGLE_SERVICE_ACCOUNT_JSON` must point at
+    # the path on the RIGHT below (in-container), not the host path.
+    volumes:
+      - ${GOOGLE_SA_HOST_PATH:-/dev/null}:/run/secrets/google-sa.json:ro
     # Host side only — HOST_PORT=8080 publishes the app on :8080.
     ports:
       - '${HOST_PORT:-3000}:3000'

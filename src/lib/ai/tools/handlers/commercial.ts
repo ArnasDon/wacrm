@@ -20,6 +20,25 @@ import { requireString, optionalString, ToolInputError } from './parse-input'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
+/** Lê `contacts.company` para o contacto da conversa actual — usado
+ *  pela trava de `bookCommercialMeetingHandler` (Ricardo, 21/09/2026:
+ *  sem o nome concreto da empresa, não marca reunião). Devolve `null`
+ *  quando não há `contactId` na conversa (ex.: chamada de Playground)
+ *  ou quando a coluna está vazia — os dois casos tratam-se da mesma
+ *  forma: falta o dado. */
+async function getContactCompany(
+  ctx: ToolHandlerContext,
+): Promise<string | null> {
+  if (!ctx.contactId) return null
+  const { data } = await ctx.db
+    .from('contacts')
+    .select('company')
+    .eq('id', ctx.contactId)
+    .maybeSingle()
+  const company = (data as { company?: string | null } | null)?.company
+  return company && company.trim() ? company.trim() : null
+}
+
 export async function checkCommercialAvailabilityHandler(
   ctx: ToolHandlerContext,
 ): Promise<ToolExecutionResult> {
@@ -79,6 +98,20 @@ export async function bookCommercialMeetingHandler(
     }
     const leadName = optionalString(input, 'lead_name')
 
+    // Regra do Ricardo (21/09/2026): nunca marcar sem o nome CONCRETO
+    // da empresa (contacts.company) — um sector ("logística") não
+    // conta. Verificado aqui, em código, pela mesma razão que a trava
+    // do handoff também vive em código (commercial-handoff.ts): um
+    // prompt cede a quem insista.
+    const company = await getContactCompany(ctx)
+    if (!company) {
+      return {
+        isError: true,
+        content:
+          'Ainda não tenho o nome concreto da empresa do lead (um sector como "logística" não chega). Pergunta como se chama a empresa, guarda com save_lead_details (campo company) e só depois chama book_commercial_meeting outra vez.',
+      }
+    }
+
     const outcome = await bookCommercialSlot(ctx.db, {
       accountId: ctx.accountId,
       contactId: ctx.contactId,
@@ -134,12 +167,13 @@ export async function saveLeadDetailsHandler(
   const name = optionalString(input, 'name')
   const email = optionalString(input, 'email')
   const escalationReason = optionalString(input, 'escalation_reason')
+  const company = optionalString(input, 'company')
 
-  if (!name && !email && !escalationReason) {
+  if (!name && !email && !escalationReason && !company) {
     return {
       isError: true,
       content:
-        'Não enviaste nenhum dado para guardar. Envia pelo menos um de: name, email, escalation_reason.',
+        'Não enviaste nenhum dado para guardar. Envia pelo menos um de: name, email, escalation_reason, company.',
     }
   }
 
@@ -151,10 +185,11 @@ export async function saveLeadDetailsHandler(
   }
 
   try {
-    if ((name || email) && ctx.contactId) {
+    if ((name || email || company) && ctx.contactId) {
       const contactUpdate: Record<string, unknown> = {}
       if (name) contactUpdate.name = name
       if (email) contactUpdate.email = email
+      if (company) contactUpdate.company = company
       const { error } = await ctx.db.from('contacts').update(contactUpdate).eq('id', ctx.contactId)
       if (error) throw error
     }
@@ -176,6 +211,7 @@ export async function saveLeadDetailsHandler(
   if (name) saved.push('name')
   if (email) saved.push('email')
   if (escalationReason) saved.push('escalation_reason')
+  if (company) saved.push('company')
 
   return {
     isError: false,

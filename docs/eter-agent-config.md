@@ -219,6 +219,17 @@ comercial não tenta agendar: cai para o link de `commercial_booking_url`
 (quando configurado) ou pede o email e diz que a equipa entra em
 contacto.
 
+**Em Docker (produção):** o ficheiro JSON da service account NUNCA
+entra na imagem nem no `.env.local` versionado — vive fora da árvore
+da app no host (ex.: `/opt/eterwa/secrets/google-sa.json`, dono
+`root`, permissões `600`) e é montado só-de-leitura pelo
+`docker-compose.yml` (`volumes:` do serviço `app`), via a variável de
+host `GOOGLE_SA_HOST_PATH` (por omissão `/dev/null`, para
+`docker compose up` continuar a funcionar sem esta funcionalidade
+configurada). `GOOGLE_SERVICE_ACCOUNT_JSON` no `.env.local` desse host
+aponta para o caminho DENTRO do container
+(`/run/secrets/google-sa.json`), nunca para o caminho no host.
+
 ## Tool-calling / agent loop (Fase 2)
 
 Ambas opcionais — têm defaults sensatos em `src/lib/ai/defaults.ts`.

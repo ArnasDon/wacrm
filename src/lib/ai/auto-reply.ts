@@ -84,7 +84,7 @@ export async function dispatchInboundToAiReply(
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select(
-        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at, escalation_reason, handoff_blocked_attempts',
+        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at, escalation_reason, handoff_blocked_attempts, team_requested_at',
       )
       .eq('id', conversationId)
       .maybeSingle()
@@ -103,7 +103,7 @@ export async function dispatchInboundToAiReply(
     // persona instead — see isCommercialConversation.
     const { data: contactRow } = await db
       .from('contacts')
-      .select('phone, name, email')
+      .select('phone, name, email, company')
       .eq('id', contactId)
       .maybeSingle()
     const isCommercial = isCommercialConversation(config, contactRow?.phone ?? null)
@@ -158,6 +158,7 @@ export async function dispatchInboundToAiReply(
       knowledge,
       commercialBookingUrl: isCommercial ? config.commercialBookingUrl : undefined,
       commercialCalendarConfigured: isCommercial ? !!config.commercialCalendarId : undefined,
+      teamAlreadyRequested: isCommercial ? !!conv.team_requested_at : undefined,
     })
 
     // The 24h-window guarantee (see sendCommercialWelcomeIfNeeded above)
@@ -260,6 +261,7 @@ export async function dispatchInboundToAiReply(
           contactName: contactRow?.name,
           contactEmail: contactRow?.email,
           escalationReason: conv.escalation_reason as string | null | undefined,
+          contactCompany: contactRow?.company,
         })
         if (!readiness.ready) {
           const attemptsSoFar = (conv.handoff_blocked_attempts as number | null) ?? 0
@@ -299,16 +301,55 @@ export async function dispatchInboundToAiReply(
         }
       }
 
+      // Regra do Ricardo (21/09/2026, correcção 3) — modo comercial
+      // APENAS: chamar a equipa já não desliga o auto-reply. O agente
+      // continua a responder normalmente (o prompt sabe-o via
+      // `teamAlreadyRequested`) e só se cala quando um humano da
+      // equipa escrever nesta conversa (ver send-message.ts, que
+      // desliga `ai_autoreply_disabled` num envio `sender_type =
+      // 'agent'`). O modo interno (números da equipa) mantém-se
+      // exactamente como antes: desliga logo o auto-reply.
+      if (isCommercial) {
+        if (conv.team_requested_at) {
+          // Já chamámos a equipa nesta conversa — não repetir o aviso
+          // nem o registo. Não há texto substantivo para enviar este
+          // turno (o modelo voltou a sinalizar handoff em vez de
+          // responder); nada mais a fazer.
+          return
+        }
+        await sendHandoffNotice({
+          accountId,
+          conversationId,
+          contactId,
+          configOwnerUserId,
+          handoffMessage: config.handoffMessage,
+        })
+        const summary = buildHandoffSummary({
+          messages,
+          replyCount: conv.ai_reply_count ?? 0,
+          company: contactRow?.company,
+        })
+        const update: Record<string, unknown> = {
+          team_requested_at: new Date().toISOString(),
+          ai_handoff_summary: summary,
+        }
+        if (handoffIncomplete) {
+          update.handoff_incomplete = true
+        }
+        await db.from('conversations').update(update).eq('id', conversationId)
+        return
+      }
+
       // The model can't (or shouldn't) answer — stop auto-replying on
       // this thread and hand it to a human. A handoff must never be
-      // silent: the customer gets a short heads-up FIRST, in either
-      // persona, before the bot goes quiet (see sendHandoffNotice's doc
-      // comment — this used to leave people talking to no one). Then we
-      // (a) pause the bot here (sticky until re-enabled), (b) route the
-      // conversation to the configured handoff agent — null leaves it
-      // in the shared queue — and (c) leave a short internal note so
-      // whoever picks it up has context. Assigning fires the
-      // `on_conversation_assigned` trigger, which notifies the agent.
+      // silent: the customer gets a short heads-up FIRST before the bot
+      // goes quiet (see sendHandoffNotice's doc comment — this used to
+      // leave people talking to no one). Then we (a) pause the bot here
+      // (sticky until re-enabled), (b) route the conversation to the
+      // configured handoff agent — null leaves it in the shared queue —
+      // and (c) leave a short internal note so whoever picks it up has
+      // context. Assigning fires the `on_conversation_assigned`
+      // trigger, which notifies the agent.
       await sendHandoffNotice({
         accountId,
         conversationId,
@@ -328,9 +369,6 @@ export async function dispatchInboundToAiReply(
       // isn't already owned — never stomp an existing human assignment.
       if (config.handoffAgentId && !conv.assigned_agent_id) {
         update.assigned_agent_id = config.handoffAgentId
-      }
-      if (handoffIncomplete) {
-        update.handoff_incomplete = true
       }
       await db.from('conversations').update(update).eq('id', conversationId)
       return

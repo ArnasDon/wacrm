@@ -512,5 +512,33 @@ export async function sendMessageToConversation(
     );
   }
 
+  // Bloco 3-A / migração 051 (Ricardo, 21/09/2026, correcção 3) — a
+  // partir de agora o agente comercial NÃO se cala só por ter chamado
+  // a equipa (`team_requested_at`); só se cala quando um humano da
+  // equipa escreve mesmo na conversa. Este é esse momento: um envio
+  // humano pelo dashboard/API pública sempre insere `sender_type =
+  // 'agent'` (nunca 'bot' — ver engineSendText em flows/meta-send.ts),
+  // por isso este é o único sítio que precisa desta escrita. Sticky —
+  // não volta a ligar-se sozinho — e best-effort, como o pause-flows
+  // acima: uma falha aqui não pode transformar um envio bem-sucedido
+  // num erro para o agente humano.
+  try {
+    const { error: disableErr } = await db
+      .from('conversations')
+      .update({ ai_autoreply_disabled: true })
+      .eq('id', conversationId);
+    if (disableErr) {
+      console.error(
+        '[ai auto-reply] disable-on-agent-send failed:',
+        disableErr.message
+      );
+    }
+  } catch (err) {
+    console.error(
+      '[ai auto-reply] disable-on-agent-send threw:',
+      err instanceof Error ? err.message : err
+    );
+  }
+
   return { messageId: messageRecord.id, whatsappMessageId: waMessageId };
 }

@@ -16,6 +16,25 @@ describe('buildHandoffSummary', () => {
     )
   })
 
+  it('includes the company name when given (Bloco 3-A, 21/09/2026)', () => {
+    const summary = buildHandoffSummary({
+      messages: [{ role: 'user', content: 'Quero falar com alguém' }],
+      replyCount: 1,
+      company: 'Clínica Sorriso Lda',
+    })
+    expect(summary).toBe(
+      '🤖 AI agent handed off after 1 reply. Company: Clínica Sorriso Lda. Last customer message: “Quero falar com alguém”',
+    )
+  })
+
+  it('omits the company line when not given', () => {
+    const summary = buildHandoffSummary({
+      messages: [{ role: 'user', content: 'Quero falar com alguém' }],
+      replyCount: 1,
+    })
+    expect(summary).not.toContain('Company:')
+  })
+
   it('uses the singular "reply" for a count of one', () => {
     const summary = buildHandoffSummary({
       messages: [{ role: 'user', content: 'help' }],

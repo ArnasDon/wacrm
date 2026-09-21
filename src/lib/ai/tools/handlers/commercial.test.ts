@@ -25,8 +25,23 @@ import {
 import { CommercialCalendarNotConfiguredError } from '@/lib/calendar/commercial-availability'
 import type { ToolHandlerContext } from './context'
 
+/** Mock `db` that answers `contacts.select('company')` — used by
+ *  bookCommercialMeetingHandler's company trava (Ricardo, 21/09/2026).
+ *  `company: undefined` simulates a contact row with no company saved. */
+function dbWithCompany(company: string | null | undefined): ToolHandlerContext['db'] {
+  return {
+    from: () => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { company }, error: null }),
+        }),
+      }),
+    }),
+  } as never
+}
+
 const ctx: ToolHandlerContext = {
-  db: {} as never,
+  db: dbWithCompany('Acme Growth Lda'),
   accountId: 'acct-1',
   conversationId: 'conv-1',
   contactId: 'contact-1',
@@ -127,6 +142,28 @@ describe('bookCommercialMeetingHandler', () => {
     expect(result.isError).toBe(true)
     expect(h.bookCommercialSlot).not.toHaveBeenCalled()
   })
+
+  it('bloqueia a marcação quando a empresa concreta ainda não está guardada (sector não conta)', async () => {
+    const ctxNoCompany: ToolHandlerContext = { ...ctx, db: dbWithCompany(null) }
+    const result = await bookCommercialMeetingHandler(ctxNoCompany, validInput)
+    expect(result.isError).toBe(true)
+    expect(result.content).toMatch(/nome concreto da empresa/i)
+    expect(h.bookCommercialSlot).not.toHaveBeenCalled()
+  })
+
+  it('bloqueia a marcação quando o campo company está vazio/em branco', async () => {
+    const ctxBlankCompany: ToolHandlerContext = { ...ctx, db: dbWithCompany('   ') }
+    const result = await bookCommercialMeetingHandler(ctxBlankCompany, validInput)
+    expect(result.isError).toBe(true)
+    expect(h.bookCommercialSlot).not.toHaveBeenCalled()
+  })
+
+  it('marca normalmente quando a empresa concreta já está guardada', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'booked', eventId: 'evt-1', htmlLink: null })
+    const result = await bookCommercialMeetingHandler(ctx, validInput)
+    expect(result.isError).toBe(false)
+    expect(h.bookCommercialSlot).toHaveBeenCalled()
+  })
 })
 
 describe('saveLeadDetailsHandler', () => {
@@ -203,6 +240,35 @@ describe('saveLeadDetailsHandler', () => {
     })
     expect(updates.find((u) => u.table === 'conversations')?.payload).toEqual({
       escalation_reason: 'Quer falar com alguém sobre preços.',
+    })
+  })
+
+  it('saves the company onto contacts', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), { company: 'Clínica Sorriso Lda' })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.content)).toEqual({ saved: ['company'] })
+    expect(updates).toEqual([
+      { table: 'contacts', payload: { company: 'Clínica Sorriso Lda' }, id: 'contact-1' },
+    ])
+  })
+
+  it('saves all four at once, one write per table', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), {
+      name: 'Ricardo',
+      email: 'ricardo@example.com',
+      escalation_reason: 'Quer falar com alguém sobre preços.',
+      company: 'Clínica Sorriso Lda',
+    })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.content)).toEqual({
+      saved: ['name', 'email', 'escalation_reason', 'company'],
+    })
+    expect(updates.find((u) => u.table === 'contacts')?.payload).toEqual({
+      name: 'Ricardo',
+      email: 'ricardo@example.com',
+      company: 'Clínica Sorriso Lda',
     })
   })
 

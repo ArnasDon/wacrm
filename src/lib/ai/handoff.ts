@@ -71,8 +71,12 @@ export async function sendHandoffNotice(args: HandoffNoticeArgs): Promise<void> 
 export function buildHandoffSummary(args: {
   messages: ChatMessage[]
   replyCount: number
+  /** Bloco 3-A / 21-09-2026 — nome concreto da empresa do lead
+   *  (contacts.company), quando conhecido. Incluído no resumo para
+   *  quem apanhar a conversa saber já com que empresa vai falar. */
+  company?: string | null
 }): string {
-  const { messages, replyCount } = args
+  const { messages, replyCount, company } = args
 
   const lastCustomer = [...messages]
     .reverse()
@@ -83,7 +87,10 @@ export function buildHandoffSummary(args: {
       ? 'without replying'
       : `after ${replyCount} ${replyCount === 1 ? 'reply' : 'replies'}`
 
-  const base = `🤖 AI agent handed off ${replies}.`
+  let base = `🤖 AI agent handed off ${replies}.`
+  if (company && company.trim()) {
+    base += ` Company: ${company.trim()}.`
+  }
 
   if (!lastCustomer) return base
 

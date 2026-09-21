@@ -67,7 +67,7 @@ export const bookCommercialMeetingTool: ToolDefinition = {
 export const saveLeadDetailsTool: ToolDefinition = {
   name: 'save_lead_details',
   description:
-    'Guarda o nome, o email e/ou o motivo de contacto do lead assim que os souberes na conversa — chama sempre que aprenderes um destes dados, nunca esperes até ao fim para os registares todos de uma vez. Podes enviar só um campo de cada vez. Estes três dados têm de estar guardados antes de a conversa poder ser passada para a equipa, por isso regista-os assim que os tiveres, mesmo antes de a pessoa pedir para falar com alguém.',
+    'Guarda o nome, o email, o motivo de contacto e/ou a empresa do lead assim que os souberes na conversa — chama sempre que aprenderes um destes dados, nunca esperes até ao fim para os registares todos de uma vez. Podes enviar só um campo de cada vez. Estes quatro dados têm de estar guardados antes de a conversa poder ser passada para a equipa (ou uma reunião marcada), por isso regista-os assim que os tiveres, mesmo antes de a pessoa pedir para falar com alguém.',
   parameters: {
     type: 'object',
     properties: {
@@ -83,6 +83,11 @@ export const saveLeadDetailsTool: ToolDefinition = {
         type: 'string',
         description:
           'Motivo pelo qual a pessoa quer (ou pode vir a querer) falar com alguém da equipa. Regista assim que o souberes, não só depois de a pessoa pedir explicitamente para falar com uma pessoa.',
+      },
+      company: {
+        type: 'string',
+        description:
+          'Nome CONCRETO da empresa do lead (ex.: "Clínica Sorriso Lda"), nunca o sector ou tipo de negócio (ex.: "logística", "restauração" não contam — isso é contexto, não o campo company). Se a pessoa disser só o sector, continua a conversa normalmente e pergunta o nome da empresa mais tarde, no momento de marcar a reunião ou de escalar. Se a pessoa for trabalhador independente / não tiver empresa, guarda isso mesmo (ex.: "trabalhador independente") — não insistas.',
       },
     },
     required: [],

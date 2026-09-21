@@ -28,6 +28,9 @@ const h = vi.hoisted(() => ({
     // conversations.escalation_reason.
     contactName: 'Ricardo Contacto' as string | null,
     contactEmail: 'contacto@example.com' as string | null,
+    // Bloco 3-A / 21-09-2026 — nome concreto da empresa do lead, lido
+    // pela mesma trava de handoff junto com nome/email/motivo.
+    contactCompany: 'Acme Growth Lda' as string | null,
   },
 }))
 
@@ -67,6 +70,7 @@ vi.mock('./admin-client', () => ({
                     phone: h.state.contactPhone,
                     name: h.state.contactName,
                     email: h.state.contactEmail,
+                    company: h.state.contactCompany,
                   },
                   error: null,
                 }),
@@ -157,6 +161,7 @@ beforeEach(() => {
   h.state.contactPhone = '351911111111'
   h.state.contactName = 'Ricardo Contacto'
   h.state.contactEmail = 'contacto@example.com'
+  h.state.contactCompany = 'Acme Growth Lda'
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -324,6 +329,10 @@ function commercialConv(overrides: Record<string, unknown> = {}) {
     // dita sobrepõem estes campos explicitamente.
     escalation_reason: 'Quer saber mais sobre os serviços da Eter.',
     handoff_blocked_attempts: 0,
+    // Correcção 3 (21/09/2026) — por omissão a equipa ainda não foi
+    // chamada nesta conversa; overrides explícitos testam o caso
+    // "já chamada".
+    team_requested_at: null,
     ...overrides,
   }
 }
@@ -538,7 +547,10 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
         text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
       }),
     )
-    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(typeof (h.state.updatePayload as Record<string, unknown>)?.team_requested_at).toBe(
+      'string',
+    )
   })
 
   it('routes commercial mode through generateReplyWithTools with the commercial tool set, never plain generateReply', async () => {
@@ -580,15 +592,19 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
 })
 
 // ============================================================
-// Bloco 3-A / migração 050 — trava do handoff comercial.
+// Bloco 3-A / migrações 050 + 051 — trava do handoff comercial.
 //
-// Regra do Ricardo: o agente comercial nunca desliga o auto-reply nem
-// marca a conversa como passada sem ter nome, email e motivo
-// registados. É uma trava em código (commercial-handoff.ts), não só
-// no prompt. O modo interno (números da equipa) não é afectado — os
-// testes deste bloco usam sempre `commercialConfig()`.
+// Regra do Ricardo: o agente comercial nunca marca a conversa como
+// passada sem ter nome, email, motivo e o nome CONCRETO da empresa
+// (não o sector) registados. É uma trava em código
+// (commercial-handoff.ts), não só no prompt. Desde a correcção 3
+// (21/09/2026), "passar" já não desliga o auto-reply — marca
+// `team_requested_at` e o agente continua a responder até um humano
+// escrever na conversa (ver send-message.ts). O modo interno (números
+// da equipa) não é afectado — os testes deste bloco usam sempre
+// `commercialConfig()`.
 // ============================================================
-describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, motivo)', () => {
+describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, motivo, empresa)', () => {
   beforeEach(() => {
     h.generateReplyWithTools.mockResolvedValue({
       text: '',
@@ -647,7 +663,23 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
   })
 
-  it('deixa passar o handoff normalmente quando nome, email e motivo estão todos registados', async () => {
+  it('bloqueia o handoff quando falta o nome da empresa (sector sozinho não conta)', async () => {
+    h.state.conv = commercialConv()
+    h.state.contactCompany = null
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({ text: expect.stringContaining('o nome da empresa') }),
+    )
+    expect(h.state.updatePayload).toEqual({ handoff_blocked_attempts: 1 })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).not.toHaveProperty('team_requested_at')
+  })
+
+  it('deixa passar o handoff normalmente quando nome, email, motivo e empresa estão todos registados', async () => {
     h.state.conv = commercialConv()
     h.loadAiConfig.mockResolvedValue(commercialConfig())
 
@@ -660,8 +692,37 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
         text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
       }),
     )
-    expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
+    // Correcção 3 — já não desliga o auto-reply: marca team_requested_at.
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
     expect(h.state.updatePayload).not.toHaveProperty('handoff_incomplete')
+    expect(typeof (h.state.updatePayload as Record<string, unknown>)?.team_requested_at).toBe(
+      'string',
+    )
+    expect((h.state.updatePayload as Record<string, unknown>)?.ai_handoff_summary).toContain(
+      'Acme Growth Lda',
+    )
+  })
+
+  it('não repete o aviso de handoff quando a equipa já foi chamada nesta conversa', async () => {
+    h.state.conv = commercialConv({
+      team_requested_at: '2026-09-21T08:00:00.000Z',
+      commercial_welcome_sent_at: '2026-09-21T07:55:00.000Z',
+    })
+    // Boas-vindas já enviadas nesta conversa real — perde a corrida do
+    // claim atómico, isolando o teste ao que interessa: não repetir o
+    // aviso de handoff.
+    h.state.welcomeClaimed = false
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.engineSendText).not.toHaveBeenCalled()
+    // A única escrita nesta chamada é a tentativa (perdida) de claim da
+    // boas-vindas — nada de handoff (nem team_requested_at, nem
+    // ai_handoff_summary, nem ai_autoreply_disabled).
+    expect(h.state.updatePayload).toEqual({
+      commercial_welcome_sent_at: expect.any(String),
+    })
   })
 
   it('duas tentativas bloqueadas seguidas fazem o handoff passar incompleto à terceira (válvula de escape)', async () => {
@@ -693,10 +754,11 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
         text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
       }),
     )
-    expect(h.state.updatePayload).toMatchObject({
-      ai_autoreply_disabled: true,
-      handoff_incomplete: true,
-    })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({ handoff_incomplete: true })
+    expect(typeof (h.state.updatePayload as Record<string, unknown>)?.team_requested_at).toBe(
+      'string',
+    )
   })
 
   it('respeita max_handoff_blocked_attempts configurado na conta em vez do valor por omissão', async () => {
@@ -708,10 +770,11 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
 
     // Com o limite da conta em 1, uma conversa que já tem 1 bloqueio
     // força a passagem nesta tentativa, em vez de esperar por 2.
-    expect(h.state.updatePayload).toMatchObject({
-      ai_autoreply_disabled: true,
-      handoff_incomplete: true,
-    })
+    expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
+    expect(h.state.updatePayload).toMatchObject({ handoff_incomplete: true })
+    expect(typeof (h.state.updatePayload as Record<string, unknown>)?.team_requested_at).toBe(
+      'string',
+    )
   })
 
   it('o modo interno (número da equipa) nunca passa pela trava, mesmo sem nome/email/motivo', async () => {

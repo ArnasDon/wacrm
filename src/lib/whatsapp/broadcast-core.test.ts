@@ -102,6 +102,40 @@ function makeDb(rpcResult: { data: unknown; error: unknown }) {
   return { db: database, calls };
 }
 
+describe('createBroadcast recipient validation (#586)', () => {
+  it('counts a recipient without a leading + as rejected instead of sending it abroad', async () => {
+    const { db } = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+
+    const plan = await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [
+        { to: '4155551212' }, // US national → Meta would read +41 (Switzerland)
+        { to: '14155550123' }, // country code but no + — indistinguishable
+        { to: '+14155550123' },
+      ],
+    });
+
+    expect(plan.rejected).toBe(2);
+    expect(plan.planned).toEqual([
+      { recipientRowId: 'r-1', phone: '14155550123', params: [] },
+    ]);
+  });
+
+  it('fails the whole request when no recipient carries a country code', async () => {
+    const { db, calls } = makeDb({ data: [], error: null });
+    await expect(
+      createBroadcast(db, 'acc', 'user', {
+        templateName: 'promo',
+        recipients: [{ to: '4155551212' }],
+      })
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+    expect(calls.rpc).toHaveLength(0);
+  });
+});
+
 describe('createBroadcast atomicity (#370)', () => {
   it('creates parent + recipients through the atomic RPC, never a bare parent insert', async () => {
     const { db, calls } = makeDb({

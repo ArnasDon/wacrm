@@ -121,6 +121,24 @@ describe('resolveConversationByPhone', () => {
     ).rejects.toBeInstanceOf(SendMessageError);
   });
 
+  it('rejects a national-format number (no leading +) before any DB call (#586)', async () => {
+    const db = {
+      from() {
+        throw new Error('should not query');
+      },
+    } as unknown as SupabaseClient;
+    // Would otherwise be sent to +41 55 555 12 12 (Switzerland) and
+    // reported as a successful send.
+    await expect(
+      resolveConversationByPhone(db, 'acct', '4155551212')
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+    // Digits with a country code but no `+` are indistinguishable from
+    // the above, so they are refused as well.
+    await expect(
+      resolveConversationByPhone(db, 'acct', '14155550123')
+    ).rejects.toMatchObject({ code: 'bad_request', status: 400 });
+  });
+
   it('fails with whatsapp_not_configured when no config owner exists', async () => {
     const db = makeDb({ config: null });
     await resolveConversationByPhone(db, 'acct', '+14155550123').catch(

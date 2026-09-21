@@ -391,7 +391,8 @@
       "dupSimilar": "Já existe um contato com um número muito parecido.",
       "loadingTags": "Carregando tags...",
       "noTagsAvailable": "Nenhuma tag disponível. Crie tags em Configurações.",
-      "phoneRequired": "O número de telefone é obrigatório"
+      "phoneRequired": "O número de telefone é obrigatório",
+      "phoneNeedsCountryCode": "Inclua o código do país — o número deve começar com + (ex.: +5511999990000)"
     },
     "detailView": {
       "tabs": {
@@ -443,6 +444,7 @@
       "saveChangesBtn": "Salvar alterações",
       "saveCustomFieldsBtn": "Salvar campos personalizados",
       "toastPhoneRequired": "O número de telefone é obrigatório",
+      "toastPhoneNeedsCountryCode": "Inclua o código do país — o número deve começar com + (ex.: +5511999990000)",
       "toastUpdateFailed": "Falha ao atualizar o contato",
       "toastUpdated": "Contato atualizado",
       "toastNotAuthenticated": "Não autenticado",
@@ -472,7 +474,12 @@
       "resultTags": "{count} tag atribuída",
       "resultTags_plural": "{count} tags atribuídas",
       "resultSkipped": "{count} ignorados",
+      "resultInvalidPhone": "{count} telefone inválido",
+      "resultInvalidPhone_plural": "{count} telefones inválidos",
       "resultFailed": "{count} com falha",
+      "failedRowsHeading": "Linhas com falha",
+      "unknownReason": "Erro desconhecido",
+      "invalidPhoneHint": "Os números de telefone devem começar com + e o código do país (ex.: +5511999990000). Números sem código seriam entregues no país errado.",
       "willBeCreated": "{name} (será criada na importação)",
       "columns": {
         "phone": "Telefone",
@@ -494,6 +501,8 @@
       "toastTagsSkipped": "Tags desconhecidas ignoradas (crie-as primeiro em Configurações): {sample}{more}",
       "toastSkipped": "{count} duplicado ignorado",
       "toastSkipped_plural": "{count} duplicados ignorados",
+      "toastInvalidPhone": "{count} contato não tinha um número de telefone utilizável",
+      "toastInvalidPhone_plural": "{count} contatos não tinham um número de telefone utilizável",
       "toastFailed": "{count} contato não pôde ser importado",
       "toastFailed_plural": "{count} contatos não puderam ser importados",
       "toastError": "Falha na importação"
@@ -766,6 +775,7 @@
         "uploadCsv": "Enviar arquivo CSV",
         "csvFormatDesc": "Deve conter uma coluna 'phone' (formato E.164). A coluna 'name' é opcional.",
         "csvContactsFound": "{count} contato(s) válido(s) encontrado(s) no CSV.",
+        "csvInvalidPhones": "{count} linha(s) ignorada(s): os números de telefone devem começar com + e o código do país (ex.: +5511999990000).",
         "errorLoadTags": "Falha ao carregar as tags",
         "errorLoadFields": "Falha ao carregar os campos personalizados",
         "errorCsvParse": "Não foi possível ler o arquivo CSV.",

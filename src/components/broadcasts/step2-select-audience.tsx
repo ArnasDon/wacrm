@@ -246,6 +246,15 @@ export function Step2SelectAudience({
       return;
     }
 
+    // Rows without a leading `+` and country code were refused (issue
+    // #586). Say so, or a spreadsheet export that stripped the `+` looks
+    // like a mysteriously smaller audience.
+    if (result.invalid > 0) {
+      toast.warning(
+        t('selectAudience.csvInvalidPhones', { count: result.invalid }),
+      );
+    }
+
     setPickedCsvName(selected.name);
     onUpdate({ ...audience, csvContacts: result.contacts });
   }

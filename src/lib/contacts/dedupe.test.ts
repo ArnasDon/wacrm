@@ -49,11 +49,25 @@ describe("dedupeByPhone", () => {
   it("keeps the first occurrence and counts in-file duplicates", () => {
     const { unique, duplicates } = dedupeByPhone([
       { phone: "+1 555-1111", name: "A" },
-      { phone: "15551111", name: "B" }, // same digits as #1
+      { phone: "+1 (555) 1111", name: "B" }, // same digits as #1
       { phone: "+1 555-2222", name: "C" },
     ]);
     expect(unique.map((r) => r.name)).toEqual(["A", "C"]);
     expect(duplicates).toBe(1);
+  });
+
+  it("drops rows without a leading + (no country code), counted as invalid", () => {
+    // "4155551212" is a US national number to the person who exported the
+    // CSV, but Meta would deliver it to +41 (Switzerland). Refusing it here
+    // is the bulk-import half of issue #586.
+    const { unique, duplicates, invalid } = dedupeByPhone([
+      { phone: "4155551212", name: "national" },
+      { phone: "+14155551212", name: "international" },
+      { phone: "14155551212", name: "digits with CC but no +" },
+    ]);
+    expect(unique.map((r) => r.name)).toEqual(["international"]);
+    expect(duplicates).toBe(0);
+    expect(invalid).toBe(2);
   });
 
   it("drops rows with no digits, counted as invalid rather than duplicate", () => {

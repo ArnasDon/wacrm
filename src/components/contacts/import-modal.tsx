@@ -624,9 +624,14 @@ export function ImportModal({
                   </div>
                 )}
                 {result.invalidPhone > 0 && (
-                  <div className="flex items-center gap-1.5 text-sm text-amber-400">
-                    <AlertTriangle className="size-4 shrink-0" />
-                    {t('resultInvalidPhone', { count: result.invalidPhone })}
+                  <div className="space-y-0.5">
+                    <div className="flex items-center gap-1.5 text-sm text-amber-400">
+                      <AlertTriangle className="size-4 shrink-0" />
+                      {t('resultInvalidPhone', { count: result.invalidPhone })}
+                    </div>
+                    <p className="pl-[1.375rem] text-xs text-muted-foreground">
+                      {t('invalidPhoneHint')}
+                    </p>
                   </div>
                 )}
                 {result.failed > 0 && (

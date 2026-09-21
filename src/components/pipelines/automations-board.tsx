@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import {
   AlertTriangle,
+  Anchor,
   ArrowDownToLine,
   Copy,
   Globe,
@@ -63,7 +64,16 @@ export function AutomationsBoard({
   const t = useTranslations("Pipelines.automacoes")
   const router = useRouter()
   const canCreate = useCan("manage-automations")
-  const [expandindo, setExpandindo] = useState<Automation | null>(null)
+  // ⚠️ O "expandir" edita DUAS listas diferentes conforme o cartão: o de
+  // gatilho mexe em `trigger_config.stage_ids` ("para qual etapa o card tem de
+  // ENTRAR") e o de escopo em `automations.stage_ids` ("em qual etapa o
+  // contato precisa ESTAR"). Por isso o estado carrega o campo, e não só a
+  // automação — um diálogo que adivinhasse pelo gatilho gravaria na lista
+  // errada em silêncio.
+  const [expandindo, setExpandindo] = useState<{
+    automation: Automation
+    campo: "gatilho" | "escopo"
+  } | null>(null)
   const [copiando, setCopiando] = useState<string | null>(null)
   // Criar e editar abrem o construtor COM a origem: sem ela, o voltar de lá
   // levava à tela de Automações do menu, e não a esta grade (ver
@@ -132,7 +142,13 @@ export function AutomationsBoard({
         {linhas.flatMap((linha, r) =>
           linha.map((cartao) => (
             <Cartao
-              key={`${cartao.automation.id}-${cartao.colunaInicial}`}
+              // ⚠️ O TIPO entra na chave: a MESMA automação pode ocupar a
+              // MESMA coluna com dois cartões que dizem coisas diferentes —
+              // "chega nesta etapa" (um `move_deal_stage` apontando para ela)
+              // e "só roda nesta etapa" (o escopo). Sem o tipo, as duas
+              // viravam chaves irmãs iguais, e o React podia reusar o cartão
+              // errado ou sumir com um deles num redesenho (Codex, PR #234).
+              key={`${cartao.automation.id}-${cartao.tipo}-${cartao.colunaInicial}`}
               cartao={cartao}
               linha={r + 2}
               passos={steps[cartao.automation.id] ?? []}
@@ -140,7 +156,12 @@ export function AutomationsBoard({
               copiando={copiando === cartao.automation.id}
               onAbrir={() => router.push(urlDoConstrutor({ id: cartao.automation.id, origem }))}
               onDuplicar={() => duplicar(cartao.automation)}
-              onExpandir={() => setExpandindo(cartao.automation)}
+              onExpandir={() =>
+                setExpandindo({
+                  automation: cartao.automation,
+                  campo: cartao.tipo === "escopo" ? "escopo" : "gatilho",
+                })
+              }
               t={t}
             />
           )),
@@ -157,7 +178,8 @@ export function AutomationsBoard({
 
       {expandindo && (
         <EscolherEtapas
-          automation={expandindo}
+          automation={expandindo.automation}
+          campo={expandindo.campo}
           stages={ordenadas}
           onClose={() => setExpandindo(null)}
           onSaved={() => {
@@ -196,6 +218,7 @@ function Cartao({
   const resumo = primeiro ? descreverPasso(primeiro, nomes) : null
   const tGatilhos = useTranslations("Automations.builder")
   const chegada = cartao.tipo === "chegada"
+  const escopo = cartao.tipo === "escopo"
 
   // Chegada: o cabeçalho diz POR QUAL gatilho o card chega aqui — o rótulo é
   // o mesmo do editor (chave montada; toda `AutomationTriggerType` tem uma).
@@ -203,6 +226,10 @@ function Cartao({
     ? t("chegaPor", {
         gatilho: tGatilhos(`triggers.${a.trigger_type}.label` as Parameters<typeof tGatilhos>[0]),
       })
+    : escopo
+      ? t(cartao.colunas > 1 ? "rodaNasEtapas" : "rodaNaEtapa", {
+          gatilho: tGatilhos(`triggers.${a.trigger_type}.label` as Parameters<typeof tGatilhos>[0]),
+        })
     : cartao.todasAsEtapas
       ? t("todasAsEtapas")
       : cartao.colunas > 1
@@ -224,13 +251,15 @@ function Cartao({
           : "border-dashed border-border bg-card/40",
         cartao.todasAsEtapas && "border-violet-500/40 bg-violet-500/5",
         chegada && "border-sky-500/40 bg-sky-500/5",
+        escopo && "border-emerald-500/40 bg-emerald-500/5",
       )}
-      title={chegada ? t("chegaAjuda") : undefined}
+      title={chegada ? t("chegaAjuda") : escopo ? t("escopoAjuda") : undefined}
     >
       <button type="button" onClick={onAbrir} className="block w-full min-w-0 text-left">
         <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
           {cartao.todasAsEtapas && <Globe className="h-3 w-3 shrink-0 text-violet-400" />}
           {chegada && <ArrowDownToLine className="h-3 w-3 shrink-0 text-sky-400" />}
+          {escopo && <Anchor className="h-3 w-3 shrink-0 text-emerald-400" />}
           <span className="truncate">{gatilho}</span>
         </div>
 
@@ -302,11 +331,20 @@ function Cartao({
  */
 function EscolherEtapas({
   automation,
+  campo,
   stages,
   onClose,
   onSaved,
 }: {
   automation: Automation
+  /**
+   * ⚠️ QUAL das duas listas de etapa esta caixa edita:
+   *   `gatilho` → `trigger_config.stage_ids` (para qual etapa o card ENTRA)
+   *   `escopo`  → `automations.stage_ids`   (em qual etapa o contato ESTÁ)
+   * Ver `por-etapa.ts`. Gravar numa achando que é a outra deixa a automação
+   * configurada, visível e incapaz de rodar.
+   */
+  campo: "gatilho" | "escopo"
   stages: PipelineStage[]
   onClose: () => void
   onSaved: () => void
@@ -314,9 +352,12 @@ function EscolherEtapas({
   const t = useTranslations("Pipelines.automacoes")
   const tEtapas = useTranslations("Automations.builder.stages")
   const atuais = useMemo(() => {
+    if (campo === "escopo") {
+      return Array.isArray(automation.stage_ids) ? automation.stage_ids : []
+    }
     const cfg = automation.trigger_config as { stage_ids?: string[] } | undefined
     return Array.isArray(cfg?.stage_ids) ? cfg.stage_ids : []
-  }, [automation])
+  }, [automation, campo])
 
   const [escolhidas, setEscolhidas] = useState<string[]>(atuais)
   const [salvando, setSalvando] = useState(false)
@@ -325,17 +366,26 @@ function EscolherEtapas({
   // caixa, e salvar sem preservá-la apagaria a configuração em silêncio.
   const deOutroFunil = atuais.filter((id) => !stages.some((s) => s.id === id))
 
+  const escolhidasComAsDeFora = [
+    ...escolhidas.filter((id) => stages.some((s) => s.id === id)),
+    ...deOutroFunil,
+  ]
+
   async function salvar() {
     setSalvando(true)
     const res = await fetch(`/api/automations/${automation.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        trigger_config: {
-          ...(automation.trigger_config as Record<string, unknown>),
-          stage_ids: [...escolhidas.filter((id) => stages.some((s) => s.id === id)), ...deOutroFunil],
-        },
-      }),
+      body: JSON.stringify(
+        campo === "escopo"
+          ? { stage_ids: escolhidasComAsDeFora }
+          : {
+              trigger_config: {
+                ...(automation.trigger_config as Record<string, unknown>),
+                stage_ids: escolhidasComAsDeFora,
+              },
+            },
+      ),
     })
     setSalvando(false)
     if (!res.ok) {
@@ -359,13 +409,21 @@ function EscolherEtapas({
           <DialogTitle className="truncate">{automation.name}</DialogTitle>
         </DialogHeader>
 
+        <p className="text-xs text-muted-foreground">
+          {campo === "escopo" ? t("expandirEscopoAjuda") : t("expandirGatilhoAjuda")}
+        </p>
+
         <p
           className={cn(
             "text-xs",
             nenhumaMarcada ? "font-medium text-violet-400" : "text-muted-foreground",
           )}
         >
-          {nenhumaMarcada ? t("todasAsEtapas") : tEtapas("selectedCount", { count: escolhidas.length })}
+          {nenhumaMarcada
+            ? campo === "escopo"
+              ? t("escopoVazioAviso")
+              : t("todasAsEtapas")
+            : tEtapas("selectedCount", { count: escolhidas.length })}
         </p>
 
         <div className="max-h-64 space-y-0.5 overflow-y-auto">

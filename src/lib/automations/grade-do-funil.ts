@@ -14,7 +14,7 @@ import { GATILHOS_SEM_DISPARO } from './trigger-meta'
  * `trigger_config.stage_ids`. Não há coluna nova, nem migration: a largura do
  * cartão É o conteúdo daquele campo. Vazio = ocupa o funil inteiro.
  *
- * Dois TIPOS de cartão, e a diferença é o que a posição afirma:
+ * Três TIPOS de cartão, e a diferença é o que a posição afirma:
  *   - `gatilho`: "dispara quando o card ENTRA nesta(s) etapa(s)" — a
  *     largura é `trigger_config.stage_ids`.
  *   - `chegada`: "dispara em OUTRO lugar (Calendly, palavra-chave, tag…) e
@@ -23,9 +23,16 @@ import { GATILHOS_SEM_DISPARO } from './trigger-meta'
  *     mudar a etapa é editar o passo. Nasceu em 07/09/2026 porque a
  *     automação do Calendly, que move para "Reunião Agendada", não aparecia
  *     no funil, e o operador foi procurá-la lá.
+ *   - `escopo`: "dispara pelo RELÓGIO (ou à mão) e só roda ENQUANTO o card
+ *     está nesta(s) etapa(s)" — a largura é `automations.stage_ids`, a
+ *     outra lista. Nasceu em 20/09/2026 pelo mesmo motivo do `chegada`: os
+ *     quatro lembretes de reunião são presos a "Reunião Agendada" e não
+ *     apareciam em funil nenhum, então não havia onde arrastar, expandir,
+ *     duplicar nem ligar. A regra da casa é a do operador: toda automação
+ *     que roda num funil aparece na aba daquele funil.
  */
 
-export type TipoDoCartao = 'gatilho' | 'chegada'
+export type TipoDoCartao = 'gatilho' | 'chegada' | 'escopo'
 
 /** Um cartão já posicionado: onde começa, quantas colunas ocupa. */
 export interface CartaoDaGrade {
@@ -133,6 +140,7 @@ export function montarGrade(
   }
 
   for (const c of cartoesDeChegada(automations, steps, posicao)) empilhar(c)
+  for (const c of cartoesDeEscopo(automations, posicao)) empilhar(c)
 
   return linhas
 }
@@ -178,6 +186,65 @@ export function cartoesDeChegada(
         colunas: 1,
         todasAsEtapas: false,
         temOutrosTrechos: false,
+      })
+    }
+  }
+  return cartoes
+}
+
+/**
+ * Os cartões de ESCOPO: automações que não nascem de um evento de funil, mas
+ * que só rodam ENQUANTO o card está numa etapa dele
+ * (`automations.stage_ids`). O caso que motivou: os lembretes de reunião,
+ * que disparam pelo relógio (`date_field_offset`) e são presos a "Reunião
+ * Agendada" — eles rodam no funil e não apareciam na aba dele.
+ *
+ * ⚠️⚠️ A largura aqui é `automations.stage_ids`, NUNCA
+ * `trigger_config.stage_ids`. São as duas listas de significado oposto desta
+ * casa ("em qual etapa o contato precisa ESTAR" × "para qual etapa o card
+ * tem de ENTRAR"), e trocá-las põe o cartão na coluna errada afirmando uma
+ * coisa que o motor não faz. Quem editar isto lê `por-etapa.ts` antes.
+ *
+ * ⚠️ ESCOPO VAZIO NÃO VIRA CARTÃO, e aqui a convenção "vazio = todas" NÃO se
+ * aplica ao desenho: vazio quer dizer que a automação não tem relação
+ * nenhuma com etapa, e um cartão de largura total por automação sem escopo
+ * encheria a aba de toda cobrança do Asaas e de toda regra manual da conta.
+ * Cartão é afirmação; "não tem relação com este funil" se afirma NÃO
+ * desenhando.
+ *
+ * ⚠️ Automação de gatilho de etapa fica de fora: ela já tem o cartão do
+ * gatilho. Quando o escopo dela diverge do gatilho, o resultado é a
+ * combinação "nunca dispara aqui", que o painel da coluna já nomeia
+ * (`por-etapa.ts`, classe `morta`) — desenhar um segundo cartão diria que
+ * ela roda numa etapa em que ela justamente não roda.
+ *
+ * ⚠️ Gatilho sem call site (`GATILHOS_SEM_DISPARO`) também fica de fora,
+ * pela mesma razão do `chegada`: regra que não roda não é desenhada.
+ */
+export function cartoesDeEscopo(
+  automations: Automation[],
+  posicao: Map<string, number>,
+): CartaoDaGrade[] {
+  const cartoes: CartaoDaGrade[] = []
+  for (const a of automations) {
+    if (a.trigger_type === 'deal_stage_changed' || GATILHOS_SEM_DISPARO.has(a.trigger_type)) continue
+
+    const escopo = a.stage_ids
+    if (!Array.isArray(escopo) || escopo.length === 0) continue
+
+    const daqui = escopo.map((id) => posicao.get(id)).filter((i): i is number => i !== undefined)
+    if (daqui.length === 0) continue
+
+    const trechos = trechosContinuos(daqui)
+    const foraDaqui = escopo.length > daqui.length
+    for (const t of trechos) {
+      cartoes.push({
+        automation: a,
+        tipo: 'escopo',
+        colunaInicial: t.inicio,
+        colunas: t.tamanho,
+        todasAsEtapas: false,
+        temOutrosTrechos: foraDaqui || trechos.length > 1,
       })
     }
   }

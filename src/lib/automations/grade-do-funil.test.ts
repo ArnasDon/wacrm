@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { Automation, AutomationStep } from '@/types'
 
-import { cartoesDeChegada, etapasParaOndeLeva, montarGrade, trechosContinuos } from './grade-do-funil'
+import {
+  cartoesDeChegada,
+  cartoesDeEscopo,
+  etapasParaOndeLeva,
+  montarGrade,
+  trechosContinuos,
+} from './grade-do-funil'
 
 // ------------------------------------------------------------
 // A posição do cartão na grade é uma AFIRMAÇÃO sobre onde a regra roda.
@@ -220,5 +226,130 @@ describe('cartões de chegada', () => {
 
   it('todo cartão de gatilho carrega `tipo: gatilho` (compat com a tela)', () => {
     expect(montarGrade([auto('x', null)], ETAPAS).flat().every((c) => c.tipo === 'gatilho')).toBe(true)
+  })
+})
+
+// ------------------------------------------------------------
+// Cartões de ESCOPO (20/09/2026). Os quatro lembretes de reunião do
+// escritório disparam pelo RELÓGIO e são presos a "Reunião Agendada" pelo
+// escopo — rodavam no funil e não apareciam na aba dele, então não havia
+// onde arrastar, expandir, duplicar nem ligar. A armadilha é a lista: o
+// escopo é `automations.stage_ids`, NÃO `trigger_config.stage_ids`.
+// ------------------------------------------------------------
+
+const comEscopo = (
+  id: string,
+  stage_ids: string[] | null,
+  trigger_type = 'date_field_offset',
+): Automation =>
+  ({
+    id,
+    name: id,
+    trigger_type,
+    trigger_config: {},
+    stage_ids,
+    is_active: true,
+  }) as unknown as Automation
+
+describe('cartões de escopo', () => {
+  const posicao = new Map(ETAPAS.map((id, i) => [id, i]))
+
+  it('o lembrete preso a uma etapa vira cartão NAQUELA coluna', () => {
+    const lembrete = comEscopo('lembrete', ['e2'])
+    expect(cartoesDeEscopo([lembrete], posicao)).toEqual([
+      { automation: lembrete, tipo: 'escopo', colunaInicial: 2, colunas: 1, todasAsEtapas: false, temOutrosTrechos: false },
+    ])
+  })
+
+  it('CRÍTICO: a largura sai de `automations.stage_ids`, nunca de `trigger_config.stage_ids`', () => {
+    // As duas listas têm significados OPOSTOS. Ler a errada põe o cartão na
+    // coluna errada afirmando o que o motor não faz.
+    const a = {
+      id: 'a',
+      name: 'a',
+      trigger_type: 'date_field_offset',
+      trigger_config: { stage_ids: ['e0'] },
+      stage_ids: ['e3'],
+      is_active: true,
+    } as unknown as Automation
+    expect(cartoesDeEscopo([a], posicao).map((c) => c.colunaInicial)).toEqual([3])
+  })
+
+  it('etapas vizinhas viram um cartão largo; não vizinhas viram dois, com aviso', () => {
+    expect(cartoesDeEscopo([comEscopo('a', ['e1', 'e2'])], posicao)).toMatchObject([
+      { colunaInicial: 1, colunas: 2, temOutrosTrechos: false },
+    ])
+    expect(cartoesDeEscopo([comEscopo('b', ['e0', 'e3'])], posicao)).toMatchObject([
+      { colunaInicial: 0, colunas: 1, temOutrosTrechos: true },
+      { colunaInicial: 3, colunas: 1, temOutrosTrechos: true },
+    ])
+  })
+
+  it('etapa de OUTRO funil não desenha aqui, mas acende o aviso', () => {
+    expect(cartoesDeEscopo([comEscopo('a', ['e1', 'de-outro-funil'])], posicao)).toMatchObject([
+      { colunaInicial: 1, colunas: 1, temOutrosTrechos: true },
+    ])
+    // só etapas de fora: some deste quadro
+    expect(cartoesDeEscopo([comEscopo('b', ['de-outro-funil'])], posicao)).toEqual([])
+  })
+
+  it('CRÍTICO: escopo VAZIO não vira cartão — vazio não é "todas as etapas" no desenho', () => {
+    // A convenção do projeto ("vazio = todas") vale para o MOTOR. Aqui, um
+    // cartão de largura total por automação sem escopo encheria a aba com
+    // toda cobrança do Asaas e toda regra manual da conta.
+    expect(cartoesDeEscopo([comEscopo('a', null)], posicao)).toEqual([])
+    expect(cartoesDeEscopo([comEscopo('b', [])], posicao)).toEqual([])
+  })
+
+  it('CRÍTICO: automação de gatilho de etapa NÃO ganha cartão de escopo (já tem o do gatilho)', () => {
+    const a = {
+      id: 'a',
+      name: 'a',
+      trigger_type: 'deal_stage_changed',
+      trigger_config: { stage_ids: ['e0'] },
+      stage_ids: ['e4'],
+      is_active: true,
+    } as unknown as Automation
+    expect(cartoesDeEscopo([a], posicao)).toEqual([])
+    expect(montarGrade([a], ETAPAS).flat().map((c) => c.tipo)).toEqual(['gatilho'])
+  })
+
+  it('CRÍTICO: gatilho que NUNCA dispara não ganha cartão de escopo', () => {
+    expect(cartoesDeEscopo([comEscopo('t', ['e1'], 'time_based')], posicao)).toEqual([])
+    expect(cartoesDeEscopo([comEscopo('c', ['e1'], 'conversation_assigned')], posicao)).toEqual([])
+  })
+
+  it('CRÍTICO: a MESMA automação pode ter chegada E escopo na MESMA coluna', () => {
+    // É o que obriga a chave do React a incluir o TIPO (Codex, PR #234): sem
+    // ele, os dois cartões viram chaves irmãs iguais e um pode sumir no
+    // redesenho. Os dois são verdadeiros e dizem coisas diferentes — "leva o
+    // card para cá" e "só roda enquanto ele está aqui".
+    const a = {
+      id: 'dupla',
+      name: 'dupla',
+      trigger_type: 'calendly_booking',
+      trigger_config: {},
+      stage_ids: ['e2'],
+      is_active: true,
+    } as unknown as Automation
+    const steps = { dupla: [passo('dupla', 'move_deal_stage', { stage_id: 'e2' })] }
+    const cartoes = montarGrade([a], ETAPAS, steps).flat()
+    expect(cartoes).toHaveLength(2)
+    expect(cartoes.map((c) => c.tipo).sort()).toEqual(['chegada', 'escopo'])
+    // mesma automação, mesma coluna: só o tipo os distingue
+    expect(new Set(cartoes.map((c) => `${c.automation.id}-${c.colunaInicial}`)).size).toBe(1)
+    expect(new Set(cartoes.map((c) => `${c.automation.id}-${c.tipo}-${c.colunaInicial}`)).size).toBe(2)
+  })
+
+  it('montarGrade empilha escopo, gatilho e chegada sem sobrepor', () => {
+    const gat = auto('gat', ['e2'])
+    const cal = outroGatilho('cal')
+    const lembrete = comEscopo('lembrete', ['e2'])
+    const steps = { cal: [passo('cal', 'move_deal_stage', { stage_id: 'e2' })] }
+    const grade = montarGrade([gat, cal, lembrete], ETAPAS, steps)
+    expect(grade).toHaveLength(3)
+    expect(grade.flat().map((c) => c.tipo)).toEqual(['gatilho', 'chegada', 'escopo'])
+    // ninguém disputa a mesma célula
+    expect(new Set(grade.flat().map((c) => c.colunaInicial))).toEqual(new Set([2]))
   })
 })

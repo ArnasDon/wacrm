@@ -465,16 +465,43 @@ banco para isso e não deve haver. O que morde código novo:
   no motor.
 - **Há teste comparando `classificarNaEtapa` com o `triggerMatches` de
   verdade**, importado do `engine.ts`. Se a regra do motor mudar, ele quebra.
-- ⚠️ **Dois TIPOS de cartão desde 07/09/2026 (`CartaoDaGrade.tipo`):**
-  `gatilho` (largura = `trigger_config.stage_ids`, "dispara ao entrar") e
-  `chegada` (automação de OUTRO gatilho que LEVA o card para a etapa — a
-  coluna é o `stage_id` do `move_deal_stage`/`create_deal`, sempre 1
-  coluna, sem "expandir": mudar a etapa é editar o passo). Automação de
-  gatilho de etapa NÃO ganha cartão de chegada — já tem o do gatilho, e
-  uma esteira de 5 regras viraria 10 cartões. `contarAtivasNaEtapa` (o
-  raio do Kanban) continua contando só o que DISPARA na etapa.
-  Gatilho SEM call site (`GATILHOS_SEM_DISPARO`) não ganha cartão de
-  chegada nem de gatilho — regra que não roda não é desenhada (Codex, PR #131).
+- ⚠️ **TRÊS TIPOS de cartão (`CartaoDaGrade.tipo`):** `gatilho` (desde
+  07/09/2026; largura = `trigger_config.stage_ids`, "dispara ao entrar"),
+  `chegada` (07/09/2026; automação de OUTRO gatilho que LEVA o card para a
+  etapa — a coluna é o `stage_id` do `move_deal_stage`/`create_deal`, sempre
+  1 coluna, sem "expandir": mudar a etapa é editar o passo) e `escopo`
+  (20/09/2026; largura = `automations.stage_ids`, "dispara em outro lugar e
+  só roda ENQUANTO o card está aqui"). Automação de gatilho de etapa NÃO
+  ganha cartão de chegada nem de escopo — já tem o do gatilho, e uma esteira
+  de 5 regras viraria 10 cartões. `contarAtivasNaEtapa` (o raio do Kanban)
+  continua contando só o que DISPARA na etapa.
+  Gatilho SEM call site (`GATILHOS_SEM_DISPARO`) não ganha cartão nenhum —
+  regra que não roda não é desenhada (Codex, PR #131).
+- ⚠️⚠️ **O cartão de ESCOPO existe porque a aba do funil ESCONDIA regra que
+  roda no funil** (pedido do operador, 20/09/2026, com os prints da Kommo):
+  os quatro lembretes de reunião disparam pelo RELÓGIO (`date_field_offset`)
+  e são presos a "Reunião Agendada" pelo escopo — não tinham cartão em funil
+  nenhum, então não havia onde arrastar, expandir, duplicar nem ligar.
+  MEDIDO antes de mexer, rodando `montarGrade` contra a produção: das 8
+  automações do escritório, 3 apareciam (as de gatilho de etapa) e 5 não.
+  A regra da casa passou a ser a do operador: **toda automação que roda num
+  funil aparece na aba daquele funil.** O que morde código novo:
+  - ⚠️⚠️ **ESCOPO VAZIO NÃO VIRA CARTÃO, e aqui a convenção "vazio = todas"
+    NÃO vale para o desenho.** No motor, escopo vazio quer dizer "qualquer
+    etapa"; na aba, um cartão de largura total por automação sem escopo
+    encheria o funil com as 4 cobranças do Asaas e toda regra manual da
+    conta. Cartão é afirmação: "não tem relação com este funil" se afirma
+    NÃO desenhando.
+  - ⚠️⚠️ **O "expandir" edita DUAS listas diferentes conforme o cartão**, e
+    o estado do diálogo carrega qual (`campo: 'gatilho' | 'escopo'`).
+    Gatilho grava `trigger_config.stage_ids`; escopo grava
+    `automations.stage_ids`. Adivinhar pelo tipo de gatilho dentro do
+    diálogo gravaria na lista errada em silêncio — é a armadilha das "DUAS
+    listas de etapa com significados opostos", agora com uma tela que
+    escreve nas duas.
+  - ⚠️ **Desmarcar tudo num cartão de escopo TIRA a automação da aba**, e a
+    caixa diz isso antes de salvar (`escopoVazioAviso`): sem escopo ela
+    passa a valer em qualquer etapa e deixa de pertencer ao funil.
 
 ⚠️ **Mensagem agendada (925/926): NADA dispara sozinho.** A tabela guarda a
 linha; quem a transforma em mensagem é um agendador EXTERNO batendo em

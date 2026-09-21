@@ -103,6 +103,12 @@ create table if not exists migracao_kommo.livro_razao (
   -- ⚠️ O CHECK amarra os dois, senão um 'alterou' sem `antes` entra no livro
   -- e o desfazer não tem o que devolver — descobriria isso na hora de usar.
   antes          jsonb,
+  -- ⚠️⚠️ Chave COMPLEMENTAR, para a tabela cuja identidade não cabe num uuid
+  -- só. `contact_tags` é identificada por (contact_id, tag_id): guardando só
+  -- o contato, o desfazer não sabe QUAL etiqueta tirar — e tirar todas
+  -- apagaria as que o escritório aplicou à mão. Achado ao escrever o
+  -- desfazer, antes de a 1014 ser aplicada.
+  detalhe        jsonb,
   criado_em      timestamptz not null default now(),
   constraint livro_razao_antes_ck check ((acao = 'alterou') = (antes is not null))
 );
@@ -382,8 +388,9 @@ begin
       values (v_contato, v_tag)
       on conflict do nothing;
       if found then
-        insert into migracao_kommo.livro_razao (account_id, kommo_lead_id, acao, tabela, registro_id)
-        values (p_account_id, v_lead, 'criou', 'contact_tags', v_contato);
+        insert into migracao_kommo.livro_razao (account_id, kommo_lead_id, acao, tabela, registro_id, detalhe)
+        values (p_account_id, v_lead, 'criou', 'contact_tags', v_contato,
+                jsonb_build_object('tag_id', v_tag));
         v_etiquetas := v_etiquetas + 1;
       end if;
     end loop;
@@ -424,6 +431,136 @@ end;
 $funcao$;
 
 -- ------------------------------------------------------------
+-- 2b. O DESFAZER — ler o livro-razão de trás para frente.
+--
+-- ⚠️ O piloto só pode rodar depois que ISTO existir e tiver sido ensaiado: é
+-- a diferença entre "testar em produção" e "testar em produção com volta".
+--
+-- ⚠️⚠️ Os gatilhos calam AQUI TAMBÉM, e por um motivo próprio: apagar um card
+-- com o gatilho da 912 ligado escreve um `deal_deleted` — e desfazer não pode
+-- deixar rastro de que houve carga. O mesmo DDL transacional da carga vale
+-- aqui: se o desfazer morrer no meio, o rollback religa tudo.
+--
+-- ⚠️⚠️ `cb_lead_events.deal_id` NÃO TEM chave estrangeira (912, e é decisão
+-- escrita lá). Apagar o card NÃO leva a trilha dele junto: se o desfazer não
+-- apagar explicitamente, ficam eventos órfãos apontando para card que não
+-- existe — invisíveis no funil e vivos na ficha do contato.
+-- ------------------------------------------------------------
+create or replace function public.cb_kommo_desfazer(
+  p_account_id uuid,
+  p_desde_id   bigint default null,
+  p_conferir   boolean default false
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $desfazer$
+declare
+  v_linha     record;
+  v_cards     int := 0;
+  v_alterados int := 0;
+  v_etiquetas int := 0;
+  v_eventos   int := 0;
+  v_n         int;
+  v_total     int;
+begin
+  if p_account_id is null then
+    raise exception 'cb_kommo_desfazer: p_account_id é obrigatório';
+  end if;
+
+  select count(*) into v_total
+    from migracao_kommo.livro_razao
+   where account_id = p_account_id
+     and (p_desde_id is null or id >= p_desde_id);
+
+  if p_conferir then
+    return jsonb_build_object('linhas_a_desfazer', v_total, 'desfez', false);
+  end if;
+
+  alter table public.deals        disable trigger user;
+  alter table public.contact_tags disable trigger user;
+
+  -- ⚠️ DESC: desfazer é a carga ao contrário. Uma etiqueta aplicada depois do
+  -- card tem de sair antes de o card sair.
+  for v_linha in
+    select * from migracao_kommo.livro_razao
+     where account_id = p_account_id
+       and (p_desde_id is null or id >= p_desde_id)
+     order by id desc
+  loop
+    if v_linha.tabela = 'deals' and v_linha.acao = 'criou' then
+      -- A trilha SAI ANTES do card: sem FK, apagar o card deixaria órfã.
+      delete from cb_lead_events
+       where account_id = p_account_id and deal_id = v_linha.registro_id;
+      get diagnostics v_n = row_count; v_eventos := v_eventos + v_n;
+
+      delete from deals
+       where id = v_linha.registro_id and account_id = p_account_id;
+      get diagnostics v_n = row_count; v_cards := v_cards + v_n;
+
+    elsif v_linha.tabela = 'deals' and v_linha.acao = 'alterou' then
+      -- ⚠️ Só a trilha que ESTA carga escreveu: o card movido já existia e
+      -- tem trilha nossa, de meses atrás. O recorte é a procedência gravada
+      -- em `details`, que só a carga põe.
+      delete from cb_lead_events
+       where account_id = p_account_id
+         and deal_id = v_linha.registro_id
+         and origin = 'retroativo'
+         and (details->>'kommo_lead_id') is not null;
+      get diagnostics v_n = row_count; v_eventos := v_eventos + v_n;
+
+      update deals d
+         set pipeline_id   = (v_linha.antes->>'pipeline_id')::uuid,
+             stage_id      = (v_linha.antes->>'stage_id')::uuid,
+             status        = v_linha.antes->>'status',
+             value         = nullif(v_linha.antes->>'value', '')::numeric,
+             kommo_lead_id = nullif(v_linha.antes->>'kommo_lead_id', '')::bigint,
+             updated_at    = (v_linha.antes->>'updated_at')::timestamptz
+       where d.id = v_linha.registro_id and d.account_id = p_account_id;
+      get diagnostics v_n = row_count; v_alterados := v_alterados + v_n;
+
+    elsif v_linha.tabela = 'contact_tags' and v_linha.acao = 'criou' then
+      -- ⚠️ Pelo PAR. Sem o `tag_id` do `detalhe`, tirar "as etiquetas do
+      -- contato" levaria junto as que o escritório aplicou à mão.
+      delete from contact_tags
+       where contact_id = v_linha.registro_id
+         and tag_id = (v_linha.detalhe->>'tag_id')::uuid;
+      get diagnostics v_n = row_count; v_etiquetas := v_etiquetas + v_n;
+
+    else
+      raise exception 'cb_kommo_desfazer: não sei desfazer % em % (linha %)',
+        v_linha.acao, v_linha.tabela, v_linha.id;
+    end if;
+  end loop;
+
+  delete from migracao_kommo.livro_razao
+   where account_id = p_account_id
+     and (p_desde_id is null or id >= p_desde_id);
+
+  alter table public.deals        enable trigger user;
+  alter table public.contact_tags enable trigger user;
+
+  -- Prova: não sobrou card da carga nem evento órfão dela.
+  select count(*) into v_n from deals
+   where account_id = p_account_id and kommo_lead_id is not null
+     and exists (select 1 from migracao_kommo.livro_razao l
+                  where l.registro_id = deals.id and l.acao = 'criou');
+  if v_n > 0 then
+    raise exception 'o desfazer deixou % card(s) da carga de pé', v_n;
+  end if;
+
+  return jsonb_build_object(
+    'linhas',     v_total,
+    'cards',      v_cards,
+    'alterados',  v_alterados,
+    'etiquetas',  v_etiquetas,
+    'eventos',    v_eventos
+  );
+end;
+$desfazer$;
+
+-- ------------------------------------------------------------
 -- 3. Privilégio: as DUAS metades do REVOKE, e o GRANT de volta.
 --
 -- ⚠️ `REVOKE ... FROM PUBLIC` sozinho não tira nada quando a concessão é
@@ -440,6 +577,11 @@ $funcao$;
 revoke execute on function public.cb_kommo_carregar_lote(uuid, jsonb, boolean)
   from public, anon, authenticated;
 grant  execute on function public.cb_kommo_carregar_lote(uuid, jsonb, boolean)
+  to service_role;
+
+revoke execute on function public.cb_kommo_desfazer(uuid, bigint, boolean)
+  from public, anon, authenticated;
+grant  execute on function public.cb_kommo_desfazer(uuid, bigint, boolean)
   to service_role;
 
 -- ------------------------------------------------------------
@@ -494,6 +636,25 @@ begin
     when sqlstate 'P0001' then null;  -- recusou, que é o esperado
   end;
 
-  raise notice '1014: função de lote, livro-razão e privilégios conferidos.';
+  -- O desfazer existe e está igualmente fechado.
+  if to_regprocedure('public.cb_kommo_desfazer(uuid, bigint, boolean)') is null then
+    raise exception '1014: o desfazer não foi criado — sem ele o piloto não pode rodar';
+  end if;
+  if has_function_privilege('anon', 'public.cb_kommo_desfazer(uuid, bigint, boolean)', 'EXECUTE')
+     or has_function_privilege('authenticated', 'public.cb_kommo_desfazer(uuid, bigint, boolean)', 'EXECUTE') then
+    raise exception '1014: o desfazer está executável pelo navegador';
+  end if;
+  if not has_function_privilege('service_role', 'public.cb_kommo_desfazer(uuid, bigint, boolean)', 'EXECUTE') then
+    raise exception '1014: service_role PERDEU o execute do desfazer';
+  end if;
+
+  -- O livro tem a chave complementar que o desfazer de etiqueta exige.
+  if not exists (select 1 from information_schema.columns
+                  where table_schema = 'migracao_kommo' and table_name = 'livro_razao'
+                    and column_name = 'detalhe') then
+    raise exception '1014: o livro-razão está sem `detalhe` — o desfazer não saberia qual etiqueta tirar';
+  end if;
+
+  raise notice '1014: função de lote, desfazer, livro-razão e privilégios conferidos.';
 end
 $conferir$;

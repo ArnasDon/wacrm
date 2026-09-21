@@ -1522,8 +1522,9 @@ do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
 escrever.
 
 **Desde a 1025** (acompanhamento do #232): a troca de funil também exige as
-duas etapas na entrada — sem etapa, a transferência sumia das métricas do
-funil (medido: os 1.509 eventos da carga têm as duas).
+duas etapas na entrada — sem a de destino, a transferência sumia das métricas
+do funil; sem a de origem, a ficha diria "Transferido de … (—)" (medido: os
+1.509 eventos da carga têm as duas).
 
 ⚠️ **Limite conhecido, registrado em 21/09 e NÃO corrigido** (o outro achado do
 Codex no head 657b78d): "intocado" é `updated_at <= criado_em`, e `updated_at`

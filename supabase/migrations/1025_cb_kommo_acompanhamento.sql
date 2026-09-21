@@ -5,10 +5,13 @@
 -- declarados) e um da revisão adversarial do PR #238:
 --
 --   P1  cb_kommo_carregar_lote: `pipeline_changed` sem etapa passava na
---       entrada, no CHECK e na conferência de saída, e
+--       entrada, no CHECK e na conferência de saída. Sem a etapa de DESTINO,
 --       `cb_funil_trajetorias` o devolvia com `etapa = null` — que
 --       `fatosDoNegocio` pula: a transferência sumia das métricas do funil.
---       Agora as DUAS etapas são exigidas na entrada e conferidas na saída.
+--       Sem a de ORIGEM (que o funil não lê), a aba Histórico diria
+--       "Transferido de … (—)" e a guarda de apagar etapa mapeada não a veria.
+--       Agora as duas são exigidas na entrada, cada uma com a sua mensagem, e
+--       conferidas na saída.
 --       Medido na carga de 21/09: os 1.509 eventos de troca de funil têm as
 --       duas — nada do que já está no banco é afetado.
 --
@@ -161,14 +164,19 @@ begin
           if (v_evento->>'from_pipeline_id') = (v_evento->>'to_pipeline_id') then
             raise exception 'lead %: pipeline_changed com os dois funis iguais', v_lead;
           end if;
-          -- ⚠️ E AS DUAS ETAPAS (1025, Codex no #232). O CHECK da tabela e a
-          -- conferência de pós-voo aceitavam a troca de funil sem etapa, e
-          -- `cb_funil_trajetorias` a devolvia com `etapa = null` — que
-          -- `fatosDoNegocio` pula: a transferência sumia das métricas do
-          -- funil. O gatilho da 912 grava as duas etapas neste evento.
-          -- (Medido na carga de 21/09: os 1.509 eventos têm as duas.)
-          if (v_evento->>'from_stage_id') is null or (v_evento->>'to_stage_id') is null then
-            raise exception 'lead %: pipeline_changed exige from_stage_id E to_stage_id — sem a etapa a transferência some do funil', v_lead;
+          -- ⚠️ E AS DUAS ETAPAS (1025, Codex no #232), cada uma por um motivo.
+          -- A de DESTINO é o que `cb_funil_trajetorias` lê como `etapa`: sem
+          -- ela o passo sai com `etapa = null`, que `fatosDoNegocio` pula, e a
+          -- transferência some das métricas do funil. A de ORIGEM não entra
+          -- no funil, mas é o rótulo "Transferido de …" da aba Histórico e o
+          -- que a guarda de apagar etapa mapeada consulta (regra 14). O
+          -- gatilho da 912 grava as duas neste evento. (Medido na carga de
+          -- 21/09: os 1.509 eventos têm as duas.)
+          if (v_evento->>'to_stage_id') is null then
+            raise exception 'lead %: pipeline_changed exige to_stage_id — sem a etapa de destino a transferência some do funil', v_lead;
+          end if;
+          if (v_evento->>'from_stage_id') is null then
+            raise exception 'lead %: pipeline_changed exige from_stage_id — sem ela a ficha diria "Transferido de … (—)" (regra 14)', v_lead;
           end if;
         when 'status_changed' then
           if (v_evento->>'to_status') is null then
@@ -346,7 +354,7 @@ begin
      and e.event_type = 'pipeline_changed'
      and (e.from_stage_id is null or e.to_stage_id is null);
   if v_n > 0 then
-    raise exception 'o lote deixou % troca(s) de funil sem etapa — sumiriam do funil', v_n;
+    raise exception 'o lote deixou % troca(s) de funil sem etapa de origem ou de destino', v_n;
   end if;
 
   return jsonb_build_object(
@@ -461,7 +469,11 @@ begin
   -- A foto do antes vem do MESMO comando, pelo RETURNING: as partes de um
   -- WITH enxergam a mesma foto do banco, então o SELECT da foto lê a linha
   -- como estava ANTES do UPDATE — e só de quem foi de fato encerrado. A
-  -- conversa poupada aqui não ganha foto, e o desfazer não a toca.
+  -- conversa poupada aqui não ganha foto, e o desfazer não a toca. Os
+  -- contadores do retorno também saem das fotos (o RETURNING do ON CONFLICT
+  -- devolve a linha final, com os valores de antes): contados sobre `v_ids`,
+  -- afirmariam que zeraram a não lida e soltaram o dono de uma conversa
+  -- que o UPDATE poupou.
   with fechadas as (
     update conversations v
        set status            = 'closed',
@@ -474,32 +486,34 @@ begin
                           and m.sender_type = 'customer'
                           and m.gravada_em > now() - interval '2 minutes')
     returning v.id
+  ), fotos as (
+    insert into migracao_kommo.conversas_antes_do_encerramento
+           (conversation_id, account_id, status, assigned_agent_id,
+            aguardando_desde, unread_count, era_grupo)
+    select v.id, v.account_id, v.status, v.assigned_agent_id,
+           v.aguardando_desde, v.unread_count, (v.group_id is not null)
+      from conversations v
+      join fechadas f on f.id = v.id
+    -- ⚠️⚠️ A FOTO É DE CADA OPERAÇÃO, não da primeira (1021). Só entra aqui
+    -- quem está sendo encerrado AGORA (`fechadas`), então a troca só alcança
+    -- conversa reaberta desde a última vez, e o estado dela neste instante é
+    -- exatamente o que o desfazer tem de devolver.
+    on conflict (conversation_id) do update
+       set account_id        = excluded.account_id,
+           status            = excluded.status,
+           assigned_agent_id = excluded.assigned_agent_id,
+           aguardando_desde  = excluded.aguardando_desde,
+           unread_count      = excluded.unread_count,
+           era_grupo         = excluded.era_grupo,
+           encerrado_em      = excluded.encerrado_em
+    returning era_grupo, unread_count, assigned_agent_id
   )
-  insert into migracao_kommo.conversas_antes_do_encerramento
-         (conversation_id, account_id, status, assigned_agent_id,
-          aguardando_desde, unread_count, era_grupo)
-  select v.id, v.account_id, v.status, v.assigned_agent_id,
-         v.aguardando_desde, v.unread_count, (v.group_id is not null)
-    from conversations v
-    join fechadas f on f.id = v.id
-  -- ⚠️⚠️ A FOTO É DE CADA OPERAÇÃO, não da primeira (Codex, PR #232). Com
-  -- `do nothing`, uma conversa que o cliente reabriu depois do primeiro
-  -- encerramento guardava a foto de ANTES do primeiro; encerrada de novo,
-  -- ela ficava com `updated_at` mais novo que o `encerrado_em` velho, e o
-  -- desfazer a classificava como "mudou depois" — o segundo encerramento
-  -- ficava irreversível. Só entra aqui quem está sendo encerrado AGORA
-  -- (`v_ids`), então a troca só alcança conversa reaberta desde a última vez,
-  -- e o estado dela neste instante é exatamente o que o desfazer tem de
-  -- devolver.
-  on conflict (conversation_id) do update
-     set account_id        = excluded.account_id,
-         status            = excluded.status,
-         assigned_agent_id = excluded.assigned_agent_id,
-         aguardando_desde  = excluded.aguardando_desde,
-         unread_count      = excluded.unread_count,
-         era_grupo         = excluded.era_grupo,
-         encerrado_em      = excluded.encerrado_em;
-  get diagnostics v_fotos = row_count;
+  select count(*),
+         count(*) filter (where era_grupo),
+         count(*) filter (where unread_count > 0),
+         count(*) filter (where assigned_agent_id is not null)
+    into v_fotos, v_grupos, v_naolidas, v_donos
+    from fotos;
   v_fechadas := v_fotos;
   v_tardias  := coalesce(array_length(v_ids, 1), 0) - v_fechadas;
 
@@ -532,8 +546,9 @@ begin
   -- lote: a troca de funil exige as duas etapas, na entrada e na saída
   select prosrc into v_corpo from pg_proc
    where oid = 'public.cb_kommo_carregar_lote(uuid, jsonb, boolean)'::regprocedure;
-  if v_corpo not like '%pipeline_changed exige from_stage_id E to_stage_id%'
-     or v_corpo not like '%troca(s) de funil sem etapa%' then
+  if v_corpo not like '%pipeline_changed exige to_stage_id%'
+     or v_corpo not like '%pipeline_changed exige from_stage_id%'
+     or v_corpo not like '%troca(s) de funil sem etapa de origem ou de destino%' then
     raise exception '1025: a troca de funil voltou a passar sem etapa';
   end if;
   -- o que a 1017/1019/1023 trouxe tem de continuar de pé
@@ -551,6 +566,7 @@ begin
    where oid = 'public.cb_encerrar_conversas_abertas(uuid, boolean, boolean)'::regprocedure;
   if v_corpo not like '%with fechadas as (%'
      or v_corpo not like '%join fechadas f on f.id = v.id%'
+     or v_corpo not like '%from fotos;%'
      or (length(v_corpo) - length(replace(v_corpo, 'interval ''2 minutes''', '')))
           / length('interval ''2 minutes''') < 4 then
     raise exception '1025: o encerramento voltou a conferir a folga só na foto do começo';

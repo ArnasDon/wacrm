@@ -6636,12 +6636,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
       apagada em cascata com as mensagens.
 
   - **1025_cb_kommo_acompanhamento** — o acompanhamento do #232: a troca de
-    funil da carga exige as duas etapas (sem etapa, `cb_funil_trajetorias` a
-    devolvia com `etapa = null` e ela sumia das métricas), e o encerramento
+    funil da carga exige as duas etapas (sem a de destino,
+    `cb_funil_trajetorias` a devolvia com `etapa = null` e ela sumia das
+    métricas; sem a de origem, a ficha diria "Transferido de … (—)"), e o
+    encerramento
     em lote confere a folga de 2 minutos DE NOVO no próprio UPDATE, que
     enxerga uma foto tirada depois das travas — a do SELECT não via a
     mensagem confirmada no meio do comando, e o lote a escondia. A foto do
-    antes sai do MESMO comando (WITH … RETURNING), só de quem foi encerrado.
+    antes sai do MESMO comando (WITH … RETURNING), só de quem foi encerrado,
+    e os contadores do retorno saem dela.
     ⚠️ **Limite conhecido, registrado e não corrigido:** os dois desfazeres
     leem "intocado" como `updated_at <= hora da operação`, e `updated_at` é
     o INÍCIO da transação de quem escreveu — um salvamento já em voo quando o

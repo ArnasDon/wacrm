@@ -134,6 +134,14 @@ quebrar, sabe-se qual.
    URL ou pela busca do nome — nunca "a primeira linha da lista". Foi assim que
    o teste do voltar-no-celular zerou as 4 não lidas de um cliente real
    (seção da Fase 1).
+   ⚠️ **`next dev` não prova navegação**: ele não faz prefetch. O que mexe em
+   rota, roteador ou dependência de framework é testado num build de produção
+   local (`next build`, copiar `.next/static` e `public` para
+   `.next/standalone`, `PORT=… node --env-file=.env.local
+   .next/standalone/server.js`).
+   ⚠️ **Painel do navegador OCULTO = `requestAnimationFrame` parado.** O que
+   depende de rAF (restauração de rolagem, animação) parece quebrado sem estar.
+   Conferir `document.hidden` antes de acusar regressão.
 6. **PR → CI verde → `@codex review` no HEAD** (conferir por `gh api` que a
    revisão é do HEAD; "usage limits" = sem revisão) → **merge = deploy de
    produção** → verificação pós-deploy: site 200, `/api/cb/scheduled/cron` 401
@@ -281,7 +289,56 @@ o Edge Runtime (`src/app/icon.tsx`, arquivo do upstream).
      imagem antiga — **conferir o job `deploy` logo após o merge**.
   4. `eslint-visitor-keys` (dev) pede Node ≥ 22.13; o `engines` diz 22.12. Só
      aviso de `EBADENGINE`, já existia — anotado, sem mudança.
-- **Lente 1 (comportamento 16.2 → 16.3):** — (em curso)
+- **Lente 1 (comportamento 16.2 → 16.3): nenhum P0.** Mediu os dois `dist/`, as
+  duas documentações embarcadas e o config RESOLVIDO de dois builds deste app.
+  1. ⚠️ **P1 a confirmar — cinco padrões do roteador viraram sem opt-in**
+     (`validateRSCRequestHeaders`, `optimisticRouting`, `prefetchInlining`,
+     `varyParams`, `appNewScrollHandler`), o React embutido do App Router saltou
+     de canário, e o cache de segmentos foi reescrito. **O meu primeiro teste
+     não alcançava isso: `next dev` não faz prefetch.** Confirmado depois num
+     build de PRODUÇÃO local (tabela abaixo) — limpo.
+  2. P1 só na máquina de dev: o `next build` passou a checar tipos com o `tsc`
+     do projeto inteiro, **incluindo `.next/dev/types`** — o `.next` velho de
+     outra branch agora reprova também o BUILD local, não só o `typecheck`. CI
+     e Docker não têm `.next` e não sentem.
+  3. P2: a validação de RSC acrescenta um salto a todo redirect do middleware
+     (uma passada a mais do `getUser()` em sessão expirada). Com o Traefik é
+     inofensivo; se um CDN voltar à frente, o 307 sai com `s-maxage=300` —
+     desliga-se com `experimental.validateRSCRequestHeaders: false`.
+  4. P2: `useRouter()` deixou de ser um objeto único (um por componente, com
+     `bfcacheId`). Os 4 efeitos do app que dependem de `router` foram lidos:
+     todos com guarda e idempotentes. Vale para efeito NOVO.
+  5. P2: o cache de build do Turbopack virou padrão (227 MB em
+     `.next/cache/turbopack` por build; no Docker é escrito e nunca lido).
+  6. Limpos, com evidência: middleware (9 sondas de caminho idênticas nas duas
+     versões), `after()` (fiação `waitUntil`/`onClose` igual; ficou mais
+     robusto), route handlers (corpo de 300 KB atravessa o middleware até o
+     HMAC), ícones (Edge Runtime é só `warnOnce`), `next.config.ts`, next-intl,
+     e os binários `musl` no lock para a imagem Alpine.
+
+*Teste prático 2 — build de PRODUÇÃO local (standalone, como no Docker: `node
+server.js` na porta 3140, Next 16.3.5)*
+
+| Roteiro | Resultado |
+| --- | --- |
+| `/login`, cron sem segredo | 200 · 401 |
+| Sessão expirada: navegação RSC sem cookie | `/inbox?c=abc` → 2 redirects → 200 em `/login` — **sem laço** (na 16.2.12 era 1 redirect) |
+| Link direto para a conversa do lead de teste | abre com 116 mensagens e compositor |
+| **Menu inteiro por clique** (navegação do cliente, com prefetch) | os 15 destinos renderizam; console só com os 403 de foto expirada |
+| **Funil → card do lead de teste → conversa → "Voltar ao funil"** | abre `?c=00cc34a4…&de=funil`; na volta a rolagem é a de antes: **378 × 4.234** |
+| `/automations/<id>/edit` × `/automations/new` | cada uma abre a SUA tela (a rota estática vence a dinâmica com o roteamento otimista) |
+| Voltar no celular (375 px), só com o lead de teste | `push` (33 → 34), `history.back()` → `/inbox` com a conversa fechada |
+
+⚠️ **Armadilha do teste, que custou um falso alarme:** com o painel do
+navegador OCULTO o `requestAnimationFrame` não dispara (medido: não rodou em
+2 s), e a restauração da rolagem do funil depende de dois. A primeira passada
+deu rolagem 0 e parecia regressão do manipulador de scroll novo; com o rAF
+apoiado em timer, restaurou. **Conferência visual pendente do operador** (painel
+visível): funil → conversa → "Voltar ao funil".
+
+Não exercitado: o editor de fluxos (`@xyflow/react` 12.11.3) — a conta não tem
+fluxo nenhum, e criar um seria escrita só para o teste. Fica coberto na Fase 4,
+que cria um fluxo de teste.
 
 *Teste prático no preview (dev server da worktree, Next 16.3.5, porta 3130)*
 
@@ -555,4 +612,5 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 
 | Data | Fase | O que aconteceu |
 | --- | --- | --- |
-| 21/09/2026 | 0 | Medições da seção 2; estratégia "portar primeiro"; worktree criada; o #232 entrou no `main` no meio da medição sem mudar os conflitos. |
+| 21/09/2026 | 0 | Medições da seção 2; estratégia "portar primeiro"; worktree criada; o #232 entrou no `main` no meio da medição sem mudar os conflitos. Linha de base: 362 arquivos / 4.710 testes verdes; `npm audit` com 12 vulnerabilidades (1 crítica). |
+| 21/09/2026 | 1 | Dependências do upstream aplicadas: `npm audit` 12 → 0. As duas lentes não acharam P0. A Lente 2 pegou o `next dev` da 16.3 reescrevendo o `AGENTS.md` (→ `agentRules: false`). A Lente 1 mostrou que o teste em `next dev` não exercitava o roteador novo (→ refeito num build de produção local: limpo). Dois erros MEUS de teste viraram regra do protocolo: abrir conversa de cliente real zera as não lidas, e painel oculto congela o `requestAnimationFrame`. |

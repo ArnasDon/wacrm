@@ -582,6 +582,48 @@ describe('update_contact_field — custom fields', () => {
     );
   });
 
+  // 21/09/2026: o Typebot manda TODAS as variáveis em todo ponto do fluxo, e
+  // as ainda não respondidas chegam vazias. Gravar o vazio apagava o que a
+  // ficha já sabia (o "Tamanho da Divida" e a campanha que a Kommo trouxe).
+  it('CRÍTICO: variável VAZIA não apaga o campo — nem ausente, nem só espaços', async () => {
+    for (const vars of [{}, { source: '' }, { source: '   ' }]) {
+      h.state.upsertCalls = [];
+      h.state.updateCalls = [];
+      h.state.owned = { id: 'c1' };
+      h.state.ownedCustomField = { id: 'cf1' };
+      h.state.automations = [automationWithUpdateStep()];
+      h.state.steps = [customStep('custom:cf1', '{{ vars.source }}')];
+
+      await runAutomationsForTrigger({
+        accountId: ACCOUNT,
+        triggerType: 'new_message_received',
+        contactId: 'c1',
+        context: { vars },
+      });
+
+      expect(h.state.upsertCalls).toHaveLength(0);
+      expect(h.state.updateCalls).toHaveLength(0);
+    }
+  });
+
+  it('CRÍTICO: e-mail e empresa vazios também não apagam a coluna da ficha', async () => {
+    for (const campo of ['email', 'company']) {
+      h.state.updateCalls = [];
+      h.state.owned = { id: 'c1' };
+      h.state.automations = [automationWithUpdateStep()];
+      h.state.steps = [customStep(campo, '{{ vars.nada }}')];
+
+      await runAutomationsForTrigger({
+        accountId: ACCOUNT,
+        triggerType: 'new_message_received',
+        contactId: 'c1',
+        context: { vars: { nada: '' } },
+      });
+
+      expect(h.state.updateCalls).toHaveLength(0);
+    }
+  });
+
   it('refuses to write a custom field from another account', async () => {
     h.state.owned = { id: 'c1' };
     h.state.ownedCustomField = null; // account-scoped lookup finds nothing

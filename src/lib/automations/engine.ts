@@ -1535,6 +1535,22 @@ async function runStep(
       // o campo de destino inútil para a tela e para o lembrete.
       const value = await interpolate(cfg.value, args, { cru: true });
 
+      // ⚠️⚠️ VAZIO NÃO APAGA o que a ficha já sabe (21/09/2026). O valor
+      // configurado nunca é vazio (`validate.ts` exige), então vazio aqui é
+      // uma VARIÁVEL que chegou sem valor — e "não sei" não é "apague". O
+      // caso que motivou: o Typebot manda todas as variáveis em todo ponto
+      // do fluxo, e as ainda não respondidas vêm vazias; sem esta guarda, o
+      // primeiro ponto apagava o "Tamanho da Divida" e a campanha que a
+      // Kommo trouxe para o lead que volta. É a régua da carga da Kommo ("vence
+      // o não-vazio mais recente; nunca se grava linha vazia") e a que o nome
+      // já seguia. Fecha de carona um caminho que APAGAVA: o "Executar
+      // automação" manual roda sem `vars`, e a do Calendly zerava e-mail,
+      // data e link da reunião. Sai no histórico como passo concluído com
+      // este detalhe, não como `skipped`. O preço, escrito: agendamento do
+      // Calendly cujo local não tem link (nunca visto — os 62 agendamentos
+      // até 21/09 trazem link) manteria o "Link Reunião" do anterior.
+      if (value.trim() === '') return `${cfg.field} not updated: empty value`;
+
       // Custom fields are encoded as `custom:<custom_field_id>`; anything else
       // is a built-in contact column.
       if (cfg.field.startsWith('custom:')) {

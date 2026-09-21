@@ -282,7 +282,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
 | `src/lib/whatsapp/inbound-store.ts` | idem, no lado Evolution |
-| `src/lib/automations/engine.ts` | o `tituloFixadoEm` do `create_deal` (1007: título literal do autor nasce fixado, `{{…}}` fica solto). Mais `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome. Mais o gancho `antesDeExecutar` de `dispararAutomacoes` (chamado uma vez, antes da primeira automação que passou nos recortes) |
+| `src/lib/automations/engine.ts` | o `tituloFixadoEm` do `create_deal` (1007: título literal do autor nasce fixado, `{{…}}` fica solto). Mais `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome. Mais a guarda do mesmo passo para QUALQUER campo (21/09/2026): valor interpolado VAZIO não sobrescreve — o bloco do upstream grava o "" e apaga o que a ficha sabia. Mais o gancho `antesDeExecutar` de `dispararAutomacoes` (chamado uma vez, antes da primeira automação que passou nos recortes) |
 | `src/app/api/whatsapp/webhook/route.ts`, `src/lib/whatsapp/inbound-store.ts` (×2) e `src/lib/whatsapp/send-message.ts` | a chamada a `routeContactToPipeline`. ⚠️ São **QUATRO** call sites: os dois de ingestão (não há função compartilhada de abrir conversa — enxertar só num faz a feature valer só num transporte, e produção roda Evolution), o `persistDeviceMessage` do celular pareado e o núcleo de envio. Ver "Quem abre negócio" abaixo |
 | `src/lib/whatsapp/inbound-store.ts` (`persistDeviceMessage`) | o `followConversationChannel` que aponta a conversa para o número por onde a EQUIPE falou. Sem ele a conversa nasce com `channel_id` nulo e o CRM responde pelo canal PADRÃO — o advogado aborda pelo Jurídico e o sistema responderia pelo Comercial |
 | `src/lib/flows/engine.ts` | `findEntryFlow` por canal, `flow_runs.channel_id`, try/catch nos nós interativos, e o parâmetro opcional `substituicao` de `startFlowForContact` (955): o start manual carimba a run substituída como gente (`stopped_by_agent`/`replaced_by_agent`), não como regra |
@@ -5344,6 +5344,16 @@ Webhooks. Plano em `docs/PLANO-webhooks-de-entrada.md`; doc do operador em
   com ele. `channelInScope` deixa passar canal nulo (falha ABERTA), então
   automação restrita a uma conexão AINDA dispara para lead novo. Apertar a
   regra desliga o webhook justamente para quem acabou de chegar.
+- ⚠️ **E nasce ENCERRADA** (21/09/2026, pedido do operador para o Typebot):
+  `resolverDestinatario(..., { conversaNovaEncerrada: true })`, só deste
+  chamador. O lead de formulário ainda não escreveu, e conversa vazia em
+  "Abertas" é ruído; a primeira mensagem dele ou da equipe a reabre pelos
+  caminhos de sempre (`reopen.ts`). Conversa que JÁ existia não é tocada. ⚠️
+  Não trocar por um passo "Encerrar conversa" na automação: ele fecha TODAS as
+  conversas do contato e solta o responsável — inclusive a que o SDR está
+  atendendo quando manda o link do formulário. Calendly e `send_to_number`
+  continuam criando aberta: lá a conversa escondida sumiria, e envio de robô
+  não reabre.
 - ⚠️ **Lead novo não tem card**, e `move_deal_stage` LANÇA nesse caso,
   encerrando a execução. Automação de webhook que mexe no funil precisa de
   `create_deal` ANTES (ele desiste em silêncio quando já há card) — a mesma
@@ -5374,6 +5384,50 @@ Webhooks. Plano em `docs/PLANO-webhooks-de-entrada.md`; doc do operador em
   próprio CRM. A tela DECLARA as duas limitações (uma tentativa de 5s sem
   retry; 15 falhas seguidas desligam) — sem isso o operador conta com
   garantia que não existe.
+
+⚠️ **Typebot → CRM (21/09/2026): TRÊS webhooks e TRÊS automações, tudo
+CONFIGURAÇÃO — e toda escrita passa por uma TRAVA de etapa.** O fluxo
+"CB Advogados - Gestão de passivos" chama `Typebot · Lead e respostas` (em
+vários pontos: depois do telefone, do e-mail, das respostas), `Typebot ·
+Recebeu o link` (clicou "Agendar horário") e `Typebot · Desqualificado`.
+O passo a passo do lado do Typebot está em `docs/webhooks.md`. O que morde:
+
+- ⚠️⚠️ **O formulário é PÚBLICO e não prova posse do telefone.** Qualquer um
+  que digite o número de um cliente aciona as automações sobre a ficha DELE.
+  Por isso toda escrita (etiqueta, e-mail, respostas, campanha) e todo
+  movimento vivem no ramo SIM de uma condição `deal_stage == Lead - Type e
+  Forms`: só o card que o próprio Typebot criou (ou que alguém pôs ali) é
+  tocado. Cliente com card adiante, noutro funil ou perdido não ganha nada.
+  Tirar a trava faz o formulário reescrever e-mail, campanha e "Tamanho da
+  Divida" de quem já é cliente — o e-mail é o que liga tl;dv e Asaas.
+- ⚠️ **Nenhuma automação do Typebot grava o NOME.** O lead novo nasce com o
+  nome digitado (`campo_nome`); o passo de nome gravaria FIXADO e o gatilho da
+  1007 retitularia o card aberto de qualquer funil. Quem fixa é o Calendly, no
+  agendamento.
+- ⚠️ **Condição, e não escopo de etapa (`automations.stage_ids`), nas três.**
+  O escopo FALHA ABERTO em erro de leitura (`stageInScope`) — e aí o
+  `move_deal_stage` arrasta o card de um cliente do Jurídico para o comercial,
+  marcado perdido. E fora do escopo o acionamento vira `sem_automacao`, que o
+  bloco de correções do Meu dia conta para sempre (lead que refaz o Typebot já
+  em No Show acontece toda semana). A condição falha FECHADO e termina
+  `barrada`, que o Meu dia não conta.
+- ⚠️ **As chaves do corpo são os NOMES das variáveis do Typebot** (`phone`,
+  `name`, `email`, …) e o webhook lê `campo_telefone = phone`. Se alguém
+  desligar o "Custom body" do bloco, o Typebot manda o retrato padrão —
+  chaveado pelos mesmos nomes — e o lead continua entrando.
+- ⚠️ **O Typebot NUNCA repete POST** (401, 404, 429, timeout: perdido), e o
+  CRM não registra 401/404/429 — eles voltam antes do INSERT do log. Ponto que
+  "não chegou" só aparece em Typebot → Results → logs.
+- ⚠️ **No grupo "Group #19" a seta ENTRA no 3º bloco (o texto)**, e os dois
+  webhooks do topo nunca rodaram. O bloco do CRM ali vai DEPOIS do texto.
+- **Variável vazia não apaga campo** (`update_contact_field`, mesma data): o
+  Typebot manda todas as variáveis em todo ponto, e as não respondidas chegam
+  como "". Ver a nota no motor.
+- **O delta do corte da Kommo MOVE o card que o Typebot criou aqui** para a
+  etapa da Kommo (decisão 11 da migração): enquanto o Make ainda manda o mesmo
+  lead para lá, a pessoa existe nos dois lados. É o certo enquanto a equipe
+  trabalha na Kommo — mas quem rodar o delta sabe que agora há cards do
+  Typebot nascendo aqui.
 
 ⚠️ **Tag ADITIVA na API v1: `POST /api/v1/contacts/{id}/tags`.**
 `src/lib/api/v1/tags-do-contato.ts` (parse puro, testado). O `PATCH` com

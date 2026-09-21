@@ -4,7 +4,7 @@ import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/co
 
 /**
  * Ficha + conversa de um NÚMERO, quando o CRM precisa falar com ele e ainda
- * não há contato. DOIS chamadores, e a diferença entre eles importa:
+ * não há contato. TRÊS chamadores, e a diferença entre eles importa:
  *
  *   - `send_to_number` (977): o número da EQUIPE que a automação avisa.
  *   - o agendamento do Calendly (08/09/2026): o CLIENTE que marcou horário e
@@ -12,6 +12,10 @@ import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/co
  *     plano — até aqui a ficha dele nascia por acaso, quando o outro CRM
  *     mandava a primeira mensagem pelo celular pareado, e o Calendly ficava
  *     dependendo de um sistema que vai ser desligado.
+ *   - o webhook de entrada (982): o lead de formulário (o Typebot). É o ÚNICO
+ *     que pede a conversa nova ENCERRADA (`conversaNovaEncerrada`) — nos
+ *     outros dois ela nasceria escondida em "Encerradas", e envio de robô
+ *     não reabre conversa (`reopen.ts`).
  *
  * É o mesmo find-or-create da API pública (`resolveConversationByPhone`), com
  * duas diferenças de propósito:
@@ -40,6 +44,17 @@ export async function resolverDestinatario(
   accountId: string,
   digitos: string,
   nome?: string | null,
+  opcoes?: {
+    /**
+     * A conversa que NASCER aqui nasce ENCERRADA. Conversa que já existia não
+     * é tocada — nem aberta, nem fechada. Só o webhook de entrada pede isto:
+     * o lead de formulário ainda não escreveu, e uma conversa vazia em
+     * "Abertas" é ruído na caixa da equipe. Não é o passo "Encerrar
+     * conversa" da automação porque ele fecha TODAS as conversas do contato —
+     * inclusive a que o SDR está atendendo agora.
+     */
+    conversaNovaEncerrada?: boolean
+  },
 ): Promise<Destinatario> {
   const busca = await findExistingContact(db, accountId, digitos)
   // ⚠️ Erro de banco NÃO é "não encontrado": seguir criando duplicaria a
@@ -95,7 +110,12 @@ export async function resolverDestinatario(
   const dono = await resolverDono()
   const { data: nova, error: erroNova } = await db
     .from('conversations')
-    .insert({ account_id: accountId, user_id: dono, contact_id: contatoId })
+    .insert({
+      account_id: accountId,
+      user_id: dono,
+      contact_id: contatoId,
+      ...(opcoes?.conversaNovaEncerrada ? { status: 'closed' } : {}),
+    })
     .select('id')
     .single()
   if (erroNova || !nova) {

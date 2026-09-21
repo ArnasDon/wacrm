@@ -105,22 +105,8 @@ export async function processarCancelamento(
   c: Cancelamento,
   opcoes: OpcoesDoCancelamento = {},
 ): Promise<ProcessamentoDoAgendamento> {
-  // ⚠️⚠️ REAGENDAMENTO NÃO SAI MAIS POR AQUI (Codex, PR #235). A primeira
-  // versão desistia quando `reagendado` era verdadeiro, com o argumento de
-  // que o horário novo re-arma sozinho — e isso deixava o horário ANTIGO
-  // destravado no intervalo em que a ficha ainda o guarda. Cliente que
-  // reagenda 40 minutos antes recebia o lembrete da reunião que acabou de
-  // desmarcar.
-  //
-  // Travar o antigo é seguro porque a chave da 935 inclui o VALOR: o horário
-  // novo tem chave própria. E quem decide é `mesmaReuniao` — se o
-  // `invitee.created` já escreveu o horário novo na ficha, nada casa e nada
-  // é travado. O sinalizador `reagendado` sobrou como INFORMAÇÃO no log.
-  //
-  // ⚠️ O que fica de fora, escrito: reagendar para o MESMO horário (o
-  // Calendly oferece a vaga que a própria pessoa está liberando). Ali a
-  // trava do antigo vale para o novo, e o lembrete não sai. É raro e é o
-  // lado menos ruim — o outro é mandar aviso de reunião desmarcada.
+  // ⚠️ Reagendamento NÃO tem porta própria aqui — quem decide é
+  // `mesmaReuniao`, mais abaixo. O porquê está escrito lá.
   if (!c.inicio) {
     return ignorado("o cancelamento não trouxe o horário da reunião");
   }
@@ -134,8 +120,10 @@ export async function processarCancelamento(
   // quem marca e cancela em seguida chega aqui com `contact_id` ainda nulo, e
   // desistir nesse instante deixaria os lembretes ARMADOS — a linha do
   // cancelamento já existe, então a reentrega do Calendly não tenta de novo.
-  // Medido em produção: o processamento do agendamento leva 1,4 a 3,5 s.
-  // Por isso relê algumas vezes antes de desistir (Codex, PR #235).
+  // Medido em produção: o processamento leva 1,4 a 3,5 s — mas o teto dele é
+  // de 4 min, e o orçamento daqui acompanha essa constante, não um número
+  // digitado (Codex, PR #235, duas rodadas). Relê até o agendamento sair do
+  // processamento ou o orçamento acabar.
   const teto = opcoes.tetoDeEsperaMs ?? TETO_DE_ESPERA_MS;
   const tentativas = Math.max(1, Math.ceil(teto / ESPERA_ENTRE_LEITURAS_MS));
   const esperar = opcoes.esperar ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
@@ -216,7 +204,23 @@ export async function processarCancelamento(
     if (typeof valor === "string") valorPorCampo.set(id, valor);
   }
 
-  // Só desarma o lembrete cujo campo AINDA aponta para a reunião cancelada.
+  // ⚠️⚠️ SÓ DESARMA O LEMBRETE CUJO CAMPO AINDA APONTA PARA A REUNIÃO
+  // CANCELADA, e é aqui que o REAGENDAMENTO se resolve (Codex, PR #235).
+  //
+  // A primeira versão desistia lá em cima quando `reagendado` era verdadeiro,
+  // com o argumento de que o horário novo re-arma sozinho — e isso deixava o
+  // horário ANTIGO destravado no intervalo em que a ficha ainda o guarda:
+  // quem reagenda 40 minutos antes recebia o lembrete da reunião que acabou
+  // de desmarcar. Travar o antigo é seguro porque a chave da 935 inclui o
+  // VALOR, então o horário novo tem chave própria. E se o `invitee.created`
+  // já escreveu o horário novo na ficha, nada casa e nada é travado — que é
+  // o outro lado da mesma corrida. O sinalizador `reagendado` sobrou como
+  // INFORMAÇÃO no log.
+  //
+  // ⚠️ O que fica de fora, escrito: reagendar para o MESMO horário (o
+  // Calendly oferece a vaga que a própria pessoa está liberando). Ali a
+  // trava do antigo vale para o novo, e o lembrete não sai. É raro, e é o
+  // lado menos ruim — o outro é mandar aviso de reunião desmarcada.
   const alvos = lembretes
     .map((l) => ({ id: l.id, valor: valorPorCampo.get(l.campo) }))
     .filter((l): l is { id: string; valor: string } => mesmaReuniao(l.valor, c.inicio));

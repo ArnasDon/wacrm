@@ -95,6 +95,71 @@ export function phoneVariants(sanitized: string): string[] {
 }
 
 /**
+ * Known E.164 calling codes (digits, no `+`), longest first so a more
+ * specific code (e.g. `351`) is tried before a shorter code that could
+ * otherwise match the same leading digits. Not exhaustive — covers the
+ * countries Eter Growth's WhatsApp ad campaigns realistically see
+ * leads from. Add more here if a real lead from an uncovered country
+ * ever fails Twenty's INVALID_PHONE_NUMBER check (see
+ * splitPhoneCallingCode below).
+ */
+const KNOWN_CALLING_CODES = [
+  '971', // Emirados Árabes Unidos
+  '420', // Chéquia
+  '421', // Eslováquia
+  '380', // Ucrânia
+  '353', // Irlanda
+  '352', // Luxemburgo
+  '351', // Portugal
+  '55', // Brasil
+  '49', // Alemanha
+  '44', // Reino Unido
+  '39', // Itália
+  '34', // Espanha
+  '33', // França
+  '32', // Bélgica
+  '31', // Países Baixos
+  '30', // Grécia
+  '20', // Egipto
+  '1', // EUA / Canadá
+].sort((a, b) => b.length - a.length)
+
+/** Indicativo assumido quando o número não começa por nenhum dos
+ *  indicativos conhecidos acima — Portugal, o mercado por omissão da
+ *  Eter Growth. */
+const DEFAULT_CALLING_CODE = '351'
+
+/**
+ * Separates a digits-only phone number (as stored in `contacts.phone`,
+ * via `normalizePhone`) into a calling code and the remaining national
+ * number, for CRM integrations that need them as two separate fields
+ * (e.g. Twenty's `phones.primaryPhoneCallingCode` /
+ * `primaryPhoneNumber` — a single combined string like "351939000016"
+ * is rejected by Twenty with INVALID_PHONE_NUMBER).
+ *
+ * Falls back to `DEFAULT_CALLING_CODE` (Portugal) when the number
+ * doesn't start with any known calling code — the whole input is then
+ * treated as the national number under +351, which is right for the
+ * common case (a Portuguese number typed without the country code) and
+ * a reasonable default otherwise.
+ *
+ * @returns `callingCode` WITHOUT the `+` prefix (caller adds it) and
+ *   `nationalNumber` with the calling code stripped off.
+ */
+export function splitPhoneCallingCode(phone: string): {
+  callingCode: string
+  nationalNumber: string
+} {
+  const digits = normalizePhone(phone)
+  for (const code of KNOWN_CALLING_CODES) {
+    if (digits.startsWith(code) && digits.length > code.length) {
+      return { callingCode: code, nationalNumber: digits.slice(code.length) }
+    }
+  }
+  return { callingCode: DEFAULT_CALLING_CODE, nationalNumber: digits }
+}
+
+/**
  * Returns true when the Meta API error indicates the recipient
  * phone number isn't in the allowed list (sandbox restriction).
  * Detected via error code 131030 or the standard error text.

@@ -6,6 +6,7 @@ import {
   phoneVariants,
   phonesMatch,
   sanitizePhoneForMeta,
+  splitPhoneCallingCode,
 } from "./phone-utils";
 
 describe("sanitizePhoneForMeta", () => {
@@ -160,5 +161,49 @@ describe("isRecipientNotAllowedError", () => {
       false,
     );
     expect(isRecipientNotAllowedError("")).toBe(false);
+  });
+});
+
+describe("splitPhoneCallingCode", () => {
+  it("separa um número português com indicativo conhecido", () => {
+    expect(splitPhoneCallingCode("351939000016")).toEqual({
+      callingCode: "351",
+      nationalNumber: "939000016",
+    });
+  });
+
+  it("assume +351 quando o número não tem nenhum indicativo conhecido", () => {
+    expect(splitPhoneCallingCode("939000016")).toEqual({
+      callingCode: "351",
+      nationalNumber: "939000016",
+    });
+  });
+
+  it("separa um número com indicativo de 1 dígito (EUA/Canadá)", () => {
+    expect(splitPhoneCallingCode("14155551212")).toEqual({
+      callingCode: "1",
+      nationalNumber: "4155551212",
+    });
+  });
+
+  it("separa um número espanhol", () => {
+    expect(splitPhoneCallingCode("34911234567")).toEqual({
+      callingCode: "34",
+      nationalNumber: "911234567",
+    });
+  });
+
+  it("ignora caracteres não numéricos antes de separar", () => {
+    expect(splitPhoneCallingCode("+351 93 900 0016")).toEqual({
+      callingCode: "351",
+      nationalNumber: "939000016",
+    });
+  });
+
+  it("número vazio devolve indicativo por omissão e número nacional vazio", () => {
+    expect(splitPhoneCallingCode("")).toEqual({
+      callingCode: "351",
+      nationalNumber: "",
+    });
   });
 });

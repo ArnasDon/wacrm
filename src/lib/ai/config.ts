@@ -23,10 +23,12 @@ interface AiConfigRow {
   handoff_message: string | null
   max_handoff_blocked_attempts: number | null
   notify_phone_numbers: string[] | null
+  rate_limit_messages_per_minute: number | null
+  rate_limit_new_numbers_per_hour: number | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message, max_handoff_blocked_attempts, notify_phone_numbers'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message, max_handoff_blocked_attempts, notify_phone_numbers, rate_limit_messages_per_minute, rate_limit_new_numbers_per_hour'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -107,6 +109,11 @@ export async function loadAiConfig(
     // existir ou literais de teste que não a definem.
     maxHandoffBlockedAttempts: row.max_handoff_blocked_attempts ?? 2,
     notifyPhoneNumbers: row.notify_phone_numbers ?? [],
+    // NOT NULL DEFAULT 10 / 60 na base de dados (migração 054) — o ??
+    // aqui é só defesa extra, mesmo padrão de maxHandoffBlockedAttempts
+    // acima, para linhas antigas ou literais de teste sem estas colunas.
+    rateLimitMessagesPerMinute: row.rate_limit_messages_per_minute ?? 10,
+    rateLimitNewNumbersPerHour: row.rate_limit_new_numbers_per_hour ?? 60,
   }
 }
 

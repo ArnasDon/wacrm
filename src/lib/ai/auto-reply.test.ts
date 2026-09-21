@@ -35,6 +35,15 @@ const h = vi.hoisted(() => ({
     // Bloco 3-A / 21-09-2026 — nome concreto da empresa do lead, lido
     // pela mesma trava de handoff junto com nome/email/motivo.
     contactCompany: 'Acme Growth Lda' as string | null,
+    // Bloco 3-A (migração 054) — contagem que
+    // rate_limit_increment_and_check devolve para cada bucket. 1 por
+    // omissão (bem abaixo de qualquer limite por omissão), para não
+    // afectar os testes que não são sobre rate limiting.
+    perNumberRateLimitCount: 1 as number,
+    newNumberRateLimitCount: 1 as number,
+    // Simula a verificação de rate limit a falhar (erro de BD) — deve
+    // deixar passar.
+    rateLimitError: false as boolean,
   },
 }))
 
@@ -116,6 +125,18 @@ vi.mock('./admin-client', () => ({
     },
     rpc: (name: string, args: unknown) => {
       h.state.rpcCalls.push({ name, args })
+      if (name === 'rate_limit_increment_and_check') {
+        if (h.state.rateLimitError) {
+          return Promise.resolve({ data: null, error: { message: 'boom' } })
+        }
+        const isNewNumberBucket =
+          typeof (args as { p_bucket_key?: string })?.p_bucket_key === 'string' &&
+          (args as { p_bucket_key: string }).p_bucket_key.startsWith('newnum:')
+        const count = isNewNumberBucket
+          ? h.state.newNumberRateLimitCount
+          : h.state.perNumberRateLimitCount
+        return Promise.resolve({ data: count, error: null })
+      }
       return Promise.resolve({ data: h.state.claim, error: null })
     },
   }),
@@ -128,6 +149,7 @@ const ARGS = {
   conversationId: 'conv-1',
   contactId: 'contact-1',
   configOwnerUserId: 'user-1',
+  isNewContact: false,
 }
 
 function aiConfig(overrides: Partial<AiConfig> = {}): AiConfig {
@@ -167,6 +189,9 @@ beforeEach(() => {
   h.state.contactName = 'Ricardo Contacto'
   h.state.contactEmail = 'contacto@example.com'
   h.state.contactCompany = 'Acme Growth Lda'
+  h.state.perNumberRateLimitCount = 1
+  h.state.newNumberRateLimitCount = 1
+  h.state.rateLimitError = false
   h.loadAiConfig.mockResolvedValue(aiConfig())
   h.buildConversationContext.mockResolvedValue([{ role: 'user', content: 'hi' }])
   h.retrieveKnowledge.mockResolvedValue([])
@@ -184,12 +209,18 @@ beforeEach(() => {
 describe('dispatchInboundToAiReply — eligibility gates', () => {
   it('claims a slot and sends on the happy path', async () => {
     await dispatchInboundToAiReply(ARGS)
-    expect(h.state.rpcCalls).toEqual([
-      {
-        name: 'claim_ai_reply_slot',
-        args: { conversation_id: 'conv-1', max_replies: 3 },
-      },
+    // Bloco 3-A (migração 054) — a verificação de rate limit por
+    // número corre antes da reivindicação do slot de resposta. A
+    // verificação de números novos não chama a RPC aqui porque ARGS
+    // usa isNewContact: false (contacto já existente).
+    expect(h.state.rpcCalls.map((c) => c.name)).toEqual([
+      'rate_limit_increment_and_check',
+      'claim_ai_reply_slot',
     ])
+    expect(h.state.rpcCalls[1]).toEqual({
+      name: 'claim_ai_reply_slot',
+      args: { conversation_id: 'conv-1', max_replies: 3 },
+    })
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({ conversationId: 'conv-1', text: 'Hello!' }),
     )
@@ -213,8 +244,9 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   it('does not send when the atomic slot claim loses the race', async () => {
     h.state.claim = false
     await dispatchInboundToAiReply(ARGS)
-    // It still attempts the claim, but the send is skipped.
-    expect(h.state.rpcCalls).toHaveLength(1)
+    // The per-number rate-limit check runs first, then it still
+    // attempts the claim, but the send is skipped.
+    expect(h.state.rpcCalls).toHaveLength(2)
     expect(h.engineSendText).not.toHaveBeenCalled()
   })
 
@@ -269,6 +301,95 @@ describe('dispatchInboundToAiReply — eligibility gates', () => {
   })
 })
 
+// Bloco 3-A (migração 054) — limite de mensagens antes de a IA
+// responder. A mensagem em si já foi guardada pelo webhook ANTES de
+// dispatchInboundToAiReply ser chamado (ver route.ts) — estes testes
+// cobrem só a parte "a IA não responde", não o guardar da mensagem.
+describe('dispatchInboundToAiReply — rate limit por número', () => {
+  it('mensagem 10 no minuto (contagem = limite) dispara a IA normalmente', async () => {
+    h.state.perNumberRateLimitCount = 10 // config default é 10/min
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+    expect(h.engineSendText).toHaveBeenCalled()
+  })
+
+  it('mensagem 11 no minuto (contagem > limite) não dispara a IA', async () => {
+    h.state.perNumberRateLimitCount = 11
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.generateReplyWithTools).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('janela seguinte (contagem volta a 1) dispara a IA de novo', async () => {
+    h.state.perNumberRateLimitCount = 1
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+  })
+
+  it('número da equipa (team_phone_numbers) nunca é limitado, mesmo acima do limite', async () => {
+    h.state.perNumberRateLimitCount = 999
+    h.loadAiConfig.mockResolvedValue(aiConfig({ teamPhoneNumbers: ['351911111111'] }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+    // Isento → nem chega a chamar a RPC de rate limit por número.
+    const perNumberCalls = h.state.rpcCalls.filter(
+      (c) => c.name === 'rate_limit_increment_and_check',
+    )
+    expect(perNumberCalls).toHaveLength(0)
+  })
+
+  it('número de notificação (notify_phone_numbers) também é isento', async () => {
+    h.state.perNumberRateLimitCount = 999
+    h.loadAiConfig.mockResolvedValue(aiConfig({ notifyPhoneNumbers: ['351911111111'] }))
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+  })
+
+  it('erro de base de dados a verificar o limite por número deixa passar', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.state.rateLimitError = true
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.generateReply).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+})
+
+describe('dispatchInboundToAiReply — rate limit de números novos por hora', () => {
+  it('número novo dentro do limite dispara a IA normalmente', async () => {
+    h.state.newNumberRateLimitCount = 60 // config default é 60/hora
+    await dispatchInboundToAiReply({ ...ARGS, isNewContact: true })
+    expect(h.generateReply).toHaveBeenCalled()
+  })
+
+  it('61.º número novo na hora não dispara a IA', async () => {
+    h.state.newNumberRateLimitCount = 61
+    await dispatchInboundToAiReply({ ...ARGS, isNewContact: true })
+    expect(h.generateReply).not.toHaveBeenCalled()
+    expect(h.engineSendText).not.toHaveBeenCalled()
+  })
+
+  it('um contacto que já existia (isNewContact=false) nunca é travado por este limite', async () => {
+    h.state.newNumberRateLimitCount = 999
+    await dispatchInboundToAiReply({ ...ARGS, isNewContact: false })
+    expect(h.generateReply).toHaveBeenCalled()
+    const newNumberCalls = h.state.rpcCalls.filter(
+      (c) =>
+        c.name === 'rate_limit_increment_and_check' &&
+        (c.args as { p_bucket_key: string }).p_bucket_key.startsWith('newnum:'),
+    )
+    expect(newNumberCalls).toHaveLength(0)
+  })
+
+  it('erro de base de dados a verificar o limite de números novos deixa passar', async () => {
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    h.state.rateLimitError = true
+    await dispatchInboundToAiReply({ ...ARGS, isNewContact: true })
+    expect(h.generateReply).toHaveBeenCalled()
+    errorSpy.mockRestore()
+  })
+})
+
 describe('dispatchInboundToAiReply — handoff', () => {
   it('sends the handoff notice to the customer, disables auto-reply, and writes a summary — never leaves the customer without a word', async () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
@@ -282,7 +403,9 @@ describe('dispatchInboundToAiReply — handoff', () => {
         text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
-    expect(h.state.rpcCalls).toHaveLength(0)
+    // The reply-cap RPC is never reached on the handoff path (only the
+    // two rate-limit checks run before it).
+    expect(h.state.rpcCalls.some((c) => c.name === 'claim_ai_reply_slot')).toBe(false)
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(
       'AI agent handed off',
@@ -502,8 +625,9 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
         text: expect.stringContaining('Recebemos a sua mensagem'),
       }),
     )
-    // The reply-cap RPC is never reached on the failure path.
-    expect(h.state.rpcCalls).toHaveLength(0)
+    // The reply-cap RPC is never reached on the failure path (only the
+    // two rate-limit checks run before it).
+    expect(h.state.rpcCalls.some((c) => c.name === 'claim_ai_reply_slot')).toBe(false)
     errorSpy.mockRestore()
   })
 

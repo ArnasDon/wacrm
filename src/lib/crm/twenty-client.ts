@@ -12,6 +12,8 @@
 // key), never hardcoded, never logged.
 // ============================================================
 
+import { splitPhoneCallingCode } from '@/lib/whatsapp/phone-utils'
+
 export class TwentyNotConfiguredError extends Error {
   constructor() {
     super('TWENTY_BASE_URL/TWENTY_API_KEY não estão definidas no ambiente do serviço.')
@@ -51,9 +53,13 @@ function splitName(name: string): { firstName: string; lastName: string } {
 
 interface CreatePersonArgs {
   name: string
-  /** E.164-ish digits, as stored in `contacts.phone` — passed through
-   *  verbatim as Twenty's `primaryPhoneNumber`; Twenty does not require
-   *  us to split out a calling code for this to be usable. */
+  /** E.164-ish digits, as stored in `contacts.phone` (e.g.
+   *  "351939000016"). Twenty's PHONES composite field REQUIRES the
+   *  calling code and the national number as two separate sub-fields
+   *  (`primaryPhoneCallingCode` / `primaryPhoneNumber`) — sending the
+   *  whole thing as `primaryPhoneNumber` is rejected with
+   *  INVALID_PHONE_NUMBER (see splitPhoneCallingCode below, which does
+   *  the split). */
   phone: string
 }
 
@@ -70,6 +76,7 @@ export async function createTwentyPerson(args: CreatePersonArgs): Promise<{ id: 
   if (!config) throw new TwentyNotConfiguredError()
 
   const { firstName, lastName } = splitName(args.name)
+  const { callingCode, nationalNumber } = splitPhoneCallingCode(args.phone)
 
   const res = await fetch(`${config.baseUrl}/rest/people`, {
     method: 'POST',
@@ -79,7 +86,12 @@ export async function createTwentyPerson(args: CreatePersonArgs): Promise<{ id: 
     },
     body: JSON.stringify({
       name: { firstName, lastName },
-      phones: { primaryPhoneNumber: args.phone, additionalPhones: [] },
+      phones: {
+        primaryPhoneNumber: nationalNumber,
+        primaryPhoneCountryCode: '',
+        primaryPhoneCallingCode: `+${callingCode}`,
+        additionalPhones: [],
+      },
     }),
     signal: AbortSignal.timeout(10_000),
   })

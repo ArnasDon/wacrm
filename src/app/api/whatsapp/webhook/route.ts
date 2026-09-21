@@ -1093,6 +1093,10 @@ async function processMessage(
       conversationId: conversation.id,
       contactId: contactRecord.id,
       configOwnerUserId,
+      // Bloco 3-A (migração 054) — drives the new-numbers-per-hour rate
+      // limit: only a message from a phone number the webhook just
+      // created a contact for counts as "a new number".
+      isNewContact: contactOutcome.wasCreated,
     })
   }
 

@@ -102,6 +102,25 @@ export interface AiConfig {
    * dispara (o aviso por Mattermost continua independente disto).
    */
   notifyPhoneNumbers?: string[]
+
+  /**
+   * Migração 054 — máximo de mensagens por minuto de UM número antes
+   * de a IA deixar de responder a esse número (a mensagem continua a
+   * ser guardada normalmente). Isento: teamPhoneNumbers e
+   * notifyPhoneNumbers. Undefined/null cai no valor por omissão (10)
+   * — ver DEFAULT_RATE_LIMIT_MESSAGES_PER_MINUTE em
+   * src/lib/ai/inbound-rate-limit.ts.
+   */
+  rateLimitMessagesPerMinute?: number | null
+  /**
+   * Migração 054 — máximo de números NOVOS distintos por hora, para
+   * toda a conta, antes de a IA deixar de responder aos seguintes
+   * números novos (protege contra inundação com números diferentes).
+   * Undefined/null cai no valor por omissão (60) — ver
+   * DEFAULT_RATE_LIMIT_NEW_NUMBERS_PER_HOUR em
+   * src/lib/ai/inbound-rate-limit.ts.
+   */
+  rateLimitNewNumbersPerHour?: number | null
 }
 
 /** A single conversation turn in the shape both providers accept. */

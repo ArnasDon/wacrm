@@ -17,6 +17,13 @@ import { latestUserMessage } from './query'
 import { engineSendText } from '@/lib/flows/meta-send'
 import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit'
 import {
+  checkPerNumberRateLimit,
+  checkNewNumberRateLimit,
+  isExemptFromRateLimit,
+  DEFAULT_RATE_LIMIT_MESSAGES_PER_MINUTE,
+  DEFAULT_RATE_LIMIT_NEW_NUMBERS_PER_HOUR,
+} from './inbound-rate-limit'
+import {
   isCommercialConversation,
   sendCommercialFallback,
   sendCommercialWelcomeIfNeeded,
@@ -39,6 +46,13 @@ interface DispatchArgs {
   /** The account's WhatsApp config owner, used for the outbound send's
    *  audit columns (mirrors how the flow runner passes it through). */
   configOwnerUserId: string
+  /**
+   * True when the webhook just created this contact row for this
+   * inbound message — i.e. a genuinely new phone number, not a
+   * returning contact writing again. Drives the new-numbers-per-hour
+   * rate limit (checkNewNumberRateLimit) — see inbound-rate-limit.ts.
+   */
+  isNewContact: boolean
 }
 
 /**
@@ -63,7 +77,7 @@ interface DispatchArgs {
 export async function dispatchInboundToAiReply(
   args: DispatchArgs,
 ): Promise<void> {
-  const { accountId, conversationId, contactId, configOwnerUserId } = args
+  const { accountId, conversationId, contactId, configOwnerUserId, isNewContact } = args
 
   try {
     const db = supabaseAdmin()
@@ -114,6 +128,35 @@ export async function dispatchInboundToAiReply(
       .eq('id', contactId)
       .maybeSingle()
     const isCommercial = isCommercialConversation(config, contactRow?.phone ?? null)
+
+    // Bloco 3-A — limite de mensagens antes de a IA responder (migração
+    // 054). Corre DEPOIS de a mensagem já estar guardada em `messages`
+    // pelo webhook (esse INSERT acontece antes de dispatchInboundToAiReply
+    // ser chamado — ver route.ts) e ANTES de qualquer coisa que custe
+    // dinheiro: a mensagem de boas-vindas comercial (WhatsApp) e a
+    // chamada à IA (tokens). Números da equipa e de notificação estão
+    // isentos do limite por número. Ver inbound-rate-limit.ts para o
+    // desenho completo (contadores em BD, atómico, à prova de falha
+    // deixando passar).
+    const exempt = isExemptFromRateLimit(config, contactRow?.phone ?? null)
+    const perNumberDecision = await checkPerNumberRateLimit({
+      db,
+      accountId,
+      phone: contactRow?.phone ?? '',
+      isExempt: exempt,
+      limitPerMinute:
+        config.rateLimitMessagesPerMinute ?? DEFAULT_RATE_LIMIT_MESSAGES_PER_MINUTE,
+    })
+    if (!perNumberDecision.allowed) return
+
+    const newNumberDecision = await checkNewNumberRateLimit({
+      db,
+      accountId,
+      isNewContact,
+      limitPerHour:
+        config.rateLimitNewNumbersPerHour ?? DEFAULT_RATE_LIMIT_NEW_NUMBERS_PER_HOUR,
+    })
+    if (!newNumberDecision.allowed) return
 
     if (isCommercial) {
       // Sent FIRST, unconditionally, before any AI call — guarantees a

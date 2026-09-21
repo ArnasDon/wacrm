@@ -182,34 +182,15 @@ describe('reopenClosedConversation — quem reabre fica responsável (2026-09-02
   })
 })
 
-describe('reopenClosedConversation — a marca de espera do cliente (972)', () => {
-  // Encerrar APAGA `aguardando_desde` (cb_encerrar_limpa_espera). Com o
-  // UPDATE rodando sempre, o encerramento que cai entre gravar a mensagem e
-  // reabrir é coberto — mas a conversa voltava SEM o selo "em atraso",
-  // porque a marca que o INSERT acendeu já tinha sido apagada.
-  it('mensagem do cliente devolve aguardando_desde no MESMO UPDATE cercado', async () => {
-    const { client, calls } = stubClient()
-
-    await reopenClosedConversation(
-      client,
-      { id: 'conv-1' },
-      { clienteEsperaDesde: '2026-09-21T14:00:00.000Z' },
-    )
-
-    expect(calls).toHaveLength(1)
-    expect(calls[0].payload).toMatchObject({
-      status: 'open',
-      aguardando_desde: '2026-09-21T14:00:00.000Z',
-    })
-    expect(calls[0].filters).toContainEqual(['status', 'closed'])
-  })
-
-  it('sem ela (celular pareado, envio do CRM) a coluna não é tocada', async () => {
-    // Resposta de gente não espera ninguém: o INSERT dela já limpou a marca.
+describe('reopenClosedConversation — a marca de espera (972) não é tocada', () => {
+  it('reabrir nunca escreve aguardando_desde', async () => {
+    // Devolvê-la atropelaria a resposta de gente que caísse na mesma ida ao
+    // banco (Codex, PR #238); quem mantém a marca é o gatilho da 972.
     const { client, calls } = stubClient()
 
     await reopenClosedConversation(client, { id: 'conv-1' }, { assignTo: 'user-ana' })
+    await reopenClosedConversation(client, { id: 'conv-2' })
 
-    expect(calls[0].payload).not.toHaveProperty('aguardando_desde')
+    for (const c of calls) expect(c.payload).not.toHaveProperty('aguardando_desde')
   })
 })

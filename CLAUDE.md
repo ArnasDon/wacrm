@@ -1758,10 +1758,12 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   PR #238): o UPDATE desfaz qualquer encerramento anterior a ele, e a janela
   entre gravar e reabrir é onde um encerramento POSTERIOR à mensagem seria
   atropelado. Colado no INSERT, sobra uma ida ao banco — empate, que a
-  mensagem vence de propósito. Reabrir por mensagem do CLIENTE leva a hora
-  dela (`clienteEsperaDesde`) e devolve `aguardando_desde` no mesmo UPDATE:
-  o encerramento no meio a apagava (972) e a conversa voltava sem o selo
-  "em atraso". Preço medido: ~12 ms de rede por mensagem, 0,16 ms no banco,
+  mensagem vence de propósito. ⚠️ A marca `aguardando_desde` NÃO é
+  devolvida na reabertura: o encerramento nessa mesma janela a apaga e a
+  conversa volta sem o selo "em atraso", mas devolvê-la acenderia o selo
+  sobre cliente que alguém respondeu na mesma janela (Codex, PR #238) — as
+  duas pontas só fecham reabrindo por gatilho na transação do INSERT. Preço
+  medido: ~12 ms de rede por mensagem, 0,16 ms no banco,
   sem escrita nem gatilho quando a conversa está aberta. Caminho novo de
   mensagem chama DEPOIS de gravar; há pino em `reopen.chamadores.test.ts`
   contra o atalho voltar.

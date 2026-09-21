@@ -824,7 +824,6 @@ async function processMessage(
   // insert — senão a FK estouraria e a mensagem do cliente se perderia.
   // `canalGravado` é o que ficou na linha (null = conta sem conexão, ou canal
   // apagado no meio).
-  const criadaEm = new Date(parseInt(message.timestamp) * 1000).toISOString()
   const { resultado: gravacao, canal: canalGravado } = await gravarComCanal(
     channelId,
     (canal) =>
@@ -847,7 +846,7 @@ async function processMessage(
             media_filename: mediaFilename,
             message_id: message.id,
             status: 'delivered',
-            created_at: criadaEm,
+            created_at: new Date(parseInt(message.timestamp) * 1000).toISOString(),
             reply_to_message_id: replyToInternalId,
             // Only populated for content_type='interactive'. Migration 010
             // added the column; null for every other content_type so existing
@@ -882,7 +881,7 @@ async function processMessage(
   // de gravar, antes do bump, do canal e da entrega: o encerramento que cair
   // entre a mensagem e a reabertura é desfeito por ela, então essa janela
   // tem de ser uma ida ao banco, não quatro (Codex, PR #238). Ver `reopen.ts`.
-  await reopenClosedConversation(supabaseAdmin(), conversation, { clienteEsperaDesde: criadaEm })
+  await reopenClosedConversation(supabaseAdmin(), conversation)
 
   // Update conversation. The unread bump is done DB-side (migration 040's
   // bump_conversation_on_inbound) rather than as a read-modify-write of the

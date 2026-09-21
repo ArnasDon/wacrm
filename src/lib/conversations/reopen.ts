@@ -94,16 +94,14 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * RPC irmã, e no compositor ela esbarraria na RLS do operador e na
  * auto-notificação do gatilho de atribuição.
  *
- * ⚠️ **Reabrir por mensagem do CLIENTE devolve a marca de espera**
- * (`clienteEsperaDesde`, a hora da mensagem). A mensagem acende
- * `aguardando_desde` pelo gatilho da 972 no INSERT, e encerrar a APAGA
- * (`cb_encerrar_limpa_espera`). Se o encerramento cai entre gravar e reabrir
- * — a janela que este conserto passou a cobrir —, a conversa voltava aberta
- * sem o selo "em atraso", invisível ao chip e ao Meu dia até o cliente
- * escrever de novo (revisão adversarial da correção, 21/09/2026). Vai no
- * MESMO UPDATE cercado: só vale quando a conversa estava de fato encerrada,
- * e é o valor que o gatilho teria gravado (`created_at` da mensagem).
- * Celular pareado e envio do CRM não passam — resposta de gente não espera.
+ * ⚠️ **A marca de espera (`aguardando_desde`, 972) NÃO é mexida aqui, de
+ * propósito.** O encerramento que cai na ida ao banco entre gravar e reabrir
+ * a apaga (`cb_encerrar_limpa_espera`), e a conversa volta sem o selo "em
+ * atraso" até o cliente escrever de novo. Devolvê-la neste UPDATE foi feito
+ * e desfeito no mesmo PR (#238): uma resposta de GENTE na mesma ida ao banco
+ * já teria limpado a marca, e a devolução acenderia "em atraso" sobre
+ * cliente respondido (Codex). As duas pontas têm o tamanho da mesma janela;
+ * fechar as duas é, de novo, reabrir por gatilho na transação do INSERT.
  *
  * ⚠️ "Quem reabre fica responsável" continua valendo SÓ para quem reabre: o
  * `assigned_agent_id` está no mesmo UPDATE, cercado pelo mesmo
@@ -120,13 +118,12 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 export async function reopenClosedConversation(
   db: SupabaseClient,
   conversation: { id: string },
-  opts: { assignTo?: string | null; clienteEsperaDesde?: string } = {},
+  opts: { assignTo?: string | null } = {},
 ): Promise<boolean> {
   const patch: Record<string, unknown> = {
     status: 'open',
     assigned_agent_id: opts.assignTo ?? null,
     updated_at: new Date().toISOString(),
-    ...(opts.clienteEsperaDesde ? { aguardando_desde: opts.clienteEsperaDesde } : {}),
   }
 
   const { error, count } = await db

@@ -374,14 +374,10 @@ async function gravarMensagem(
   }
 
   // Gente reabre — o cliente escrevendo, ou o escritório respondendo pelo
-  // app do Instagram. Sem responsável: quem reabre por aqui não é membro. Só
-  // a mensagem do CLIENTE devolve a marca de espera. LOGO DEPOIS de gravar a
-  // primeira linha (antes dos anexos extras e do bump). Ver `reopen.ts`.
-  await reopenClosedConversation(
-    db,
-    { id: conversation.id },
-    ev.ehEco ? {} : { clienteEsperaDesde: quando }
-  );
+  // app do Instagram. Sem responsável: quem reabre por aqui não é membro.
+  // LOGO DEPOIS de gravar a primeira linha (antes dos anexos extras e do
+  // bump). Ver `reopen.ts`.
+  await reopenClosedConversation(db, { id: conversation.id });
 
   for (let i = 1; i < arquivos.length; i++) {
     const extra = await salvarMidia(arquivos[i], `${ev.mid}#${i + 1}`);

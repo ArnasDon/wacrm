@@ -715,6 +715,27 @@ função de lote, com o mesmo reparo da regra 5.
 9. `source = 'manual'`. `'channel'` ativaria o índice único parcial da 911 e
    falharia com 23505 nos contatos que já têm card; `'automation'` escaparia da
    fila da 933 no INSERT mas gravaria procedência falsa na trilha.
+⚠️⚠️ **9b. A etapa de ORIGEM é `(pipeline_id, status_id)`, NUNCA `status_id`
+    sozinho.** Na Kommo, **142 (ganho) e 143 (perdido) são status GLOBAIS**:
+    existem em TODOS os seis funis, com o mesmo id. Um mapa chaveado só pelo
+    status guarda o ÚLTIMO funil que o definiu e manda **o lead perdido do
+    Bancário para o funil do Trabalhista** — sem erro, sem log, com o card
+    pousando numa etapa que existe. Medido em 21/09:
+
+    | status | funil da Kommo | leads | vai para |
+    | ---: | --- | ---: | --- |
+    | 142 | Trabalhista | 171 | Trabalhista ‑ Comercial › Protocolado |
+    | 143 | Pré Vendas (SDR) | 2.924 | Bancário ‑ Comercial › Perdido |
+    | 143 | Trabalhista | 2.719 | Trabalhista ‑ Comercial › Perdido |
+    | 143 | Closer | 57 | Bancário ‑ Comercial › Perdido |
+    | 143 | Onboarding | 1 | Bancário ‑ Comercial › Perdido |
+
+    Fecha a conta: 6.844 em etapa própria + 171 + 5.701 = **12.716**, os leads
+    vivos. É a mesma repartição que o de‑para já descrevia — o risco não está
+    na decisão, está na IMPLEMENTAÇÃO. O bug já foi cometido uma vez, no
+    script que escolheu os leads do piloto, e só apareceu porque as contagens
+    por funil foram conferidas contra o de‑para.
+
 10. O par `(stage_id, pipeline_id)` conferido no script — a FK é COMPOSTA e
     devolve 23503 cru.
 11. `currency` pode ficar no default: o app formata em BRL e não lê a coluna.
@@ -1111,11 +1132,11 @@ em "falhou". A margem caiu de ~90× para ~3×.
       estado "configure" e passou a medir — `LEAD 272 → MQL 53 → REUNIÃO 53 →
       PROPOSTA 0 → CONTRATO 0` —, exatamente como esta linha avisava que
       aconteceria. É a mudança que a equipe vê.
-- [ ] **3. Piloto em produção** — **os 31 leads já escolhidos**, rodando **a
+- [ ] **3. Piloto em produção** — **os 33 leads já escolhidos**, rodando **a
       carga de verdade com um filtro**, nunca um script à parte. Pré-requisito
       que não se dispensa: o **livro-razão** de desfazer, escrito e ensaiado
       ANTES. Rodar DUAS vezes prova a idempotência; conferir **na tela**, não só
-      no banco. Ver a seção "O piloto — os 31 leads", no fim.
+      no banco. Ver a seção "O piloto — os 33 leads", no fim.
 - [ ] **4. Ensaio com volume** — a carga inteira contra um Postgres local com o
       schema do replay, para o que o piloto não vê: o estouro de subtransação,
       o tempo, o Kanban com 8.400 cards e o corte do disparo. Não existe banco
@@ -1143,11 +1164,11 @@ em 14/09 o CB CRM tinha 1.024 contatos, em 19/09 tinha 1.196, em 20/09 tinha
 1.212. Remedir antes de escrever a carga. A varredura completa leva ~6 min mais
 ~12 min do histórico.
 
-## O piloto — os 31 leads, escolhidos em 21/09
+## O piloto — os 33 leads, escolhidos em 21/09
 
 Escolhidos por COBERTURA, não à mão: `escolher-piloto.py` (scratchpad, não
 versionado — lê dado de cliente) enumera **31 variações** e escolhe o menor
-conjunto que cobre **cada uma três vezes**, com leads diferentes.
+conjunto que cobre **cada uma três vezes**, com leads diferentes: **33 leads**.
 
 ⚠️ **Três vezes, e não uma, de propósito.** Cobrir cada variação uma vez dá
 **8 leads** — isso é cobertura de tabela, não piloto. O que quebra uma carga

@@ -17,6 +17,21 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Corrigido
 
+- **`POST /api/v1/broadcasts` passa a funcionar, e a respeitar o
+  `channel_id`.** A função do banco por trás do endpoint nunca tinha
+  conseguido executar: toda chamada devolvia `500 Failed to create
+  broadcast`. Junto, dois defeitos que só a execução mostrou: os `params`
+  por destinatário não eram gravados como lista (com dois ou mais valores
+  a campanha ficava órfã; com um, o "retomar" reenviaria o modelo sem as
+  variáveis), e a rota descartava o `channel_id`. Agora a campanha sai
+  pelo número oficial pedido, e a resposta diz por qual saiu; um
+  `channel_id` que não é um número oficial utilizável da conta devolve
+  `400`, e nada é enviado. A tela de Disparos não era afetada.
+  **Migration necessária:**
+  `supabase/migrations/1030_cb_funcao_de_disparo_executavel.sql` (o
+  `supabase db push` a aplica). Aplique-a e publique esta versão juntas:
+  só com a migration, o endpoint funciona mas a aplicação antiga ainda
+  ignora o `channel_id`; só com a aplicação nova, ele continua em 500.
 - **A recuperação de senha volta a funcionar.** A tela de "esqueci a
   senha" apontava para `/auth/callback` e `/reset-password` desde o
   início, e nenhuma das duas rotas existia: o e-mail chegava e o link

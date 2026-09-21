@@ -5,6 +5,7 @@ import {
   finalizeBroadcastStatus,
   BroadcastError,
 } from './broadcast-core';
+import { findOrCreateContact } from '@/lib/api/v1/contacts';
 
 // Contact resolution and token decryption are exercised elsewhere — stub
 // them so these tests focus on the persistence boundary.
@@ -287,5 +288,98 @@ describe('regressão de merge: a campanha nasce carimbada com o canal', () => {
 
     const args = calls.rpc[0].args as Record<string, unknown>;
     expect(args.p_channel_id).toBe('canal-1');
+  });
+});
+
+// ============================================================
+// O canal PEDIDO chega ao resolvedor — e a recusa vem ANTES de tudo.
+//
+// `POST /api/v1/broadcasts` descartava o `channel_id` (Fase 2 do plano do
+// merge do upstream, 21/09/2026). O pino da ROTA mocka `createBroadcast`
+// inteiro, então o MESMO defeito um nível abaixo — trocar
+// `resolveMetaChannel(db, accountId, params.channelId)` por
+// `resolveMetaChannel(db, accountId)` — passava por TODOS os testes (medido por
+// mutação na revisão final do PR #242). Estes dois casos são o pino do salto
+// núcleo → resolvedor. A fake de `cb_channels` CONFERE os filtros, como o banco
+// faria: devolver uma linha fixa às cegas é o que deixava o mutante passar.
+// ============================================================
+describe('o canal pedido chega ao resolvedor', () => {
+  const PADRAO = { ...CANAL_META, id: 'canal-padrao', account_id: 'acc', is_default: true };
+  const PEDIDO = { ...CANAL_META, id: 'canal-pedido', account_id: 'acc', is_default: false };
+  const ALHEIO = { ...CANAL_META, id: 'canal-alheio', account_id: 'outra-conta', is_default: true };
+
+  function makeDbComCanais(canais: Record<string, unknown>[]) {
+    const base = makeDb({
+      data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
+      error: null,
+    });
+    const solto = base.db as unknown as { from: (t: string) => unknown };
+    const original = solto.from.bind(solto);
+    solto.from = (table: string) => {
+      if (table !== 'cb_channels') return original(table);
+      const filtros: Record<string, unknown> = {};
+      const casa = (c: Record<string, unknown>) =>
+        Object.entries(filtros).every(([k, v]) => c[k] === v);
+      const chain: Record<string, unknown> = {
+        select: () => chain,
+        eq: (col: string, val: unknown) => {
+          filtros[col] = val;
+          return chain;
+        },
+        order: () => chain,
+        limit: () => chain,
+        maybeSingle: () =>
+          Promise.resolve({ data: canais.find(casa) ?? null, error: null }),
+        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
+          resolve({ data: canais.filter(casa), error: null }),
+      };
+      return chain;
+    };
+    return base;
+  }
+
+  it('⚠️ usa o canal PEDIDO, e não o padrão da conta', async () => {
+    const { db, calls } = makeDbComCanais([PADRAO, PEDIDO]);
+
+    const plano = await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      channelId: 'canal-pedido',
+      recipients: [{ to: '+14155550123' }],
+    });
+
+    // Com o `channelId` descartado no caminho, quem sairia aqui é o PADRÃO.
+    expect(plano.channelId).toBe('canal-pedido');
+    expect((calls.rpc[0].args as Record<string, unknown>).p_channel_id).toBe('canal-pedido');
+  });
+
+  it('sem canal pedido, continua escolhendo o padrão', async () => {
+    const { db } = makeDbComCanais([PADRAO, PEDIDO]);
+    const plano = await createBroadcast(db, 'acc', 'user', {
+      templateName: 'promo',
+      recipients: [{ to: '+14155550123' }],
+    });
+    expect(plano.channelId).toBe('canal-padrao');
+  });
+
+  it('⚠️ canal recusado → meta_channel_required ANTES de criar contato ou campanha', async () => {
+    // O canal existe e é Meta — mas é de OUTRA conta. E a conta tem um padrão
+    // perfeitamente utilizável (e a fake ainda oferece o espelho legado): cair
+    // em qualquer um dos dois seria a campanha saindo por um número que
+    // ninguém pediu. A recusa também vem antes do laço de destinatários — que
+    // CRIA contato para telefone desconhecido, até mil por pedido.
+    const { db, calls } = makeDbComCanais([PADRAO, ALHEIO]);
+    vi.mocked(findOrCreateContact).mockClear();
+
+    await expect(
+      createBroadcast(db, 'acc', 'user', {
+        templateName: 'promo',
+        channelId: 'canal-alheio',
+        recipients: [{ to: '+14155550123' }],
+      })
+    ).rejects.toMatchObject({ code: 'meta_channel_required', status: 400 });
+
+    expect(findOrCreateContact).not.toHaveBeenCalled();
+    expect(calls.rpc).toHaveLength(0);
+    expect(calls.usedDirectInsert).toBe(0);
   });
 });

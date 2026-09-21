@@ -34,6 +34,7 @@ vi.mock('./google/client', async () => {
 
 import {
   addBusinessDays,
+  addBusinessMinutes,
   findCommercialSlots,
   bookCommercialSlot,
   CommercialCalendarNotConfiguredError,
@@ -90,6 +91,30 @@ describe('addBusinessDays', () => {
   })
 })
 
+describe('addBusinessMinutes', () => {
+  it('does not count weekend time towards the lead time (Ricardo, 21/09/2026: sempre 2-3 dias úteis)', () => {
+    // 2026-09-18 is a Friday, 15:00 UTC.
+    const fridayAfternoon = new Date('2026-09-18T15:00:00Z')
+    // 2880 min = 48h "business time" — Sat/Sun don't count, so this must
+    // land on Tuesday afternoon, not Sunday.
+    const result = addBusinessMinutes(fridayAfternoon, 2880, 'Europe/Lisbon')
+    expect(result.getUTCDay()).toBe(2) // Tuesday
+  })
+
+  it('is a no-op for 0 minutes', () => {
+    const now = new Date('2026-09-14T08:00:00Z')
+    expect(addBusinessMinutes(now, 0, 'Europe/Lisbon').getTime()).toBe(now.getTime())
+  })
+
+  it('skips a weekend entirely when the lead time starts mid-weekend', () => {
+    // 2026-09-19 is a Saturday.
+    const saturday = new Date('2026-09-19T10:00:00Z')
+    const result = addBusinessMinutes(saturday, 60, 'Europe/Lisbon')
+    // Should land Monday morning (Sat/Sun skipped, then 60 min consumed).
+    expect(result.getUTCDay()).toBe(1) // Monday
+  })
+})
+
 describe('findCommercialSlots', () => {
   it('throws CommercialCalendarNotConfiguredError when the account has no commercial_calendar_id', async () => {
     h.getCommercialCalendarConfig.mockResolvedValue(config({ calendarId: null }))
@@ -113,6 +138,20 @@ describe('findCommercialSlots', () => {
     const { slots } = await findCommercialSlots({} as never, 'acct-1', new Date('2026-09-14T08:00:00Z'))
     expect(slots.length).toBeLessThanOrEqual(3)
     expect(slots.length).toBeGreaterThan(0)
+  })
+
+  it('never proposes a slot sooner than 2 business days ahead, even on a Friday afternoon (Ricardo, 21/09/2026)', async () => {
+    h.getCommercialCalendarConfig.mockResolvedValue(config({ minLeadTimeMin: 2880, maxBusinessDaysAhead: 10 }))
+    // 2026-09-18 is a Friday, 13:00 UTC (mid-afternoon in Lisbon).
+    const fridayAfternoon = new Date('2026-09-18T13:00:00Z')
+    const { slots } = await findCommercialSlots({} as never, 'acct-1', fridayAfternoon)
+    expect(slots.length).toBeGreaterThan(0)
+    for (const slot of slots) {
+      // Must never land on the same day (Friday), the next calendar day
+      // (Saturday, closed anyway), nor Sunday/Monday — only Tuesday
+      // 2026-09-22 onwards.
+      expect(slot.start.getTime()).toBeGreaterThanOrEqual(new Date('2026-09-22T00:00:00Z').getTime())
+    }
   })
 
   it('excludes a slot that is busy on ANY of the checked calendars, including the personal one', async () => {
@@ -181,5 +220,35 @@ describe('bookCommercialSlot', () => {
     const outcome = await bookCommercialSlot({} as never, baseInput)
     expect(outcome).toEqual({ status: 'not_configured' })
     expect(h.getServiceAccountAccessToken).not.toHaveBeenCalled()
+  })
+
+  it('titles the event "Reunião [Empresa]<>Eter Growth" and fills the description (Ricardo, 21/09/2026)', async () => {
+    await bookCommercialSlot(
+      {} as never,
+      { ...baseInput, company: 'Clínica Sorriso Lda', leadPhone: '+351900000014', reason: 'Quer saber preços.' },
+    )
+    expect(h.createEvent).toHaveBeenCalledWith(
+      'at-1',
+      'leads@group.calendar.google.com',
+      expect.objectContaining({
+        summary: 'Reunião Clínica Sorriso Lda<>Eter Growth',
+        description: expect.stringContaining('Nome: Lead Teste'),
+      }),
+      undefined,
+    )
+    const call = h.createEvent.mock.calls[0][2]
+    expect(call.description).toContain('Telefone: +351900000014')
+    expect(call.description).toContain('Email: lead@example.com')
+    expect(call.description).toContain('Motivo: Quer saber preços.')
+  })
+
+  it('falls back to the lead name in the title when there is no company (independent worker)', async () => {
+    await bookCommercialSlot({} as never, { ...baseInput, company: null })
+    expect(h.createEvent).toHaveBeenCalledWith(
+      'at-1',
+      'leads@group.calendar.google.com',
+      expect.objectContaining({ summary: 'Reunião Lead Teste<>Eter Growth' }),
+      undefined,
+    )
   })
 })

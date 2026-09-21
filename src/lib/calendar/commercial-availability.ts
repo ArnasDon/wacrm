@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { addDays } from 'date-fns'
+import { addDays, addMinutes, startOfDay } from 'date-fns'
 import { TZDate } from '@date-fns/tz'
 import {
   createEvent,
@@ -68,6 +68,46 @@ export function addBusinessDays(from: Date, n: number, timezone: string): Date {
   return cursor
 }
 
+/**
+ * Advance `minutes` from `from`, but weekend time doesn't count towards
+ * the total — Sat/Sun are skipped in full rather than consumed. This is
+ * what makes `commercial_min_lead_time_min` mean "N business days"
+ * instead of "N calendar days": with a plain `addMinutes`, 2880 min (48h)
+ * requested on a Friday afternoon would land on a Sunday, and the very
+ * first slot offered would be Monday morning — one business day away,
+ * not two, which is not what the lead-time setting is meant to guarantee
+ * (Ricardo, 21/09/2026: never propose the same day nor the next one;
+ * always 2–3 business days out).
+ *
+ * Each business day is treated as a full midnight-to-midnight span for
+ * this purpose (not "business hours only") — `calculateAvailability`
+ * still clips the result against `businessHours` afterwards, so this
+ * only needs to get the DAY right, not the hour-of-day boundary.
+ */
+export function addBusinessMinutes(from: Date, minutes: number, timezone: string): Date {
+  let cursor: Date = new TZDate(from.getTime(), timezone)
+  let remaining = minutes
+  while (remaining > 0) {
+    const weekday = cursor.getDay() // 0 = Sun, 6 = Sat
+    const startOfNextDay = startOfDay(addDays(cursor, 1))
+    if (weekday === 0 || weekday === 6) {
+      // Weekend: skip straight to the next calendar day without
+      // consuming any of `remaining`.
+      cursor = startOfNextDay
+      continue
+    }
+    const minutesToNextDay = (startOfNextDay.getTime() - cursor.getTime()) / 60_000
+    if (remaining <= minutesToNextDay) {
+      cursor = addMinutes(cursor, remaining)
+      remaining = 0
+    } else {
+      cursor = startOfNextDay
+      remaining -= minutesToNextDay
+    }
+  }
+  return cursor
+}
+
 async function commercialAccessToken(http?: HttpClient): Promise<string> {
   const sa = loadServiceAccountFromEnv()
   const subject = commercialImpersonatedUserFromEnv()
@@ -126,17 +166,24 @@ export async function findCommercialSlots(
     ...confirmedBookings.map((b) => ({ start: b.startsAt, end: b.endsAt })),
   ]
 
+  // The lead-time floor is computed here (business-days-aware) and
+  // handed to `calculateAvailability` as its `now` with `minLeadTimeMin:
+  // 0` — that function's own lead-time handling is a plain `addMinutes`
+  // shared with the PERSONAL calendar's `check_availability`, which must
+  // keep its calendar-days-are-equal behaviour untouched. See
+  // `addBusinessMinutes` above.
+  const earliestBookable = addBusinessMinutes(now, config.minLeadTimeMin, config.timezone)
   const allSlots = calculateAvailability(
     {
       timezone: config.timezone,
       businessHours: config.businessHours,
       bufferMin: config.bufferMin,
-      minLeadTimeMin: config.minLeadTimeMin,
+      minLeadTimeMin: 0,
     },
     { start: rangeStart, end: rangeEnd },
     config.meetingDurationMin,
     busy,
-    now,
+    earliestBookable,
   )
 
   return { config, slots: allSlots.slice(0, MAX_PROPOSED_SLOTS) }
@@ -165,11 +212,52 @@ export interface BookCommercialSlotInput {
   conversationId: string | null
   leadEmail: string
   leadName?: string | null
+  /** `contacts.company` — drives the event TITLE (Ricardo, 21/09/2026):
+   *  "Reunião [Empresa]<>Eter Growth". When empty (e.g. an independent
+   *  worker with no company name on file), the title falls back to
+   *  `leadName` instead — see `buildEventTitle` below. */
+  company?: string | null
+  /** `contacts.phone` — shown in the event description so Ricardo can
+   *  see who he's meeting without opening EterWA. */
+  leadPhone?: string | null
+  /** `conversations.escalation_reason` — the reason/context for the
+   *  contact, also surfaced in the event description. */
+  reason?: string | null
   /** Only the start is caller-supplied — the end is always derived from
    *  the account's own `commercial_meeting_duration_min`, so a tool
    *  call can never book a longer/shorter meeting than the configured
    *  rule allows. */
   start: Date
+}
+
+/** "Reunião [Empresa]<>Eter Growth" — no spaces around `<>` (Ricardo,
+ *  21/09/2026). Falls back to the lead's own name when there's no
+ *  company on file (independent workers), and finally to a generic
+ *  label when neither is known — `book_commercial_meeting`'s own gate
+ *  (commercial.ts) normally guarantees `company` is set before this is
+ *  ever called, but this function doesn't assume its caller enforced
+ *  that. */
+function buildEventTitle(company: string | null | undefined, leadName: string | null | undefined): string {
+  const who = (company && company.trim()) || (leadName && leadName.trim()) || 'lead (anúncio)'
+  return `Reunião ${who}<>Eter Growth`
+}
+
+/** Description for the calendar event — everything Ricardo needs to
+ *  know who he's meeting and why, without opening EterWA (Ricardo,
+ *  21/09/2026). Omits a field entirely when unknown rather than
+ *  printing an empty "Telefone: " line. */
+function buildEventDescription(input: {
+  leadName?: string | null
+  leadPhone?: string | null
+  leadEmail: string
+  reason?: string | null
+}): string {
+  const lines = ['Marcado automaticamente pelo assistente comercial (Bloco 3-A).', '']
+  if (input.leadName?.trim()) lines.push(`Nome: ${input.leadName.trim()}`)
+  if (input.leadPhone?.trim()) lines.push(`Telefone: ${input.leadPhone.trim()}`)
+  lines.push(`Email: ${input.leadEmail}`)
+  if (input.reason?.trim()) lines.push(`Motivo: ${input.reason.trim()}`)
+  return lines.join('\n')
 }
 
 export type BookCommercialSlotOutcome =
@@ -220,8 +308,8 @@ export async function bookCommercialSlot(
     accessToken,
     config.calendarId,
     {
-      summary: input.leadName ? `Reunião com ${input.leadName}` : 'Reunião com lead (anúncio)',
-      description: 'Marcado automaticamente pelo assistente comercial (Bloco 3-A).',
+      summary: buildEventTitle(input.company, input.leadName),
+      description: buildEventDescription(input),
       start: input.start,
       end,
       timezone: config.timezone,

@@ -25,19 +25,35 @@ import {
 import { CommercialCalendarNotConfiguredError } from '@/lib/calendar/commercial-availability'
 import type { ToolHandlerContext } from './context'
 
-/** Mock `db` that answers `contacts.select('company')` — used by
- *  bookCommercialMeetingHandler's company trava (Ricardo, 21/09/2026).
- *  `company: undefined` simulates a contact row with no company saved. */
-function dbWithCompany(company: string | null | undefined): ToolHandlerContext['db'] {
+/** Mock `db` that answers `contacts.select('company, phone')` and
+ *  `conversations.select('escalation_reason')` by table name — used by
+ *  bookCommercialMeetingHandler's company trava (Ricardo, 21/09/2026) and
+ *  by the event title/description it builds from these fields. */
+function dbWithLead(row: {
+  company?: string | null
+  phone?: string | null
+  reason?: string | null
+}): ToolHandlerContext['db'] {
   return {
-    from: () => ({
+    from: (table: string) => ({
       select: () => ({
         eq: () => ({
-          maybeSingle: () => Promise.resolve({ data: { company }, error: null }),
+          maybeSingle: () =>
+            Promise.resolve({
+              data:
+                table === 'contacts'
+                  ? { company: row.company, phone: row.phone }
+                  : { escalation_reason: row.reason },
+              error: null,
+            }),
         }),
       }),
     }),
   } as never
+}
+
+function dbWithCompany(company: string | null | undefined): ToolHandlerContext['db'] {
+  return dbWithLead({ company })
 }
 
 const ctx: ToolHandlerContext = {
@@ -163,6 +179,23 @@ describe('bookCommercialMeetingHandler', () => {
     const result = await bookCommercialMeetingHandler(ctx, validInput)
     expect(result.isError).toBe(false)
     expect(h.bookCommercialSlot).toHaveBeenCalled()
+  })
+
+  it('passa empresa, telefone e motivo ao bookCommercialSlot para o título/descrição do evento', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'booked', eventId: 'evt-1', htmlLink: null })
+    const ctxFull: ToolHandlerContext = {
+      ...ctx,
+      db: dbWithLead({ company: 'Clínica Sorriso Lda', phone: '+351900000014', reason: 'Quer saber preços.' }),
+    }
+    await bookCommercialMeetingHandler(ctxFull, validInput)
+    expect(h.bookCommercialSlot).toHaveBeenCalledWith(
+      ctxFull.db,
+      expect.objectContaining({
+        company: 'Clínica Sorriso Lda',
+        leadPhone: '+351900000014',
+        reason: 'Quer saber preços.',
+      }),
+    )
   })
 })
 

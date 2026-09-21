@@ -20,23 +20,47 @@ import { requireString, optionalString, ToolInputError } from './parse-input'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-/** Lê `contacts.company` para o contacto da conversa actual — usado
- *  pela trava de `bookCommercialMeetingHandler` (Ricardo, 21/09/2026:
- *  sem o nome concreto da empresa, não marca reunião). Devolve `null`
- *  quando não há `contactId` na conversa (ex.: chamada de Playground)
- *  ou quando a coluna está vazia — os dois casos tratam-se da mesma
- *  forma: falta o dado. */
-async function getContactCompany(
+interface CommercialBookingContext {
+  company: string | null
+  phone: string | null
+  reason: string | null
+}
+
+/** Lê `contacts.company`/`contacts.phone` e `conversations.escalation_reason`
+ *  para a conversa actual — usados pela trava de `bookCommercialMeetingHandler`
+ *  (Ricardo, 21/09/2026: sem o nome concreto da empresa, não marca reunião)
+ *  e para preencher o título/descrição do evento no Google Calendar (Ricardo,
+ *  21/09/2026: título "Reunião [Empresa]<>Eter Growth", descrição com nome,
+ *  telefone, email e motivo). Devolve tudo a `null` quando não há `contactId`
+ *  na conversa (ex.: chamada de Playground) ou quando a coluna está vazia —
+ *  os dois casos tratam-se da mesma forma: falta o dado. */
+async function getCommercialBookingContext(
   ctx: ToolHandlerContext,
-): Promise<string | null> {
-  if (!ctx.contactId) return null
-  const { data } = await ctx.db
-    .from('contacts')
-    .select('company')
-    .eq('id', ctx.contactId)
-    .maybeSingle()
-  const company = (data as { company?: string | null } | null)?.company
-  return company && company.trim() ? company.trim() : null
+): Promise<CommercialBookingContext> {
+  const empty: CommercialBookingContext = { company: null, phone: null, reason: null }
+  if (!ctx.contactId) return empty
+
+  const [{ data: contact }, conversation] = await Promise.all([
+    ctx.db.from('contacts').select('company, phone').eq('id', ctx.contactId).maybeSingle(),
+    ctx.conversationId
+      ? ctx.db
+          .from('conversations')
+          .select('escalation_reason')
+          .eq('id', ctx.conversationId)
+          .maybeSingle()
+          .then((r) => r.data)
+      : Promise.resolve(null),
+  ])
+
+  const row = contact as { company?: string | null; phone?: string | null } | null
+  const convRow = conversation as { escalation_reason?: string | null } | null
+  const clean = (v: string | null | undefined) => (v && v.trim() ? v.trim() : null)
+
+  return {
+    company: clean(row?.company),
+    phone: clean(row?.phone),
+    reason: clean(convRow?.escalation_reason),
+  }
 }
 
 export async function checkCommercialAvailabilityHandler(
@@ -103,7 +127,7 @@ export async function bookCommercialMeetingHandler(
     // conta. Verificado aqui, em código, pela mesma razão que a trava
     // do handoff também vive em código (commercial-handoff.ts): um
     // prompt cede a quem insista.
-    const company = await getContactCompany(ctx)
+    const { company, phone, reason } = await getCommercialBookingContext(ctx)
     if (!company) {
       return {
         isError: true,
@@ -118,6 +142,9 @@ export async function bookCommercialMeetingHandler(
       conversationId: ctx.conversationId,
       leadEmail,
       leadName,
+      company,
+      leadPhone: phone,
+      reason,
       start: startsAt,
     })
 

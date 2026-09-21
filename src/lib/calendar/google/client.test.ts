@@ -175,17 +175,19 @@ describe('createEvent / updateEvent / deleteEvent', () => {
 
     const [url, init] = vi.mocked(http.fetch).mock.calls[0]
     expect(url).toContain('/calendars/primary/events')
+    expect(url).toContain('sendUpdates=all')
     const body = JSON.parse(init!.body as string)
     expect(body.start.timeZone).toBe('Europe/Lisbon')
   })
 
-  it('updateEvent PATCHes the given eventId', async () => {
+  it('updateEvent PATCHes the given eventId and asks Google to email attendees', async () => {
     const http = mockHttp(
       ok({ id: 'evt-1', start: { dateTime: '2026-08-20T10:00:00Z' }, end: { dateTime: '2026-08-20T10:30:00Z' } }),
     )
     await updateEvent('at-1', 'primary', 'evt-1', input, http)
     const [url, init] = vi.mocked(http.fetch).mock.calls[0]
     expect(url).toContain('/events/evt-1')
+    expect(url).toContain('sendUpdates=all')
     expect(init!.method).toBe('PATCH')
   })
 

@@ -404,6 +404,15 @@ function toCalendarEvent(data: GoogleEventResponse): CalendarEvent {
   }
 }
 
+/**
+ * `sendUpdates=all` is a QUERY parameter on `events.insert`/`events.patch`
+ * (never a body field) — without it Google defaults to `none` and
+ * creates/updates the event with the attendee listed, but never emails
+ * them an invite. Every event this agent creates has an attendee that
+ * needs to actually receive that email (the lead, on `book_meeting` /
+ * `book_commercial_meeting`), so both functions below always ask for it.
+ * See https://developers.google.com/calendar/api/v3/reference/events/insert.
+ */
 export async function createEvent(
   accessToken: string,
   calendarId: string,
@@ -412,7 +421,7 @@ export async function createEvent(
 ): Promise<CalendarEvent> {
   const res = await googleFetch(
     http,
-    `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events`,
+    `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events?sendUpdates=all`,
     {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
@@ -433,7 +442,7 @@ export async function updateEvent(
 ): Promise<CalendarEvent> {
   const res = await googleFetch(
     http,
-    `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}`,
+    `${CALENDAR_API_BASE}/calendars/${encodeURIComponent(calendarId)}/events/${encodeURIComponent(eventId)}?sendUpdates=all`,
     {
       method: 'PATCH',
       headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },

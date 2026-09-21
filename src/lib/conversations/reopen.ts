@@ -66,6 +66,24 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * Por isso o parâmetro é só o `id`: um `status` aqui convidaria a
  * reintroduzir o atalho.
  *
+ * ⚠️⚠️ **E todo chamador reabre LOGO DEPOIS de gravar a mensagem — na
+ * instrução seguinte, antes do bump, da prévia, do canal e da entrega**
+ * (Codex, PR #238). O UPDATE desfaz QUALQUER encerramento confirmado antes
+ * dele, e isso só é certo para o que veio ANTES da mensagem. O que cai entre
+ * gravar e reabrir é um encerramento POSTERIOR à mensagem que a reabertura
+ * atropela — e com três idas ao banco no meio (o caminho da Meta tinha
+ * bump, canal e entrega antes daqui) essa janela era larga o bastante para
+ * alcançar um clique ou uma automação. Com a reabertura colada no INSERT, o
+ * que sobra é uma ida ao banco: encerramento e mensagem SIMULTÂNEOS, e nesse
+ * empate a mensagem vence de propósito — conversa reaberta à toa volta à
+ * caixa e se encerra de novo com um clique; mensagem escondida numa
+ * encerrada ninguém vê. Um carimbo de "encerrada em" comparado à hora da
+ * mensagem não fecharia o empate: compara início de transação, não a ordem
+ * em que elas se confirmam. Fechá-lo de vez é reabrir por gatilho, na MESMA
+ * transação do INSERT da mensagem — com as exceções (a histórica, o envio
+ * por chave, quem fica responsável) ditas em SQL. Há pino da ordem em
+ * `reopen.chamadores.test.ts`.
+ *
  * O preço, MEDIDO em 21/09/2026: uma ida ao banco por mensagem gravada, onde
  * antes só havia quando a conversa já estava encerrada — ~12 ms da VPS ao
  * Supabase numa conexão reaproveitada (9–27 ms em 15 amostras), e 0,16 ms no

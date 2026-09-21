@@ -1753,7 +1753,12 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   os seis chamadores gravam a mensagem ANTES: encerrou antes do UPDATE, ele
   reabre; encerrou depois, foi decisão tomada com a mensagem já gravada
   (exceção: o encerramento em LOTE, que confere a folga de 2 min numa foto
-  velha — o conserto é no lote). Reabrir por mensagem do CLIENTE leva a hora
+  velha — o conserto é no lote). ⚠️ Todo chamador reabre na instrução
+  SEGUINTE ao INSERT da mensagem, antes de bump/prévia/canal/entrega (Codex,
+  PR #238): o UPDATE desfaz qualquer encerramento anterior a ele, e a janela
+  entre gravar e reabrir é onde um encerramento POSTERIOR à mensagem seria
+  atropelado. Colado no INSERT, sobra uma ida ao banco — empate, que a
+  mensagem vence de propósito. Reabrir por mensagem do CLIENTE leva a hora
   dela (`clienteEsperaDesde`) e devolve `aguardando_desde` no mesmo UPDATE:
   o encerramento no meio a apagava (972) e a conversa voltava sem o selo
   "em atraso". Preço medido: ~12 ms de rede por mensagem, 0,16 ms no banco,

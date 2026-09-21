@@ -93,6 +93,16 @@ export interface BuscaDeContato {
  * são os mesmos nas duas grafias do nono dígito (o 9 fica ANTES deles),
  * então a irmã sempre volta no mesmo lote de candidatos.
  *
+ * ⚠️⚠️ **Mas a passada TOLERANTE não ganhou candidatos novos** (revisão
+ * adversarial da 1024). Com o LIKE sobre os dígitos, a ficha de OUTRA pessoa
+ * gravada com separador ("+55 15 98874-5316", outro DDD, mesmo final) passou
+ * a voltar como candidata — e o casamento pelos 8 finais a entregaria à
+ * mensagem de "5582988745316". Sobre o texto cru ela nem aparecia. Por isso
+ * a tolerante só aceita a candidata que o LIKE antigo já traria (o texto
+ * cru termina nos 8 dígitos) ou cujo prefixo é COMPATÍVEL (`prefixoCompativel`:
+ * o mesmo, descontado o 0 de tronco e o nono dígito). Nada que casava antes
+ * deixa de casar; o que é novo só entra se for o mesmo número.
+ *
  * ⚠️ **O `order` é a outra metade**, para o caso fuzzy-PURO — o nono dígito
  * brasileiro, em que nenhum candidato é exato — também ser estável; sem ele
  * a resposta continuaria saindo da ordem física da tabela. `created_at`
@@ -132,10 +142,29 @@ export async function findExistingContact(
     contato:
       candidatos.find((c) => isExactMatch(c, phone)) ??
       candidatos.find((c) => chaveDePessoa(c.phone ?? "") === canonica) ??
-      candidatos.find((c) => phonesMatch(c.phone, phone)) ??
+      candidatos.find(
+        (c) =>
+          phonesMatch(c.phone ?? "", phone) &&
+          ((c.phone ?? "").endsWith(suffix) || prefixoCompativel(c.phone ?? "", phone)),
+      ) ??
       null,
     falhou: false,
   };
+}
+
+/**
+ * O que vem ANTES dos 8 finais é o mesmo, descontado o 0 de tronco e o nono
+ * dígito ("370" ~ "3700", "5583" ~ "55839")? Prefixo vazio (número digitado
+ * curto) vale como curinga — é o que o LIKE de sufixo sempre fez.
+ */
+function prefixoCompativel(a: string, b: string): boolean {
+  // O nono dígito sai dos dois lados; o 0 de tronco só conta como diferença
+  // quando é o ÚNICO dígito a mais — cortá-lo por regex levaria junto o 0 que
+  // é do código do país ("370" viraria "37").
+  const prefixo = (t: string) => normalizePhone(t).slice(0, -8).replace(/9$/, "");
+  const pa = prefixo(a);
+  const pb = prefixo(b);
+  return pa === "" || pb === "" || pa === pb || pa === `${pb}0` || pb === `${pa}0`;
 }
 
 /** Esperas entre as releituras de `fichaQueVenceu` (ms). */

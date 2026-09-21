@@ -238,9 +238,13 @@ assistente de broadcast — 1 PR, o único desde o merge anterior):
 
 - **`upsertCsvContacts` (`src/hooks/use-broadcast-sending.ts`) fica com os
   DOIS lados.** Do upstream: o CSV passa a casar com o contato pelo número
-  NORMALIZADO (`.in('phone_normalized', keys)`, a coluna gerada da 022, mesma
-  chave do `normalizeKey`) em vez do texto cru — "+55 (11) 9…" no arquivo agora
-  acha o "5511 9…" da base em vez de tentar inserir de novo e morrer em 23505.
+  NORMALIZADO (`.in('phone_normalized', …)`, a coluna gerada da 022) em vez do
+  texto cru — "+55 (11) 9…" no arquivo agora acha o "5511 9…" da base em vez
+  de tentar inserir de novo e morrer em 23505. ⚠️ Desde a 1024 o trecho mudou
+  de forma (é NOSSO agora também): deduplica e casa por PESSOA
+  (`chaveDePessoa`), busca as duas grafias do nono dígito em fatias e, na
+  corrida, relê e insere um a um — a versão do upstream casa por grafia, e
+  com o índice canônico a campanha inteira morreria no 23505.
   Nosso: o contato criado grava `user_id: ownerUserId` com falha fechada
   (`if (!ownerUserId) throw`), nunca `user.id` — `contacts.user_id` CASCADEia
   de `auth.users`, e o offboarding do operador levaria os contatos do CSV com
@@ -6667,7 +6671,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
       conversa?" — sem a trava, a conversa sendo criada naquele instante era
       apagada em cascata com as mensagens.
 
-  - **1024_cb_telefone_canonico** — `contacts.telefone_canonico` (coluna
+  - **1024_cb_telefone_canonico** — ⚠️ **aplicada DEPOIS do deploy**, a
+    exceção da 981: ela RESTRINGE, e o app anterior (CSV do disparo casando
+    por grafia) derrubaria a campanha no intervalo; o app novo não depende
+    dela. `contacts.telefone_canonico` (coluna
     GERADA: só dígitos e, no celular brasileiro de 12 dígitos, com o nono
     dígito) + índice único parcial `(account_id, telefone_canonico)`: o mesmo
     celular nas duas grafias deixa de poder virar duas fichas. Redefine

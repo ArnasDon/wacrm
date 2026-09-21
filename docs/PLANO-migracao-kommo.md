@@ -961,9 +961,12 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
     confirmar".
 20. **Toda escrita é reexecutável**: `ON CONFLICT ... DO NOTHING` (ou
     `DO UPDATE`) e o id resolvido por SELECT em seguida, **nunca pelo
-    RETURNING**, que vem vazio para quem perdeu a corrida. Em `contacts` a
-    cláusula `WHERE phone_normalized <> ''` é obrigatória, porque o índice é
-    parcial. A carga roda com a ingestão viva: entre apurar "estes contatos não
+    RETURNING**, que vem vazio para quem perdeu a corrida. ⚠️ Em `contacts`,
+    desde a 1024, o `ON CONFLICT` é **SEM alvo**: há dois índices únicos
+    parciais (a grafia exata da 0022 e a canônica do nono dígito da 1024), e
+    um alvo nomeado só absorve o seu — a irmã criada pela ingestão no meio
+    abortaria o lote inteiro. (Até a 1023 a regra mandava nomear o alvo com
+    `WHERE phone_normalized <> ''`.) A carga roda com a ingestão viva: entre apurar "estes contatos não
     têm conversa" e escrever, qualquer um deles pode mandar mensagem.
 21. Etiqueta por INSERT direto em `contact_tags`, com
     `userId = accounts.owner_user_id`. **Nunca** `tag-events.ts`. ⚠️ O INSERT

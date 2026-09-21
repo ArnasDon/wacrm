@@ -41,6 +41,13 @@
 -- Custo: ADD COLUMN ... STORED reescreve a tabela (ACCESS EXCLUSIVE durante
 -- a reescrita — 5.106 linhas, fração de segundo) e o CREATE UNIQUE INDEX
 -- segura as escritas enquanto constrói.
+--
+-- ⚠️⚠️ APLICAR DEPOIS DO DEPLOY — a exceção da 981 à ordem da casa. Esta
+-- migration RESTRINGE: com o app anterior no ar, o CSV do disparo (que casava
+-- por grafia exata) mandaria a irmã do nono dígito ao INSERT e a campanha
+-- inteira morreria no 23505, e a ficha de /contatos diria "falha ao
+-- atualizar" sem motivo. O app novo NÃO depende dela: a busca é pelos dígitos,
+-- e a releitura do 23505 funciona com ou sem o índice canônico.
 -- ============================================================
 
 alter table public.contacts

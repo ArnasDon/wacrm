@@ -559,6 +559,12 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
           throw new Error(`Failed to create CSV contacts: ${erroDeUm?.message ?? '?'}`);
         }
         lembrar(await buscarExistentes([key]));
+        // O 23505 garante que a vencedora existe e tem uma das duas grafias;
+        // se mesmo assim ela não veio, o erro é visível — nunca a linha
+        // sumindo da campanha com o operador achando que ela foi.
+        if (!byKey.has(key)) {
+          throw new Error(`Failed to resolve CSV contact ${row.phone} after a conflict`);
+        }
       }
     }
 

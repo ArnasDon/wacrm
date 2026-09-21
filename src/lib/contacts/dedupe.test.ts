@@ -125,6 +125,29 @@ describe("findExistingContact", () => {
     expect(hit.contato?.id).toBe("c-fmt");
   });
 
+  it("a tolerante NÃO entrega a ficha de outro DDD gravada com separador (revisão da 1024)", async () => {
+    // Sobre o texto cru, "+55 15 98874-5316" nem voltava como candidata para
+    // "5582988745316". Com o LIKE sobre os dígitos ela volta — e não pode ser
+    // entregue: é outra pessoa.
+    const db = stubDb([{ id: "c-15-fmt", phone: "+55 15 98874-5316" }]);
+    const hit = await findExistingContact(db, "acct", "5582988745316");
+    expect(hit.contato).toBeNull();
+  });
+
+  it("a tolerante continua casando a variante de TRONCO mesmo gravada com separador", async () => {
+    const db = stubDb([{ id: "c-lt", phone: "+370 6394-9836" }]);
+    const hit = await findExistingContact(db, "acct", "370063949836");
+    expect(hit.contato?.id).toBe("c-lt");
+  });
+
+  it("o que casava antes continua casando (ficha só com dígitos, mesmo final)", async () => {
+    // A régua do Asaas (D5) depende disto: o sufixo de outro número volta
+    // como candidato para "Para confirmar", nunca como vínculo.
+    const db = stubDb([{ id: "c-15", phone: "5515988745316" }]);
+    const hit = await findExistingContact(db, "acct", "5582988745316");
+    expect(hit.contato?.id).toBe("c-15");
+  });
+
   it("a IRMÃ do nono dígito vence a ficha mais antiga de OUTRO DDD com o mesmo final", async () => {
     // A tolerante sozinha devolvia a mais antiga com os mesmos 8 finais — a
     // de outra pessoa. A canônica é a dona do número no índice.

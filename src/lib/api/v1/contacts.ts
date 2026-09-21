@@ -9,7 +9,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
 import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
@@ -149,10 +149,11 @@ export async function findOrCreateContact(
     .single();
 
   if (error || !created) {
-    // Lost a race against a concurrent create — the unique index
-    // rejected the duplicate. Re-resolve to the winner.
+    // Lost a race against a concurrent create — the unique index (exato ou,
+    // desde a 1024, o canônico do nono dígito) rejected the duplicate.
+    // Re-resolve to the winner.
     if (isUniqueViolation(error)) {
-      const raced = (await findExistingContact(db, accountId, sanitized))
+      const raced = (await fichaQueVenceu(db, accountId, sanitized))
         .contato;
       if (raced) return { id: raced.id, created: false };
     }

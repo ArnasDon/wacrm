@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { marcaDoNomeManual } from "@/lib/contacts/nome-fixado";
-import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 import { resolveImportTagIds } from "@/lib/contacts/resolve-import-tags";
 import { variantesDoNonoDigito } from "@/lib/contacts/telefone";
 
@@ -193,8 +193,9 @@ export async function criarFichaDoAsaas(
   if (error || !criado) {
     if (!isUniqueViolation(error)) return { ok: false, codigo: "db_error" };
     // Corrida: alguém gravou o mesmo número entre a busca e o insert. Reler
-    // e aplicar a MESMA régua — a ficha pode ser a irmã do 9 ou só o sufixo.
-    const deNovo = await findExistingContact(admin, accountId, cliente.telefone);
+    // e aplicar a MESMA régua — a ficha pode ser a irmã do 9 (o índice
+    // canônico da 1024 a barra) ou só o sufixo.
+    const deNovo = await fichaQueVenceu(admin, accountId, cliente.telefone);
     if (deNovo.falhou || !deNovo.contato) return { ok: false, codigo: "db_error" };
     return mesmoNumero(deNovo.contato.phone, cliente.telefone)
       ? { ok: true, contactId: deNovo.contato.id, criou: false, etiquetada: false }

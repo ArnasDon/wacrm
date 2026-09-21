@@ -961,6 +961,7 @@
       "readOnlyHint": "Your role is read-only",
       "toastPhoneRequired": "Phone number is required",
       "toastUpdateFailed": "Failed to update contact",
+      "toastPhoneConflict": "Another contact already has this number (with or without the ninth digit). Nothing was saved.",
       "toastUpdated": "Contact updated",
       "toastNotAuthenticated": "Not authenticated",
       "toastNoteAddFailed": "Failed to add note",

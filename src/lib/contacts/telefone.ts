@@ -97,3 +97,21 @@ export function variantesDoNonoDigito(digitos: string): string[] {
   }
   return [digitos];
 }
+
+/**
+ * A grafia CANÔNICA de um telefone: só dígitos e, no celular brasileiro de 12
+ * dígitos (55 + DDD + 8, começando em 6–9), COM o nono dígito depois do DDD.
+ * As duas grafias que `variantesDoNonoDigito` devolve têm sempre a MESMA
+ * canônica — é a chave de "mesma pessoa".
+ *
+ * ⚠️ ESPELHO da coluna gerada `contacts.telefone_canonico` (1024), que é a
+ * chave ÚNICA por conta: mudar a régua num lado sem o outro faz o código
+ * achar "pessoa nova" onde o banco vê a mesma (23505 na cara) ou o contrário.
+ * Há teste lendo a migration.
+ */
+export function telefoneCanonico(telefone: string | null | undefined): string {
+  const digitos = (telefone ?? "").replace(/\D/g, "");
+  return /^55\d{2}[6-9]\d{7}$/.test(digitos)
+    ? `${digitos.slice(0, 4)}9${digitos.slice(4)}`
+    : digitos;
+}

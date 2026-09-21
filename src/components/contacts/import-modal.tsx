@@ -5,9 +5,9 @@ import { createClient } from '@/lib/supabase/client';
 import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
 import { useAuth } from '@/hooks/use-auth';
 import {
+  chaveDePessoa,
   dedupeByPhone,
   isUniqueViolation,
-  normalizeKey,
 } from '@/lib/contacts/dedupe';
 import {
   parseContactCsv,
@@ -236,26 +236,36 @@ export function ImportModal({
       let skipped = 0;
       let failed = 0;
 
-      // 1) De-dupe within the file by normalized phone (keep first).
+      // 1) De-dupe within the file by PERSON (keep first) — the canonical
+      //    ninth-digit spelling, so the same number written with and without
+      //    the 9 counts once (1024).
       const { unique, duplicates: inFileDupes } = dedupeByPhone(parsedRows);
       skipped += inFileDupes;
 
-      // 2) Skip numbers already in this account. One read of the
-      //    generated `phone_normalized` column (migration 022) → Set.
-      const { data: existingRows } = await supabase
-        .from('contacts')
-        .select('phone_normalized')
-        .eq('account_id', accountId);
-      const existing = new Set(
-        (existingRows ?? [])
-          .map(
-            (r) => (r as { phone_normalized: string | null }).phone_normalized
-          )
-          .filter((p): p is string => !!p)
-      );
+      // 2) Skip people already in this account, by the same key the unique
+      //    index uses since 1024 (`chaveDePessoa`). ⚠️ PAGINADO: numa leitura
+      //    só o PostgREST devolve as primeiras mil fichas — a base já passa de
+      //    cinco mil —, e quem ficava de fora era tratado como novo, levava o
+      //    lote inteiro ao 23505 e caía no modo linha a linha abaixo.
+      const existing = new Set<string>();
+      const PAGINA = 1000;
+      for (let desde = 0; ; desde += PAGINA) {
+        const { data: pagina, error: erroDaPagina } = await supabase
+          .from('contacts')
+          .select('phone_normalized')
+          .eq('account_id', accountId)
+          .order('id', { ascending: true })
+          .range(desde, desde + PAGINA - 1);
+        if (erroDaPagina) break;
+        for (const r of pagina ?? []) {
+          const numero = (r as { phone_normalized: string | null }).phone_normalized;
+          if (numero) existing.add(chaveDePessoa(numero));
+        }
+        if (!pagina || pagina.length < PAGINA) break;
+      }
 
       const toInsert = unique.filter((row) => {
-        if (existing.has(normalizeKey(row.phone))) {
+        if (existing.has(chaveDePessoa(row.phone))) {
           skipped++;
           return false;
         }

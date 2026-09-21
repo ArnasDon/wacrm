@@ -250,9 +250,13 @@ assistente de broadcast — 1 PR, o único desde o merge anterior):
 
 - **`upsertCsvContacts` (`src/hooks/use-broadcast-sending.ts`) fica com os
   DOIS lados.** Do upstream: o CSV passa a casar com o contato pelo número
-  NORMALIZADO (`.in('phone_normalized', keys)`, a coluna gerada da 022, mesma
-  chave do `normalizeKey`) em vez do texto cru — "+55 (11) 9…" no arquivo agora
-  acha o "5511 9…" da base em vez de tentar inserir de novo e morrer em 23505.
+  NORMALIZADO (`.in('phone_normalized', …)`, a coluna gerada da 022) em vez do
+  texto cru — "+55 (11) 9…" no arquivo agora acha o "5511 9…" da base em vez
+  de tentar inserir de novo e morrer em 23505. ⚠️ Desde a 1024 o trecho mudou
+  de forma (é NOSSO agora também): deduplica e casa por PESSOA
+  (`chaveDePessoa`), busca as duas grafias do nono dígito em fatias e, na
+  corrida, relê e insere um a um — a versão do upstream casa por grafia, e
+  com o índice canônico a campanha inteira morreria no 23505.
   Nosso: o contato criado grava `user_id: ownerUserId` com falha fechada
   (`if (!ownerUserId) throw`), nunca `user.id` — `contacts.user_id` CASCADEia
   de `auth.users`, e o offboarding do operador levaria os contatos do CSV com
@@ -3285,6 +3289,38 @@ id; a página recarrega a lista e navega por `?c=`. O que morde código novo:
 - **Reusa `findExistingContact`**, não uma busca própria: sem isso, digitar
   o número com o nono dígito quando o cliente já existe sem ele criaria uma
   segunda ficha, cada uma com metade do histórico.
+
+⚠️⚠️ **Chave única do telefone: a grafia CANÔNICA do nono dígito (1024).**
+`contacts.telefone_canonico` (gerada) + índice único `(account_id,
+telefone_canonico)`; `telefoneCanonico`/`chaveDePessoa` são o espelho em TS,
+com teste lendo a migration. O índice da 0022 (grafia exata) continua, mas
+não é mais ele que decide "mesma pessoa". O que morde código novo:
+
+- ⚠️⚠️ **Todo INSERT em `contacts` precisa saber o que fazer com o 23505**, e
+  há pino default-deny (`src/lib/contacts/chave-canonica.chamadores.test.ts`):
+  escritor novo reprova até declarar o trato. No SERVIDOR o trato é
+  `fichaQueVenceu` — relê a ficha que venceu, com nova tentativa se a LEITURA
+  falhar. Na ingestão, desistir na primeira leitura é descartar a mensagem do
+  cliente, que o provedor já deu por entregue (a regra 18 do plano da Kommo).
+- ⚠️⚠️ **`findExistingContact` busca pelos DÍGITOS (`phone_normalized`),
+  nunca pelo texto cru**, e prefere a IRMÃ do nono dígito ao casamento pelos 8
+  finais. Sobre `phone`, a ficha gravada "+55 83 98874-5316" não casava
+  `%88745316`: a busca, o INSERT e a releitura falhavam juntos e a mensagem
+  sumia. E a tolerante sozinha devolvia a ficha MAIS ANTIGA com o mesmo final
+  — que pode ser de outro DDD, outra pessoa.
+- ⚠️ **Lote que deduplica por GRAFIA derruba o lote inteiro.** O CSV do
+  disparo e o import de contatos deduplicam e casam por `chaveDePessoa`, e o
+  do disparo busca as DUAS grafias (`variantesDoNonoDigito`) em fatias: cada
+  grafia casa no máximo uma ficha, então a resposta fica abaixo do teto de
+  mil linhas do PostgREST — que antes truncava a busca e mandava os
+  "faltantes" ao INSERT.
+- ⚠️ **Coluna gerada não pode ler outra gerada**: a canônica sai de `phone`,
+  repetindo o `regexp_replace`, nunca de `phone_normalized`.
+- **Ficha só do Instagram fica fora**: `phone` nulo dá canônica nula, e o
+  índice é parcial.
+- ⚠️ **Fundir fichas NÃO é `merge_duplicate_contacts`** (agrupa por grafia
+  exata e apaga as tarefas do perdedor): se um dia o pré-voo da 1024 achar
+  par, a fusão é a receita da seção "APAGAR CONTATO".
 - **A conversa nasce sem `last_message_at`** e, com `nullsFirst: false`, vai
   para o FIM da lista até a primeira mensagem. Ela abre selecionada e a
   busca a encontra ("Nenhuma mensagem ainda"), mas quem mexer na ordenação
@@ -6670,6 +6706,19 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
       editada depois fica retida no desfazer, travada antes da pergunta "tem
       conversa?" — sem a trava, a conversa sendo criada naquele instante era
       apagada em cascata com as mensagens.
+
+  - **1024_cb_telefone_canonico** — ⚠️ **aplicada DEPOIS do deploy**, a
+    exceção da 981: ela RESTRINGE, e o app anterior (CSV do disparo casando
+    por grafia) derrubaria a campanha no intervalo; o app novo não depende
+    dela. `contacts.telefone_canonico` (coluna
+    GERADA: só dígitos e, no celular brasileiro de 12 dígitos, com o nono
+    dígito) + índice único parcial `(account_id, telefone_canonico)`: o mesmo
+    celular nas duas grafias deixa de poder virar duas fichas. Redefine
+    `cb_kommo_carregar_pessoas` (corpo da 1023) só para o `ON CONFLICT`
+    perder o alvo — com alvo, o índice novo abortaria o lote na corrida.
+    Pré-voo que PARA (em vez de fundir) se já houver par de irmãs; medido
+    imediatamente antes: 5.106 fichas, zero pares, 2.839 ganham a chave com o
+    9. Ver a seção "Chave única do telefone".
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

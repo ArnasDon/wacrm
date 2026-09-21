@@ -12,7 +12,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing';
 import { reopenClosedConversation } from '@/lib/conversations/reopen';
 import { runAutomationsForTrigger } from '@/lib/automations/engine';
@@ -96,9 +96,10 @@ async function findOrCreateContact(
   name: string
 ): Promise<{ contact: ContactRow; wasCreated: boolean } | null> {
   // ⚠️ `falhou` deliberadamente NÃO derruba a ingestão (mesma decisão do
-  // webhook da Meta): perder a mensagem do cliente é pior que arriscar uma
-  // ficha duplicada de variante de tronco — o backstop 23505 abaixo cobre o
-  // duplicado exato. Caminhos de GENTE respondem 500 em vez disso.
+  // webhook da Meta): perder a mensagem do cliente é pior. Se a ficha existir
+  // e a busca tiver falhado, o índice CANÔNICO (1024) recusa o INSERT abaixo
+  // — inclusive a irmã do nono dígito — e o 23505 relê a vencedora. Caminhos
+  // de GENTE respondem 500 em vez disso.
   const existing = (await findExistingContact(db, accountId, phone)).contato;
   if (existing) {
     // ⚠️ Nunca RENOMEAR contato existente para um número: o `name` cai para o
@@ -130,7 +131,9 @@ async function findOrCreateContact(
 
   if (error) {
     if (isUniqueViolation(error)) {
-      const raced = (await findExistingContact(db, accountId, phone)).contato;
+      // A ficha que venceu a corrida (índice exato ou canônico) — relida com
+      // nova tentativa se a leitura falhar, para a mensagem não se perder.
+      const raced = (await fichaQueVenceu(db, accountId, phone)).contato;
       if (raced) return { contact: raced as ContactRow, wasCreated: false };
     }
     console.error('[inbound-store] create contact failed:', error);

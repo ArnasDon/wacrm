@@ -4,7 +4,7 @@ import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption'
 import { getMediaUrl, downloadMedia } from '@/lib/whatsapp/meta-api'
 import { mirrorInboundMedia } from '@/lib/whatsapp/mirror-inbound-media'
 import { normalizePhone } from '@/lib/whatsapp/phone-utils'
-import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
+import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
 import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
 import { routeContactToPipeline } from '@/lib/cb-channels/pipeline-routing'
@@ -1380,12 +1380,12 @@ async function findOrCreateContact(
 
   if (createError) {
     // Lost a race: a concurrent inbound delivery (or another path)
-    // created this contact between our lookup and insert, and the
-    // unique index (migration 022) rejected the duplicate. Re-resolve
-    // the existing row instead of dropping the message.
+    // created this contact between our lookup and insert, and the unique
+    // index rejected the duplicate — o canônico da 1024 inclusive, que barra
+    // a irmã do nono dígito. Relê a ficha que VENCEU (com nova tentativa se a
+    // leitura falhar) em vez de descartar a mensagem do cliente.
     if (isUniqueViolation(createError)) {
-      const raced = (await findExistingContact(supabaseAdmin(), accountId, phone))
-        .contato
+      const raced = (await fichaQueVenceu(supabaseAdmin(), accountId, phone)).contato
       if (raced) return { contact: raced, wasCreated: false }
     }
     console.error('Error creating contact:', createError)

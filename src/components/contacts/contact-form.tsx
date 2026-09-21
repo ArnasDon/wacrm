@@ -9,6 +9,7 @@ import { emailMudou, emailNormalizado } from '@/lib/contacts/email-espelhado';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag } from '@/types';
 import {
+  chaveDePessoa,
   findExistingContact,
   isExactMatch,
   isUniqueViolation,
@@ -104,9 +105,17 @@ export function ContactForm({
         accountId,
         value,
       );
+      // A irmã do nono dígito é a MESMA pessoa: desde a 1024 o índice único
+      // canônico recusa o salvamento, então ela bloqueia como a exata — um
+      // aviso amarelo liberaria o Salvar para um erro garantido.
       setDupMatch(
         existing
-          ? { contact: existing, exact: isExactMatch(existing, value) }
+          ? {
+              contact: existing,
+              exact:
+                isExactMatch(existing, value) ||
+                chaveDePessoa(existing.phone ?? '') === chaveDePessoa(value),
+            }
           : null,
       );
     } finally {

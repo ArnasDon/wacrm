@@ -1704,6 +1704,18 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   regra não valia para NENHUMA mensagem real. Broadcast, fluxo, automação e
   IA NÃO reabrem, de propósito (um disparo para 500 encerradas devolveria
   as 500 à caixa); é o mesmo desenho do roteador de funil.
+  ⚠️ Hoje são SEIS (o Instagram e a mensagem tardia da 1010 entraram depois),
+  e o que importa é quem NÃO está na lista: **`src/lib/cb-groups/persist.ts`**.
+  Aquele arquivo não menciona `conversations.status` em lugar nenhum, então
+  **conversa de GRUPO encerrada NÃO reabre com mensagem no grupo** — ela só
+  volta se a EQUIPE mandar mensagem por aqui (aí o núcleo de envio reabre).
+  Encerrar um grupo de trabalho é escondê-lo da caixa por tempo
+  indeterminado, e as mensagens continuam chegando sem ninguém ver. Medido em
+  21/09/2026, quando o encerramento em lote da **1018** precisou decidir o que
+  fazer com os 7 grupos abertos da conta (2 a 12 dias de última mensagem, 261
+  não lidas somadas): eles ficam de fora por padrão, e incluí-los exige
+  `p_incluir_grupos => true`, por escrito. Quem for encerrar grupo pela TELA
+  paga o mesmo preço, sem aviso nenhum.
 - ⚠️ **Quem reabre fica responsável; encerrar solta o responsável.** O envio
   pelo núcleo reabre com `assignTo: senderUserId` (nulo na API por chave);
   o cabeçalho do fio usa `patchDeSituacao`; o passo `close_conversation`

@@ -165,6 +165,15 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
               .eq('account_id', bruta.account_id)
               .eq('evento', 'invitee.canceled')
               .in('contact_id', contatos)
+              // ⚠️ Ordem de INSERÇÃO, nunca só `id` (Codex, PR #237). O `id`
+              // é `gen_random_uuid()` (0977): um cancelamento gravado entre
+              // duas páginas cairia no MEIO de uma página já lida, empurraria
+              // outra linha para a seguinte, e o laço veria uma duplicata e
+              // perderia justamente a linha nova — com a contagem batendo,
+              // porque a duplicata a infla. `recebido_em` é `DEFAULT now()`
+              // (NOT NULL): linha nova vai para o FIM e não mexe no que já
+              // foi lido. O `id` fica como desempate.
+              .order('recebido_em', { ascending: true })
               .order('id', { ascending: true })
               .range(inicioDaPagina, fimDaPagina)
             return {

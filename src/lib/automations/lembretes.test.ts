@@ -432,9 +432,20 @@ describe('a leitura dos cancelamentos é PAGINADA', () => {
     // vir e o lembrete da reunião CANCELADA sai para o cliente (Codex, PR
     // #236). `null` do laço é "não confie" e tem de cair na falha fechada.
     const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
-    const trecho = fonte.slice(fonte.indexOf("'invitee.canceled'") - 1200, fonte.indexOf("'invitee.canceled'") + 900)
+    // Recorte SEMÂNTICO — do laço paginado até quem consome o resultado —, e
+    // não por número de caracteres: um comentário a mais empurrava o `if`
+    // para fora da janela e o pino reprovava código correto.
+    const inicio = fonte.indexOf('buscarPaginado<')
+    const fim = fonte.indexOf('semOsCancelados(encontrados')
+    expect(inicio).toBeGreaterThan(-1)
+    expect(fim).toBeGreaterThan(inicio)
+    const trecho = fonte.slice(inicio, fim)
+    expect(trecho).toContain("'invitee.canceled'")
     expect(trecho).toContain('buscarPaginado')
-    expect(trecho).toMatch(/\.order\('id'/)
+    // ⚠️ Ordem de INSERÇÃO: `id` é uuid aleatório, e paginar só por ele deixa
+    // uma linha nova entrar numa página já lida (Codex, PR #237).
+    expect(trecho).toMatch(/\.order\('recebido_em'/)
+    expect(trecho.indexOf(".order('recebido_em'")).toBeLessThan(trecho.indexOf(".order('id'"))
     expect(trecho).toMatch(/\.range\(/)
     expect(trecho).toMatch(/count: 'exact'/)
     expect(trecho).toMatch(/if \(!cancelados\)/)

@@ -3242,6 +3242,55 @@ sempre. O que morde código novo:
   ESTADO ("este contato já tem card?"), então as conversas que ficaram sem
   card se resolvem sozinhas na próxima mensagem trocada, em qualquer sentido.
 
+⚠️⚠️ **Histórico importado do WhatsApp (1027, 21/09/2026): mensagem com
+`gravada_em` NULA pode ser do backfill, e o registro é o que diz.** A conversa
+de 2026 dos leads da Kommo ficou lá (a API dela só entrega metadado); o texto
+existia na Evolution — a conexão viva (jun–set) e o backup de 09/09 da conexão
+antiga "Bancario", o mesmo número do Bancário - Comercial (jan–ago). Um script
+fora do repositório (o conteúdo é de cliente) normaliza cada mensagem com o
+próprio `normalizeUpsert` e escreve pela `cb_importar_historico_whatsapp`. Plano
+e números em `docs/PLANO-migracao-kommo.md`. O que morde código novo:
+
+- ⚠️⚠️ **O backfill NÃO passa pela ingestão, e é isso que o deixa mudo**:
+  automação, robô, IA, funil e reabertura moram no código de
+  `inbound-store`/webhook. Quem um dia "reaproveitar" `persistInboundMessage`
+  para importar histórico dispara tudo isso por mensagem antiga.
+- ⚠️⚠️ **Os dois gatilhos AFTER INSERT de `messages` ficam calados dentro do
+  lote**, pelo nome: o da 0972 decide "em atraso" pela ORDEM DE INSERÇÃO — a
+  fala de junho inserida hoje preencheria `aguardando_desde` (que sobrevive
+  à reabertura) e um eco antigo apagaria uma espera verdadeira. Quem criar
+  outra carga de mensagem antiga repete o desligar-religar, dentro da
+  transação.
+- ⚠️ **`gravada_em` vai NULA de propósito**: com o default `now()`,
+  `clienteRespondeuDesde` leria a fala antiga como "o cliente respondeu
+  agora" e cancelaria a sequência. Consequência: `gravada_em IS NULL` não
+  distingue mais "antes da 1003" de "importado" — quem precisar saber
+  pergunta ao registro.
+- ⚠️⚠️ **Teto de 700 mensagens por conversa, mantendo as mais RECENTES.** O
+  fio carrega a conversa inteira em ordem crescente, sem paginar, e o
+  PostgREST corta em 1000 linhas (`max_rows` MEDIDO: 1000): o que passasse
+  sumiria pelo lado das mensagens de HOJE. 1.884 mensagens antigas de 8 fichas
+  ficaram de fora por isso; trazê-las exige paginar o fio antes.
+- **A conversa que não existia nasce ENCERRADA** (dono durável, sem
+  responsável, sem não lida); a encerrada existente só ganha prévia quando o
+  histórico é mais novo que ela, com `set_updated_at` calado — o desfazer do
+  encerramento em lote (1020) só devolve conversa com `updated_at <=
+  encerrado_em`. Conversa ABERTA nunca é tocada.
+- **Mídia sem arquivo** (`media_url` e `media_state` nulos): a bolha diz
+  "indisponível", e o documento leva `media_filename`. Nunca `'failed'`/
+  `'pending'` em 1:1 (acenderia botão de baixar que só existe em grupo), nunca
+  `'too_large'` (afirmaria um motivo falso).
+- ⚠️ **O carimbo de canal é o da conexão de ORIGEM** (a antiga "Bancario" →
+  Bancário - Comercial): 68 conversas passaram a ter dois números no fio, e o
+  separador aparece — é verdade, o histórico correu por aquele número.
+- ⚠️ **O tempo real da carga chega a toda aba de inbox aberta**: sem filtro
+  por idade, a página troca a prévia e soma não lida NA TELA (nunca no banco)
+  até recarregar — por isso a carga grande roda fora do expediente.
+- ⚠️ **Desfazer: `cb_desfazer_historico_whatsapp` ANTES de
+  `cb_kommo_desfazer`.** Conversa com mensagem fica presa no desfazer da
+  carga; e a linha deste backfill não pode ir para o `livro_razao` — o
+  desfazer da Kommo aborta em tabela que não conhece.
+
 ⚠️ **Iniciar conversa pelo CRM (`POST /api/cb/conversas/abrir`).** Botão no
 cabeçalho da lista do inbox → `nova-conversa-dialog.tsx`. ABRE, não envia:
 cria/reencontra contato e conversa, **FIXA** o canal escolhido
@@ -6747,8 +6796,18 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     história de `POST /api/v1/broadcasts`.
     ⚠️ **O número pula para 1030 DE PROPÓSITO**: a faixa `1030+` é do
     `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
-    números no mesmo dia — as 1025/1026 são dela). **Não existem 1027–1029**:
-    não "preencher" a lacuna.
+    números no mesmo dia — as 1025/1026 são dela). **Não existem 1028–1029**:
+    não "preencher" a lacuna. (A 1027 existe: é da sessão da Kommo, aplicada
+    DEPOIS da 1030 — ver a entrada logo abaixo.)
+
+  - **1027_cb_historico_do_whatsapp** — o registro
+    `migracao_kommo.historico_whatsapp` e as funções
+    `cb_importar_historico_whatsapp` / `cb_desfazer_historico_whatsapp`: a
+    porta de escrita, por lote, do histórico de 2026 do WhatsApp trazido da
+    Evolution para as fichas com card (ver a seção "Histórico importado do
+    WhatsApp"). Numerada 1027 porque a faixa 1020 é da sessão da Kommo e a
+    1030+ é do merge do upstream; aplicada depois da 1030, então a ordem por
+    número não é a de aplicação (como a 1024, aplicada depois da 1026).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

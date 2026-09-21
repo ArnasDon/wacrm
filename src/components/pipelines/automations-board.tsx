@@ -142,7 +142,13 @@ export function AutomationsBoard({
         {linhas.flatMap((linha, r) =>
           linha.map((cartao) => (
             <Cartao
-              key={`${cartao.automation.id}-${cartao.colunaInicial}`}
+              // ⚠️ O TIPO entra na chave: a MESMA automação pode ocupar a
+              // MESMA coluna com dois cartões que dizem coisas diferentes —
+              // "chega nesta etapa" (um `move_deal_stage` apontando para ela)
+              // e "só roda nesta etapa" (o escopo). Sem o tipo, as duas
+              // viravam chaves irmãs iguais, e o React podia reusar o cartão
+              // errado ou sumir com um deles num redesenho (Codex, PR #234).
+              key={`${cartao.automation.id}-${cartao.tipo}-${cartao.colunaInicial}`}
               cartao={cartao}
               linha={r + 2}
               passos={steps[cartao.automation.id] ?? []}

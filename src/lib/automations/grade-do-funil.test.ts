@@ -319,6 +319,28 @@ describe('cartões de escopo', () => {
     expect(cartoesDeEscopo([comEscopo('c', ['e1'], 'conversation_assigned')], posicao)).toEqual([])
   })
 
+  it('CRÍTICO: a MESMA automação pode ter chegada E escopo na MESMA coluna', () => {
+    // É o que obriga a chave do React a incluir o TIPO (Codex, PR #234): sem
+    // ele, os dois cartões viram chaves irmãs iguais e um pode sumir no
+    // redesenho. Os dois são verdadeiros e dizem coisas diferentes — "leva o
+    // card para cá" e "só roda enquanto ele está aqui".
+    const a = {
+      id: 'dupla',
+      name: 'dupla',
+      trigger_type: 'calendly_booking',
+      trigger_config: {},
+      stage_ids: ['e2'],
+      is_active: true,
+    } as unknown as Automation
+    const steps = { dupla: [passo('dupla', 'move_deal_stage', { stage_id: 'e2' })] }
+    const cartoes = montarGrade([a], ETAPAS, steps).flat()
+    expect(cartoes).toHaveLength(2)
+    expect(cartoes.map((c) => c.tipo).sort()).toEqual(['chegada', 'escopo'])
+    // mesma automação, mesma coluna: só o tipo os distingue
+    expect(new Set(cartoes.map((c) => `${c.automation.id}-${c.colunaInicial}`)).size).toBe(1)
+    expect(new Set(cartoes.map((c) => `${c.automation.id}-${c.tipo}-${c.colunaInicial}`)).size).toBe(2)
+  })
+
   it('montarGrade empilha escopo, gatilho e chegada sem sobrepor', () => {
     const gat = auto('gat', ['e2'])
     const cal = outroGatilho('cal')

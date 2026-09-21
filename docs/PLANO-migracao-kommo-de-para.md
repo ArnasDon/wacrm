@@ -169,10 +169,12 @@ Bancário). Medido:
 | um card por lead (espelho da Kommo) | 12.687 | 266 |
 | um card por pessoa | 12.387 | 0 |
 | **um card por pessoa e área** ← escolhido | **12.389** | **2** |
+| ↳ mais os 222 extras com desfecho (seção 6b) | **12.611** | 2 |
 
-**298 leads não viram card** — e o teste de esforço de 20/09 mostrou que
-"só histórico" não é executável como estava escrito. ⚠️ **PERGUNTA EM ABERTO —
-ver a seção 6b.**
+**Os 298 leads extras se repartem em dois destinos** (fechado em 20/09, ver a
+seção 6b): os **222 que têm desfecho** ganham card próprio, fechado; os **76
+que continuam abertos** têm a trajetória FUNDIDA no card sobrevivente. Total:
+**12.611 cards**.
 
 **Quem sobrevive:** o lead mais recente entre os **abertos**; não havendo
 aberto, o mais recente de todos. É o que responde "onde essa pessoa está hoje".
@@ -214,39 +216,49 @@ carga.**
 
 ---
 
-## 6b. ⚠️ Em aberto: o que fazer com os 298 leads sem card
+## 6b. Os 298 leads extras — decidido em 20/09
 
 Todo evento de funil precisa de um `deal_id` que EXISTA. Não há chave
 estrangeira, então um id inventado entra no banco — mas a trajetória some das
-três vistas do funil (fica só na ficha do contato). E pendurar os eventos no
-card sobrevivente faz o funil contar um contrato que não tem card: um contato
-com um lead antigo GANHO e um lead novo ABERTO viraria um card parado em
-"Entrada Avulsa" afirmando que alcançou contrato.
+três vistas do funil (fica só na ficha do contato). E pendurar TODOS os eventos
+no card sobrevivente faz o funil contar um contrato que não tem card: um
+contato com um lead antigo GANHO e um lead novo ABERTO viraria um card parado
+em "Entrada Avulsa" afirmando que alcançou contrato.
 
 Medido em 20/09, os 298 se repartem assim:
 
-| Situação do lead extra | Leads |
-| --- | ---: |
-| Ganho | 123 |
-| Perdido | 71 |
-| **Aberto** | **104** — dos quais 28 pousam em etapa com `resultado` e fecham sozinhos |
+| Situação do lead extra | Leads | Destino |
+| --- | ---: | --- |
+| Ganho | 123 | **card próprio, fechado** |
+| Perdido | 71 | **card próprio, fechado** |
+| Aberto, mas pousa em etapa com `resultado` | 28 | **card próprio** (o gatilho da 950 o fecha ao entrar) |
+| **Aberto de verdade** | **76** | **trajetória fundida no card sobrevivente** |
 
-Sobram **76** que virariam um segundo card ABERTO da mesma pessoa na mesma
-área — exatamente o que a decisão C existe para evitar.
+**A régua:** *lead que chegou a um desfecho é um caso distinto e ganha o próprio
+card fechado; lead ainda aberto é entrada duplicada da mesma jornada e se
+funde.* Dois leads abertos da mesma pessoa na MESMA ÁREA são a duplicata que a
+Kommo fabricava — é ela que a decisão C existe para desfazer. E nenhum card
+ABERTO se duplica, que era o custo que fazia a opção "um card por lead" ser
+recusada.
 
-**As três saídas:**
+**Total: 12.611 cards.** As três saídas que foram descartadas: card para todos
+os 298 (12.687, com 76 pessoas tendo dois cards abertos) e "só histórico" com
+id inventado (a história dos 298 sumiria do Desempenho e da Saúde).
 
-- **(1) Card para todos os 298** (total 12.687). Métrica íntegra, nada some.
-  Custo: 76 pessoas com dois cards abertos. O CRM tolera isso — as automações
-  agem sobre o negócio aberto mais recente, então não há disparo em dobro —,
-  mas o Kanban mostra a mesma pessoa duas vezes.
-- **(2) Card só para os que tiveram desfecho** (194 + 28 = 222; total 12.611) e
-  a trajetória dos 76 abertos fundida no card sobrevivente. Dois leads abertos
-  da mesma pessoa na mesma área são a duplicata que a Kommo fabricava, e fundir
-  a jornada deles é o que descreve a realidade. É a recomendação.
-- **(3) Manter "só histórico"** com id inventado: a história dos 298 desaparece
-  do Desempenho e da Saúde, ficando só na ficha.
+⚠️ **Fundir é seguro para a métrica, e o motivo é o alcance ser monotônico:** a
+trajetória do lead fundido acrescenta ao sobrevivente os degraus por onde
+aquela pessoa passou, o que é verdade sobre a pessoa. O caso que estragaria —
+um extra que alcançou `contrato` fundido num card aberto — não existe aqui: os
+26 extras abertos em "Protocolado" pousam numa etapa com `resultado = ganho` e
+portanto estão entre os 28 que ganham card próprio, não entre os 76.
 
+⚠️⚠️ **A idempotência dos eventos fundidos vem do CARD, não do evento.**
+`cb_lead_events` não tem restrição única, então reexecutar a carga duplicaria os
+eventos dos 76 — eles não têm `deals.kommo_lead_id` próprio, porque não têm card.
+A regra que fecha isso: **se o card sobrevivente já existe (por
+`kommo_lead_id`), o GRUPO inteiro é pulado — eventos fundidos inclusive.** A
+procedência de cada lead fundido continua legível em
+`cb_lead_events.details->>'kommo_lead_id'`.
 
 ## 7. Etiquetas — reusa 8, cria 1
 

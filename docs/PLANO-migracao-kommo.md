@@ -696,14 +696,28 @@ etapa atual) e `to_pipeline_id` = o funil daquela etapa.
     `(occurred_at, id)`; dois movimentos do mesmo lead no mesmo segundo saem em
     ordem sorteada. A carga desempata com microssegundos incrementais na ordem
     em que a Kommo devolveu.
-17. **Os 298 leads "só histórico" precisam de um `deal_id` que exista.** Não há
-    FK, então um id sintético não estoura — mas o evento órfão some do funil, e
-    pendurá-lo no card sobrevivente faz o funil contar um contrato que não tem
-    card (um contato com um lead antigo ganho e um novo aberto viraria um card
-    em "Entrada Avulsa" com `alcancouContrato = true`). **Decisão tomada: criar
-    card para os 298 também**, com o status e a etapa finais deles — não há
-    órfão nem fusão, e a métrica fica íntegra. Isso leva o total de cards de
-    12.389 para **12.687**, e são 298 cards fechados a mais no Kanban.
+17. **Os 298 leads extras: 222 ganham card fechado, 76 se fundem.** Todo
+    evento precisa de um `deal_id` que EXISTA; sem FK, um id inventado entra no
+    banco mas a trajetória some das três vistas do funil, e pendurar todos no
+    card sobrevivente faz o funil contar um contrato que não tem card. A régua
+    fechada em 20/09 (seção 6b do de-para): **lead com desfecho é caso distinto
+    e ganha card próprio** (123 ganhos + 71 perdidos + 28 que fecham ao pousar
+    numa etapa com `resultado`); **lead ainda aberto é entrada duplicada da
+    mesma jornada e a trajetória dele se funde no sobrevivente** (76). Total de
+    cards: **12.611**.
+    ⚠️ Fundir é seguro porque o alcance é monotônico — a trajetória fundida
+    acrescenta ao sobrevivente os degraus por onde aquela pessoa passou, o que
+    é verdade sobre a pessoa. O caso que estragaria (um extra que alcançou
+    `contrato` fundido num card aberto) não existe: os 26 extras abertos em
+    "Protocolado" pousam numa etapa com `resultado = ganho` e estão entre os 28
+    que ganham card próprio.
+    ⚠️⚠️ **A idempotência dos eventos fundidos vem do CARD.** Os 76 não têm
+    `deals.kommo_lead_id` porque não têm card, e `cb_lead_events` não tem
+    restrição única — reexecutar duplicaria os eventos deles em silêncio. A
+    regra: **se o card sobrevivente já existe, o grupo inteiro é pulado,
+    eventos fundidos inclusive.** A procedência de cada lead fundido continua
+    legível em `cb_lead_events.details->>'kommo_lead_id'`.
+
 
 ### D. Contato, etiqueta, campo
 

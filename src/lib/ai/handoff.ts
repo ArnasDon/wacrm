@@ -17,7 +17,7 @@ const MAX_QUOTE_LEN = 160
  * commercial one.
  */
 export const DEFAULT_HANDOFF_MESSAGE =
-  'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.'
+  'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.'
 
 interface HandoffNoticeArgs {
   accountId: string

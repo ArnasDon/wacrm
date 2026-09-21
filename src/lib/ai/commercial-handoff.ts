@@ -51,9 +51,9 @@ export function checkHandoffReadiness(input: HandoffReadinessInput): HandoffRead
 }
 
 const MISSING_FIELD_LABELS: Record<MissingHandoffField, string> = {
-  name: 'o teu nome',
-  email: 'o teu email',
-  reason: 'o motivo do que precisas',
+  name: 'o seu nome',
+  email: 'o seu email',
+  reason: 'o motivo do que precisa',
   company: 'o nome da empresa',
 }
 
@@ -68,7 +68,7 @@ export function buildMissingInfoNudge(missing: MissingHandoffField[]): string {
   const labels = missing.map((field) => MISSING_FIELD_LABELS[field])
   return (
     `Antes de chamar aqui alguém da equipa, preciso só de ${joinPt(labels)}, ` +
-    'para saberem com quem vão falar e sobre o quê. Podes dizer-me?'
+    'para saberem com quem vão falar e sobre o quê. Pode dizer-me?'
   )
 }
 

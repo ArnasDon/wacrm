@@ -279,7 +279,7 @@ describe('dispatchInboundToAiReply — handoff', () => {
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({
         aiGenerated: false,
-        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
     expect(h.state.rpcCalls).toHaveLength(0)
@@ -434,7 +434,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
       expect.objectContaining({
         conversationId: 'conv-1',
         aiGenerated: false,
-        text: expect.stringContaining('Obrigado por nos contactares'),
+        text: expect.stringContaining('Obrigado por nos contactar'),
       }),
     )
     expect(h.engineSendText).toHaveBeenNthCalledWith(
@@ -499,7 +499,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
       2,
       expect.objectContaining({
         aiGenerated: false,
-        text: expect.stringContaining('Recebemos a tua mensagem'),
+        text: expect.stringContaining('Recebemos a sua mensagem'),
       }),
     )
     // The reply-cap RPC is never reached on the failure path.
@@ -524,7 +524,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
     expect(h.engineSendText).toHaveBeenCalledTimes(2)
     expect(h.engineSendText).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ text: expect.stringContaining('Recebemos a tua mensagem') }),
+      expect.objectContaining({ text: expect.stringContaining('Recebemos a sua mensagem') }),
     )
     warnSpy.mockRestore()
   })
@@ -549,7 +549,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
       2,
       expect.objectContaining({
         aiGenerated: false,
-        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
@@ -659,7 +659,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
       2,
       expect.objectContaining({
         aiGenerated: false,
-        text: expect.stringContaining('o teu email'),
+        text: expect.stringContaining('o seu email'),
       }),
     )
     expect(h.state.updatePayload).toEqual({ handoff_blocked_attempts: 1 })
@@ -675,7 +675,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
 
     expect(h.engineSendText).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ text: expect.stringContaining('o teu nome') }),
+      expect.objectContaining({ text: expect.stringContaining('o seu nome') }),
     )
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
   })
@@ -688,7 +688,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
 
     expect(h.engineSendText).toHaveBeenNthCalledWith(
       2,
-      expect.objectContaining({ text: expect.stringContaining('o motivo do que precisas') }),
+      expect.objectContaining({ text: expect.stringContaining('o motivo do que precisa') }),
     )
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
   })
@@ -719,7 +719,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
     expect(h.engineSendText).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({
-        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
     // Correcção 3 — já não desliga o auto-reply: marca team_requested_at.
@@ -781,7 +781,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
     expect(h.engineSendText).toHaveBeenCalledTimes(1) // a mensagem de handoff
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
@@ -824,7 +824,7 @@ describe('dispatchInboundToAiReply — Bloco 3-A trava do handoff (nome, email, 
     expect(h.engineSendText).toHaveBeenCalledTimes(1)
     expect(h.engineSendText).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: 'Vou pedir a alguém da equipa que lhe responda. Fica atento, respondemos por aqui.',
+        text: 'Vou pedir a alguém da equipa que lhe responda. Fique atento, respondemos por aqui.',
       }),
     )
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })

@@ -61,7 +61,7 @@ export async function sendReminderHandler(
         kind,
         sendAt,
         payload: {
-          freeText: `Lembrete: tens uma reunião marcada. Até já!`,
+          freeText: `Lembrete: tem uma reunião marcada. Até já!`,
         },
       },
     ])

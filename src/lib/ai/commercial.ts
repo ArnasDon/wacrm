@@ -46,9 +46,9 @@ export function isCommercialConversation(
  * required by Bloco 3-A.
  */
 export const DEFAULT_COMMERCIAL_WELCOME_MESSAGE =
-  'Olá! Obrigado por nos contactares. 😊 ' +
-  'Somos a equipa comercial e estamos aqui para perceber melhor o teu negócio e ver como podemos ajudar. ' +
-  'Em que empresa ou projecto estás, e que problema gostavas de resolver?'
+  'Olá! Obrigado por nos contactar. 😊 ' +
+  'Somos a equipa comercial e estamos aqui para perceber melhor o seu negócio e ver como podemos ajudar. ' +
+  'Em que empresa ou projecto está, e que problema gostava de resolver?'
 
 /**
  * Fixed fallback sent when the AI call fails, times out, or returns no
@@ -59,7 +59,7 @@ export const DEFAULT_COMMERCIAL_WELCOME_MESSAGE =
  * from the inbox regardless.
  */
 export const DEFAULT_COMMERCIAL_FALLBACK_MESSAGE =
-  'Recebemos a tua mensagem, obrigado! Estamos só a confirmar uns detalhes e respondemos já de seguida.'
+  'Recebemos a sua mensagem, obrigada. Estamos só a confirmar uns detalhes e respondemos já de seguida.'
 
 interface WelcomeArgs {
   db: SupabaseClient

@@ -93,17 +93,17 @@ describe('checkHandoffReadiness', () => {
 describe('buildMissingInfoNudge', () => {
   it('mentions a single missing field naturally', () => {
     const text = buildMissingInfoNudge(['email'])
-    expect(text).toContain('preciso só de o teu email,')
+    expect(text).toContain('preciso só de o seu email,')
   })
 
   it('joins two missing fields with "e"', () => {
     const text = buildMissingInfoNudge(['name', 'email'])
-    expect(text).toContain('o teu nome e o teu email')
+    expect(text).toContain('o seu nome e o seu email')
   })
 
   it('joins three missing fields with commas and a final "e"', () => {
     const text = buildMissingInfoNudge(['name', 'email', 'reason'])
-    expect(text).toContain('o teu nome, o teu email e o motivo do que precisas')
+    expect(text).toContain('o seu nome, o seu email e o motivo do que precisa')
   })
 
   it('mentions the company name when it is the missing field', () => {
@@ -114,7 +114,7 @@ describe('buildMissingInfoNudge', () => {
   it('joins four missing fields (incluindo empresa) com vírgulas e um "e" final', () => {
     const text = buildMissingInfoNudge(['name', 'email', 'reason', 'company'])
     expect(text).toContain(
-      'o teu nome, o teu email, o motivo do que precisas e o nome da empresa',
+      'o seu nome, o seu email, o motivo do que precisa e o nome da empresa',
     )
   })
 

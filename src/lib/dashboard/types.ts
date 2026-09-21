@@ -10,8 +10,15 @@ export interface MetricDelta {
 export interface MetricsBundle {
   activeConversations: MetricDelta
   newContactsToday: MetricDelta
-  openDealsValue: number
-  openDealsCount: number
+  /**
+   * ⚠️ `null` = NÃO SABEMOS. A leitura dos negócios abertos percorre milhares
+   * de linhas e pode voltar incompleta (teto de páginas, consulta recusada,
+   * coleção mudando no meio); nesse caso o cartão ESCONDE o número em vez de
+   * publicar a soma parcial. Soma parcial apresentada como total é plausível,
+   * estável entre recarregamentos e menor que a verdade — ninguém desconfia.
+   * Os dois campos andam juntos: ou se sabe o valor e a contagem, ou nenhum.
+   */
+  openDeals: { value: number; count: number } | null
   messagesSentToday: MetricDelta
 }
 
@@ -29,10 +36,21 @@ export interface PipelineStageSlice {
   totalValue: number
 }
 
-export interface PipelineDonutData {
+export interface PipelineDonutSlices {
   stages: PipelineStageSlice[]
   totalValue: number
 }
+
+/**
+ * ⚠️ `confiavel: false` = NÃO SABEMOS: a leitura dos negócios (ou das etapas)
+ * não voltou completa. É união discriminada, e não campos anuláveis, para o
+ * compilador COBRAR o caso de quem desenhar a rosca — desenhá-la com metade
+ * dos negócios daria um anel bonito, com todas as fatias menores que a
+ * verdade e nada na tela dizendo isso.
+ */
+export type PipelineDonutData =
+  | ({ confiavel: true } & PipelineDonutSlices)
+  | { confiavel: false }
 
 export interface ResponseTimeBucket {
   /** 0 = Mon … 6 = Sun (Monday-first). */

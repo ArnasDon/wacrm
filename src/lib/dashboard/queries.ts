@@ -17,6 +17,7 @@ import type {
   ResponseTimeSummary,
 } from './types'
 import { nomeDoContato } from '@/lib/contacts/identidade'
+import { buscarPaginado } from '@/lib/supabase/paginar'
 
 // ------------------------------------------------------------
 // All client-side aggregation. RLS scopes every query to the
@@ -66,6 +67,68 @@ export function porCanal<Q>(query: Q, channelId?: string | null): Q {
     'channel_id',
     channelId,
   )
+}
+
+// ------------------------------------------------------------
+// OS NEGÓCIOS ABERTOS — a única leitura do painel que traz LINHAS em volume.
+//
+// ⚠️⚠️ As duas consultas de `deals` do painel (o cartão "Valor dos negócios
+// abertos" e a rosca por etapa) liam sem `range` e sem `count`. O PostgREST
+// corta em ~1000 linhas SEM AVISAR: volta `error: null`, mil linhas e cara de
+// completa. Hoje a conta tem 976 negócios e o defeito não aparece; a carga da
+// Kommo traz ~12.700 de uma vez (`docs/PLANO-migracao-kommo.md`), e a partir
+// desse dia o cartão somaria MIL negócios arbitrários e publicaria o resultado
+// como total — número plausível, estável entre recarregamentos e MENOR que a
+// verdade. É a pior categoria de erro de painel: ninguém desconfia dele.
+//
+// `linhas: null` = NÃO SABEMOS, e quem chama tem de esconder o número. Soma
+// parcial apresentada como total é exatamente o que isto existe para impedir.
+//
+// 🔭 O certo seria AGREGAR NO BANCO: o painel não precisa das linhas, precisa
+// de `sum(value)` e `count(*)` por etapa. Isso pede migration (uma RPC) e
+// ficou de fora — hoje o painel baixa a mesma coleção DUAS vezes por carga,
+// porque o cartão e a rosca são duas chamadas independentes na página.
+// ------------------------------------------------------------
+
+function lerNegociosAbertos<T>(db: DB, colunas: string, channelId?: string | null) {
+  return buscarPaginado<T>(async (de, ate) => {
+    const { data, error, count } = await porCanal(
+      db.from('deals').select(colunas, { count: 'exact' }).eq('status', 'open'),
+      channelId,
+    )
+      // ⚠️ A ordem aqui NÃO é de exibição — nada nesta leitura é exibido em
+      // ordem, tudo vira soma. Ela existe porque `range` sem `order` é
+      // LIMIT/OFFSET sobre ordem INDEFINIDA: uma linha que troca de posição
+      // entre duas páginas vem duas vezes numa e some da outra, e a soma sai
+      // errada sem erro nenhum. `id` é único, então desempata sozinho (o
+      // quadro do funil precisa somar `id` ao `created_at` justamente porque
+      // lá a ordem TAMBÉM é a da tela).
+      .order('id', { ascending: true })
+      .range(de, ate)
+    return { data: (data ?? null) as T[] | null, error, count }
+  })
+}
+
+/** O erro do Supabase tem propriedades NÃO enumeráveis — logar campo a campo. */
+function registrarLeituraDuvidosa(
+  onde: string,
+  resultado: {
+    motivo: string | null
+    erro: {
+      message: string
+      details?: string | null
+      hint?: string | null
+      code?: string | null
+    } | null
+  },
+) {
+  console.error(`[dashboard] ${onde}: leitura de negócios não confiável`, {
+    motivo: resultado.motivo,
+    message: resultado.erro?.message,
+    details: resultado.erro?.details,
+    hint: resultado.erro?.hint,
+    code: resultado.erro?.code,
+  })
 }
 
 // ------------------------------------------------------------
@@ -150,7 +213,7 @@ export async function loadMetrics(
       .select('id', { count: 'exact', head: true })
       .gte('created_at', yesterdayStart)
       .lt('created_at', todayStart),
-    porCanal(db.from('deals').select('value, status').eq('status', 'open'), channelId),
+    lerNegociosAbertos<{ value: number | null }>(db, 'value', channelId),
     porCanal(
       semGrupo(
         db
@@ -174,9 +237,9 @@ export async function loadMetrics(
     ),
   ])
 
-  // As oito consultas acima devolvem `{ count, data, error }` sem lançar, e
-  // o código só lia `count ?? 0`. Uma falha virava CARTÃO ZERADO: o painel
-  // afirmava "0 conversas ativas" quando na verdade a consulta nem
+  // As sete consultas de CONTAGEM acima devolvem `{ count, data, error }` sem
+  // lançar, e o código só lia `count ?? 0`. Uma falha virava CARTÃO ZERADO: o
+  // painel afirmava "0 conversas ativas" quando na verdade a consulta nem
   // respondeu. Zero é um número plausível — ninguém desconfia dele. Agora a
   // falha sobe e o chamador registra o erro em vez de mostrar mentira.
   const falha = [
@@ -185,14 +248,22 @@ export async function loadMetrics(
     newConvYesterday,
     newContactsToday,
     newContactsYesterday,
-    openDeals,
     messagesToday,
     messagesYesterday,
   ].find((r) => r.error)
   if (falha?.error) throw falha.error
 
-  const openDealsRows = (openDeals.data ?? []) as { value: number | null }[]
-  const openDealsValue = openDealsRows.reduce((sum, d) => sum + (d.value ?? 0), 0)
+  // ⚠️ A leitura de negócios NÃO entra naquela lista, e a diferença é
+  // deliberada: as sete acima são `count/head` (uma linha de resposta, ou
+  // falha), enquanto esta percorre milhares de linhas e tem um terceiro
+  // estado — "veio incompleta". Derrubar a função aqui apagaria os TRÊS
+  // cartões que estão certos por causa do quarto. O quarto admite que não
+  // sabe; os outros continuam na tela.
+  if (!openDeals.linhas) registrarLeituraDuvidosa('cartão de negócios', openDeals)
+  const negociosAbertos = openDeals.linhas && {
+    value: openDeals.linhas.reduce((soma, d) => soma + (d.value ?? 0), 0),
+    count: openDeals.linhas.length,
+  }
 
   return {
     activeConversations: {
@@ -206,8 +277,7 @@ export async function loadMetrics(
       current: newContactsToday.count ?? 0,
       previous: newContactsYesterday.count ?? 0,
     },
-    openDealsValue,
-    openDealsCount: openDealsRows.length,
+    openDeals: negociosAbertos,
     messagesSentToday: {
       current: messagesToday.count ?? 0,
       previous: messagesYesterday.count ?? 0,
@@ -257,16 +327,37 @@ export async function loadPipelineDonut(
 ): Promise<PipelineDonutData> {
   const [stagesRes, dealsRes] = await Promise.all([
     // Etapas NÃO se filtram por canal: elas são do funil, não do número.
+    // Também não paginam: são dezenas por conta, criadas à mão pelo operador
+    // — a carga da Kommo traz NEGÓCIOS, não etapas.
     db.from('pipeline_stages').select('id, name, color, pipeline_id, position').order('position'),
-    porCanal(
-      db.from('deals').select('stage_id, value, status').eq('status', 'open'),
+    lerNegociosAbertos<{ stage_id: string; value: number | null }>(
+      db,
+      'stage_id, value',
       channelId,
     ),
   ])
 
+  // ⚠️ Sem as etapas não há como NOMEAR fatia nenhuma, e o código antigo lia
+  // `stagesRes.data ?? []`: a consulta que falhava virava rosca vazia, e a
+  // rosca vazia diz "Nenhum negócio aberto ainda" — lista vazia virando
+  // AFIRMAÇÃO, sobre uma conta que pode ter milhares de negócios em aberto.
+  if (stagesRes.error) {
+    console.error('[dashboard] rosca do funil: etapas não carregaram', {
+      message: stagesRes.error.message,
+      details: stagesRes.error.details,
+      hint: stagesRes.error.hint,
+      code: stagesRes.error.code,
+    })
+    return { confiavel: false }
+  }
+  if (!dealsRes.linhas) {
+    registrarLeituraDuvidosa('rosca do funil', dealsRes)
+    return { confiavel: false }
+  }
+
   const stages =
     (stagesRes.data ?? []) as { id: string; name: string; color: string }[]
-  const deals = (dealsRes.data ?? []) as { stage_id: string; value: number | null }[]
+  const deals = dealsRes.linhas
 
   const byStage = new Map<string, { count: number; total: number }>()
   for (const d of deals) {
@@ -290,6 +381,7 @@ export async function loadPipelineDonut(
     .filter((s) => s.totalValue > 0 || s.dealCount > 0)
 
   return {
+    confiavel: true,
     stages: slices,
     totalValue: slices.reduce((sum, s) => sum + s.totalValue, 0),
   }

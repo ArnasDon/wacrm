@@ -1,7 +1,7 @@
 "use client"
 
-import { GitBranch } from 'lucide-react'
-import type { PipelineDonutData } from '@/lib/dashboard/types'
+import { AlertTriangle, GitBranch } from 'lucide-react'
+import type { PipelineDonutData, PipelineDonutSlices } from '@/lib/dashboard/types'
 import { formatCurrencyShort } from '@/lib/currency'
 import { EmptyState } from './empty-state'
 import { Skeleton } from './skeleton'
@@ -27,6 +27,16 @@ export function PipelineDonut({ data, loading }: PipelineDonutProps) {
       <div className="flex flex-1 flex-col p-5">
         {loading || !data ? (
           <Skeleton className="h-56 w-full" />
+        ) : !data.confiavel ? (
+          // ⚠️ NÃO cair no "Nenhum negócio aberto ainda" daqui: a leitura que
+          // volta incompleta não é uma conta sem negócios, e dizer isso a um
+          // escritório com milhares em aberto é a mentira mais cara que um
+          // painel pode contar.
+          <EmptyState
+            icon={AlertTriangle}
+            title={t('unknown')}
+            hint={t('unknownHint')}
+          />
         ) : data.stages.length === 0 ? (
           <EmptyState
             icon={GitBranch}
@@ -67,7 +77,7 @@ export function PipelineDonut({ data, loading }: PipelineDonutProps) {
 // between segments are implied by a thin slate-900 stroke between
 // them for a cleaner look.
 // ------------------------------------------------------------
-function Donut({ data }: { data: PipelineDonutData }) {
+function Donut({ data }: { data: PipelineDonutSlices }) {
   const t = useTranslations('Dashboard.pipelineDonut')
   const size = 200
   const r = 80

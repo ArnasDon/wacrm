@@ -10,6 +10,11 @@ import {
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
 import { normalizeKey } from '@/lib/contacts/dedupe';
+import {
+  buscarPaginado,
+  type ErroDoPostgrest,
+  type MotivoDaDesconfianca,
+} from '@/lib/supabase/paginar';
 import { Contact, MessageTemplate } from '@/types';
 
 export type CustomFieldOperator = 'is' | 'is_not' | 'contains';
@@ -84,6 +89,57 @@ const SEND_BATCH_DELAY_MS = 1000;
 
 /** `broadcast_recipients` inserts are independent of the send rate. */
 const INSERT_BATCH_SIZE = 200;
+
+/**
+ * Quantos ids cabem num `.in(...)` sem estourar a linha de requisição.
+ *
+ * ⚠️ O PostgREST vai por GET e o `.in()` viaja na URL: cada UUID custa 37
+ * caracteres, então 100 ids dão ~3,7 KB de query string — folgado sob os
+ * ~8 KB que proxy e servidor aceitam. A audiência inteira num `.in()` só
+ * (12.980 contatos depois da carga da Kommo) passaria de 480 KB, e a
+ * requisição seria recusada com um erro que não fala de tamanho nenhum.
+ */
+export const IDS_POR_CONSULTA = 100;
+
+/** Reparte uma lista em fatias de no máximo `tamanho`. A última é a sobra. */
+export function emFatias<T>(lista: T[], tamanho: number): T[][] {
+  const fatias: T[][] = [];
+  for (let i = 0; i < lista.length; i += tamanho) {
+    fatias.push(lista.slice(i, i + tamanho));
+  }
+  return fatias;
+}
+
+/**
+ * `linhas: null` de `buscarPaginado` é o contrato "NÃO CONFIE" — nunca uma
+ * lista parcial. Num disparo isso tem de ABORTAR, e a ordem de gravidade é
+ * esta: mandar de menos é ruim; mandar para quem a EXCLUSÃO deveria ter
+ * poupado é pior; e gravar `broadcasts.total_recipients = 12.980` tendo
+ * enviado para 1.000 é o pior dos três — a campanha fica com o relatório
+ * mentindo para sempre, e não sobra como descobrir quem ficou de fora.
+ *
+ * A mensagem sobe crua para o `toast.error` do assistente
+ * (`broadcasts/new/page.tsx`), então diz O QUE não foi lido e POR QUÊ:
+ * "a consulta falhou" e "passou do teto" pedem providências diferentes.
+ */
+export function erroDeLeituraParcial(
+  oQueFaltou: string,
+  motivo: MotivoDaDesconfianca | null,
+  erro: ErroDoPostgrest | null,
+): Error {
+  const porque: Record<MotivoDaDesconfianca, string> = {
+    erro: 'a consulta ao banco falhou',
+    sem_contagem: 'o banco não devolveu o total de linhas',
+    incompleto: 'a lista mudou enquanto era lida',
+    teto: 'passou do teto de 25.000 linhas por consulta',
+  };
+  const detalhe = erro?.message ? ` (${erro.message})` : '';
+  return new Error(
+    `Disparo cancelado: não foi possível ler ${oQueFaltou} por inteiro — ` +
+      `${motivo ? porque[motivo] : 'motivo desconhecido'}${detalhe}. ` +
+      'Nada foi enviado.',
+  );
+}
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -164,8 +220,102 @@ async function marcarDestinatario(
 }
 
 /**
+ * Os contatos da conta. `ids === null` traz todos; uma lista traz só eles.
+ *
+ * ⚠️⚠️ PAGINADA, e aqui o corte silencioso de 1000 linhas do PostgREST não
+ * deixa uma tela incompleta — deixa uma CAMPANHA incompleta que se declara
+ * completa. A audiência "todos os contatos" já passa de mil HOJE (1.212
+ * contatos, contra o teto de 1000), e depois da carga da Kommo são ~12.980:
+ * a tela dizia "12.980 destinatários", `total_recipients` gravava 12.980 e
+ * o envio saía para uma amostra ARBITRÁRIA de mil — sem erro, sem toast,
+ * sem nada no console. O `.in()` por fatias é a segunda metade do conserto:
+ * ver `IDS_POR_CONSULTA`.
+ */
+async function lerContatos(
+  supabase: ReturnType<typeof createClient>,
+  ids: string[] | null,
+): Promise<Contact[]> {
+  const fatias: (string[] | null)[] =
+    ids === null ? [null] : emFatias(ids, IDS_POR_CONSULTA);
+  const contatos: Contact[] = [];
+
+  for (const fatia of fatias) {
+    const { linhas, erro, motivo } = await buscarPaginado<Contact>(
+      async (de, ate) => {
+        const base = supabase.from('contacts').select('*', { count: 'exact' });
+        // O `.in()` antes de `order`/`range`: depois deles o builder já não
+        // aceita filtro, e a ordem tem de desempatar por coluna única.
+        const { data, error, count } = await (fatia ? base.in('id', fatia) : base)
+          .order('id', { ascending: true })
+          .range(de, ate);
+        return { data: (data ?? null) as Contact[] | null, error, count };
+      },
+    );
+    if (!linhas) {
+      throw erroDeLeituraParcial('a lista de contatos da audiência', motivo, erro);
+    }
+    contatos.push(...linhas);
+  }
+
+  return contatos;
+}
+
+/**
+ * Os `contact_id` que carregam qualquer uma das etiquetas.
+ *
+ * ⚠️⚠️ A EXCLUSÃO depende desta paginação mais que a inclusão. A etiqueta
+ * `kommo` é a rede de proteção da migração — vai estar em ~12.980 fichas —,
+ * e cortada em 1000 ela conheceria 8% dos importados e deixaria a campanha
+ * alcançar os outros 92%. Exclusão que enxerga 8% é PIOR que exclusão
+ * nenhuma: a tela afirma que protegeu.
+ */
+async function contatosComAsEtiquetas(
+  supabase: ReturnType<typeof createClient>,
+  tagIds: string[],
+): Promise<string[]> {
+  const contactIds = new Set<string>();
+
+  for (const fatia of emFatias(tagIds, IDS_POR_CONSULTA)) {
+    const { linhas, erro, motivo } = await buscarPaginado<{ contact_id: string }>(
+      async (de, ate) => {
+        const { data, error, count } = await supabase
+          .from('contact_tags')
+          .select('contact_id', { count: 'exact' })
+          .in('tag_id', fatia)
+          .order('id', { ascending: true })
+          .range(de, ate);
+        return {
+          data: (data ?? null) as { contact_id: string }[] | null,
+          error,
+          count,
+        };
+      },
+    );
+    if (!linhas) {
+      throw erroDeLeituraParcial('os contatos das etiquetas', motivo, erro);
+    }
+    for (const linha of linhas) contactIds.add(linha.contact_id);
+  }
+
+  return [...contactIds];
+}
+
+/**
  * Bulk-fetch contact_custom_values for a set of contacts. Returns an
  * index keyed by contact_id → field_id → value.
+ *
+ * ⚠️⚠️ A fatia é de CONTATOS, mas a consulta devolve N LINHAS POR CONTATO —
+ * uma por campo preenchido. Com os 500 contatos por volta da versão
+ * anterior e ~15 campos no catálogo desta conta, cada volta pedia ~7.500
+ * linhas e o PostgREST devolvia as primeiras mil, sem erro nenhum. O
+ * estrago não aparece aqui: aparece no texto que chega ao CLIENTE, com a
+ * variável vazia ("Olá , sobre sua dívida de "), ou num `failed` que a Meta
+ * devolve depois. Por isso são DUAS defesas — fatia pequena E cada fatia
+ * paginada até o fim.
+ *
+ * ⚠️ E a falha deixou de ser engolida (`const { data }` descartava o
+ * `error`): índice incompleto é indistinguível de "o contato não tem esse
+ * campo", e o disparo seguiria com placeholder vazio. Aborta.
  */
 async function fetchCustomValueIndex(
   supabase: ReturnType<typeof createClient>,
@@ -174,17 +324,35 @@ async function fetchCustomValueIndex(
   const index: CustomValueIndex = new Map();
   if (contactIds.length === 0) return index;
 
-  // Supabase PostgREST caps the .in(...) IN-clause roughly at 1000
-  // values. Page through to stay safe.
-  const PAGE = 500;
-  for (let i = 0; i < contactIds.length; i += PAGE) {
-    const slice = contactIds.slice(i, i + PAGE);
-    const { data } = await supabase
-      .from('contact_custom_values')
-      .select('contact_id, custom_field_id, value')
-      .in('contact_id', slice);
+  for (const fatia of emFatias(contactIds, IDS_POR_CONSULTA)) {
+    const { linhas, erro, motivo } = await buscarPaginado<{
+      contact_id: string;
+      custom_field_id: string;
+      value: string | null;
+    }>(async (de, ate) => {
+      const { data, error, count } = await supabase
+        .from('contact_custom_values')
+        .select('contact_id, custom_field_id, value', { count: 'exact' })
+        .in('contact_id', fatia)
+        .order('id', { ascending: true })
+        .range(de, ate);
+      return {
+        data: (data ?? null) as
+          | { contact_id: string; custom_field_id: string; value: string | null }[]
+          | null,
+        error,
+        count,
+      };
+    });
+    if (!linhas) {
+      throw erroDeLeituraParcial(
+        'os valores dos campos personalizados',
+        motivo,
+        erro,
+      );
+    }
 
-    for (const row of data ?? []) {
+    for (const row of linhas) {
       const bucket = index.get(row.contact_id) ?? new Map<string, string>();
       bucket.set(row.custom_field_id, row.value ?? '');
       index.set(row.contact_id, bucket);
@@ -205,32 +373,18 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     let contacts: Contact[] = [];
 
     if (audience.type === 'all') {
-      const { data, error } = await supabase.from('contacts').select('*');
-      if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-      contacts = data ?? [];
+      contacts = await lerContatos(supabase, null);
     } else if (
       audience.type === 'tags' &&
       audience.tagIds &&
       audience.tagIds.length > 0
     ) {
-      const { data: contactTags, error: tagError } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.tagIds);
-
-      if (tagError)
-        throw new Error(`Failed to fetch contact tags: ${tagError.message}`);
-
-      if (contactTags && contactTags.length > 0) {
-        const uniqueContactIds = [
-          ...new Set(contactTags.map((ct) => ct.contact_id)),
-        ];
-        const { data, error } = await supabase
-          .from('contacts')
-          .select('*')
-          .in('id', uniqueContactIds);
-        if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-        contacts = data ?? [];
+      const uniqueContactIds = await contatosComAsEtiquetas(
+        supabase,
+        audience.tagIds,
+      );
+      if (uniqueContactIds.length > 0) {
+        contacts = await lerContatos(supabase, uniqueContactIds);
       }
     } else if (audience.type === 'custom_field' && audience.customField) {
       contacts = await resolveCustomFieldAudience(supabase, audience.customField);
@@ -245,12 +399,15 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
 
     // Apply exclude tags (works across all contact-derived audience
     // types). CSV contacts are synthetic so exclusion doesn't apply.
+    //
+    // ⚠️ A falha aqui também deixou de ser engolida (`const { data: excludeRows }`
+    // descartava o `error`): exclusão que não foi lida vira conjunto vazio, e
+    // conjunto vazio é indistinguível de "ninguém a poupar" — a campanha sai
+    // para todo mundo achando que respeitou o filtro.
     if (audience.excludeTagIds && audience.excludeTagIds.length > 0) {
-      const { data: excludeRows } = await supabase
-        .from('contact_tags')
-        .select('contact_id')
-        .in('tag_id', audience.excludeTagIds);
-      const excludedIds = new Set((excludeRows ?? []).map((r) => r.contact_id));
+      const excludedIds = new Set(
+        await contatosComAsEtiquetas(supabase, audience.excludeTagIds),
+      );
       contacts = contacts.filter((c) => !excludedIds.has(c.id));
     }
 
@@ -308,6 +465,17 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     // `phone_normalized` column (upstream #532), the same digits-only key
     // as `normalizeKey`, so "+55 (11) 9..." in the CSV finds the contact
     // stored as "5511 9..." instead of trying to insert it again.
+    //
+    // ⚠️⚠️ ESTA CONSULTA CONTINUA SEM PAGINAR, e é o último buraco desta
+    // família no arquivo: acima de mil chaves o PostgREST devolve as
+    // primeiras mil, os contatos que não vieram são tratados como novos, o
+    // insert abaixo bate no índice único da 022 e a campanha inteira morre
+    // com um 23505 cru na tela. Um CSV de 12 mil linhas — o tamanho da base
+    // depois da Kommo — cai nisso na primeira tentativa. Não foi consertada
+    // junto com as outras porque `use-broadcast-sending.dono-do-csv.test.ts`
+    // trava a FORMA deste trecho letra por letra (é a resolução do merge do
+    // upstream de 2026-09-05), e fatiar a lista renomeia a variável que o
+    // pino exige. Quem consertar mexe nos DOIS arquivos, na mesma passada.
     const { data: existing, error: lookupErr } = await supabase
       .from('contacts')
       .select('*')
@@ -375,28 +543,44 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     // Build the WHERE clause for the operator. PostgREST supports
     // eq/neq/ilike via the query builder — use ilike with wildcards
     // for "contains" so the match is case-insensitive.
-    let query = supabase
-      .from('contact_custom_values')
-      .select('contact_id')
-      .eq('custom_field_id', fieldId);
+    //
+    // ⚠️ Paginada: este recorte casa a base inteira com facilidade — um
+    // `is_not` sobre valor raro devolve quase todo mundo —, e o corte de
+    // 1000 escolheria mil deles em silêncio.
+    const { linhas, erro, motivo } = await buscarPaginado<{ contact_id: string }>(
+      async (de, ate) => {
+        let query = supabase
+          .from('contact_custom_values')
+          .select('contact_id', { count: 'exact' })
+          .eq('custom_field_id', fieldId);
 
-    if (operator === 'is') query = query.eq('value', value);
-    else if (operator === 'is_not') query = query.neq('value', value);
-    else if (operator === 'contains') query = query.ilike('value', `%${value}%`);
+        if (operator === 'is') query = query.eq('value', value);
+        else if (operator === 'is_not') query = query.neq('value', value);
+        else if (operator === 'contains')
+          query = query.ilike('value', `%${value}%`);
 
-    const { data: matches, error: matchErr } = await query;
-    if (matchErr)
-      throw new Error(`Custom-field filter failed: ${matchErr.message}`);
+        const { data, error, count } = await query
+          .order('id', { ascending: true })
+          .range(de, ate);
+        return {
+          data: (data ?? null) as { contact_id: string }[] | null,
+          error,
+          count,
+        };
+      },
+    );
+    if (!linhas) {
+      throw erroDeLeituraParcial(
+        'o recorte por campo personalizado',
+        motivo,
+        erro,
+      );
+    }
 
-    const contactIds = [...new Set((matches ?? []).map((m) => m.contact_id))];
+    const contactIds = [...new Set(linhas.map((m) => m.contact_id))];
     if (contactIds.length === 0) return [];
 
-    const { data, error } = await supabase
-      .from('contacts')
-      .select('*')
-      .in('id', contactIds);
-    if (error) throw new Error(`Failed to fetch contacts: ${error.message}`);
-    return data ?? [];
+    return lerContatos(supabase, contactIds);
   }
 
   async function createAndSendBroadcast(payload: BroadcastPayload): Promise<string> {
@@ -430,8 +614,38 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         throw new Error('No contacts found for this audience.');
       }
 
-      // ── Step 2: Create broadcast row ──────────────────────────────
+      // ── Step 1b: Resolve template params ──────────────────────────
+      // Custom values are fetched BEFORE the insert so each row can
+      // carry its resolved template params. Those params are what makes
+      // the campaign resumable server-side (issue #472): the send loop
+      // below runs in this browser tab, and if the tab goes away the
+      // only record of what {{1}} should be for each contact is this
+      // column. Resolving once here also means the resume sends exactly
+      // what this pass would have.
+      //
+      // ⚠️ E vem antes da linha de `broadcasts`, não depois, desde que
+      // `fetchCustomValueIndex` passou a ABORTAR em leitura parcial (era
+      // silencioso): criada a campanha primeiro, o aborto deixaria uma linha
+      // `sending` com zero destinatários, que nada recolhe. É a mesma ordem
+      // da agendada com anexo (932) — conferir ANTES de reivindicar a linha.
       setProgress(10);
+      const customValueIndex = await fetchCustomValueIndex(
+        supabase,
+        contacts.map((c) => c.id),
+      );
+      const paramsByContact = new Map(
+        contacts.map((contact) => [
+          contact.id,
+          resolveVariables(
+            payload.variables,
+            contact,
+            customValueIndex.get(contact.id),
+          ),
+        ]),
+      );
+
+      // ── Step 2: Create broadcast row ──────────────────────────────
+      setProgress(15);
       const { data: broadcast, error: broadcastError } = await supabase
         .from('broadcasts')
         .insert({
@@ -466,28 +680,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
 
       // ── Step 3: Insert recipient rows ─────────────────────────────
-      // Custom values are fetched BEFORE the insert so each row can
-      // carry its resolved template params. Those params are what makes
-      // the campaign resumable server-side (issue #472): the send loop
-      // below runs in this browser tab, and if the tab goes away the
-      // only record of what {{1}} should be for each contact is this
-      // column. Resolving once here also means the resume sends exactly
-      // what this pass would have.
+      // `paramsByContact` já foi resolvido no passo 1b, antes da linha de
+      // `broadcasts` — ver o comentário de lá.
       setProgress(20);
-      const customValueIndex = await fetchCustomValueIndex(
-        supabase,
-        contacts.map((c) => c.id),
-      );
-      const paramsByContact = new Map(
-        contacts.map((contact) => [
-          contact.id,
-          resolveVariables(
-            payload.variables,
-            contact,
-            customValueIndex.get(contact.id),
-          ),
-        ]),
-      );
       const recipientRows = contacts.map((contact) => ({
         broadcast_id: broadcast.id,
         contact_id: contact.id,
@@ -520,14 +715,47 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       }
 
       // ── Step 4: Fetch recipients back (joined contact) ────────────
+      //
+      // ⚠️⚠️ PAGINADA também, e sem isto o conserto da audiência não valeria
+      // de nada — só mudaria o lugar do defeito. É esta lista que o laço de
+      // envio percorre: com 12.980 destinatários inseridos e o corte de 1000
+      // aqui, a campanha gravaria 12.980, mandaria para mil e fecharia como
+      // `sent`, deixando 11.980 linhas `pending` que ninguém recolhe — e o
+      // `failedCount === totalRecipients` do passo 5 compararia contra mil.
       setProgress(30);
-      const { data: recipients, error: recipientsFetchError } = await supabase
-        .from('broadcast_recipients')
-        .select('*, contact:contacts(*)')
-        .eq('broadcast_id', broadcast.id);
+      type LinhaDeDestinatario = {
+        id: string;
+        template_params: unknown;
+        contact: Contact | null;
+      };
+      const { linhas: recipients, erro: recipientsErr, motivo: recipientsMotivo } =
+        await buscarPaginado<LinhaDeDestinatario>(async (de, ate) => {
+          const { data, error, count } = await supabase
+            .from('broadcast_recipients')
+            .select('*, contact:contacts(*)', { count: 'exact' })
+            .eq('broadcast_id', broadcast.id)
+            .order('id', { ascending: true })
+            .range(de, ate);
+          return {
+            data: (data ?? null) as LinhaDeDestinatario[] | null,
+            error,
+            count,
+          };
+        });
 
-      if (recipientsFetchError || !recipients) {
-        throw new Error('Failed to fetch broadcast recipients');
+      if (!recipients) {
+        // Aqui NADA saiu ainda — as linhas estão gravadas, mas o laço de
+        // envio não rodou. A campanha vira `failed` para não ficar presa em
+        // `sending` para sempre; o motivo sobe no toast.
+        await supabase
+          .from('broadcasts')
+          .update({ status: 'failed' })
+          .eq('id', broadcast.id);
+        throw erroDeLeituraParcial(
+          'a lista de destinatários da campanha',
+          recipientsMotivo,
+          recipientsErr,
+        );
       }
 
       let failedCount = 0;

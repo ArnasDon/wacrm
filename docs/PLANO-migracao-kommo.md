@@ -1485,3 +1485,26 @@ O livro-razão tem **26.170 linhas** e `cb_kommo_desfazer` (1017) sabe reverter
 as nove tabelas. Ele é REPETÍVEL: a linha cujo objeto não pôde sair — ficha que
 ganhou conversa porque o cliente escreveu durante a carga — **fica no livro** e
 sai na tentativa seguinte.
+
+**Desde a 1022 (21/09, achados do Codex no PR #232), ele só devolve o que
+continua INTOCADO desde a carga.** Card criado ou movido, título, ficha (nome e
+e-mail) e valor de campo que alguém mexeu depois FICAM — retidos no livro e
+contados em `editadas_depois`, para decisão de gente. Apagar ou devolver a foto
+de antes por cima levaria o trabalho feito depois da carga, sem aviso.
+
+- `deals`: `updated_at <= criado_em` da linha do livro. A carga gravou a data
+  da Kommo (no passado), e qualquer escrita posterior o empurra para a frente.
+- `contacts`: a mesma régua — a carga escreveu com os gatilhos ligados, então
+  `updated_at` ficou igual a `criado_em`. O desfazer cala SÓ o
+  `set_updated_at` de `contacts` (o espelho de e-mail continua ligado) e
+  devolve `updated_at` à mão; sem isso, devolver o e-mail empurrava
+  `updated_at` para agora e a linha do nome da mesma ficha era lida como
+  "editada depois".
+- `contact_custom_values` não tem `updated_at`: a prova é o VALOR, que o livro
+  passou a guardar em `detalhe.valor`. As linhas que já existiam foram
+  preenchidas com o valor do dia da 1022 — uma edição feita entre a carga e a
+  1022 passou a contar como "o valor da carga".
+
+Ensaiado contra a produção em rollback antes de aplicar: o card e o valor
+editados depois ficaram, os intocados saíram, e a ficha voltou exata
+(`updated_at` inclusive).

@@ -635,35 +635,64 @@ que é a ÚNICA porta de saída do fio do cliente (`apareceNaConversa`). Ou seja
 apagaria do histórico de conversa 311 etiquetas reais e reescreveria a data de
 9 movimentos que aconteceram aqui. (Achado do Codex no PR #232.)
 
-O recorte certo é o **`xmin`** — a coluna de sistema que guarda a transação
-que inseriu a linha:
+⚠️⚠️ **E o `xmin` NÃO serve — medido, e é a lição desta seção.** A primeira
+correção deste achado usava
+`WHERE xmin = pg_current_xact_id()::xid`, com um teste que parecia provar a
+coisa: numa transação de rollback, o recorte casava as 3 linhas que a própria
+transação tinha inserido e zero linhas antigas. **O teste estava errado porque
+inseria as linhas À MÃO.** Com o INSERT de verdade em `deals` — deixando os
+gatilhos escreverem — o mesmo recorte devolve **ZERO**:
 
-```sql
-UPDATE cb_lead_events
-   SET occurred_at = <data real do fato na Kommo>,
-       origin = 'retroativo',
-       reconstructed = true
- WHERE xmin = pg_current_xact_id()::xid   -- só o que ESTE lote escreveu
-   AND deal_id = ANY(<ids do lote>)
-   AND event_type IN ('deal_created', 'stage_changed', 'status_changed');
+```
+eventos do card por deal_id : 1
+eventos do card por xmin    : 0
+xmin da linha do gatilho    : 368534
+pg_current_xact_id()::xid   : 368532
 ```
 
-MEDIDO contra a produção em 20/09 (numa transação que terminou em rollback):
-`xmin = pg_current_xact_id()::xid` casa exatamente as 3 linhas que a
-transação acabou de inserir, e **zero** linhas antigas de `deals` ou de
-`cb_lead_events`. O `AND origin = 'sistema'` sai da cláusula: com o `xmin` ele
-não recorta mais nada, e mantê-lo só criaria a ilusão de que a procedência é
-que isola o lote.
+O motivo é o que este plano já dizia noutro parágrafo, sem que a ligação
+fosse feita: **cada gatilho abre uma SUBTRANSAÇÃO** (o `cb_deals_log_event`
+tem bloco de exceção — a política de falha assimétrica da 912). A linha
+escrita lá dentro recebe o **subxid**, e `pg_current_xact_id()` devolve o id
+do TOPO. Eles nunca são iguais. Um reparo por `xmin` não repararia nada, e a
+carga sairia com a trilha inteira datada de hoje e `reconstructed = false` —
+o defeito original, agora silencioso.
 
-⚠️ **Por que não `occurred_at >= <início do lote>`.** Funciona quase sempre —
-`occurred_at` tem `DEFAULT clock_timestamp()`, que ANDA dentro da transação (o
-comentário da 912 diz isso por escrito, e foi medido junto) —, mas não é
-imune a **concorrência**: um operador que mova um card do lote durante a
-janela de carga escreve um evento com `occurred_at` maior que o piso, e o
-reparo o levaria junto. O `xmin` é da transação, então não há janela nenhuma.
+**As três saídas que sobram, todas MEDIDAS em 21/09 contra a produção (com
+rollback):**
 
-O `tag_added` do gatilho da 912 grava `deal_id` NULO e é alcançado por
-`contact_id = ANY(...)` — com a **mesma** cerca de `xmin`, e sem o
+| Saída | Isola? | Repara? | Subtransações | FK de pé | Lock | Afeta outras sessões |
+| --- | --- | --- | --- | --- | --- | --- |
+| `xmin` do topo | **não funciona** | — | — | — | — | — |
+| **anti-join de ids** — guardar os ids que já existiam para os cards do lote e reparar o resto | sim | sim | sim (6 por linha) | sim | não | não |
+| **piso de tempo** — `occurred_at >= clock_timestamp()` do início do lote | sim | sim | sim | sim | não | não |
+| **`ALTER TABLE deals DISABLE TRIGGER USER`** | n/a | **não** | **não** | sim | `ACCESS EXCLUSIVE` (breve) | **sim** |
+| **`SET LOCAL session_replication_role = 'replica'`** | n/a | **não** | **não** | **NÃO** | não | não |
+
+Medidos lado a lado no mesmo lote (um card novo + um card movido que já tinha
+1 linha de trilha): anti-join e piso de tempo acharam as mesmas **3** linhas a
+reparar e contaminaram **0** antigas. Os dois resolvem o P1.
+
+⚠️ `session_replication_role = 'replica'` silencia os SEIS gatilhos de uma vez
+(0 eventos, 0 linhas de fila, e o `status` fica `open` — o carimbo da 950
+também para) **sem lock e sem afetar quem está usando o CRM**. O preço é caro
+e foi medido: **as FKs também param** — um INSERT com `stage_id` inexistente
+NÃO foi barrado. Numa carga de 12.611 linhas isso troca uma violação que o
+banco pegaria na hora por cards apontando para nada.
+
+⚠️ Desligar os gatilhos é a única saída que também mata o **estouro de
+subtransação** (seis por linha) e dispensa apagar `cb_automation_events` — os
+três problemas de uma vez. `DISABLE TRIGGER USER` preserva as FKs, ao
+contrário do modo replica; em troca vale para TODAS as sessões enquanto durar,
+o que numa janela de carga controlada (conexões sem funil padrão, Calendly
+desligado) é aceitável, e até desejável.
+
+**Qual usar é decisão de projeto da 1013**, não desta seção — e quem decidir
+escreve aqui o porquê. O que está fechado é o que NÃO se usa: `xmin`.
+
+Se o caminho for REPARAR (as duas primeiras linhas da tabela), o `tag_added`
+do gatilho da 912 grava `deal_id` NULO e é alcançado por
+`contact_id = ANY(...)` com a MESMA cerca escolhida — e **sem** o
 `origin <> 'usuario'` da versão antiga, que era uma tentativa de adivinhar o
 que a transação tinha escrito e deixava passar as 311 linhas medidas acima.
 

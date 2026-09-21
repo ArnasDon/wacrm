@@ -114,13 +114,15 @@ Três comportamentos que valem para todo webhook recebido:
 - Use o bloco **HTTP request** (Integrações), não o bloco lógico "Webhook" —
   aquele trava a conversa esperando uma resposta de fora.
 - Método **POST**. Em *Advanced configuration*: **Headers** →
-  `Authorization` = `Bearer <segredo>`; ligue **Custom body** e cole o JSON;
-  deixe **Execute on client** DESLIGADO (ligado, o segredo iria para o
-  navegador de cada visitante).
-- Nomeie as chaves do JSON com os **mesmos nomes das variáveis do Typebot**
-  (`{"phone": "{{phone}}", "name": "{{name}}", …}`) e configure o **campo do
-  telefone** do webhook com esse nome. Se alguém desligar o *Custom body*, o
-  Typebot manda um retrato com as variáveis pelos mesmos nomes, e nada quebra.
+  `Authorization` = `Bearer <segredo>`; deixe **Custom body** e **Execute on
+  client** DESLIGADOS (com o segundo ligado, o segredo iria para o navegador
+  de cada visitante).
+- Sem *Custom body*, o Typebot manda sozinho **todas as variáveis que têm
+  valor, pelo nome** (`phone`, `name`, `email`, as UTMs…). Configure o
+  **campo do telefone** do webhook com o nome da variável do telefone (ex.:
+  `phone`) e use `{{vars.<nome da variável>}}` na automação. A pergunta ainda
+  não respondida simplesmente não vem. Se preferir montar um JSON próprio, use
+  os mesmos nomes nas chaves.
 - O Typebot **não repete** uma chamada que falhou (401, 404, 429 ou tempo
   esgotado): o ponto é perdido, e o erro só aparece em Typebot → *Results* →
   *logs*. Esses três erros também não chegam ao log do CRM.

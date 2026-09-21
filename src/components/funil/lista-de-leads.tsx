@@ -286,7 +286,7 @@ export function ListaDeLeads({
       if (stageId === f.linha.stage_id) return;
       const dealId = f.linha.deal_id;
       const antes = f.linha;
-      const status = statusAoEntrarNaEtapa(stages, stageId);
+      const status = statusAoEntrarNaEtapa(stages, stageId, antes.status);
       atualizarLinha(dealId, (l) => ({
         ...aplicarMudancaDeEtapa(l, stageId, new Date()),
         ...(status ? { status } : {}),

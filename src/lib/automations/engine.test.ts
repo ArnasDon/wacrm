@@ -17,6 +17,13 @@ const h = vi.hoisted(() => ({
     pipeline: null as { id: string } | null,
     stage: null as { id: string } | null,
     dealExistente: null as { id: string; stage_id?: string } | null,
+    /**
+     * Preenchido, a leitura de `deals` responde PELO STATUS pedido (`.eq('status', …)`)
+     * — é como se encena "sem card aberto, com um perdido" (1028).
+     */
+    dealPorStatus: null as Record<string, { id: string; stage_id?: string } | null> | null,
+    /** As chamadas a `cb_atualizar_negocio` (mover card / marcar status). */
+    rpcMover: [] as Record<string, unknown>[],
     /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
     erroNoNegocio: null as string | null,
     /**
@@ -161,6 +168,10 @@ vi.mock('./admin-client', () => {
       // linha única de todos os outros leitores.
       if ((ops.limite ?? 0) > 1) {
         return { data: state.dealExistente ? [state.dealExistente] : [], error: null };
+      }
+      if (state.dealPorStatus) {
+        const status = ops.filters.find(([op, k]) => op === 'eq' && k === 'status')?.[2];
+        return { data: typeof status === 'string' ? (state.dealPorStatus[status] ?? null) : null, error: null };
       }
       return { data: state.dealExistente, error: null };
     }
@@ -354,6 +365,10 @@ vi.mock('./admin-client', () => {
           state.esperasEnfileiradas.push(args ?? {});
           return Promise.resolve({ data: 'espera-nova', error: null });
         }
+        if (nome === 'cb_atualizar_negocio') {
+          state.rpcMover.push(args ?? {});
+          return Promise.resolve({ data: [{ ok: true, motivo: null }], error: null });
+        }
         return Promise.resolve({ data: null, error: null });
       },
     }),
@@ -412,6 +427,8 @@ beforeEach(() => {
   h.state.pipeline = null;
   h.state.stage = null;
   h.state.dealExistente = null;
+  h.state.dealPorStatus = null;
+  h.state.rpcMover = [];
   h.state.dealSelects = [];
   h.state.dealInserts = [];
   h.state.automations = [];
@@ -639,6 +656,72 @@ describe('update_contact_field — custom fields', () => {
 
     expect(h.state.upsertCalls).toHaveLength(0);
     expect(h.state.updateCalls).toHaveLength(0);
+  });
+});
+
+// 1028 (21/09/2026): o lead desqualificado pode voltar a ser qualificado. Sem
+// card aberto, o "Mover card" acha o PERDIDO mais recente — e o gatilho da
+// 1028 o reabre ao entrar numa etapa neutra. O GANHO nunca: é o card do
+// cliente que fechou (e foi para o Jurídico).
+describe('Mover card — sem card aberto, o PERDIDO (1028)', () => {
+  const moverPara = (stage_id: string) => ({
+    id: 's-mover',
+    automation_id: 'a1',
+    step_type: 'move_deal_stage',
+    position: 0,
+    parent_step_id: null,
+    step_config: { stage_id },
+  });
+
+  it('CRÍTICO: sem aberto, move o perdido mais recente', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover).toHaveLength(1);
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-lead', p_status: null });
+  });
+
+  it('com card aberto, o aberto vence — o perdido nem é consultado', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: { id: 'd-aberto' }, lost: { id: 'd-perdido' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-aberto' });
+    expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'lost'))).toBe(false);
+  });
+
+  it('CRÍTICO: o GANHO nunca é alvo — só o card ganho = nenhum negócio, e nada se move', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: null, won: { id: 'd-ganho' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover).toHaveLength(0);
+    expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'won'))).toBe(false);
   });
 });
 

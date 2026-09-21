@@ -3023,10 +3023,22 @@ mostra o rótulo certo sem mudar nada. Ao mesclar upstream, manter o wrapper.
 de etapa (painel da conversa, arrasto, formulário, RPC das automações, API).
 O que morde código novo:
 
-- ⚠️ **SAIR de etapa marcada para etapa neutra NÃO reabre** — decisão do
+- ⚠️ **GANHO que sai para etapa neutra CONTINUA ganho** — decisão do
   operador (fluxo: fechou → transfere para o funil do jurídico → CONTINUA
-  ganho). Não "corrigir" para o modelo Kommo. Reabrir é só por botão ou por
-  entrar em etapa com outro resultado.
+  ganho). Não "corrigir" para o modelo Kommo.
+- ⚠️⚠️ **PERDIDO que entra em etapa neutra VOLTA ABERTO (1028, decisão do
+  operador em 21/09/2026)**, revendo a metade "perdido" da regra acima: o
+  lead desqualificado pode voltar a ser qualificado (estava em dia, meses
+  depois entra em atraso), e até aqui ele ficava preso — na coluna nova com o
+  selo "Perdido", fora das métricas de aberto e invisível às automações. Só
+  quando o update NÃO trocou o status (`OLD` e `NEW` = `lost`: arrasto,
+  seletor de etapa, RPC das automações, formulário que reenvia o que estava)
+  e só com a etapa ACHADA. O espelho (`statusAoEntrarNaEtapa`) recebe o
+  status de antes e o pedido, e há pino lendo o SQL da 1028.
+- ⚠️ **As automações acham o card PERDIDO quando o contato não tem aberto**
+  (`negocioAlvo`, 1028): o "Mover card" do Typebot e do Calendly tira o lead
+  da perda — e o gatilho acima o reabre. O GANHO nunca é alvo: um cliente que
+  marca outra reunião arrastaria o card do caso dele para o comercial.
 - **Etapa marcada VENCE status explícito no mesmo update**; o Reabrir muda só
   o status (sem tocar etapa) e o gatilho passa reto — de propósito.
 - **`src/lib/pipelines/resultado.ts` é ESPELHO do gatilho** (para o selo
@@ -4552,7 +4564,7 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ingestão), então automação restrita a uma conexão AINDA dispara para
     lead novo. Quem apertar essa regra desliga o Calendly para lead novo.
   - ⚠️⚠️ **Lead novo não tem card, e `move_deal_stage` LANÇA nesse caso**
-    ("nenhum negócio aberto para este contato"), encerrando a execução. A
+    ("nenhum negócio aberto ou perdido para este contato"), encerrando a execução. A
     automação do Calendly precisa de um passo **`create_deal`** antes dele —
     `create_deal` desiste em silêncio quando já há card ("um card por
     contato"), então serve aos dois casos. Sem ele, todo lead novo termina
@@ -5385,12 +5397,18 @@ Webhooks. Plano em `docs/PLANO-webhooks-de-entrada.md`; doc do operador em
   retry; 15 falhas seguidas desligam) — sem isso o operador conta com
   garantia que não existe.
 
-⚠️ **Typebot → CRM (21/09/2026): TRÊS webhooks e TRÊS automações, tudo
+⚠️ **Typebot → CRM (21/09/2026): QUATRO webhooks e QUATRO automações, tudo
 CONFIGURAÇÃO — e toda escrita passa por uma TRAVA de etapa.** O fluxo
 "CB Advogados - Gestão de passivos" chama `Typebot · Lead e respostas` (em
 vários pontos: depois do telefone, do e-mail, das respostas), `Typebot ·
-Recebeu o link` (clicou "Agendar horário") e `Typebot · Desqualificado`.
-O passo a passo do lado do Typebot está em `docs/webhooks.md`. O que morde:
+Recebeu o link` (clicou "Agendar horário"), `Typebot · Desqualificado` e
+`Typebot · Abaixo de 150 mil com processo` (etiqueta `-150k`; o passo de
+mensagem ao lead entra quando o operador escrever o texto). A de lead PUXA
+para "Lead - Type e Forms" o card que está em Contato Avulso, Desqualificado
+ou Perdido (decisão do operador) — os dois últimos saem da perda pela 1028.
+Os blocos do Typebot mandam o corpo PADRÃO (Custom body desligado: todas as
+variáveis pelo nome, fbp/fbc/ip/user_agent inclusive). O passo a passo
+genérico está em `docs/webhooks.md`. O que morde:
 
 - ⚠️⚠️ **O formulário é PÚBLICO e não prova posse do telefone.** Qualquer um
   que digite o número de um cliente aciona as automações sobre a ficha DELE.
@@ -5411,10 +5429,12 @@ O passo a passo do lado do Typebot está em `docs/webhooks.md`. O que morde:
   bloco de correções do Meu dia conta para sempre (lead que refaz o Typebot já
   em No Show acontece toda semana). A condição falha FECHADO e termina
   `barrada`, que o Meu dia não conta.
-- ⚠️ **As chaves do corpo são os NOMES das variáveis do Typebot** (`phone`,
-  `name`, `email`, …) e o webhook lê `campo_telefone = phone`. Se alguém
-  desligar o "Custom body" do bloco, o Typebot manda o retrato padrão —
-  chaveado pelos mesmos nomes — e o lead continua entrando.
+- ⚠️ **O corpo é o retrato PADRÃO do Typebot** ("Custom body" desligado):
+  toda variável com valor, chaveada pelo NOME (`phone`, `name`, `email`, …),
+  inclusive as de sessão — conferido no fonte (`parseAnswers`, que lê
+  `typebot.variables` sem filtrar `isSessionVariable`). O webhook lê
+  `campo_telefone = phone`. Pergunta não respondida vem AUSENTE (não "") e a
+  automação a ignora (`update_contact_field` vazio não grava).
 - ⚠️ **O Typebot NUNCA repete POST** (401, 404, 429, timeout: perdido), e o
   CRM não registra 401/404/429 — eles voltam antes do INSERT do log. Ponto que
   "não chegou" só aparece em Typebot → Results → logs.
@@ -6788,6 +6808,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     imediatamente antes: 5.106 fichas, zero pares, 2.839 ganham a chave com o
     9. Ver a seção "Chave única do telefone".
 
+  - **1028_cb_perdido_pode_voltar** — só troca o CORPO de
+    `cb_deals_aplica_resultado` (o gatilho da 950): card PERDIDO que entra
+    numa etapa neutra, sem troca de status no mesmo update e com a etapa
+    achada, volta `open`; ganho continua ganho. Decisão do operador em
+    21/09/2026 (ver a seção "Etapa com RESULTADO"). Aplicada ANTES do merge,
+    depois do replay do CI.
   - **1030_cb_funcao_de_disparo_executavel** — `create_broadcast_with_recipients`
     passa a EXECUTAR (RETURNING qualificado, upstream #536) e a gravar os
     parâmetros por destinatário como lista (`p_template_params JSONB`, pareado
@@ -6801,8 +6827,9 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     história de `POST /api/v1/broadcasts`.
     ⚠️ **O número pula para 1030 DE PROPÓSITO**: a faixa `1030+` é do
     `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
-    números no mesmo dia — as 1025/1026 são dela). **Não existem 1027–1029**:
-    não "preencher" a lacuna.
+    números no mesmo dia — as 1025/1026 são dela). A 1027 (histórico do
+    WhatsApp) e a 1028 (o perdido que volta) vieram de outras frentes depois;
+    **a 1029 não existe** — não "preencher" a lacuna.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

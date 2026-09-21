@@ -725,7 +725,7 @@ export function PainelDoContato({
       // status. O BANCO já gravou (BEFORE trigger, mesma escrita); aqui só
       // refletimos para o selo aparecer sem esperar refetch.
       const carimbo = patch.stage_id
-        ? statusAoEntrarNaEtapa(allStages, patch.stage_id)
+        ? statusAoEntrarNaEtapa(allStages, patch.stage_id, deal.status, patch.status)
         : null;
       setDeals((prev) =>
         prev.map((d) =>

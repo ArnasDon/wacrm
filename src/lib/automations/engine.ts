@@ -1703,7 +1703,7 @@ async function runStep(
     case 'set_deal_status': {
       const cfg = step.step_config as MoveDealStepConfig;
       const alvo = await negocioAlvo(db, args);
-      if (!alvo) throw new Error('nenhum negócio aberto para este contato');
+      if (!alvo) throw new Error('nenhum negócio aberto ou perdido para este contato');
 
       const ehMover = step.step_type === 'move_deal_stage';
       if (ehMover && !cfg.stage_id)
@@ -2645,8 +2645,17 @@ function stepChannel(
  * nascido de conexão).
  *
  * Sem card no contexto (ex.: "quando chegar mensagem → mova o card"), a regra
- * é o negócio ABERTO mais recente (D8). Fechado fica de fora de propósito:
- * mexer sozinho num negócio que alguém deu por encerrado é surpresa ruim.
+ * é o negócio ABERTO mais recente (D8). Sem nenhum aberto, o PERDIDO mais
+ * recente (1028, decisão do operador em 21/09/2026): o lead desqualificado
+ * pode voltar a ser qualificado — ele refaz o formulário, ou agenda pelo
+ * Calendly —, e sem isto nenhuma automação o enxergava: o "Mover card"
+ * lançava "nenhum negócio aberto" e o card ficava preso na coluna de perda
+ * para sempre. Movido para etapa neutra, o gatilho da 1028 o reabre.
+ *
+ * ⚠️ GANHO fica de fora, sempre. O card ganho é o do cliente que fechou (e
+ * que foi transferido para o funil do Jurídico): o aviso do Calendly de um
+ * cliente que marca outra reunião arrastaria o card do caso dele para o
+ * comercial. Lá, "nenhum negócio" continua sendo a resposta.
  */
 async function negocioAlvo(
   db: ReturnType<typeof supabaseAdmin>,
@@ -2654,17 +2663,20 @@ async function negocioAlvo(
 ): Promise<string | null> {
   if (args.context.deal_id) return args.context.deal_id;
   if (!args.contactId) return null;
-  const { data, error } = await db
-    .from('deals')
-    .select('id')
-    .eq('account_id', args.automation.account_id)
-    .eq('contact_id', args.contactId)
-    .eq('status', 'open')
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error) throw new Error(`busca do negócio falhou: ${error.message}`);
-  return (data?.id as string | undefined) ?? null;
+  for (const status of ['open', 'lost'] as const) {
+    const { data, error } = await db
+      .from('deals')
+      .select('id')
+      .eq('account_id', args.automation.account_id)
+      .eq('contact_id', args.contactId)
+      .eq('status', status)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (error) throw new Error(`busca do negócio falhou: ${error.message}`);
+    if (data?.id) return data.id as string;
+  }
+  return null;
 }
 
 /**

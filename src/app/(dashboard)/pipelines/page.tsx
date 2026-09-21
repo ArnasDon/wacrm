@@ -695,13 +695,12 @@ function PipelinesPageInner() {
       // ganho/perdido NO BANCO (BEFORE trigger, mesma escrita). Sem refletir
       // aqui, arrastar para "Contrato Fechado" gravava won mas o selo do
       // card só aparecia no reload — achado da auditoria de 2026-08-29.
-      const carimbo = statusAoEntrarNaEtapa(stages, newStageId);
       setDeals((prev) =>
-        prev.map((d) =>
-          d.id === dealId
-            ? { ...d, stage_id: newStageId, ...(carimbo ? { status: carimbo } : {}) }
-            : d,
-        ),
+        prev.map((d) => {
+          if (d.id !== dealId) return d;
+          const carimbo = statusAoEntrarNaEtapa(stages, newStageId, d.status);
+          return { ...d, stage_id: newStageId, ...(carimbo ? { status: carimbo } : {}) };
+        }),
       );
       // `.select("id")` = checagem de ROWCOUNT. Update que casa 0 linhas
       // volta `error: null` com cara de sucesso — acontece quando a RLS

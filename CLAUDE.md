@@ -1731,6 +1731,18 @@ estrutural `reopen.chamadores.test.ts`) e o alerta de atraso em
   regra não valia para NENHUMA mensagem real. Broadcast, fluxo, automação e
   IA NÃO reabrem, de propósito (um disparo para 500 encerradas devolveria
   as 500 à caixa); é o mesmo desenho do roteador de funil.
+  ⚠️ Hoje são SEIS (o Instagram e a mensagem tardia da 1010 entraram depois),
+  e o que importa é quem NÃO está na lista: **`src/lib/cb-groups/persist.ts`**.
+  Aquele arquivo não menciona `conversations.status` em lugar nenhum, então
+  **conversa de GRUPO encerrada NÃO reabre com mensagem no grupo** — ela só
+  volta se a EQUIPE mandar mensagem por aqui (aí o núcleo de envio reabre).
+  Encerrar um grupo de trabalho é escondê-lo da caixa por tempo
+  indeterminado, e as mensagens continuam chegando sem ninguém ver. Medido em
+  21/09/2026, quando o encerramento em lote da **1018** precisou decidir o que
+  fazer com os 7 grupos abertos da conta (2 a 12 dias de última mensagem, 261
+  não lidas somadas): eles ficam de fora por padrão, e incluí-los exige
+  `p_incluir_grupos => true`, por escrito. Quem for encerrar grupo pela TELA
+  paga o mesmo preço, sem aviso nenhum.
 - ⚠️ **Quem reabre fica responsável; encerrar solta o responsável.** O envio
   pelo núcleo reabre com `assignTo: senderUserId` (nulo na API por chave);
   o cabeçalho do fio usa `patchDeSituacao`; o passo `close_conversation`
@@ -6529,6 +6541,99 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     escritório sem telefone (plano, 6.4). Testada antes num Postgres 16
     descartável: o defeito reproduz com a função da 1010 e some com a 1011,
     idempotente, os 20 cenários anteriores verdes.
+  - **1012_cb_kommo_lead_id** — `deals.kommo_lead_id bigint` com índice único
+    PARCIAL `(account_id, kommo_lead_id) WHERE kommo_lead_id IS NOT NULL`: a
+    chave que torna a carga da Kommo REEXECUTÁVEL. A decisão 16 do operador
+    pôs o id do CONTATO num campo personalizado, e isso não alcança o NEGÓCIO
+    (campo personalizado só existe em contato, e uma pessoa pode ter mais de um
+    card). O plano mandava guardar o id do lead em
+    `cb_lead_events.details->>'kommo_lead_id'`, e o teste de esforço mediu o
+    preço: "já migrei este lead?" vira 12.389 varreduras completas sobre uma
+    tabela que vai a ~62.000 linhas, e sem restrição única quem pular a
+    pergunta duplica 28.316 eventos em silêncio. Único por CONTA (duas contas
+    podem importar de Kommos diferentes) e PARCIAL (quase todo negócio nasce
+    aqui com a coluna nula). Aditiva — nada em produção lê a coluna até a carga
+    existir. Aplicada em 20/09/2026 pela Management API (histórico
+    `20260921003408`), ANTES do merge do PR #232 e DEPOIS de o replay do CI
+    passar; conferida no catálogo (tipo `bigint`, e o índice renderizado com
+    UNIQUE, `account_id` e o WHERE — os três predicados que o bloco de
+    conferência da própria migration cobra).
+
+  - **1014_cb_kommo_carga_em_lote** — a carga da Kommo: o schema
+    `migracao_kommo` com o **livro-razão** e as funções
+    `cb_kommo_carregar_lote` / `cb_kommo_desfazer`.
+    ⚠️⚠️ **A função DESLIGA os gatilhos de `deals` e `contact_tags` DENTRO da
+    transação do lote** — não repara a trilha depois. Duas medições
+    escolheram: (1) `ALTER TABLE ... DISABLE TRIGGER` é **DDL transacional**,
+    então o rollback religa sozinho e não existe "desligado e esquecido"; (2)
+    é a ÚNICA forma de a carga gravar `updated_at` com a data da Kommo, porque
+    `set_updated_at` é BEFORE UPDATE sem lista de colunas e sobrescreve com
+    `now()` (medido: pedindo 2024-03-15 a coluna vira a data de hoje). A trava
+    é `ShareRowExclusive`, não ACCESS EXCLUSIVE — leitor não espera. As FKs
+    ficam de pé (são gatilhos internos), ao contrário de
+    `session_replication_role = 'replica'`, que as derruba junto.
+    ⚠️ Com os gatilhos calados a função DEVE escrever à mão o `status` (o que
+    a 950 faz), o `updated_at` e a trilha retroativa.
+    ⚠️ O livro-razão mora em `migracao_kommo`, **não em `public`**: lá herdaria
+    a concessão padrão do Supabase e nasceria legível do navegador com id e
+    nome de todo contato. Ele guarda `detalhe jsonb` para a chave que não cabe
+    num uuid (`contact_tags` é (contato, etiqueta) — sem isso o desfazer
+    tiraria as etiquetas que o escritório aplicou à mão).
+    ⚠️ `cb_lead_events.deal_id` não tem FK, então o desfazer apaga a trilha
+    EXPLICITAMENTE antes do card; no card movido, só o que a carga escreveu,
+    recortado pela procedência em `details`.
+    Aplicada em 21/09/2026 (histórico `20260921023141`), DEPOIS de o replay do
+    CI passar no commit exato e de dois ensaios contra a produção em
+    transação encerrada com ROLLBACK: carga + reexecução (idempotente) e
+    carga + desfazer (o banco volta ao estado anterior, card movido inclusive).
+  - **1015–1023 — a carga da Kommo e o encerramento em lote**, todas aplicadas
+    em 21/09/2026, cada uma DEPOIS de um ensaio contra a produção em
+    transação encerrada por `raise exception` (histórico `20260921024652` em
+    diante):
+    · **1015** — os três achados do PRIMEIRO piloto: `deals.value` é NOT NULL
+      (NULL explícito anula o default), `deals.currency` nasce `'USD'` numa
+      base BRL, e o livro-razão não cobria `contacts`.
+    · **1016** — `cb_kommo_carregar_pessoas` e `cb_kommo_carregar_conversas`,
+      e o desfazer passou a cobrir o que as duas criam.
+    · **1017** — o lote MOVE o card que já existe (honra `deal_id`, grava
+      `created_at`/`title` da Kommo) e a trilha nasce com rótulo e posição; o
+      passo de pessoas cala os gatilhos de `deals` e registra no livro o
+      título que o gatilho da 1007 troca; a linha RETIDA fica no livro
+      (`v_presas`), para o desfazer ser repetível.
+    · **1018** — `cb_encerrar_conversas_abertas` e
+      `cb_desfazer_encerramento_em_lote`, com a foto de antes em
+      `migracao_kommo.conversas_antes_do_encerramento`. Grupos ficam de fora
+      por padrão (ver a nota sobre `cb-groups/persist.ts`).
+    · **1019** — `stage_changed` sem `to_pipeline_id` é recusado na entrada e
+      na conferência de saída.
+    · **1020** — três corridas (Codex, PR #232): o encerramento pula conversa
+      com mensagem do cliente gravada nos últimos 2 min (`FOR UPDATE … SKIP
+      LOCKED`), o desfazer do encerramento só devolve o que ninguém mexeu
+      depois, e o passo de pessoas acha a ficha pelas DUAS grafias do nono
+      dígito.
+    · **1021** — a foto do encerramento é de CADA operação (`on conflict do
+      update`), senão um segundo encerramento desfazia contra a foto velha.
+    · **1022** — o desfazer da carga só devolve o que continua INTOCADO desde
+      ela: card criado ou movido que alguém mexeu depois, ficha com nome ou
+      e-mail trocado depois e valor de campo editado depois FICAM, retidos no
+      livro e contados em `editadas_depois`. ⚠️ "Intocado" em `deals` e
+      `contacts` é `updated_at <= criado_em` da linha do livro; em
+      `contact_custom_values`, que não tem `updated_at`, é o VALOR — que o
+      livro passou a guardar (`detalhe.valor`), preenchido nas linhas antigas
+      com o valor do dia da migration. ⚠️ O desfazer cala SÓ o
+      `set_updated_at` de `contacts` (nominal — o espelho de e-mail continua
+      ligado) e devolve `updated_at` explicitamente: sem isso, devolver o
+      e-mail empurrava `updated_at` para agora e a linha do nome da MESMA
+      ficha era lida como "editada depois".
+    · **1023** — as decisões da carga são tomadas SOB TRAVA (Codex, PR
+      #232): nome e e-mail da ficha só são preenchidos com `FOR UPDATE` e a
+      regra repetida no UPDATE (um escritor concorrente que preenchesse o
+      e-mail era sobrescrito pelo da Kommo); o card movido é lido travado
+      (a foto do livro é o que o UPDATE sobrescreve); `status_changed` sem
+      funil é recusado na ENTRADA do lote; e a ficha CRIADA pela carga e
+      editada depois fica retida no desfazer, travada antes da pergunta "tem
+      conversa?" — sem a trava, a conversa sendo criada naquele instante era
+      apagada em cascata com as mensagens.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

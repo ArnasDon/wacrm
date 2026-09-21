@@ -605,9 +605,9 @@ operador vai religar as automações depois da carga.
 
 ⚠️⚠️ **3. A idempotência é GARANTIDA PELO BANCO, não conferida pelo script.**
 `deals.kommo_lead_id` com índice único parcial, criado ANTES da carga. Sem
-ele, a pergunta "já migrei este lead?" vira 12.389 varreduras completas sobre
-uma tabela de ~62.000 linhas, e quem pular a pergunta duplica 28.316 eventos em
-silêncio. O id do CONTATO continua no campo personalizado (decisão 16) —
+ele, a pergunta "já migrei este lead?" vira uma varredura completa por card
+(12.611) sobre uma tabela de ~62.000 linhas, e quem pular a pergunta duplica
+28.316 eventos em silêncio. O id do CONTATO continua no campo personalizado (decisão 16) —
 **mas ele responde por contato, não por lead**, e por isso não serve de chave
 de reexecução para `deals`.
 
@@ -819,7 +819,16 @@ conjunto a inserir e de pós-voo sobre a tabela.
     o defeito que existia para pegar.
 30. Nº de `deal_created` retroativos = nº de cards; `min(occurred_at)` por card
     = `deals.created_at`.
-31. `deals` com `created_at` nulo ou igual ao dia da carga = 0.
+31. `deals` com `created_at` **nulo** = 0 — e, para a data, a conferência é
+    contra a FONTE: nenhum card importado pode ter `created_at` diferente do
+    `created_at` do lead dele na Kommo.
+    ⚠️ A versão anterior exigia "nenhum card com `created_at` igual ao dia da
+    carga", e isso **nunca poderia dar zero**: a Kommo continua recebendo ~30
+    leads por dia, e o delta final importa leads criados NAQUELE dia — que
+    legitimamente têm a data do dia. A conferência acusaria migração falhada
+    sobre dado correto (achado do Codex no PR #232, 2ª rodada). O que se quer
+    saber é se a coluna foi ESCRITA ou se caiu no default, e só a comparação
+    com a origem responde isso.
 32. `cb_automation_events` da janela da carga = 0, medido por
     `count: 'exact', head: true` — **nunca** pelo retorno do DELETE, que não
     conta o que saiu.
@@ -873,8 +882,9 @@ as contagens e as regras. Esta seção é o índice.
   como **procedência** na trilha — nunca como chave.
   ⚠️ A versão anterior desta linha aceitava "sem índice único, a idempotência
   fica por conta do script". O teste de esforço mediu o preço e a decisão caiu:
-  sem a coluna, a pergunta vira 12.389 varreduras completas sobre uma tabela de
-  ~62.000 linhas, e quem pular a pergunta duplica 28.316 eventos em silêncio.
+  sem a coluna, a pergunta vira uma varredura completa por card (12.611) sobre
+  uma tabela de ~62.000 linhas, e quem pular a pergunta duplica 28.316 eventos
+  em silêncio.
   Quem implementar a carga seguindo o texto antigo reintroduz as duas coisas —
   ver a regra A.3 do contrato. (Achado do Codex no PR #232.)
 - **17 — apagar as linhas de `cb_automation_events` na mesma transação**, com
@@ -884,8 +894,18 @@ as contagens e as regras. Esta seção é o índice.
 **A REGRA DO CARD — fechada em 20/09, e é a que conserta o defeito da Kommo**
 
 - **Um card por PESSOA e por ÁREA** (Trabalhista × Bancário): **12.389 cards**,
-  2 pessoas com dois, **298 leads que viram só histórico**. Sobrevive o lead
-  mais recente entre os ABERTOS; não havendo aberto, o mais recente de todos.
+  2 pessoas com dois, e **298 leads extras** que NÃO viram card por esta regra.
+  Sobrevive o lead mais recente entre os ABERTOS; não havendo aberto, o mais
+  recente de todos.
+  ⚠️⚠️ **Os 298 extras não viram todos "só histórico" — essa foi a versão
+  RECUSADA.** A régua fechada em 20/09 (seção 6b do de-para, contrato C.17)
+  reparte: **lead com desfecho é caso distinto e ganha card próprio, fechado**
+  (123 ganhos + 71 perdidos + 28 que fecham ao pousar numa etapa com
+  `resultado` = 222); **só o lead ainda ABERTO de verdade** (76) tem a
+  trajetória fundida no sobrevivente. **O total é 12.611 cards**, e é esse
+  número que o contrato e o de-para usam. Quem implementar pelo texto antigo
+  perde 222 casos encerrados como card e subconta o funil de fechados.
+  (Achado do Codex no PR #232, 2ª rodada.)
   "Pessoa" é o telefone pela régua do nono dígito (`variantesDoNonoDigito`),
   **nunca** os últimos 8 de `phonesMatch` — medido: pelos últimos 8, 14 sufixos
   teriam mais de uma pessoa, 13 com DDD ou DDI diferente.

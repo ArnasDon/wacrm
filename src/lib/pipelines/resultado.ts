@@ -11,7 +11,7 @@ import type { DealStatus, PipelineStage } from "@/types";
  *
  * ⚠️ A regra daqui NÃO pode divergir da do gatilho: etapa 'ganho' → 'won',
  * 'perdido' → 'lost', neutra → NÃO MEXE (devolve null = "mantenha o que
- * está") — MENOS para o card PERDIDO, que volta aberto (1028, decisão do
+ * está") — MENOS para o card PERDIDO, que volta aberto (1031, decisão do
  * operador em 21/09/2026: o desqualificado pode voltar a ser qualificado).
  * GANHO que sai para etapa neutra continua ganho (2026-08-29): fechou →
  * transferiu para o funil do Jurídico → continua ganho.

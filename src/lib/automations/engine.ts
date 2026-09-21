@@ -2646,11 +2646,11 @@ function stepChannel(
  *
  * Sem card no contexto (ex.: "quando chegar mensagem → mova o card"), a regra
  * é o negócio ABERTO mais recente (D8). Sem nenhum aberto, o PERDIDO mais
- * recente (1028, decisão do operador em 21/09/2026): o lead desqualificado
+ * recente (1031, decisão do operador em 21/09/2026): o lead desqualificado
  * pode voltar a ser qualificado — ele refaz o formulário, ou agenda pelo
  * Calendly —, e sem isto nenhuma automação o enxergava: o "Mover card"
  * lançava "nenhum negócio aberto" e o card ficava preso na coluna de perda
- * para sempre. Movido para etapa neutra, o gatilho da 1028 o reabre.
+ * para sempre. Movido para etapa neutra, o gatilho da 1031 o reabre.
  *
  * ⚠️ GANHO fica de fora, sempre. O card ganho é o do cliente que fechou (e
  * que foi transferido para o funil do Jurídico): o aviso do Calendly de um

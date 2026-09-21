@@ -1,5 +1,5 @@
 -- ============================================================
--- 1028 — Card PERDIDO que entra numa etapa neutra VOLTA a ficar aberto
+-- 1031 — Card PERDIDO que entra numa etapa neutra VOLTA a ficar aberto
 --
 -- Decisão do operador (21/09/2026), revendo a metade "perdido" da 950: o
 -- lead desqualificado — em tese perdido — pode voltar a ser qualificado
@@ -53,7 +53,7 @@ BEGIN
     AND TG_OP = 'UPDATE'
     AND OLD.status = 'lost'
     AND NEW.status = 'lost' THEN
-    -- 1028: o perdido que volta ao funil volta ABERTO. Só com a etapa
+    -- 1031: o perdido que volta ao funil volta ABERTO. Só com a etapa
     -- ACHADA e sem resultado: etapa que a RLS esconde não é afirmação de
     -- "neutra", e reabrir por ignorância seria afirmar o que não se sabe.
     NEW.status := 'open';
@@ -73,15 +73,15 @@ BEGIN
   IF NOT EXISTS (
     SELECT 1 FROM pg_trigger WHERE tgname = 'cb_deals_aplica_resultado_trigger'
   ) THEN
-    RAISE EXCEPTION '1028: gatilho da 950 ausente';
+    RAISE EXCEPTION '1031: gatilho da 950 ausente';
   END IF;
 
   IF position('OLD.status = ''lost''' IN pg_get_functiondef('cb_deals_aplica_resultado()'::regprocedure)) = 0 THEN
-    RAISE EXCEPTION '1028: a função não traz a regra do perdido que volta';
+    RAISE EXCEPTION '1031: a função não traz a regra do perdido que volta';
   END IF;
 
   IF has_function_privilege('anon', 'cb_deals_aplica_resultado()', 'EXECUTE')
      OR has_function_privilege('authenticated', 'cb_deals_aplica_resultado()', 'EXECUTE') THEN
-    RAISE EXCEPTION '1028: função do gatilho executável por papel de cliente';
+    RAISE EXCEPTION '1031: função do gatilho executável por papel de cliente';
   END IF;
 END $$;

@@ -10,7 +10,7 @@ import { statusAoEntrarNaEtapa, statusPorResultado } from "./resultado";
  * produção em 2026-08-29 num DO-block revertido:
  *   entrou em etapa 'ganho'  → status 'won'
  *   saiu para etapa neutra   → status FICOU 'won' (não reabre)
- *   (1028, 21/09/2026: o PERDIDO que sai para etapa neutra volta 'open')
+ *   (1031, 21/09/2026: o PERDIDO que sai para etapa neutra volta 'open')
  *   reabrir explícito        → 'open' (o gatilho não interfere)
  * Se este teste quebrar, ou o espelho divergiu do gatilho, ou alguém mudou o
  * gatilho sem mudar aqui — os dois são o mesmo bug: a tela mostrando um selo
@@ -52,7 +52,7 @@ describe("statusAoEntrarNaEtapa", () => {
     expect(statusAoEntrarNaEtapa(stages, "inexistente", "lost")).toBeNull();
   });
 
-  // 1028 (21/09/2026): o lead desqualificado pode voltar a ser qualificado.
+  // 1031 (21/09/2026): o lead desqualificado pode voltar a ser qualificado.
   it("CRÍTICO: PERDIDO que entra em etapa neutra volta ABERTO", () => {
     expect(statusAoEntrarNaEtapa(stages, "b", "lost")).toBe("open");
     // o formulário reenvia o status que já estava — continua valendo
@@ -75,10 +75,10 @@ describe("statusAoEntrarNaEtapa", () => {
 });
 
 // O espelho e o gatilho são o MESMO bug quando divergem: a tela com um selo e o
-// banco com outro. O corpo da função vigente é o da 1028.
-describe("gatilho da 1028 — a regra escrita no SQL", () => {
+// banco com outro. O corpo da função vigente é o da 1031.
+describe("gatilho da 1031 — a regra escrita no SQL", () => {
   const sql = readFileSync(
-    join(process.cwd(), "supabase/migrations/1028_cb_perdido_pode_voltar.sql"),
+    join(process.cwd(), "supabase/migrations/1031_cb_perdido_pode_voltar.sql"),
     "utf8",
   );
 

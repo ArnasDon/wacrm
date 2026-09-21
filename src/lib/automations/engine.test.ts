@@ -19,7 +19,7 @@ const h = vi.hoisted(() => ({
     dealExistente: null as { id: string; stage_id?: string } | null,
     /**
      * Preenchido, a leitura de `deals` responde PELO STATUS pedido (`.eq('status', …)`)
-     * — é como se encena "sem card aberto, com um perdido" (1028).
+     * — é como se encena "sem card aberto, com um perdido" (1031).
      */
     dealPorStatus: null as Record<string, { id: string; stage_id?: string } | null> | null,
     /** As chamadas a `cb_atualizar_negocio` (mover card / marcar status). */
@@ -659,11 +659,11 @@ describe('update_contact_field — custom fields', () => {
   });
 });
 
-// 1028 (21/09/2026): o lead desqualificado pode voltar a ser qualificado. Sem
+// 1031 (21/09/2026): o lead desqualificado pode voltar a ser qualificado. Sem
 // card aberto, o "Mover card" acha o PERDIDO mais recente — e o gatilho da
-// 1028 o reabre ao entrar numa etapa neutra. O GANHO nunca: é o card do
+// 1031 o reabre ao entrar numa etapa neutra. O GANHO nunca: é o card do
 // cliente que fechou (e foi para o Jurídico).
-describe('Mover card — sem card aberto, o PERDIDO (1028)', () => {
+describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
   const moverPara = (stage_id: string) => ({
     id: 's-mover',
     automation_id: 'a1',

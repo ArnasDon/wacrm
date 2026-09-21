@@ -6,6 +6,8 @@ const h = vi.hoisted(() => ({
   state: {
     owned: null as { id: string } | null,
     ownedCustomField: null as { id: string } | null,
+    /** Row the account-scoped `conversations` lookup resolves. */
+    ownedConversation: null as { id: string } | null,
     automations: [] as Record<string, unknown>[],
     steps: [] as Record<string, unknown>[],
     fromCalls: [] as string[],
@@ -33,6 +35,9 @@ vi.mock("./admin-client", () => {
       }
       // ownership guard / condition read
       return { data: state.owned, error: null };
+    }
+    if (table === "conversations") {
+      return { data: state.ownedConversation, error: null };
     }
     if (table === "custom_fields") {
       // account-scoped ownership lookup for a custom field definition
@@ -112,6 +117,7 @@ const ACCOUNT = "acct-1";
 beforeEach(() => {
   h.state.owned = null;
   h.state.ownedCustomField = null;
+  h.state.ownedConversation = null;
   h.state.automations = [];
   h.state.steps = [];
   h.state.fromCalls = [];
@@ -151,6 +157,43 @@ describe("runAutomationsForTrigger — tenant isolation", () => {
       triggerType: "new_message_received",
       contactId: "c1",
       context: {},
+    });
+
+    expect(h.state.fromCalls).toContain("automations");
+  });
+
+  it("refuses a caller-supplied conversation_id from another account (GHSA-m4fx-g6pr-hrw8)", async () => {
+    // POST /api/automations/engine copies `body.context` verbatim into
+    // the run, so this id is attacker-controlled. The contact is the
+    // caller's own — only the conversation is foreign, which is exactly
+    // what made this a cross-tenant message-injection primitive.
+    h.state.owned = { id: "c1" };
+    h.state.ownedConversation = null; // not in this account
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [updateStep()];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "victim-conversation-uuid" },
+    });
+
+    expect(h.state.fromCalls).toContain("conversations");
+    expect(h.state.fromCalls).not.toContain("automations");
+    expect(h.state.updateCalls).toHaveLength(0);
+  });
+
+  it("proceeds when the conversation belongs to the account", async () => {
+    h.state.owned = { id: "c1" };
+    h.state.ownedConversation = { id: "conv-1" };
+    h.state.automations = [];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: "new_message_received",
+      contactId: "c1",
+      context: { conversation_id: "conv-1" },
     });
 
     expect(h.state.fromCalls).toContain("automations");

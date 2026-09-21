@@ -80,7 +80,7 @@ afterEach(() => {
   global.fetch = originalFetch
 })
 
-const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', eventName: 'Lead' as const }
+const ARGS = { accountId: 'acct-1', conversationId: 'conv-1', eventName: 'LeadSubmitted' as const }
 
 describe('sendCapiEvent', () => {
   it('reserva o event_id (insert pending) antes de tentar seja o que for', async () => {
@@ -90,7 +90,7 @@ describe('sendCapiEvent', () => {
     expect(writes[0]).toEqual({
       table: 'meta_capi_events',
       op: 'insert',
-      payload: { conversation_id: 'conv-1', event_name: 'Lead', event_id: 'conv-1:Lead', status: 'pending' },
+      payload: { conversation_id: 'conv-1', event_name: 'LeadSubmitted', event_id: 'conv-1:LeadSubmitted', status: 'pending' },
     })
   })
 
@@ -163,11 +163,11 @@ describe('sendCapiEvent', () => {
     expect(init.headers.Authorization).toBe('Bearer plaintext-access-token')
     const body = JSON.parse(init.body)
     expect(body.data[0]).toMatchObject({
-      event_name: 'Lead',
+      event_name: 'LeadSubmitted',
       action_source: 'business_messaging',
       messaging_channel: 'whatsapp',
       user_data: { ctwa_clid: 'clid-123', whatsapp_business_account_id: 'waba-1' },
-      event_id: 'conv-1:Lead',
+      event_id: 'conv-1:LeadSubmitted',
     })
     expect(body.test_event_code).toBeUndefined()
 
@@ -205,9 +205,9 @@ describe('sendCapiEvent', () => {
   it('usa event_id determinístico por conversa+evento, para dedupe', async () => {
     global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
     const { db, writes } = makeDb({})
-    await sendCapiEvent({ db: db as never, accountId: 'acct-1', conversationId: 'conv-9', eventName: 'Schedule' })
+    await sendCapiEvent({ db: db as never, accountId: 'acct-1', conversationId: 'conv-9', eventName: 'QualifiedLead' })
     const insert = writes.find((w) => w.op === 'insert')
-    expect(insert?.payload.event_id).toBe('conv-9:Schedule')
+    expect(insert?.payload.event_id).toBe('conv-9:QualifiedLead')
   })
 })
 

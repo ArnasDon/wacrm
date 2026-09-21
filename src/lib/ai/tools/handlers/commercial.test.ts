@@ -163,7 +163,7 @@ describe('bookCommercialMeetingHandler', () => {
     )
   })
 
-  it('reunião marcada dispara o evento Schedule na Conversions API (Bloco 4)', async () => {
+  it('reunião marcada dispara o evento QualifiedLead na Conversions API (Bloco 4)', async () => {
     h.bookCommercialSlot.mockResolvedValue({ status: 'booked', eventId: 'evt-1', htmlLink: null })
     const result = await bookCommercialMeetingHandler(ctx, validInput)
     expect(result.isError).toBe(false)
@@ -172,11 +172,11 @@ describe('bookCommercialMeetingHandler', () => {
       db: ctx.db,
       accountId: 'acct-1',
       conversationId: 'conv-1',
-      eventName: 'Schedule',
+      eventName: 'QualifiedLead',
     })
   })
 
-  it('não dispara o evento Schedule quando a marcação não foi feita (conflito)', async () => {
+  it('não dispara o evento QualifiedLead quando a marcação não foi feita (conflito)', async () => {
     h.bookCommercialSlot.mockResolvedValue({ status: 'conflict' })
     await bookCommercialMeetingHandler(ctx, validInput)
     await flushMicrotasks()
@@ -260,7 +260,7 @@ describe('saveLeadDetailsHandler', () => {
   /**
    * `readRows` simula o estado JÁ persistido de `contacts`/`conversations`
    * — lido por `maybeFireLeadCapiEvent` (Bloco 4) depois do UPDATE, para
-   * decidir se a conversa ficou pronta para o evento 'Lead'. Por omissão
+   * decidir se a conversa ficou pronta para o evento 'LeadSubmitted'. Por omissão
    * devolve tudo vazio (não pronta), como uma conversa nova.
    */
   function makeDb(
@@ -399,7 +399,7 @@ describe('saveLeadDetailsHandler', () => {
     expect(updates).toEqual([])
   })
 
-  it('dispara o evento Lead (Bloco 4) quando o save completa nome, email, empresa e motivo', async () => {
+  it('dispara o evento LeadSubmitted (Bloco 4) quando o save completa nome, email, empresa e motivo', async () => {
     const { db } = makeDb({
       contacts: { name: 'Ricardo', email: 'ricardo@example.com', company: 'Clínica Sorriso Lda' },
       conversations: { escalation_reason: 'Quer saber preços.' },
@@ -411,11 +411,11 @@ describe('saveLeadDetailsHandler', () => {
       db,
       accountId: 'acct-1',
       conversationId: 'conv-1',
-      eventName: 'Lead',
+      eventName: 'LeadSubmitted',
     })
   })
 
-  it('não dispara o evento Lead enquanto faltar um campo (ex.: sem motivo)', async () => {
+  it('não dispara o evento LeadSubmitted enquanto faltar um campo (ex.: sem motivo)', async () => {
     const { db } = makeDb({
       contacts: { name: 'Ricardo', email: 'ricardo@example.com', company: 'Clínica Sorriso Lda' },
       conversations: { escalation_reason: null },

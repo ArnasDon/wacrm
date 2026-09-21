@@ -11,10 +11,20 @@ import { META_API_BASE } from '@/lib/whatsapp/meta-api'
 //
 // Dois eventos, cada um disparado uma vez por conversa a partir do seu
 // ponto de origem:
-//   - 'Lead'     — quando checkHandoffReadiness (commercial-handoff.ts)
-//                  passa a `ready: true` dentro de saveLeadDetailsHandler.
-//   - 'Schedule' — quando bookCommercialMeetingHandler confirma uma
-//                  reunião (outcome.status === 'booked').
+//   - 'LeadSubmitted' — quando checkHandoffReadiness (commercial-handoff.ts)
+//                       passa a `ready: true` dentro de saveLeadDetailsHandler.
+//   - 'QualifiedLead' — quando bookCommercialMeetingHandler confirma uma
+//                       reunião (outcome.status === 'booked') — marcar
+//                       reunião é o sinal mais forte de qualificação que
+//                       temos, por isso reutiliza este nome padrão da
+//                       Meta em vez de um "Schedule" que ela rejeita.
+//
+// Nomes: a Meta só aceita uma lista fixa de valores para `event_name`
+// quando `action_source = 'business_messaging'` — nem 'Lead' nem
+// 'Schedule' (os nomes do brief original) estão nela; um teste em
+// produção (21/09/2026) confirmou a rejeição (error_subcode 2804066).
+// Ver migração 056 e a lista completa de nomes aceites no comentário
+// mais abaixo, junto ao corpo do pedido.
 //
 // Contrato desta função (a mesma disciplina de notify-team.ts e
 // crm/sync.ts): NUNCA lança. Chamar sempre fire-and-forget
@@ -42,13 +52,20 @@ import { META_API_BASE } from '@/lib/whatsapp/meta-api'
 // para enviar mensagens) — e a app Meta precisa do nível "Marketing
 // API Access Tier" activo. Sem isso, a Meta responde 401/403 e
 // sendCapiEvent regista o erro sem nunca lançar (ver testes).
+//
+// `event_name`, para `action_source = 'business_messaging'`, só pode
+// ser um destes valores fixos (confirmado na documentação oficial —
+// não há eventos custom aqui): Purchase, LeadSubmitted,
+// InitiateCheckout, AddToCart, ViewContent, OrderCreated,
+// OrderShipped, OrderDelivered, OrderCanceled, OrderReturned,
+// CartAbandoned, QualifiedLead, RatingProvided, ReviewProvided.
 // ============================================================
 
 /** Timeout curto — este envio nunca pode atrasar a resposta ao lead. */
 const CAPI_REQUEST_TIMEOUT_MS = 5_000
 const RESPONSE_SUMMARY_MAX = 500
 
-export type CapiEventName = 'Lead' | 'Schedule'
+export type CapiEventName = 'LeadSubmitted' | 'QualifiedLead'
 
 export interface SendCapiEventArgs {
   db: SupabaseClient

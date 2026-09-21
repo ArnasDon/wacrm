@@ -166,7 +166,7 @@ export async function bookCommercialMeetingHandler(
       })
 
       // Bloco 4 — reporta a reunião marcada à Meta Conversions API
-      // (evento 'Schedule'), ligada ao clique de anúncio original pelo
+      // (evento 'QualifiedLead'), ligada ao clique de anúncio original pelo
       // ctwa_clid guardado na conversa. Sem efeito numa conversa que
       // não veio de anúncio (sendCapiEvent trata isso). Fire-and-forget
       // — nunca lança nem atrasa a confirmação ao lead.
@@ -175,9 +175,9 @@ export async function bookCommercialMeetingHandler(
           db: ctx.db,
           accountId: ctx.accountId,
           conversationId: ctx.conversationId,
-          eventName: 'Schedule',
+          eventName: 'QualifiedLead',
         }).catch((err) => {
-          console.error('[commercial handler] sendCapiEvent (Schedule) falhou:', err)
+          console.error('[commercial handler] sendCapiEvent (QualifiedLead) falhou:', err)
         })
       }
 
@@ -274,7 +274,7 @@ export async function saveLeadDetailsHandler(
 
   // Bloco 4 — se este save completou tudo o que checkHandoffReadiness
   // exige (nome, email, motivo, empresa), a conversa acabou de se
-  // tornar uma lead qualificada: reporta o evento 'Lead' à Meta
+  // tornar uma lead qualificada: reporta o evento 'LeadSubmitted' à Meta
   // Conversions API. Fire-and-forget, depois de já ter respondido ao
   // modelo — nunca atrasa nem falha esta chamada de ferramenta.
   if (ctx.conversationId) {
@@ -292,7 +292,7 @@ export async function saveLeadDetailsHandler(
 /**
  * Lê o estado ACTUAL da conversa (depois do save acima já ter sido
  * persistido) e, se checkHandoffReadiness ficar satisfeito, dispara o
- * evento 'Lead' da Conversions API (sendCapiEvent — que por sua vez só
+ * evento 'LeadSubmitted' da Conversions API (sendCapiEvent — que por sua vez só
  * envia de facto quando a conversa tem `ctwa_clid`, ou seja, veio de um
  * anúncio Click to WhatsApp; dedup por `event_id` garante no máximo um
  * envio por conversa mesmo que este handler corra várias vezes).
@@ -326,7 +326,7 @@ async function maybeFireLeadCapiEvent(ctx: ToolHandlerContext): Promise<void> {
     db: ctx.db,
     accountId: ctx.accountId,
     conversationId: ctx.conversationId,
-    eventName: 'Lead',
+    eventName: 'LeadSubmitted',
   })
 }
 

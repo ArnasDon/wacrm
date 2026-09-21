@@ -1193,7 +1193,7 @@
       "toastFailedDeletePipeline": "Falha ao excluir o funil",
       "toastDeleted": "Funil excluído",
       "stageOutcome": "Resultado da etapa",
-      "stageOutcomeHint": "Negócio que entra nesta etapa é marcado com este resultado automaticamente. Sair dela não reabre.",
+      "stageOutcomeHint": "Negócio que entra nesta etapa é marcado com este resultado automaticamente. Ganho continua ganho ao sair; perdido que vai para uma etapa sem resultado volta a ficar aberto.",
       "outcomeNone": "—",
       "outcomeWon": "Ganho",
       "outcomeLost": "Perdido",
@@ -1956,7 +1956,7 @@
         "status_open": "Reaberto",
         "moveToLabel": "Mover para a etapa",
         "pickStage": "Escolha a etapa",
-        "moveHelp": "Move o card do gatilho. Sem card no gatilho, move o negócio aberto mais recente do contato."
+        "moveHelp": "Move o card do gatilho. Sem card no gatilho, move o negócio aberto mais recente do contato — ou, sem nenhum aberto, o perdido mais recente, que volta a ficar aberto (menos de quem já tem negócio ganho: cliente não é puxado de volta). Se o status do card mudar enquanto a automação roda, o passo para em vez de mexer nele."
       },
       "lembrete": {
         "campoLabel": "Campo de data",

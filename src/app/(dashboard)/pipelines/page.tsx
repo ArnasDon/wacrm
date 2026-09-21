@@ -695,13 +695,12 @@ function PipelinesPageInner() {
       // ganho/perdido NO BANCO (BEFORE trigger, mesma escrita). Sem refletir
       // aqui, arrastar para "Contrato Fechado" gravava won mas o selo do
       // card só aparecia no reload — achado da auditoria de 2026-08-29.
-      const carimbo = statusAoEntrarNaEtapa(stages, newStageId);
       setDeals((prev) =>
-        prev.map((d) =>
-          d.id === dealId
-            ? { ...d, stage_id: newStageId, ...(carimbo ? { status: carimbo } : {}) }
-            : d,
-        ),
+        prev.map((d) => {
+          if (d.id !== dealId) return d;
+          const carimbo = statusAoEntrarNaEtapa(stages, newStageId, d.status);
+          return { ...d, stage_id: newStageId, ...(carimbo ? { status: carimbo } : {}) };
+        }),
       );
       // `.select("id")` = checagem de ROWCOUNT. Update que casa 0 linhas
       // volta `error: null` com cara de sucesso — acontece quando a RLS
@@ -713,12 +712,22 @@ function PipelinesPageInner() {
         .from("deals")
         .update({ stage_id: newStageId })
         .eq("id", dealId)
-        .select("id");
+        .select("id, status");
       if (error || !linhas || linhas.length === 0) {
         toast.error(t("toastFailedMoveDeal"));
         refreshDeals();
         return;
       }
+      // O status que o BANCO gravou vence o espelho acima: o quadro não tem
+      // realtime, e o `d.status` desta tela pode ser de antes de outro
+      // operador fechar ou reabrir o card — o gatilho decide pelo que está
+      // gravado, não pelo que a tela lembra (Codex, PR #245).
+      const gravado = linhas[0].status as Deal["status"];
+      setDeals((prev) =>
+        prev.map((d) =>
+          d.id === dealId && d.stage_id === newStageId ? { ...d, status: gravado } : d,
+        ),
+      );
       // O trigger da 933 já enfileirou o evento. Este aviso só antecipa a
       // drenagem: sem ele a automação da etapa sairia no ciclo de 15 min do
       // agendador, e "arrastou → mandou a mensagem" viraria "arrastou →

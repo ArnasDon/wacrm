@@ -618,6 +618,14 @@ accepts `title`, `value`, `status`, and stage moves:
 Stage/pipeline/status changes are recorded in the account's activity
 trail automatically.
 
+**Stages with an outcome.** A stage can be marked *won* or *lost*: moving a
+deal into it sets `status` to `won` / `lost`, overriding any `status` sent
+in the same request. A **lost** deal moved into a stage **without** an
+outcome is reopened (`status: open`) — also when the same request sends
+`status: "lost"` for a deal that is already lost. To keep a deal lost while
+moving it, move it to a stage marked *lost*. A won deal stays won when it
+moves to a stage without an outcome. The response shows the final status.
+
 ### `GET /api/v1/meetings`
 
 List calendar meetings, newest first. Scope: `meetings:read`.

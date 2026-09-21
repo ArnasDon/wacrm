@@ -1,0 +1,626 @@
+-- ============================================================
+-- 1032 — As regras de LEITURA perguntam "de quais contas sou membro" UMA vez
+-- por consulta, e não a cada linha lida.
+--
+-- Até aqui, 61 policies de leitura (52 tabelas) chamavam
+-- `is_account_member(account_id)` por LINHA. A função é SECURITY DEFINER —
+-- não pode ser incorporada à consulta — e cada chamada faz uma busca em
+-- `profiles` e decodifica o JWT de novo (`auth.uid()`). Numa leitura do quadro
+-- do funil (card + contato + etiquetas + conversa, por card) isso dá dezenas
+-- de milhares de chamadas. MEDIDO em produção em 21/09/2026, com a RLS real
+-- (`SET ROLE authenticated` + claims do dono da conta):
+--   · página do quadro do Trabalhista (1.000 de 3.669 cards): 1.071 ms com a
+--     regra por linha × 212 ms sem RLS × 227 ms com a pergunta feita uma vez;
+--   · negócios do filtro de etapa da caixa de entrada: 178 ms × 6 ms — é a
+--     consulta do CRM que mais ocupa o banco (2.645 chamadas, média 320 ms);
+--   · página da lista de conversas: 278 ms × 58 ms.
+-- O funil Trabalhista - Comercial levava ~9 s para abrir e a caixa de
+-- entrada ~4,5 s; o resto do tempo é o mesmo custo multiplicado.
+--
+-- ⚠️⚠️ A REGRA DE QUEM VÊ O QUÊ NÃO MUDA. `is_account_member(x, papel)` é
+-- "existe um perfil meu na conta x com papel >= papel"; a forma nova é
+-- "x está no conjunto das contas em que tenho papel >= papel". Mesmo `CASE`
+-- de hierarquia, mesma tabela, mesmo `auth.uid()`; conta nula não casa em
+-- nenhuma das duas. A conferência no fim compara as duas funções para todo
+-- usuário × toda conta × todo papel do banco em que é aplicada.
+--
+-- ⚠️ POR QUE AS DE "TODOS OS COMANDOS" (FOR ALL) ENTRAM JUNTO: policy FOR ALL
+-- vale também para SELECT, e as permissivas são somadas com OU na ordem do
+-- NOME — `contact_tags_modify` é avaliada antes de `contact_tags_select`.
+-- Reescrever só a de SELECT deixaria o custo inteiro na outra.
+--
+-- ⚠️ As policies SÓ de escrita (INSERT/UPDATE/DELETE) ficam como estão, de
+-- propósito: são avaliadas por linha ESCRITA — uma por vez na prática —, e
+-- deixá-las intactas mantém a mudança do tamanho do problema.
+--
+-- ⚠️ As quatro de leitura que comparam `user_id = auth.uid()` (favoritas,
+-- filtros salvos, filtro padrão, perfis) passam a `(SELECT auth.uid())`,
+-- que também é avaliado uma vez por consulta.
+--
+-- ⚠️ `cb_contas_do_usuario` é SECURITY DEFINER pelo mesmo motivo de
+-- `is_account_member`: lê `profiles`, cuja própria policy pergunta pela
+-- conta — como invoker, entraria em recursão. EXECUTE vai para anon,
+-- authenticated e service_role porque as policies são `TO public`: o anon
+-- também as avalia (e recebe conjunto vazio — `auth.uid()` é nulo).
+--
+-- ⚠️ ALTER POLICY toma trava EXCLUSIVA de cada tabela até o fim da
+-- transação. `lock_timeout` faz a migration DESISTIR (e desfazer tudo) se
+-- alguma tabela estiver ocupada, em vez de enfileirar o sistema inteiro atrás
+-- dela. Falhou por trava? É só aplicar de novo num momento mais calmo.
+--
+-- ⚠️ São policies do UPSTREAM (017 e seguintes). Uma migration futura dele
+-- que recrie uma delas traz de volta a forma por linha — só lentidão, não
+-- brecha. Policy NOVA de leitura usa a forma desta migration.
+--
+-- Reversão: as 61 expressões antigas estão no catálogo de hoje; o inverso é
+-- `ALTER POLICY … USING (is_account_member(…))` para cada uma. Aplicar a
+-- reversão não precisa apagar a função.
+-- ============================================================
+
+SET LOCAL lock_timeout = '5s';
+
+CREATE OR REPLACE FUNCTION public.cb_contas_do_usuario(
+  p_papel_minimo public.account_role_enum DEFAULT 'viewer'
+)
+RETURNS SETOF uuid
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+ROWS 3
+AS $$
+  -- Espelho do corpo de `is_account_member` (017): mesma tabela, mesmo
+  -- `auth.uid()`, mesma hierarquia. Só muda a pergunta: em vez de "sou
+  -- membro DESTA conta?", "de QUAIS contas sou membro?".
+  SELECT p.account_id
+    FROM public.profiles p
+   WHERE p.user_id = auth.uid()
+     AND p.account_id IS NOT NULL
+     AND CASE p.account_role
+           WHEN 'owner'  THEN 4
+           WHEN 'admin'  THEN 3
+           WHEN 'agent'  THEN 2
+           WHEN 'viewer' THEN 1
+         END
+         >=
+         CASE p_papel_minimo
+           WHEN 'owner'  THEN 4
+           WHEN 'admin'  THEN 3
+           WHEN 'agent'  THEN 2
+           WHEN 'viewer' THEN 1
+         END
+$$;
+
+REVOKE ALL ON FUNCTION public.cb_contas_do_usuario(public.account_role_enum)
+  FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.cb_contas_do_usuario(public.account_role_enum)
+  TO anon, authenticated, service_role;
+
+-- ============================================================
+-- As 61 policies de leitura (SELECT e FOR ALL), geradas do catálogo de
+-- produção em 21/09/2026 — a mesma expressão, com a pergunta de membro
+-- trocada. Em ordem de tabela.
+-- ============================================================
+
+-- account_invitations
+ALTER POLICY account_invitations_modify ON public.account_invitations
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+ )
+ WITH CHECK (
+  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+ );
+ALTER POLICY account_invitations_select ON public.account_invitations
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+ );
+
+-- accounts
+ALTER POLICY accounts_select ON public.accounts
+ USING (
+  (id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- ai_configs
+ALTER POLICY ai_configs_select ON public.ai_configs
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- ai_knowledge_chunks
+ALTER POLICY ai_knowledge_chunks_select ON public.ai_knowledge_chunks
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- ai_knowledge_documents
+ALTER POLICY ai_knowledge_documents_select ON public.ai_knowledge_documents
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- ai_usage_log
+ALTER POLICY ai_usage_log_select ON public.ai_usage_log
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum)))
+ );
+
+-- api_keys
+ALTER POLICY api_keys_select ON public.api_keys
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- automation_logs
+ALTER POLICY automation_logs_select ON public.automation_logs
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- automation_steps
+ALTER POLICY automation_steps_modify ON public.automation_steps
+ USING (
+  (EXISTS ( SELECT 1
+     FROM automations a
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM automations a
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ );
+ALTER POLICY automation_steps_select ON public.automation_steps
+ USING (
+  (EXISTS ( SELECT 1
+     FROM automations a
+    WHERE ((a.id = automation_steps.automation_id) AND (a.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- automations
+ALTER POLICY automations_select ON public.automations
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- broadcast_recipients
+ALTER POLICY broadcast_recipients_modify ON public.broadcast_recipients
+ USING (
+  (EXISTS ( SELECT 1
+     FROM broadcasts b
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM broadcasts b
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ );
+ALTER POLICY broadcast_recipients_select ON public.broadcast_recipients
+ USING (
+  (EXISTS ( SELECT 1
+     FROM broadcasts b
+    WHERE ((b.id = broadcast_recipients.broadcast_id) AND (b.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- broadcasts
+ALTER POLICY broadcasts_select ON public.broadcasts
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_availability
+ALTER POLICY cb_availability_select ON public.cb_availability
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_channels
+ALTER POLICY cb_channels_select ON public.cb_channels
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_conversa_aberta
+ALTER POLICY cb_conversa_aberta_select ON public.cb_conversa_aberta
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_conversation_favorites
+ALTER POLICY cb_conversation_favorites_select ON public.cb_conversation_favorites
+ USING (
+  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+ );
+
+-- cb_conversation_insights
+ALTER POLICY cb_conversation_insights_select ON public.cb_conversation_insights
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_conversation_notes
+ALTER POLICY cb_conversation_notes_select ON public.cb_conversation_notes
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_groups
+ALTER POLICY cb_groups_select ON public.cb_groups
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_grupos_de_campos
+ALTER POLICY cb_grupos_de_campos_select ON public.cb_grupos_de_campos
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_inbox_filtro_padrao
+ALTER POLICY cb_inbox_filtro_padrao_select ON public.cb_inbox_filtro_padrao
+ USING (
+  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+ );
+
+-- cb_inbox_saved_filters
+ALTER POLICY cb_inbox_saved_filters_select ON public.cb_inbox_saved_filters
+ USING (
+  ((user_id = ( SELECT auth.uid())) AND (account_id IN ( SELECT public.cb_contas_do_usuario())))
+ );
+
+-- cb_lead_events
+ALTER POLICY cb_lead_events_select ON public.cb_lead_events
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_media_library
+ALTER POLICY cb_media_library_select ON public.cb_media_library
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_meetings
+ALTER POLICY cb_meetings_select ON public.cb_meetings
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_meta_ads_campanhas
+ALTER POLICY cb_meta_ads_campanhas_select ON public.cb_meta_ads_campanhas
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_meta_ads_gastos
+ALTER POLICY cb_meta_ads_gastos_select ON public.cb_meta_ads_gastos
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_perfis_de_acesso
+ALTER POLICY cb_perfis_select ON public.cb_perfis_de_acesso
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_reunioes_transcritas
+ALTER POLICY cb_reunioes_transcritas_select ON public.cb_reunioes_transcritas
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_scheduled_messages
+ALTER POLICY cb_scheduled_messages_select ON public.cb_scheduled_messages
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- cb_tasks
+ALTER POLICY cb_tasks_select ON public.cb_tasks
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- contact_custom_values
+ALTER POLICY contact_custom_values_modify ON public.contact_custom_values
+ USING (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ );
+ALTER POLICY contact_custom_values_select ON public.contact_custom_values
+ USING (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_custom_values.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- contact_tags
+ALTER POLICY contact_tags_modify ON public.contact_tags
+ USING (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ );
+ALTER POLICY contact_tags_select ON public.contact_tags
+ USING (
+  (EXISTS ( SELECT 1
+     FROM contacts c
+    WHERE ((c.id = contact_tags.contact_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- contacts
+ALTER POLICY contacts_select ON public.contacts
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- conversations
+ALTER POLICY conversations_select ON public.conversations
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- custom_fields
+ALTER POLICY custom_fields_select ON public.custom_fields
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- deals
+ALTER POLICY deals_select ON public.deals
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- flow_nodes
+ALTER POLICY flow_nodes_modify ON public.flow_nodes
+ USING (
+  (EXISTS ( SELECT 1
+     FROM flows f
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM flows f
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ );
+ALTER POLICY flow_nodes_select ON public.flow_nodes
+ USING (
+  (EXISTS ( SELECT 1
+     FROM flows f
+    WHERE ((f.id = flow_nodes.flow_id) AND (f.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- flow_run_events
+ALTER POLICY flow_run_events_select ON public.flow_run_events
+ USING (
+  (EXISTS ( SELECT 1
+     FROM flow_runs r
+    WHERE ((r.id = flow_run_events.flow_run_id) AND (r.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- flow_runs
+ALTER POLICY flow_runs_select ON public.flow_runs
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- flows
+ALTER POLICY flows_select ON public.flows
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- member_presence
+ALTER POLICY member_presence_select ON public.member_presence
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- message_reactions
+ALTER POLICY message_reactions_modify ON public.message_reactions
+ USING (
+  (EXISTS ( SELECT 1
+     FROM (messages m
+       JOIN conversations c ON ((c.id = m.conversation_id)))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM (messages m
+       JOIN conversations c ON ((c.id = m.conversation_id)))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ );
+ALTER POLICY message_reactions_select ON public.message_reactions
+ USING (
+  (EXISTS ( SELECT 1
+     FROM (messages m
+       JOIN conversations c ON ((c.id = m.conversation_id)))
+    WHERE ((m.id = message_reactions.message_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- message_templates
+ALTER POLICY message_templates_select ON public.message_templates
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- messages
+ALTER POLICY messages_modify ON public.messages
+ USING (
+  (EXISTS ( SELECT 1
+     FROM conversations c
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM conversations c
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario('agent'::public.account_role_enum))))))
+ );
+ALTER POLICY messages_select ON public.messages
+ USING (
+  (EXISTS ( SELECT 1
+     FROM conversations c
+    WHERE ((c.id = messages.conversation_id) AND (c.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- pipeline_stages
+ALTER POLICY pipeline_stages_modify ON public.pipeline_stages
+ USING (
+  (EXISTS ( SELECT 1
+     FROM pipelines p
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ )
+ WITH CHECK (
+  (EXISTS ( SELECT 1
+     FROM pipelines p
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario('admin'::public.account_role_enum))))))
+ );
+ALTER POLICY pipeline_stages_select ON public.pipeline_stages
+ USING (
+  (EXISTS ( SELECT 1
+     FROM pipelines p
+    WHERE ((p.id = pipeline_stages.pipeline_id) AND (p.account_id IN ( SELECT public.cb_contas_do_usuario())))))
+ );
+
+-- pipelines
+ALTER POLICY pipelines_select ON public.pipelines
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- profiles
+ALTER POLICY profiles_select ON public.profiles
+ USING (
+  ((( SELECT auth.uid()) = user_id) OR (account_id IN ( SELECT public.cb_contas_do_usuario())))
+ );
+
+-- quick_replies
+ALTER POLICY quick_replies_select ON public.quick_replies
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- tags
+ALTER POLICY tags_select ON public.tags
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- webhook_endpoints
+ALTER POLICY webhook_endpoints_select ON public.webhook_endpoints
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- whatsapp_config
+ALTER POLICY whatsapp_config_select ON public.whatsapp_config
+ USING (
+  (account_id IN ( SELECT public.cb_contas_do_usuario()))
+ );
+
+-- ============================================================
+-- Conferência.
+-- ============================================================
+
+-- 1) Nenhuma policy de LEITURA do schema public ainda pergunta por linha.
+DO $$
+DECLARE
+  v_sobrou text;
+BEGIN
+  SELECT string_agg(tablename || '.' || policyname, ', ')
+    INTO v_sobrou
+    FROM pg_policies
+   WHERE schemaname = 'public'
+     AND cmd IN ('SELECT', 'ALL')
+     AND (qual ~ 'is_account_member' OR coalesce(with_check, '') ~ 'is_account_member');
+  IF v_sobrou IS NOT NULL THEN
+    RAISE EXCEPTION '1032: policy de leitura ainda chama is_account_member: %', v_sobrou;
+  END IF;
+END $$;
+
+-- 2) Quem avalia as policies consegue executar a função; PUBLIC não.
+DO $$
+BEGIN
+  IF NOT has_function_privilege('authenticated', 'public.cb_contas_do_usuario(public.account_role_enum)', 'EXECUTE')
+     OR NOT has_function_privilege('anon', 'public.cb_contas_do_usuario(public.account_role_enum)', 'EXECUTE')
+     OR NOT has_function_privilege('service_role', 'public.cb_contas_do_usuario(public.account_role_enum)', 'EXECUTE') THEN
+    RAISE EXCEPTION '1032: anon/authenticated/service_role sem EXECUTE em cb_contas_do_usuario';
+  END IF;
+  IF EXISTS (
+    SELECT 1
+      FROM pg_proc p, aclexplode(p.proacl) a
+     WHERE p.oid = 'public.cb_contas_do_usuario(public.account_role_enum)'::regprocedure
+       AND a.grantee = 0  -- PUBLIC
+  ) THEN
+    RAISE EXCEPTION '1032: PUBLIC ainda tem EXECUTE em cb_contas_do_usuario';
+  END IF;
+END $$;
+
+-- 3) As duas perguntas dão a MESMA resposta para todo usuário × toda conta ×
+--    todo papel deste banco. Em banco vazio não há o que comparar.
+DO $$
+DECLARE
+  u record;
+  a uuid;
+  r public.account_role_enum;
+  v_casos int := 0;
+BEGIN
+  FOR u IN SELECT DISTINCT user_id FROM public.profiles WHERE user_id IS NOT NULL LOOP
+    PERFORM set_config(
+      'request.jwt.claims',
+      json_build_object('sub', u.user_id, 'role', 'authenticated')::text,
+      true
+    );
+    FOR a IN SELECT id FROM public.accounts LOOP
+      FOREACH r IN ARRAY enum_range(NULL::public.account_role_enum) LOOP
+        IF public.is_account_member(a, r)
+           IS DISTINCT FROM (a IN (SELECT public.cb_contas_do_usuario(r))) THEN
+          RAISE EXCEPTION '1032: divergência para usuário %, conta %, papel %', u.user_id, a, r;
+        END IF;
+        v_casos := v_casos + 1;
+      END LOOP;
+    END LOOP;
+  END LOOP;
+  PERFORM set_config('request.jwt.claims', '', true);
+  IF v_casos = 0 THEN
+    RAISE NOTICE '1032: banco vazio, nada a comparar.';
+  ELSE
+    RAISE NOTICE '1032: % combinações (usuário × conta × papel) idênticas.', v_casos;
+  END IF;
+END $$;
+
+-- 4) As policies novas RODAM como authenticated (a função é chamada de dentro
+--    da RLS com o privilégio de quem consulta). Tabela sem SELECT para
+--    authenticated neste banco é pulada — esta migration não concede nem
+--    confere privilégio de tabela.
+DO $$
+DECLARE
+  t text;
+BEGIN
+  FOREACH t IN ARRAY ARRAY['deals', 'contacts', 'contact_tags', 'conversations', 'messages', 'profiles'] LOOP
+    IF NOT has_table_privilege('authenticated', 'public.' || t, 'SELECT') THEN
+      RAISE NOTICE '1032: authenticated sem SELECT em %, pulada.', t;
+      CONTINUE;
+    END IF;
+    BEGIN
+      SET LOCAL ROLE authenticated;
+      EXECUTE format('SELECT count(*) FROM public.%I', t);
+      RESET ROLE;
+    EXCEPTION WHEN insufficient_privilege THEN
+      RESET ROLE;
+      RAISE EXCEPTION '1032: authenticated não consegue ler % pela policy nova: %', t, SQLERRM;
+    END;
+  END LOOP;
+END $$;

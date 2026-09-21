@@ -3651,6 +3651,39 @@ linhas em todas —, mas era **uma** barreira onde as tabelas novas têm duas.
 Confira as duas metades, como no caso das funções: que o `anon` perdeu, **e**
 que `authenticated`/`service_role` não perderam.
 
+⚠️⚠️ **Policy de LEITURA pergunta a conta UMA vez por consulta (1032):
+`account_id IN (SELECT public.cb_contas_do_usuario())`, nunca
+`is_account_member(account_id)`.** A antiga é `SECURITY DEFINER` (o
+planejador não a incorpora) e, numa policy, roda POR LINHA lida — uma busca
+em `profiles` e uma leitura do JWT a cada chamada. Medido em 21/09/2026 com a
+RLS real: a página do quadro do funil Trabalhista levava 1.071 ms contra
+212 ms sem RLS, e a forma por consulta dá 227 ms; o funil abria em ~9 s e a
+caixa de entrada em ~4,5 s. Quem vê o quê NÃO muda: mesma escada de papéis,
+mesma tabela, mesmo `auth.uid()` (pino em `rls-leitura-1032.test.ts`; a
+migration compara as duas funções para todo usuário × conta × papel). O que
+morde código novo:
+
+- **Tabela nova com policy de leitura escreve a forma da 1032**, com papel
+  mínimo quando precisar: `cb_contas_do_usuario('admin'::public.account_role_enum)`.
+  `is_account_member` continua nas policies de ESCRITA (INSERT/UPDATE/DELETE),
+  avaliadas por linha ESCRITA — uma por vez na prática.
+- ⚠️ **FOR ALL vale também para SELECT, e as permissivas somam com OU**: uma
+  FOR ALL por linha na tabela mantém o custo inteiro mesmo com a de SELECT
+  reescrita. A 1032 reescreveu o PREDICADO das FOR ALL também (o comando não
+  muda — é por isso que o pino das policies de escrita da 964 lê `ALTER
+  POLICY` e aceita as duas formas).
+- ⚠️⚠️ **As 61 são policies DO UPSTREAM (017 e seguintes).** Um merge que
+  recrie uma delas, ou traga tabela nova com a forma dele, devolve a lentidão
+  sem quebrar tela nenhuma — é assim que volta sem ninguém notar. O pino
+  reprova no CI: converter para a forma da 1032 no próprio merge.
+- `user_id = auth.uid()` em policy de leitura vira `(SELECT auth.uid())`,
+  também avaliado uma vez.
+- ⚠️ **CREATE/ALTER POLICY trava a tabela EXCLUSIVAMENTE até o fim da
+  transação.** Migration que mexe em policy de tabela quente leva `SET LOCAL
+  lock_timeout` (a 1032 usa 5 s), senão uma transação longa em `messages`
+  enfileira o sistema inteiro atrás dela. Aplicada pela Management API, a
+  migration roda como UM bloco — medido: o `SET LOCAL` vale até o fim.
+
 ⚠️ **A 903 removeu dois índices únicos.** `message_templates(user_id, name,
 language)` e `ai_configs(account_id)` viraram pares de índices **parciais**
 (global + por canal). Consequências que já morderam durante a implementação e
@@ -6803,6 +6836,17 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
     números no mesmo dia — as 1025/1026 são dela). **Não existem 1027–1029**:
     não "preencher" a lacuna.
+  - **1032_cb_rls_leitura_uma_vez_por_consulta** — a função
+    `cb_contas_do_usuario(papel)` (SECURITY DEFINER, EXECUTE para anon,
+    authenticated e service_role — as policies são `TO public`) e as 61
+    policies de LEITURA (SELECT e FOR ALL, 52 tabelas) reescritas por `ALTER
+    POLICY` para `account_id IN (SELECT …)` — ver "Policy de LEITURA pergunta
+    a conta UMA vez por consulta". ⚠️ É **1032** porque a **1031** é da branch
+    `feat/perdido-pode-voltar` (ainda não mesclada), e 1025–1027 foram
+    aplicadas por outras frentes antes de chegar ao `main`. Ensaiada em
+    produção numa transação desfeita (8 usuários × 52 tabelas: o resultado da
+    RLS, o predicado antigo e o novo idênticos em todas). A aplicação e a
+    conferência depois dela estão no PR.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
@@ -6875,8 +6919,8 @@ criado do zero ele não se repete. Duas consequências, ambas já morderam:
 
   ⚠️ Vale também para RLS: política avaliada com o privilégio de QUEM CHAMOU.
   A de `messages` consulta `conversations`, então `authenticated` precisa de
-  `SELECT` nas duas. A cadeia para em `is_account_member`, que é
-  `SECURITY DEFINER`.
+  `SELECT` nas duas. A cadeia para em `cb_contas_do_usuario` (leitura, 1032)
+  e em `is_account_member` (escrita), as duas `SECURITY DEFINER`.
 
 **2. Conferência não pode exigir dado que só existe aqui.**
 
@@ -7197,6 +7241,9 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
   diretório em 4, ela ordena fora do lugar no replay — e o teste
   `nomes-das-migrations.test.ts` reprova.
 - ❌ Renomear/renumerar migration já aplicada.
+- ❌ Policy de LEITURA nova com `is_account_member(account_id)` — ela roda
+  por linha lida. Use `account_id IN (SELECT public.cb_contas_do_usuario())`
+  (1032); o pino `rls-leitura-1032.test.ts` reprova a forma antiga.
 - ❌ Conferir privilégio numa migration sem tê-lo CONCEDIDO ali. O que vem do
   *default privilege* do Supabase não existe em banco novo — nove migrations
   nossas reprovaram por isso na primeira vez que o CI as reaplicou do zero.

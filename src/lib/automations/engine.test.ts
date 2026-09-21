@@ -15,7 +15,7 @@ const h = vi.hoisted(() => ({
     } | null,
     ownedCustomField: null as { id: string } | null,
     pipeline: null as { id: string } | null,
-    stage: null as { id: string } | null,
+    stage: null as { id?: string; resultado?: string | null } | null,
     dealExistente: null as { id: string; stage_id?: string } | null,
     /**
      * Preenchido, a leitura de `deals` responde PELO STATUS pedido (`.eq('status', …)`)
@@ -24,6 +24,8 @@ const h = vi.hoisted(() => ({
     dealPorStatus: null as Record<string, { id: string; stage_id?: string } | null> | null,
     /** As chamadas a `cb_atualizar_negocio` (mover card / marcar status). */
     rpcMover: [] as Record<string, unknown>[],
+    /** Roda depois de cada `cb_atualizar_negocio` — encena o card mudando de status no meio da execução. */
+    depoisDeMover: null as null | (() => void),
     /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
     erroNoNegocio: null as string | null,
     /**
@@ -171,7 +173,12 @@ vi.mock('./admin-client', () => {
       }
       if (state.dealPorStatus) {
         const status = ops.filters.find(([op, k]) => op === 'eq' && k === 'status')?.[2];
-        return { data: typeof status === 'string' ? (state.dealPorStatus[status] ?? null) : null, error: null };
+        if (typeof status === 'string') return { data: state.dealPorStatus[status] ?? null, error: null };
+        // Leitura POR ID (o status do card que o "Mover" vai mexer): devolve o
+        // card com o status da chave em que ele está.
+        const id = ops.filters.find(([op, k]) => op === 'eq' && k === 'id')?.[2];
+        const achado = Object.entries(state.dealPorStatus).find(([, d]) => d?.id === id);
+        return { data: achado ? { ...achado[1], status: achado[0] } : null, error: null };
       }
       return { data: state.dealExistente, error: null };
     }
@@ -367,6 +374,7 @@ vi.mock('./admin-client', () => {
         }
         if (nome === 'cb_atualizar_negocio') {
           state.rpcMover.push(args ?? {});
+          state.depoisDeMover?.();
           return Promise.resolve({ data: [{ ok: true, motivo: null }], error: null });
         }
         return Promise.resolve({ data: null, error: null });
@@ -429,6 +437,7 @@ beforeEach(() => {
   h.state.dealExistente = null;
   h.state.dealPorStatus = null;
   h.state.rpcMover = [];
+  h.state.depoisDeMover = null;
   h.state.dealSelects = [];
   h.state.dealInserts = [];
   h.state.automations = [];
@@ -705,6 +714,80 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
 
     expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-aberto' });
     expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'lost'))).toBe(false);
+  });
+
+  it('CRÍTICO: perdido "movido" para a etapa NEUTRA em que já está volta ABERTO (o gatilho não vê etapa igual)', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido', stage_id: 'etapa-reuniao' } };
+    h.state.stage = { resultado: null };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-reuniao')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-reuniao', p_status: 'open' });
+  });
+
+  it('perdido indo para etapa marcada "perdido" não é forçado a aberto', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido' } };
+    h.state.stage = { resultado: 'perdido' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-desqualificado')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_status: null });
+  });
+
+  it('CRÍTICO: o card fica FIXADO na execução — depois de fechado, o "Mover" seguinte não troca de card', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: { id: 'd-contrato' }, lost: { id: 'd-outro-funil' } };
+    // O primeiro "Mover" leva o card a "Contrato Fechado" e ele deixa de estar aberto.
+    h.state.depoisDeMover = () => {
+      if (h.state.dealPorStatus) h.state.dealPorStatus = { won: { id: 'd-contrato' }, lost: { id: 'd-outro-funil' } };
+    };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-contrato-fechado'), { ...moverPara('etapa-cliente-ativo'), id: 's-mover-2', position: 1 }];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover.map((r) => r.p_deal_id)).toEqual(['d-contrato', 'd-contrato']);
+  });
+
+  it('o card fixado NÃO vaza para a automação seguinte do mesmo disparo', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: { id: 'd-1' } };
+    h.state.depoisDeMover = () => {
+      if (h.state.dealPorStatus) h.state.dealPorStatus = { open: { id: 'd-2' } };
+    };
+    h.state.automations = [automationWithUpdateStep(), { ...automationWithUpdateStep(), id: 'a2' }];
+    h.state.steps = [moverPara('etapa-x'), { ...moverPara('etapa-y'), id: 's-a2', automation_id: 'a2' }];
+
+    const contexto = {};
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: contexto,
+    });
+
+    expect(contexto).toEqual({});
   });
 
   it('CRÍTICO: o GANHO nunca é alvo — só o card ganho = nenhum negócio, e nada se move', async () => {

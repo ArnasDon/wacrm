@@ -55,7 +55,8 @@ describe("statusAoEntrarNaEtapa", () => {
   // 1031 (21/09/2026): o lead desqualificado pode voltar a ser qualificado.
   it("CRÍTICO: PERDIDO que entra em etapa neutra volta ABERTO", () => {
     expect(statusAoEntrarNaEtapa(stages, "b", "lost")).toBe("open");
-    // o formulário reenvia o status que já estava — continua valendo
+    // 'lost' mandado de novo junto com a etapa (a API v1) também reabre: o
+    // gatilho não distingue "não mexeu" de "mandou o mesmo"
     expect(statusAoEntrarNaEtapa(stages, "b", "lost", "lost")).toBe("open");
   });
 

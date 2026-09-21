@@ -813,7 +813,11 @@ async function executeAutomation(
     (await executeStepsFrom({
       automation,
       contactId: input.contactId ?? null,
-      context: input.context ?? {},
+      // ⚠️ CÓPIA por execução: `input.context` é o MESMO objeto para todas as
+      // automações de um disparo, e o "Mover card" fixa nele o card desta
+      // execução (`deal_id`, 1031) — sem a cópia, a automação seguinte do
+      // mesmo disparo herdaria o card da anterior.
+      context: { ...(input.context ?? {}) },
       parentStepId: null,
       branch: null,
       startPosition: 0,
@@ -1704,12 +1708,45 @@ async function runStep(
       const cfg = step.step_config as MoveDealStepConfig;
       const alvo = await negocioAlvo(db, args);
       if (!alvo) throw new Error('nenhum negócio aberto ou perdido para este contato');
+      // ⚠️ O card desta execução fica FIXADO no contexto (1031): sem isto
+      // cada passo procura de novo, e depois de um passo que fecha o card
+      // (entrar em "Contrato Fechado" o ganha) o "Mover" seguinte cairia no
+      // PERDIDO de outro funil do mesmo contato — a Kommo trouxe um card por
+      // pessoa e por área. Viaja para o "Aguardar" junto com o resto do
+      // contexto.
+      if (!args.context.deal_id) args.context.deal_id = alvo;
 
       const ehMover = step.step_type === 'move_deal_stage';
       if (ehMover && !cfg.stage_id)
         throw new Error('move_deal_stage precisa de etapa');
       if (!ehMover && !cfg.status)
         throw new Error('set_deal_status precisa de status');
+
+      // ⚠️ O PERDIDO que o "Mover" leva para uma etapa neutra volta ABERTO
+      // (1031) — e é dito aqui, explicitamente, porque o gatilho só age
+      // quando a etapa MUDA: o card marcado perdido pelo botão continua na
+      // etapa em que estava, e "mover" para essa mesma etapa (o Calendly
+      // manda para "Reunião Agendada" quem reagendou) seria um no-op com
+      // cara de sucesso. Etapa marcada (ganho/perdido) segue o gatilho.
+      let statusPedido: string | null = ehMover ? null : (cfg.status ?? null);
+      if (ehMover) {
+        const { data: card, error: erroCard } = await db
+          .from('deals')
+          .select('status')
+          .eq('id', alvo)
+          .eq('account_id', args.automation.account_id)
+          .maybeSingle();
+        if (erroCard) throw new Error(`leitura do negócio falhou: ${erroCard.message}`);
+        if (card?.status === 'lost') {
+          const { data: etapa, error: erroEtapa } = await db
+            .from('pipeline_stages')
+            .select('resultado')
+            .eq('id', cfg.stage_id)
+            .maybeSingle();
+          if (erroEtapa) throw new Error(`leitura da etapa falhou: ${erroEtapa.message}`);
+          if (etapa && etapa.resultado == null) statusPedido = 'open';
+        }
+      }
 
       // ⚠️ Vai por RPC, e não por `.update()` direto, por DOIS motivos que se
       // somam: (1) a trilha da 912 exige que funil e etapa mudem no MESMO
@@ -1721,7 +1758,7 @@ async function runStep(
         p_account_id: args.automation.account_id,
         p_pipeline_id: null,
         p_stage_id: ehMover ? cfg.stage_id : null,
-        p_status: ehMover ? null : cfg.status,
+        p_status: statusPedido,
         p_cadeia: cadeiaDoContexto(args),
       });
       if (error) throw new Error(`${step.step_type} falhou: ${error.message}`);

@@ -3032,13 +3032,33 @@ O que morde código novo:
   depois entra em atraso), e até aqui ele ficava preso — na coluna nova com o
   selo "Perdido", fora das métricas de aberto e invisível às automações. Só
   quando o update NÃO trocou o status (`OLD` e `NEW` = `lost`: arrasto,
-  seletor de etapa, RPC das automações, formulário que reenvia o que estava)
-  e só com a etapa ACHADA. O espelho (`statusAoEntrarNaEtapa`) recebe o
-  status de antes e o pedido, e há pino lendo o SQL da 1031.
+  seletor de etapa, lista do funil, RPC das automações) e só com a etapa
+  ACHADA. ⚠️ O gatilho não distingue "não mexeu no status" de "mandou 'lost'
+  de novo": PATCH da API v1 com `status: 'lost'` + etapa neutra sobre card JÁ
+  perdido volta aberto (está na doc da API). O espelho
+  (`statusAoEntrarNaEtapa`) recebe o status de antes e o pedido, e há pino
+  lendo o SQL da 1031.
+- ⚠️ **Etapa IGUAL não passa pelo gatilho**, e é o caso comum: o card marcado
+  perdido pelo BOTÃO continua na etapa em que estava. Por isso o "Mover card"
+  das automações reabre EXPLICITAMENTE (`p_status: 'open'`) quando o card é
+  perdido e o destino é neutro — senão o Calendly "moveria" para "Reunião
+  Agendada" quem reagendou, com cara de sucesso, e o card seguiria perdido,
+  sem lembrete nenhum (revisão do PR #245).
 - ⚠️ **As automações acham o card PERDIDO quando o contato não tem aberto**
   (`negocioAlvo`, 1031): o "Mover card" do Typebot e do Calendly tira o lead
-  da perda — e o gatilho acima o reabre. O GANHO nunca é alvo: um cliente que
-  marca outra reunião arrastaria o card do caso dele para o comercial.
+  da perda. O GANHO nunca é alvo — mas isso só protege card FECHADO como
+  ganho: os cards do Jurídico estão ABERTOS (o operador os move lá sem fechar)
+  e o Calendly de um cliente do Jurídico que marca reunião já arrastava o card
+  do caso para o comercial antes da 1031. Escopo (`stageInScope`) e estadia
+  (`so-na-etapa.ts`) continuam só com card ABERTO, de propósito: perdido não
+  "está" em etapa nenhuma para esses dois.
+- ⚠️⚠️ **O card da execução fica FIXADO no contexto** no primeiro "Mover
+  card"/"Marcar status" (`context.deal_id`, e viaja para o "Aguardar"). Sem
+  isso cada passo procurava de novo, e depois de um passo que FECHA o card o
+  seguinte cairia no perdido de outro funil do mesmo contato (a Kommo trouxe
+  um card por pessoa e por área). Por isso `executeAutomation` passa uma CÓPIA
+  de `input.context` — o objeto é o mesmo para todas as automações de um
+  disparo, e o card fixado vazaria para a seguinte.
 - **Etapa marcada VENCE status explícito no mesmo update**; o Reabrir muda só
   o status (sem tocar etapa) e o gatilho passa reto — de propósito.
 - **`src/lib/pipelines/resultado.ts` é ESPELHO do gatilho** (para o selo

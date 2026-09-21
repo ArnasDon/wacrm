@@ -13,13 +13,19 @@
 -- transferência do jurídico que a 950 protege (fechou → vai para o funil
 -- do Jurídico → CONTINUA ganho). Não estender ao `won`.
 --
--- ⚠️ Status EXPLÍCITO no mesmo update vence, como antes: quem muda o
--- status para outra coisa junto com a etapa fica com o que pediu. A regra
--- só age quando o update NÃO mexeu no status (`NEW.status = OLD.status =
--- 'lost'`) — é o arrasto no quadro, o seletor de etapa, a RPC das
--- automações (`coalesce(p_status, status)`) e o formulário que reenvia o
--- status que já estava. Continuar perdido e trocar de etapa = entrar numa
--- etapa marcada "perdido".
+-- ⚠️ A regra age quando o update NÃO trocou o status (`NEW.status =
+-- OLD.status = 'lost'`) — o arrasto no quadro, o seletor de etapa, a lista
+-- do funil e a RPC das automações (`coalesce(p_status, status)`). Quem pede
+-- OUTRO status junto com a etapa fica com o que pediu. ⚠️ O gatilho não
+-- distingue "não mexeu no status" de "mandou 'lost' de novo": um PATCH da
+-- API v1 com `status: 'lost'` e etapa neutra sobre card JÁ perdido volta
+-- aberto (a doc da API diz). Continuar perdido e trocar de etapa = entrar
+-- numa etapa marcada "perdido".
+--
+-- ⚠️ Etapa IGUAL não passa por aqui (o gatilho só age quando a etapa muda):
+-- o card marcado perdido pelo botão continua na etapa em que estava, e o
+-- "Mover card" das automações para essa mesma etapa reabre EXPLICITAMENTE,
+-- no motor (`p_status: 'open'`).
 --
 -- Só troca o CORPO da função; o gatilho da 950 continua apontando para ela.
 -- ============================================================

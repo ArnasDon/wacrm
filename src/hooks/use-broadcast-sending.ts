@@ -9,7 +9,8 @@ import {
   BATCH_SEND_ATTEMPTS,
   batchRetryDelayMs,
 } from '@/lib/broadcast-retry';
-import { normalizeKey } from '@/lib/contacts/dedupe';
+import { chaveDePessoa, isUniqueViolation } from '@/lib/contacts/dedupe';
+import { variantesDoNonoDigito } from '@/lib/contacts/telefone';
 import {
   buscarPaginado,
   type ErroDoPostgrest,
@@ -425,8 +426,9 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
    * contact_id, which failed the UUID cast on insert — every CSV
    * broadcast silently created zero recipients.
    *
-   * Matching is on the normalized number throughout, so it agrees with
-   * the account-wide unique index rather than colliding with it.
+   * Matching is by PERSON throughout — the canonical ninth-digit spelling
+   * (`chaveDePessoa`), the key of the account-wide unique index since 1024 —
+   * so it agrees with the index rather than colliding with it.
    */
   async function upsertCsvContacts(
     supabase: ReturnType<typeof createClient>,
@@ -445,51 +447,61 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
       throw new Error('Your profile is not linked to an account.');
     }
 
-    // De-duplicate within the CSV on the NORMALIZED number — the same
-    // key the DB's UNIQUE (account_id, phone_normalized) index uses
-    // (migration 022). Keyed on the raw string instead, "+1 555-0100"
-    // and "15550100" survived as two rows and the insert below died on
-    // a 23505, failing the whole broadcast.
+    // De-duplicate within the CSV by PERSON: the canonical ninth-digit
+    // spelling (`chaveDePessoa`), the key the DB's UNIQUE (account_id,
+    // telefone_canonico) index enforces since 1024. Keyed on the raw string,
+    // "+1 555-0100" and "15550100" survived as two rows; keyed on the digits
+    // only (up to 1024), "5583988745316" and "558388745316" did — and the
+    // insert below died on a 23505, failing the whole broadcast.
     const uniqueByKey = new Map<string, { phone: string; name?: string }>();
     for (const row of csvRows) {
-      const key = normalizeKey(row.phone);
+      const key = chaveDePessoa(row.phone);
       if (key && !uniqueByKey.has(key)) uniqueByKey.set(key, row);
     }
     const keys = [...uniqueByKey.keys()];
 
-    // Single round-trip lookup of existing contacts. Scoped by ACCOUNT, not
-    // by who clicked: contacts born from ingestion (or from a teammate)
-    // carry the account owner's user_id, and filtering by `user.id` missed
-    // them — the re-insert then hit the unique index (migration 022) and
-    // sank the whole broadcast with a raw 23505. Matched on the generated
-    // `phone_normalized` column (upstream #532), the same digits-only key
-    // as `normalizeKey`, so "+55 (11) 9..." in the CSV finds the contact
-    // stored as "5511 9..." instead of trying to insert it again.
-    //
-    // ⚠️⚠️ ESTA CONSULTA CONTINUA SEM PAGINAR, e é o último buraco desta
-    // família no arquivo: acima de mil chaves o PostgREST devolve as
-    // primeiras mil, os contatos que não vieram são tratados como novos, o
-    // insert abaixo bate no índice único da 022 e a campanha inteira morre
-    // com um 23505 cru na tela. Um CSV de 12 mil linhas — o tamanho da base
-    // depois da Kommo — cai nisso na primeira tentativa. Não foi consertada
-    // junto com as outras porque `use-broadcast-sending.dono-do-csv.test.ts`
-    // trava a FORMA deste trecho letra por letra (é a resolução do merge do
-    // upstream de 2026-09-05), e fatiar a lista renomeia a variável que o
-    // pino exige. Quem consertar mexe nos DOIS arquivos, na mesma passada.
-    const { data: existing, error: lookupErr } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('account_id', accountId)
-      .in('phone_normalized', keys);
-    if (lookupErr) {
-      throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
-    }
-
     const byKey = new Map<string, Contact>();
-    for (const c of (existing ?? []) as Contact[]) {
-      const key = normalizeKey(c.phone ?? '');
-      if (key) byKey.set(key, c);
-    }
+    const lembrar = (lista: Contact[]) => {
+      for (const c of lista) {
+        const key = chaveDePessoa(c.phone ?? '');
+        if (key) byKey.set(key, c);
+      }
+    };
+
+    // Lookup of existing contacts. Scoped by ACCOUNT, not by who clicked:
+    // contacts born from ingestion (or from a teammate) carry the account
+    // owner's user_id, and filtering by `user.id` missed them. Matched on the
+    // generated `phone_normalized` column (upstream #532) by BOTH spellings of
+    // each number (`variantesDoNonoDigito` over the canonical key): the
+    // ingestion stores the JID, which comes WITHOUT the 9 for older numbers,
+    // while the CSV comes as the office typed it — matching one spelling only
+    // treated the client as new, and since 1024 the insert then hits the
+    // canonical index.
+    //
+    // ⚠️ Em FATIAS de `LOOKUP_CHUNK` grafias: cada grafia casa no máximo uma
+    // ficha (o índice exato da 022), então cada resposta fica bem abaixo do
+    // teto de mil linhas do PostgREST. Numa consulta só, acima de mil chaves
+    // o PostgREST devolvia as primeiras mil, os contatos que não vieram eram
+    // tratados como novos e a campanha morria com um 23505 cru na tela.
+    const LOOKUP_CHUNK = 200;
+    const buscarExistentes = async (chaves: string[]): Promise<Contact[]> => {
+      const grafias = chaves.flatMap((k) => variantesDoNonoDigito(k));
+      const achados: Contact[] = [];
+      for (let i = 0; i < grafias.length; i += LOOKUP_CHUNK) {
+        const fatia = grafias.slice(i, i + LOOKUP_CHUNK);
+        const { data: existing, error: lookupErr } = await supabase
+          .from('contacts')
+          .select('*')
+          .eq('account_id', accountId)
+          .in('phone_normalized', fatia);
+        if (lookupErr) {
+          throw new Error(`Failed to look up CSV contacts: ${lookupErr.message}`);
+        }
+        achados.push(...((existing ?? []) as Contact[]));
+      }
+      return achados;
+    };
+    lembrar(await buscarExistentes(keys));
 
     // Insert only missing contacts, in one batch per 200 rows (PostgREST
     // has a default payload cap — 200 keeps individual requests small).
@@ -519,12 +531,34 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
         .from('contacts')
         .insert(chunk)
         .select();
-      if (insertErr) {
+      if (!insertErr) {
+        lembrar((inserted ?? []) as Contact[]);
+        continue;
+      }
+      if (!isUniqueViolation(insertErr)) {
         throw new Error(`Failed to create CSV contacts: ${insertErr.message}`);
       }
-      for (const c of (inserted ?? []) as Contact[]) {
-        const key = normalizeKey(c.phone ?? '');
-        if (key) byKey.set(key, c);
+      // Corrida: outro caminho (a ingestão, um colega) criou uma destas
+      // pessoas — em qualquer das duas grafias — entre a busca e o insert. O
+      // lote é tudo-ou-nada, então: relê quem existe agora, insere o resto
+      // um a um, e a linha que ainda colidir fica com a ficha que venceu.
+      lembrar(await buscarExistentes(chunk.map((row) => chaveDePessoa(row.phone))));
+      for (const row of chunk) {
+        const key = chaveDePessoa(row.phone);
+        if (byKey.has(key)) continue;
+        const { data: um, error: erroDeUm } = await supabase
+          .from('contacts')
+          .insert(row)
+          .select()
+          .single();
+        if (um) {
+          lembrar([um as Contact]);
+          continue;
+        }
+        if (!isUniqueViolation(erroDeUm)) {
+          throw new Error(`Failed to create CSV contacts: ${erroDeUm?.message ?? '?'}`);
+        }
+        lembrar(await buscarExistentes([key]));
       }
     }
 

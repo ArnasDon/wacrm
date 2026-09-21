@@ -65,8 +65,10 @@ const UNIVERSO: Record<
     viaVariavel: true,
   },
   'hooks/use-broadcast-sending.ts': {
+    // O lote e, na corrida (23505 com o índice canônico da 1024), o reenvio
+    // um a um das MESMAS linhas de `missing` — as duas levam o dono.
     fontes: ['ownerUserId'],
-    callSites: 1,
+    callSites: 2,
     viaVariavel: true,
   },
   'lib/asaas/criar-ficha.ts': {

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import {
+  chaveDePessoa,
   dedupeByPhone,
+  fichaQueVenceu,
   findExistingContact,
   isExactMatch,
   isUniqueViolation,
@@ -64,6 +66,24 @@ describe("dedupeByPhone", () => {
     expect(unique).toHaveLength(1);
     expect(duplicates).toBe(1);
   });
+
+  it("o mesmo celular com e sem o 9 é UMA pessoa (1024)", () => {
+    // Pela grafia, as duas passavam e caíam no mesmo lote de INSERT — com o
+    // índice canônico, o lote inteiro levava 23505.
+    const { unique, duplicates } = dedupeByPhone([
+      { phone: "5583988745316", name: "com o 9" },
+      { phone: "+55 83 8874-5316", name: "sem o 9" },
+    ]);
+    expect(unique.map((r) => r.name)).toEqual(["com o 9"]);
+    expect(duplicates).toBe(1);
+  });
+});
+
+describe("chaveDePessoa", () => {
+  it("é a grafia canônica: as duas grafias do nono dígito dão a mesma chave", () => {
+    expect(chaveDePessoa("558388745316")).toBe(chaveDePessoa("+55 (83) 98874-5316"));
+    expect(normalizeKey("558388745316")).not.toBe(normalizeKey("5583988745316"));
+  });
 });
 
 describe("findExistingContact", () => {
@@ -73,6 +93,7 @@ describe("findExistingContact", () => {
   function stubDb(
     rows: Array<{ id: string; phone: string }>,
     ordens: Array<{ col: string; opcoes?: { ascending?: boolean } }> = [],
+    likes: Array<{ col: string; padrao: string }> = [],
   ): SupabaseClient {
     const builder = {
       select: () => builder,
@@ -81,10 +102,37 @@ describe("findExistingContact", () => {
         ordens.push({ col, opcoes });
         return builder;
       },
-      like: () => Promise.resolve({ data: rows, error: null }),
+      like: (col: string, padrao: string) => {
+        likes.push({ col, padrao });
+        return Promise.resolve({ data: rows, error: null });
+      },
     };
     return { from: () => builder } as unknown as SupabaseClient;
   }
+
+  it("filtra pelos DÍGITOS (`phone_normalized`), nunca pelo texto cru (regra 18)", async () => {
+    // Sobre `phone`, a ficha gravada "+55 83 98874-5316" não casava
+    // `%88745316`: a busca não a achava, o INSERT levava 23505, a releitura
+    // falhava igual e a ingestão descartava a mensagem — todas, para sempre.
+    const likes: Array<{ col: string; padrao: string }> = [];
+    await findExistingContact(stubDb([], [], likes), "acct", "+55 83 98874-5316");
+    expect(likes).toEqual([{ col: "phone_normalized", padrao: "%88745316" }]);
+  });
+
+  it("acha a ficha gravada COM separadores (o candidato volta pelos dígitos)", async () => {
+    const db = stubDb([{ id: "c-fmt", phone: "+55 (83) 98874-5316" }]);
+    const hit = await findExistingContact(db, "acct", "558388745316");
+    expect(hit.contato?.id).toBe("c-fmt");
+  });
+
+  it("a IRMÃ do nono dígito vence a ficha mais antiga de OUTRO DDD com o mesmo final", async () => {
+    // A tolerante sozinha devolvia a mais antiga com os mesmos 8 finais — a
+    // de outra pessoa. A canônica é a dona do número no índice.
+    const outroDdd = { id: "c-15-antiga", phone: "5515988745316" };
+    const irma = { id: "c-83", phone: "5583988745316" };
+    const hit = await findExistingContact(stubDb([outroDdd, irma]), "acct", "558388745316");
+    expect(hit.contato?.id).toBe("c-83");
+  });
 
   it("returns a trunk-variant match via phonesMatch", async () => {
     const db = stubDb([{ id: "c1", phone: "37063949836" }]);
@@ -186,5 +234,48 @@ describe("findExistingContact", () => {
       expect(ordens.map((o) => o.col)).toEqual(["created_at", "id"]);
       expect(ordens.every((o) => o.opcoes?.ascending === true)).toBe(true);
     });
+  });
+});
+
+describe("fichaQueVenceu (a releitura depois do 23505)", () => {
+  function dbComRespostas(respostas: Array<{ data: unknown; error: unknown }>) {
+    let chamadas = 0;
+    const builder = {
+      select: () => builder,
+      eq: () => builder,
+      order: () => builder,
+      like: () => Promise.resolve(respostas[Math.min(chamadas++, respostas.length - 1)]),
+    };
+    return {
+      db: { from: () => builder } as unknown as SupabaseClient,
+      chamadas: () => chamadas,
+    };
+  }
+  const semEspera = async () => {};
+
+  it("releitura que FALHA é repetida, e a vencedora é entregue", async () => {
+    // Na ingestão, é a diferença entre gravar a mensagem do cliente na ficha
+    // dele e descartá-la: o provedor já recebeu 200 e não reenvia.
+    const { db, chamadas } = dbComRespostas([
+      { data: null, error: { message: "timeout" } },
+      { data: [{ id: "c1", phone: "5583988745316" }], error: null },
+    ]);
+    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
+    expect(r).toEqual({ contato: { id: "c1", phone: "5583988745316" }, falhou: false });
+    expect(chamadas()).toBe(2);
+  });
+
+  it("para depois de três tentativas e diz que NÃO SABE (nunca 'não existe')", async () => {
+    const { db, chamadas } = dbComRespostas([{ data: null, error: { message: "fora do ar" } }]);
+    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
+    expect(r).toEqual({ contato: null, falhou: true });
+    expect(chamadas()).toBe(3);
+  });
+
+  it("'não achei' com a consulta respondida NÃO é repetido", async () => {
+    const { db, chamadas } = dbComRespostas([{ data: [], error: null }]);
+    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
+    expect(r).toEqual({ contato: null, falhou: false });
+    expect(chamadas()).toBe(1);
   });
 });

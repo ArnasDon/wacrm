@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { normalizePhone, phonesMatch } from "@/lib/whatsapp/phone-utils";
+import { telefoneCanonico } from "@/lib/contacts/telefone";
 
 /**
  * Contact de-duplication helpers, shared by the WhatsApp webhook, the
@@ -18,6 +19,18 @@ export function normalizeKey(phone: string): string {
   return normalizePhone(phone);
 }
 
+/**
+ * A chave de "MESMA PESSOA": a grafia canônica do nono dígito
+ * (`telefoneCanonico`), que é a chave ÚNICA de `contacts` desde a 1024.
+ * `normalizeKey` responde "mesma GRAFIA"; esta responde "o banco vai recusar
+ * a segunda ficha". Deduplicar um lote por `normalizeKey` deixava passar as
+ * duas grafias do mesmo celular — e, com o índice canônico, o INSERT do lote
+ * inteiro levava 23505.
+ */
+export function chaveDePessoa(phone: string): string {
+  return telefoneCanonico(phone);
+}
+
 /** Minimal shape we need back from a contacts lookup. */
 export interface ExistingContact {
   id: string;
@@ -33,15 +46,13 @@ export interface BuscaDeContato {
   /**
    * ⚠️ `true` = a CONSULTA falhou — "não sei", nunca "não achei". Colapsar
    * os dois em null era o que duplicava a ficha do cliente num blip de banco
-   * (achado #04 do plano de 31/08): a busca é por sufixo com tolerância a
-   * tronco, as variantes de nono dígito têm `phone_normalized` DIFERENTES, e
-   * o índice único NÃO segura o insert que vem depois. Quem chama decide:
+   * (achado #04 do plano de 31/08). Quem chama decide:
    * — caminho de GENTE (abrir conversa, API v1, envio por telefone) responde
    *   erro 500 e deixa tentar de novo;
    * — a INGESTÃO (webhook Meta, Evolution) segue em frente com o `contato`
-   *   nulo, de propósito: derrubá-la perderia a mensagem do cliente, que é
-   *   pior que uma ficha duplicada — e o backstop 23505 cobre o duplicado
-   *   exato.
+   *   nulo, de propósito: derrubá-la perderia a mensagem do cliente. Desde a
+   *   1024 o índice CANÔNICO barra a ficha duplicada (inclusive a irmã do
+   *   nono dígito) e o 23505 cai em `fichaQueVenceu`, que relê a vencedora.
    */
   falhou: boolean;
 }
@@ -65,6 +76,22 @@ export interface BuscaDeContato {
  * colisão as duas passadas devolvem o MESMO candidato: o comportamento só
  * muda onde já estava errado. Exato há no máximo um — o índice único
  * `(account_id, phone_normalized)` da 022 não deixa existirem dois.
+ *
+ * ⚠️⚠️ **E a IRMÃ DO NONO DÍGITO vem antes do tolerante** (1024): mesma
+ * grafia canônica = a MESMA pessoa, e é exatamente a ficha que o índice único
+ * aponta como dona do número. Sem essa passada, a tolerante devolvia a ficha
+ * MAIS ANTIGA com os mesmos 8 finais — que pode ser a de outro DDD, outra
+ * pessoa — e a releitura depois de um 23505 entregava a mensagem na conversa
+ * errada.
+ *
+ * ⚠️⚠️ **O LIKE é sobre `phone_normalized` (só dígitos), nunca sobre
+ * `phone`** (1024). Sobre o texto cru, uma ficha gravada com separador
+ * ("+55 83 98874-5316", do formulário ou de um CSV) não casava
+ * `%88745316`: a busca não a achava, o INSERT levava 23505, a RELEITURA
+ * falhava do mesmo jeito e a ingestão descartava a mensagem do cliente —
+ * todas as dele, para sempre (a regra 18 do plano da Kommo). Os 8 finais
+ * são os mesmos nas duas grafias do nono dígito (o 9 fica ANTES deles),
+ * então a irmã sempre volta no mesmo lote de candidatos.
  *
  * ⚠️ **O `order` é a outra metade**, para o caso fuzzy-PURO — o nono dígito
  * brasileiro, em que nenhum candidato é exato — também ser estável; sem ele
@@ -94,19 +121,55 @@ export async function findExistingContact(
     .eq("account_id", accountId)
     .order("created_at", { ascending: true, nullsFirst: false })
     .order("id", { ascending: true })
-    .like("phone", `%${suffix}`);
+    .like("phone_normalized", `%${suffix}`);
 
   if (error || !data) return { contato: null, falhou: true };
 
   const candidatos = data as ExistingContact[];
+  const canonica = chaveDePessoa(phone);
 
   return {
     contato:
       candidatos.find((c) => isExactMatch(c, phone)) ??
+      candidatos.find((c) => chaveDePessoa(c.phone ?? "") === canonica) ??
       candidatos.find((c) => phonesMatch(c.phone, phone)) ??
       null,
     falhou: false,
   };
+}
+
+/** Esperas entre as releituras de `fichaQueVenceu` (ms). */
+export const ESPERAS_DA_RELEITURA_MS = [250, 750] as const;
+
+/**
+ * A ficha que VENCEU a corrida, depois de um INSERT em `contacts` levar
+ * 23505. É o que todo escritor de ficha no servidor chama nesse ramo (há
+ * teste estrutural cobrando).
+ *
+ * O 23505 só sai depois que a transação concorrente CONFIRMOU a ficha dela
+ * (se ainda estivesse aberta, o INSERT teria esperado), então a vencedora já
+ * está visível: `findExistingContact` a acha pela grafia exata ou pela irmã
+ * do nono dígito. O que pode faltar é a LEITURA — um soluço do banco no
+ * instante da releitura. Por isso a consulta que FALHA é repetida (até três
+ * vezes, com as esperas acima); "não achei" com a consulta respondida não é
+ * repetido, porque repetir não muda a resposta.
+ *
+ * Na ingestão isto é a diferença entre gravar a mensagem do cliente na ficha
+ * dele e descartá-la: o provedor já recebeu 200 e não reenvia.
+ */
+export async function fichaQueVenceu(
+  db: SupabaseClient,
+  accountId: string,
+  phone: string,
+  esperar: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms)),
+): Promise<BuscaDeContato> {
+  let busca = await findExistingContact(db, accountId, phone);
+  for (const ms of ESPERAS_DA_RELEITURA_MS) {
+    if (!busca.falhou) return busca;
+    await esperar(ms);
+    busca = await findExistingContact(db, accountId, phone);
+  }
+  return busca;
 }
 
 /**
@@ -129,10 +192,14 @@ export function isUniqueViolation(error: unknown): boolean {
 }
 
 /**
- * De-duplicate parsed CSV rows by normalized phone, keeping the first
- * occurrence of each. Rows with an empty normalized phone are dropped
- * (they can't be a valid contact). Returns the unique rows plus the
- * count removed as in-file duplicates.
+ * De-duplicate parsed CSV rows by PERSON (`chaveDePessoa`, a grafia canônica
+ * do nono dígito), keeping the first occurrence of each. Rows with an empty
+ * normalized phone are dropped (they can't be a valid contact). Returns the
+ * unique rows plus the count removed as in-file duplicates.
+ *
+ * ⚠️ Por pessoa, não por grafia (1024): o mesmo celular escrito com e sem o 9
+ * no mesmo arquivo passava pelo dedupe e caía no mesmo lote de INSERT — e,
+ * com o índice canônico, o lote inteiro levava 23505.
  */
 export function dedupeByPhone<T extends { phone: string }>(
   rows: T[],
@@ -142,7 +209,7 @@ export function dedupeByPhone<T extends { phone: string }>(
   let duplicates = 0;
 
   for (const row of rows) {
-    const key = normalizeKey(row.phone);
+    const key = chaveDePessoa(row.phone);
     if (!key) {
       duplicates++;
       continue;

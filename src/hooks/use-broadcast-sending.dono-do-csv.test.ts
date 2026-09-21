@@ -41,11 +41,35 @@ describe('upsertCsvContacts: resolução do merge do upstream (2026-09-05)', () 
 
   it('casa o CSV pelo número normalizado, por CONTA (lado do upstream, #532)', () => {
     expect(corpo).toContain(".eq('account_id', accountId)");
-    expect(corpo).toContain(".in('phone_normalized', keys)");
+    expect(corpo).toContain(".in('phone_normalized', fatia)");
     expect(corpo).not.toContain(".in('phone', ");
+  });
+});
+
+describe('upsertCsvContacts: a MESMA PESSOA nas duas grafias do nono dígito (1024)', () => {
+  // Desde a 1024 a chave única de `contacts` é a grafia canônica: o CSV que
+  // trouxesse "5583988745316" para a ficha gravada como "558388745316" (o
+  // JID do WhatsApp) não a achava pela busca exata, ia para o INSERT e o
+  // lote inteiro levava 23505 — a campanha não saía. Três peças, e o teste
+  // cobra as três.
+  const corpo = corpoDe('upsertCsvContacts');
+
+  it('deduplica e mapeia por pessoa (`chaveDePessoa`), nunca pela grafia', () => {
     expect(fonte).toContain(
-      "import { normalizeKey } from '@/lib/contacts/dedupe'"
+      "import { chaveDePessoa, isUniqueViolation } from '@/lib/contacts/dedupe'"
     );
+    expect(corpo).toContain('chaveDePessoa(row.phone)');
+    expect(corpo).not.toContain('normalizeKey(');
+  });
+
+  it('busca as DUAS grafias de cada número, em fatias (teto de mil linhas)', () => {
+    expect(corpo).toContain('variantesDoNonoDigito(k)');
+    expect(corpo).toMatch(/grafias\.slice\(i, i \+ LOOKUP_CHUNK\)/);
+  });
+
+  it('a corrida (23505 no lote) relê e insere um a um, sem derrubar a campanha', () => {
+    expect(corpo).toContain('isUniqueViolation(insertErr)');
+    expect(corpo).toContain('isUniqueViolation(erroDeUm)');
   });
 
   it('grava o dono da conta no contato novo, com falha fechada (lado nosso)', () => {

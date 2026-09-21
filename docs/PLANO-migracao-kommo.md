@@ -895,6 +895,15 @@ O WhatsApp já respondeu 200 — não há retentativa. Vale para os dois
 transportes, para o Calendly e para o Asaas. Conferência de pré-voo sobre o
 conjunto a inserir e de pós-voo sobre a tabela.
 
+✅ **Fechada no CRM em 21/09 (1024, PR próprio):** `findExistingContact` passou
+a buscar pelos DÍGITOS (`phone_normalized`), então a ficha gravada com
+separadores volta a ser achada — pela busca e pela releitura. A chave única de
+`contacts` virou a grafia CANÔNICA do nono dígito, e todo INSERT de ficha no
+servidor relê a vencedora no 23505 (`fichaQueVenceu`, com nova tentativa se a
+leitura falhar). A regra "só dígitos com DDI" continua valendo para a carga: é
+o que mantém `contacts.phone` limpo, mas deixou de ser a única coisa entre um
+separador e a mensagem perdida.
+
 ⚠️⚠️ **18b. Lead SEM telefone aproveitável NÃO vira card — e nunca vira card
 ÓRFÃO.** Medido em 21/09: são **32 leads** (0,25%): 16 sem contato nenhum e 16
 cujo contato não tem telefone com 10+ dígitos. Sem pessoa não há `contacts`

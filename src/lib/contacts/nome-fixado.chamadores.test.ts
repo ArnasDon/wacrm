@@ -81,7 +81,8 @@ const ESCRITORES: Record<string, string[]> = {
   // destinatario.ts e FIXA logo em seguida, em processar.ts.)
   "lib/api/v1/contacts.ts": ["insert:sem-marca"],
   "components/contacts/import-modal.tsx": ["insert:sem-marca", "insert:sem-marca"],
-  "hooks/use-broadcast-sending.ts": ["insert:sem-marca"],
+  // O lote e o reenvio um a um da corrida (1024): as mesmas linhas do CSV.
+  "hooks/use-broadcast-sending.ts": ["insert:sem-marca", "insert:sem-marca"],
   "lib/automations/destinatario.ts": ["insert:sem-marca"],
   // O perfil do Instagram só preenche o nome quando a ficha NÃO TEM nenhum
   // (`nomeAtual ? null : …`): nunca sobrescreve um nome, fixado ou não.

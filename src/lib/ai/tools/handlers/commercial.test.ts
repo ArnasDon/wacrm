@@ -7,6 +7,7 @@ const h = vi.hoisted(() => ({
     mattermost: { sent: true, via: 'webhook' },
     whatsapp: [{ sent: true, via: 'text' }],
   }),
+  sendCapiEvent: vi.fn().mockResolvedValue(undefined),
 }))
 
 vi.mock('@/lib/calendar/commercial-availability', async () => {
@@ -20,6 +21,15 @@ vi.mock('@/lib/calendar/commercial-availability', async () => {
   }
 })
 vi.mock('@/lib/notifications/notify-team', () => ({ notifyMeetingBooked: h.notifyMeetingBooked }))
+vi.mock('@/lib/meta/conversions-api', () => ({ sendCapiEvent: h.sendCapiEvent }))
+
+/** Espera as microtasks pendentes correrem — usado para os disparos
+ *  fire-and-forget (`void sendCapiEvent(...)`) que os handlers não
+ *  esperam antes de devolver a resposta ao modelo. */
+async function flushMicrotasks() {
+  await Promise.resolve()
+  await Promise.resolve()
+}
 
 import {
   checkCommercialAvailabilityHandler,
@@ -153,6 +163,26 @@ describe('bookCommercialMeetingHandler', () => {
     )
   })
 
+  it('reunião marcada dispara o evento Schedule na Conversions API (Bloco 4)', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'booked', eventId: 'evt-1', htmlLink: null })
+    const result = await bookCommercialMeetingHandler(ctx, validInput)
+    expect(result.isError).toBe(false)
+    await flushMicrotasks()
+    expect(h.sendCapiEvent).toHaveBeenCalledWith({
+      db: ctx.db,
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      eventName: 'Schedule',
+    })
+  })
+
+  it('não dispara o evento Schedule quando a marcação não foi feita (conflito)', async () => {
+    h.bookCommercialSlot.mockResolvedValue({ status: 'conflict' })
+    await bookCommercialMeetingHandler(ctx, validInput)
+    await flushMicrotasks()
+    expect(h.sendCapiEvent).not.toHaveBeenCalled()
+  })
+
   it('reports a conflict as a tool error telling the model to re-propose, never a crash', async () => {
     h.bookCommercialSlot.mockResolvedValue({ status: 'conflict' })
     const result = await bookCommercialMeetingHandler(ctx, validInput)
@@ -227,7 +257,18 @@ describe('bookCommercialMeetingHandler', () => {
 })
 
 describe('saveLeadDetailsHandler', () => {
-  function makeDb() {
+  /**
+   * `readRows` simula o estado JÁ persistido de `contacts`/`conversations`
+   * — lido por `maybeFireLeadCapiEvent` (Bloco 4) depois do UPDATE, para
+   * decidir se a conversa ficou pronta para o evento 'Lead'. Por omissão
+   * devolve tudo vazio (não pronta), como uma conversa nova.
+   */
+  function makeDb(
+    readRows: {
+      contacts?: { name?: string | null; email?: string | null; company?: string | null }
+      conversations?: { escalation_reason?: string | null }
+    } = {},
+  ) {
     const updates: { table: string; payload: Record<string, unknown>; id: string }[] = []
     const db = {
       from: (table: string) => ({
@@ -236,6 +277,18 @@ describe('saveLeadDetailsHandler', () => {
             updates.push({ table, payload, id })
             return Promise.resolve({ error: null })
           },
+        }),
+        select: () => ({
+          eq: () => ({
+            maybeSingle: () =>
+              Promise.resolve({
+                data:
+                  table === 'contacts'
+                    ? readRows.contacts ?? {}
+                    : readRows.conversations ?? {},
+                error: null,
+              }),
+          }),
         }),
       }),
     }
@@ -344,6 +397,33 @@ describe('saveLeadDetailsHandler', () => {
     const result = await saveLeadDetailsHandler(ctxWith(db), {})
     expect(result.isError).toBe(true)
     expect(updates).toEqual([])
+  })
+
+  it('dispara o evento Lead (Bloco 4) quando o save completa nome, email, empresa e motivo', async () => {
+    const { db } = makeDb({
+      contacts: { name: 'Ricardo', email: 'ricardo@example.com', company: 'Clínica Sorriso Lda' },
+      conversations: { escalation_reason: 'Quer saber preços.' },
+    })
+    const result = await saveLeadDetailsHandler(ctxWith(db), { company: 'Clínica Sorriso Lda' })
+    expect(result.isError).toBe(false)
+    await flushMicrotasks()
+    expect(h.sendCapiEvent).toHaveBeenCalledWith({
+      db,
+      accountId: 'acct-1',
+      conversationId: 'conv-1',
+      eventName: 'Lead',
+    })
+  })
+
+  it('não dispara o evento Lead enquanto faltar um campo (ex.: sem motivo)', async () => {
+    const { db } = makeDb({
+      contacts: { name: 'Ricardo', email: 'ricardo@example.com', company: 'Clínica Sorriso Lda' },
+      conversations: { escalation_reason: null },
+    })
+    const result = await saveLeadDetailsHandler(ctxWith(db), { company: 'Clínica Sorriso Lda' })
+    expect(result.isError).toBe(false)
+    await flushMicrotasks()
+    expect(h.sendCapiEvent).not.toHaveBeenCalled()
   })
 })
 

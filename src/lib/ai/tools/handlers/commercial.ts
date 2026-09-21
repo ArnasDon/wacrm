@@ -7,6 +7,8 @@ import type { ToolCall, ToolExecutionResult, ToolExecutor } from '../loop-types'
 import type { ToolHandlerContext } from './context'
 import { requireString, optionalString, ToolInputError } from './parse-input'
 import { notifyMeetingBooked } from '@/lib/notifications/notify-team'
+import { checkHandoffReadiness } from '../../commercial-handoff'
+import { sendCapiEvent } from '@/lib/meta/conversions-api'
 
 // ============================================================
 // Bloco 3-A — handlers for check_commercial_availability /
@@ -163,6 +165,22 @@ export async function bookCommercialMeetingHandler(
         console.error('[commercial handler] notifyMeetingBooked falhou:', err)
       })
 
+      // Bloco 4 — reporta a reunião marcada à Meta Conversions API
+      // (evento 'Schedule'), ligada ao clique de anúncio original pelo
+      // ctwa_clid guardado na conversa. Sem efeito numa conversa que
+      // não veio de anúncio (sendCapiEvent trata isso). Fire-and-forget
+      // — nunca lança nem atrasa a confirmação ao lead.
+      if (ctx.conversationId) {
+        void sendCapiEvent({
+          db: ctx.db,
+          accountId: ctx.accountId,
+          conversationId: ctx.conversationId,
+          eventName: 'Schedule',
+        }).catch((err) => {
+          console.error('[commercial handler] sendCapiEvent (Schedule) falhou:', err)
+        })
+      }
+
       return {
         isError: false,
         content: JSON.stringify({
@@ -254,10 +272,62 @@ export async function saveLeadDetailsHandler(
   if (escalationReason) saved.push('escalation_reason')
   if (company) saved.push('company')
 
+  // Bloco 4 — se este save completou tudo o que checkHandoffReadiness
+  // exige (nome, email, motivo, empresa), a conversa acabou de se
+  // tornar uma lead qualificada: reporta o evento 'Lead' à Meta
+  // Conversions API. Fire-and-forget, depois de já ter respondido ao
+  // modelo — nunca atrasa nem falha esta chamada de ferramenta.
+  if (ctx.conversationId) {
+    void maybeFireLeadCapiEvent(ctx).catch((err) => {
+      console.error('[commercial handler] falha ao avaliar o evento Lead (Conversions API):', err)
+    })
+  }
+
   return {
     isError: false,
     content: JSON.stringify({ saved }),
   }
+}
+
+/**
+ * Lê o estado ACTUAL da conversa (depois do save acima já ter sido
+ * persistido) e, se checkHandoffReadiness ficar satisfeito, dispara o
+ * evento 'Lead' da Conversions API (sendCapiEvent — que por sua vez só
+ * envia de facto quando a conversa tem `ctwa_clid`, ou seja, veio de um
+ * anúncio Click to WhatsApp; dedup por `event_id` garante no máximo um
+ * envio por conversa mesmo que este handler corra várias vezes).
+ */
+async function maybeFireLeadCapiEvent(ctx: ToolHandlerContext): Promise<void> {
+  if (!ctx.conversationId) return
+
+  const [{ data: contact }, { data: conversation }] = await Promise.all([
+    ctx.contactId
+      ? ctx.db.from('contacts').select('name, email, company').eq('id', ctx.contactId).maybeSingle()
+      : Promise.resolve({ data: null }),
+    ctx.db
+      .from('conversations')
+      .select('escalation_reason')
+      .eq('id', ctx.conversationId)
+      .maybeSingle(),
+  ])
+
+  const contactRow = contact as { name?: string | null; email?: string | null; company?: string | null } | null
+  const convRow = conversation as { escalation_reason?: string | null } | null
+
+  const readiness = checkHandoffReadiness({
+    contactName: contactRow?.name,
+    contactEmail: contactRow?.email,
+    escalationReason: convRow?.escalation_reason,
+    contactCompany: contactRow?.company,
+  })
+  if (!readiness.ready) return
+
+  await sendCapiEvent({
+    db: ctx.db,
+    accountId: ctx.accountId,
+    conversationId: ctx.conversationId,
+    eventName: 'Lead',
+  })
 }
 
 /**

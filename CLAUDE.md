@@ -6460,10 +6460,10 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     CI passar no commit exato e de dois ensaios contra a produção em
     transação encerrada com ROLLBACK: carga + reexecução (idempotente) e
     carga + desfazer (o banco volta ao estado anterior, card movido inclusive).
-  - **1015–1022 — a carga da Kommo e o encerramento em lote**, todas aplicadas
+  - **1015–1023 — a carga da Kommo e o encerramento em lote**, todas aplicadas
     em 21/09/2026, cada uma DEPOIS de um ensaio contra a produção em
-    transação encerrada por `raise exception` (histórico `20260921024652` a
-    `20260921133214`):
+    transação encerrada por `raise exception` (histórico `20260921024652` em
+    diante):
     · **1015** — os três achados do PRIMEIRO piloto: `deals.value` é NOT NULL
       (NULL explícito anula o default), `deals.currency` nasce `'USD'` numa
       base BRL, e o livro-razão não cobria `contacts`.
@@ -6499,6 +6499,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
       ligado) e devolve `updated_at` explicitamente: sem isso, devolver o
       e-mail empurrava `updated_at` para agora e a linha do nome da MESMA
       ficha era lida como "editada depois".
+    · **1023** — as decisões da carga são tomadas SOB TRAVA (Codex, PR
+      #232): nome e e-mail da ficha só são preenchidos com `FOR UPDATE` e a
+      regra repetida no UPDATE (um escritor concorrente que preenchesse o
+      e-mail era sobrescrito pelo da Kommo); o card movido é lido travado
+      (a foto do livro é o que o UPDATE sobrescreve); `status_changed` sem
+      funil é recusado na ENTRADA do lote; e a ficha CRIADA pela carga e
+      editada depois fica retida no desfazer, travada antes da pergunta "tem
+      conversa?" — sem a trava, a conversa sendo criada naquele instante era
+      apagada em cascata com as mensagens.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

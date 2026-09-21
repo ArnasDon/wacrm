@@ -1508,3 +1508,15 @@ de antes por cima levaria o trabalho feito depois da carga, sem aviso.
 Ensaiado contra a produção em rollback antes de aplicar: o card e o valor
 editados depois ficaram, os intocados saíram, e a ficha voltou exata
 (`updated_at` inclusive).
+
+**E desde a 1023 a ficha CRIADA pela carga também** (Codex, PR #232): ela só
+sai se continua intocada (`updated_at <= criado_em`; medido em 21/09: 3.872
+das 3.874 fichas estavam assim — as duas outras foram mexidas depois e
+ficariam). A ficha é TRAVADA antes das perguntas "tem conversa? tem card?":
+sem a trava, uma conversa sendo criada naquele instante não aparecia para a
+pergunta e o DELETE a apagava em cascata, com as mensagens. Na mesma
+migration, a CARGA passou a decidir sob trava — nome e e-mail só são
+preenchidos se continuam vazios/telefone no instante da escrita, e o card
+movido é lido travado —, e `status_changed` sem funil é recusado na entrada
+do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
+escrever.

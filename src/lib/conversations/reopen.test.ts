@@ -13,10 +13,15 @@ interface Recorded {
   table: string
   payload: Record<string, unknown> | null
   filters: [string, unknown][]
+  count?: string
 }
 
-/** Chainable stub shaped like the bit of postgrest this touches. */
-function stubClient(error: { message: string } | null = null) {
+/**
+ * Chainable stub shaped like the bit of postgrest this touches. `linhas` é o
+ * que o BANCO responde ao UPDATE condicional: 1 = a linha estava encerrada e
+ * foi reaberta; 0 = não casou o `status = 'closed'`.
+ */
+function stubClient(error: { message: string } | null = null, linhas = 1) {
   const calls: Recorded[] = []
 
   const client = {
@@ -24,16 +29,17 @@ function stubClient(error: { message: string } | null = null) {
       const rec: Recorded = { table, payload: null, filters: [] }
       calls.push(rec)
       const builder = {
-        update(payload: Record<string, unknown>) {
+        update(payload: Record<string, unknown>, opts?: { count?: string }) {
           rec.payload = payload
+          rec.count = opts?.count
           return builder
         },
         eq(column: string, value: unknown) {
           rec.filters.push([column, value])
           return builder
         },
-        then(onFulfilled: (v: { error: unknown }) => unknown) {
-          return Promise.resolve({ error }).then(onFulfilled)
+        then(onFulfilled: (v: { error: unknown; count: number | null }) => unknown) {
+          return Promise.resolve({ error, count: error ? null : linhas }).then(onFulfilled)
         },
       }
       return builder
@@ -47,10 +53,7 @@ describe('reopenClosedConversation', () => {
   it('flips a closed conversation back to open', async () => {
     const { client, calls } = stubClient()
 
-    const reopened = await reopenClosedConversation(client, {
-      id: 'conv-1',
-      status: 'closed',
-    })
+    const reopened = await reopenClosedConversation(client, { id: 'conv-1' })
 
     expect(reopened).toBe(true)
     expect(calls).toHaveLength(1)
@@ -60,12 +63,12 @@ describe('reopenClosedConversation', () => {
   })
 
   it('guards the write on the row still being closed', async () => {
-    // The caller read the row earlier in the request. Without this filter,
-    // two concurrent inbound deliveries both holding a stale
-    // `status: 'closed'` could write 'open' over an agent's re-close.
+    // O filtro é a ÚNICA pergunta "está encerrada?": duas entregas
+    // concorrentes não podem escrever 'open' por cima de quem acabou de
+    // encerrar a conversa de novo no meio delas.
     const { client, calls } = stubClient()
 
-    await reopenClosedConversation(client, { id: 'conv-1', status: 'closed' })
+    await reopenClosedConversation(client, { id: 'conv-1' })
 
     expect(calls[0].filters).toEqual([
       ['id', 'conv-1'],
@@ -73,26 +76,27 @@ describe('reopenClosedConversation', () => {
     ])
   })
 
-  it.each(['open', 'pending'])(
-    'issues no query for a %s conversation',
-    async (status) => {
-      const { client, calls } = stubClient()
-
-      const reopened = await reopenClosedConversation(client, {
-        id: 'conv-1',
-        status,
-      })
-
-      expect(reopened).toBe(false)
-      expect(calls).toEqual([])
-    },
-  )
-
-  it('issues no query when status is missing', async () => {
+  it('SEMPRE pergunta ao banco — o status que o chamador leu não conta (Codex, PR #232)', async () => {
+    // A corrida: o chamador leu a conversa ABERTA no começo da requisição, um
+    // encerramento (botão, automação, lote da 1018) caiu antes de a mensagem
+    // ser gravada, e o atalho antigo `status !== 'closed'` pulava a
+    // reabertura — a mensagem do cliente ficava escondida da caixa. Agora a
+    // função nem recebe o status: o UPDATE condicional roda sempre.
     const { client, calls } = stubClient()
+    const lidaAberta = { id: 'conv-1', status: 'open' }
+
+    expect(await reopenClosedConversation(client, lidaAberta)).toBe(true)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].filters).toContainEqual(['status', 'closed'])
+  })
+
+  it('conversa que o banco diz aberta/pendente: o UPDATE não casa e devolve false', async () => {
+    const { client, calls } = stubClient(null, 0)
 
     expect(await reopenClosedConversation(client, { id: 'conv-1' })).toBe(false)
-    expect(calls).toEqual([])
+    expect(calls).toHaveLength(1)
+    // `count` pedido ao PostgREST: é ele que separa "reabri" de "já estava aberta".
+    expect(calls[0].count).toBe('exact')
   })
 
   it('swallows a failed update so inbound processing continues', async () => {
@@ -102,7 +106,7 @@ describe('reopenClosedConversation', () => {
     const { client } = stubClient({ message: 'permission denied' })
 
     await expect(
-      reopenClosedConversation(client, { id: 'conv-1', status: 'closed' }),
+      reopenClosedConversation(client, { id: 'conv-1' }),
     ).resolves.toBe(false)
 
     expect(spy).toHaveBeenCalled()
@@ -116,7 +120,7 @@ describe('reopenClosedConversation — quem reabre fica responsável (2026-09-02
 
     await reopenClosedConversation(
       client,
-      { id: 'conv-1', status: 'closed' },
+      { id: 'conv-1' },
       { assignTo: 'user-ana' },
     )
 
@@ -139,7 +143,7 @@ describe('reopenClosedConversation — quem reabre fica responsável (2026-09-02
 
       await reopenClosedConversation(
         client,
-        { id: 'conv-1', status: 'closed' },
+        { id: 'conv-1' },
         { assignTo },
       )
 
@@ -150,22 +154,43 @@ describe('reopenClosedConversation — quem reabre fica responsável (2026-09-02
   it('sem `opts` nenhum também zera o responsável (os caminhos do cliente)', async () => {
     const { client, calls } = stubClient()
 
-    await reopenClosedConversation(client, { id: 'conv-1', status: 'closed' })
+    await reopenClosedConversation(client, { id: 'conv-1' })
 
     expect(calls[0].payload).toMatchObject({ status: 'open', assigned_agent_id: null })
   })
 
   it('conversa aberta não é reatribuída por um envio comum', async () => {
     // A regra é "quem REABRE fica responsável" — mandar mensagem numa conversa
-    // já aberta não pode roubar a atribuição de quem está com ela.
-    const { client, calls } = stubClient()
+    // já aberta não pode roubar a atribuição de quem está com ela. Desde que o
+    // UPDATE roda sempre, quem garante isso é o FILTRO: a atribuição mora na
+    // MESMA escrita cercada por `status = 'closed'`, então numa conversa
+    // aberta a linha não casa e nada é gravado — nem o responsável.
+    const { client, calls } = stubClient(null, 0)
 
-    await reopenClosedConversation(
+    const reabriu = await reopenClosedConversation(
       client,
-      { id: 'conv-1', status: 'open' },
+      { id: 'conv-1' },
       { assignTo: 'user-ana' },
     )
 
-    expect(calls).toEqual([])
+    expect(reabriu).toBe(false)
+    expect(calls).toHaveLength(1)
+    expect(calls[0].payload).toHaveProperty('assigned_agent_id', 'user-ana')
+    expect(calls[0].filters).toContainEqual(['status', 'closed'])
+    // Uma única escrita: o responsável nunca viaja num UPDATE sem a cerca.
+    expect(calls.filter((c) => c.payload && 'assigned_agent_id' in c.payload)).toHaveLength(1)
+  })
+})
+
+describe('reopenClosedConversation — a marca de espera (972) não é tocada', () => {
+  it('reabrir nunca escreve aguardando_desde', async () => {
+    // Devolvê-la atropelaria a resposta de gente que caísse na mesma ida ao
+    // banco (Codex, PR #238); quem mantém a marca é o gatilho da 972.
+    const { client, calls } = stubClient()
+
+    await reopenClosedConversation(client, { id: 'conv-1' }, { assignTo: 'user-ana' })
+    await reopenClosedConversation(client, { id: 'conv-2' })
+
+    for (const c of calls) expect(c.payload).not.toHaveProperty('aguardando_desde')
   })
 })

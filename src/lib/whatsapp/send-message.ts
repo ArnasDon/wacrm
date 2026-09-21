@@ -830,6 +830,16 @@ export async function sendMessageToConversation(
     );
   }
 
+  // Falar numa conversa encerrada a devolve à caixa de entrada, e quem falou
+  // fica responsável por ela (regra do operador, 2026-09-02). `senderUserId`
+  // nulo é envio por CHAVE DE API: reabre, mas não há quem nomear. Por aqui
+  // passam os quatro envios decididos por gente — ver `reopen.ts` para o que
+  // fica de fora (broadcast e robô) e por quê. LOGO DEPOIS de gravar: a
+  // janela até aqui decide qual encerramento a reabertura desfaz.
+  await reopenClosedConversation(db, conversation, {
+    assignTo: senderUserId ?? null,
+  });
+
   const lastMessageText =
     messageType === 'interactive'
       ? interactivePayloadPreviewText(interactivePayload!)
@@ -843,15 +853,6 @@ export async function sendMessageToConversation(
       updated_at: new Date().toISOString(),
     })
     .eq('id', conversationId);
-
-  // Falar numa conversa encerrada a devolve à caixa de entrada, e quem falou
-  // fica responsável por ela (regra do operador, 2026-09-02). `senderUserId`
-  // nulo é envio por CHAVE DE API: reabre, mas não há quem nomear. Por aqui
-  // passam os quatro envios decididos por gente — ver `reopen.ts` para o que
-  // fica de fora (broadcast e robô) e por quê.
-  await reopenClosedConversation(db, conversation, {
-    assignTo: senderUserId ?? null,
-  });
 
   // Carimbo de canal (Fase 3): registra por qual número esta resposta saiu.
   // Via supabaseAdmin (não depende de policy de UPDATE em messages para o

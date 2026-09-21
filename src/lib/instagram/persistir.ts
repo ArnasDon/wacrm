@@ -373,6 +373,12 @@ async function gravarMensagem(
     return { resultado: 'falhou' };
   }
 
+  // Gente reabre — o cliente escrevendo, ou o escritório respondendo pelo
+  // app do Instagram. Sem responsável: quem reabre por aqui não é membro.
+  // LOGO DEPOIS de gravar a primeira linha (antes dos anexos extras e do
+  // bump). Ver `reopen.ts`.
+  await reopenClosedConversation(db, { id: conversation.id });
+
   for (let i = 1; i < arquivos.length; i++) {
     const extra = await salvarMidia(arquivos[i], `${ev.mid}#${i + 1}`);
     if (!extra) continue;
@@ -410,12 +416,6 @@ async function gravarMensagem(
       console.error(`${TAG} bump da conversa falhou:`, erroBump.message);
   }
 
-  // Gente reabre — o cliente escrevendo, ou o escritório respondendo pelo
-  // app do Instagram. Sem responsável: quem reabre por aqui não é membro.
-  await reopenClosedConversation(
-    db,
-    conversation as { id: string; status?: string | null }
-  );
   await followConversationChannel(db, conversation.id, ctx.channelId);
 
   // A fronteira de entrega da conexão (1002). Sem `timestampMs` não há o

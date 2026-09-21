@@ -37,7 +37,7 @@ export async function refletirComoUltima(
   try {
     const { data: conversa, error } = await db
       .from('conversations')
-      .select('id, status')
+      .select('id')
       .eq('id', conversationId)
       .maybeSingle();
     if (error || !conversa) {
@@ -48,11 +48,9 @@ export async function refletirComoUltima(
       return;
     }
 
-    // Cliente e celular pareado reabrem SEM responsável (ver `reopen.ts`).
-    await reopenClosedConversation(db, {
-      id: conversa.id as string,
-      status: conversa.status as string | null,
-    });
+    // Cliente e celular pareado reabrem SEM responsável (ver `reopen.ts`). Quem
+    // decide se está encerrada é o UPDATE condicional de lá, não esta leitura.
+    await reopenClosedConversation(db, { id: conversa.id as string });
 
     await atualizarPreviaDaConversa(db, conversationId);
     const { error: erroDaPosicao } = await db

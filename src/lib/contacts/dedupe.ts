@@ -100,7 +100,7 @@ export interface BuscaDeContato {
  * mensagem de "5582988745316". Sobre o texto cru ela nem aparecia. Por isso
  * a tolerante só aceita a candidata que o LIKE antigo já traria (o texto
  * cru termina nos 8 dígitos) ou cujo prefixo é COMPATÍVEL (`prefixoCompativel`:
- * o mesmo, descontado o 0 de tronco e o nono dígito). Nada que casava antes
+ * o mesmo, ou com um 0 de tronco a mais). Nada que casava antes
  * deixa de casar; o que é novo só entra se for o mesmo número.
  *
  * ⚠️ **O `order` é a outra metade**, para o caso fuzzy-PURO — o nono dígito
@@ -153,15 +153,19 @@ export async function findExistingContact(
 }
 
 /**
- * O que vem ANTES dos 8 finais é o mesmo, descontado o 0 de tronco e o nono
- * dígito ("370" ~ "3700", "5583" ~ "55839")? Prefixo vazio (número digitado
- * curto) vale como curinga — é o que o LIKE de sufixo sempre fez.
+ * O que vem ANTES dos 8 finais é o mesmo, com no máximo um 0 de TRONCO a mais
+ * ("370" ~ "3700")? Prefixo vazio (número digitado curto) vale como curinga —
+ * é o que o LIKE de sufixo sempre fez.
+ *
+ * ⚠️ O prefixo sai da grafia CANÔNICA, e nenhum 9 é descontado aqui (Codex,
+ * PR #240): o nono dígito só existe no celular brasileiro, e `telefoneCanonico`
+ * já o resolve pela regra inteira do número. Descontar um 9 final de qualquer
+ * prefixo casava "+49 9 1234-5678" com "4912345678" — dois números alemães
+ * diferentes. E o 0 de tronco só conta quando é o ÚNICO dígito a mais: por
+ * regex, iria junto o 0 que é do código do país ("370" viraria "37").
  */
 function prefixoCompativel(a: string, b: string): boolean {
-  // O nono dígito sai dos dois lados; o 0 de tronco só conta como diferença
-  // quando é o ÚNICO dígito a mais — cortá-lo por regex levaria junto o 0 que
-  // é do código do país ("370" viraria "37").
-  const prefixo = (t: string) => normalizePhone(t).slice(0, -8).replace(/9$/, "");
+  const prefixo = (t: string) => telefoneCanonico(t).slice(0, -8);
   const pa = prefixo(a);
   const pb = prefixo(b);
   return pa === "" || pb === "" || pa === pb || pa === `${pb}0` || pb === `${pa}0`;

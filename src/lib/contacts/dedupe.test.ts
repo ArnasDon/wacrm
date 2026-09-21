@@ -134,6 +134,14 @@ describe("findExistingContact", () => {
     expect(hit.contato).toBeNull();
   });
 
+  it("nenhum 9 é descontado fora do celular brasileiro (Codex, PR #240)", async () => {
+    // "+49 9 1234-5678" e "4912345678" terminam igual e são números
+    // diferentes; descontar o 9 final de qualquer prefixo os casava.
+    const db = stubDb([{ id: "c-de", phone: "+49 9 1234-5678" }]);
+    const hit = await findExistingContact(db, "acct", "4912345678");
+    expect(hit.contato).toBeNull();
+  });
+
   it("a tolerante continua casando a variante de TRONCO mesmo gravada com separador", async () => {
     const db = stubDb([{ id: "c-lt", phone: "+370 6394-9836" }]);
     const hit = await findExistingContact(db, "acct", "370063949836");

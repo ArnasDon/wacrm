@@ -3,6 +3,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const h = vi.hoisted(() => ({
   findCommercialSlots: vi.fn(),
   bookCommercialSlot: vi.fn(),
+  notifyMeetingBooked: vi.fn().mockResolvedValue({
+    mattermost: { sent: true, via: 'webhook' },
+    whatsapp: [{ sent: true, via: 'text' }],
+  }),
 }))
 
 vi.mock('@/lib/calendar/commercial-availability', async () => {
@@ -15,6 +19,7 @@ vi.mock('@/lib/calendar/commercial-availability', async () => {
     bookCommercialSlot: h.bookCommercialSlot,
   }
 })
+vi.mock('@/lib/notifications/notify-team', () => ({ notifyMeetingBooked: h.notifyMeetingBooked }))
 
 import {
   checkCommercialAvailabilityHandler,
@@ -122,6 +127,28 @@ describe('bookCommercialMeetingHandler', () => {
         contactId: 'contact-1',
         conversationId: 'conv-1',
         leadEmail: 'lead@example.com',
+      }),
+    )
+  })
+
+  it('reunião marcada avisa a equipa por Mattermost e WhatsApp via notifyMeetingBooked', async () => {
+    h.bookCommercialSlot.mockResolvedValue({
+      status: 'booked',
+      eventId: 'evt-1',
+      htmlLink: 'https://calendar.google.com/event?eid=abc',
+    })
+    const result = await bookCommercialMeetingHandler(ctx, {
+      ...validInput,
+      lead_name: 'Joana Silva',
+    })
+    expect(result.isError).toBe(false)
+    expect(h.notifyMeetingBooked).toHaveBeenCalledTimes(1)
+    expect(h.notifyMeetingBooked).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: 'acct-1',
+        contactName: 'Joana Silva',
+        company: 'Acme Growth Lda',
+        eventUrl: 'https://calendar.google.com/event?eid=abc',
       }),
     )
   })

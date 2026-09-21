@@ -10,6 +10,10 @@ const h = vi.hoisted(() => ({
   generateReply: vi.fn(),
   generateReplyWithTools: vi.fn(),
   engineSendText: vi.fn(),
+  notifyHandoff: vi.fn().mockResolvedValue({
+    mattermost: { sent: true, via: 'webhook' },
+    whatsapp: [{ sent: true, via: 'text' }],
+  }),
   state: {
     conv: null as Record<string, unknown> | null,
     autoResponders: [] as { id: string }[],
@@ -46,6 +50,7 @@ vi.mock('./tools/handlers/commercial', () => ({
   createCommercialToolExecutor: vi.fn(() => vi.fn()),
 }))
 vi.mock('@/lib/flows/meta-send', () => ({ engineSendText: h.engineSendText }))
+vi.mock('@/lib/notifications/notify-team', () => ({ notifyHandoff: h.notifyHandoff }))
 vi.mock('./admin-client', () => ({
   supabaseAdmin: () => ({
     from: (table: string) => {
@@ -550,6 +555,31 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
     expect(h.state.updatePayload).not.toHaveProperty('ai_autoreply_disabled')
     expect(typeof (h.state.updatePayload as Record<string, unknown>)?.team_requested_at).toBe(
       'string',
+    )
+  })
+
+  it('handoff (comercial) avisa a equipa por Mattermost e WhatsApp via notifyHandoff', async () => {
+    h.state.conv = commercialConv()
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    h.generateReplyWithTools.mockResolvedValue({
+      text: '',
+      handoff: true,
+      usage: null,
+      iterations: 1,
+      hitIterationLimit: false,
+    })
+
+    await dispatchInboundToAiReply(ARGS)
+
+    expect(h.notifyHandoff).toHaveBeenCalledTimes(1)
+    expect(h.notifyHandoff).toHaveBeenCalledWith(
+      expect.objectContaining({
+        accountId: ARGS.accountId,
+        conversationId: ARGS.conversationId,
+        contactName: 'Ricardo Contacto',
+        company: 'Acme Growth Lda',
+        conversationUrl: expect.stringContaining(ARGS.conversationId),
+      }),
     )
   })
 

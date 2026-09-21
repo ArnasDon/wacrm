@@ -12,7 +12,9 @@
     "signingIn": "Iniciando sesión...",
     "signIn": "Iniciar sesión",
     "noAccount": "¿No tienes una cuenta?",
-    "createAccount": "Crear cuenta"
+    "createAccount": "Crear cuenta",
+    "linkExpired": "Ese enlace expiró. Para restablecer la contraseña, usa “¿Olvidaste tu contraseña?” y pide uno nuevo; si estabas confirmando tu correo, regístrate de nuevo.",
+    "linkInvalid": "No se pudo iniciar sesión con ese enlace. Si estabas confirmando tu correo, es posible que ya esté verificado; inicia sesión abajo. Para restablecer la contraseña, pide un enlace nuevo y ábrelo en el mismo navegador desde el que lo solicitaste."
   },
   "Sidebar": {
     "title": "Plantilla de CRM para WhatsApp",
@@ -1907,6 +1909,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Enviando...",
     "sendLink": "Enviar enlace de restablecimiento"
+  },
+  "ResetPasswordPage": {
+    "title": "Elige una nueva contraseña",
+    "desc": "Ingresa una nueva contraseña para tu cuenta.",
+    "passwordLabel": "Nueva contraseña",
+    "passwordPlaceholder": "Al menos 6 caracteres",
+    "confirmPasswordLabel": "Confirmar nueva contraseña",
+    "confirmPasswordPlaceholder": "Repite la nueva contraseña",
+    "submit": "Actualizar contraseña",
+    "saving": "Actualizando...",
+    "passwordsMismatch": "Las contraseñas no coinciden",
+    "passwordTooShort": "La contraseña debe tener al menos 6 caracteres",
+    "checking": "Comprobando tu enlace...",
+    "expiredTitle": "Este enlace ya no es válido",
+    "expiredDesc": "Los enlaces para restablecer la contraseña funcionan una sola vez y expiran pronto. Pide uno nuevo y ábrelo en el mismo navegador desde el que lo solicitaste.",
+    "requestNewLink": "Pedir un enlace nuevo",
+    "backToSignIn": "Volver a iniciar sesión",
+    "successTitle": "Contraseña actualizada",
+    "successDesc": "Has iniciado sesión con tu nueva contraseña.",
+    "continueToDashboard": "Ir al panel"
   },
   "JoinPage": {
     "fail": {

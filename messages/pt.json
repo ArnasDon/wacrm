@@ -12,7 +12,9 @@
     "signingIn": "Entrando...",
     "signIn": "Entrar",
     "noAccount": "Não tem uma conta?",
-    "createAccount": "Criar conta"
+    "createAccount": "Criar conta",
+    "linkExpired": "Esse link expirou. Para redefinir a senha, use “Esqueceu a senha?” para pedir um novo; se estava confirmando seu e-mail, cadastre-se novamente.",
+    "linkInvalid": "Não foi possível entrar com esse link. Se estava confirmando seu e-mail, ele já pode estar verificado — basta entrar abaixo. Para redefinir a senha, peça um novo link e abra-o no mesmo navegador em que o solicitou."
   },
   "Sidebar": {
     "title": "Modelo de CRM para WhatsApp",
@@ -1907,6 +1909,26 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Enviando...",
     "sendLink": "Enviar link de redefinição"
+  },
+  "ResetPasswordPage": {
+    "title": "Escolha uma nova senha",
+    "desc": "Informe uma nova senha para a sua conta.",
+    "passwordLabel": "Nova senha",
+    "passwordPlaceholder": "Pelo menos 6 caracteres",
+    "confirmPasswordLabel": "Confirmar nova senha",
+    "confirmPasswordPlaceholder": "Repita a nova senha",
+    "submit": "Atualizar senha",
+    "saving": "Atualizando...",
+    "passwordsMismatch": "As senhas não coincidem",
+    "passwordTooShort": "A senha deve ter pelo menos 6 caracteres",
+    "checking": "Verificando seu link...",
+    "expiredTitle": "Este link não é mais válido",
+    "expiredDesc": "Links de redefinição de senha funcionam uma vez e expiram em pouco tempo. Peça um novo e abra-o no mesmo navegador em que o solicitou.",
+    "requestNewLink": "Pedir um novo link",
+    "backToSignIn": "Voltar ao login",
+    "successTitle": "Senha atualizada",
+    "successDesc": "Você está conectado com a nova senha.",
+    "continueToDashboard": "Ir para o painel"
   },
   "JoinPage": {
     "fail": {

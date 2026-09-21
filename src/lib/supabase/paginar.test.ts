@@ -43,6 +43,33 @@ function fonte(
 }
 
 describe("buscarPaginado", () => {
+  // ⚠️⚠️ Invariante 5 do módulo: a página seguinte só é pedida DEPOIS de a
+  // anterior voltar. Paralelizar páginas por OFFSET pula linha que já existia
+  // quando a coleção recebe inserção no meio da leitura (Codex, PR #247).
+  it("pede a página seguinte só depois de a anterior voltar", async () => {
+    const pedidas: number[] = [];
+    const soltar: Array<() => void> = [];
+    const total = 2 * PAGINA + 3;
+    const promessa = buscarPaginado<Linha>((de) => {
+      pedidas.push(de);
+      const quantas = de < 2 * PAGINA ? PAGINA : 3;
+      return new Promise<RespostaDaPagina<Linha>>((ok) =>
+        soltar.push(() => ok({ data: linhas(de, quantas), error: null, count: total })),
+      );
+    });
+
+    for (let pagina = 1; pagina <= 3; pagina++) {
+      await new Promise((r) => setTimeout(r, 0));
+      // Só a página corrente foi pedida — nenhuma adiantada.
+      expect(pedidas).toHaveLength(pagina);
+      soltar[pagina - 1]();
+    }
+    const r = await promessa;
+    expect(r.motivo).toBeNull();
+    expect(r.linhas).toHaveLength(total);
+  });
+
+
   it("devolve a página única quando ela vem curta", async () => {
     const { pagina, chamadas } = fonte([linhas(0, 12)], 12);
     const r = await buscarPaginado(pagina);
@@ -124,122 +151,13 @@ describe("buscarPaginado", () => {
     expect(r.motivo).toBeNull();
   });
 
-  it("admite o teto em vez de recortar em silêncio — sem pedir o que vai descartar", async () => {
+  it("admite o teto em vez de recortar em silêncio", async () => {
     const cheias = Array.from({ length: MAX_PAGINAS }, (_, n) => linhas(n * PAGINA, PAGINA));
     const { pagina, chamadas } = fonte(cheias, MAX_PAGINAS * PAGINA + 1);
     const r = await buscarPaginado(pagina);
 
     expect(r.linhas).toBeNull();
     expect(r.motivo).toBe("teto");
-    // A contagem da 1ª página já prova que não cabe.
-    expect(chamadas).toHaveLength(1);
-  });
-
-  it("admite o teto quando a coleção CRESCE além dele no meio da leitura", async () => {
-    const cheias = Array.from({ length: MAX_PAGINAS }, (_, n) => linhas(n * PAGINA, PAGINA));
-    // A 1ª contagem promete 2 páginas; as seguintes dizem que não para de crescer.
-    const contagens = [2 * PAGINA, ...Array.from({ length: MAX_PAGINAS }, () => MAX_PAGINAS * PAGINA + 1)];
-    const { pagina, chamadas } = fonte(cheias, contagens);
-    const r = await buscarPaginado(pagina);
-
-    expect(r.linhas).toBeNull();
-    expect(r.motivo).toBe("teto");
     expect(chamadas).toHaveLength(MAX_PAGINAS);
-  });
-
-  // ⚠️ O motivo de a função existir nesta forma: em fila, o quadro de 3.669
-  // cards levava 4× o tempo de uma página. As seguintes à 1ª saem JUNTAS.
-  it("pede as páginas seguintes JUNTAS, sem esperar uma pela outra, e as junta na ordem", async () => {
-    const total = 3 * PAGINA + 5;
-    const pedidas: number[] = [];
-    const soltar: Array<() => void> = [];
-    const pagina = (de: number) => {
-      pedidas.push(de);
-      const n = de / PAGINA;
-      const resposta: RespostaDaPagina<Linha> = {
-        data: linhas(de, n < 3 ? PAGINA : 5),
-        error: null,
-        count: total,
-      };
-      if (n === 0) return Promise.resolve(resposta);
-      return new Promise<RespostaDaPagina<Linha>>((ok) => soltar.push(() => ok(resposta)));
-    };
-
-    const promessa = buscarPaginado(pagina);
-    await new Promise((r) => setTimeout(r, 0));
-    // Nenhuma das seguintes voltou, e as três já foram pedidas.
-    expect(pedidas).toEqual([0, PAGINA, 2 * PAGINA, 3 * PAGINA]);
-
-    // Voltam FORA de ordem — o resultado tem de sair na ordem das páginas.
-    soltar.reverse().forEach((s) => s());
-    const r = await promessa;
-    expect(r.motivo).toBeNull();
-    expect(r.linhas?.map((l) => l.id)).toEqual(linhas(0, total).map((l) => l.id));
-  });
-
-  it("continua uma a uma quando a coleção cresceu além da 1ª contagem", async () => {
-    const { pagina, chamadas } = fonte(
-      [linhas(0, PAGINA), linhas(PAGINA, PAGINA), linhas(2 * PAGINA, 3)],
-      [PAGINA + 5, 2 * PAGINA + 3, 2 * PAGINA + 3],
-    );
-    const r = await buscarPaginado(pagina);
-
-    expect(r.linhas).toHaveLength(2 * PAGINA + 3);
-    expect(r.motivo).toBeNull();
-    expect(chamadas).toHaveLength(3);
-  });
-
-  // ⚠️⚠️ As páginas do lote saem JUNTAS e não têm ordem de tempo entre si:
-  // a do offset 1000 pode ter visto a coleção DEPOIS de crescer (3.500) e a
-  // do 2000, ANTES (3.000). Assentar na ordem do offset deixava a contagem
-  // velha vencer e 3.000 linhas "fechavam" uma coleção de 3.500 — 500 linhas
-  // a menos com cara de lista completa (Codex, PR #247).
-  it("o lote paralelo vale pela MAIOR contagem dele — a velha não fecha a leitura", async () => {
-    const { pagina, chamadas } = fonte(
-      [
-        linhas(0, PAGINA),
-        linhas(PAGINA, PAGINA),
-        linhas(2 * PAGINA, PAGINA),
-        linhas(3 * PAGINA, 500),
-      ],
-      [3 * PAGINA, 3 * PAGINA + 500, 3 * PAGINA, 3 * PAGINA + 500],
-    );
-    const r = await buscarPaginado(pagina);
-
-    expect(r.motivo).toBeNull();
-    expect(r.linhas).toHaveLength(3 * PAGINA + 500);
-    // A 4ª página (depois do lote) é a que prova o fim.
-    expect(chamadas).toHaveLength(4);
-  });
-
-  it("no lote que encolheu, a maior contagem deixa a leitura 'incompleto', nunca completa com buraco", async () => {
-    // A 1000 viu a coleção antes da exclusão (3.000) e a 2000, depois (2.990,
-    // página curta). Não dá para saber qual é a mais nova: não confie.
-    const { pagina } = fonte(
-      [linhas(0, PAGINA), linhas(PAGINA, PAGINA), linhas(2 * PAGINA, 990)],
-      [3 * PAGINA, 3 * PAGINA, 3 * PAGINA - 10],
-    );
-    const r = await buscarPaginado(pagina);
-
-    expect(r.linhas).toBeNull();
-    expect(r.motivo).toBe("incompleto");
-  });
-
-  it("uma página do meio com erro derruba a leitura inteira", async () => {
-    const erro = { message: "timeout", code: "57014" };
-    let n = 0;
-    const r = await buscarPaginado<Linha>((de) => {
-      n++;
-      return Promise.resolve(
-        de === PAGINA
-          ? { data: null, error: erro, count: null }
-          : { data: linhas(de, PAGINA), error: null, count: 3 * PAGINA },
-      );
-    });
-
-    expect(r.linhas).toBeNull();
-    expect(r.motivo).toBe("erro");
-    expect(r.erro).toBe(erro);
-    expect(n).toBe(3);
   });
 });

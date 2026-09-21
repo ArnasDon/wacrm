@@ -28,6 +28,18 @@
  *     impedir.
  *  4. **Teto de páginas.** Acima dele, admitir que não coube é melhor que
  *     recortar errado em silêncio.
+ *  5. **As páginas vão EM FILA, uma depois da outra.** Não é descuido: foi
+ *     paralelizado em 21/09/2026 (PR #247) e desfeito na mesma noite, por
+ *     duas anotações do Codex. Páginas por OFFSET pedidas JUNTAS não
+ *     compartilham a foto do banco, e podem vê-la em ordem inversa à dos
+ *     offsets: se o offset 2000 responde ANTES de uma inserção na posição
+ *     1500 e o 1000 responde DEPOIS, a linha que estava na posição 1999 não
+ *     vem em página nenhuma — uma linha que JÁ EXISTIA, não a nova —, e a
+ *     página seguinte devolve outra repetida, fechando a contagem. Num
+ *     disparo, é um destinatário pulado em silêncio. Em fila, a página de
+ *     offset maior nunca vê o banco antes da menor, e a inserção no meio só
+ *     repete linha ou perde a NOVA. Quem precisar de velocidade aqui troca
+ *     OFFSET por chave (keyset), não paraleliza.
  *
  * ⚠️ `src/lib/funil/carregar.ts` tem uma cópia deste laço e NÃO foi migrada
  * de propósito: ela faz o parse de cada linha (`lerLinha`) dentro do laço e
@@ -74,17 +86,6 @@ export interface ResultadoPaginado<T> {
  *
  * `pagina(de, ate)` monta a consulta com o `order` e o `count: 'exact'` de
  * quem chama e devolve a resposta crua do Supabase.
- *
- * ⚠️ A primeira página vai SOZINHA — é a contagem dela que diz quantas faltam
- * —, e as seguintes saem JUNTAS. Em fila, cada página esperava a anterior
- * voltar: o quadro do funil Trabalhista (3.669 cards, 4 páginas) levava 4×
- * o tempo de uma, e os 5.224 negócios do filtro da caixa de entrada, 6×
- * (medido em 21/09/2026). As respostas são ASSENTADAS na ordem, pela mesma
- * régua de antes — a contagem mais recente manda, a página curta prova o fim
- * —, então o resultado é o da leitura em fila; só o tempo muda. A exceção é a
- * CONTAGEM do lote paralelo, que vale pela maior dele (ver no corpo). Se a
- * coleção CRESCEU no meio (a última página prevista veio cheia e o acumulado
- * ainda não alcança a contagem), o resto segue uma a uma, até o teto.
  */
 export async function buscarPaginado<T>(
   pagina: (de: number, ate: number) => PromiseLike<RespostaDaPagina<T>>,
@@ -92,21 +93,15 @@ export async function buscarPaginado<T>(
   const acumulado: T[] = [];
   let total: number | null = null;
 
-  /**
-   * Acrescenta uma página. Devolve o resultado se a leitura TERMINOU.
-   * `contagem` é a que vale para esta página — a dela, ou a do lote paralelo
-   * (ver abaixo).
-   */
-  const assentar = (
-    { data, error }: RespostaDaPagina<T>,
-    contagem: number | null,
-  ): ResultadoPaginado<T> | null => {
+  for (let n = 0; n < MAX_PAGINAS; n++) {
+    const de = n * PAGINA;
+    const { data, error, count } = await pagina(de, de + PAGINA - 1);
     if (error || !data) return { linhas: null, erro: error ?? null, motivo: "erro" };
 
     acumulado.push(...data);
     // A contagem MAIS RECENTE manda: linha apagada entre duas páginas encolhe
     // o total, e é por ele que se descobre que a leitura saiu incompleta.
-    total = contagem ?? total;
+    total = count ?? total;
     const curta = data.length < PAGINA;
 
     if (total == null) {
@@ -122,50 +117,6 @@ export async function buscarPaginado<T>(
         ? { linhas: acumulado, erro: null, motivo: null }
         : { linhas: null, erro: null, motivo: "incompleto" };
     }
-    return null;
-  };
-
-  const intervalo = (n: number) => pagina(n * PAGINA, n * PAGINA + PAGINA - 1);
-
-  const primeira = await intervalo(0);
-  const fim = assentar(primeira, primeira.count);
-  if (fim) return fim;
-
-  // Aqui `total` existe (sem contagem, a 1ª página já teria decidido). Se a
-  // contagem já passa do teto, pedir as 24 páginas seguintes só para
-  // descartá-las seria carga à toa no banco.
-  const previstas = Math.ceil((total ?? 0) / PAGINA);
-  if (previstas > MAX_PAGINAS) return { linhas: null, erro: null, motivo: "teto" };
-
-  let n = 1;
-  const respostas = await Promise.all(
-    Array.from({ length: Math.max(previstas - 1, 0) }, (_, i) => intervalo(i + 1)),
-  );
-  // ⚠️⚠️ Entre as páginas do LOTE não há ordem de tempo: saíram juntas, e a
-  // do offset 1000 pode ter sido respondida DEPOIS da do 2000. "A contagem
-  // mais recente manda" deixa de ter como ser aplicada página a página — se a
-  // 1000 viu 3.500 linhas (inseriram 500 no meio) e a 2000 viu 3.000, assentar
-  // na ordem do offset faria a contagem velha vencer, e 3.000 linhas
-  // acumuladas "fechariam" uma coleção de 3.500 (Codex, PR #247). O lote
-  // inteiro vale pela MAIOR contagem dele: numa coleção que cresce é a mais
-  // nova, e numa que encolhe é o lado conservador — a leitura sai
-  // "incompleto" em vez de completa com linha faltando. Entre a 1ª página e
-  // o lote a ordem é conhecida (o lote só sai depois dela), então a
-  // encolhida de verdade continua sendo aceita como antes.
-  const contagens = respostas
-    .map((r) => r.count)
-    .filter((c): c is number => c != null);
-  const contagemDoLote = contagens.length > 0 ? Math.max(...contagens) : null;
-  for (const resposta of respostas) {
-    n++;
-    const terminou = assentar(resposta, contagemDoLote);
-    if (terminou) return terminou;
-  }
-
-  for (; n < MAX_PAGINAS; n++) {
-    const resposta = await intervalo(n);
-    const terminou = assentar(resposta, resposta.count);
-    if (terminou) return terminou;
   }
 
   return { linhas: null, erro: null, motivo: "teto" };

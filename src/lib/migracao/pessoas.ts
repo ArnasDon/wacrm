@@ -13,11 +13,17 @@
 //
 // A conta fecha: 1.157 existem + 11.888 a criar + 1 a pular = 13.046.
 //
-// ⚠️ Os 336 só aparecem porque a resolução passa por `digitosDoTelefone`, que
-// acrescenta o `55` ao número brasileiro escrito sem DDI. Uma medição feita à
-// mão, só com `replace(/\D/g,'')`, acha 320 e perde 16 — foi o que aconteceu
-// na primeira estimativa deste plano. Usar o helper da casa, e não uma régua
-// própria, é o que faz a carga concordar com a ingestão.
+// ⚠️ Quantas se perdem depende do que se chame de "igualdade", e as duas
+// contas foram medidas: quem compara o telefone CRU da Kommo contra
+// `phone_normalized` perde **336**; quem normaliza por `digitosDoTelefone` e
+// então compara por igualdade perde **333** (os 3 de diferença são números
+// escritos sem DDI, que casam só depois do `55`). O que não muda é o total:
+// **1.157 já existem aqui**.
+//
+// ⚠️ Uma primeira estimativa feita à mão, só com `replace(/\D/g,'')` e sem o
+// helper da casa, dizia 320 e "~1.150" — errava por não acrescentar o DDI.
+// Usar `digitosDoTelefone`, e não uma régua própria, é o que faz a carga
+// concordar com a ingestão.
 //
 // ⚠️ E NÃO é a régua dos ÚLTIMOS 8 DÍGITOS do `phonesMatch`. Medido no
 // levantamento: por ela, 14 sufixos teriam mais de uma pessoa, 13 com DDD ou

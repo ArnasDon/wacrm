@@ -937,10 +937,13 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
     chaves diferentes).
     ⚠️ A conta fecha: **1.157 já existem** + 11.888 a criar + 1 a pular =
     13.046 — e é 1.157, não os "~1.150" que este plano estimava.
-    ⚠️ Os 336 só aparecem porque a resolução passa por `digitosDoTelefone`,
-    que acrescenta o `55` ao número brasileiro escrito sem DDI. Uma medição à
-    mão, só com `replace(/\D/g,'')`, acha 320 e perde 16 — foi o que a
-    primeira versão desta regra dizia. A decisão sempre foi esta; o risco é a IMPLEMENTAÇÃO —
+    ⚠️ Quantas se perdem depende do que se chame de "igualdade", e as duas
+    contas foram medidas: comparando o telefone CRU da Kommo contra
+    `phone_normalized`, **336**; normalizando por `digitosDoTelefone` e então
+    comparando por igualdade, **333** (os 3 de diferença são números escritos
+    sem DDI, que casam só depois do `55`). O que não muda é o total: **1.157
+    já existem**. Uma primeira estimativa à mão, sem o helper da casa, dizia
+    320 e "~1.150" — errava por não acrescentar o DDI. A decisão sempre foi esta; o risco é a IMPLEMENTAÇÃO —
     a mesma família do `(pipeline_id, status_id)` da regra 9b. (P0 do painel
     de projeto, remedido por mim.)
 

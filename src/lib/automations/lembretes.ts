@@ -1,5 +1,8 @@
 import type { DateFieldTriggerConfig } from '@/types'
 
+// Função pura (compara dois instantes ISO); nada de I/O vem junto.
+import { mesmaReuniao } from '@/lib/calendly/cancelamento'
+
 // ------------------------------------------------------------
 // Gatilho de LEMBRETE por data de campo personalizado (migration 935).
 //
@@ -194,23 +197,32 @@ export function travaDeveSerDevolvida(r: { erro?: string; executadas: number }):
 }
 
 /**
- * Tira da lista de alvos os horários que um CANCELAMENTO já travou.
+ * Tira da lista de alvos os horários que uma reunião CANCELADA ocupa.
  *
- * ⚠️⚠️ A trava de cancelamento vale para QUALQUER lembrete daquele
- * (contato, valor) — inclusive os criados DEPOIS do cancelamento (Codex, PR
- * #235). O desarme do Calendly pré-arma uma linha por automação EXISTENTE, e
- * a data continua na ficha de propósito; sem esta varredura, uma automação de
- * lembrete criada no intervalo entre o cancelamento e o horário da reunião
- * nasceria sem trava e mandaria o aviso de um evento desmarcado.
+ * ⚠️⚠️ A fonte é o EVENTO de cancelamento (`cb_calendly_eventos`), não a
+ * trava por automação. A primeira versão perguntava a
+ * `cb_automation_reminders (motivo = 'cancelamento')`, e aquela linha herda a
+ * vida da AUTOMAÇÃO: `automation_id` é `ON DELETE CASCADE` (935), então
+ * apagar o lembrete apagava junto a prova de que a reunião foi desmarcada —
+ * e um lembrete criado depois mandava o aviso. Pela mesma razão não existia
+ * exclusão nenhuma quando a conta ainda não tinha lembrete no momento do
+ * cancelamento, e a poda precisava de uma regra especial de 400 dias.
  *
- * O par é (contato, valor) porque é isso que identifica O HORÁRIO — a
- * automação é justamente o que não se pode exigir que já exista.
+ * O evento não tem nenhum desses problemas: é da CONTA, guarda contato e
+ * horário, não pertence a automação nenhuma e não é podado (Codex, PR #235,
+ * três rodadas apontando para a mesma raiz).
+ *
+ * ⚠️ A comparação é por INSTANTE, não por texto: o campo do contato guarda
+ * "2026-09-25T17:00:00.000000Z" e a coluna `inicio` volta do PostgREST como
+ * "2026-09-25 17:00:00+00". São o mesmo momento e dois textos diferentes —
+ * comparar string deixaria passar tudo.
  */
 export function semOsCancelados<T extends { contact_id: string; valor: string }>(
   alvos: readonly T[],
-  cancelados: readonly { contact_id: string; valor: string }[],
+  cancelados: readonly { contact_id: string; inicio: string | null }[],
 ): T[] {
   if (cancelados.length === 0) return [...alvos]
-  const mortos = new Set(cancelados.map((c) => `${c.contact_id}\u0000${c.valor}`))
-  return alvos.filter((a) => !mortos.has(`${a.contact_id}\u0000${a.valor}`))
+  return alvos.filter(
+    (a) => !cancelados.some((c) => c.contact_id === a.contact_id && mesmaReuniao(a.valor, c.inicio)),
+  )
 }

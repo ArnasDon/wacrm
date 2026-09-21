@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -369,21 +371,40 @@ describe('travaDeveSerDevolvida', () => {
 describe('semOsCancelados', () => {
   const alvo = (contact_id: string, valor: string) => ({ contact_id, valor })
 
-  it('CRÍTICO: tira o horário que um cancelamento travou, seja de qual automação for', () => {
-    // A trava do cancelamento é gravada por automação EXISTENTE; um lembrete
-    // criado depois não teria trava nenhuma e mandaria o aviso de uma reunião
-    // desmarcada (Codex, PR #235). Por isso a pergunta é (contato, valor).
-    const alvos = [alvo('c1', 'T17'), alvo('c2', 'T18')]
-    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T18')])
+  it('CRÍTICO: tira o horário de uma reunião cancelada, seja de qual automação for', () => {
+    // A fonte é o EVENTO do cancelamento, não a trava por automação: aquela
+    // é `ON DELETE CASCADE` em `automations`, então apagar o lembrete
+    // apagaria a prova de que a reunião foi desmarcada (Codex, PR #235).
+    const alvos = [alvo('c1', '2026-09-25T17:00:00.000000Z'), alvo('c2', '2026-09-25T18:00:00.000000Z')]
+    const cancelados = [{ contact_id: 'c1', inicio: '2026-09-25 17:00:00+00' }]
+    expect(semOsCancelados(alvos, cancelados)).toEqual([alvos[1]])
   })
 
-  it('mesmo contato, OUTRO horário, continua valendo', () => {
-    const alvos = [alvo('c1', 'T17'), alvo('c1', 'T19')]
-    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c1', 'T19')])
+  it('CRÍTICO: compara INSTANTE, não texto', () => {
+    // O campo do contato guarda "…T17:00:00.000000Z" e o PostgREST devolve
+    // "… 17:00:00+00". Comparando string, nada casaria e a correção seria
+    // enfeite.
+    expect(
+      semOsCancelados(
+        [alvo('c1', '2026-09-25T14:00:00-03:00')],
+        [{ contact_id: 'c1', inicio: '2026-09-25 17:00:00+00' }],
+      ),
+    ).toEqual([])
+  })
+
+  it('mesmo contato, OUTRO horário, continua valendo — é o reagendamento', () => {
+    const alvos = [alvo('c1', '2026-10-02T17:00:00.000000Z')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', inicio: '2026-09-25 17:00:00+00' }])).toEqual(alvos)
   })
 
   it('mesmo horário, OUTRO contato, continua valendo', () => {
-    expect(semOsCancelados([alvo('c2', 'T17')], [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T17')])
+    const alvos = [alvo('c2', '2026-09-25T17:00:00.000000Z')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', inicio: '2026-09-25 17:00:00+00' }])).toEqual(alvos)
+  })
+
+  it('cancelamento sem horário não tira ninguém', () => {
+    const alvos = [alvo('c1', '2026-09-25T17:00:00.000000Z')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', inicio: null }])).toEqual(alvos)
   })
 
   it('sem cancelamento nenhum, a lista passa inteira', () => {
@@ -393,20 +414,23 @@ describe('semOsCancelados', () => {
 })
 
 describe('poda das travas', () => {
-  it('CRÍTICO: a marca de CANCELAMENTO vive muito mais que a de disparo', async () => {
-    // Ela só serve quando o horário DESMARCADO chega à janela do lembrete.
-    // Podada aos 90 dias, uma reunião cancelada com mais antecedência que
-    // isso perderia a marca antes da hora — e o aviso do evento cancelado
-    // voltaria a sair, porque a data continua na ficha (Codex, PR #235).
-    const { PODA_DO_DISPARO_MS, PODA_DO_CANCELAMENTO_MS } = await import('./varrer-lembretes')
-    expect(PODA_DO_DISPARO_MS).toBe(90 * 86_400_000)
-    expect(PODA_DO_CANCELAMENTO_MS).toBeGreaterThan(365 * 86_400_000)
+  it('uma regra só, 90 dias — o cancelamento não depende mais da trava', () => {
+    // A regra especial de 400 dias existia porque a marca do cancelamento
+    // morava na trava. Agora a prova é o EVENTO, que não é podado: a poda
+    // volta a ser a de sempre (Codex, PR #235).
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
+    expect(fonte).not.toContain('PODA_DO_CANCELAMENTO_MS')
+    expect(fonte).toMatch(/90 \* 86_400_000/)
   })
+})
 
-  it('e a poda de 90 dias é CERCADA pelo motivo (pino estrutural)', async () => {
-    const { readFileSync } = await import('node:fs')
-    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8').replace(/\/\/.*$/gm, '')
-    expect(fonte).toMatch(/PODA_DO_DISPARO_MS[\s\S]{0,200}?\.eq\('motivo', 'disparo'\)/)
-    expect(fonte).toMatch(/PODA_DO_CANCELAMENTO_MS[\s\S]{0,200}?\.eq\('motivo', 'cancelamento'\)/)
+describe('o filtro do cancelamento é só do lembrete por CAMPO', () => {
+  it('CRÍTICO: lembrete de AGENDA não passa pelo filtro do Calendly', async () => {
+    // Com `fonte: 'reuniao'` o alvo vem de `cb_meetings`. Um cancelamento do
+    // Calendly no mesmo instante mataria o lembrete de uma reunião do CRM
+    // que continua de pé — e a RPC da agenda já exclui a `cancelada`, que é
+    // o caminho dela (Codex, PR #236).
+    const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
+    expect(fonte).toMatch(/if \(!daAgenda && encontrados\.length > 0\)/)
   })
 })

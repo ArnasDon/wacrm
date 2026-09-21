@@ -6,7 +6,7 @@ fase e no diário do fim.
 
 | | |
 | --- | --- |
-| **Estado** | Fases 0 e 1 concluídas — **a Fase 1 (Next 16.3.5, `npm audit` 12 → 0) está EM PRODUÇÃO desde 21/09/2026 15:08Z** (PR #239). **Fase 2 (função de disparo): migration `1030` APLICADA e teste prático APROVADO em 21/09 — PR #242 na revisão final (Codex → merge).** |
+| **Estado** | Fases 0, 1 e 2 concluídas. **Fase 1** (Next 16.3.5, `npm audit` 12 → 0) em produção desde 21/09/2026 15:08Z (PR #239). **Fase 2** (função de disparo, migration `1030`, `channel_id` respeitado) **em produção desde 21/09/2026 17:33Z** (PR #242), pós-deploy conferido. **Pausado a pedido do operador antes da Fase 3.** |
 | **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. |
 | **Pedido do operador (21/09/2026)** | Trazer todas as atualizações como COMPLEMENTO ou CORREÇÃO, nunca retrocesso. BSUID por último (é o mais complexo e o de maior risco). Toda correção é **medida contra o nosso código**, **revisada em duas lentes** e **testada no preview, na prática**. Merge e migration estão autorizados quando o teste exigir. Só depois da validação passa-se à fase seguinte. |
 | **PR #229** | Aberto por `devgabrielslv` com head em `ArnasDon/wacrm:main`. **Não tem como ser mesclado**: resolver conflito ali seria commitar no upstream. Fica aberto até a decisão P1 (seção 8). |
@@ -180,7 +180,7 @@ quebrar, sabe-se qual.
 | --- | --- | --- | --- | --- | --- | --- |
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (falta só a decisão P1) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
-| **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | 🔄 validada na prática; PR #242 na revisão final |
+| **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
 | **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir) | Moderado | Baixa | Baixo | — | pendente |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
@@ -540,6 +540,36 @@ Os quatro pinos novos reprovam por MUTAÇÃO. A rota mudou só de ORDEM (validar
 canal antes de ir ao banco) — reconferida no preview pela sonda pós-deploy
 apontada para `localhost`.
 
+**Pós-deploy (21/09/2026) — ✅ conferido.** Merge `7ecb0efb` às 17:27Z; os
+três jobs verdes, e o rollout deu certo na PRIMEIRA tentativa (a segunda nem
+rodou), terminando às 17:33:41Z.
+
+| Conferência | Antes do merge | Depois do deploy |
+| --- | --- | --- |
+| Sonda na PRODUÇÃO: `channel_id: 42` + destinatário inválido (nenhuma das duas rotas consegue enviar) | 400 "No recipients had a valid E.164…" — a rota ANTIGA ignorava o canal | **400 "'channel_id' must be a non-empty string…"** — a rota NOVA |
+| `GET /api/v1/broadcasts/{id}` da campanha de teste | sem `channel_id` | **com `channel_id`** |
+| Sem chave | 401 | 401 |
+| Site / rota protegida | — | `login` 200 · `/inbox` 307 → `/login` |
+| Crons (agendadas, automações, radar) | — | 401 nos três (503 seria env vazia) |
+| Webhooks sem assinatura (Evolution e Meta) · API v1 sem chave · manifesto | — | 401 · 401 · 401 · 200 |
+| Ingestão depois do rollout | — | 3 mensagens gravadas em ~3 min (1 de cliente, 2 da equipe já com recibo); as 5 conexões `connected`, atraso de entrega de segundos |
+| Chaves de API ativas no banco | 0 | 0 (a sonda cria a dela em processo, por 20 min, e a revoga no `finally`) |
+
+⚠️ **Dois registros de método desta fase:**
+- A sonda que prova "a rota nova está no ar" foi desenhada para NÃO conseguir
+  enviar nem contra a rota antiga (destinatário inválido) — provar deploy com um
+  pedido que a versão velha executaria é como se manda mensagem por engano.
+  Rodá-la ANTES do merge deu a linha de base que torna o "depois" uma prova.
+- Logo depois do merge, o classificador de permissões da sessão negou até
+  leitura anônima do site ("[Production Deploy]"), porque o operador tinha
+  pedido "resumo e pausa" no meio do turno. Parei, relatei, e a conferência só
+  rodou com a ordem explícita dele ("finalize tudo da fase 2"). Instrução nova
+  no meio do turno muda o que está autorizado — inclusive o que já estava.
+
+Ficou no banco, de propósito: UMA campanha rotulada "TESTE Fase 2 — merge do
+upstream…" (`fc068dcf-…`, 1 destinatário `failed`) — é a evidência do achado da
+entrega e o alvo da sonda. Apagar é decisão do operador.
+
 **Consequência para o escritório, fora deste plano:** campanha de Marketing para
 quem não escreveu nas últimas 24 h pode simplesmente não ser entregue — e hoje a
 tela só diz "falhou". → Vira o teste prático da Fase 5: repetir ESTE disparo com
@@ -772,3 +802,4 @@ Portões, fumaça no preview, merge. Depois: bloco "Decisões fixadas no merge d
 | 21/09/2026 | 0 | Medições da seção 2; estratégia "portar primeiro"; worktree criada; o #232 entrou no `main` no meio da medição sem mudar os conflitos. Linha de base: 362 arquivos / 4.710 testes verdes; `npm audit` com 12 vulnerabilidades (1 crítica). |
 | 21/09/2026 | 1 | Dependências do upstream aplicadas: `npm audit` 12 → 0. As duas lentes não acharam P0. A Lente 2 pegou o `next dev` da 16.3 reescrevendo o `AGENTS.md` (→ `agentRules: false`). A Lente 1 mostrou que o teste em `next dev` não exercitava o roteador novo (→ refeito num build de produção local: limpo). Dois erros MEUS de teste viraram regra do protocolo: abrir conversa de cliente real zera as não lidas, e painel oculto congela o `requestAnimationFrame`. |
 | 21/09/2026 | 2 | A função de disparo NUNCA tinha executado (42702) — e as duas lentes acharam o que o upstream não tem: os parâmetros por destinatário chegavam em 2-D pelo PostgREST (Lente 1) e a rota descartava o `channel_id` (Lente 2). Na 2ª passada, a Lente 1 derrubou uma medição MINHA ("23502") feita num dublê com `NOT NULL` que a produção não tem. Ordem com migration: rascunho → replay verde no commit exato → `1030` aplicada (`20260921164342`) → teste prático: 5 recusas em 400 sem gravar nada, o PRIMEIRO 202 do endpoint, params como lista pelo PostgREST real → chave de teste revogada na hora (0 chaves ativas). Achado fora do escopo: a Meta aceitou e depois falhou a ENTREGA do modelo de Marketing fora da janela, e o motivo se perdeu — é o defeito da Fase 5, que ganhou um caso de teste real. |
+| 21/09/2026 | 2 (fecho) | Codex SEM COTA no HEAD → terceira revisão independente no lugar dele: nenhum P0/P1; os 2 P2 e 3 P3 corrigidos (pino do salto núcleo → resolvedor, `null` = ausente, ordem da validação, mensagem do `verify-schema`, doc), 1 P3 corrigido em parte (o pino do filtro por conta entrou; o `error` descartado e o `status` não conferido de `resolveMetaChannel` viraram cartão) e 2 P3 aceitos por escrito. Merge 17:27Z, rollout 17:33Z na primeira tentativa. Pós-deploy: a sonda inverteu (rota antiga → rota nova; `GET` sem → com `channel_id`), saúde e ingestão conferidas, zero chaves ativas. **Operador pediu pausa antes da Fase 3.** |

@@ -16,7 +16,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 const h = vi.hoisted(() => ({ decrypt: vi.fn() }))
 vi.mock('@/lib/whatsapp/encryption', () => ({ decrypt: h.decrypt }))
 
-import { sendCapiEvent } from './conversions-api'
+import { sendCapiEvent, sendPurchaseCapiEvent } from './conversions-api'
 import { isUniqueViolation } from '@/lib/contacts/dedupe'
 
 interface Row {
@@ -215,5 +215,104 @@ describe('isUniqueViolation (sanity — usado pela dedupe de sendCapiEvent)', ()
   it('reconhece o código Postgres 23505', () => {
     expect(isUniqueViolation({ code: '23505' })).toBe(true)
     expect(isUniqueViolation({ code: 'other' })).toBe(false)
+  })
+})
+
+// ============================================================
+// sendPurchaseCapiEvent (Bloco 5) — dedup por opportunityId, dois
+// caminhos de user_data (ctwa vs system_generated).
+// ============================================================
+describe('sendPurchaseCapiEvent', () => {
+  const PURCHASE_ARGS = {
+    accountId: 'acct-1',
+    conversationId: 'conv-1',
+    opportunityId: 'opp-1',
+    amountEur: 500,
+    currencyCode: 'EUR',
+  }
+
+  it('reserva o event_id determinístico por opportunity (não por conversa)', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
+    const { db, writes } = makeDb({})
+    await sendPurchaseCapiEvent({
+      db: db as never,
+      ...PURCHASE_ARGS,
+      userData: { kind: 'ctwa', ctwaClid: 'clid-123', wabaId: 'waba-1' },
+    })
+    const insert = writes.find((w) => w.op === 'insert')
+    expect(insert?.payload).toMatchObject({ event_name: 'Purchase', event_id: 'opp-1:Purchase', status: 'pending' })
+  })
+
+  it('desiste sem chamar a Meta quando a reserva perde a corrida (unique violation) — idempotência', async () => {
+    global.fetch = vi.fn()
+    const { db } = makeDb({ insertResult: { error: { code: '23505', message: 'duplicate key' } } })
+    await sendPurchaseCapiEvent({
+      db: db as never,
+      ...PURCHASE_ARGS,
+      userData: { kind: 'ctwa', ctwaClid: 'clid-123', wabaId: 'waba-1' },
+    })
+    expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('caminho ctwa: envia action_source business_messaging com ctwa_clid + waba_id e o valor em custom_data', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
+    const { db } = makeDb({})
+    await sendPurchaseCapiEvent({
+      db: db as never,
+      ...PURCHASE_ARGS,
+      userData: { kind: 'ctwa', ctwaClid: 'clid-123', wabaId: 'waba-1' },
+    })
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(init.body)
+    expect(body.data[0]).toMatchObject({
+      event_name: 'Purchase',
+      action_source: 'business_messaging',
+      messaging_channel: 'whatsapp',
+      user_data: { ctwa_clid: 'clid-123', whatsapp_business_account_id: 'waba-1' },
+      custom_data: { value: 500, currency: 'EUR' },
+      event_id: 'opp-1:Purchase',
+    })
+  })
+
+  it('caminho system_generated: envia action_source system_generated com em/ph hasheados, sem messaging_channel', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
+    const { db } = makeDb({})
+    await sendPurchaseCapiEvent({
+      db: db as never,
+      ...PURCHASE_ARGS,
+      userData: { kind: 'system_generated', emailHash: 'hash-email', phoneHash: 'hash-phone' },
+    })
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(init.body)
+    expect(body.data[0].action_source).toBe('system_generated')
+    expect(body.data[0].messaging_channel).toBeUndefined()
+    expect(body.data[0].user_data).toEqual({ em: ['hash-email'], ph: ['hash-phone'] })
+  })
+
+  it('caminho system_generated com só email (sem telefone) omite o campo ph', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: true, status: 200, text: async () => '{}' })
+    const { db } = makeDb({})
+    await sendPurchaseCapiEvent({
+      db: db as never,
+      ...PURCHASE_ARGS,
+      userData: { kind: 'system_generated', emailHash: 'hash-email', phoneHash: null },
+    })
+    const [, init] = (global.fetch as ReturnType<typeof vi.fn>).mock.calls[0]
+    const body = JSON.parse(init.body)
+    expect(body.data[0].user_data).toEqual({ em: ['hash-email'] })
+  })
+
+  it('grava status error e não lança quando a Meta responde não-2xx', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false, status: 400, text: async () => '{"error":"bad"}' })
+    const { db, writes } = makeDb({})
+    await expect(
+      sendPurchaseCapiEvent({
+        db: db as never,
+        ...PURCHASE_ARGS,
+        userData: { kind: 'ctwa', ctwaClid: 'clid-123', wabaId: 'waba-1' },
+      }),
+    ).resolves.toBeUndefined()
+    const update = writes.find((w) => w.op === 'update')
+    expect(update?.payload).toMatchObject({ status: 'error', http_status: 400 })
   })
 })

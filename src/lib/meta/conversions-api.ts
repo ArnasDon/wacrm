@@ -65,7 +65,7 @@ import { META_API_BASE } from '@/lib/whatsapp/meta-api'
 const CAPI_REQUEST_TIMEOUT_MS = 5_000
 const RESPONSE_SUMMARY_MAX = 500
 
-export type CapiEventName = 'LeadSubmitted' | 'QualifiedLead'
+export type CapiEventName = 'LeadSubmitted' | 'QualifiedLead' | 'Purchase'
 
 export interface SendCapiEventArgs {
   db: SupabaseClient
@@ -234,6 +234,153 @@ export async function sendCapiEvent(args: SendCapiEventArgs): Promise<void> {
   } catch (err) {
     console.error(
       `[meta capi] erro inesperado a enviar o evento ${eventName} (conversation=${conversationId}):`,
+      err instanceof Error ? err.message : err,
+    )
+    await recordOutcome(db, eventId, 'error', null, 'unexpected_error')
+  }
+}
+
+// ============================================================
+// Bloco 5: Purchase — negócio ganho no Twenty CRM → Conversions API.
+//
+// Diferente de sendCapiEvent (Bloco 4), este evento não nasce de um
+// passo da conversa em si, nasce do CRM (webhook de opportunity
+// actualizada, ou o cron de reconciliação em
+// src/app/api/crm/twenty/purchases-cron/route.ts). Por isso o dedup é
+// por `opportunityId`, não por `conversationId` — o mesmo negócio
+// nunca deve gerar duas Purchase, mesmo que o webhook do Twenty
+// reenvie o evento (retry) ou o cron o reencontre na janela seguinte.
+//
+// Dois caminhos de `user_data`, escolhidos pelo chamador
+// (src/lib/crm/twenty-purchase.ts) consoante a conversa tem ou não
+// `ctwa_clid`:
+//   - CTWA (`action_source: 'business_messaging'`): ctwa_clid +
+//     whatsapp_business_account_id — mesmo padrão do Bloco 4.
+//   - sem CTWA (`action_source: 'system_generated'`): email/telefone
+//     da pessoa no Twenty, hasheados em SHA-256 (nunca em claro).
+// ============================================================
+
+export type PurchaseUserData =
+  | { kind: 'ctwa'; ctwaClid: string; wabaId: string }
+  | { kind: 'system_generated'; emailHash: string | null; phoneHash: string | null }
+
+export interface SendPurchaseCapiEventArgs {
+  db: SupabaseClient
+  accountId: string
+  conversationId: string
+  opportunityId: string
+  amountEur: number
+  currencyCode: string
+  userData: PurchaseUserData
+}
+
+/**
+ * Envia o evento `Purchase` à Meta Conversions API quando um negócio
+ * é marcado como ganho no Twenty. `event_id` é
+ * `${opportunityId}:Purchase` — determinístico e independente de
+ * quantas vezes o webhook/cron reencontrar o mesmo negócio. Nunca
+ * lança (mesmo contrato de sendCapiEvent).
+ */
+export async function sendPurchaseCapiEvent(args: SendPurchaseCapiEventArgs): Promise<void> {
+  const { db, accountId, conversationId, opportunityId, amountEur, currencyCode, userData } = args
+  const eventId = `${opportunityId}:Purchase`
+
+  try {
+    const { error: claimError } = await db
+      .from('meta_capi_events')
+      .insert({ conversation_id: conversationId, event_name: 'Purchase', event_id: eventId, status: 'pending' })
+    if (claimError) {
+      if (isUniqueViolation(claimError)) return
+      console.error(`[meta capi] falha a reservar Purchase (opportunity=${opportunityId}):`, claimError.message)
+      return
+    }
+
+    const { data: aiConfig } = await db
+      .from('ai_configs')
+      .select('meta_capi_dataset_id, meta_capi_test_event_code')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    const datasetId = (aiConfig as { meta_capi_dataset_id?: string | null } | null)?.meta_capi_dataset_id
+    if (!datasetId) {
+      console.error(`[meta capi] sem meta_capi_dataset_id (account=${accountId}) — Purchase não enviado.`)
+      await recordOutcome(db, eventId, 'error', null, 'dataset_not_configured')
+      return
+    }
+    const testEventCode = (aiConfig as { meta_capi_test_event_code?: string | null } | null)
+      ?.meta_capi_test_event_code
+
+    const { data: waConfig, error: waError } = await db
+      .from('whatsapp_config')
+      .select('access_token, waba_id')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    const encryptedToken = (waConfig as { access_token?: string | null } | null)?.access_token
+    if (waError || !encryptedToken) {
+      console.error(`[meta capi] whatsapp_config não encontrado (account=${accountId}) — Purchase não enviado.`)
+      await recordOutcome(db, eventId, 'error', null, 'whatsapp_config_not_found')
+      return
+    }
+
+    let accessToken: string
+    try {
+      accessToken = decrypt(encryptedToken)
+    } catch (err) {
+      console.error('[meta capi] falha a decifrar o access_token do WhatsApp:', err)
+      await recordOutcome(db, eventId, 'error', null, 'access_token_decrypt_failed')
+      return
+    }
+
+    const eventBase: Record<string, unknown> = {
+      event_name: 'Purchase',
+      event_time: Math.floor(Date.now() / 1000),
+      event_id: eventId,
+      custom_data: { value: amountEur, currency: currencyCode },
+    }
+
+    if (userData.kind === 'ctwa') {
+      eventBase.action_source = 'business_messaging'
+      eventBase.messaging_channel = 'whatsapp'
+      eventBase.user_data = { ctwa_clid: userData.ctwaClid, whatsapp_business_account_id: userData.wabaId }
+    } else {
+      eventBase.action_source = 'system_generated'
+      eventBase.user_data = {
+        ...(userData.emailHash ? { em: [userData.emailHash] } : {}),
+        ...(userData.phoneHash ? { ph: [userData.phoneHash] } : {}),
+      }
+    }
+
+    const body: Record<string, unknown> = { data: [eventBase] }
+    if (testEventCode) body.test_event_code = testEventCode
+
+    let response: Response
+    try {
+      response = await fetch(`${META_API_BASE}/${datasetId}/events`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(CAPI_REQUEST_TIMEOUT_MS),
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err)
+      console.error(`[meta capi] falha a contactar a Conversions API (Purchase, opportunity=${opportunityId}):`, message)
+      await recordOutcome(db, eventId, 'error', null, truncate(`request_failed: ${message}`, RESPONSE_SUMMARY_MAX))
+      return
+    }
+
+    const responseText = await response.text().catch(() => '')
+    if (!response.ok) {
+      console.error(`[meta capi] a Meta respondeu ${response.status} ao Purchase (opportunity=${opportunityId}).`)
+      await recordOutcome(db, eventId, 'error', response.status, truncate(responseText, RESPONSE_SUMMARY_MAX))
+      return
+    }
+
+    await recordOutcome(db, eventId, 'sent', response.status, truncate(responseText, RESPONSE_SUMMARY_MAX))
+  } catch (err) {
+    console.error(
+      `[meta capi] erro inesperado a enviar Purchase (opportunity=${opportunityId}):`,
       err instanceof Error ? err.message : err,
     )
     await recordOutcome(db, eventId, 'error', null, 'unexpected_error')

@@ -108,3 +108,104 @@ export async function createTwentyPerson(args: CreatePersonArgs): Promise<{ id: 
   }
   return { id }
 }
+
+// ============================================================
+// Bloco 5: Purchase (negócio ganho) → Meta Conversions API.
+//
+// getTwentyPerson / listWonOpportunitiesSince são leitura pura sobre a
+// instância Twenty — mesma disciplina de createTwentyPerson: nunca
+// engolem erro, o chamador (twenty-purchase.ts) é responsável por
+// capturar e registar. Nunca logar email/telefone devolvidos.
+// ============================================================
+
+export interface TwentyPerson {
+  id: string
+  email: string | null
+  phone: string | null
+}
+
+/** Busca uma Person pelo id, para o caminho `system_generated` (sem
+ *  `ctwa_clid`) do Purchase — precisamos do email/telefone para os
+ *  hashear em SHA-256 antes de enviar à Meta. Devolve `null` em vez
+ *  de lançar quando o registo não existe (404), lança em qualquer
+ *  outra falha. */
+export async function getTwentyPerson(id: string): Promise<TwentyPerson | null> {
+  const config = getTwentyConfig()
+  if (!config) throw new TwentyNotConfiguredError()
+
+  const res = await fetch(`${config.baseUrl}/rest/people/${id}`, {
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (res.status === 404) return null
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '')
+    throw new Error(`Twenty getPerson falhou (HTTP ${res.status}): ${bodyText.slice(0, 300)}`)
+  }
+
+  const data = (await res.json().catch(() => null)) as {
+    data?: { person?: { id?: string; emails?: { primaryEmail?: string }; phones?: { primaryPhoneCallingCode?: string; primaryPhoneNumber?: string } } }
+  } | null
+  const person = data?.data?.person
+  if (!person?.id) return null
+
+  const email = person.emails?.primaryEmail?.trim() || null
+  const callingCode = person.phones?.primaryPhoneCallingCode?.replace(/\D/g, '') ?? ''
+  const nationalNumber = person.phones?.primaryPhoneNumber?.replace(/\D/g, '') ?? ''
+  const phone = callingCode && nationalNumber ? `${callingCode}${nationalNumber}` : null
+
+  return { id: person.id, email, phone }
+}
+
+export interface TwentyWonOpportunity {
+  id: string
+  amountMicros: number
+  currencyCode: string
+  pointOfContactId: string | null
+  updatedAt: string
+}
+
+/** Lista negócios na fase `CLIENTE` (ganho) actualizados desde `sinceIso`
+ *  — usado pelo cron de reconciliação (fallback quando o webhook do
+ *  Twenty falha ou não está configurado). Não pagina: o volume actual
+ *  da instância (< 200 negócios) cabe sempre num pedido, ver API.md.
+ *  Filtra só por `stage[eq]:CLIENTE` no pedido (sintaxe multi-condição
+ *  com `updatedAt` não está confirmada em API.md) e aplica o corte por
+ *  `updatedAt` em memória — seguro com o volume actual da instância. */
+export async function listWonOpportunitiesSince(sinceIso: string): Promise<TwentyWonOpportunity[]> {
+  const config = getTwentyConfig()
+  if (!config) throw new TwentyNotConfiguredError()
+
+  const filter = encodeURIComponent('stage[eq]:CLIENTE')
+  const res = await fetch(`${config.baseUrl}/rest/opportunities?limit=200&filter=${filter}`, {
+    headers: { Authorization: `Bearer ${config.apiKey}` },
+    signal: AbortSignal.timeout(10_000),
+  })
+
+  if (!res.ok) {
+    const bodyText = await res.text().catch(() => '')
+    throw new Error(`Twenty listOpportunities falhou (HTTP ${res.status}): ${bodyText.slice(0, 300)}`)
+  }
+
+  const data = (await res.json().catch(() => null)) as {
+    data?: {
+      opportunities?: Array<{
+        id: string
+        amount?: { amountMicros?: number; currencyCode?: string }
+        pointOfContactId?: string | null
+        updatedAt: string
+      }>
+    }
+  } | null
+  const opportunities = data?.data?.opportunities ?? []
+  return opportunities
+    .filter((o) => o.updatedAt >= sinceIso)
+    .map((o) => ({
+      id: o.id,
+      amountMicros: o.amount?.amountMicros ?? 0,
+      currencyCode: o.amount?.currencyCode ?? 'EUR',
+      pointOfContactId: o.pointOfContactId ?? null,
+      updatedAt: o.updatedAt,
+    }))
+}

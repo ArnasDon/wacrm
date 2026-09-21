@@ -943,10 +943,17 @@ as contagens e as regras. Esta seção é o índice.
 (`src/lib/supabase/paginar.ts`), **mesclado em 20/09**. Os três cortavam em
 1.000 linhas sem avisar.
 
-Os cinco abaixo saíram do teste de esforço. Nenhum é da migração — são defeitos
-que já existem e que a carga torna graves.
+✅ **Os cinco abaixo saíram do teste de esforço e foram feitos no
+[PR #231](https://github.com/leonardocabralb/CB-CRM/pull/231), mesclado em
+21/09.** Nenhum é da migração — são defeitos que já existem e que a carga
+torna graves. O Codex achou dois P2 antes do merge (a busca pela coluna
+`phone_normalized` e os tetos por coluna viajando no retorno do funil) e um
+terceiro **51 segundos depois** dele, consertado no
+[PR #233](https://github.com/leonardocabralb/CB-CRM/pull/233): a outra saída
+para o inbox — o link do formulário do negócio — gravava o retorno sem os
+tetos, e a volta caía num quadro de 100 cards.
 
-- [ ] **1. Teto por coluna no Kanban** (`pipeline-board.tsx`). O #227 consertou
+- [x] **1. Teto por coluna no Kanban** (`pipeline-board.tsx`). O #227 consertou
       o DADO, não o RENDER: a tela monta um componente React e um registro do
       dnd-kit por card, e a coluna "Perdido" (2.719) estica a página para
       centenas de milhares de pixels. No computador trava a thread principal;
@@ -955,25 +962,25 @@ que já existem e que a carga torna graves.
       (`lista-de-leads.tsx`, `PAGINA = 100` + "carregar mais") e não pede
       dependência nova. O contador do cabeçalho vem de `deals.length` e
       continua certo.
-- [ ] **2. Paginar as quatro consultas de audiência do disparo** e chunkear
+- [x] **2. Paginar as quatro consultas de audiência do disparo** e chunkear
       `fetchCustomValueIndex` (`use-broadcast-sending.ts`). As duas andam
       JUNTAS, no mesmo PR: consertar só a audiência leva o `.in()` a uma URL de
       ~480 KB e faz o índice de campos truncar — e aí o cliente recebe
       "Olá , sobre sua dívida de ". `linhas === null` tem de ABORTAR o disparo.
-- [ ] **3. Preferir o telefone EXATO em `findExistingContact`**
+- [x] **3. Preferir o telefone EXATO em `findExistingContact`**
       (`dedupe.ts`). Hoje a consulta busca pelo sufixo de 8 dígitos **sem
       `.order()`** e devolve o primeiro que passar no teste tolerante: com os 4
       pares ambíguos, a mensagem do cliente pode ser anexada à ficha errada — e
       a escolha pode INVERTER de um dia para o outro, porque qualquer UPDATE
       numa das linhas move a tupla no heap. Preferir o exato antes do tolerante
       não muda nada onde não há colisão e torna a resolução determinística.
-- [ ] **4. Agregar no banco o painel do funil** (`dashboard/queries.ts`). O
+- [x] **4. Agregar no banco o painel do funil** (`dashboard/queries.ts`). O
       cartão "Valor do funil" e o donut por etapa somam no máximo 1.000
       negócios abertos e publicam o resultado como total: um número plausível,
       estável entre recarregamentos, e errado para baixo. O mínimo aceitável é
       `count: 'exact'` e ESCONDER o cartão quando o count passar do que veio —
       a régua que o Meu dia já usa.
-- [ ] **5. Busca no servidor nos seletores de contato** (`deal-form.tsx`,
+- [x] **5. Busca no servidor nos seletores de contato** (`deal-form.tsx`,
       `task-form.tsx`). Os dois carregam `contacts` sem limite e já estão
       cortados hoje; com 12.980 contatos, do meio do alfabeto em diante o
       cliente não aparece — e o operador cadastra de novo, gerando a ficha
@@ -983,9 +990,12 @@ que já existem e que a carga torna graves.
 
 **Migrations que a carga exige** (nenhuma delas é dado — dado é a fase 2c):
 
-- [ ] **`deals.kommo_lead_id`** com índice único parcial: é o que torna a
-      reexecução garantida pelo banco (contrato A.3).
-- [ ] **A função de lote** (`SECURITY DEFINER`) que insere os cards, repara a
+- [x] **`deals.kommo_lead_id`** com índice único parcial: é o que torna a
+      reexecução garantida pelo banco (contrato A.3). **Migration 1012,
+      aplicada em 20/09** (histórico `20260921003408`) e conferida no catálogo
+      — o índice renderizado tem `UNIQUE`, `account_id` e o `WHERE`.
+- [ ] **A função de lote** (`SECURITY DEFINER`, será a **1013** — número
+      conferido nos arquivos E no histórico do banco) que insere os cards, repara a
       trilha dos gatilhos e apaga `cb_automation_events` na mesma transação
       curta (contrato A.1). `REVOKE` de PUBLIC **e** dos papéis, com `GRANT`
       de volta só para `service_role` — as duas metades, conferidas.
@@ -1007,14 +1017,24 @@ em "falhou". A margem caiu de ~90× para ~3×.
 - [x] **2a. Teste de esforço** — as decisões contra o código real, seis lentes
       com refutação adversarial. 60 achados, 8 que bloqueiam. Estão na seção
       "O teste de esforço de 20/09/2026" e reescreveram o contrato de carga.
-- [ ] **2b. Consertos de código** — os cinco da seção anterior, mais as duas
-      migrations (`deals.kommo_lead_id` e a função de lote). Nenhum deles é da
-      migração: são defeitos que já existem e que a carga torna graves.
-- [ ] **2c. Estrutura em produção** — as 6 etapas novas, os degraus das 34, o
-      `resultado` de "Desqualificado", o campo do id da Kommo e o bloco
-      "Migração". É DADO, não migration. ⚠️ Marcar os degraus faz o Desempenho
-      e a Saúde **começarem a funcionar para os 976 negócios que já existem** —
-      hoje as duas telas dizem "configure". É desejável, e é visível.
+- [x] **2b. Consertos de código** — os cinco da seção anterior, feitos no
+      [#231](https://github.com/leonardocabralb/CB-CRM/pull/231) (mesclado em
+      21/09) e no [#233](https://github.com/leonardocabralb/CB-CRM/pull/233).
+      Mais a migration **1012** (`deals.kommo_lead_id`), aplicada. **Falta só a
+      função de lote (1013)**, que nasce junto com a carga — a assinatura dela
+      É o contrato da carga, e inventá-la antes seria adivinhar a forma que o
+      script vai querer. Nenhum dos cinco é da migração: são defeitos que já
+      existem e que a carga torna graves.
+- [x] **2c. Estrutura em produção — FEITA em 21/09.** As 6 etapas novas, os
+      degraus das 34, o `resultado` de "Desqualificado", o campo
+      `kommo_contact_id` e o bloco "Migração" na posição 2 (depois de
+      Traqueamento). É DADO, não migration — e o desfazer exato, com os ids
+      reais das 24 etapas, foi escrito ANTES de aplicar.
+      ⚠️ Conferido depois: 34 etapas na ordem certa e **nenhum card deslocado**
+      (406, 269, 227, 53, 21 e 1 inalterados). E na tela: o Desempenho saiu do
+      estado "configure" e passou a medir — `LEAD 272 → MQL 53 → REUNIÃO 53 →
+      PROPOSTA 0 → CONTRATO 0` —, exatamente como esta linha avisava que
+      aconteceria. É a mudança que a equipe vê.
 - [ ] **3. Piloto em produção** — 25 a 40 leads escolhidos para cobrir cada
       variação uma vez (contato novo × existente, colapso de leads, etapa
       criada × existente, ganho × perdido × aberto, com e sem anotação, com e

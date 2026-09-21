@@ -81,6 +81,15 @@ export function cardsDaColuna<T extends { id: string }>(
   return solto ? [solto, ...visiveis] : visiveis;
 }
 
+/**
+ * Os tetos por coluna, carimbados com o funil a que pertencem. Exportado
+ * porque a PÁGINA cria o ref e o quadro só o alimenta.
+ */
+export interface TetosDoQuadro {
+  funil: string;
+  porEtapa: Record<string, number>;
+}
+
 interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: DealDoQuadro[];
@@ -96,6 +105,19 @@ interface PipelineBoardProps {
    * retorno da mesma jornada).
    */
   quadroRef: React.RefObject<HTMLDivElement | null>;
+  /**
+   * Idem: os tetos por coluna são estado DAQUI, mas a página é quem grava o
+   * retorno pelo link "ver conversa" do formulário do negócio — aberto pelo
+   * lápis de um card que pode ser o de número 150 de uma coluna expandida.
+   * Sem este espelho, aquela saída grava rolagem sem tetos e a volta cai num
+   * quadro de 100 cards, com o card de origem ausente e o `scrollTop`
+   * grampeado (achado do Codex no PR #231, 2ª rodada).
+   *
+   * Carimbado com o funil: o quadro DESMONTA ao trocar para a Lista, e o
+   * `useEffect` de limpeza não roda a troca de funil feita de lá — sem o
+   * carimbo, o retorno do funil B levaria os tetos do funil A.
+   */
+  limitesRef: React.MutableRefObject<TetosDoQuadro>;
   onDealMoved: (dealId: string, newStageId: string) => void;
   onAddDeal: (stageId: string) => void;
   onEditDeal: (deal: Deal) => void;
@@ -109,6 +131,7 @@ export function PipelineBoard({
   pipelineId,
   campos,
   quadroRef,
+  limitesRef,
   onDealMoved,
   onAddDeal,
   onEditDeal,
@@ -141,11 +164,14 @@ export function PipelineBoard({
    * Espelho dos tetos para `navegarParaInbox` ler sem virar dependência dele
    * — ver o porquê lá. Efeito passivo basta: o valor só precisa estar em dia
    * quando o operador CLICA, que é muito depois de qualquer commit.
+   *
+   * ⚠️ O ref é da PÁGINA (prop), não deste componente: a outra saída para o
+   * inbox — o link do formulário do negócio — é gravada lá, e um ref local
+   * seria invisível para ela.
    */
-  const limitesRef = useRef<Record<string, number>>({});
   useEffect(() => {
-    limitesRef.current = limitesDoFunil;
-  }, [limitesDoFunil]);
+    limitesRef.current = { funil: pipelineId, porEtapa: limitesDoFunil };
+  }, [limitesRef, pipelineId, limitesDoFunil]);
   /**
    * O último card solto. Só existe para `cardsDaColuna` poder trazê-lo para
    * dentro do teto — ver o porquê lá.
@@ -224,11 +250,14 @@ export function PipelineBoard({
         // callback — que é o que segura o `memo` do DealCard e impede os
         // ~120 cards de redesenharem a cada tecla digitada num diálogo irmão
         // (o achado da revisão do PR #71, registrado logo acima).
-        limites: limitesRef.current,
+        limites:
+          limitesRef.current.funil === pipelineId
+            ? limitesRef.current.porEtapa
+            : {},
       });
       router.push(urlDoInbox({ ...destino, de: "funil" }));
     },
-    [pipelineId, quadroRef, router],
+    [pipelineId, quadroRef, limitesRef, router],
   );
   const abrirConversa = useCallback(
     (conversationId: string) => navegarParaInbox({ c: conversationId }),

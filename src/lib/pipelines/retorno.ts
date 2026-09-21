@@ -105,27 +105,28 @@ export function desserializarRetorno(
 }
 
 /**
- * ⚠️ `limites` é OPCIONAL e, quando omitido, o que já estava gravado é
- * PRESERVADO — não zerado. São dois chamadores e só um deles tem os tetos
- * em mão: o quadro sabe quantos cards cada coluna mostra; a página, que
- * grava pelo link "ver conversa" do formulário do negócio, não. E esse
- * formulário é aberto pelo lápis de um card — possivelmente o de número 150
- * de uma coluna expandida. Zerar ali desfaria, na última escrita, a
- * restauração que a primeira tinha preparado.
+ * ⚠️⚠️ `limites` é OBRIGATÓRIO, e isso é o pino: são DUAS saídas do funil
+ * para o inbox — o quadro (corpo do card e botão da coluna) e a página (o
+ * link "ver conversa" do formulário do negócio, aberto pelo lápis de um
+ * card) —, e cada uma já esqueceu os tetos uma vez. Rolagem sem tetos é
+ * rolagem sobre o quadro errado: quem saiu do card 150 volta para um quadro
+ * de 100, o card de origem não existe e o `scrollTop` é grampeado pela
+ * altura menor.
+ *
+ * A primeira versão deste parâmetro era opcional e PRESERVAVA o que já
+ * estivesse gravado. Parecia defensivo e escondia o defeito: a página não
+ * tinha os tetos em mão, então a preservação só podia reusar um registro
+ * ANTERIOR — na primeira volta da jornada não havia nenhum, e depois de
+ * expandir outra coluna o registro velho estava desatualizado (Codex, PR
+ * #231, 1ª e 2ª rodadas). Hoje a página recebe os tetos do quadro por ref e
+ * as duas saídas passam o valor de verdade; exigi-lo faz o compilador cobrar
+ * de quem criar a terceira.
  */
-export function gravarRetorno(
-  retorno: Omit<RetornoDoFunil, "em" | "limites"> & {
-    limites?: Record<string, number>;
-  },
-): void {
+export function gravarRetorno(retorno: Omit<RetornoDoFunil, "em">): void {
   try {
-    const anterior = retorno.limites === undefined ? lerRetorno() : null;
-    const limites =
-      retorno.limites ??
-      (anterior?.pipelineId === retorno.pipelineId ? anterior.limites : {});
     sessionStorage.setItem(
       CHAVE_RETORNO_DO_FUNIL,
-      JSON.stringify({ ...retorno, limites, em: Date.now() }),
+      JSON.stringify({ ...retorno, em: Date.now() }),
     );
   } catch {
     // Storage bloqueado — a volta simplesmente abre no topo.

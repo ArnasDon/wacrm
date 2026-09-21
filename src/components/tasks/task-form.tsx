@@ -36,10 +36,9 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { toast } from 'sonner';
 
-import { SeletorDeContato } from '@/components/contacts/seletor-de-contato';
-import { createClient } from '@/lib/supabase/client';
+import { SeletorDeContatoRemoto } from '@/components/contacts/seletor-de-contato-remoto';
+import { TETO_DE_RESULTADOS } from '@/lib/contacts/busca-remota';
 import { useAuth } from '@/hooks/use-auth';
 import { useMembros } from '@/hooks/use-membros';
 import type { EdicaoDeTarefa, NovaTarefa } from '@/hooks/use-acoes-da-tarefa';
@@ -95,10 +94,6 @@ export function TaskForm({
   const [titulo, setTitulo] = useState('');
   const [descricao, setDescricao] = useState('');
   const [responsavel, setResponsavel] = useState('');
-  /** Catálogo de contatos — carregado SÓ na criação global (`null` = ainda não). */
-  const [contatos, setContatos] = useState<
-    { id: string; name: string | null; phone: string | null; instagram_username?: string | null }[] | null
-  >(null);
   const [contatoEscolhido, setContatoEscolhido] = useState('');
   const [venceEm, setVenceEm] = useState('');
   const [venceAs, setVenceAs] = useState('');
@@ -149,38 +144,14 @@ export function TaskForm({
   }, [open, tarefa, carregandoMembros, membrosFalharam, membros.length, user?.id]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  // O catálogo de contatos só é buscado quando a criação é GLOBAL — no
-  // inbox/ficha o cliente vem por prop e a busca seria peso morto a cada
-  // abertura. Uma busca por ABERTURA (não por montagem): o guard antigo
-  // `contatos !== null` fazia a primeira lista valer para sempre, e o lead
-  // criado depois nunca aparecia em "Nova tarefa" até remontar a página —
-  // "Nenhum cliente encontrado" com cara de resposta certa (ledger 48h).
-  // A lista anterior FICA na tela enquanto a nova chega, sem piscar.
-  // ⚠️ Teto implícito de 1000 linhas do PostgREST: hoje são ~120 contatos;
-  // se a base passar de mil, este seletor precisa virar busca digitada.
-  useEffect(() => {
-    if (!open || !precisaCliente) return;
-    let vivo = true;
-    void createClient()
-      .from('contacts')
-      .select('id, name, phone, instagram_username')
-      .order('name')
-      .then(({ data, error }) => {
-        if (!vivo) return;
-        // Erro NÃO vira lista vazia: `[]` habilitava o seletor com cara de
-        // "não há clientes" e o Criar ficava travado sem explicação. A
-        // lista que já estava na tela (se houver) continua utilizável; o
-        // toast diz o que houve, e reabrir tenta de novo.
-        if (error) {
-          toast.error(t('contactsLoadError'));
-          return;
-        }
-        setContatos(data ?? []);
-      });
-    return () => {
-      vivo = false;
-    };
-  }, [open, precisaCliente, t]);
+  // ⚠️ O CATÁLOGO DE CONTATOS NÃO É MAIS CARREGADO AQUI. Até 20/09/2026 este
+  // formulário puxava `contacts` inteiro a cada abertura para filtrar no
+  // navegador, e o comentário que ficava neste lugar já mandava trocar por
+  // busca digitada "se a base passar de mil". A carga da Kommo põe ~12.980
+  // contatos (eram 1.212), e o PostgREST corta em 1000 SEM AVISAR: do meio
+  // do alfabeto em diante o cliente sumia do seletor sem erro nenhum, e o
+  // operador cadastraria a ficha de novo. Agora quem filtra é o banco, em
+  // `SeletorDeContatoRemoto`.
 
   const podeSalvar =
     !!titulo.trim() &&
@@ -256,15 +227,20 @@ export function TaskForm({
               </Label>
               {/* PESQUISÁVEL (pedido do operador, 2026-08-30): 100+ clientes
                   num drop-down comum era caça ao rolar. Busca por nome OU
-                  telefone — `filtrarContatos` ignora acento e máscara. */}
-              <SeletorDeContato
-                contatos={contatos}
+                  telefone — desde 20/09/2026 NO BANCO, porque a lista
+                  carregada inteira batia no teto de 1000 do PostgREST.
+                  ⚠️ O teto de resultados vem da CONSTANTE, nunca digitado no
+                  dicionário: mudar um sem o outro faz a frase mentir. */}
+              <SeletorDeContatoRemoto
                 value={contatoEscolhido}
                 onChange={setContatoEscolhido}
                 placeholder={t('contactPlaceholder')}
                 searchPlaceholder={t('contactSearchPlaceholder')}
-                emptyText={t('contactSearchEmpty')}
+                hintText={t('contactSearchHint')}
                 loadingText={t('loadingContacts')}
+                emptyText={t('contactSearchEmpty')}
+                failedText={t('contactSearchFailed')}
+                moreText={t('contactSearchMore', { count: TETO_DE_RESULTADOS })}
                 ariaLabel={t('fieldContact')}
               />
             </div>

@@ -210,6 +210,11 @@ export async function createBroadcast(
   // an orphaned campaign that looked like it was sending but had no
   // delivery plan (issue #370). The function body is atomic, so a recipient
   // failure now rolls the parent back and nothing orphaned survives.
+  //
+  // ⚠️ A forma VIGENTE da função é a da migration 1030 — a da 0040/0041/0940
+  // nunca executou (`RETURNING id, contact_id` ambíguo: 42702 na primeira
+  // chamada, e esta linha devolvia 500 sempre). Os argumentos vão por NOME;
+  // ver no comentário de `p_template_params` o que o TIPO dele decide.
   const { data: createdRows, error: createErr } = await db.rpc(
     'create_broadcast_with_recipients',
     {
@@ -227,6 +232,17 @@ export async function createBroadcast(
       p_channel_id: canal.channelId,
       // Frozen per-recipient params (migration 041) — without them a
       // resume of this broadcast has no way to reconstruct {{1}}.
+      //
+      // ⚠️ É uma LISTA DE LISTAS, e o argumento da função é `JSONB` (1030),
+      // nunca `JSONB[]`: o PostgREST converte este corpo para o TIPO de cada
+      // argumento (`json_to_record`/`json_to_recordset`), e com `JSONB[]` a
+      // lista de listas vira um array de DUAS dimensões. Com 2+ variáveis a
+      // função gravava o DOBRO de linhas (metade sem contato, o 2º contato com
+      // o parâmetro do 1º) e o pareamento logo abaixo estourava, deixando a
+      // campanha órfã em `sending`; com 1 variável gravava texto em vez de
+      // lista (o "retomar" reenviaria sem as variáveis). Medido com as
+      // restrições reais (`contact_id` é anulável desde a 0004); há pino em
+      // `supabase/migrations/funcao-de-disparo-1030.test.ts`.
       p_template_params: deduped.map((r) => r.params),
     }
   );

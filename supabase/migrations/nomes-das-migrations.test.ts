@@ -33,6 +33,10 @@ describe('nomes dos arquivos de migration', () => {
   it('CRÍTICO: todo arquivo tem 4 dígitos, sublinhado e nome em snake_case', () => {
     const foraDoFormato = sql.filter((f) => !/^\d{4}_[a-z0-9_]+\.sql$/.test(f));
     // Quem aparecer aqui: renomeie para 4 dígitos (`043_x.sql` → `0043_x.sql`).
+    // ⚠️ EXCETO a `041_fix_broadcast_contact_id_ambiguity.sql` do upstream: essa
+    // é APAGADA, não renomeada — recria a função de disparo com OITO parâmetros
+    // (o overload que a 0940 apagou), e o conserto equivalente é a nossa 1030.
+    // Ver `funcao-de-disparo-1030.test.ts` e o CLAUDE.md ("Workflow de migrations").
     expect(foraDoFormato).toEqual([]);
   });
 

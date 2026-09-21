@@ -156,10 +156,14 @@ BEGIN
         'a função de disparo que sobrou não é a de nove parâmetros com p_template_params JSONB (1030)';
     END IF;
     v_def := pg_get_functiondef(v_disparo);
+    -- ⚠️ O LIKE é LITERAL: exige a grafia exata da 1030. Uma migration futura
+    -- que reescreva a função de forma LEGÍTIMA com outra grafia (um alias na
+    -- tabela, por exemplo) reprova aqui sem ter defeito nenhum — por isso a
+    -- mensagem diz as duas causas, e o que fazer na segunda.
     IF v_def NOT LIKE '%RETURNING id, broadcast_recipients.contact_id%'
        OR v_def LIKE '%RETURNING id, contact_id%' THEN
       RAISE EXCEPTION
-        'create_broadcast_with_recipients continua com o RETURNING ambíguo — a 1030 não aplicou, ou alguém a recriou crua depois';
+        'create_broadcast_with_recipients não tem o RETURNING na grafia da 1030 (`RETURNING id, broadcast_recipients.contact_id`). Ou ele voltou a ser ambíguo (a 1030 não aplicou, ou alguém recriou a função crua depois), ou uma migration nova a reescreveu de forma legítima com outra grafia — nesse caso atualize esta asserção e o pino supabase/migrations/funcao-de-disparo-1030.test.ts';
     END IF;
   END;
 

@@ -41,8 +41,12 @@ vi.mock('@/lib/whatsapp/broadcast-core', () => {
   return { createBroadcast, deliverBroadcast, BroadcastError }
 })
 
+import fs from 'node:fs'
+import path from 'node:path'
+
 import { POST } from './route'
 import { BroadcastError } from '@/lib/whatsapp/broadcast-core'
+import { resolveAuditUserId } from '@/lib/api/v1/contacts'
 
 const pedido = (corpo: unknown) =>
   new Request('http://localhost/api/v1/broadcasts', {
@@ -61,6 +65,8 @@ beforeEach(() => {
   createBroadcast.mockReset()
   deliverBroadcast.mockReset()
   depoisDaResposta.mockReset()
+  // `mockClear`, não `mockReset`: só zera a contagem, a implementação fica.
+  vi.mocked(resolveAuditUserId).mockClear()
   createBroadcast.mockResolvedValue({
     broadcastId: 'b1',
     planned: [{}],
@@ -93,6 +99,10 @@ describe('POST /api/v1/broadcasts — o canal pedido chega ao núcleo', () => {
     }
     expect(createBroadcast).not.toHaveBeenCalled()
     expect(depoisDaResposta).not.toHaveBeenCalled()
+    // A recusa vem ANTES de qualquer ida ao banco: pedido que vai levar 400 não
+    // gasta os dois SELECTs de `resolveAuditUserId`, e um 500 de "dono não
+    // resolvido" não mascara o 400 (revisão final do PR #242).
+    expect(resolveAuditUserId).not.toHaveBeenCalled()
   })
 
   it('o 202 diz por QUAL número a campanha saiu (o que o núcleo resolveu, não o que veio no corpo)', async () => {
@@ -121,5 +131,18 @@ describe('POST /api/v1/broadcasts — o canal pedido chega ao núcleo', () => {
     // O envio mora no `after()`: recusado o canal, ele nem é agendado.
     expect(depoisDaResposta).not.toHaveBeenCalled()
     expect(deliverBroadcast).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /api/v1/broadcasts/{id} — o progresso diz por qual número saiu', () => {
+  // `docs/public-api.md` promete `channel_id` na resposta do progresso. A rota
+  // serializa o que o `select` trouxe, então o pino é o próprio `select`: sem a
+  // coluna ali, o campo some da resposta sem erro nenhum (e um merge do upstream
+  // traz o `select` deles, que não a conhece).
+  it('o select da rota de progresso inclui `channel_id`', () => {
+    const fonte = fs.readFileSync(path.join(__dirname, '[id]', 'route.ts'), 'utf8')
+    const select = fonte.match(/\.select\(\s*(['"`])([\s\S]*?)\1/)
+    expect(select, 'não achei o .select(...) da rota de progresso').not.toBeNull()
+    expect(select![2]).toMatch(/\bchannel_id\b/)
   })
 })

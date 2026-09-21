@@ -13,6 +13,7 @@ import { resolveMetaChannel } from './resolve-meta';
 
 const META = {
   id: 'ch-meta',
+  account_id: 'acct',
   label: 'Comercial',
   kind: 'meta',
   is_default: false,
@@ -23,6 +24,7 @@ const META = {
 };
 const EVO = {
   id: 'ch-evo',
+  account_id: 'acct',
   label: 'Dr. Leonardo',
   kind: 'evolution',
   is_default: true,
@@ -40,17 +42,27 @@ function makeDb(opts: {
 }): SupabaseClient {
   let table = '';
   let filtrouId = false;
+  let filtros: Record<string, unknown> = {};
 
   const builder: Record<string, unknown> = {
     select: () => builder,
-    eq: (col: string) => {
+    eq: (col: string, val: unknown) => {
       if (col === 'id') filtrouId = true;
+      filtros[col] = val;
       return builder;
     },
     order: () => builder,
     maybeSingle: () => {
       if (table === 'cb_channels') {
-        return Promise.resolve({ data: opts.porId ?? null, error: null });
+        // ⚠️ A fake CONFERE os filtros da busca por id, como o banco faria.
+        // Devolvendo `porId` às cegas, o caso "canal de outra conta" passava
+        // mesmo com o `.eq('account_id', …)` REMOVIDO do código (medido por
+        // mutação na revisão final do PR #242) — e esse filtro é a única
+        // barreira entre contas, porque quem chama usa a service role.
+        const linha = (opts.porId ?? null) as Record<string, unknown> | null;
+        const casa =
+          !!linha && Object.entries(filtros).every(([k, v]) => linha[k] === v);
+        return Promise.resolve({ data: casa ? linha : null, error: null });
       }
       return Promise.resolve({ data: opts.espelho ?? null, error: null });
     },
@@ -65,6 +77,7 @@ function makeDb(opts: {
     from: (t: string) => {
       table = t;
       filtrouId = false;
+      filtros = {};
       return builder;
     },
   } as unknown as SupabaseClient;
@@ -105,8 +118,40 @@ describe('resolveMetaChannel', () => {
     expect(r).toBeNull();
   });
 
-  it('canal pedido de outra conta devolve null', async () => {
-    const r = await resolveMetaChannel(makeDb({ porId: null }), 'acct', 'ch-alheio');
+  it('⚠️ canal pedido de OUTRA CONTA devolve null — o filtro por conta é a barreira', async () => {
+    // O canal EXISTE e é Meta utilizável — só que pertence a outra conta. Quem
+    // chama usa a service role (ignora RLS), então o `.eq('account_id', …)` é
+    // a única coisa entre uma chave de API da conta A e o número oficial da
+    // conta B. A fake confere os filtros: sem o filtro no código, este caso
+    // devolve o canal alheio e reprova.
+    const alheio = { ...META, id: 'ch-alheio', account_id: 'outra-conta' };
+    const r = await resolveMetaChannel(makeDb({ porId: alheio }), 'acct', 'ch-alheio');
+    expect(r).toBeNull();
+  });
+
+  it('canal pedido que não existe devolve null', async () => {
+    const r = await resolveMetaChannel(makeDb({ porId: null }), 'acct', 'ch-fantasma');
+    expect(r).toBeNull();
+  });
+
+  it('canal pedido e recusado NÃO cai no espelho legado', async () => {
+    // Com o id recusado a função devolve null na hora — não segue para a lista
+    // nem para o `whatsapp_config`, que aqui é um número oficial perfeitamente
+    // utilizável. Cair nele seria a campanha saindo por um número que ninguém
+    // pediu.
+    const r = await resolveMetaChannel(
+      makeDb({
+        porId: null,
+        espelho: {
+          provider: 'meta',
+          phone_number_id: 'pni-legado',
+          waba_id: 'waba-legado',
+          access_token: 'enc',
+        },
+      }),
+      'acct',
+      'ch-fantasma',
+    );
     expect(r).toBeNull();
   });
 

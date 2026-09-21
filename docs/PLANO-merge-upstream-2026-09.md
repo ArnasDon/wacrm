@@ -518,6 +518,28 @@ usuário parou o marketing desta empresa" e 130472 "número em experimento") —
 falha assíncrona, decidida do lado de lá, que nenhum código nosso alcança. Não
 dá para excluir outra causa (pagamento, 131042) sem o código.
 
+**Revisão final NO LUGAR do Codex (21/09/2026).** O Codex respondeu "usage
+limits" no HEAD — **não houve revisão dele neste PR**, e isso fica escrito. No
+lugar, uma TERCEIRA leitura independente do diff inteiro (revisor sem o
+enquadramento do autor, medindo num Postgres 16 descartável e por mutação):
+**nenhum P0 nem P1**; 2 P2 e 6 P3.
+
+| Achado | Destino |
+| --- | --- |
+| P2 — nenhum teste reprovava se o NÚCLEO voltasse a descartar o `channel_id` (o pino da rota mocka o núcleo inteiro: o mesmo defeito, um nível abaixo, passava 18/18) | ✅ 3 casos em `broadcast-core.test.ts`, com uma fake que CONFERE os filtros; o mutante reprova |
+| P2 — `channel_id: null` sai pelo número escolhido, e a doc dizia 400 | ✅ decidido por escrito: `null` = AUSENTE (é o JSON de "sem valor", e o 202 diz qual número saiu). Doc e comentário da rota corrigidos |
+| P3 — o filtro por CONTA de `resolveMetaChannel` não tinha pino (a fake devolvia a linha às cegas) — e ele é a única barreira entre contas, porque quem chama usa a service role | ✅ a fake confere os filtros; o mutante sem `.eq('account_id')` reprova |
+| P3 — `resolveAuditUserId` (2 SELECTs) rodava ANTES da validação do canal | ✅ invertido, com pino |
+| P3 — `verify-schema.sql`: o LIKE é literal, e a mensagem enganava quem reescrevesse a função de forma legítima | ✅ a mensagem diz as duas causas e o que fazer (provada num 5º estado) |
+| P3 — doc: o 202 pode trazer `channel_id: null` (configuração legada); "account default first" era impreciso (um CONECTADO vence o padrão desconectado); o cabeçalho da rota não listava o campo; nada prendia o `channel_id` do `GET` | ✅ corrigidos; pino estrutural no `select` da rota de progresso |
+| P3 — `resolveMetaChannel` descarta o `error` da busca por id (um timeout vira 400 "conecte um número", e quem integra não reenvia) e não confere `status` | ➡️ FORA deste PR — o resolvedor é compartilhado com as rotas de modelo; virou cartão próprio |
+| P3 — a função commita entradas que o app não manda (lista de contatos vazia ou com NULL) | aceito: inalcançável (o núcleo barra lista vazia e os ids vêm do banco) — guarda para cenário impossível contraria a regra da casa |
+| P3 — o teto de 1000 destinatários é igual ao "Max rows" padrão do PostgREST | aceito e anotado: com o limite REDUZIDO no painel do Supabase, a RPC devolveria menos linhas do que gravou (os que sobram ficam `pending`; o "Retomar" os recupera) |
+
+Os quatro pinos novos reprovam por MUTAÇÃO. A rota mudou só de ORDEM (validar o
+canal antes de ir ao banco) — reconferida no preview pela sonda pós-deploy
+apontada para `localhost`.
+
 **Consequência para o escritório, fora deste plano:** campanha de Marketing para
 quem não escreveu nas últimas 24 h pode simplesmente não ser entregue — e hoje a
 tela só diz "falhou". → Vira o teste prático da Fase 5: repetir ESTE disparo com

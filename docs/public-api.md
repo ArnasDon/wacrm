@@ -422,7 +422,10 @@ Invalid phone numbers are dropped and counted as `rejected`. Response
 
 `channel_id` is the official number the campaign **actually** went out
 on — record it for auditing, especially when you omitted it in the
-request. `GET /api/v1/broadcasts/{id}` returns it too.
+request. `GET /api/v1/broadcasts/{id}` returns it too. It is `null` only
+on an installation that still uses the legacy single-number setup (no
+entry under Settings → Connections), where there is no channel id to
+report.
 
 ### `GET /api/v1/broadcasts/{id}`
 
@@ -476,13 +479,22 @@ The `201` response includes `channel_id` — the number the message
 **actually** went out on, which is what you should record for auditing.
 
 `POST /api/v1/broadcasts` also accepts `channel_id`, but it must be an
-official Meta number (broadcasts are template-only). Omitted, it picks
-the first usable Meta number (account default first). If the account has
-none, the call returns `meta_channel_required`. A `channel_id` that is
-not a usable Meta number **of this account** returns the same
-`meta_channel_required` (400), and one that is present but not a
-non-empty string returns `bad_request` (400). Either way it never falls
-back to another number, and nothing is sent.
+official Meta number (broadcasts are template-only).
+
+- **Omitted or `null`** — the campaign goes out on a usable Meta number
+  chosen for you: a **connected** one is preferred (the account default
+  first, then the oldest); if none is connected, the default / oldest
+  one that has credentials. If the account has none, the call returns
+  `meta_channel_required`. The `202` tells you which one was picked.
+- **Set** — a `channel_id` that is not a usable Meta number **of this
+  account** returns `meta_channel_required` (400), and any other
+  non-null value that is not a non-empty string (a number, a list, an
+  object, `""`) returns `bad_request` (400). Either way it never falls
+  back to another number, and nothing is created or sent.
+
+If your integration tool fills the field from a variable, note that an
+empty variable usually arrives as `""` (refused) but may arrive as
+`null` (treated as omitted) — check the `channel_id` in the `202`.
 
 ### `GET /api/v1/tasks`
 

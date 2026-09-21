@@ -21,7 +21,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
-import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 import { SendMessageError } from '@/lib/whatsapp/send-message';
 import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
 
@@ -44,11 +44,14 @@ export async function resolveConversationByPhone(
   phone: string,
   name?: string | null
 ): Promise<ResolvedConversation> {
-  const sanitized = sanitizePhoneForMeta(phone);
-  if (!isValidE164(sanitized)) {
+  // Raw integrator input: the leading `+` is required so the country
+  // code is explicit — "4155551212" would otherwise be delivered to
+  // Switzerland, not the US (issue #586).
+  const sanitized = parseInternationalPhone(phone);
+  if (!sanitized) {
     throw new SendMessageError(
       'bad_request',
-      "'to' must be a valid phone number in E.164 format (e.g. +14155550123)",
+      "'to' must be an international phone number with a leading + and country code (e.g. +14155550123)",
       400
     );
   }

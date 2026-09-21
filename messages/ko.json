@@ -391,7 +391,8 @@
       "dupSimilar": "매우 유사한 번호를 가진 연락처가 이미 있습니다.",
       "loadingTags": "태그를 불러오는 중...",
       "noTagsAvailable": "사용 가능한 태그가 없습니다. 설정에서 태그를 만드세요.",
-      "phoneRequired": "전화번호는 필수입니다"
+      "phoneRequired": "전화번호는 필수입니다",
+      "phoneNeedsCountryCode": "국가 코드를 포함하세요. 번호는 +로 시작해야 합니다 (예: +14155550123)"
     },
     "detailView": {
       "tabs": {
@@ -443,6 +444,7 @@
       "saveChangesBtn": "변경 사항 저장",
       "saveCustomFieldsBtn": "커스텀 필드 저장",
       "toastPhoneRequired": "전화번호는 필수입니다",
+      "toastPhoneNeedsCountryCode": "국가 코드를 포함하세요. 번호는 +로 시작해야 합니다 (예: +14155550123)",
       "toastUpdateFailed": "연락처를 업데이트하지 못했습니다",
       "toastUpdated": "연락처가 업데이트되었습니다",
       "toastNotAuthenticated": "인증되지 않았습니다",
@@ -475,6 +477,7 @@
       "resultInvalidPhone": "전화번호 오류 {count}개",
       "resultInvalidPhone_plural": "전화번호 오류 {count}개",
       "resultFailed": "{count}개 실패",
+      "invalidPhoneHint": "전화번호는 +와 국가 코드로 시작해야 합니다 (예: +14155550123). 국가 코드가 없는 번호는 다른 국가로 발송될 수 있습니다.",
       "failedRowsHeading": "실패한 행",
       "unknownReason": "알 수 없는 오류",
       "willBeCreated": "{name} (가져오기 시 생성됨)",
@@ -772,6 +775,7 @@
         "uploadCsv": "CSV 파일 업로드",
         "csvFormatDesc": "'phone' 열(E.164 형식)이 필요합니다. 'name' 열은 선택 사항입니다.",
         "csvContactsFound": "CSV에서 유효한 연락처 {count}개를 찾았습니다.",
+        "csvInvalidPhones": "{count}개 행을 건너뛰었습니다. 전화번호는 +와 국가 코드로 시작해야 합니다 (예: +14155550123).",
         "errorLoadTags": "태그를 불러오지 못했습니다",
         "errorLoadFields": "커스텀 필드를 불러오지 못했습니다",
         "errorCsvParse": "CSV 파일을 파싱할 수 없습니다.",

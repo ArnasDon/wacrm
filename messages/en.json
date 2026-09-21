@@ -391,7 +391,8 @@
       "dupSimilar": "A contact with a very similar number already exists.",
       "loadingTags": "Loading tags...",
       "noTagsAvailable": "No tags available. Create tags in Settings.",
-      "phoneRequired": "Phone number is required"
+      "phoneRequired": "Phone number is required",
+      "phoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)"
     },
     "detailView": {
       "tabs": {
@@ -443,6 +444,7 @@
       "saveChangesBtn": "Save Changes",
       "saveCustomFieldsBtn": "Save Custom Fields",
       "toastPhoneRequired": "Phone number is required",
+      "toastPhoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)",
       "toastUpdateFailed": "Failed to update contact",
       "toastUpdated": "Contact updated",
       "toastNotAuthenticated": "Not authenticated",
@@ -475,6 +477,7 @@
       "resultInvalidPhone": "{count} invalid phone",
       "resultInvalidPhone_plural": "{count} invalid phones",
       "resultFailed": "{count} failed",
+      "invalidPhoneHint": "Phone numbers must start with + and a country code (e.g. +14155550123). Numbers without one would be delivered to the wrong country.",
       "failedRowsHeading": "Failed rows",
       "unknownReason": "Unknown error",
       "willBeCreated": "{name} (will be created on import)",
@@ -772,6 +775,7 @@
         "uploadCsv": "Upload CSV File",
         "csvFormatDesc": "Must contain a 'phone' column (E.164 format). 'name' column is optional.",
         "csvContactsFound": "{count} valid contact(s) found in CSV.",
+        "csvInvalidPhones": "{count} row(s) skipped: phone numbers must start with + and a country code (e.g. +14155550123).",
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",

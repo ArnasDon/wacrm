@@ -38,8 +38,14 @@ export type ParseBroadcastCsvResult =
   | {
       ok: true;
       contacts: BroadcastCsvContact[];
-      /** Rows dropped as same-number repeats (or as blank numbers). */
+      /** Rows dropped as same-number repeats. */
       duplicates: number;
+      /**
+       * Rows dropped because the number is blank or lacks a leading `+`
+       * and country code (issue #586). The wizard warns about these so
+       * a CSV of national-format numbers doesn't silently shrink.
+       */
+      invalid: number;
     }
   | { ok: false; error: BroadcastCsvError };
 
@@ -48,7 +54,7 @@ export function parseBroadcastCsv(text: string): ParseBroadcastCsvResult {
 
   if (!hasPhoneColumn) return { ok: false, error: 'missing_phone_column' };
 
-  const { unique, duplicates } = dedupeByPhone(rows);
+  const { unique, duplicates, invalid } = dedupeByPhone(rows);
   if (unique.length === 0) return { ok: false, error: 'no_valid_rows' };
 
   return {
@@ -59,5 +65,6 @@ export function parseBroadcastCsv(text: string): ParseBroadcastCsvResult {
       name ? { phone, name } : { phone }
     ),
     duplicates,
+    invalid,
   };
 }

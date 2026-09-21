@@ -391,7 +391,8 @@
       "dupSimilar": "Ya existe un contacto con un número muy parecido.",
       "loadingTags": "Cargando etiquetas...",
       "noTagsAvailable": "No hay etiquetas disponibles. Crea etiquetas en Configuración.",
-      "phoneRequired": "El número de teléfono es obligatorio"
+      "phoneRequired": "El número de teléfono es obligatorio",
+      "phoneNeedsCountryCode": "Incluye el código de país — el número debe empezar con + (p. ej. +5215512345678)"
     },
     "detailView": {
       "tabs": {
@@ -443,6 +444,7 @@
       "saveChangesBtn": "Guardar cambios",
       "saveCustomFieldsBtn": "Guardar campos personalizados",
       "toastPhoneRequired": "El número de teléfono es obligatorio",
+      "toastPhoneNeedsCountryCode": "Incluye el código de país — el número debe empezar con + (p. ej. +5215512345678)",
       "toastUpdateFailed": "Error al actualizar el contacto",
       "toastUpdated": "Contacto actualizado",
       "toastNotAuthenticated": "No autenticado",
@@ -473,6 +475,7 @@
       "resultTags_plural": "{count} etiquetas asignadas",
       "resultSkipped": "{count} omitidos",
       "resultFailed": "{count} con error",
+      "invalidPhoneHint": "Los números de teléfono deben empezar con + y el código de país (p. ej. +5215512345678). Los números sin código se entregarían en el país equivocado.",
       "willBeCreated": "{name} (se creará al importar)",
       "columns": {
         "phone": "Teléfono",
@@ -766,6 +769,7 @@
         "uploadCsv": "Subir archivo CSV",
         "csvFormatDesc": "Debe contener una columna 'phone' (formato E.164). La columna 'name' es opcional.",
         "csvContactsFound": "{count} contacto(s) válido(s) encontrado(s) en el CSV.",
+        "csvInvalidPhones": "{count} fila(s) omitida(s): los números de teléfono deben empezar con + y el código de país (p. ej. +5215512345678).",
         "errorLoadTags": "Error al cargar las etiquetas",
         "errorLoadFields": "Error al cargar los campos personalizados",
         "errorCsvParse": "No se pudo leer el archivo CSV.",

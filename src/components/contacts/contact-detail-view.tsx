@@ -42,6 +42,7 @@ import {
 } from 'lucide-react';
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
+import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -201,6 +202,16 @@ export function ContactDetailView({
   async function saveDetails() {
     if (!contactId || !editPhone.trim()) {
       toast.error(t('toastPhoneRequired'));
+      return;
+    }
+
+    // Same rule as the create form: a changed number must start with `+`
+    // and a country code (issue #586). Unchanged numbers — including the
+    // digits-only form the inbound webhook stores — are left alone so a
+    // name/email edit is never blocked by the phone field.
+    const phoneChanged = editPhone.trim() !== (contact?.phone ?? '');
+    if (phoneChanged && !parseInternationalPhone(editPhone)) {
+      toast.error(t('toastPhoneNeedsCountryCode'));
       return;
     }
 

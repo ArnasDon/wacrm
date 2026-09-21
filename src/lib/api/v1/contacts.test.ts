@@ -75,6 +75,18 @@ describe('findOrCreateContact', () => {
       findOrCreateContact(noopDb, 'acc', 'user', { phone: 'not-a-number' })
     ).rejects.toBeInstanceOf(ContactError);
   });
+
+  it('rejects a number without a leading + before any DB call (#586)', async () => {
+    // "4155551212" is a US national number to the integrator but Meta
+    // would deliver it to +41 (Switzerland); persisting it would repeat
+    // that on every later send. Digits with a country code but no `+`
+    // are refused too — the API can't tell the two apart.
+    for (const phone of ['4155551212', '14155551212', '+1234567']) {
+      await expect(
+        findOrCreateContact(noopDb, 'acc', 'user', { phone })
+      ).rejects.toMatchObject({ status: 400 });
+    }
+  });
 });
 
 describe('setContactTags', () => {

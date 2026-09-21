@@ -189,6 +189,42 @@ describe("buscarPaginado", () => {
     expect(chamadas).toHaveLength(3);
   });
 
+  // ⚠️⚠️ As páginas do lote saem JUNTAS e não têm ordem de tempo entre si:
+  // a do offset 1000 pode ter visto a coleção DEPOIS de crescer (3.500) e a
+  // do 2000, ANTES (3.000). Assentar na ordem do offset deixava a contagem
+  // velha vencer e 3.000 linhas "fechavam" uma coleção de 3.500 — 500 linhas
+  // a menos com cara de lista completa (Codex, PR #247).
+  it("o lote paralelo vale pela MAIOR contagem dele — a velha não fecha a leitura", async () => {
+    const { pagina, chamadas } = fonte(
+      [
+        linhas(0, PAGINA),
+        linhas(PAGINA, PAGINA),
+        linhas(2 * PAGINA, PAGINA),
+        linhas(3 * PAGINA, 500),
+      ],
+      [3 * PAGINA, 3 * PAGINA + 500, 3 * PAGINA, 3 * PAGINA + 500],
+    );
+    const r = await buscarPaginado(pagina);
+
+    expect(r.motivo).toBeNull();
+    expect(r.linhas).toHaveLength(3 * PAGINA + 500);
+    // A 4ª página (depois do lote) é a que prova o fim.
+    expect(chamadas).toHaveLength(4);
+  });
+
+  it("no lote que encolheu, a maior contagem deixa a leitura 'incompleto', nunca completa com buraco", async () => {
+    // A 1000 viu a coleção antes da exclusão (3.000) e a 2000, depois (2.990,
+    // página curta). Não dá para saber qual é a mais nova: não confie.
+    const { pagina } = fonte(
+      [linhas(0, PAGINA), linhas(PAGINA, PAGINA), linhas(2 * PAGINA, 990)],
+      [3 * PAGINA, 3 * PAGINA, 3 * PAGINA - 10],
+    );
+    const r = await buscarPaginado(pagina);
+
+    expect(r.linhas).toBeNull();
+    expect(r.motivo).toBe("incompleto");
+  });
+
   it("uma página do meio com erro derruba a leitura inteira", async () => {
     const erro = { message: "timeout", code: "57014" };
     let n = 0;

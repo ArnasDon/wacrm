@@ -743,7 +743,14 @@ export function ConversationList({
     // conta própria depois de semeado (`aguardandoEtapas`), e o que não
     // recorta não tem por que esperar. Catálogo que falhou também passa —
     // esperar para sempre seria pior, e catálogo vazio não limpa nada.
-    if (!catalogosProntos) return;
+    // ⚠️ As CONEXÕES são catálogo também, e chegam por outra rota
+    // (`/api/cb/channels`), às vezes depois das quatro consultas acima: sem
+    // esperá-las, o padrão com uma conexão apagada era semeado com o id
+    // morto (catálogo vazio não limpa nada), a caixa abria vazia, e a
+    // resposta das conexões não consertava mais — a semente é de uma vez só
+    // (Codex, PR #247). Enquanto os negócios eram esperados, eles chegavam
+    // depois e escondiam a corrida.
+    if (!catalogosProntos || canaisCarregando) return;
     semeouPadraoRef.current = true;
     // ⚠️ Só semeia sobre o recorte INTACTO. A consulta demora alguns
     // centésimos e o operador pode ter clicado em "Não lidas" nesse meio —
@@ -776,6 +783,7 @@ export function ConversationList({
     filtroPadraoId,
     filtrosSalvos,
     catalogosProntos,
+    canaisCarregando,
     catalogosDoFiltro,
   ]);
 
@@ -786,14 +794,16 @@ export function ConversationList({
    * ler um durante o render dá tela desatualizada. Não precisa — as duas
    * condições abaixo VIRAM FALSAS por conta própria assim que a semente pode
    * ter rodado (`salvosCarregando` cai quando a consulta volta, e
-   * `catalogosProntos` só vai de falso a verdadeiro). O padrão que recorta
+   * `catalogosProntos` só vai de falso a verdadeiro, e `canaisCarregando`
+   * de verdadeiro a falso). O padrão que recorta
    * por etapa passa a segurar a lista por `aguardandoEtapas` no render da
    * semente. Sobra, como antes desta mudança, o render em que os catálogos
    * chegam e o efeito da semente ainda não rodou.
    */
   const esperandoPadrao =
     !etapaInicial &&
-    (salvosCarregando || (filtroPadraoId !== null && !catalogosProntos));
+    (salvosCarregando ||
+      (filtroPadraoId !== null && (!catalogosProntos || canaisCarregando)));
 
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {

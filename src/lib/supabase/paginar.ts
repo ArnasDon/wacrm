@@ -81,7 +81,8 @@ export interface ResultadoPaginado<T> {
  * o tempo de uma, e os 5.224 negócios do filtro da caixa de entrada, 6×
  * (medido em 21/09/2026). As respostas são ASSENTADAS na ordem, pela mesma
  * régua de antes — a contagem mais recente manda, a página curta prova o fim
- * —, então o resultado é o mesmo da leitura em fila; só o tempo muda. Se a
+ * —, então o resultado é o da leitura em fila; só o tempo muda. A exceção é a
+ * CONTAGEM do lote paralelo, que vale pela maior dele (ver no corpo). Se a
  * coleção CRESCEU no meio (a última página prevista veio cheia e o acumulado
  * ainda não alcança a contagem), o resto segue uma a uma, até o teto.
  */
@@ -91,14 +92,21 @@ export async function buscarPaginado<T>(
   const acumulado: T[] = [];
   let total: number | null = null;
 
-  /** Acrescenta uma página. Devolve o resultado se a leitura TERMINOU. */
-  const assentar = ({ data, error, count }: RespostaDaPagina<T>): ResultadoPaginado<T> | null => {
+  /**
+   * Acrescenta uma página. Devolve o resultado se a leitura TERMINOU.
+   * `contagem` é a que vale para esta página — a dela, ou a do lote paralelo
+   * (ver abaixo).
+   */
+  const assentar = (
+    { data, error }: RespostaDaPagina<T>,
+    contagem: number | null,
+  ): ResultadoPaginado<T> | null => {
     if (error || !data) return { linhas: null, erro: error ?? null, motivo: "erro" };
 
     acumulado.push(...data);
     // A contagem MAIS RECENTE manda: linha apagada entre duas páginas encolhe
     // o total, e é por ele que se descobre que a leitura saiu incompleta.
-    total = count ?? total;
+    total = contagem ?? total;
     const curta = data.length < PAGINA;
 
     if (total == null) {
@@ -119,7 +127,8 @@ export async function buscarPaginado<T>(
 
   const intervalo = (n: number) => pagina(n * PAGINA, n * PAGINA + PAGINA - 1);
 
-  const fim = assentar(await intervalo(0));
+  const primeira = await intervalo(0);
+  const fim = assentar(primeira, primeira.count);
   if (fim) return fim;
 
   // Aqui `total` existe (sem contagem, a 1ª página já teria decidido). Se a
@@ -132,14 +141,30 @@ export async function buscarPaginado<T>(
   const respostas = await Promise.all(
     Array.from({ length: Math.max(previstas - 1, 0) }, (_, i) => intervalo(i + 1)),
   );
+  // ⚠️⚠️ Entre as páginas do LOTE não há ordem de tempo: saíram juntas, e a
+  // do offset 1000 pode ter sido respondida DEPOIS da do 2000. "A contagem
+  // mais recente manda" deixa de ter como ser aplicada página a página — se a
+  // 1000 viu 3.500 linhas (inseriram 500 no meio) e a 2000 viu 3.000, assentar
+  // na ordem do offset faria a contagem velha vencer, e 3.000 linhas
+  // acumuladas "fechariam" uma coleção de 3.500 (Codex, PR #247). O lote
+  // inteiro vale pela MAIOR contagem dele: numa coleção que cresce é a mais
+  // nova, e numa que encolhe é o lado conservador — a leitura sai
+  // "incompleto" em vez de completa com linha faltando. Entre a 1ª página e
+  // o lote a ordem é conhecida (o lote só sai depois dela), então a
+  // encolhida de verdade continua sendo aceita como antes.
+  const contagens = respostas
+    .map((r) => r.count)
+    .filter((c): c is number => c != null);
+  const contagemDoLote = contagens.length > 0 ? Math.max(...contagens) : null;
   for (const resposta of respostas) {
     n++;
-    const terminou = assentar(resposta);
+    const terminou = assentar(resposta, contagemDoLote);
     if (terminou) return terminou;
   }
 
   for (; n < MAX_PAGINAS; n++) {
-    const terminou = assentar(await intervalo(n));
+    const resposta = await intervalo(n);
+    const terminou = assentar(resposta, resposta.count);
     if (terminou) return terminou;
   }
 

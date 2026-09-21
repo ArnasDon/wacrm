@@ -11,7 +11,7 @@ export const CONVERSATION_SELECT =
 
 /** Raw shape returned by {@link CONVERSATION_SELECT} before flattening. */
 type RawContact = Contact & { contact_tags?: { tags: Tag | null }[] };
-type RawConversation = Omit<Conversation, "contact"> & {
+export type RawConversation = Omit<Conversation, "contact"> & {
   contact?: RawContact | null;
 };
 

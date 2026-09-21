@@ -53,6 +53,12 @@ const ESCRITORES: Record<string, string[]> = {
 
   // ---- Fontes deliberadas: gravam a marca ----
   "lib/calendly/processar.ts": ["update:grava"],
+  // A ficha criada pelo Asaas nasce com o NOME DO CONTRATO fixado (decisão do
+  // operador, 19/09/2026). Sem a marca, a primeira mensagem do cliente trocava
+  // o nome legal pelo apelido do perfil do WhatsApp — 27 das 263 fichas já
+  // tinham virado "@Macol", "J.A.A.", "Ká Nunnes". Nome que cai no telefone
+  // não é marcado (`marcaDoNomeManual`).
+  "lib/asaas/criar-ficha.ts": ["insert:grava"],
   // O 1º é o ramo do NOME do `update_contact_field` (grava fixado, e valor que
   // não é nome não sobrescreve). O 2º é o mesmo passo para e-mail e empresa:
   // a chave computada ainda aparece, mas o nome já saiu antes dela.
@@ -69,15 +75,13 @@ const ESCRITORES: Record<string, string[]> = {
   // PATCH da API v1: o integrador troca o nome e não fixa. Deliberado, mas não
   // é "gente escrevendo à mão" — a decisão fica para quando houver integrador.
   "app/api/v1/contacts/[id]/route.ts": ["update:sem-marca"],
-  // Criação pela API v1, pela importação de CSV (tela e disparo), pela
-  // integração do Asaas e pelo `send_to_number`/webhook de entrada
-  // (destinatario.ts): a ficha nasce com o nome da fonte, sem marca — como
-  // era antes da 999. (O Calendly cria por destinatario.ts e FIXA logo em
-  // seguida, em processar.ts.)
+  // Criação pela API v1, pela importação de CSV (tela e disparo) e pelo
+  // `send_to_number`/webhook de entrada (destinatario.ts): a ficha nasce com o
+  // nome da fonte, sem marca — como era antes da 999. (O Calendly cria por
+  // destinatario.ts e FIXA logo em seguida, em processar.ts.)
   "lib/api/v1/contacts.ts": ["insert:sem-marca"],
   "components/contacts/import-modal.tsx": ["insert:sem-marca", "insert:sem-marca"],
   "hooks/use-broadcast-sending.ts": ["insert:sem-marca"],
-  "lib/asaas/criar-ficha.ts": ["insert:sem-marca"],
   "lib/automations/destinatario.ts": ["insert:sem-marca"],
   // O perfil do Instagram só preenche o nome quando a ficha NÃO TEM nenhum
   // (`nomeAtual ? null : …`): nunca sobrescreve um nome, fixado ou não.

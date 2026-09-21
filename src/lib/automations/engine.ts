@@ -1640,6 +1640,10 @@ async function runStep(
           ? args.context.conversation_id
           : null;
 
+      const tituloDoAutor = (cfg.title ?? '').trim();
+      const tituloLiteralDoAutor =
+        tituloDoAutor !== '' && !tituloDoAutor.includes('{{');
+
       const criado = await createDeal({
         db,
         accountId: args.automation.account_id,
@@ -1650,6 +1654,16 @@ async function runStep(
         pipelineId: cfg.pipeline_id,
         stageId: cfg.stage_id,
         title: await interpolate(cfg.title, args),
+        // ⚠️ Título LITERAL é texto que o AUTOR da automação escolheu para
+        // todo card que ela criar ("Caso trabalhista"), e fica FIXADO: sem a
+        // marca, o gatilho da 1007 o trocaria pelo nome do contato na
+        // primeira renomeação deliberada da ficha, apagando o que ele quis
+        // dizer. Título com `{{…}}` é DERIVADO de quem está do outro lado
+        // (hoje o único em produção é `{{vars.agendamento_nome}}`): fica
+        // solto, para o card continuar acompanhando a ficha. Título vazio
+        // também fica solto — aí o gatilho é a única chance de o card ganhar
+        // um nome. (Achado do Codex, PR #225.)
+        tituloFixadoEm: tituloLiteralDoAutor ? new Date().toISOString() : null,
         value: cfg.value ?? 0,
         // Canal do disparo, mesmo carimbo que a linha de automation_logs
         // recebe. Sem ele o card some de qualquer recorte por número.

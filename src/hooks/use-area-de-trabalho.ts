@@ -36,6 +36,7 @@ import {
   type GrupoDeEtapa,
   type NegocioDoBloco,
 } from '@/lib/meu-dia/negocios';
+import { lerRetidas, type RetidasNaTela } from '@/lib/meu-dia/retidas';
 import { recorteDeCanais, recorteDeFunis } from '@/lib/perfis/escopo';
 import type { ContextoDeAcesso } from '@/lib/perfis/tipos';
 import { somarDias } from '@/lib/tasks/prazo';
@@ -151,6 +152,12 @@ export interface Agenda {
 export interface Integracoes {
   calendly: number;
   webhooks: number;
+  /**
+   * ⚠️ `null` = "não consegui conferir" — a rota não respondeu esta parte
+   * (banco sem a 1010, erro só desta consulta, servidor antigo no meio de um
+   * deploy). NUNCA zero: zero afirmaria "nenhuma mensagem retida".
+   */
+  retidas: RetidasNaTela | null;
 }
 
 export interface AreaDeTrabalho {
@@ -353,10 +360,12 @@ export function useAreaDeTrabalho(pedido: PedidoDaArea): AreaDeTrabalho {
       if (!r.ok) throw new Error(`pendencias: HTTP ${r.status}`);
       const json = (await r.json()) as {
         naoProcessadas?: { calendly?: number; webhooks?: number };
+        retidas?: unknown;
       };
       return {
         calendly: json.naoProcessadas?.calendly ?? 0,
         webhooks: json.naoProcessadas?.webhooks ?? 0,
+        retidas: lerRetidas(json.retidas),
       };
     });
 

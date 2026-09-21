@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { marcaDoNomeManual } from "@/lib/contacts/nome-fixado";
 import { findExistingContact, isUniqueViolation } from "@/lib/contacts/dedupe";
 import { resolveImportTagIds } from "@/lib/contacts/resolve-import-tags";
 import { variantesDoNonoDigito } from "@/lib/contacts/telefone";
@@ -33,9 +34,11 @@ import { variantesDoNonoDigito } from "@/lib/contacts/telefone";
  * - SEM conversa: 264 conversas vazias de uma vez iriam para o fim da
  *   caixa como ruído. A conversa nasce quando o cliente escrever ou no
  *   primeiro envio da régua (criada pela VARREDURA, Fase 3).
- * - ⚠️ O nome legal não sobrevive à primeira mensagem do cliente:
- *   `inbound-store` sobrescreve `contacts.name` com o push name do
- *   WhatsApp. É por isso que a régua usa o nome do Asaas, nunca o da ficha.
+ * - ⚠️ O nome legal NASCE FIXADO (`nome_fixado_em`, 999) desde 19/09/2026:
+ *   sem a marca, `inbound-store` sobrescrevia `contacts.name` com o push
+ *   name do WhatsApp na primeira mensagem do cliente, e o nome do contrato
+ *   sumia da ficha e do card. A régua de cobrança continua usando o nome do
+ *   Asaas, nunca o da ficha — a ficha pode ter sido renomeada à mão.
  */
 
 export const ETIQUETA_DA_FICHA = "asaas";
@@ -171,7 +174,20 @@ export async function criarFichaDoAsaas(
   const nome = cliente.nome.trim() || cliente.telefone;
   const { data: criado, error } = await admin
     .from("contacts")
-    .insert({ account_id: accountId, user_id: dono, phone: cliente.telefone, name: nome })
+    .insert({
+      account_id: accountId,
+      user_id: dono,
+      phone: cliente.telefone,
+      name: nome,
+      // ⚠️ O nome do CONTRATO fica FIXADO (decisão do operador, 19/09/2026).
+      // Sem a marca da 999, a primeira mensagem do cliente trocava o nome
+      // legal pelo apelido do perfil do WhatsApp — medido: 27 das 263 fichas
+      // criadas aqui já tinham virado "@Macol", "J.A.A.", "Ká Nunnes", e as
+      // outras iriam pelo mesmo caminho. Quem quiser outro nome continua
+      // podendo escrevê-lo à mão; a marca protege contra o automático.
+      // `marcaDoNomeManual` não marca quando o nome caiu no telefone.
+      ...marcaDoNomeManual(null, nome, new Date().toISOString()),
+    })
     .select("id")
     .single();
   if (error || !criado) {

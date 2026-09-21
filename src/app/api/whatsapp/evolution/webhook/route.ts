@@ -5,13 +5,14 @@ import { timingSafeEqual } from 'crypto';
 import {
   edicaoCifrada,
   extractText,
-  isLidJid,
   isReaction,
   normalizeUpsert,
   parseDeleteEvent,
   unwrapMessage,
   type EvolutionUpsert,
 } from '@/lib/whatsapp/transport/evolution-inbound';
+import { receberSemTelefone } from '@/lib/whatsapp/sem-telefone/receber';
+import { religarOResto, religarRetidas } from '@/lib/whatsapp/sem-telefone/religar';
 import { aceitamAvancoPara } from '@/lib/whatsapp/transport/escada-de-status';
 import {
   PAUSAS_DO_RECIBO_MS,
@@ -195,8 +196,21 @@ export async function POST(request: Request) {
          * dois: ver o portão por tamanho no laço abaixo.)
          */
         ehGrupo?: boolean;
+        /**
+         * A conexão de onde o anexo é baixado, quando NÃO é a deste webhook:
+         * mensagem retida sem telefone pode ser religada por uma mensagem que
+         * chegou por OUTRO número, e a mídia só existe na instância por onde
+         * ela veio. Ausente = `route.channelId`, como sempre foi.
+         */
+        channelId?: string | null;
       }[] = [];
       const paraFoto: NonNullable<PersistedInbound['contato']>[] = [];
+      /**
+       * LIDs cujo telefone apareceu NESTE lote → a conversa onde religar as
+       * falas retidas daquele LID. Um por LID: três mensagens do mesmo cliente
+       * no lote são UMA consulta às retidas, não três.
+       */
+      const paraReligar = new Map<string, { telefoneJid: string; conversationId: string }>();
 
       for (const item of items) {
         try {
@@ -296,7 +310,29 @@ export async function POST(request: Request) {
             route.channelId,
           );
           if (!normalized) {
-            registrarDescartePorLid(item, route.channelId);
+            // ---- `@lid` SEM TELEFONE ----
+            // A cópia que o celular pareado reenvia quando a Evolution não
+            // decifrou a mensagem de primeira. Até 19/09/2026 era jogada fora
+            // aqui, com um `console.warn` como único rastro — e num caso
+            // medido era a fala inicial de um lead novo. Agora o telefone é
+            // procurado no acervo; sem ele, a mensagem fica RETIDA até o
+            // número aparecer. Qualquer outro descarte segue calado, como
+            // sempre. Nunca lança. Ver `sem-telefone/receber.ts`.
+            const chegada = await receberSemTelefone({
+              db: supabaseAdmin(),
+              item,
+              rota: route,
+              jaGravada,
+            });
+            semAnexo.push(...chegada.anexos);
+            // Ficou retida e o acervo JÁ conhece o LID (o eco entrou no meio):
+            // religa com as demais, depois do laço.
+            if (chegada.religar) {
+              paraReligar.set(chegada.religar.lidJid, {
+                telefoneJid: chegada.religar.telefoneJid,
+                conversationId: chegada.religar.conversationId,
+              });
+            }
             continue;
           }
 
@@ -330,122 +366,218 @@ export async function POST(request: Request) {
               bytes: mediaBytesOf(item),
             });
           }
+
+          // Esta mensagem trouxe o PAR (telefone + LID): anota para religar as
+          // retidas daquele LID — DEPOIS do laço, nunca aqui (ver abaixo).
+          if (gravada && normalized.remoteJidLid && normalized.remoteJid) {
+            paraReligar.set(normalized.remoteJidLid, {
+              telefoneJid: normalized.remoteJid,
+              conversationId: gravada.conversationId,
+            });
+          }
         } catch (err) {
           console.error('[evolution/webhook] persist failed:', err);
         }
       }
 
-      for (const pendente of semAnexo) {
+      // ---- RELIGAR ----
+      // Alguma mensagem deste lote trouxe o PAR (telefone + LID). Se havia fala
+      // daquele LID retida por falta de telefone, ela entra na conversa agora —
+      // tipicamente o eco da resposta do escritório destravando a primeira
+      // mensagem do lead.
+      //
+      // ⚠️⚠️ DEPOIS de TODOS os itens do lote gravados, nunca dentro do laço
+      // acima (Codex, PR #226). Religar são várias idas ao banco por retida; no
+      // meio do laço, o lote que destravasse muitas delas atrasaria — e, num
+      // corte do `after()`, PERDERIA — os itens seguintes do mesmo lote, que é
+      // a perda que as duas fases existem para impedir: mensagem ATUAL primeiro,
+      // história depois. De quebra, os motores de todo o lote já rodaram
+      // exatamente como rodariam sem a retida, e ela entra como história.
+      //
+      // Vem antes da fase de anexos só para os anexos das religadas entrarem na
+      // mesma fila; o teto de retidas por vez (`MAXIMO_DE_RETIDAS_POR_VEZ`)
+      // limita o quanto isso pode atrasar o anexo de uma mensagem atual. Sai sem
+      // consultar nada para conversa que não é endereçada por LID; nunca lança.
+      //
+      // ⚠️ É UMA página por LID. O LID cuja página veio cheia entra em
+      // `comResto`, e o resto dele é drenado na SEGUNDA leva da fase de anexos,
+      // mais abaixo — nunca aqui, que atrasaria o anexo da mensagem atual, e
+      // nunca "na próxima mensagem daquele LID", que para quem não escreve de
+      // novo é nunca (Codex, PR #226, 3ª rodada).
+      //
+      // ⚠️ Uma consequência escrita: quando quem destrava é o ECO do escritório,
+      // a fala retida entra como mensagem de cliente ANTES de o cliente escrever
+      // de novo — e a mensagem seguinte dele deixa de ser "a primeira" para o
+      // gatilho `first_inbound_message`. É o lado escolhido: boas-vindas de robô
+      // depois de gente já ter respondido. Quando quem destrava é o próprio
+      // cliente, a mensagem DELE já foi gravada e o gatilho vale como hoje.
+      const pedidoDeReligacao = (
+        lidJid: string,
+        alvo: { telefoneJid: string; conversationId: string },
+      ) => ({
+        db: supabaseAdmin(),
+        accountId: route.accountId,
+        ownerUserId: route.ownerUserId,
+        lidJid,
+        telefoneJid: alvo.telefoneJid,
+        conversationId: alvo.conversationId,
+        jaGravada,
+      });
+      const comResto = new Map<string, { telefoneJid: string; conversationId: string }>();
+      for (const [lidJid, alvo] of paraReligar) {
         try {
-          // ---- MAIOR QUE O BUCKET ----
-          // ⚠️ Vem ANTES de tudo, inclusive do adiamento de grupo: baixar um
-          // arquivo que o Storage vai recusar gasta banda e memória para
-          // terminar em "Documento indisponível", que não explica nada. Com
-          // `too_large` gravado, a bolha diz o NOME do arquivo e o motivo, e
-          // `podeBaixarAnexo` esconde o botão que nunca funcionaria.
-          //
-          // Vale para 1:1 e para grupo. Até 2026-09-09 o `media_state` era só
-          // de grupo — e `too_large` não tinha escritor nenhum, embora a rota
-          // de download já o lesse.
-          if (anexoGrandeDemais(pendente.bytes)) {
-            // ⚠️ Os dois passos (marcar + apagar o ponteiro com as chaves de
-            // decifragem) moram no helper de propósito — soltos aqui, eles já
-            // divergiram da rota de download em um PR. Ver `anexo-grande.ts`.
-            await marcarAnexoGrandeDemais({
-              db: supabaseAdmin(),
-              messageId: pendente.messageId,
-              filename: nomeDeArquivoDeclarado(pendente.item),
-              limparPonteiro: !!pendente.ehGrupo,
-            });
-            continue;
+          const pagina = await religarRetidas(pedidoDeReligacao(lidJid, alvo));
+          semAnexo.push(...pagina.anexos);
+          if (pagina.haMais) comResto.set(lidJid, alvo);
+        } catch (err) {
+          console.error('[evolution/webhook] religar as retidas falhou:', err);
+        }
+      }
+
+      // ---- A FASE DE ANEXOS, em DUAS LEVAS ----
+      // 'lote'   as mensagens deste webhook e a primeira página de religadas —
+      //          a fila de sempre;
+      // 'resto'  só existe para o LID com MAIS retidas que uma página: as
+      //          páginas seguintes são religadas AGORA, com os anexos do lote já
+      //          buscados (mensagem atual primeiro, história depois), e os
+      //          anexos delas passam pelo MESMO corpo abaixo. Sem LID em
+      //          `comResto` — o caso de sempre — a leva é vazia e não consulta
+      //          nada.
+      let filaDeAnexos = semAnexo;
+      for (const leva of ['lote', 'resto'] as const) {
+        if (leva === 'resto') {
+          filaDeAnexos = [];
+          for (const [lidJid, alvo] of comResto) {
+            try {
+              filaDeAnexos.push(...(await religarOResto(pedidoDeReligacao(lidJid, alvo))));
+            } catch (err) {
+              console.error('[evolution/webhook] religar o resto das retidas falhou:', err);
+            }
           }
+        }
+        for (const pendente of filaDeAnexos) {
+          try {
+            // ---- MAIOR QUE O BUCKET ----
+            // ⚠️ Vem ANTES de tudo, inclusive do adiamento de grupo: baixar um
+            // arquivo que o Storage vai recusar gasta banda e memória para
+            // terminar em "Documento indisponível", que não explica nada. Com
+            // `too_large` gravado, a bolha diz o NOME do arquivo e o motivo, e
+            // `podeBaixarAnexo` esconde o botão que nunca funcionaria.
+            //
+            // Vale para 1:1 e para grupo. Até 2026-09-09 o `media_state` era só
+            // de grupo — e `too_large` não tinha escritor nenhum, embora a rota
+            // de download já o lesse.
+            if (anexoGrandeDemais(pendente.bytes)) {
+              // ⚠️ Os dois passos (marcar + apagar o ponteiro com as chaves de
+              // decifragem) moram no helper de propósito — soltos aqui, eles já
+              // divergiram da rota de download em um PR. Ver `anexo-grande.ts`.
+              await marcarAnexoGrandeDemais({
+                db: supabaseAdmin(),
+                messageId: pendente.messageId,
+                filename: nomeDeArquivoDeclarado(pendente.item),
+                limparPonteiro: !!pendente.ehGrupo,
+              });
+              continue;
+            }
 
-          // Em GRUPO o anexo grande fica sob demanda ("toque para baixar"),
-          // e só ele: no 1:1 o comportamento segue exatamente como era.
-          // Tamanho desconhecido conta como pequeno de propósito — o WhatsApp
-          // expira a mídia no servidor dele, então na dúvida é melhor gastar
-          // banda agora do que descobrir semanas depois que o comprovante do
-          // cliente não existe mais em lugar nenhum.
-          if (
-            pendente.ehGrupo &&
-            pendente.bytes != null &&
-            pendente.bytes > LIMITE_DOWNLOAD_AUTOMATICO_BYTES
-          ) {
-            continue; // fica com media_state='pending'
-          }
+            // Em GRUPO o anexo grande fica sob demanda ("toque para baixar"),
+            // e só ele: no 1:1 o comportamento segue exatamente como era.
+            // Tamanho desconhecido conta como pequeno de propósito — o WhatsApp
+            // expira a mídia no servidor dele, então na dúvida é melhor gastar
+            // banda agora do que descobrir semanas depois que o comprovante do
+            // cliente não existe mais em lugar nenhum.
+            if (
+              pendente.ehGrupo &&
+              pendente.bytes != null &&
+              pendente.bytes > LIMITE_DOWNLOAD_AUTOMATICO_BYTES
+            ) {
+              continue; // fica com media_state='pending'
+            }
 
-          const midia = await resolveEvolutionMedia(
-            route.accountId,
-            route.channelId,
-            pendente.item,
-            pendente.contentType,
-          );
+            // ---- RETIDA CUJA CONEXÃO FOI APAGADA ----
+            // A mídia de uma retida só existe na instância por onde ELA chegou.
+            // Com a conexão apagada (`channelId: null` — a chave existe, e é
+            // nula de propósito) não há onde buscar: `resolveEvolutionMedia`
+            // com canal nulo cairia no canal PADRÃO da conta, que nunca viu
+            // esta mensagem. A mensagem entrou; o anexo, não.
+            if ('channelId' in pendente && pendente.channelId == null) continue;
 
-          if (!midia) {
-            // `failed` continua SÓ em grupo: é o estado que acende o botão
-            // de tentar de novo, e a rota de download sob demanda só existe
-            // para grupo. Marcar 1:1 aqui prometeria um botão que não há.
-            // (Diferente do `too_large` do portão acima, que não oferece
-            // botão nenhum — só explica.)
+            const midia = await resolveEvolutionMedia(
+              route.accountId,
+              // `in`, e não `??`: item normal não carrega a chave e usa o canal
+              // deste webhook, como sempre; a retida usa o DELA — quem destravou
+              // pode ter chegado por outro número.
+              'channelId' in pendente ? (pendente.channelId ?? null) : route.channelId,
+              pendente.item,
+              pendente.contentType,
+            );
+
+            if (!midia) {
+              // `failed` continua SÓ em grupo: é o estado que acende o botão
+              // de tentar de novo, e a rota de download sob demanda só existe
+              // para grupo. Marcar 1:1 aqui prometeria um botão que não há.
+              // (Diferente do `too_large` do portão acima, que não oferece
+              // botão nenhum — só explica.)
+              if (pendente.ehGrupo) {
+                await supabaseAdmin()
+                  .from('messages')
+                  .update({ media_state: 'failed' })
+                  .eq('id', pendente.messageId);
+              }
+              continue;
+            }
+
+            const { error } = await supabaseAdmin()
+              .from('messages')
+              .update({
+                media_url: midia.url,
+                // O nome como o remetente enviou (969) e o mime que a Evolution
+                // declarou. Os dois chegavam até aqui e eram descartados: o
+                // documento aparecia como "Documento" na bolha e `media_type`
+                // ficava NULL em 100% das linhas deste transporte.
+                // ⚠️ Só escreve o nome quando ele existe — sobrescrever com NULL
+                // apagaria o que outro caminho tivesse gravado antes.
+                ...(midia.filename ? { media_filename: midia.filename } : {}),
+                media_type: midia.mime,
+                // Baixou: o anexo está no nosso Storage e o balão para de
+                // oferecer o botão.
+                ...(pendente.ehGrupo ? { media_state: null } : {}),
+              })
+              .eq('id', pendente.messageId);
+            if (error) {
+              console.error(
+                '[evolution/webhook] anexo baixado mas não pôde ser ligado à mensagem:',
+                error.message,
+              );
+              continue;
+            }
+
+            // Ponteiro cumpriu o papel: o arquivo está no nosso Storage e não
+            // se busca de novo. Apagar não é faxina — o payload do Baileys
+            // carrega as CHAVES DE DECIFRAGEM da mídia, e guardá-las depois de
+            // não precisar mais é superfície de risco de graça. Sobram na
+            // tabela só os anexos realmente pendentes ou falhos.
             if (pendente.ehGrupo) {
               await supabaseAdmin()
-                .from('messages')
-                .update({ media_state: 'failed' })
-                .eq('id', pendente.messageId);
+                .from('cb_message_media_ref')
+                .delete()
+                .eq('message_id', pendente.messageId);
             }
-            continue;
-          }
-
-          const { error } = await supabaseAdmin()
-            .from('messages')
-            .update({
-              media_url: midia.url,
-              // O nome como o remetente enviou (969) e o mime que a Evolution
-              // declarou. Os dois chegavam até aqui e eram descartados: o
-              // documento aparecia como "Documento" na bolha e `media_type`
-              // ficava NULL em 100% das linhas deste transporte.
-              // ⚠️ Só escreve o nome quando ele existe — sobrescrever com NULL
-              // apagaria o que outro caminho tivesse gravado antes.
-              ...(midia.filename ? { media_filename: midia.filename } : {}),
-              media_type: midia.mime,
-              // Baixou: o anexo está no nosso Storage e o balão para de
-              // oferecer o botão.
-              ...(pendente.ehGrupo ? { media_state: null } : {}),
-            })
-            .eq('id', pendente.messageId);
-          if (error) {
-            console.error(
-              '[evolution/webhook] anexo baixado mas não pôde ser ligado à mensagem:',
-              error.message,
-            );
-            continue;
-          }
-
-          // Ponteiro cumpriu o papel: o arquivo está no nosso Storage e não
-          // se busca de novo. Apagar não é faxina — o payload do Baileys
-          // carrega as CHAVES DE DECIFRAGEM da mídia, e guardá-las depois de
-          // não precisar mais é superfície de risco de graça. Sobram na
-          // tabela só os anexos realmente pendentes ou falhos.
-          if (pendente.ehGrupo) {
-            await supabaseAdmin()
-              .from('cb_message_media_ref')
-              .delete()
-              .eq('message_id', pendente.messageId);
-          }
-        } catch (err) {
-          // A mensagem já está gravada — aqui só se perde o anexo.
-          console.error('[evolution/webhook] anexo falhou:', err);
-          if (pendente.ehGrupo) {
-            // O `catch` de fora não protege o que roda DENTRO dele: sem este
-            // try, uma falha aqui escaparia do laço e mataria os anexos dos
-            // itens seguintes.
-            try {
-              await supabaseAdmin()
-                .from('messages')
-                .update({ media_state: 'failed' })
-                .eq('id', pendente.messageId);
-            } catch {
-              // Nada a fazer: o anexo já estava perdido.
+          } catch (err) {
+            // A mensagem já está gravada — aqui só se perde o anexo.
+            console.error('[evolution/webhook] anexo falhou:', err);
+            if (pendente.ehGrupo) {
+              // O `catch` de fora não protege o que roda DENTRO dele: sem este
+              // try, uma falha aqui escaparia do laço e mataria os anexos dos
+              // itens seguintes.
+              try {
+                await supabaseAdmin()
+                  .from('messages')
+                  .update({ media_state: 'failed' })
+                  .eq('id', pendente.messageId);
+              } catch {
+                // Nada a fazer: o anexo já estava perdido.
+              }
             }
           }
         }
@@ -774,40 +906,6 @@ export async function POST(request: Request) {
 
   // Any other event (qrcode.updated, send.message echo, …) — just ack.
   return NextResponse.json({ ok: true });
-}
-
-/**
- * Deixa rastro quando uma mensagem é descartada por vir endereçada só por
- * `@lid`.
- *
- * O descarte em si é deliberado e continua: um `@lid` sem telefone não tem
- * como ser ligado a uma conversa, e gravá-lo cria contato fantasma — em
- * 26/07 isso produziu 4 fantasmas com 24 mensagens, e a dedup por 8 dígitos
- * chegou a fundir um deles com um cliente real (commit 9606636).
- *
- * O que NÃO era deliberado é o silêncio. Medido em 27/07 na Evolution de
- * produção: de 143 ecos do aparelho em ~29h, 119 foram descartados assim —
- * 83% —, e não havia log, contador nem qualquer sinal. A perda só apareceu
- * porque o operador comparou o celular com a tela do CRM.
- *
- * Isto não muda comportamento nenhum: só torna a perda contável no log do
- * contêiner, para dimensionar o problema enquanto a saída definitiva (mapa
- * telefone↔LID, ou versão da Evolution que preencha `remoteJidAlt`) não
- * existe.
- */
-function registrarDescartePorLid(item: EvolutionUpsert, channelId: string | null): void {
-  const jid = item.key?.remoteJid;
-  if (!jid || !isLidJid(jid)) return; // descarte por outro motivo
-  console.warn(
-    '[evolution/webhook] mensagem DESCARTADA: endereçada por @lid sem telefone.',
-    JSON.stringify({
-      canal: channelId,
-      remoteJid: jid,
-      messageId: item.key?.id,
-      fromMe: item.key?.fromMe === true,
-      tipo: Object.keys(item.message ?? {})[0] ?? null,
-    }),
-  );
 }
 
 /**

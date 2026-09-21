@@ -64,11 +64,12 @@ export interface EvolutionUpsert {
  *
  * ⚠️ `@lid` NÃO está aqui de propósito. Desde a v2 o WhatsApp usa esse
  * formato no lugar do telefone em conversas legítimas — barrá-lo perderia
- * mensagem de cliente de verdade. O efeito colateral conhecido é que o
- * contato nasce com o LID no campo `phone`, que não é discável. O canal em
- * produção hoje recebe `@s.whatsapp.net` com telefone real, então isso é
- * risco latente, não ativo; resolver exige mapear LID → telefone, que a
- * Evolution só expõe em alguns payloads.
+ * mensagem de cliente de verdade. O LID NUNCA vira `phone`: quem decide o
+ * telefone é `phoneJidFromKey`, e o item que chega SÓ com o LID é resolvido
+ * pelo acervo ou retido (`ehLidSemTelefone`, `sem-telefone/receber.ts`).
+ * (Uma versão desta nota dizia que o contato nascia com o LID no campo
+ * `phone` — era verdade até 27/07/2026, e foi o que criou os 4 contatos
+ * fantasmas do commit 9606636.)
  */
 const SUFIXOS_NAO_CONVERSA = ['@g.us', '@newsletter', '@broadcast'];
 
@@ -315,6 +316,38 @@ export function edicaoCifrada(
 }
 
 /**
+ * O item é uma conversa 1:1 endereçada SÓ por `@lid` — a chave não traz o
+ * telefone em campo nenhum. É a forma da cópia que a Baileys 7 emite quando o
+ * celular pareado reenvia uma mensagem que ela não conseguiu decifrar
+ * (`requestPlaceholderResend` sem o `msgData`: a chave vem crua do aparelho,
+ * sem `remoteJidAlt`, sem `addressingMode` e sem `pushName`). Ver
+ * docs/PLANO-lid-sem-telefone.md.
+ */
+export function ehLidSemTelefone(key: EvolutionMessageKey | undefined): boolean {
+  const bruto = key?.remoteJid;
+  return !!bruto && isLidJid(bruto) && phoneJidFromKey(key) === null;
+}
+
+/**
+ * JID de telefone de verdade (`…@s.whatsapp.net`, com dígitos). É a régua do
+ * telefone que vem de FORA da chave (`telefoneResolvido`): um LID, um grupo ou
+ * um texto qualquer ali recriaria o contato falso que o descarte evita.
+ */
+function ehJidDeTelefone(jid: string): boolean {
+  return jid.endsWith('@s.whatsapp.net') && /\d/.test(phoneFromJid(jid));
+}
+
+export interface OpcoesDoNormalize {
+  /**
+   * Telefone que o CHAMADOR resolveu para um item em `@lid` sem telefone — o
+   * par LID→telefone já visto numa mensagem gravada (ver
+   * `sem-telefone/resolver-lid.ts`). Só é usado quando a chave não traz
+   * telefone nenhum; com telefone na chave, a chave manda.
+   */
+  telefoneResolvido?: string | null;
+}
+
+/**
  * Normalize one upsert item. Returns null for messages the inbox should
  * ignore (group chats, our own echoes, or missing key/id). `channelId` é o
  * `cb_channels.id` por onde a mensagem entrou (Fase 3), propagado para o
@@ -324,7 +357,8 @@ export function normalizeUpsert(
   item: EvolutionUpsert,
   accountId: string,
   configOwnerUserId: string,
-  channelId: string | null = null
+  channelId: string | null = null,
+  opcoes: OpcoesDoNormalize = {}
 ): NormalizedInbound | null {
   const bruto = item.key?.remoteJid;
   const id = item.key?.id;
@@ -334,9 +368,14 @@ export function normalizeUpsert(
   if (isSecretEncrypted(item.message)) return null; // edição cifrada: sem texto (ver isSecretEncrypted)
 
   // Endereço de TELEFONE da conversa. Um `@lid` sem contrapartida devolve
-  // null e a mensagem é descartada — ver `phoneJidFromKey` para o porquê:
-  // gravá-la criaria um contato falso e partiria a conversa do cliente.
-  const jid = phoneJidFromKey(item.key);
+  // null e a mensagem NÃO é gravada aqui — ver `phoneJidFromKey` para o
+  // porquê: gravá-la criaria um contato falso e partiria a conversa do
+  // cliente. Quem chama pode ter resolvido o telefone por fora
+  // (`telefoneResolvido`); sem isso, a rota a RETÉM em vez de descartar.
+  const resolvido = opcoes.telefoneResolvido;
+  const jid =
+    phoneJidFromKey(item.key) ??
+    (resolvido && ehJidDeTelefone(resolvido) ? resolvido : null);
   if (!jid) return null;
 
   const phone = phoneFromJid(jid);

@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { escritaDoTituloManual } from "@/lib/deals/titulo-do-card";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { ValorInput } from "@/components/valor/valor-input";
 import type {
@@ -198,8 +199,13 @@ export function DealForm({
     }
     setSaving(true);
 
+    // ⚠️ O TÍTULO NÃO ENTRA NO PAYLOAD (1007). Ele é digitado, e quem o
+    // digita FIXA o card: `escritaDoTituloManual` devolve o texto e a marca
+    // juntos, e nada quando o título não mudou — o formulário reenvia todo
+    // campo em cada salvamento, e regravar o título velho de uma tela aberta
+    // há minutos congelaria justamente o nome que o gatilho acabou de pôr.
+    const agora = new Date().toISOString();
     const payload = {
-      title: title.trim(),
       value,
       // A coluna é NOT NULL e continua sendo preenchida, mesmo sem seletor:
       // negócio novo nasce em real, que é a única moeda daqui.
@@ -215,7 +221,7 @@ export function DealForm({
     if (deal) {
       const { error } = await supabase
         .from("deals")
-        .update(payload)
+        .update({ ...payload, ...escritaDoTituloManual(deal.title, title, agora) })
         .eq("id", deal.id);
       if (error) {
         toast.error(t("toastFailedSave"));
@@ -244,6 +250,8 @@ export function DealForm({
       // vez daquela de onde ele nasceu.
       const { error } = await supabase.from("deals").insert({
         ...payload,
+        // Card criado à mão nasce com o título fixado: alguém o escreveu.
+        ...escritaDoTituloManual(null, title, agora),
         user_id: user.id,
         account_id: accountId,
         status: "open",

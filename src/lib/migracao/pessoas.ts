@@ -58,8 +58,20 @@ export interface PessoaDaKommo {
 export function pessoaDoTelefone(texto: string | null | undefined): PessoaDaKommo | null {
   const digitos = digitosDoTelefone(texto ?? "");
   if (!digitos) return null;
+  // ⚠️⚠️ O PISO DA CARGA É 10 DÍGITOS, e não os 8 de `digitosDoTelefone`
+  // (Codex, PR #232). Aquele helper aceita 8–15 porque também serve a quem
+  // digita um número sem DDD; a carga não. A função no banco
+  // (`cb_kommo_carregar_pessoas`) confere `^[0-9]{10,15}$` na conferência de
+  // forma — e um único telefone de 8 ou 9 dígitos classificado como "criar"
+  // derrubava o LOTE INTEIRO, em vez de pular aquele lead com o motivo. O
+  // `carga.py` já barrava (<10 = pular), então a carga de 21/09 não tropeçou;
+  // o que se fecha aqui é a divergência no módulo que É a regra.
+  if (digitos.length < MINIMO_DE_DIGITOS_DA_CARGA) return null;
   return { telefone: digitos, grafias: variantesDoNonoDigito(digitos) };
 }
+
+/** DDI + DDD + número: o mínimo que identifica uma pessoa sem adivinhar. */
+export const MINIMO_DE_DIGITOS_DA_CARGA = 10;
 
 /**
  * O índice das fichas que JÁ existem aqui, chaveado por TODAS as grafias.

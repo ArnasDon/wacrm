@@ -6460,6 +6460,45 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     CI passar no commit exato e de dois ensaios contra a produção em
     transação encerrada com ROLLBACK: carga + reexecução (idempotente) e
     carga + desfazer (o banco volta ao estado anterior, card movido inclusive).
+  - **1015–1022 — a carga da Kommo e o encerramento em lote**, todas aplicadas
+    em 21/09/2026, cada uma DEPOIS de um ensaio contra a produção em
+    transação encerrada por `raise exception` (histórico `20260921024652` a
+    `20260921133214`):
+    · **1015** — os três achados do PRIMEIRO piloto: `deals.value` é NOT NULL
+      (NULL explícito anula o default), `deals.currency` nasce `'USD'` numa
+      base BRL, e o livro-razão não cobria `contacts`.
+    · **1016** — `cb_kommo_carregar_pessoas` e `cb_kommo_carregar_conversas`,
+      e o desfazer passou a cobrir o que as duas criam.
+    · **1017** — o lote MOVE o card que já existe (honra `deal_id`, grava
+      `created_at`/`title` da Kommo) e a trilha nasce com rótulo e posição; o
+      passo de pessoas cala os gatilhos de `deals` e registra no livro o
+      título que o gatilho da 1007 troca; a linha RETIDA fica no livro
+      (`v_presas`), para o desfazer ser repetível.
+    · **1018** — `cb_encerrar_conversas_abertas` e
+      `cb_desfazer_encerramento_em_lote`, com a foto de antes em
+      `migracao_kommo.conversas_antes_do_encerramento`. Grupos ficam de fora
+      por padrão (ver a nota sobre `cb-groups/persist.ts`).
+    · **1019** — `stage_changed` sem `to_pipeline_id` é recusado na entrada e
+      na conferência de saída.
+    · **1020** — três corridas (Codex, PR #232): o encerramento pula conversa
+      com mensagem do cliente gravada nos últimos 2 min (`FOR UPDATE … SKIP
+      LOCKED`), o desfazer do encerramento só devolve o que ninguém mexeu
+      depois, e o passo de pessoas acha a ficha pelas DUAS grafias do nono
+      dígito.
+    · **1021** — a foto do encerramento é de CADA operação (`on conflict do
+      update`), senão um segundo encerramento desfazia contra a foto velha.
+    · **1022** — o desfazer da carga só devolve o que continua INTOCADO desde
+      ela: card criado ou movido que alguém mexeu depois, ficha com nome ou
+      e-mail trocado depois e valor de campo editado depois FICAM, retidos no
+      livro e contados em `editadas_depois`. ⚠️ "Intocado" em `deals` e
+      `contacts` é `updated_at <= criado_em` da linha do livro; em
+      `contact_custom_values`, que não tem `updated_at`, é o VALOR — que o
+      livro passou a guardar (`detalhe.valor`), preenchido nas linhas antigas
+      com o valor do dia da migration. ⚠️ O desfazer cala SÓ o
+      `set_updated_at` de `contacts` (nominal — o espelho de e-mail continua
+      ligado) e devolve `updated_at` explicitamente: sem isso, devolver o
+      e-mail empurrava `updated_at` para agora e a linha do nome da MESMA
+      ficha era lida como "editada depois".
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

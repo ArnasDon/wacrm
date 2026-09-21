@@ -77,6 +77,26 @@ describe("pessoas da carga da Kommo", () => {
     it("`pessoaDoTelefone` devolve null no mesmo caso", () => {
       expect(pessoaDoTelefone(null)).toBeNull();
     });
+
+    it.each(["98874531", "988745316", "(83) 8874-531"])(
+      "CRÍTICO: %s (8–9 dígitos) vira PULAR — a função do banco exige 10",
+      (entrada) => {
+        // `digitosDoTelefone` aceita 8 dígitos; a carga não. Um só destes
+        // classificado como "criar" derrubava o lote inteiro na conferência
+        // de forma de `cb_kommo_carregar_pessoas` (Codex, PR #232).
+        expect(resolverPessoa(entrada, new Map())).toEqual({
+          tipo: "pular",
+          motivo: "sem_telefone",
+        });
+      },
+    );
+
+    it("10 dígitos (fixo sem DDI) continua valendo — ganha o 55", () => {
+      expect(resolverPessoa("8332211234", new Map())).toEqual({
+        tipo: "criar",
+        telefone: "558332211234",
+      });
+    });
   });
 
   describe("o índice", () => {

@@ -11,7 +11,10 @@ import type {
   PipelineStage,
   Deal,
 } from "@/types";
-import { PipelineBoard } from "@/components/pipelines/pipeline-board";
+import {
+  PipelineBoard,
+  type TetosDoQuadro,
+} from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
 import { AutomationsBoard } from "@/components/pipelines/automations-board";
 import { DealForm } from "@/components/pipelines/deal-form";
@@ -161,11 +164,26 @@ function PipelinesPageInner() {
    * conversa" do formulário de negócio — todas gravam o mesmo retorno.
    */
   const quadroRef = useRef<HTMLDivElement>(null);
+  /**
+   * Pelo MESMO motivo, e é o ponto que faltava: os tetos por coluna são
+   * estado do quadro, mas esta saída também precisa deles. Quem abre o
+   * formulário pelo lápis de um card e segue o link "ver conversa" grava
+   * daqui — e sem os tetos a volta cai num quadro de 100 cards, com o card
+   * de origem ausente e a rolagem grampeada, que é exatamente o defeito que
+   * os tetos no retorno existem para consertar (Codex, PR #231, 2ª rodada).
+   *
+   * O quadro alimenta o ref; a leitura confere o carimbo do funil, porque o
+   * quadro desmonta na vista Lista e ninguém zera o ref ao trocar de funil
+   * de lá.
+   */
+  const limitesDoQuadroRef = useRef<TetosDoQuadro>({ funil: "", porEtapa: {} });
   const salvarRetornoDoQuadro = useCallback(() => {
+    const tetos = limitesDoQuadroRef.current;
     gravarRetorno({
       pipelineId: selectedPipelineId,
       scrollLeft: quadroRef.current?.scrollLeft ?? 0,
       scrollTop: quadroRef.current?.closest("main")?.scrollTop ?? 0,
+      limites: tetos.funil === selectedPipelineId ? tetos.porEtapa : {},
     });
   }, [selectedPipelineId]);
 
@@ -1005,6 +1023,7 @@ function PipelinesPageInner() {
             pipelineId={selectedPipelineId}
             campos={campos}
             quadroRef={quadroRef}
+            limitesRef={limitesDoQuadroRef}
             onDealMoved={handleDealMoved}
             onAddDeal={handleAddDeal}
             onEditDeal={handleEditDeal}

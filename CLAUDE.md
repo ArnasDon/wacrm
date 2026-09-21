@@ -6739,6 +6739,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     essa assinatura. ⚠️ E o desfazer do encerramento é da CONTA INTEIRA:
     rodado depois de um encerramento novo, devolve também o que o de 21/09
     ainda guarda na foto (medido no ensaio: 899 linhas para 64 da operação).
+  - **1026_cb_kommo_entrada_sem_texto_vazio** — a entrada do lote trata ""
+    como ausente em TODA guarda de evento (Codex, PR #241): a gravação faz
+    `nullif(..., '')`, e um id em branco passava na entrada, o modo de
+    conferência dizia "válido" e só a conferência de saída o recusava,
+    depois de escrever e sem nomear o lead. Migration nova porque a 1025 já
+    estava aplicada.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

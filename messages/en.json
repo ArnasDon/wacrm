@@ -1200,7 +1200,7 @@
       "toastFailedDeletePipeline": "Failed to delete pipeline",
       "toastDeleted": "Pipeline deleted",
       "stageOutcome": "Stage outcome",
-      "stageOutcomeHint": "Deals entering this stage are automatically marked with this outcome. Leaving it does not reopen them.",
+      "stageOutcomeHint": "Deals entering this stage are automatically marked with this outcome. A won deal stays won when it leaves; a lost deal that moves to a stage without an outcome is reopened.",
       "outcomeNone": "—",
       "outcomeWon": "Won",
       "outcomeLost": "Lost",
@@ -1963,7 +1963,7 @@
         "status_open": "Reopened",
         "moveToLabel": "Move to stage",
         "pickStage": "Pick a stage",
-        "moveHelp": "Moves the trigger's deal. With no deal on the trigger, it moves the contact's most recent open deal."
+        "moveHelp": "Moves the trigger's deal. With no deal on the trigger, it moves the contact's most recent open deal — or, when none is open, the most recent lost deal, which is reopened (except for contacts who already have a won deal: a client is never pulled back). If the deal's status changes while the automation runs, the step stops instead of touching it."
       },
       "lembrete": {
         "campoLabel": "Date field",

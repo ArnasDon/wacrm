@@ -10,9 +10,10 @@ import path from 'node:path'
 //     quando a instrução RODA — aplicar limpo não prova nada. O upstream
 //     consertou isto (#536), para a assinatura de OITO parâmetros.
 //  2. `p_template_params JSONB[]`: pelo PostgREST, o `string[][]` do app vira um
-//     array de DUAS dimensões. Com 2+ variáveis a campanha inteira falha
-//     (23502); com 1, grava texto em vez de lista e o "retomar" reenvia sem as
-//     variáveis. O upstream NÃO consertou — achado da revisão da Fase 2 do
+//     array de DUAS dimensões. Com 2+ variáveis a função grava o DOBRO de
+//     linhas (metade SEM contato, o 2º contato com o parâmetro do 1º) e a
+//     campanha fica órfã em `sending`; com 1, grava texto em vez de lista e o
+//     "retomar" reenvia sem as variáveis. O upstream NÃO consertou — achado da revisão da Fase 2 do
 //     docs/PLANO-merge-upstream-2026-09.md, medido num Postgres 16.
 //
 // A 1030 conserta os dois na assinatura de NOVE parâmetros (a nossa, com o
@@ -22,6 +23,12 @@ import path from 'node:path'
 // `broadcasts.channel_id`.
 const dir = __dirname
 const NOME = 'create_broadcast_with_recipients'
+
+/** O que fazer quando este pino reprova num merge do upstream. */
+const O_QUE_FAZER =
+  'Se o arquivo é a 041_fix_broadcast_contact_id_ambiguity do upstream: APAGUE-o, não renomeie — ' +
+  'CLAUDE.md, "Workflow de migrations" (a exceção da 041). Migration NOSSA nova que redefina a função ' +
+  'entra na lista do primeiro teste e tem de manter a forma final (9 parâmetros, p_template_params JSONB).'
 
 interface Definicao {
   arquivo: string
@@ -89,7 +96,7 @@ function definicoes(): Definicao[] {
 
 describe('1030 — a função de disparo executa, grava os params como lista, e só existe UMA', () => {
   it('o leitor enxerga as quatro definições reais, com a contagem certa', () => {
-    expect(definicoes().map((d) => [d.arquivo, d.parametros.length])).toEqual([
+    expect(definicoes().map((d) => [d.arquivo, d.parametros.length]), O_QUE_FAZER).toEqual([
       ['0040_webhook_broadcast_reliability.sql', 7],
       ['0041_broadcast_resume.sql', 8],
       ['0940_cb_broadcast_com_canal.sql', 9],
@@ -98,10 +105,13 @@ describe('1030 — a função de disparo executa, grava os params como lista, e 
   })
 
   it('⚠️ a ÚLTIMA definição tem o RETURNING qualificado — e não o cru', () => {
-    const ultima = definicoes().at(-1)!
-    expect(ultima.corpo).toMatch(/RETURNING\s+id,\s*broadcast_recipients\.contact_id/)
+    // ⚠️ Só o corpo da FUNÇÃO (até o primeiro `$$;`): o bloco de conferência
+    // cita a forma certa num LIKE, e a asserção positiva casaria com ELE mesmo
+    // se a função voltasse a ter o RETURNING cru (achado da Lente 1).
+    const funcao = definicoes().at(-1)!.corpo.split('$$;')[0]
+    expect(funcao).toMatch(/RETURNING\s+id,\s*broadcast_recipients\.contact_id/)
     // A forma crua é o defeito 1 inteiro (SQLSTATE 42702 na primeira execução).
-    expect(ultima.corpo.split('$$;')[0]).not.toMatch(/RETURNING\s+id,\s*contact_id/)
+    expect(funcao).not.toMatch(/RETURNING\s+id,\s*contact_id/)
   })
 
   it('⚠️ a ÚLTIMA definição recebe os params como JSONB (não JSONB[]) e pareia por ORDINALIDADE', () => {
@@ -114,6 +124,10 @@ describe('1030 — a função de disparo executa, grava os params como lista, e 
     const funcao = ultima.corpo.split('$$;')[0]
     expect(funcao).toMatch(/unnest\(p_contact_ids\)\s+WITH\s+ORDINALITY/i)
     expect(funcao).toMatch(/jsonb_array_elements\([\s\S]*?\)\s+WITH\s+ORDINALITY/i)
+    // ⚠️ É o `USING (ord)` que amarra cada contato à SUA lista. Trocado por
+    // `ON true` (mutante medido), 2 contatos × 2 listas viram 4 linhas — e só a
+    // conferência da 1030, com dois contatos, percebia.
+    expect(funcao).toMatch(/WITH\s+ORDINALITY\s+AS\s+p\(prm,\s*ord\)\s+USING\s*\(ord\)/i)
     // O pareamento antigo (unnest de DOIS arrays) é o que espalhava os params.
     expect(funcao).not.toMatch(/unnest\(\s*p_contact_ids\s*,\s*p_template_params\s*\)/i)
   })
@@ -133,7 +147,7 @@ describe('1030 — a função de disparo executa, grava os params como lista, e 
       '0940_cb_broadcast_com_canal.sql',
     ])
     for (const d of definicoes().filter((x) => !HISTORICAS.has(x.arquivo))) {
-      const aviso = `${d.arquivo} define ${NOME}(${d.parametros.length} parâmetros) — a 041 do upstream entrou crua?`
+      const aviso = `${d.arquivo} define ${NOME}(${d.parametros.length} parâmetros). ${O_QUE_FAZER}`
       expect(d.parametros.length, aviso).toBe(9)
       expect(
         d.parametros.some((p) => /^p_template_params\s+JSONB$/i.test(p)),
@@ -152,9 +166,14 @@ describe('1030 — a função de disparo executa, grava os params como lista, e 
     expect(sql).toMatch(/IF v_quantas <> 1 THEN/)
     // Pelo caminho do PostgREST, e em DUAS instruções (dentro da mesma, a
     // consulta de fora não enxerga a linha que a função acabou de inserir).
-    expect(sql).toMatch(/json_to_recordset\(/)
-    expect(sql).toMatch(/SELECT f\.recipient_id INTO v_destinatario/)
-    expect(sql).toMatch(/FROM broadcast_recipients r WHERE r\.id = v_destinatario;/)
+    expect(sql).toMatch(/FROM json_to_record\(v_corpo\) AS _\(c UUID\[\], p JSONB\)/)
+    expect(sql).toMatch(/SELECT f\.broadcast_id INTO v_campanha/)
+    expect(sql).toMatch(/WHERE r\.broadcast_id = v_campanha/)
+    // Com DOIS contatos e listas de tamanhos diferentes — é o que prova o pareamento.
+    expect(sql).toMatch(/WHEN 2 THEN '\[\["a","b"\],\["c"\]\]'::json/)
+    // Só o SQLSTATE próprio: `WHEN OTHERS` engoliria o erro que a chamada existe para mostrar.
+    expect(sql).toMatch(/WHEN SQLSTATE 'P1030' THEN/)
+    expect(sql).not.toMatch(/WHEN OTHERS THEN/)
     // As duas metades do REVOKE e o GRANT de volta (regra do banco vazio).
     expect(sql).toMatch(/REVOKE ALL ON FUNCTION[^;]+FROM PUBLIC, anon, authenticated;/)
     expect(sql).toMatch(/GRANT EXECUTE ON FUNCTION[^;]+TO service_role;/)

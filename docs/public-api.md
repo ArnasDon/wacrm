@@ -383,12 +383,25 @@ curl -X POST https://your-crm.example.com/api/v1/broadcasts \
         "name": "July promo",
         "template_name": "promo_july",
         "template_language": "en_US",
+        "channel_id": "<uuid of an official Meta number>",
         "recipients": [
           { "to": "+14155550123", "params": ["Jane"] },
           { "to": "+14155550124" }
         ]
       }'
 ```
+
+`channel_id` is optional — see
+[Choosing which number to send from](#choosing-which-number-to-send-from).
+`params` is one list per recipient, in the order of the template's
+`{{1}}`, `{{2}}`… variables; recipients may carry lists of different
+lengths.
+
+**Migration required:** apply
+`supabase/migrations/1030_cb_funcao_de_disparo_executavel.sql`. Before it,
+every call to this endpoint failed with `500 Failed to create broadcast`
+(the database function behind it could not execute), and per-recipient
+`params` could not be stored as lists.
 
 Recipients are capped at **1000 per request** — split larger sends.
 Invalid phone numbers are dropped and counted as `rejected`. Response
@@ -401,10 +414,15 @@ Invalid phone numbers are dropped and counted as `rejected`. Response
     "status": "sending",
     "total_recipients": 2,
     "accepted": 2,
-    "rejected": 0
+    "rejected": 0,
+    "channel_id": "…"
   }
 }
 ```
+
+`channel_id` is the official number the campaign **actually** went out
+on — record it for auditing, especially when you omitted it in the
+request. `GET /api/v1/broadcasts/{id}` returns it too.
 
 ### `GET /api/v1/broadcasts/{id}`
 
@@ -418,7 +436,8 @@ List the account's WhatsApp numbers. Scope: `channels:read`.
 
 An account can have several numbers — official Meta (Cloud API) ones and
 unofficial QR-code ones. Every id returned here is a valid `channel_id`
-for `POST /api/v1/messages` and `POST /api/v1/broadcasts`.
+for `POST /api/v1/messages`. `POST /api/v1/broadcasts` only accepts the
+ones whose `kind` is `meta` (broadcasts are template-only).
 
 ```jsonc
 {
@@ -461,13 +480,9 @@ official Meta number (broadcasts are template-only). Omitted, it picks
 the first usable Meta number (account default first). If the account has
 none, the call returns `meta_channel_required`. A `channel_id` that is
 not a usable Meta number **of this account** returns the same
-`meta_channel_required` (400) — it never falls back to another number,
-and nothing is sent.
-
-> Requires migration `1030`. Before it, every call to this endpoint
-> failed with `500 Failed to create broadcast` (the database function
-> behind it could not execute), and per-recipient `params` with two or
-> more values could not be stored.
+`meta_channel_required` (400), and one that is present but not a
+non-empty string returns `bad_request` (400). Either way it never falls
+back to another number, and nothing is sent.
 
 ### `GET /api/v1/tasks`
 

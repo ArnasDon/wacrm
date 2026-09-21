@@ -64,23 +64,40 @@ export async function POST(request: Request) {
 
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
-    // ⚠️ NOSSO (multi-canal): por QUAL número oficial a campanha sai. A doc
-    // pública, a do MCP e a ferramenta `send_broadcast` do mcp-server prometem
-    // este campo desde a Fase E4 — e esta rota o descartava. Ninguém viu porque
-    // o endpoint devolvia 500 em toda chamada (a função de disparo não
-    // executava, ver a migration 1030); no dia em que ele passou a funcionar,
-    // numa conta com dois números oficiais a campanha sairia pelo que
-    // `resolveMetaChannel` escolhesse, sem erro. O núcleo já falha FECHADO:
-    // `channel_id` que não é um canal Meta utilizável DESTA conta vira 400
-    // (`meta_channel_required`), e nada é enviado. Um merge do upstream traz a
-    // rota deles crua, sem esta linha.
-    const channelId =
-      typeof body.channel_id === 'string' ? body.channel_id.trim() : '';
+    // ⚠️ NOSSO (multi-canal): por QUAL número oficial a campanha sai. O núcleo
+    // aceita o canal desde a Fase E4, e a doc pública, a do MCP e a ferramenta
+    // `send_broadcast` do mcp-server prometem o campo — mas esta rota o
+    // descartava. Ninguém viu porque o endpoint devolvia 500 em toda chamada (a
+    // função de disparo não executava, ver a migration 1030); no dia em que ele
+    // passou a funcionar, numa conta com dois números oficiais a campanha
+    // sairia pelo que `resolveMetaChannel` escolhesse, sem erro. O núcleo falha
+    // FECHADO: `channel_id` que não é um canal Meta utilizável DESTA conta vira
+    // 400 (`meta_channel_required`), e nada é enviado. Um merge do upstream
+    // traz a rota deles crua, sem este bloco.
+    //
+    // ⚠️ Presente e INVÁLIDO (número, lista, texto vazio) é 400 — nunca "como se
+    // não tivesse vindo". Num envio em massa, cair no número padrão em silêncio
+    // é o pior desfecho: quem integra pediu um número e a campanha sai por
+    // outro. É a régua de `resolve-meta.ts` ("prefere um erro a sair pelo número
+    // errado"). `POST /api/v1/messages` é mais tolerante de propósito — lá o
+    // pior caso é UMA mensagem pelo canal da conversa.
+    const canalBruto = body.channel_id;
+    if (
+      canalBruto != null &&
+      (typeof canalBruto !== 'string' || !canalBruto.trim())
+    ) {
+      return fail(
+        'bad_request',
+        "'channel_id' must be a non-empty string (the id of an official Meta number)",
+        400
+      );
+    }
+    const channelId = typeof canalBruto === 'string' ? canalBruto.trim() : null;
 
     const plan = await createBroadcast(ctx.supabase, ctx.accountId, auditUserId, {
       name: typeof body.name === 'string' ? body.name : null,
       templateName,
-      channelId: channelId || null,
+      channelId,
       templateLanguage:
         typeof body.template_language === 'string'
           ? body.template_language
@@ -103,6 +120,10 @@ export async function POST(request: Request) {
         total_recipients: plan.planned.length,
         accepted: plan.planned.length,
         rejected: plan.rejected,
+        // Por QUAL número a campanha saiu — o que quem integra deve registrar
+        // para auditoria (o mesmo contrato do 201 de `/messages`). Com o campo
+        // omitido no pedido, é a única forma de saber qual o núcleo escolheu.
+        channel_id: plan.channelId,
       },
       202
     );

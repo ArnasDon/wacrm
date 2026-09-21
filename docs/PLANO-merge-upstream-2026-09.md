@@ -142,11 +142,16 @@ quebrar, sabe-se qual.
    ⚠️ **Painel do navegador OCULTO = `requestAnimationFrame` parado.** O que
    depende de rAF (restauração de rolagem, animação) parece quebrado sem estar.
    Conferir `document.hidden` antes de acusar regressão.
-6. ⚠️ **Fase com MIGRATION inverte a ordem dos passos 5 e 6** (lição da 1010, reafirmada na Fase 2): PR em RASCUNHO → replay do CI verde no commit EXATO → aplicar a migration → teste prático no preview → marcar pronto → Codex → merge.
-   **PR → CI verde → `@codex review` no HEAD** (conferir por `gh api` que a
+6. **PR → CI verde → `@codex review` no HEAD** (conferir por `gh api` que a
    revisão é do HEAD; "usage limits" = sem revisão) → **merge = deploy de
    produção** → verificação pós-deploy: site 200, `/api/cb/scheduled/cron` 401
    (503 = env vazia), ingestão viva, e o roteiro mínimo da fase em produção.
+   ⚠️ **Fase com MIGRATION: o passo 5 acontece NO MEIO deste** (a lição da 1010,
+   reafirmada na Fase 2) — (a) PR em RASCUNHO → replay do CI verde no commit
+   EXATO; (b) aplicar a migration e registrá-la no `CLAUDE.md`; (c) o passo 5;
+   (d) pronto para revisão → Codex no HEAD → merge. Commit novo que toque o
+   `.sql` volta a (a). Na janela entre (b) e o merge a PRODUÇÃO roda o código
+   antigo contra o banco novo — escrever o pior caso na seção da fase.
 7. **Registrar aqui** (resultado, evidências, desvios, decisões). O pós-deploy
    da fase N é escrito no PR da fase N+1, para não gerar deploy só de
    documentação.
@@ -399,13 +404,19 @@ não tem.
 1. ⚠️⚠️ **Lente 1 — o conserto do upstream NÃO basta: os parâmetros por
    destinatário chegam em DUAS DIMENSÕES.** `p_template_params` era `JSONB[]` e
    o app manda `string[][]`. O PostgREST converte o corpo com
-   `json_to_recordset(... AS _(p_template_params jsonb[]))`, e a lista de listas
-   vira um array 2-D. Medido (com SÓ a qualificação do upstream aplicada):
-   2 destinatários × 2 params → **23502**, a campanha inteira falha (e o 2º
-   contato receberia o parâmetro do 1º); 1 param → grava `"Ana"` (texto) em vez
-   de `["Ana"]`, e o "retomar" (`Array.isArray`) reenviaria SEM as variáveis;
-   contagens diferentes → `malformed JSON array`. Só não mordeu porque os 9
-   modelos da conta têm zero variáveis.
+   `json_to_record(... AS _(p_template_params jsonb[]))`, e a lista de listas
+   vira um array 2-D. Medido (com SÓ a qualificação do upstream aplicada, e as
+   restrições REAIS da tabela): 2 destinatários × 2 params → a função EXECUTA e
+   grava **4 linhas para 2 contatos** — o 2º contato com o parâmetro do 1º, duas
+   linhas SEM contato — e a campanha fica commitada em `sending`, órfã (o app
+   estoura logo depois, ao parear as linhas devolvidas); 1 param → grava
+   `"Ana"` (texto) em vez de `["Ana"]`, e o "retomar" (`Array.isArray`)
+   reenviaria SEM as variáveis; contagens diferentes → `malformed JSON array`
+   (22P02). Era invisível enquanto o defeito 1 derrubava toda chamada.
+   ⚠️ **Erro meu, pego pela 2ª passada da Lente 1:** a primeira medição dizia
+   "23502, a campanha inteira falha" — o meu banco descartável declarava
+   `contact_id NOT NULL`, que a 0004 tirou. O dublê imitava a forma SUPOSTA, e
+   a verdade era pior. Virou nota no `CLAUDE.md` (regra 3).
 2. ⚠️ **Lente 2 — `POST /api/v1/broadcasts` DESCARTAVA o `channel_id`**, que
    `docs/public-api.md`, `docs/mcp.md` e a ferramenta `send_broadcast` do
    mcp-server prometem. Invisível enquanto a rota devolvia 500; com a função
@@ -419,10 +430,16 @@ não tem.
   de 8 e a de 9 com `JSONB[]`), recria a de 9 com `p_template_params JSONB`,
   pareia contato × lista por **ORDINALIDADE**, qualifica o RETURNING,
   `REVOKE`/`GRANT`, `NOTIFY pgrst`. A conferência **CHAMA a função pelo caminho
-  do PostgREST** e desfaz a chamada num subbloco (banco vazio pula com NOTICE).
-  O app não muda: chama por NOME, e o mesmo corpo é convertido para o tipo novo.
+  do PostgREST** na conta que tem MAIS contatos — com dois, leva listas de
+  tamanhos DIFERENTES e prova o PAREAMENTO (o mutante `ON true` no lugar de
+  `USING (ord)` reprova) — e desfaz a chamada num subbloco (banco vazio pula
+  com NOTICE). O app não muda: chama por NOME, e o mesmo corpo é convertido para
+  o tipo novo.
 - `src/app/api/v1/broadcasts/route.ts`: o `channel_id` chega ao núcleo, que já
-  falhava FECHADO (canal inválido = 400, nada enviado).
+  falhava FECHADO (canal inválido = 400, nada enviado). Presente e inválido
+  (número, lista, texto vazio) também é **400** — num envio em massa, "tratar
+  como ausente" é a campanha saindo por um número que ninguém pediu. O 202 e o
+  `GET /broadcasts/{id}` passam a dizer por QUAL número a campanha saiu.
 - Pinos: `supabase/migrations/funcao-de-disparo-1030.test.ts` (lê TODO `.sql`,
   casa as quatro grafias de `CREATE FUNCTION`, cobra a forma final e proíbe
   outra assinatura fora das três históricas) e
@@ -432,7 +449,8 @@ não tem.
 - `CLAUDE.md`: a exceção da `041` do upstream (APAGADA, não renomeada), a regra
   3 do banco vazio (função plpgsql tem de ser CHAMADA, pelo caminho do
   PostgREST, lendo o resultado em OUTRA instrução) e duas linhas na tabela de
-  divergências. `docs/public-api.md`: o canal inválido e a nota da migration.
+  divergências. `docs/public-api.md`, `docs/mcp.md` e `CHANGELOG.md` (com a **migration
+  necessária**).
 
 ⚠️ **Erro meu, pego pelo teste local:** a primeira conferência lia o que a
 função gravou com um `JOIN` na MESMA instrução — que não enxerga a linha recém-
@@ -442,11 +460,25 @@ inserida — e acusava a função certa. Virou regra no `CLAUDE.md`.
 rascunho → replay do CI VERDE no commit exato → aplicar a 1030 → teste prático
 no preview → pronto para revisão → Codex → merge.
 
+⚠️ **A janela entre aplicar a 1030 e o deploy** (achado das duas lentes): a
+produção roda a rota ANTIGA contra a função NOVA. O endpoint passa a funcionar,
+mas ainda ignora o `channel_id` — um id inválido devolveria 202 e enviaria pelo
+único número oficial. Quem alcança isso é só a chave de teste desta fase (a
+única ativa). Por isso: todo pedido do teste vai SÓ para `localhost`, e a chave
+é revogada logo depois do teste, sem esperar o Codex nem o merge.
+
+**Reversão:** `git revert` do merge; a 1030 FICA (a função antiga não
+executava — não há para onde voltar). Com o revert a rota volta a descartar o
+`channel_id`: revogar as chaves com `broadcasts:send`.
+
 **Teste prático no preview:** canal inválido → 400 e nada sai; depois o disparo
 de verdade (1 destinatário, o lead de teste, modelo aprovado sem variáveis, pelo
 número oficial) → 202, campanha gravada COM `channel_id`, destinatário `sent`;
 e a função chamada pelo PostgREST de verdade com 1 contato × 2 parâmetros →
-gravado como lista. Limpeza: revogar a chave; a campanha de teste fica rotulada.
+gravado como lista. Limpeza: revogar a chave; a campanha do disparo real fica
+rotulada "TESTE"; a campanha criada pela chamada direta ao PostgREST (que nasce
+`sending` com destinatário `pending` e botão "Retomar" na tela) é APAGADA por
+id na mesma hora.
 
 **Resultado:** — (a preencher depois do teste prático)
 

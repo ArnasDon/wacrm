@@ -3,7 +3,9 @@
 -- gravar os parâmetros de cada destinatário do jeito que o app os lê.
 --
 -- São DOIS defeitos na mesma função. O primeiro o upstream consertou (#536); o
--- segundo não — foi achado na revisão desta fase e medido em 21/09/2026.
+-- segundo não — foi achado na revisão desta fase e medido em 21/09/2026 (num
+-- Postgres 16 descartável com as restrições reais; produção e CI rodam o 17, e
+-- quem prova lá é a conferência no fim deste arquivo).
 --
 -- 1. O `RETURNING` ambíguo (a função nunca executou)
 --
@@ -16,27 +18,29 @@
 --   ⚠️ Nada acusava: o corpo de uma função plpgsql só é analisado quando a
 --   instrução RODA. 0040, 0041 e 0940 aplicaram limpas, o replay do CI passou
 --   nas três, e a função continuou incapaz de executar. Medido pela rota de
---   verdade, contra este banco: `POST /api/v1/broadcasts` → 500, com
---   `42702 column reference "contact_id" is ambiguous` no log. `broadcasts`
---   tinha ZERO linhas. (O único chamador é `createBroadcast`, em
---   `broadcast-core.ts`, alcançado só por essa rota — a tela de Disparos grava
---   a campanha direto na tabela, e o "retomar" não chama a função.)
+--   verdade: `POST /api/v1/broadcasts` → 500, com `42702 column reference
+--   "contact_id" is ambiguous` no log, nada gravado. (O único chamador é
+--   `createBroadcast`, em `broadcast-core.ts`, alcançado só por essa rota — a
+--   tela de Disparos grava a campanha direto na tabela, e o "retomar" não chama
+--   a função.)
 --
 -- 2. Os parâmetros por destinatário chegavam em DUAS DIMENSÕES
 --
 --   `p_template_params` era `JSONB[]`, e o app manda `string[][]` (uma lista
---   de parâmetros por destinatário). O PostgREST monta os argumentos nomeados
---   com `json_to_recordset(...) AS _("p_template_params" jsonb[], …)`, e nessa
---   conversão um array JSON de arrays vira um `jsonb[]` de DUAS dimensões —
---   não um array de listas. Medido num Postgres 16:
---     · 2 destinatários × 2 params → o `unnest` de dois arrays devolve QUATRO
---       linhas: o 2º contato recebe o 2º parâmetro do PRIMEIRO, e duas linhas
---       saem sem contato (23502) — a campanha inteira falha;
+--   de parâmetros por destinatário). O PostgREST converte o corpo do pedido
+--   para o TIPO de cada argumento (`json_to_record`/`json_to_recordset`), e
+--   nessa conversão um array JSON de arrays vira um `jsonb[]` de DUAS
+--   dimensões — não um array de listas. Era invisível enquanto o defeito 1
+--   derrubava toda chamada. Medido com SÓ o conserto do upstream aplicado:
+--     · 2 destinatários × 2 params → a função EXECUTA e grava QUATRO linhas
+--       para dois contatos: o 2º contato recebe o 2º parâmetro do PRIMEIRO,
+--       duas linhas saem SEM contato (`contact_id` é anulável desde a 0004), e
+--       a campanha fica commitada em `sending` — órfã, porque o app estoura em
+--       seguida ao parear as linhas devolvidas;
 --     · 1 param por destinatário → grava `"Ana"` (texto) em vez de `["Ana"]`, e
 --       o "retomar" (`Array.isArray`) reenviaria o modelo SEM as variáveis;
---     · contagens diferentes entre destinatários → `malformed JSON array` já
---       na conversão dos argumentos.
---   Só não mordeu porque os modelos desta conta têm zero variáveis.
+--     · contagens diferentes entre destinatários → `malformed JSON array`
+--       (22P02) já na conversão dos argumentos.
 --
 --   O argumento passa a ser `JSONB` (o array de listas, inteiro), pareado com
 --   os contatos por ORDINALIDADE. O corpo que o app manda não muda — o
@@ -98,10 +102,10 @@ BEGIN
   RETURNING id INTO v_broadcast_id;
 
   -- Cada contato é pareado com a SUA lista de parâmetros pela posição
-  -- (ORDINALITY dos dois lados). Lista mais curta que a de contatos, NULL ou
-  -- algo que não é array → `template_params` NULL, que o "retomar" lê como
-  -- "sem parâmetros". Lista mais LONGA não cria destinatário: quem manda é
-  -- `p_contact_ids` (LEFT JOIN a partir dos contatos).
+  -- (ORDINALITY dos dois lados, `USING (ord)`). Lista mais curta que a de
+  -- contatos, NULL ou algo que não é array → `template_params` NULL, que o
+  -- "retomar" lê como "sem parâmetros". Lista mais LONGA não cria
+  -- destinatário: quem manda é `p_contact_ids` (LEFT JOIN a partir deles).
   --
   -- ⚠️ `broadcast_recipients.contact_id`, QUALIFICADO: `contact_id` sozinho
   -- casa também com a variável de saída do RETURNS TABLE (42702). Os outros
@@ -133,8 +137,9 @@ REVOKE ALL ON FUNCTION public.create_broadcast_with_recipients(UUID, UUID, TEXT,
 GRANT EXECUTE ON FUNCTION public.create_broadcast_with_recipients(UUID, UUID, TEXT, TEXT, TEXT, INTEGER, UUID[], JSONB, UUID) TO service_role;
 
 -- O PostgREST converte o corpo do pedido usando o TIPO dos argumentos que tem
--- em cache. O Supabase recarrega o cache sozinho a cada DDL; o aviso explícito
--- é para não depender disso justamente quando o tipo de um argumento mudou.
+-- em cache. O Supabase recarrega o cache sozinho a cada DDL (gatilhos de
+-- evento); o aviso explícito é para não depender disso justamente quando o
+-- tipo de um argumento mudou. Sem ninguém ouvindo (o replay do CI), é no-op.
 NOTIFY pgrst, 'reload schema';
 
 -- ------------------------------------------------------------
@@ -142,14 +147,15 @@ NOTIFY pgrst, 'reload schema';
 -- ------------------------------------------------------------
 DO $$
 DECLARE
-  v_quantas  INTEGER;
-  v_oid      regprocedure;
-  v_def      TEXT;
-  v_conta    UUID;
-  v_dono     UUID;
-  v_contato  UUID;
-  v_destinatario UUID;
-  v_gravado  JSONB;
+  v_quantas   INTEGER;
+  v_oid       regprocedure;
+  v_def       TEXT;
+  v_conta     UUID;
+  v_dono      UUID;
+  v_contatos  UUID[];
+  v_corpo     JSON;
+  v_campanha  UUID;
+  v_errados   INTEGER;
 BEGIN
   -- 1. Sobrou UMA função com esse nome.
   SELECT count(*) INTO v_quantas
@@ -186,51 +192,73 @@ BEGIN
     RAISE EXCEPTION '1030: o service_role perdeu o EXECUTE';
   END IF;
 
-  -- 5. ⚠️ A prova que faltou à 0040, à 0041 e à 0940: CHAMAR a função — e pelo
-  --    mesmo caminho do PostgREST (`json_to_recordset` com o tipo do
-  --    argumento), que é onde o defeito 2 morava. Tudo acontece num subbloco
-  --    que se desfaz por exceção própria: nada sobra em `broadcasts` nem em
-  --    `broadcast_recipients`. Banco vazio não tem conta para a FK — pula e
-  --    avisa; conta sem contato nenhum chama com as listas vazias (prova o
-  --    defeito 1, não o 2).
-  SELECT id, owner_user_id INTO v_conta, v_dono FROM accounts LIMIT 1;
+  -- 5. ⚠️ A prova que faltou à 0040, à 0041 e à 0940: CHAMAR a função — e do
+  --    jeito que o PostgREST chama (o corpo JSON convertido para o TIPO de
+  --    cada argumento), que é onde o defeito 2 morava. Tudo acontece num
+  --    subbloco que se desfaz por exceção própria: nada sobra em `broadcasts`
+  --    nem em `broadcast_recipients`.
+  --
+  --    A conta é a que tem MAIS contatos, de propósito: com dois contatos a
+  --    chamada leva listas de tamanhos DIFERENTES (`["a","b"]` e `["c"]`) e
+  --    prova o PAREAMENTO; com um, prova só a forma da lista; sem contato
+  --    nenhum, chama com as listas vazias (prova o defeito 1, não o 2). Banco
+  --    vazio não tem conta para a FK — pula e avisa.
+  SELECT a.id, a.owner_user_id,
+         ARRAY(SELECT c.id FROM contacts c WHERE c.account_id = a.id ORDER BY c.id LIMIT 2)
+    INTO v_conta, v_dono, v_contatos
+  FROM accounts a
+  ORDER BY (SELECT count(*) FROM contacts c WHERE c.account_id = a.id) DESC, a.id
+  LIMIT 1;
   IF v_conta IS NULL THEN
     RAISE NOTICE '1030: banco vazio — a função foi conferida pela definição, não chamada.';
     RETURN;
   END IF;
-  SELECT id INTO v_contato FROM contacts WHERE account_id = v_conta LIMIT 1;
+
+  v_corpo := json_build_object(
+    'c', to_json(v_contatos),
+    'p', CASE cardinality(v_contatos)
+           WHEN 2 THEN '[["a","b"],["c"]]'::json
+           WHEN 1 THEN '[["a","b"]]'::json
+           ELSE '[]'::json
+         END
+  );
 
   BEGIN
-    IF v_contato IS NULL THEN
-      PERFORM * FROM public.create_broadcast_with_recipients(
-        v_conta, v_dono, '1030 — conferência (desfeita)', 'conferencia', 'pt_BR',
-        0, ARRAY[]::UUID[], '[]'::JSONB, NULL
-      );
-    ELSE
-      -- ⚠️ DUAS instruções, e não um JOIN: dentro da MESMA instrução a consulta
-      -- de fora não enxerga a linha que a função acabou de inserir (a foto da
-      -- instrução é anterior ao INSERT). Medido: com o JOIN, o gravado vinha NULL
-      -- e a conferência acusava a função certa.
-      SELECT f.recipient_id INTO v_destinatario
-      FROM json_to_recordset(
-             json_build_array(json_build_object('c', json_build_array(v_contato),
-                                                'p', '[["a","b"]]'::json))
-           ) AS _(c UUID[], p JSONB),
-           LATERAL public.create_broadcast_with_recipients(
-             v_conta, v_dono, '1030 — conferência (desfeita)', 'conferencia', 'pt_BR',
-             1, _.c, _.p, NULL
-           ) f;
-      SELECT r.template_params INTO v_gravado
-      FROM broadcast_recipients r WHERE r.id = v_destinatario;
-      IF v_gravado IS DISTINCT FROM '["a","b"]'::JSONB THEN
-        RAISE EXCEPTION '1030: os parâmetros do destinatário foram gravados como %, e não como ["a","b"]', v_gravado;
-      END IF;
+    -- ⚠️ DUAS instruções, e não um JOIN: dentro da MESMA instrução a consulta
+    -- de fora não enxerga as linhas que a função acabou de inserir (a foto da
+    -- instrução é anterior ao INSERT). Medido: com o JOIN o gravado vinha NULL
+    -- e a conferência acusava a função certa.
+    SELECT f.broadcast_id INTO v_campanha
+    FROM json_to_record(v_corpo) AS _(c UUID[], p JSONB),
+         LATERAL public.create_broadcast_with_recipients(
+           v_conta, v_dono, '1030 — conferência (desfeita)', 'conferencia', 'pt_BR',
+           cardinality(v_contatos), _.c, _.p, NULL
+         ) f
+    LIMIT 1;
+
+    -- Cada contato tem de ter ficado com a SUA lista, como LISTA — nem a do
+    -- vizinho, nem texto solto, nem linha sem contato.
+    SELECT count(*) INTO v_errados
+    FROM (
+      SELECT r.contact_id, r.template_params FROM broadcast_recipients r
+      WHERE r.broadcast_id = v_campanha
+    ) gravado
+    FULL JOIN (
+      SELECT v_contatos[i] AS contact_id,
+             CASE i WHEN 1 THEN '["a","b"]'::jsonb ELSE '["c"]'::jsonb END AS template_params
+      FROM generate_subscripts(v_contatos, 1) AS i
+    ) esperado USING (contact_id)
+    WHERE gravado.template_params IS DISTINCT FROM esperado.template_params;
+    IF v_errados > 0 THEN
+      RAISE EXCEPTION '1030: % destinatário(s) ficaram com os parâmetros errados (pareamento ou forma da lista)', v_errados;
     END IF;
+
     RAISE EXCEPTION USING ERRCODE = 'P1030', MESSAGE = 'desfaz a chamada de conferência';
   EXCEPTION
+    -- ⚠️ Só o SQLSTATE próprio. `WHEN OTHERS` engoliria justamente o erro que
+    -- a chamada existe para mostrar.
     WHEN SQLSTATE 'P1030' THEN
-      RAISE NOTICE '1030: a função EXECUTOU% (e a chamada foi desfeita).',
-        CASE WHEN v_contato IS NULL THEN ' com as listas vazias'
-             ELSE ' e gravou a lista de parâmetros como lista' END;
+      RAISE NOTICE '1030: a função EXECUTOU (% contato(s) na chamada de conferência, desfeita).',
+        cardinality(v_contatos);
   END;
 END $$;

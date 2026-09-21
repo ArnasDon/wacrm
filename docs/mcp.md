@@ -52,7 +52,10 @@ data or send messages, add `"WACRM_ENABLE_WRITES": "true"` (and
 
 An account can have more than one number. `list_channels` shows them, and
 `send_message` / `send_broadcast` take an optional `channel_id` to pick
-which one to send **from**. It needs the `channels:read` scope.
+which one to send **from**. It needs the `channels:read` scope. For
+`send_broadcast`, omitting it picks the first usable official number; an
+id that is not a usable official number of the account is refused
+(`meta_channel_required`) and nothing is sent.
 
 Two things worth knowing before choosing:
 

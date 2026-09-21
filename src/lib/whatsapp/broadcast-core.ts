@@ -234,12 +234,14 @@ export async function createBroadcast(
       // resume of this broadcast has no way to reconstruct {{1}}.
       //
       // ⚠️ É uma LISTA DE LISTAS, e o argumento da função é `JSONB` (1030),
-      // nunca `JSONB[]`: o PostgREST converte este corpo com
-      // `json_to_recordset(... AS _(p_template_params <tipo>))`, e com
-      // `JSONB[]` a lista de listas vira um array de DUAS dimensões — 2+
-      // variáveis derrubavam a campanha inteira (23502) e 1 variável gravava
-      // texto em vez de lista (o "retomar" reenviaria sem as variáveis).
-      // Medido num Postgres 16; há pino em
+      // nunca `JSONB[]`: o PostgREST converte este corpo para o TIPO de cada
+      // argumento (`json_to_record`/`json_to_recordset`), e com `JSONB[]` a
+      // lista de listas vira um array de DUAS dimensões. Com 2+ variáveis a
+      // função gravava o DOBRO de linhas (metade sem contato, o 2º contato com
+      // o parâmetro do 1º) e o pareamento logo abaixo estourava, deixando a
+      // campanha órfã em `sending`; com 1 variável gravava texto em vez de
+      // lista (o "retomar" reenviaria sem as variáveis). Medido com as
+      // restrições reais (`contact_id` é anulável desde a 0004); há pino em
       // `supabase/migrations/funcao-de-disparo-1030.test.ts`.
       p_template_params: deduped.map((r) => r.params),
     }

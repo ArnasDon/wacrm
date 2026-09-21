@@ -6192,9 +6192,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
   `0044_`, o replay passa (a 0940 roda depois e a apaga), mas a PRODUÇÃO aplica
   por ordem CRONOLÓGICA e ficaria com as duas: chamada sem `p_channel_id` cai na
   que não carimba o canal. Medido num Postgres 16 em 21/09/2026. O conserto
-  equivalente — e maior — é a nossa **1030**; o pino é
-  `supabase/migrations/funcao-de-disparo-1030.test.ts`, e o
-  `verify-schema.sql` reprova o replay com duas assinaturas.
+  equivalente — e maior — é a nossa **1030**. Quem pega o arquivo renomeado é o
+  pino (`supabase/migrations/funcao-de-disparo-1030.test.ts`, vitest); o
+  `verify-schema.sql` só pega o caso em que as duas chegam ao FIM do replay —
+  arquivo numerado DEPOIS da 1030. E a própria 1030, reaplicada, APAGA a de
+  oito.
 - ⚠️ **Evitar colisão de número com o upstream:** como o original também numera
   em sequência, se criarmos `0037_...` e o upstream criar `037_...`, colidem no
   merge. **Nossas migrations próprias usam a faixa reservada `0900+`** (e, a
@@ -6833,6 +6835,9 @@ reprovavam por falta de dado, não por defeito.
 
 **3. Função plpgsql nova (ou recriada) tem de ser CHAMADA pela conferência.**
 
+(Não é uma terceira causa de replay VERMELHO — é o que o replay VERDE não
+prova.)
+
 O corpo de uma função plpgsql só é analisado quando a instrução RODA:
 `CREATE FUNCTION` aceita nome ambíguo, coluna que não existe e tipo errado, e o
 replay passa verde. `create_broadcast_with_recipients` atravessou TRÊS
@@ -6842,14 +6847,27 @@ ninguém viu, porque nada a tinha chamado com sucesso. Só a 1030 (21/09/2026)
 consertou, e achou um SEGUNDO defeito que só a execução mostra.
 
   ✅ **Regra:** a conferência chama a função num subbloco que se DESFAZ por
-  exceção própria (`RAISE EXCEPTION USING ERRCODE = 'P1030'` + `EXCEPTION WHEN
-  SQLSTATE 'P1030'`) — nada sobra no banco. Banco vazio pula com `RAISE NOTICE`
+  exceção própria — um SQLSTATE só dela, de 5 caracteres (`'P1030'`), capturado
+  por `WHEN SQLSTATE`, **nunca `WHEN OTHERS`** (engoliria o erro que a chamada
+  existe para mostrar). Nada sobra no banco. Banco vazio pula com `RAISE NOTICE`
   (regra 2). Modelo: `1030_cb_funcao_de_disparo_executavel.sql`.
 
-  ⚠️ **Função chamada pelo PostgREST se testa PELO CAMINHO DELE**: ele monta os
-  argumentos nomeados com `json_to_recordset(corpo) AS _(arg <tipo>, …)`, e o
-  TIPO decide o que chega. Com `JSONB[]`, o `string[][]` do app virava um array
-  de DUAS dimensões (2+ valores derrubavam a chamada; 1 valor gravava texto em
+  ⚠️ **O replay do CI NÃO exercita a chamada**: lá o banco é vazio e a regra 2
+  manda pular. O que esta regra garante é que a migration FALHA ao ser aplicada
+  num banco com dado (a produção, a instalação existente), em vez de a função
+  falhar no primeiro uso. A prova ANTES de aplicar é um Postgres descartável com
+  dado — **e com as restrições REAIS da tabela**: o primeiro cenário da 1030
+  declarava `contact_id NOT NULL`, que a 0004 tirou, e "provou" um 23502 que a
+  produção nunca daria (lá a função gravava o DOBRO de linhas e a campanha ficava
+  órfã). É a armadilha do dublê que imita a forma SUPOSTA. O que não dá para
+  chamar de um `DO` sem montar cenário — função de gatilho, função que lê
+  `auth.uid()` — prova-se no descartável e diz-se isso no cabeçalho.
+
+  ⚠️ **Função chamada pelo PostgREST (todo `.rpc()` do supabase-js) se testa
+  PELO CAMINHO DELE**: ele converte o corpo JSON para o TIPO de cada argumento
+  (`json_to_record(corpo) AS _(arg <tipo>, …)`), e o TIPO decide o que chega.
+  Com `JSONB[]`, o `string[][]` do app virava um array de DUAS dimensões (2+
+  valores espalhavam os parâmetros entre os contatos; 1 valor gravava texto em
   vez de lista). Chamar a função com `ARRAY['[…]'::jsonb]` direto passa verde
   sobre exatamente esse defeito. Lista de listas = argumento `JSONB`.
 
@@ -7087,6 +7105,9 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
       para quem precisa, e nenhuma conferência exige dado que só existe aqui?
       (Ver "Migration tem de aplicar num banco VAZIO".) Conferir com
       `supabase db start`, que é o que o CI faz.
+- [ ] Função plpgsql nova ou recriada: a conferência a CHAMA (pelo caminho do
+      PostgREST se for RPC) e desfaz a chamada? E o descartável onde ela foi
+      provada tinha as restrições REAIS da tabela?
 - [ ] Não commitar `.env.local` (confirmar com `git status`).
 - [ ] Rodar `npm run typecheck` e `npm run lint` antes de finalizar.
 
@@ -7112,6 +7133,9 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
 - ❌ Conferência de migration que exige DADO presente (busca por literal,
   `count(*) >= N`). Em banco vazio ela reprova por falta de dado, não por
   defeito. Derive o dado e pule com `RAISE NOTICE` quando não houver.
+- ❌ Dar por conferida uma função plpgsql porque a migration aplicou e o replay
+  ficou verde — o corpo só é analisado quando RODA (a função de disparo
+  atravessou três migrations sem nunca ter executado).
 - ❌ Aplicar mudança de schema pela UI de tabelas em vez do comando canônico.
 - ❌ Usar `SUPABASE_SERVICE_ROLE_KEY` em código client-side.
 - ❌ Rotacionar `ENCRYPTION_KEY` sem avisar (invalida tokens do WhatsApp).

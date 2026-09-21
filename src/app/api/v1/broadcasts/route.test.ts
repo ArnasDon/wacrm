@@ -61,7 +61,12 @@ beforeEach(() => {
   createBroadcast.mockReset()
   deliverBroadcast.mockReset()
   depoisDaResposta.mockReset()
-  createBroadcast.mockResolvedValue({ broadcastId: 'b1', planned: [{}], rejected: 0 })
+  createBroadcast.mockResolvedValue({
+    broadcastId: 'b1',
+    planned: [{}],
+    rejected: 0,
+    channelId: 'canal-que-o-nucleo-escolheu',
+  })
 })
 
 describe('POST /api/v1/broadcasts — o canal pedido chega ao núcleo', () => {
@@ -72,11 +77,31 @@ describe('POST /api/v1/broadcasts — o canal pedido chega ao núcleo', () => {
     expect(createBroadcast.mock.calls[0][3]).toMatchObject({ channelId: 'canal-oficial-2' })
   })
 
-  it('sem `channel_id` (ou com algo que não é texto) o núcleo recebe null e escolhe sozinho', async () => {
+  it('sem `channel_id` (ausente ou null) o núcleo recebe null e escolhe sozinho', async () => {
     await POST(pedido(CORPO))
-    await POST(pedido({ ...CORPO, channel_id: 42 }))
-    await POST(pedido({ ...CORPO, channel_id: '   ' }))
-    expect(createBroadcast.mock.calls.map((c) => c[3].channelId)).toEqual([null, null, null])
+    await POST(pedido({ ...CORPO, channel_id: null }))
+    expect(createBroadcast.mock.calls.map((c) => c[3].channelId)).toEqual([null, null])
+  })
+
+  it('⚠️ `channel_id` PRESENTE e inválido é 400 — nunca cai no número padrão em silêncio', async () => {
+    // Num envio em massa, "tratar como ausente" é a campanha saindo por um
+    // número que ninguém pediu. Nada é criado e nada é agendado.
+    for (const invalido of [42, ['canal'], { id: 'canal' }, '', '   ', true]) {
+      const res = await POST(pedido({ ...CORPO, channel_id: invalido }))
+      expect(res.status, JSON.stringify(invalido)).toBe(400)
+      expect((await res.json()).error.code).toBe('bad_request')
+    }
+    expect(createBroadcast).not.toHaveBeenCalled()
+    expect(depoisDaResposta).not.toHaveBeenCalled()
+  })
+
+  it('o 202 diz por QUAL número a campanha saiu (o que o núcleo resolveu, não o que veio no corpo)', async () => {
+    const res = await POST(pedido(CORPO))
+    expect((await res.json()).data).toMatchObject({
+      broadcast_id: 'b1',
+      status: 'sending',
+      channel_id: 'canal-que-o-nucleo-escolheu',
+    })
   })
 
   it('os parâmetros de cada destinatário seguem como LISTA (é o que a 1030 grava como lista)', async () => {

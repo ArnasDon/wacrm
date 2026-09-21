@@ -927,14 +927,20 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
 "Lead #NNNNN") e pode ser descartado sem perda.
 
 ⚠️⚠️ **18c. A PESSOA é resolvida pela régua do NONO DÍGITO, nunca por
-    igualdade de `phone_normalized`.** Medido em 21/09: dos 13.046 telefones
-    distintos da Kommo, **821** casam com uma ficha daqui por igualdade e
-    **outros 320 casam SÓ pela variante do nono dígito** — `553172090560` na
-    Kommo é `5531972090560` aqui, a mesma pessoa. Uma carga que resolva por
-    igualdade cria **320 fichas novas para clientes que já estão no CRM**, com
-    o histórico repartido entre as duas, e o índice único não impede nada
-    (são chaves diferentes). 821 + 320 = 1.141, que é a origem dos "~1.150 que
-    já existem aqui". A decisão sempre foi esta; o risco é a IMPLEMENTAÇÃO —
+    igualdade de `phone_normalized`.** MEDIDO em 21/09 rodando o módulo
+    `src/lib/migracao/pessoas.ts` sobre os 13.046 telefones distintos da
+    Kommo: **821** casam com uma ficha daqui por igualdade e **outros 336
+    casam SÓ pela variante do nono dígito** — `553172090560` na Kommo é
+    `5531972090560` aqui, a mesma pessoa. Uma carga que resolva por igualdade
+    cria **336 fichas novas para clientes que já estão no CRM**, com o
+    histórico repartido entre as duas, e o índice único não impede nada (são
+    chaves diferentes).
+    ⚠️ A conta fecha: **1.157 já existem** + 11.888 a criar + 1 a pular =
+    13.046 — e é 1.157, não os "~1.150" que este plano estimava.
+    ⚠️ Os 336 só aparecem porque a resolução passa por `digitosDoTelefone`,
+    que acrescenta o `55` ao número brasileiro escrito sem DDI. Uma medição à
+    mão, só com `replace(/\D/g,'')`, acha 320 e perde 16 — foi o que a
+    primeira versão desta regra dizia. A decisão sempre foi esta; o risco é a IMPLEMENTAÇÃO —
     a mesma família do `(pipeline_id, status_id)` da regra 9b. (P0 do painel
     de projeto, remedido por mim.)
 

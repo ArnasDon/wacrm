@@ -160,7 +160,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Install the Supabase CLI
-        uses: supabase/setup-cli@v1
+        uses: supabase/setup-cli@v3
         with:
           # Fixada em vez de `latest`: isto é infraestrutura, e uma versão
           # nova mudando comportamento deve ser um bump deliberado num PR,

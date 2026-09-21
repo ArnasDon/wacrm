@@ -6403,6 +6403,23 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     escritório sem telefone (plano, 6.4). Testada antes num Postgres 16
     descartável: o defeito reproduz com a função da 1010 e some com a 1011,
     idempotente, os 20 cenários anteriores verdes.
+  - **1012_cb_kommo_lead_id** — `deals.kommo_lead_id bigint` com índice único
+    PARCIAL `(account_id, kommo_lead_id) WHERE kommo_lead_id IS NOT NULL`: a
+    chave que torna a carga da Kommo REEXECUTÁVEL. A decisão 16 do operador
+    pôs o id do CONTATO num campo personalizado, e isso não alcança o NEGÓCIO
+    (campo personalizado só existe em contato, e uma pessoa pode ter mais de um
+    card). O plano mandava guardar o id do lead em
+    `cb_lead_events.details->>'kommo_lead_id'`, e o teste de esforço mediu o
+    preço: "já migrei este lead?" vira 12.389 varreduras completas sobre uma
+    tabela que vai a ~62.000 linhas, e sem restrição única quem pular a
+    pergunta duplica 28.316 eventos em silêncio. Único por CONTA (duas contas
+    podem importar de Kommos diferentes) e PARCIAL (quase todo negócio nasce
+    aqui com a coluna nula). Aditiva — nada em produção lê a coluna até a carga
+    existir. Aplicada em 20/09/2026 pela Management API (histórico
+    `20260921003408`), ANTES do merge do PR #232 e DEPOIS de o replay do CI
+    passar; conferida no catálogo (tipo `bigint`, e o índice renderizado com
+    UNIQUE, `account_id` e o WHERE — os três predicados que o bloco de
+    conferência da própria migration cobra).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

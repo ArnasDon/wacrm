@@ -623,19 +623,49 @@ UPDATE OF stage_id, 950). O último reescreve `NEW.status` a partir do
 Meu dia. Cada lote tem de **reparar** o que os seus gatilhos escreveram, na
 mesma transação:
 
+⚠️⚠️ **E o reparo tem de alcançar SÓ o que ESTA transação escreveu.** A
+primeira versão desta regra filtrava por `deal_id = ANY(<ids do lote>) AND
+origin = 'sistema'`, e isso é o histórico INTEIRO daquele card, não as linhas
+do lote. Os 1.150 que já existem aqui não nascem na carga: eles são
+**movidos** (decisão 11), e já têm trilha nossa — criada pelo roteador, pelas
+automações, pelo carimbo da 950. Medido em produção em 20/09: o filtro por
+`deal_id` pegaria **9** eventos antigos e o de etiqueta, **311** — as 320
+linhas seriam datadas com a data da Kommo e marcadas `reconstructed = true`,
+que é a ÚNICA porta de saída do fio do cliente (`apareceNaConversa`). Ou seja:
+apagaria do histórico de conversa 311 etiquetas reais e reescreveria a data de
+9 movimentos que aconteceram aqui. (Achado do Codex no PR #232.)
+
+O recorte certo é o **`xmin`** — a coluna de sistema que guarda a transação
+que inseriu a linha:
+
 ```sql
 UPDATE cb_lead_events
    SET occurred_at = <data real do fato na Kommo>,
        origin = 'retroativo',
        reconstructed = true
- WHERE deal_id = ANY(<ids do lote>)
-   AND origin = 'sistema'
+ WHERE xmin = pg_current_xact_id()::xid   -- só o que ESTE lote escreveu
+   AND deal_id = ANY(<ids do lote>)
    AND event_type IN ('deal_created', 'stage_changed', 'status_changed');
 ```
 
+MEDIDO contra a produção em 20/09 (numa transação que terminou em rollback):
+`xmin = pg_current_xact_id()::xid` casa exatamente as 3 linhas que a
+transação acabou de inserir, e **zero** linhas antigas de `deals` ou de
+`cb_lead_events`. O `AND origin = 'sistema'` sai da cláusula: com o `xmin` ele
+não recorta mais nada, e mantê-lo só criaria a ilusão de que a procedência é
+que isola o lote.
+
+⚠️ **Por que não `occurred_at >= <início do lote>`.** Funciona quase sempre —
+`occurred_at` tem `DEFAULT clock_timestamp()`, que ANDA dentro da transação (o
+comentário da 912 diz isso por escrito, e foi medido junto) —, mas não é
+imune a **concorrência**: um operador que mova um card do lote durante a
+janela de carga escreve um evento com `occurred_at` maior que o piso, e o
+reparo o levaria junto. O `xmin` é da transação, então não há janela nenhuma.
+
 O `tag_added` do gatilho da 912 grava `deal_id` NULO e é alcançado por
-`contact_id = ANY(...)`, com `AND origin <> 'usuario'` — os 1.150 contatos que
-já existem aqui podem ter ação real de operador na mesma janela.
+`contact_id = ANY(...)` — com a **mesma** cerca de `xmin`, e sem o
+`origin <> 'usuario'` da versão antiga, que era uma tentativa de adivinhar o
+que a transação tinha escrito e deixava passar as 311 linhas medidas acima.
 
 **6. UM INSERT por negócio, já no estado FINAL.** Nenhum `UPDATE` de
 `pipeline_id`/`stage_id`/`status` depois. A decisão 11 (a etapa da Kommo move o
@@ -833,10 +863,20 @@ as contagens e as regras. Esta seção é o índice.
 - **11 — a etapa da Kommo MOVE o card** dos que já existem aqui (1.150 dos
   1.209 contatos daqui recebem dado).
 - **16 — o id da Kommo vira CAMPO PERSONALIZADO** de contato, num bloco próprio
-  "Migração". ⚠️ Campo personalizado só existe em CONTATO: o id do LEAD vai em
-  `cb_lead_events.details->>'kommo_lead_id'`. Preço aceito: sem índice único, a
-  idempotência fica por conta do script — o que basta para uma carga que roda
-  sozinha, e não bastaria para duas ao mesmo tempo.
+  "Migração" (`kommo_contact_id`, já criado em produção).
+  ⚠️⚠️ **Campo personalizado só existe em CONTATO, e ele NÃO é a chave de
+  reexecução.** Uma pessoa pode ter mais de um card, então o id do contato não
+  responde "já migrei este LEAD?". Quem responde é **`deals.kommo_lead_id`**,
+  com o índice único parcial `(account_id, kommo_lead_id)` da **migration
+  1012**, já aplicada (histórico `20260921003408`). O
+  `cb_lead_events.details->>'kommo_lead_id'` continua sendo gravado, mas só
+  como **procedência** na trilha — nunca como chave.
+  ⚠️ A versão anterior desta linha aceitava "sem índice único, a idempotência
+  fica por conta do script". O teste de esforço mediu o preço e a decisão caiu:
+  sem a coluna, a pergunta vira 12.389 varreduras completas sobre uma tabela de
+  ~62.000 linhas, e quem pular a pergunta duplica 28.316 eventos em silêncio.
+  Quem implementar a carga seguindo o texto antigo reintroduz as duas coisas —
+  ver a regra A.3 do contrato. (Achado do Codex no PR #232.)
 - **17 — apagar as linhas de `cb_automation_events` na mesma transação**, com
   `deals.source = 'manual'`. Mantém a trilha (912), o carimbo de resultado
   (950) e as FKs de pé.

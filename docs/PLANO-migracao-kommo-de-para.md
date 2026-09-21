@@ -422,8 +422,11 @@ os 5 utm_* (~305 cada), Atraso da dívida (2.376), Origem dívida (2.367), TAGs
 contem (298), Demitida (302), Tempo da demissão (302), Grávida (13).
 
 ⚠️ **O id do LEAD não cabe em campo personalizado** — eles só existem em
-contato. Ele vai em `cb_lead_events.details->>'kommo_lead_id'`, invisível na
-tela e consultável.
+contato, e uma pessoa pode ter mais de um card. Ele vai na coluna
+**`deals.kommo_lead_id`** (migration **1012**, já aplicada), com índice único
+parcial `(account_id, kommo_lead_id)`: é ELA que torna a carga reexecutável.
+O `cb_lead_events.details->>'kommo_lead_id'` continua sendo gravado, mas como
+**procedência** na trilha — nunca como chave de idempotência.
 
 ⚠️⚠️ **A carga resolve o campo por `field_key` e ABORTA se algum faltar —
 nunca cria pelo nome.** Os quatro já existem. Criar "pelo nome da Kommo" geraria

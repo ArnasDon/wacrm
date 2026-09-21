@@ -109,6 +109,7 @@
       "newTodayVsYesterday": "new today vs yesterday",
       "vsYesterday": "vs yesterday",
       "openDeals": "{count} open {count, plural, =1 {deal} other {deals}}",
+      "openDealsUnknown": "Couldn't add up the deals right now",
       "noChange": "No change {suffix}"
     },
     "quickActions": {
@@ -146,6 +147,8 @@
       "description": "Open deals by stage",
       "noOpenDeals": "No open deals yet",
       "noOpenDealsHint": "Create deals in Pipelines to see stage breakdowns here.",
+      "unknown": "Couldn't add up the deals",
+      "unknownHint": "The read came back incomplete, so every stage would show less than it really has. Try again in a moment.",
       "dealCount": "{count} {count, plural, =1 {deal} other {deals}}",
       "total": "Total",
       "ariaLabel": "Pipeline value by stage"
@@ -1101,6 +1104,7 @@
       "addDeal": "Add Deal",
       "stageAutomations": "{count, plural, =0 {Automations for this stage} one {Automations for this stage (# active)} other {Automations for this stage (# active)}}",
       "stageConversations": "See this stage's conversations in the inbox",
+      "loadMoreCards": "Load {n} more",
       "cardFields": "Card information",
       "cardFieldsTitle": "Show on the card",
       "cardFieldsHint": "Applies to this device only.",
@@ -1163,7 +1167,13 @@
       "toastReopened": "Deal reopened",
       "toastFailedDelete": "Failed to delete deal",
       "toastDeleted": "Deal deleted",
-      "pipeline": "Pipeline"
+      "pipeline": "Pipeline",
+      "loadingContacts": "Loading contacts…",
+      "contactSearchPlaceholder": "Search by name or phone…",
+      "contactSearchHint": "Type at least 2 letters to search.",
+      "contactSearchEmpty": "No contact matches the search.",
+      "contactSearchFailed": "The search failed. Type again to retry.",
+      "contactSearchMore": "Showing the first {count}. Keep typing to narrow it down."
     },
     "settings": {
       "managePipeline": "Manage Pipeline",
@@ -4173,7 +4183,6 @@
     "fieldContact": "Client",
     "contactPlaceholder": "Choose a client",
     "loadingContacts": "Loading clients…",
-    "contactsLoadError": "Could not load the client list. Close and reopen to retry.",
     "contactSearchPlaceholder": "Search by name or phone…",
     "contactSearchEmpty": "No client matches the search.",
     "fieldDueDate": "Date",
@@ -4192,7 +4201,10 @@
     "emptyForContact": "No tasks for this client yet.",
     "showDone": "Show {count} done",
     "openCount": "{count, plural, =1 {1 open task} other {# open tasks}}",
-    "deleteConfirm": "Delete \"{titulo}\"? This cannot be undone."
+    "deleteConfirm": "Delete \"{titulo}\"? This cannot be undone.",
+    "contactSearchHint": "Type at least 2 letters to search.",
+    "contactSearchFailed": "The search failed. Type again to retry.",
+    "contactSearchMore": "Showing the first {count}. Keep typing to narrow it down."
   },
   "TelaBloqueada": {
     "title": "This area is not part of your profile",

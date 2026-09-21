@@ -9,7 +9,6 @@ import { escritaDoTituloManual } from "@/lib/deals/titulo-do-card";
 import { DEFAULT_CURRENCY } from "@/lib/currency";
 import { ValorInput } from "@/components/valor/valor-input";
 import type {
-  Contact,
   Conversation,
   Deal,
   DealStatus,
@@ -37,7 +36,8 @@ import { toast } from "sonner";
 import { useTranslations } from "next-intl";
 import { avisarDrenagemDeFunil } from "@/lib/automations/avisar-drenagem";
 import { urlDoInbox } from "@/lib/inbox/url";
-import { nomeDoContato } from "@/lib/contacts/identidade";
+import { SeletorDeContatoRemoto } from "@/components/contacts/seletor-de-contato-remoto";
+import { TETO_DE_RESULTADOS } from "@/lib/contacts/busca-remota";
 
 interface DealFormProps {
   open: boolean;
@@ -98,7 +98,6 @@ export function DealForm({
   const [pipelines, setPipelines] = useState<{ id: string; name: string }[]>([]);
   const [allStages, setAllStages] = useState<PipelineStage[]>([]);
 
-  const [contacts, setContacts] = useState<Contact[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [linkedConversation, setLinkedConversation] =
     useState<Conversation | null>(null);
@@ -144,10 +143,18 @@ export function DealForm({
     if (!open) return;
     let cancelled = false;
     (async () => {
+      // ⚠️ `contacts` NÃO entra aqui. Até 20/09/2026 esta lista era um
+      // `select("*")` sem limite, para encher um `<select>` nativo: a ficha
+      // inteira de cada contato, e o teto de 1000 linhas do PostgREST
+      // cortando em silêncio. Com os ~12.980 contatos da carga da Kommo
+      // (eram 1.212), o cliente do meio do alfabeto em diante não aparecia —
+      // e salvar o negócio de um card antigo, cujo contato tivesse caído
+      // fora do corte, exigia reescolher alguém. Agora quem filtra é o
+      // banco, em `SeletorDeContatoRemoto`.
+      //
       // Etapas de TODOS os funis, não só do quadro aberto: mover o card
       // exige oferecer as etapas do funil de destino.
-      const [c, p, funis, etapas] = await Promise.all([
-        supabase.from("contacts").select("*").order("name"),
+      const [p, funis, etapas] = await Promise.all([
         supabase.from("profiles").select("*").order("full_name"),
         // Recorte por perfil (Fase 4): o formulário só oferece funis do
         // escopo — sem isto, o advogado do trabalhista criaria negócio no
@@ -156,7 +163,6 @@ export function DealForm({
         supabase.from("pipeline_stages").select("*").order("position"),
       ]);
       if (cancelled) return;
-      setContacts((c.data ?? []) as Contact[]);
       setProfiles((p.data ?? []) as Profile[]);
       setPipelines(funisVisiveis(acesso, (funis.data ?? []) as { id: string; name: string }[]));
       setAllStages((etapas.data ?? []) as PipelineStage[]);
@@ -342,18 +348,28 @@ export function DealForm({
 
             <div className="grid gap-2">
               <Label className="text-muted-foreground">{t("contact")}</Label>
-              <select
+              {/* ⚠️ Busca NO BANCO. O `<select>` nativo que havia aqui
+                  dependia de carregar `contacts` inteiro, e com a base da
+                  Kommo o cliente procurado simplesmente não estava entre as
+                  opções — sem erro, sem aviso. O contato JÁ VINCULADO é
+                  buscado por id pelo próprio seletor, senão editar um
+                  negócio antigo abriria o campo vazio e salvar apagaria o
+                  vínculo.
+                  ⚠️ O teto de resultados vem da CONSTANTE, nunca digitado no
+                  dicionário: mudar um sem o outro faz a frase mentir. */}
+              <SeletorDeContatoRemoto
                 value={contactId}
-                onChange={(e) => setContactId(e.target.value)}
-                className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-              >
-                <option value="">{t("selectContact")}</option>
-                {contacts.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {nomeDoContato(c, '')}
-                  </option>
-                ))}
-              </select>
+                onChange={setContactId}
+                placeholder={t("selectContact")}
+                searchPlaceholder={t("contactSearchPlaceholder")}
+                hintText={t("contactSearchHint")}
+                loadingText={t("loadingContacts")}
+                emptyText={t("contactSearchEmpty")}
+                failedText={t("contactSearchFailed")}
+                moreText={t("contactSearchMore", { count: TETO_DE_RESULTADOS })}
+                ariaLabel={t("contact")}
+                className="h-9 border-border bg-muted text-foreground"
+              />
 
               {/* O caminho de volta do card para o atendimento.
                   ⚠️ A conversa do CONTATO manda; o vínculo gravado

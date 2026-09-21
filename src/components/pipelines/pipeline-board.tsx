@@ -30,6 +30,57 @@ import type { CamposDoCard } from "@/lib/pipelines/campos-do-card";
 import { gravarRetorno, lerRetorno } from "@/lib/pipelines/retorno";
 import { urlDoInbox } from "@/lib/inbox/url";
 
+/**
+ * Quantos cards uma coluna desenha de uma vez.
+ *
+ * ⚠️⚠️ O PR #227 consertou o DADO (a consulta de `deals` da página passou a
+ * paginar); o RENDER continuava desenhando TUDO. Medido contra o que a
+ * migração da Kommo traz: o funil "Trabalhista - Comercial" fica com ~8.400
+ * cards, e a coluna "Perdido" sozinha com 2.719. Um `deals.map` por coluna
+ * monta 8.400 componentes React e registra 8.400 `useDraggable` num commit
+ * só, e a coluna estica a página para centenas de milhares de pixels: no
+ * computador tranca a thread principal, e no CRM instalado no iPhone o
+ * provável é o app ser morto pelo sistema — a tela principal do funil deixa
+ * de abrir. Hoje o maior funil tem centenas de cards e nada disso aparece.
+ *
+ * 100 POR COLUNA, no molde da lista de leads (`funil/lista-de-leads.tsx`,
+ * que usa o mesmo número para a tabela inteira). Com as colunas de um funil
+ * real isso dá algumas centenas de cards no primeiro desenho — a faixa que
+ * a produção já prova hoje —, contra os 8.400 de uma coluna sem teto.
+ *
+ * Sem biblioteca de virtualização, de propósito: o "carregar mais" é uma
+ * linha de estado, e virtualizar DENTRO de um `DndContext` (cada card é um
+ * `useDraggable`, a coluna é um `useDroppable`) é outra obra.
+ */
+export const CARDS_POR_COLUNA = 100;
+
+/**
+ * Os cards que a coluna desenha: os `limite` primeiros, mais o card que
+ * ACABOU de ser solto aqui quando ele cairia fora do teto.
+ *
+ * ⚠️ A segunda metade não é zelo: sem ela o arrasto SOME com o card. A
+ * ordem do quadro é `created_at DESC, id ASC` (a consulta da página) e
+ * mover não reordena nada — o negócio de meses atrás arrastado para
+ * "Perdido" entra na posição ~2.700 de uma coluna que desenha 100, e o
+ * operador vê o card desaparecer no instante em que o soltou, sem erro
+ * nenhum. Ele entra no TOPO porque é a única posição que existe qualquer
+ * que seja o teto (a natural dele está atrás do "carregar mais").
+ *
+ * Nunca duplica: só entra quando NÃO está entre os visíveis.
+ */
+export function cardsDaColuna<T extends { id: string }>(
+  deals: T[],
+  limite: number,
+  recemSolto: string | null,
+): T[] {
+  if (deals.length <= limite) return deals;
+  const visiveis = deals.slice(0, limite);
+  if (!recemSolto || visiveis.some((d) => d.id === recemSolto)) return visiveis;
+  // Nulo quando o card foi solto em OUTRA coluna — o id é do quadro inteiro.
+  const solto = deals.find((d) => d.id === recemSolto);
+  return solto ? [solto, ...visiveis] : visiveis;
+}
+
 interface PipelineBoardProps {
   stages: PipelineStage[];
   deals: DealDoQuadro[];
@@ -65,6 +116,43 @@ export function PipelineBoard({
 }: PipelineBoardProps) {
   const router = useRouter();
   const [activeDealId, setActiveDealId] = useState<string | null>(null);
+  /**
+   * Quanto cada coluna já revelou, CARIMBADO com o funil a que pertence.
+   *
+   * ⚠️ Trocar de funil tem de voltar ao teto inicial, senão a coluna do
+   * funil novo abre expandida com o limite que o operador subiu no
+   * anterior. E a volta NÃO pode ser um efeito: `setState` síncrono em
+   * efeito é ERRO do React Compiler neste projeto (PRs #92/#94). Carimbar o
+   * dono e comparar contra o prop do render ATUAL é o mesmo padrão dos
+   * campos personalizados (`{ de, mapa }`) — e não tem o quadro em que o
+   * efeito ainda não rodou.
+   */
+  const [limites, setLimites] = useState<{
+    funil: string;
+    porEtapa: Record<string, number>;
+  }>({ funil: pipelineId, porEtapa: {} });
+  const limitesDoFunil = limites.funil === pipelineId ? limites.porEtapa : {};
+  /**
+   * O último card solto. Só existe para `cardsDaColuna` poder trazê-lo para
+   * dentro do teto — ver o porquê lá.
+   */
+  const [recemSolto, setRecemSolto] = useState<string | null>(null);
+
+  const mostrarMais = useCallback(
+    (stageId: string) => {
+      setLimites((atual) => {
+        const base = atual.funil === pipelineId ? atual.porEtapa : {};
+        return {
+          funil: pipelineId,
+          porEtapa: {
+            ...base,
+            [stageId]: (base[stageId] ?? CARDS_POR_COLUNA) + CARDS_POR_COLUNA,
+          },
+        };
+      });
+    },
+    [pipelineId],
+  );
   // UMA busca de canais para o quadro inteiro. Dentro do card, o hook
   // disparava um GET /api/cb/channels POR CARD (120 numa conta real) a cada
   // montagem — achado da revisão do PR #71.
@@ -204,6 +292,10 @@ export function PipelineBoard({
     if (!deal || deal.stage_id === targetStageId) return;
     if (!sortedStages.some((s) => s.id === targetStageId)) return;
 
+    // Só marca quando o movimento REALMENTE acontece (as três saídas acima
+    // devolvem o card ao lugar) — senão a coluna de origem passaria a fixar
+    // no topo um card que ninguém moveu.
+    setRecemSolto(dealId);
     onDealMoved(dealId, targetStageId);
   }
 
@@ -245,6 +337,9 @@ export function PipelineBoard({
               campos={campos}
               channels={channels}
               esperasPorContato={esperasPorContato}
+              limite={limitesDoFunil[stage.id] ?? CARDS_POR_COLUNA}
+              recemSolto={recemSolto}
+              onMostrarMais={mostrarMais}
               onAddDeal={onAddDeal}
               onEditDeal={onEditDeal}
               onAbrirConversa={abrirConversa}
@@ -328,6 +423,9 @@ function StageColumn({
   campos,
   channels,
   esperasPorContato,
+  limite,
+  recemSolto,
+  onMostrarMais,
   onAddDeal,
   onEditDeal,
   onAbrirConversa,
@@ -340,6 +438,11 @@ function StageColumn({
   automacoesAtivas: number;
   campos: CamposDoCard;
   channels: CbChannel[];
+  /** Quantos cards desta coluna desenhar — ver `CARDS_POR_COLUNA`. */
+  limite: number;
+  /** O último card solto no quadro (pode ser de outra coluna). */
+  recemSolto: string | null;
+  onMostrarMais: (stageId: string) => void;
   /**
    * contato → quantas automações agendadas (985). Um mapa só para o quadro
    * inteiro, buscado UMA vez no board: um hook por card seria uma requisição
@@ -354,6 +457,11 @@ function StageColumn({
 }) {
   const t = useTranslations("Pipelines.board");
   const { setNodeRef, isOver } = useDroppable({ id: stage.id });
+  // ⚠️ O contador do cabeçalho e o somatório continuam vindo de `deals`, a
+  // coluna INTEIRA: o teto é de desenho, não de dado, e um "100" no
+  // distintivo de uma coluna com 2.719 cards seria mentira.
+  const visiveis = cardsDaColuna(deals, limite, recemSolto);
+  const escondidos = deals.length - visiveis.length;
 
   return (
     // On mobile each column is `w-[85vw]` (with a reasonable min/max)
@@ -430,7 +538,7 @@ function StageColumn({
             {t("dropDealHere")}
           </div>
         ) : (
-          deals.map((deal) => (
+          visiveis.map((deal) => (
             <DraggableDealCard
               key={deal.id}
               deal={deal}
@@ -444,6 +552,21 @@ function StageColumn({
               onAbrirConversa={onAbrirConversa}
             />
           ))
+        )}
+
+        {/* Dentro da área de soltura, de propósito: quem arrasta até o fim
+            de uma coluna cheia solta em cima deste botão, e fora dela o
+            gesto cairia no vão entre o quadro e "Adicionar negócio". */}
+        {escondidos > 0 && (
+          <button
+            type="button"
+            onClick={() => onMostrarMais(stage.id)}
+            className="w-full rounded-lg py-2 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            {t("loadMoreCards", {
+              n: Math.min(CARDS_POR_COLUNA, escondidos),
+            })}
+          </button>
         )}
       </div>
 

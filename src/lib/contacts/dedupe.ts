@@ -51,6 +51,32 @@ export interface BuscaDeContato {
  * Pre-filters in SQL by the last-8-digit suffix (so we don't
  * pull every contact), then applies the strict `phonesMatch` in JS on
  * the small candidate set — the exact approach the webhook has used.
+ *
+ * ⚠️⚠️ **São DUAS passadas, e a ordem entre elas É o conserto: o casamento
+ * EXATO vem ANTES do tolerante.** `phonesMatch` casa pelos ÚLTIMOS 8
+ * DÍGITOS, então duas fichas de números DIFERENTES que terminam igual
+ * casam as duas — e numa passada só a escolhida era a que o heap
+ * entregasse primeiro. Medido na carga da Kommo: 4 pares assim, um deles
+ * DDD 82 contra DDD 15, que são duas PESSOAS. A mensagem do cliente da
+ * Paraíba ia para a conversa do cliente de São Paulo, e a escolha podia
+ * INVERTER de um dia para o outro — qualquer UPDATE numa das linhas (a
+ * carga grava `nome_fixado_em`; `avatar_checked_at` é recarimbado a cada
+ * 30 dias) move a tupla no heap e troca a ordem do seq scan. Onde não há
+ * colisão as duas passadas devolvem o MESMO candidato: o comportamento só
+ * muda onde já estava errado. Exato há no máximo um — o índice único
+ * `(account_id, phone_normalized)` da 022 não deixa existirem dois.
+ *
+ * ⚠️ **O `order` é a outra metade**, para o caso fuzzy-PURO — o nono dígito
+ * brasileiro, em que nenhum candidato é exato — também ser estável; sem ele
+ * a resposta continuaria saindo da ordem física da tabela. `created_at`
+ * primeiro porque a ficha MAIS ANTIGA é a que o escritório vem usando (a
+ * mesma régua do catálogo de etiquetas), e `id` como desempate porque
+ * `contacts.created_at` é NULLABLE (001) e empate é exatamente onde a ordem
+ * volta a ser a do heap. ⚠️ Ele vem ANTES do `.like` de propósito: para o
+ * PostgREST os dois são só parâmetros da mesma query e a posição não muda
+ * nada, mas os dublês dos testes de outros módulos terminam a cadeia no
+ * `.like` — pôr o `order` depois dele quebra aqueles testes sem quebrar
+ * nada aqui.
  */
 export async function findExistingContact(
   db: SupabaseClient,
@@ -66,13 +92,18 @@ export async function findExistingContact(
     .from("contacts")
     .select("*")
     .eq("account_id", accountId)
+    .order("created_at", { ascending: true, nullsFirst: false })
+    .order("id", { ascending: true })
     .like("phone", `%${suffix}`);
 
   if (error || !data) return { contato: null, falhou: true };
 
+  const candidatos = data as ExistingContact[];
+
   return {
     contato:
-      (data as ExistingContact[]).find((c) => phonesMatch(c.phone, phone)) ??
+      candidatos.find((c) => isExactMatch(c, phone)) ??
+      candidatos.find((c) => phonesMatch(c.phone, phone)) ??
       null,
     falhou: false,
   };

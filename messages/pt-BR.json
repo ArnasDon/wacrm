@@ -102,6 +102,7 @@
       "newTodayVsYesterday": "novos hoje em relação a ontem",
       "vsYesterday": "em relação a ontem",
       "openDeals": "{count} {count, plural, =1 {negócio aberto} other {negócios abertos}}",
+      "openDealsUnknown": "Não foi possível somar os negócios agora",
       "noChange": "Sem alteração {suffix}"
     },
     "quickActions": {
@@ -139,6 +140,8 @@
       "description": "Negócios abertos por etapa",
       "noOpenDeals": "Nenhum negócio aberto ainda",
       "noOpenDealsHint": "Crie negócios em Funis para ver a divisão por etapa aqui.",
+      "unknown": "Não foi possível somar os negócios",
+      "unknownHint": "A leitura não voltou completa, e cada etapa apareceria com menos do que realmente tem. Tente de novo em instantes.",
       "dealCount": "{count} {count, plural, =1 {negócio} other {negócios}}",
       "total": "Total",
       "ariaLabel": "Valor do funil por etapa"
@@ -1094,6 +1097,7 @@
       "addDeal": "Adicionar negócio",
       "stageAutomations": "{count, plural, =0 {Automações desta etapa} one {Automações desta etapa (# ativa)} other {Automações desta etapa (# ativas)}}",
       "stageConversations": "Ver as conversas desta etapa na caixa de entrada",
+      "loadMoreCards": "Carregar mais {n}",
       "cardFields": "Informações do card",
       "cardFieldsTitle": "Exibir no card",
       "cardFieldsHint": "Vale só neste dispositivo.",
@@ -1156,7 +1160,13 @@
       "toastReopened": "Negócio reaberto",
       "toastFailedDelete": "Falha ao excluir o negócio",
       "toastDeleted": "Negócio excluído",
-      "pipeline": "Funil"
+      "pipeline": "Funil",
+      "loadingContacts": "Carregando contatos…",
+      "contactSearchPlaceholder": "Buscar por nome ou telefone…",
+      "contactSearchHint": "Digite ao menos 2 letras para buscar.",
+      "contactSearchEmpty": "Nenhum contato encontrado para a busca.",
+      "contactSearchFailed": "A busca falhou. Digite de novo para tentar.",
+      "contactSearchMore": "Mostrando os {count} primeiros. Continue digitando para afinar."
     },
     "settings": {
       "managePipeline": "Gerenciar funil",
@@ -4173,7 +4183,6 @@
     "fieldContact": "Cliente",
     "contactPlaceholder": "Escolha um cliente",
     "loadingContacts": "Carregando clientes…",
-    "contactsLoadError": "Não foi possível carregar a lista de clientes. Feche e reabra para tentar de novo.",
     "contactSearchPlaceholder": "Buscar por nome ou telefone…",
     "contactSearchEmpty": "Nenhum cliente encontrado para a busca.",
     "fieldDueDate": "Data",
@@ -4192,7 +4201,10 @@
     "emptyForContact": "Nenhuma tarefa para este cliente ainda.",
     "showDone": "Ver {count} concluída(s)",
     "openCount": "{count, plural, =1 {1 tarefa aberta} other {# tarefas abertas}}",
-    "deleteConfirm": "Excluir \"{titulo}\"? Isso não pode ser desfeito."
+    "deleteConfirm": "Excluir \"{titulo}\"? Isso não pode ser desfeito.",
+    "contactSearchHint": "Digite ao menos 2 letras para buscar.",
+    "contactSearchFailed": "A busca falhou. Digite de novo para tentar.",
+    "contactSearchMore": "Mostrando os {count} primeiros. Continue digitando para afinar."
   },
   "TelaBloqueada": {
     "title": "Esta área não faz parte do seu perfil",

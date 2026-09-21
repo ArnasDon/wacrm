@@ -229,9 +229,18 @@ export default function DashboardPage() {
               // que este número tem em aberto.
               accountWideNote={canalFiltro ? tCanais('channelOriginated') : undefined}
               title={t('openDealsValue')}
-              value={formatCurrency(metrics.openDealsValue)}
+              // ⚠️ `openDeals` nulo é "não sabemos", nunca zero: a leitura dos
+              // negócios pode voltar incompleta, e um valor somado pela
+              // metade é indistinguível de um valor verdadeiro na tela.
+              value={
+                metrics.openDeals ? formatCurrency(metrics.openDeals.value) : '—'
+              }
               icon={DollarSign}
-              subtitle={t('openDeals', { count: metrics.openDealsCount })}
+              subtitle={
+                metrics.openDeals
+                  ? t('openDeals', { count: metrics.openDeals.count })
+                  : t('openDealsUnknown')
+              }
             />
             <MetricCard
               title={t('messagesSentToday')}

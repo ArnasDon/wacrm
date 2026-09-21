@@ -1257,11 +1257,9 @@ em "falhou". A margem caiu de ~90× para ~3×.
       estado "configure" e passou a medir — `LEAD 272 → MQL 53 → REUNIÃO 53 →
       PROPOSTA 0 → CONTRATO 0` —, exatamente como esta linha avisava que
       aconteceria. É a mudança que a equipe vê.
-- [ ] **3. Piloto em produção** — **os 33 leads já escolhidos**, rodando **a
-      carga de verdade com um filtro**, nunca um script à parte. Pré-requisito
-      que não se dispensa: o **livro-razão** de desfazer, escrito e ensaiado
-      ANTES. Rodar DUAS vezes prova a idempotência; conferir **na tela**, não só
-      no banco. Ver a seção "O piloto — os 33 leads", no fim.
+- [x] **3. Piloto em produção — FEITO em 21/09, e ele DERRUBOU a 1014.**
+      Os 33 leads, a carga de verdade com filtro, duas passadas, conferência na
+      tela e desfazer. Resultado na seção "O piloto — os 33 leads".
 - [ ] **4. Ensaio com volume** — a carga inteira contra um Postgres local com o
       schema do replay, para o que o piloto não vê: o estouro de subtransação,
       o tempo, o Kanban com 8.400 cards e o corte do disparo. Não existe banco
@@ -1316,6 +1314,45 @@ Cabral Baptista"), que é o contato de teste autorizado para envio real.
 
 **Conferir na tela, não só no banco** — e rodar DUAS vezes seguidas, que é a
 prova de idempotência.
+
+### O que o piloto encontrou (21/09/2026)
+
+⚠️⚠️ **A 1014 tinha passado em DOIS ensaios contra a produção — carga +
+reexecução e carga + desfazer — e o piloto a derrubou na PRIMEIRA tentativa.**
+É a diferença entre dado escolhido a dedo e dado de verdade, e é a
+justificativa inteira desta fase. Os três achados viraram a **1015**:
+
+1. **`deals.value` é NOT NULL com DEFAULT 0**, e a função passava NULL
+   explícito — que ANULA o default. Todo lead sem valor derrubava o lote com
+   23502. Os ensaios não pegaram porque os dois grupos escritos à mão tinham
+   valor.
+2. **`deals.currency` tem DEFAULT `'USD'`.** Medido: **980 dos 982** cards da
+   conta são BRL. A regra 11 deste contrato dizia "pode ficar no default" e
+   estava errada na prática — poria os 12.611 cards importados em dólar.
+3. **O livro-razão não cobria `contacts`.** A ficha é criada fora da função
+   (com os gatilhos LIGADOS, porque o espelho de e-mail depende deles), e
+   ficava fora do livro: o desfazer não a alcançava. Medido: a função abortou
+   e sobraram **24 contatos órfãos**.
+
+### O resultado depois da 1015
+
+| Prova | Medido |
+| --- | --- |
+| Carga | 30 cards, 112 eventos, 24 fichas · **62 ms** |
+| 2ª passada | **0/0/0** — os 30 `ja_migrado`; as 13 medidas idênticas |
+| Trilha escrita por gatilho | **0** — o silenciamento funcionou |
+| Cards fora de BRL · sem valor · sem contato | **0 · 0 · 0** |
+| Fila de automação na janela | **0** |
+| Datas dos cards | 2025‑06‑20 a 2026‑07‑20 · **0 datados de hoje** |
+| **Desfazer** | 30 cards, 24 fichas, 112 eventos, **0 retidas** |
+| Depois do desfazer | contatos 1216 · cards 980 · eventos 1326 — **o ponto exato** |
+
+**Na tela:** as três etapas novas do Trabalhista ‑ Comercial apareceram com
+**3 cards cada** e nomes reais; o Desempenho contou **408 leads "este mês"**
+(só os pré-existentes) e **423 no "Total"** com **3 contratos** — ou seja, os
+importados entram no funil **com as datas da Kommo**, sem poluir o mês
+corrente. Depois do desfazer, o quadro voltou a R$ 18.000,00 e as colunas às
+contagens originais.
 
 **Pré-requisito que não se dispensa:** o **livro-razão** de desfazer, escrito e
 ensaiado ANTES — cada linha criada, com tabela e id, gravada conforme escreve;

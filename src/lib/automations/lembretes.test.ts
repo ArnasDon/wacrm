@@ -424,31 +424,33 @@ describe('poda das travas', () => {
   })
 })
 
-describe('a leitura dos cancelamentos é PAGINADA', () => {
-  it('CRÍTICO: a busca de invitee.canceled passa por buscarPaginado e falha fechada', () => {
-    // Os eventos de cancelamento nunca são podados, e o PostgREST corta em
-    // ~1000 linhas sem avisar (`error` nulo, lista com cara de inteira). Sem
-    // o laço paginado, o cancelamento que casa com o alvo do ciclo pode não
-    // vir e o lembrete da reunião CANCELADA sai para o cliente (Codex, PR
-    // #236). `null` do laço é "não confie" e tem de cair na falha fechada.
+describe('a leitura dos cancelamentos é UMA consulta estreita', () => {
+  it('CRÍTICO: estreita às duplas (contato, horário), sem paginar, e falha fechada se vier incompleta', () => {
+    // Três rodadas do Codex (PR #236 e #237): sem paginar, o corte de ~1000
+    // do PostgREST perdia o cancelamento; paginando por `id` (uuid) ou por
+    // `recebido_em`, o filtro por `contact_id` — que MUDA: nasce nulo e vira
+    // nulo com ON DELETE SET NULL — deixava uma linha sair do recorte entre
+    // páginas. A saída é uma consulta só, estreitada também por `inicio`
+    // (timestamptz: compara instantes, como `mesmaReuniao`), com a contagem
+    // da mesma requisição cobrando que nada ficou de fora.
     const fonte = readFileSync('src/lib/automations/varrer-lembretes.ts', 'utf-8')
-    // Recorte SEMÂNTICO — do laço paginado até quem consome o resultado —, e
+    // Recorte SEMÂNTICO — de onde se monta o recorte até quem o consome —, e
     // não por número de caracteres: um comentário a mais empurrava o `if`
     // para fora da janela e o pino reprovava código correto.
-    const inicio = fonte.indexOf('buscarPaginado<')
+    const inicio = fonte.indexOf('const instantes')
     const fim = fonte.indexOf('semOsCancelados(encontrados')
     expect(inicio).toBeGreaterThan(-1)
     expect(fim).toBeGreaterThan(inicio)
     const trecho = fonte.slice(inicio, fim)
     expect(trecho).toContain("'invitee.canceled'")
-    expect(trecho).toContain('buscarPaginado')
-    // ⚠️ Ordem de INSERÇÃO: `id` é uuid aleatório, e paginar só por ele deixa
-    // uma linha nova entrar numa página já lida (Codex, PR #237).
-    expect(trecho).toMatch(/\.order\('recebido_em'/)
-    expect(trecho.indexOf(".order('recebido_em'")).toBeLessThan(trecho.indexOf(".order('id'"))
-    expect(trecho).toMatch(/\.range\(/)
+    expect(trecho).toMatch(/\.in\('contact_id'/)
+    expect(trecho).toMatch(/\.in\('inicio', instantes\)/)
     expect(trecho).toMatch(/count: 'exact'/)
-    expect(trecho).toMatch(/if \(!cancelados\)/)
+    expect(trecho).toMatch(/count > data\.length/)
+    // e nada de paginação por deslocamento sobre este recorte mutável
+    expect(trecho).not.toContain('buscarPaginado')
+    // valor que não parseia fica FORA da consulta (não pode derrubar o cast)
+    expect(trecho).toMatch(/Number\.isFinite/)
   })
 })
 

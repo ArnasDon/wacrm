@@ -1,5 +1,5 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
-import { buscarPaginado } from '@/lib/supabase/paginar'
+import { PAGINA } from '@/lib/supabase/paginar'
 import { supabaseAdmin } from './admin-client'
 import { dispararAutomacoes } from './engine'
 import {
@@ -22,6 +22,14 @@ import {
 // e o cron já é o lugar onde o tempo passa. Enfileirar seria dar uma volta
 // para chegar no mesmo ponto.
 // ------------------------------------------------------------
+
+/**
+ * Quantos cancelamentos cabem na leitura de UM ciclo de UMA automação. É o
+ * corte do PostgREST (`PAGINA`, ~1000): a consulta é estreitada às duplas
+ * (contato, horário) da janela, então o resultado real é de poucas linhas, e
+ * passar disto é tratado como leitura incompleta — falha fechada.
+ */
+const TETO_DE_CANCELADOS = PAGINA
 
 export interface ResultadoDaVarredura {
   /** Automações de lembrete examinadas neste ciclo. */
@@ -143,55 +151,66 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
       // (Codex, PR #236).
       let lista = encontrados
       if (!daAgenda && encontrados.length > 0) {
-        // ⚠️⚠️ PAGINADA, e leitura incompleta conta como FALHA (Codex, PR
-        // #236). Os eventos de cancelamento nunca são podados, e o PostgREST
-        // corta em ~1000 linhas SEM AVISAR: `error` volta nulo e a lista vem
-        // com cara de inteira. Numa conta madura, o cancelamento que casa
-        // com o alvo deste ciclo podia simplesmente não vir — e aí
-        // `semOsCancelados` manteria o alvo, e o lembrete da reunião
-        // CANCELADA sairia para o cliente. `null` de `buscarPaginado` é o
-        // contrato de "não confie", e aqui ele cai na falha FECHADA de
-        // sempre: a automação espera o ciclo seguinte.
+        // ⚠️⚠️ UMA consulta, ESTREITA, com a contagem da MESMA fotografia do
+        // banco — e leitura incompleta conta como FALHA. Três rodadas do
+        // Codex chegaram aqui (PR #236 e #237), cada uma derrubando a anterior:
+        //  1. sem paginar, o PostgREST corta em ~1000 linhas SEM AVISAR e o
+        //     cancelamento que casa com o alvo podia não vir — os eventos
+        //     nunca são podados;
+        //  2. paginando por `id`, que é uuid aleatório, uma linha nova caía
+        //     numa página já lida;
+        //  3. paginando por `recebido_em`, o FILTRO continuava mutável:
+        //     `contact_id` nasce nulo, é preenchido depois e vira nulo quando
+        //     o contato é apagado (ON DELETE SET NULL), então uma linha podia
+        //     SAIR do recorte entre duas páginas e empurrar outra para trás.
+        // Qualquer paginação por deslocamento sobre este recorte tem a mesma
+        // fresta. A saída é não precisar paginar: o que interessa são só os
+        // cancelamentos das duplas (contato, horário) DESTE ciclo — a janela
+        // dura no máximo 1 hora —, e `inicio` é `timestamptz`, então o
+        // `.in()` compara INSTANTES, exatamente como `mesmaReuniao`. O
+        // resultado cabe numa página; se um dia não couber, `count > length`
+        // (os dois da mesma requisição, logo da mesma transação) cai na falha
+        // FECHADA de sempre: a automação espera o ciclo seguinte. Mandar
+        // aviso de reunião cancelada é pior que atrasar um lembrete.
         const contatos = [...new Set(encontrados.map((a) => a.contact_id))]
-        const {
-          linhas: cancelados,
-          erro: erroCancelados,
-          motivo: motivoCancelados,
-        } = await buscarPaginado<{ contact_id: string; inicio: string | null }>(
-          async (inicioDaPagina, fimDaPagina) => {
-            const { data, error, count } = await db
-              .from('cb_calendly_eventos')
-              .select('contact_id, inicio', { count: 'exact' })
-              .eq('account_id', bruta.account_id)
-              .eq('evento', 'invitee.canceled')
-              .in('contact_id', contatos)
-              // ⚠️ Ordem de INSERÇÃO, nunca só `id` (Codex, PR #237). O `id`
-              // é `gen_random_uuid()` (0977): um cancelamento gravado entre
-              // duas páginas cairia no MEIO de uma página já lida, empurraria
-              // outra linha para a seguinte, e o laço veria uma duplicata e
-              // perderia justamente a linha nova — com a contagem batendo,
-              // porque a duplicata a infla. `recebido_em` é `DEFAULT now()`
-              // (NOT NULL): linha nova vai para o FIM e não mexe no que já
-              // foi lido. O `id` fica como desempate.
-              .order('recebido_em', { ascending: true })
-              .order('id', { ascending: true })
-              .range(inicioDaPagina, fimDaPagina)
-            return {
-              data: (data ?? null) as { contact_id: string; inicio: string | null }[] | null,
-              error,
-              count,
-            }
-          },
-        )
-        if (!cancelados) {
-          console.error(
-            '[automations] leitura dos cancelados falhou',
-            bruta.id,
-            motivoCancelados,
-            erroCancelados,
-          )
-          saida.falhas += 1
-          continue
+        // Valor que não parseia não casa com cancelamento nenhum: `inicio`
+        // vem do Calendly sempre em ISO, e `mesmaReuniao` só cai na igualdade
+        // de texto quando um dos lados NÃO parseia. Fica de fora da consulta
+        // sem perder nada — e sem derrubar a consulta inteira num cast
+        // inválido de `timestamptz`.
+        const instantes = [
+          ...new Set(
+            encontrados
+              .map((a) => Date.parse(a.valor))
+              .filter((ms) => Number.isFinite(ms))
+              .map((ms) => new Date(ms).toISOString()),
+          ),
+        ]
+        let cancelados: { contact_id: string; inicio: string | null }[] = []
+        if (instantes.length > 0) {
+          const {
+            data,
+            error: erroCancelados,
+            count,
+          } = await db
+            .from('cb_calendly_eventos')
+            .select('contact_id, inicio', { count: 'exact' })
+            .eq('account_id', bruta.account_id)
+            .eq('evento', 'invitee.canceled')
+            .in('contact_id', contatos)
+            .in('inicio', instantes)
+            .range(0, TETO_DE_CANCELADOS - 1)
+          if (erroCancelados || !data || count == null || count > data.length) {
+            console.error(
+              '[automations] leitura dos cancelados falhou ou veio incompleta',
+              bruta.id,
+              { count, lidas: data?.length ?? null },
+              erroCancelados,
+            )
+            saida.falhas += 1
+            continue
+          }
+          cancelados = data as { contact_id: string; inicio: string | null }[]
         }
         lista = semOsCancelados(encontrados, cancelados)
         saida.cancelados += encontrados.length - lista.length

@@ -6829,6 +6829,12 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     WhatsApp"). Numerada 1027 porque a faixa 1020 é da sessão da Kommo e a
     1030+ é do merge do upstream; aplicada depois da 1030, então a ordem por
     número não é a de aplicação (como a 1024, aplicada depois da 1026).
+    Aplicada em 21/09/2026 (histórico `20260921201327`), depois do replay do
+    CI no commit das correções da revisão adversarial e de dois ensaios em
+    transação desfeita. Ensaio REAL no mesmo dia (lote `ensaio-1`, 5 fichas,
+    540 mensagens): nenhuma conversa existente mudou situação, não lidas,
+    espera, responsável, `updated_at` nem canal; 0 notificação, 0 evento de
+    automação, gatilhos religados; conferido no preview.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

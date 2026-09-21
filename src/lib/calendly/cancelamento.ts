@@ -69,13 +69,23 @@ const ignorado = (detalhe: string, contactId: string | null = null): Processamen
  * dois caminhos.
  */
 export interface OpcoesDoCancelamento {
-  /** Quantas vezes reler o agendamento que ainda está sendo processado. */
-  tentativas?: number;
+  /** Quanto tempo, no total, esperar o agendamento terminar de ser processado. */
+  tetoDeEsperaMs?: number;
   /** Injetável para o teste não dormir de verdade. */
   esperar?: (ms: number) => Promise<void>;
 }
 
-const ESPERA_PADRAO_MS = 5_000;
+const ESPERA_ENTRE_LEITURAS_MS = 5_000;
+
+/**
+ * ⚠️ Dois minutos, não dez segundos (Codex, PR #235). O processamento do
+ * agendamento MEDIDO leva 1,4 a 3,5 s, mas o cadeado dele (`claim.ts`)
+ * permite até 4 minutos — uma automação com passo de rede pode passar
+ * folgadamente dos 10 s da primeira versão. E desistir aqui é DEFINITIVO: a
+ * linha do cancelamento já existe, então a reentrega do Calendly não tenta
+ * de novo. Fica abaixo do teto de processamento do próprio cancelamento.
+ */
+const TETO_DE_ESPERA_MS = 120_000;
 
 export async function processarCancelamento(
   db: SupabaseClient,
@@ -83,9 +93,22 @@ export async function processarCancelamento(
   c: Cancelamento,
   opcoes: OpcoesDoCancelamento = {},
 ): Promise<ProcessamentoDoAgendamento> {
-  if (c.reagendado) {
-    return ignorado("reagendamento: o horário novo chega no invitee.created e re-arma sozinho");
-  }
+  // ⚠️⚠️ REAGENDAMENTO NÃO SAI MAIS POR AQUI (Codex, PR #235). A primeira
+  // versão desistia quando `reagendado` era verdadeiro, com o argumento de
+  // que o horário novo re-arma sozinho — e isso deixava o horário ANTIGO
+  // destravado no intervalo em que a ficha ainda o guarda. Cliente que
+  // reagenda 40 minutos antes recebia o lembrete da reunião que acabou de
+  // desmarcar.
+  //
+  // Travar o antigo é seguro porque a chave da 935 inclui o VALOR: o horário
+  // novo tem chave própria. E quem decide é `mesmaReuniao` — se o
+  // `invitee.created` já escreveu o horário novo na ficha, nada casa e nada
+  // é travado. O sinalizador `reagendado` sobrou como INFORMAÇÃO no log.
+  //
+  // ⚠️ O que fica de fora, escrito: reagendar para o MESMO horário (o
+  // Calendly oferece a vaga que a própria pessoa está liberando). Ali a
+  // trava do antigo vale para o novo, e o lembrete não sai. É raro e é o
+  // lado menos ruim — o outro é mandar aviso de reunião desmarcada.
   if (!c.inicio) {
     return ignorado("o cancelamento não trouxe o horário da reunião");
   }
@@ -101,7 +124,8 @@ export async function processarCancelamento(
   // cancelamento já existe, então a reentrega do Calendly não tenta de novo.
   // Medido em produção: o processamento do agendamento leva 1,4 a 3,5 s.
   // Por isso relê algumas vezes antes de desistir (Codex, PR #235).
-  const tentativas = Math.max(1, opcoes.tentativas ?? 3);
+  const teto = opcoes.tetoDeEsperaMs ?? TETO_DE_ESPERA_MS;
+  const tentativas = Math.max(1, Math.ceil(teto / ESPERA_ENTRE_LEITURAS_MS));
   const esperar = opcoes.esperar ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   let contactId: string | null = null;
   let aindaProcessando = false;
@@ -124,7 +148,7 @@ export async function processarCancelamento(
       !!original &&
       (original.processando_desde != null || original.resultado === "recebido");
     if (!aindaProcessando || i === tentativas - 1) break;
-    await esperar(ESPERA_PADRAO_MS);
+    await esperar(ESPERA_ENTRE_LEITURAS_MS);
   }
   if (!contactId) {
     return ignorado(
@@ -177,7 +201,9 @@ export async function processarCancelamento(
 
   if (alvos.length === 0) {
     return ignorado(
-      "a data na ficha não é mais a da reunião cancelada — nada a desarmar",
+      c.reagendado
+        ? "reagendamento: a ficha já tem o horário novo — nada a desarmar"
+        : "a data na ficha não é mais a da reunião cancelada — nada a desarmar",
       contactId,
     );
   }
@@ -210,7 +236,7 @@ export async function processarCancelamento(
 
   return {
     resultado: "cancelado",
-    detalhe: `${alvos.length} lembrete(s) desarmado(s) para ${c.inicio}`,
+    detalhe: `${alvos.length} lembrete(s) desarmado(s) para ${c.inicio}${c.reagendado ? " (reagendamento: o horário novo re-arma sozinho)" : ""}`,
     contactId,
   };
 }

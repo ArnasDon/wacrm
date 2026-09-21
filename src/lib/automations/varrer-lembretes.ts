@@ -1,7 +1,12 @@
 import type { Automation, DateFieldTriggerConfig } from '@/types'
 import { supabaseAdmin } from './admin-client'
 import { dispararAutomacoes } from './engine'
-import { janelaDeBusca, motivoDeConfigInvalida, travaDeveSerDevolvida } from './lembretes'
+import {
+  janelaDeBusca,
+  motivoDeConfigInvalida,
+  semOsCancelados,
+  travaDeveSerDevolvida,
+} from './lembretes'
 
 // ------------------------------------------------------------
 // Varredura do gatilho de lembrete por data (migration 935).
@@ -31,6 +36,8 @@ export interface ResultadoDaVarredura {
    * `travaDeveSerDevolvida`.
    */
   devolvidos: number
+  /** Horários que um CANCELAMENTO do Calendly já travou (1013). */
+  cancelados: number
   falhas: number
 }
 
@@ -41,6 +48,7 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
     disparados: 0,
     repetidos: 0,
     devolvidos: 0,
+    cancelados: 0,
     falhas: 0,
   }
   try {
@@ -114,7 +122,38 @@ export async function varrerLembretes(): Promise<ResultadoDaVarredura> {
         continue
       }
 
-      for (const alvo of (alvos ?? []) as { contact_id: string; valor: string }[]) {
+      const encontrados = (alvos ?? []) as { contact_id: string; valor: string }[]
+
+      // ⚠️⚠️ HORÁRIO CANCELADO NÃO RECEBE LEMBRETE, venha de qual automação
+      // vier. O desarme do Calendly (1013) pré-arma uma trava por automação
+      // EXISTENTE e deixa a data na ficha; um lembrete criado depois do
+      // cancelamento nasceria sem trava e mandaria o aviso de uma reunião
+      // desmarcada (Codex, PR #235). A pergunta aqui é por (contato, valor).
+      //
+      // ⚠️ Falha FECHADA: sem poder conferir, esta automação fica para o
+      // ciclo seguinte (a janela dura 1 hora e o laço roda a cada ~15 s).
+      // Mandar aviso de reunião cancelada é pior que atrasar um lembrete.
+      let lista = encontrados
+      if (encontrados.length > 0) {
+        const { data: cancelados, error: erroCancelados } = await db
+          .from('cb_automation_reminders')
+          .select('contact_id, valor')
+          .eq('account_id', bruta.account_id)
+          .eq('motivo', 'cancelamento')
+          .in('contact_id', [...new Set(encontrados.map((a) => a.contact_id))])
+        if (erroCancelados) {
+          console.error('[automations] leitura dos cancelados falhou', bruta.id, erroCancelados)
+          saida.falhas += 1
+          continue
+        }
+        lista = semOsCancelados(
+          encontrados,
+          (cancelados ?? []) as { contact_id: string; valor: string }[],
+        )
+        saida.cancelados += encontrados.length - lista.length
+      }
+
+      for (const alvo of lista) {
         // ⚠️ A TRAVA VEM ANTES DO DISPARO, e o INSERT é a própria
         // reivindicação. Ler-depois-escrever abriria janela para dois ciclos
         // sobrepostos mandarem o mesmo lembrete duas vezes ao cliente.

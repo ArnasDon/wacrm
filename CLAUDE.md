@@ -4331,12 +4331,27 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   evento cancelado. `src/lib/calendly/cancelamento.ts` (puro + o I/O, com
   teste) e o caminho próprio na rota do webhook. O que morde código novo:
   - ⚠️⚠️ **REAGENDAR TAMBÉM CANCELA**, e a ordem das duas entregas não é
-    garantida. São DUAS guardas, e nenhuma dispensa a outra: `reagendado`
-    (o `rescheduled` do invitee OU o `new_invitee`) e, independente dela,
-    `mesmaReuniao` — só se desarma o lembrete cujo valor GRAVADO NA FICHA
-    ainda é o instante da reunião cancelada. Sem a segunda, um
-    `invitee.created` processado primeiro deixaria a ficha com o horário
-    novo e o cancelamento calaria o lembrete de uma reunião que existe.
+    garantida. Quem decide é `mesmaReuniao`: só se desarma o lembrete cujo
+    valor GRAVADO NA FICHA ainda é o instante da reunião cancelada. Se o
+    `invitee.created` já escreveu o horário novo, nada casa e nada é
+    travado. ⚠️ O reagendamento **NÃO** sai por uma porta própria: a 1ª
+    versão desistia com `reagendado`, e isso deixava o horário ANTIGO
+    destravado no intervalo em que a ficha ainda o guarda — quem reagenda 40
+    min antes recebia o lembrete da reunião que acabou de desmarcar (Codex,
+    PR #235). Travar o antigo é seguro porque a chave da 935 inclui o VALOR.
+    O que fica de fora, escrito: reagendar para o MESMO horário trava o
+    novo junto — raro, e o lado menos ruim.
+  - ⚠️⚠️ **A VARREDURA consulta os cancelamentos por (contato, valor), não
+    por automação.** O desarme pré-arma uma linha por automação EXISTENTE e
+    a data continua na ficha: sem essa consulta, um lembrete CRIADO DEPOIS
+    do cancelamento nasceria sem trava e mandaria o aviso de uma reunião
+    desmarcada (`semOsCancelados`, puro e testado; Codex, PR #235). Falha
+    FECHADA — não conseguindo conferir, a automação fica para o ciclo
+    seguinte.
+  - ⚠️ **A espera pelo agendamento em processamento é de 2 MINUTOS**, não de
+    10 segundos: o processamento medido leva 1,4 a 3,5 s, mas o cadeado dele
+    permite até 4 min, e desistir aqui é DEFINITIVO (a linha do cancelamento
+    já existe, a reentrega do Calendly não tenta de novo).
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras

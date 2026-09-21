@@ -2677,8 +2677,7 @@
         "colStatus": "Status",
         "colFunil": "Pipeline",
         "motivo": {
-          "assinatura_incompleta": "the Calendly webhook subscription does not receive cancellations — click Re-subscribe",
-          "token_invalido": "Meta rejected the token",
+              "token_invalido": "Meta rejected the token",
           "sem_permissao": "the token lacks ads_read on this account",
           "conta_nao_encontrada": "ad account not found",
           "conta_invalida": "invalid account id (use act_… or digits only)",
@@ -2746,6 +2745,7 @@
           "heuristica": "detected question"
         },
         "motivo": {
+          "assinatura_incompleta": "the Calendly webhook subscription does not receive cancellations — click Re-subscribe",
           "token_invalido": "Calendly rejected the token",
           "sem_permissao": "Calendly refused (permission, or plan without webhooks)",
           "nao_encontrado": "resource not found on Calendly",

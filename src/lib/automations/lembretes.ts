@@ -192,3 +192,25 @@ export function motivoDeConfigInvalida(cfg: DateFieldTriggerConfig): string | nu
 export function travaDeveSerDevolvida(r: { erro?: string; executadas: number }): boolean {
   return !r.erro && r.executadas === 0
 }
+
+/**
+ * Tira da lista de alvos os horários que um CANCELAMENTO já travou.
+ *
+ * ⚠️⚠️ A trava de cancelamento vale para QUALQUER lembrete daquele
+ * (contato, valor) — inclusive os criados DEPOIS do cancelamento (Codex, PR
+ * #235). O desarme do Calendly pré-arma uma linha por automação EXISTENTE, e
+ * a data continua na ficha de propósito; sem esta varredura, uma automação de
+ * lembrete criada no intervalo entre o cancelamento e o horário da reunião
+ * nasceria sem trava e mandaria o aviso de um evento desmarcado.
+ *
+ * O par é (contato, valor) porque é isso que identifica O HORÁRIO — a
+ * automação é justamente o que não se pode exigir que já exista.
+ */
+export function semOsCancelados<T extends { contact_id: string; valor: string }>(
+  alvos: readonly T[],
+  cancelados: readonly { contact_id: string; valor: string }[],
+): T[] {
+  if (cancelados.length === 0) return [...alvos]
+  const mortos = new Set(cancelados.map((c) => `${c.contact_id}\u0000${c.valor}`))
+  return alvos.filter((a) => !mortos.has(`${a.contact_id}\u0000${a.valor}`))
+}

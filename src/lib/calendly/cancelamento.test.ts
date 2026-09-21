@@ -133,11 +133,28 @@ describe("processarCancelamento", () => {
     });
   });
 
-  it("CRÍTICO: reagendamento não desarma nada", async () => {
+  it("CRÍTICO: reagendamento TRAVA o horário antigo enquanto a ficha ainda o guarda", async () => {
+    // Quem reagenda 40 min antes recebia o lembrete da reunião que acabou de
+    // desmarcar: o `invitee.canceled` chegava primeiro e a versão antiga
+    // desistia. Travar o antigo é seguro — a chave inclui o VALOR, e o
+    // horário novo tem chave própria (Codex, PR #235).
     const { db, travas } = bancoFalso({
       original: { contact_id: "contato-1" },
       automacoes: [LEMBRETE("a24", "campo-data")],
       valores: [{ custom_field_id: "campo-data", value: "2026-09-25T17:00:00Z" }],
+    });
+    const r = await processarCancelamento(db, "conta-1", { ...CANCELAMENTO, reagendado: true });
+    expect(r.resultado).toBe("cancelado");
+    expect(travas).toHaveLength(1);
+    expect(r.detalhe).toContain("reagendamento");
+  });
+
+  it("CRÍTICO: reagendamento com a ficha JÁ no horário novo não trava nada", async () => {
+    // O outro lado da corrida: o `invitee.created` foi processado primeiro.
+    const { db, travas } = bancoFalso({
+      original: { contact_id: "contato-1" },
+      automacoes: [LEMBRETE("a24", "campo-data")],
+      valores: [{ custom_field_id: "campo-data", value: "2026-10-02T17:00:00Z" }],
     });
     const r = await processarCancelamento(db, "conta-1", { ...CANCELAMENTO, reagendado: true });
     expect(r.resultado).toBe("ignorado");
@@ -253,7 +270,7 @@ describe("processarCancelamento — corridas (Codex, PR #235)", () => {
     const { db } = bancoFalso({
       original: { contact_id: null, resultado: "recebido", processando_desde: "2026-09-21T01:00:00Z" },
     });
-    const r = await processarCancelamento(db, "conta-1", CANCELAMENTO, { ...semDormir, tentativas: 2 });
+    const r = await processarCancelamento(db, "conta-1", CANCELAMENTO, { ...semDormir, tetoDeEsperaMs: 10_000 });
     expect(r.resultado).toBe("ignorado");
     expect(r.detalhe).toContain("podem ter ficado armados");
   });

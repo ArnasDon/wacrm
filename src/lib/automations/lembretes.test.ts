@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   LARGURA_MS,
+  semOsCancelados,
   PISO_ANTES_MS,
   deslocamentoEmMs,
   janelaDeBusca,
@@ -362,5 +363,31 @@ describe('travaDeveSerDevolvida', () => {
     // ter mandado mensagem. Devolver a trava aqui mandaria de novo.
     expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 0 }))).toBe(false)
     expect(travaDeveSerDevolvida(r({ erro: 'banco fora', executadas: 2 }))).toBe(false)
+  })
+})
+
+describe('semOsCancelados', () => {
+  const alvo = (contact_id: string, valor: string) => ({ contact_id, valor })
+
+  it('CRÍTICO: tira o horário que um cancelamento travou, seja de qual automação for', () => {
+    // A trava do cancelamento é gravada por automação EXISTENTE; um lembrete
+    // criado depois não teria trava nenhuma e mandaria o aviso de uma reunião
+    // desmarcada (Codex, PR #235). Por isso a pergunta é (contato, valor).
+    const alvos = [alvo('c1', 'T17'), alvo('c2', 'T18')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T18')])
+  })
+
+  it('mesmo contato, OUTRO horário, continua valendo', () => {
+    const alvos = [alvo('c1', 'T17'), alvo('c1', 'T19')]
+    expect(semOsCancelados(alvos, [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c1', 'T19')])
+  })
+
+  it('mesmo horário, OUTRO contato, continua valendo', () => {
+    expect(semOsCancelados([alvo('c2', 'T17')], [{ contact_id: 'c1', valor: 'T17' }])).toEqual([alvo('c2', 'T17')])
+  })
+
+  it('sem cancelamento nenhum, a lista passa inteira', () => {
+    const alvos = [alvo('c1', 'T17')]
+    expect(semOsCancelados(alvos, [])).toEqual(alvos)
   })
 })

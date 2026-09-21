@@ -2670,8 +2670,7 @@
         "colStatus": "Status",
         "colFunil": "Funil",
         "motivo": {
-          "assinatura_incompleta": "a assinatura do webhook no Calendly não recebe cancelamentos — clique em Reassinar",
-          "token_invalido": "a Meta recusou o token",
+              "token_invalido": "a Meta recusou o token",
           "sem_permissao": "o token não tem permissão ads_read nesta conta",
           "conta_nao_encontrada": "conta de anúncios não encontrada",
           "conta_invalida": "id da conta inválido (use act_… ou só os números)",
@@ -2739,6 +2738,7 @@
           "heuristica": "pergunta detectada"
         },
         "motivo": {
+          "assinatura_incompleta": "a assinatura do webhook no Calendly não recebe cancelamentos — clique em Reassinar",
           "token_invalido": "o Calendly recusou o token",
           "sem_permissao": "o Calendly recusou (permissão ou plano sem webhooks)",
           "nao_encontrado": "recurso não encontrado no Calendly",

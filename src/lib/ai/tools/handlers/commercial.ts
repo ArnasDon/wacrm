@@ -6,6 +6,7 @@ import {
 import type { ToolCall, ToolExecutionResult, ToolExecutor } from '../loop-types'
 import type { ToolHandlerContext } from './context'
 import { requireString, optionalString, ToolInputError } from './parse-input'
+import { notifyMeetingBooked } from '@/lib/notifications/notify-team'
 
 // ============================================================
 // Bloco 3-A — handlers for check_commercial_availability /
@@ -149,6 +150,19 @@ export async function bookCommercialMeetingHandler(
     })
 
     if (outcome.status === 'booked') {
+      // Aviso à equipa (Mattermost + WhatsApp) — best-effort, nunca
+      // bloqueia a confirmação ao lead. Ver notify-team.ts.
+      void notifyMeetingBooked({
+        accountId: ctx.accountId,
+        contactName: leadName ?? null,
+        company,
+        startsAt,
+        timezone: 'Europe/Lisbon',
+        eventUrl: outcome.htmlLink ?? null,
+      }).catch((err) => {
+        console.error('[commercial handler] notifyMeetingBooked falhou:', err)
+      })
+
       return {
         isError: false,
         content: JSON.stringify({

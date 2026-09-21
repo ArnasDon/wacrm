@@ -92,6 +92,16 @@ export interface AiConfig {
    * cai no DEFAULT_MAX_HANDOFF_BLOCKED_ATTEMPTS (2).
    */
   maxHandoffBlockedAttempts?: number | null
+
+  /**
+   * Migração 053 — números E.164 que recebem aviso automático por
+   * WhatsApp em dois eventos do modo comercial: handoff para a equipa
+   * (team_requested_at) e reunião marcada (book_commercial_meeting).
+   * Ver src/lib/notifications/notify-team.ts. Vazio por omissão: sem
+   * números configurados, o aviso por WhatsApp simplesmente não
+   * dispara (o aviso por Mattermost continua independente disto).
+   */
+  notifyPhoneNumbers?: string[]
 }
 
 /** A single conversation turn in the shape both providers accept. */

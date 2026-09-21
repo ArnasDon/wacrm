@@ -22,10 +22,11 @@ interface AiConfigRow {
   team_phone_numbers: string[] | null
   handoff_message: string | null
   max_handoff_blocked_attempts: number | null
+  notify_phone_numbers: string[] | null
 }
 
 const CONFIG_COLUMNS =
-  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message, max_handoff_blocked_attempts'
+  'provider, model, api_key, system_prompt, is_active, auto_reply_enabled, auto_reply_max_per_conversation, handoff_agent_id, embeddings_api_key, commercial_system_prompt, commercial_mode_enabled, commercial_booking_url, commercial_welcome_message, commercial_calendar_id, team_phone_numbers, handoff_message, max_handoff_blocked_attempts, notify_phone_numbers'
 
 /**
  * Load and decrypt the account's AI config for *use* (draft or
@@ -105,6 +106,7 @@ export async function loadAiConfig(
     // só defesa extra para linhas antigas escritas antes da coluna
     // existir ou literais de teste que não a definem.
     maxHandoffBlockedAttempts: row.max_handoff_blocked_attempts ?? 2,
+    notifyPhoneNumbers: row.notify_phone_numbers ?? [],
   }
 }
 

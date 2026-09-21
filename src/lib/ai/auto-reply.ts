@@ -5,6 +5,7 @@ import { retrieveKnowledge } from './knowledge'
 import { generateReply, generateReplyWithTools } from './generate'
 import { buildSystemPrompt } from './defaults'
 import { buildHandoffSummary, sendHandoffNotice } from './handoff'
+import { notifyHandoff } from '@/lib/notifications/notify-team'
 import {
   checkHandoffReadiness,
   buildMissingInfoNudge,
@@ -23,6 +24,12 @@ import {
 import { COMMERCIAL_TOOLS } from './tools/commercial-schema'
 import { createCommercialToolExecutor } from './tools/handlers/commercial'
 import type { GenerateResult } from './types'
+
+/** Base do link da conversa no EterWA, usado no aviso de handoff
+ *  (notify-team.ts). O inbox é uma página única que lê a conversa a
+ *  abrir por query string (`?c=<conversationId>`), não por rota
+ *  `/inbox/<id>` — ver src/app/(dashboard)/inbox/page.tsx. */
+const ETERWA_INBOX_URL = process.env.ETERWA_INBOX_URL ?? 'https://eterwa.etergrowth.com/inbox'
 
 interface DispatchArgs {
   /** Tenancy key — drives config, contact, and whatsapp_config lookups. */
@@ -337,6 +344,24 @@ export async function dispatchInboundToAiReply(
           update.handoff_incomplete = true
         }
         await db.from('conversations').update(update).eq('id', conversationId)
+
+        // Aviso à equipa (Mattermost + WhatsApp) — best-effort, nunca
+        // bloqueia nem desfaz o handoff já persistido acima. Ver
+        // notify-team.ts.
+        void notifyHandoff({
+          accountId,
+          conversationId,
+          contactName: contactRow?.name ?? null,
+          company: contactRow?.company ?? null,
+          phone: contactRow?.phone ?? null,
+          email: contactRow?.email ?? null,
+          reason: (conv.escalation_reason as string | null) ?? null,
+          lastMessages: messages.slice(-3),
+          conversationUrl: `${ETERWA_INBOX_URL}?c=${encodeURIComponent(conversationId)}`,
+        }).catch((err) => {
+          console.error('[ai auto-reply] notifyHandoff falhou:', err)
+        })
+
         return
       }
 

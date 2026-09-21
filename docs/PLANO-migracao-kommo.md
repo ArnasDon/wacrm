@@ -911,8 +911,12 @@ errado. Adivinhar ali é inventar identidade — e `findExistingContact` casa
 pelos ÚLTIMOS 8 DÍGITOS, então um número reconstruído errado FUNDE a ficha com
 a de um cliente real, que é o dano irreversível desta migração.
 
-⚠️⚠️ **DOIS deles têm desfecho real e precisam de decisão do operador ANTES do
-corte** — sem telefone eles somem do funil de fechados:
+⚠️ **DECIDIDO pelo operador em 21/09: os 32 ficam de fora, os dois com
+desfecho inclusive.** A carga pula e lista; ninguém preenche telefone na Kommo
+para recuperá-los. Consequência aceita e escrita: o funil de fechados nasce com
+**dois contratos a menos** do que a Kommo mostra (um Protocolado e um Ganho), e
+é por isso que a conferência de contagem do bloco E tem de somar 32 aos não
+migrados em vez de exigir igualdade com a Kommo. Os dois são:
 | Lead | Nome | Etapa | O que é |
 | --- | --- | --- | --- |
 | #27593737 | Kailane Silva Gomes | Trabalhista › Protocolado | contrato (a etapa carimba `ganho`); o contato se chama "91985184761" |

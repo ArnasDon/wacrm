@@ -1490,6 +1490,7 @@ function StepEditor({
             <Input
               value={(cfg.url as string) ?? ""}
               onChange={(e) => set({ url: e.target.value })}
+              placeholder="https://example.com/webhook"
               className="bg-muted text-foreground"
             />
           </FieldBlock>
@@ -1497,8 +1498,15 @@ function StepEditor({
             <Textarea
               value={(cfg.body_template as string) ?? ""}
               onChange={(e) => set({ body_template: e.target.value })}
-              className="min-h-20 bg-muted font-mono text-xs text-foreground"
+              placeholder={`{\n  "phone": "{{ contact.phone }}",\n  "name": "{{ contact.name }}",\n  "message": "{{ message.text }}"\n}`}
+              className="min-h-24 bg-muted font-mono text-xs text-foreground"
             />
+            <p className="mt-1 text-[11px] text-muted-foreground">
+              {t("config.bodyTemplateHint", {
+                defaultValue:
+                  "Supported: {{ contact.phone }}, {{ contact.name }}, {{ contact.email }}, {{ message.text }}, {{ conversation.id }}, {{ vars.* }}",
+              })}
+            </p>
           </FieldBlock>
         </>
       )

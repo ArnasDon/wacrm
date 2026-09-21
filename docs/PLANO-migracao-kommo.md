@@ -529,7 +529,7 @@ errado em produção.** O que eles mudaram no plano:
 | | O que se descobriu | Onde isso mudou o plano |
 | --- | --- | --- |
 | 1 | **A decisão 17 não é executável**: o PostgREST não tem transação de várias instruções | contrato A.1 — RPC por lote |
-| 2 | **Transação única derruba o CRM** na 64ª linha (estouro de subtransação) | contrato A.1 — lotes de 1.000–2.000 |
+| 2 | **Transação única derruba o CRM** por volta da 32ª linha (estouro de subtransação) | contrato A.1 — lotes de 1.000–2.000 |
 | 3 | **Os gatilhos escrevem trilha datada de hoje** com `reconstructed = false`: ela cai no fio do cliente, ancora "na etapa desde" e acende "ganhos hoje" no Meu dia | contrato A.5 — reparo por lote |
 | 4 | **Falta o evento de criação**: ~1.100 leads nunca mudaram de etapa e ficariam invisíveis nas três vistas do funil | contrato C.12 |
 | 5 | **Telefone com separadores faz a ingestão DESCARTAR a mensagem do cliente**, para sempre e em silêncio | contrato D.18 |
@@ -582,8 +582,8 @@ transação única.** As duas formas óbvias estão erradas, em direções opost
   noutra são duas transações, com uma janela real entre os commits em que o
   agendador (que drena a cada 15 s) enxerga e reivindica os eventos. A
   atomicidade que a decisão 17 promete **não existe** por esse caminho.
-- **Uma transação única para tudo**: por volta da **64ª linha** de `deals` o
-  Postgres estoura o cache de subtransações (cada gatilho abre a sua), e a
+- **Uma transação única para tudo**: por volta da **32ª linha** de `deals` o
+  Postgres estoura o cache de subtransações, e a
   partir daí toda leitura concorrente — webhook, tela, cron — paga uma consulta
   de SLRU por tupla. A carga leva minutos a dezenas de minutos nesse estado, e
   o CRM inteiro fica progressivamente mais lento, sem erro e sem log.
@@ -620,7 +620,14 @@ ele, a pergunta "já migrei este lead?" vira uma varredura completa por card
 **mas ele responde por contato, não por lead**, e por isso não serve de chave
 de reexecução para `deals`.
 
-**4. São SEIS gatilhos em `deals`**, não dois: `set_updated_at` (0001),
+⚠️ **4. São SEIS gatilhos em `deals`, mas só QUATRO abrem subtransação — e
+por OPERAÇÃO são DOIS.** Conferido no catálogo em 21/09 (`prosrc` com bloco
+`EXCEPTION`): `cb_deals_log_event`, `cb_deals_log_event_update`,
+`cb_deals_enfileira_evento` e `cb_deals_enfileira_evento_update` abrem;
+`set_updated_at` e `cb_deals_aplica_resultado_trigger` não. Um INSERT dispara
+dois dos que abrem; um UPDATE, os outros dois. Com o cache de 64 subxids, o
+estouro é por volta da **32ª linha** do lote, não da 64ª — uma versão anterior
+desta seção dizia "cada gatilho abre a sua" e contava seis. Os seis são: `set_updated_at` (0001),
 `cb_deals_log_event` e `..._update` (912), `cb_deals_enfileira_evento` e
 `..._update` (933) e `cb_deals_aplica_resultado_trigger` (**BEFORE** INSERT OR
 UPDATE OF stage_id, 950). O último reescreve `NEW.status` a partir do
@@ -675,7 +682,7 @@ rollback):**
 | `xmin` do topo | **não funciona** | — | — | — | — | — |
 | **anti-join de ids** — guardar os ids que já existiam para os cards do lote e reparar o resto | sim | sim | sim (6 por linha) | sim | não | não |
 | **piso de tempo** — `occurred_at >= clock_timestamp()` do início do lote | sim | sim | sim | sim | não | não |
-| **`ALTER TABLE deals DISABLE TRIGGER USER`** | n/a | **não** | **não** | sim | `ACCESS EXCLUSIVE` (breve) | **sim** |
+| **`ALTER TABLE deals DISABLE TRIGGER USER`** ← **ESCOLHIDA** | n/a | **não** | **não** | sim | `ShareRowExclusive` (leitor não espera) | só ENQUANTO o lote dura, e é transacional |
 | **`SET LOCAL session_replication_role = 'replica'`** | n/a | **não** | **não** | **NÃO** | não | não |
 
 Medidos lado a lado no mesmo lote (um card novo + um card movido que já tinha
@@ -702,14 +709,66 @@ NÃO foi barrado. Numa carga de 12.611 linhas isso troca uma violação que o
 banco pegaria na hora por cards apontando para nada.
 
 ⚠️ Desligar os gatilhos é a única saída que também mata o **estouro de
-subtransação** (seis por linha) e dispensa apagar `cb_automation_events` — os
+subtransação** (dois por linha) e dispensa apagar `cb_automation_events` — os
 três problemas de uma vez. `DISABLE TRIGGER USER` preserva as FKs, ao
 contrário do modo replica; em troca vale para TODAS as sessões enquanto durar,
 o que numa janela de carga controlada (conexões sem funil padrão, Calendly
 desligado) é aceitável, e até desejável.
 
-**Qual usar é decisão de projeto da 1013**, não desta seção — e quem decidir
-escreve aqui o porquê. O que está fechado é o que NÃO se usa: `xmin`.
+**DECIDIDO em 21/09, e o número é 1014 — não 1013** (a outra sessão aplicou
+`1013_cb_cancelamento_do_calendly` em produção às 01:39Z enquanto isto era
+escrito; conferir `ls` E o histórico IMEDIATAMENTE antes de criar o arquivo,
+porque já divergiram sete vezes).
+
+⚠️⚠️ **A saída é a (c): `ALTER TABLE deals DISABLE TRIGGER USER` DENTRO da
+transação de cada lote** — e o que a escolheu foi uma medição que derruba a
+objeção óbvia e um argumento que nenhuma das outras saídas resolve:
+
+1. **É DDL TRANSACIONAL — rollback religa sozinho.** Era esta a objeção:
+   "se a carga morrer entre o DISABLE e o ENABLE, o CRM fica sem os 16
+   gatilhos, em silêncio". MEDIDO em 21/09 contra a produção: um bloco que
+   desliga os 6 gatilhos de `deals` e termina em `RAISE` deixa os **sete**
+   (contando `contact_tags`) de volta em `ligado`. Não existe estado
+   "desligado e esquecido" se o DISABLE estiver dentro do lote.
+2. ⚠️⚠️ **É a ÚNICA saída em que a regra 8 do contrato é alcançável.**
+   `set_updated_at` é `BEFORE UPDATE` **sem lista de colunas** e faz
+   `NEW.updated_at = now()` em qualquer escrita. MEDIDO: pedindo
+   `2024-03-15`, com o gatilho ligado a coluna ficou `2026-09-21 02:06`; com
+   ele desligado, ficou `2024-03-15` exato. Ou seja: **com os gatilhos
+   ligados, os ~1.150 cards MOVIDOS não têm como receber a data da Kommo** —
+   e o cabeçalho do Kanban conta "ganhos/perdidos este mês" por `updated_at`.
+   Nenhuma das duas saídas de reparo toca nisso: elas mexem em
+   `cb_lead_events`, não em `deals`. (Achado do painel de projeto.)
+3. **A trava é `ShareRowExclusiveLock`, não `ACCESS EXCLUSIVE`** — MEDIDO.
+   Leitor concorrente **não espera**; escritor de `deals` espera o lote
+   terminar. Com lotes curtos isso é uma pausa, não uma perda: o CRM
+   enfileira e escreve depois, com trilha e fila normais. É muito melhor que
+   a alternativa de "os gatilhos não rodaram para ele", que seria silenciosa.
+4. **As FKs continuam de pé**: os gatilhos de integridade são INTERNOS e
+   `DISABLE TRIGGER USER` não os toca — ao contrário do modo replica.
+5. Some o reparo (e com ele o furo de concorrência do P1 do Codex), some o
+   estouro de subtransação e some a limpeza de `cb_automation_events`.
+
+**O preço, escrito:** a carga passa a dever escrever à mão o que os gatilhos
+faziam — o `status` a partir do `resultado` da etapa (o que a 950 fazia), o
+`updated_at`, e a trilha retroativa. É exatamente o que se quer: escrita certa
+de primeira, em vez de escrita errada e depois remendada.
+
+⚠️ **Sobre a (d), `session_replication_role = 'replica'`: FICA FORA, e há uma
+contradição de medição registrada de propósito.** Eu medi duas vezes contra a
+produção que o `SET` funciona (pela Management API, como `postgres`, inclusive
+numa função `SECURITY DEFINER` chamada com `SET ROLE service_role`). O painel
+mediu o catálogo e achou o oposto: `postgres` tem `rolsuper = false`,
+`pg_parameter_acl` está vazia e
+`has_parameter_privilege('postgres','session_replication_role','SET')`
+responde **false** (conferido por mim: é verdade). As duas medições são reais;
+o que nenhuma das duas cobriu é o caminho de PRODUÇÃO — PostgREST entrando
+como `authenticator` e assumindo `service_role`. Como a (d) foi recusada por
+mérito (derruba as FKs e silencia TODO gatilho da sessão, o espelho de e-mail
+da 1000/1001 inclusive), a contradição fica anotada e não precisa ser
+resolvida. Quem quiser ressuscitá-la resolve primeiro.
+
+O que está fechado de qualquer forma é o que NÃO se usa: `xmin`.
 
 Se o caminho for REPARAR (as duas primeiras linhas da tabela), o `tag_added`
 do gatilho da 912 grava `deal_id` NULO e é alcançado por
@@ -759,6 +818,10 @@ função de lote, com o mesmo reparo da regra 5.
 
 10. O par `(stage_id, pipeline_id)` conferido no script — a FK é COMPOSTA e
     devolve 23503 cru.
+    ⚠️ **`pipeline_stages` NÃO tem `account_id`** (conferido no catálogo em
+    21/09; `pipelines` tem). Guarda escrita como `s.account_id = p_account_id`
+    morre em **42703**, e o recorte por conta tem de passar por `pipelines`.
+    (P0 do painel de projeto.)
 11. `currency` pode ficar no default: o app formata em BRL e não lê a coluna.
 
 ### C. `cb_lead_events`
@@ -858,6 +921,18 @@ O conserto barato é **na Kommo, antes do corte**: preencher o telefone dos dois
 contatos. Aí eles entram pela porta normal, sem exceção no código. O resto dos
 32 é lixo declarado ("APAGAR" ×3, "Teste" ×3, "test4", "Autolead: Teste",
 "Lead #NNNNN") e pode ser descartado sem perda.
+
+⚠️⚠️ **18c. A PESSOA é resolvida pela régua do NONO DÍGITO, nunca por
+    igualdade de `phone_normalized`.** Medido em 21/09: dos 13.046 telefones
+    distintos da Kommo, **821** casam com uma ficha daqui por igualdade e
+    **outros 320 casam SÓ pela variante do nono dígito** — `553172090560` na
+    Kommo é `5531972090560` aqui, a mesma pessoa. Uma carga que resolva por
+    igualdade cria **320 fichas novas para clientes que já estão no CRM**, com
+    o histórico repartido entre as duas, e o índice único não impede nada
+    (são chaves diferentes). 821 + 320 = 1.141, que é a origem dos "~1.150 que
+    já existem aqui". A decisão sempre foi esta; o risco é a IMPLEMENTAÇÃO —
+    a mesma família do `(pipeline_id, status_id)` da regra 9b. (P0 do painel
+    de projeto, remedido por mim.)
 
 19. Casar por `mesmoNumero` sobre TODOS os candidatos do sufixo, numa consulta
     **ordenada**. Um só candidato → liga; nenhum → cria; mais de um → "para

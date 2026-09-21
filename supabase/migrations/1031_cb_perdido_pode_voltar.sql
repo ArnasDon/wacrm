@@ -2,8 +2,9 @@
 -- 1031 — Card PERDIDO que entra numa etapa neutra VOLTA a ficar aberto
 --   (1) o gatilho da 950, para todo escritor; (2) a RPC das automações (934),
 --   para o "Mover card" que leva o perdido à etapa em que ele já está; e
---   (3) a mesma RPC só escreve no card que a BUSCA do motor achou se ele
---   continua no status em que foi achado
+--   (3) a mesma RPC só escreve se o card continua no status esperado — o que
+--   a BUSCA do motor viu, ou o que a própria execução gravou —, e devolve o
+--   status que gravou
 --
 -- Decisão do operador (21/09/2026), revendo a metade "perdido" da 950: o
 -- lead desqualificado — em tese perdido — pode voltar a ser qualificado
@@ -104,8 +105,17 @@ REVOKE EXECUTE ON FUNCTION cb_deals_aplica_resultado() FROM PUBLIC, anon, authen
 --    AINDA está no status em que foi achado. Entre a busca e a escrita alguém
 --    pode tê-lo marcado ganho, e o CASE acima protege só o STATUS: a etapa
 --    mudaria assim mesmo, e o card do cliente que acabou de fechar voltaria
---    para o funil comercial (Codex, PR #245). Nulo = alvo explícito (o card do
---    evento de funil, ou o já fixado na execução): escreve como antes.
+--    para o funil comercial (Codex, PR #245). Nulo = escreve sem conferir (o
+--    card do evento de funil, antes da primeira escrita da execução).
+--
+--    A RPC DEVOLVE o status gravado (`status_gravado`, depois do gatilho da
+--    950): o motor o fixa junto com o card, e as escritas seguintes da MESMA
+--    execução — inclusive depois de um "Aguardar" de dias — esperam esse
+--    status. Sem isso o card fixado atravessava a espera sem guarda, e o
+--    ganho marcado no meio virava perdido no passo seguinte (revisão do PR
+--    #245). ⚠️ A coluna NÃO se chama `status`: coluna de saída de RETURNS
+--    TABLE é variável em escopo, e colidiria com `deals.status` no UPDATE —
+--    o 42702 que a 1030 consertou.
 -- ------------------------------------------------------------
 DROP FUNCTION IF EXISTS cb_atualizar_negocio(uuid, uuid, uuid, uuid, text, jsonb);
 
@@ -118,7 +128,7 @@ CREATE OR REPLACE FUNCTION cb_atualizar_negocio(
   p_cadeia          jsonb,
   p_status_esperado text DEFAULT NULL
 )
-RETURNS TABLE (ok boolean, motivo text)
+RETURNS TABLE (ok boolean, motivo text, status_gravado text)
 LANGUAGE plpgsql
 SECURITY DEFINER
 SET search_path TO 'public'
@@ -127,6 +137,7 @@ DECLARE
   v_deal      deals;
   v_funil     uuid;
   v_resultado text;
+  v_gravado   text;
 BEGIN
   -- Posse. O motor roda em service-role e ignora RLS, então o filtro por
   -- conta aqui é a única barreira entre um `deal_id` vindo do contexto e o
@@ -134,12 +145,12 @@ BEGIN
   SELECT * INTO v_deal FROM deals
    WHERE id = p_deal_id AND account_id = p_account_id;
   IF NOT FOUND THEN
-    RETURN QUERY SELECT false, 'negocio nao encontrado nesta conta';
+    RETURN QUERY SELECT false, 'negocio nao encontrado nesta conta', NULL::text;
     RETURN;
   END IF;
 
   IF p_status IS NOT NULL AND p_status NOT IN ('open', 'won', 'lost') THEN
-    RETURN QUERY SELECT false, format('status invalido: %s', p_status);
+    RETURN QUERY SELECT false, format('status invalido: %s', p_status), NULL::text;
     RETURN;
   END IF;
 
@@ -149,13 +160,13 @@ BEGIN
     SELECT s.pipeline_id, s.resultado INTO v_funil, v_resultado
       FROM pipeline_stages s WHERE s.id = p_stage_id;
     IF v_funil IS NULL THEN
-      RETURN QUERY SELECT false, 'etapa nao existe';
+      RETURN QUERY SELECT false, 'etapa nao existe', NULL::text;
       RETURN;
     END IF;
     IF NOT EXISTS (
       SELECT 1 FROM pipelines p WHERE p.id = v_funil AND p.account_id = p_account_id
     ) THEN
-      RETURN QUERY SELECT false, 'etapa pertence a um funil de outra conta';
+      RETURN QUERY SELECT false, 'etapa pertence a um funil de outra conta', NULL::text;
       RETURN;
     END IF;
   END IF;
@@ -178,17 +189,19 @@ BEGIN
                        END
    WHERE id = p_deal_id AND account_id = p_account_id
      -- 3) o card achado pela busca só é escrito no status em que foi achado.
-     AND (p_status_esperado IS NULL OR status = p_status_esperado);
+     AND (p_status_esperado IS NULL OR status = p_status_esperado)
+  RETURNING deals.status INTO v_gravado;
 
   IF NOT FOUND THEN
     RETURN QUERY SELECT false,
       CASE WHEN p_status_esperado IS NULL THEN 'negocio nao encontrado nesta conta'
            ELSE format('o negocio deixou de estar %s durante a automacao', p_status_esperado)
-      END;
+      END,
+      NULL::text;
     RETURN;
   END IF;
 
-  RETURN QUERY SELECT true, NULL::text;
+  RETURN QUERY SELECT true, NULL::text, v_gravado;
 END;
 $$;
 
@@ -286,7 +299,7 @@ BEGIN
      WHERE d.status = 'lost'
      ORDER BY d.id, s.position, s.id LIMIT 1;
     IF v_deal IS NOT NULL THEN
-      SELECT r.ok, r.motivo INTO v_ok, v_motivo
+      SELECT r.ok, r.motivo, r.status_gravado INTO v_ok, v_motivo, v_status
         FROM cb_atualizar_negocio(v_deal, v_conta, NULL, v_etapa, NULL, '[]'::jsonb, 'lost') r;
       IF NOT v_ok THEN
         RAISE EXCEPTION '1031: a RPC recusou mover o perdido: %', v_motivo;
@@ -294,6 +307,10 @@ BEGIN
       SELECT status INTO v_depois FROM deals WHERE id = v_deal;
       IF v_depois IS DISTINCT FROM 'open' THEN
         RAISE EXCEPTION '1031: o perdido movido pela RPC para etapa neutra ficou %', v_depois;
+      END IF;
+      -- O que a RPC devolve é o que ficou gravado — o motor fixa isso.
+      IF v_status IS DISTINCT FROM v_depois THEN
+        RAISE EXCEPTION '1031: a RPC devolveu % e gravou %', v_status, v_depois;
       END IF;
       v_provas := array_append(v_provas, 'a RPC reabre');
     END IF;

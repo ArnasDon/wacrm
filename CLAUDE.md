@@ -3019,8 +3019,9 @@ mostra o rótulo certo sem mudar nada. Ao mesclar upstream, manter o wrapper.
 
 ⚠️ **Etapa com RESULTADO (950): quem carimba ganho/perdido é o BANCO.**
 `pipeline_stages.resultado` ('ganho'|'perdido'|null) + gatilho BEFORE em
-`deals`: ENTRAR numa etapa marcada grava o status — para os CINCO escritores
-de etapa (painel da conversa, arrasto, formulário, RPC das automações, API).
+`deals`: ENTRAR numa etapa marcada grava o status — para os SEIS escritores
+de etapa (painel da conversa, arrasto, lista do funil, formulário, RPC das
+automações, API).
 O que morde código novo:
 
 - ⚠️ **GANHO que sai para etapa neutra CONTINUA ganho** — decisão do
@@ -3036,8 +3037,8 @@ O que morde código novo:
   ACHADA. ⚠️ O gatilho não distingue "não mexeu no status" de "mandou 'lost'
   de novo": PATCH da API v1 com `status: 'lost'` + etapa neutra sobre card JÁ
   perdido volta aberto (está na doc da API). O espelho
-  (`statusAoEntrarNaEtapa`) recebe o status de antes e o pedido, e há pino
-  lendo o SQL da 1031.
+  (`statusAoEntrarNaEtapa`) recebe só o status de antes — os dois chamadores
+  mudam só a etapa —, e há pino lendo o SQL da 1031.
 - ⚠️ **Etapa IGUAL não passa pelo gatilho**, e é o caso comum: o card marcado
   perdido pelo BOTÃO continua na etapa em que estava. Por isso a RPC das
   automações (`cb_atualizar_negocio`, redefinida na 1031) reabre o perdido que
@@ -3055,17 +3056,37 @@ O que morde código novo:
   do caso para o comercial antes da 1031. Escopo (`stageInScope`) e estadia
   (`so-na-etapa.ts`) continuam só com card ABERTO, de propósito: perdido não
   "está" em etapa nenhuma para esses dois.
-  ⚠️⚠️ **O card achado pela BUSCA só é escrito no status em que foi achado**
-  (`p_status_esperado`, o 7º argumento da RPC na 1031): `negocioAlvo` devolve
-  o id E o status visto, e o UPDATE só casa se o status não mudou. Sem isso,
-  quem marcasse o card como ganho entre a busca e a escrita teria o card
-  ARRASTADO de volta ao comercial — o CASE protege o status, não a etapa
-  (Codex, PR #245, 3ª rodada). Card do contexto (evento de funil, ou o já
-  fixado) vai com `null`: é alvo explícito, e o ganho que entrou em "Contrato
-  Fechado" pode seguir para o Jurídico. A recusa encerra a execução com o
-  motivo no registro.
+  ⚠️⚠️ **As CONDIÇÕES de etapa e de status usam o MESMO alvo** — ao contrário
+  do escopo e da estadia —, e é decisão, não esquecimento: condição e ação
+  falam do mesmo card, e a automação "Typebot · Lead e respostas" só puxa o
+  desqualificado de volta porque `deal_stage == Desqualificado` enxerga o card
+  perdido. O preço (Codex, PR #245, 4ª rodada): regra SEM card no contexto
+  que pergunta "está na etapa X?" responde sim para o card perdido que ficou
+  em X (marcado pelo botão). Quem quer agir só com card aberto soma
+  `deal_status == open`. Medido em 21/09: só as automações do Typebot têm
+  condição de funil nesta conta. Automação disparada por evento de funil não
+  é afetada — ela carrega o card no contexto desde sempre.
+  ⚠️⚠️ **Contato com card GANHO não tem o PERDIDO puxado.** É cliente, e o
+  perdido é história de outra área (a Kommo trouxe um card por pessoa e por
+  área). Sem a regra, quem digitasse o telefone de um cliente no formulário
+  PÚBLICO do Typebot reabriria o perdido antigo dele, e a trava de etapa
+  passaria a gravar e-mail e respostas por cima da ficha (revisão do PR
+  #245). Para esse contato vale o de antes da 1031: "nenhum negócio".
+  ⚠️⚠️ **Toda escrita confere o status esperado** (`p_status_esperado`, o 7º
+  argumento da RPC na 1031): o que a BUSCA viu, ou o que a própria execução
+  gravou por último (`context.deal_status_fixado` — a RPC devolve o status
+  gravado, depois do gatilho). O UPDATE só casa se o status não mudou. Sem
+  isso, quem marcasse o card como ganho entre a busca e a escrita — ou
+  durante um "Aguardar" de dias, com o card já fixado — teria o card
+  arrastado de volta ao comercial ou o ganho trocado por perdido: o CASE
+  protege o status, não a etapa (Codex e revisão, PR #245). Só o card do
+  EVENTO de funil, antes da primeira escrita da execução, vai sem conferir: é
+  alvo explícito, e o ganho que entrou em "Contrato Fechado" segue para o
+  Jurídico (a partir daí, fixado como `won`). A recusa encerra a execução
+  com o motivo no registro.
 - ⚠️⚠️ **O card da execução fica FIXADO no contexto** no primeiro "Mover
-  card"/"Marcar status" (`context.deal_id`, e viaja para o "Aguardar"). Sem
+  card"/"Marcar status" (`context.deal_id` + `deal_status_fixado`, e os dois
+  viajam para o "Aguardar" e para a automação acionada). Sem
   isso cada passo procurava de novo, e depois de um passo que FECHA o card o
   seguinte cairia no perdido de outro funil do mesmo contato (a Kommo trouxe
   um card por pessoa e por área). Por isso `executeAutomation` passa uma CÓPIA
@@ -4601,7 +4622,7 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ingestão), então automação restrita a uma conexão AINDA dispara para
     lead novo. Quem apertar essa regra desliga o Calendly para lead novo.
   - ⚠️⚠️ **Lead novo não tem card, e `move_deal_stage` LANÇA nesse caso**
-    ("nenhum negócio aberto ou perdido para este contato"), encerrando a execução. A
+    ("nenhum negócio aberto (nem perdido de quem não tem ganho)…"), encerrando a execução. A
     automação do Calendly precisa de um passo **`create_deal`** antes dele —
     `create_deal` desiste em silêncio quando já há card ("um card por
     contato"), então serve aos dois casos. Sem ele, todo lead novo termina
@@ -5452,7 +5473,10 @@ genérico está em `docs/webhooks.md`. O que morde:
   Por isso toda escrita (etiqueta, e-mail, respostas, campanha) e todo
   movimento vivem no ramo SIM de uma condição `deal_stage == Lead - Type e
   Forms`: só o card que o próprio Typebot criou (ou que alguém pôs ali) é
-  tocado. Cliente com card adiante, noutro funil ou perdido não ganha nada.
+  tocado. Cliente com card adiante ou noutro funil não ganha nada. ⚠️ O card
+  PERDIDO é alcançado de propósito (a "Lead e respostas" puxa o desqualificado
+  de volta), MENOS o de contato que tem card GANHO — esse é cliente, e fica
+  intocado (ver "Etapa com RESULTADO").
   Tirar a trava faz o formulário reescrever e-mail, campanha e "Tamanho da
   Divida" de quem já é cliente — o e-mail é o que liga tl;dv e Asaas.
 - ⚠️ **Nenhuma automação do Typebot grava o NOME.** O lead novo nasce com o
@@ -6871,10 +6895,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     numa etapa neutra, sem troca de status no mesmo update e com a etapa
     achada, volta `open`; ganho continua ganho) e `cb_atualizar_negocio` (a
     RPC das automações da 934: mover para etapa neutra reabre o perdido na
-    mesma escrita, inclusive para a etapa em que ele já está; e só escreve no
-    card achado pela busca se ele continua no status visto). ⚠️ A RPC muda de
-    ASSINATURA — ganha `p_status_esperado text DEFAULT NULL` —, por isso
-    DROP + CREATE; quem chama sem ele (o app anterior) cai no DEFAULT. A
+    mesma escrita, inclusive para a etapa em que ele já está; só escreve se o
+    card continua no status esperado; e devolve o status gravado). ⚠️ A RPC
+    muda de ASSINATURA — ganha `p_status_esperado text DEFAULT NULL` e a
+    coluna de saída `status_gravado` —, por isso DROP + CREATE; quem chama
+    sem o argumento (o app anterior) cai no DEFAULT e ignora a coluna nova. A
     conferência CHAMA as duas funções com dado real, num subbloco desfeito por
     `P1031` (a guarda recusa, a RPC reabre, o gatilho reabre, o ganho fica).
     Ensaiada contra a produção numa transação desfeita antes de aplicar.

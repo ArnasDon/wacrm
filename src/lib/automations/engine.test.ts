@@ -28,6 +28,8 @@ const h = vi.hoisted(() => ({
     depoisDeMover: null as null | (() => void),
     /** Preenchido, `cb_atualizar_negocio` RECUSA com este motivo (a guarda do status esperado, 1031). */
     rpcMoverRecusa: null as string | null,
+    /** O status que `cb_atualizar_negocio` devolve como gravado (o motor o fixa no contexto, 1031). */
+    rpcStatusGravado: 'open' as string,
     /** Preenchido, a LEITURA de `deals` devolve este erro (18/09). */
     erroNoNegocio: null as string | null,
     /**
@@ -380,7 +382,10 @@ vi.mock('./admin-client', () => {
             return Promise.resolve({ data: [{ ok: false, motivo: state.rpcMoverRecusa }], error: null });
           }
           state.depoisDeMover?.();
-          return Promise.resolve({ data: [{ ok: true, motivo: null }], error: null });
+          return Promise.resolve({
+            data: [{ ok: true, motivo: null, status_gravado: state.rpcStatusGravado }],
+            error: null,
+          });
         }
         return Promise.resolve({ data: null, error: null });
       },
@@ -444,6 +449,7 @@ beforeEach(() => {
   h.state.rpcMover = [];
   h.state.depoisDeMover = null;
   h.state.rpcMoverRecusa = null;
+  h.state.rpcStatusGravado = 'open';
   h.state.dealSelects = [];
   h.state.dealInserts = [];
   h.state.automations = [];
@@ -754,6 +760,8 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     h.state.depoisDeMover = () => {
       if (h.state.dealPorStatus) h.state.dealPorStatus = { won: { id: 'd-contrato' }, lost: { id: 'd-outro-funil' } };
     };
+    // "Contrato Fechado" é etapa marcada: a RPC devolve o GANHO que gravou.
+    h.state.rpcStatusGravado = 'won';
     h.state.automations = [automationWithUpdateStep()];
     h.state.steps = [moverPara('etapa-contrato-fechado'), { ...moverPara('etapa-cliente-ativo'), id: 's-mover-2', position: 1 }];
 
@@ -765,9 +773,10 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     });
 
     expect(h.state.rpcMover.map((r) => r.p_deal_id)).toEqual(['d-contrato', 'd-contrato']);
-    // O 2º "Mover" vai no card FIXADO — alvo explícito, sem a guarda da busca:
-    // ele acabou de ser ganho pelo passo anterior, e isso é esperado.
-    expect(h.state.rpcMover.map((r) => r.p_status_esperado)).toEqual(['open', null]);
+    // O 2º "Mover" vai no card FIXADO e espera o status que o 1º GRAVOU (o
+    // ganho da etapa marcada): quem fechou, segue para o Jurídico; quem
+    // mudasse o status no meio faria a RPC recusar.
+    expect(h.state.rpcMover.map((r) => r.p_status_esperado)).toEqual(['open', 'won']);
   });
 
   it('o card fixado NÃO vaza para a automação seguinte do mesmo disparo', async () => {
@@ -804,7 +813,86 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     });
 
     expect(h.state.rpcMover).toHaveLength(0);
-    expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'won'))).toBe(false);
+  });
+
+  it('CRÍTICO: contato com card GANHO não tem o PERDIDO puxado — o formulário público não alcança a ficha de cliente', async () => {
+    // Revisão do PR #245: cliente com o caso ganho (foi para o Jurídico) e um
+    // card perdido antigo de outra área. Sem a regra, o Typebot reabriria o
+    // perdido e a trava de etapa gravaria e-mail e respostas na ficha dele.
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido' }, won: { id: 'd-ganho' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover).toHaveLength(0);
+    expect(JSON.stringify(h.state.logUpdates)).toContain('nenhum negócio aberto');
+  });
+
+  it('CRÍTICO: o card fixado vai com o status que a execução GRAVOU — a espera não apaga a guarda', async () => {
+    // Revisão do PR #245: "Mover" → "Aguardar 3 dias" → "Marcar perdido". O
+    // contexto que acorda da fila traz o card E o status fixado; se o
+    // operador ganhou o card durante a espera, a RPC recusa.
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [moverPara('etapa-lead')];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { deal_id: 'd-fixado', deal_status_fixado: 'open' },
+    });
+
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-fixado', p_status_esperado: 'open' });
+  });
+
+  it('o "Aguardar" leva o card E o status fixados para a fila', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: { id: 'd-1' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      moverPara('etapa-lead'),
+      { id: 's-espera', automation_id: 'a1', step_type: 'wait', position: 1, parent_step_id: null, step_config: { amount: 3, unit: 'days' } },
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.esperasEnfileiradas).toHaveLength(1);
+    expect(h.state.esperasEnfileiradas[0].context).toMatchObject({ deal_id: 'd-1', deal_status_fixado: 'open' });
+  });
+
+  it('a condição de etapa enxerga o PERDIDO sem aberto nem ganho — é como o Typebot puxa o desqualificado', async () => {
+    // A 4ª rodada do Codex pediu condição só-aberto; mantido: condição e ação
+    // falam do mesmo card, e `deal_stage == Desqualificado` só passa assim.
+    h.state.owned = { id: 'c1' };
+    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido', stage_id: 'etapa-desq' } };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [
+      { id: 'c-desq', automation_id: 'a1', step_type: 'condition', position: 0, parent_step_id: null, step_config: { subject: 'deal_stage', operand: 'etapa-desq' } },
+      { ...moverPara('etapa-lead'), id: 's-puxa', parent_step_id: 'c-desq', branch: 'yes' },
+    ];
+
+    await runAutomationsForTrigger({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: {},
+    });
+
+    expect(h.state.rpcMover).toHaveLength(1);
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-lead', p_status_esperado: 'lost' });
   });
 
   it('o card do EVENTO de funil é alvo explícito — vai sem a guarda da busca', async () => {

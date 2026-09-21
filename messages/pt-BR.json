@@ -1956,7 +1956,7 @@
         "status_open": "Reaberto",
         "moveToLabel": "Mover para a etapa",
         "pickStage": "Escolha a etapa",
-        "moveHelp": "Move o card do gatilho. Sem card no gatilho, move o negócio aberto mais recente do contato — ou, sem nenhum aberto, o perdido mais recente, que volta a ficar aberto. Negócio ganho nunca é movido por aqui."
+        "moveHelp": "Move o card do gatilho. Sem card no gatilho, move o negócio aberto mais recente do contato — ou, sem nenhum aberto, o perdido mais recente, que volta a ficar aberto (menos de quem já tem negócio ganho: cliente não é puxado de volta). Se o status do card mudar enquanto a automação roda, o passo para em vez de mexer nele."
       },
       "lembrete": {
         "campoLabel": "Campo de data",

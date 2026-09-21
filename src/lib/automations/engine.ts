@@ -29,6 +29,7 @@ import type {
   WebhookTriggerConfig,
   AutomationLogStatus,
   CreateTaskStepConfig,
+  DealStatus,
 } from '@/types';
 import { supabaseAdmin } from './admin-client';
 import { resolverDestinatario } from './destinatario';
@@ -139,6 +140,14 @@ export interface AutomationContext {
    * JSONB em `automation_pending_executions.context`.
    */
   deal_id?: string | null;
+  /**
+   * O status que a ÚLTIMA escrita desta execução deixou no card fixado em
+   * `deal_id` (1031). As escritas seguintes o mandam como `p_status_esperado`:
+   * se alguém mudou o status no meio — inclusive durante um "Aguardar" de
+   * dias —, a RPC recusa em vez de sobrescrever (o ganho viraria perdido).
+   * Ausente = card do evento ainda não escrito: vai sem conferir.
+   */
+  deal_status_fixado?: DealStatus | null;
   /** Etapa de destino do evento de funil — a que o card ACABOU de entrar. */
   to_stage_id?: string | null;
   /**
@@ -1707,7 +1716,10 @@ async function runStep(
     case 'set_deal_status': {
       const cfg = step.step_config as MoveDealStepConfig;
       const alvo = await negocioAlvo(db, args);
-      if (!alvo) throw new Error('nenhum negócio aberto ou perdido para este contato');
+      if (!alvo)
+        throw new Error(
+          'nenhum negócio aberto (nem perdido de quem não tem ganho) para este contato'
+        );
 
       const ehMover = step.step_type === 'move_deal_stage';
       if (ehMover && !cfg.stage_id)
@@ -1733,10 +1745,11 @@ async function runStep(
         p_stage_id: ehMover ? cfg.stage_id : null,
         p_status: ehMover ? null : cfg.status,
         p_cadeia: cadeiaDoContexto(args),
-        // ⚠️ Card achado pela BUSCA só é escrito no status em que foi achado
-        // (1031). Entre a busca e a escrita alguém pode tê-lo marcado ganho —
-        // e o ganho nunca é alvo: sem a guarda, o "Mover" arrastaria de volta
-        // ao comercial o card do cliente que acabou de fechar (Codex, PR #245).
+        // ⚠️ A RPC só escreve se o card continua no status esperado (1031): o
+        // que a BUSCA viu, ou o que a própria execução gravou por último.
+        // Entre uma coisa e outra alguém pode tê-lo marcado ganho — até dias
+        // depois, se houve um "Aguardar" —, e sem a guarda o "Mover" o
+        // arrastaria de volta ao comercial (Codex e revisão, PR #245).
         p_status_esperado: alvo.statusVisto,
       });
       if (error) throw new Error(`${step.step_type} falhou: ${error.message}`);
@@ -1746,13 +1759,14 @@ async function runStep(
           `${step.step_type} recusado: ${r?.motivo ?? 'motivo desconhecido'}`
         );
 
-      // ⚠️ O card desta execução fica FIXADO no contexto (1031): sem isto
-      // cada passo procura de novo, e depois de um passo que fecha o card
-      // (entrar em "Contrato Fechado" o ganha) o "Mover" seguinte cairia no
-      // PERDIDO de outro funil do mesmo contato — a Kommo trouxe um card por
-      // pessoa e por área. Viaja para o "Aguardar" junto com o resto do
-      // contexto.
+      // ⚠️ O card desta execução fica FIXADO no contexto (1031), com o status
+      // que acabou de ser gravado: sem isto cada passo procura de novo, e
+      // depois de um passo que fecha o card (entrar em "Contrato Fechado" o
+      // ganha) o "Mover" seguinte cairia no PERDIDO de outro funil do mesmo
+      // contato — a Kommo trouxe um card por pessoa e por área. Os dois viajam
+      // para o "Aguardar" junto com o resto do contexto.
       if (!args.context.deal_id) args.context.deal_id = alvo.id;
+      args.context.deal_status_fixado = (r.status_gravado as DealStatus | null) ?? null;
 
       return ehMover
         ? `negócio movido para ${cfg.stage_id}`
@@ -2619,6 +2633,13 @@ async function evaluateCondition(
  * ⚠️ O contexto guarda `to_stage_id`, que é onde o card estava quando o evento
  * nasceu. Depois de um `wait` de 240 horas isso é história, não fato. Estas
  * condições existem justamente para perguntar ao banco.
+ *
+ * ⚠️ O card é o MESMO que o "Mover card" mexeria (`negocioAlvo`) — inclusive
+ * o PERDIDO, quando o contato não tem aberto (1031). De propósito: condição e
+ * ação falam do mesmo card, e é assim que a automação do Typebot puxa de volta
+ * o desqualificado (`deal_stage == Desqualificado`). Consequência escrita:
+ * "está na etapa X?" responde sim para o card perdido parado em X; quem quer
+ * agir só com card aberto soma `deal_status == open` (Codex, PR #245).
  */
 async function negocioAtualDoContexto(
   args: ExecuteArgs
@@ -2679,19 +2700,26 @@ function stepChannel(
  * que foi transferido para o funil do Jurídico): o aviso do Calendly de um
  * cliente que marca outra reunião arrastaria o card do caso dele para o
  * comercial. Lá, "nenhum negócio" continua sendo a resposta.
+ * ⚠️⚠️ E contato com card GANHO não tem o PERDIDO puxado: é cliente, e o
+ * perdido é história de outra área (a Kommo trouxe um card por pessoa e por
+ * área). Sem isto, quem digitasse o telefone de um cliente no formulário
+ * público do Typebot reabriria o perdido antigo dele, e a trava de etapa
+ * passaria a gravar e-mail e respostas por cima da ficha (revisão do PR #245).
  *
- * `statusVisto` é o status em que a BUSCA achou o card (nulo quando o alvo
- * veio do contexto): quem escreve o repassa à RPC, que só escreve se ele não
- * mudou no meio — é o que mantém o ganho fora do alcance mesmo quando alguém
- * fecha o card entre a busca e a escrita.
+ * `statusVisto` é o status que a escrita deve encontrar: o que a BUSCA viu,
+ * ou — card do contexto — o que a própria execução gravou por último
+ * (`deal_status_fixado`; ausente no card do evento ainda não escrito). A RPC
+ * só escreve se ele não mudou no meio.
  */
 async function negocioAlvo(
   db: ReturnType<typeof supabaseAdmin>,
   args: ExecuteArgs
-): Promise<{ id: string; statusVisto: 'open' | 'lost' | null } | null> {
-  if (args.context.deal_id) return { id: args.context.deal_id, statusVisto: null };
+): Promise<{ id: string; statusVisto: DealStatus | null } | null> {
+  if (args.context.deal_id) {
+    return { id: args.context.deal_id, statusVisto: args.context.deal_status_fixado ?? null };
+  }
   if (!args.contactId) return null;
-  for (const status of ['open', 'lost'] as const) {
+  const maisRecente = async (status: DealStatus): Promise<string | null> => {
     const { data, error } = await db
       .from('deals')
       .select('id')
@@ -2702,9 +2730,13 @@ async function negocioAlvo(
       .limit(1)
       .maybeSingle();
     if (error) throw new Error(`busca do negócio falhou: ${error.message}`);
-    if (data?.id) return { id: data.id as string, statusVisto: status };
-  }
-  return null;
+    return (data?.id as string | undefined) ?? null;
+  };
+  const aberto = await maisRecente('open');
+  if (aberto) return { id: aberto, statusVisto: 'open' };
+  if (await maisRecente('won')) return null;
+  const perdido = await maisRecente('lost');
+  return perdido ? { id: perdido, statusVisto: 'lost' } : null;
 }
 
 /**

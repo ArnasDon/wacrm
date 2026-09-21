@@ -27,17 +27,18 @@ export function statusPorResultado(
 /**
  * O status que uma mudança PARA `stageId` produz, ou null para "mantém".
  *
- * `statusAntes` é o do card ANTES do update; `statusPedido`, o que o MESMO
- * update grava explicitamente (ausente = não mexe no status). Os dois
- * existem porque o gatilho só reabre quando o update NÃO trocou o status:
- * perdido → etapa neutra continuando perdido volta aberto; quem pediu outra
- * coisa junto fica com o que pediu.
+ * `statusAntes` é o do card ANTES do update. Os dois chamadores (o arrasto
+ * no quadro e a etapa na lista do funil) só mudam a ETAPA, e é esse o caso em
+ * que o gatilho reabre: perdido → etapa neutra volta aberto.
+ *
+ * ⚠️ É só o PALPITE otimista: o `statusAntes` é o da memória da tela, que pode
+ * ser de antes de outro operador mexer no card. Os chamadores trocam o
+ * palpite pelo status que o BANCO devolve na escrita (Codex, PR #245).
  */
 export function statusAoEntrarNaEtapa(
   stages: Pick<PipelineStage, "id" | "resultado">[],
   stageId: string,
   statusAntes: string | null | undefined,
-  statusPedido?: string | null,
 ): DealStatus | null {
   const etapa = stages.find((s) => s.id === stageId);
   const carimbo = statusPorResultado(etapa?.resultado);
@@ -45,7 +46,6 @@ export function statusAoEntrarNaEtapa(
   // Etapa desconhecida aqui = não se sabe se é neutra: não afirma nada (o
   // gatilho também só reabre com a etapa achada).
   if (!etapa) return null;
-  const depois = statusPedido ?? statusAntes;
-  if (statusAntes === "lost" && depois === "lost") return "open";
+  if (statusAntes === "lost") return "open";
   return null;
 }

@@ -55,9 +55,6 @@ describe("statusAoEntrarNaEtapa", () => {
   // 1031 (21/09/2026): o lead desqualificado pode voltar a ser qualificado.
   it("CRÍTICO: PERDIDO que entra em etapa neutra volta ABERTO", () => {
     expect(statusAoEntrarNaEtapa(stages, "b", "lost")).toBe("open");
-    // 'lost' mandado de novo junto com a etapa (a API v1) também reabre: o
-    // gatilho não distingue "não mexeu" de "mandou o mesmo"
-    expect(statusAoEntrarNaEtapa(stages, "b", "lost", "lost")).toBe("open");
   });
 
   it("CRÍTICO: GANHO que sai para etapa neutra continua ganho (a transferência do jurídico)", () => {
@@ -69,10 +66,6 @@ describe("statusAoEntrarNaEtapa", () => {
     expect(statusAoEntrarNaEtapa(stages, "a", "lost")).toBe("won");
   });
 
-  it("status EXPLÍCITO no mesmo update vence: aberto que pede perdido fica perdido", () => {
-    expect(statusAoEntrarNaEtapa(stages, "b", "open", "lost")).toBeNull();
-    expect(statusAoEntrarNaEtapa(stages, "b", "lost", "won")).toBeNull();
-  });
 });
 
 // O espelho e o gatilho são o MESMO bug quando divergem: a tela com um selo e o
@@ -109,7 +102,16 @@ describe("gatilho da 1031 — a regra escrita no SQL", () => {
     expect(sql).toMatch(/DROP FUNCTION IF EXISTS cb_atualizar_negocio\(uuid, uuid, uuid, uuid, text, jsonb\);/);
     expect(sql).toMatch(/p_status_esperado text DEFAULT NULL/);
     expect(sql).toMatch(
-      /WHERE id = p_deal_id AND account_id = p_account_id\s+(--[^\n]*\n\s*)*AND \(p_status_esperado IS NULL OR status = p_status_esperado\);\s+IF NOT FOUND THEN/,
+      /WHERE id = p_deal_id AND account_id = p_account_id\s+(--[^\n]*\n\s*)*AND \(p_status_esperado IS NULL OR status = p_status_esperado\)\s+RETURNING deals\.status INTO v_gravado;\s+IF NOT FOUND THEN/,
     );
+  });
+
+  // O motor fixa o status que a escrita deixou, e as escritas seguintes da
+  // mesma execução o esperam — inclusive depois de um "Aguardar" (revisão do
+  // PR #245). A coluna NÃO pode se chamar `status`: coluna de saída de
+  // RETURNS TABLE é variável em escopo e colidiria com `deals.status` (42702).
+  it("a RPC devolve o status gravado, numa coluna que não colide com deals.status", () => {
+    expect(sql).toMatch(/RETURNS TABLE \(ok boolean, motivo text, status_gravado text\)/);
+    expect(sql).toMatch(/RETURN QUERY SELECT true, NULL::text, v_gravado;/);
   });
 });

@@ -6635,6 +6635,21 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
       conversa?" — sem a trava, a conversa sendo criada naquele instante era
       apagada em cascata com as mensagens.
 
+  - **1025_cb_kommo_acompanhamento** — o acompanhamento do #232: a troca de
+    funil da carga exige as duas etapas (sem etapa, `cb_funil_trajetorias` a
+    devolvia com `etapa = null` e ela sumia das métricas), e o encerramento
+    em lote confere a folga de 2 minutos DE NOVO no próprio UPDATE, que
+    enxerga uma foto tirada depois das travas — a do SELECT não via a
+    mensagem confirmada no meio do comando, e o lote a escondia. A foto do
+    antes sai do MESMO comando (WITH … RETURNING), só de quem foi encerrado.
+    ⚠️ **Limite conhecido, registrado e não corrigido:** os dois desfazeres
+    leem "intocado" como `updated_at <= hora da operação`, e `updated_at` é
+    o INÍCIO da transação de quem escreveu — um salvamento já em voo quando o
+    lote começou passaria por intocado. Medido: nenhuma linha da carga tem
+    essa assinatura. ⚠️ E o desfazer do encerramento é da CONTA INTEIRA:
+    rodado depois de um encerramento novo, devolve também o que o de 21/09
+    ainda guarda na foto (medido no ensaio: 899 linhas para 64 da operação).
+
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
   ⚠️ A `906` foi aplicada FORA DE ORDEM (antes da 907), e o histórico do

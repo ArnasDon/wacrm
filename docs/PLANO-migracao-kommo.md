@@ -1520,3 +1520,16 @@ preenchidos se continuam vazios/telefone no instante da escrita, e o card
 movido é lido travado —, e `status_changed` sem funil é recusado na entrada
 do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
 escrever.
+
+**Desde a 1025** (acompanhamento do #232): a troca de funil também exige as
+duas etapas na entrada — sem etapa, a transferência sumia das métricas do
+funil (medido: os 1.509 eventos da carga têm as duas).
+
+⚠️ **Limite conhecido, registrado em 21/09 e NÃO corrigido** (o outro achado do
+Codex no head 657b78d): "intocado" é `updated_at <= criado_em`, e `updated_at`
+é a hora em que a transação de quem escreveu COMEÇOU. Um salvamento que já
+estava em voo quando um lote da carga começou, esperou a trava e gravou depois,
+fica com `updated_at` anterior à operação e passaria por intocado. Medido na
+carga de 21/09: nenhuma ficha nem card tem essa assinatura. Fechar de vez é
+guardar a imagem da linha depois da carga e comparar a linha inteira — obra
+desproporcional para uma ferramenta de emergência.

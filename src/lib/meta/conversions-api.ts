@@ -30,6 +30,18 @@ import { META_API_BASE } from '@/lib/whatsapp/meta-api'
 // claim_ai_reply_slot/commercial_welcome_sent_at do Bloco 3-A, mas via
 // unique constraint em vez de UPDATE...IS NULL). Uma segunda chamada
 // perde a reserva (unique violation) e desiste sem reenviar.
+//
+// Formato do pedido (Conversions API for Business Messaging — ver
+// developers.facebook.com/documentation/ads-commerce/conversions-api/
+// business-messaging): `user_data` leva `ctwa_clid` E
+// `whatsapp_business_account_id` (sem este último a Meta não valida o
+// evento, mesmo com dataset e clique correctos). O access_token
+// reutilizado de `whatsapp_config` precisa das permissões
+// `whatsapp_business_management` + `whatsapp_business_manage_events`
+// (não basta `whatsapp_business_messaging`, que é o que a app já usa
+// para enviar mensagens) — e a app Meta precisa do nível "Marketing
+// API Access Tier" activo. Sem isso, a Meta responde 401/403 e
+// sendCapiEvent regista o erro sem nunca lançar (ver testes).
 // ============================================================
 
 /** Timeout curto — este envio nunca pode atrasar a resposta ao lead. */
@@ -131,13 +143,23 @@ export async function sendCapiEvent(args: SendCapiEventArgs): Promise<void> {
 
     const { data: waConfig, error: waError } = await db
       .from('whatsapp_config')
-      .select('access_token')
+      .select('access_token, waba_id')
       .eq('account_id', accountId)
       .maybeSingle()
     const encryptedToken = (waConfig as { access_token?: string | null } | null)?.access_token
     if (waError || !encryptedToken) {
       console.error(`[meta capi] whatsapp_config não encontrado (account=${accountId}) — evento ${eventName} não enviado.`)
       await recordOutcome(db, eventId, 'error', null, 'whatsapp_config_not_found')
+      return
+    }
+    // A Meta exige `whatsapp_business_account_id` dentro de `user_data`
+    // (ver documentação da Conversions API for Business Messaging) —
+    // sem ele o evento não valida do lado da Meta, mesmo com dataset e
+    // ctwa_clid correctos.
+    const wabaId = (waConfig as { waba_id?: string | null } | null)?.waba_id
+    if (!wabaId) {
+      console.error(`[meta capi] whatsapp_config sem waba_id (account=${accountId}) — evento ${eventName} não enviado.`)
+      await recordOutcome(db, eventId, 'error', null, 'waba_id_not_found')
       return
     }
 
@@ -157,7 +179,7 @@ export async function sendCapiEvent(args: SendCapiEventArgs): Promise<void> {
           event_time: Math.floor(Date.now() / 1000),
           action_source: 'business_messaging',
           messaging_channel: 'whatsapp',
-          user_data: { ctwa_clid: ctwaClid },
+          user_data: { ctwa_clid: ctwaClid, whatsapp_business_account_id: wabaId },
           event_id: eventId,
         },
       ],

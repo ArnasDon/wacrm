@@ -36,7 +36,7 @@ function makeDb(opts: {
   const {
     conversations = { data: { ctwa_clid: 'clid-123' }, error: null },
     aiConfigs = { data: { meta_capi_dataset_id: 'dataset-1', meta_capi_test_event_code: null }, error: null },
-    whatsappConfig = { data: { access_token: 'enc-token' }, error: null },
+    whatsappConfig = { data: { access_token: 'enc-token', waba_id: 'waba-1' }, error: null },
     insertResult = { error: null },
   } = opts
 
@@ -128,6 +128,17 @@ describe('sendCapiEvent', () => {
     expect(update?.payload).toMatchObject({ status: 'error', response_summary: 'whatsapp_config_not_found' })
   })
 
+  it('regista o erro e não chama a Meta sem waba_id em whatsapp_config', async () => {
+    global.fetch = vi.fn()
+    const { db, writes } = makeDb({
+      whatsappConfig: { data: { access_token: 'enc-token', waba_id: null }, error: null },
+    })
+    await sendCapiEvent({ db: db as never, ...ARGS })
+    expect(global.fetch).not.toHaveBeenCalled()
+    const update = writes.find((w) => w.op === 'update')
+    expect(update?.payload).toMatchObject({ status: 'error', response_summary: 'waba_id_not_found' })
+  })
+
   it('regista o erro quando o access_token não decifra', async () => {
     global.fetch = vi.fn()
     h.decrypt.mockImplementation(() => {
@@ -155,7 +166,7 @@ describe('sendCapiEvent', () => {
       event_name: 'Lead',
       action_source: 'business_messaging',
       messaging_channel: 'whatsapp',
-      user_data: { ctwa_clid: 'clid-123' },
+      user_data: { ctwa_clid: 'clid-123', whatsapp_business_account_id: 'waba-1' },
       event_id: 'conv-1:Lead',
     })
     expect(body.test_event_code).toBeUndefined()

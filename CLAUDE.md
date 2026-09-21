@@ -4369,13 +4369,21 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     PR #235). Travar o antigo é seguro porque a chave da 935 inclui o VALOR.
     O que fica de fora, escrito: reagendar para o MESMO horário trava o
     novo junto — raro, e o lado menos ruim.
-  - ⚠️⚠️ **A VARREDURA consulta os cancelamentos por (contato, valor), não
-    por automação.** O desarme pré-arma uma linha por automação EXISTENTE e
-    a data continua na ficha: sem essa consulta, um lembrete CRIADO DEPOIS
-    do cancelamento nasceria sem trava e mandaria o aviso de uma reunião
-    desmarcada (`semOsCancelados`, puro e testado; Codex, PR #235). Falha
-    FECHADA — não conseguindo conferir, a automação fica para o ciclo
-    seguinte.
+  - ⚠️⚠️ **A VARREDURA pergunta ao EVENTO do cancelamento, nunca à trava por
+    automação** (`semOsCancelados`, puro e testado). A trava é
+    `ON DELETE CASCADE` em `automations` (935): apagar o lembrete apagaria
+    junto a prova de que a reunião foi desmarcada, e um lembrete criado
+    depois mandaria o aviso. O evento é da CONTA, guarda contato e horário,
+    sobrevive à automação e não é podado — e por isso também cobre a conta
+    que ainda não tinha lembrete nenhum quando o cancelamento chegou (Codex,
+    PR #235, três rodadas apontando para a mesma raiz). Falha FECHADA: não
+    conseguindo conferir, a automação fica para o ciclo seguinte.
+    ⚠️ A comparação é por INSTANTE: o campo guarda
+    "…T17:00:00.000000Z" e o PostgREST devolve "… 17:00:00+00" — por texto,
+    nada casaria e a guarda seria enfeite.
+    ⚠️ A trava pré-armada por automação CONTINUA sendo escrita (é o que
+    resolve a corrida com o INSERT da própria varredura), mas ela já não é
+    a fonte da decisão.
   - ⚠️⚠️ **A espera pelo agendamento em processamento é DERIVADA de
     `TETO_DE_PROCESSAMENTO_MS`, nunca digitada.** Duas versões erraram o
     número (10 s, depois 2 min) enquanto o agendamento pode legitimamente
@@ -4384,11 +4392,6 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     existe, e a reentrega do Calendly não tenta de novo. O cancelamento tem
     teto PRÓPRIO (`TETO_DO_CANCELAMENTO_MS`), maior que a espera e menor que
     `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens.
-  - ⚠️⚠️ **A marca de cancelamento NÃO é podada aos 90 dias** como a de
-    disparo (400 dias): ela só serve quando o horário DESMARCADO chega à
-    janela do lembrete, e a data continua na ficha de propósito. Reunião
-    cancelada com mais de 90 dias de antecedência perderia a marca antes da
-    hora e o aviso voltaria a sair.
   - ⚠️ **Código de erro novo entra na lista FECHADA da tela**
     (`CODIGOS_CONHECIDOS`, em `calendly-card.tsx`), senão cai no texto
     genérico "erro do Calendly" — com a tradução existindo e no lugar certo.
@@ -4401,11 +4404,11 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     não vai acontecer, e os lembretes voltam sem trava. A rota consulta
     `houveCancelamento` e FALHA FECHADA: não conseguindo conferir, recusa —
     recusar é reversível, disparar não (Codex, PR #235).
-  - ⚠️ **CONHECIDO, NÃO TRATADO:** conta SEM nenhum lembrete por data no
-    momento do cancelamento não guarda exclusão nenhuma (a trava é por
-    AUTOMAÇÃO), e um lembrete criado depois — antes do horário cancelado —
-    sai. Inalcançável nesta conta (os quatro existem); fechar pede guardar o
-    horário cancelado em lugar próprio. O `detalhe` do evento diz isso.
+  - ⚠️ **CONHECIDO, NÃO TRATADO:** cancelamento cujo processamento falhou
+    ANTES de resolver o contato não deixa contato na linha do evento, e a
+    varredura não tem por onde casar. Rarísimo (erro de banco no instante) e
+    o `detalhe` do evento diz o que houve. Depois de o contato ser
+    resolvido, mesmo um `falhou` já serve de prova.
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras

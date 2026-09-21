@@ -3072,6 +3072,10 @@ O que morde código novo:
   PÚBLICO do Typebot reabriria o perdido antigo dele, e a trava de etapa
   passaria a gravar e-mail e respostas por cima da ficha (revisão do PR
   #245). Para esse contato vale o de antes da 1031: "nenhum negócio".
+  ⚠️ A conferência é uma ida ao banco ANTES da escrita: outro card do contato
+  ganho nesse intervalo de milissegundos não é visto (Codex, 5ª rodada).
+  Aceito por escrito — o abuso do formulário não depende de concorrência, e
+  fechar a janela pede travar todos os cards do contato dentro da RPC.
   ⚠️⚠️ **Toda escrita confere o status esperado** (`p_status_esperado`, o 7º
   argumento da RPC na 1031): o que a BUSCA viu, ou o que a própria execução
   gravou por último (`context.deal_status_fixado` — a RPC devolve o status

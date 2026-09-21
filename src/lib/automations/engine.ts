@@ -2705,6 +2705,11 @@ function stepChannel(
  * área). Sem isto, quem digitasse o telefone de um cliente no formulário
  * público do Typebot reabriria o perdido antigo dele, e a trava de etapa
  * passaria a gravar e-mail e respostas por cima da ficha (revisão do PR #245).
+ * ⚠️ Conferido numa ida ao banco ANTES da escrita, não dentro dela: outro
+ * card do contato ganho exatamente nesse intervalo não é visto (Codex, PR
+ * #245, 5ª rodada). Aceito: o abuso do formulário não depende de
+ * concorrência, e fechar a janela pede travar todos os cards do contato na
+ * RPC.
  *
  * `statusVisto` é o status que a escrita deve encontrar: o que a BUSCA viu,
  * ou — card do contexto — o que a própria execução gravou por último

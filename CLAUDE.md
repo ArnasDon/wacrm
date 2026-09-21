@@ -3039,11 +3039,14 @@ O que morde código novo:
   (`statusAoEntrarNaEtapa`) recebe o status de antes e o pedido, e há pino
   lendo o SQL da 1031.
 - ⚠️ **Etapa IGUAL não passa pelo gatilho**, e é o caso comum: o card marcado
-  perdido pelo BOTÃO continua na etapa em que estava. Por isso o "Mover card"
-  das automações reabre EXPLICITAMENTE (`p_status: 'open'`) quando o card é
-  perdido e o destino é neutro — senão o Calendly "moveria" para "Reunião
-  Agendada" quem reagendou, com cara de sucesso, e o card seguiria perdido,
-  sem lembrete nenhum (revisão do PR #245).
+  perdido pelo BOTÃO continua na etapa em que estava. Por isso a RPC das
+  automações (`cb_atualizar_negocio`, redefinida na 1031) reabre o perdido que
+  o "Mover card" leva a uma etapa neutra — inclusive a mesma — com um CASE
+  DENTRO do UPDATE, que olha o status da linha na hora da escrita. Sem isso o
+  Calendly "moveria" para "Reunião Agendada" quem reagendou, com cara de
+  sucesso, e o card seguiria perdido, sem lembrete (revisão do PR #245). ⚠️
+  Nunca ler o status no motor e mandar `p_status: 'open'` depois: quem marcasse
+  o card como ganho no meio teria o ganho sobrescrito (Codex, PR #245).
 - ⚠️ **As automações acham o card PERDIDO quando o contato não tem aberto**
   (`negocioAlvo`, 1031): o "Mover card" do Typebot e do Calendly tira o lead
   da perda. O GANHO nunca é alvo — mas isso só protege card FECHADO como
@@ -6849,12 +6852,14 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     manda o push simples. A do "perdido que volta" nasceu 1028 e virou 1031
     por isso (Codex, PR #245).
 
-  - **1031_cb_perdido_pode_voltar** — só troca o CORPO de
-    `cb_deals_aplica_resultado` (o gatilho da 950): card PERDIDO que entra
+  - **1031_cb_perdido_pode_voltar** — troca o CORPO de duas funções:
+    `cb_deals_aplica_resultado` (o gatilho da 950: card PERDIDO que entra
     numa etapa neutra, sem troca de status no mesmo update e com a etapa
-    achada, volta `open`; ganho continua ganho. Decisão do operador em
-    21/09/2026 (ver a seção "Etapa com RESULTADO"). Aplicada ANTES do merge,
-    depois do replay do CI.
+    achada, volta `open`; ganho continua ganho) e `cb_atualizar_negocio` (a
+    RPC das automações da 934: mover para etapa neutra reabre o perdido na
+    mesma escrita, inclusive para a etapa em que ele já está). Assinaturas e
+    privilégios iguais. Decisão do operador em 21/09/2026 (ver a seção "Etapa
+    com RESULTADO"). Aplicada ANTES do merge, depois do replay do CI.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

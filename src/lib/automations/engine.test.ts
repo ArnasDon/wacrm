@@ -716,10 +716,12 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
     expect(h.state.dealSelects.some((f) => f.some(([op, k, v]) => op === 'eq' && k === 'status' && v === 'lost'))).toBe(false);
   });
 
-  it('CRÍTICO: perdido "movido" para a etapa NEUTRA em que já está volta ABERTO (o gatilho não vê etapa igual)', async () => {
+  it('o "Mover" NÃO pede status — quem reabre o perdido é a RPC, na mesma escrita (1031)', async () => {
+    // Ler "está perdido?" aqui e pedir `open` depois abria corrida com quem
+    // marcasse o card como GANHO no meio: o ganho seria sobrescrito (Codex,
+    // PR #245). O CASE da RPC olha o status da linha na hora do UPDATE.
     h.state.owned = { id: 'c1' };
     h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido', stage_id: 'etapa-reuniao' } };
-    h.state.stage = { resultado: null };
     h.state.automations = [automationWithUpdateStep()];
     h.state.steps = [moverPara('etapa-reuniao')];
 
@@ -730,24 +732,7 @@ describe('Mover card — sem card aberto, o PERDIDO (1031)', () => {
       context: {},
     });
 
-    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-reuniao', p_status: 'open' });
-  });
-
-  it('perdido indo para etapa marcada "perdido" não é forçado a aberto', async () => {
-    h.state.owned = { id: 'c1' };
-    h.state.dealPorStatus = { open: null, lost: { id: 'd-perdido' } };
-    h.state.stage = { resultado: 'perdido' };
-    h.state.automations = [automationWithUpdateStep()];
-    h.state.steps = [moverPara('etapa-desqualificado')];
-
-    await runAutomationsForTrigger({
-      accountId: ACCOUNT,
-      triggerType: 'new_message_received',
-      contactId: 'c1',
-      context: {},
-    });
-
-    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_status: null });
+    expect(h.state.rpcMover[0]).toMatchObject({ p_deal_id: 'd-perdido', p_stage_id: 'etapa-reuniao', p_status: null });
   });
 
   it('CRÍTICO: o card fica FIXADO na execução — depois de fechado, o "Mover" seguinte não troca de card', async () => {

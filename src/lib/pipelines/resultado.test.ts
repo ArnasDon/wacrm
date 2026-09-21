@@ -90,4 +90,15 @@ describe("gatilho da 1031 — a regra escrita no SQL", () => {
   it("não toca no ganho", () => {
     expect(sql).not.toMatch(/OLD\.status = 'won'/);
   });
+
+  // A etapa IGUAL não passa pelo gatilho: quem reabre o perdido que o "Mover
+  // card" leva à etapa em que ele já está é a RPC — e DENTRO do UPDATE, com o
+  // status da linha na hora da escrita (Codex, PR #245: ler antes e pedir
+  // 'open' depois sobrescrevia um ganho no meio).
+  it("a RPC das automações reabre o perdido na MESMA escrita, sem sobrepor status explícito", () => {
+    expect(sql).toMatch(/CREATE OR REPLACE FUNCTION cb_atualizar_negocio\(/);
+    expect(sql).toMatch(
+      /status\s+=\s+CASE\s+WHEN p_status IS NULL\s+AND p_stage_id IS NOT NULL\s+AND v_resultado IS NULL\s+AND status = 'lost'\s+THEN 'open'\s+ELSE coalesce\(p_status, status\)\s+END/,
+    );
+  });
 });

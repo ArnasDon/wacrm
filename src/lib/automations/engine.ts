@@ -1722,32 +1722,12 @@ async function runStep(
       if (!ehMover && !cfg.status)
         throw new Error('set_deal_status precisa de status');
 
-      // ⚠️ O PERDIDO que o "Mover" leva para uma etapa neutra volta ABERTO
-      // (1031) — e é dito aqui, explicitamente, porque o gatilho só age
-      // quando a etapa MUDA: o card marcado perdido pelo botão continua na
-      // etapa em que estava, e "mover" para essa mesma etapa (o Calendly
-      // manda para "Reunião Agendada" quem reagendou) seria um no-op com
-      // cara de sucesso. Etapa marcada (ganho/perdido) segue o gatilho.
-      let statusPedido: string | null = ehMover ? null : (cfg.status ?? null);
-      if (ehMover) {
-        const { data: card, error: erroCard } = await db
-          .from('deals')
-          .select('status')
-          .eq('id', alvo)
-          .eq('account_id', args.automation.account_id)
-          .maybeSingle();
-        if (erroCard) throw new Error(`leitura do negócio falhou: ${erroCard.message}`);
-        if (card?.status === 'lost') {
-          const { data: etapa, error: erroEtapa } = await db
-            .from('pipeline_stages')
-            .select('resultado')
-            .eq('id', cfg.stage_id)
-            .maybeSingle();
-          if (erroEtapa) throw new Error(`leitura da etapa falhou: ${erroEtapa.message}`);
-          if (etapa && etapa.resultado == null) statusPedido = 'open';
-        }
-      }
 
+      // ⚠️ O "Mover" NÃO pede status: quem reabre o PERDIDO levado a uma
+      // etapa neutra — inclusive a etapa em que ele já está, o card marcado
+      // perdido pelo botão — é a RPC, dentro do UPDATE, olhando o status da
+      // linha na hora da escrita (1031). Ler aqui e pedir `open` depois
+      // sobrescreveria o ganho de quem fechasse o card no meio (Codex, PR #245).
       // ⚠️ Vai por RPC, e não por `.update()` direto, por DOIS motivos que se
       // somam: (1) a trilha da 912 exige que funil e etapa mudem no MESMO
       // update, senão ela grava que o lead saiu e voltou; (2) só de dentro da
@@ -1758,7 +1738,7 @@ async function runStep(
         p_account_id: args.automation.account_id,
         p_pipeline_id: null,
         p_stage_id: ehMover ? cfg.stage_id : null,
-        p_status: statusPedido,
+        p_status: ehMover ? null : cfg.status,
         p_cadeia: cadeiaDoContexto(args),
       });
       if (error) throw new Error(`${step.step_type} falhou: ${error.message}`);

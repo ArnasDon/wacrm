@@ -40,6 +40,11 @@ git checkout -b chore/atualizacao-AAAA-MM-DD
 git merge vX.Y.Z          # a versão que você quer trazer
 ```
 
+> Enquanto ainda não houver versões marcadas (`git tag -l` vazio depois do
+> `fetch`), traga o ramo principal: `git merge upstream/main`. Leia antes
+> a seção `[Não publicado]` do `CHANGELOG.md` — é ela que diz o que muda
+> e o que exige passo manual.
+
 Resolva os conflitos (a próxima seção diz onde eles caem). Depois, antes
 de qualquer outra coisa:
 
@@ -121,6 +126,15 @@ o comportamento vai de "o recurso não funciona em silêncio" a erro na
 tela, dependendo do caso. O `CHANGELOG.md` marca as versões em que essa
 ordem é obrigatória.
 
+A exceção é a migration que **restringe** — que passa a recusar algo que
+a versão anterior da aplicação ainda faz. Essa vai **depois** da imagem
+nova, e o `CHANGELOG.md` diz quais são. Como o `db push` aplica tudo o
+que falta de uma vez: mova esse arquivo para fora da pasta, rode o
+`db push`, publique a imagem, devolva o arquivo e rode
+`supabase db push --include-all`. O `--include-all` é necessário porque
+a migration devolvida é mais antiga que as já aplicadas, e sem ele o
+`push` a recusa.
+
 Se algo der errado, o teste que vale é o mesmo que o CI faz: as
 migrations reaplicam num banco vazio, do zero, em ordem. Você pode rodar
 isso localmente com `supabase db start` (precisa de Docker).
@@ -138,7 +152,7 @@ agendador — é preciso um `docker stack deploy` à mão no servidor:
 set -a && . ./crm.env && set +a
 export CRM_IMAGE="$(docker service inspect crm_crm \
   --format '{{.Spec.TaskTemplate.ContainerSpec.Image}}' | cut -d@ -f1)"
-docker stack deploy -c docker-stack.yml crm
+docker stack deploy -c docker-stack.yml --with-registry-auth crm
 ```
 
 > ⚠️ **As três linhas andam juntas.** Sem carregar o `crm.env`, o Docker

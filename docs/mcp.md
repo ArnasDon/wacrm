@@ -8,25 +8,36 @@ Claude Code, Cursor, and any other MCP client — in natural language:
 > "Show the last five messages with +1 415 555 0123."
 > "Send the `order_update` template to that contact."
 
-It lives in [`mcp-server/`](../mcp-server) and is published to npm as
-[`wacrm-mcp`](https://www.npmjs.com/package/wacrm-mcp). Under the hood
-it's a thin wrapper over the [public API](./public-api.md), so every
-request is authenticated and scoped by your instance exactly like any
-other API call.
+It lives in [`mcp-server/`](../mcp-server) and runs from this
+repository — build it once and point your MCP client at the compiled
+file. Under the hood it's a thin wrapper over the
+[public API](./public-api.md), so every request is authenticated and
+scoped by your instance exactly like any other API call.
+
+> ⚠️ Don't install `wacrm-mcp` from npm. That package is the original
+> wacrm project's build and does not carry this version's changes (for
+> instance, picking the sending number with `channel_id`).
 
 ## Quick start
 
 1. Create an API key in the dashboard: **Settings → API keys**. Grant
    only the scopes your assistant needs (a read-only assistant only
    needs the `*:read` scopes).
-2. Add the server to your MCP client config:
+2. Build the server (Node 22, from the repository root):
+
+   ```bash
+   cd mcp-server && npm ci && npm run build
+   ```
+
+3. Add it to your MCP client config, with the **absolute** path to the
+   compiled file:
 
    ```jsonc
    {
      "mcpServers": {
        "wacrm": {
-         "command": "npx",
-         "args": ["-y", "wacrm-mcp"],
+         "command": "node",
+         "args": ["/absolute/path/to/the/repo/mcp-server/dist/index.js"],
          "env": {
            "WACRM_BASE_URL": "https://crm.example.com",
            "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"

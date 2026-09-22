@@ -21,6 +21,18 @@ wacrm instance — this server just exposes the API as MCP tools.
 
 ## Install & configure
 
+Build it from this repository (Node 22):
+
+```bash
+cd mcp-server
+npm ci
+npm run build      # produces dist/index.js
+```
+
+> ⚠️ Don't use `npx -y wacrm-mcp`. The npm package is the original wacrm
+> project's build and does not carry this version's changes (for
+> instance, picking the sending number with `channel_id`).
+
 The server reads two required environment variables and two optional
 write guards:
 
@@ -34,14 +46,15 @@ write guards:
 ### Claude Desktop / Claude Code / Cursor
 
 Add to your MCP client config (e.g. `claude_desktop_config.json`, or
-`.mcp.json` for Claude Code):
+`.mcp.json` for Claude Code), with the **absolute** path to the
+compiled file:
 
 ```jsonc
 {
   "mcpServers": {
     "wacrm": {
-      "command": "npx",
-      "args": ["-y", "wacrm-mcp"],
+      "command": "node",
+      "args": ["/absolute/path/to/the/repo/mcp-server/dist/index.js"],
       "env": {
         "WACRM_BASE_URL": "https://crm.example.com",
         "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"

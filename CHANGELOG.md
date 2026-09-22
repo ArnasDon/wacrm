@@ -37,7 +37,10 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   início, e nenhuma das duas rotas existia: o e-mail chegava e o link
   caía em 404. As duas foram implementadas.
   **Ação necessária:** acrescente `<a-sua-origem>/auth/callback` à lista
-  de redirects em *Authentication → URL Configuration* no Supabase.
+  de redirects em *Authentication → URL Configuration* no Supabase, e
+  configure um SMTP próprio em *Authentication → SMTP*: o envio padrão do
+  Supabase só entrega e-mail aos membros da equipe do projeto no painel,
+  então o link de recuperação não chega a mais ninguém.
 - **Convite não aponta mais para um domínio de terceiro.** Quando a
   instalação não sabia o próprio endereço, o link de convite era gerado
   apontando para o site de marketing do projeto original, que responde
@@ -47,6 +50,18 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   `EVOLUTION_BASE_URL`, `EVOLUTION_GLOBAL_API_KEY` e
   `EVOLUTION_WEBHOOK_SECRET` são lidas pelo código e não apareciam no
   `.env.local.example`. Um teste passou a cobrar isso.
+- **A documentação de instalação alcançou o código.** O
+  `.env.local.example` passou a tratar `AUTOMATION_CRON_SECRET` e
+  `NEXT_PUBLIC_SITE_URL` como obrigatórias em produção (sem a primeira,
+  as sete rotas do agendador respondem 503; sem a segunda, o webhook do
+  Asaas não é criado e os links das automações saem relativos) e a
+  apontar a Evolution pelo nome do serviço, não por `127.0.0.1`. O
+  `docs/INSTALACAO.md` ganhou o que cada integração exige (plano,
+  permissão da chave, cadastro no painel de fora) e o
+  `--with-registry-auth` no primeiro deploy — sem ele, imagem privada
+  não é baixada. O servidor MCP passou a ser instalado a partir deste
+  repositório: o pacote `wacrm-mcp` do npm é o do projeto original, sem
+  a escolha do número de envio.
 - **O idioma coreano foi removido.** O dicionário tinha menos da metade
   das chaves, e escolhê-lo entregava metade da tela como caminho de chave
   cru. Restam português do Brasil e inglês, os dois completos.
@@ -67,6 +82,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   próximo `supabase db push`, rode uma vez
   `scripts/reparar-historico-de-migrations.sql` no *SQL Editor* — o
   roteiro está em [`docs/ATUALIZAR.md`](./docs/ATUALIZAR.md).
+- **Duas migrations RESTRINGEM, e vão depois da imagem nova:**
+  `0981_cb_apagar_contato_so_admin.sql` (só administrador apaga contato)
+  e `1024_cb_telefone_canonico.sql` (o mesmo celular nas duas grafias do
+  nono dígito não vira mais duas fichas). Aplicadas antes, a aplicação
+  antiga faria o que elas passam a recusar — dizer "contato excluído"
+  sobre um contato intacto, ou derrubar a importação de CSV de um
+  disparo. As demais vão antes, como sempre. O roteiro está em
+  [`docs/ATUALIZAR.md`](./docs/ATUALIZAR.md), seção *Migrations*.
+- **O agendador mudou, e isso exige um `docker stack deploy` à mão.**
+  As automações passaram a um laço de 15 segundos (o piso das pausas
+  curtas do "Aguardar"), e o laço de 15 minutos ganhou as rotas do Meta
+  Ads, do tl;dv e do Asaas. O CI só troca a imagem do serviço e não relê
+  o `docker-stack.yml`.
 
 ## [0.8.1] — 2026-07-10
 

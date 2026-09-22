@@ -309,7 +309,7 @@ upstream sobrescrevê-los:
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
 | `src/app/api/automations/[id]/duplicate/route.ts` | copia `channel_ids` (sem isso a cópia vira irrestrita) |
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
-| `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos |
+| `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
 | `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
@@ -1705,6 +1705,19 @@ O que morde código novo:
   quadro "vazio" com cara de funil sem negócio. `contact.tags` fica AUSENTE
   no plano B (fabricar `[]` afirmaria "sem etiquetas" sobre dado não
   carregado).
+- ⚠️ **O quadro carrega em DUAS etapas (22/09/2026)**: a lista ENXUTA de
+  todos os cards (`DEAL_SELECT_ENXUTO`) e o conteúdo (`DEAL_SELECT_DO_QUADRO`)
+  só dos que as colunas desenham, por id. Medido no Trabalhista - Comercial
+  (3.673 cards): o select do quadro para todos custava ~2,7 s, e cortar
+  colunas dele não resolvia (2,1 s) — o custo é montar os embutidos. A
+  página guarda UMA lista (`CardDoQuadro`): contador, soma, indicadores e
+  arrasto leem a coluna inteira, e o card sem conteúdo aparece "carregando"
+  até a coluna pedi-lo ("mostrar mais", arrasto). Na junção, os campos da
+  lista enxuta VENCEM os do conteúdo (`juntarConteudo`): deixar o conteúdo
+  vencer punha no card a etapa de uma consulta e na coluna a de outra
+  (Codex, PR #248). Quem ler campo novo de TODOS os cards (indicador,
+  filtro) acrescenta a coluna ao select enxuto — no conteúdo ela só existe
+  para os desenhados.
 - **O retorno de rolagem EXPIRA (10 min), não é apagado no consumo**
   (`retorno.ts`): apagar antes dos rAF perdia a restauração se o quadro
   desmontasse na janela, ir-e-voltar duas vezes teleportava para `list[0]`, e

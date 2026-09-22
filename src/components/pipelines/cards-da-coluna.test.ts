@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CARDS_POR_COLUNA, cardsDaColuna } from "./pipeline-board";
+import { CARDS_POR_COLUNA, cardsDaColuna, idsDesenhados } from "./pipeline-board";
 
 /**
  * O teto POR COLUNA do quadro do funil.
@@ -62,5 +62,35 @@ describe("cardsDaColuna", () => {
 
   it("o teto inicial é o mesmo número que a lista de leads usa", () => {
     expect(CARDS_POR_COLUNA).toBe(100);
+  });
+});
+
+describe("idsDesenhados — o que a carga baixa por completo", () => {
+  const naEtapa = (etapa: string, n: number) =>
+    Array.from({ length: n }, (_, i) => ({ id: `${etapa}-${i}`, stage_id: etapa }));
+
+  it("os primeiros de cada etapa até o teto, na ordem da lista", () => {
+    const lista = [...naEtapa("a", 150), ...naEtapa("b", 3)];
+    const ids = idsDesenhados(lista, {});
+    expect(ids).toHaveLength(103);
+    expect(ids.slice(0, 2)).toEqual(["a-0", "a-1"]);
+    expect(ids).toContain("a-99");
+    expect(ids).not.toContain("a-100");
+    expect(ids).toContain("b-2");
+  });
+
+  it("respeita o teto de cada coluna (a volta do inbox com a coluna expandida)", () => {
+    const ids = idsDesenhados(naEtapa("a", 250), { a: 200 });
+    expect(ids).toHaveLength(200);
+    expect(ids.at(-1)).toBe("a-199");
+  });
+
+  it("cards intercalados de etapas diferentes contam cada um na sua coluna", () => {
+    const lista = [
+      { id: "1", stage_id: "a" },
+      { id: "2", stage_id: "b" },
+      { id: "3", stage_id: "a" },
+    ];
+    expect(idsDesenhados(lista, { a: 1, b: 1 })).toEqual(["1", "2"]);
   });
 });

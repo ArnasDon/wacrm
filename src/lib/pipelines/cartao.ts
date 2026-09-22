@@ -54,6 +54,76 @@ export type DealDoQuadro = Deal & {
 };
 
 /**
+ * O quadro carrega em DUAS etapas (22/09/2026). Medido no "Trabalhista -
+ * Comercial", com 3.673 cards: o select acima para TODOS eram 6,6 MB e
+ * ~2,7 s de rede, e cortar colunas dele quase não ajudava (2,1 s) — o custo
+ * é montar os embutidos das 3.673 linhas. Então a página busca:
+ *   1. esta lista ENXUTA de todos os cards (~230 bytes cada, ~0,8 s): coluna,
+ *      contador, soma, indicadores e arrasto, o que precisa da coluna INTEIRA;
+ *   2. o conteúdo completo só dos cards que as colunas DESENHAM (os 100
+ *      primeiros de cada uma, ~0,3 s), por id.
+ * Quem acrescentar coluna aqui paga em todos os cards do funil.
+ */
+export const DEAL_SELECT_ENXUTO =
+  "id, stage_id, title, value, status, created_at, updated_at";
+
+/** Um card da lista enxuta cujo conteúdo ainda não chegou. */
+export type CardSemConteudo = Pick<
+  Deal,
+  "id" | "stage_id" | "title" | "value" | "status" | "created_at" | "updated_at"
+> & { semConteudo: true };
+
+/** O que o quadro guarda de cada card: completo, ou ainda só a linha enxuta. */
+export type CardDoQuadro = DealDoQuadro | CardSemConteudo;
+
+export function temConteudo(card: CardDoQuadro): card is DealDoQuadro {
+  return !("semConteudo" in card);
+}
+
+/**
+ * O conteúdo que chegou, aplicado ao quadro: preenche os cards PEDIDOS que
+ * ainda não o tinham, e tira do quadro o pedido que não voltou — o negócio
+ * foi apagado entre a lista e o conteúdo, e ficaria "carregando" para
+ * sempre. Card que já tem conteúdo não é tocado. Devolve a MESMA lista
+ * quando nada muda.
+ *
+ * ⚠️ Os campos da linha enxuta VENCEM os do conteúdo. As duas consultas saem
+ * em momentos diferentes, e é a enxuta que decide a coluna — e ela pode ter
+ * sido mexida aqui depois, por um arrasto. Deixar o conteúdo vencer punha a
+ * etapa de uma consulta no card e a de outra na coluna, e o formulário,
+ * aberto pelo lápis, regravaria a etapa velha ao salvar outro campo (Codex,
+ * PR #248).
+ */
+export function juntarConteudo(
+  cards: CardDoQuadro[],
+  pedidos: readonly string[],
+  conteudo: ReadonlyMap<string, DealDoQuadro>,
+): CardDoQuadro[] {
+  const pedido = new Set(pedidos);
+  let mudou = false;
+  const saida: CardDoQuadro[] = [];
+  for (const card of cards) {
+    if (temConteudo(card) || !pedido.has(card.id)) {
+      saida.push(card);
+      continue;
+    }
+    mudou = true;
+    const chegou = conteudo.get(card.id);
+    if (!chegou) continue;
+    saida.push({
+      ...chegou,
+      stage_id: card.stage_id,
+      title: card.title,
+      value: card.value,
+      status: card.status,
+      created_at: card.created_at,
+      updated_at: card.updated_at,
+    });
+  }
+  return mudou ? saida : cards;
+}
+
+/**
  * Entre as conversas embutidas, qual representa o card. Mais de uma linha só
  * acontece em sobra que a 036 não pegou — aí vale a que casa com o vínculo
  * gravado no negócio; sem casar, a de conversa mais recente.

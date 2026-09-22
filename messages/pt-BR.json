@@ -1099,6 +1099,7 @@
       "stageAutomations": "{count, plural, =0 {Automações desta etapa} one {Automações desta etapa (# ativa)} other {Automações desta etapa (# ativas)}}",
       "stageConversations": "Ver as conversas desta etapa na caixa de entrada",
       "loadMoreCards": "Carregar mais {n}",
+      "carregandoCard": "Carregando {titulo}",
       "cardFields": "Informações do card",
       "cardFieldsTitle": "Exibir no card",
       "cardFieldsHint": "Vale só neste dispositivo.",

@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import {
   PipelineBoard,
+  idsDesenhados,
   type TetosDoQuadro,
 } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
@@ -58,7 +59,11 @@ import { statusAoEntrarNaEtapa } from "@/lib/pipelines/resultado";
 import {
   DEAL_SELECT_BASICO,
   DEAL_SELECT_DO_QUADRO,
+  DEAL_SELECT_ENXUTO,
+  juntarConteudo,
   normalizarDealDoQuadro,
+  type CardDoQuadro,
+  type CardSemConteudo,
   type DealDoQuadro,
   type RawDealDoQuadro,
 } from "@/lib/pipelines/cartao";
@@ -130,7 +135,7 @@ function PipelinesPageInner() {
   // e Desempenho/Saúde precisam distinguir "ainda não chegaram" de "o funil
   // não tem etapa" — os dois são `[]` (Codex, PR #121).
   const [etapasDe, setEtapasDe] = useState<string>("");
-  const [deals, setDeals] = useState<DealDoQuadro[]>([]);
+  const [deals, setDeals] = useState<CardDoQuadro[]>([]);
   const [loading, setLoading] = useState(true);
 
   /**
@@ -281,93 +286,131 @@ function PipelinesPageInner() {
   );
 
   /**
-   * Os negócios do quadro. `null` = as duas consultas falharam (o select do
-   * quadro e o plano B) — mesmo motivo do `buscarEtapas`. Quem já usava
-   * `loadDeals` continua recebendo `[]`, com o toast.
+   * O conteúdo completo de cards, por id (ver `DEAL_SELECT_ENXUTO`): a carga
+   * pede o dos desenhados, a coluna pede o do "mostrar mais". Em fatias de
+   * 100 ids, em paralelo — é GET, e cada id custa ~37 caracteres na URL.
+   * `null` = falhou (o select do quadro E o plano B).
    */
-  const buscarNegocios = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[] | null> => {
-      // A MESMA consulta para os dois selects: qualquer mudança de escopo
-      // (filtro, ordem) vale automaticamente no plano B — divergir os dois é
-      // exatamente o tipo de bug que só aparece quando ninguém está olhando.
-      //
-      // ⚠️⚠️ PAGINADA desde 19/09/2026. Antes era uma consulta só, sem
-      // `range` e sem `count`: o PostgREST corta em ~1000 linhas SEM AVISAR,
-      // então um funil com mais de mil cards mostrava os 1.000 mais RECENTES
-      // e contava errado nas colunas, em silêncio. A lista de conversas já
-      // paginava a consulta de `deals` por esta exata razão
-      // (`conversation-list.tsx`); o quadro, não. Hoje o maior funil tem
-      // centenas de cards — a migração da Kommo traz mais de 8 mil para um
-      // deles (`docs/PLANO-migracao-kommo.md`, trava 11).
-      const buscar = (select: string) =>
-        buscarPaginado<RawDealDoQuadro>(async (de, ate) => {
-          const { data, error, count } = await supabase
-            .from("deals")
-            .select(select, { count: "exact" })
-            .eq("pipeline_id", pipelineId)
-            // ⚠️ O desempate por `id` é o que torna a paginação estável: dois
-            // cards com o MESMO `created_at` (a carga da Kommo vai ter muitos)
-            // ficam em ordem indefinida entre uma página e outra, e aí um
-            // deles some do quadro e outro vem duas vezes.
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: true })
-            .range(de, ate);
-          return { data: (data ?? null) as RawDealDoQuadro[] | null, error, count };
-        });
+  const buscarConteudo = useCallback(
+    async (ids: string[]): Promise<Map<string, DealDoQuadro> | null> => {
+      const buscar = async (select: string) => {
+        const fatias: string[][] = [];
+        for (let i = 0; i < ids.length; i += 100) fatias.push(ids.slice(i, i + 100));
+        const respostas = await Promise.all(
+          fatias.map((fatia) => supabase.from("deals").select(select).in("id", fatia)),
+        );
+        const falha = respostas.find((r) => r.error || !r.data);
+        if (falha) return { linhas: null, erro: falha.error };
+        const linhas = respostas.flatMap((r) => (r.data ?? []) as unknown as RawDealDoQuadro[]);
+        return { linhas: new Map(linhas.map((r) => [r.id, normalizarDealDoQuadro(r)])), erro: null };
+      };
 
       if (!embedDoQuadroRecusado) {
         const doQuadro = await buscar(DEAL_SELECT_DO_QUADRO);
-        if (doQuadro.linhas) return doQuadro.linhas.map(normalizarDealDoQuadro);
-        if (!doQuadro.erro) {
-          // Não foi o PostgREST recusando o embed: a coleção mudou no meio da
-          // leitura, ou passou do teto. Repetir com o select básico daria o
-          // mesmo — o quadro admite que não sabe, em vez de desenhar meia
-          // lista com cara de lista inteira.
-          console.error("Failed to load deals (paginação):", {
-            motivo: doQuadro.motivo,
-          });
-          toast.error(t("toastFailedLoadDeals"));
-          return null;
-        }
+        if (doQuadro.linhas) return doQuadro.linhas;
         // ⚠️ Um embed recusado pelo PostgREST não pode derrubar o Kanban: sem
         // este plano B o quadro abriria VAZIO, sem mensagem nenhuma. Loga (os
         // campos do erro do Supabase não são enumeráveis) e refaz com o
         // select antigo — o quadro fica de pé, sem conversa/etiquetas nos
         // cards (e negócio pré-910 volta a abrir o formulário no clique).
         console.error("Failed to load deals (select do quadro):", {
-          message: doQuadro.erro.message,
-          details: doQuadro.erro.details,
-          hint: doQuadro.erro.hint,
-          code: doQuadro.erro.code,
+          message: doQuadro.erro?.message,
+          details: doQuadro.erro?.details,
+          hint: doQuadro.erro?.hint,
+          code: doQuadro.erro?.code,
         });
         embedDoQuadroRecusado = true;
       }
 
       const basico = await buscar(DEAL_SELECT_BASICO);
       if (!basico.linhas) {
-        // ⚠️ O plano B também pode falhar (rede, RLS) — descartar ESTE erro
-        // reproduzia o defeito original: colunas "vazias" com cara de funil
-        // sem negócio. Toast + `null`: o `loadDeals` o converte na lista
-        // vazia explícita de sempre, e a recarga da volta ao app mantém o
-        // quadro.
         console.error("Failed to load deals (select básico):", {
-          motivo: basico.motivo,
           message: basico.erro?.message,
           details: basico.erro?.details,
           hint: basico.erro?.hint,
           code: basico.erro?.code,
         });
+        return null;
+      }
+      return basico.linhas;
+    },
+    [supabase],
+  );
+
+  /**
+   * Os negócios do quadro: a lista ENXUTA de todos e o conteúdo dos que as
+   * colunas desenham com estes `limites` (ver `DEAL_SELECT_ENXUTO`). `null` =
+   * não confie (a lista ou o conteúdo falhou) — mesmo motivo do
+   * `buscarEtapas`. Quem já usava `loadDeals` continua recebendo `[]`, com o
+   * toast.
+   *
+   * `limites` são os tetos a respeitar já na carga: os da volta do inbox (a
+   * coluna expandida volta com o conteúdo, e a rolagem é restaurada sobre os
+   * cards de verdade) e os do quadro na tela, numa recarga.
+   */
+  const buscarNegocios = useCallback(
+    async (
+      pipelineId: string,
+      limites: Record<string, number> = {},
+    ): Promise<CardDoQuadro[] | null> => {
+      // ⚠️⚠️ PAGINADA desde 19/09/2026. Antes era uma consulta só, sem
+      // `range` e sem `count`: o PostgREST corta em ~1000 linhas SEM AVISAR,
+      // então um funil com mais de mil cards mostrava os 1.000 mais RECENTES
+      // e contava errado nas colunas, em silêncio. A lista de conversas já
+      // paginava a consulta de `deals` por esta exata razão
+      // (`conversation-list.tsx`); o quadro, não. Hoje o Trabalhista -
+      // Comercial tem 3.673 cards.
+      type Linha = Omit<CardSemConteudo, "semConteudo">;
+      const lista = await buscarPaginado<Linha>(async (de, ate) => {
+        const { data, error, count } = await supabase
+          .from("deals")
+          .select(DEAL_SELECT_ENXUTO, { count: "exact" })
+          .eq("pipeline_id", pipelineId)
+          // ⚠️ O desempate por `id` é o que torna a paginação estável: dois
+          // cards com o MESMO `created_at` (a carga da Kommo tem muitos)
+          // ficam em ordem indefinida entre uma página e outra, e aí um
+          // deles some do quadro e outro vem duas vezes.
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(de, ate);
+        return { data: (data ?? null) as Linha[] | null, error, count };
+      });
+      if (!lista.linhas) {
+        // ⚠️ Nunca meia lista com cara de lista inteira: a coleção que mudou
+        // no meio da leitura, o teto e a falha viram o toast e a lista vazia
+        // explícita de sempre — e a recarga da volta ao app mantém o quadro.
+        console.error("Failed to load deals:", {
+          motivo: lista.motivo,
+          message: lista.erro?.message,
+          details: lista.erro?.details,
+          hint: lista.erro?.hint,
+          code: lista.erro?.code,
+        });
         toast.error(t("toastFailedLoadDeals"));
         return null;
       }
-      return basico.linhas.map(normalizarDealDoQuadro);
+      const cards: CardDoQuadro[] = lista.linhas.map((linha) => ({
+        ...linha,
+        semConteudo: true as const,
+      }));
+      const ids = idsDesenhados(cards, limites);
+      const conteudo = await buscarConteudo(ids);
+      if (!conteudo) {
+        // O plano B também pode falhar (rede, RLS): quadro de cards
+        // "carregando" que nunca chegam seria pior que o toast de sempre.
+        toast.error(t("toastFailedLoadDeals"));
+        return null;
+      }
+      return juntarConteudo(cards, ids, conteudo);
     },
-    [supabase, t],
+    [supabase, t, buscarConteudo],
   );
 
   const loadDeals = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[]> =>
-      (await buscarNegocios(pipelineId)) ?? [],
+    async (
+      pipelineId: string,
+      limites?: Record<string, number>,
+    ): Promise<CardDoQuadro[]> => (await buscarNegocios(pipelineId, limites)) ?? [],
     [buscarNegocios],
   );
 
@@ -548,9 +591,14 @@ function PipelinesPageInner() {
     }
     let cancelled = false;
     (async () => {
+      // A volta do inbox restaura as colunas expandidas: o conteúdo delas vem
+      // já na carga (ver `buscarNegocios`).
+      const retorno = lerRetorno();
+      const limites =
+        retorno?.pipelineId === selectedPipelineId ? retorno.limites : {};
       const [s, d] = await Promise.all([
         loadStages(selectedPipelineId),
-        loadDeals(selectedPipelineId),
+        loadDeals(selectedPipelineId, limites),
       ]);
       if (cancelled) return;
       setStages(s);
@@ -617,8 +665,42 @@ function PipelinesPageInner() {
   const refreshDeals = useCallback(async () => {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
-    setDeals(await loadDeals(selectedPipelineId));
+    // Os tetos de AGORA: a coluna expandida continua com o conteúdo.
+    const tetos = limitesDoQuadroRef.current;
+    setDeals(
+      await loadDeals(
+        selectedPipelineId,
+        tetos.funil === selectedPipelineId ? tetos.porEtapa : {},
+      ),
+    );
   }, [loadDeals, selectedPipelineId]);
+
+  /**
+   * O conteúdo dos cards que uma coluna desenha e ainda não tem ("mostrar
+   * mais", o card que um arrasto expôs). `emVooRef` impede pedir de novo o
+   * que já está a caminho: a coluna avisa a cada mudança do que desenha.
+   * Uma falha fica no toast, e os cards seguem "carregando" até o próximo
+   * aviso da coluna ou a próxima recarga.
+   */
+  const emVooRef = useRef(new Set<string>());
+  const carregarConteudo = useCallback(
+    (ids: string[]) => {
+      const emVoo = emVooRef.current;
+      const novos = ids.filter((id) => !emVoo.has(id));
+      if (novos.length === 0) return;
+      for (const id of novos) emVoo.add(id);
+      void (async () => {
+        const conteudo = await buscarConteudo(novos);
+        for (const id of novos) emVoo.delete(id);
+        if (!conteudo) {
+          toast.error(t("toastFailedLoadDeals"));
+          return;
+        }
+        setDeals((prev) => juntarConteudo(prev, novos, conteudo));
+      })();
+    },
+    [buscarConteudo, t],
+  );
 
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza o quadro do funil aberto, a lista de
@@ -649,11 +731,14 @@ function PipelinesPageInner() {
     const versao = versaoDoQuadroRef.current;
     const valeAinda = () =>
       versaoDoQuadroRef.current === versao && funilAbertoRef.current === funil;
+    const tetos = limitesDoQuadroRef.current;
     void (async () => {
       const [funis, etapas, negocios, automacoes] = await Promise.all([
         buscarFunis(),
         funil ? buscarEtapas(funil) : Promise.resolve(null),
-        funil ? buscarNegocios(funil) : Promise.resolve(null),
+        funil
+          ? buscarNegocios(funil, tetos.funil === funil ? tetos.porEtapa : {})
+          : Promise.resolve(null),
         buscarAutomacoes(),
       ]);
       const extra = automacoes ? await loadPassosENomes(automacoes) : null;
@@ -1028,6 +1113,7 @@ function PipelinesPageInner() {
           <PipelineBoard
             stages={stages}
             deals={deals}
+            onFaltaConteudo={carregarConteudo}
             automations={automations}
             pipelineId={selectedPipelineId}
             campos={campos}

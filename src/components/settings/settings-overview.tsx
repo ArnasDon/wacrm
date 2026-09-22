@@ -294,6 +294,27 @@ export function SettingsOverview({
           );
         })}
       </div>
+
+      {/* ⚠️ Exigência do LICENSE da Evolution API (Apache 2.0 com condições
+          adicionais, condição 1.b): quem a usa como parte de um sistema tem de
+          dizer isso a quem administra, pela tela de configurações ou pela
+          documentação — senão pode ser cobrada licença comercial. O texto vale
+          para qualquer instalação (descreve como as conexões por QR Code
+          funcionam), então não depende de haver conexão Evolution na conta. */}
+      <p className="mt-6 text-xs text-muted-foreground">
+        {t.rich('evolutionNotice', {
+          link: (chunks) => (
+            <a
+              href="https://github.com/evolution-foundation/evolution-api"
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-foreground"
+            >
+              {chunks}
+            </a>
+          ),
+        })}
+      </p>
     </section>
   );
 }

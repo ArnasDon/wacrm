@@ -137,3 +137,11 @@ Este projeto começou como um fork do
 [wacrm](https://github.com/ArnasDon/wacrm), de Arnas Donauskas,
 distribuído sob licença MIT, e cresceu bastante desde então. O aviso de
 copyright original está preservado em [`LICENSE`](./LICENSE).
+
+As conexões de WhatsApp por QR Code usam a
+[Evolution API](https://github.com/evolution-foundation/evolution-api),
+licenciada sob a Apache 2.0 com condições adicionais. Uma delas é avisar a
+quem administra o sistema que ela é usada: o aviso está ao pé de
+Configurações → Visão geral. A Evolution roda num serviço próprio, fora
+deste código, e tem licença própria a ativar (ver
+[`docs/INSTALACAO.md`](./docs/INSTALACAO.md)).

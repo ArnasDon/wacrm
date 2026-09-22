@@ -4055,10 +4055,11 @@ conceder. Três decisões, e o que morde código novo:
   deixava evidentes. ⚠️ Vale para os QUATRO perfis não-admin da conta — os
   dois "Gestor" incluídos, que são `agent`.
 
-⚠️⚠️ **APAGAR CONTATO não apaga o que aponta para ele — 14 tabelas ficam com
+⚠️⚠️ **APAGAR CONTATO não apaga o que aponta para ele — 15 tabelas ficam com
 o ponteiro pendurado, e `deals` é uma delas.** Medido no catálogo em
-19/09/2026 (`pg_constraint`, as 25 FKs que referenciam `contacts`). São dois
-grupos, e os dois mordem:
+19/09/2026 (`pg_constraint`, as 25 FKs que referenciam `contacts`), mais a
+`cb_reunioes_da_kommo` da 1036 (22/09/2026). São dois grupos, e os dois
+mordem:
 
 - **CASCADE (vai junto, some sem aviso):** `conversations` — e, por ela, TODAS
   as mensagens —, `contact_tags`, `contact_custom_values`, `cb_tasks`,
@@ -4067,7 +4068,9 @@ grupos, e os dois mordem:
   `cb_meetings`, `cb_reunioes_transcritas`, `cb_asaas_clientes`,
   `cb_asaas_regua_envios`, `cb_automation_events`, `cb_webhook_eventos`,
   `automation_logs`, `automation_pending_executions`, `broadcast_recipients`,
-  `flow_runs` e `notifications`.
+  `flow_runs`, `notifications` e `cb_reunioes_da_kommo` (esta de propósito: a
+  reunião histórica fica mesmo sem a ficha — a 1036 guarda até as de leads
+  que nunca viraram ficha).
 
 O sintoma visível é o negócio: card com `contact_id` nulo **renderiza em
 branco no Kanban** e não abre conversa nenhuma. Os invisíveis são piores —
@@ -4088,7 +4091,7 @@ nono dígito (é o que `variantesDoNonoDigito` resolve). Hoje só o
 `service_role` executa (o `REVOKE` da 913/915 fechou `anon` e `authenticated`).
 
 **A receita de fusão, então, é:** reapontar TODAS as referências do perdedor
-para o sobrevivente (as 14 do SET NULL mais as 6 do CASCADE, cada uma com a
+para o sobrevivente (as 15 do SET NULL mais as 6 do CASCADE, cada uma com a
 sua regra de conflito — `contact_tags` e `contact_custom_values` têm único por
 `(contato, X)` e precisam do `NOT EXISTS`) → mover os campos que faltarem na
 ficha sobrevivente → apagar o negócio duplicado EXPLICITAMENTE, se não for
@@ -7138,6 +7141,25 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     `cb_kommo_carregar_lote` e `cb_encerrar_conversas_abertas` (com as
     concessões DELAS), que nenhuma da 1030 à 1033 toca; nenhuma policy nem
     tabela. Em produção o histórico guarda os nomes antigos, e nada reaplica.
+
+  - **1036_cb_reunioes_da_kommo** — as reuniões históricas da Kommo, só como
+    histórico (decisão 27 do plano da migração, opção b, 22/09/2026): a
+    última data do campo de LEAD "Reunião Marcada" de cada lead, com o link,
+    o "marcou onde", o funil e a etapa da Kommo. ⚠️ Tabela PRÓPRIA e FECHADA
+    ao navegador (RLS sem policy, REVOKE das duas metades), sem gatilho: o
+    campo "Data e Hora Reunião" é do Calendly e é o que os lembretes leem —
+    gravar ali sobrescreveria agendamento real e dispararia lembrete sobre
+    reunião passada. Nenhuma tela, automação ou lembrete lê a tabela; quem
+    vai ler é o mapa de reuniões (Fase 8 do funil comercial), pelo servidor.
+    `contact_id` é NULO para o lead perdido que ficou fora do recorte da
+    carga (a data não se perde quando a Kommo sair do ar), com SET NULL ao
+    apagar o contato. Chave `(account_id, kommo_lead_id)`: rodar de novo no
+    dia do corte atualiza. Quem grava é um script fora do app (leitura em
+    `scripts/kommo/reunioes.mjs`); desfazer é DELETE por `lote`. Aplicada
+    em 22/09/2026 pela Management API (histórico `20260922185547`), depois do
+    replay do CI e antes do merge; gravadas 1.196 linhas no lote `reunioes-1`
+    (546 pelo card, 28 pelo telefone, 622 sem ficha), com notificações,
+    eventos de automação e execuções iguais antes e depois.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

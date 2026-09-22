@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { casaComContato, filtrarContatos } from './filtrar-contatos';
 
-const ana = { name: 'Ana Lúcia Corrêa', phone: '5527928340132' };
-const jose = { name: 'José', phone: '551131784851' };
+const ana = { name: 'Ana Lúcia Corrêa', phone: '5527900000017' };
+const jose = { name: 'José', phone: '551130000018' };
 const semNome = { name: null, phone: '5511987654321' };
 
 describe('casaComContato', () => {
@@ -14,9 +14,9 @@ describe('casaComContato', () => {
   });
 
   it('telefone casa por DÍGITOS, ignorando máscara nas duas pontas', () => {
-    expect(casaComContato(jose, '11 3178')).toBe(true);
-    expect(casaComContato(jose, '(11) 3178-4851')).toBe(true);
-    expect(casaComContato(ana, '2792834')).toBe(true);
+    expect(casaComContato(jose, '11 3000')).toBe(true);
+    expect(casaComContato(jose, '(11) 3000-0018')).toBe(true);
+    expect(casaComContato(ana, '2790000')).toBe(true);
     expect(casaComContato(semNome, '98765')).toBe(true);
   });
 
@@ -42,7 +42,7 @@ describe('casaComContato', () => {
   });
 
   it('recorta a lista', () => {
-    expect(filtrarContatos([ana, jose, semNome], '3178')).toEqual([jose]);
+    expect(filtrarContatos([ana, jose, semNome], '3000')).toEqual([jose]);
     expect(filtrarContatos([ana, jose, semNome], 'ana')).toEqual([ana]);
   });
 });
@@ -53,7 +53,7 @@ describe('ficha só do Instagram (989)', () => {
     const ig = { name: null, phone: null, instagram_username: 'cbadv.bancario' };
     expect(casaComContato(ig, 'bancario')).toBe(true);
     expect(casaComContato(ig, '@cbadv')).toBe(true);
-    expect(casaComContato(ig, '9887')).toBe(false);
+    expect(casaComContato(ig, '9800')).toBe(false);
     expect(casaComContato({ name: 'Ana', phone: null }, '11')).toBe(false);
   });
 });

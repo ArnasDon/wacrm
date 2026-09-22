@@ -252,7 +252,7 @@ describe('normalizeUpsert', () => {
 // outra com nome de número sem sentido contendo as respostas do advogado.
 describe('@lid — endereçamento novo do WhatsApp', () => {
   const LID = '10000000000107@lid';
-  const TEL = '558393124441@s.whatsapp.net';
+  const TEL = '558390000019@s.whatsapp.net';
 
   it('LID sozinho é DESCARTADO: melhor não gravar que inventar contato', () => {
     const it0 = item({ conversation: 'oi' }, { key: { remoteJid: LID, fromMe: true, id: 'X' } });
@@ -268,7 +268,7 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
       const out = normalizeUpsert(it0, 'conta', 'dono', 'canal');
       expect(out, `campo ${campo}`).not.toBeNull();
       // O telefone REAL, para cair na conversa que já existe.
-      expect(out!.phone, `campo ${campo}`).toBe('558393124441');
+      expect(out!.phone, `campo ${campo}`).toBe('558390000019');
       expect(out!.remoteJid, `campo ${campo}`).toBe(TEL);
     }
   });
@@ -283,7 +283,7 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
 
   it('conversa normal segue intocada', () => {
     const it0 = item({ conversation: 'oi' }, { key: { remoteJid: TEL, fromMe: false, id: 'X' } });
-    expect(normalizeUpsert(it0, 'conta', 'dono', 'canal')!.phone).toBe('558393124441');
+    expect(normalizeUpsert(it0, 'conta', 'dono', 'canal')!.phone).toBe('558390000019');
   });
 
   // ⚠️ O LID muda de CAMPO conforme a versão da Evolution (ver `lidJidFromKey`
@@ -422,7 +422,7 @@ describe('@lid sem telefone — telefone resolvido pelo chamador', () => {
 
 describe('lidJidFromKey', () => {
   const LID = '10000000000107@lid';
-  const TEL = '558393124441@s.whatsapp.net';
+  const TEL = '558390000019@s.whatsapp.net';
 
   it('devolve o primeiro campo que for @lid, na ordem previousRemoteJid → remoteJidAlt → remoteJid', () => {
     expect(lidJidFromKey({ remoteJid: TEL, previousRemoteJid: LID })).toBe(LID);

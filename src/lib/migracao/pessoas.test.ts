@@ -78,7 +78,7 @@ describe("pessoas da carga da Kommo", () => {
       expect(pessoaDoTelefone(null)).toBeNull();
     });
 
-    it.each(["98000001", "980000016", "(83) 8874-531"])(
+    it.each(["98000001", "980000016", "(83) 8000-001"])(
       "CRÍTICO: %s (8–9 dígitos) vira PULAR — a função do banco exige 10",
       (entrada) => {
         // `digitosDoTelefone` aceita 8 dígitos; a carga não. Um só destes

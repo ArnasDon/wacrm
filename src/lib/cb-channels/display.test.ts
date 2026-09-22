@@ -182,8 +182,8 @@ describe('identidadeDoCanal', () => {
       identidadeDoCanal({ kind: 'evolution', display_phone: '5583980000016', ig_username: null }),
     ).toBe('+55 (83) 98000-0016');
     expect(
-      identidadeDoCanal({ kind: 'meta', display_phone: '+55 83 9887-5316', ig_username: null }),
-    ).toBe('+55 83 9887-5316');
+      identidadeDoCanal({ kind: 'meta', display_phone: '+55 83 9800-0016', ig_username: null }),
+    ).toBe('+55 83 9800-0016');
     expect(
       identidadeDoCanal({ kind: 'instagram', display_phone: null, ig_username: 'cbadv.bancario' }),
     ).toBe('@cbadv.bancario');

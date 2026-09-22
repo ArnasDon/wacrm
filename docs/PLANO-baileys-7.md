@@ -199,7 +199,7 @@ o cliente recebe os bytes sem a chave.
 - **Duas instâncias órfãs em laço de QR** (a cada ~45 s, `QRCODE_LIMIT=1902`):
   `Bancario` (id `385dac9a-…`, criada 06/2025, `ownerJid` **5511960000001 — o
   mesmo número da Bancário - Comercial**, 9.454 chaves no Redis) e `CBAdv`
-  (`c68ecb8d-…`, `ownerJid` 558386262646 — o mesmo da Trabalhista - Jurídico,
+  (`c68ecb8d-…`, `ownerJid` 558380000020 — o mesmo da Trabalhista - Jurídico,
   3.074 chaves). Não existem no CRM.
 - **4 hashes no Redis de instâncias já apagadas**: `f71807c0-…` (3.078
   campos), `7fc75fe2-…` (86), `dcbf9851-…` (30), `60a309e7-…` (2.720).
@@ -1385,9 +1385,9 @@ duplicidade volta em dias ou semanas (relatos de 1–2 dias a semanas).
 | `cbcrm-a3af0191-5adc-4fa8-9c27-d69c2e5666d8-76ac04` | `44982408-b357-449c-adae-06ff28dc1dd3` | 5511960000001 | open | Bancário - Comercial (padrão) | NULL | 0 | 1.235 (280 sessões PN, 908 pre-keys, 13 sender-keys) |
 | `juridico-bancario-d5a458` | `be282022-d83d-4800-a4da-f139ce034310` | 558380000010 | open | Bancário - Jurídico | `10000000000106@lid` | 12 | 274 |
 | `comercial-trabalhista-e7c7ea` | `200ac9ef-98e0-4f35-a43e-f22ea168e7bd` | 558390000012 | open | Trabalhista - Comercial | NULL | 0 | 407 |
-| `trabalhista-juridico-bf8a08` | `d1d9caf5-24db-48a6-a58c-8d0953200f7c` | 558386262646 | open | Trabalhista - Jurídico (`display_phone` NULL) | NULL | 0 | 664 |
+| `trabalhista-juridico-bf8a08` | `d1d9caf5-24db-48a6-a58c-8d0953200f7c` | 558380000020 | open | Trabalhista - Jurídico (`display_phone` NULL) | NULL | 0 | 664 |
 | ~~`Bancario`~~ (órfã, **removida 09/09 17:27**) | `385dac9a-e446-44d9-be94-68ab94935e2e` | 5511960000001 | era `connecting` em laço de QR | — | — | — | 9.454 (cópia no db 9) |
-| ~~`CBAdv`~~ (órfã, **removida 09/09 17:27**) | `c68ecb8d-5b13-4d0b-85b9-c3d9b89a01a2` | 558386262646 | era `connecting` em laço de QR | — | — | — | 3.074 (cópia no db 9) |
+| ~~`CBAdv`~~ (órfã, **removida 09/09 17:27**) | `c68ecb8d-5b13-4d0b-85b9-c3d9b89a01a2` | 558380000020 | era `connecting` em laço de QR | — | — | — | 3.074 (cópia no db 9) |
 | ~~(apagadas, só hash)~~ **removidas 09/09** | `f71807c0-…`, `7fc75fe2-…`, `dcbf9851-…`, `60a309e7-…` | — | — | — | — | — | 3.078 / 86 / 30 / 2.720 (cópias no db 9) |
 
 Canais do CRM sem instância na Evolution: "WhatsApp (QR Code)" (`Gabriel -

@@ -2321,7 +2321,8 @@
       "fieldsCount": "{count} {count, plural, =1 {campo personalizado} other {campos personalizados}}",
       "appearance": "Modo {mode} · destaque {theme}",
       "yourAccount": "Sua conta",
-      "loading": "Carregando…"
+      "loading": "Carregando…",
+      "evolutionNotice": "As conexões de WhatsApp por QR Code usam a <link>Evolution API</link>, licenciada sob a Apache 2.0 com condições adicionais."
     },
     "members": {
       "title": "Membros da equipe",

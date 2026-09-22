@@ -2328,7 +2328,8 @@
       "fieldsCount": "{count} custom {count, plural, =1 {field} other {fields}}",
       "appearance": "{mode} mode · {theme} accent",
       "yourAccount": "Your account",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "evolutionNotice": "WhatsApp connections by QR code use the <link>Evolution API</link>, licensed under Apache 2.0 with additional conditions."
     },
     "members": {
       "title": "Team members",

@@ -56,7 +56,7 @@ const ESCRITORES: Record<string, string[]> = {
   // A ficha criada pelo Asaas nasce com o NOME DO CONTRATO fixado (decisão do
   // operador, 19/09/2026). Sem a marca, a primeira mensagem do cliente trocava
   // o nome legal pelo apelido do perfil do WhatsApp — 27 das 263 fichas já
-  // tinham virado "@Macol", "J.A.A.", "Ká Nunnes". Nome que cai no telefone
+  // tinham virado "@Apelido", "J.E.T.", "Ká Exemplar". Nome que cai no telefone
   // não é marcado (`marcaDoNomeManual`).
   "lib/asaas/criar-ficha.ts": ["insert:grava"],
   // O 1º é o ramo do NOME do `update_contact_field` (grava fixado, e valor que

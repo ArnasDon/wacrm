@@ -89,7 +89,7 @@ O que **não** existe e muda o desenho:
 
 **Medido em 12/09/2026 às 11:13 (sábado), pelo operador**, com o script `medir_producao.py` (somente `SELECT`, só agregados, sem nome de cliente nem texto de mensagem) contra a API de gerenciamento do Supabase, usando o token da CLI. Os números são o retrato daquela hora.
 
-| O que o resumo mostraria | Leonardo (dono) | Dra. Isa (`agent`) | Estephany Dias (`agent`) | Sem responsável |
+| O que o resumo mostraria | Leonardo (dono) | Dra. A (`agent`) | Atendente B (`agent`) | Sem responsável |
 | --- | --- | --- | --- | --- |
 | Notificações não lidas (acumuladas) | **7** — todas "conversa atribuída"; a mais antiga de **04/09**; **0** nas últimas 24 h; leu 1 de 8 desde sempre (última leitura 08/09) | **0** (nenhuma notificação, nunca) | **2** (1 conversa atribuída, 1 tarefa), as duas de 10/09 | — |
 | Tarefas abertas | 0 | **9, todas vencidas, todas não lidas** (`lida_em` nulo); 0 vencem hoje; 0 amanhã | 1 (no prazo, não lida) | 0 |
@@ -99,15 +99,15 @@ O que **não** existe e muda o desenho:
 
 **Sessões de login (`auth.sessions`):** 20 sessões vivas; a mais antiga de **23/07**; a mais parada está há **51 dias** sem renovar; **19 das 20** estão paradas há mais de 4 h e **13** há mais de 7 dias; **nenhuma** tem `not_after` (o time-box do Supabase está desligado). Isso confirma a §3.1: hoje nada expira. Se o "inactivity timeout" do painel está ligado não dá para concluir daqui — ele recusa a renovação, não apaga a linha (D11 continua na conferência do painel).
 
-**Membros:** a consulta devolveu 7 perfis em 5 contas. Na conta do escritório aparecem **três** pessoas ativas, não duas: Leonardo (dono), Dra. Isa Lenier (`agent`, com perfil de acesso) e **Estephany Dias** (`agent`, com perfil de acesso, recebendo tarefa e conversa atribuída desde 10/09). "Contato CB - Geral", "Gabriel", "TESTE AUTOMATIZADO" e "TESTE FASE6 CONVIDADO" são donos de outras contas (as de teste e as pessoais de quem foi removido). ⚠️ A consulta não agrupou por conta, então a pertença de cada um fica NÃO VERIFICADA até a segunda rodada (o script corrigido pergunta "mesma conta que o Leonardo?"). Qual perfil cada uma usa: a consulta falhou (`telas_config` não existe na `cb_perfis_de_acesso`; a coluna é `telas`), corrigida para a segunda rodada.
+**Membros:** a consulta devolveu 7 perfis em 5 contas. Na conta do escritório aparecem **três** pessoas ativas, não duas: Leonardo (dono), Dra. Advogada A (`agent`, com perfil de acesso) e **Atendente B** (`agent`, com perfil de acesso, recebendo tarefa e conversa atribuída desde 10/09). "Contato CB - Geral", "Gabriel", "TESTE AUTOMATIZADO" e "TESTE FASE6 CONVIDADO" são donos de outras contas (as de teste e as pessoais de quem foi removido). ⚠️ A consulta não agrupou por conta, então a pertença de cada um fica NÃO VERIFICADA até a segunda rodada (o script corrigido pergunta "mesma conta que o Leonardo?"). Qual perfil cada uma usa: a consulta falhou (`telas_config` não existe na `cb_perfis_de_acesso`; a coluna é `telas`), corrigida para a segunda rodada.
 
 **O que os números mudam no plano:**
 
 1. **D1 fica decidida pelos dados.** Com "não lidas acumuladas", você veria "7" toda manhã, por avisos de 04/09 a 10/09 que já foram tratados sem passar pela página de Notificações. "Novidades desde a sua última entrada" (D1a) mostraria "nada de novo" hoje — que é a verdade. Fica (a).
-2. **Ler a tarefa direto, e não o aviso dela, está certo.** A Dra. Isa tem 9 tarefas vencidas e **nenhuma notificação** — o aviso não foi gerado ou não existe para esse caminho. Um resumo que dependesse do sino diria "nada pendente" para quem tem 9 tarefas atrasadas que ninguém abriu.
+2. **Ler a tarefa direto, e não o aviso dela, está certo.** A Dra. A tem 9 tarefas vencidas e **nenhuma notificação** — o aviso não foi gerado ou não existe para esse caminho. Um resumo que dependesse do sino diria "nada pendente" para quem tem 9 tarefas atrasadas que ninguém abriu.
 3. **O bloco de reuniões, como desenhado, mostraria "nenhuma" para todo mundo, todo dia** — a agenda do CRM nunca foi usada; as reuniões do escritório vivem no Calendly. A D13 muda de forma (ver §6.1). A sugestão 20 ("reuniões sem baixa") fica sem objeto por enquanto.
 4. **"Sem responsável" é onde a espera está, mas o número cru é acervo, não urgência:** 235 conversas esperam há mais de 10 min, e 234 delas há mais de 30 — a maior parte espera há dias. Um "235" fixo de manhã é o rótulo que o olho aprende a pular (a lição do rótulo de canal). A D7 ganha um recorte por tempo (ver §6.1).
-5. **A terceira pessoa entra nos testes da F1** (login com a conta da Estephany também), e o plano deixa de falar em "duas contas".
+5. **A terceira pessoa entra nos testes da F1** (login com a conta da Atendente B também), e o plano deixa de falar em "duas contas".
 
 As consultas rodadas (as quatro primeiras) e as duas que ficam para a segunda rodada (agenda × Calendly e reuniões sem baixa — a segunda já tem resposta: zero, porque a tabela está vazia):
 
@@ -309,7 +309,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 - **D1 — Notificações no resumo:**
   (a) ✅ **as que chegaram desde a sua última entrada NESTE aparelho**, separadas em menções, tarefas e conversas. Sem histórico no aparelho, as das últimas 24 h.
   (b) todas as não lidas acumuladas: o mesmo número do sino, que já aparece no menu o dia todo. **Medido em 12/09:** você tem 7 não lidas, todas "conversa atribuída", a mais antiga de 04/09, nenhuma nas últimas 24 h — com (b) o resumo diria "7" toda manhã.
-- **D7 — Clientes esperando sem responsável:** ✅ **sim, mas recortado pelo tempo.** Medido em 12/09: **235** conversas sem responsável esperam há mais de 10 min (234 há mais de 30), contra 3 suas e 2 da Dra. Isa — é ali que a espera está, mas um "235" todo dia de manhã vira o número que ninguém lê. Proposta: a linha mostra **quem começou a esperar desde a sua última entrada** (sem histórico no aparelho, nas últimas 24 h), e o acumulado em texto apagado: "3 desde ontem · e mais 232 esperando há mais tempo". Só nas conexões que a pessoa enxerga. Concorda com esse recorte?
+- **D7 — Clientes esperando sem responsável:** ✅ **sim, mas recortado pelo tempo.** Medido em 12/09: **235** conversas sem responsável esperam há mais de 10 min (234 há mais de 30), contra 3 suas e 2 da Dra. A — é ali que a espera está, mas um "235" todo dia de manhã vira o número que ninguém lê. Proposta: a linha mostra **quem começou a esperar desde a sua última entrada** (sem histórico no aparelho, nas últimas 24 h), e o acumulado em texto apagado: "3 desde ontem · e mais 232 esperando há mais tempo". Só nas conexões que a pessoa enxerga. Concorda com esse recorte?
 - **D13 — Reuniões: a agenda do CRM está VAZIA.** Medido em 12/09: `cb_meetings` não tem nenhuma linha — nunca houve reunião lançada; as reuniões do escritório vivem no Calendly. O bloco "Reuniões na agenda do CRM" mostraria "nenhuma" para todo mundo, todo dia. Opções:
   (a) ✅ **v1 sem o bloco de reuniões.** Ele é construído no dia em que houver reunião na agenda do CRM ou quando a (b) existir — código para tabela vazia é código para futuro hipotético.
   (b) **O Calendly passa a gravar na agenda do CRM**: uma reunião em `cb_meetings` por agendamento, com o dono definido por você (o agendamento não tem responsável hoje) e tratando cancelamento (hoje só `invitee.created` é assinado, então cancelamento nem chega). É trabalho na integração do Calendly, fora deste plano, e é o caminho que alimenta a agenda, os lembretes e este bloco de uma vez. Recomendo como próximo trabalho do Calendly.
@@ -349,7 +349,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
 - [x] **Medido no preview em 12/09/2026:** o `session_id` do token **não muda** na renovação — o token emitido às 11:14 (`iat` 1789222486) foi renovado às 12:12 (`iat` 1789225977, `exp` +1 h) e a claim continuou `d4b2af40-…`. A metade "sessão de login nova" da régua da F1 é confiável, e a F2 pode usá-la.
 - [ ] **Medir no preview:** o token traz `amr` como objeto com `timestamp` (`types.d.ts:280-288,1654`)? Isso decide o caso "registro ausente" da F2 (§3.3).
 - [ ] Conferir Auth > Sessions no painel do projeto `hxnhakmyxyhalbsktzwe` (plano, time-box, inatividade, sessão única): D11.
-- [ ] Qual perfil a Dra. Isa usa — **e a Estephany Dias**, a terceira pessoa da conta que a medição revelou (segunda rodada do script).
+- [ ] Qual perfil a Dra. A usa — **e a Atendente B**, a terceira pessoa da conta que a medição revelou (segunda rodada do script).
 - [ ] Respostas da §6.1 e da §6.2, registradas aqui.
 - **O operador faz:** reconectar o conector, olhar o painel do Supabase e responder às perguntas.
 
@@ -431,7 +431,7 @@ Por que `/meu-dia` fica **fora** do catálogo de perfis:
   - DevTools offline: blocos com "—" e o botão liberado aos 8 s;
   - nenhuma rolagem horizontal no celular;
   - título certo em `/agenda`.
-- **O operador faz:** testar com a própria conta e com a da Dra. Isa.
+- **O operador faz:** testar com a própria conta e com a da Dra. A.
 
 ### F2 — Guarda de 4 h sem atividade + volta ao ponto (partida em F2a e F2b)
 
@@ -629,7 +629,7 @@ Depois das quatro revisões, conferi à mão os pontos que decidem o desenho e r
 - D1 decidida pelos dados: "novidades desde a última entrada", porque as não lidas acumuladas repetiriam "7" toda manhã.
 - D7 ganhou recorte por tempo: 235 conversas sem responsável esperando há mais de 10 min é acervo, não a urgência do dia.
 - D13 mudou de forma: a agenda do CRM está vazia; o bloco de reuniões sai da v1 e o caminho recomendado é o Calendly gravar na agenda.
-- A conta tem **três** pessoas ativas (Leonardo, Dra. Isa, Estephany Dias); os testes da F1 incluem a terceira.
+- A conta tem **três** pessoas ativas (Leonardo, Dra. A, Atendente B); os testes da F1 incluem a terceira.
 - §3.1 confirmada por `auth.sessions`: sessões de 51 dias sem renovar continuam vivas; time-box desligado.
 
 ---
@@ -886,7 +886,7 @@ A verificação no preview com o banco de produção mostrou "4" e, investigando
   "Contato Avulso"**. Foi soluço pontual — uma ocorrência em sete dias, zero
   agendadas com o mesmo erro, e as seis conexões reais conectadas agora.
 - **3 entradas não viraram atendimento** — a da Angela acima, mais **Joel**
-  (08/09, telefone 5519982764080) e **Renato** (08/09, 5511999956666), os
+  (08/09, telefone 5519980000004) e **Renato** (08/09, 5511990000003), os
   dois `sem_contato`. Os dois são ANTERIORES à revisão da D2 do Calendly, que
   fez a ficha nascer do agendamento: hoje o "Processar de novo" cria a ficha
   e roda a automação.

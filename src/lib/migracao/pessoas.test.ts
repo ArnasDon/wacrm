@@ -7,8 +7,8 @@ import {
 } from "./pessoas";
 
 /** O par medido em produção: a MESMA pessoa nas duas grafias. */
-const SEM_NOVE = "553172090560";
-const COM_NOVE = "5531972090560";
+const SEM_NOVE = "553170000006";
+const COM_NOVE = "5531970000006";
 
 describe("pessoas da carga da Kommo", () => {
   describe("a régua é a do NONO DÍGITO — o defeito de 320 fichas", () => {
@@ -53,16 +53,16 @@ describe("pessoas da carga da Kommo", () => {
   describe("pessoa que NÃO está aqui", () => {
     it("vira `criar`, não `existe`", () => {
       const aqui = indexarFichasExistentes([{ id: "x", phone_normalized: "5511999990000" }]);
-      expect(resolverPessoa("5583988745316", aqui)).toEqual({
+      expect(resolverPessoa("5583980000016", aqui)).toEqual({
         tipo: "criar",
-        telefone: "5583988745316",
+        telefone: "5583980000016",
       });
     });
 
     it("número de OUTRO DDD com final parecido não casa", () => {
       // 82 x 15: dois DDDs, mesmos 8 finais. A régua dos últimos 8 casaria.
-      const aqui = indexarFichasExistentes([{ id: "pb", phone_normalized: "5582988745316" }]);
-      expect(resolverPessoa("5515988745316", aqui).tipo).toBe("criar");
+      const aqui = indexarFichasExistentes([{ id: "pb", phone_normalized: "5582980000016" }]);
+      expect(resolverPessoa("5515980000016", aqui).tipo).toBe("criar");
     });
   });
 
@@ -78,7 +78,7 @@ describe("pessoas da carga da Kommo", () => {
       expect(pessoaDoTelefone(null)).toBeNull();
     });
 
-    it.each(["98874531", "988745316", "(83) 8874-531"])(
+    it.each(["98000001", "980000016", "(83) 8000-001"])(
       "CRÍTICO: %s (8–9 dígitos) vira PULAR — a função do banco exige 10",
       (entrada) => {
         // `digitosDoTelefone` aceita 8 dígitos; a carga não. Um só destes

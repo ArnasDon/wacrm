@@ -390,7 +390,7 @@ export function InboxFilters({
         // empresa) atrás de "Mais filtros". Uma coluna, de propósito: `sm:`
         // olha a JANELA, mas esta barra tem largura FIXA no desktop (320px
         // no `lg`, 360 no `xl`). Duas colunas dariam ~130px cada, e "Recebeu
-        // link de agendamento" ou "Leonardo Cabral Baptista" truncariam no
+        // link de agendamento" ou "Rodrigo Tavares Monteiro" truncariam no
         // próprio gatilho. E o efeito era invertido: no celular, onde a
         // lista ocupa a tela toda, ele caía para uma coluna larga.
         <div className="grid gap-2 rounded-lg border border-border bg-muted/30 p-2.5">

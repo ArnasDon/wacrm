@@ -13,14 +13,14 @@ import {
 
 describe("digitosDoTelefone", () => {
   it("o lembrete por SMS vem com DDI e entra como veio", () => {
-    expect(digitosDoTelefone("+55 96 99112-6767")).toBe("5596991126767");
+    expect(digitosDoTelefone("+55 96 99000-0016")).toBe("5596990000016");
     expect(digitosDoTelefone("+1 404-555-1234")).toBe("14045551234");
   });
 
   it("o que o brasileiro digita sem DDI ganha o 55", () => {
-    expect(digitosDoTelefone("(96) 99112-6767")).toBe("5596991126767");
-    expect(digitosDoTelefone("96 9112-6767")).toBe("559691126767");
-    expect(digitosDoTelefone("83988745316")).toBe("5583988745316");
+    expect(digitosDoTelefone("(96) 99000-0016")).toBe("5596990000016");
+    expect(digitosDoTelefone("96 9000-0016")).toBe("559690000016");
+    expect(digitosDoTelefone("83980000016")).toBe("5583980000016");
   });
 
   it("CRÍTICO: número de fora escrito só em dígitos NÃO ganha o 55 (o 9 na 3ª posição é o que separa)", () => {
@@ -29,17 +29,17 @@ describe("digitosDoTelefone", () => {
     expect(digitosDoTelefone("14045551234")).toBe("14045551234");
     expect(digitosDoTelefone("1 404 555 1234")).toBe("14045551234");
     // celular brasileiro: DDD + 9 + 8 dígitos
-    expect(digitosDoTelefone("83988745316")).toBe("5583988745316");
+    expect(digitosDoTelefone("83980000016")).toBe("5583980000016");
     expect(digitosDoTelefone("11 91234-5678")).toBe("5511912345678");
   });
 
   it("já com 55 e sem `+` não dobra o DDI", () => {
-    expect(digitosDoTelefone("5596991126767")).toBe("5596991126767");
-    expect(digitosDoTelefone("55 96 99112-6767")).toBe("5596991126767");
+    expect(digitosDoTelefone("5596990000016")).toBe("5596990000016");
+    expect(digitosDoTelefone("55 96 99000-0016")).toBe("5596990000016");
   });
 
   it("prefixo internacional 00 é DDI escrito de outro jeito", () => {
-    expect(digitosDoTelefone("0055 96 99112 6767")).toBe("5596991126767");
+    expect(digitosDoTelefone("0055 96 99000 0016")).toBe("5596990000016");
   });
 
   it("curto ou longo demais não é telefone", () => {
@@ -52,9 +52,9 @@ describe("digitosDoTelefone", () => {
 
 describe("pareceTelefone", () => {
   it("aceita as formas usuais", () => {
-    expect(pareceTelefone("(96) 99112-6767")).toBe(true);
-    expect(pareceTelefone("+55 96 99112-6767")).toBe(true);
-    expect(pareceTelefone("96991126767")).toBe(true);
+    expect(pareceTelefone("(96) 99000-0016")).toBe(true);
+    expect(pareceTelefone("+55 96 99000-0016")).toBe(true);
+    expect(pareceTelefone("96990000016")).toBe(true);
   });
 
   it("recusa texto com letras ou poucos dígitos", () => {
@@ -67,7 +67,7 @@ describe("pareceTelefone", () => {
 
 describe("formatarTelefone", () => {
   it("brasileiro com 9 dígitos", () => {
-    expect(formatarTelefone("5596991126767")).toBe("(96) 99112-6767");
+    expect(formatarTelefone("5596990000016")).toBe("(96) 99000-0016");
   });
 
   it("brasileiro com 8 dígitos (fixo)", () => {
@@ -85,16 +85,16 @@ describe("formatarTelefone", () => {
 
 describe("variantesDoNonoDigito", () => {
   it("celular gravado COM o 9 ganha a irmã sem ele — a original primeiro", () => {
-    expect(variantesDoNonoDigito("5583988745316")).toEqual([
-      "5583988745316",
-      "558388745316",
+    expect(variantesDoNonoDigito("5583980000016")).toEqual([
+      "5583980000016",
+      "558380000016",
     ]);
   });
 
   it("celular gravado SEM o 9 ganha a irmã com ele", () => {
-    expect(variantesDoNonoDigito("558388745316")).toEqual([
-      "558388745316",
-      "5583988745316",
+    expect(variantesDoNonoDigito("558380000016")).toEqual([
+      "558380000016",
+      "5583980000016",
     ]);
   });
 
@@ -105,7 +105,7 @@ describe("variantesDoNonoDigito", () => {
   });
 
   it("sem DDI 55, ou de outro país, volta sozinho", () => {
-    expect(variantesDoNonoDigito("83988745316")).toEqual(["83988745316"]);
+    expect(variantesDoNonoDigito("83980000016")).toEqual(["83980000016"]);
     expect(variantesDoNonoDigito("14045551234")).toEqual(["14045551234"]);
     expect(variantesDoNonoDigito("")).toEqual([""]);
   });
@@ -113,9 +113,9 @@ describe("variantesDoNonoDigito", () => {
 
 describe("telefoneCanonico (a chave única de contacts desde a 1024)", () => {
   it.each([
-    ["558388745316", "5583988745316"], // celular sem o 9: ganha
-    ["5583988745316", "5583988745316"], // com o 9: fica
-    ["+55 (83) 8874-5316", "5583988745316"], // separadores saem
+    ["558380000016", "5583980000016"], // celular sem o 9: ganha
+    ["5583980000016", "5583980000016"], // com o 9: fica
+    ["+55 (83) 8000-0016", "5583980000016"], // separadores saem
     ["551132345678", "551132345678"], // fixo (começa em 3): não inventa 9
     ["5511912345678", "5511912345678"], // 13 dígitos: fica como está
     ["14045551234", "14045551234"], // fora do Brasil: fica
@@ -130,7 +130,7 @@ describe("telefoneCanonico (a chave única de contacts desde a 1024)", () => {
   });
 
   it("as duas grafias do nono dígito têm SEMPRE a mesma canônica", () => {
-    for (const numero of ["558388745316", "5583988745316", "5511987654321", "556199998888"]) {
+    for (const numero of ["558380000016", "5583980000016", "5511987654321", "556199998888"]) {
       const [a, b] = variantesDoNonoDigito(numero);
       if (b === undefined) continue;
       expect(telefoneCanonico(a)).toBe(telefoneCanonico(b));
@@ -139,7 +139,7 @@ describe("telefoneCanonico (a chave única de contacts desde a 1024)", () => {
 
   it("dois números que NÃO são irmãos continuam distintos (os pares ambíguos do de-para)", () => {
     // Mesmos 8 finais, DDDs diferentes: duas pessoas.
-    expect(telefoneCanonico("5582988745316")).not.toBe(telefoneCanonico("5515988745316"));
+    expect(telefoneCanonico("5582980000016")).not.toBe(telefoneCanonico("5515980000016"));
     // Fixo e celular que diferem só no 9: o fixo não tem irmã.
     expect(telefoneCanonico("551132345678")).not.toBe(telefoneCanonico("5511932345678"));
   });

@@ -51,7 +51,7 @@ function estado(extra: Partial<Record<string, unknown[]>> = {}, config: Record<s
       accounts: [{ id: CONTA, owner_user_id: DONO, name: "CB Advogados" }],
       cb_asaas_config: [{ account_id: CONTA, regua_ativa: true, regua_ativada_em: ATIVADA, regua_intervalo_dias: 3, vencidas_listadas_em: LISTAGEM, ...config }],
       cb_channels: [{ id: CANAL, account_id: CONTA, status: "connected", kind: "evolution" }],
-      contacts: [{ id: "ct-a", account_id: CONTA, phone: "5583988745316" }, { id: "ct-b", account_id: CONTA, phone: "5583988745317" }],
+      contacts: [{ id: "ct-a", account_id: CONTA, phone: "5583980000016" }, { id: "ct-b", account_id: CONTA, phone: "5583980000017" }],
       automations: [automacao("a-1", "asaas_cobranca_vencida", { dias_de_atraso: 1 }, "Cobrança · 1 dia"), automacao("a-0", "asaas_cobranca_vence_hoje", {}, "Lembrete")],
       cb_asaas_clientes: [cliente("cus_a", "ct-a")],
       cb_asaas_cobrancas: [cobranca("c1", "cus_a")],
@@ -182,7 +182,7 @@ describe("varrerRegua — o interruptor e as cercas", () => {
 
   it("telefone que o remetente do robô recusa (zero na frente, 18 dígitos de JID de grupo): pulado sem travar — senão a trava fechava `falhou` sem nova chance (Codex, 4ª rodada do PR #206)", async () => {
     const e = estado({
-      contacts: [{ id: "ct-a", account_id: CONTA, phone: "0800123456789" }, { id: "ct-b", account_id: CONTA, phone: "120363025246125486" }, { id: "ct-c", account_id: CONTA, phone: "(83) 98874-5316" }],
+      contacts: [{ id: "ct-a", account_id: CONTA, phone: "0800123456789" }, { id: "ct-b", account_id: CONTA, phone: "120363025246125486" }, { id: "ct-c", account_id: CONTA, phone: "(83) 98000-0016" }],
       cb_asaas_clientes: [cliente("cus_a", "ct-a"), cliente("cus_b", "ct-b"), cliente("cus_c", "ct-c")],
       cb_asaas_cobrancas: [cobranca("c1", "cus_a"), cobranca("c2", "cus_b"), cobranca("c3", "cus_c")],
     });

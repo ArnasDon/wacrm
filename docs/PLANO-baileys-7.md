@@ -170,14 +170,14 @@ o cliente recebe os bytes sem a chave.
 
 | Contato | Sessões gravadas | Leitura |
 | --- | --- | --- |
-| Vitor (5511995313317 ↔ LID 276819265749011) | `session-5511995313317.0`, `.99`, `session-276819265749011.0`, `.99` | **4 sessões para 2 aparelhos** |
-| Humberto (555491761508 ↔ LID 29266007871686) | `session-555491761508.0`, `session-29266007871686.0` | **2 sessões para 1 aparelho** |
-| Nosso número (5511964102992) | `.0 .21 .22 .29` | celular + **3 aparelhos vinculados** — cada envio é cifrado 4 vezes a mais |
+| Vitor (5511990000002 ↔ LID 100000000000104) | `session-5511990000002.0`, `.99`, `session-100000000000104.0`, `.99` | **4 sessões para 2 aparelhos** |
+| Humberto (555490000008 ↔ LID 10000000000105) | `session-555490000008.0`, `session-10000000000105.0` | **2 sessões para 1 aparelho** |
+| Nosso número (5511960000001) | `.0 .21 .22 .29` | celular + **3 aparelhos vinculados** — cada envio é cifrado 4 vezes a mais |
 | Em todos os hashes | sessões em formato LID (`_1`): **0**; `lid-mapping`: **0** | a biblioteca não faz ideia do que é LID |
 
 - Enviamos para `…@s.whatsapp.net`; os recibos (`MessageUpdate`) voltam por
   `…@lid`. A Evolution **sabe** o mapeamento (`IsOnWhatsapp`:
-  `5511995313317@s.whatsapp.net` ↔ `276819265749011@lid`); a biblioteca não o usa.
+  `5511990000002@s.whatsapp.net` ↔ `100000000000104@lid`); a biblioteca não o usa.
 - Escala: **3.325 dos 7.019 chats** e **12.267 dos 22.618 `IsOnWhatsapp`** já são
   LID; **6.103 das 6.501** mensagens do CRM em 30 dias têm `remote_jid_lid`
   (medição das 16h de 09/09).
@@ -197,9 +197,9 @@ o cliente recebe os bytes sem a chave.
 ### 2.3 Achados de carona (não são a causa; entram na Fase 0)
 
 - **Duas instâncias órfãs em laço de QR** (a cada ~45 s, `QRCODE_LIMIT=1902`):
-  `Bancario` (id `385dac9a-…`, criada 06/2025, `ownerJid` **5511964102992 — o
+  `Bancario` (id `385dac9a-…`, criada 06/2025, `ownerJid` **5511960000001 — o
   mesmo número da Bancário - Comercial**, 9.454 chaves no Redis) e `CBAdv`
-  (`c68ecb8d-…`, `ownerJid` 558386262646 — o mesmo da Trabalhista - Jurídico,
+  (`c68ecb8d-…`, `ownerJid` 558380000020 — o mesmo da Trabalhista - Jurídico,
   3.074 chaves). Não existem no CRM.
 - **4 hashes no Redis de instâncias já apagadas**: `f71807c0-…` (3.078
   campos), `7fc75fe2-…` (86), `dcbf9851-…` (30), `60a309e7-…` (2.720).
@@ -390,7 +390,7 @@ seja atribuível à Evolution e não ao CRM.
 - `aprenderNossoLid` recebe `senderLid` (hoje recebe `senderJid`, que com a
   Baileys 7 passa a ser o telefone — e a função só aceita `@lid`, então nunca
   mais aprenderia). Hoje só o canal Bancário - Jurídico tem `own_lid`
-  (`40373380473043@lid`, 12 grupos); os outros três estão `NULL`.
+  (`10000000000106@lid`, 12 grupos); os outros três estão `NULL`.
 - **Decisão proposta (confirmar):** `group_sender_jid` continua sendo o **LID**
   quando houver — identidade estável e igual a 100% das linhas existentes
   (`remetenteDoGrupo` hoje prefere o telefone dos campos alternativos, que na
@@ -680,7 +680,7 @@ Tudo na VPS (`vps.cbadvogados.com`, Swarm). **Regra que segue valendo:
    tem de estar vazia na janela (cancelar e reagendar depois). ⚠️ Em
    09/09 às 16h havia **1 pendente** — conferir o que é antes de marcar a
    janela.
-7. **Aviso à equipe**: usar celular/outro CRM na janela (a Dra. Isa mandou 17
+7. **Aviso à equipe**: usar celular/outro CRM na janela (a Dra. A mandou 17
    pelo CRM em 09/09).
 
 ### 6.2.0 Pré-voo da Fase 1 (no dia da janela, ANTES de trocar a imagem)
@@ -1031,7 +1031,7 @@ Evolution e do CRM abertos. Registrar resultado e data em cada linha.
 | latência de entrada | T21 (consulta em Anexo B) | segundos, não minutos. **Base 09/09: p50 1,2 s, p95 2,1 s** |
 | **entrada continua chegando** | Supabase: recebidas por hora (Anexo B) | **Base 09/09 (mediana por hora do dia, 7 dias)**: 8h–17h entre 20 e 48/h; 18h 14; noite 1–9/h. Hora cheia com 0 recebidas onde a base dá ≥ 5 = investigar na hora (webhook 401/400 é descartado sem retentativa pela Evolution e o CRM não loga o 401). A **primeira** mensagem de cliente depois do `scale=1` tem de aparecer no Supabase — prova de que o `Authorization` guardado na tabela `Webhook` ainda vale |
 | **falha de decifragem do NOSSO lado** (a direção silenciosa: a mensagem do cliente não vira webhook e ele vê ✓✓) | log da Evolution, contagens sobre o arquivo guardado por marco (`grep -ci`) | **Base 09/09, 24 h até 18:24** (inclui o laço de QR das órfãs até 17:27): `Bad MAC` **166**, `No matching sessions` 20, `failed to decrypt` 20, `Decrypt` 352, `SessionError` 10, `keep alive` 82, `stream:error` 4, `Closing open session` 3, `Closing stale` 24, `qrcodeCount` 444. Esperado depois: **cai ou zera**; SUBIR = sessão migrada errada para algum contato → abrir a conversa daquele JID no celular e comparar com o CRM |
-| relato de "Aguardando mensagem" | **ativo, não passivo**: (a) com T1 verde, a Dra. Isa volta ao CRM e reporta QUALQUER "Aguardando" na hora; (b) 3× por dia o operador abre no **celular do escritório** as conversas em que o CRM enviou texto e confere que a cópia **não** diz "Aguardando mensagem" (é o único detector do próprio sintoma que não depende de reclamação — seção 1) | 0/N em 24 h e 48 h |
+| relato de "Aguardando mensagem" | **ativo, não passivo**: (a) com T1 verde, a Dra. A volta ao CRM e reporta QUALQUER "Aguardando" na hora; (b) 3× por dia o operador abre no **celular do escritório** as conversas em que o CRM enviou texto e confere que a cópia **não** diz "Aguardando mensagem" (é o único detector do próprio sintoma que não depende de reclamação — seção 1) | 0/N em 24 h e 48 h |
 
 ### 8.4 Gatilhos de rollback (decididos antes, sem discutir na hora)
 
@@ -1115,7 +1115,7 @@ Script `prevoo-backup.sh` em segundo plano na VPS (`/root/backups/prevoo-run.log
 - **Tentativa 2 (19:02–19:03)**: `scale=0` 19:02:03; foto final **`20260909-1902-final`** (dump 14,26 MB, `Message` **70.550** / máx `messageTimestamp` 1788991209, Redis **59 = 59**, `HLEN` 437/726/275/1276, RDB 3,2 MB); especificação: imagem por digest + `TELEMETRY_ENABLED=false` + **`--mount-add type=bind,source=/root/evolution/prisma.config.ts,target=/evolution/prisma.config.ts,readonly`**; `scale=1` **19:02:22**; `Migration succeeded` + `Prisma generate succeeded` às 19:02:26 (as 4: `add_kafka_integration`, `add_chat_instance_remotejid_unique`, `increase_token_length`, `add_runtime_config`); HTTP no ar ~19:02:35; **4 × `CONNECTED TO WHATSAPP` sem QR** (19:02:36), `Instance` 4 × `open`, webhooks `connection.update` entregues ao CRM (os 4 `cb_channels` marcados `connected` às 19:02:36 — o `Authorization` guardado continua válido). Contêiner: `2.4.0` / `7.0.0-rc13`. `/license/status` → `{"status":"inactive","instance_id":"02510f09-…"}`; `fetchInstances` sem chave → 503 com `register_url = https://api.cbadvogados.com/manager/login` (certo).
 - **Sinais aos 4 min**: `lid-mapping-*` = **2** em cada um dos 4 hashes (campo novo da v7), `session-*_1.*` ainda 0 (migra no primeiro tráfego), PN inalteradas (154/142/35/291); log: `463` = 0, `Bad MAC` = 0, erros = 0. Apareceu um hash `evolution:instance:whatsapp_web_version` (cache novo da 2.4).
 - **Ativação (19:13)**: pelo operador, no `/manager`; `/license/status` → `active`; `RuntimeConfig` guardada em `evolution-runtimeconfig-20260909-1902-final.dump`; `fetchInstances` com chave → 4 × `open`. Entre o `scale=1` e a ativação o CRM registrou 13 × `[health] servidor Evolution não respondeu` e **2 anexos sem arquivo** (uma imagem de cliente às 19:06 e uma nota de voz do celular às 19:11 — o download passa pela API, que respondia 503). Os dois foram **recuperados às 19:34** por `getBase64FromMediaMessage` → Storage (`account-…/1788993295164-4A7B0AA03B1C7F4E584D.jpg`, `…-2A78908AE8C263E859CE.oga`) → `media_url`/`media_type` na linha.
-- **Rodada 1 de testes (19:19–19:20, lead autorizado, canal Bancário - Comercial)**: **T1 passou** — os 4 textos do CRM chegaram legíveis, e o WhatsApp Web do escritório mostra ✓✓ neles **sem "Aguardando mensagem"** (a mensagem das 18:16, anterior ao upgrade, continua com o aviso — é o sintoma antigo); **T17 passou** — o texto do celular pareado apareceu no CRM com a etiqueta CELULAR, `DESCARTADA` = 0; as respostas do lead ("Oi", "Teste") entraram (T14 do lado dele e T15 a confirmar com o operador). **Defeito achado**: no CRM os 4 textos ficaram com **um ✓** enquanto o WhatsApp mostrava ✓✓. Causa medida no log: a 2.4 emite **vários `messages.update` fora de ordem** para a mesma mensagem — `SERVER_ACK` 19:19:12.089, `DELIVERY_ACK` 19:19:12.241, `SERVER_ACK` 19:19:12.270, `DELIVERY_ACK` 19:19:13.306 e **`SERVER_ACK` 19:19:21.531** (e outro às 19:19:51 nas três seguintes), alternando `remoteJid` `143838555439152@lid` e `143838555439152` (sem sufixo); a rota do CRM aplicava o status sem guarda e o último rebaixava `delivered` → `sent`. O replay manual do `DELIVERY_ACK` real contra a rota virou a linha `delivered` — o caminho está íntegro. **Ajuste 6** (escada monotônica) no **PR #171**. No banco da própria Evolution as 4 ficaram `PENDING` (ela não casa o recibo por LID com a linha guardada por telefone — só afeta o bookkeeping dela).
+- **Rodada 1 de testes (19:19–19:20, lead autorizado, canal Bancário - Comercial)**: **T1 passou** — os 4 textos do CRM chegaram legíveis, e o WhatsApp Web do escritório mostra ✓✓ neles **sem "Aguardando mensagem"** (a mensagem das 18:16, anterior ao upgrade, continua com o aviso — é o sintoma antigo); **T17 passou** — o texto do celular pareado apareceu no CRM com a etiqueta CELULAR, `DESCARTADA` = 0; as respostas do lead ("Oi", "Teste") entraram (T14 do lado dele e T15 a confirmar com o operador). **Defeito achado**: no CRM os 4 textos ficaram com **um ✓** enquanto o WhatsApp mostrava ✓✓. Causa medida no log: a 2.4 emite **vários `messages.update` fora de ordem** para a mesma mensagem — `SERVER_ACK` 19:19:12.089, `DELIVERY_ACK` 19:19:12.241, `SERVER_ACK` 19:19:12.270, `DELIVERY_ACK` 19:19:13.306 e **`SERVER_ACK` 19:19:21.531** (e outro às 19:19:51 nas três seguintes), alternando `remoteJid` `100000000000103@lid` e `100000000000103` (sem sufixo); a rota do CRM aplicava o status sem guarda e o último rebaixava `delivered` → `sent`. O replay manual do `DELIVERY_ACK` real contra a rota virou a linha `delivered` — o caminho está íntegro. **Ajuste 6** (escada monotônica) no **PR #171**. No banco da própria Evolution as 4 ficaram `PENDING` (ela não casa o recibo por LID com a linha guardada por telefone — só afeta o bookkeeping dela).
 - **Decifragem**: 3 mensagens de clientes deram `SessionError` ×3 cada (19:06 e 19:13, `failed to decrypt`), e as três **entraram** depois da repetição (retry receipt da v7): a imagem das 19:06 é a recuperada acima; as duas mensagens do lead às 19:19:57 entraram na hora. `463` = 0, `Bad MAC` = 0.
 - **`fileLength` (P5)**: chega como **objeto `Long`** `{ low: 59064, high: 0, unsigned: true }` (webhook e banco). `mediaBytesOf` devolvia `null` (tentava baixar, sem dano), mas o portão da 986 ficava cego → **ajuste 4** (`bytesDeclarados`) no mesmo PR #171. `mediaKey` chega como `Uint8Array` serializado.
 - **Reinícios do `crm_crm` (19:01, 19:10, 19:19)**: não foi defeito — foram **três deploys** do pipeline (PRs #163, #164, #168 de outra sessão mesclados no `main` durante a janela); o rollout `start-first` dá uns segundos de 502 no Traefik, e a Evolution registrou 8 × `Request failed with status code 502` nos webhooks às 19:19:57–19:20:15 — **retentados** (as mensagens do lead entraram). Lição em 0.4.
@@ -1237,7 +1237,7 @@ overlay: o curl sai por `https://api.cbadvogados.com`.
 - [x] Pré-voo, parte só de leitura (6.2.0, itens 2, 3, 5, 6, 7) — 09/09 18:10, registro em 9.2
 - [x] Pré-voo, parte de backup (6.2.0, item 4): dump novo, `FLUSHDB` do db 9 + cópia, RDB, restauração de prova, log — 09/09 18:24, carimbo `20260909-1824`, registro em 9.3
 - [x] Operador confirmou janela e equipe avisada; **1 celular** à mão (os outros 3 números são de teste — QR em 10/09 se pedirem); P2 decidida (LID) — 09/09 noite
-- [x] Instância do celular à mão **nomeada** (P4): `cbcrm-…-76ac04` (11 96410-2992)
+- [x] Instância do celular à mão **nomeada** (P4): `cbcrm-…-76ac04` (11 96000-0001)
 - [x] `docker service scale evolution_evolution=0` e **foto final** (6.2, passos 0–1) — `20260909-1902-final` (9.4)
 - [x] `service update` com a imagem por digest + `TELEMETRY_ENABLED=false` + o mount do `prisma.config.ts` (a 0 réplicas) e `scale --detach =1` — 19:02:22 BRT (9.4); a tentativa 1 sem o mount falhou e voltou em 4 min
 - [x] Migrations aplicadas — as 4 em `_prisma_migrations` às 19:02:26 (nomes em 9.4); sem laço na tentativa 2
@@ -1364,7 +1364,7 @@ duplicidade volta em dias ou semanas (relatos de 1–2 dias a semanas).
 | ~~P1~~ | **Resolvida 09/09**: cadastro com `leonardocabralb@gmail.com` (telefone informado ao executor, fora do repositório) | — |
 | ~~P2~~ | **Resolvida 09/09 (noite)**: `group_sender_jid` continua LID (5.2) — decisão do operador; nada muda no código | — |
 | ~~P3~~ | **Autorizada 09/09** e executada (seção 9, Fase 0) | — |
-| ~~P4~~ | **Resolvida 09/09 (noite)**: janela aberta; o operador tem **só 1 celular à mão** e aceitou o risco — os outros 3 números foram conectados **para teste**, ninguém os usa; se pedirem QR, ficam desconectados e a leitura fica para 10/09. Equipe avisada (celular/outro CRM). Celular à mão atende `cbcrm-a3af0191-…-76ac04` (11 96410-2992) — confirmado 09/09 18:50 | — |
+| ~~P4~~ | **Resolvida 09/09 (noite)**: janela aberta; o operador tem **só 1 celular à mão** e aceitou o risco — os outros 3 números foram conectados **para teste**, ninguém os usa; se pedirem QR, ficam desconectados e a leitura fica para 10/09. Equipe avisada (celular/outro CRM). Celular à mão atende `cbcrm-a3af0191-…-76ac04` (11 96000-0001) — confirmado 09/09 18:50 | — |
 | ~~P5~~ | **Resolvida 09/09**: objeto `Long {low, high, unsigned}` → ajuste 4 (PR #171) | — |
 | ~~P10~~ | **Resolvida 09/09 21:11**: imagem própria `evolution-api-cb` (workflow `evolution-cb.yml`, `docker/evolution-cb/`) com o patch do #2708 + `prisma.config.ts` dentro, em produção; CRM lê a referência (PRs #184/#186). T7 ✅. Quando o upstream mesclar o #2708, voltar à imagem oficial (9.5) | — |
 | P12 | **Cron `docker image prune -af --filter until=24h`** (00:17, diário) apaga as imagens de rollback (`homolog`, `lidfix`) na madrugada seguinte à troca. São públicas e voltam com `pull`, mas o rollback passa a depender de rede. Opções: tirar o `-a` do cron, ou `docker create --name manter-<nome> <imagem@digest> true` para segurá-las | operador decide |
@@ -1382,12 +1382,12 @@ duplicidade volta em dias ou semanas (relatos de 1–2 dias a semanas).
 
 | Instância (Evolution) | `id` | `ownerJid` | Estado | Canal no CRM | `own_lid` | Grupos | Hash Redis (campos) |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `cbcrm-a3af0191-5adc-4fa8-9c27-d69c2e5666d8-76ac04` | `44982408-b357-449c-adae-06ff28dc1dd3` | 5511964102992 | open | Bancário - Comercial (padrão) | NULL | 0 | 1.235 (280 sessões PN, 908 pre-keys, 13 sender-keys) |
-| `juridico-bancario-d5a458` | `be282022-d83d-4800-a4da-f139ce034310` | 558388711991 | open | Bancário - Jurídico | `40373380473043@lid` | 12 | 274 |
-| `comercial-trabalhista-e7c7ea` | `200ac9ef-98e0-4f35-a43e-f22ea168e7bd` | 558399673788 | open | Trabalhista - Comercial | NULL | 0 | 407 |
-| `trabalhista-juridico-bf8a08` | `d1d9caf5-24db-48a6-a58c-8d0953200f7c` | 558386262646 | open | Trabalhista - Jurídico (`display_phone` NULL) | NULL | 0 | 664 |
-| ~~`Bancario`~~ (órfã, **removida 09/09 17:27**) | `385dac9a-e446-44d9-be94-68ab94935e2e` | 5511964102992 | era `connecting` em laço de QR | — | — | — | 9.454 (cópia no db 9) |
-| ~~`CBAdv`~~ (órfã, **removida 09/09 17:27**) | `c68ecb8d-5b13-4d0b-85b9-c3d9b89a01a2` | 558386262646 | era `connecting` em laço de QR | — | — | — | 3.074 (cópia no db 9) |
+| `cbcrm-a3af0191-5adc-4fa8-9c27-d69c2e5666d8-76ac04` | `44982408-b357-449c-adae-06ff28dc1dd3` | 5511960000001 | open | Bancário - Comercial (padrão) | NULL | 0 | 1.235 (280 sessões PN, 908 pre-keys, 13 sender-keys) |
+| `juridico-bancario-d5a458` | `be282022-d83d-4800-a4da-f139ce034310` | 558380000010 | open | Bancário - Jurídico | `10000000000106@lid` | 12 | 274 |
+| `comercial-trabalhista-e7c7ea` | `200ac9ef-98e0-4f35-a43e-f22ea168e7bd` | 558390000012 | open | Trabalhista - Comercial | NULL | 0 | 407 |
+| `trabalhista-juridico-bf8a08` | `d1d9caf5-24db-48a6-a58c-8d0953200f7c` | 558380000020 | open | Trabalhista - Jurídico (`display_phone` NULL) | NULL | 0 | 664 |
+| ~~`Bancario`~~ (órfã, **removida 09/09 17:27**) | `385dac9a-e446-44d9-be94-68ab94935e2e` | 5511960000001 | era `connecting` em laço de QR | — | — | — | 9.454 (cópia no db 9) |
+| ~~`CBAdv`~~ (órfã, **removida 09/09 17:27**) | `c68ecb8d-5b13-4d0b-85b9-c3d9b89a01a2` | 558380000020 | era `connecting` em laço de QR | — | — | — | 3.074 (cópia no db 9) |
 | ~~(apagadas, só hash)~~ **removidas 09/09** | `f71807c0-…`, `7fc75fe2-…`, `dcbf9851-…`, `60a309e7-…` | — | — | — | — | — | 3.078 / 86 / 30 / 2.720 (cópias no db 9) |
 
 Canais do CRM sem instância na Evolution: "WhatsApp (QR Code)" (`Gabriel -

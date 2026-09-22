@@ -12,7 +12,7 @@ import { criarBanco, type Banco, type Linha } from './banco.test-helper';
 import { receberSemTelefone } from './receber';
 
 const RETIDAS = 'cb_mensagens_sem_telefone';
-const LID = '254833865040050@lid';
+const LID = '100000000000101@lid';
 const TEL = '5583900001111@s.whatsapp.net';
 const CARIMBO = 1789747434; // 2026-09-18T16:03:54Z
 const ms = (seg: number) => (CARIMBO + seg) * 1000;

@@ -309,7 +309,7 @@ upstream sobrescrevê-los:
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
 | `src/app/api/automations/[id]/duplicate/route.ts` | copia `channel_ids` (sem isso a cópia vira irrestrita) |
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
-| `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos |
+| `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
 | `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
@@ -1705,6 +1705,14 @@ O que morde código novo:
   quadro "vazio" com cara de funil sem negócio. `contact.tags` fica AUSENTE
   no plano B (fabricar `[]` afirmaria "sem etiquetas" sobre dado não
   carregado).
+- ⚠️ **O quadro carrega em DUAS etapas (22/09/2026)** — o porquê e a medição
+  estão em `DEAL_SELECT_ENXUTO` (`src/lib/pipelines/cartao.ts`): a lista
+  ENXUTA de todos os cards e o conteúdo só dos que as colunas desenham, por id
+  e só do funil aberto. O que morde: na junção (`juntarConteudo`) os campos da
+  lista enxuta VENCEM os do conteúdo; campo lido de TODOS os cards (indicador,
+  soma, filtro) vai no select enxuto, porque no conteúdo ele só existe para os
+  desenhados; e o plano B só liga com a RECUSA do embed (`RECUSA_DO_EMBED`),
+  nunca com rede fora ou 5xx.
 - **O retorno de rolagem EXPIRA (10 min), não é apagado no consumo**
   (`retorno.ts`): apagar antes dos rAF perdia a restauração se o quadro
   desmontasse na janela, ir-e-voltar duas vezes teleportava para `list[0]`, e
@@ -3462,8 +3470,8 @@ não é mais ele que decide "mesma pessoa". O que morde código novo:
   cliente, que o provedor já deu por entregue (a regra 18 do plano da Kommo).
 - ⚠️⚠️ **`findExistingContact` busca pelos DÍGITOS (`phone_normalized`),
   nunca pelo texto cru**, e prefere a IRMÃ do nono dígito ao casamento pelos 8
-  finais. Sobre `phone`, a ficha gravada "+55 83 98874-5316" não casava
-  `%88745316`: a busca, o INSERT e a releitura falhavam juntos e a mensagem
+  finais. Sobre `phone`, a ficha gravada "+55 83 98000-0016" não casava
+  `%80000016`: a busca, o INSERT e a releitura falhavam juntos e a mensagem
   sumia. E a tolerante sozinha devolvia a ficha MAIS ANTIGA com o mesmo final
   — que pode ser de outro DDD, outra pessoa.
 - ⚠️ **Lote que deduplica por GRAFIA derruba o lote inteiro.** O CSV do
@@ -3525,7 +3533,7 @@ novo:
 `src/lib/deals/titulo-do-card.ts` (puro, com teste), a coluna
 `deals.titulo_fixado_em` e o gatilho `cb_titulo_do_card_segue_a_ficha` em
 `contacts`. Pedido do operador (19/09/2026), olhando o Kanban: o card dizia
-"Bancário - Comercial — 558599704949" e a ficha, "Vanessa Bezerra". O que
+"Bancário - Comercial — 558590000013" e a ficha, "Paula Exemplo". O que
 morde código novo:
 
 - ⚠️ **O título nasce com o NOME e nada mais** (`routeContactToPipeline`). O
@@ -3547,9 +3555,9 @@ morde código novo:
   qualquer nome de verdade; título que JÁ identifica alguém só muda quando o
   nome novo foi ESCOLHIDO (`nome_fixado_em`: Calendly, Asaas, gente
   digitando). Nasceu de uma medição feita antes de escrever o código: **26**
-  cards guardavam o nome do CONTRATO ("Mamedes Candido de Oliveira Junior",
-  "José Almino de Araújo") enquanto a ficha já tinha o apelido do perfil
-  ("@Macol", "J.A.A.") — o Asaas cria a ficha com o nome completo e a
+  cards guardavam o nome do CONTRATO ("Marcos Exemplo de Teste Junior",
+  "José Exemplo de Teste") enquanto a ficha já tinha o apelido do perfil
+  ("@Apelido", "J.E.T.") — o Asaas cria a ficha com o nome completo e a
   primeira mensagem do cliente o substituía, e o card congelado era a última
   cópia viva do nome bom. Seguir a ficha cegamente rebaixaria os 26, que é o
   oposto do que a feature existe para fazer.
@@ -4160,8 +4168,8 @@ quatro queixas do operador na mesma tarde. O que morde código novo:
   busca que ela não fez. E só celular com DDI 55 (13 ou 12 dígitos, local
   começando em 6–9): é como `contacts.phone` guarda. A regra vale nos DOIS
   irmãos (`casaComABusca` do inbox e `casaComContato` do seletor de
-  contato) — "(83) 98874-5316" tem de achar a ficha gravada como
-  `558388745316`, que é como o WhatsApp entrega número antigo.
+  contato) — "(83) 98000-0016" tem de achar a ficha gravada como
+  `558380000016`, que é como o WhatsApp entrega número antigo.
 - ⚠️ **A barra de busca local SUBSTITUI a faixa da busca da lista enquanto
   está aberta.** `termoEfetivo` é a ÚNICA origem de `acharNoFio`, `alvoId` e
   das setas: as duas contam achados do MESMO fio, e duas contagens lado a
@@ -4798,7 +4806,7 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   de área nunca é 9 (N9X reservado), então o teste separa os dois; número
   de outro país com 11 dígitos e 9 ali (Bulgária fixo) ainda colide —
   a dica do editor manda escrever número de fora com `+`. Vale para o
-  passo `send_to_number` também — o mesmo helper, senão "(83) 98874-5316"
+  passo `send_to_number` também — o mesmo helper, senão "(83) 98000-0016"
   no editor saía para um número que não existe.
 - ⚠️ **A assinatura é conferida sobre o corpo CRU** (`request.text()`),
   `Calendly-Webhook-Signature: t=…,v1=…` = HMAC-SHA256 de `t.corpo` com a
@@ -6198,6 +6206,14 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   antiga; e o catálogo e as automações ficavam velhos até reabrir a tela.
   Quem criar outro caminho que mexa nesses estados avança a versão também. Os
   `load*` continuam devolvendo vazio para quem já os chamava.
+  ⚠️ O `refreshDeals` (depois de salvar, da lista e do arrasto recusado) e o
+  `refreshStages` (Gerenciar funil) descartam a resposta de funil que já não
+  está aberto (22/09/2026, há pino): trocar de funil logo depois de salvar
+  punha os cards, ou as etapas, do anterior no quadro do novo, colunas vazias
+  até recarregar. A cerca é SÓ de funil, de
+  propósito: o preenchimento do conteúdo (`carregarConteudo`) avança a
+  versão, e uma cerca de versão descartaria o refresh que desfaz o arrasto
+  recusado pelo banco.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de

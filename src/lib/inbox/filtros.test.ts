@@ -62,7 +62,7 @@ function grupo(patch: Partial<Conversation> = {}): Conversation {
       account_id: "a1",
       channel_id: "ch1",
       jid: "123@g.us",
-      subject: "Condomínio Rio Tucumã",
+      subject: "Condomínio Rio Jutaí",
       alias: null,
       description: null,
       picture_url: null,
@@ -124,7 +124,7 @@ describe("casaComABusca", () => {
   it("acha GRUPO pelo nome — grupo não tem contato", () => {
     // Sem este ramo, buscar não acharia grupo nenhum: nome e telefone são
     // ambos vazios numa conversa de grupo.
-    expect(casaComABusca(grupo(), "tucumã")).toBe(true);
+    expect(casaComABusca(grupo(), "jutaí")).toBe(true);
     expect(casaComABusca(grupo(), "ana")).toBe(false);
   });
 
@@ -144,7 +144,7 @@ describe("casaComABusca", () => {
 
     const base = conversa();
     const comAcento = conversa({
-      contact: { ...base.contact!, name: "Conceição Ramos" },
+      contact: { ...base.contact!, name: "Conceição Exemplo" },
     });
     expect(casaComABusca(comAcento, "conceicao")).toBe(true);
     expect(casaComABusca(comAcento, "Conceição")).toBe(true);
@@ -152,26 +152,26 @@ describe("casaComABusca", () => {
 });
 
 describe("casaComABusca — telefone escrito por gente (08/09/2026)", () => {
-  // `contacts.phone` guarda só dígitos com DDI. Colar "(19) 98276-4080" — a
+  // `contacts.phone` guarda só dígitos com DDI. Colar "(19) 98000-0004" — a
   // forma que o cliente manda, e a que o próprio CRM exibe — não achava
   // NADA, e a leitura do operador foi que o cliente não estava no CRM.
   const joel = conversa({
-    contact: { ...conversa().contact!, phone: "5519982764080", name: "Joel" },
+    contact: { ...conversa().contact!, phone: "5519980000004", name: "Joel" },
   });
 
   it("CRÍTICO: acha com o número formatado, com e sem DDI", () => {
-    expect(casaComABusca(joel, "(19) 98276-4080")).toBe(true);
-    expect(casaComABusca(joel, "+55 19 98276-4080")).toBe(true);
-    expect(casaComABusca(joel, "19 98276 4080")).toBe(true);
+    expect(casaComABusca(joel, "(19) 98000-0004")).toBe(true);
+    expect(casaComABusca(joel, "+55 19 98000-0004")).toBe(true);
+    expect(casaComABusca(joel, "19 98000 0004")).toBe(true);
   });
 
   it("o pedaço formatado também acha (é o que se cola do WhatsApp)", () => {
-    expect(casaComABusca(joel, "98276-4080")).toBe(true);
-    expect(casaComABusca(joel, "982764080")).toBe(true);
+    expect(casaComABusca(joel, "98000-0004")).toBe(true);
+    expect(casaComABusca(joel, "980000004")).toBe(true);
   });
 
   it("não passa a achar quem não tem aqueles dígitos", () => {
-    expect(casaComABusca(conversa(), "(19) 98276-4080")).toBe(false);
+    expect(casaComABusca(conversa(), "(19) 98000-0004")).toBe(false);
   });
 });
 
@@ -180,39 +180,39 @@ describe("casaComABusca — o nono dígito (09/09/2026)", () => {
   // número no celular COM o 9. Digitar o completo não achava a ficha, e a
   // busca virava exatidão onde deveria ser "contém".
   const semNove = conversa({
-    contact: { ...conversa().contact!, phone: "558388745316", name: "Renato" },
+    contact: { ...conversa().contact!, phone: "558380000016", name: "Renato" },
   });
   const comNove = conversa({
-    contact: { ...conversa().contact!, phone: "5583988745316", name: "Renato" },
+    contact: { ...conversa().contact!, phone: "5583980000016", name: "Renato" },
   });
 
   it("CRÍTICO: o número COM o 9 acha a ficha gravada SEM ele", () => {
-    expect(casaComABusca(semNove, "(83) 98874-5316")).toBe(true);
-    expect(casaComABusca(semNove, "+55 83 98874-5316")).toBe(true);
-    expect(casaComABusca(semNove, "83988745316")).toBe(true);
+    expect(casaComABusca(semNove, "(83) 98000-0016")).toBe(true);
+    expect(casaComABusca(semNove, "+55 83 98000-0016")).toBe(true);
+    expect(casaComABusca(semNove, "83980000016")).toBe(true);
   });
 
   it("e o número SEM o 9 acha a ficha gravada COM ele", () => {
-    expect(casaComABusca(comNove, "(83) 8874-5316")).toBe(true);
-    expect(casaComABusca(comNove, "558388745316")).toBe(true);
+    expect(casaComABusca(comNove, "(83) 8000-0016")).toBe(true);
+    expect(casaComABusca(comNove, "558380000016")).toBe(true);
   });
 
   it("o pedaço com o 9 na frente também acha (é 'contém', não exatidão)", () => {
-    expect(casaComABusca(semNove, "98874-5316")).toBe(true);
-    expect(casaComABusca(semNove, "9 8874")).toBe(true);
+    expect(casaComABusca(semNove, "98000-0016")).toBe(true);
+    expect(casaComABusca(semNove, "9 8000")).toBe(true);
   });
 
   it("não passa a achar outro número por causa da variante", () => {
-    expect(casaComABusca(semNove, "(83) 98874-5317")).toBe(false);
-    expect(casaComABusca(comNove, "(84) 98874-5316")).toBe(false);
+    expect(casaComABusca(semNove, "(83) 98000-0017")).toBe(false);
+    expect(casaComABusca(comNove, "(84) 98000-0016")).toBe(false);
   });
 });
 
 describe("digitosDeBuscaDeTelefone", () => {
   it("aceita dígitos e a pontuação com que se escreve telefone", () => {
-    expect(digitosDeBuscaDeTelefone("(19) 98276-4080")).toBe("19982764080");
-    expect(digitosDeBuscaDeTelefone("+55 19 98276.4080")).toBe("5519982764080");
-    expect(digitosDeBuscaDeTelefone(" 982764080 ")).toBe("982764080");
+    expect(digitosDeBuscaDeTelefone("(19) 98000-0004")).toBe("19980000004");
+    expect(digitosDeBuscaDeTelefone("+55 19 98000.0004")).toBe("5519980000004");
+    expect(digitosDeBuscaDeTelefone(" 980000004 ")).toBe("980000004");
   });
 
   it("⚠️ termo com LETRA não é telefone — senão a busca por texto sujaria a de número", () => {

@@ -2,9 +2,9 @@
  * Telefone como GENTE o escreve — e como o CRM o guarda.
  *
  * Nasceu para o Calendly (977), que não tem campo "telefone": o número vem do lembrete por SMS
- * (`text_reminder_number`, sempre com DDI: "+55 96 99112-6767") ou do que o
- * cliente DIGITOU numa pergunta do formulário ("(96) 99112-6767",
- * "96991126767", "+55 96 9 9112-6767"…). Aqui tudo vira o formato de
+ * (`text_reminder_number`, sempre com DDI: "+55 96 99000-0016") ou do que o
+ * cliente DIGITOU numa pergunta do formulário ("(96) 99000-0016",
+ * "96990000016", "+55 96 9 9000-0016"…). Aqui tudo vira o formato de
  * `contacts.phone` (só dígitos, com DDI), que é o que `findExistingContact`
  * casa pelos últimos 8 dígitos.
  *
@@ -51,7 +51,7 @@ export function pareceTelefone(texto: string | null | undefined): boolean {
   return digitos.length >= 10 && digitos.length <= MAX_DIGITOS;
 }
 
-/** "5596991126767" → "(96) 99112-6767"; fora do Brasil, "+<dígitos>". */
+/** "5596990000016" → "(96) 99000-0016"; fora do Brasil, "+<dígitos>". */
 export function formatarTelefone(digitos: string | null | undefined): string {
   if (!digitos) return "";
   if (digitos.startsWith("55") && (digitos.length === 12 || digitos.length === 13)) {
@@ -68,8 +68,8 @@ export function formatarTelefone(digitos: string | null | undefined): string {
  * e a irmã com/sem o NONO DÍGITO.
  *
  * `contacts.phone` guarda só dígitos com DDI, e o mesmo cliente existe na
- * base ora como "5583988745316" (13 dígitos, com o 9), ora como
- * "558388745316" (12, sem) — depende de quem gravou: o WhatsApp entrega o
+ * base ora como "5583980000016" (13 dígitos, com o 9), ora como
+ * "558380000016" (12, sem) — depende de quem gravou: o WhatsApp entrega o
  * JID sem o 9 para número antigo, o CSV vem como o escritório digitou, o
  * Calendly como o cliente escreveu. `findExistingContact` já tolera isso ao
  * CASAR (últimos 8 dígitos); a busca da caixa de entrada não tolerava —

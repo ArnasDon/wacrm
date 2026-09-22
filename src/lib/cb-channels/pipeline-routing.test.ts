@@ -236,9 +236,9 @@ describe('routeContactToPipeline', () => {
       account: { owner_user_id: 'dono-da-conta' },
     });
 
-    await routeContactToPipeline({ db, ...BASE, contactName: '558599704949' });
+    await routeContactToPipeline({ db, ...BASE, contactName: '558590000013' });
 
-    expect(inserts[0]).toMatchObject({ title: '558599704949' });
+    expect(inserts[0]).toMatchObject({ title: '558590000013' });
   });
 
   it('sem nome NENHUM o título não fica vazio — a coluna é NOT NULL', async () => {

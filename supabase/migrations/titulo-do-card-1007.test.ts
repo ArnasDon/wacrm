@@ -61,8 +61,8 @@ describe('1007 — o título do card segue a ficha', () => {
   })
 
   it('a conferência prova a régua do nome sem depender de dado (banco vazio)', () => {
-    expect(sql).toMatch(/cb_nome_para_titulo\('558599704949'\) IS NOT NULL/)
-    expect(sql).toMatch(/cb_nome_para_titulo\('\+55 \(85\) 99704-9490'\) IS NOT NULL/)
+    expect(sql).toMatch(/cb_nome_para_titulo\('558590000013'\) IS NOT NULL/)
+    expect(sql).toMatch(/cb_nome_para_titulo\('\+55 \(85\) 90000-0130'\) IS NOT NULL/)
   })
 })
 

@@ -109,7 +109,7 @@ const linhaBase = (patch: Record<string, unknown> = {}) => ({
   event_type_nome: "Reunião",
   nome: "Joel",
   email: null,
-  telefone: "5519982764080",
+  telefone: "5519980000004",
   telefone_origem: "heuristica",
   inicio: "2026-09-09T19:00:00Z",
   fim: null,

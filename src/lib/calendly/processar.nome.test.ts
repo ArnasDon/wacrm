@@ -7,8 +7,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 //
 // O cliente muitas vezes fala pelo celular da empresa: o perfil do WhatsApp
 // diz o nome da empresa, e quem agendou é a pessoa. O caso da tela: o card do
-// funil dizia "Douglas" (o nome do agendamento, pelo `{{vars.agendamento_nome}}`
-// do passo create_deal) e a conversa dizia "DOUGLAS BARBOSA" (o perfil).
+// funil dizia "Diego" (o nome do agendamento, pelo `{{vars.agendamento_nome}}`
+// do passo create_deal) e a conversa dizia "DIEGO EXEMPLO" (o perfil).
 // ============================================================
 
 const busca = vi.hoisted(() => ({ findExistingContact: vi.fn() }));
@@ -30,9 +30,9 @@ const AGENDAMENTO: Agendamento = {
   eventoUri: "https://api.calendly.com/event_types/T1",
   eventoNome: "Reunião com Advogado",
   eventoAgendadoUri: null,
-  nome: "Douglas Barbosa",
+  nome: "Diego Exemplo",
   email: null,
-  telefone: "5562993798909",
+  telefone: "5562990000009",
   telefoneOrigem: "sms",
   inicio: "2026-09-09T13:45:00Z",
   fim: null,
@@ -121,7 +121,7 @@ beforeEach(() => {
   erroNaBuscaDoCard = null;
   automacoes = ESCUTA;
   ordem.length = 0;
-  busca.findExistingContact.mockReset().mockResolvedValue({ contato: { id: "c1", phone: "5562993798909" }, falhou: false });
+  busca.findExistingContact.mockReset().mockResolvedValue({ contato: { id: "c1", phone: "5562990000009" }, falhou: false });
   destino.resolverDestinatario.mockReset().mockResolvedValue({ contactId: "novo-1", conversationId: "conv-nova", criouContato: true });
   // O motor de verdade chama o gancho antes da primeira automação que passou
   // nos recortes; o dublê faz o mesmo.
@@ -139,7 +139,7 @@ describe("processarAgendamento — o nome do agendamento", () => {
     await processarAgendamento(admin, "acct-1", AGENDAMENTO);
 
     const [ficha] = daTabela("contacts");
-    expect(ficha.valores.name).toBe("Douglas Barbosa");
+    expect(ficha.valores.name).toBe("Diego Exemplo");
     // Sem a marca, a próxima mensagem do cliente devolveria o nome do perfil.
     expect(typeof ficha.valores.nome_fixado_em).toBe("string");
     expect(ficha.filtros).toEqual([
@@ -158,7 +158,7 @@ describe("processarAgendamento — o nome do agendamento", () => {
       ["status", "open"],
     ]);
     const [negocio] = daTabela("deals");
-    expect(negocio.valores).toEqual({ title: "Douglas Barbosa" });
+    expect(negocio.valores).toEqual({ title: "Diego Exemplo" });
     expect(negocio.filtros).toContainEqual(["status", "open"]);
   });
 
@@ -220,7 +220,7 @@ describe("processarAgendamento — o nome do agendamento", () => {
     expect(cardsNoBanco).toBe(1);
     expect(iCard).toBeGreaterThan(iDisparo);
     expect(consultas.find((c) => c.tabela === "deals")?.filtros).toContainEqual(["contact_id", "novo-1"]);
-    expect(daTabela("deals")[0]).toMatchObject({ valores: { title: "Douglas Barbosa" } });
+    expect(daTabela("deals")[0]).toMatchObject({ valores: { title: "Diego Exemplo" } });
   });
 
   it("ficha recém-criada pelo agendamento também sai com o nome fixado", async () => {
@@ -233,7 +233,7 @@ describe("processarAgendamento — o nome do agendamento", () => {
   });
 
   it("CRÍTICO: nome que é um número não é gravado nem fixado, e o detalhe diz por quê", async () => {
-    const r = await processarAgendamento(admin, "acct-1", { ...AGENDAMENTO, nome: "+55 62 99379-8909" });
+    const r = await processarAgendamento(admin, "acct-1", { ...AGENDAMENTO, nome: "+55 62 99000-0009" });
     expect(escritas).toEqual([]);
     expect(r.resultado).toBe("disparado");
     expect(r.detalhe).toContain("parece um número");

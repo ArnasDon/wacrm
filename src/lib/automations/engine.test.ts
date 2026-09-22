@@ -951,18 +951,18 @@ describe('update_contact_field — o NOME (999)', () => {
       accountId: ACCOUNT,
       triggerType: 'new_message_received',
       contactId: 'c1',
-      context: { vars: { nome: '  Douglas   Barbosa ' } },
+      context: { vars: { nome: '  Diego   Exemplo ' } },
     });
 
     expect(h.state.updateCalls).toHaveLength(1);
     const payload = h.state.updateCalls[0].payload as Record<string, unknown>;
-    expect(payload.name).toBe('Douglas Barbosa');
+    expect(payload.name).toBe('Diego Exemplo');
     expect(typeof payload.nome_fixado_em).toBe('string');
     expect(h.state.updateCalls[0].filters).toContainEqual(['eq', 'account_id', ACCOUNT]);
   });
 
   it('CRÍTICO: valor que não é nome (telefone, vazio) NÃO sobrescreve a ficha', async () => {
-    for (const valor of ['+55 62 99379-8909', '']) {
+    for (const valor of ['+55 62 99000-0009', '']) {
       h.state.updateCalls = [];
       h.state.owned = { id: 'c1' };
       h.state.automations = [automationWithUpdateStep()];
@@ -1096,11 +1096,11 @@ describe('create_deal — um card por contato', () => {
       accountId: ACCOUNT,
       triggerType: 'new_message_received',
       contactId: 'c1',
-      context: { vars: { agendamento_nome: 'Vanessa Bezerra' } },
+      context: { vars: { agendamento_nome: 'Paula Exemplo' } },
     });
 
     expect(h.state.dealInserts[0]).toMatchObject({
-      title: 'Vanessa Bezerra',
+      title: 'Paula Exemplo',
       titulo_fixado_em: null,
     });
   });
@@ -1684,7 +1684,7 @@ describe('send_to_number — aviso para a equipe', () => {
   it('manda para a conversa do NÚMERO avisado, com o texto interpolado, pela conexão do passo', async () => {
     await dispararAviso(
       {
-        phone: '(83) 98874-5316',
+        phone: '(83) 98000-0016',
         contact_name: 'Leonardo',
         text: 'Novo agendamento: {{vars.agendamento_nome}}',
         channel_id: 'ch-comercial',
@@ -1694,7 +1694,7 @@ describe('send_to_number — aviso para a equipe', () => {
     expect(destinatarioMock.resolverDestinatario).toHaveBeenCalledWith(
       expect.anything(),
       ACCOUNT,
-      '5583988745316',
+      '5583980000016',
       'Leonardo'
     );
     const args = vi.mocked(engineSendText).mock.calls[0]?.[0];
@@ -1705,7 +1705,7 @@ describe('send_to_number — aviso para a equipe', () => {
   });
 
   it('CRÍTICO: sem conexão no passo NÃO herda o canal do disparo (é o número do cliente, não o da equipe)', async () => {
-    await dispararAviso({ phone: '5583988745316', text: 'oi' });
+    await dispararAviso({ phone: '5583980000016', text: 'oi' });
     const args = vi.mocked(engineSendText).mock.calls[0]?.[0];
     expect(args?.preferredChannelId).toBeUndefined();
   });
@@ -1715,7 +1715,7 @@ describe('send_to_number — aviso para a equipe', () => {
       channelId: 'ch-padrao',
     });
     await dispararAviso({
-      phone: '5583988745316',
+      phone: '5583980000016',
       text: 'oi',
       channel_id: 'ch-apagado',
     });
@@ -1735,7 +1735,7 @@ describe('send_to_number — aviso para a equipe', () => {
   });
 
   it('texto vazio depois da interpolação falha antes de enviar', async () => {
-    await dispararAviso({ phone: '5583988745316', text: '{{vars.nada}}' });
+    await dispararAviso({ phone: '5583980000016', text: '{{vars.nada}}' });
     expect(engineSendText).not.toHaveBeenCalled();
   });
 });
@@ -1805,7 +1805,7 @@ describe('interpolate — variáveis do contato', () => {
     h.state.owned = {
       id: 'c1',
       name: 'Marcelo',
-      phone: '5596991126767',
+      phone: '5596990000016',
       email: 'm@x.com',
       company: null,
     } as unknown as { id: string };
@@ -1825,7 +1825,7 @@ describe('interpolate — variáveis do contato', () => {
       '{{contact.name}} · {{contact.phone}} · {{contact.email}} · {{conversation.link}}'
     );
     expect(texto).toBe(
-      'Marcelo · 5596991126767 · m@x.com · https://crm.exemplo.com/inbox?c=conv1'
+      'Marcelo · 5596990000016 · m@x.com · https://crm.exemplo.com/inbox?c=conv1'
     );
   });
 
@@ -2520,7 +2520,7 @@ describe('retentativa de passo que falhou (13/09/2026)', () => {
     vi.mocked(engineSendText).mockRejectedValueOnce(erro);
     h.state.owned = { id: 'c1' };
     h.state.automations = [automationWithUpdateStep()];
-    h.state.steps = [passoAvisar({ phone: '5583988745316', text: 'oi' })];
+    h.state.steps = [passoAvisar({ phone: '5583980000016', text: 'oi' })];
     await runAutomationsForTrigger({
       accountId: ACCOUNT,
       triggerType: 'new_message_received',
@@ -3190,7 +3190,7 @@ describe('Aguardar — parar se o cliente responder', () => {
     h.state.automations = [automacaoSimples('a-resume')];
     h.state.steps = [
       {
-        ...passoAvisar({ phone: '5583988745316', text: 'oi' }),
+        ...passoAvisar({ phone: '5583980000016', text: 'oi' }),
         automation_id: 'a-resume',
         position: 1,
         parent_step_id: null,

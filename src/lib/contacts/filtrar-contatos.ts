@@ -18,7 +18,7 @@ export interface ContatoPesquisavel {
   instagram_username?: string | null;
 }
 
-/** Só os dígitos — "+55 (11) 3178-4851" e "551131784851" viram comparáveis. */
+/** Só os dígitos — "+55 (11) 3000-0018" e "551130000018" viram comparáveis. */
 function soDigitos(s: string): string {
   return s.replace(/\D/g, '');
 }

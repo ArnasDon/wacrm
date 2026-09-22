@@ -13,7 +13,7 @@ function cliente(extra: Partial<ClienteDoEspelho>): ClienteDoEspelho {
     nome: "Maria Aparecida Silva",
     cpf_cnpj: "12345678901",
     email: null,
-    celular: "5583988745316",
+    celular: "5583980000016",
     telefone: null,
     contact_id: null,
     vinculo_origem: null,
@@ -65,8 +65,8 @@ describe("mascararDocumento", () => {
 
 describe("montarListas", () => {
   const fichas = new Map<string, FichaResumida>([
-    ["c-maria", { id: "c-maria", nome: "Maria Silva", telefone: "5583988745316" }],
-    ["c-outra", { id: "c-outra", nome: "Outra Pessoa", telefone: "5521988745316" }],
+    ["c-maria", { id: "c-maria", nome: "Maria Silva", telefone: "5583980000016" }],
+    ["c-outra", { id: "c-outra", nome: "Outra Pessoa", telefone: "5521980000016" }],
   ]);
 
   it("reparte os clientes nas quatro listas e conta os inadimplentes com e sem ficha", () => {
@@ -107,7 +107,7 @@ describe("montarListas", () => {
     expect(listas.sem_ficha.map((i) => i.id)).toEqual(["l3"]);
     expect(listas.ignorados.map((i) => i.id)).toEqual(["l4"]);
     // o ligado: contato resolvido, documento mascarado, telefone formatado, dívida
-    expect(listas.ligados[0]).toMatchObject({ documento: "***.456.789-**", telefone: "(83) 98874-5316", contato: { id: "c-maria", nome: "Maria Silva" } });
+    expect(listas.ligados[0]).toMatchObject({ documento: "***.456.789-**", telefone: "(83) 98000-0016", contato: { id: "c-maria", nome: "Maria Silva" } });
     expect(listas.ligados[0].divida).toMatchObject({ parcelas: 2, rotulos: "cobrança e 2/12", total: 300, desde: "2026-08-01", dias: 42 });
     // candidatos com o nome da ficha e a pontuação
     expect(listas.sem_ficha[0].candidatos[0]).toMatchObject({ id: "c-maria", nome: "Maria Silva", motivo: "nome_aproximado", pontuacao: 0.5 });
@@ -149,12 +149,12 @@ describe("montarListas", () => {
 });
 
 describe("busca e paginação", () => {
-  const item = montarListas([cliente({ contact_id: "c-maria", vinculo_origem: "telefone", email: "maria@x.com" })], [], new Map([["c-maria", { id: "c-maria", nome: "Maria Silva", telefone: "5583988745316" }]]), AGORA, LISTAGEM).ligados[0];
+  const item = montarListas([cliente({ contact_id: "c-maria", vinculo_origem: "telefone", email: "maria@x.com" })], [], new Map([["c-maria", { id: "c-maria", nome: "Maria Silva", telefone: "5583980000016" }]]), AGORA, LISTAGEM).ligados[0];
 
   it("casa por nome, e-mail, telefone (dígitos) e nome da ficha", () => {
     expect(casaComABusca(item, "aparecida")).toBe(true);
     expect(casaComABusca(item, "maria@x")).toBe(true);
-    expect(casaComABusca(item, "(83) 98874")).toBe(true);
+    expect(casaComABusca(item, "(83) 98000")).toBe(true);
     expect(casaComABusca(item, "silva")).toBe(true);
     expect(casaComABusca(item, "joão")).toBe(false);
     expect(casaComABusca(item, "")).toBe(true);

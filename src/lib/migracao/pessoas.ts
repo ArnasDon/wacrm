@@ -5,8 +5,8 @@
 // A régua é a do NONO DÍGITO (`variantesDoNonoDigito`), nunca igualdade de
 // `phone_normalized`. MEDIDO em 21/09/2026 rodando ESTE módulo sobre os
 // 13.046 telefones distintos da Kommo: **821** casam com uma ficha daqui por
-// igualdade e **outros 336** só pela variante — `553172090560` na Kommo é
-// `5531972090560` aqui, a MESMA pessoa. Uma carga que resolva por igualdade
+// igualdade e **outros 336** só pela variante — `553170000006` na Kommo é
+// `5531970000006` aqui, a MESMA pessoa. Uma carga que resolva por igualdade
 // cria 336 fichas novas para clientes que já estão no CRM, com o histórico
 // repartido entre as duas, e o índice único da 022 não impede nada: são
 // chaves diferentes.

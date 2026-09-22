@@ -42,12 +42,12 @@ describe('variantesDoTermoTelefonico', () => {
   // Os seis jeitos de digitar o mesmo celular, com e sem o nono dígito.
   // A forma digitada vem SEMPRE primeiro.
   it.each([
-    ['DDI + DDD + 9', '5583988745316', '558388745316'],
-    ['DDI + DDD', '558388745316', '5583988745316'],
-    ['DDD + 9', '83988745316', '8388745316'],
-    ['DDD', '8388745316', '83988745316'],
-    ['local com 9', '988745316', '88745316'],
-    ['local sem 9', '88745316', '988745316'],
+    ['DDI + DDD + 9', '5583980000016', '558380000016'],
+    ['DDI + DDD', '558380000016', '5583980000016'],
+    ['DDD + 9', '83980000016', '8380000016'],
+    ['DDD', '8380000016', '83980000016'],
+    ['local com 9', '980000016', '80000016'],
+    ['local sem 9', '80000016', '980000016'],
   ])('%s: acha as duas grafias', (_caso, digitado, irma) => {
     expect(variantesDoTermoTelefonico(digitado)).toEqual([digitado, irma]);
   });
@@ -63,7 +63,7 @@ describe('variantesDoTermoTelefonico', () => {
 
   it('fragmento que termina no meio do número sai sozinho (limite escrito)', () => {
     // Documentado em `busca-remota.ts`: a régua é ancorada no FIM.
-    expect(variantesDoTermoTelefonico('3988745')).toEqual(['3988745']);
+    expect(variantesDoTermoTelefonico('3980000')).toEqual(['3980000']);
   });
 
   // ⚠️ O PINO que mantém as duas réguas de acordo. `variantesDoNonoDigito`
@@ -76,8 +76,8 @@ describe('variantesDoTermoTelefonico', () => {
   // a forma que `contacts.phone` guarda e o único terreno comum: a função
   // daqui também responde por fragmento sem DDI, onde a outra nem tenta.
   it.each([
-    '5583988745316',
-    '558388745316',
+    '5583980000016',
+    '558380000016',
     '5511999998888',
     '551199998888',
     '551133334444',
@@ -113,18 +113,18 @@ describe('ramosDaBuscaDeContato', () => {
   });
 
   it('telefone mascarado vira dígito, nas duas grafias do nono', () => {
-    const ramos = ramosDaBuscaDeContato('(83) 98874-5316')!;
-    expect(ramos).toContain('phone_normalized.ilike."%83988745316%"');
-    expect(ramos).toContain('phone_normalized.ilike."%8388745316%"');
+    const ramos = ramosDaBuscaDeContato('(83) 98000-0016')!;
+    expect(ramos).toContain('phone_normalized.ilike."%83980000016%"');
+    expect(ramos).toContain('phone_normalized.ilike."%8380000016%"');
   });
 
   it('⚠️ o ramo de telefone é SEMPRE sobre a coluna gerada, nunca sobre `phone`', () => {
     // `phone` guarda o que foi DIGITADO: o formulário de contato preserva a
-    // pontuação, e em "+55 (83) 98874-5316" os dígitos não são contíguos —
+    // pontuação, e em "+55 (83) 98000-0016" os dígitos não são contíguos —
     // um padrão de dígitos nunca casa. A ficha sem nome fica inalcançável
     // pelos dois seletores. Medido: 1 dos 1.214 contatos da produção já está
     // assim. `phone_normalized` é coluna gerada e só tem dígitos (022).
-    const ramos = ramosDaBuscaDeContato('98874-5316')!;
+    const ramos = ramosDaBuscaDeContato('98000-0016')!;
     for (const ramo of ramos.split(',')) {
       expect(ramo.startsWith('phone.ilike')).toBe(false);
     }

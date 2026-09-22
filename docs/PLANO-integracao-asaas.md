@@ -625,7 +625,7 @@ resumo:
 Cinco listas, paginadas por `GET /api/cb/asaas/clientes?lista=…`:
 
 - **Para confirmar** — "Maria Aparecida Silva · CPF ***.123.456-** ·
-  (83) 9 8874-5316 → parece ser **Maria A. Silva** (mesmo telefone sem o 9 ·
+  (83) 9 8000-0016 → parece ser **Maria A. Silva** (mesmo telefone sem o 9 ·
   nome parecido)". Botões **Ligar**, **Outro contato…** (o `SeletorDeCliente`
   de `src/components/agenda/seletor-de-cliente.tsx`) e **Ignorar**. Com dois
   candidatos, os dois aparecem para escolher.

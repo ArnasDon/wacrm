@@ -4,7 +4,7 @@
 # ── O problema ──────────────────────────────────────────────
 # O WhatsApp migrou o endereçamento das conversas de telefone
 # (`5511999999999@s.whatsapp.net`) para um identificador interno
-# (`192603597332721@lid`). Medido na instância do escritório em 27/07/2026:
+# (`100000000000102@lid`). Medido na instância do escritório em 27/07/2026:
 # 263 dos 551 chats já migraram.
 #
 # Quando o operador manda mensagem pelo CELULAR pareado, o eco chega ao

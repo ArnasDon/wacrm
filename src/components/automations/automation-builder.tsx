@@ -2809,7 +2809,7 @@ function StepEditor({
             <Input
               value={(cfg.phone as string) ?? ""}
               onChange={(e) => set({ phone: e.target.value })}
-              placeholder="5583988745316"
+              placeholder="5583980000016"
               inputMode="tel"
               className="bg-muted text-foreground"
             />

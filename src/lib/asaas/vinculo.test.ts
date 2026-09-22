@@ -29,13 +29,13 @@ function cliente(extra: Partial<ClienteParaVincular>): ClienteParaVincular {
 }
 
 const FICHAS: FichaDoCrm[] = [
-  { id: "maria", nome: "Maria Silva", telefone: "5583988745316", email: null },
+  { id: "maria", nome: "Maria Silva", telefone: "5583980000016", email: null },
   // gravada SEM o nono dígito, com o número como nome (203 fichas assim na conta)
-  { id: "numerica-sem-9", nome: "558388745399", telefone: "558388745399", email: null },
+  { id: "numerica-sem-9", nome: "558380000099", telefone: "558380000099", email: null },
   { id: "joao", nome: "João Pedro Souza", telefone: "5583999990000", email: "joao@x.com" },
   { id: "ana", nome: "Ana Souza", telefone: "5511911112222", email: null },
   // outro DDD, mesmos 8 últimos dígitos da Maria
-  { id: "sufixo", nome: "Outra Pessoa", telefone: "5521988745316", email: null },
+  { id: "sufixo", nome: "Outra Pessoa", telefone: "5521980000016", email: null },
   // a mesma pessoa gravada duas vezes, com e sem o 9
   { id: "dup-com-9", nome: "Pedro Dup", telefone: "5583977770000", email: null },
   { id: "dup-sem-9", nome: "Pedro Dup", telefone: "558377770000", email: null },
@@ -59,14 +59,14 @@ describe("elegível", () => {
 
 describe("decidir — os sinais fortes", () => {
   it("telefone idêntico liga", () => {
-    expect(decidir(cliente({ celular: "5583988745316" }), indices())).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
+    expect(decidir(cliente({ celular: "5583980000016" }), indices())).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
   });
 
   it("a irmã do nono dígito também é 'telefone' — nos dois sentidos", () => {
-    const idx = montarIndices([{ id: "sem9", nome: "Maria Silva", telefone: "558388745316", email: null }], new Map(), [], []);
-    expect(decidir(cliente({ celular: "5583988745316" }), idx)).toEqual({ acao: "ligar", contactId: "sem9", origem: "telefone" });
-    const idx2 = montarIndices([{ id: "com9", nome: "Maria Silva", telefone: "5583988745316", email: null }], new Map(), [], []);
-    expect(decidir(cliente({ celular: "558388745316" }), idx2)).toEqual({ acao: "ligar", contactId: "com9", origem: "telefone" });
+    const idx = montarIndices([{ id: "sem9", nome: "Maria Silva", telefone: "558380000016", email: null }], new Map(), [], []);
+    expect(decidir(cliente({ celular: "5583980000016" }), idx)).toEqual({ acao: "ligar", contactId: "sem9", origem: "telefone" });
+    const idx2 = montarIndices([{ id: "com9", nome: "Maria Silva", telefone: "5583980000016", email: null }], new Map(), [], []);
+    expect(decidir(cliente({ celular: "558380000016" }), idx2)).toEqual({ acao: "ligar", contactId: "com9", origem: "telefone" });
   });
 
   it("duas fichas pelo telefone (com e sem o 9) é ambíguo, nunca vínculo", () => {
@@ -90,7 +90,7 @@ describe("decidir — os sinais fortes", () => {
   });
 
   it("telefone dizendo A e e-mail dizendo B é conflito: pergunta com os dois", () => {
-    const d = decidir(cliente({ celular: "5583988745316", email: "joao@x.com" }), indices());
+    const d = decidir(cliente({ celular: "5583980000016", email: "joao@x.com" }), indices());
     expect(d.acao).toBe("confirmar");
     if (d.acao === "confirmar") {
       expect(d.candidatos.map((k) => k.contact_id).sort()).toEqual(["joao", "maria"]);
@@ -103,21 +103,21 @@ describe("decidir — as cercas", () => {
   it("contato desligado por gente nunca volta pela regra — nem como sugestão", () => {
     // Sem a recusa, a Maria ligaria pelo telefone. Recusada, sobra só o sufixo
     // de outro DDD como SUGESTÃO — e a própria Maria não aparece nem ali.
-    const d = decidir(cliente({ celular: "5583988745316", contatos_recusados: ["maria"] }), indices());
+    const d = decidir(cliente({ celular: "5583980000016", contatos_recusados: ["maria"] }), indices());
     expect(d).toEqual({ acao: "confirmar", candidatos: [{ contact_id: "sufixo", motivo: "sufixo" }] });
-    const d2 = decidir(cliente({ celular: "5583988745316", contatos_recusados: ["maria", "sufixo"] }), indices());
-    expect(d2).toEqual({ acao: "criar", telefone: "5583988745316" });
+    const d2 = decidir(cliente({ celular: "5583980000016", contatos_recusados: ["maria", "sufixo"] }), indices());
+    expect(d2).toEqual({ acao: "criar", telefone: "5583980000016" });
   });
 
   it("um contato, um CPF: contato já ligado a outro cliente de documento diferente vira pergunta", () => {
     const idx = indices({ ligados: [{ asaas_customer_id: "cus_0", nome: "Empresa Ltda", cpf_cnpj: "11222333000181", contact_id: "maria" }] });
-    const d = decidir(cliente({ celular: "5583988745316" }), idx);
+    const d = decidir(cliente({ celular: "5583980000016" }), idx);
     expect(d).toEqual({ acao: "confirmar", candidatos: [{ contact_id: "maria", motivo: "contato_ja_ligado" }] });
   });
 
   it("mesmo cliente do Asaas já ligado ao contato (recomputo) não é 'contato já ligado'", () => {
     const idx = indices({ ligados: [{ asaas_customer_id: "cus_1", nome: "Maria", cpf_cnpj: "12345678901", contact_id: "maria" }] });
-    expect(decidir(cliente({ celular: "5583988745316" }), idx)).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
+    expect(decidir(cliente({ celular: "5583980000016" }), idx)).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
   });
 
   it("a esposa que paga a conta: telefone bate, nome de gente não compartilha nada → pergunta", () => {
@@ -126,7 +126,7 @@ describe("decidir — as cercas", () => {
   });
 
   it("ficha de nome numérico não aciona a cerca do nome", () => {
-    expect(decidir(cliente({ celular: "5583988745399", nome: "Carla Mendes Lima" }), indices())).toEqual({
+    expect(decidir(cliente({ celular: "5583980000099", nome: "Carla Mendes Lima" }), indices())).toEqual({
       acao: "ligar",
       contactId: "numerica-sem-9",
       origem: "telefone",
@@ -134,16 +134,16 @@ describe("decidir — as cercas", () => {
   });
 
   it("telefone igual ao de uma conexão da conta não liga nem cria ficha", () => {
-    const idx = indices({ conexoes: ["+55 83 98874-5316"] });
-    const d = decidir(cliente({ celular: "5583988745316" }), idx);
+    const idx = indices({ conexoes: ["+55 83 98000-0016"] });
+    const d = decidir(cliente({ celular: "5583980000016" }), idx);
     expect(d.acao).toBe("sem_ficha");
-    expect(telefonesUteis({ celular: "5583988745316", telefone: null }, idx.telefonesDasConexoes)).toEqual([]);
+    expect(telefonesUteis({ celular: "5583980000016", telefone: null }, idx.telefonesDasConexoes)).toEqual([]);
   });
 });
 
 describe("decidir — sugestões e criação", () => {
   it("só o sufixo de 8 batendo vira sugestão, nunca vínculo nem ficha nova", () => {
-    const d = decidir(cliente({ celular: "5531988745316", nome: "Fulano de Tal" }), indices());
+    const d = decidir(cliente({ celular: "5531980000016", nome: "Fulano de Tal" }), indices());
     expect(d.acao).toBe("confirmar");
     if (d.acao === "confirmar") expect(d.candidatos.map((k) => k.contact_id).sort()).toEqual(["maria", "sufixo"]);
   });
@@ -164,7 +164,7 @@ describe("decidir — sugestões e criação", () => {
   });
 
   it("origem 'criada' ainda liga pelo telefone à ficha sobrevivente (fusão)", () => {
-    expect(decidir(cliente({ celular: "5583988745316", vinculo_origem: "criada" }), indices())).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
+    expect(decidir(cliente({ celular: "5583980000016", vinculo_origem: "criada" }), indices())).toEqual({ acao: "ligar", contactId: "maria", origem: "telefone" });
   });
 
   it("sem telefone nenhum: só o nome aproximado, como sugestão pontuada", () => {

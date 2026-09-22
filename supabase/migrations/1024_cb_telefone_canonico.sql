@@ -3,8 +3,8 @@
 -- dígito.
 --
 -- O índice da 0022 compara `phone_normalized` por igualdade EXATA, e o mesmo
--- celular brasileiro existe em duas grafias: "558388745316" (o JID que o
--- WhatsApp entrega para número antigo) e "5583988745316" (como gente digita).
+-- celular brasileiro existe em duas grafias: "558380000016" (o JID que o
+-- WhatsApp entrega para número antigo) e "5583980000016" (como gente digita).
 -- Todo caminho "procura, depois insere" podia criar a segunda ficha — a
 -- busca e o INSERT são duas instruções, e o índice não via as duas grafias
 -- como a mesma pessoa. A ficha duplicada divide o histórico do cliente em

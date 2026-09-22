@@ -3,7 +3,12 @@ import { describe, expect, it } from "vitest";
 import type { Tag } from "@/types";
 import {
   conversaDoCard,
+  juntarConteudo,
   normalizarDealDoQuadro,
+  temConteudo,
+  type CardDoQuadro,
+  type CardSemConteudo,
+  type DealDoQuadro,
   type RawDealDoQuadro,
   type ResumoDaConversa,
 } from "./cartao";
@@ -161,5 +166,65 @@ describe("conversaDoCard — a conversa do CONTATO manda", () => {
     expect(
       conversaDoCard(normalizarDealDoQuadro(dealCru({ contact: null, contact_id: null }))),
     ).toBeNull();
+  });
+});
+
+describe("juntarConteudo — o conteúdo por id sobre a lista enxuta", () => {
+  function enxuto(id: string, extras: Partial<CardSemConteudo> = {}): CardSemConteudo {
+    return {
+      id,
+      stage_id: "s1",
+      title: `Card ${id}`,
+      value: 100,
+      status: "open",
+      created_at: "2026-09-01T00:00:00+00:00",
+      updated_at: "2026-09-01T00:00:00+00:00",
+      ...extras,
+    };
+  }
+  function completo(id: string, extras: Partial<RawDealDoQuadro> = {}): DealDoQuadro {
+    return normalizarDealDoQuadro(dealCru({ id, contact: contato(), ...extras }));
+  }
+
+  it("preenche o card pedido com o conteúdo", () => {
+    const junto = juntarConteudo([enxuto("d1")], ["d1"], new Map([["d1", completo("d1")]]));
+    expect(junto).toHaveLength(1);
+    expect(temConteudo(junto[0]!)).toBe(true);
+    expect((junto[0] as DealDoQuadro).contact?.id).toBe("c1");
+  });
+
+  it("temConteudo: o card normalizado tem `conversa` em todo caminho (com e sem contato), a linha enxuta não", () => {
+    expect(temConteudo(enxuto("d1"))).toBe(false);
+    expect(temConteudo(completo("d1"))).toBe(true);
+    expect(temConteudo(normalizarDealDoQuadro(dealCru({ contact: null, contact_id: null })))).toBe(true);
+  });
+
+  it("⚠️ a linha enxuta VENCE: etapa, status, título e valor ficam os do quadro — o card arrastado enquanto carregava não volta para a etapa velha, e o formulário não regrava a etapa de outra consulta (Codex, PR #248)", () => {
+    const naTela = enxuto("d1", { stage_id: "s-nova", status: "won", title: "Ana", value: 900 });
+    const velho = completo("d1", { stage_id: "s-velha", status: "open", title: "Outro", value: 1 });
+    const [junto] = juntarConteudo([naTela], ["d1"], new Map([["d1", velho]]));
+    expect(junto).toMatchObject({ stage_id: "s-nova", status: "won", title: "Ana", value: 900 });
+  });
+
+  it("não toca card que já tem conteúdo, nem card enxuto que não foi pedido", () => {
+    const jaTem = completo("d1", { title: "Já tem" });
+    const outro = enxuto("d2");
+    const lista: CardDoQuadro[] = [jaTem, outro];
+    const junto = juntarConteudo(lista, ["d1"], new Map([["d1", completo("d1", { title: "Novo" })]]));
+    expect(junto).toBe(lista);
+  });
+
+  it("tira do quadro o card pedido que não voltou — apagado, ou levado para outro funil, entre a lista e o conteúdo; ficaria carregando para sempre", () => {
+    const junto = juntarConteudo([enxuto("d1"), enxuto("d2")], ["d1", "d2"], new Map([["d2", completo("d2")]]));
+    expect(junto.map((c) => c.id)).toEqual(["d2"]);
+  });
+
+  it("mantém a ordem da lista", () => {
+    const lista = [enxuto("d1"), enxuto("d2"), enxuto("d3")];
+    const conteudo = new Map([
+      ["d3", completo("d3")],
+      ["d1", completo("d1")],
+    ]);
+    expect(juntarConteudo(lista, ["d1", "d3"], conteudo).map((c) => c.id)).toEqual(["d1", "d2", "d3"]);
   });
 });

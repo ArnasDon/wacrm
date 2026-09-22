@@ -17,10 +17,10 @@ import type { EvolutionUpsert } from "./evolution-inbound";
  */
 const documento = (patch: Record<string, unknown> = {}): EvolutionUpsert =>
   ({
-    key: { id: "4A615BC7C1AB54E122CD", remoteJid: "5519999269530@s.whatsapp.net", fromMe: false },
+    key: { id: "4A615BC7C1AB54E122CD", remoteJid: "5519990000005@s.whatsapp.net", fromMe: false },
     message: {
       documentMessage: {
-        fileName: "Phag angut.pdf",
+        fileName: "Documento exemplo.pdf",
         mimetype: "application/pdf",
         fileLength: "17187121",
         caption: "￼",
@@ -65,7 +65,7 @@ describe("mediaBytesOf", () => {
 
 describe("nomeDeArquivoDeclarado", () => {
   it("devolve o nome como o remetente enviou", () => {
-    expect(nomeDeArquivoDeclarado(documento())).toBe("Phag angut.pdf");
+    expect(nomeDeArquivoDeclarado(documento())).toBe("Documento exemplo.pdf");
   });
 
   it("nome vazio ou ausente é null — foto e áudio não têm nome", () => {

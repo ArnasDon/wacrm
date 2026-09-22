@@ -2609,11 +2609,11 @@ como o operador; toda escrita foi desfeita e conferida por SQL):**
   a volta ao inbox em t=123,9 s — 7,2 s depois, dentro dos 15 s — disparou
   `buscar` de novo (frame `useChannels.useEffect → obter → buscar`). Sem a
   invalidação, seria cache.
-- **C21** — viewport 375×812: abrir "Ana Christina" (326 msgs), voltar,
+- **C21** — viewport 375×812: abrir "Ana Exemplo" (326 msgs), voltar,
   reabrir. Na reabertura o nó com "Nenhuma mensagem ainda" foi REMOVIDO e o
   spinner inserido aos 166 ms; as mensagens entraram aos ~600 ms; nenhum
   `add` do texto vazio em momento algum.
-- **C23** — grupo "CB - Rafael Stopa" (0 notas) com a aba Notas ativa;
+- **C23** — grupo "CB - Rafael Exemplo" (0 notas) com a aba Notas ativa;
   troca para "CB TRABALHISTA - ANA PAULA": "Nenhuma nota ainda" saiu aos
   150 ms, a busca de `cb_conversation_notes` correu de 153 a 436 ms e o vazio
   só voltou aos 443 ms — depois da resposta.

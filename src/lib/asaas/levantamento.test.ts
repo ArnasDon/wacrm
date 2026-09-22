@@ -63,14 +63,14 @@ describe('mascaramento', () => {
     expect(primeiroNome('Maria Aparecida da Silva')).toBe('Maria')
     expect(primeiroNome('   ')).toBe('—')
     expect(primeiroNome(null)).toBe('—')
-    expect(fimDoTelefone('5583988745316')).toBe('…5316')
+    expect(fimDoTelefone('5583980000016')).toBe('…0016')
     expect(fimDoTelefone('12')).toBe('—')
     expect(fimDoTelefone(null)).toBe('—')
   })
 
   it('do telefone sai a FORMA, nunca o número (C1)', () => {
-    expect(formatoDoTelefone('5583988745316')).toBe('13 dígitos, com 55')
-    expect(formatoDoTelefone('8388745316')).toBe('10 dígitos, sem 55')
+    expect(formatoDoTelefone('5583980000016')).toBe('13 dígitos, com 55')
+    expect(formatoDoTelefone('8380000016')).toBe('10 dígitos, sem 55')
     expect(formatoDoTelefone(null)).toBe('vazio')
   })
 })
@@ -96,7 +96,7 @@ describe('diasDeAtraso e faixaDeAtraso', () => {
 
 describe('decidirVinculo', () => {
   const contatos: ContatoDoCrm[] = [
-    { id: 'k1', nome: 'Maria Silva', telefone: '5583988745316', email: null },
+    { id: 'k1', nome: 'Maria Silva', telefone: '5583980000016', email: null },
     // A MESMA pessoa, gravada sem o nono dígito — é como o WhatsApp entrega
     // número antigo, e 380 dos 589 da base estão assim.
     { id: 'k2', nome: 'João Pereira', telefone: '558332215544', email: 'joao@exemplo.com' },
@@ -105,7 +105,7 @@ describe('decidirVinculo', () => {
   const crm = indicesDoCrm(contatos)
 
   it('telefone idêntico é telefone idêntico', () => {
-    expect(decidirVinculo(cliente({ celular: '5583988745316' }), crm, SEM_CALENDLY)).toEqual({
+    expect(decidirVinculo(cliente({ celular: '5583980000016' }), crm, SEM_CALENDLY)).toEqual({
       motivo: 'telefone_igual',
       contactId: 'k1',
     })
@@ -114,7 +114,7 @@ describe('decidirVinculo', () => {
   // ⚠️ A distinção existe para a D5: o que casa a menos do 9 não é "idêntico".
   it('a irmã do nono dígito NÃO se disfarça de telefone idêntico', () => {
     // ficha com 13 dígitos, cliente do Asaas com 12
-    expect(decidirVinculo(cliente({ celular: '558388745316' }), crm, SEM_CALENDLY)).toEqual({
+    expect(decidirVinculo(cliente({ celular: '558380000016' }), crm, SEM_CALENDLY)).toEqual({
       motivo: 'nono_digito',
       contactId: 'k1',
     })
@@ -144,7 +144,7 @@ describe('decidirVinculo', () => {
 
   it('só o sufixo de 8 dígitos é um degrau à parte (D5: vira sugestão)', () => {
     // mesmo final, DDD diferente: não é o mesmo número
-    expect(decidirVinculo(cliente({ celular: '5511988745316' }), crm, SEM_CALENDLY)).toEqual({
+    expect(decidirVinculo(cliente({ celular: '5511980000016' }), crm, SEM_CALENDLY)).toEqual({
       motivo: 'sufixo_8',
       contactId: 'k1',
     })
@@ -166,10 +166,10 @@ describe('decidirVinculo', () => {
   // afirmação sobre quem deve dinheiro.
   it('mais de um candidato é ambíguo, e não continua procurando', () => {
     const doisIguais = indicesDoCrm([
-      { id: 'a', nome: 'Xis', telefone: '5583988745316', email: null },
-      { id: 'b', nome: 'Xis', telefone: '5583988745316', email: null },
+      { id: 'a', nome: 'Xis', telefone: '5583980000016', email: null },
+      { id: 'b', nome: 'Xis', telefone: '5583980000016', email: null },
     ])
-    expect(decidirVinculo(cliente({ celular: '5583988745316', nome: 'Xis' }), doisIguais, SEM_CALENDLY)).toEqual({
+    expect(decidirVinculo(cliente({ celular: '5583980000016', nome: 'Xis' }), doisIguais, SEM_CALENDLY)).toEqual({
       motivo: 'ambiguo',
       contactId: null,
     })
@@ -179,8 +179,8 @@ describe('decidirVinculo', () => {
 describe('contarClientes', () => {
   it('separa CPF de CNPJ pelo tamanho e acha documento repetido', () => {
     const c = contarClientes([
-      cliente({ id: '1', cpfCnpj: '12345678909', celular: '5583988745316', email: 'a@b.c' }),
-      cliente({ id: '2', cpfCnpj: '12345678909', celular: '5583988745316' }),
+      cliente({ id: '1', cpfCnpj: '12345678909', celular: '5583980000016', email: 'a@b.c' }),
+      cliente({ id: '2', cpfCnpj: '12345678909', celular: '5583980000016' }),
       cliente({ id: '3', cpfCnpj: '12345678000199' }),
       cliente({ id: '4', apagado: true, notificacoesDesligadas: true, referenciaExterna: 'erp-77' }),
     ])

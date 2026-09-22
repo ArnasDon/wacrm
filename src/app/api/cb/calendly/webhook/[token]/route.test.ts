@@ -82,7 +82,7 @@ function corpoDeAgendamento(inviteeId = "INV1") {
       uri: `https://api.calendly.com/scheduled_events/E1/invitees/${inviteeId}`,
       name: "Marcelo",
       email: "m@x.com",
-      text_reminder_number: "+55 96 99112-6767",
+      text_reminder_number: "+55 96 99000-0016",
       questions_and_answers: [],
       scheduled_event: {
         uri: "https://api.calendly.com/scheduled_events/E1",
@@ -126,7 +126,7 @@ describe("POST /api/cb/calendly/webhook/[token]", () => {
       account_id: "acc-1",
       evento: "invitee.created",
       invitee_uri: "https://api.calendly.com/scheduled_events/E1/invitees/INV1",
-      telefone: "5596991126767",
+      telefone: "5596990000016",
       telefone_origem: "sms",
       resultado: "recebido",
     });

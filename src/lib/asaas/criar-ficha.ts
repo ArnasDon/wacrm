@@ -182,7 +182,7 @@ export async function criarFichaDoAsaas(
       // ⚠️ O nome do CONTRATO fica FIXADO (decisão do operador, 19/09/2026).
       // Sem a marca da 999, a primeira mensagem do cliente trocava o nome
       // legal pelo apelido do perfil do WhatsApp — medido: 27 das 263 fichas
-      // criadas aqui já tinham virado "@Macol", "J.A.A.", "Ká Nunnes", e as
+      // criadas aqui já tinham virado "@Apelido", "J.E.T.", "Ká Exemplar", e as
       // outras iriam pelo mesmo caminho. Quem quiser outro nome continua
       // podendo escrevê-lo à mão; a marca protege contra o automático.
       // `marcaDoNomeManual` não marca quando o nome caiu no telefone.

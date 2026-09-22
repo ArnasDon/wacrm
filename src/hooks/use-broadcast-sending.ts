@@ -451,7 +451,7 @@ export function useBroadcastSending(): UseBroadcastSendingReturn {
     // spelling (`chaveDePessoa`), the key the DB's UNIQUE (account_id,
     // telefone_canonico) index enforces since 1024. Keyed on the raw string,
     // "+1 555-0100" and "15550100" survived as two rows; keyed on the digits
-    // only (up to 1024), "5583988745316" and "558388745316" did — and the
+    // only (up to 1024), "5583980000016" and "558380000016" did — and the
     // insert below died on a 23505, failing the whole broadcast.
     const uniqueByKey = new Map<string, { phone: string; name?: string }>();
     for (const row of csvRows) {

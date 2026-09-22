@@ -374,15 +374,15 @@ export interface ContextoDosFiltros {
  *
  * ⚠️ O telefone é comparado DUAS vezes: como texto (o que sempre foi) e em
  * DÍGITOS, quando o termo é um telefone escrito por gente. `contacts.phone`
- * guarda só dígitos com DDI ("5519982764080"); colar "(19) 98276-4080" — a
+ * guarda só dígitos com DDI ("5519980000004"); colar "(19) 98000-0004" — a
  * forma que o cliente manda e que o próprio CRM exibe — não achava NADA, e
  * a leitura do operador é que o cliente não está no CRM (reportado da tela
  * em 08/09/2026, sobre um contato que existia). Ver `digitosDeBuscaDeTelefone`.
  *
  * ⚠️ E a comparação em dígitos olha as DUAS grafias do número gravado — com
  * e sem o nono dígito (`variantesDoNonoDigito`). O cliente gravado como
- * "558388745316" (sem o 9, como o WhatsApp entrega número antigo) não era
- * achado por "(83) 98874-5316", que é como o operador o lê no celular — e
+ * "558380000016" (sem o 9, como o WhatsApp entrega número antigo) não era
+ * achado por "(83) 98000-0016", que é como o operador o lê no celular — e
  * a busca virava exatidão onde deveria ser "contém" (reportado em
  * 09/09/2026). Só o lado do CONTATO ganha variante: o termo é o que a
  * pessoa digitou, e alterá-lo inventaria uma busca que ela não fez.

@@ -133,8 +133,8 @@ export function descreverPasso(passo: PassoResumivel, nomes: NomesConhecidos = {
 
     case 'send_to_number':
       // O número, legível: é o que distingue dois avisos no mesmo quadro. A
-      // mesma leitura do motor — "(83) 98874-5316" digitado sem DDI ganha o
-      // 55 antes de ser formatado, senão sairia "+83988745316".
+      // mesma leitura do motor — "(83) 98000-0016" digitado sem DDI ganha o
+      // 55 antes de ser formatado, senão sairia "+83980000016".
       return simples(formatarTelefone(digitosDoTelefone((cfg as unknown as SendToNumberStepConfig).phone)))
 
     case 'wait': {

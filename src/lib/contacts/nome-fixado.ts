@@ -21,7 +21,7 @@
  * quando não serve de nome.
  *
  * ⚠️ Número NÃO é nome. É a mesma régua que a ingestão da Evolution já usa
- * para não renomear "Leonardo Cabral" para "5583…": um formulário que devolve
+ * para não renomear "Rodrigo Tavares" para "5583…": um formulário que devolve
  * o telefone no campo de nome faria a ficha perder o nome de verdade e, pior,
  * FIXÁ-LO assim — a próxima mensagem do cliente não teria mais como consertar.
  *

@@ -87,7 +87,7 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
   const respostas: RespostasDoAsaas = {
     listas: {
       "/customers": [
-        clienteAsaas("cus_A", "Maria Silva", { mobilePhone: "83988745316" }),
+        clienteAsaas("cus_A", "Maria Silva", { mobilePhone: "83980000016" }),
         clienteAsaas("cus_B", "João Pedro Souza", { mobilePhone: "84999990000", email: "joao@x.com" }),
         clienteAsaas("cus_C", "Carlos Sem Telefone", {}),
         clienteAsaas("cus_D", "Escritório Mesmo", { mobilePhone: "8330000000" }),
@@ -99,7 +99,7 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
   };
 
   it("lista clientes, grava as vencidas e a que vence hoje, liga pelo telefone, cria a ficha (D2) e deixa quem não tem telefone para gente", async () => {
-    const estado = estadoInicial({ contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583988745316", email: null }] });
+    const estado = estadoInicial({ contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583980000016", email: null }] });
     const { resultado, registro } = rodar(estado, respostas);
     const r = await resultado;
     expect(r).toMatchObject({ ok: true, clientesListados: 4, cobrancasGravadas: 3, ligados: 1, fichasCriadas: 1 });
@@ -110,7 +110,7 @@ describe("sincronizarAsaas — o primeiro ciclo", () => {
 
     const clientes = estado.tabelas.cb_asaas_clientes;
     const porId = new Map(clientes.map((c) => [c.asaas_customer_id, c]));
-    expect(porId.get("cus_A")).toMatchObject({ contact_id: "c-maria", vinculo_origem: "telefone", celular: "5583988745316" });
+    expect(porId.get("cus_A")).toMatchObject({ contact_id: "c-maria", vinculo_origem: "telefone", celular: "5583980000016" });
     // B: ficha nova, com o dono da conta, o 55 na frente e a etiqueta
     const b = porId.get("cus_B")!;
     expect(b.vinculo_origem).toBe("criada");
@@ -233,9 +233,9 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
   it("contato DESLIGADO por gente não volta: nem pela regra, nem pela criação (o número é o mesmo)", async () => {
     const estado = estadoInicial(
       {
-        contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583988745316", email: null }],
+        contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583980000016", email: null }],
         cb_asaas_clientes: [
-          { id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "Maria Silva", cpf_cnpj: "1", celular: "5583988745316", contact_id: null, vinculo_origem: null, contatos_recusados: ["c-maria"], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+          { id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "Maria Silva", cpf_cnpj: "1", celular: "5583980000016", contact_id: null, vinculo_origem: null, contatos_recusados: ["c-maria"], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
         ],
       },
       { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },
@@ -250,9 +250,9 @@ describe("sincronizarAsaas — os ciclos seguintes", () => {
   it("vínculo feito à mão no meio do ciclo vence a regra (o UPDATE é cercado)", async () => {
     const estado = estadoInicial(
       {
-        contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583988745316", email: null }],
+        contacts: [{ id: "c-maria", account_id: CONTA, user_id: DONO, name: "Maria Silva", phone: "5583980000016", email: null }],
         cb_asaas_clientes: [
-          { id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "Maria Silva", cpf_cnpj: "1", celular: "5583988745316", contact_id: null, vinculo_origem: "manual", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
+          { id: "l-a", account_id: CONTA, asaas_customer_id: "cus_A", nome: "Maria Silva", cpf_cnpj: "1", celular: "5583980000016", contact_id: null, vinculo_origem: "manual", contatos_recusados: [], candidatos: [], deleted: false, visto_em: "2026-09-14T06:00:00Z" },
         ],
       },
       { last_full_sync_at: "2026-09-14T06:00:00Z", vencidas_listadas_em: "2026-09-14T06:00:00Z" },

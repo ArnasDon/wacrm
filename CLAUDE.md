@@ -3462,8 +3462,8 @@ não é mais ele que decide "mesma pessoa". O que morde código novo:
   cliente, que o provedor já deu por entregue (a regra 18 do plano da Kommo).
 - ⚠️⚠️ **`findExistingContact` busca pelos DÍGITOS (`phone_normalized`),
   nunca pelo texto cru**, e prefere a IRMÃ do nono dígito ao casamento pelos 8
-  finais. Sobre `phone`, a ficha gravada "+55 83 98874-5316" não casava
-  `%88745316`: a busca, o INSERT e a releitura falhavam juntos e a mensagem
+  finais. Sobre `phone`, a ficha gravada "+55 83 98000-0016" não casava
+  `%80000016`: a busca, o INSERT e a releitura falhavam juntos e a mensagem
   sumia. E a tolerante sozinha devolvia a ficha MAIS ANTIGA com o mesmo final
   — que pode ser de outro DDD, outra pessoa.
 - ⚠️ **Lote que deduplica por GRAFIA derruba o lote inteiro.** O CSV do
@@ -3525,7 +3525,7 @@ novo:
 `src/lib/deals/titulo-do-card.ts` (puro, com teste), a coluna
 `deals.titulo_fixado_em` e o gatilho `cb_titulo_do_card_segue_a_ficha` em
 `contacts`. Pedido do operador (19/09/2026), olhando o Kanban: o card dizia
-"Bancário - Comercial — 558599704949" e a ficha, "Vanessa Bezerra". O que
+"Bancário - Comercial — 558590000013" e a ficha, "Paula Exemplo". O que
 morde código novo:
 
 - ⚠️ **O título nasce com o NOME e nada mais** (`routeContactToPipeline`). O
@@ -3547,9 +3547,9 @@ morde código novo:
   qualquer nome de verdade; título que JÁ identifica alguém só muda quando o
   nome novo foi ESCOLHIDO (`nome_fixado_em`: Calendly, Asaas, gente
   digitando). Nasceu de uma medição feita antes de escrever o código: **26**
-  cards guardavam o nome do CONTRATO ("Mamedes Candido de Oliveira Junior",
-  "José Almino de Araújo") enquanto a ficha já tinha o apelido do perfil
-  ("@Macol", "J.A.A.") — o Asaas cria a ficha com o nome completo e a
+  cards guardavam o nome do CONTRATO ("Marcos Exemplo de Teste Junior",
+  "José Exemplo de Teste") enquanto a ficha já tinha o apelido do perfil
+  ("@Apelido", "J.E.T.") — o Asaas cria a ficha com o nome completo e a
   primeira mensagem do cliente o substituía, e o card congelado era a última
   cópia viva do nome bom. Seguir a ficha cegamente rebaixaria os 26, que é o
   oposto do que a feature existe para fazer.
@@ -4157,8 +4157,8 @@ quatro queixas do operador na mesma tarde. O que morde código novo:
   busca que ela não fez. E só celular com DDI 55 (13 ou 12 dígitos, local
   começando em 6–9): é como `contacts.phone` guarda. A regra vale nos DOIS
   irmãos (`casaComABusca` do inbox e `casaComContato` do seletor de
-  contato) — "(83) 98874-5316" tem de achar a ficha gravada como
-  `558388745316`, que é como o WhatsApp entrega número antigo.
+  contato) — "(83) 98000-0016" tem de achar a ficha gravada como
+  `558380000016`, que é como o WhatsApp entrega número antigo.
 - ⚠️ **A barra de busca local SUBSTITUI a faixa da busca da lista enquanto
   está aberta.** `termoEfetivo` é a ÚNICA origem de `acharNoFio`, `alvoId` e
   das setas: as duas contam achados do MESMO fio, e duas contagens lado a
@@ -4795,7 +4795,7 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
   de área nunca é 9 (N9X reservado), então o teste separa os dois; número
   de outro país com 11 dígitos e 9 ali (Bulgária fixo) ainda colide —
   a dica do editor manda escrever número de fora com `+`. Vale para o
-  passo `send_to_number` também — o mesmo helper, senão "(83) 98874-5316"
+  passo `send_to_number` também — o mesmo helper, senão "(83) 98000-0016"
   no editor saía para um número que não existe.
 - ⚠️ **A assinatura é conferida sobre o corpo CRU** (`request.text()`),
   `Calendly-Webhook-Signature: t=…,v1=…` = HMAC-SHA256 de `t.corpo` com a

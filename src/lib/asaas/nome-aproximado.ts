@@ -22,7 +22,7 @@
 
 const PARTICULAS = new Set(["de", "da", "do", "dos", "das", "e", "di", "du", "del", "della", "van", "von", "la", "le"]);
 
-/** "5583988745316", "+55 (83) 9…" — nome que é só número/pontuação. */
+/** "5583980000016", "+55 (83) 9…" — nome que é só número/pontuação. */
 export function ehNomeNumerico(nome: string | null | undefined): boolean {
   const aparado = (nome ?? "").trim();
   return aparado !== "" && !/\p{L}/u.test(aparado);

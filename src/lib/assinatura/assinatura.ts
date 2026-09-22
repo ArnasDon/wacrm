@@ -41,9 +41,9 @@ export function saneiaNome(bruto: string | null | undefined): string | null {
  *
  * ⚠️ Decisão do operador em 2026-08-01, revertendo a P1.6 original (que pedia
  * só o primeiro nome). O contexto é um escritório de advocacia: quem recebe
- * precisa saber com qual advogado falou, e "Leonardo" não identifica ninguém
- * num escritório com mais de um Leonardo — enquanto "Leonardo Cabral
- * Baptista" é o nome que o cliente vê na procuração e no processo.
+ * precisa saber com qual advogado falou, e "Rodrigo" não identifica ninguém
+ * num escritório com mais de um Rodrigo — enquanto "Rodrigo Tavares
+ * Monteiro" é o nome que o cliente vê na procuração e no processo.
  *
  * Cai para o e-mail quando não há nome; nesse caso usa o trecho antes do `@`,
  * porque o domínio não diz nada a quem lê.

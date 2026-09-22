@@ -5,7 +5,7 @@
 > num evento do Calendly (inicialmente "Reunião com Advogado - Kommo"), o CRM
 > acha o cliente pelo telefone, atualiza o nome, preenche "Data e Hora
 > Reunião" e "Link Reunião", move o card para "Reunião Agendada" e avisa o
-> número 83 98874-5316 pela conexão "Bancário - Comercial". **Ele é editado a
+> número 83 98000-0016 pela conexão "Bancário - Comercial". **Ele é editado a
 > cada fase** — quem pegar o plano depois sabe o que foi feito e onde parou.
 >
 > ⚠️ **Este documento envelhece.** Antes de decidir com base em algo aqui,
@@ -63,7 +63,7 @@ até o operador dizer o contrário):**
 | 2. nome = nome do Calendly | passo `update_contact_field` com `field: 'name'` | valor `{{vars.agendamento_nome}}` |
 | 3. campos "Data e Hora Reunião" (`datetime`) e "Link Reunião" (`text`) | `update_contact_field` com `custom:<id>`; datetime grava ISO UTC (`campo-data.ts`) | `{{vars.agendamento_inicio}}` e `{{vars.agendamento_link}}` |
 | 4. mover para "Reunião Agendada" | passo `move_deal_stage` (RPC `cb_atualizar_negocio`) | só a etapa (`3ab137e6…`, funil Bancário - Comercial) |
-| 5. avisar 83 98874-5316 pela "Bancário - Comercial" | **não existe**: `send_message` só fala com o contato do disparo | passo novo `send_to_number` (telefone + conexão + texto) |
+| 5. avisar 83 98000-0016 pela "Bancário - Comercial" | **não existe**: `send_message` só fala com o contato do disparo | passo novo `send_to_number` (telefone + conexão + texto) |
 
 ---
 
@@ -76,7 +76,7 @@ até o operador dizer o contrário):**
 | Etapa "Reunião Agendada" | só no funil **Bancário - Comercial** (`3ab137e6-1be6-439e-a88d-3b66ac59dee7`, posição 4) | o passo aponta para ela; contato com card em OUTRO funil é transferido pela RPC (deriva o funil da etapa) |
 | Campos | `data_e_hora_reuniao` (`datetime`, `e40ad0f2…`) e `link_reuniao` (`text`, `a5d00f62…`) já existem, bloco Geral | nenhum campo novo |
 | Conexão "Bancário - Comercial" | `f2f9820b-3cbe-4581-870b-92415fd547aa`, padrão da conta, Evolution, conectada | o aviso sai por ela |
-| Contato 83 98874-5316 | **não existe** em `contacts` (nenhum telefone terminando em 88745316) | o passo cria contato + conversa na primeira vez, pelo mesmo caminho da API pública (`resolveConversationByPhone`) |
+| Contato 83 98000-0016 | **não existe** em `contacts` (nenhum telefone terminando em 80000016) | o passo cria contato + conversa na primeira vez, pelo mesmo caminho da API pública (`resolveConversationByPhone`) |
 | Automações | 2 (webhook Atlas em `deal_stage_changed`; teste do plano 955) | nenhuma escuta o Calendly |
 | `custom_fields.field_type` | CHECK `(text, datetime, select, number)`; valor é TEXT | datetime em ISO `…Z` |
 | Conta | `a3af0191-…` (Leonardo, 2 membros) | 5 contas no banco: a rota do webhook identifica a conta por um token na URL |
@@ -146,7 +146,7 @@ até o operador dizer o contrário):**
 
 | Módulo | Faz |
 | --- | --- |
-| `telefone.ts` | `digitosDoTelefone` (Calendly manda "+55 96 99112-6767" ou o que o cliente digitou; 10–11 dígitos sem DDI ganham 55), `formatarTelefone` ("(96) 99112-6767" para BR, `+…` para o resto), `pareceTelefone` |
+| `telefone.ts` | `digitosDoTelefone` (Calendly manda "+55 96 99000-0016" ou o que o cliente digitou; 10–11 dígitos sem DDI ganham 55), `formatarTelefone` ("(96) 99000-0016" para BR, `+…` para o resto), `pareceTelefone` |
 | `payload.ts` | `lerAgendamento(corpo, {perguntaTelefone})` → `Agendamento` normalizado (ou `null` para evento que não é `invitee.created`); D1 mora aqui |
 | `assinatura.ts` | `verificarAssinatura(header, corpoCru, chave, agoraSeg)`, `gerarChaveDeAssinatura`, `gerarTokenDeWebhook` |
 | `variaveis.ts` | `variaveisDoAgendamento(a)` → `vars` do contexto: `agendamento_nome`, `agendamento_email`, `agendamento_telefone`, `agendamento_evento`, `agendamento_data` (dd/mm/aaaa hh:mm em `America/Sao_Paulo`, montado por `formatToParts` — nunca `toLocaleString`, que muda de forma entre majors do Node), `agendamento_inicio` (ISO UTC, o que o campo `datetime` guarda), `agendamento_link`, `agendamento_local`, `agendamento_cancelar`, `agendamento_remarcar`, `agendamento_situacao` ("Novo agendamento" / "Reagendamento") |
@@ -196,7 +196,7 @@ qualquer, até a conexão existir), passos nesta ordem (D6):
 1. `update_contact_field` `name` = `{{vars.agendamento_nome}}`
 2. `update_contact_field` `custom:e40ad0f2…` (Data e Hora Reunião) = `{{vars.agendamento_inicio}}`
 3. `update_contact_field` `custom:a5d00f62…` (Link Reunião) = `{{vars.agendamento_link}}`
-4. `send_to_number` telefone `5583988745316`, nome "Leonardo Cabral Baptista",
+4. `send_to_number` telefone `5583980000016`, nome "Leonardo Cabral Baptista",
    conexão Bancário - Comercial, texto (formato do operador, 07/09, com
    negrito do WhatsApp):
    ```
@@ -231,7 +231,7 @@ qualquer, até a conexão existir), passos nesta ordem (D6):
    com Advogado - Kommo" no gatilho → ativar.
 5. Marcar um horário de teste com um telefone que exista no CRM e conferir:
    ficha renomeada, campos preenchidos, card em Reunião Agendada, aviso no
-   83 98874-5316, e a linha no cartão da integração.
+   83 98000-0016, e a linha no cartão da integração.
 
 ---
 
@@ -350,15 +350,15 @@ conectou o token (organização, webhook `active`) e pediu o teste.
 - Automação "Calendly → Reunião agendada" criada por SQL (5 passos da
   seção 3.5), ativada, e o agendamento feito na página pública
   `calendly.com/cbadvogados` → "Reunião com Advogado - Kommo" → 9/9 17:30,
-  com nome, e-mail e "Telefone (Whatsapp)" `+55 83 98874-5316`.
+  com nome, e-mail e "Telefone (Whatsapp)" `+55 83 98000-0016`.
 - **Medido:** webhook recebido **2 s** depois da confirmação; assinatura
   aceita; telefone lido por HEURÍSTICA (rótulo "Telefone (Whatsapp)",
   resposta com `+55`); contato casado pelos últimos 8 dígitos (a ficha
-  guarda `558388745316`, sem o nono dígito, e casou mesmo assim);
+  guarda `558380000016`, sem o nono dígito, e casou mesmo assim);
   `automation_logs` `success` com os 5 passos; campos `data_e_hora_reuniao
   = 2026-09-09T20:30:00Z` (17:30 BRT) e `link_reuniao` (Google Meet do
   Calendly); card em "Reunião Agendada"; aviso `delivered` no
-  83 98874-5316 pela Bancário - Comercial, com a assinatura do escritório
+  83 98000-0016 pela Bancário - Comercial, com a assinatura do escritório
   na frente (923) e o link `https://crm.cbadvogados.com/inbox?c=…`.
 - **Achado:** "*Origem:*" saiu como " -  - " (contato sem campanha).
   Nasceu `{{contact.origem}}`, que junta só as partes preenchidas; o passo

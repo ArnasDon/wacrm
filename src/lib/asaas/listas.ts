@@ -63,7 +63,7 @@ export interface ItemDaLista {
   nome: string;
   documento: string | null;
   email: string | null;
-  /** "(83) 98874-5316" — o celular, senão o telefone */
+  /** "(83) 98000-0016" — o celular, senão o telefone */
   telefone: string | null;
   situacao: SituacaoDoCliente;
   origem: string | null;

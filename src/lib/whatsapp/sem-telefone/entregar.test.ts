@@ -24,7 +24,7 @@ const recuperada = (over: Partial<NormalizedInbound> = {}): NormalizedInbound =>
   name: '5583900001111',
   providerMessageId: 'ACA5A459',
   remoteJid: '5583900001111@s.whatsapp.net',
-  remoteJidLid: '254833865040050@lid',
+  remoteJidLid: '100000000000101@lid',
   timestamp: CARIMBO,
   contentType: 'text',
   text: 'Olá',

@@ -8,7 +8,7 @@ describe('lerCliente', () => {
       id: 'cus_1',
       name: 'Maria Silva',
       email: '  Maria@Exemplo.COM ',
-      mobilePhone: '(83) 98874-5316',
+      mobilePhone: '(83) 98000-0016',
       phone: '8332215544',
       cpfCnpj: '123.456.789-09',
       personType: 'FISICA',
@@ -16,7 +16,7 @@ describe('lerCliente', () => {
     expect(c).toMatchObject({
       id: 'cus_1',
       email: 'maria@exemplo.com',
-      celular: '5583988745316',
+      celular: '5583980000016',
       telefone: '558332215544',
       cpfCnpj: '12345678909',
       tipoDePessoa: 'FISICA',

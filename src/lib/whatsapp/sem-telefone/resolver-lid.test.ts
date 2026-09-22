@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { criarBanco, type Linha } from './banco.test-helper';
 import { resolverTelefoneDoLid } from './resolver-lid';
 
-const LID = '254833865040050@lid';
+const LID = '100000000000101@lid';
 const TEL = '5583900001111@s.whatsapp.net';
 
 /** Uma mensagem como a ingestão grava: os dois endereços + a conversa embutida. */

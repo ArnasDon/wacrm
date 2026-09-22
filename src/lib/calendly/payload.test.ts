@@ -89,13 +89,13 @@ describe("lerAgendamento", () => {
 
 describe("telefoneDoAgendamento (D1)", () => {
   const perguntas = [
-    { pergunta: "Qual o seu WhatsApp?", resposta: "(96) 99112-6767" },
+    { pergunta: "Qual o seu WhatsApp?", resposta: "(96) 99000-0016" },
     { pergunta: "Valor da dívida", resposta: "R$ 15.000" },
   ];
 
   it("1º: o lembrete por SMS, quando existe", () => {
-    expect(telefoneDoAgendamento({ text_reminder_number: "+55 83 98874-5316" }, perguntas)).toEqual({
-      telefone: "5583988745316",
+    expect(telefoneDoAgendamento({ text_reminder_number: "+55 83 98000-0016" }, perguntas)).toEqual({
+      telefone: "5583980000016",
       origem: "sms",
     });
   });
@@ -103,11 +103,11 @@ describe("telefoneDoAgendamento (D1)", () => {
   it("2º: a pergunta configurada pelo operador, por trecho e sem acento", () => {
     const lista = [
       { pergunta: "Telefone do escritório", resposta: "(83) 3222-1111" },
-      { pergunta: "Seu número de contato (WhatsApp)", resposta: "96 99112-6767" },
+      { pergunta: "Seu número de contato (WhatsApp)", resposta: "96 99000-0016" },
     ];
-    expect(telefoneDoAgendamento({}, lista, "whatsapp")).toEqual({ telefone: "5596991126767", origem: "pergunta" });
+    expect(telefoneDoAgendamento({}, lista, "whatsapp")).toEqual({ telefone: "5596990000016", origem: "pergunta" });
     expect(telefoneDoAgendamento({}, lista, "Numero de Contato")).toEqual({
-      telefone: "5596991126767",
+      telefone: "5596990000016",
       origem: "pergunta",
     });
   });
@@ -115,14 +115,14 @@ describe("telefoneDoAgendamento (D1)", () => {
   it("3º: heurística — a pergunta que fala de telefone vence qualquer outra resposta numérica", () => {
     const lista = [
       { pergunta: "CPF", resposta: "123.456.789-00" },
-      { pergunta: "Celular", resposta: "83 98874-5316" },
+      { pergunta: "Celular", resposta: "83 98000-0016" },
     ];
-    expect(telefoneDoAgendamento({}, lista)).toEqual({ telefone: "5583988745316", origem: "heuristica" });
+    expect(telefoneDoAgendamento({}, lista)).toEqual({ telefone: "5583980000016", origem: "heuristica" });
   });
 
   it("3º: sem rótulo conhecido, a primeira resposta com cara de telefone", () => {
-    const lista = [{ pergunta: "Como podemos te achar?", resposta: "+55 96 99112-6767" }];
-    expect(telefoneDoAgendamento({}, lista)).toEqual({ telefone: "5596991126767", origem: "heuristica" });
+    const lista = [{ pergunta: "Como podemos te achar?", resposta: "+55 96 99000-0016" }];
+    expect(telefoneDoAgendamento({}, lista)).toEqual({ telefone: "5596990000016", origem: "heuristica" });
   });
 
   it("sem nada que pareça telefone, fica sem — nunca inventa", () => {
@@ -151,13 +151,13 @@ describe("telefoneDoAgendamento (D1)", () => {
     // A pergunta configurada pelo operador VENCE a lista de exclusão: se ele
     // disse que o telefone está em "Contato", é lá que está.
     expect(
-      telefoneDoAgendamento({}, [{ pergunta: "Contato", resposta: "83988745316" }], "contato"),
-    ).toEqual({ telefone: "5583988745316", origem: "pergunta" });
+      telefoneDoAgendamento({}, [{ pergunta: "Contato", resposta: "83980000016" }], "contato"),
+    ).toEqual({ telefone: "5583980000016", origem: "pergunta" });
   });
 
   it("a pergunta configurada que não existe no formulário não trava a heurística", () => {
     expect(telefoneDoAgendamento({}, perguntas, "Telefone comercial")).toEqual({
-      telefone: "5596991126767",
+      telefone: "5596990000016",
       origem: "heuristica",
     });
   });

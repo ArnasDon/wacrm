@@ -14,7 +14,7 @@
 -- e o título ficou congelado. Mais 95 cards nomeando "Comercial - Bancário",
 -- rótulo que a conexão não usa desde 02/09: o canal no título envelhece
 -- igual. Do quadro do operador: o card era "Bancário - Comercial —
--- 558599704949" e a ficha dizia "Vanessa Bezerra".
+-- 558590000013" e a ficha dizia "Paula Exemplo".
 --
 -- O QUE ESTA MIGRATION FAZ
 --  1. `deals.titulo_fixado_em` — a marca de "gente escolheu este título".
@@ -26,8 +26,8 @@
 -- ⚠️⚠️ POR QUE O GATILHO NÃO SEGUE O NOME SEMPRE — a descoberta que inverteu
 -- metade do plano. Havia 33 cards cujo título não batia com a ficha, e eles
 -- NÃO estavam desatualizados: era o contrário. O título guardava o nome do
--- Asaas ("Mamedes Candido de Oliveira Junior") e a ficha tinha o apelido do
--- perfil do WhatsApp ("@Macol") — 26 deles com o nome do Asaas EXATO. O Asaas
+-- Asaas ("Marcos Exemplo de Teste Junior") e a ficha tinha o apelido do
+-- perfil do WhatsApp ("@Apelido") — 26 deles com o nome do Asaas EXATO. O Asaas
 -- cria a ficha com o nome completo (D2), e a primeira mensagem do cliente
 -- trocava esse nome pelo apelido dele. O card, congelado, era a última cópia
 -- viva do nome do contrato. "Seguir a ficha" cegamente rebaixaria os 26.
@@ -65,7 +65,7 @@ COMMENT ON COLUMN public.deals.titulo_fixado_em IS
 -- ------------------------------------------------------------
 -- Devolve o nome com o espaço colapsado (o não separável incluído), ou NULL
 -- quando não serve de nome: vazio, ou só dígitos e pontuação de telefone.
--- É a mesma régua que impede a ingestão de renomear "Leonardo Cabral" para
+-- É a mesma régua que impede a ingestão de renomear "Rodrigo Tavares" para
 -- "5583…", e aqui ela responde as duas perguntas do gatilho: "o nome novo
 -- presta?" e "o título de hoje já identifica alguém?".
 --
@@ -304,16 +304,16 @@ BEGIN
   IF public.cb_nome_para_titulo('  Ana   Maria  ') IS DISTINCT FROM 'Ana Maria' THEN
     RAISE EXCEPTION '1007: cb_nome_para_titulo não colapsou o espaço';
   END IF;
-  IF public.cb_nome_para_titulo('558599704949') IS NOT NULL THEN
+  IF public.cb_nome_para_titulo('558590000013') IS NOT NULL THEN
     RAISE EXCEPTION '1007: cb_nome_para_titulo aceitou um telefone como nome';
   END IF;
-  IF public.cb_nome_para_titulo('+55 (85) 99704-9490') IS NOT NULL THEN
+  IF public.cb_nome_para_titulo('+55 (85) 90000-0130') IS NOT NULL THEN
     RAISE EXCEPTION '1007: cb_nome_para_titulo aceitou um telefone formatado como nome';
   END IF;
   IF public.cb_nome_para_titulo('   ') IS NOT NULL OR public.cb_nome_para_titulo(NULL) IS NOT NULL THEN
     RAISE EXCEPTION '1007: cb_nome_para_titulo aceitou vazio como nome';
   END IF;
-  IF public.cb_nome_para_titulo('J.A.A.') IS DISTINCT FROM 'J.A.A.' THEN
+  IF public.cb_nome_para_titulo('J.E.T.') IS DISTINCT FROM 'J.E.T.' THEN
     RAISE EXCEPTION '1007: cb_nome_para_titulo recusou um nome curto legítimo';
   END IF;
 END $$;

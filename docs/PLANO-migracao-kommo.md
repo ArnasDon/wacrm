@@ -321,12 +321,12 @@ tamanho da dívida).
 
 | Usuário da Kommo | Leads como responsável |
 | --- | ---: |
-| Gabriel Queiroz | 8.088 |
+| Usuário Kommo A | 8.088 |
 | Leonardo Cabral | 3.871 |
 | Trabalhista (login compartilhado) | 559 |
 | Cabral Baptista Advocacia | 96 |
 
-O CB CRM tem **3 membros** (Leonardo, Isa Lenier, Estephany Dias).
+O CB CRM tem **3 membros** (Leonardo, Advogada A, Atendente B).
 `deals.assigned_to` guarda `profiles.id` e só aceita membro. Gabriel, o
 responsável por 64% dos leads, não é membro. Decisão 12.
 
@@ -451,7 +451,7 @@ responsável por 64% dos leads, não é membro. Decisão 12.
     dele justamente para poder excluí-las. Decisão 21.
 14. ⚠️ **NOVA — a régua de "o mesmo contato" do projeto mudou em 12/09.**
     `findExistingContact` casa pelos ÚLTIMOS 8 DÍGITOS — medido:
-    `5583988745316` e `5511988745316` casam entre si. Desde a integração do
+    `5583980000016` e `5511980000016` casam entre si. Desde a integração do
     Asaas a doutrina escrita é outra: sufixo de 8 **sugere**, o vínculo é
     `mesmoNumero` (o número ou a irmã do nono dígito), e o que não bate vai
     para uma lista "para confirmar". A carga usa o sufixo como pré-filtro
@@ -887,7 +887,7 @@ etapa atual) e `to_pipeline_id` = o funil daquela etapa.
 
 ⚠️⚠️ **18. `contacts.phone` é SÓ DÍGITOS COM DDI**, exatamente o que
 `digitosDoTelefone` produz — nunca o texto da Kommo. Gravado com separadores
-(`+55 83 98874-5316`), a ficha entra no banco normalmente e **a primeira
+(`+55 83 98000-0016`), a ficha entra no banco normalmente e **a primeira
 mensagem daquele cliente é descartada em silêncio, e todas as seguintes, para
 sempre**: a busca por telefone não acha a ficha, o INSERT leva 23505 do índice
 único, a recuperação falha pelo mesmo motivo, e a ingestão desiste sem gravar.
@@ -914,8 +914,8 @@ grupo). A carga PULA esses leads e emite a lista dos não migrados, com o
 motivo, para o operador decidir caso a caso.
 
 ⚠️ **E a carga NÃO tenta salvar o telefone do campo NOME**, embora dê vontade:
-em 8 deles o número está no nome do lead ou do contato ("83998185823",
-"(51) 98060-8345", "+55 91 99190-9141"), porque quem cadastrou digitou no campo
+em 8 deles o número está no nome do lead ou do contato ("83990000011",
+"(51) 98000-0007", "+55 91 99000-0015"), porque quem cadastrou digitou no campo
 errado. Adivinhar ali é inventar identidade — e `findExistingContact` casa
 pelos ÚLTIMOS 8 DÍGITOS, então um número reconstruído errado FUNDE a ficha com
 a de um cliente real, que é o dano irreversível desta migração.
@@ -928,7 +928,7 @@ para recuperá-los. Consequência aceita e escrita: o funil de fechados nasce co
 migrados em vez de exigir igualdade com a Kommo. Os dois são:
 | Lead | Nome | Etapa | O que é |
 | --- | --- | --- | --- |
-| #27593737 | Kailane Silva Gomes | Trabalhista › Protocolado | contrato (a etapa carimba `ganho`); o contato se chama "91985184761" |
+| #27593737 | Cliente Exemplo K | Trabalhista › Protocolado | contrato (a etapa carimba `ganho`); o contato se chama "91980000014" |
 | #27963311 | Lead #27963311 | Trabalhista › Ganho | ganho; o contato se chama "Luzia" |
 O conserto barato é **na Kommo, antes do corte**: preencher o telefone dos dois
 contatos. Aí eles entram pela porta normal, sem exceção no código. O resto dos
@@ -939,8 +939,8 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
     igualdade de `phone_normalized`.** MEDIDO em 21/09 rodando o módulo
     `src/lib/migracao/pessoas.ts` sobre os 13.046 telefones distintos da
     Kommo: **821** casam com uma ficha daqui por igualdade e **outros 336
-    casam SÓ pela variante do nono dígito** — `553172090560` na Kommo é
-    `5531972090560` aqui, a mesma pessoa. Uma carga que resolva por igualdade
+    casam SÓ pela variante do nono dígito** — `553170000006` na Kommo é
+    `5531970000006` aqui, a mesma pessoa. Uma carga que resolva por igualdade
     cria **336 fichas novas para clientes que já estão no CRM**, com o
     histórico repartido entre as duas, e o índice único não impede nada (são
     chaves diferentes).
@@ -1150,7 +1150,7 @@ as contagens e as regras. Esta seção é o índice.
   "Tamanho da Divida" (2.813) e o id da Kommo. Os outros 13 ficam de fora.
 - **6 — consertar os 43 nomes corrompidos** (reinterpretação de bytes).
 - **7 — os 29 contatos sem telefone não migram.**
-- **12 — nenhum responsável.** Gabriel Queiroz responde por 64% dos leads e não
+- **12 — nenhum responsável.** Usuário Kommo A responde por 64% dos leads e não
   é membro do CB CRM.
 - **13 — motivo de perda descartado**: 1.122 dos 5.701 têm motivo, e é sempre o
   mesmo.
@@ -1485,7 +1485,7 @@ os 677 ganhos todos neste mês.
 
 - Os **20 leads sem telefone aproveitável** do recorte não viraram card (regra
   18b), com a lista emitida. Dois deles têm desfecho e o operador já decidiu
-  deixá-los de fora: #27593737 (Kailane, Protocolado) e #27963311 (Ganho).
+  deixá-los de fora: #27593737 (Cliente K, Protocolado) e #27963311 (Ganho).
 - **Reuniões históricas** (decisão 27) e os campos fora da allowlist continuam
   fora.
 - **A Fase 5 não foi feita.** A Kommo continua recebendo ~30 leads/dia, e o

@@ -86,8 +86,8 @@ export interface BuscaDeContato {
  *
  * ⚠️⚠️ **O LIKE é sobre `phone_normalized` (só dígitos), nunca sobre
  * `phone`** (1024). Sobre o texto cru, uma ficha gravada com separador
- * ("+55 83 98874-5316", do formulário ou de um CSV) não casava
- * `%88745316`: a busca não a achava, o INSERT levava 23505, a RELEITURA
+ * ("+55 83 98000-0016", do formulário ou de um CSV) não casava
+ * `%80000016`: a busca não a achava, o INSERT levava 23505, a RELEITURA
  * falhava do mesmo jeito e a ingestão descartava a mensagem do cliente —
  * todas as dele, para sempre (a regra 18 do plano da Kommo). Os 8 finais
  * são os mesmos nas duas grafias do nono dígito (o 9 fica ANTES deles),
@@ -95,9 +95,9 @@ export interface BuscaDeContato {
  *
  * ⚠️⚠️ **Mas a passada TOLERANTE não ganhou candidatos novos** (revisão
  * adversarial da 1024). Com o LIKE sobre os dígitos, a ficha de OUTRA pessoa
- * gravada com separador ("+55 15 98874-5316", outro DDD, mesmo final) passou
+ * gravada com separador ("+55 15 98000-0016", outro DDD, mesmo final) passou
  * a voltar como candidata — e o casamento pelos 8 finais a entregaria à
- * mensagem de "5582988745316". Sobre o texto cru ela nem aparecia. Por isso
+ * mensagem de "5582980000016". Sobre o texto cru ela nem aparecia. Por isso
  * a tolerante só aceita a candidata que o LIKE antigo já traria (o texto
  * cru termina nos 8 dígitos) ou cujo prefixo é COMPATÍVEL (`prefixoCompativel`:
  * o mesmo, ou com um 0 de tronco a mais). Nada que casava antes

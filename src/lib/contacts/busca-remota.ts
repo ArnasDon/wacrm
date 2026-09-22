@@ -60,7 +60,7 @@ export const TETO_DE_RESULTADOS = 20;
  * RLS de `contacts` bloqueia — 200 com `[]`, nenhum dado de cliente lido),
  * e não suposta: o teste unitário só conhece a string que este módulo
  * escreve, e foi assim que o `storage.exists()` enganou esta casa. Oito
- * termos passaram, incluindo `silva, jr`, `(83) 98874-5316`, `50%`, `a_b`,
+ * termos passaram, incluindo `silva, jr`, `(83) 98000-0016`, `50%`, `a_b`,
  * `o"brien` e `costa (filho) & cia`. O CONTROLE fecha a medição: o mesmo
  * `silva, jr` SEM as aspas volta **400 PGRST100 — "failed to parse logic
  * tree"**, que é o modo de falha que o seletor da agenda descreve (o erro
@@ -90,18 +90,18 @@ export function paraIlike(valor: string): string {
  * começo, cada comprimento precisaria do seu caso, e o fragmento sem DDI
  * (o mais comum) não teria nenhum.
  *
- *  "5583988745316" (DDI+DDD+9) → tira o 9 → "558388745316"
- *  "558388745316"  (DDI+DDD)   → põe  o 9 → "5583988745316"
- *  "83988745316"   (DDD+9)     → tira o 9 → "8388745316"
- *  "8388745316"    (DDD)       → põe  o 9 → "83988745316"
- *  "988745316"     (local+9)   → tira o 9 → "88745316"
- *  "88745316"      (local)     → põe  o 9 → "988745316"
+ *  "5583980000016" (DDI+DDD+9) → tira o 9 → "558380000016"
+ *  "558380000016"  (DDI+DDD)   → põe  o 9 → "5583980000016"
+ *  "83980000016"   (DDD+9)     → tira o 9 → "8380000016"
+ *  "8380000016"    (DDD)       → põe  o 9 → "83980000016"
+ *  "980000016"     (local+9)   → tira o 9 → "80000016"
+ *  "80000016"      (local)     → põe  o 9 → "980000016"
  *
  * ⚠️ Só CELULAR, como em `variantesDoNonoDigito`: o 9 foi acrescentado aos
  * móveis, que começam em 6–9. Um fixo ("551133334444") não ganha irmã —
  * inserir o 9 ali fabricaria um número que não existe.
  *
- * ⚠️ Limite escrito: fragmento que termina no MEIO do número ("3988745",
+ * ⚠️ Limite escrito: fragmento que termina no MEIO do número ("3980000",
  * colado de um cadastro) sai sozinho, e aí só acha a grafia como está
  * gravada. O filtro em JS cobria esse caso; cobri-lo aqui pediria uma
  * variante por posição de 9, e o `.or()` cresceria a cada uma. Quem digita
@@ -147,7 +147,7 @@ export function ramosDaBuscaDeContato(termo: string): string | null {
 
   // ⚠️⚠️ Telefone casa contra `phone_normalized`, NUNCA contra `phone`.
   // `phone` guarda o que o escritório DIGITOU — o formulário de contato
-  // preserva a pontuação —, então "+55 (83) 98874-5316" não tem os dígitos
+  // preserva a pontuação —, então "+55 (83) 98000-0016" não tem os dígitos
   // contíguos e um padrão de dígitos nunca casa com ele. A ficha continua no
   // banco e some da busca; se ela não tiver nome, fica inalcançável pelos
   // dois seletores. `phone_normalized` é coluna GERADA

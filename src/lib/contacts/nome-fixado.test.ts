@@ -9,22 +9,22 @@ describe("escritaDoNomeManual (o nome e a marca só vão quando o nome mudou)", 
     // Revisão do PR #208: com o formulário aberto sobre a lista velha, o
     // agendamento trocou o nome no banco; salvar só a empresa regravava o
     // nome da foto e mantinha a marca — o nome do perfil ficava FIXADO.
-    expect(escritaDoNomeManual("DOUGLAS BARBOSA", "DOUGLAS BARBOSA", AGORA)).toEqual({});
-    expect(escritaDoNomeManual("DOUGLAS BARBOSA", " DOUGLAS  BARBOSA ", AGORA)).toEqual({});
+    expect(escritaDoNomeManual("DIEGO EXEMPLO", "DIEGO EXEMPLO", AGORA)).toEqual({});
+    expect(escritaDoNomeManual("DIEGO EXEMPLO", " DIEGO  EXEMPLO ", AGORA)).toEqual({});
     expect(escritaDoNomeManual(null, "", AGORA)).toEqual({});
   });
 
   it("nome trocado vai JUNTO com a marca, já colapsado", () => {
-    expect(escritaDoNomeManual("Carolzinha", "  Anny   Karoline ", AGORA)).toEqual({
-      name: "Anny Karoline",
+    expect(escritaDoNomeManual("Lili", "  Lia   Fernanda ", AGORA)).toEqual({
+      name: "Lia Fernanda",
       nome_fixado_em: AGORA,
     });
   });
 
   it("nome apagado grava NULL e solta a marca; número grava e solta", () => {
-    expect(escritaDoNomeManual("Anny", "", AGORA)).toEqual({ name: null, nome_fixado_em: null });
-    expect(escritaDoNomeManual("Anny", "5583988745316", AGORA)).toEqual({
-      name: "5583988745316",
+    expect(escritaDoNomeManual("Lia", "", AGORA)).toEqual({ name: null, nome_fixado_em: null });
+    expect(escritaDoNomeManual("Lia", "5583980000016", AGORA)).toEqual({
+      name: "5583980000016",
       nome_fixado_em: null,
     });
   });
@@ -32,19 +32,19 @@ describe("escritaDoNomeManual (o nome e a marca só vão quando o nome mudou)", 
 
 describe("marcaDoNomeManual (a escrita à mão também fixa o nome)", () => {
   it("CRÍTICO: nome que NÃO mudou não mexe na marca — salvar só o e-mail não fixa o nome do WhatsApp", () => {
-    expect(marcaDoNomeManual("DOUGLAS BARBOSA", "DOUGLAS BARBOSA", AGORA)).toEqual({});
-    expect(marcaDoNomeManual("DOUGLAS BARBOSA", "  DOUGLAS   BARBOSA ", AGORA)).toEqual({});
+    expect(marcaDoNomeManual("DIEGO EXEMPLO", "DIEGO EXEMPLO", AGORA)).toEqual({});
+    expect(marcaDoNomeManual("DIEGO EXEMPLO", "  DIEGO   EXEMPLO ", AGORA)).toEqual({});
     expect(marcaDoNomeManual(null, "", AGORA)).toEqual({});
     expect(marcaDoNomeManual(undefined, null, AGORA)).toEqual({});
   });
 
   it("nome trocado por um nome de verdade FIXA", () => {
-    expect(marcaDoNomeManual("Carolzinha", "Anny Karoline da Silva", AGORA)).toEqual({ nome_fixado_em: AGORA });
+    expect(marcaDoNomeManual("Lili", "Lia Fernanda da Silva", AGORA)).toEqual({ nome_fixado_em: AGORA });
   });
 
   it("nome apagado ou trocado por número SOLTA — a próxima mensagem volta a preencher", () => {
-    expect(marcaDoNomeManual("Anny Karoline da Silva", "", AGORA)).toEqual({ nome_fixado_em: null });
-    expect(marcaDoNomeManual("Anny Karoline da Silva", "5583988745316", AGORA)).toEqual({ nome_fixado_em: null });
+    expect(marcaDoNomeManual("Lia Fernanda da Silva", "", AGORA)).toEqual({ nome_fixado_em: null });
+    expect(marcaDoNomeManual("Lia Fernanda da Silva", "5583980000016", AGORA)).toEqual({ nome_fixado_em: null });
   });
 
   it("na criação (antes nulo), nome digitado fixa e campo vazio não grava a chave", () => {
@@ -55,15 +55,15 @@ describe("marcaDoNomeManual (a escrita à mão também fixa o nome)", () => {
 
 describe("nomeParaFixar", () => {
   it("devolve o nome como a pessoa escreveu, só com o espaço arrumado", () => {
-    expect(nomeParaFixar("Douglas Barbosa")).toBe("Douglas Barbosa");
-    expect(nomeParaFixar("  douglas   barbosa  ")).toBe("douglas barbosa");
-    expect(nomeParaFixar("Anny Karoline da Silva")).toBe("Anny Karoline da Silva");
+    expect(nomeParaFixar("Diego Exemplo")).toBe("Diego Exemplo");
+    expect(nomeParaFixar("  diego   exemplo  ")).toBe("diego exemplo");
+    expect(nomeParaFixar("Lia Fernanda da Silva")).toBe("Lia Fernanda da Silva");
   });
 
   it("CRÍTICO: número não é nome — fixá-lo tiraria da ficha o nome de verdade para sempre", () => {
-    expect(nomeParaFixar("5583988745316")).toBeNull();
-    expect(nomeParaFixar("+55 (83) 98874-5316")).toBeNull();
-    expect(nomeParaFixar("83.98874.5316")).toBeNull();
+    expect(nomeParaFixar("5583980000016")).toBeNull();
+    expect(nomeParaFixar("+55 (83) 98000-0016")).toBeNull();
+    expect(nomeParaFixar("83.98000.0016")).toBeNull();
   });
 
   it("vazio, só espaço, só pontuação e ausente não servem", () => {

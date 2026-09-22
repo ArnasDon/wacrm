@@ -14,7 +14,7 @@ Procedimento para aplicar o conserto na Evolution da VPS.
 
 O WhatsApp trocou o endereço de parte das conversas: em vez do telefone
 (`5511999999999@s.whatsapp.net`), passa um identificador interno
-(`192603597332721@lid`). Medido na instância do escritório em **27/07/2026**:
+(`100000000000102@lid`). Medido na instância do escritório em **27/07/2026**:
 **263 dos 551 chats** já migraram.
 
 Quando alguém responde pelo **celular** (ou pelo WhatsApp Web), esse eco chega

@@ -83,7 +83,7 @@ describe('mostrarResponsavel', () => {
 
 describe('primeiroNome', () => {
   it('pega o primeiro', () => {
-    expect(primeiroNome('Leonardo Cabral Baptista')).toBe('Leonardo');
+    expect(primeiroNome('Rodrigo Tavares Monteiro')).toBe('Rodrigo');
     expect(primeiroNome('Gabriel')).toBe('Gabriel');
   });
 

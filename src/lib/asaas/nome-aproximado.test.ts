@@ -20,8 +20,8 @@ describe("tokensDoNome", () => {
 
 describe("ehNomeNumerico", () => {
   it("o número como nome (203 fichas na conta) é numérico; nome com letra não é", () => {
-    expect(ehNomeNumerico("5583988745316")).toBe(true);
-    expect(ehNomeNumerico("+55 (83) 98874-5316")).toBe(true);
+    expect(ehNomeNumerico("5583980000016")).toBe(true);
+    expect(ehNomeNumerico("+55 (83) 98000-0016")).toBe(true);
     expect(ehNomeNumerico("Leo 83")).toBe(false);
     expect(ehNomeNumerico("")).toBe(false);
   });
@@ -48,8 +48,8 @@ describe("compararNomes", () => {
   });
 
   it("nome de um token nunca casa, de nenhum dos lados", () => {
-    expect(compararNomes("Leo", "Leonardo Cabral Baptista").candidato).toBe(false);
-    expect(compararNomes("Leonardo Cabral", "Leonardo").candidato).toBe(false);
+    expect(compararNomes("Rod", "Rodrigo Tavares Monteiro").candidato).toBe(false);
+    expect(compararNomes("Rodrigo Tavares", "Rodrigo").candidato).toBe(false);
   });
 
   it("a pontuação é tokens em comum sobre o menor", () => {
@@ -59,7 +59,7 @@ describe("compararNomes", () => {
 
 describe("sugerirPorNome", () => {
   const fichas = [
-    { id: "num", nome: "5583988745316" },
+    { id: "num", nome: "5583980000016" },
     { id: "ms", nome: "Maria Silva" },
     { id: "mas", nome: "Maria Aparecida Silva" },
     { id: "js", nome: "João Silva" },
@@ -92,7 +92,7 @@ describe("nomesIncompativeis (a cerca da esposa que paga a conta)", () => {
   });
 
   it("ficha de nome numérico ou de um token não diz nada", () => {
-    expect(nomesIncompativeis("João Pedro Souza", "5583988745316")).toBe(false);
+    expect(nomesIncompativeis("João Pedro Souza", "5583980000016")).toBe(false);
     expect(nomesIncompativeis("João Pedro Souza", "Leo")).toBe(false);
     expect(nomesIncompativeis("João Pedro Souza", null)).toBe(false);
   });

@@ -2061,7 +2061,7 @@ async function runStep(
       // ficha e conversa (é assim que a mensagem aparece no inbox), mas não
       // vira card no funil nem "conversa reaberta" a cada aviso.
       const cfg = step.step_config as SendToNumberStepConfig;
-      // A mesma leitura do telefone do Calendly: "(83) 98874-5316" ganha o 55,
+      // A mesma leitura do telefone do Calendly: "(83) 98000-0016" ganha o 55,
       // "+1 404…" entra como veio. Sem isso o número digitado sem DDI no
       // editor saía para um destino que não existe.
       const digitos = digitosDoTelefone(cfg.phone);

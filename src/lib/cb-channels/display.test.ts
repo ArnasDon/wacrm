@@ -179,8 +179,8 @@ describe('identidadeDoCanal', () => {
   it('WhatsApp mostra o telefone formatado; Instagram, o @', async () => {
     const { identidadeDoCanal } = await import('./display');
     expect(
-      identidadeDoCanal({ kind: 'evolution', display_phone: '5583988745316', ig_username: null }),
-    ).toBe('+55 (83) 98874-5316');
+      identidadeDoCanal({ kind: 'evolution', display_phone: '5583980000016', ig_username: null }),
+    ).toBe('+55 (83) 98000-0016');
     expect(
       identidadeDoCanal({ kind: 'meta', display_phone: '+55 83 9887-5316', ig_username: null }),
     ).toBe('+55 83 9887-5316');

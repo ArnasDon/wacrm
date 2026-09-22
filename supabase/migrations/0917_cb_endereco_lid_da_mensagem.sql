@@ -23,9 +23,9 @@
 --   {
 --     "id": "3A65CF5756657C006B64",
 --     "fromMe": true,
---     "remoteJid":         "5511964102992@s.whatsapp.net",  ← reescrito
---     "previousRemoteJid": "192603597332721@lid",           ← o original
---     "senderPn":          "5511964102992@s.whatsapp.net"
+--     "remoteJid":         "5511960000001@s.whatsapp.net",  ← reescrito
+--     "previousRemoteJid": "100000000000102@lid",           ← o original
+--     "senderPn":          "5511960000001@s.whatsapp.net"
 --   }
 --
 -- `previousRemoteJid` é exatamente o dado que faltava, e ele já chega — só

@@ -71,8 +71,8 @@ describe("dedupeByPhone", () => {
     // Pela grafia, as duas passavam e caíam no mesmo lote de INSERT — com o
     // índice canônico, o lote inteiro levava 23505.
     const { unique, duplicates } = dedupeByPhone([
-      { phone: "5583988745316", name: "com o 9" },
-      { phone: "+55 83 8874-5316", name: "sem o 9" },
+      { phone: "5583980000016", name: "com o 9" },
+      { phone: "+55 83 8000-0016", name: "sem o 9" },
     ]);
     expect(unique.map((r) => r.name)).toEqual(["com o 9"]);
     expect(duplicates).toBe(1);
@@ -81,8 +81,8 @@ describe("dedupeByPhone", () => {
 
 describe("chaveDePessoa", () => {
   it("é a grafia canônica: as duas grafias do nono dígito dão a mesma chave", () => {
-    expect(chaveDePessoa("558388745316")).toBe(chaveDePessoa("+55 (83) 98874-5316"));
-    expect(normalizeKey("558388745316")).not.toBe(normalizeKey("5583988745316"));
+    expect(chaveDePessoa("558380000016")).toBe(chaveDePessoa("+55 (83) 98000-0016"));
+    expect(normalizeKey("558380000016")).not.toBe(normalizeKey("5583980000016"));
   });
 });
 
@@ -111,26 +111,26 @@ describe("findExistingContact", () => {
   }
 
   it("filtra pelos DÍGITOS (`phone_normalized`), nunca pelo texto cru (regra 18)", async () => {
-    // Sobre `phone`, a ficha gravada "+55 83 98874-5316" não casava
-    // `%88745316`: a busca não a achava, o INSERT levava 23505, a releitura
+    // Sobre `phone`, a ficha gravada "+55 83 98000-0016" não casava
+    // `%80000016`: a busca não a achava, o INSERT levava 23505, a releitura
     // falhava igual e a ingestão descartava a mensagem — todas, para sempre.
     const likes: Array<{ col: string; padrao: string }> = [];
-    await findExistingContact(stubDb([], [], likes), "acct", "+55 83 98874-5316");
-    expect(likes).toEqual([{ col: "phone_normalized", padrao: "%88745316" }]);
+    await findExistingContact(stubDb([], [], likes), "acct", "+55 83 98000-0016");
+    expect(likes).toEqual([{ col: "phone_normalized", padrao: "%80000016" }]);
   });
 
   it("acha a ficha gravada COM separadores (o candidato volta pelos dígitos)", async () => {
-    const db = stubDb([{ id: "c-fmt", phone: "+55 (83) 98874-5316" }]);
-    const hit = await findExistingContact(db, "acct", "558388745316");
+    const db = stubDb([{ id: "c-fmt", phone: "+55 (83) 98000-0016" }]);
+    const hit = await findExistingContact(db, "acct", "558380000016");
     expect(hit.contato?.id).toBe("c-fmt");
   });
 
   it("a tolerante NÃO entrega a ficha de outro DDD gravada com separador (revisão da 1024)", async () => {
-    // Sobre o texto cru, "+55 15 98874-5316" nem voltava como candidata para
-    // "5582988745316". Com o LIKE sobre os dígitos ela volta — e não pode ser
+    // Sobre o texto cru, "+55 15 98000-0016" nem voltava como candidata para
+    // "5582980000016". Com o LIKE sobre os dígitos ela volta — e não pode ser
     // entregue: é outra pessoa.
-    const db = stubDb([{ id: "c-15-fmt", phone: "+55 15 98874-5316" }]);
-    const hit = await findExistingContact(db, "acct", "5582988745316");
+    const db = stubDb([{ id: "c-15-fmt", phone: "+55 15 98000-0016" }]);
+    const hit = await findExistingContact(db, "acct", "5582980000016");
     expect(hit.contato).toBeNull();
   });
 
@@ -151,17 +151,17 @@ describe("findExistingContact", () => {
   it("o que casava antes continua casando (ficha só com dígitos, mesmo final)", async () => {
     // A régua do Asaas (D5) depende disto: o sufixo de outro número volta
     // como candidato para "Para confirmar", nunca como vínculo.
-    const db = stubDb([{ id: "c-15", phone: "5515988745316" }]);
-    const hit = await findExistingContact(db, "acct", "5582988745316");
+    const db = stubDb([{ id: "c-15", phone: "5515980000016" }]);
+    const hit = await findExistingContact(db, "acct", "5582980000016");
     expect(hit.contato?.id).toBe("c-15");
   });
 
   it("a IRMÃ do nono dígito vence a ficha mais antiga de OUTRO DDD com o mesmo final", async () => {
     // A tolerante sozinha devolvia a mais antiga com os mesmos 8 finais — a
     // de outra pessoa. A canônica é a dona do número no índice.
-    const outroDdd = { id: "c-15-antiga", phone: "5515988745316" };
-    const irma = { id: "c-83", phone: "5583988745316" };
-    const hit = await findExistingContact(stubDb([outroDdd, irma]), "acct", "558388745316");
+    const outroDdd = { id: "c-15-antiga", phone: "5515980000016" };
+    const irma = { id: "c-83", phone: "5583980000016" };
+    const hit = await findExistingContact(stubDb([outroDdd, irma]), "acct", "558380000016");
     expect(hit.contato?.id).toBe("c-83");
   });
 
@@ -208,12 +208,12 @@ describe("findExistingContact", () => {
   // de ser "o primeiro que o heap devolveu".
   describe("colisão de sufixo (carga da Kommo)", () => {
     // Mesmos 8 dígitos finais, DDDs diferentes: duas PESSOAS.
-    const ALAGOAS = { id: "c-82", phone: "5582988745316" };
-    const SAO_PAULO = { id: "c-15", phone: "5515988745316" };
+    const ALAGOAS = { id: "c-82", phone: "5582980000016" };
+    const SAO_PAULO = { id: "c-15", phone: "5515980000016" };
 
     it("prefere o casamento EXATO ao tolerante", async () => {
       const db = stubDb([SAO_PAULO, ALAGOAS]);
-      const hit = await findExistingContact(db, "acct", "+55 82 98874-5316");
+      const hit = await findExistingContact(db, "acct", "+55 82 98000-0016");
       expect(hit.contato?.id).toBe("c-82");
     });
 
@@ -228,14 +228,14 @@ describe("findExistingContact", () => {
         const alagoas = await findExistingContact(
           stubDb(linhas),
           "acct",
-          "5582988745316",
+          "5582980000016",
         );
         expect(alagoas.contato?.id).toBe("c-82");
 
         const sp = await findExistingContact(
           stubDb(linhas),
           "acct",
-          "5515988745316",
+          "5515980000016",
         );
         expect(sp.contato?.id).toBe("c-15");
       }
@@ -245,8 +245,8 @@ describe("findExistingContact", () => {
       // A ficha antiga não tem o 9; o WhatsApp entrega o número com ele.
       // Aqui NÃO há candidato exato — é o caso que a 1ª passada não resolve
       // e que o `order` da consulta existe para deixar estável.
-      const db = stubDb([{ id: "c-83", phone: "558388745316" }]);
-      const hit = await findExistingContact(db, "acct", "+55 83 98874-5316");
+      const db = stubDb([{ id: "c-83", phone: "558380000016" }]);
+      const hit = await findExistingContact(db, "acct", "+55 83 98000-0016");
       expect(hit.contato?.id).toBe("c-83");
       expect(hit.falhou).toBe(false);
     });
@@ -258,9 +258,9 @@ describe("findExistingContact", () => {
       const ordens: Array<{ col: string; opcoes?: { ascending?: boolean } }> =
         [];
       await findExistingContact(
-        stubDb([{ id: "c1", phone: "5582988745316" }], ordens),
+        stubDb([{ id: "c1", phone: "5582980000016" }], ordens),
         "acct",
-        "5582988745316",
+        "5582980000016",
       );
       expect(ordens.map((o) => o.col)).toEqual(["created_at", "id"]);
       expect(ordens.every((o) => o.opcoes?.ascending === true)).toBe(true);
@@ -289,23 +289,23 @@ describe("fichaQueVenceu (a releitura depois do 23505)", () => {
     // dele e descartá-la: o provedor já recebeu 200 e não reenvia.
     const { db, chamadas } = dbComRespostas([
       { data: null, error: { message: "timeout" } },
-      { data: [{ id: "c1", phone: "5583988745316" }], error: null },
+      { data: [{ id: "c1", phone: "5583980000016" }], error: null },
     ]);
-    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
-    expect(r).toEqual({ contato: { id: "c1", phone: "5583988745316" }, falhou: false });
+    const r = await fichaQueVenceu(db, "acct", "558380000016", semEspera);
+    expect(r).toEqual({ contato: { id: "c1", phone: "5583980000016" }, falhou: false });
     expect(chamadas()).toBe(2);
   });
 
   it("para depois de três tentativas e diz que NÃO SABE (nunca 'não existe')", async () => {
     const { db, chamadas } = dbComRespostas([{ data: null, error: { message: "fora do ar" } }]);
-    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
+    const r = await fichaQueVenceu(db, "acct", "558380000016", semEspera);
     expect(r).toEqual({ contato: null, falhou: true });
     expect(chamadas()).toBe(3);
   });
 
   it("'não achei' com a consulta respondida NÃO é repetido", async () => {
     const { db, chamadas } = dbComRespostas([{ data: [], error: null }]);
-    const r = await fichaQueVenceu(db, "acct", "558388745316", semEspera);
+    const r = await fichaQueVenceu(db, "acct", "558380000016", semEspera);
     expect(r).toEqual({ contato: null, falhou: false });
     expect(chamadas()).toBe(1);
   });

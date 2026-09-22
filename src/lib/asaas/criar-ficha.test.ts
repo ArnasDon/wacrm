@@ -12,10 +12,10 @@ function estado(contacts: Record<string, unknown>[] = [], accounts: Record<strin
 
 describe("mesmoNumero", () => {
   it("igual ou a irmã do nono dígito; sufixo de outro DDD não", () => {
-    expect(mesmoNumero("5583988745316", "5583988745316")).toBe(true);
-    expect(mesmoNumero("558388745316", "5583988745316")).toBe(true);
-    expect(mesmoNumero("5521988745316", "5583988745316")).toBe(false);
-    expect(mesmoNumero(null, "5583988745316")).toBe(false);
+    expect(mesmoNumero("5583980000016", "5583980000016")).toBe(true);
+    expect(mesmoNumero("558380000016", "5583980000016")).toBe(true);
+    expect(mesmoNumero("5521980000016", "5583980000016")).toBe(false);
+    expect(mesmoNumero(null, "5583980000016")).toBe(false);
   });
 });
 

@@ -8,7 +8,7 @@ const base: Agendamento = {
   inviteeUri: "https://api.calendly.com/scheduled_events/E/invitees/I",
   nome: "Marcelo",
   email: "m@x.com",
-  telefone: "5596991126767",
+  telefone: "5596990000016",
   telefoneOrigem: "pergunta",
   eventoUri: "https://api.calendly.com/event_types/T",
   eventoNome: "Reunião com Advogado - Kommo",
@@ -49,7 +49,7 @@ describe("variaveisDoAgendamento", () => {
     expect(v.agendamento_nome).toBe("Marcelo");
     expect(v.agendamento_evento).toBe("Reunião com Advogado - Kommo");
     expect(v.agendamento_data).toBe("26/08/2026 às 13:45h");
-    expect(v.agendamento_telefone).toBe("(96) 99112-6767");
+    expect(v.agendamento_telefone).toBe("(96) 99000-0016");
     expect(v.agendamento_inicio).toBe("2026-08-26T16:45:00.000000Z");
     expect(v.agendamento_link).toBe("https://meet.google.com/abc");
     expect(v.agendamento_situacao).toBe("Novo agendamento");

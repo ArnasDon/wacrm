@@ -7,7 +7,7 @@ fase e no diário do fim.
 | | |
 | --- | --- |
 | **Estado** | Fases 0, 1 e 2 concluídas. **Fase 1** (Next 16.3.5, `npm audit` 12 → 0) em produção desde 21/09/2026 15:08Z (PR #239). **Fase 2** (função de disparo, migration `1030`, `channel_id` respeitado) **em produção desde 21/09/2026 17:33Z** (PR #242), pós-deploy conferido. **Pausado a pedido do operador antes da Fase 3.** |
-| **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. ⚠️ **Ele ANDOU (medido em 21/09/2026): `upstream/main` = `aee1b01f`, 2 commits novos** — `b9969fa2` (#586: exige `+` e código do país em telefone digitado e na API; 21 arquivos) e `f8a1cc72` (chaves do modal de importação em `pt`/`es`). Estão FORA deste plano até a decisão P9 (seção 8). |
+| **Alvo PINADO** | `upstream/main` = **`80c3f9a`** (13/09/2026). Base comum com o nosso `main`: `98b5bd2` (upstream #532, 31/08). Tudo neste plano se refere a esse commit — se o upstream andar, é outro ciclo. ⚠️ **Ele ANDOU (medido em 21/09/2026): `upstream/main` = `aee1b01f`, 2 commits novos** — `b9969fa2` (#586: exige `+` e código do país em telefone digitado e na API; 21 arquivos) e `f8a1cc72` (chaves do modal de importação em `pt`/`es`). Estão FORA deste plano até a decisão P9 (seção 8). Conferido de novo em 22/09/2026: não andou mais. |
 | **Pedido do operador (21/09/2026)** | Trazer todas as atualizações como COMPLEMENTO ou CORREÇÃO, nunca retrocesso. BSUID por último (é o mais complexo e o de maior risco). Toda correção é **medida contra o nosso código**, **revisada em duas lentes** e **testada no preview, na prática**. Merge e migration estão autorizados quando o teste exigir. Só depois da validação passa-se à fase seguinte. |
 | **PR #229** | Aberto por `devgabrielslv` com head em `ArnasDon/wacrm:main`. **Não tinha como ser mesclado**: resolver conflito ali seria commitar no upstream, e o conteúdo dele muda sozinho (a origem é uma branch viva). **FECHADO em 21/09/2026 por decisão do operador (P1)**, com comentário apontando para este plano — fechar o PR não descarta o conteúdo: ele entra pelas fases daqui, e a worktree `.claude/worktrees/merge-upstream` fica de pé para isso. |
 | **Migrations deste plano** | Faixa **`1030+`** (decisão da Fase 0 — a sessão da Kommo aplicou a 1023 hoje e segue criando números; já houve 7 colisões de branches em paralelo). Migration do upstream aplicada SEM mudança entra na faixa `00xx` preservando a ordem deles: `040→0043`, `041→(não usada)`, `042→0045`. |
@@ -181,7 +181,7 @@ quebrar, sabe-se qual.
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (P1 decidida em 21/09: #229 fechado) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
 | **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
-| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir) | Moderado | Baixa | Baixo | — | pendente |
+| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream) | Moderado | Baixa | Baixo | — | pendente |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
 | **6** | Modelos: cabeçalho de mídia (#562) e stub (#534) | Moderado | Média | Médio-baixo | — | pendente |
@@ -534,7 +534,7 @@ enquadramento do autor, medindo num Postgres 16 descartável e por mutação):
 | P3 — `resolveAuditUserId` (2 SELECTs) rodava ANTES da validação do canal | ✅ invertido, com pino |
 | P3 — `verify-schema.sql`: o LIKE é literal, e a mensagem enganava quem reescrevesse a função de forma legítima | ✅ a mensagem diz as duas causas e o que fazer (provada num 5º estado) |
 | P3 — doc: o 202 pode trazer `channel_id: null` (configuração legada); "account default first" era impreciso (um CONECTADO vence o padrão desconectado); o cabeçalho da rota não listava o campo; nada prendia o `channel_id` do `GET` | ✅ corrigidos; pino estrutural no `select` da rota de progresso |
-| P3 — `resolveMetaChannel` descarta o `error` da busca por id (um timeout vira 400 "conecte um número", e quem integra não reenvia) e não confere `status` | ➡️ FORA deste PR — o resolvedor é compartilhado com as rotas de modelo; virou cartão próprio |
+| P3 — `resolveMetaChannel` descarta o `error` da busca por id (um timeout vira 400 "conecte um número", e quem integra não reenvia) e não confere `status` | ➡️ FORA deste PR — o resolvedor é compartilhado com as rotas de modelo; virou cartão próprio e, em 22/09, o item **3e** deste plano (confirmado no `main` naquele dia) |
 | P3 — a função commita entradas que o app não manda (lista de contatos vazia ou com NULL) | aceito: inalcançável (o núcleo barra lista vazia e os ids vêm do banco) — guarda para cenário impossível contraria a regra da casa |
 | P3 — o teto de 1000 destinatários é igual ao "Max rows" padrão do PostgREST | aceito e anotado: com o limite REDUZIDO no painel do Supabase, a RPC devolveria menos linhas do que gravou (os que sobram ficam `pending`; o "Retomar" os recupera) |
 
@@ -601,6 +601,61 @@ passam). A assinatura do Instagram é outra e não é tocada.
 **3d. Tags da v1 (#560, `77d403b`) — só medir.** Já corrigimos em 09/09
 (`set-contact-tags.test.ts`). Medição: rodar os testes de regressão DELES contra
 a NOSSA implementação; adotar os que acrescentam cobertura; o código fica o nosso.
+
+**3e. O resolvedor do canal Meta — erro de banco não é "sem canal"** (achado
+NOSSO, sem PR do upstream: dois P3 da revisão final do #242, deixados de fora
+daquele PR porque o resolvedor é compartilhado com as rotas de modelo; era o
+cartão `task_6706439b`). **Confirmado em 22/09/2026 no `origin/main`
+(`ba5612ef`)**, em `src/lib/cb-channels/resolve-meta.ts`:
+
+- **Busca por id (`:72-79`): o `error` é DESCARTADO.** Um tempo esgotado ou erro
+  do PostgREST vira `null`, e o chamador responde 400 "conecte um número em
+  Configurações" — e quem integra pela API não reenvia. É a regra da casa "erro
+  de banco NÃO é não-encontrado" (o caso `getContactById`, seção da API pública
+  do `CLAUDE.md`). ⚠️ `channel_id` com UUID MALFORMADO gera 22P02 no Postgres e
+  hoje cai no mesmo ramo — esse caso TEM de continuar 400 (canal inválido):
+  validar o formato ANTES (na rota ou no resolvedor) e tratar o resto como erro
+  de verdade (500).
+- **O mesmo descarte na LISTA e no espelho legado:** `:92` (`if (!error &&
+  data)`) cai em silêncio para o `whatsapp_config` quando a lista falha, e a
+  consulta do espelho (`:100-104`) também joga o `error` fora. Decidir e
+  escrever o porquê.
+- **Busca por id não confere o `status`** (`:79` só pergunta `utilizavel`): um
+  canal Meta DESCONECTADO que ainda tem credenciais é aceito, e o disparo falha
+  destinatário por destinatário. Não sai pelo número errado, mas a resposta
+  poderia ser um erro claro ANTES de criar a campanha. (A busca SEM id já
+  prefere `connected`, `:94`.) Decidir — recusar com motivo claro × manter — e
+  escrever o porquê.
+
+**Chamadores (7, em 6 arquivos) — hoje TODOS traduzem `null` em 400:**
+
+| Chamador | De onde vem o canal | `null` vira |
+| --- | --- | --- |
+| `lib/whatsapp/broadcast-core.ts:125` (API v1 de disparos) | `channel_id` do corpo (validado na rota) | `BroadcastError('meta_channel_required', 400)` |
+| `lib/whatsapp/broadcast-resume.ts:217` ("Retomar") | `broadcasts.channel_id` (NULL = campanha anterior à 903 → cai no padrão) | `BroadcastError('whatsapp_not_configured', 400)` |
+| `app/api/whatsapp/broadcast/route.ts:134` (disparo pela tela) | `channel_id` do corpo, CRU | 400 "Broadcasts require an official Meta…" |
+| `app/api/whatsapp/templates/submit/route.ts:171` | canal pedido | 400 "WhatsApp not configured…" |
+| `app/api/whatsapp/templates/sync/route.ts:146` | `?channel_id=` | 400 "WhatsApp not configured…" |
+| `app/api/whatsapp/templates/[id]/route.ts:152` (PATCH) | `channel_id` do próprio modelo | 400 |
+| `app/api/whatsapp/templates/[id]/route.ts:299` (DELETE) | idem | 400 (também sem `wabaId`) |
+
+Nenhum trata exceção vinda do resolvedor: mudar o contrato (lançar, ou devolver
+um resultado com o motivo) exige ajustar os SETE na mesma passada e conferir o
+`catch` de cada rota — não mudar o contrato sem isso.
+
+**Verificação:** testes que reprovem por MUTAÇÃO (a fake de
+`resolve-meta.test.ts` confere os filtros desde o #242 — os mutantes a provar:
+erro engolido na busca por id, erro engolido na lista, UUID malformado virando
+500, e o `status`, conforme a decisão); `typecheck`, `lint` (ler `✖ N
+problems`), suíte em Node 22. Se o contrato de erro da API pública mudar (500
+onde era 400, ou código novo), atualizar `docs/public-api.md` — e o `docs/mcp.md`
+se a ferramenta `send_broadcast` descrever o erro. **Teste no preview:** o 500 de
+erro de banco se prova no unitário (não se derruba o banco da produção);
+no preview, pela API com chave de teste criada e revogada na hora: `channel_id`
+malformado → 400; canal Meta desconectado → a resposta decidida, sem campanha
+criada; caminho feliz → 202 (a sonda `f2-pos-deploy.mjs` da Fase 2 não envia
+nada e serve de base). ⚠️ Toca `broadcast-core.ts`, que a metade aproveitável
+do #586 (P9) também toca — se os dois entrarem na mesma fase, um PR só.
 
 **Resultado:** — (a preencher)
 
@@ -810,3 +865,4 @@ de ser `80c3f9a` e passa a ser o commit que os contém — e as medições da se
 | 21/09/2026 | 2 | A função de disparo NUNCA tinha executado (42702) — e as duas lentes acharam o que o upstream não tem: os parâmetros por destinatário chegavam em 2-D pelo PostgREST (Lente 1) e a rota descartava o `channel_id` (Lente 2). Na 2ª passada, a Lente 1 derrubou uma medição MINHA ("23502") feita num dublê com `NOT NULL` que a produção não tem. Ordem com migration: rascunho → replay verde no commit exato → `1030` aplicada (`20260921164342`) → teste prático: 5 recusas em 400 sem gravar nada, o PRIMEIRO 202 do endpoint, params como lista pelo PostgREST real → chave de teste revogada na hora (0 chaves ativas). Achado fora do escopo: a Meta aceitou e depois falhou a ENTREGA do modelo de Marketing fora da janela, e o motivo se perdeu — é o defeito da Fase 5, que ganhou um caso de teste real. |
 | 21/09/2026 | 2 (fecho) | Codex SEM COTA no HEAD → terceira revisão independente no lugar dele: nenhum P0/P1; os 2 P2 e 3 P3 corrigidos (pino do salto núcleo → resolvedor, `null` = ausente, ordem da validação, mensagem do `verify-schema`, doc), 1 P3 corrigido em parte (o pino do filtro por conta entrou; o `error` descartado e o `status` não conferido de `resolveMetaChannel` viraram cartão) e 2 P3 aceitos por escrito. Merge 17:27Z, rollout 17:33Z na primeira tentativa. Pós-deploy: a sonda inverteu (rota antiga → rota nova; `GET` sem → com `channel_id`), saúde e ingestão conferidas, zero chaves ativas. **Operador pediu pausa antes da Fase 3.** |
 | 21/09/2026 | 0 (P1) | **#229 FECHADO** por ordem do operador, com comentário explicando por que não podia ser mesclado (origem = o `main` do próprio original; conteúdo que muda sozinho; 19 PRs num deploy só) e apontando para este plano. A worktree fica de pé para as correções seguirem por aqui. Na conferência, o original tinha ANDADO: `upstream/main` = `aee1b01f`, 2 commits depois do alvo — o #586 (exige `+` e código do país; 21 arquivos, vários da Fase 3a) virou a decisão P9. |
+| 22/09/2026 | 3 (plano) | A pedido do operador, o cartão do `resolveMetaChannel` (P3 da revisão final do #242) entrou no plano como **item 3e**, depois de confirmado no `origin/main` (`ba5612ef`): o `error` descartado na busca por id, na lista e no espelho, e o `status` não conferido. Levantados os 7 chamadores (6 arquivos), todos traduzindo `null` em 400. Nada implementado — a pausa antes da Fase 3 continua. |

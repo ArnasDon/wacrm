@@ -654,8 +654,9 @@ trouxe o telefone já está gravada.
 
 - o estado que sobra é o MESMO que o caminho normal deixa depois de TODA
   resposta pelo celular pareado, por onde sai quase toda resposta do escritório:
-  responder não zera a não lida em lugar nenhum; só abrir a conversa zera
-  (`message-thread.tsx`). A corrida não cria um estado novo;
+  responder não zera a não lida em lugar nenhum; no app, só abrir a conversa
+  zera (`message-thread.tsx`; fora dele, o encerramento em lote da 1018,
+  rodado à mão). A corrida não cria um estado novo;
 - a janela é de UMA ida ao banco;
 - medido em 22/09/2026: desde o deploy, `cb_mensagens_sem_telefone` tem UMA
   linha — um documento de cliente resolvido pelo acervo no instante da chegada,

@@ -2987,8 +2987,9 @@ O que morde código novo:
   resposta de gente gravada nesse vão deixa +1 de não lida sobre fala já
   respondida (Codex, rodada no commit do MERGE `545af27`; aceito em
   22/09/2026: é o MESMO estado que o caminho normal deixa depois de toda
-  resposta pelo celular — responder não zera a não lida em lugar nenhum, só
-  abrir a conversa zera —; nenhum dos dois modos tinha rodado em produção; e
+  resposta pelo celular — responder não zera a não lida em lugar nenhum; no
+  app, só abrir a conversa zera —; nenhum dos dois modos tinha rodado em
+  produção; e
   fechar pede a pergunta DENTRO da função, migration nova; plano 6.10). Só a Fase 3
   (patch na imagem da Evolution: `lidMapping.getPNForLID` antes da troca da
   linha 1668 — consulta local, sem rede) resolveria na hora; decisão do

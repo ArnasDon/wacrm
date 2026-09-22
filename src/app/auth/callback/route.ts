@@ -20,27 +20,29 @@
 // mandaria a pessoa para o login levando o `code` embora — o link do
 // e-mail é de uso único, então ela nunca mais conseguiria trocar a senha
 // com aquele e-mail.
+//
+// ⚠️ Os dois redirecionamentos saem da ORIGEM PÚBLICA (`origemPublica`),
+// nunca de `request.nextUrl`: em produção aquela origem é
+// `https://0.0.0.0:3000`, e até 22/09/2026 esta rota trocava o código pela
+// sessão e mandava a pessoa para lá — os cookies ficavam no domínio certo e
+// o navegador ia para um endereço que não abre.
 // ============================================================
 
 import { NextResponse, type NextRequest } from 'next/server'
 
 import { destinoSeguro } from '@/lib/auth/destino-seguro'
+import { origemPublica } from '@/lib/auth/origem-publica'
 import { createClient } from '@/lib/supabase/server'
 
 /** Para onde volta quem chegou com link vencido, já usado ou adulterado. */
-const FALHA = '/forgot-password'
+const FALHA = '/forgot-password?erro=link'
 
 export async function GET(request: NextRequest) {
   const code = request.nextUrl.searchParams.get('code')
   const destino = destinoSeguro(request.nextUrl.searchParams.get('next'))
+  const origem = origemPublica(request.headers, request.nextUrl)
 
-  const falhar = () => {
-    const url = request.nextUrl.clone()
-    url.pathname = FALHA
-    url.search = '?erro=link'
-    url.hash = ''
-    return NextResponse.redirect(url)
-  }
+  const falhar = () => NextResponse.redirect(new URL(FALHA, origem))
 
   if (!code) return falhar()
 
@@ -51,10 +53,7 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) return falhar()
 
-  const alvo = new URL(destino, request.nextUrl.origin)
-  const url = request.nextUrl.clone()
-  url.pathname = alvo.pathname
-  url.search = alvo.search
-  url.hash = alvo.hash
-  return NextResponse.redirect(url)
+  // `destino` já é caminho relativo validado (`destinoSeguro`): resolvido
+  // contra a origem pública, não sai dela.
+  return NextResponse.redirect(new URL(destino, origem))
 }

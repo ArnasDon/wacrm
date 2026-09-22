@@ -5,6 +5,7 @@ import {
   conversaDoCard,
   juntarConteudo,
   normalizarDealDoQuadro,
+  temConteudo,
   type CardDoQuadro,
   type CardSemConteudo,
   type DealDoQuadro,
@@ -178,7 +179,6 @@ describe("juntarConteudo — o conteúdo por id sobre a lista enxuta", () => {
       status: "open",
       created_at: "2026-09-01T00:00:00+00:00",
       updated_at: "2026-09-01T00:00:00+00:00",
-      semConteudo: true,
       ...extras,
     };
   }
@@ -189,8 +189,14 @@ describe("juntarConteudo — o conteúdo por id sobre a lista enxuta", () => {
   it("preenche o card pedido com o conteúdo", () => {
     const junto = juntarConteudo([enxuto("d1")], ["d1"], new Map([["d1", completo("d1")]]));
     expect(junto).toHaveLength(1);
-    expect("semConteudo" in junto[0]!).toBe(false);
+    expect(temConteudo(junto[0]!)).toBe(true);
     expect((junto[0] as DealDoQuadro).contact?.id).toBe("c1");
+  });
+
+  it("temConteudo: o card normalizado tem `conversa` em todo caminho (com e sem contato), a linha enxuta não", () => {
+    expect(temConteudo(enxuto("d1"))).toBe(false);
+    expect(temConteudo(completo("d1"))).toBe(true);
+    expect(temConteudo(normalizarDealDoQuadro(dealCru({ contact: null, contact_id: null })))).toBe(true);
   });
 
   it("⚠️ a linha enxuta VENCE: etapa, status, título e valor ficam os do quadro — o card arrastado enquanto carregava não volta para a etapa velha, e o formulário não regrava a etapa de outra consulta (Codex, PR #248)", () => {
@@ -208,7 +214,7 @@ describe("juntarConteudo — o conteúdo por id sobre a lista enxuta", () => {
     expect(junto).toBe(lista);
   });
 
-  it("tira do quadro o card pedido que não voltou — apagado entre a lista e o conteúdo, ficaria carregando para sempre", () => {
+  it("tira do quadro o card pedido que não voltou — apagado, ou levado para outro funil, entre a lista e o conteúdo; ficaria carregando para sempre", () => {
     const junto = juntarConteudo([enxuto("d1"), enxuto("d2")], ["d1", "d2"], new Map([["d2", completo("d2")]]));
     expect(junto.map((c) => c.id)).toEqual(["d2"]);
   });

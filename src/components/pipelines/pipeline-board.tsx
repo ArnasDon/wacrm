@@ -19,6 +19,7 @@ import type { Automation, Deal, PipelineStage } from "@/types";
 import type { CbChannel } from "@/lib/cb-channels/repo";
 import { DealCard } from "./deal-card";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/dashboard/skeleton";
 import { MessageSquare, Plus, Zap } from "lucide-react";
 import { useSinalDeExecucoes } from "@/hooks/use-sinal-de-execucoes";
 import { useChannels } from "@/hooks/use-channels";
@@ -45,7 +46,7 @@ import { urlDoInbox } from "@/lib/inbox/url";
  * só, e a coluna estica a página para centenas de milhares de pixels: no
  * computador tranca a thread principal, e no CRM instalado no iPhone o
  * provável é o app ser morto pelo sistema — a tela principal do funil deixa
- * de abrir. Em 22/09/2026 o "Trabalhista - Comercial" já tinha 3.673 cards.
+ * de abrir. Em 22/09/2026, depois da primeira carga da Kommo, ele tinha 3.673.
  *
  * 100 POR COLUNA, no molde da lista de leads (`funil/lista-de-leads.tsx`,
  * que usa o mesmo número para a tabela inteira). Com as colunas de um funil
@@ -86,10 +87,11 @@ export function cardsDaColuna<T extends { id: string }>(
 }
 
 /**
- * Os ids que as colunas desenham com estes tetos — a MESMA regra do render
- * (`cardsDaColuna`), para a página baixar na carga o conteúdo exatamente
- * destes cards (ver `DEAL_SELECT_ENXUTO`). Cada card conta na coluna da
- * própria etapa, na ordem da lista.
+ * Os ids que as colunas desenham com estes tetos — a regra do render
+ * (`cardsDaColuna`), para a página baixar na carga o conteúdo destes cards
+ * (ver `DEAL_SELECT_ENXUTO`). Cada card conta na coluna da própria etapa, na
+ * ordem da lista. Fica de fora o card recém-solto que o render fixa no topo
+ * de uma coluna cheia: esse a coluna pede à parte, depois da carga.
  */
 export function idsDesenhados(
   cards: readonly { id: string; stage_id: string }[],
@@ -121,10 +123,10 @@ interface PipelineBoardProps {
   deals: CardDoQuadro[];
   /**
    * Os cards DESENHADOS que ainda não têm conteúdo — "mostrar mais", o teto
-   * que a volta do inbox restaura, o card que um arrasto expôs. A página
-   * deduplica e baixa; a coluna só avisa.
+   * que a volta do inbox restaura, o card que um arrasto expôs —, com o
+   * funil da coluna. A página deduplica e baixa; a coluna só avisa.
    */
-  onFaltaConteudo: (ids: string[]) => void;
+  onFaltaConteudo: (ids: string[], funil: string) => void;
   /** Automações da conta, para a etiqueta por coluna (Fase 5). */
   automations: Automation[];
   /** O funil exibido — carimba o ponto de retorno ao sair para o inbox. */
@@ -540,7 +542,7 @@ function StageColumn({
   /** O último card solto no quadro (pode ser de outra coluna). */
   recemSolto: string | null;
   onMostrarMais: (stageId: string) => void;
-  onFaltaConteudo: (ids: string[]) => void;
+  onFaltaConteudo: (ids: string[], funil: string) => void;
   /**
    * contato → quantas automações agendadas (985). Um mapa só para o quadro
    * inteiro, buscado UMA vez no board: um hook por card seria uma requisição
@@ -560,15 +562,17 @@ function StageColumn({
   // distintivo de uma coluna com 2.719 cards seria mentira.
   const visiveis = cardsDaColuna(deals, limite, recemSolto);
   const escondidos = deals.length - visiveis.length;
-  // O desenhado que ainda não tem conteúdo é pedido à página. Em texto, para
-  // o efeito só rodar quando o conjunto MUDA, não a cada render.
+  // O desenhado que ainda não tem conteúdo é pedido à página, que não repete
+  // o que já está a caminho. ⚠️ `deals` nas dependências, e não só o texto
+  // dos ids: uma recarga que devolva à coluna o MESMO conjunto sem conteúdo
+  // (ou uma falha seguida de outra mudança do quadro) tem de pedir de novo.
   const faltam = visiveis
     .filter((d) => !temConteudo(d))
     .map((d) => d.id)
     .join(",");
   useEffect(() => {
-    if (faltam) onFaltaConteudo(faltam.split(","));
-  }, [faltam, onFaltaConteudo]);
+    if (faltam) onFaltaConteudo(faltam.split(","), stage.pipeline_id);
+  }, [faltam, deals, stage.pipeline_id, onFaltaConteudo]);
 
   return (
     // On mobile each column is `w-[85vw]` (with a reasonable min/max)
@@ -744,16 +748,14 @@ function DraggableDealCard({
  * negócio inteiro.
  */
 function CardCarregando({ titulo }: { titulo: string }) {
-  const t = useTranslations("Pipelines.board");
   return (
     <div
       aria-busy="true"
-      aria-label={t("carregandoCard", { titulo })}
       className="rounded-xl border border-border/50 bg-muted/70 py-3 pl-4 pr-3 shadow-sm"
     >
       <p className="truncate text-sm font-semibold text-muted-foreground">{titulo}</p>
-      <div className="mt-3 h-3 w-2/3 animate-pulse rounded bg-muted" />
-      <div className="mt-3 h-3 w-1/3 animate-pulse rounded bg-muted" />
+      <Skeleton className="mt-3 h-3 w-2/3 rounded" />
+      <Skeleton className="mt-3 h-3 w-1/3 rounded" />
     </div>
   );
 }

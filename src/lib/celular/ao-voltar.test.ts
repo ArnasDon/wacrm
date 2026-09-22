@@ -96,6 +96,9 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
       /const refreshAutomations = useCallback\(async \(\) => \{\s*versaoDoQuadroRef\.current \+= 1;/,
       /const handleDealMoved = useCallback\(\s*async \(dealId: string, newStageId: string\) => \{[\s\S]{0,300}versaoDoQuadroRef\.current \+= 1;/,
       /funilAbertoRef\.current = selectedPipelineId;[\s\S]{0,500}versaoDoQuadroRef\.current \+= 1;/,
+      // O conteúdo que chega para a coluna ("mostrar mais") também é
+      // mudança local (PR #251): a recarga que partiu antes o desfaria.
+      /const carregarConteudo = useCallback\([\s\S]{0,1600}versaoDoQuadroRef\.current \+= 1;\s*setDeals\(\(prev\) => juntarConteudo/,
     ]) {
       expect(funil).toMatch(quem);
     }

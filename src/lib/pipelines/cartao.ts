@@ -61,7 +61,7 @@ export type DealDoQuadro = Deal & {
  *   1. esta lista ENXUTA de todos os cards (~230 bytes cada, ~0,8 s): coluna,
  *      contador, soma, indicadores e arrasto, o que precisa da coluna INTEIRA;
  *   2. o conteúdo completo só dos cards que as colunas DESENHAM (os 100
- *      primeiros de cada uma, ~0,3 s), por id.
+ *      primeiros de cada uma, ~0,3 s), por id e só deste funil.
  * Quem acrescentar coluna aqui paga em todos os cards do funil.
  */
 export const DEAL_SELECT_ENXUTO =
@@ -71,28 +71,33 @@ export const DEAL_SELECT_ENXUTO =
 export type CardSemConteudo = Pick<
   Deal,
   "id" | "stage_id" | "title" | "value" | "status" | "created_at" | "updated_at"
-> & { semConteudo: true };
+>;
 
 /** O que o quadro guarda de cada card: completo, ou ainda só a linha enxuta. */
 export type CardDoQuadro = DealDoQuadro | CardSemConteudo;
 
+/**
+ * ⚠️ O card completo é o que tem `conversa`: `normalizarDealDoQuadro` a
+ * preenche SEMPRE (null quando não há conversa), inclusive no plano B, e a
+ * lista enxuta nunca a traz. Quem mudar um dos dois lados muda esta regra.
+ */
 export function temConteudo(card: CardDoQuadro): card is DealDoQuadro {
-  return !("semConteudo" in card);
+  return "conversa" in card;
 }
 
 /**
  * O conteúdo que chegou, aplicado ao quadro: preenche os cards PEDIDOS que
  * ainda não o tinham, e tira do quadro o pedido que não voltou — o negócio
- * foi apagado entre a lista e o conteúdo, e ficaria "carregando" para
- * sempre. Card que já tem conteúdo não é tocado. Devolve a MESMA lista
- * quando nada muda.
+ * foi apagado, ou saiu do funil, entre a lista e o conteúdo (que é buscado
+ * só no funil aberto), e ficaria "carregando" para sempre. Card que já tem
+ * conteúdo não é tocado. Devolve a MESMA lista quando nada muda.
  *
- * ⚠️ Os campos da linha enxuta VENCEM os do conteúdo. As duas consultas saem
- * em momentos diferentes, e é a enxuta que decide a coluna — e ela pode ter
- * sido mexida aqui depois, por um arrasto. Deixar o conteúdo vencer punha a
- * etapa de uma consulta no card e a de outra na coluna, e o formulário,
- * aberto pelo lápis, regravaria a etapa velha ao salvar outro campo (Codex,
- * PR #248).
+ * ⚠️ Os campos da linha enxuta VENCEM os do conteúdo (ela é espalhada por
+ * último). As duas consultas saem em momentos diferentes, e é a enxuta que
+ * decide a coluna — e ela pode ter sido mexida aqui depois, por um arrasto.
+ * Deixar o conteúdo vencer punha a etapa de uma consulta no card e a de outra
+ * na coluna, e o formulário, aberto pelo lápis, regravaria a etapa velha ao
+ * salvar outro campo (Codex, PR #248).
  */
 export function juntarConteudo(
   cards: CardDoQuadro[],
@@ -109,16 +114,7 @@ export function juntarConteudo(
     }
     mudou = true;
     const chegou = conteudo.get(card.id);
-    if (!chegou) continue;
-    saida.push({
-      ...chegou,
-      stage_id: card.stage_id,
-      title: card.title,
-      value: card.value,
-      status: card.status,
-      created_at: card.created_at,
-      updated_at: card.updated_at,
-    });
+    if (chegou) saida.push({ ...chegou, ...card });
   }
   return mudou ? saida : cards;
 }

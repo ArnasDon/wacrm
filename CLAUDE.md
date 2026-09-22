@@ -1705,19 +1705,14 @@ O que morde código novo:
   quadro "vazio" com cara de funil sem negócio. `contact.tags` fica AUSENTE
   no plano B (fabricar `[]` afirmaria "sem etiquetas" sobre dado não
   carregado).
-- ⚠️ **O quadro carrega em DUAS etapas (22/09/2026)**: a lista ENXUTA de
-  todos os cards (`DEAL_SELECT_ENXUTO`) e o conteúdo (`DEAL_SELECT_DO_QUADRO`)
-  só dos que as colunas desenham, por id. Medido no Trabalhista - Comercial
-  (3.673 cards): o select do quadro para todos custava ~2,7 s, e cortar
-  colunas dele não resolvia (2,1 s) — o custo é montar os embutidos. A
-  página guarda UMA lista (`CardDoQuadro`): contador, soma, indicadores e
-  arrasto leem a coluna inteira, e o card sem conteúdo aparece "carregando"
-  até a coluna pedi-lo ("mostrar mais", arrasto). Na junção, os campos da
-  lista enxuta VENCEM os do conteúdo (`juntarConteudo`): deixar o conteúdo
-  vencer punha no card a etapa de uma consulta e na coluna a de outra
-  (Codex, PR #248). Quem ler campo novo de TODOS os cards (indicador,
-  filtro) acrescenta a coluna ao select enxuto — no conteúdo ela só existe
-  para os desenhados.
+- ⚠️ **O quadro carrega em DUAS etapas (22/09/2026)** — o porquê e a medição
+  estão em `DEAL_SELECT_ENXUTO` (`src/lib/pipelines/cartao.ts`): a lista
+  ENXUTA de todos os cards e o conteúdo só dos que as colunas desenham, por id
+  e só do funil aberto. O que morde: na junção (`juntarConteudo`) os campos da
+  lista enxuta VENCEM os do conteúdo; campo lido de TODOS os cards (indicador,
+  soma, filtro) vai no select enxuto, porque no conteúdo ele só existe para os
+  desenhados; e o plano B só liga com a RECUSA do embed (`RECUSA_DO_EMBED`),
+  nunca com rede fora ou 5xx.
 - **O retorno de rolagem EXPIRA (10 min), não é apagado no consumo**
   (`retorno.ts`): apagar antes dos rAF perdia a restauração se o quadro
   desmontasse na janela, ir-e-voltar duas vezes teleportava para `list[0]`, e

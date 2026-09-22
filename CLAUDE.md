@@ -7155,7 +7155,11 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     carga (a data não se perde quando a Kommo sair do ar), com SET NULL ao
     apagar o contato. Chave `(account_id, kommo_lead_id)`: rodar de novo no
     dia do corte atualiza. Quem grava é um script fora do app (leitura em
-    `scripts/kommo/reunioes.mjs`); desfazer é DELETE por `lote`.
+    `scripts/kommo/reunioes.mjs`); desfazer é DELETE por `lote`. Aplicada
+    em 22/09/2026 pela Management API (histórico `20260922185547`), depois do
+    replay do CI e antes do merge; gravadas 1.196 linhas no lote `reunioes-1`
+    (546 pelo card, 28 pelo telefone, 622 sem ficha), com notificações,
+    eventos de automação e execuções iguais antes e depois.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

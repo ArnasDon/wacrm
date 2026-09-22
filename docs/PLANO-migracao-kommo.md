@@ -1649,6 +1649,12 @@ a etapa da Kommo (quase todas "perdido"): são a única cópia dessas datas, que
 somem quando a Kommo sair do ar, e podem entrar no volume do mapa por horário.
 Nenhuma ficha nem card nasce delas.
 
+**Feito em 22/09/2026:** a 1036 aplicada (histórico `20260922185547`) depois
+do replay do CI; conferência antes de gravar (1.196 válidas, nenhum lead
+repetido, datas de 10/06/2025 a 22/09/2026); as 1.196 gravadas numa instrução,
+lote `reunioes-1`. Notificações, eventos de automação e execuções iguais antes
+e depois — nada disparou.
+
 **Desfazer:** `delete from public.cb_reunioes_da_kommo where lote = 'reunioes-1'`
 — nada referencia a tabela. **No dia do corte**, rodar de novo atualiza as
 linhas pela chave `(account_id, kommo_lead_id)` e acrescenta as reuniões que

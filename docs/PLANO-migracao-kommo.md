@@ -1533,6 +1533,20 @@ movido é lido travado —, e `status_changed` sem funil é recusado na entrada
 do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
 escrever.
 
+**Desde a 1034 (aplicada como 1025)** (acompanhamento do #232): a troca de
+funil também exige as duas etapas na entrada — sem a de destino, a
+transferência sumia das métricas do funil; sem a de origem, a ficha diria
+"Transferido de … (—)" (medido: os 1.509 eventos da carga têm as duas).
+
+⚠️ **Limite conhecido, registrado em 21/09 e NÃO corrigido** (o outro achado do
+Codex no head 657b78d): "intocado" é `updated_at <= criado_em`, e `updated_at`
+é a hora em que a transação de quem escreveu COMEÇOU. Um salvamento que já
+estava em voo quando um lote da carga começou, esperou a trava e gravou depois,
+fica com `updated_at` anterior à operação e passaria por intocado. Medido na
+carga de 21/09: nenhuma ficha nem card tem essa assinatura. Fechar de vez é
+guardar a imagem da linha depois da carga e comparar a linha inteira — obra
+desproporcional para uma ferramenta de emergência.
+
 ## O histórico de conversa de 2026 — 21/09/2026 (migration 1033, aplicada como 1027)
 
 Pedido do operador depois da carga: os leads vieram, mas a conversa ficou na
@@ -1579,3 +1593,17 @@ carregador nunca parte uma ficha entre lotes. Perdas registradas: reações, o
 do WhatsApp expira em ~30 dias); o Trabalhista antes de junho não existe em
 fonte nenhuma; as conversas em LID puro esperam o CRM aprender o par
 (ou uma consulta ao WhatsApp, que arrisca restrição do número).
+
+**Carga completa — 22/09/2026, lote `carga-1`, 14h50–15h08** (em expediente,
+por decisão do operador; quem estava com a caixa de entrada aberta viu prévias
+antigas na tela até recarregar). A cadeia foi refeita no dia — o reinício da
+máquina apagou os exports — e a conferência (`p_conferir`) passou nos 300 lotes
+antes de escrever. Resultado: **68.337 mensagens para 1.004 fichas**, nenhuma
+repetida; 391 conversas criadas (encerradas, sem não lida, espera nem
+responsável); 86 encerradas com prévia nova; 5.359 citações ligadas. Nenhuma
+notificação nem evento de automação, nenhum gatilho deixado desligado, nenhuma
+conversa aberta com prévia importada. O teto de 600 deixou de fora 2.986
+mensagens antigas de 13 fichas. As 5 fichas do `ensaio-1` já estavam completas
+e ficaram fora deste lote — os dois lotes não se sobrepõem, o que importa para
+o desfazer por lote (a prévia é registrada uma vez por conversa, no primeiro
+lote).

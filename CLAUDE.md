@@ -6206,6 +6206,14 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   antiga; e o catálogo e as automações ficavam velhos até reabrir a tela.
   Quem criar outro caminho que mexa nesses estados avança a versão também. Os
   `load*` continuam devolvendo vazio para quem já os chamava.
+  ⚠️ O `refreshDeals` (depois de salvar, da lista e do arrasto recusado) e o
+  `refreshStages` (Gerenciar funil) descartam a resposta de funil que já não
+  está aberto (22/09/2026, há pino): trocar de funil logo depois de salvar
+  punha os cards, ou as etapas, do anterior no quadro do novo, colunas vazias
+  até recarregar. A cerca é SÓ de funil, de
+  propósito: o preenchimento do conteúdo (`carregarConteudo`) avança a
+  versão, e uma cerca de versão descartaria o refresh que desfaz o arrasto
+  recusado pelo banco.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de

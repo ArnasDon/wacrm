@@ -621,6 +621,19 @@ function PipelinesPageInner() {
    */
   const versaoDoQuadroRef = useRef(0);
 
+  // O funil aberto AGORA, para quem espera uma resposta conferir se ela
+  // ainda é deste funil (a volta ao app, o `refreshDeals` e o
+  // `refreshStages`).
+  const funilAbertoRef = useRef(selectedPipelineId);
+  useEffect(() => {
+    funilAbertoRef.current = selectedPipelineId;
+    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
+    // ar passava pela cerca do funil (é A de novo e a versão não andava), e
+    // a resposta velha gravava por cima da carga nova de A (Codex, PR #216,
+    // 3ª rodada).
+    versaoDoQuadroRef.current += 1;
+  }, [selectedPipelineId]);
+
   const refreshAutomations = useCallback(async () => {
     versaoDoQuadroRef.current += 1;
     const lista = await loadAutomations();
@@ -660,13 +673,23 @@ function PipelinesPageInner() {
   const refreshStages = useCallback(async () => {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
-    setStages(await loadStages(selectedPipelineId));
+    const funil = selectedPipelineId;
+    const etapas = await loadStages(funil);
+    // A mesma cerca do `refreshDeals`, para quem salva em Gerenciar funil e
+    // troca de funil logo depois.
+    if (funilAbertoRef.current !== funil) return;
+    setStages(etapas);
   }, [loadStages, selectedPipelineId]);
 
   const refreshDeals = useCallback(async () => {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
-    setDeals(await loadDeals(selectedPipelineId));
+    const funil = selectedPipelineId;
+    const negocios = await loadDeals(funil);
+    // Trocar de funil logo depois de salvar punha os cards do funil anterior
+    // no quadro do novo — as colunas vazias até recarregar a página.
+    if (funilAbertoRef.current !== funil) return;
+    setDeals(negocios);
   }, [loadDeals, selectedPipelineId]);
 
   /**
@@ -724,15 +747,6 @@ function PipelinesPageInner() {
   // - as gravações vão JUNTAS, depois de uma única conferência: gravando a
   //   troca de funil antes, a própria troca avançaria a versão e descartaria
   //   as automações.
-  const funilAbertoRef = useRef(selectedPipelineId);
-  useEffect(() => {
-    funilAbertoRef.current = selectedPipelineId;
-    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
-    // ar passava pela cerca do funil (é A de novo e a versão não andava), e
-    // a resposta velha gravava por cima da carga nova de A (Codex, PR #216,
-    // 3ª rodada).
-    versaoDoQuadroRef.current += 1;
-  }, [selectedPipelineId]);
   useAoVoltarParaOApp(() => {
     const funil = selectedPipelineId;
     const versao = versaoDoQuadroRef.current;

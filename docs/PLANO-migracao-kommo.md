@@ -1059,7 +1059,7 @@ contatos. Aí eles entram pela porta normal, sem exceção no código. O resto d
 40. Taxa acima de 100% no modo por período é razão de fluxo e está CERTA —
     não "consertar".
 
-## Decisões — 23 das 27 fechadas
+## Decisões — 24 das 27 fechadas
 
 As 27 (a antiga 10 foi reescrita como 17) estão fechadas, menos as do bloco C,
 que dependem da data do corte. **O mapa da carga é
@@ -1166,7 +1166,7 @@ as contagens e as regras. Esta seção é o índice.
 | 23 | **A carga roda com o CRM em uso?** | janela de baixo movimento, resolvendo colisão na ida · parar o que der (agendador) e aceitar o resto | não dá para congelar: a ingestão do WhatsApp e o Calendly são dirigidos por quem manda mensagem. A carga tem de nascer tolerante |
 | 24 | **Quais automações podem estar LIGADAS na janela da carga** | nenhuma · só as que não são de etapa | nenhuma automação de etapa e nenhuma com "Aguardar" ativa. Hoje as 8 estão desligadas — conferir na véspera |
 | 26 | **Régua do Asaas** | desligar durante a carga e o ciclo seguinte · deixar como está | a carga liga clientes que hoje estão em "Sem ficha"; eles nunca passaram pela curadoria dos 38 da lista de exceção |
-| 27 | **Reuniões históricas da Kommo** (1.199 com data) | só o campo "Data e Hora Reunião" (uma por contato — perde as repetidas) · linhas sintéticas em `cb_calendly_eventos` (fiel, mas inventa registro num log de integração) | decidir junto com a Fase 8 do funil: se for linha sintética, a Fase 8 precisa existir ANTES da carga. ⚠️ Data FUTURA no campo arma o gatilho de lembrete quando o relógio a alcança |
+| 27 | **Reuniões históricas da Kommo** (1.199 com data) | só o campo "Data e Hora Reunião" (uma por contato — perde as repetidas) · linhas sintéticas em `cb_calendly_eventos` (fiel, mas inventa registro num log de integração) | ✅ **DECIDIDA em 22/09/2026 pelo operador: só como histórico**, numa terceira forma — tabela própria e fechada (`cb_reunioes_da_kommo`, 1036), sem tocar no campo do Calendly nem no log dele, só datas passadas, nada disparado. Ver "As reuniões históricas da Kommo — 22/09/2026" |
 | 14 | **O corte** | — | quais entradas religar primeiro (n8n/Typebot → webhooks de entrada da 982), quem substitui os 5 webhooks de conversão, quanto tempo os dois convivem, quando a equipe para de mover card na Kommo |
 | 28 | **Onde a carga vive** | `scripts/kommo/` · módulo em `src/lib/migracao/` chamado por script | em `src/` ela herda de graça os pinos de dono durável e nome fixado, que hoje NÃO a alcançam (trava 8) |
 
@@ -1486,8 +1486,8 @@ os 677 ganhos todos neste mês.
 - Os **20 leads sem telefone aproveitável** do recorte não viraram card (regra
   18b), com a lista emitida. Dois deles têm desfecho e o operador já decidiu
   deixá-los de fora: #27593737 (Kailane, Protocolado) e #27963311 (Ganho).
-- **Reuniões históricas** (decisão 27) e os campos fora da allowlist continuam
-  fora.
+- Os campos fora da allowlist continuam fora. As **reuniões históricas**
+  (decisão 27) vieram depois, em 22/09, pela 1036 — ver a seção própria.
 - **A Fase 5 não foi feita.** A Kommo continua recebendo ~30 leads/dia, e o
   delta do dia do corte é uma segunda passada da mesma carga.
 
@@ -1607,3 +1607,49 @@ mensagens antigas de 13 fichas. As 5 fichas do `ensaio-1` já estavam completas
 e ficaram fora deste lote — os dois lotes não se sobrepõem, o que importa para
 o desfazer por lote (a prévia é registrada uma vez por conversa, no primeiro
 lote).
+
+## As reuniões históricas da Kommo — 22/09/2026 (migration 1036)
+
+Decisão 27, opção b, do operador: trazer **só como histórico**. Nem o campo
+"Data e Hora Reunião" (é do Calendly, com valores vivos, e é o que os quatro
+lembretes de reunião leem — gravar ali sobrescreveria agendamento real e
+armaria lembrete sobre reunião que já passou), nem linhas no log do Calendly
+(`cb_calendly_eventos` alimenta o "Processar de novo", a ponte de e-mail do
+tl;dv e o Meu dia — inventar registro ali contamina os três). Tabela própria,
+`cb_reunioes_da_kommo`, fechada ao navegador e sem gatilho: nenhuma tela,
+automação ou lembrete a lê. Quem vai ler é o mapa de reuniões por dia e
+horário (Fase 8 do funil comercial).
+
+**Como:** `scripts/kommo/reunioes.mjs` lê da Kommo (só leitura) o campo de lead
+"Reunião Marcada" com "URL Reunião" e "Marcou reunião onde", achados pelo NOME
+(aborta se faltar ou repetir), e o contato principal de cada lead com os
+telefones. Um passo fora do app liga cada reunião à ficha — pelo card da carga
+(`deals.kommo_lead_id`), pelo campo `kommo_contact_id` ou pela chave canônica
+do telefone — e grava pela Management API.
+
+| | |
+| --- | ---: |
+| Leads vivos na Kommo | 12.773 |
+| Com data de reunião | 1.227 |
+| Futuras (ficam de fora — a futura é do Calendly) | 9 |
+| Data impossível (a Kommo devolve 0 → 1970) | 22 |
+| **Gravadas** | **1.196** |
+| … ligadas à ficha pelo card da carga | 546 |
+| … ligadas pelo telefone | 28 |
+| … sem ficha (lead PERDIDO, fora do recorte da carga) | 622 |
+| Clientes com reunião na ficha | 553 (19 com mais de uma) |
+| Por ano | 474 de 2025 · 722 de 2026 |
+
+⚠️ **A Kommo guarda UMA data por lead** — a remarcada sobrescreve a anterior.
+O que veio é a última reunião de cada lead, não a série; o cliente com dois
+leads tem duas linhas.
+
+⚠️ **As 622 sem ficha entram de propósito**, com `contact_id` nulo e o funil e
+a etapa da Kommo (quase todas "perdido"): são a única cópia dessas datas, que
+somem quando a Kommo sair do ar, e podem entrar no volume do mapa por horário.
+Nenhuma ficha nem card nasce delas.
+
+**Desfazer:** `delete from public.cb_reunioes_da_kommo where lote = 'reunioes-1'`
+— nada referencia a tabela. **No dia do corte**, rodar de novo atualiza as
+linhas pela chave `(account_id, kommo_lead_id)` e acrescenta as reuniões que
+tiverem passado até lá.

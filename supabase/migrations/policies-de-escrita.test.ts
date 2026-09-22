@@ -60,6 +60,11 @@ const ESPERADAS = [
 
 const CRIA = /CREATE\s+POLICY\s+(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
 const APAGA = /DROP\s+POLICY\s+(?:IF\s+EXISTS\s+)?(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
+// ALTER POLICY troca o PREDICADO e nunca o comando — é assim que a 1032
+// reescreveu as três FOR ALL daqui (`… = ANY (ARRAY(SELECT
+// cb_contas_do_usuario('admin'…)))`). Sem lê-lo, o teste abaixo conferiria o
+// corpo da 964, que já não é o que o banco tem.
+const ALTERA = /ALTER\s+POLICY\s+(?:"([^"]+)"|([A-Za-z_]\w*))\s+ON\s+(?:public\.)?(\w+)/gi;
 
 /**
  * Reproduz o replay: aplica os arquivos em ordem e devolve as policies de
@@ -106,6 +111,11 @@ function policiasDeEscritaComCorpo(): Map<string, { cmd: string; corpo: string }
       const cmd = corpo.match(/\bFOR\s+(ALL|SELECT|INSERT|UPDATE|DELETE)\b/i)?.[1] ?? 'ALL';
       vivas.set(`${tabela}.${nome}`, { cmd: cmd.toUpperCase(), corpo });
     }
+
+    for (const m of sql.matchAll(ALTERA)) {
+      const atual = vivas.get(`${m[3]}.${m[1] ?? m[2]}`);
+      if (atual) atual.corpo = sql.slice(m.index! + m[0].length).split(';')[0];
+    }
   }
 
   for (const [chave, { cmd }] of vivas) {
@@ -130,7 +140,10 @@ describe('policies de escrita em disparo/regras (M17)', () => {
     // que sobre a ÚLTIMA definição de cada uma, e não sobre a da 964.
     for (const [chave, { corpo }] of policiasDeEscritaComCorpo()) {
       expect(corpo, `${chave} aceita agent`).not.toMatch(/'agent'/);
-      expect(corpo, `${chave} não exige admin`).toMatch(/is_account_member\([^)]*'admin'\)/);
+      // As duas formas da mesma pergunta: por linha (964) e por consulta (1032).
+      expect(corpo, `${chave} não exige admin`).toMatch(
+        /is_account_member\([^)]*'admin'\)|cb_contas_do_usuario\('admin'/,
+      );
     }
   });
 
@@ -141,5 +154,12 @@ describe('policies de escrita em disparo/regras (M17)', () => {
     const sql001 = fs.readFileSync(path.join(DIR, '0001_initial_schema.sql'), 'utf8');
     const achadas = [...sql001.matchAll(CRIA)].map((m) => m[1] ?? m[2]);
     expect(achadas).toContain('Users can manage own broadcasts');
+  });
+
+  it('o parser enxerga a ALTER da 1032 — o corpo conferido é o do fim do replay', () => {
+    // Sem ler ALTER, o teste acima passaria sobre o corpo da 964 — verde, e
+    // conferindo um texto que o banco já não tem.
+    const passos = policiasDeEscritaComCorpo().get('automation_steps.automation_steps_modify');
+    expect(passos?.corpo).toMatch(/cb_contas_do_usuario\('admin'/);
   });
 });

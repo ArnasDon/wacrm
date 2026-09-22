@@ -46,6 +46,11 @@ export function useTotalUnread(): number {
           .from("conversations")
           .select("id, unread_count", { count: "exact" })
           .is("group_id", null)
+          // Só quem TEM não lida: o total é "quantas passam de zero", e o
+          // tempo real acrescenta ao mapa qualquer conversa que mudar depois.
+          // Sem o filtro, o menu de TODA tela baixava a conta inteira (1.400+
+          // conversas, e crescendo) para contar meia dúzia.
+          .gt("unread_count", 0)
           .order("id", { ascending: true })
           .range(de, ate);
         return {

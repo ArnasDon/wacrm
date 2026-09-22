@@ -57,8 +57,9 @@ describe('serializeCustomFields', () => {
   });
 
   it("'' gravado no banco sai como null no wire — vazio é null não importa quem escreveu", () => {
-    // A automação update_contact_field grava '' quando a variável resolve
-    // vazia; a doc promete null para campo vazio.
+    // Desde 21/09/2026 a automação update_contact_field NÃO grava mais ''
+    // quando a variável resolve vazia, mas o '' ainda pode estar no banco (e
+    // outros escritores existem); a doc promete null para campo vazio.
     const out = serializeCustomFields(fields, { '1': '', '2': '   ' });
     expect(out.values).toEqual({
       utm_source: null,

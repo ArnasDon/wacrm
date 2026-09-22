@@ -286,7 +286,7 @@ export function ListaDeLeads({
       if (stageId === f.linha.stage_id) return;
       const dealId = f.linha.deal_id;
       const antes = f.linha;
-      const status = statusAoEntrarNaEtapa(stages, stageId);
+      const status = statusAoEntrarNaEtapa(stages, stageId, antes.status);
       atualizarLinha(dealId, (l) => ({
         ...aplicarMudancaDeEtapa(l, stageId, new Date()),
         ...(status ? { status } : {}),
@@ -295,13 +295,17 @@ export function ListaDeLeads({
         .from("deals")
         .update({ stage_id: stageId })
         .eq("id", dealId)
-        .select("id");
+        .select("id, status");
       if (error || !data || data.length === 0) {
         toast.error(t("toastEtapaFalhou"));
         atualizarLinha(dealId, () => antes);
         recarregar();
         return;
       }
+      // O status que o banco gravou vence o espelho: a lista é uma foto, e o
+      // gatilho decide pelo que está gravado (ver o quadro; Codex, PR #245).
+      const gravado = (data[0].status as string | null) ?? null;
+      atualizarLinha(dealId, (l) => (l.stage_id === stageId ? { ...l, status: gravado } : l));
       avisarDrenagemDeFunil();
       onDealChanged();
     },

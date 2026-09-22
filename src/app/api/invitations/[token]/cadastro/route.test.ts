@@ -1,10 +1,29 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-// O que a rota consultou e criou, para os testes afirmarem.
-let peekResposta: { data: unknown; error: unknown } = { data: { ok: true }, error: null }
+// ------------------------------------------------------------------
+// O que a rota consultou, criou, aceitou e desfez — para os testes
+// afirmarem cada passo.
+// ------------------------------------------------------------------
+let peekResposta: { data: unknown; error: unknown }
 const peekChamadas: unknown[] = []
-let criarResposta: { data: unknown; error: unknown } = { data: { user: { id: 'u1' } }, error: null }
+
+let criarResposta: { data: unknown; error: unknown }
 const criarChamadas: Array<Record<string, unknown>> = []
+
+let entrarResposta: { data: unknown; error: unknown }
+const entrarChamadas: Array<Record<string, unknown>> = []
+
+let aceiteResposta: { data: unknown; error: unknown }
+const aceiteChamadas: Array<{ nome: string; args: unknown; autorizacao?: string }> = []
+
+// Estado do perfil DEPOIS do aceite: em qual conta ele está e quem é o dono.
+let perfilDepois: { account_id: string } | null
+let donoDaContaDoPerfil: string
+let erroAoApagarConta: unknown
+let erroAoApagarUsuario: unknown
+const apagadas: Array<{ tabela: string; filtro: [string, unknown] }> = []
+const usuariosApagados: string[] = []
+const bloqueios: Array<{ id: string; attrs: unknown }> = []
 
 vi.mock('@/lib/supabase/server', () => ({
   createClient: async () => ({
@@ -15,13 +34,63 @@ vi.mock('@/lib/supabase/server', () => ({
   }),
 }))
 
+vi.mock('@supabase/supabase-js', () => ({
+  createClient: (_url: string, _chave: string, opcoes?: { global?: { headers?: Record<string, string> } }) => ({
+    auth: {
+      signInWithPassword: async (args: Record<string, unknown>) => {
+        entrarChamadas.push(args)
+        return entrarResposta
+      },
+    },
+    rpc: async (nome: string, args: unknown) => {
+      aceiteChamadas.push({ nome, args, autorizacao: opcoes?.global?.headers?.Authorization })
+      return aceiteResposta
+    },
+  }),
+}))
+
+function consulta(tabela: string) {
+  const filtros: Array<[string, unknown]> = []
+  const api = {
+    select: () => api,
+    delete: () => {
+      const del = {
+        eq: async (coluna: string, valor: unknown) => {
+          apagadas.push({ tabela, filtro: [coluna, valor] })
+          return { error: erroAoApagarConta }
+        },
+      }
+      return del
+    },
+    eq: (coluna: string, valor: unknown) => {
+      filtros.push([coluna, valor])
+      return api
+    },
+    maybeSingle: async () => {
+      if (tabela === 'profiles') return { data: perfilDepois, error: null }
+      if (tabela === 'accounts') return { data: { owner_user_id: donoDaContaDoPerfil }, error: null }
+      return { data: null, error: null }
+    },
+  }
+  return api
+}
+
 vi.mock('@/lib/automations/admin-client', () => ({
   supabaseAdmin: () => ({
+    from: (tabela: string) => consulta(tabela),
     auth: {
       admin: {
         createUser: async (args: Record<string, unknown>) => {
           criarChamadas.push(args)
           return criarResposta
+        },
+        deleteUser: async (id: string) => {
+          usuariosApagados.push(id)
+          return { error: erroAoApagarUsuario }
+        },
+        updateUserById: async (id: string, attrs: unknown) => {
+          bloqueios.push({ id, attrs })
+          return { error: null }
         },
       },
     },
@@ -34,6 +103,7 @@ import { hashInviteToken } from '@/lib/auth/invitations'
 import { POST } from './route'
 
 const CORPO = { nome: 'Ana Exemplo', email: 'Ana@Exemplo.com', senha: 'segredo1' }
+const SESSAO = { access_token: 'jwt-da-ana', refresh_token: 'refresh-da-ana' }
 
 function chamar(token: string, corpo: unknown = CORPO, ip = '10.0.0.1') {
   const req = new Request(`http://localhost/api/invitations/${token}/cadastro`, {
@@ -47,13 +117,20 @@ function chamar(token: string, corpo: unknown = CORPO, ip = '10.0.0.1') {
 beforeEach(() => {
   __resetRateLimitForTests()
   peekResposta = { data: { ok: true, account_name: 'Acme', role: 'agent' }, error: null }
-  criarResposta = { data: { user: { id: 'u1' } }, error: null }
-  peekChamadas.length = 0
-  criarChamadas.length = 0
+  criarResposta = { data: { user: { id: 'u-nova' } }, error: null }
+  entrarResposta = { data: { session: SESSAO }, error: null }
+  aceiteResposta = { data: 'conta-da-equipe', error: null }
+  perfilDepois = { account_id: 'conta-avulsa' }
+  donoDaContaDoPerfil = 'u-nova'
+  erroAoApagarConta = null
+  erroAoApagarUsuario = null
+  for (const l of [peekChamadas, criarChamadas, entrarChamadas, aceiteChamadas, apagadas, usuariosApagados, bloqueios]) {
+    l.length = 0
+  }
 })
 
 describe('POST /api/invitations/[token]/cadastro', () => {
-  it('convite válido: confere pelo HASH e cria a conta confirmada, com o nome no metadado', async () => {
+  it('convite válido: cria a conta confirmada, ACEITA o convite como a pessoa e devolve a sessão', async () => {
     const res = await chamar('tok-bom')
     expect(res.status).toBe(201)
     expect(peekChamadas).toEqual([
@@ -67,6 +144,18 @@ describe('POST /api/invitations/[token]/cadastro', () => {
         user_metadata: { full_name: 'Ana Exemplo' },
       },
     ])
+    expect(entrarChamadas).toEqual([{ email: 'ana@exemplo.com', password: 'segredo1' }])
+    // O aceite é o MESMO redeem da tela /join, com o JWT da pessoa nova.
+    expect(aceiteChamadas).toEqual([
+      {
+        nome: 'redeem_invitation',
+        args: { p_token_hash: hashInviteToken('tok-bom') },
+        autorizacao: 'Bearer jwt-da-ana',
+      },
+    ])
+    expect(await res.json()).toEqual({ ok: true, sessao: SESSAO })
+    expect(usuariosApagados).toHaveLength(0)
+    expect(bloqueios).toHaveLength(0)
   })
 
   it.each(['used', 'expired', 'not_found'])('convite %s: 400 e NENHUMA conta criada', async (motivo) => {
@@ -79,15 +168,13 @@ describe('POST /api/invitations/[token]/cadastro', () => {
 
   it('falha ao conferir o convite: 500 e nenhuma conta criada (não é "convite ok")', async () => {
     peekResposta = { data: null, error: { code: 'XX000', message: 'boom' } }
-    const res = await chamar('tok')
-    expect(res.status).toBe(500)
+    expect((await chamar('tok')).status).toBe(500)
     expect(criarChamadas).toHaveLength(0)
   })
 
   it('resposta vazia da conferência também não cria conta', async () => {
     peekResposta = { data: null, error: null }
-    const res = await chamar('tok')
-    expect(res.status).toBe(400)
+    expect((await chamar('tok')).status).toBe(400)
     expect(criarChamadas).toHaveLength(0)
   })
 
@@ -100,23 +187,68 @@ describe('POST /api/invitations/[token]/cadastro', () => {
   })
 
   it('corpo que não é JSON: 400', async () => {
-    const res = await chamar('tok', 'não é json')
-    expect(res.status).toBe(400)
+    expect((await chamar('tok', 'não é json')).status).toBe(400)
   })
 
-  it('e-mail que já tem conta: 409 email_existe', async () => {
+  it('e-mail que já tem conta: 409 email_existe, e nada é aceito nem desfeito', async () => {
     criarResposta = { data: null, error: { code: 'email_exists', status: 422, message: 'x' } }
     const res = await chamar('tok')
     expect(res.status).toBe(409)
     expect(await res.json()).toEqual({ codigo: 'email_existe' })
+    expect(aceiteChamadas).toHaveLength(0)
+    expect(usuariosApagados).toHaveLength(0)
+  })
+
+  it('⚠️ convite usado NO MEIO (redeem 22023): a conta criada é DESFEITA, conta avulsa antes do usuário', async () => {
+    aceiteResposta = { data: null, error: { code: '22023', message: 'Invitation already used' } }
+    const res = await chamar('tok')
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ codigo: 'convite_invalido' })
+    expect(apagadas).toEqual([{ tabela: 'accounts', filtro: ['owner_user_id', 'u-nova'] }])
+    expect(usuariosApagados).toEqual(['u-nova'])
+    expect(bloqueios).toHaveLength(0)
+  })
+
+  it('outra falha do aceite: desfaz e responde 500 (a pessoa pode tentar de novo com o mesmo e-mail)', async () => {
+    aceiteResposta = { data: null, error: { code: 'XX000', message: 'boom' } }
+    const res = await chamar('tok')
+    expect(res.status).toBe(500)
+    expect(usuariosApagados).toEqual(['u-nova'])
+  })
+
+  it('⚠️ erro no aceite mas o perfil JÁ saiu da conta avulsa: o aceite aconteceu — nada é desfeito', async () => {
+    aceiteResposta = { data: null, error: { code: 'XX000', message: 'resposta perdida' } }
+    perfilDepois = { account_id: 'conta-da-equipe' }
+    donoDaContaDoPerfil = 'dono-do-escritorio'
+    const res = await chamar('tok')
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({ ok: true, sessao: SESSAO })
+    expect(apagadas).toHaveLength(0)
+    expect(usuariosApagados).toHaveLength(0)
+  })
+
+  it('não conseguir entrar como a conta nova: desfaz e responde 500', async () => {
+    entrarResposta = { data: { session: null }, error: { code: 'unexpected_failure' } }
+    const res = await chamar('tok')
+    expect(res.status).toBe(500)
+    expect(aceiteChamadas).toHaveLength(0)
+    expect(usuariosApagados).toEqual(['u-nova'])
+  })
+
+  it('desfazer que falha BLOQUEIA o usuário em vez de deixá-lo solto com conta própria', async () => {
+    aceiteResposta = { data: null, error: { code: '22023', message: 'x' } }
+    erroAoApagarConta = { code: '23503', message: 'fk' }
+    const res = await chamar('tok')
+    expect(res.status).toBe(400)
+    expect(usuariosApagados).toHaveLength(0)
+    expect(bloqueios).toEqual([{ id: 'u-nova', attrs: { ban_duration: '876000h' } }])
   })
 
   it('limite POR CONVITE vale mesmo trocando de IP', async () => {
     for (let i = 0; i < 5; i++) {
       expect((await chamar('tok-vazado', CORPO, `10.0.1.${i}`)).status).toBe(201)
     }
-    const sexta = await chamar('tok-vazado', CORPO, '10.0.1.99')
-    expect(sexta.status).toBe(429)
+    expect((await chamar('tok-vazado', CORPO, '10.0.1.99')).status).toBe(429)
     expect(criarChamadas).toHaveLength(5)
   })
 

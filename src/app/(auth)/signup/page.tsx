@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+import { MessageSquare, CheckCircle, Lock, UsersRound } from "lucide-react";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -32,11 +32,11 @@ function SignupPageInner() {
   const t = useTranslations("SignupPage");
   const searchParams = useSearchParams();
   // When the user lands here from `/join/<token>` we carry the
-  // invite token in the query. With it, the account is created by the
-  // SERVER (`/api/invitations/<token>/cadastro`), which checks the
-  // invitation first — so a new teammate still gets in with the public
-  // signup CLOSED in Supabase. Without it, this is the plain public
-  // signup, which is refused (`signup_disabled`) once it is closed.
+  // invite token in the query. With it, the account is created AND the
+  // invitation accepted by the SERVER (`/api/invitations/<token>/cadastro`)
+  // — so a new teammate still gets in with the public signup CLOSED in
+  // Supabase, and lands directly in the team. Without it, this is the
+  // plain public signup, which is refused once it is closed.
   const inviteToken = searchParams.get("invite");
 
   const [fullName, setFullName] = useState("");
@@ -46,12 +46,37 @@ function SignupPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  // O cadastro público está fechado no Supabase? `null` = não sei (ainda
+  // não respondeu, ou a consulta falhou): aí o formulário aparece, e a
+  // recusa do envio é traduzida do mesmo jeito. Só com convite a pergunta
+  // não importa — por ele a conta nasce no servidor.
+  const [cadastroFechado, setCadastroFechado] = useState<boolean | null>(null);
   const supabase = createClient();
 
-  // A conta nasce no servidor, já confirmada; aqui só se entra com ela.
-  // Devolve `true` quando a sessão existe — quem chama segue para
-  // `/join/<token>`, onde a pessoa ACEITA o convite (o passo de
-  // confirmação de sempre, com a conta e o papel à vista).
+  useEffect(() => {
+    if (inviteToken) return;
+    let cancelado = false;
+    // `/auth/v1/settings` é público (só a chave anon) e diz, entre outras
+    // coisas, se novos cadastros estão desligados. Sem isto, quem chega sem
+    // convite preenchia os quatro campos para só então ser recusado.
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((config: { disable_signup?: unknown } | null) => {
+        if (!cancelado && config) {
+          setCadastroFechado(config.disable_signup === true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [inviteToken]);
+
+  // A conta nasce no servidor, já confirmada e já DENTRO da equipe (a rota
+  // aceita o convite na mesma requisição). Aqui só se adota a sessão que
+  // ela devolve. Devolve `true` quando a sessão ficou gravada.
   const cadastrarPorConvite = async (token: string): Promise<boolean> => {
     let res: Response;
     try {
@@ -78,12 +103,18 @@ function SignupPageInner() {
       return false;
     }
 
-    // A rota grava o e-mail aparado e em minúsculas; entrar com a mesma
-    // forma não depende de o Supabase normalizar do lado dele.
-    const { error: erroAoEntrar } = await supabase.auth.signInWithPassword({
-      email: email.trim().toLowerCase(),
-      password,
-    });
+    const corpo = (await res.json().catch(() => null)) as {
+      sessao?: { access_token?: unknown; refresh_token?: unknown };
+    } | null;
+    const access = corpo?.sessao?.access_token;
+    const refresh = corpo?.sessao?.refresh_token;
+    const { error: erroAoEntrar } =
+      typeof access === "string" && typeof refresh === "string"
+        ? await supabase.auth.setSession({
+            access_token: access,
+            refresh_token: refresh,
+          })
+        : { error: new Error("sem sessão") };
     if (erroAoEntrar) {
       setError(t("signedUpButSignInFailed"));
       setLoading(false);
@@ -122,14 +153,21 @@ function SignupPageInner() {
       return;
     }
 
+    // O bcrypt do Supabase conta BYTES: letra com acento vale dois.
+    if (new TextEncoder().encode(password).length > 72) {
+      setError(t("passwordTooLong"));
+      return;
+    }
+
     setLoading(true);
 
     if (inviteToken) {
       // Navegação completa, pelo mesmo motivo do ramo sem convite, abaixo:
-      // o middleware só lê os cookies da sessão numa requisição nova. O
-      // botão continua desabilitado enquanto o navegador troca de página.
+      // o middleware e o AuthProvider só leem a sessão (e a conta nova)
+      // numa requisição nova. O botão continua desabilitado enquanto o
+      // navegador troca de página.
       if (await cadastrarPorConvite(inviteToken)) {
-        window.location.href = `/join/${encodeURIComponent(inviteToken)}`;
+        window.location.href = "/dashboard";
       }
       return;
     }
@@ -185,6 +223,36 @@ function SignupPageInner() {
     setSuccess(true);
     setLoading(false);
   };
+
+  if (!inviteToken && cadastroFechado) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md border-border bg-card">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+              <Lock className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl text-foreground">
+              {t("closedTitle")}
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t("signupClosed")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/login">
+              <Button
+                variant="outline"
+                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {t("backToSignIn")}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (success) {
     return (

@@ -2678,7 +2678,7 @@
         "colStatus": "Status",
         "colFunil": "Funil",
         "motivo": {
-              "token_invalido": "a Meta recusou o token",
+          "token_invalido": "a Meta recusou o token",
           "sem_permissao": "o token não tem permissão ads_read nesta conta",
           "conta_nao_encontrada": "conta de anúncios não encontrada",
           "conta_invalida": "id da conta inválido (use act_… ou só os números)",
@@ -3820,7 +3820,7 @@
     "title": "Criar conta",
     "titleInvite": "Criar conta e entrar na equipe",
     "description": "Comece a usar o {appName}",
-    "descriptionInvite": "Crie sua conta e aceite o convite para entrar na sua equipe.",
+    "descriptionInvite": "Crie sua conta para entrar na equipe — o convite é aceito junto.",
     "fullNameLabel": "Nome completo",
     "fullNamePlaceholder": "João da Silva",
     "emailLabel": "E-mail",
@@ -3837,10 +3837,12 @@
     "inviteInvalid": "Este convite não vale mais: já foi usado, venceu ou não existe. Peça um novo a quem o enviou.",
     "emailExists": "Já existe uma conta com este e-mail. Entre com ela para aceitar o convite.",
     "weakPassword": "A senha não atende aos requisitos de segurança. Escolha uma mais forte.",
-    "invalidData": "Confira o nome, o e-mail e a senha (entre 6 e 72 caracteres).",
+    "invalidData": "Confira o nome, o e-mail e a senha.",
     "signupFailed": "Não foi possível criar a conta. Tente de novo em instantes.",
-    "signedUpButSignInFailed": "A conta foi criada, mas não foi possível entrar. Use \"Entrar\" com o e-mail e a senha que você escolheu.",
-    "tooManyAttempts": "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo."
+    "signedUpButSignInFailed": "A conta foi criada e já está na equipe, mas não foi possível entrar agora. Use \"Entrar\" com o e-mail e a senha que você escolheu.",
+    "tooManyAttempts": "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo.",
+    "closedTitle": "Cadastro fechado",
+    "passwordTooLong": "A senha é longa demais: o limite é de 72 bytes, e cada letra com acento conta como duas."
   },
   "ChannelHealth": {
     "title": "Conexões de WhatsApp",

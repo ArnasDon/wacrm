@@ -126,23 +126,22 @@ Sem isso a caixa de entrada não atualiza sozinha.
 *Authentication → URL Configuration*:
 
 - **Site URL:** `https://crm.seudominio.com`
-- **Redirect URLs**, acrescente as duas:
+- **Redirect URLs**, acrescente:
   - `https://crm.seudominio.com/auth/callback`
-  - `https://crm.seudominio.com/join/*`
 
-A primeira é a recuperação de senha; a segunda, os convites de equipe.
-Sem elas o link do e-mail é recusado pelo Supabase.
+É a recuperação de senha: sem ela o link do e-mail é recusado pelo
+Supabase. (Os convites de equipe não passam por e-mail do Supabase e não
+precisam de entrada aqui.)
 
 *Authentication → Emails → SMTP Settings*: configure um SMTP próprio.
 O remetente embutido do Supabase é limitado a testes e não entrega
 volume — quem depende dele descobre no dia em que convida a equipe.
 
 > ⚠️ **Deixe os cadastros LIGADOS por enquanto.** Em *Authentication →
-> Sign In / Providers → Email* existe a opção que permite novos cadastros,
-> e ela vem ligada. Você provavelmente vai querer desligá-la, mas **ainda
-> não**: é por ela que você cria a sua própria conta no passo 6, e é por
-> ela que os convites do CRM funcionam. O passo 10 explica quando e como
-> desligar sem quebrar nada.
+> Sign In / Providers* existe a opção *Allow new users to sign up*, e ela
+> vem ligada. É por ela que você cria a sua própria conta no passo 6.
+> Desligue-a logo depois (passo 10): os convites do CRM continuam
+> funcionando com ela desligada.
 
 ### 1.5 Copiar as três chaves
 
@@ -535,30 +534,40 @@ sozinha: é o teste do agendador.
 
 ---
 
-## 10. Fechar o cadastro (depois que a equipe entrou)
+## 10. Fechar o cadastro (logo depois de criar a sua conta)
 
 Enquanto a opção de cadastro estiver ligada, **qualquer pessoa que
-alcance o seu endereço cria uma conta no seu servidor**. Num CRM exposto
-na internet você vai querer fechar isso. Mas a ordem importa, e fechar
-cedo demais deixa você de fora do próprio sistema.
+alcance o seu endereço cria uma conta no seu servidor** — e cada conta é
+um CRM inteiro, capaz de conectar WhatsApp no seu gateway. Feche assim
+que a sua conta de dono existir (passo 6).
 
-**Faça só quando as duas coisas já tiverem acontecido:** a sua conta de
-dono existe (passo 6) e todo mundo da equipe já entrou.
+Em *Authentication → Sign In / Providers*, desligue **só** a opção *Allow
+new users to sign up*. ⚠️ Não desligue o provedor *Email*: ele é o login
+por senha de todo mundo, e desligá-lo tranca a equipe inteira do lado de
+fora.
 
-⚠️ **Desligar o cadastro desliga também os convites do próprio CRM.** O
-link de convite manda quem ainda não tem conta para `/signup`, e aquela
-tela chama o cadastro do Supabase — que passa a recusar. Não é uma falha
-sua; é o que essa opção faz. Depois de fechar, entrem pessoas novas por
-*Authentication → Users → Invite user*, no painel do Supabase: a pessoa
-recebe o e-mail, define a senha, e aí o link de convite do CRM funciona
-para ela (ele resgata para quem já está logado).
+**Os convites do CRM continuam funcionando.** Quem abre um link de
+convite sem ter conta cria a conta pela tela do convite, e ela nasce no
+servidor, já dentro da equipe que convidou — o convite é conferido antes
+e aceito junto. Não use o *Invite user* do painel do Supabase: ele cria a
+pessoa com um CRM próprio, fora da sua equipe. E não religue o cadastro
+para convidar ninguém.
 
-Em *Authentication → Sign In / Providers → Email*, desligue a opção que
-permite novos cadastros. Se depois disso você precisar convidar muita
-gente pelo próprio CRM, religue por um tempo e feche de novo.
+A conta criada por convite nasce com o e-mail já confirmado: o convite é
+a credencial, e confirmar por e-mail dependeria do SMTP. Quem digitar o
+e-mail errado não recebe a recuperação de senha.
+
+**Depois de fechar, confira quem mais tem login.** O cadastro fechado
+impede contas NOVAS; quem já tem login continua entrando. Cada login fora
+da sua equipe (alguém que se cadastrou antes de você fechar, um teste
+esquecido) tem um CRM próprio e pode gerar convites para ele. Em
+*Authentication → Users*, confira a lista e **bloqueie** (*Ban user*)
+quem não deve entrar — bloquear é reversível; apagar pode ser recusado
+enquanto a pessoa for dona de uma conta. O mesmo vale para quem sai da
+equipe: removê-lo da equipe não apaga o login dele.
 
 Um teste que vale fazer: com o cadastro fechado, abra `/signup` numa aba
-anônima e confirme que ele recusa. É a prova de que a porta fechou.
+anônima. A tela tem de dizer que o cadastro está fechado.
 
 ---
 

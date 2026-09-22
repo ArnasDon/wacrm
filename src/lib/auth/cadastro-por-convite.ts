@@ -9,16 +9,19 @@
 // navegador passa a ser recusado com `signup_disabled` — e era por ele que
 // o link de convite criava a conta de quem ainda não tinha uma. A conta
 // nova passa a nascer no SERVIDOR, pela API de administração (que não é
-// barrada pela opção), e só depois de o convite ser conferido. Assim o
-// cadastro fica fechado para quem chega sem convite, e aberto para quem
-// tem um link válido.
+// barrada pela opção), só depois de o convite ser conferido, e sai da rota
+// já DENTRO da equipe — o convite é aceito na mesma requisição (ver a
+// rota). Assim o cadastro fica fechado para quem chega sem convite, e quem
+// tem um link válido entra na equipe que convidou, nunca numa conta avulsa.
 //
 // ⚠️ A conta nasce com o e-mail CONFIRMADO (`email_confirm: true`). O
 // convite é a credencial: quem tem o link é quem foi convidado, e
 // confirmar por e-mail exigiria um SMTP que a instalação pode não ter —
 // o padrão do Supabase só entrega a quem é da equipe do projeto. O preço é
-// que o e-mail digitado não é provado; quem digita errado prejudica a si
-// mesmo (não recebe a recuperação de senha).
+// que o e-mail digitado não é provado: quem digita errado não recebe a
+// recuperação de senha, e quem tem o link pode ocupar o e-mail de outra
+// pessoa (o que a confirmação automática, ligada nesta instalação, já
+// permitia antes).
 // ============================================================
 
 /** O que a rota aceita, já limpo. */

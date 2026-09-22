@@ -54,8 +54,8 @@ describe('erroDoCadastro', () => {
 })
 
 // Pino estrutural: com convite, a tela TEM de passar pela rota do servidor
-// antes de qualquer `auth.signUp`. Se o ramo do convite voltar a cair no
-// signUp do navegador, o convite quebra no instante em que o cadastro
+// e SAIR antes de qualquer `auth.signUp`. Se o ramo do convite voltar a cair
+// no signUp do navegador, o convite quebra no instante em que o cadastro
 // público estiver fechado no Supabase — sem erro nenhum no CI.
 describe('tela de cadastro', () => {
   const fonte = readFileSync(
@@ -63,12 +63,23 @@ describe('tela de cadastro', () => {
     'utf8',
   )
 
-  it('com convite, chama a rota de cadastro e sai antes do auth.signUp', () => {
-    const desvio = fonte.indexOf('if (await cadastrarPorConvite(inviteToken))')
-    const signUp = fonte.indexOf('supabase.auth.signUp(')
-    expect(desvio).toBeGreaterThan(-1)
-    expect(signUp).toBeGreaterThan(desvio)
+  it('com convite, chama a rota de cadastro e SAI antes do auth.signUp', () => {
+    const handler = fonte.indexOf('const handleSignup')
+    const ramo = fonte.indexOf('if (inviteToken) {', handler)
+    const signUp = fonte.indexOf('supabase.auth.signUp(', handler)
+    expect(handler).toBeGreaterThan(-1)
+    expect(ramo).toBeGreaterThan(handler)
+    expect(signUp).toBeGreaterThan(ramo)
+    const trecho = fonte.slice(ramo, signUp)
+    expect(trecho).toContain('await cadastrarPorConvite(inviteToken)')
+    // o `return` é o que impede o ramo do convite de seguir para o signUp
+    expect(trecho).toMatch(/\n\s{6}return;\n\s{4}\}/)
     expect(fonte).toContain('/api/invitations/${encodeURIComponent(token)}/cadastro')
+  })
+
+  it('adota a sessão devolvida pela rota, sem segundo login com a senha', () => {
+    expect(fonte).toContain('supabase.auth.setSession(')
+    expect(fonte).not.toContain('signInWithPassword(')
   })
 
   it('traduz o cadastro fechado em vez de mostrar a mensagem crua', () => {

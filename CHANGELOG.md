@@ -17,6 +17,19 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Corrigido
 
+- **Fechar o cadastro não fecha mais os convites.** Com *Allow new users
+  to sign up* desligado no Supabase, o link de convite do CRM deixava de
+  funcionar, porque criava a conta pelo mesmo cadastro público. Agora a
+  conta de quem tem convite nasce no servidor, só depois de o convite ser
+  conferido, e já dentro da equipe que convidou (o convite é aceito junto;
+  antes a pessoa ainda precisava clicar em "Aceitar", e quem não clicava
+  ficava com um CRM próprio). Sem convite, `/signup` diz que o cadastro
+  está fechado antes de a pessoa preencher o formulário.
+  ⚠️ A conta criada por convite nasce com o e-mail **confirmado**, mesmo
+  com *Confirm email* ligado no Supabase: o convite é a credencial.
+  **Ação recomendada:** feche o cadastro (`docs/INSTALACAO.md`, passo 10)
+  e bloqueie os logins que não são da sua equipe.
+
 - **`POST /api/v1/broadcasts` passa a funcionar, e a respeitar o
   `channel_id`.** A função do banco por trás do endpoint nunca tinha
   conseguido executar: toda chamada devolvia `500 Failed to create

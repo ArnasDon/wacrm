@@ -1,5 +1,15 @@
 -- ============================================================
--- 1027 — O histórico de 2026 do WhatsApp, trazido para as fichas com card.
+-- 1033 — O histórico de 2026 do WhatsApp, trazido para as fichas com card.
+--
+-- ⚠️ APLICADA EM PRODUÇÃO COMO 1027 (histórico `20260921201327`, 21/09/2026).
+-- O arquivo virou 1033 no merge porque, quando ele chegou ao `main`, já
+-- estavam lá a 1030, a 1031 e a 1032 — e a instalação que atualiza por
+-- `supabase db push` RECUSA migration com número menor que o maior já
+-- aplicado (a regra do CLAUDE.md; a do "perdido que volta" nasceu 1028 e virou
+-- 1031 pelo mesmo motivo). A ordem não muda nada no resultado: esta migration
+-- cria um registro em `migracao_kommo`, três funções e as concessões delas —
+-- nenhuma policy, nada que a 1030 (função de disparo), a 1031 (resultado da
+-- etapa) ou a 1032 (policies de leitura do `public`) toquem ou leiam.
 --
 -- Pedido do operador (21/09/2026): os leads da Kommo já estão aqui, com card,
 -- mas a conversa de 2026 ficou na Kommo — que só entrega metadado, nunca o
@@ -587,7 +597,7 @@ grant  execute on function public.cb_desfazer_historico_whatsapp(uuid, text, boo
 
 -- ------------------------------------------------------------
 -- Conferência. As funções são CHAMADAS (regra 3 do CLAUDE.md) num subbloco que
--- se desfaz pela exceção própria P1027 — nada sobra no banco. Banco vazio pula.
+-- se desfaz pela exceção própria P1033 — nada sobra no banco. Banco vazio pula.
 -- ------------------------------------------------------------
 do $$
 declare
@@ -601,7 +611,7 @@ declare
   v_ligados int;
 begin
   if to_regclass('migracao_kommo.historico_whatsapp') is null then
-    raise exception '1027: o registro não foi criado';
+    raise exception '1033: o registro não foi criado';
   end if;
   if has_function_privilege('anon', 'public.cb_importar_historico_whatsapp(uuid, text, jsonb, boolean)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.cb_importar_historico_whatsapp(uuid, text, jsonb, boolean)', 'EXECUTE')
@@ -609,15 +619,15 @@ begin
      or has_function_privilege('authenticated', 'public.cb_desfazer_historico_whatsapp(uuid, text, boolean, int)', 'EXECUTE')
      or has_function_privilege('anon', 'public.cb_historico_conversa_apontada(uuid)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.cb_historico_conversa_apontada(uuid)', 'EXECUTE') then
-    raise exception '1027: as funções continuam executáveis pelo navegador';
+    raise exception '1033: as funções continuam executáveis pelo navegador';
   end if;
   if not has_function_privilege('service_role', 'public.cb_importar_historico_whatsapp(uuid, text, jsonb, boolean)', 'EXECUTE')
      or not has_function_privilege('service_role', 'public.cb_desfazer_historico_whatsapp(uuid, text, boolean, int)', 'EXECUTE') then
-    raise exception '1027: o service_role perdeu o EXECUTE';
+    raise exception '1033: o service_role perdeu o EXECUTE';
   end if;
   if has_table_privilege('anon', 'migracao_kommo.historico_whatsapp', 'SELECT')
      or has_table_privilege('authenticated', 'migracao_kommo.historico_whatsapp', 'SELECT') then
-    raise exception '1027: o registro está legível pelo navegador';
+    raise exception '1033: o registro está legível pelo navegador';
   end if;
 
   -- uma conversa ENCERRADA existente, para provar que nada nela muda além do fio
@@ -626,7 +636,7 @@ begin
    where v.contact_id is not null and v.status = 'closed'
    limit 1;
   if v_conv is null then
-    raise notice '1027: banco sem conversa encerrada de contato — a chamada não foi provada aqui.';
+    raise notice '1033: banco sem conversa encerrada de contato — a chamada não foi provada aqui.';
     return;
   end if;
 
@@ -634,23 +644,23 @@ begin
     select status, unread_count, aguardando_desde, assigned_agent_id, last_message_at, updated_at
       into v_antes from conversations where id = v_conv;
 
-    v_r := public.cb_importar_historico_whatsapp(v_conta, 'conferencia-1027', jsonb_build_array(
-      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1027-a',
+    v_r := public.cb_importar_historico_whatsapp(v_conta, 'conferencia-1033', jsonb_build_array(
+      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1033-a',
         'sender_type', 'customer', 'from_me', false, 'from_device', false,
         'content_type', 'text', 'content_text', 'conferência', 'status', 'delivered',
         'created_at', '2026-01-02T12:00:00Z', 'previa', 'conferência'),
-      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1027-b',
+      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1033-b',
         'sender_type', 'agent', 'from_me', true, 'from_device', true,
         'content_type', 'text', 'content_text', 'resposta', 'status', 'read',
-        'created_at', '2026-01-02T12:01:00Z', 'cita', 'conferencia-1027-a',
+        'created_at', '2026-01-02T12:01:00Z', 'cita', 'conferencia-1033-a',
         'edited_at', '2026-01-02T12:02:00Z'),
-      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1027-c',
+      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1033-c',
         'sender_type', 'customer', 'from_me', false, 'from_device', false,
         'content_type', 'text', 'content_text', 'apagada', 'status', 'delivered',
         'created_at', '2026-01-02T12:03:00Z', 'deleted_at', '2026-01-02T12:04:00Z',
         'deleted_by', 'customer')));
     if (v_r->>'inseridas')::int <> 3 or (v_r->>'citacoes')::int <> 1 then
-      raise exception '1027: a importação devolveu %', v_r;
+      raise exception '1033: a importação devolveu %', v_r;
     end if;
 
     select status, unread_count, aguardando_desde, assigned_agent_id, last_message_at, updated_at
@@ -660,55 +670,55 @@ begin
        or v_depois.aguardando_desde is distinct from v_antes.aguardando_desde
        or v_depois.assigned_agent_id is distinct from v_antes.assigned_agent_id
        or v_depois.updated_at is distinct from v_antes.updated_at then
-      raise exception '1027: a importação mexeu na conversa (situação, não lidas, espera, responsável ou updated_at)';
+      raise exception '1033: a importação mexeu na conversa (situação, não lidas, espera, responsável ou updated_at)';
     end if;
     if exists (select 1 from messages where conversation_id = v_conv
-                and message_id like 'conferencia-1027-%' and gravada_em is not null) then
-      raise exception '1027: a mensagem importada nasceu com gravada_em';
+                and message_id like 'conferencia-1033-%' and gravada_em is not null) then
+      raise exception '1033: a mensagem importada nasceu com gravada_em';
     end if;
     if not exists (select 1 from messages where conversation_id = v_conv
-                    and message_id = 'conferencia-1027-c' and deleted_by = 'customer' and deleted_at is not null)
+                    and message_id = 'conferencia-1033-c' and deleted_by = 'customer' and deleted_at is not null)
        or not exists (select 1 from messages where conversation_id = v_conv
-                       and message_id = 'conferencia-1027-b' and edited_at is not null) then
-      raise exception '1027: a apagada ou a editada perdeu a marca';
+                       and message_id = 'conferencia-1033-b' and edited_at is not null) then
+      raise exception '1033: a apagada ou a editada perdeu a marca';
     end if;
 
     select count(*) into v_ligados from pg_trigger
      where tgrelid in ('public.messages'::regclass, 'public.conversations'::regclass)
        and not tgisinternal and tgenabled = 'D';
     if v_ligados > 0 then
-      raise exception '1027: % gatilho(s) de messages/conversations ficaram desligados', v_ligados;
+      raise exception '1033: % gatilho(s) de messages/conversations ficaram desligados', v_ligados;
     end if;
 
-    v_r2 := public.cb_importar_historico_whatsapp(v_conta, 'conferencia-1027', jsonb_build_array(
-      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1027-a',
+    v_r2 := public.cb_importar_historico_whatsapp(v_conta, 'conferencia-1033', jsonb_build_array(
+      jsonb_build_object('contact_id', v_contato, 'message_id', 'conferencia-1033-a',
         'sender_type', 'customer', 'content_type', 'text', 'content_text', 'conferência',
         'status', 'delivered', 'created_at', '2026-01-02T12:00:00Z')));
     if (v_r2->>'inseridas')::int <> 0 then
-      raise exception '1027: a reimportação duplicou (%)', v_r2;
+      raise exception '1033: a reimportação duplicou (%)', v_r2;
     end if;
 
     -- o desfazer em pedaços: de 2 em 2, até terminar
-    v_r2 := public.cb_desfazer_historico_whatsapp(v_conta, 'conferencia-1027', false, 2);
+    v_r2 := public.cb_desfazer_historico_whatsapp(v_conta, 'conferencia-1033', false, 2);
     if (v_r2->>'terminou')::boolean or (v_r2->>'restam')::int <> 1 then
-      raise exception '1027: o primeiro pedaço do desfazer devolveu %', v_r2;
+      raise exception '1033: o primeiro pedaço do desfazer devolveu %', v_r2;
     end if;
-    v_r2 := public.cb_desfazer_historico_whatsapp(v_conta, 'conferencia-1027', false, 2);
+    v_r2 := public.cb_desfazer_historico_whatsapp(v_conta, 'conferencia-1033', false, 2);
     if not (v_r2->>'terminou')::boolean
-       or exists (select 1 from messages where conversation_id = v_conv and message_id like 'conferencia-1027-%') then
-      raise exception '1027: o desfazer não terminou (%)', v_r2;
+       or exists (select 1 from messages where conversation_id = v_conv and message_id like 'conferencia-1033-%') then
+      raise exception '1033: o desfazer não terminou (%)', v_r2;
     end if;
     if (select last_message_at from conversations where id = v_conv) is distinct from v_antes.last_message_at
        or (select updated_at from conversations where id = v_conv) is distinct from v_antes.updated_at then
-      raise exception '1027: o desfazer não devolveu a prévia, ou empurrou updated_at';
+      raise exception '1033: o desfazer não devolveu a prévia, ou empurrou updated_at';
     end if;
     if public.cb_historico_conversa_apontada(v_conv) is distinct from public.cb_historico_conversa_apontada(v_conv) then
-      raise exception '1027: a consulta de quem aponta para a conversa não é determinística';
+      raise exception '1033: a consulta de quem aponta para a conversa não é determinística';
     end if;
 
-    raise exception using errcode = 'P1027', message = 'conferência desfeita';
-  exception when sqlstate 'P1027' then
+    raise exception using errcode = 'P1033', message = 'conferência desfeita';
+  exception when sqlstate 'P1033' then
     null;
   end;
-  raise notice '1027: importação, reimportação e desfazer em pedaços conferidos numa conversa encerrada (desfeito).';
+  raise notice '1033: importação, reimportação e desfazer em pedaços conferidos numa conversa encerrada (desfeito).';
 end $$;

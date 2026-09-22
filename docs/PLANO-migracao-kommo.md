@@ -1533,7 +1533,7 @@ movido é lido travado —, e `status_changed` sem funil é recusado na entrada
 do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
 escrever.
 
-## O histórico de conversa de 2026 — 21/09/2026 (migration 1027)
+## O histórico de conversa de 2026 — 21/09/2026 (migration 1033, aplicada como 1027)
 
 Pedido do operador depois da carga: os leads vieram, mas a conversa ficou na
 Kommo. **A API da Kommo não entrega o texto** — o evento de chat traz só o id
@@ -1563,7 +1563,7 @@ Validado contra a Kommo em 7 clientes do Bancário - Comercial: **799 × 790**.
 **Como:** um script fora do repositório exporta o conteúdo, normaliza com o
 `normalizeUpsert` da própria ingestão (importado direto, Node 24), aplica a
 lista de tipos permitidos, confere o carimbo, e escreve por lote pela
-`cb_importar_historico_whatsapp` (1027). O que a função garante e por quê está
+`cb_importar_historico_whatsapp` (1033). O que a função garante e por quê está
 no cabeçalho da migration e na seção "Histórico importado do WhatsApp" do
 CLAUDE.md. Desfazer: `cb_desfazer_historico_whatsapp` — ANTES do
 `cb_kommo_desfazer`.

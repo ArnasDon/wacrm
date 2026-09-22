@@ -3327,7 +3327,7 @@ sempre. O que morde código novo:
   ESTADO ("este contato já tem card?"), então as conversas que ficaram sem
   card se resolvem sozinhas na próxima mensagem trocada, em qualquer sentido.
 
-⚠️⚠️ **Histórico importado do WhatsApp (1027, 21/09/2026): mensagem com
+⚠️⚠️ **Histórico importado do WhatsApp (1033, aplicada como 1027 em 21/09/2026): mensagem com
 `gravada_em` NULA pode ser do backfill, e o registro é o que diz.** A conversa
 de 2026 dos leads da Kommo ficou lá (a API dela só entrega metadado); o texto
 existia na Evolution — a conexão viva (jun–set) e o backup de 09/09 da conexão
@@ -7024,28 +7024,14 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     história de `POST /api/v1/broadcasts`.
     ⚠️ **O número pula para 1030 DE PROPÓSITO**: a faixa `1030+` é do
     `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
-    números no mesmo dia — as 1025/1026 são dela). A 1027 (histórico do
-    WhatsApp) veio de outra frente depois; **não existem 1028 e 1029** — não
-    "preencher" a lacuna. ⚠️ E número NOVO vem SEMPRE depois do maior que já
+    números no mesmo dia — as 1025/1026 são dela). **Não existem arquivos 1027,
+    1028 e 1029** — não "preencher" a lacuna: a do histórico do WhatsApp foi
+    APLICADA em produção como 1027 e o arquivo virou **1033** no merge, por
+    esta mesma regra. ⚠️ E número NOVO vem SEMPRE depois do maior que já
     está no `main`: a instalação que atualiza por `supabase db push` RECUSA
     migration fora de ordem (sem `--include-all`), e o `docs/ATUALIZAR.md`
     manda o push simples. A do "perdido que volta" nasceu 1028 e virou 1031
     por isso (Codex, PR #245).
-
-  - **1027_cb_historico_do_whatsapp** — o registro
-    `migracao_kommo.historico_whatsapp` e as funções
-    `cb_importar_historico_whatsapp` / `cb_desfazer_historico_whatsapp`: a
-    porta de escrita, por lote, do histórico de 2026 do WhatsApp trazido da
-    Evolution para as fichas com card (ver a seção "Histórico importado do
-    WhatsApp"). Numerada 1027 porque a faixa 1020 é da sessão da Kommo e a
-    1030+ é do merge do upstream; aplicada depois da 1030, então a ordem por
-    número não é a de aplicação (como a 1024, aplicada depois da 1026).
-    Aplicada em 21/09/2026 (histórico `20260921201327`), depois do replay do
-    CI no commit das correções da revisão adversarial e de dois ensaios em
-    transação desfeita. Ensaio REAL no mesmo dia (lote `ensaio-1`, 5 fichas,
-    540 mensagens): nenhuma conversa existente mudou situação, não lidas,
-    espera, responsável, `updated_at` nem canal; 0 notificação, 0 evento de
-    automação, gatilhos religados; conferido no preview.
 
   - **1031_cb_perdido_pode_voltar** — troca o CORPO de duas funções:
     `cb_deals_aplica_resultado` (o gatilho da 950: card PERDIDO que entra
@@ -7070,7 +7056,8 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     POLICY` para `account_id = ANY (ARRAY(SELECT …))` — ver "Policy de LEITURA
     pergunta a conta UMA vez por consulta". ⚠️ É **1032** porque a **1031** é a
     do perdido que volta (PR #245, que chegou ao `main` antes desta), e
-    1025–1027 foram aplicadas por outras frentes antes de chegar ao `main`.
+    1025, 1026 e a do histórico do WhatsApp (aplicada como 1027, hoje 1033)
+    foram aplicadas por outras frentes antes de chegar ao `main`.
     Ensaiada em produção numa transação desfeita (8 usuários × 52 tabelas: o
     resultado da RLS, o predicado antigo e o novo idênticos em todas). Aplicada em
     21/09/2026 pela Management API (histórico `20260921220626`), com
@@ -7083,6 +7070,26 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     linear, roda antes das ALTER, e passou contra a produção em 81 ms. O que
     a migration MUDA no banco é idêntico ao aplicado — só os blocos de
     verificação diferem do registrado no histórico.
+
+  - **1033_cb_historico_do_whatsapp** (aplicada como 1027) — o registro
+    `migracao_kommo.historico_whatsapp` e as funções
+    `cb_importar_historico_whatsapp` / `cb_desfazer_historico_whatsapp`: a
+    porta de escrita, por lote, do histórico de 2026 do WhatsApp trazido da
+    Evolution para as fichas com card (ver a seção "Histórico importado do
+    WhatsApp"). ⚠️ Aplicada em produção como **1027** (a faixa 1020 era da
+    sessão da Kommo); quando o arquivo chegou ao `main` já estavam lá a 1030, a
+    1031 e a 1032, e ele virou **1033** — a instalação que atualiza por
+    `supabase db push` recusa número menor que o maior já aplicado. Conferido
+    que a ordem não muda o resultado: ela cria o registro em `migracao_kommo`,
+    três funções e as concessões delas; nenhuma policy (a 1032 reescreve e
+    confere só policies de leitura do `public`), e nada que a 1030 ou a 1031
+    toquem. Em produção o histórico guarda o nome antigo, e nada reaplica.
+    Aplicada em 21/09/2026 (histórico `20260921201327`), depois do replay do
+    CI no commit das correções da revisão adversarial e de dois ensaios em
+    transação desfeita. Ensaio REAL no mesmo dia (lote `ensaio-1`, 5 fichas,
+    540 mensagens): nenhuma conversa existente mudou situação, não lidas,
+    espera, responsável, `updated_at` nem canal; 0 notificação, 0 evento de
+    automação, gatilhos religados; conferido no preview.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

@@ -1,4 +1,4 @@
-// Pinos da 1027 (o histórico de 2026 do WhatsApp). A importação escreve em
+// Pinos da 1033 (o histórico de 2026 do WhatsApp; aplicada como 1027). A importação escreve em
 // produção por fora do código da ingestão, e cada garantia de "não dispara
 // nada, não reabre, não soma não lida, não acende atraso, não trava a
 // ingestão" mora no SQL — estes testes cobram que ela continue lá.
@@ -6,14 +6,14 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const sql = readFileSync(join(__dirname, '1027_cb_historico_do_whatsapp.sql'), 'utf8');
+const sql = readFileSync(join(__dirname, '1033_cb_historico_do_whatsapp.sql'), 'utf8');
 const semComentarios = sql.replace(/--[^\n]*/g, '');
 const trecho = (de: string, ate: string) =>
   semComentarios.slice(semComentarios.indexOf(de), semComentarios.indexOf(ate));
 const importar = trecho('function public.cb_importar_historico_whatsapp', 'function public.cb_desfazer_historico_whatsapp');
 const desfazer = trecho('function public.cb_desfazer_historico_whatsapp', 'revoke execute on function public.cb_historico_conversa_apontada');
 
-describe('1027 — histórico do WhatsApp', () => {
+describe('1033 — histórico do WhatsApp', () => {
   it('grava gravada_em NULA (senão a retomada lê a fala antiga como "respondeu agora")', () => {
     const insert = importar.slice(importar.indexOf('insert into messages'), importar.indexOf('on conflict (conversation_id, message_id)'));
     expect(insert).toMatch(/deleted_at, deleted_by, edited_at, gravada_em\)/);
@@ -98,8 +98,8 @@ describe('1027 — histórico do WhatsApp', () => {
   });
 
   it('a conferência CHAMA as funções e se desfaz pela exceção própria (nunca WHEN OTHERS)', () => {
-    expect(semComentarios).toMatch(/errcode = 'P1027'/);
-    expect(semComentarios).toMatch(/when sqlstate 'P1027'/);
+    expect(semComentarios).toMatch(/errcode = 'P1033'/);
+    expect(semComentarios).toMatch(/when sqlstate 'P1033'/);
     expect(semComentarios).not.toMatch(/when others/i);
   });
 });

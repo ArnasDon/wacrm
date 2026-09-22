@@ -13,6 +13,7 @@ import type {
 } from "@/types";
 import {
   PipelineBoard,
+  idsDesenhados,
   type TetosDoQuadro,
 } from "@/components/pipelines/pipeline-board";
 import { PipelineSettings } from "@/components/pipelines/pipeline-settings";
@@ -58,7 +59,11 @@ import { statusAoEntrarNaEtapa } from "@/lib/pipelines/resultado";
 import {
   DEAL_SELECT_BASICO,
   DEAL_SELECT_DO_QUADRO,
+  DEAL_SELECT_ENXUTO,
+  juntarConteudo,
   normalizarDealDoQuadro,
+  type CardDoQuadro,
+  type CardSemConteudo,
   type DealDoQuadro,
   type RawDealDoQuadro,
 } from "@/lib/pipelines/cartao";
@@ -81,6 +86,12 @@ import { CamposDoCardPopover } from "@/components/pipelines/campos-do-card-popov
 // PERSISTENTE, não transitória: lembrada aqui, as cargas seguintes vão direto
 // ao select básico em vez de pagar duas consultas por troca de funil.
 let embedDoQuadroRecusado = false;
+// ⚠️ Só estes códigos SÃO a recusa: relação que o cache de schema não conhece
+// (PGRST200), relação ambígua (PGRST201) e coluna que não existe (42703).
+// Rede fora, 5xx e tempo esgotado são passageiros — lembrá-los deixaria a
+// sessão inteira no plano B por um soluço, e o conteúdo é pedido a cada
+// "mostrar mais".
+const RECUSA_DO_EMBED = new Set(["PGRST200", "PGRST201", "42703"]);
 
 // Spec-defined seed — name and color per the product spec.
 const SPEC_DEFAULT_STAGES = [
@@ -130,7 +141,7 @@ function PipelinesPageInner() {
   // e Desempenho/Saúde precisam distinguir "ainda não chegaram" de "o funil
   // não tem etapa" — os dois são `[]` (Codex, PR #121).
   const [etapasDe, setEtapasDe] = useState<string>("");
-  const [deals, setDeals] = useState<DealDoQuadro[]>([]);
+  const [deals, setDeals] = useState<CardDoQuadro[]>([]);
   const [loading, setLoading] = useState(true);
 
   /**
@@ -281,92 +292,130 @@ function PipelinesPageInner() {
   );
 
   /**
-   * Os negócios do quadro. `null` = as duas consultas falharam (o select do
-   * quadro e o plano B) — mesmo motivo do `buscarEtapas`. Quem já usava
+   * O conteúdo completo de cards, por id (ver `DEAL_SELECT_ENXUTO`), SÓ deste
+   * funil: o card que saiu dele entre a lista e o conteúdo não volta, e
+   * `juntarConteudo` o tira do quadro. A carga pede o dos desenhados, a coluna
+   * pede o do "mostrar mais". Em fatias de 100 ids, em paralelo — é GET, e
+   * cada id custa ~37 caracteres na URL. `null` = falhou.
+   */
+  const buscarConteudo = useCallback(
+    async (
+      pipelineId: string,
+      ids: string[],
+    ): Promise<Map<string, DealDoQuadro> | null> => {
+      const fatias: string[][] = [];
+      for (let i = 0; i < ids.length; i += 100) fatias.push(ids.slice(i, i + 100));
+      // O conteúdo por id, ou o erro da primeira fatia que falhou (já no log).
+      const buscar = async (select: string, rotulo: string) => {
+        const respostas = await Promise.all(
+          fatias.map((fatia) =>
+            supabase.from("deals").select(select).eq("pipeline_id", pipelineId).in("id", fatia),
+          ),
+        );
+        const erro = respostas.find((r) => r.error)?.error;
+        if (erro) {
+          // Os campos do erro do Supabase não são enumeráveis.
+          console.error(`Failed to load deals (${rotulo}):`, {
+            message: erro.message,
+            details: erro.details,
+            hint: erro.hint,
+            code: erro.code,
+          });
+          return erro;
+        }
+        const linhas = respostas.flatMap((r) => (r.data ?? []) as unknown as RawDealDoQuadro[]);
+        return new Map(linhas.map((r) => [r.id, normalizarDealDoQuadro(r)]));
+      };
+
+      if (!embedDoQuadroRecusado) {
+        const doQuadro = await buscar(DEAL_SELECT_DO_QUADRO, "select do quadro");
+        if (doQuadro instanceof Map) return doQuadro;
+        // ⚠️ Um embed recusado pelo PostgREST não pode derrubar o Kanban: sem
+        // este plano B o quadro abriria VAZIO, sem mensagem nenhuma. Refaz com
+        // o select antigo — o quadro fica de pé, sem conversa/etiquetas nos
+        // cards (e negócio pré-910 volta a abrir o formulário no clique). Só
+        // a RECUSA liga o plano B (ver `RECUSA_DO_EMBED`).
+        if (!RECUSA_DO_EMBED.has(doQuadro.code)) return null;
+        embedDoQuadroRecusado = true;
+      }
+      const basico = await buscar(DEAL_SELECT_BASICO, "select básico");
+      return basico instanceof Map ? basico : null;
+    },
+    [supabase],
+  );
+
+  /**
+   * Os negócios do quadro: a lista ENXUTA de todos e o conteúdo dos que as
+   * colunas desenham (ver `DEAL_SELECT_ENXUTO`). `null` = não confie (a lista
+   * ou o conteúdo falhou) — mesmo motivo do `buscarEtapas`. Quem já usava
    * `loadDeals` continua recebendo `[]`, com o toast.
    */
   const buscarNegocios = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[] | null> => {
-      // A MESMA consulta para os dois selects: qualquer mudança de escopo
-      // (filtro, ordem) vale automaticamente no plano B — divergir os dois é
-      // exatamente o tipo de bug que só aparece quando ninguém está olhando.
-      //
+    async (pipelineId: string): Promise<CardDoQuadro[] | null> => {
       // ⚠️⚠️ PAGINADA desde 19/09/2026. Antes era uma consulta só, sem
       // `range` e sem `count`: o PostgREST corta em ~1000 linhas SEM AVISAR,
       // então um funil com mais de mil cards mostrava os 1.000 mais RECENTES
       // e contava errado nas colunas, em silêncio. A lista de conversas já
       // paginava a consulta de `deals` por esta exata razão
-      // (`conversation-list.tsx`); o quadro, não. Hoje o maior funil tem
-      // centenas de cards — a migração da Kommo traz mais de 8 mil para um
-      // deles (`docs/PLANO-migracao-kommo.md`, trava 11).
-      const buscar = (select: string) =>
-        buscarPaginado<RawDealDoQuadro>(async (de, ate) => {
-          const { data, error, count } = await supabase
-            .from("deals")
-            .select(select, { count: "exact" })
-            .eq("pipeline_id", pipelineId)
-            // ⚠️ O desempate por `id` é o que torna a paginação estável: dois
-            // cards com o MESMO `created_at` (a carga da Kommo vai ter muitos)
-            // ficam em ordem indefinida entre uma página e outra, e aí um
-            // deles some do quadro e outro vem duas vezes.
-            .order("created_at", { ascending: false })
-            .order("id", { ascending: true })
-            .range(de, ate);
-          return { data: (data ?? null) as RawDealDoQuadro[] | null, error, count };
-        });
-
-      if (!embedDoQuadroRecusado) {
-        const doQuadro = await buscar(DEAL_SELECT_DO_QUADRO);
-        if (doQuadro.linhas) return doQuadro.linhas.map(normalizarDealDoQuadro);
-        if (!doQuadro.erro) {
-          // Não foi o PostgREST recusando o embed: a coleção mudou no meio da
-          // leitura, ou passou do teto. Repetir com o select básico daria o
-          // mesmo — o quadro admite que não sabe, em vez de desenhar meia
-          // lista com cara de lista inteira.
-          console.error("Failed to load deals (paginação):", {
-            motivo: doQuadro.motivo,
-          });
-          toast.error(t("toastFailedLoadDeals"));
-          return null;
-        }
-        // ⚠️ Um embed recusado pelo PostgREST não pode derrubar o Kanban: sem
-        // este plano B o quadro abriria VAZIO, sem mensagem nenhuma. Loga (os
-        // campos do erro do Supabase não são enumeráveis) e refaz com o
-        // select antigo — o quadro fica de pé, sem conversa/etiquetas nos
-        // cards (e negócio pré-910 volta a abrir o formulário no clique).
-        console.error("Failed to load deals (select do quadro):", {
-          message: doQuadro.erro.message,
-          details: doQuadro.erro.details,
-          hint: doQuadro.erro.hint,
-          code: doQuadro.erro.code,
-        });
-        embedDoQuadroRecusado = true;
-      }
-
-      const basico = await buscar(DEAL_SELECT_BASICO);
-      if (!basico.linhas) {
-        // ⚠️ O plano B também pode falhar (rede, RLS) — descartar ESTE erro
-        // reproduzia o defeito original: colunas "vazias" com cara de funil
-        // sem negócio. Toast + `null`: o `loadDeals` o converte na lista
-        // vazia explícita de sempre, e a recarga da volta ao app mantém o
-        // quadro.
-        console.error("Failed to load deals (select básico):", {
-          motivo: basico.motivo,
-          message: basico.erro?.message,
-          details: basico.erro?.details,
-          hint: basico.erro?.hint,
-          code: basico.erro?.code,
+      // (`conversation-list.tsx`); o quadro, não. Em 22/09/2026 o
+      // Trabalhista - Comercial tinha 3.673 cards.
+      const lista = await buscarPaginado<CardSemConteudo>(async (de, ate) => {
+        const { data, error, count } = await supabase
+          .from("deals")
+          .select(DEAL_SELECT_ENXUTO, { count: "exact" })
+          .eq("pipeline_id", pipelineId)
+          // ⚠️ O desempate por `id` é o que torna a paginação estável: dois
+          // cards com o MESMO `created_at` (a carga da Kommo tem muitos)
+          // ficam em ordem indefinida entre uma página e outra, e aí um
+          // deles some do quadro e outro vem duas vezes.
+          .order("created_at", { ascending: false })
+          .order("id", { ascending: true })
+          .range(de, ate);
+        return { data: (data ?? null) as CardSemConteudo[] | null, error, count };
+      });
+      if (!lista.linhas) {
+        // ⚠️ Nunca meia lista com cara de lista inteira: a coleção que mudou
+        // no meio da leitura, o teto e a falha viram o toast e a lista vazia
+        // explícita de sempre — e a recarga da volta ao app mantém o quadro.
+        console.error("Failed to load deals:", {
+          motivo: lista.motivo,
+          message: lista.erro?.message,
+          details: lista.erro?.details,
+          hint: lista.erro?.hint,
+          code: lista.erro?.code,
         });
         toast.error(t("toastFailedLoadDeals"));
         return null;
       }
-      return basico.linhas.map(normalizarDealDoQuadro);
+      // Os tetos de coluna a carregar, o maior de cada coluna entre os que o
+      // quadro desenha AGORA neste funil (o ref que ele alimenta) e os da
+      // volta do inbox, que ele ainda vai aplicar. Só a volta não bastava: o
+      // quadro volta a desenhar a coluna que o operador expandiu antes de
+      // trocar de funil, e a carga pediria conteúdo só dos 100 primeiros.
+      const tetos = limitesDoQuadroRef.current;
+      const limites = { ...(tetos.funil === pipelineId ? tetos.porEtapa : {}) };
+      const retorno = lerRetorno();
+      if (retorno?.pipelineId === pipelineId) {
+        for (const [etapa, n] of Object.entries(retorno.limites)) {
+          limites[etapa] = Math.max(limites[etapa] ?? 0, n);
+        }
+      }
+      const ids = idsDesenhados(lista.linhas, limites);
+      const conteudo = await buscarConteudo(pipelineId, ids);
+      if (!conteudo) {
+        // O mesmo estado de falha da lista (toast + lista vazia). Devolver a
+        // lista enxuta aqui trocaria, na volta ao app, um quadro bom por
+        // cards "carregando".
+        toast.error(t("toastFailedLoadDeals"));
+        return null;
+      }
+      return juntarConteudo(lista.linhas, ids, conteudo);
     },
-    [supabase, t],
+    [supabase, t, buscarConteudo],
   );
 
   const loadDeals = useCallback(
-    async (pipelineId: string): Promise<DealDoQuadro[]> =>
+    async (pipelineId: string): Promise<CardDoQuadro[]> =>
       (await buscarNegocios(pipelineId)) ?? [],
     [buscarNegocios],
   );
@@ -572,6 +621,19 @@ function PipelinesPageInner() {
    */
   const versaoDoQuadroRef = useRef(0);
 
+  // O funil aberto AGORA, para quem espera uma resposta conferir se ela
+  // ainda é deste funil (a volta ao app, o `refreshDeals` e o
+  // `refreshStages`).
+  const funilAbertoRef = useRef(selectedPipelineId);
+  useEffect(() => {
+    funilAbertoRef.current = selectedPipelineId;
+    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
+    // ar passava pela cerca do funil (é A de novo e a versão não andava), e
+    // a resposta velha gravava por cima da carga nova de A (Codex, PR #216,
+    // 3ª rodada).
+    versaoDoQuadroRef.current += 1;
+  }, [selectedPipelineId]);
+
   const refreshAutomations = useCallback(async () => {
     versaoDoQuadroRef.current += 1;
     const lista = await loadAutomations();
@@ -611,14 +673,64 @@ function PipelinesPageInner() {
   const refreshStages = useCallback(async () => {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
-    setStages(await loadStages(selectedPipelineId));
+    const funil = selectedPipelineId;
+    const etapas = await loadStages(funil);
+    // A mesma cerca do `refreshDeals`, para quem salva em Gerenciar funil e
+    // troca de funil logo depois.
+    if (funilAbertoRef.current !== funil) return;
+    setStages(etapas);
   }, [loadStages, selectedPipelineId]);
 
   const refreshDeals = useCallback(async () => {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
-    setDeals(await loadDeals(selectedPipelineId));
+    const funil = selectedPipelineId;
+    const negocios = await loadDeals(funil);
+    // Trocar de funil logo depois de salvar punha os cards do funil anterior
+    // no quadro do novo — as colunas vazias até recarregar a página.
+    if (funilAbertoRef.current !== funil) return;
+    setDeals(negocios);
   }, [loadDeals, selectedPipelineId]);
+
+  /**
+   * O conteúdo dos cards que uma coluna desenha e ainda não tem ("mostrar
+   * mais", o card que um arrasto expôs), do funil da própria coluna — durante
+   * uma troca de funil o quadro ainda mostra o anterior. `emVooRef` impede
+   * pedir de novo o que já está a caminho: a coluna avisa a cada mudança do
+   * quadro. Uma falha fica no toast, e a coluna pede de novo na mudança
+   * seguinte do quadro (arrasto, "mostrar mais", recarga).
+   */
+  const emVooRef = useRef(new Set<string>());
+  const carregarConteudo = useCallback(
+    (ids: string[], funil: string) => {
+      const emVoo = emVooRef.current;
+      const novos = ids.filter((id) => !emVoo.has(id));
+      if (novos.length === 0) return;
+      for (const id of novos) emVoo.add(id);
+      void (async () => {
+        let conteudo: Map<string, DealDoQuadro> | null = null;
+        try {
+          conteudo = await buscarConteudo(funil, novos);
+        } catch (erro) {
+          console.error("Failed to load deals (conteúdo):", erro);
+        } finally {
+          for (const id of novos) emVoo.delete(id);
+        }
+        if (!conteudo) {
+          // Id fixo: cada coluna pede o seu, e a mesma falha não pode
+          // empilhar um aviso por coluna.
+          toast.error(t("toastFailedLoadDeals"), { id: "funil-conteudo" });
+          return;
+        }
+        const recebido = conteudo;
+        // Mudança local, como o arrasto: a recarga da volta ao app que estiver
+        // no ar já não grava por cima (ver `versaoDoQuadroRef`).
+        versaoDoQuadroRef.current += 1;
+        setDeals((prev) => juntarConteudo(prev, novos, recebido));
+      })();
+    },
+    [buscarConteudo, t],
+  );
 
   // O app instalado no celular não tem botão de recarregar: voltar para ele
   // depois de um tempo fora atualiza o quadro do funil aberto, a lista de
@@ -635,15 +747,6 @@ function PipelinesPageInner() {
   // - as gravações vão JUNTAS, depois de uma única conferência: gravando a
   //   troca de funil antes, a própria troca avançaria a versão e descartaria
   //   as automações.
-  const funilAbertoRef = useRef(selectedPipelineId);
-  useEffect(() => {
-    funilAbertoRef.current = selectedPipelineId;
-    // Trocar de funil também é mudança: sem isto, A → B → A com a recarga no
-    // ar passava pela cerca do funil (é A de novo e a versão não andava), e
-    // a resposta velha gravava por cima da carga nova de A (Codex, PR #216,
-    // 3ª rodada).
-    versaoDoQuadroRef.current += 1;
-  }, [selectedPipelineId]);
   useAoVoltarParaOApp(() => {
     const funil = selectedPipelineId;
     const versao = versaoDoQuadroRef.current;
@@ -1028,6 +1131,7 @@ function PipelinesPageInner() {
           <PipelineBoard
             stages={stages}
             deals={deals}
+            onFaltaConteudo={carregarConteudo}
             automations={automations}
             pipelineId={selectedPipelineId}
             campos={campos}

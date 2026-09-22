@@ -20,9 +20,19 @@ import {
 import { formatCurrency } from "@/lib/currency";
 import { useTranslations } from "next-intl";
 
+/**
+ * Só o que os indicadores leem — a forma ENXUTA do quadro, que chega para
+ * TODOS os cards do funil (`DEAL_SELECT_ENXUTO`). O conteúdo completo existe
+ * só para os desenhados, e somar só esses mudaria os números sem erro nenhum.
+ */
+type NegocioDoIndicador = Pick<
+  Deal,
+  "status" | "value" | "stage_id" | "updated_at" | "created_at"
+>;
+
 interface PipelineAnalyticsProps {
   stages: PipelineStage[];
-  deals: Deal[];
+  deals: NegocioDoIndicador[];
 }
 
 /**
@@ -70,7 +80,7 @@ export function PipelineAnalytics({ stages, deals }: PipelineAnalyticsProps) {
 
     const now = new Date();
     const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    const thisMonth = (d: Deal) => {
+    const thisMonth = (d: NegocioDoIndicador) => {
       const ts = d.updated_at ?? d.created_at;
       return ts ? new Date(ts) >= monthStart : false;
     };

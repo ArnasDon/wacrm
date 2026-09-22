@@ -95,10 +95,26 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
       /const refreshPipelines = useCallback\(async \(\) => \{\s*versaoDoQuadroRef\.current \+= 1;/,
       /const refreshAutomations = useCallback\(async \(\) => \{\s*versaoDoQuadroRef\.current \+= 1;/,
       /const handleDealMoved = useCallback\(\s*async \(dealId: string, newStageId: string\) => \{[\s\S]{0,300}versaoDoQuadroRef\.current \+= 1;/,
-      /funilAbertoRef\.current = selectedPipelineId;[\s\S]{0,500}versaoDoQuadroRef\.current \+= 1;/,
+      // Preso ao fim do PRÓPRIO efeito: colado nele vem o `refreshAutomations`,
+      // cujo incremento um regex solto aceitaria no lugar deste.
+      /funilAbertoRef\.current = selectedPipelineId;[^}]*versaoDoQuadroRef\.current \+= 1;\s*\}, \[selectedPipelineId\]\);/,
+      // O conteúdo que chega para a coluna ("mostrar mais") também é
+      // mudança local (PR #251): a recarga que partiu antes o desfaria.
+      /const carregarConteudo = useCallback\([\s\S]{0,1600}versaoDoQuadroRef\.current \+= 1;\s*setDeals\(\(prev\) => juntarConteudo/,
     ]) {
       expect(funil).toMatch(quem);
     }
+  });
+
+  it("refreshDeals e refreshStages não gravam a resposta de um funil que já não está aberto", () => {
+    // Salvar e trocar de funil logo em seguida punha os cards (ou as etapas)
+    // do funil anterior no quadro do novo: as colunas vazias até recarregar.
+    expect(funil).toMatch(
+      /const refreshDeals = useCallback\([\s\S]{0,300}const funil = selectedPipelineId;\s*const negocios = await loadDeals\(funil\);[\s\S]{0,300}if \(funilAbertoRef\.current !== funil\) return;\s*setDeals\(negocios\);/,
+    );
+    expect(funil).toMatch(
+      /const refreshStages = useCallback\([\s\S]{0,300}const funil = selectedPipelineId;\s*const etapas = await loadStages\(funil\);[\s\S]{0,300}if \(funilAbertoRef\.current !== funil\) return;\s*setStages\(etapas\);/,
+    );
   });
 });
 

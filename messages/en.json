@@ -3842,7 +3842,7 @@
     "signIn": "Sign in",
     "signupClosed": "Sign-ups are closed. To get in, ask whoever runs this CRM for an invitation.",
     "inviteInvalid": "This invitation is no longer valid: it was used, expired or doesn't exist. Ask whoever sent it for a new one.",
-    "emailExists": "An account with this email already exists. Sign in with it to accept the invitation.",
+    "emailExists": "An account with this email already exists. Sign in with it.",
     "weakPassword": "The password doesn't meet the security requirements. Choose a stronger one.",
     "invalidData": "Check the name, the email and the password.",
     "signupFailed": "Couldn't create the account. Try again in a moment.",

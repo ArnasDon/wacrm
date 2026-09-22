@@ -134,8 +134,10 @@ Supabase. (Os convites de equipe não passam por e-mail do Supabase e não
 precisam de entrada aqui.)
 
 *Authentication → Emails → SMTP Settings*: configure um SMTP próprio.
-O remetente embutido do Supabase é limitado a testes e não entrega
-volume — quem depende dele descobre no dia em que convida a equipe.
+O remetente embutido do Supabase só entrega aos membros da equipe do
+projeto no painel do Supabase — sem SMTP próprio, o e-mail de
+recuperação de senha não chega a mais ninguém. (Os convites do CRM não
+usam e-mail: o link é copiado e enviado por você.)
 
 > ⚠️ **Deixe os cadastros LIGADOS por enquanto.** Em *Authentication →
 > Sign In / Providers* existe a opção *Allow new users to sign up*, e ela
@@ -527,7 +529,8 @@ sozinha: é o teste do agendador.
 | Convite devolve erro 500 citando `NEXT_PUBLIC_SITE_URL` | A instalação não sabe o próprio endereço. Defina a variável e reconstrua |
 | Eco do celular pareado não aparece | O conserto do `@lid` na Evolution. Veja o passo 3.1 |
 | Tela em inglês depois de mudar o idioma | Idioma é fixado no build. Reconstrua a imagem |
-| Convite aceito mas o cadastro é recusado | Os cadastros estão desligados no Supabase. Veja o passo 10 |
+| `/signup` diz "cadastro fechado" | É o esperado sem convite, com *Allow new users to sign up* desligado (passo 10). Quem vai entrar precisa de um link de convite |
+| Convite recusado na criação da conta | O convite venceu, já foi usado ou foi revogado. Gere outro em *Configurações → Membros* |
 | Evolution "connection refused" a partir do CRM | `EVOLUTION_BASE_URL` apontando para `127.0.0.1`. Use o nome do serviço no Swarm. Veja o passo 3.1 |
 | `docker stack deploy` ou `network create` diz que não é um manager | O Swarm não foi iniciado. Veja o passo 0.1 |
 | A tela abre com dados de outra empresa | O stack subiu com a imagem de queda, de outro repositório. Exporte `CRM_IMAGE`. Veja o passo 5.3 |

@@ -17,9 +17,12 @@ let aceiteResposta: { data: unknown; error: unknown }
 const aceiteChamadas: Array<{ nome: string; args: unknown; autorizacao?: string }> = []
 
 // Estado do perfil DEPOIS do aceite: em qual conta ele está e quem é o dono.
-let perfilDepois: { account_id: string } | null
-let donoDaContaDoPerfil: string
+// `leiturasDoPerfil` é uma fila: cada leitura consome a primeira resposta
+// (a última se repete), para simular o banco que falha e depois volta.
+let leiturasDoPerfil: Array<{ data: unknown; error: unknown }>
+let donosDaConta: string[]
 let erroAoApagarConta: unknown
+let contasApagadas: Array<{ id: string }>
 let erroAoApagarUsuario: unknown
 const apagadas: Array<{ tabela: string; filtro: [string, unknown] }> = []
 const usuariosApagados: string[] = []
@@ -53,22 +56,26 @@ function consulta(tabela: string) {
   const filtros: Array<[string, unknown]> = []
   const api = {
     select: () => api,
-    delete: () => {
-      const del = {
-        eq: async (coluna: string, valor: unknown) => {
+    delete: () => ({
+      eq: (coluna: string, valor: unknown) => ({
+        select: async () => {
           apagadas.push({ tabela, filtro: [coluna, valor] })
-          return { error: erroAoApagarConta }
+          return { data: erroAoApagarConta ? null : contasApagadas, error: erroAoApagarConta }
         },
-      }
-      return del
-    },
+      }),
+    }),
     eq: (coluna: string, valor: unknown) => {
       filtros.push([coluna, valor])
       return api
     },
     maybeSingle: async () => {
-      if (tabela === 'profiles') return { data: perfilDepois, error: null }
-      if (tabela === 'accounts') return { data: { owner_user_id: donoDaContaDoPerfil }, error: null }
+      if (tabela === 'profiles') {
+        return leiturasDoPerfil.length > 1 ? leiturasDoPerfil.shift()! : leiturasDoPerfil[0]
+      }
+      if (tabela === 'accounts') {
+        const dono = donosDaConta.length > 1 ? donosDaConta.shift()! : donosDaConta[0]
+        return { data: { owner_user_id: dono }, error: null }
+      }
       return { data: null, error: null }
     },
   }
@@ -120,9 +127,10 @@ beforeEach(() => {
   criarResposta = { data: { user: { id: 'u-nova' } }, error: null }
   entrarResposta = { data: { session: SESSAO }, error: null }
   aceiteResposta = { data: 'conta-da-equipe', error: null }
-  perfilDepois = { account_id: 'conta-avulsa' }
-  donoDaContaDoPerfil = 'u-nova'
+  leiturasDoPerfil = [{ data: { account_id: 'conta-avulsa' }, error: null }]
+  donosDaConta = ['u-nova']
   erroAoApagarConta = null
+  contasApagadas = [{ id: 'conta-avulsa' }]
   erroAoApagarUsuario = null
   for (const l of [peekChamadas, criarChamadas, entrarChamadas, aceiteChamadas, apagadas, usuariosApagados, bloqueios]) {
     l.length = 0
@@ -218,8 +226,8 @@ describe('POST /api/invitations/[token]/cadastro', () => {
 
   it('⚠️ erro no aceite mas o perfil JÁ saiu da conta avulsa: o aceite aconteceu — nada é desfeito', async () => {
     aceiteResposta = { data: null, error: { code: 'XX000', message: 'resposta perdida' } }
-    perfilDepois = { account_id: 'conta-da-equipe' }
-    donoDaContaDoPerfil = 'dono-do-escritorio'
+    leiturasDoPerfil = [{ data: { account_id: 'conta-da-equipe' }, error: null }]
+    donosDaConta = ['dono-do-escritorio']
     const res = await chamar('tok')
     expect(res.status).toBe(201)
     expect(await res.json()).toEqual({ ok: true, sessao: SESSAO })
@@ -244,12 +252,54 @@ describe('POST /api/invitations/[token]/cadastro', () => {
     expect(bloqueios).toEqual([{ id: 'u-nova', attrs: { ban_duration: '876000h' } }])
   })
 
-  it('limite POR CONVITE vale mesmo trocando de IP', async () => {
+  it('limite POR CONVITE conta TENTATIVAS e vale mesmo trocando de IP', async () => {
+    // O convite só é consumido num aceite que dá certo; aqui toda tentativa
+    // bate em e-mail repetido, e o link continua válido.
+    criarResposta = { data: null, error: { code: 'email_exists', status: 422, message: 'x' } }
     for (let i = 0; i < 5; i++) {
-      expect((await chamar('tok-vazado', CORPO, `10.0.1.${i}`)).status).toBe(201)
+      expect((await chamar('tok-vazado', CORPO, `10.0.1.${i}`)).status).toBe(409)
     }
     expect((await chamar('tok-vazado', CORPO, '10.0.1.99')).status).toBe(429)
     expect(criarChamadas).toHaveLength(5)
+  })
+
+  it('⚠️ aceite que falha e banco que não responde: NADA apagado e NADA declarado — 503 aceite_incerto com a sessão', async () => {
+    aceiteResposta = { data: null, error: { code: 'PGRST002', message: 'schema cache' } }
+    leiturasDoPerfil = [{ data: null, error: { code: 'PGRST002', message: 'x' } }]
+    const res = await chamar('tok')
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ codigo: 'aceite_incerto', sessao: SESSAO })
+    expect(apagadas).toHaveLength(0)
+    expect(usuariosApagados).toHaveLength(0)
+    expect(bloqueios).toHaveLength(0)
+  })
+
+  it('leitura que falha e depois volta: decide pela resposta boa (aqui, aceite aconteceu)', async () => {
+    aceiteResposta = { data: null, error: { code: 'XX000', message: 'x' } }
+    leiturasDoPerfil = [
+      { data: null, error: { code: 'PGRST002', message: 'x' } },
+      { data: { account_id: 'conta-da-equipe' }, error: null },
+    ]
+    donosDaConta = ['dono-do-escritorio']
+    const res = await chamar('tok')
+    expect(res.status).toBe(201)
+    expect(usuariosApagados).toHaveLength(0)
+  })
+
+  it('⚠️ redeem EM VOO: o DELETE não acha conta avulsa (o redeem a levou) — o usuário NÃO é apagado', async () => {
+    aceiteResposta = { data: null, error: { code: 'XX000', message: 'transporte' } }
+    // 1ª leitura (antes de desfazer): ainda na conta avulsa → pendente.
+    // 2ª leitura (depois do DELETE vazio): o perfil já foi para a equipe.
+    leiturasDoPerfil = [
+      { data: { account_id: 'conta-avulsa' }, error: null },
+      { data: { account_id: 'conta-da-equipe' }, error: null },
+    ]
+    contasApagadas = []
+    donosDaConta = ['u-nova', 'dono-do-escritorio']
+    const res = await chamar('tok')
+    expect(apagadas).toEqual([{ tabela: 'accounts', filtro: ['owner_user_id', 'u-nova'] }])
+    expect(usuariosApagados).toHaveLength(0)
+    expect(res.status).toBe(201)
   })
 
   it('limite POR IP vale mesmo trocando de convite', async () => {

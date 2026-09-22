@@ -23,7 +23,15 @@
 // Se a aceitação falhar, a conta criada aqui é DESFEITA (a conta avulsa e
 // o usuário, criados segundos antes nesta mesma requisição), para a pessoa
 // poder tentar de novo com o mesmo e-mail. Se desfazer falhar, o usuário é
-// BLOQUEADO (ban), nunca deixado solto com uma conta própria.
+// BLOQUEADO (ban). Se não der para saber se o convite foi aceito (o banco
+// não responde), nada é apagado e nada é declarado: a tela leva a pessoa a
+// /join/<token>.
+//
+// ⚠️ O que fica sem cobertura, por escrito: resposta do createUser perdida
+// no caminho, ou o processo morrendo entre o createUser e o desfazer —
+// sobra uma conta avulsa sem ninguém saber. O convite continua pendente
+// (a pessoa pode aceitá-lo por /join), e o login avulso aparece em
+// Authentication → Users para ser bloqueado.
 //
 // Ver `src/lib/auth/cadastro-por-convite.ts` para o porquê do e-mail
 // confirmado na criação.
@@ -143,14 +151,23 @@ export async function POST(
     p_token_hash: tokenHash,
   })
   if (erroDoAceite) {
+    console.error('[cadastro por convite] redeem falhou:', erroDoAceite.code)
     // O erro pode ter vindo DEPOIS do commit (resposta perdida no caminho):
     // se o perfil já saiu da conta avulsa, o convite foi aceito, e desfazer
     // agora apagaria um membro da equipe. Quem decide é o banco.
-    if (await aceiteAconteceu(admin, novoId)) {
-      return sucesso(sessao)
+    const estado = await estadoDoAceite(admin, novoId)
+    const desfecho = estado === 'pendente' ? await desfazerConta(admin, novoId) : estado
+    if (desfecho === 'aceito') return sucesso(sessao)
+    if (desfecho === 'incerto') {
+      // Não dá para saber se o convite foi aceito. Não se apaga nada (pode
+      // ser um membro) e não se declara sucesso (pode ser uma conta avulsa):
+      // a tela adota a sessão e leva a pessoa a /join/<token>, que mostra
+      // "Aceitar" se o convite ainda estiver pendente.
+      return NextResponse.json(
+        { codigo: 'aceite_incerto', sessao: tokensDa(sessao) },
+        { status: 503, headers: { 'Cache-Control': 'no-store' } },
+      )
     }
-    console.error('[cadastro por convite] redeem falhou:', erroDoAceite.code)
-    await desfazerConta(admin, novoId)
     // 22023 = convite não existe, já usado ou vencido (usado por outra
     // pessoa entre a conferência e o aceite, por exemplo).
     return erroDoAceite.code === '22023'
@@ -161,68 +178,100 @@ export async function POST(
   return sucesso(sessao)
 }
 
-function sucesso(sessao: { access_token: string; refresh_token: string }) {
+type Sessao = { access_token: string; refresh_token: string }
+
+function tokensDa(sessao: Sessao): Sessao {
+  return { access_token: sessao.access_token, refresh_token: sessao.refresh_token }
+}
+
+function sucesso(sessao: Sessao) {
   return NextResponse.json(
-    {
-      ok: true,
-      sessao: { access_token: sessao.access_token, refresh_token: sessao.refresh_token },
-    },
+    { ok: true, sessao: tokensDa(sessao) },
     { status: 201, headers: { 'Cache-Control': 'no-store' } },
   )
 }
 
 type Admin = ReturnType<typeof supabaseAdmin>
+type EstadoDoAceite = 'aceito' | 'pendente' | 'incerto'
+
+const esperar = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /**
- * O perfil da pessoa ainda está na conta avulsa que o gatilho criou para
- * ela? Se não está, o `redeem` a moveu: o aceite aconteceu. Leitura que
- * falha responde "aconteceu" — o erro para o lado de NÃO apagar ninguém.
+ * Onde está o perfil da pessoa? Fora de uma conta de que ela é dona, o
+ * `redeem` o moveu: `aceito`. Na conta avulsa (ou sem perfil — o gatilho
+ * falhou), nada foi aceito: `pendente`. Leitura que falha é `incerto`, e
+ * NUNCA vira nem "aceito" (declararia sucesso sobre uma conta avulsa) nem
+ * "pendente" (apagaria um possível membro). Tenta de novo antes de desistir.
  */
-async function aceiteAconteceu(admin: Admin, userId: string): Promise<boolean> {
+async function estadoDoAceite(admin: Admin, userId: string): Promise<EstadoDoAceite> {
+  for (let tentativa = 0; tentativa < 3; tentativa++) {
+    if (tentativa > 0) await esperar(150 * tentativa)
+    const estado = await lerEstadoDoAceite(admin, userId)
+    if (estado !== 'incerto') return estado
+  }
+  return 'incerto'
+}
+
+async function lerEstadoDoAceite(admin: Admin, userId: string): Promise<EstadoDoAceite> {
   const { data: perfil, error } = await admin
     .from('profiles')
     .select('account_id')
     .eq('user_id', userId)
     .maybeSingle()
-  if (error) return true
-  if (!perfil?.account_id) return false
+  if (error) return 'incerto'
+  if (!perfil?.account_id) return 'pendente'
   const { data: conta, error: erroDaConta } = await admin
     .from('accounts')
     .select('owner_user_id')
     .eq('id', perfil.account_id)
     .maybeSingle()
-  if (erroDaConta) return true
-  return !!conta && conta.owner_user_id !== userId
+  if (erroDaConta || !conta) return 'incerto'
+  return conta.owner_user_id === userId ? 'pendente' : 'aceito'
 }
 
 /**
  * Desfaz a conta criada nesta requisição: a conta avulsa (que leva o perfil
  * e o campo de e-mail junto, em cascata — o mesmo DELETE que o `redeem`
  * faz com ela) e depois o usuário. `accounts.owner_user_id` é RESTRICT, por
- * isso a ordem. Qualquer falha cai no bloqueio: a conta nunca fica solta.
+ * isso a ordem.
+ *
+ * ⚠️ Se o DELETE não achar conta avulsa nenhuma, o usuário só é apagado
+ * depois de conferir que o perfil não foi para a equipe: um `redeem` ainda
+ * em voo quando o erro de transporte chegou apaga a conta avulsa sozinho, e
+ * apagar o usuário ali tiraria da equipe quem acabou de entrar.
+ *
+ * Falha de escrita cai no bloqueio (ban): a conta nunca fica solta.
  */
-async function desfazerConta(admin: Admin, userId: string): Promise<void> {
-  const { error: erroDaConta } = await admin
+async function desfazerConta(
+  admin: Admin,
+  userId: string,
+): Promise<'desfeito' | 'bloqueado' | EstadoDoAceite> {
+  const { data: apagadas, error: erroDaConta } = await admin
     .from('accounts')
     .delete()
     .eq('owner_user_id', userId)
-  const { error: erroDoUsuario } = erroDaConta
-    ? { error: erroDaConta }
-    : await admin.auth.admin.deleteUser(userId)
-  if (!erroDaConta && !erroDoUsuario) return
+    .select('id')
+  if (erroDaConta) return bloquear(admin, userId, erroDaConta.code)
 
-  console.error(
-    '[cadastro por convite] desfazer falhou; bloqueando o usuário:',
-    erroDaConta?.code ?? erroDoUsuario?.code,
-  )
-  const { error: erroDoBloqueio } = await admin.auth.admin.updateUserById(userId, {
-    ban_duration: '876000h',
-  })
-  if (erroDoBloqueio) {
+  if ((apagadas?.length ?? 0) === 0) {
+    const estado = await estadoDoAceite(admin, userId)
+    if (estado !== 'pendente') return estado
+  }
+
+  const { error: erroDoUsuario } = await admin.auth.admin.deleteUser(userId)
+  if (erroDoUsuario) return bloquear(admin, userId, erroDoUsuario.code)
+  return 'desfeito'
+}
+
+async function bloquear(admin: Admin, userId: string, motivo?: string): Promise<'bloqueado'> {
+  console.error('[cadastro por convite] desfazer falhou; bloqueando o usuário:', motivo)
+  const { error } = await admin.auth.admin.updateUserById(userId, { ban_duration: '876000h' })
+  if (error) {
     console.error(
       '[cadastro por convite] ⚠️ bloqueio também falhou — conta avulsa solta, usuário',
       userId,
-      erroDoBloqueio.code,
+      error.code,
     )
   }
+  return 'bloqueado'
 }

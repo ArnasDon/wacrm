@@ -6349,8 +6349,36 @@ novo:
   chega no callback ainda não tem sessão; protegê-lo mandaria a pessoa para
   o login levando o `code` embora, e o código do e-mail é de uso único.
 - ⚠️ **A instalação precisa de `<origem>/auth/callback` na lista de
-  redirects do Supabase** (Authentication → URL Configuration), ao lado do
-  `/join/*` que já existia. Está escrito no `docs/INSTALACAO.md`.
+  redirects do Supabase** (Authentication → URL Configuration). O `/join/*`
+  que existia ali servia ao e-mail de confirmação do cadastro por convite,
+  que deixou de existir (PR #258: a conta de quem tem convite nasce no
+  servidor). Está escrito no `docs/INSTALACAO.md`.
+- ⚠️ **O callback redireciona pela ORIGEM PÚBLICA, nunca por
+  `request.url`** (`origemPublica`, PR #254): o `standalone` monta a URL com
+  `0.0.0.0:3000`. E `destinoSeguro` recusa saída que começa com `//` — um
+  segmento de ponto (`/.//evil`) resolve dentro da base e sairia do domínio.
+
+⚠️ **Cadastro SÓ POR CONVITE (PR #258, 22/09/2026).** `disable_signup`
+ligado no Supabase; `POST /api/invitations/[token]/cadastro` confere o
+convite, cria o usuário pela API de administração (que não consulta a
+opção) e ACEITA o convite na mesma requisição, com o `redeem_invitation`
+rodando com o JWT da pessoa. O que morde código novo:
+
+- ⚠️⚠️ **Criar a conta sem aceitar é o furo.** `handle_new_user` dá a todo
+  usuário novo um CRM PRÓPRIO (conta avulsa, dono). Um link ainda não
+  aceito criaria contas avulsas capazes de conectar WhatsApp na Evolution
+  do escritório. Por isso o aceite é na mesma requisição.
+- ⚠️⚠️ **Três estados, nunca dois: `aceito`, `pendente`, `incerto`.**
+  Leitura do banco que falha é `incerto`: nada é apagado (pode ser um
+  membro) e nada é declarado (pode ser uma conta avulsa) — 503
+  `aceite_incerto`, e a tela leva a `/join/<token>`. Só `pendente` desfaz.
+- ⚠️ **DELETE da conta avulsa que acha ZERO linhas não segue para o
+  `deleteUser`** sem reconferir: um `redeem` em voo apaga a conta avulsa
+  sozinho, e apagar o usuário ali tiraria da equipe quem acabou de entrar.
+- **O cadastro fechado não tranca quem JÁ tem login.** Ex-membro
+  (`remove_account_member` não apaga o login) e contas avulsas antigas
+  continuam entrando e podem gerar convite para o próprio CRM. A saída é
+  BLOQUEAR (ban) em Authentication → Users — decisão do operador.
 
 ⚠️ **`scripts/env-documentado.test.ts` cobra o `.env.local.example`.** Toda
 `process.env.X` lida em `src/` tem de aparecer lá como `X=`, comentada ou

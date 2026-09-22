@@ -144,9 +144,10 @@ export const RATE_LIMITS = {
    *  cria um usuário no Supabase, então é o mais apertado dos públicos:
    *  5/min cobre quem erra o formulário algumas vezes. */
   invitationSignup: { limit: 5, windowMs: 60_000 },
-  /** Cadastro por convite, por CONVITE. O convite só é consumido na
-   *  aceitação; sem este teto, um link vazado criaria contas sem fim
-   *  mudando de IP. 5 em 10 minutos é folga para uma pessoa só. */
+  /** Cadastro por convite, por CONVITE. O convite é consumido no aceite,
+   *  que acontece na mesma requisição — então isto conta TENTATIVAS
+   *  (e-mail repetido, senha fraca, falha no meio) sobre o mesmo link,
+   *  trocando de IP. 5 em 10 minutos é folga para uma pessoa só. */
   invitationSignupPerToken: { limit: 5, windowMs: 600_000 },
   /** Admin-only account / member-management actions: create/revoke
    *  invitation, rename account, change member role, remove member,

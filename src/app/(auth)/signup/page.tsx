@@ -76,8 +76,11 @@ function SignupPageInner() {
 
   // A conta nasce no servidor, já confirmada e já DENTRO da equipe (a rota
   // aceita o convite na mesma requisição). Aqui só se adota a sessão que
-  // ela devolve. Devolve `true` quando a sessão ficou gravada.
-  const cadastrarPorConvite = async (token: string): Promise<boolean> => {
+  // ela devolve. Devolve para ONDE seguir, ou `null` quando parou com erro
+  // na tela: `/dashboard` com o aceite confirmado; `/join/<token>` quando o
+  // servidor não conseguiu saber se o convite foi aceito — lá o botão
+  // "Aceitar" aparece se ele ainda estiver pendente.
+  const cadastrarPorConvite = async (token: string): Promise<string | null> => {
     let res: Response;
     try {
       res = await fetch(
@@ -91,21 +94,20 @@ function SignupPageInner() {
     } catch {
       setError(t("signupFailed"));
       setLoading(false);
-      return false;
-    }
-
-    if (!res.ok) {
-      const corpo = (await res.json().catch(() => ({}))) as {
-        codigo?: string;
-      };
-      setError(mensagemDoCadastro(res.status, corpo.codigo));
-      setLoading(false);
-      return false;
+      return null;
     }
 
     const corpo = (await res.json().catch(() => null)) as {
+      codigo?: string;
       sessao?: { access_token?: unknown; refresh_token?: unknown };
     } | null;
+    const incerto = res.status === 503 && corpo?.codigo === "aceite_incerto";
+    if (!res.ok && !incerto) {
+      setError(mensagemDoCadastro(res.status, corpo?.codigo));
+      setLoading(false);
+      return null;
+    }
+
     const access = corpo?.sessao?.access_token;
     const refresh = corpo?.sessao?.refresh_token;
     const { error: erroAoEntrar } =
@@ -118,9 +120,9 @@ function SignupPageInner() {
     if (erroAoEntrar) {
       setError(t("signedUpButSignInFailed"));
       setLoading(false);
-      return false;
+      return null;
     }
-    return true;
+    return incerto ? `/join/${encodeURIComponent(token)}` : "/dashboard";
   };
 
   const mensagemDoCadastro = (status: number, codigo?: string): string => {
@@ -166,9 +168,8 @@ function SignupPageInner() {
       // o middleware e o AuthProvider só leem a sessão (e a conta nova)
       // numa requisição nova. O botão continua desabilitado enquanto o
       // navegador troca de página.
-      if (await cadastrarPorConvite(inviteToken)) {
-        window.location.href = "/dashboard";
-      }
+      const destino = await cadastrarPorConvite(inviteToken);
+      if (destino) window.location.href = destino;
       return;
     }
 

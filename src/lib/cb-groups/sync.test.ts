@@ -41,7 +41,7 @@ describe('parseChatsParaGrupos', () => {
 describe('parseGroupInfo', () => {
   // Forma real da Evolution 2.3.2: participante tem id (@lid), jid (telefone),
   // lid e admin.
-  const NOSSO = '558388745316';
+  const NOSSO = '558380000016';
   const INFO = {
     id: GRUPO,
     subject: 'Clientes SP',
@@ -52,7 +52,7 @@ describe('parseGroupInfo', () => {
     announce: false,
     participants: [
       { id: '111@lid', jid: '5516999998784@s.whatsapp.net', lid: '111@lid', admin: null },
-      { id: '222@lid', jid: '558388745316@s.whatsapp.net', lid: '222@lid', admin: 'admin' },
+      { id: '222@lid', jid: '558380000016@s.whatsapp.net', lid: '222@lid', admin: 'admin' },
       { id: '333@lid', jid: '5511222223333@s.whatsapp.net', lid: '333@lid', admin: null },
     ],
   };
@@ -85,7 +85,7 @@ describe('parseGroupInfo', () => {
   });
 
   it('compara só os dígitos — formatação do telefone não pode atrapalhar', () => {
-    expect(parseGroupInfo(INFO, '+55 83 8874-5316').ourLid).toBe('222@lid');
+    expect(parseGroupInfo(INFO, '+55 83 8000-0016').ourLid).toBe('222@lid');
   });
 
   it('⚠️ Baileys 7: participante vem como Contact — `phoneNumber` no lugar de `jid`, e às vezes o LID só em `id`', () => {
@@ -97,7 +97,7 @@ describe('parseGroupInfo', () => {
       ...INFO,
       participants: [
         { id: '111@lid', phoneNumber: '5516999998784@s.whatsapp.net', admin: null },
-        { id: '222@lid', phoneNumber: '558388745316@s.whatsapp.net', admin: 'admin' },
+        { id: '222@lid', phoneNumber: '558380000016@s.whatsapp.net', admin: 'admin' },
         { id: '5511222223333@s.whatsapp.net', lid: '333@lid', admin: null },
       ],
     };

@@ -46,8 +46,8 @@ describe("escritaDoTituloManual (1007)", () => {
   it("número É título válido aqui: quem digitou escolheu", () => {
     // Diferente do NOME da ficha (`nomeParaFixar` recusa telefone): aqui o
     // texto é o rótulo do card, e "Processo 0801234-56" é legítimo.
-    expect(escritaDoTituloManual("Ana", "5585997049490", AGORA)).toEqual({
-      title: "5585997049490",
+    expect(escritaDoTituloManual("Ana", "5585900000130", AGORA)).toEqual({
+      title: "5585900000130",
       titulo_fixado_em: AGORA,
     });
   });

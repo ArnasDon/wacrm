@@ -12,11 +12,11 @@
 //
 // ⚠️ O telefone é normalizado pelo MESMO módulo do app
 // (`src/lib/contacts/telefone.ts`), nunca por um `replace(/\D/g, '')` cru: a
-// Kommo devolve "(96) 99112-6767" sem DDI, e só `digitosDoTelefone` sabe
+// Kommo devolve "(96) 99000-0016" sem DDI, e só `digitosDoTelefone` sabe
 // quando dar o 55. E dois contatos são "o mesmo" pela chave SEM o nono
 // dígito, que é como `findExistingContact` casa (últimos 8 dígitos) — o
 // índice único `(account_id, phone_normalized)` sozinho deixaria passar
-// "5583988745316" e "558388745316" como duas pessoas.
+// "5583980000016" e "558380000016" como duas pessoas.
 // ============================================================
 
 import fs from 'node:fs';

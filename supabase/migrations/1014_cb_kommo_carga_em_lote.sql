@@ -69,7 +69,7 @@
 -- ⚠️⚠️ E RESOLVER O CONTATO É DA CARGA, PELA RÉGUA DO NONO DÍGITO — nunca por
 -- igualdade de `phone_normalized`. Medido em 21/09: dos 13.046 telefones
 -- distintos da Kommo, 821 casam com uma ficha daqui por igualdade e OUTROS
--- 320 casam só pela variante ('553172090560' lá é '5531972090560' aqui, a
+-- 320 casam só pela variante ('553170000006' lá é '5531970000006' aqui, a
 -- mesma pessoa). Resolver por igualdade cria 320 fichas novas para clientes
 -- que já estão no CRM. Esta função não tem como conferir isso — ela só
 -- recusa contato de outra conta.

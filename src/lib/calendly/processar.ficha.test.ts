@@ -32,7 +32,7 @@ const AGENDAMENTO: Agendamento = {
   eventoAgendadoUri: null,
   nome: "Joel",
   email: null,
-  telefone: "5519982764080",
+  telefone: "5519980000004",
   telefoneOrigem: "heuristica",
   inicio: "2026-09-09T19:00:00Z",
   fim: null,
@@ -77,7 +77,7 @@ describe("processarAgendamento — telefone que não é de nenhum contato", () =
   it("CRÍTICO: cria a ficha com o nome do Calendly e dispara a automação", async () => {
     const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
 
-    expect(destino.resolverDestinatario).toHaveBeenCalledWith(admin, "acct-1", "5519982764080", "Joel");
+    expect(destino.resolverDestinatario).toHaveBeenCalledWith(admin, "acct-1", "5519980000004", "Joel");
     expect(r).toMatchObject({ resultado: "disparado", contactId: "novo-1" });
     expect(r.detalhe).toContain("ficha criada");
     // A conversa recém-criada é a do disparo, sem uma segunda consulta.
@@ -95,7 +95,7 @@ describe("processarAgendamento — telefone que não é de nenhum contato", () =
   });
 
   it("contato que já existe não passa pela criação", async () => {
-    busca.findExistingContact.mockResolvedValue({ contato: { id: "c1", phone: "5519982764080" }, falhou: false });
+    busca.findExistingContact.mockResolvedValue({ contato: { id: "c1", phone: "5519980000004" }, falhou: false });
     const r = await processarAgendamento(admin, "acct-1", AGENDAMENTO);
     expect(destino.resolverDestinatario).not.toHaveBeenCalled();
     expect(r).toMatchObject({ resultado: "disparado", contactId: "c1" });

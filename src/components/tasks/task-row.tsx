@@ -211,7 +211,7 @@ export function TaskRow({
           ) : null}
 
           {/* ⚠️ Lembrete pessoal não leva autoria. Quem cria uma tarefa para si
-              mesmo lia "de Leonardo Cabral Baptista" na própria linha — o
+              mesmo lia "de Rodrigo Tavares Monteiro" na própria linha — o
               formato que a tela usa para dizer "alguém te mandou isto", e que
               ali faz procurar um remetente que não existe. */}
           {tarefa.criador_user_id === tarefa.responsavel_user_id ? null : (

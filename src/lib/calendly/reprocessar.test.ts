@@ -17,12 +17,12 @@ const LINHA = {
   event_type_nome: "Reunião com Advogado - Kommo",
   nome: "Joel",
   email: "joel@exemplo.com",
-  telefone: "5519982764080",
+  telefone: "5519980000004",
   telefone_origem: "heuristica",
   inicio: "2026-09-09T19:00:00Z",
   fim: "2026-09-09T20:00:00Z",
   link: "https://meet.google.com/x",
-  perguntas: [{ pergunta: "Telefone (Whatsapp)", resposta: "+55 19 98276-4080" }],
+  perguntas: [{ pergunta: "Telefone (Whatsapp)", resposta: "+55 19 98000-0004" }],
   variaveis: {},
 };
 
@@ -32,7 +32,7 @@ describe("agendamentoDaLinha", () => {
     expect(a).toMatchObject({
       evento: "invitee.created",
       nome: "Joel",
-      telefone: "5519982764080",
+      telefone: "5519980000004",
       telefoneOrigem: "heuristica",
       eventoUri: "https://api.calendly.com/event_types/T1",
       inicio: "2026-09-09T19:00:00Z",

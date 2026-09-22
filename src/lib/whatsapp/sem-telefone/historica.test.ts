@@ -5,7 +5,7 @@ import type { NormalizedInbound } from '@/lib/whatsapp/inbound-store';
 import { criarBanco, type Linha } from './banco.test-helper';
 import { gravarHistorica } from './historica';
 
-const LID = '254833865040050@lid';
+const LID = '100000000000101@lid';
 const TEL = '5583900001111@s.whatsapp.net';
 // 18/09/2026 13:03:54 BRT — o caso medido.
 const CARIMBO = 1789747434;

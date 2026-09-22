@@ -350,7 +350,7 @@ mais fariam o inbox cortar em silêncio.
 contatos recebem dado da Kommo; 59 a Kommo não conhece.
 
 ⚠️⚠️ **`contacts.phone` é SÓ DÍGITOS COM DDI**, nunca o texto da Kommo. Gravado
-com separadores ("+55 83 98874-5316"), a ficha entra no banco normalmente e **a
+com separadores ("+55 83 98000-0016"), a ficha entra no banco normalmente e **a
 primeira mensagem daquele cliente é descartada em silêncio — e todas as
 seguintes, para sempre.** A busca não acha a ficha, o INSERT leva violação do
 índice único, a recuperação falha igual, e a ingestão desiste sem gravar; o
@@ -457,12 +457,12 @@ deles preenchido —, para não fabricar uma tripla que nunca existiu.
 
 | Usuário da Kommo | Leads |
 | --- | ---: |
-| Gabriel Queiroz | 8.088 |
+| Usuário Kommo A | 8.088 |
 | Leonardo Cabral | 3.871 |
 | Trabalhista (login compartilhado) | 559 |
 | Cabral Baptista Advocacia | 96 |
 
-**Todos os cards nascem sem responsável.** Gabriel Queiroz responde por 64% dos
+**Todos os cards nascem sem responsável.** Usuário Kommo A responde por 64% dos
 leads e não é membro do CB CRM; atribuir 8.088 cards a alguém encheria a fila
 dessa pessoa com trabalho de 15 meses atrás.
 

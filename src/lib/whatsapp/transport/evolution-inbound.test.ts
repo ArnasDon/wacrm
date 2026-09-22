@@ -251,8 +251,8 @@ describe('normalizeUpsert', () => {
 // e a conversa do cliente se partia em duas — uma com o que ele escreveu,
 // outra com nome de número sem sentido contendo as respostas do advogado.
 describe('@lid — endereçamento novo do WhatsApp', () => {
-  const LID = '71176265142382@lid';
-  const TEL = '558393124441@s.whatsapp.net';
+  const LID = '10000000000107@lid';
+  const TEL = '558390000019@s.whatsapp.net';
 
   it('LID sozinho é DESCARTADO: melhor não gravar que inventar contato', () => {
     const it0 = item({ conversation: 'oi' }, { key: { remoteJid: LID, fromMe: true, id: 'X' } });
@@ -268,7 +268,7 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
       const out = normalizeUpsert(it0, 'conta', 'dono', 'canal');
       expect(out, `campo ${campo}`).not.toBeNull();
       // O telefone REAL, para cair na conversa que já existe.
-      expect(out!.phone, `campo ${campo}`).toBe('558393124441');
+      expect(out!.phone, `campo ${campo}`).toBe('558390000019');
       expect(out!.remoteJid, `campo ${campo}`).toBe(TEL);
     }
   });
@@ -283,7 +283,7 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
 
   it('conversa normal segue intocada', () => {
     const it0 = item({ conversation: 'oi' }, { key: { remoteJid: TEL, fromMe: false, id: 'X' } });
-    expect(normalizeUpsert(it0, 'conta', 'dono', 'canal')!.phone).toBe('558393124441');
+    expect(normalizeUpsert(it0, 'conta', 'dono', 'canal')!.phone).toBe('558390000019');
   });
 
   // ⚠️ O LID muda de CAMPO conforme a versão da Evolution (ver `lidJidFromKey`
@@ -336,7 +336,7 @@ describe('@lid — endereçamento novo do WhatsApp', () => {
 // 3.875; ver docs/PLANO-lid-sem-telefone.md). O telefone vem de FORA da chave,
 // resolvido pelo chamador no acervo do próprio CRM.
 describe('@lid sem telefone — telefone resolvido pelo chamador', () => {
-  const LID = '254833865040050@lid';
+  const LID = '100000000000101@lid';
   const TEL = '5583900001111@s.whatsapp.net';
   const copiaDoCelular = (over: Record<string, unknown> = {}) =>
     ({
@@ -421,8 +421,8 @@ describe('@lid sem telefone — telefone resolvido pelo chamador', () => {
 });
 
 describe('lidJidFromKey', () => {
-  const LID = '71176265142382@lid';
-  const TEL = '558393124441@s.whatsapp.net';
+  const LID = '10000000000107@lid';
+  const TEL = '558390000019@s.whatsapp.net';
 
   it('devolve o primeiro campo que for @lid, na ordem previousRemoteJid → remoteJidAlt → remoteJid', () => {
     expect(lidJidFromKey({ remoteJid: TEL, previousRemoteJid: LID })).toBe(LID);
@@ -519,8 +519,8 @@ describe('normalizeUpsert — endereço @lid da conversa', () => {
     const out = normalizeUpsert(
       item(TEXTO, {
         key: {
-          remoteJid: '5511964102992@s.whatsapp.net',
-          previousRemoteJid: '192603597332721@lid',
+          remoteJid: '5511960000001@s.whatsapp.net',
+          previousRemoteJid: '100000000000102@lid',
           fromMe: true,
           id: '3A65CF57',
         },
@@ -530,10 +530,10 @@ describe('normalizeUpsert — endereço @lid da conversa', () => {
       'canal',
     );
     // O telefone continua sendo quem IDENTIFICA a conversa...
-    expect(out!.remoteJid).toBe('5511964102992@s.whatsapp.net');
-    expect(out!.phone).toBe('5511964102992');
+    expect(out!.remoteJid).toBe('5511960000001@s.whatsapp.net');
+    expect(out!.phone).toBe('5511960000001');
     // ...e o @lid é quem permite AGIR sobre a mensagem.
-    expect(out!.remoteJidLid).toBe('192603597332721@lid');
+    expect(out!.remoteJidLid).toBe('100000000000102@lid');
   });
 
   it('conversa não migrada não tem @lid — e null aqui é o caso normal', () => {
@@ -545,7 +545,7 @@ describe('normalizeUpsert — endereço @lid da conversa', () => {
   // faria a revogação sair para um endereço inventado. Só LID entra.
   it('ignora previousRemoteJid que NÃO seja um @lid', () => {
     for (const bruto of [
-      '5511964102992@s.whatsapp.net',
+      '5511960000001@s.whatsapp.net',
       '120363000000000000@g.us',
       '',
       'lixo',
@@ -553,7 +553,7 @@ describe('normalizeUpsert — endereço @lid da conversa', () => {
       const out = normalizeUpsert(
         item(TEXTO, {
           key: {
-            remoteJid: '5511964102992@s.whatsapp.net',
+            remoteJid: '5511960000001@s.whatsapp.net',
             previousRemoteJid: bruto,
             fromMe: true,
             id: 'X',
@@ -573,20 +573,20 @@ describe('edição cifrada (secretEncryptedMessage, Baileys 7)', () => {
   // editou "Sim" → "Não" e a edição chegou assim, sem texto legível.
   const EDICAO = {
     key: {
-      remoteJid: '558388745316@s.whatsapp.net',
-      remoteJidAlt: '143838555439152@lid',
+      remoteJid: '558380000016@s.whatsapp.net',
+      remoteJidAlt: '100000000000103@lid',
       fromMe: false,
       id: '3ADD98536C64480C3D21',
       addressingMode: 'pn',
     },
-    pushName: 'Leonardo Cabral Baptista',
+    pushName: 'Rodrigo Tavares Monteiro',
     message: {
       messageContextInfo: { deviceListMetadataVersion: 2 },
       secretEncryptedMessage: {
         encIv: 'YJMJvA0NlXqnuSO4',
         encPayload: 'e4fyGlVouS2/70+0eRwoUkPxXX+O8nBEh7vUTQySSOBM',
         secretEncType: 2,
-        targetMessageKey: { id: '3A9AE00D793FDBEAB5CB', fromMe: true, remoteJid: '143838555439152@lid' },
+        targetMessageKey: { id: '3A9AE00D793FDBEAB5CB', fromMe: true, remoteJid: '100000000000103@lid' },
       },
     },
     messageType: 'secretEncryptedMessage',
@@ -621,13 +621,13 @@ describe('edição cifrada (secretEncryptedMessage, Baileys 7)', () => {
 });
 
 describe('quotedProviderId — a citação muda de lugar com a versão da Evolution', () => {
-  const key = { remoteJid: '558388745316@s.whatsapp.net', fromMe: false, id: '3A414DC87A4CEB87F32F' };
+  const key = { remoteJid: '558380000016@s.whatsapp.net', fromMe: false, id: '3A414DC87A4CEB87F32F' };
 
   it('2.4 com o patch da citação: stanzaId no contextInfo de cima (texto achatado em conversation)', () => {
     const item = {
       key,
       message: { conversation: 'Sim' },
-      contextInfo: { stanzaId: '3EB0DBB1705F2F0E41CF56', participant: '5511964102992@s.whatsapp.net' },
+      contextInfo: { stanzaId: '3EB0DBB1705F2F0E41CF56', participant: '5511960000001@s.whatsapp.net' },
     };
     expect(quotedProviderId(item)).toBe('3EB0DBB1705F2F0E41CF56');
     expect(normalizeUpsert(item, 'acc', 'owner', null)?.quotedProviderId).toBe('3EB0DBB1705F2F0E41CF56');

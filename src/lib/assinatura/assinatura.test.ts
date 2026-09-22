@@ -19,7 +19,7 @@ describe('saneiaNome', () => {
   });
 
   it('normaliza espaço e apara as pontas', () => {
-    expect(saneiaNome('  Leonardo   Cabral  ')).toBe('Leonardo Cabral');
+    expect(saneiaNome('  Rodrigo   Tavares  ')).toBe('Rodrigo Tavares');
   });
 
   it('devolve null quando não sobra nada — o sinal de "não assine"', () => {
@@ -38,8 +38,8 @@ describe('nomeDePessoa', () => {
     // Decisão do operador (2026-08-01): num escritório de advocacia o cliente
     // precisa saber com qual advogado falou, e o primeiro nome não identifica
     // ninguém. É o nome que ele vê na procuração.
-    expect(nomeDePessoa('Leonardo Cabral Baptista', null)).toBe(
-      'Leonardo Cabral Baptista',
+    expect(nomeDePessoa('Rodrigo Tavares Monteiro', null)).toBe(
+      'Rodrigo Tavares Monteiro',
     );
   });
 
@@ -143,8 +143,8 @@ describe('removerAssinatura', () => {
 
 describe('assinaturaExistente', () => {
   it('devolve a assinatura literal, com a quebra de linha', () => {
-    expect(assinaturaExistente('*Leonardo Cabral Baptista:*\nBom dia')).toBe(
-      '*Leonardo Cabral Baptista:*\n',
+    expect(assinaturaExistente('*Rodrigo Tavares Monteiro:*\nBom dia')).toBe(
+      '*Rodrigo Tavares Monteiro:*\n',
     );
   });
 

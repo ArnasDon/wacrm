@@ -45,7 +45,7 @@ export function mostrarResponsavel(reunioes: Meeting[]): boolean {
  * O primeiro nome, que é o que cabe no cartão.
  *
  * Num escritório as pessoas se chamam pelo primeiro nome, e "Leonardo" recorta
- * melhor que "Leonardo Cabral Bapt…".
+ * melhor que "Rodrigo Tavares Mont…".
  */
 export function primeiroNome(nome: string): string {
   const limpo = nome.trim();

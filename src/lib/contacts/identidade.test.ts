@@ -4,8 +4,8 @@ import { identidadeDoContato, nomeDoContato } from './identidade';
 
 describe('identidadeDoContato', () => {
   it('telefone primeiro, @ do Instagram depois', () => {
-    expect(identidadeDoContato({ phone: '+5583988745316' })).toBe(
-      '+5583988745316'
+    expect(identidadeDoContato({ phone: '+5583980000016' })).toBe(
+      '+5583980000016'
     );
     expect(
       identidadeDoContato({ phone: null, instagram_username: 'cbadv.bancario' })
@@ -13,8 +13,8 @@ describe('identidadeDoContato', () => {
     // Ficha unificada (Fase 5): tem os dois — o telefone continua sendo a
     // identidade principal, porque é por ele que o resto do CRM casa.
     expect(
-      identidadeDoContato({ phone: '+5583988745316', instagram_username: 'x' })
-    ).toBe('+5583988745316');
+      identidadeDoContato({ phone: '+5583980000016', instagram_username: 'x' })
+    ).toBe('+5583980000016');
   });
 
   it('Instagram sem @ lido ainda NÃO vira o IGSID na tela', () => {

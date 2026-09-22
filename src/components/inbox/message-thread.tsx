@@ -2034,7 +2034,7 @@ export function MessageThread({
   // ⚠️ O campo de edição recebe o corpo SEM a assinatura (923).
   //
   // Ele era pré-preenchido com o `content_text` inteiro, e com a assinatura
-  // gravada ali o operador veria `*Leonardo Cabral Baptista:*` cru dentro do
+  // gravada ali o operador veria `*Rodrigo Tavares Monteiro:*` cru dentro do
   // campo — podendo apagar sem querer, ou "corrigir" o nome. O servidor
   // recoloca a assinatura ORIGINAL ao salvar, então o que se edita aqui é só
   // o que se quis dizer.

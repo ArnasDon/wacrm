@@ -58,7 +58,7 @@ const pedido = (corpo: unknown) =>
 const CORPO = {
   template_name: 'lembrete',
   template_language: 'pt_BR',
-  recipients: [{ to: '+5583988745316', params: ['Ana', '10h'] }],
+  recipients: [{ to: '+5583980000016', params: ['Ana', '10h'] }],
 }
 
 beforeEach(() => {
@@ -117,7 +117,7 @@ describe('POST /api/v1/broadcasts — o canal pedido chega ao núcleo', () => {
   it('os parâmetros de cada destinatário seguem como LISTA (é o que a 1030 grava como lista)', async () => {
     await POST(pedido(CORPO))
     expect(createBroadcast.mock.calls[0][3].recipients).toEqual([
-      { to: '+5583988745316', params: ['Ana', '10h'] },
+      { to: '+5583980000016', params: ['Ana', '10h'] },
     ])
   })
 

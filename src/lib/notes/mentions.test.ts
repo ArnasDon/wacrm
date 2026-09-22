@@ -8,9 +8,9 @@ import {
   type MembroMencionavel,
 } from './mentions';
 
-const LEO: MembroMencionavel = { user_id: 'u-leo', rotulo: 'Leonardo Cabral' };
+const LEO: MembroMencionavel = { user_id: 'u-leo', rotulo: 'Rodrigo Tavares' };
 const JOSE: MembroMencionavel = { user_id: 'u-jose', rotulo: 'José Marcos' };
-const ANA: MembroMencionavel = { user_id: 'u-ana', rotulo: 'Ana Cabral' };
+const ANA: MembroMencionavel = { user_id: 'u-ana', rotulo: 'Ana Tavares' };
 const EQUIPE = [LEO, JOSE, ANA];
 
 describe('tokenSobOCursor', () => {
@@ -31,12 +31,12 @@ describe('tokenSobOCursor', () => {
   });
 
   it('aceita espaço no termo — nome de gente tem sobrenome', () => {
-    const texto = 'ver com @Leonardo Cab';
-    expect(tokenSobOCursor(texto, texto.length)?.termo).toBe('Leonardo Cab');
+    const texto = 'ver com @Rodrigo Tav';
+    expect(tokenSobOCursor(texto, texto.length)?.termo).toBe('Rodrigo Tav');
   });
 
   it('desiste depois de espaços demais, para não caçar o parágrafo inteiro', () => {
-    const texto = 'ver com @Leonardo Cabral Baptista ontem';
+    const texto = 'ver com @Rodrigo Tavares Monteiro ontem';
     expect(tokenSobOCursor(texto, texto.length)).toBeNull();
   });
 
@@ -81,8 +81,8 @@ describe('filtrarMembros', () => {
   });
 
   it('quem casa pelo COMEÇO vem antes de quem casa no meio', () => {
-    // "Cabral" é sobrenome de dois; só a Ana começa com "ana".
-    const r = filtrarMembros(EQUIPE, 'cabral');
+    // "Tavares" é sobrenome de dois; só a Ana começa com "ana".
+    const r = filtrarMembros(EQUIPE, 'tavares');
     expect(r.map((m) => m.user_id)).toEqual(['u-leo', 'u-ana']);
 
     const r2 = filtrarMembros(EQUIPE, 'ana');
@@ -103,7 +103,7 @@ describe('aplicarMencao', () => {
     const texto = 'falar com @leo';
     const alvo = tokenSobOCursor(texto, texto.length)!;
     const r = aplicarMencao(texto, alvo.inicio, texto.length, LEO.rotulo);
-    expect(r.texto).toBe('falar com @Leonardo Cabral ');
+    expect(r.texto).toBe('falar com @Rodrigo Tavares ');
     expect(r.cursor).toBe(r.texto.length);
   });
 
@@ -111,19 +111,19 @@ describe('aplicarMencao', () => {
     const texto = 'oi @an tudo bem';
     const alvo = tokenSobOCursor(texto, 6)!;
     const r = aplicarMencao(texto, alvo.inicio, 6, ANA.rotulo);
-    expect(r.texto).toBe('oi @Ana Cabral  tudo bem');
-    expect(r.cursor).toBe('oi @Ana Cabral '.length);
+    expect(r.texto).toBe('oi @Ana Tavares  tudo bem');
+    expect(r.cursor).toBe('oi @Ana Tavares '.length);
   });
 });
 
 describe('mencionadosNoTexto', () => {
   it('acha quem está escrito no texto', () => {
-    const texto = '@Leonardo Cabral confere isso, por favor';
+    const texto = '@Rodrigo Tavares confere isso, por favor';
     expect(mencionadosNoTexto(texto, EQUIPE)).toEqual(['u-leo']);
   });
 
   it('acha mais de um, sem repetir', () => {
-    const texto = '@Ana Cabral e @José Marcos — e de novo @Ana Cabral';
+    const texto = '@Ana Tavares e @José Marcos — e de novo @Ana Tavares';
     expect(mencionadosNoTexto(texto, EQUIPE).sort()).toEqual([
       'u-ana',
       'u-jose',
@@ -136,16 +136,16 @@ describe('mencionadosNoTexto', () => {
   });
 
   it('não confunde o nome sem @ com menção', () => {
-    expect(mencionadosNoTexto('o Leonardo Cabral ligou', EQUIPE)).toEqual([]);
+    expect(mencionadosNoTexto('o Rodrigo Tavares ligou', EQUIPE)).toEqual([]);
   });
 
   it('NÃO menciona quem só é PREFIXO de outro colega', () => {
-    // Regressão: com "Ana" e "Ana Cabral" na equipe, `@Ana Cabral` casava
+    // Regressão: com "Ana" e "Ana Tavares" na equipe, `@Ana Tavares` casava
     // com os dois, e a Ana levava no sino uma anotação sobre caso alheio.
     // Sobrenome repetido é o caso comum num escritório de família.
     const ana: MembroMencionavel = { user_id: 'u-ana-curta', rotulo: 'Ana' };
-    const equipe = [ana, ANA]; // ANA = 'Ana Cabral'
-    expect(mencionadosNoTexto('@Ana Cabral confere isso', equipe)).toEqual([
+    const equipe = [ana, ANA]; // ANA = 'Ana Tavares'
+    expect(mencionadosNoTexto('@Ana Tavares confere isso', equipe)).toEqual([
       'u-ana',
     ]);
   });
@@ -159,7 +159,7 @@ describe('mencionadosNoTexto', () => {
 
   it('acha as duas quando as duas estão escritas', () => {
     const ana: MembroMencionavel = { user_id: 'u-ana-curta', rotulo: 'Ana' };
-    const r = mencionadosNoTexto('@Ana Cabral e @Ana veem isso', [ana, ANA]);
+    const r = mencionadosNoTexto('@Ana Tavares e @Ana veem isso', [ana, ANA]);
     expect(r.sort()).toEqual(['u-ana', 'u-ana-curta']);
   });
 
@@ -167,6 +167,6 @@ describe('mencionadosNoTexto', () => {
     // `memberLabel` cai para o id quando não há nome nem e-mail, mas um
     // rótulo vazio faria `texto.includes('@')` casar com qualquer menção.
     const anonimo: MembroMencionavel = { user_id: 'u-x', rotulo: '' };
-    expect(mencionadosNoTexto('@Ana Cabral vê isso', [anonimo])).toEqual([]);
+    expect(mencionadosNoTexto('@Ana Tavares vê isso', [anonimo])).toEqual([]);
   });
 });

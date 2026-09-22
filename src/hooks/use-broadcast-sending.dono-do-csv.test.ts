@@ -48,7 +48,7 @@ describe('upsertCsvContacts: resolução do merge do upstream (2026-09-05)', () 
 
 describe('upsertCsvContacts: a MESMA PESSOA nas duas grafias do nono dígito (1024)', () => {
   // Desde a 1024 a chave única de `contacts` é a grafia canônica: o CSV que
-  // trouxesse "5583988745316" para a ficha gravada como "558388745316" (o
+  // trouxesse "5583980000016" para a ficha gravada como "558380000016" (o
   // JID do WhatsApp) não a achava pela busca exata, ia para o INSERT e o
   // lote inteiro levava 23505 — a campanha não saía. Três peças, e o teste
   // cobra as três.

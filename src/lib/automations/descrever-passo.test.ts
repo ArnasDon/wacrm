@@ -123,8 +123,8 @@ describe('descreverPasso — texto', () => {
 
 describe('send_to_number (977)', () => {
   it('mostra o número legível, com o 55 que o motor acrescenta', () => {
-    expect(descreverPasso(passo('send_to_number', { phone: '(83) 98874-5316' })).valores.alvo).toBe('(83) 98874-5316')
-    expect(descreverPasso(passo('send_to_number', { phone: '5583988745316' })).valores.alvo).toBe('(83) 98874-5316')
+    expect(descreverPasso(passo('send_to_number', { phone: '(83) 98000-0016' })).valores.alvo).toBe('(83) 98000-0016')
+    expect(descreverPasso(passo('send_to_number', { phone: '5583980000016' })).valores.alvo).toBe('(83) 98000-0016')
   })
 
   it('telefone ausente ou inválido não vira "undefined"', () => {

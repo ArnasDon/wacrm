@@ -210,11 +210,11 @@ describe("sincronizarTldv", () => {
   it("contato SEM e-mail na ficha, mas com agendamento no Calendly pelo mesmo e-mail: vincula pela ponte", async () => {
     const estado = estadoInicial({
       contatos: [],
-      agendamentos: [{ contact_id: "c-paulo", email: "Paulo@Yahoo.com.br" }],
+      agendamentos: [{ contact_id: "c-paulo", email: "Paulo@Exemplo.com.br" }],
       equipe: ["leonardo@escritorio.example"],
     });
     // A forma REAL medida em 09/09: convidado sem nome, só o e-mail.
-    const cliente = clienteFalso({ reunioes: [reuniao(M1, [{ nome: "", email: "paulo@yahoo.com.br" }])] });
+    const cliente = clienteFalso({ reunioes: [reuniao(M1, [{ nome: "", email: "paulo@exemplo.com.br" }])] });
     const r = await sincronizarTldv(dubleDoAdmin(estado), "conta", { agora, cliente: () => cliente });
     expect(r.ok && r.vinculadas).toBe(1);
     expect(estado.linhas.get(M1)).toMatchObject({ contact_id: "c-paulo", vinculo_origem: "email" });

@@ -12,7 +12,7 @@ import {
 } from './retidas';
 
 const TABELA = 'cb_mensagens_sem_telefone';
-const LID = '254833865040050@lid';
+const LID = '100000000000101@lid';
 
 const ocorrencia = (over: Partial<Ocorrencia> = {}): Ocorrencia => ({
   accountId: 'conta-1',

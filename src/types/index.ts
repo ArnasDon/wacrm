@@ -1450,7 +1450,7 @@ export interface CreateTaskStepConfig {
  * Preenchido = aquele número, falhando FECHADO se ele não resolver.
  */
 export interface SendToNumberStepConfig extends ChannelScopedStepConfig {
-  /** Dígitos com DDI (`5583988745316`); pontuação é tolerada. */
+  /** Dígitos com DDI (`5583980000016`); pontuação é tolerada. */
   phone: string;
   /** Nome para a ficha quando o número ainda não é contato. */
   contact_name?: string;

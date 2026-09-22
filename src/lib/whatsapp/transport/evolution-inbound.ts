@@ -93,7 +93,7 @@ export function isLidJid(jid: string): boolean {
  * JID de TELEFONE da conversa. Devolve `null` quando só existe o LID.
  *
  * ⚠️ Esta função existe por causa de um bug que chegou a produção: o
- * WhatsApp está migrando o endereçamento para LID (`71176265142382@lid`),
+ * WhatsApp está migrando o endereçamento para LID (`10000000000107@lid`),
  * um identificador interno que NÃO é telefone. Em produção o eco das
  * mensagens que o operador mandava do celular chegava com LID enquanto as
  * mensagens recebidas do MESMO cliente chegavam com o telefone — e como o

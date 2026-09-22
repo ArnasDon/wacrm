@@ -346,13 +346,13 @@ describe("validateTriggerForActivation", () => {
 describe("send_to_number / calendly_booking (977)", () => {
   it("exige telefone com DDI e texto", () => {
     expect(
-      validateStepsForActivation([{ step_type: "send_to_number", step_config: { phone: "(83) 98874-5316", text: "oi" } }]),
+      validateStepsForActivation([{ step_type: "send_to_number", step_config: { phone: "(83) 98000-0016", text: "oi" } }]),
     ).toEqual([]);
     expect(
       validateStepsForActivation([{ step_type: "send_to_number", step_config: { phone: "123", text: "oi" } }]),
     ).toEqual([{ path: "steps[0].phone", message: "phone must be a valid number with country code" }]);
     expect(
-      validateStepsForActivation([{ step_type: "send_to_number", step_config: { phone: "5583988745316", text: " " } }]),
+      validateStepsForActivation([{ step_type: "send_to_number", step_config: { phone: "5583980000016", text: " " } }]),
     ).toEqual([{ path: "steps[0].text", message: "message text is required" }]);
   });
 

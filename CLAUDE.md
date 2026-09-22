@@ -2977,7 +2977,15 @@ O que morde código novo:
   motores, dentro do caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
-  mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3
+  mais escreve e a quem ninguém responde pelo celular fica retido; a NÃO LIDA
+  da histórica é decidida ANTES da função (`genteRespondeuDepois`, uma ida ao
+  banco), e `cb_assentar_mensagem_historica` só aplica o `p_conta_nao_lida` —
+  resposta de gente gravada nesse vão deixa +1 de não lida sobre conversa já
+  respondida, até alguém abri-la (Codex, 5ª rodada, no commit do MERGE
+  `545af27`; aceito em 22/09/2026: janela de milissegundos num caminho que
+  ainda não tinha rodado nenhuma vez em produção — a única recuperada até
+  então entrou como `nova` —, e fechar pede a pergunta DENTRO da função,
+  migration nova; plano 6.10). Só a Fase 3
   (patch na imagem da Evolution: `lidMapping.getPNForLID` antes da troca da
   linha 1668 — consulta local, sem rede) resolveria na hora; decisão do
   operador: fora do escopo.
@@ -4636,7 +4644,16 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ANTES de resolver o contato não deixa contato na linha do evento, e a
     varredura não tem por onde casar. Rarísimo (erro de banco no instante) e
     o `detalhe` do evento diz o que houve. Depois de o contato ser
-    resolvido, mesmo um `falhou` já serve de prova.
+    resolvido, mesmo um `falhou` já serve de prova. ⚠️ O MESMO fim tem o
+    AGENDAMENTO que passa do teto de 4 min (Codex, PR #235, 5ª rodada,
+    respondido depois do merge): `comTetoDeProcessamento` grava `falhou`
+    com o contato NULO — o agendamento só grava o contato na linha quando
+    termina — e solta o cadeado sem abortar a promessa; o cancelamento lê
+    "finalizado, sem contato" e desiste na hora, e a automação que continua
+    rodando pode gravar a data cancelada depois. Aceito: o processamento
+    medido leva 1,4 a 3,5 s. Fechar os dois casos pede ligar o cancelamento
+    ao contato pelo `invitee_uri` na varredura E gravar o contato na linha
+    do agendamento assim que ele é resolvido, antes das automações.
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras

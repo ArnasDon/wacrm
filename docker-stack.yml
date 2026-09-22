@@ -22,7 +22,10 @@ services:
     # deploy MANUAL e rola a produção para trás em silêncio.
     image: ${CRM_IMAGE:-ghcr.io/leonardocabralb/cb-crm:latest}
     environment:
-      # NEXT_PUBLIC_* are also read server-side at runtime; keep them here.
+      # ⚠️ NEXT_PUBLIC_* são gravadas no BUILD, inclusive no código de
+      # servidor (Next 16: `define-env.js` aplica a todos os compiladores).
+      # Estas quatro linhas não mudam nada em runtime; ficam até a Fase 1.1
+      # do plano de produto. Trocar idioma ou domínio exige rebuild.
       NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
       NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       NEXT_PUBLIC_SITE_URL: https://crm.cbadvogados.com
@@ -37,6 +40,19 @@ services:
       EVOLUTION_BASE_URL: ${EVOLUTION_BASE_URL:-}
       EVOLUTION_GLOBAL_API_KEY: ${EVOLUTION_GLOBAL_API_KEY:-}
       EVOLUTION_WEBHOOK_SECRET: ${EVOLUTION_WEBHOOK_SECRET:-}
+      # ⚠️ O `environment:` é explícito (não há `env_file`): variável do
+      # `crm.env` que não estiver aqui NUNCA chega ao contêiner, sem erro
+      # nenhum. `scripts/stack-env.test.ts` cobra que toda variável que o
+      # servidor lê esteja nesta lista. Vazias valem o mesmo que ausentes:
+      # META_APP_ID vazio dá o mesmo erro de hoje, a lista de convite vazia
+      # é "sem restrição", e AI_* vazias caem no padrão (30 s, 20 mensagens).
+      # Modelo com cabeçalho de imagem (Resumable Upload da Meta).
+      META_APP_ID: ${META_APP_ID:-}
+      # Hosts aceitos no link de convite (lista separada por vírgula).
+      ALLOWED_INVITE_HOSTS: ${ALLOWED_INVITE_HOSTS:-}
+      # Ajuste fino do assistente de IA.
+      AI_REQUEST_TIMEOUT_MS: ${AI_REQUEST_TIMEOUT_MS:-}
+      AI_CONTEXT_MESSAGE_LIMIT: ${AI_CONTEXT_MESSAGE_LIMIT:-}
     networks:
       - CBAdvNet
     deploy:

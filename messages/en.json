@@ -3839,7 +3839,15 @@
     "createAccountButton": "Create account",
     "creatingAccount": "Creating account...",
     "alreadyHaveAccount": "Already have an account?",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "signupClosed": "Sign-ups are closed. To get in, ask whoever runs this CRM for an invitation.",
+    "inviteInvalid": "This invitation is no longer valid: it was used, expired or doesn't exist. Ask whoever sent it for a new one.",
+    "emailExists": "An account with this email already exists. Sign in with it to accept the invitation.",
+    "weakPassword": "The password doesn't meet the security requirements. Choose a stronger one.",
+    "invalidData": "Check the name, the email and the password (6 to 72 characters).",
+    "signupFailed": "Couldn't create the account. Try again in a moment.",
+    "signedUpButSignInFailed": "The account was created, but signing in failed. Use \"Sign in\" with the email and password you chose.",
+    "tooManyAttempts": "Too many attempts in a row. Wait a few minutes and try again."
   },
   "ChannelHealth": {
     "title": "WhatsApp connections",

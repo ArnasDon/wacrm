@@ -32,10 +32,11 @@ function SignupPageInner() {
   const t = useTranslations("SignupPage");
   const searchParams = useSearchParams();
   // When the user lands here from `/join/<token>` we carry the
-  // invite token in the query so it survives the signup → email
-  // verification → redirect round-trip. `emailRedirectTo` below
-  // points back at /join/<token> so the user lands on the redeem
-  // step after verifying instead of being dropped on /dashboard.
+  // invite token in the query. With it, the account is created by the
+  // SERVER (`/api/invitations/<token>/cadastro`), which checks the
+  // invitation first — so a new teammate still gets in with the public
+  // signup CLOSED in Supabase. Without it, this is the plain public
+  // signup, which is refused (`signup_disabled`) once it is closed.
   const inviteToken = searchParams.get("invite");
 
   const [fullName, setFullName] = useState("");
@@ -46,6 +47,66 @@ function SignupPageInner() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const supabase = createClient();
+
+  // A conta nasce no servidor, já confirmada; aqui só se entra com ela.
+  // Devolve `true` quando a sessão existe — quem chama segue para
+  // `/join/<token>`, onde a pessoa ACEITA o convite (o passo de
+  // confirmação de sempre, com a conta e o papel à vista).
+  const cadastrarPorConvite = async (token: string): Promise<boolean> => {
+    let res: Response;
+    try {
+      res = await fetch(
+        `/api/invitations/${encodeURIComponent(token)}/cadastro`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: fullName, email, senha: password }),
+        },
+      );
+    } catch {
+      setError(t("signupFailed"));
+      setLoading(false);
+      return false;
+    }
+
+    if (!res.ok) {
+      const corpo = (await res.json().catch(() => ({}))) as {
+        codigo?: string;
+      };
+      setError(mensagemDoCadastro(res.status, corpo.codigo));
+      setLoading(false);
+      return false;
+    }
+
+    // A rota grava o e-mail aparado e em minúsculas; entrar com a mesma
+    // forma não depende de o Supabase normalizar do lado dele.
+    const { error: erroAoEntrar } = await supabase.auth.signInWithPassword({
+      email: email.trim().toLowerCase(),
+      password,
+    });
+    if (erroAoEntrar) {
+      setError(t("signedUpButSignInFailed"));
+      setLoading(false);
+      return false;
+    }
+    return true;
+  };
+
+  const mensagemDoCadastro = (status: number, codigo?: string): string => {
+    if (status === 429) return t("tooManyAttempts");
+    switch (codigo) {
+      case "convite_invalido":
+        return t("inviteInvalid");
+      case "email_existe":
+        return t("emailExists");
+      case "senha_fraca":
+        return t("weakPassword");
+      case "dados_invalidos":
+        return t("invalidData");
+      default:
+        return t("signupFailed");
+    }
+  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,13 +124,15 @@ function SignupPageInner() {
 
     setLoading(true);
 
-    // If we have an invite token, point Supabase's verification
-    // email back at the join page so the user can accept after
-    // verifying. Without a token, Supabase uses its default
-    // redirect (the app root).
-    const emailRedirectTo = inviteToken
-      ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
-      : undefined;
+    if (inviteToken) {
+      // Navegação completa, pelo mesmo motivo do ramo sem convite, abaixo:
+      // o middleware só lê os cookies da sessão numa requisição nova. O
+      // botão continua desabilitado enquanto o navegador troca de página.
+      if (await cadastrarPorConvite(inviteToken)) {
+        window.location.href = `/join/${encodeURIComponent(inviteToken)}`;
+      }
+      return;
+    }
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -78,12 +141,16 @@ function SignupPageInner() {
         data: {
           full_name: fullName,
         },
-        ...(emailRedirectTo ? { emailRedirectTo } : {}),
       },
     });
 
     if (error) {
-      setError(error.message);
+      // Cadastro público fechado no Supabase: a mensagem crua é
+      // "Signups not allowed for this instance", em inglês e sem dizer
+      // o que fazer.
+      setError(
+        error.code === "signup_disabled" ? t("signupClosed") : error.message,
+      );
       setLoading(false);
       return;
     }
@@ -108,9 +175,7 @@ function SignupPageInner() {
     // them on a fresh request. A client-side push can reach /join
     // before the middleware sees the new session and get bounced.
     if (data.session) {
-      window.location.href = inviteToken
-        ? `/join/${encodeURIComponent(inviteToken)}`
-        : "/dashboard";
+      window.location.href = "/dashboard";
       // Deliberately leave `loading` true: the button stays disabled
       // while the browser navigates, so an impatient second click
       // can't fire a duplicate signUp.

@@ -140,6 +140,14 @@ export const RATE_LIMITS = {
    *  successful redemption mutates two profiles and an invite row, so
    *  the abuse surface is "spam join attempts." */
   invitationRedeem: { limit: 10, windowMs: 60_000 },
+  /** Cadastro por convite (público, por IP). Cada chamada bem-sucedida
+   *  cria um usuário no Supabase, então é o mais apertado dos públicos:
+   *  5/min cobre quem erra o formulário algumas vezes. */
+  invitationSignup: { limit: 5, windowMs: 60_000 },
+  /** Cadastro por convite, por CONVITE. O convite só é consumido na
+   *  aceitação; sem este teto, um link vazado criaria contas sem fim
+   *  mudando de IP. 5 em 10 minutos é folga para uma pessoa só. */
+  invitationSignupPerToken: { limit: 5, windowMs: 600_000 },
   /** Admin-only account / member-management actions: create/revoke
    *  invitation, rename account, change member role, remove member,
    *  transfer ownership. 30/min per user is comfortably above any

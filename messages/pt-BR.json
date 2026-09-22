@@ -3832,7 +3832,15 @@
     "createAccountButton": "Criar conta",
     "creatingAccount": "Criando conta...",
     "alreadyHaveAccount": "Já tem uma conta?",
-    "signIn": "Entrar"
+    "signIn": "Entrar",
+    "signupClosed": "O cadastro está fechado. Para entrar, peça um convite a quem administra o CRM.",
+    "inviteInvalid": "Este convite não vale mais: já foi usado, venceu ou não existe. Peça um novo a quem o enviou.",
+    "emailExists": "Já existe uma conta com este e-mail. Entre com ela para aceitar o convite.",
+    "weakPassword": "A senha não atende aos requisitos de segurança. Escolha uma mais forte.",
+    "invalidData": "Confira o nome, o e-mail e a senha (entre 6 e 72 caracteres).",
+    "signupFailed": "Não foi possível criar a conta. Tente de novo em instantes.",
+    "signedUpButSignInFailed": "A conta foi criada, mas não foi possível entrar. Use \"Entrar\" com o e-mail e a senha que você escolheu.",
+    "tooManyAttempts": "Muitas tentativas seguidas. Aguarde alguns minutos e tente de novo."
   },
   "ChannelHealth": {
     "title": "Conexões de WhatsApp",

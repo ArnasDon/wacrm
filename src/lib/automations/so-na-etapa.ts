@@ -117,8 +117,12 @@ export type SituacaoNaEtapa =
  * história. Mesma razão da condição `deal_stage` do motor.
  *
  * O card é o do CONTEXTO (`deal_id`, que o evento de funil carimba) e, sem
- * ele — execução disparada à mão —, o negócio ABERTO mais recente do contato:
- * a mesma resolução de `negocioAlvo` no motor.
+ * ele — execução disparada à mão —, o negócio ABERTO mais recente do contato.
+ * ⚠️ Desde a 1031 o `negocioAlvo` do motor cai no PERDIDO quando não há
+ * aberto; aqui (e no `stageInScope`), NÃO, de propósito: card perdido não
+ * "está" em etapa nenhuma para efeito de escopo e estadia — é a leitura que
+ * já valia, e o "Mover card" que o tira da perda o reabre e fixa o card no
+ * contexto da execução.
  *
  * ⚠️ Erro de leitura é `'erro'`, nunca `'na_etapa'` nem `'saiu'`: o primeiro
  * cobraria quem pode ter saído, o segundo mataria a sequência de quem ficou —

@@ -93,6 +93,45 @@ de aninhamento, 60 acionamentos por minuto por webhook.
 > funil, ponha um **"Criar negócio"** antes — ele não faz nada quando o
 > contato já tem card, então serve para os dois casos.
 
+Três comportamentos que valem para todo webhook recebido:
+
+- **A conversa do lead novo nasce encerrada.** Ele ainda não escreveu, e
+  uma conversa vazia em "Abertas" só atrapalha a equipe. Ela aparece na aba
+  **Encerradas** e reabre sozinha na primeira mensagem — dele ou da equipe.
+  Se o contato já tinha conversa, ela fica como está.
+- **Variável vazia não apaga campo.** "Atualizar campo" com
+  `{{vars.algo}}` que chegou vazio (ou nem chegou) não mexe no valor que a
+  ficha já tem. Por isso dá para mandar o mesmo corpo em vários pontos de um
+  formulário: o que ainda não foi respondido não apaga o que já se sabia.
+- **O formulário é público.** Qualquer pessoa pode digitar o telefone de um
+  cliente seu. Se a automação grava dados ou mexe no funil, ponha o que ela
+  faz dentro de uma condição **"O negócio está na etapa X"** (a etapa em que o
+  formulário cria o card): assim ela só age sobre o card que o próprio
+  formulário criou, e nunca sobre a ficha de quem já é cliente.
+
+### Typebot
+
+- Use o bloco **HTTP request** (Integrações), não o bloco lógico "Webhook" —
+  aquele trava a conversa esperando uma resposta de fora.
+- Método **POST**. Em *Advanced configuration*: **Headers** →
+  `Authorization` = `Bearer <segredo>`; deixe **Custom body** e **Execute on
+  client** DESLIGADOS (com o segundo ligado, o segredo iria para o navegador
+  de cada visitante).
+- Sem *Custom body*, o Typebot manda sozinho **todas as variáveis que têm
+  valor, pelo nome** (`phone`, `name`, `email`, as UTMs…). Configure o
+  **campo do telefone** do webhook com o nome da variável do telefone (ex.:
+  `phone`) e use `{{vars.<nome da variável>}}` na automação. A pergunta ainda
+  não respondida simplesmente não vem. Se preferir montar um JSON próprio, use
+  os mesmos nomes nas chaves.
+- O Typebot **não repete** uma chamada que falhou (401, 404, 429 ou tempo
+  esgotado): o ponto é perdido, e o erro só aparece em Typebot → *Results* →
+  *logs*. Esses três erros também não chegam ao log do CRM.
+- Um bloco só roda se o fluxo PASSAR por ele. Quando a seta de um grupo entra
+  no meio dele (num bloco específico), o que estiver acima desse bloco nunca
+  roda — ponha o HTTP request depois do ponto de entrada.
+- O "Preview" do editor e o botão "Test the request" fazem chamadas DE
+  VERDADE: teste com um telefone fictício.
+
 ### 5. Leia o log
 
 Cada webhook tem um log com os acionamentos, do mais recente para o mais

@@ -182,11 +182,15 @@ export async function processarAcionamento(
   // integração justamente no caso que ela existe para atender.
   let destinatario;
   try {
+    // ⚠️ A conversa que nasce aqui nasce ENCERRADA (ninguém escreveu ainda);
+    // a que já existia fica como está. A primeira mensagem do cliente ou da
+    // equipe a reabre pelos caminhos de sempre (`reopen.ts`).
     destinatario = await resolverDestinatario(
       admin,
       accountId,
       digitos,
-      valorDoCampo(acionamento.variaveis, webhook.campo_nome)
+      valorDoCampo(acionamento.variaveis, webhook.campo_nome),
+      { conversaNovaEncerrada: true }
     );
   } catch (err) {
     console.error("[webhooks-de-entrada] destinatário:", err);

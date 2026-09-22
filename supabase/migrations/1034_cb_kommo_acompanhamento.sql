@@ -1,5 +1,14 @@
 -- ============================================================
--- 1025 — Acompanhamento da carga da Kommo e do encerramento em lote.
+-- 1034 — Acompanhamento da carga da Kommo e do encerramento em lote.
+--
+-- ⚠️ APLICADA EM PRODUÇÃO COMO 1025 (histórico `20260921151613`, 21/09/2026).
+-- O arquivo virou 1034 no merge porque, quando ele chegou ao `main`, já
+-- estavam lá a 1030, a 1031, a 1032 e a 1033 — e a instalação que atualiza
+-- por `supabase db push` RECUSA migration com número menor que o maior já
+-- aplicado. A ordem não muda nada no resultado: esta migration só recria
+-- `cb_kommo_carregar_lote` e `cb_encerrar_conversas_abertas` (e as
+-- concessões delas), que nenhuma da 1030 à 1033 toca. Na versão aplicada, os
+-- comentários e as mensagens abaixo diziam "1025".
 --
 -- Os dois achados do Codex no head 657b78d do PR #232 (mesclado com eles
 -- declarados) e um da revisão adversarial do PR #238:
@@ -41,7 +50,7 @@
 -- de emergência. Decisão registrada em 21/09/2026.
 --
 -- Os dois corpos partem das definições VIGENTES (lote da 1023, encerramento
--- da 1021); só os trechos marcados "1025" mudam.
+-- da 1021); só os trechos marcados "1034" mudam.
 -- ============================================================
 
 create or replace function public.cb_kommo_carregar_lote(
@@ -164,7 +173,7 @@ begin
           if (v_evento->>'from_pipeline_id') = (v_evento->>'to_pipeline_id') then
             raise exception 'lead %: pipeline_changed com os dois funis iguais', v_lead;
           end if;
-          -- ⚠️ E AS DUAS ETAPAS (1025, Codex no #232), cada uma por um motivo.
+          -- ⚠️ E AS DUAS ETAPAS (1034, Codex no #232), cada uma por um motivo.
           -- A de DESTINO é o que `cb_funil_trajetorias` lê como `etapa`: sem
           -- ela o passo sai com `etapa = null`, que `fatosDoNegocio` pula, e a
           -- transferência some das métricas do funil. A de ORIGEM não entra
@@ -456,7 +465,7 @@ begin
   end if;
 
   -- ⚠️⚠️ A FOLGA DE 2 MINUTOS É CONFERIDA DE NOVO AQUI, e o encerramento e a
-  -- foto saem de UMA instrução (1025). A conferência do SELECT acima enxerga
+  -- foto saem de UMA instrução (1034). A conferência do SELECT acima enxerga
   -- a foto do COMEÇO daquele comando: a mensagem que o cliente gravou
   -- depois dela — e antes de o SELECT alcançar a linha — era invisível, a
   -- reabertura da ingestão via a linha ainda aberta e não esperava, e o lote
@@ -549,7 +558,7 @@ begin
   if v_corpo not like '%pipeline_changed exige to_stage_id%'
      or v_corpo not like '%pipeline_changed exige from_stage_id%'
      or v_corpo not like '%troca(s) de funil sem etapa de origem ou de destino%' then
-    raise exception '1025: a troca de funil voltou a passar sem etapa';
+    raise exception '1034: a troca de funil voltou a passar sem etapa';
   end if;
   -- o que a 1017/1019/1023 trouxe tem de continuar de pé
   if v_corpo not like '%status_changed exige to_pipeline_id%'
@@ -558,7 +567,7 @@ begin
      or v_corpo not like '%to_stage_label%'
      or v_corpo not like '%d.contact_id = v_contato%'
      or v_corpo not like '%for update of d%' then
-    raise exception '1025: o lote perdeu uma guarda da 1017/1019/1023';
+    raise exception '1034: o lote perdeu uma guarda da 1017/1019/1023';
   end if;
 
   -- encerramento: a folga é conferida no UPDATE, e a foto sai do mesmo comando
@@ -569,11 +578,11 @@ begin
      or v_corpo not like '%from fotos;%'
      or (length(v_corpo) - length(replace(v_corpo, 'interval ''2 minutes''', '')))
           / length('interval ''2 minutes''') < 4 then
-    raise exception '1025: o encerramento voltou a conferir a folga só na foto do começo';
+    raise exception '1034: o encerramento voltou a conferir a folga só na foto do começo';
   end if;
   if v_corpo not like '%for update of v skip locked%'
      or v_corpo not like '%encerrado_em      = excluded.encerrado_em%' then
-    raise exception '1025: o encerramento perdeu a trava da 1020 ou a foto por operação da 1021';
+    raise exception '1034: o encerramento perdeu a trava da 1020 ou a foto por operação da 1021';
   end if;
 
   foreach v_f in array array[
@@ -581,13 +590,13 @@ begin
     'public.cb_encerrar_conversas_abertas(uuid, boolean, boolean)'] loop
     if has_function_privilege('anon', v_f, 'EXECUTE')
        or has_function_privilege('authenticated', v_f, 'EXECUTE') then
-      raise exception '1025: % ficou executável pelo navegador', v_f;
+      raise exception '1034: % ficou executável pelo navegador', v_f;
     end if;
     if not has_function_privilege('service_role', v_f, 'EXECUTE') then
-      raise exception '1025: service_role perdeu o execute de %', v_f;
+      raise exception '1034: service_role perdeu o execute de %', v_f;
     end if;
   end loop;
 
-  raise notice '1025: troca de funil com etapa; folga do encerramento conferida no UPDATE.';
+  raise notice '1034: troca de funil com etapa; folga do encerramento conferida no UPDATE.';
 end
 $conferir$;

@@ -1,7 +1,13 @@
 -- ============================================================
--- 1026 — A entrada do lote da Kommo trata "" como ausente.
+-- 1035 — A entrada do lote da Kommo trata "" como ausente.
 --
--- Achado do Codex no PR #241, sobre a 1025: as guardas de entrada testavam
+-- ⚠️ APLICADA EM PRODUÇÃO COMO 1026 (histórico `20260921152355`, 21/09/2026).
+-- Virou 1035 no merge, pela mesma regra da 1034 (aplicada como 1025): só
+-- recria `cb_kommo_carregar_lote` e a concessão dele, que nenhuma da 1030 à
+-- 1033 toca. Na versão aplicada, os comentários e as mensagens abaixo diziam
+-- "1026" (e "1025" para a anterior).
+--
+-- Achado do Codex no PR #241, sobre a 1034: as guardas de entrada testavam
 -- `(v_evento->>'x') is null`, mas a gravação converte o texto vazio em NULL
 -- (`nullif(..., '')`). Um `from_stage_id: ""` — ou qualquer outro id em
 -- branco — passava na entrada, o modo de conferência (`p_conferir`) dizia
@@ -10,11 +16,11 @@
 -- qual lead. Agora toda guarda da entrada aplica a mesma normalização e
 -- recusa na hora, nomeando o lead.
 --
--- O padrão já existia antes da 1025 (`to_pipeline_id`, `to_stage_id`); a
--- correção cobre todas as guardas de uma vez. A 1025 já estava aplicada,
--- por isso é uma migration nova e não uma edição da 1025.
+-- O padrão já existia antes da 1034 (`to_pipeline_id`, `to_stage_id`); a
+-- correção cobre todas as guardas de uma vez. A 1034 já estava aplicada,
+-- por isso é uma migration nova e não uma edição da 1034.
 --
--- O corpo parte da definição VIGENTE (lote da 1025); só a entrada muda.
+-- O corpo parte da definição VIGENTE (lote da 1034); só a entrada muda.
 -- ============================================================
 
 create or replace function public.cb_kommo_carregar_lote(
@@ -109,7 +115,7 @@ begin
     end loop;
 
     for v_evento in select * from jsonb_array_elements(coalesce(v_grupo->'eventos', '[]'::jsonb)) loop
-      -- ⚠️ `nullif(..., '')` em TODA guarda desta entrada (1026, Codex no
+      -- ⚠️ `nullif(..., '')` em TODA guarda desta entrada (1035, Codex no
       -- #241): a gravação lá embaixo converte "" em NULL, então um id em
       -- branco passava aqui, o modo de conferência dizia "lote válido", e só
       -- a conferência de saída o recusava — depois de escrever tudo e sem
@@ -142,7 +148,7 @@ begin
           if nullif(v_evento->>'from_pipeline_id', '') = nullif(v_evento->>'to_pipeline_id', '') then
             raise exception 'lead %: pipeline_changed com os dois funis iguais', v_lead;
           end if;
-          -- ⚠️ E AS DUAS ETAPAS (1025, Codex no #232), cada uma por um motivo.
+          -- ⚠️ E AS DUAS ETAPAS (1034, Codex no #232), cada uma por um motivo.
           -- A de DESTINO é o que `cb_funil_trajetorias` lê como `etapa`: sem
           -- ela o passo sai com `etapa = null`, que `fatosDoNegocio` pula, e a
           -- transferência some das métricas do funil. A de ORIGEM não entra
@@ -365,9 +371,9 @@ begin
      or v_corpo not like '%nullif(v_evento->>''from_stage_id'', '''') is null%'
      or v_corpo not like '%nullif(v_evento->>''to_stage_id'', '''') is null%'
      or v_corpo not like '%nullif(v_evento->>''to_pipeline_id'', '''') is null%' then
-    raise exception '1026: uma guarda da entrada voltou a aceitar id em branco';
+    raise exception '1035: uma guarda da entrada voltou a aceitar id em branco';
   end if;
-  -- o que a 1017/1019/1023/1025 trouxe continua de pé
+  -- o que a 1017/1019/1023/1034 trouxe continua de pé
   if v_corpo not like '%pipeline_changed exige to_stage_id%'
      or v_corpo not like '%pipeline_changed exige from_stage_id%'
      or v_corpo not like '%troca(s) de funil sem etapa de origem ou de destino%'
@@ -377,15 +383,15 @@ begin
      or v_corpo not like '%to_stage_label%'
      or v_corpo not like '%d.contact_id = v_contato%'
      or v_corpo not like '%for update of d%' then
-    raise exception '1026: o lote perdeu uma guarda da 1017/1019/1023/1025';
+    raise exception '1035: o lote perdeu uma guarda da 1017/1019/1023/1034';
   end if;
   if has_function_privilege('anon', 'public.cb_kommo_carregar_lote(uuid, jsonb, boolean)', 'EXECUTE')
      or has_function_privilege('authenticated', 'public.cb_kommo_carregar_lote(uuid, jsonb, boolean)', 'EXECUTE') then
-    raise exception '1026: o lote ficou executável pelo navegador';
+    raise exception '1035: o lote ficou executável pelo navegador';
   end if;
   if not has_function_privilege('service_role', 'public.cb_kommo_carregar_lote(uuid, jsonb, boolean)', 'EXECUTE') then
-    raise exception '1026: service_role perdeu o execute do lote';
+    raise exception '1035: service_role perdeu o execute do lote';
   end if;
-  raise notice '1026: a entrada do lote trata texto vazio como ausente.';
+  raise notice '1035: a entrada do lote trata texto vazio como ausente.';
 end
 $conferir$;

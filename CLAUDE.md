@@ -282,7 +282,7 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
 | `src/lib/whatsapp/inbound-store.ts` | idem, no lado Evolution |
-| `src/lib/automations/engine.ts` | o `tituloFixadoEm` do `create_deal` (1007: título literal do autor nasce fixado, `{{…}}` fica solto). Mais `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome. Mais o gancho `antesDeExecutar` de `dispararAutomacoes` (chamado uma vez, antes da primeira automação que passou nos recortes) |
+| `src/lib/automations/engine.ts` | o `tituloFixadoEm` do `create_deal` (1007: título literal do autor nasce fixado, `{{…}}` fica solto). Mais `channelInScope`, condição `channel`, canal de saída por passo, e o `create_deal` que virou chamada a `createDeal` com a checagem "um card por contato" ANTES do insert — o índice da 911 é parcial (`source = 'channel'`) e não barra o insert da automação, então sem a checagem nasce card duplicado. Mais o `rotuloDoDisparo` opcional de `runAutomationById` (955): a execução manual da conversa grava `'manual'` no log — sem ele, o registro diria que outra automação chamou. Mais o ramo de NOME do `update_contact_field` (999): grava FIXADO e não sobrescreve com valor que não é nome. Mais a guarda do mesmo passo para QUALQUER campo (21/09/2026): valor interpolado VAZIO não sobrescreve — o bloco do upstream grava o "" e apaga o que a ficha sabia. Mais o gancho `antesDeExecutar` de `dispararAutomacoes` (chamado uma vez, antes da primeira automação que passou nos recortes) |
 | `src/app/api/whatsapp/webhook/route.ts`, `src/lib/whatsapp/inbound-store.ts` (×2) e `src/lib/whatsapp/send-message.ts` | a chamada a `routeContactToPipeline`. ⚠️ São **QUATRO** call sites: os dois de ingestão (não há função compartilhada de abrir conversa — enxertar só num faz a feature valer só num transporte, e produção roda Evolution), o `persistDeviceMessage` do celular pareado e o núcleo de envio. Ver "Quem abre negócio" abaixo |
 | `src/lib/whatsapp/inbound-store.ts` (`persistDeviceMessage`) | o `followConversationChannel` que aponta a conversa para o número por onde a EQUIPE falou. Sem ele a conversa nasce com `channel_id` nulo e o CRM responde pelo canal PADRÃO — o advogado aborda pelo Jurídico e o sistema responderia pelo Comercial |
 | `src/lib/flows/engine.ts` | `findEntryFlow` por canal, `flow_runs.channel_id`, try/catch nos nós interativos, e o parâmetro opcional `substituicao` de `startFlowForContact` (955): o start manual carimba a run substituída como gente (`stopped_by_agent`/`replaced_by_agent`), não como regra |
@@ -2075,6 +2075,17 @@ novo:
   recorte INTACTO. Reaplicar faria o filtro que o operador acabou de limpar
   voltar sozinho; semear por cima de uma escolha feita nos centésimos em que a
   consulta voltava desfaria o que a pessoa acabou de fazer.
+  ⚠️⚠️ Ela espera os CATÁLOGOS (etiquetas, perfis, etapas, funis) e as
+  CONEXÕES — e NÃO os negócios (21/09/2026). Esperando os negócios, a caixa
+  ficava no spinner até a última das seis páginas (5.224 negócios) mesmo com
+  um padrão que só recorta por conexão; o padrão que recorta por etapa ou
+  funil segura a lista sozinho depois de semeado (`aguardandoEtapas`). E as
+  conexões chegam por OUTRA rota (`/api/cb/channels`), às vezes depois dos
+  catálogos: semeado antes delas, um padrão com conexão apagada ficava com o
+  id morto (catálogo vazio não limpa nada) e a caixa abria vazia, sem
+  conserto — a semente é de uma vez só (Codex, PR #247). Quem acrescentar
+  catálogo ao `limparOrfaos` acrescenta a espera dele aqui e em
+  `esperandoPadrao`.
 - ⚠️ **`?etapa=` do funil VENCE o padrão**, e a lista SEGURA o spinner enquanto
   o padrão pode entrar (`esperandoPadrao`). Sem a espera, o inbox pinta as 176
   conversas e pula para 8 um segundo depois; sem a precedência, a faixa "Voltar
@@ -3019,19 +3030,93 @@ mostra o rótulo certo sem mudar nada. Ao mesclar upstream, manter o wrapper.
 
 ⚠️ **Etapa com RESULTADO (950): quem carimba ganho/perdido é o BANCO.**
 `pipeline_stages.resultado` ('ganho'|'perdido'|null) + gatilho BEFORE em
-`deals`: ENTRAR numa etapa marcada grava o status — para os CINCO escritores
-de etapa (painel da conversa, arrasto, formulário, RPC das automações, API).
+`deals`: ENTRAR numa etapa marcada grava o status — para os SEIS escritores
+de etapa (painel da conversa, arrasto, lista do funil, formulário, RPC das
+automações, API).
 O que morde código novo:
 
-- ⚠️ **SAIR de etapa marcada para etapa neutra NÃO reabre** — decisão do
+- ⚠️ **GANHO que sai para etapa neutra CONTINUA ganho** — decisão do
   operador (fluxo: fechou → transfere para o funil do jurídico → CONTINUA
-  ganho). Não "corrigir" para o modelo Kommo. Reabrir é só por botão ou por
-  entrar em etapa com outro resultado.
+  ganho). Não "corrigir" para o modelo Kommo.
+- ⚠️⚠️ **PERDIDO que entra em etapa neutra VOLTA ABERTO (1031, decisão do
+  operador em 21/09/2026)**, revendo a metade "perdido" da regra acima: o
+  lead desqualificado pode voltar a ser qualificado (estava em dia, meses
+  depois entra em atraso), e até aqui ele ficava preso — na coluna nova com o
+  selo "Perdido", fora das métricas de aberto e invisível às automações. Só
+  quando o update NÃO trocou o status (`OLD` e `NEW` = `lost`: arrasto,
+  seletor de etapa, lista do funil, RPC das automações) e só com a etapa
+  ACHADA. ⚠️ O gatilho não distingue "não mexeu no status" de "mandou 'lost'
+  de novo": PATCH da API v1 com `status: 'lost'` + etapa neutra sobre card JÁ
+  perdido volta aberto (está na doc da API). O espelho
+  (`statusAoEntrarNaEtapa`) recebe só o status de antes — os dois chamadores
+  mudam só a etapa —, e há pino lendo o SQL da 1031.
+- ⚠️ **Etapa IGUAL não passa pelo gatilho**, e é o caso comum: o card marcado
+  perdido pelo BOTÃO continua na etapa em que estava. Por isso a RPC das
+  automações (`cb_atualizar_negocio`, redefinida na 1031) reabre o perdido que
+  o "Mover card" leva a uma etapa neutra — inclusive a mesma — com um CASE
+  DENTRO do UPDATE, que olha o status da linha na hora da escrita. Sem isso o
+  Calendly "moveria" para "Reunião Agendada" quem reagendou, com cara de
+  sucesso, e o card seguiria perdido, sem lembrete (revisão do PR #245). ⚠️
+  Nunca ler o status no motor e mandar `p_status: 'open'` depois: quem marcasse
+  o card como ganho no meio teria o ganho sobrescrito (Codex, PR #245).
+- ⚠️ **As automações acham o card PERDIDO quando o contato não tem aberto**
+  (`negocioAlvo`, 1031): o "Mover card" do Typebot e do Calendly tira o lead
+  da perda. O GANHO nunca é alvo — mas isso só protege card FECHADO como
+  ganho: os cards do Jurídico estão ABERTOS (o operador os move lá sem fechar)
+  e o Calendly de um cliente do Jurídico que marca reunião já arrastava o card
+  do caso para o comercial antes da 1031. Escopo (`stageInScope`) e estadia
+  (`so-na-etapa.ts`) continuam só com card ABERTO, de propósito: perdido não
+  "está" em etapa nenhuma para esses dois.
+  ⚠️⚠️ **As CONDIÇÕES de etapa e de status usam o MESMO alvo** — ao contrário
+  do escopo e da estadia —, e é decisão, não esquecimento: condição e ação
+  falam do mesmo card, e a automação "Typebot · Lead e respostas" só puxa o
+  desqualificado de volta porque `deal_stage == Desqualificado` enxerga o card
+  perdido. O preço (Codex, PR #245, 4ª rodada): regra SEM card no contexto
+  que pergunta "está na etapa X?" responde sim para o card perdido que ficou
+  em X (marcado pelo botão). Quem quer agir só com card aberto soma
+  `deal_status == open`. Medido em 21/09: só as automações do Typebot têm
+  condição de funil nesta conta. Automação disparada por evento de funil não
+  é afetada — ela carrega o card no contexto desde sempre.
+  ⚠️⚠️ **Contato com card GANHO não tem o PERDIDO puxado.** É cliente, e o
+  perdido é história de outra área (a Kommo trouxe um card por pessoa e por
+  área). Sem a regra, quem digitasse o telefone de um cliente no formulário
+  PÚBLICO do Typebot reabriria o perdido antigo dele, e a trava de etapa
+  passaria a gravar e-mail e respostas por cima da ficha (revisão do PR
+  #245). Para esse contato vale o de antes da 1031: "nenhum negócio".
+  ⚠️ A conferência é uma ida ao banco ANTES da escrita: outro card do contato
+  ganho nesse intervalo de milissegundos não é visto (Codex, 5ª rodada).
+  Aceito por escrito — o abuso do formulário não depende de concorrência, e
+  fechar a janela pede travar todos os cards do contato dentro da RPC.
+  ⚠️⚠️ **Toda escrita confere o status esperado** (`p_status_esperado`, o 7º
+  argumento da RPC na 1031): o que a BUSCA viu, ou o que a própria execução
+  gravou por último (`context.deal_status_fixado` — a RPC devolve o status
+  gravado, depois do gatilho). O UPDATE só casa se o status não mudou. Sem
+  isso, quem marcasse o card como ganho entre a busca e a escrita — ou
+  durante um "Aguardar" de dias, com o card já fixado — teria o card
+  arrastado de volta ao comercial ou o ganho trocado por perdido: o CASE
+  protege o status, não a etapa (Codex e revisão, PR #245). Só o card do
+  EVENTO de funil, antes da primeira escrita da execução, vai sem conferir: é
+  alvo explícito, e o ganho que entrou em "Contrato Fechado" segue para o
+  Jurídico (a partir daí, fixado como `won`). A recusa encerra a execução
+  com o motivo no registro.
+- ⚠️⚠️ **O card da execução fica FIXADO no contexto** no primeiro "Mover
+  card"/"Marcar status" (`context.deal_id` + `deal_status_fixado`, e os dois
+  viajam para o "Aguardar" e para a automação acionada). Sem
+  isso cada passo procurava de novo, e depois de um passo que FECHA o card o
+  seguinte cairia no perdido de outro funil do mesmo contato (a Kommo trouxe
+  um card por pessoa e por área). Por isso `executeAutomation` passa uma CÓPIA
+  de `input.context` — o objeto é o mesmo para todas as automações de um
+  disparo, e o card fixado vazaria para a seguinte.
 - **Etapa marcada VENCE status explícito no mesmo update**; o Reabrir muda só
   o status (sem tocar etapa) e o gatilho passa reto — de propósito.
 - **`src/lib/pipelines/resultado.ts` é ESPELHO do gatilho** (para o selo
   aparecer sem refetch). Quem mudar a regra muda nos DOIS, e o teste fixa o
-  comportamento MEDIDO em produção.
+  comportamento MEDIDO em produção. ⚠️ Ele é só o palpite OTIMISTA do quadro e
+  da lista do funil: os dois gravam com `.select('id, status')` e trocam o
+  palpite pelo status que o BANCO gravou, e o painel da conversa (que espera a
+  escrita) usa direto o do banco. O quadro não tem realtime: o status em
+  memória pode ser de antes de outro operador fechar o card, e o gatilho
+  decide pelo que está gravado (Codex, PR #245).
 - Ganho/perdido **não some com nada**: card fica na coluna (selo), conversa
   intocada; sai das métricas de aberto e entra em "Ganhos no mês".
 
@@ -3241,6 +3326,77 @@ sempre. O que morde código novo:
 - **Não houve migration de recuperação**, de propósito: o gatilho é por
   ESTADO ("este contato já tem card?"), então as conversas que ficaram sem
   card se resolvem sozinhas na próxima mensagem trocada, em qualquer sentido.
+
+⚠️⚠️ **Histórico importado do WhatsApp (1033, aplicada como 1027 em 21/09/2026): mensagem com
+`gravada_em` NULA pode ser do backfill, e o registro é o que diz.** A conversa
+de 2026 dos leads da Kommo ficou lá (a API dela só entrega metadado); o texto
+existia na Evolution — a conexão viva (jun–set) e o backup de 09/09 da conexão
+antiga "Bancario", o mesmo número do Bancário - Comercial (jan–ago). Um script
+fora do repositório (o conteúdo é de cliente) normaliza cada mensagem com o
+próprio `normalizeUpsert` e escreve pela `cb_importar_historico_whatsapp`. Plano
+e números em `docs/PLANO-migracao-kommo.md`. O que morde código novo:
+
+- ⚠️⚠️ **O backfill NÃO passa pela ingestão, e é isso que o deixa mudo**:
+  automação, robô, IA, funil e reabertura moram no código de
+  `inbound-store`/webhook. Quem um dia "reaproveitar" `persistInboundMessage`
+  para importar histórico dispara tudo isso por mensagem antiga.
+- ⚠️⚠️ **Os dois gatilhos AFTER INSERT de `messages` ficam calados dentro do
+  lote**, pelo nome: o da 0972 decide "em atraso" pela ORDEM DE INSERÇÃO — a
+  fala de junho inserida hoje preencheria `aguardando_desde` (que sobrevive
+  à reabertura) e um eco antigo apagaria uma espera verdadeira. Quem criar
+  outra carga de mensagem antiga repete o desligar-religar, dentro da
+  transação.
+- ⚠️ **`gravada_em` vai NULA de propósito**: com o default `now()`,
+  `clienteRespondeuDesde` leria a fala antiga como "o cliente respondeu
+  agora" e cancelaria a sequência. Consequência: `gravada_em IS NULL` não
+  distingue mais "antes da 1003" de "importado" — quem precisar saber
+  pergunta ao registro.
+- ⚠️⚠️ **Teto de 600 mensagens por conversa, mantendo as mais RECENTES.** O
+  fio carrega a conversa inteira em ordem crescente, sem paginar, e o
+  PostgREST corta em 1000 linhas (`max_rows` MEDIDO: 1000): o que passasse
+  sumiria pelo lado das mensagens de HOJE. 600, e não 700: as conversas
+  cortadas são as dos clientes mais ativos, e 300 de folga seriam semanas.
+  2.986 mensagens antigas de 13 fichas ficaram de fora (medido na carga de
+  22/09); trazê-las exige o fio
+  buscar as mais recentes antes (defeito que já existia para qualquer
+  conversa acima de 1000).
+- ⚠️⚠️ **As travas são pegas no COMEÇO do lote, `messages` e depois
+  `conversations`** (a ordem do gatilho da 0972), com `lock_timeout` de 1 s.
+  A primeira versão travava linhas de `conversations` e só depois a tabela, e
+  a ingestão viva que chegasse no meio fechava um ciclo com o lote — o
+  detector abortava a INGESTÃO (mensagem de cliente perdida, com a Evolution
+  já respondida). Achado da revisão adversarial, antes de aplicar.
+- **Apagada e editada entram marcadas** (`deleted_at`/`deleted_by`,
+  `edited_at` — da edição comum e da cifrada da 2.4), como a ingestão
+  guardaria. Entre cópias repetidas da mesma mensagem, a MAIS ANTIGA; figurinha
+  fica de fora (sem arquivo viraria "Foto indisponível"). "Celular" no
+  histórico quer dizer celular, WhatsApp Web ou a integração antiga — é o que
+  `persistDeviceMessage` faria, e não há sinal confiável para separar.
+- **A conversa que não existia nasce ENCERRADA** (dono durável, sem
+  responsável, sem não lida); a encerrada existente só ganha prévia quando o
+  histórico é mais novo que ela, com `set_updated_at` calado — o desfazer do
+  encerramento em lote (1020) só devolve conversa com `updated_at <=
+  encerrado_em`. Conversa ABERTA nunca é tocada.
+- **Mídia sem arquivo** (`media_url` e `media_state` nulos): a bolha diz
+  "indisponível", e o documento leva `media_filename`. Nunca `'failed'`/
+  `'pending'` em 1:1 (acenderia botão de baixar que só existe em grupo), nunca
+  `'too_large'` (afirmaria um motivo falso).
+- ⚠️ **O carimbo de canal é o da conexão de ORIGEM** (a antiga "Bancario" →
+  Bancário - Comercial): 68 conversas passaram a ter dois números no fio, e o
+  separador aparece — é verdade, o histórico correu por aquele número.
+- ⚠️ **O tempo real da carga chega a toda aba de inbox aberta**: sem filtro
+  por idade, a página troca a prévia e soma não lida NA TELA (nunca no banco)
+  até recarregar — por isso a carga grande roda fora do expediente.
+- ⚠️ **Desfazer: `cb_desfazer_historico_whatsapp` ANTES de
+  `cb_kommo_desfazer`** (conversa com mensagem fica presa no desfazer da
+  carga) **e antes de `cb_desfazer_encerramento_em_lote`** (que devolveria a
+  espera da foto a uma conversa cuja prévia o backfill trocou). Ele anda EM
+  PEDAÇOS (`p_limite`, repetir até `terminou`), sem DDL em `messages`, e só
+  apaga a conversa que o backfill criou se ninguém a tocou — pergunta ao
+  CATÁLOGO que tabela aponta para ela (`cb_historico_conversa_apontada`), para
+  não levar pelo CASCADE uma agendada pendente. Retém a mensagem importada que
+  uma mensagem de fora cita. A linha deste backfill não pode ir para o
+  `livro_razao` — o desfazer da Kommo aborta em tabela que não conhece.
 
 ⚠️ **Iniciar conversa pelo CRM (`POST /api/cb/conversas/abrir`).** Botão no
 cabeçalho da lista do inbox → `nova-conversa-dialog.tsx`. ABRE, não envia:
@@ -3650,6 +3806,63 @@ dado era a RLS. Nunca houve vazamento — medido com `SET ROLE anon`, dava 0
 linhas em todas —, mas era **uma** barreira onde as tabelas novas têm duas.
 Confira as duas metades, como no caso das funções: que o `anon` perdeu, **e**
 que `authenticated`/`service_role` não perderam.
+
+⚠️⚠️ **Policy de LEITURA pergunta a conta UMA vez por consulta (1032):
+`account_id = ANY (ARRAY(SELECT public.cb_contas_do_usuario()))`, nunca
+`is_account_member(account_id)`.** A antiga é `SECURITY DEFINER` (o
+planejador não a incorpora) e, numa policy, roda POR LINHA lida — uma busca
+em `profiles` e uma leitura do JWT a cada chamada. Medido em 21/09/2026 pela
+RLS de verdade, as duas formas na mesma transação desfeita: a página do
+quadro do funil Trabalhista cai de 886 para 232 ms (224 ms sem RLS
+nenhuma), a lista de conversas de 261 para 69 ms; o funil abria em ~9 s e a
+caixa de entrada em ~4,5 s. Quem vê o quê NÃO muda: mesma escada de papéis,
+mesma tabela, mesmo `auth.uid()` (pino em `rls-leitura-1032.test.ts`; a
+migration compara as duas funções para todo usuário e todo papel, ANTES das
+ALTER). Aplicada em produção em 21/09/2026 e medida depois pela RLS de
+verdade: quadro 250 ms, conversas 74–84 ms, negócios da caixa 7–10 ms. O que
+morde código novo:
+
+- **Tabela nova com policy de leitura escreve a forma da 1032**, com papel
+  mínimo quando precisar: `cb_contas_do_usuario('admin'::public.account_role_enum)`.
+- ⚠️⚠️ **`= ANY (ARRAY(SELECT …))`, e NÃO `IN (SELECT …)`** — as duas dizem a
+  mesma coisa, e a diferença só aparece no plano. Numa policy que pergunta
+  pela tabela-mãe (`EXISTS (SELECT 1 FROM contacts c WHERE c.id = … AND
+  c.account_id IN (SELECT fn()))` — são 17, `messages` inclusive), o
+  planejador desdobra o `IN` numa semi-junção DENTRO do EXISTS e a função
+  volta a rodar por linha: a primeira versão da 1032 usava `IN` e só levou o
+  quadro de 886 a 566 ms (`loops=7428` no plano). `ARRAY(...)` nunca é
+  desdobrada — vira InitPlan, calculado uma vez. O pino reprova as duas
+  formas por linha. Quem MEDIR uma policy nova mede pela RLS (`SET ROLE
+  authenticated` + claims), nunca escrevendo o predicado à mão como
+  `postgres`: foi assim que a 1ª versão pareceu dar 227 ms.
+  `is_account_member` continua nas policies de ESCRITA (INSERT/UPDATE/DELETE),
+  avaliadas por linha ESCRITA — uma por vez na prática.
+- ⚠️ **FOR ALL vale também para SELECT, e as permissivas somam com OU**: uma
+  FOR ALL por linha na tabela mantém o custo inteiro mesmo com a de SELECT
+  reescrita. A 1032 reescreveu o PREDICADO das FOR ALL também (o comando não
+  muda — é por isso que o pino das policies de escrita da 964 lê `ALTER
+  POLICY` e aceita as duas formas).
+- ⚠️⚠️ **As 61 são policies DO UPSTREAM (017 e seguintes).** Um merge que
+  recrie uma delas, ou traga tabela nova com a forma dele, devolve a lentidão
+  sem quebrar tela nenhuma — é assim que volta sem ninguém notar. O pino
+  reprova no CI: converter para a forma da 1032 no próprio merge.
+- `user_id = auth.uid()` em policy de leitura vira `(SELECT auth.uid())`,
+  também avaliado uma vez.
+- ⚠️ **CREATE/ALTER POLICY trava a tabela EXCLUSIVAMENTE até o fim da
+  transação.** Migration que mexe em policy de tabela quente leva `SET LOCAL
+  lock_timeout` (a 1032 usa 5 s), senão uma transação longa em `messages`
+  enfileira o sistema inteiro atrás dela. Aplicada pela Management API, a
+  migration roda como UM bloco — medido: o `SET LOCAL` vale até o fim.
+  ⚠️⚠️ **E `lock_timeout` limita só a ESPERA pela trava, não o que se faz com
+  ela**: tudo o que roda DEPOIS da primeira ALTER, na mesma transação, roda
+  com a trava exclusiva de todas as tabelas já alteradas. A conferência que a
+  1032 aplicou em produção percorria usuário × conta × papel ali dentro —
+  160 casos aqui, 4 milhões numa instalação com mil usuários e mil contas —
+  e fechava com `count(*)` em `messages` (Codex, PR #246). Verificação cara
+  vai ANTES da primeira ALTER; depois dela, só catálogo e EXPLAIN (o EXPLAIN
+  confere o SELECT de toda tabela da consulta, as das policies inclusive, e o
+  EXECUTE de toda função, sem varrer linha — provado num Postgres 16
+  descartável). Há pino.
 
 ⚠️ **A 903 removeu dois índices únicos.** `message_templates(user_id, name,
 language)` e `ai_configs(account_id)` viraram pares de índices **parciais**
@@ -4552,7 +4765,7 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ingestão), então automação restrita a uma conexão AINDA dispara para
     lead novo. Quem apertar essa regra desliga o Calendly para lead novo.
   - ⚠️⚠️ **Lead novo não tem card, e `move_deal_stage` LANÇA nesse caso**
-    ("nenhum negócio aberto para este contato"), encerrando a execução. A
+    ("nenhum negócio aberto (nem perdido de quem não tem ganho)…"), encerrando a execução. A
     automação do Calendly precisa de um passo **`create_deal`** antes dele —
     `create_deal` desiste em silêncio quando já há card ("um card por
     contato"), então serve aos dois casos. Sem ele, todo lead novo termina
@@ -5344,6 +5557,16 @@ Webhooks. Plano em `docs/PLANO-webhooks-de-entrada.md`; doc do operador em
   com ele. `channelInScope` deixa passar canal nulo (falha ABERTA), então
   automação restrita a uma conexão AINDA dispara para lead novo. Apertar a
   regra desliga o webhook justamente para quem acabou de chegar.
+- ⚠️ **E nasce ENCERRADA** (21/09/2026, pedido do operador para o Typebot):
+  `resolverDestinatario(..., { conversaNovaEncerrada: true })`, só deste
+  chamador. O lead de formulário ainda não escreveu, e conversa vazia em
+  "Abertas" é ruído; a primeira mensagem dele ou da equipe a reabre pelos
+  caminhos de sempre (`reopen.ts`). Conversa que JÁ existia não é tocada. ⚠️
+  Não trocar por um passo "Encerrar conversa" na automação: ele fecha TODAS as
+  conversas do contato e solta o responsável — inclusive a que o SDR está
+  atendendo quando manda o link do formulário. Calendly e `send_to_number`
+  continuam criando aberta: lá a conversa escondida sumiria, e envio de robô
+  não reabre.
 - ⚠️ **Lead novo não tem card**, e `move_deal_stage` LANÇA nesse caso,
   encerrando a execução. Automação de webhook que mexe no funil precisa de
   `create_deal` ANTES (ele desiste em silêncio quando já há card) — a mesma
@@ -5374,6 +5597,61 @@ Webhooks. Plano em `docs/PLANO-webhooks-de-entrada.md`; doc do operador em
   próprio CRM. A tela DECLARA as duas limitações (uma tentativa de 5s sem
   retry; 15 falhas seguidas desligam) — sem isso o operador conta com
   garantia que não existe.
+
+⚠️ **Typebot → CRM (21/09/2026): QUATRO webhooks e QUATRO automações, tudo
+CONFIGURAÇÃO — e toda escrita passa por uma TRAVA de etapa.** O fluxo
+"CB Advogados - Gestão de passivos" chama `Typebot · Lead e respostas` (em
+vários pontos: depois do telefone, do e-mail, das respostas), `Typebot ·
+Recebeu o link` (clicou "Agendar horário"), `Typebot · Desqualificado` e
+`Typebot · Abaixo de 150 mil com processo` (etiqueta `-150k`; o passo de
+mensagem ao lead entra quando o operador escrever o texto). A de lead PUXA
+para "Lead - Type e Forms" o card que está em Contato Avulso, Desqualificado
+ou Perdido (decisão do operador) — os dois últimos saem da perda pela 1031.
+Os blocos do Typebot mandam o corpo PADRÃO (Custom body desligado: todas as
+variáveis pelo nome, fbp/fbc/ip/user_agent inclusive). O passo a passo
+genérico está em `docs/webhooks.md`. O que morde:
+
+- ⚠️⚠️ **O formulário é PÚBLICO e não prova posse do telefone.** Qualquer um
+  que digite o número de um cliente aciona as automações sobre a ficha DELE.
+  Por isso toda escrita (etiqueta, e-mail, respostas, campanha) e todo
+  movimento vivem no ramo SIM de uma condição `deal_stage == Lead - Type e
+  Forms`: só o card que o próprio Typebot criou (ou que alguém pôs ali) é
+  tocado. Cliente com card adiante ou noutro funil não ganha nada. ⚠️ O card
+  PERDIDO é alcançado de propósito (a "Lead e respostas" puxa o desqualificado
+  de volta), MENOS o de contato que tem card GANHO — esse é cliente, e fica
+  intocado (ver "Etapa com RESULTADO").
+  Tirar a trava faz o formulário reescrever e-mail, campanha e "Tamanho da
+  Divida" de quem já é cliente — o e-mail é o que liga tl;dv e Asaas.
+- ⚠️ **Nenhuma automação do Typebot grava o NOME.** O lead novo nasce com o
+  nome digitado (`campo_nome`); o passo de nome gravaria FIXADO e o gatilho da
+  1007 retitularia o card aberto de qualquer funil. Quem fixa é o Calendly, no
+  agendamento.
+- ⚠️ **Condição, e não escopo de etapa (`automations.stage_ids`), nas três.**
+  O escopo FALHA ABERTO em erro de leitura (`stageInScope`) — e aí o
+  `move_deal_stage` arrasta o card de um cliente do Jurídico para o comercial,
+  marcado perdido. E fora do escopo o acionamento vira `sem_automacao`, que o
+  bloco de correções do Meu dia conta para sempre (lead que refaz o Typebot já
+  em No Show acontece toda semana). A condição falha FECHADO e termina
+  `barrada`, que o Meu dia não conta.
+- ⚠️ **O corpo é o retrato PADRÃO do Typebot** ("Custom body" desligado):
+  toda variável com valor, chaveada pelo NOME (`phone`, `name`, `email`, …),
+  inclusive as de sessão — conferido no fonte (`parseAnswers`, que lê
+  `typebot.variables` sem filtrar `isSessionVariable`). O webhook lê
+  `campo_telefone = phone`. Pergunta não respondida vem AUSENTE (não "") e a
+  automação a ignora (`update_contact_field` vazio não grava).
+- ⚠️ **O Typebot NUNCA repete POST** (401, 404, 429, timeout: perdido), e o
+  CRM não registra 401/404/429 — eles voltam antes do INSERT do log. Ponto que
+  "não chegou" só aparece em Typebot → Results → logs.
+- ⚠️ **No grupo "Group #19" a seta ENTRA no 3º bloco (o texto)**, e os dois
+  webhooks do topo nunca rodaram. O bloco do CRM ali vai DEPOIS do texto.
+- **Variável vazia não apaga campo** (`update_contact_field`, mesma data): o
+  Typebot manda todas as variáveis em todo ponto, e as não respondidas chegam
+  como "". Ver a nota no motor.
+- **O delta do corte da Kommo MOVE o card que o Typebot criou aqui** para a
+  etapa da Kommo (decisão 11 da migração): enquanto o Make ainda manda o mesmo
+  lead para lá, a pessoa existe nos dois lados. É o certo enquanto a equipe
+  trabalha na Kommo — mas quem rodar o delta sabe que agora há cards do
+  Typebot nascendo aqui.
 
 ⚠️ **Tag ADITIVA na API v1: `POST /api/v1/contacts/{id}/tags`.**
 `src/lib/api/v1/tags-do-contato.ts` (parse puro, testado). O `PATCH` com
@@ -6737,32 +7015,6 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     imediatamente antes: 5.106 fichas, zero pares, 2.839 ganham a chave com o
     9. Ver a seção "Chave única do telefone".
 
-  - **1025_cb_kommo_acompanhamento** — aplicada em 21/09/2026 (histórico
-    `20260921151613`), depois do replay do CI e de dois ensaios em transação
-    desfeita. O acompanhamento do #232: a troca de
-    funil da carga exige as duas etapas (sem a de destino,
-    `cb_funil_trajetorias` a devolvia com `etapa = null` e ela sumia das
-    métricas; sem a de origem, a ficha diria "Transferido de … (—)"), e o
-    encerramento
-    em lote confere a folga de 2 minutos DE NOVO no próprio UPDATE, que
-    enxerga uma foto tirada depois das travas — a do SELECT não via a
-    mensagem confirmada no meio do comando, e o lote a escondia. A foto do
-    antes sai do MESMO comando (WITH … RETURNING), só de quem foi encerrado,
-    e os contadores do retorno saem dela.
-    ⚠️ **Limite conhecido, registrado e não corrigido:** os dois desfazeres
-    leem "intocado" como `updated_at <= hora da operação`, e `updated_at` é
-    o INÍCIO da transação de quem escreveu — um salvamento já em voo quando o
-    lote começou passaria por intocado. Medido: nenhuma linha da carga tem
-    essa assinatura. ⚠️ E o desfazer do encerramento é da CONTA INTEIRA:
-    rodado depois de um encerramento novo, devolve também o que o de 21/09
-    ainda guarda na foto (medido no ensaio: 899 linhas para 64 da operação).
-  - **1026_cb_kommo_entrada_sem_texto_vazio** — aplicada em 21/09/2026
-    (histórico `20260921152355`), depois do replay do CI. A entrada do lote
-    trata "" como ausente em TODA guarda de evento (Codex, PR #241): a gravação faz
-    `nullif(..., '')`, e um id em branco passava na entrada, o modo de
-    conferência dizia "válido" e só a conferência de saída o recusava,
-    depois de escrever e sem nomear o lead. Migration nova porque a 1025 já
-    estava aplicada.
   - **1030_cb_funcao_de_disparo_executavel** — `create_broadcast_with_recipients`
     passa a EXECUTAR (RETURNING qualificado, upstream #536) e a gravar os
     parâmetros por destinatário como lista (`p_template_params JSONB`, pareado
@@ -6776,8 +7028,116 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     história de `POST /api/v1/broadcasts`.
     ⚠️ **O número pula para 1030 DE PROPÓSITO**: a faixa `1030+` é do
     `docs/PLANO-merge-upstream-2026-09.md` (a sessão da Kommo seguia criando
-    números no mesmo dia — as 1025/1026 são dela). **Não existem 1027–1029**:
-    não "preencher" a lacuna.
+    números no mesmo dia — as aplicadas como 1025/1026 são dela). **Não
+    existem arquivos 1025 a 1029** — não "preencher" a lacuna: a do histórico
+    do WhatsApp foi APLICADA em produção como 1027 e o arquivo virou **1033**
+    no merge, e as duas do acompanhamento da Kommo, aplicadas como 1025 e
+    1026, viraram **1034** e **1035**, por esta mesma regra. ⚠️ E número NOVO vem SEMPRE depois do maior que já
+    está no `main`: a instalação que atualiza por `supabase db push` RECUSA
+    migration fora de ordem (sem `--include-all`), e o `docs/ATUALIZAR.md`
+    manda o push simples. A do "perdido que volta" nasceu 1028 e virou 1031
+    por isso (Codex, PR #245).
+
+  - **1031_cb_perdido_pode_voltar** — troca o CORPO de duas funções:
+    `cb_deals_aplica_resultado` (o gatilho da 950: card PERDIDO que entra
+    numa etapa neutra, sem troca de status no mesmo update e com a etapa
+    achada, volta `open`; ganho continua ganho) e `cb_atualizar_negocio` (a
+    RPC das automações da 934: mover para etapa neutra reabre o perdido na
+    mesma escrita, inclusive para a etapa em que ele já está; só escreve se o
+    card continua no status esperado; e devolve o status gravado). ⚠️ A RPC
+    muda de ASSINATURA — ganha `p_status_esperado text DEFAULT NULL` e a
+    coluna de saída `status_gravado` —, por isso DROP + CREATE; quem chama
+    sem o argumento (o app anterior) cai no DEFAULT e ignora a coluna nova. A
+    conferência CHAMA as duas funções com dado real, num subbloco desfeito por
+    `P1031` (a guarda recusa, a RPC reabre, o gatilho reabre, o ganho fica).
+    Ensaiada contra a produção numa transação desfeita antes de aplicar.
+    Decisão do operador em 21/09/2026 (ver a seção "Etapa com RESULTADO").
+    Aplicada ANTES do merge, depois do replay do CI.
+
+  - **1032_cb_rls_leitura_uma_vez_por_consulta** — a função
+    `cb_contas_do_usuario(papel)` (SECURITY DEFINER, EXECUTE para anon,
+    authenticated e service_role — as policies são `TO public`) e as 61
+    policies de LEITURA (SELECT e FOR ALL, 52 tabelas) reescritas por `ALTER
+    POLICY` para `account_id = ANY (ARRAY(SELECT …))` — ver "Policy de LEITURA
+    pergunta a conta UMA vez por consulta". ⚠️ É **1032** porque a **1031** é a
+    do perdido que volta (PR #245, que chegou ao `main` antes desta), e as
+    aplicadas como 1025 e 1026 (hoje 1034 e 1035) e a do histórico do
+    WhatsApp (aplicada como 1027, hoje 1033) foram aplicadas por outras
+    frentes antes de chegar ao `main`.
+    Ensaiada em produção numa transação desfeita (8 usuários × 52 tabelas: o
+    resultado da RLS, o predicado antigo e o novo idênticos em todas). Aplicada em
+    21/09/2026 pela Management API (histórico `20260921220626`), com
+    autorização do operador e DEPOIS do replay do CI; conferida no catálogo
+    (nenhuma policy de leitura por linha, 61 na forma nova, EXECUTE sem
+    PUBLIC) e pela RLS de cada um dos 4 membros da conta (as mesmas contagens
+    da verdade da conta em 15 tabelas; outra conta e `anon` não veem nada).
+    ⚠️ A CONFERÊNCIA foi reescrita DEPOIS de aplicada (Codex, PR #246): a
+    aplicada era quadrática e rodava com as travas presas; a do arquivo é
+    linear, roda antes das ALTER, e passou contra a produção em 81 ms. O que
+    a migration MUDA no banco é idêntico ao aplicado — só os blocos de
+    verificação diferem do registrado no histórico.
+
+  - **1033_cb_historico_do_whatsapp** (aplicada como 1027) — o registro
+    `migracao_kommo.historico_whatsapp` e as funções
+    `cb_importar_historico_whatsapp` / `cb_desfazer_historico_whatsapp`: a
+    porta de escrita, por lote, do histórico de 2026 do WhatsApp trazido da
+    Evolution para as fichas com card (ver a seção "Histórico importado do
+    WhatsApp"). ⚠️ Aplicada em produção como **1027** (a faixa 1020 era da
+    sessão da Kommo); quando o arquivo chegou ao `main` já estavam lá a 1030, a
+    1031 e a 1032, e ele virou **1033** — a instalação que atualiza por
+    `supabase db push` recusa número menor que o maior já aplicado. Conferido
+    que a ordem não muda o resultado: ela cria o registro em `migracao_kommo`,
+    três funções e as concessões delas; nenhuma policy (a 1032 reescreve e
+    confere só policies de leitura do `public`), e nada que a 1030 ou a 1031
+    toquem. Em produção o histórico guarda o nome antigo, e nada reaplica.
+    Aplicada em 21/09/2026 (histórico `20260921201327`), depois do replay do
+    CI no commit das correções da revisão adversarial e de dois ensaios em
+    transação desfeita. Ensaio REAL no mesmo dia (lote `ensaio-1`, 5 fichas,
+    540 mensagens): nenhuma conversa existente mudou situação, não lidas,
+    espera, responsável, `updated_at` nem canal; 0 notificação, 0 evento de
+    automação, gatilhos religados; conferido no preview. **Carga completa em
+    22/09/2026** (lote `carga-1`, sem as fichas do ensaio): 68.337 mensagens
+    para 1.004 fichas, 391 conversas criadas (encerradas), 86 encerradas com
+    prévia nova; nada disparado. Os dois lotes não se sobrepõem — é o que
+    mantém certo o desfazer POR LOTE (a prévia de antes é registrada uma vez
+    por conversa, no primeiro lote que a tocou); desfazer tudo não depende
+    disso. ⚠️ Antes de desfazer, conferir `cb_scheduled_messages` pendentes
+    com `reply_to_message_id` apontando para mensagem do registro: a retenção
+    do desfazer olha só citação em `messages`, e a agendada perderia a
+    citação (Codex, PR #243).
+
+  - **1034_cb_kommo_acompanhamento** (aplicada como 1025) — aplicada em
+    21/09/2026 (histórico `20260921151613`), depois do replay do CI e de dois
+    ensaios em transação desfeita. O acompanhamento do #232: a troca de
+    funil da carga exige as duas etapas (sem a de destino,
+    `cb_funil_trajetorias` a devolvia com `etapa = null` e ela sumia das
+    métricas; sem a de origem, a ficha diria "Transferido de … (—)"), e o
+    encerramento em lote confere a folga de 2 minutos DE NOVO no próprio
+    UPDATE, que enxerga uma foto tirada depois das travas — a do SELECT não
+    via a mensagem confirmada no meio do comando, e o lote a escondia. A foto
+    do antes sai do MESMO comando (WITH … RETURNING), só de quem foi
+    encerrado, e os contadores do retorno saem dela.
+    ⚠️ **Limite conhecido, registrado e não corrigido:** os dois desfazeres
+    leem "intocado" como `updated_at <= hora da operação`, e `updated_at` é
+    o INÍCIO da transação de quem escreveu — um salvamento já em voo quando o
+    lote começou passaria por intocado. Medido: nenhuma linha da carga tem
+    essa assinatura. ⚠️ E o desfazer do encerramento é da CONTA INTEIRA:
+    rodado depois de um encerramento novo, devolve também o que o de 21/09
+    ainda guarda na foto (medido no ensaio: 899 linhas para 64 da operação).
+  - **1035_cb_kommo_entrada_sem_texto_vazio** (aplicada como 1026) —
+    aplicada em 21/09/2026 (histórico `20260921152355`), depois do replay do
+    CI. A entrada do lote trata "" como ausente em TODA guarda de evento
+    (Codex, PR #241): a gravação faz `nullif(..., '')`, e um id em branco
+    passava na entrada, o modo de conferência dizia "válido" e só a
+    conferência de saída o recusava, depois de escrever e sem nomear o lead.
+    Migration nova porque a 1034 (então 1025) já estava aplicada.
+    ⚠️ **As duas viraram 1034/1035 no merge (22/09/2026)**, pela regra da
+    1030: quando chegaram ao `main` já estavam lá a 1030–1033, e a instalação
+    que atualiza por `supabase db push` recusa número menor que o maior já
+    aplicado. A ordem não muda o resultado: as duas só recriam
+    `cb_kommo_carregar_lote` e `cb_encerrar_conversas_abertas` (com as
+    concessões DELAS), que nenhuma da 1030 à 1033 toca; nenhuma policy nem
+    tabela. Em produção o histórico guarda os nomes antigos, e nada reaplica.
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.
@@ -6850,8 +7210,8 @@ criado do zero ele não se repete. Duas consequências, ambas já morderam:
 
   ⚠️ Vale também para RLS: política avaliada com o privilégio de QUEM CHAMOU.
   A de `messages` consulta `conversations`, então `authenticated` precisa de
-  `SELECT` nas duas. A cadeia para em `is_account_member`, que é
-  `SECURITY DEFINER`.
+  `SELECT` nas duas. A cadeia para em `cb_contas_do_usuario` (leitura, 1032)
+  e em `is_account_member` (escrita), as duas `SECURITY DEFINER`.
 
 **2. Conferência não pode exigir dado que só existe aqui.**
 
@@ -7172,6 +7532,10 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
   diretório em 4, ela ordena fora do lugar no replay — e o teste
   `nomes-das-migrations.test.ts` reprova.
 - ❌ Renomear/renumerar migration já aplicada.
+- ❌ Policy de LEITURA nova com `is_account_member(account_id)` ou com
+  `IN (SELECT cb_contas_do_usuario())` — as duas rodam por linha. Use
+  `account_id = ANY (ARRAY(SELECT public.cb_contas_do_usuario()))` (1032); o
+  pino `rls-leitura-1032.test.ts` reprova as duas.
 - ❌ Conferir privilégio numa migration sem tê-lo CONCEDIDO ali. O que vem do
   *default privilege* do Supabase não existe em banco novo — nove migrations
   nossas reprovaram por isso na primeira vez que o CI as reaplicou do zero.

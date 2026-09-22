@@ -26,6 +26,23 @@ describe('destinoSeguro', () => {
     expect(destinoSeguro(entrada)).toBe(DESTINO_PADRAO)
   })
 
+  // Segmento de ponto: resolve DENTRO da base (a origem confere) e deixa
+  // `//evil.example`, que o redirecionamento leria como outro host.
+  it.each([
+    '/.//evil.example',
+    '/..//evil.example',
+    '/%2e//evil.example',
+    '/%2e%2e//evil.example',
+    '/a/..//evil.example',
+    '/././/evil.example/x?y=1',
+  ])('recusa segmento de ponto que vira //: %s', (entrada) => {
+    expect(destinoSeguro(entrada)).toBe(DESTINO_PADRAO)
+  })
+
+  it('barra dupla NO MEIO do caminho continua sendo caminho nosso', () => {
+    expect(destinoSeguro('/inbox//x')).toBe('/inbox//x')
+  })
+
   it('recusa caractere de controle', () => {
     expect(destinoSeguro('/a\nb')).toBe(DESTINO_PADRAO)
     expect(destinoSeguro('/a\rb')).toBe(DESTINO_PADRAO)

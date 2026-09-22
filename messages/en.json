@@ -2685,7 +2685,7 @@
         "colStatus": "Status",
         "colFunil": "Pipeline",
         "motivo": {
-              "token_invalido": "Meta rejected the token",
+          "token_invalido": "Meta rejected the token",
           "sem_permissao": "the token lacks ads_read on this account",
           "conta_nao_encontrada": "ad account not found",
           "conta_invalida": "invalid account id (use act_… or digits only)",
@@ -3827,7 +3827,7 @@
     "title": "Create account",
     "titleInvite": "Create account & join",
     "description": "Get started with {appName}",
-    "descriptionInvite": "Create your account and accept the invitation to join your team.",
+    "descriptionInvite": "Create your account to join the team — the invitation is accepted along with it.",
     "fullNameLabel": "Full name",
     "fullNamePlaceholder": "John Doe",
     "emailLabel": "Email",
@@ -3839,7 +3839,17 @@
     "createAccountButton": "Create account",
     "creatingAccount": "Creating account...",
     "alreadyHaveAccount": "Already have an account?",
-    "signIn": "Sign in"
+    "signIn": "Sign in",
+    "signupClosed": "Sign-ups are closed. To get in, ask whoever runs this CRM for an invitation.",
+    "inviteInvalid": "This invitation is no longer valid: it was used, expired or doesn't exist. Ask whoever sent it for a new one.",
+    "emailExists": "An account with this email already exists. Sign in with it.",
+    "weakPassword": "The password doesn't meet the security requirements. Choose a stronger one.",
+    "invalidData": "Check the name, the email and the password.",
+    "signupFailed": "Couldn't create the account. Try again in a moment.",
+    "signedUpButSignInFailed": "The account was created and is already in the team, but signing in failed just now. Use \"Sign in\" with the email and password you chose.",
+    "tooManyAttempts": "Too many attempts in a row. Wait a few minutes and try again.",
+    "closedTitle": "Sign-ups are closed",
+    "passwordTooLong": "The password is too long: the limit is 72 bytes, and each accented letter counts as two."
   },
   "ChannelHealth": {
     "title": "WhatsApp connections",

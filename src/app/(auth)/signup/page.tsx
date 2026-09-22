@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { useTranslations } from "next-intl";
@@ -16,7 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { MessageSquare, CheckCircle, UsersRound } from "lucide-react";
+import { MessageSquare, CheckCircle, Lock, UsersRound } from "lucide-react";
 
 // `useSearchParams` opts the component out of static prerendering
 // unless wrapped in Suspense — same pattern as /login.
@@ -32,10 +32,11 @@ function SignupPageInner() {
   const t = useTranslations("SignupPage");
   const searchParams = useSearchParams();
   // When the user lands here from `/join/<token>` we carry the
-  // invite token in the query so it survives the signup → email
-  // verification → redirect round-trip. `emailRedirectTo` below
-  // points back at /join/<token> so the user lands on the redeem
-  // step after verifying instead of being dropped on /dashboard.
+  // invite token in the query. With it, the account is created AND the
+  // invitation accepted by the SERVER (`/api/invitations/<token>/cadastro`)
+  // — so a new teammate still gets in with the public signup CLOSED in
+  // Supabase, and lands directly in the team. Without it, this is the
+  // plain public signup, which is refused once it is closed.
   const inviteToken = searchParams.get("invite");
 
   const [fullName, setFullName] = useState("");
@@ -45,7 +46,100 @@ function SignupPageInner() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  // O cadastro público está fechado no Supabase? `null` = não sei (ainda
+  // não respondeu, ou a consulta falhou): aí o formulário aparece, e a
+  // recusa do envio é traduzida do mesmo jeito. Só com convite a pergunta
+  // não importa — por ele a conta nasce no servidor.
+  const [cadastroFechado, setCadastroFechado] = useState<boolean | null>(null);
   const supabase = createClient();
+
+  useEffect(() => {
+    if (inviteToken) return;
+    let cancelado = false;
+    // `/auth/v1/settings` é público (só a chave anon) e diz, entre outras
+    // coisas, se novos cadastros estão desligados. Sem isto, quem chega sem
+    // convite preenchia os quatro campos para só então ser recusado.
+    fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/auth/v1/settings`, {
+      headers: { apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "" },
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((config: { disable_signup?: unknown } | null) => {
+        if (!cancelado && config) {
+          setCadastroFechado(config.disable_signup === true);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelado = true;
+    };
+  }, [inviteToken]);
+
+  // A conta nasce no servidor, já confirmada e já DENTRO da equipe (a rota
+  // aceita o convite na mesma requisição). Aqui só se adota a sessão que
+  // ela devolve. Devolve para ONDE seguir, ou `null` quando parou com erro
+  // na tela: `/dashboard` com o aceite confirmado; `/join/<token>` quando o
+  // servidor não conseguiu saber se o convite foi aceito — lá o botão
+  // "Aceitar" aparece se ele ainda estiver pendente.
+  const cadastrarPorConvite = async (token: string): Promise<string | null> => {
+    let res: Response;
+    try {
+      res = await fetch(
+        `/api/invitations/${encodeURIComponent(token)}/cadastro`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nome: fullName, email, senha: password }),
+        },
+      );
+    } catch {
+      setError(t("signupFailed"));
+      setLoading(false);
+      return null;
+    }
+
+    const corpo = (await res.json().catch(() => null)) as {
+      codigo?: string;
+      sessao?: { access_token?: unknown; refresh_token?: unknown };
+    } | null;
+    const incerto = res.status === 503 && corpo?.codigo === "aceite_incerto";
+    if (!res.ok && !incerto) {
+      setError(mensagemDoCadastro(res.status, corpo?.codigo));
+      setLoading(false);
+      return null;
+    }
+
+    const access = corpo?.sessao?.access_token;
+    const refresh = corpo?.sessao?.refresh_token;
+    const { error: erroAoEntrar } =
+      typeof access === "string" && typeof refresh === "string"
+        ? await supabase.auth.setSession({
+            access_token: access,
+            refresh_token: refresh,
+          })
+        : { error: new Error("sem sessão") };
+    if (erroAoEntrar) {
+      setError(t("signedUpButSignInFailed"));
+      setLoading(false);
+      return null;
+    }
+    return incerto ? `/join/${encodeURIComponent(token)}` : "/dashboard";
+  };
+
+  const mensagemDoCadastro = (status: number, codigo?: string): string => {
+    if (status === 429) return t("tooManyAttempts");
+    switch (codigo) {
+      case "convite_invalido":
+        return t("inviteInvalid");
+      case "email_existe":
+        return t("emailExists");
+      case "senha_fraca":
+        return t("weakPassword");
+      case "dados_invalidos":
+        return t("invalidData");
+      default:
+        return t("signupFailed");
+    }
+  };
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -61,15 +155,23 @@ function SignupPageInner() {
       return;
     }
 
+    // O bcrypt do Supabase conta BYTES: letra com acento vale dois.
+    if (new TextEncoder().encode(password).length > 72) {
+      setError(t("passwordTooLong"));
+      return;
+    }
+
     setLoading(true);
 
-    // If we have an invite token, point Supabase's verification
-    // email back at the join page so the user can accept after
-    // verifying. Without a token, Supabase uses its default
-    // redirect (the app root).
-    const emailRedirectTo = inviteToken
-      ? `${window.location.origin}/join/${encodeURIComponent(inviteToken)}`
-      : undefined;
+    if (inviteToken) {
+      // Navegação completa, pelo mesmo motivo do ramo sem convite, abaixo:
+      // o middleware e o AuthProvider só leem a sessão (e a conta nova)
+      // numa requisição nova. O botão continua desabilitado enquanto o
+      // navegador troca de página.
+      const destino = await cadastrarPorConvite(inviteToken);
+      if (destino) window.location.href = destino;
+      return;
+    }
 
     const { data, error } = await supabase.auth.signUp({
       email,
@@ -78,12 +180,16 @@ function SignupPageInner() {
         data: {
           full_name: fullName,
         },
-        ...(emailRedirectTo ? { emailRedirectTo } : {}),
       },
     });
 
     if (error) {
-      setError(error.message);
+      // Cadastro público fechado no Supabase: a mensagem crua é
+      // "Signups not allowed for this instance", em inglês e sem dizer
+      // o que fazer.
+      setError(
+        error.code === "signup_disabled" ? t("signupClosed") : error.message,
+      );
       setLoading(false);
       return;
     }
@@ -108,9 +214,7 @@ function SignupPageInner() {
     // them on a fresh request. A client-side push can reach /join
     // before the middleware sees the new session and get bounced.
     if (data.session) {
-      window.location.href = inviteToken
-        ? `/join/${encodeURIComponent(inviteToken)}`
-        : "/dashboard";
+      window.location.href = "/dashboard";
       // Deliberately leave `loading` true: the button stays disabled
       // while the browser navigates, so an impatient second click
       // can't fire a duplicate signUp.
@@ -120,6 +224,36 @@ function SignupPageInner() {
     setSuccess(true);
     setLoading(false);
   };
+
+  if (!inviteToken && cadastroFechado) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <Card className="w-full max-w-md border-border bg-card">
+          <CardHeader className="items-center text-center">
+            <div className="mb-2 flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+              <Lock className="h-6 w-6 text-primary" />
+            </div>
+            <CardTitle className="text-xl text-foreground">
+              {t("closedTitle")}
+            </CardTitle>
+            <CardDescription className="text-muted-foreground">
+              {t("signupClosed")}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Link href="/login">
+              <Button
+                variant="outline"
+                className="w-full border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                {t("backToSignIn")}
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   if (success) {
     return (

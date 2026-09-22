@@ -393,8 +393,10 @@ docker login ghcr.io -u <seu-usuário>
 set -a && . ./crm.env && set +a
 export CRM_IMAGE=ghcr.io/<seu-usuário>/cb-crm:latest
 
-# 4. Subir.
-docker stack deploy -c docker-stack.yml crm
+# 4. Subir. O `--with-registry-auth` repassa ao Swarm o login do passo 2:
+#    sem ele, imagem PRIVADA (o padrão de pacote criado a partir de
+#    repositório privado) não é baixada, e o serviço fica sem subir.
+docker stack deploy -c docker-stack.yml --with-registry-auth crm
 docker service logs -f crm_crm
 ```
 
@@ -431,8 +433,9 @@ curl -s -o /dev/null -w '%{http_code}\n' https://crm.seudominio.com/api/cb/sched
 ### 5.4 O agendador não é opcional
 
 O `docker-stack.yml` traz um serviço chamado `agendador`. Ele bate nas
-rotas de tarefas do CRM em dois laços, um de 60 segundos e outro de 15
-minutos.
+rotas de tarefas do CRM em dois laços: um de 15 segundos, só para
+`automations/cron` (é o piso das pausas curtas do "Aguardar" e das
+retentativas de envio), e outro de 15 minutos para as outras seis rotas.
 
 **Sem ele, mensagem agendada não sai.** O Next.js não tem agendador
 embutido, e nada no código chama essas rotas sozinho. Também dependem
@@ -447,6 +450,11 @@ Se você não usa Docker Swarm, substitua por uma entrada de `cron`:
 */15 * * * * for r in cb/scheduled flows cb/radar cb/meta-ads cb/tldv cb/asaas; do curl -fsS -m 120 -H "x-cron-secret: SEGREDO" "https://crm.seudominio.com/api/$r/cron"; done
 ```
 
+O `cron` do sistema roda no mínimo a cada minuto: com ele, uma pausa de
+segundos no "Aguardar" passa a durar até um minuto. Para manter os 15
+segundos, use um laço em shell (`while true; do curl …; sleep 15; done`)
+num serviço próprio, como o `agendador` faz.
+
 O laço de 15 minutos não pode encolher sem mexer também em
 `CICLO_MINUTOS`, em `src/lib/scheduled/display.ts`: é esse número que a
 tela usa para oferecer horários e prometer "sai em até 15 min".
@@ -459,10 +467,10 @@ tela usa para oferecer horários e prometer "sai em até 15 min".
    cadastro vira dono da conta automaticamente — um gatilho no banco cria
    a conta e o perfil na mesma transação.
 2. **Configurações → Perfis**: crie os perfis de acesso padrão pelo botão
-   que os semeia (Administrador, Advogado, Visualizador).
+   que os semeia (Administrador, Advogado e Observador).
 3. **Funis**: crie o primeiro funil e as etapas. Se pretende usar os
    painéis de desempenho, marque em cada etapa o degrau correspondente
-   (lead, reunião, proposta, contrato, perda).
+   (Lead, MQL, Reunião, Proposta, Contrato, Perda — ou "Não conta").
 4. **Configurações → Conexões**: crie a conexão do WhatsApp.
    - *Evolution*: escolha o transporte, dê um rótulo, salve e leia o QR
      code com o celular. O nome da instância é derivado do rótulo e
@@ -561,17 +569,75 @@ guarda a própria chave cifrada com a `ENCRYPTION_KEY` — rotacionar essa
 variável invalida todas de uma vez.
 
 **Asaas** (cobrança de honorários): no Asaas, em *Integrações → Chaves de
-API*, gere uma chave só de **leitura** em *Clientes*, *Cobranças* e
-*Parcelamentos*, sem data de validade (o Asaas não avisa antes de uma
-validade definida à mão expirar). Cole a chave no cartão com o NOME que
-ela tem no Asaas. A partir daí o agendador (passo 5.4) lê a cada 15
-minutos as cobranças vencidas e liga cada cliente do Asaas a um contato
+API*, gere uma chave com **leitura** em *Clientes*, *Cobranças* e
+*Parcelamentos* **e Webhooks em leitura e escrita** — é essa permissão que
+deixa o CRM criar sozinho o aviso na hora (o webhook); sem ela, o cartão
+mostra o webhook sem permissão e o aviso na conversa só muda no ciclo de 15
+minutos. Sem data de validade (o Asaas não avisa antes de uma validade
+definida à mão expirar). O CRM recusa chave de sandbox. Cole a chave no
+cartão com o NOME que ela tem no Asaas. O webhook precisa do endereço
+público do CRM gravado no build (`NEXT_PUBLIC_SITE_URL`, passo 5.1): sem
+ele, o CRM não tem para onde apontar o aviso e não o cria. A partir daí o
+agendador (passo 5.4) lê a cada 15 minutos as cobranças vencidas e liga cada cliente do Asaas a um contato
 do CRM pelo telefone, pelo documento ou pelo e-mail — e cria a ficha de
 quem tem telefone e ainda não tem contato, com a etiqueta `asaas`. Quem
 não casou aparece no cartão, em *Para confirmar* e *Sem ficha*, para uma
 pessoa decidir. ⚠️ Se você já tinha o agendador no ar antes desta versão,
 refaça o `docker stack deploy` (passo 5.3): o laço só passa a chamar
 `cb/asaas/cron` depois disso.
+
+A **régua de cobrança** do Asaas (automações de cobrança vencida e de
+"vence hoje") sai só por conexão **QR Code** (Evolution), nunca pelo
+número oficial; roda até as 18:00, pula fim de semana e feriado nacional de
+data fixa (feriado estadual ou municipal não conta), e trata número sem `+`
+como brasileiro. Envio automático por conexão não oficial aumenta o risco
+de o WhatsApp bloquear o número.
+
+**Calendly** (agendamento vira lead e automação): webhooks exigem plano
+pago do Calendly (**Standard ou superior**). Gere um *Personal access token*
+em *Integrations → API & Webhooks* com a conta que **administra a
+organização** (para enxergar os eventos de todos). O CRM assina o webhook
+sozinho no endereço público do CRM, que precisa ser alcançável de fora; ao
+trocar de domínio, use **Reassinar** no cartão.
+
+**tl;dv** (transcrições de reunião na ficha): a API só existe nos planos
+**Pro e Business**, e só sai pela API a reunião de quem a ORGANIZOU com um
+desses planos. Gere a chave em *Settings → Personal Settings → API Keys*.
+O webhook é opcional (o cartão mostra a URL; eventos `MeetingReady` e
+`TranscriptReady`); sem ele, a reunião entra no ciclo seguinte do
+agendador.
+
+**Meta Ads** (investimento e custo por lead no painel do funil): no
+Gerenciador de Negócios, *Configurações do negócio → Usuários do sistema →
+Gerar token*, com a permissão `ads_read` e sem validade. Depois, ligue cada
+campanha a um funil no cartão.
+
+**Assistente de IA, Radar e transcrição de áudio**: a chave de OpenAI,
+Anthropic ou Google Gemini vai em *Configurações → Integrações*. A
+**transcrição de áudio só funciona com Gemini**, e a busca na base de
+conhecimento (RAG) só com **OpenAI**. O Radar fica desligado por padrão e
+é ligado **por conexão**. Use chave de plano **pago** do provedor: os
+planos gratuitos podem usar o conteúdo enviado.
+
+**Instagram Direct** (em *Configurações → Conexões*, não em Integrações):
+crie um app próprio no painel da Meta e cadastre no CRM o *Instagram App
+ID* e o *Instagram App Secret* da aba do produto Instagram (um app serve a
+todas as contas). No painel da Meta:
+1. registre a **OAuth Redirect URI** que o CRM mostra (uma vez por app);
+2. em *Configuração da API com login do Instagram → Configurar webhooks*,
+   cole a Callback URL e o Verify Token que o CRM mostra e assine o campo
+   `messages`;
+3. adicione cada conta profissional ao app e aceite o convite no app do
+   Instagram;
+4. publique o app (modo **Ativo**) — em desenvolvimento, só quem tem papel
+   no app recebe mensagens. O modo Ativo pede uma URL de política de
+   privacidade: o CRM serve uma em `/privacidade`, que você deve revisar
+   antes de usar.
+O token vale **60 dias**; o CRM avisa quando estiver para vencer, e a
+renovação é entrar de novo pelo login do Instagram.
+
+**Webhooks de entrada e de saída** (Typebot, n8n, outros sistemas): ver
+[`webhooks.md`](./webhooks.md).
 
 ---
 

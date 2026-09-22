@@ -19,13 +19,17 @@ mesmo lugar, atribuição por conversa, situação (aberta, pendente,
 encerrada), anotações internas, favoritas, filtros salvos por pessoa e
 busca que alcança o corpo do histórico, não só o nome do contato. Grupos
 de WhatsApp aparecem como conversa, com o remetente identificado. Áudio é
-transcrito sob demanda. Quem está com a mesma conversa aberta aparece no
-cabeçalho.
+transcrito sob demanda. Mensagens podem ser agendadas, com anexo, e um
+acervo guarda os arquivos que o escritório envia sempre. Quem está com a
+mesma conversa aberta aparece no cabeçalho. Instala na tela de início do
+celular como aplicativo.
 
 **Dois transportes de WhatsApp, lado a lado.** A API oficial da Meta e a
 Evolution API (pareamento por QR code, como o WhatsApp Web). Cada conexão
 escolhe o seu, e a mesma instalação usa os dois. Mensagem enviada do
-celular pareado entra no CRM junto com o resto.
+celular pareado entra no CRM junto com o resto. O Instagram Direct entra
+na mesma caixa de entrada, para atendimento feito por gente (o robô não
+responde no Direct).
 
 **Contatos.** Etiquetas, campos personalizados organizados em blocos que
 o operador ordena, importação por CSV com deduplicação, histórico de tudo
@@ -38,9 +42,10 @@ etapas, ticket médio, custo por lead e CAC quando o Meta Ads está
 conectado.
 
 **Automações e fluxos.** Gatilhos por mensagem recebida, contato novo,
-palavra-chave, mudança de etapa do funil ou agendamento do Calendly.
-Condições, esperas, ramificações, webhooks. Construtor visual, sem
-código.
+palavra-chave, mudança de etapa do funil, agendamento do Calendly,
+cobrança vencida no Asaas ou webhook recebido (Typebot, n8n, formulário).
+Condições, esperas que param quando o cliente responde ou o card sai da
+etapa, ramificações, webhooks. Construtor visual, sem código.
 
 **Disparos.** Envio em massa com modelos aprovados pela Meta, controle de
 entrega e leitura por destinatário, substituição de variáveis, e
@@ -54,7 +59,9 @@ sustenta.
 
 **Agenda e tarefas.** Reuniões com disponibilidade por advogado e
 sobreposição barrada pelo banco. Tarefas por cliente, com prazo,
-responsável e respostas encadeadas.
+responsável e respostas encadeadas. A tela "Meu dia" abre o expediente
+de cada pessoa com o que venceu e o que chegou; quem administra vê
+também o que precisa de correção na operação.
 
 **Assistente de IA com a sua chave.** OpenAI, Anthropic ou Google Gemini.
 A chave é da sua conta, guardada cifrada, e o CRM chama o provedor
@@ -68,9 +75,12 @@ titularidade, e um modo "ver como" para conferir o que cada perfil
 enxerga.
 
 **Integrações.** Calendly (agendamento vira lead, com automação),
-Meta Ads (investimento e atribuição no painel do funil), API REST pública
-com chaves revogáveis por escopo, e um servidor MCP para operar o CRM a
-partir de assistentes de IA.
+Meta Ads (investimento e atribuição no painel do funil), Asaas (clientes
+ligados às fichas, aviso de inadimplência na conversa e régua de
+cobrança por WhatsApp), tl;dv (transcrições de reunião na ficha),
+webhooks de entrada e de saída, API REST pública com chaves revogáveis
+por escopo, e um servidor MCP para operar o CRM a partir de assistentes
+de IA.
 
 ---
 
@@ -117,6 +127,8 @@ Para uma instalação de verdade, com Supabase, WhatsApp e servidor, siga
 | [`docs/ATUALIZAR.md`](./docs/ATUALIZAR.md) | Trazer uma versão nova sem perder o que você customizou |
 | [`docs/public-api.md`](./docs/public-api.md) | A API REST e as chaves com escopo |
 | [`docs/mcp.md`](./docs/mcp.md) | Operar o CRM por assistentes de IA |
+| [`docs/webhooks.md`](./docs/webhooks.md) | Webhooks recebidos (Typebot, n8n, formulário) e enviados |
+| [`docs/docker.md`](./docs/docker.md) | Rodar a imagem localmente, com Docker Compose |
 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) | Como mexer no código da sua cópia |
 
 ## Idiomas

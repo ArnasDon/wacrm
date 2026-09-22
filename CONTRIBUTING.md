@@ -73,7 +73,12 @@ lê `NEXT_PUBLIC_APP_NAME`. Frase de interface não cita o nome do produto;
 onde ele é necessário, entra como parâmetro `{appName}`.
 
 **Migrations são arquivos, e nunca se renumera uma já aplicada.** Nomes
-em `NNN_descricao.sql`, sequenciais. Toda migration precisa aplicar num
+em `NNNN_descricao.sql`, com **quatro** dígitos, sequenciais — o CI
+aplica os arquivos em ordem de nome, e `1000_` com três dígitos ao lado
+ordenaria antes da `0900_` (um teste reprova nome fora do formato).
+Número novo vem sempre depois do maior que já existe: quem atualiza por
+`supabase db push` tem a migration fora de ordem recusada. Toda
+migration precisa aplicar num
 banco **vazio**: todo `REVOKE` acompanhado do `GRANT` de volta para quem
 precisa, e nenhuma conferência que exija dado que só existe numa
 instalação específica.

@@ -55,20 +55,25 @@ docker run -d --env-file .env.local -e PORT=3000 -p 3000:3000 wacrm
 
 ## Notes
 
-- Database migrations under `supabase/` are **not** run by the
-  container — apply them with the Supabase CLI as described in the
-  README.
+> This page covers running the image **locally**. For a production
+> install (Docker Swarm, Traefik, the scheduler, the Evolution gateway),
+> follow [`INSTALACAO.md`](./INSTALACAO.md).
+
+- Database migrations under `supabase/migrations/` are **not** run by
+  the container — apply them as described in
+  [`INSTALACAO.md`, step 1.2](./INSTALACAO.md#12-aplicar-as-migrations).
 - Received attachments are copied into the `chat-media` Supabase
-  Storage bucket, because Meta deletes media roughly 30 days after it
-  arrives and the copy is the only thing that outlives that. It grows
-  with inbound volume, so it's worth watching your project's storage
-  quota. Turn it off per account under Settings → WhatsApp →
-  Attachment Storage; attachments received while it's off become
-  unviewable once Meta drops them. Files over 16 MB (the bucket's
-  limit) are never copied.
-- Nothing inside the container is scheduled. If you use automation
-  Wait steps or flows, point an external scheduler at
-  `GET /api/automations/cron` and `GET /api/flows/cron` on this
-  deployment, sending the shared secret in the `x-cron-secret` header
-  (`AUTOMATION_CRON_SECRET`, see `.env.local.example`). Both return
-  503 until that variable is set.
+  Storage bucket: the providers delete media after a while (Meta about
+  30 days after it arrives), and the copy is the only thing that
+  outlives that. It grows with inbound volume, so it's worth watching
+  your project's storage quota. There is no screen to turn it off.
+  Files over 50 MiB (the bucket's limit) are never copied.
+- Nothing inside the container is scheduled. Point an external
+  scheduler at the seven cron routes of this deployment, sending the
+  shared secret in the `x-cron-secret` header (`AUTOMATION_CRON_SECRET`,
+  see `.env.local.example`): `GET /api/automations/cron` every ~15 s,
+  and `/api/cb/scheduled/cron`, `/api/flows/cron`, `/api/cb/radar/cron`,
+  `/api/cb/meta-ads/cron`, `/api/cb/tldv/cron` and `/api/cb/asaas/cron`
+  every 15 min. Every one of them returns 503 until that variable is
+  set. The production scheduler is described in
+  [`INSTALACAO.md`, step 5.4](./INSTALACAO.md#54-o-agendador-não-é-opcional).

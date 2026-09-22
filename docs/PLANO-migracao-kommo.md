@@ -1532,3 +1532,78 @@ preenchidos se continuam vazios/telefone no instante da escrita, e o card
 movido é lido travado —, e `status_changed` sem funil é recusado na entrada
 do lote, nomeando o lead, em vez de derrubar o lote inteiro depois de
 escrever.
+
+**Desde a 1034 (aplicada como 1025)** (acompanhamento do #232): a troca de
+funil também exige as duas etapas na entrada — sem a de destino, a
+transferência sumia das métricas do funil; sem a de origem, a ficha diria
+"Transferido de … (—)" (medido: os 1.509 eventos da carga têm as duas).
+
+⚠️ **Limite conhecido, registrado em 21/09 e NÃO corrigido** (o outro achado do
+Codex no head 657b78d): "intocado" é `updated_at <= criado_em`, e `updated_at`
+é a hora em que a transação de quem escreveu COMEÇOU. Um salvamento que já
+estava em voo quando um lote da carga começou, esperou a trava e gravou depois,
+fica com `updated_at` anterior à operação e passaria por intocado. Medido na
+carga de 21/09: nenhuma ficha nem card tem essa assinatura. Fechar de vez é
+guardar a imagem da linha depois da carga e comparar a linha inteira — obra
+desproporcional para uma ferramenta de emergência.
+
+## O histórico de conversa de 2026 — 21/09/2026 (migration 1033, aplicada como 1027)
+
+Pedido do operador depois da carga: os leads vieram, mas a conversa ficou na
+Kommo. **A API da Kommo não entrega o texto** — o evento de chat traz só o id
+da mensagem, o canal (`com.amocrm.amocrmwa`, o WhatsApp Lite dela) e o
+`talk_id`; foi dito em 02/09 e medido de novo em 21/09. O texto existe na
+Evolution:
+
+- **conexão viva** (as 4 atuais): o que o WhatsApp mandou ao parear, jun–set;
+- **backup de 09/09** (`/root/backups/evolution-20260909-1704.dump`): a conexão
+  antiga `Bancario` era o MESMO número do Bancário - Comercial e tem jan–27/08.
+  É a ÚNICA cópia de jan–mai desse número — não apagar. A `CBAdv` era o número
+  do Trabalhista - Jurídico, mas acaba em 24/12/2025.
+
+| | |
+| --- | ---: |
+| Mensagens 1:1 de 2026 nas duas fontes, sem repetição | 126.225 |
+| Das fichas COM CARD nos 4 funis, a trazer | 71.306 (997 fichas) |
+| Prontas depois da normalização e do teto | **67.969 (996 fichas)** |
+| Fora pelo teto de 600 por conversa (as mais antigas de 13 fichas) | 2.961 |
+| Fora por tipo que vira bolha vazia ou sem arquivo (contato, álbum, botões, figurinha) | 355 |
+| Fora porque a cópia mais antiga é de 2025 (reenvio em laço de dezembro) | 15 |
+| Editadas, que entram marcadas | 355 |
+| Sem telefone identificável (LID puro, jun–set) — não atribuíveis | ~26,7 mil |
+
+Validado contra a Kommo em 7 clientes do Bancário - Comercial: **799 × 790**.
+
+**Como:** um script fora do repositório exporta o conteúdo, normaliza com o
+`normalizeUpsert` da própria ingestão (importado direto, Node 24), aplica a
+lista de tipos permitidos, confere o carimbo, e escreve por lote pela
+`cb_importar_historico_whatsapp` (1033). O que a função garante e por quê está
+no cabeçalho da migration e na seção "Histórico importado do WhatsApp" do
+CLAUDE.md. Desfazer: `cb_desfazer_historico_whatsapp` — ANTES do
+`cb_kommo_desfazer`.
+
+**Revisão adversarial antes de aplicar (21/09, 4 lentes):** as travas
+passaram para o começo do lote (evita impasse com a ingestão viva), o desfazer
+anda em pedaços e só apaga conversa intocada, apagada/editada entram marcadas,
+cópia repetida escolhe a mais antiga, o teto caiu de 700 para 600 e o
+carregador nunca parte uma ficha entre lotes. Perdas registradas: reações, o
+único envio com erro (entra como enviado) e a figurinha.
+
+**Limites aceitos:** anexo sem arquivo (a Evolution não guardou a mídia; o CDN
+do WhatsApp expira em ~30 dias); o Trabalhista antes de junho não existe em
+fonte nenhuma; as conversas em LID puro esperam o CRM aprender o par
+(ou uma consulta ao WhatsApp, que arrisca restrição do número).
+
+**Carga completa — 22/09/2026, lote `carga-1`, 14h50–15h08** (em expediente,
+por decisão do operador; quem estava com a caixa de entrada aberta viu prévias
+antigas na tela até recarregar). A cadeia foi refeita no dia — o reinício da
+máquina apagou os exports — e a conferência (`p_conferir`) passou nos 300 lotes
+antes de escrever. Resultado: **68.337 mensagens para 1.004 fichas**, nenhuma
+repetida; 391 conversas criadas (encerradas, sem não lida, espera nem
+responsável); 86 encerradas com prévia nova; 5.359 citações ligadas. Nenhuma
+notificação nem evento de automação, nenhum gatilho deixado desligado, nenhuma
+conversa aberta com prévia importada. O teto de 600 deixou de fora 2.986
+mensagens antigas de 13 fichas. As 5 fichas do `ensaio-1` já estavam completas
+e ficaram fora deste lote — os dois lotes não se sobrepõem, o que importa para
+o desfazer por lote (a prévia é registrada uma vez por conversa, no primeiro
+lote).

@@ -30,7 +30,7 @@
 
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { destinoSeguro } from '@/lib/auth/destino-seguro'
+import { DESTINO_PADRAO, destinoSeguro } from '@/lib/auth/destino-seguro'
 import { origemPublica } from '@/lib/auth/origem-publica'
 import { createClient } from '@/lib/supabase/server'
 
@@ -53,7 +53,13 @@ export async function GET(request: NextRequest) {
   const { error } = await supabase.auth.exchangeCodeForSession(code)
   if (error) return falhar()
 
-  // `destino` já é caminho relativo validado (`destinoSeguro`): resolvido
-  // contra a origem pública, não sai dela.
-  return NextResponse.redirect(new URL(destino, origem))
+  // `destino` já é caminho relativo validado (`destinoSeguro`). A
+  // conferência da origem final é a segunda camada: se um dia um caminho
+  // escapar da validação e resolver para outro host, a pessoa vai para o
+  // destino padrão em vez de sair do domínio recém-autenticada.
+  const alvo = new URL(destino, origem)
+  if (alvo.origin !== new URL(origem).origin) {
+    return NextResponse.redirect(new URL(DESTINO_PADRAO, origem))
+  }
+  return NextResponse.redirect(alvo)
 }

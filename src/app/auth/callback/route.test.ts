@@ -44,6 +44,14 @@ describe('/auth/callback', () => {
     expect(r.headers.get('location')).toBe('https://crm.example.com/forgot-password?erro=link')
   })
 
+  it.each(['/.//evil.example', '/..//evil.example', '/%2e%2e//evil.example/x'])(
+    '`next` com segmento de ponto (%s) não sai do nosso domínio',
+    async (next) => {
+      const r = await GET(pedido(`?code=abc&next=${encodeURIComponent(next)}`))
+      expect(r.headers.get('location')).toBe('https://crm.example.com/dashboard')
+    },
+  )
+
   it('`next` para outro domínio não sai do nosso (open redirect)', async () => {
     const r = await GET(pedido('?code=abc&next=https://evil.example/x'))
     expect(new URL(r.headers.get('location')!).host).toBe('crm.example.com')

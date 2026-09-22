@@ -61,5 +61,13 @@ export function destinoSeguro(bruto: string | null | undefined): string {
   // a origem `null` de um esquema como `javascript:` ou `data:`).
   if (resolvida.origin !== BASE) return DESTINO_PADRAO
 
+  // ⚠️ E a SAÍDA não pode começar com `//`. Um segmento de ponto some na
+  // normalização: `/.//evil.example`, `/..//evil.example` e as formas
+  // `%2e` resolvem contra a base SEM sair dela (a conferência acima passa)
+  // e deixam o caminho `//evil.example` — que, resolvido de novo contra a
+  // origem pública na hora do redirecionamento, é URL relativa ao
+  // protocolo e aponta para OUTRO host. Achado da revisão do PR #254.
+  if (resolvida.pathname.startsWith('//')) return DESTINO_PADRAO
+
   return `${resolvida.pathname}${resolvida.search}${resolvida.hash}`
 }

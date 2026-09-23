@@ -62,7 +62,9 @@
     "radar": "Radar",
     "agenda": "Calendar",
     "unreadTasks": "{count} unread {count, plural, =1 {task} other {tasks}}",
-    "meuDia": "My day"
+    "meuDia": "My day",
+    "title": "CRM Template for WhatsApp",
+    "primaryNav": "Primary"
   },
   "Header": {
     "dashboard": "Dashboard",
@@ -274,7 +276,10 @@
       "novaConversa": "New conversation",
       "automacaoRodando": "{n, plural, one {# automation scheduled for this contact} other {# automations scheduled for this contact}}",
       "searchPlaceholderInMessages": "Search by name, number or message...",
-      "searchInsideMessages": "Also search inside messages"
+      "searchInsideMessages": "Also search inside messages",
+      "filterAll": "All",
+      "filterPending": "Pending",
+      "company": "Company"
     },
     "messageThread": {
       "unknownAuthor": "Unknown",
@@ -328,7 +333,14 @@
       "searchLocalMinChars": "Type {n} letters",
       "searchLocalNone": "No matches",
       "searchLocalCount": "{atual} of {total}",
-      "searchClose": "Close search"
+      "searchClose": "Close search",
+      "customer": "Customer",
+      "unknown": "Unknown",
+      "sendFailed": "Failed to send: {reason}",
+      "sendTemplateFailed": "Failed to send template: {reason}",
+      "waitForSending": "Wait for the message to finish sending",
+      "reactionFailed": "Reaction failed: {reason}",
+      "assignmentUpdateFailed": "Failed to update assignment"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -389,7 +401,14 @@
       "tetoDeAnexos": "{n, plural, =1 {1 file was left out} other {# files were left out}}: at most {max} attachments at a time.",
       "removeAllAttachments": "Remove all",
       "addCaptionFor": "Caption for {arquivo}",
-      "enviarNAnexos": "{n} messages"
+      "enviarNAnexos": "{n} messages",
+      "aiNotConfigured": "AI isn't set up yet — enable it in Settings → AI Assistant.",
+      "draftFailed": "Couldn't draft a reply.",
+      "draftEmpty": "The assistant didn't return a reply.",
+      "aiUnreachable": "Couldn't reach the AI assistant.",
+      "recordingTooLong": "Recording is too long (over 16 MB).",
+      "recordingUnsupported": "Voice recording isn't supported in this browser.",
+      "microphoneDenied": "Microphone access denied or unavailable."
     },
     "bubble": {
       "transcricao": "Transcript",
@@ -432,7 +451,8 @@
       "downloadFailed": "Couldn't download the attachment",
       "viewImage": "View image",
       "expandVideo": "Expand video",
-      "imageAlt": "Shared image"
+      "imageAlt": "Shared image",
+      "notDelivered": "Not delivered"
     },
     "actions": {
       "reply": "Reply",
@@ -871,7 +891,8 @@
       "toastBulkFailedDelete": "Failed to delete contacts",
       "toastBulkDeleted": "{count} contacts deleted",
       "toastDeleteRefused": "Could not delete: your profile is not allowed to delete contacts.",
-      "toastDeleteGone": "This contact no longer exists — someone deleted it first. The list has been refreshed."
+      "toastDeleteGone": "This contact no longer exists — someone deleted it first. The list has been refreshed.",
+      "selectAllOnPage": "Select all contacts on this page"
     },
     "form": {
       "addTitle": "Add Contact",
@@ -904,7 +925,8 @@
       "dupSimilar": "A contact with a very similar number already exists.",
       "loadingTags": "Loading tags...",
       "noTagsAvailable": "No tags available. Create tags in Settings.",
-      "phoneRequired": "Phone number is required"
+      "phoneRequired": "Phone number is required",
+      "phoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)"
     },
     "detailView": {
       "tabs": {
@@ -973,7 +995,11 @@
       "toastNoteNeedsConversation": "This contact has no conversation yet, so there is nowhere to attach the note. Send a message first.",
       "toastNoteDeleteForbidden": "Only the author or an admin can delete this note.",
       "fieldSaved": "Saved",
-      "toastCustomFieldFailed": "Could not save \"{campo}\" for {cliente}."
+      "toastCustomFieldFailed": "Could not save \"{campo}\" for {cliente}.",
+      "saveCustomFieldsBtn": "Save Custom Fields",
+      "toastPhoneNeedsCountryCode": "Include the country code — the number must start with + (e.g. +14155550123)",
+      "toastCustomFieldsSaved": "Custom fields saved",
+      "toastCustomFieldsFailed": "Failed to save custom fields"
     },
     "importModal": {
       "title": "Import Contacts",
@@ -1016,7 +1042,14 @@
       "toastSkipped_plural": "{count} duplicates skipped",
       "toastFailed": "{count} contact failed to import",
       "toastFailed_plural": "{count} contacts failed to import",
-      "toastError": "Import failed"
+      "toastError": "Import failed",
+      "resultInvalidPhone": "{count} invalid phone",
+      "resultInvalidPhone_plural": "{count} invalid phones",
+      "invalidPhoneHint": "Phone numbers must start with + and a country code (e.g. +14155550123). Numbers without one would be delivered to the wrong country.",
+      "failedRowsHeading": "Failed rows",
+      "unknownReason": "Unknown error",
+      "toastInvalidPhone": "{count} contact had no usable phone number",
+      "toastInvalidPhone_plural": "{count} contacts had no usable phone number"
     },
     "customFields": {
       "title": "Custom fields",
@@ -1174,7 +1207,8 @@
       "contactSearchHint": "Type at least 2 letters to search.",
       "contactSearchEmpty": "No contact matches the search.",
       "contactSearchFailed": "The search failed. Type again to retry.",
-      "contactSearchMore": "Showing the first {count}. Keep typing to narrow it down."
+      "contactSearchMore": "Showing the first {count}. Keep typing to narrow it down.",
+      "currency": "Currency"
     },
     "settings": {
       "managePipeline": "Manage Pipeline",
@@ -1496,7 +1530,8 @@
         "date": "Date"
       },
       "errorLoad": "Failed to load broadcasts",
-      "retry": "Retry"
+      "retry": "Retry",
+      "broadcastInProgress": "Broadcast in progress"
     },
     "status": {
       "draft": "Draft",
@@ -1619,7 +1654,10 @@
         "errorLoadTags": "Failed to load tags",
         "errorLoadFields": "Failed to load custom fields",
         "errorCsvParse": "Could not parse CSV file.",
-        "errorCsvMissingPhone": "CSV must have a 'phone' column."
+        "errorCsvMissingPhone": "CSV must have a 'phone' column.",
+        "csvInvalidPhones": "{count} row(s) skipped: phone numbers must start with + and a country code (e.g. +14155550123).",
+        "audienceSummary": "Audience Summary",
+        "calculating": "Calculating…"
       },
       "personalize": {
         "title": "Personalize Variables",
@@ -1646,7 +1684,14 @@
           "name": "Name",
           "phone": "Phone",
           "email": "Email"
-        }
+        },
+        "headerPreviewAlt": "Header preview",
+        "mediaUrlRequired": "A media URL is required to send this template.",
+        "mediaUrlInvalid": "Enter a valid http(s) URL.",
+        "enterValue": "Enter value...",
+        "loadingFields": "Loading…",
+        "noCustomFields": "No custom fields",
+        "unmappedWarning": "Map every placeholder before continuing — still missing <mono>{keys}</mono>. Otherwise those placeholders will ship to Meta as empty strings."
       },
       "scheduleSend": {
         "title": "Review & Send",
@@ -1667,7 +1712,11 @@
         "sending": "Sending...",
         "preparing": "Preparing...",
         "progressDesc": "Processing {current} of {total} recipients...",
-        "toastFailedPreview": "Failed to load preview data"
+        "toastFailedPreview": "Failed to load preview data",
+        "estimatedReach": "Estimated Reach",
+        "language": "Language",
+        "confirmTitle": "Confirm Broadcast",
+        "confirmDesc": "You are about to send this broadcast to <b>{count, number}</b> {count, plural, =1 {contact} other {contacts}} using the <b>{template}</b> template. This action cannot be undone."
       }
     }
   },
@@ -1701,7 +1750,9 @@
         "duplicateError": "Failed to duplicate",
         "deleteError": "Failed to delete"
       },
-      "never": "never"
+      "never": "never",
+      "activeIndicator": "active",
+      "openMenu": "Open menu"
     },
     "edit": {
       "loading": "Loading...",
@@ -2066,7 +2117,20 @@
         "label": "Sign as",
         "placeholder": "Carol - billing",
         "ajuda": "The name that signs this automation's text messages, instead of the firm's automatic name. Empty = the automatic name. Still under the account's signature switch."
-      }
+      },
+      "schedulePlaceholder": "Cron expression or HH:mm",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "kindCondition": "Condition",
+      "kindWait": "Wait",
+      "kindAction": "Action"
+    },
+    "relative": {
+      "never": "never",
+      "justNow": "just now",
+      "minutesAgo": "{n}m ago",
+      "hoursAgo": "{n}h ago",
+      "daysAgo": "{n}d ago"
     }
   },
   "Flows": {
@@ -2212,7 +2276,12 @@
         "filenamePlaceholder": "invoice.pdf",
         "advanceAfterSending": "After sending, advance to",
         "pickNextNode": "Pick a next node…",
-        "none": "— None —"
+        "none": "— None —",
+        "removeSection": "Remove section",
+        "fileUploaded": "File uploaded.",
+        "uploadFailed": "Upload failed.",
+        "fileTooLarge": "File is {size} MB — limit is 16 MB.",
+        "defaultOptionTitle": "Option"
       },
       "categories": {
         "messaging": "Messaging",
@@ -2260,7 +2329,8 @@
           "label": "End",
           "blurb": "Ends the flow"
         }
-      }
+      },
+      "editorView": "Editor view"
     },
     "validation": {
       "noIssues": "No issues. Ready to activate.",
@@ -2272,7 +2342,8 @@
       "fixIssues": "Fix the issues below before activating.",
       "statusActivated": "Flow activated.",
       "statusArchived": "Archived.",
-      "statusDraft": "Saved as draft."
+      "statusDraft": "Saved as draft.",
+      "deleteConfirm": "Delete \"{name}\"? Any active runs end immediately. This can't be undone."
     },
     "summary": {
       "options": "{count} {count, plural, =1 {option} other {options}}",
@@ -2307,7 +2378,10 @@
       "descriptionLabel": "Flow description",
       "statusDraft": "Draft",
       "statusActive": "Active",
-      "statusArchived": "Archived"
+      "statusArchived": "Archived",
+      "namePlaceholder": "Flow name",
+      "unsavedHint": "Unsaved changes — hit Save to persist",
+      "fixIssues": "Fix the issues below before activating"
     }
   },
   "Settings": {
@@ -2365,7 +2439,14 @@
       "perfilChanged": "Profile updated",
       "perfilChangeError": "Could not assign the profile",
       "legendaTitle": "What each profile grants",
-      "legendaMembros": "{count} {count, plural, =1 {member} other {members}}"
+      "legendaMembros": "{count} {count, plural, =1 {member} other {members}}",
+      "loadFailed": "Failed to load members",
+      "loadInvitationsFailed": "Failed to load invitations",
+      "updateRoleFailed": "Failed to update role",
+      "removeFailed": "Failed to remove member",
+      "revokeFailed": "Failed to revoke invitation",
+      "networkError": "Could not reach the server",
+      "memberAlt": "Member"
     },
     "invite": {
       "inviteCreated": "Invite created",
@@ -2397,7 +2478,9 @@
       "clipboardBlocked": "Clipboard blocked — copy the link manually",
       "whatsappMessage": "Join {accountName} on {appName} using this link (valid for {expiresInDays} days): {url}",
       "genericAccountName": "this account",
-      "perfilLabel": "Access profile"
+      "perfilLabel": "Access profile",
+      "networkError": "Could not reach the server. Try again?",
+      "fallbackAccountName": "our wacrm account"
     },
     "tagsAndFields": {
       "title": "Fields & tags",
@@ -2532,7 +2615,18 @@
       "toastInvalidImage": "Header image must be a JPEG or PNG.",
       "toastImageTooLarge": "Image is {size} MB — Meta's limit is 5 MB.",
       "toastUploadSuccess": "Image uploaded.",
-      "toastUploadFailed": "Upload failed."
+      "toastUploadFailed": "Upload failed.",
+      "qualityScoreTitle": "Meta quality score",
+      "headerTextLabel": "Header text",
+      "editFailedHttp": "Edit failed (HTTP {status})",
+      "submitFailedHttp": "Submit failed (HTTP {status})",
+      "uploadVideo": "Upload video",
+      "uploadDocument": "Upload document",
+      "uploadHintVideo": "MP4 or 3GPP, ≤16 MB",
+      "uploadHintDocument": "PDF, Word, PowerPoint, Excel or text, ≤16 MB",
+      "toastInvalidVideo": "Header video must be an MP4 or 3GPP file.",
+      "toastInvalidDocument": "Header document must be a PDF, Word, PowerPoint, Excel or text file.",
+      "toastMediaTooLarge": "File is {size} MB — the upload limit is {max} MB."
     },
     "roles": {
       "admin": "Admin",
@@ -2614,7 +2708,39 @@
       "step4_3": "Paste the <strong class=\"text-foreground\">Webhook Callback URL</strong> from above",
       "step4_4": "Enter the same <strong class=\"text-foreground\">Verify Token</strong> you set here",
       "step4_5": "Subscribe to \"messages\" webhook field",
-      "metaDocs": "Meta WhatsApp API Documentation"
+      "metaDocs": "Meta WhatsApp API Documentation",
+      "loadFailed": "Failed to load WhatsApp configuration",
+      "phoneNumberIdRequired": "Phone Number ID is required",
+      "accessTokenRequired": "Access Token is required for initial setup",
+      "reenterAccessToken": "Please re-enter the Access Token to save changes",
+      "saveFailed": "Failed to save configuration",
+      "savedButRegistrationFailed": "Saved, but Meta couldn't register the number: {error}",
+      "savedRegistrationSkipped": "Credentials saved and verified. Inbound registration was skipped (no PIN) — see Registration status below.",
+      "liveWithName": "Live — {name} can now receive events.",
+      "connectedGeneric": "WhatsApp connected. Events will start flowing within a minute.",
+      "connectedTo": "Connected to {name}",
+      "apiConnectionOk": "API connection successful",
+      "apiConnectionFailed": "API connection failed",
+      "connectionTestFailed": "Connection test failed. Check network and try again.",
+      "fullyWired": "Number is fully wired — Meta is delivering events.",
+      "notFullyRegistered": "Number is not fully registered. See the checks below for which step failed.",
+      "verifyEndpointUnreachable": "Could not reach the verification endpoint.",
+      "resetConfirm": "This will delete the current WhatsApp config so you can re-enter it. Continue?",
+      "resetFailed": "Failed to reset configuration",
+      "resetDone": "Configuration cleared. You can now re-enter your credentials.",
+      "webhookCopied": "Webhook URL copied to clipboard",
+      "phoneNumberIdPlaceholder": "e.g. 100234567890123",
+      "wabaIdPlaceholder": "e.g. 100234567890456",
+      "lastSaveFailed": "Last save failed",
+      "metaErrorStep": "Step",
+      "metaErrorCode": "Meta error code",
+      "metaErrorTrace": "Trace ID",
+      "metaErrorMessage": "Meta said",
+      "metaErrorDetailsHint": "Quote these details when contacting Meta support.",
+      "phoneNumberIdNotNumeric": "Phone Number ID must contain only digits. Copy the numeric id from Meta → WhatsApp → API Setup, not the phone number itself.",
+      "wabaIdNotNumeric": "WhatsApp Business Account ID must contain only digits. Copy it from Meta → WhatsApp → API Setup.",
+      "wabaSubscribed": "The WhatsApp Business Account is subscribed to this app — inbound webhooks can be delivered.",
+      "wabaNotSubscribed": "The WhatsApp Business Account is not subscribed to this app, so Meta will not deliver inbound webhooks. Re-enter the access token and save again to subscribe it."
     },
     "sections": {
       "overview": "Overview",
@@ -3386,7 +3512,8 @@
       "cancel": "Cancel",
       "signingOut": "Signing out…",
       "signOutEverywhere": "Sign out everywhere",
-      "signOutFailed": "Sign-out failed: {message}"
+      "signOutFailed": "Sign-out failed: {message}",
+      "unknownError": "Unknown error"
     },
     "appearance": {
       "title": "Appearance",
@@ -3395,7 +3522,8 @@
       "useMode": "Use {mode} mode",
       "active": "Active",
       "accentColor": "Accent color",
-      "useTheme": "Use {name} theme"
+      "useTheme": "Use {name} theme",
+      "colorMode": "Color mode"
     },
     "security": {
       "title": "Login & security",
@@ -3506,7 +3634,9 @@
       "addDoc": "Add document",
       "reindex": "Reindex",
       "reindexTooltip": "Re-embed all documents (e.g. after adding an embeddings key)",
-      "loading": "Loading…"
+      "loading": "Loading…",
+      "editDoc": "Edit",
+      "deleteDoc": "Delete"
     },
     "quickReplies": {
       "title": "Quick replies",
@@ -3673,6 +3803,43 @@
         "ignorado": "Ignored",
         "falhou": "Failed"
       }
+    },
+    "sectionsNav": "Settings sections",
+    "browserNotifications": {
+      "title": "Browser notifications",
+      "description": "Get a desktop alert for every new customer message, even while you're on another page. Saved to this device.",
+      "toggleLabel": "Notify me about new customer messages",
+      "toggleDesc": "Works only while the app is open in a browser tab.",
+      "statusGranted": "Allowed by your browser.",
+      "statusDefault": "Turning this on will ask your browser for permission.",
+      "statusDenied": "Blocked in browser settings",
+      "deniedHint": "Allow notifications for this site in your browser's site settings (usually the lock icon next to the address bar), then reload the page.",
+      "unsupported": "This browser doesn't support desktop notifications.",
+      "sendTest": "Send test notification",
+      "testTitle": "Test notification",
+      "testBody": "Notifications are working. New customer messages will show up like this.",
+      "permissionDeniedToast": "Your browser blocked notifications",
+      "labels": {
+        "fallbackTitle": "New message",
+        "image": "📷 Photo",
+        "audio": "🎤 Voice message",
+        "video": "🎬 Video",
+        "document": "📄 Document",
+        "location": "📍 Location",
+        "template": "📋 Template"
+      }
+    },
+    "deals": {
+      "title": "Deals & currency",
+      "description": "The currency used for new deals and for pipeline and dashboard totals.",
+      "defaultCurrency": "Default currency",
+      "defaultCurrencyDesc": "New deals default to this currency, and pipeline and dashboard totals are shown in it. Existing deals keep the currency they were saved with.",
+      "currencyLabel": "Currency",
+      "adminOnlyHint": "Only account admins can change the default currency.",
+      "save": "Save",
+      "saving": "Saving...",
+      "saveFailed": "Failed to save default currency",
+      "saveSuccess": "Default currency updated"
     }
   },
   "roles": {
@@ -3694,7 +3861,14 @@
       "inputPlaceholder": "Type a customer message…",
       "errorNotConfigured": "No agent configured yet — finish Setup first.",
       "errorNoReply": "Couldn't get a reply.",
-      "errorUnreachable": "Couldn't reach the agent."
+      "errorUnreachable": "Couldn't reach the agent.",
+      "emptyTitle": "Send a message to see how your agent would reply.",
+      "emptyDesc": "It uses your knowledge base and behaves exactly like the auto-reply bot — including handoff.",
+      "handoff": "Would hand off to a human here",
+      "placeholder": "Type a customer message…",
+      "notConfigured": "No agent configured yet — finish Setup first.",
+      "noReply": "Couldn't get a reply.",
+      "unreachable": "Couldn't reach the agent."
     },
     "usage": {
       "loadError": "Failed to load usage",
@@ -3712,8 +3886,20 @@
       "tokensPerDay": "Tokens per day",
       "byModel": "By model",
       "modelStats": "{tokens} tok · {calls, plural, =1 {# call} other {# calls}}",
-      "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
-    }
+      "truncatedNotice": "Showing a partial window — usage is high enough that only the most recent records are summarized here.",
+      "window": "Last {days} days",
+      "loadFailed": "Failed to load usage",
+      "empty": "No AI usage in the last {days} days yet.",
+      "emptyHint": "This fills in as the assistant drafts and auto-replies.",
+      "tokens": "Tokens",
+      "modelCalls": "{tokens} tok · {count, plural, =1 {# call} other {# calls}}",
+      "partialWindow": "Showing a partial window — usage is high enough that only the most recent records are summarized here."
+    },
+    "title": "AI Agents",
+    "description": "Your bring-your-own-key AI agent — set it up, then test it in the playground before it replies to customers in the inbox.",
+    "tabPlayground": "Playground",
+    "tabSetup": "Setup",
+    "tabUsage": "Usage"
   },
   "ForgotPasswordPage": {
     "successTitle": "Check your email",
@@ -3725,7 +3911,11 @@
     "emailPlaceholder": "you@example.com",
     "sending": "Sending...",
     "submitButton": "Send reset link",
-    "linkExpired": "That link has expired or was already used. Ask for a new one below."
+    "linkExpired": "That link has expired or was already used. Ask for a new one below.",
+    "checkEmailTitle": "Check your email",
+    "checkEmailDesc": "We've sent a password reset link to <strong>{email}</strong>. Please check your inbox.",
+    "desc": "Enter your email and we'll send you a reset link",
+    "sendLink": "Send reset link"
   },
   "ResetPasswordPage": {
     "title": "Choose a new password",
@@ -3771,7 +3961,28 @@
       "bodyPlaceholder": "Message body…",
       "buttonFallback": "Button",
       "menuFallback": "Menu"
-    }
+    },
+    "replyButtons": "Reply buttons",
+    "list": "List",
+    "body": "Body",
+    "bodyPlaceholder": "What the customer reads above the options",
+    "header": "Header (optional)",
+    "footer": "Footer (optional)",
+    "showIds": "Show reply IDs (advanced)",
+    "previewBody": "Message body…",
+    "previewButton": "Button",
+    "previewMenu": "Menu",
+    "buttonsCount": "Buttons ({count}/{max})",
+    "idPlaceholder": "id",
+    "buttonLabelPlaceholder": "Button label",
+    "addButton": "Add button",
+    "listButtonLabel": "List button label",
+    "rowsCount": "Rows ({count}/{max})",
+    "sectionTitlePlaceholder": "Section title (optional)",
+    "rowTitlePlaceholder": "Row title",
+    "rowDescriptionPlaceholder": "Description (optional)",
+    "addRow": "Add row",
+    "addSection": "Add section"
   },
   "JoinPage": {
     "roleAdmin": "Admin",
@@ -3805,7 +4016,29 @@
     "signingOut": "Signing out…",
     "signOutDifferentEmail": "Sign out & use a different email",
     "createAccountAndJoin": "Create account & join",
-    "alreadyHaveAccount": "I already have an account"
+    "alreadyHaveAccount": "I already have an account",
+    "fail": {
+      "notFoundTitle": "Invite not found",
+      "notFoundBody": "This link doesn't match a valid invitation. Double-check the URL or ask the person who invited you to send a new one.",
+      "usedTitle": "Invite already used",
+      "usedBody": "This invitation has already been accepted. If that wasn't you, ask the account admin to send a fresh link.",
+      "expiredTitle": "Invite expired",
+      "expiredBody": "This invitation has expired. Ask the account admin to send a new one — they take a few seconds to generate.",
+      "serverErrorTitle": "Something went wrong",
+      "serverErrorBody": "We couldn't verify this invitation right now. Try refreshing the page in a moment."
+    },
+    "conflictDefault": "You are already in another account. Sign in with a different email to join this one.",
+    "acceptFailed": "Failed to accept invitation",
+    "welcome": "Welcome to the team",
+    "serverUnreachable": "Could not reach the server",
+    "signOutFailed": "Could not sign out. Try refreshing the page.",
+    "createNewAccount": "Create a new account instead",
+    "invitedTo": "You're invited to <account>{name}</account>",
+    "joinAs": "You'll join as <badge>{role}</badge>. Link valid until {date}.",
+    "conflictBody": "To join <account>{name}</account>, sign out and sign up again with a different email address. The invite link stays valid as long as it hasn't expired.",
+    "signOutSwitch": "Sign out & use a different email",
+    "createAndJoin": "Create account & join",
+    "haveAccount": "I already have an account"
   },
   "NotificationsPage": {
     "title": "Notifications",
@@ -3849,7 +4082,15 @@
     "signedUpButSignInFailed": "The account was created and is already in the team, but signing in failed just now. Use \"Sign in\" with the email and password you chose.",
     "tooManyAttempts": "Too many attempts in a row. Wait a few minutes and try again.",
     "closedTitle": "Sign-ups are closed",
-    "passwordTooLong": "The password is too long: the limit is 72 bytes, and each accented letter counts as two."
+    "passwordTooLong": "The password is too long: the limit is 72 bytes, and each accented letter counts as two.",
+    "passwordsMismatch": "Passwords do not match",
+    "checkEmailDesc": "We've sent a confirmation link to <strong>{email}</strong>. Please check your inbox and click the link to verify your account.",
+    "titleJoin": "Create account & join",
+    "descJoin": "Verify your email, then accept the invitation to join your team.",
+    "desc": "Get started with CRM Template for WhatsApp",
+    "creating": "Creating account...",
+    "submit": "Create account",
+    "haveAccount": "Already have an account?"
   },
   "ChannelHealth": {
     "title": "WhatsApp connections",
@@ -4441,5 +4682,16 @@
   "DashboardShell": {
     "loading": "Loading…",
     "signOutError": "Could not sign out: {message}"
+  },
+  "Notifications": {
+    "title": "Notifications",
+    "description": "Conversations other teammates assign to you show up here.",
+    "markAllRead": "Mark all as read",
+    "markReadFailed": "Failed to mark notification as read",
+    "markAllFailed": "Failed to mark all as read",
+    "retry": "Retry",
+    "emptyTitle": "No notifications yet",
+    "emptyDesc": "You'll see an alert here when someone assigns you a conversation.",
+    "unread": "Unread"
   }
 }

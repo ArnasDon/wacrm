@@ -2,10 +2,24 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
+  getSubscribedApps,
+  listWabaPhoneNumbers,
   registerPhoneNumber,
   subscribeWabaToApp,
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
+import {
+  explainMetaError,
+  metaErrorPayload,
+  type MetaConnectStep,
+  type MetaErrorContext,
+} from '@/lib/whatsapp/meta-error-explain'
+import {
+  appSubscriptionState,
+  describeWabaPhoneMismatch,
+  isNumericMetaId,
+  phoneNumberBelongsToWaba,
+} from '@/lib/whatsapp/waba-pairing'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import {
   syncDefaultMetaChannelFromConfig,
@@ -53,6 +67,25 @@ function supabaseAdmin() {
 }
 
 /**
+ * Shape every failed Meta call into `{ error, meta }` — the actionable
+ * text plus the code / subcode / fbtrace_id / step a user can quote to
+ * Meta support. Status is 400 when the fix is on the user's side (token,
+ * ids, PIN) and 502 when Meta has to change something (issue #505).
+ */
+function metaFailure(err: unknown, step: MetaConnectStep, ctx: MetaErrorContext) {
+  const explained = explainMetaError(err, step, ctx)
+  console.error(`[whatsapp/config] Meta ${step} failed:`, explained.metaMessage, {
+    code: explained.code,
+    subcode: explained.subcode,
+    fbtrace_id: explained.fbtraceId,
+  })
+  return NextResponse.json(
+    { error: explained.summary, meta: metaErrorPayload(explained) },
+    { status: explained.httpStatus },
+  )
+}
+
+/**
  * GET /api/whatsapp/config
  *
  * Used by the "Test API Connection" button and by the page to check
@@ -60,10 +93,12 @@ function supabaseAdmin() {
  * so the UI can render an appropriate message rather than show a 500.
  *
  * Response shape:
- *   { connected: true,  phone_info: {...} }
+ *   { connected: true,  phone_info: {...},
+ *     waba_subscription: { checked, subscribed, app_id_match, error? } }
  *   { connected: false, reason: 'no_config',        message: '...' }
  *   { connected: false, reason: 'token_corrupted',  message: '...', needs_reset: true }
- *   { connected: false, reason: 'meta_api_error',   message: '...' }
+ *   { connected: false, reason: 'meta_api_error',   message: '...',
+ *     meta: { code, subcode, fbtrace_id, step, field, message } }
  */
 export async function GET() {
   try {
@@ -97,7 +132,7 @@ export async function GET() {
 
     const { data: config, error: configError } = await supabase
       .from('whatsapp_config')
-      .select('phone_number_id, access_token, status')
+      .select('phone_number_id, waba_id, access_token, status')
       .eq('account_id', accountId)
       .maybeSingle()
 
@@ -140,24 +175,65 @@ export async function GET() {
     }
 
     // Validate credentials against Meta
+    let phoneInfo
     try {
-      const phoneInfo = await verifyPhoneNumber({
+      phoneInfo = await verifyPhoneNumber({
         phoneNumberId: config.phone_number_id,
         accessToken,
       })
-      return NextResponse.json({ connected: true, phone_info: phoneInfo })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('[whatsapp/config GET] Meta API verification failed:', message)
+      const explained = explainMetaError(err, 'verify_number', {
+        phoneNumberId: config.phone_number_id,
+        wabaId: config.waba_id,
+      })
+      console.error('[whatsapp/config GET] Meta API verification failed:', explained.metaMessage)
       return NextResponse.json(
         {
           connected: false,
           reason: 'meta_api_error',
-          message: `Meta API rejected the credentials: ${message}`,
+          message: explained.summary,
+          meta: metaErrorPayload(explained),
         },
         { status: 200 }
       )
     }
+
+    // Credentials work. Also report whether the WABA is subscribed to
+    // this app — valid credentials with an unsubscribed WABA is exactly
+    // the "connected but no messages arrive" state (issue #505). Never
+    // fatal: the token may lack whatsapp_business_management and still
+    // be fine for sending.
+    let wabaSubscription: {
+      checked: boolean
+      subscribed: boolean | null
+      app_id_match: boolean | null
+      error?: string
+    } = { checked: false, subscribed: null, app_id_match: null }
+    if (config.waba_id) {
+      try {
+        const subs = await getSubscribedApps({ wabaId: config.waba_id, accessToken })
+        const state = appSubscriptionState(subs, process.env.META_APP_ID)
+        wabaSubscription = {
+          checked: true,
+          subscribed: state.subscribed,
+          app_id_match: state.appIdMatch,
+        }
+      } catch (err) {
+        const explained = explainMetaError(err, 'subscribed_apps', { wabaId: config.waba_id })
+        wabaSubscription = {
+          checked: true,
+          subscribed: null,
+          app_id_match: null,
+          error: explained.summary,
+        }
+      }
+    }
+
+    return NextResponse.json({
+      connected: true,
+      phone_info: phoneInfo,
+      waba_subscription: wabaSubscription,
+    })
   } catch (error) {
     console.error('Error in WhatsApp config GET:', error)
     return NextResponse.json(
@@ -172,6 +248,11 @@ export async function GET() {
  *
  * Saves or updates the WhatsApp config for the authenticated user.
  * Verifies credentials with Meta first, then encrypts and stores.
+ *
+ * Every Meta failure answers `{ error, meta: { code, subcode,
+ * fbtrace_id, step, field, message } }` — `error` is the actionable
+ * text, `meta` is what to quote to Meta support. 400 = fix it on the
+ * form (token / ids / PIN), 502 = Meta has to change something.
  */
 export async function POST(request: Request) {
   try {
@@ -211,6 +292,32 @@ export async function POST(request: Request) {
         { status: 400 }
       )
     }
+
+    // Meta ids are decimal digit strings. Catch the classic paste
+    // mistakes (the +phone number, a display name, a URL) here with a
+    // named field, instead of letting Meta answer "(#100) Unsupported
+    // get request" for a value we could have rejected up front.
+    if (!isNumericMetaId(phone_number_id)) {
+      return NextResponse.json(
+        {
+          error:
+            'Phone Number ID must contain only digits — it is the numeric id shown under Meta → WhatsApp → API Setup, not the phone number itself.',
+          field: 'phone_number_id',
+        },
+        { status: 400 }
+      )
+    }
+    if (waba_id !== undefined && waba_id !== null && waba_id !== '' && !isNumericMetaId(waba_id)) {
+      return NextResponse.json(
+        {
+          error:
+            'WhatsApp Business Account ID must contain only digits — copy it from Meta → WhatsApp → API Setup.',
+          field: 'waba_id',
+        },
+        { status: 400 }
+      )
+    }
+    const metaCtx: MetaErrorContext = { phoneNumberId: phone_number_id, wabaId: waba_id || null }
 
     if (pin !== undefined && pin !== null && pin !== '') {
       if (typeof pin !== 'string' || !/^\d{6}$/.test(pin)) {
@@ -261,12 +368,40 @@ export async function POST(request: Request) {
         accessToken: access_token,
       })
     } catch (err) {
-      const message = err instanceof Error ? err.message : 'Unknown Meta API error'
-      console.error('Meta API verification failed during save:', message)
-      return NextResponse.json(
-        { error: `Meta API error: ${message}` },
-        { status: 400 }
-      )
+      return metaFailure(err, 'verify_number', metaCtx)
+    }
+
+    // The number resolves — now make sure it lives under the WABA the
+    // user typed. A foreign-but-valid WABA ID used to save fine and
+    // subscribe the *wrong* account, surfacing days later as a webhook
+    // that never fires. Failing here names the mismatch instead.
+    if (waba_id) {
+      let wabaNumbers
+      try {
+        wabaNumbers = await listWabaPhoneNumbers({
+          wabaId: waba_id,
+          accessToken: access_token,
+        })
+      } catch (err) {
+        return metaFailure(err, 'waba_phone_numbers', metaCtx)
+      }
+      if (!phoneNumberBelongsToWaba(wabaNumbers, phone_number_id)) {
+        return NextResponse.json(
+          {
+            error: describeWabaPhoneMismatch(wabaNumbers, phone_number_id, waba_id),
+            field: 'waba_id',
+            meta: {
+              code: null,
+              subcode: null,
+              fbtrace_id: null,
+              step: 'waba_phone_numbers',
+              field: 'waba_id',
+              message: 'phone_number_id is not listed under waba_id',
+            },
+          },
+          { status: 400 }
+        )
+      }
     }
 
     // Encrypt sensitive tokens before storing
@@ -309,6 +444,7 @@ export async function POST(request: Request) {
     // stale PIN would actually fail and undo the active subscription.
     let registeredAt: string | null = existing?.registered_at ?? null
     let registrationError: string | null = null
+    let registrationMeta: ReturnType<typeof metaErrorPayload> | null = null
     // True when registration was deliberately skipped because no PIN
     // was supplied (see below). Distinct from registrationError — this
     // is not a failure, just an incomplete-but-valid save.
@@ -336,9 +472,10 @@ export async function POST(request: Request) {
           })
           registeredAt = new Date().toISOString()
         } catch (err) {
-          registrationError =
-            err instanceof Error ? err.message : 'Unknown Meta API error'
-          console.error('Phone number /register failed:', registrationError)
+          const explained = explainMetaError(err, 'register', metaCtx)
+          registrationError = explained.summary
+          registrationMeta = metaErrorPayload(explained)
+          console.error('Phone number /register failed:', explained.metaMessage, registrationMeta)
           // We deliberately fall through and still save the row so the
           // user can retry without re-entering everything. The UI
           // surfaces `last_registration_error` so they see WHY it's
@@ -351,6 +488,13 @@ export async function POST(request: Request) {
     // side, so we call on every save and persist the timestamp.
     // Skipped only when there's no waba_id (legacy rows from before
     // we required it).
+    //
+    // A failure here used to be swallowed with a console.warn, which
+    // left the user with a green "connected" banner and a webhook that
+    // never fired. Without this subscription Meta delivers nothing, so
+    // treat it as a failed connect and say why (issue #505). Nothing
+    // has been written yet, so the user just fixes the cause and saves
+    // again.
     let subscribedAppsAt: string | null = null
     if (waba_id) {
       try {
@@ -360,11 +504,7 @@ export async function POST(request: Request) {
         })
         subscribedAppsAt = new Date().toISOString()
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err)
-        console.warn('WABA subscribed_apps failed (non-fatal):', message)
-        // Subscription failures are rare once the App has the right
-        // permissions; we don't block save on them — the diagnostic
-        // endpoint surfaces this state too.
+        return metaFailure(err, 'subscribe_waba', metaCtx)
       }
     }
 
@@ -439,6 +579,8 @@ export async function POST(request: Request) {
         saved: true,
         registered: false,
         registration_error: registrationError,
+        error: registrationError,
+        meta: registrationMeta,
         phone_info: phoneInfo,
       })
     }

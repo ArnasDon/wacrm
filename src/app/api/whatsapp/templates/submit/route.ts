@@ -14,7 +14,7 @@ import {
   type TemplatePayload,
 } from '@/lib/whatsapp/template-validators'
 import { buildMetaTemplatePayload } from '@/lib/whatsapp/template-components'
-import { ensureImageHeaderHandle } from '@/lib/whatsapp/template-header-handle'
+import { ensureMediaHeaderHandle } from '@/lib/whatsapp/template-header-handle'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 
 /**
@@ -190,15 +190,16 @@ export async function POST(request: Request) {
 
       const accessToken = decrypt(canal.accessToken)
 
-      // Image headers need a Resumable-Upload handle (Meta rejects a
-      // plain URL at creation). Derive it from header_media_url before
-      // building the payload. Surfaces a 400 with an actionable message
-      // (missing META_APP_ID, unreachable URL, wrong type/size).
+      // Media headers (image/video/document) need a Resumable-Upload
+      // handle (Meta rejects a plain URL at creation). Derive it from
+      // header_media_url before building the payload. Surfaces a 400 with
+      // an actionable message (missing META_APP_ID, unreachable URL,
+      // wrong type/size).
       try {
-        await ensureImageHeaderHandle(payload, accessToken)
+        await ensureMediaHeaderHandle(payload, accessToken)
       } catch (e) {
         return NextResponse.json(
-          { error: e instanceof Error ? e.message : 'Header image upload failed.' },
+          { error: e instanceof Error ? e.message : 'Header media upload failed.' },
           { status: 400 },
         )
       }

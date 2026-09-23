@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   BookOpen,
   ChevronDown,
@@ -27,6 +27,7 @@ import {
   useRotulosDosGrupos,
 } from "@/components/settings/documentacao/rotulos-dos-eventos";
 import { SettingsChip } from "@/components/settings/settings-chip";
+import { SubAbas } from "@/components/settings/sub-abas";
 import {
   FALHAS_QUE_DESLIGAM,
   PRAZO_DA_ENTREGA_SEGUNDOS,
@@ -1398,15 +1399,41 @@ function AbaEnviados() {
 // A seção
 // ------------------------------------------------------------
 
+type AbaDosWebhooks = "recebidos" | "enviados";
+
 export function WebhooksPanel() {
   const t = useTranslations("Settings.webhooks");
-  // `?aba=enviados` abre direto na aba Enviados — é para onde a
-  // Documentação (Configurações → API) manda quem vai cadastrar um aviso.
-  // Lido só na montagem: a sub-aba continua sendo estado local.
+  const router = useRouter();
   const searchParams = useSearchParams();
-  const [aba, setAba] = useState<"recebidos" | "enviados">(() =>
-    searchParams.get("aba") === "enviados" ? "enviados" : "recebidos"
+
+  // A sub-aba MORA NA URL (`?aba=`), como na seção API, e é DERIVADA no
+  // render — nunca guardada em estado. A versão anterior lia o `?aba=` só na
+  // montagem e o clique mexia num `useState`: a tela mostrava Enviados com a
+  // URL dizendo Recebidos (ou o contrário, vindo da Documentação), e o link
+  // copiado dali — ou o recarregar da página — abria a OUTRA aba. Valor
+  // ausente ou desconhecido cai em Recebidos, o que `?tab=webhooks` sempre
+  // abriu.
+  const aba: AbaDosWebhooks =
+    searchParams.get("aba") === "enviados" ? "enviados" : "recebidos";
+
+  const irParaAba = useCallback(
+    (proxima: AbaDosWebhooks) => {
+      const params = new URLSearchParams(searchParams.toString());
+      // `tab` regravado junto, pelo mesmo motivo do `irParaAba` da seção API:
+      // quem resolve a seção é a página, e o link copiado depois do clique
+      // tem de abrir esta mesma aba. `replace`, como a troca de seção — o
+      // voltar do navegador não desfaz troca de aba.
+      params.set("tab", "webhooks");
+      params.set("aba", proxima);
+      router.replace(`/settings?${params.toString()}`, { scroll: false });
+    },
+    [router, searchParams]
   );
+
+  const abas = [
+    { id: "recebidos" as const, rotulo: t("abaRecebidos") },
+    { id: "enviados" as const, rotulo: t("abaEnviados") },
+  ];
 
   return (
     <div className="space-y-4">
@@ -1415,24 +1442,7 @@ export function WebhooksPanel() {
         <p className="mt-1 text-sm text-muted-foreground">{t("descricao")}</p>
       </div>
 
-      <div className="flex gap-4 border-b border-border">
-        {(["recebidos", "enviados"] as const).map((id) => (
-          <button
-            key={id}
-            type="button"
-            onClick={() => setAba(id)}
-            aria-current={aba === id}
-            className={cn(
-              "-mb-px border-b-2 px-1 pb-2 text-sm",
-              aba === id
-                ? "border-primary font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {id === "recebidos" ? t("abaRecebidos") : t("abaEnviados")}
-          </button>
-        ))}
-      </div>
+      <SubAbas abas={abas} ativa={aba} aoTrocar={irParaAba} rotulo={t("abasAria")} />
 
       {aba === "recebidos" ? <AbaRecebidos /> : <AbaEnviados />}
     </div>

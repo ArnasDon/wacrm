@@ -246,6 +246,47 @@ describe('conferência da assinatura no n8n', () => {
     expect(texto).toContain(`"${CABECALHO_DA_ASSINATURA.toLowerCase()}"`);
     expect(texto).toContain('sha256(t + "." + 1.value; "hex"; "SEU_SEGREDO")');
   });
+
+  it('Make: o Filter confere a JANELA de t, com a régua da verificação real nas bordas', () => {
+    // Sem a janela, uma entrega capturada passaria reenviada a qualquer hora
+    // (o HMAC do corpo reenviado é o mesmo). O trecho é texto para o operador
+    // colar no Make, então o teste o LÊ: tira as duas comparações de `t`
+    // contra `timestamp` e as avalia, e o resultado tem de coincidir com
+    // `verifySignatureHeader` — inclusive exatamente na borda da janela.
+    const texto = assinaturaNoMake(M);
+    const comparacoes = [
+      ...texto.matchAll(
+        /AND t\s+Numeric: (Greater|Less) than or equal to\s+\{\{timestamp ([+-]) (\d+)\}\}/g
+      ),
+    ].map(([, sentido, sinal, n]) => ({
+      sentido,
+      deslocamento: (sinal === '-' ? -1 : 1) * Number(n),
+    }));
+    // Duas, uma para cada lado: o Make não tem `abs`.
+    expect(comparacoes).toHaveLength(2);
+    for (const c of comparacoes) {
+      expect(Math.abs(c.deslocamento)).toBe(TOLERANCIA_DA_ASSINATURA_SEGUNDOS);
+    }
+
+    const filtroAceita = (t: number, agora: number) =>
+      comparacoes.every(({ sentido, deslocamento }) =>
+        sentido === 'Greater' ? t >= agora + deslocamento : t <= agora + deslocamento
+      );
+
+    const corpo = '{"a":1}';
+    const t0 = 1_800_000_000;
+    const cab = buildSignatureHeader(corpo, 'whsec_x', t0);
+    const J = TOLERANCIA_DA_ASSINATURA_SEGUNDOS;
+    for (const d of [-J - 1, -J, -1, 0, 1, J, J + 1]) {
+      const agora = t0 + d;
+      expect(filtroAceita(t0, agora), `agora = t + ${d}`).toBe(
+        verifySignatureHeader(cab, corpo, 'whsec_x', agora)
+      );
+    }
+    // E a borda de verdade está lá: um segundo além da janela é recusado.
+    expect(filtroAceita(t0, t0 + J + 1)).toBe(false);
+    expect(filtroAceita(t0, t0 + J)).toBe(true);
+  });
 });
 
 describe('credenciais e filtros', () => {

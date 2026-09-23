@@ -1016,7 +1016,9 @@
       "toastSkipped_plural": "{count} duplicates skipped",
       "toastFailed": "{count} contact failed to import",
       "toastFailed_plural": "{count} contacts failed to import",
-      "toastError": "Import failed"
+      "toastError": "Import failed",
+      "pareceId": "{name} looks like a tag id and does not exist in this account — it will be ignored",
+      "toastTagIdsSkipped": "Tag ids that do not exist in this account were ignored: {sample}{more}"
     },
     "customFields": {
       "title": "Custom fields",
@@ -3687,7 +3689,7 @@
         },
         "dealCreated": {
           "rotulo": "Deal created",
-          "descricao": "A card was created in a pipeline, in any stage."
+          "descricao": "A card was created in a pipeline, in any stage — in a won or lost stage, it is born with that status."
         },
         "dealStageChanged": {
           "rotulo": "Deal changed stage",
@@ -3695,7 +3697,7 @@
         },
         "dealStatusChanged": {
           "rotulo": "Deal won, lost or reopened",
-          "descricao": "A card changed status."
+          "descricao": "A card changed status. A card created already won or lost produces only “Deal created”."
         }
       },
       "grupoMensagens": "Messages and conversations",
@@ -3724,7 +3726,8 @@
         "outro": "the CRM could not deliver"
       },
       "testeErro": "Could not send the test. Try again.",
-      "comoConfigurar": "How to set it up in n8n and Make"
+      "comoConfigurar": "How to set it up in n8n and Make",
+      "abasAria": "Webhooks section"
     },
     "copiar": {
       "copiado": "Copied",
@@ -3771,13 +3774,13 @@
       },
       "etiquetas": {
         "titulo": "Tags",
-        "fonte": "In the API: <code>GET /api/v1/tags</code> (scope <code>contacts:read</code>). The API accepts a tag by its name or by its ID.",
+        "fonte": "In the API: <code>GET /api/v1/tags</code> (scope <code>contacts:read</code>). Creating and editing a contact and applying a tag accept the name or the ID; the <code>?tag=</code> filter of <code>GET /api/v1/contacts</code>, only the ID.",
         "vazio": "No tag in this account.",
         "copiar": "Copy ID of tag {nome}"
       },
       "campos": {
         "titulo": "Custom fields",
-        "fonte": "The API reads and writes values by the <b>key</b>, not by the ID: <code>field_key</code> in <code>/api/v1/contacts/'{id}'/custom-fields</code> (scope <code>custom_fields:read</code>). No endpoint lists the account's fields — copy the key from here.",
+        "fonte": "The API reads and writes values by the <b>key</b>, not by the ID, at <code>/api/v1/contacts/'{id}'/custom-fields</code>. A GET there, with the id of ANY contact, returns the account's whole catalog in <code>fields</code>, with each field's key in <code>key</code> (scope <code>custom_fields:read</code>).",
         "nasAutomacoes": "In automation messages, the same key goes in <code>'{{contact.campo.<key>}}'</code>.",
         "vazio": "No custom field in this account.",
         "chave": "Key",
@@ -3786,7 +3789,7 @@
       },
       "conexoes": {
         "titulo": "Connections",
-        "fonte": "In the API: <code>GET /api/v1/channels</code> (scope <code>channels:read</code>). The sending endpoints take the <code>channel_id</code> to choose the number.",
+        "fonte": "In the API: <code>GET /api/v1/channels</code> (scope <code>channels:read</code>). The sending endpoints accept a <code>channel_id</code> to choose the number — in <code>POST /api/v1/messages</code>, without it, the message goes out on the conversation’s number or the account default.",
         "vazio": "No connection in this account.",
         "copiar": "Copy ID of connection {nome}",
         "semIdentidade": "no number yet"
@@ -3838,11 +3841,11 @@
       },
       "ids": {
         "intro": "The <ids>IDs</ids> tab lists, with a copy button, the ids of pipelines, stages, tags, connections, members and fields. The rules that confuse the most:",
-        "etiqueta": "<b>Tags</b> go by name or by id — both work. A new name creates the tag; an id never becomes a tag name.",
+        "etiqueta": "<b>Tags</b> go by name or by id when creating or editing a contact and when applying a tag. A new name creates the tag; an id never becomes a tag name. The <code>?tag=</code> filter of the contact list, though, takes only the id.",
         "campo": "<b>Custom fields</b> go by key (<code>utm_source</code>), never by the field's id.",
         "usuario": "<b>Task assignee and meeting owner</b> are the member's USER id, which the IDs tab shows in the members list.",
         "etapa": "<b>Stages</b> go by id, and creating a deal requires <code>stage_id</code>: the CRM does not pick the entry column for you.",
-        "api": "Through the API itself: <code>GET /api/v1/pipelines</code> lists pipelines and stages (scope <code>deals:read</code>), <code>GET /api/v1/tags</code> the tags (<code>contacts:read</code>) and <code>GET /api/v1/channels</code> the connections (<code>channels:read</code>)."
+        "api": "Through the API itself: <code>GET /api/v1/pipelines</code> lists pipelines and stages (scope <code>deals:read</code>), <code>GET /api/v1/tags</code> the tags (<code>contacts:read</code>), <code>GET /api/v1/channels</code> the connections (<code>channels:read</code>) and <code>GET /api/v1/contacts/'{id}'/custom-fields</code>, with the id of any contact, the custom field catalog (<code>custom_fields:read</code>)."
       },
       "n8n": {
         "chamarTitulo": "Calling the API",
@@ -3853,8 +3856,8 @@
         "receberTitulo": "Receiving notifications",
         "receber1": "Use the <b>Webhook</b> node, POST method, and under <b>Respond</b> pick <b>Immediately</b>: the CRM waits at most {segundos} seconds for the answer.",
         "receber2": "Register the <b>Production URL</b> in the CRM and click <b>Publish</b> — saving without publishing does not put the new version live. What arrives shows in the <b>Executions</b> tab.",
-        "receber3": "The <b>Test URL</b> only listens for 120 seconds after “Listen for test event”. To avoid depending on a real event in that window, use the <b>Send test</b> button in Webhooks → Outgoing.",
-        "servidor": "n8n on your own server: set <code>N8N_WEBHOOK_URL</code> to the public address. Without it the URL comes out with <code>localhost</code>, and the CRM refuses it."
+        "receber3": "<b>Send test</b> (in <enviados>Webhooks → Outgoing</enviados>) posts to the registered URL — the Production URL: with the flow published, it shows in <b>Executions</b>, not in “Listen for test event”, which only listens on the <b>Test URL</b>, for 120 seconds. To see it in Listen, register a second endpoint with the Test URL, click Listen and Send test within that window, then delete the endpoint: outside the window it answers 404 to real notifications and ends up switched off.",
+        "servidor": "n8n on your own server: set the public address in <code>N8N_WEBHOOK_URL</code> (n8n 2.30 and later) or in <code>WEBHOOK_URL</code> (earlier versions; newer ones still read it). Without it the URL comes out with <code>localhost</code>, and the CRM refuses it."
       },
       "make": {
         "chamarTitulo": "Calling the API",
@@ -3872,23 +3875,23 @@
         "regrasTitulo": "Delivery rules",
         "regra": {
           "umaTentativa": "One attempt per notification, with a {segundos}-second deadline and no retry. Answer 2xx quickly; a redirect counts as a failure.",
-          "desliga": "{falhas} consecutive failures switch the endpoint off. Turn it back on in the Outgoing tab — that resets the counter.",
+          "desliga": "{falhas} consecutive failures switch the endpoint off, and the counter belongs to the ENDPOINT, not to the event: a backlog of deal notifications (with the scheduler down, for instance) goes out at once and, if your system is down at that moment, it alone can add up to {falhas} — switching off the message notifications along with it. Turn it back on in the Outgoing tab; that resets the counter.",
           "repeticao": "Order is not guaranteed. On deal events, the envelope <code>id</code> (equal to <code>data.event_id</code>) is stable: use it to drop repeats.",
           "teste": "The Send test button sends fictitious data with <code>\"test\": true</code>: filter it out of production flows.",
-          "negocio": "On deal events, <code>deal</code> is the deal AS OF DELIVERY and <code>stage</code> is the stage of THIS move — read <code>stage</code>, not <code>deal.stage_id</code>. <code>source</code> says who caused it, <code>assignee</code> is the owner and <code>contact</code> carries tags and <code>custom_fields</code>.",
+          "negocio": "On deal events, <code>deal</code> is the deal AS OF DELIVERY and <code>stage</code> is the stage of THIS move — read <code>stage</code>, not <code>deal.stage_id</code>. <code>assignee</code> is the owner and <code>contact</code> carries tags and <code>custom_fields</code>. <code>source</code> says who caused it: <code>user</code> (someone in the CRM screens), <code>channel</code> (the connection opened the card on the first message, from the client or from the team), <code>automation</code> (the “Create Deal” step) or <code>system</code> (the API and the automations' “Move deal to stage” and “Mark won or lost” steps). <code>channel_id</code> is the number of the contact's conversation at that moment, and comes empty when they have not talked through any connection yet — an incoming-webhook (Typebot) or Calendly lead who has not written, a contact created by the API, a card with no contact. If you filter by number, decide what to do with these.",
           "atraso": "A late notification still goes out, with the real time of the fact in <code>occurred_at</code>.",
-          "doisAvisos": "Moving a card into a stage marked won or lost produces two notifications: stage changed and status changed.",
+          "doisAvisos": "Moving a card into a stage marked won or lost produces two notifications: stage changed and status changed. A card CREATED in such a stage, though, is born with that status and produces only <code>deal.created</code>: if you wait for “won”, also check <code>deal.status</code> on that notification.",
           "migracao": "Bulk data migration loads produce no notification."
         },
         "assinaturaTitulo": "Verifying the signature — optional, advanced",
         "assinatura": {
           "intro": "<code>{assinatura}</code> reads <code>t=…,v1=…</code>: <code>v1</code> is the hex HMAC-SHA256 of <code>t</code>, a dot and the RAW body, keyed with the whole secret (<code>{prefixo}</code> included). Reject it if <code>t</code> is more than {minutos} minutes old.",
           "n8n": "In n8n: turn on <b>Raw Body</b> in the Webhook node (under Add Option), add a <b>Code</b> node with the snippet below and, after it, a <b>Crypto</b> and an <b>IF</b>:",
-          "make": "In Make: in the Custom webhook, turn on <b>JSON pass-through</b> and <b>Get request headers</b>; split out <code>t</code> and <code>v1</code> and compare them in a <b>Filter</b>. Then use <b>Parse JSON</b> on the body:"
+          "make": "In Make: in the Custom webhook, turn on <b>JSON pass-through</b> and <b>Get request headers</b>; split out <code>t</code> and <code>v1</code> and, in a <b>Filter</b>, compare the signature and check the age of <code>t</code>. Then use <b>Parse JSON</b> on the body:"
         }
       },
       "receber": {
-        "texto": "For an outside system to send data and trigger an automation, create a webhook in <recebidos>Webhooks → Incoming</recebidos>. It POSTs to the webhook URL with <code>Authorization: Bearer</code> and the secret, and each JSON field becomes <code>'{{vars.field_name}}'</code> in the automation.",
+        "texto": "For an outside system to send data and trigger an automation, create a webhook in <recebidos>Webhooks → Incoming</recebidos> (a section only admins see). It POSTs to the webhook URL with <code>Authorization: Bearer</code> and the secret, and each JSON field becomes <code>'{{vars.field_name}}'</code> in the automation.",
         "telefone": "Set the <b>phone field</b>: it is how the CRM finds the client, creating the record if the number is new. Without it, no automation runs.",
         "automacao": "In the automation, use the <b>Incoming webhook</b> trigger. A new lead has no deal: put <b>Create Deal</b> before <b>Move deal to stage</b>."
       },
@@ -3896,7 +3899,7 @@
         "etapa": {
           "titulo": "When a lead changes stage, notify n8n",
           "texto": "Register an endpoint with the <code>deal.stage_changed</code> event and, in n8n, filter by the stage id (IDs tab) in an <b>IF</b> node:",
-          "laco": "⚠️ If your flow moves the card through the API, that produces another notification, with <code>source</code> equal to <code>system</code>, and the flow can loop. The filter above drops it — and also drops automations' “Move card” steps, which come out the same way."
+          "laco": "⚠️ If your flow moves the card through the API, that produces another notification, with <code>source</code> equal to <code>system</code>, and the flow can loop. The filter above drops it — and also drops the automations' “Move deal to stage” step, which comes out with the same <code>source</code>."
         },
         "negocio": {
           "titulo": "Create a deal in a stage",
@@ -3912,7 +3915,7 @@
         },
         "mensagem": {
           "titulo": "Send a message",
-          "texto": "By phone number, with country code. <code>channel_id</code> picks the sending number; without it, the account default is used. A contact with no deal gets one in the connection's pipeline. Scope <code>messages:send</code>."
+          "texto": "By phone number, with country code. Without <code>channel_id</code>, it goes out on the number the conversation is already on (otherwise, the account default). With it, it goes out on that number and the conversation is PINNED to it — the client's reply comes back to the same number. A contact with no deal gets a card only if the connection the message went out on has a default pipeline. Scope <code>messages:send</code>."
         }
       },
       "erros": {
@@ -3920,7 +3923,7 @@
         "e403": "<b>403</b> — the key is missing a scope. Listing pipelines needs <code>deals:read</code>; tags, <code>contacts:read</code>; connections, <code>channels:read</code>. Create a key with the missing scope.",
         "e429": "<b>429</b> — more than {limite} calls per minute. Wait for <code>Retry-After</code>; in n8n, use the interval between pages.",
         "e400": "<b>400</b> — the body has an error, and the message names the field. Dates and times need the timezone (<code>Z</code> or <code>-03:00</code>).",
-        "etiquetaPorId": "<b>Tag sent by id</b> where a name was expected: it works now — the API accepts both.",
+        "etiquetaPorId": "<b>Tag sent by id</b> where a name was expected: it works when creating and editing a contact and when applying a tag. An id that is not from this account returns <code>400</code> (<code>unknown_tag_ids</code>) and nothing is written. The <code>?tag=</code> filter of the contact list, though, takes only the id — a name there is a <code>400</code>.",
         "usuario": "<b>Assignee not found</b> — use the member's user id, not the id of something else on the same screen.",
         "testUrl": "<b>Nothing reaches n8n</b> — the Test URL only listens for 120 seconds. Register the Production URL, with the flow published.",
         "url": "<b>Address refused</b> — the CRM only delivers to a public https:// address: http, localhost and internal IPs do not work.",
@@ -3936,7 +3939,8 @@
         "segredo": "YOUR_SECRET",
         "tituloDoNegocio": "Jane Example",
         "textoDaMensagem": "Hi! We've got your message."
-      }
+      },
+      "soAdmin": "Only admins see this section"
     }
   },
   "roles": {

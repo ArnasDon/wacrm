@@ -186,7 +186,25 @@ export function curlPreencherCampo(base: string, m: Marcadores): string {
   );
 }
 
-/** `POST /api/v1/messages`: pelo telefone, com DDI; `channel_id` opcional. */
+/**
+ * `POST /api/v1/messages`: pelo telefone, com DDI; `channel_id` opcional.
+ *
+ * ⚠️ O exemplo LEVA o `channel_id`, de propósito, e a receita diz o preço:
+ * com ele a conversa fica FIXADA naquele número (`pinConversationChannel`
+ * na rota) e deixa de seguir o cliente. Sem ele, a mensagem sai pelo número
+ * em que a conversa já está — que "segue o cliente" —, e numa conta com
+ * vários números o remetente de um lembrete disparado pelo n8n ficaria
+ * imprevisível: sairia pelo número por onde o cliente escreveu da última
+ * vez, fosse qual fosse. Para integração, escolher o número é o caso comum;
+ * numa conta de um número só, fixar nele não muda nada.
+ *
+ * E o marcador serve de trava: colado sem trocar `ID_DA_CONEXAO`, o pedido
+ * volta `400` ("not a channel of this account") em vez de mandar a mensagem
+ * pelo número que o CRM escolhesse. O telefone do exemplo é fictício, mas
+ * quem cola o curl troca o telefone e esquece o resto. (A trava não é
+ * perfeita: a rota acha-ou-cria a ficha e a conversa ANTES de conferir o
+ * canal, então esse 400 deixa a ficha do telefone criada — nada é enviado.)
+ */
 export function curlMandarMensagem(base: string, m: Marcadores): string {
   return curl('POST', `${base}/api/v1/messages`, m.chave, {
     to: '+5511900000000',
@@ -338,14 +356,32 @@ export function paginacaoDoMake(): string {
  * A conferência da assinatura no Make: com JSON pass-through o corpo cru
  * chega em `1.value`, e `sha256` COM chave devolve o HMAC. Os arrays do
  * Make começam em 1.
+ *
+ * ⚠️ O Filter confere TAMBÉM a idade de `t`, não só o HMAC. A tela manda
+ * recusar `t` com mais de `TOLERANCIA_DA_ASSINATURA_SEGUNDOS`, e até
+ * 23/09/2026 este trecho só comparava a assinatura: uma entrega capturada
+ * (log de proxy, histórico do próprio Make) podia ser reenviada a qualquer
+ * hora e passaria — a janela é a proteção contra replay, e o HMAC sozinho
+ * não a dá (o corpo reenviado é o mesmo, a assinatura também).
+ *
+ * São DUAS comparações numéricas contra `timestamp` (a variável do Make com
+ * o agora em segundos Unix), e não uma sobre a diferença absoluta: o Make
+ * não tem `abs`, e `t` chega como TEXTO — por isso a conta fica do lado do
+ * `timestamp` (número) e `t` é só o operando que o operador numérico do
+ * Filter converte. As duas juntas são `|agora − t| ≤ janela`, inclusive nas
+ * bordas, que é exatamente a régua de `verifySignatureHeader` (o teste
+ * compara as duas nas bordas).
  */
 export function assinaturaNoMake(m: Marcadores): string {
   const cabecalho = CABECALHO_DA_ASSINATURA.toLowerCase();
+  const janela = TOLERANCIA_DA_ASSINATURA_SEGUNDOS;
   return [
     `sig = {{get(map(1.__IMTHEADERS__; "value"; "name"; "${cabecalho}"); 1)}}`,
     't   = {{replace(get(split(sig; ","); 1); "t="; "")}}',
     'v1  = {{replace(get(split(sig; ","); 2); "v1="; "")}}',
     '',
     `Filter: v1  Equal to  {{sha256(t + "." + 1.value; "hex"; "${m.segredo}")}}`,
+    `    AND t   Numeric: Greater than or equal to  {{timestamp - ${janela}}}`,
+    `    AND t   Numeric: Less than or equal to  {{timestamp + ${janela}}}`,
   ].join('\n');
 }

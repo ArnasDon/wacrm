@@ -31,6 +31,9 @@ import Link from "next/link";
 import { ArrowDownLeft, ArrowUpRight, KeyRound } from "lucide-react";
 import { useTranslations } from "next-intl";
 
+import { useAuth } from "@/hooks/use-auth";
+import { podeVerSecao } from "@/lib/perfis/visibilidade";
+
 import { BlocoDeCodigo, ValorCopiavel } from "./copiar";
 import {
   CodigoEmLinha,
@@ -122,6 +125,23 @@ export function DocumentacaoDeIntegracao({
   const origem = useOrigem();
   const base = ex.urlBaseDoCrm(process.env.NEXT_PUBLIC_SITE_URL, origem) ?? "";
 
+  // ⚠️ Esta aba é de QUALQUER membro (a seção API não está em
+  // `SECOES_SO_DE_ADMIN`), mas Webhooks é só de admin. O link para lá, nas
+  // mãos de quem não vê a seção, não dava erro nenhum: a página de
+  // Configurações recusa a seção pedida e cai na PRIMEIRA visível — a pessoa
+  // clicava em "Enviados" e chegava à Visão geral (ou ao próprio perfil), sem
+  // uma palavra dizendo por quê. Sem a seção, o nome dela vira texto em destaque, com o motivo no
+  // `title`. A régua é a MESMA da página (`podeVerSecao` sobre o acesso
+  // EFETIVO), então o "Ver como" de um perfil sem Webhooks também tira o
+  // link.
+  const { acesso } = useAuth();
+  const veWebhooks = podeVerSecao(acesso, "webhooks");
+  const semSecaoDeWebhooks = (c: ReactNode) => (
+    <strong className="font-medium text-foreground" title={t("soAdmin")}>
+      {c}
+    </strong>
+  );
+
   const m: ex.Marcadores = {
     chave: t("marcador.chave"),
     idDoContato: t("marcador.idDoContato"),
@@ -146,17 +166,24 @@ export function DocumentacaoDeIntegracao({
     ids: (c: ReactNode) => (
       <BotaoDeLink onClick={() => irParaAba("ids")}>{c}</BotaoDeLink>
     ),
-    // A seção Webhooks lê `?aba=` para abrir direto na sub-aba certa.
-    enviados: (c: ReactNode) => (
-      <Link href="/settings?tab=webhooks&aba=enviados" className={CLASSE_DO_LINK}>
-        {c}
-      </Link>
-    ),
-    recebidos: (c: ReactNode) => (
-      <Link href="/settings?tab=webhooks&aba=recebidos" className={CLASSE_DO_LINK}>
-        {c}
-      </Link>
-    ),
+    // A seção Webhooks lê `?aba=` para abrir direto na sub-aba certa — e
+    // só é link para quem enxerga a seção (ver `veWebhooks` acima).
+    enviados: (c: ReactNode) =>
+      veWebhooks ? (
+        <Link href="/settings?tab=webhooks&aba=enviados" className={CLASSE_DO_LINK}>
+          {c}
+        </Link>
+      ) : (
+        semSecaoDeWebhooks(c)
+      ),
+    recebidos: (c: ReactNode) =>
+      veWebhooks ? (
+        <Link href="/settings?tab=webhooks&aba=recebidos" className={CLASSE_DO_LINK}>
+          {c}
+        </Link>
+      ) : (
+        semSecaoDeWebhooks(c)
+      ),
   };
 
   const tituloDaSecao: Record<IdDaSecao, () => string> = {

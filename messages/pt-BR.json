@@ -1009,7 +1009,9 @@
       "toastSkipped_plural": "{count} duplicados ignorados",
       "toastFailed": "{count} contato não pôde ser importado",
       "toastFailed_plural": "{count} contatos não puderam ser importados",
-      "toastError": "Falha na importação"
+      "toastError": "Falha na importação",
+      "pareceId": "{name} parece um id de etiqueta e não existe nesta conta — será ignorado",
+      "toastTagIdsSkipped": "Ids de etiqueta que não existem nesta conta foram ignorados: {sample}{more}"
     },
     "customFields": {
       "title": "Campos personalizados",
@@ -3680,7 +3682,7 @@
         },
         "dealCreated": {
           "rotulo": "Negócio criado",
-          "descricao": "Um card nasceu no funil, em qualquer etapa."
+          "descricao": "Um card nasceu no funil, em qualquer etapa — numa etapa de ganho ou perdido, já nasce com esse status."
         },
         "dealStageChanged": {
           "rotulo": "Negócio mudou de etapa",
@@ -3688,7 +3690,7 @@
         },
         "dealStatusChanged": {
           "rotulo": "Negócio ganho, perdido ou reaberto",
-          "descricao": "Um card mudou de status."
+          "descricao": "Um card mudou de status. O card criado já ganho ou perdido gera só “Negócio criado”."
         }
       },
       "grupoMensagens": "Mensagens e conversas",
@@ -3717,7 +3719,8 @@
         "outro": "o CRM não conseguiu entregar"
       },
       "testeErro": "Não foi possível enviar o teste. Tente de novo.",
-      "comoConfigurar": "Como configurar no n8n e no Make"
+      "comoConfigurar": "Como configurar no n8n e no Make",
+      "abasAria": "Seção Webhooks"
     },
     "copiar": {
       "copiado": "Copiado",
@@ -3764,13 +3767,13 @@
       },
       "etiquetas": {
         "titulo": "Etiquetas",
-        "fonte": "Na API: <code>GET /api/v1/tags</code> (escopo <code>contacts:read</code>). A API aceita a etiqueta pelo nome ou pelo ID.",
+        "fonte": "Na API: <code>GET /api/v1/tags</code> (escopo <code>contacts:read</code>). Criar e editar contato e aplicar etiqueta aceitam o nome ou o ID; o filtro <code>?tag=</code> de <code>GET /api/v1/contacts</code>, só o ID.",
         "vazio": "Nenhuma etiqueta nesta conta.",
         "copiar": "Copiar ID da etiqueta {nome}"
       },
       "campos": {
         "titulo": "Campos personalizados",
-        "fonte": "A API lê e grava valores pela <b>chave</b>, não pelo ID: <code>field_key</code> em <code>/api/v1/contacts/'{id}'/custom-fields</code> (escopo <code>custom_fields:read</code>). Nenhum endpoint lista os campos da conta — copie a chave daqui.",
+        "fonte": "A API lê e grava valores pela <b>chave</b>, não pelo ID, em <code>/api/v1/contacts/'{id}'/custom-fields</code>. O GET desse endereço, com o id de QUALQUER contato, devolve em <code>fields</code> o catálogo inteiro da conta, com a chave de cada campo em <code>key</code> (escopo <code>custom_fields:read</code>).",
         "nasAutomacoes": "Nas mensagens das automações, a mesma chave entra em <code>'{{contact.campo.<chave>}}'</code>.",
         "vazio": "Nenhum campo personalizado nesta conta.",
         "chave": "Chave",
@@ -3779,7 +3782,7 @@
       },
       "conexoes": {
         "titulo": "Conexões",
-        "fonte": "Na API: <code>GET /api/v1/channels</code> (escopo <code>channels:read</code>). Os endpoints de envio pedem o <code>channel_id</code> para escolher o número.",
+        "fonte": "Na API: <code>GET /api/v1/channels</code> (escopo <code>channels:read</code>). Os endpoints de envio aceitam o <code>channel_id</code> para escolher o número — em <code>POST /api/v1/messages</code>, sem ele, a mensagem sai pelo número da conversa ou pelo padrão da conta.",
         "vazio": "Nenhuma conexão nesta conta.",
         "copiar": "Copiar ID da conexão {nome}",
         "semIdentidade": "sem número ainda"
@@ -3831,11 +3834,11 @@
       },
       "ids": {
         "intro": "A aba <ids>IDs</ids> lista, com botão de copiar, os ids de funis, etapas, etiquetas, conexões, membros e campos. As regras que mais confundem:",
-        "etiqueta": "<b>Etiqueta</b> vai pelo nome ou pelo id — os dois funcionam. Nome novo cria a etiqueta; um id nunca vira nome de etiqueta.",
+        "etiqueta": "<b>Etiqueta</b> vai pelo nome ou pelo id ao criar ou editar contato e ao aplicar etiqueta. Nome novo cria a etiqueta; um id nunca vira nome de etiqueta. Já o filtro <code>?tag=</code> da lista de contatos aceita só o id.",
         "campo": "<b>Campo personalizado</b> vai pela chave (<code>utm_source</code>), nunca pelo id do campo.",
         "usuario": "<b>Responsável de tarefa e dono de reunião</b> são o id de USUÁRIO do membro, que a aba IDs mostra na lista de membros.",
         "etapa": "<b>Etapa</b> vai pelo id, e criar negócio exige <code>stage_id</code>: o CRM não escolhe a coluna de entrada por você.",
-        "api": "Pela própria API: <code>GET /api/v1/pipelines</code> lista funis e etapas (escopo <code>deals:read</code>), <code>GET /api/v1/tags</code> as etiquetas (<code>contacts:read</code>) e <code>GET /api/v1/channels</code> as conexões (<code>channels:read</code>)."
+        "api": "Pela própria API: <code>GET /api/v1/pipelines</code> lista funis e etapas (escopo <code>deals:read</code>), <code>GET /api/v1/tags</code> as etiquetas (<code>contacts:read</code>), <code>GET /api/v1/channels</code> as conexões (<code>channels:read</code>) e <code>GET /api/v1/contacts/'{id}'/custom-fields</code>, com o id de qualquer contato, o catálogo de campos personalizados (<code>custom_fields:read</code>)."
       },
       "n8n": {
         "chamarTitulo": "Chamar a API",
@@ -3846,8 +3849,8 @@
         "receberTitulo": "Receber os avisos",
         "receber1": "Use o nó <b>Webhook</b>, método POST, e em <b>Respond</b> escolha <b>Immediately</b>: o CRM espera no máximo {segundos} segundos pela resposta.",
         "receber2": "Cadastre no CRM a <b>Production URL</b> e clique em <b>Publish</b> — salvar sem publicar não põe a versão nova no ar. O que chega aparece na aba <b>Executions</b>.",
-        "receber3": "A <b>Test URL</b> só escuta por 120 segundos depois de “Listen for test event”. Para não depender de um fato real nesse intervalo, use o botão <b>Enviar teste</b> em Webhooks → Enviados.",
-        "servidor": "n8n no seu próprio servidor: configure <code>N8N_WEBHOOK_URL</code> com o endereço público. Sem isso a URL sai com <code>localhost</code>, e o CRM a recusa."
+        "receber3": "O <b>Enviar teste</b> (em <enviados>Webhooks → Enviados</enviados>) posta na URL cadastrada — a Production URL: com o fluxo publicado, ele aparece em <b>Executions</b>, e não no “Listen for test event”, que só escuta a <b>Test URL</b>, por 120 segundos. Para vê-lo no Listen, cadastre um segundo endereço com a Test URL, clique em Listen e em Enviar teste dentro desse prazo e apague o endereço em seguida: fora da janela ele responde 404 aos avisos reais e acaba desligado.",
+        "servidor": "n8n no seu próprio servidor: ponha o endereço público em <code>N8N_WEBHOOK_URL</code> (n8n 2.30 em diante) ou em <code>WEBHOOK_URL</code> (versões anteriores; as novas ainda a leem). Sem isso a URL sai com <code>localhost</code>, e o CRM a recusa."
       },
       "make": {
         "chamarTitulo": "Chamar a API",
@@ -3865,23 +3868,23 @@
         "regrasTitulo": "Regras de entrega",
         "regra": {
           "umaTentativa": "Uma tentativa por aviso, com {segundos} segundos de prazo e sem repetição. Responda 2xx logo; redirecionamento conta como falha.",
-          "desliga": "{falhas} falhas seguidas desligam o endereço. Religue na aba Enviados — isso zera o contador.",
+          "desliga": "{falhas} falhas seguidas desligam o endereço, e o contador é do ENDEREÇO, não do evento: uma fila de avisos de negócio represada (com o agendador parado, por exemplo) sai de uma vez e, se o seu sistema estiver fora do ar nessa hora, ela sozinha pode somar as {falhas} — desligando junto os avisos de mensagem. Religue na aba Enviados; isso zera o contador.",
           "repeticao": "Não há ordem garantida. Nos eventos de negócio, o <code>id</code> do envelope (igual a <code>data.event_id</code>) é estável: use-o para descartar repetição.",
           "teste": "O botão Enviar teste manda dados fictícios com <code>\"test\": true</code>: filtre-os nos fluxos de produção.",
-          "negocio": "Nos eventos de negócio, <code>deal</code> é o negócio NA HORA DO ENVIO e <code>stage</code> é a etapa DESTE movimento — leia <code>stage</code>, não <code>deal.stage_id</code>. <code>source</code> diz quem causou, <code>assignee</code> é o responsável e <code>contact</code> traz etiquetas e <code>custom_fields</code>.",
+          "negocio": "Nos eventos de negócio, <code>deal</code> é o negócio NA HORA DO ENVIO e <code>stage</code> é a etapa DESTE movimento — leia <code>stage</code>, não <code>deal.stage_id</code>. <code>assignee</code> é o responsável e <code>contact</code> traz etiquetas e <code>custom_fields</code>. <code>source</code> diz quem causou: <code>user</code> (alguém nas telas do CRM), <code>channel</code> (a conexão abriu o card na primeira mensagem, do cliente ou da equipe), <code>automation</code> (o passo “Criar negócio”) ou <code>system</code> (a API e os passos “Mover card de etapa” e “Marcar ganho ou perdido” das automações). <code>channel_id</code> é o número da conversa do contato naquele momento, e vem vazio quando ele ainda não conversou por nenhuma conexão — lead de webhook recebido (Typebot) ou do Calendly que ainda não escreveu, ficha criada pela API, card sem contato. Quem filtra por número decide o que fazer com esses.",
           "atraso": "Aviso atrasado sai mesmo assim, com a hora real do fato em <code>occurred_at</code>.",
-          "doisAvisos": "Levar um card a uma etapa marcada como ganho ou perdido gera dois avisos: mudou de etapa e mudou de status.",
+          "doisAvisos": "Levar um card a uma etapa marcada como ganho ou perdido gera dois avisos: mudou de etapa e mudou de status. Já o card CRIADO numa etapa assim nasce com esse status e gera só <code>deal.created</code>: quem espera o “ganho” confere também o <code>deal.status</code> desse aviso.",
           "migracao": "Carga em massa de migração de dados não gera aviso."
         },
         "assinaturaTitulo": "Conferir a assinatura — opcional, avançado",
         "assinatura": {
           "intro": "<code>{assinatura}</code> vale <code>t=…,v1=…</code>: <code>v1</code> é o HMAC-SHA256, em hex, de <code>t</code>, um ponto e o corpo CRU, com o segredo inteiro (com <code>{prefixo}</code>) como chave. Recuse se <code>t</code> tiver mais de {minutos} minutos.",
           "n8n": "No n8n: ligue <b>Raw Body</b> no nó Webhook (em Add Option), acrescente um nó <b>Code</b> com o trecho abaixo e, depois dele, um <b>Crypto</b> e um <b>IF</b>:",
-          "make": "No Make: no Custom webhook, ligue <b>JSON pass-through</b> e <b>Get request headers</b>; separe <code>t</code> e <code>v1</code> e compare num <b>Filter</b>. Depois, use <b>Parse JSON</b> sobre o corpo:"
+          "make": "No Make: no Custom webhook, ligue <b>JSON pass-through</b> e <b>Get request headers</b>; separe <code>t</code> e <code>v1</code> e, num <b>Filter</b>, compare a assinatura e confira a idade de <code>t</code>. Depois, use <b>Parse JSON</b> sobre o corpo:"
         }
       },
       "receber": {
-        "texto": "Para um sistema de fora mandar dados e disparar uma automação, crie um webhook em <recebidos>Webhooks → Recebidos</recebidos>. Ele faz POST na URL do webhook com <code>Authorization: Bearer</code> e o segredo, e cada campo do JSON vira <code>'{{vars.nome_do_campo}}'</code> na automação.",
+        "texto": "Para um sistema de fora mandar dados e disparar uma automação, crie um webhook em <recebidos>Webhooks → Recebidos</recebidos> (seção que só administradores veem). Ele faz POST na URL do webhook com <code>Authorization: Bearer</code> e o segredo, e cada campo do JSON vira <code>'{{vars.nome_do_campo}}'</code> na automação.",
         "telefone": "Informe o <b>campo do telefone</b>: é por ele que o CRM acha o cliente, criando a ficha se o número for novo. Sem ele, nenhuma automação roda.",
         "automacao": "Na automação, use o gatilho <b>Webhook recebido</b>. Lead novo não tem negócio: ponha <b>Criar negócio</b> antes de <b>Mover card de etapa</b>."
       },
@@ -3889,7 +3892,7 @@
         "etapa": {
           "titulo": "Quando o lead mudar de etapa, avisar o n8n",
           "texto": "Cadastre um endereço com o evento <code>deal.stage_changed</code> e, no n8n, filtre pelo id da etapa (aba IDs) num nó <b>IF</b>:",
-          "laco": "⚠️ Se o seu fluxo mover o card pela API, isso gera outro aviso, com <code>source</code> igual a <code>system</code>, e o fluxo pode entrar em laço. O filtro acima o descarta — e descarta também o “Mover card” das automações, que sai do mesmo jeito."
+          "laco": "⚠️ Se o seu fluxo mover o card pela API, isso gera outro aviso, com <code>source</code> igual a <code>system</code>, e o fluxo pode entrar em laço. O filtro acima o descarta — e descarta também o passo “Mover card de etapa” das automações, que sai com o mesmo <code>source</code>."
         },
         "negocio": {
           "titulo": "Criar um negócio numa etapa",
@@ -3905,7 +3908,7 @@
         },
         "mensagem": {
           "titulo": "Mandar uma mensagem",
-          "texto": "Pelo telefone, com DDI. <code>channel_id</code> escolhe o número que envia; sem ele, sai pelo padrão da conta. Contato sem negócio ganha um no funil da conexão. Escopo <code>messages:send</code>."
+          "texto": "Pelo telefone, com DDI. Sem <code>channel_id</code>, sai pelo número em que a conversa já está (senão, pelo padrão da conta). Com ele, sai por aquele número e a conversa fica FIXADA nele — a resposta do cliente volta ao mesmo número. Contato sem negócio ganha um card só se a conexão por onde a mensagem saiu tiver funil padrão. Escopo <code>messages:send</code>."
         }
       },
       "erros": {
@@ -3913,7 +3916,7 @@
         "e403": "<b>403</b> — falta um escopo na chave. Listar funis pede <code>deals:read</code>; etiquetas, <code>contacts:read</code>; conexões, <code>channels:read</code>. Crie uma chave com o escopo que falta.",
         "e429": "<b>429</b> — mais de {limite} chamadas por minuto. Espere o <code>Retry-After</code>; no n8n, use o intervalo entre páginas.",
         "e400": "<b>400</b> — o corpo tem erro, e a mensagem diz qual campo. Data e hora precisam do fuso (<code>Z</code> ou <code>-03:00</code>).",
-        "etiquetaPorId": "<b>Etiqueta pelo id</b> onde se esperava o nome: agora funciona — a API aceita os dois.",
+        "etiquetaPorId": "<b>Etiqueta pelo id</b> onde se esperava o nome: funciona ao criar e editar contato e ao aplicar etiqueta. Um id que não é desta conta volta <code>400</code> (<code>unknown_tag_ids</code>) sem gravar nada. Já o filtro <code>?tag=</code> da lista de contatos só aceita o id — um nome ali é <code>400</code>.",
         "usuario": "<b>Responsável não encontrado</b> — use o id de usuário do membro, não o id de outra coisa da mesma tela.",
         "testUrl": "<b>Nada chega no n8n</b> — a Test URL só escuta 120 segundos. Cadastre a Production URL, com o fluxo publicado.",
         "url": "<b>Endereço recusado</b> — o CRM só entrega em https:// público: http, localhost e IP interno não servem.",
@@ -3929,7 +3932,8 @@
         "segredo": "SEU_SEGREDO",
         "tituloDoNegocio": "Maria Exemplo",
         "textoDaMensagem": "Olá! Recebemos o seu contato."
-      }
+      },
+      "soAdmin": "Só administradores veem esta seção"
     }
   },
   "roles": {

@@ -171,31 +171,81 @@ mais uma vez.
 
 ## Webhooks enviados
 
-O CRM faz `POST` num endereço seu quando algo acontece aqui. Três eventos:
+O CRM faz `POST` num endereço seu quando algo acontece aqui. Seis eventos:
 
 | Evento | Dispara quando |
 |---|---|
 | `message.received` | Chega mensagem de um contato |
 | `message.status_updated` | Muda o status de entrega de uma mensagem enviada |
 | `conversation.created` | Uma conversa nova é aberta |
+| `deal.created` | Um card (negócio) nasce no funil, em qualquer etapa |
+| `deal.stage_changed` | Um card muda de etapa — ou de funil |
+| `deal.status_changed` | Um card é marcado ganho ou perdido, ou é reaberto |
+
+Os três `deal.*` valem para **todo** jeito de mexer no card: arrastar no
+quadro, formulário, lista, painel da conversa, automações e a API. O aviso
+leva o negócio, o funil e a etapa (com nome e id), a etapa de onde o card
+saiu, o contato com etiquetas e campos personalizados, e quem causou a
+mudança (`source`). O formato completo, com exemplo, está em
+[`public-api.md`](./public-api.md#delivery-payload) e na tela
+**Configurações → API → Documentação**. Três detalhes que confundem:
+
+- **`source`**: `user` é alguém nas telas do CRM; `channel` é a conexão
+  abrindo o card — na primeira mensagem do cliente **ou** no primeiro envio
+  da equipe (pela tela, pelo celular pareado ou por `POST /api/v1/messages`),
+  então não quer dizer "lead que chegou"; `automation` é o passo "Criar
+  negócio"; `system` são as escritas diretas em negócio pela API e os passos
+  "Mover card de etapa" e "Marcar ganho ou perdido" das automações.
+- **`channel_id` pode vir vazio**: é o número da conversa do contato no
+  momento do movimento, e o lead que ainda não conversou por nenhuma conexão
+  não tem um — o que chegou por webhook recebido (Typebot) ou pelo Calendly
+  e ainda não escreveu, a ficha criada pela API, o card sem contato. Quem
+  filtra por número decide o que fazer com esses.
+- **Levar um card a uma etapa de ganho ou perdido gera dois avisos** (mudou
+  de etapa e mudou de status), mas o card **criado** já numa etapa assim
+  nasce com o status e gera só `deal.created`: quem espera o "ganho" confere
+  também o `deal.status` desse aviso.
 
 **Configurações → Webhooks → Enviados → Novo endereço.** A URL precisa ser
-`https://` e alcançável da internet. O segredo é mostrado uma única vez —
-guarde-o no sistema que vai **receber**, para conferir a assinatura.
+`https://` e alcançável da internet. Marque só os eventos que o seu fluxo
+usa — o endereço novo nasce sem nenhum marcado. O segredo é mostrado uma
+única vez — guarde-o no sistema que vai **receber**, para conferir a
+assinatura. Os eventos de um endereço já criado podem ser trocados na mesma
+tela, e o botão **Enviar teste** manda um exemplo do evento escolhido (com
+`"test": true`) para a URL cadastrada e mostra o que o seu sistema
+respondeu. Ele funciona com o endereço desligado e para evento que o
+endereço não assina, e não conta como falha.
+
+⚠️ **O Enviar teste não aparece no "Listen for test event" do n8n.** O
+Listen só escuta a **Test URL** (`/webhook-test/…`), e o endereço que se
+cadastra aqui é a **Production URL**. Com a Production URL e o fluxo
+publicado, o teste aparece na aba **Executions** do n8n. Para vê-lo no
+Listen, cadastre um segundo endereço, provisório, com a Test URL; clique em
+Listen e, dentro dos 120 segundos, em Enviar teste nesse endereço — e
+apague-o em seguida: fora da janela a Test URL responde 404 aos avisos
+reais, e o endereço acaba desligado.
 
 ### Conferindo a assinatura
 
 Cada entrega leva `X-Wacrm-Signature: t=<unix>,v1=<hex>`, onde `v1` é
-`HMAC-SHA256(segredo, "<t>.<corpo cru>")`. Confira sobre o **corpo cru**,
-compare em tempo constante, e recuse se `t` tiver mais que alguns minutos.
+`HMAC-SHA256(segredo, "<t>.<corpo cru>")` — o segredo **inteiro**, com o
+prefixo `whsec_`. Confira sobre o **corpo cru**, compare em tempo
+constante, e recuse se `t` tiver mais que alguns minutos. O passo a passo
+no n8n e no Make está em **Configurações → API → Documentação**.
 
-### Duas limitações que você precisa conhecer
+### Limitações que você precisa conhecer
 
 - **Uma tentativa por evento**, com 5 segundos de limite e **sem nova
   tentativa**. Trate entrega perdida como possível e reconcilie pelos
   endpoints de leitura da [API pública](./public-api.md) quando importar.
 - **Quinze falhas seguidas desligam o endereço sozinho.** Religar pela tela
-  zera o contador.
+  zera o contador. (O **Enviar teste** não conta como falha.) O contador é
+  do ENDEREÇO, não do evento: uma fila de avisos de negócio represada (com o
+  agendador parado, por exemplo) sai de uma vez e, se o seu sistema estiver
+  fora do ar nessa hora, ela sozinha pode somar as quinze e desligar o
+  endereço — levando junto os avisos de mensagem que ele assina.
+- **Sem ordem garantida.** As entregas saem em paralelo: nos `deal.*`, use
+  `occurred_at` para ordenar e o `id` do envelope para descartar repetição.
 
 Os mesmos endereços também podem ser geridos pela API pública, com uma chave
 de escopo `webhooks:manage` — veja [`public-api.md`](./public-api.md).

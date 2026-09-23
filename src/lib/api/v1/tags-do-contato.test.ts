@@ -4,9 +4,28 @@ import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
 
 import {
   aplicarMudancaDeTags,
+  casarReferencias,
   lerMudancaDeTags,
   MAX_TAGS_POR_CHAMADA,
+  TagReferenceError,
 } from './tags-do-contato';
+
+// Ids fictícios, na forma de uuid — é a forma que decide "isto é um id".
+const ID_BANCARIO = '11111111-1111-4111-8111-111111111111';
+const ID_TYPEBOT = '33333333-3333-4333-8333-333333333333';
+const ID_NOVA = '55555555-5555-4555-8555-555555555555';
+const ID_DE_OUTRA_CONTA = '99999999-9999-4999-8999-999999999999';
+
+/** O catálogo como `lerCatalogoDeTags` o devolve: por chave (a mais antiga vence) e por id. */
+function catalogoDe(tags: { id: string; name: string }[]) {
+  const porChave = new Map<string, string>();
+  const nomePorId = new Map<string, string>();
+  for (const t of tags) {
+    nomePorId.set(t.id.toLowerCase(), t.name);
+    if (!porChave.has(chaveDeTag(t.name))) porChave.set(chaveDeTag(t.name), t.id);
+  }
+  return { porChave, nomePorId };
+}
 
 const resolveImportTagIds = vi.hoisted(() => vi.fn());
 const lerCatalogoDeTags = vi.hoisted(() => vi.fn());
@@ -126,10 +145,10 @@ function bancoCom(
   if (opts.falha) {
     lerCatalogoDeTags.mockRejectedValue(new Error('timeout'));
   } else {
-    // `.reverse()` porque o Map deixa o ÚLTIMO vencer, e o real deixa o
-    // PRIMEIRO (a etiqueta mais antiga) — é isso que o teste da colisão mede.
-    const pares: [string, string][] = tags.map((t) => [chaveDeTag(t.name), t.id]);
-    lerCatalogoDeTags.mockResolvedValue(new Map(pares.reverse()));
+    // O real chega ordenado por `created_at` e deixa a PRIMEIRA (a mais
+    // antiga) vencer a colisão de chave — `catalogoDe` imita isso, e é o que
+    // o teste da colisão mede.
+    lerCatalogoDeTags.mockResolvedValue(catalogoDe(tags));
   }
   return {} as never;
 }
@@ -141,8 +160,8 @@ describe('aplicarMudancaDeTags', () => {
     contactId: 'contato-1',
   };
   const CATALOGO = [
-    { id: 'id-bancario', name: 'Bancário' },
-    { id: 'id-typebot', name: 'Typebot' },
+    { id: ID_BANCARIO, name: 'Bancário' },
+    { id: ID_TYPEBOT, name: 'Typebot' },
   ];
 
   beforeEach(() => {
@@ -166,7 +185,8 @@ describe('aplicarMudancaDeTags', () => {
       mudanca: { add: ['bancario'], remove: [], criarFaltantes: true },
     });
 
-    expect(r.adicionadas).toEqual(['bancario']);
+    // O balde leva o nome GRAVADO, não a grafia enviada.
+    expect(r.adicionadas).toEqual(['Bancário']);
     expect(r.desconhecidas).toEqual([]);
     // NADA foi criado: o casamento achou a etiqueta que já existia.
     expect(resolveImportTagIds).not.toHaveBeenCalled();
@@ -174,7 +194,7 @@ describe('aplicarMudancaDeTags', () => {
       db: expect.anything(),
       accountId: 'conta-1',
       contactId: 'contato-1',
-      tagId: 'id-bancario',
+      tagId: ID_BANCARIO,
     });
   });
 
@@ -202,8 +222,12 @@ describe('aplicarMudancaDeTags', () => {
     // tivesse guardado antes da criação.
     resolveImportTagIds.mockResolvedValue({
       tagIdByKey: new Map([
-        ['nova', 'id-da-outra-requisicao'],
-        ['bancario', 'id-bancario'],
+        ['nova', ID_NOVA],
+        ['bancario', ID_BANCARIO],
+      ]),
+      nomePorId: new Map([
+        [ID_NOVA, 'Nova'],
+        [ID_BANCARIO, 'Bancário'],
       ]),
       skippedNames: [],
     });
@@ -218,13 +242,14 @@ describe('aplicarMudancaDeTags', () => {
     });
 
     expect(addContactTagAndDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ tagId: 'id-da-outra-requisicao' })
+      expect.objectContaining({ tagId: ID_NOVA })
     );
   });
 
   it('nome novo de verdade é criado pelo helper compartilhado', async () => {
     resolveImportTagIds.mockResolvedValue({
-      tagIdByKey: new Map([['nova', 'id-nova']]),
+      tagIdByKey: new Map([['nova', ID_NOVA]]),
+      nomePorId: new Map([[ID_NOVA, 'Nova']]),
       skippedNames: [],
     });
     addContactTagAndDispatch.mockResolvedValue({
@@ -268,7 +293,7 @@ describe('aplicarMudancaDeTags', () => {
     });
 
     expect(r.removidas).toEqual(['Typebot']);
-    expect(r.inalteradas).toEqual(['bancario']);
+    expect(r.inalteradas).toEqual(['Bancário']);
   });
 
   it('⚠️ REMOVER nunca cria etiqueta, mesmo com create_missing ligado', async () => {
@@ -290,9 +315,11 @@ describe('aplicarMudancaDeTags', () => {
       added: true,
       dispatched: true,
     });
+    const ANTIGA = '66666666-6666-4666-8666-666666666666';
+    const RECENTE = '77777777-7777-4777-8777-777777777777';
     const comColisao = [
-      { id: 'id-antiga', name: 'Bancário' },
-      { id: 'id-nova', name: 'bancario' },
+      { id: ANTIGA, name: 'Bancário' },
+      { id: RECENTE, name: 'bancario' },
     ];
 
     await aplicarMudancaDeTags(bancoCom(comColisao), {
@@ -301,7 +328,7 @@ describe('aplicarMudancaDeTags', () => {
     });
 
     expect(addContactTagAndDispatch).toHaveBeenCalledWith(
-      expect.objectContaining({ tagId: 'id-antiga' })
+      expect.objectContaining({ tagId: ANTIGA })
     );
   });
 
@@ -315,5 +342,244 @@ describe('aplicarMudancaDeTags', () => {
         mudanca: { add: ['Typebot'], remove: [], criarFaltantes: true },
       })
     ).rejects.toThrow(/tags/i);
+  });
+});
+
+// ============================================================
+// NOME ou ID (22/09/2026). O caso real: um integrador pegou o `id` do
+// "Typebot" em GET /api/v1/tags e o mandou onde a API lia NOME; ela criou
+// uma etiqueta chamada com o UUID, aplicou-a e disparou `tag_added`.
+// ============================================================
+
+describe('casarReferencias', () => {
+  const CATALOGO = catalogoDe([
+    { id: ID_BANCARIO, name: 'Bancário' },
+    { id: ID_TYPEBOT, name: 'Typebot' },
+  ]);
+
+  it('id da conta vira a etiqueta, com o nome GRAVADO', () => {
+    expect(casarReferencias([ID_TYPEBOT], CATALOGO)).toEqual({
+      itens: [{ pedido: ID_TYPEBOT, id: ID_TYPEBOT, nome: 'Typebot' }],
+      idsDesconhecidos: [],
+    });
+  });
+
+  it('nome casa sem acento e sem caixa, e também devolve o nome gravado', () => {
+    expect(casarReferencias(['  bancario '], CATALOGO).itens).toEqual([
+      { pedido: 'bancario', id: ID_BANCARIO, nome: 'Bancário' },
+    ]);
+  });
+
+  it('nome que não existe fica sem id — candidato a criação', () => {
+    expect(casarReferencias(['Nova'], CATALOGO).itens).toEqual([
+      { pedido: 'Nova', id: null, nome: 'Nova' },
+    ]);
+  });
+
+  it('⚠️⚠️ id de fora NUNCA vira nome a criar — vai para idsDesconhecidos', () => {
+    const r = casarReferencias([ID_DE_OUTRA_CONTA, ID_DE_OUTRA_CONTA], CATALOGO);
+    expect(r.itens).toEqual([]);
+    expect(r.idsDesconhecidos).toEqual([ID_DE_OUTRA_CONTA]);
+  });
+
+  it('⚠️ nome e id da MESMA etiqueta são UMA — a primeira ocorrência fica', () => {
+    const r = casarReferencias(
+      ['Typebot', ID_TYPEBOT.toUpperCase(), 'TYPEBOT'],
+      CATALOGO
+    );
+    expect(r.itens).toEqual([
+      { pedido: 'Typebot', id: ID_TYPEBOT, nome: 'Typebot' },
+    ]);
+  });
+
+  it('ignora texto vazio (o parse já recusa; o PATCH filtra só não-string)', () => {
+    expect(casarReferencias(['  ', ''], CATALOGO)).toEqual({
+      itens: [],
+      idsDesconhecidos: [],
+    });
+  });
+});
+
+describe('aplicarMudancaDeTags — por id', () => {
+  const base = {
+    accountId: 'conta-1',
+    auditUserId: 'dono-1',
+    contactId: 'contato-1',
+  };
+  const CATALOGO = [
+    { id: ID_BANCARIO, name: 'Bancário' },
+    { id: ID_TYPEBOT, name: 'Typebot' },
+  ];
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    addContactTagAndDispatch.mockResolvedValue({ added: true, dispatched: true });
+    removeContactTag.mockResolvedValue(true);
+  });
+
+  it('⚠️⚠️ acrescenta pelo id SEM criar nada — o caso de 22/09', async () => {
+    const r = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: { add: [ID_TYPEBOT], remove: [], criarFaltantes: true },
+    });
+
+    expect(resolveImportTagIds).not.toHaveBeenCalled();
+    expect(addContactTagAndDispatch).toHaveBeenCalledWith(
+      expect.objectContaining({ tagId: ID_TYPEBOT })
+    );
+    // O integrador lê "Typebot", nunca o UUID cru.
+    expect(r).toEqual({
+      adicionadas: ['Typebot'],
+      removidas: [],
+      inalteradas: [],
+      desconhecidas: [],
+    });
+  });
+
+  it('retira pelo id, e o balde leva o nome', async () => {
+    const r = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: { add: [], remove: [ID_BANCARIO], criarFaltantes: true },
+    });
+
+    expect(removeContactTag).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tagId: ID_BANCARIO })
+    );
+    expect(r.removidas).toEqual(['Bancário']);
+  });
+
+  it('⚠️⚠️ id que não é desta conta: 400 unknown_tag_ids e NADA escrito', async () => {
+    // O id desconhecido está no `add`, mas o `remove` válido vem primeiro na
+    // aplicação — a recusa tem de acontecer antes dele.
+    const erro = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: {
+        add: ['Nova', ID_DE_OUTRA_CONTA],
+        remove: ['Bancário'],
+        criarFaltantes: true,
+      },
+    }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(TagReferenceError);
+    expect((erro as TagReferenceError).code).toBe('unknown_tag_ids');
+    expect((erro as TagReferenceError).status).toBe(400);
+    expect((erro as TagReferenceError).message).toContain(ID_DE_OUTRA_CONTA);
+    expect(removeContactTag).not.toHaveBeenCalled();
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+    // …nem a criação do nome válido que vinha junto.
+    expect(resolveImportTagIds).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ id desconhecido no REMOVE também é 400 (não "desconhecida")', async () => {
+    await expect(
+      aplicarMudancaDeTags(bancoCom(CATALOGO), {
+        ...base,
+        mudanca: { add: [], remove: [ID_DE_OUTRA_CONTA], criarFaltantes: true },
+      })
+    ).rejects.toMatchObject({ code: 'unknown_tag_ids', status: 400 });
+    expect(removeContactTag).not.toHaveBeenCalled();
+  });
+
+  it('⚠️⚠️ texto com cara de UUID NUNCA é criado, mesmo com create_missing', async () => {
+    // É exatamente o que aconteceu em produção: o id de uma etiqueta que
+    // não está no catálogo desta conta seria lido como NOME e criado.
+    await expect(
+      aplicarMudancaDeTags(bancoCom(CATALOGO), {
+        ...base,
+        mudanca: { add: [ID_NOVA], remove: [], criarFaltantes: true },
+      })
+    ).rejects.toBeInstanceOf(TagReferenceError);
+    expect(resolveImportTagIds).not.toHaveBeenCalled();
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ nome e id da MESMA etiqueta no add: aplicada e relatada UMA vez', async () => {
+    const r = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: {
+        add: ['typebot', ID_TYPEBOT],
+        remove: [],
+        criarFaltantes: true,
+      },
+    });
+
+    expect(addContactTagAndDispatch).toHaveBeenCalledTimes(1);
+    expect(r.adicionadas).toEqual(['Typebot']);
+  });
+
+  it('⚠️⚠️ a mesma etiqueta por NOME num lado e por ID no outro é recusada — antes de escrever', async () => {
+    // O parse não vê (os textos são diferentes); sem esta recusa, o remove
+    // tirava a etiqueta e o add a punha de volta, disparando `tag_added`.
+    const leitura = lerMudancaDeTags({ add: ['Typebot'], remove: [ID_TYPEBOT] });
+    expect(leitura.ok).toBe(true);
+
+    const erro = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: leitura.ok ? leitura.mudanca : (null as never),
+    }).catch((e: unknown) => e);
+
+    expect(erro).toBeInstanceOf(TagReferenceError);
+    expect((erro as TagReferenceError).code).toBe('bad_request');
+    expect((erro as TagReferenceError).message).toContain(
+      "cannot be in both 'add' and 'remove': Typebot"
+    );
+    expect(removeContactTag).not.toHaveBeenCalled();
+    expect(addContactTagAndDispatch).not.toHaveBeenCalled();
+  });
+
+  it('mistura nome novo, nome existente e id: cada um no seu balde', async () => {
+    resolveImportTagIds.mockResolvedValue({
+      tagIdByKey: new Map([
+        ['nova', ID_NOVA],
+        ['bancario', ID_BANCARIO],
+        ['typebot', ID_TYPEBOT],
+      ]),
+      nomePorId: new Map([
+        [ID_NOVA, 'Nova'],
+        [ID_BANCARIO, 'Bancário'],
+        [ID_TYPEBOT, 'Typebot'],
+      ]),
+      skippedNames: [],
+    });
+    addContactTagAndDispatch
+      .mockResolvedValueOnce({ added: true, dispatched: true })
+      .mockResolvedValueOnce({ added: false, dispatched: false, reason: 'duplicate' })
+      .mockResolvedValueOnce({ added: true, dispatched: true });
+
+    const r = await aplicarMudancaDeTags(bancoCom(CATALOGO), {
+      ...base,
+      mudanca: {
+        add: ['nova', 'bancario', ID_TYPEBOT],
+        remove: [],
+        criarFaltantes: true,
+      },
+    });
+
+    // Só o nome que não existia vai à criação — nunca o id.
+    expect(resolveImportTagIds).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ tagNames: ['nova'] })
+    );
+    expect(r.adicionadas).toEqual(['Nova', 'Typebot']);
+    expect(r.inalteradas).toEqual(['Bancário']);
+  });
+});
+
+describe('lerMudancaDeTags — com id', () => {
+  it('aceita id no add e no remove, como texto', () => {
+    const r = lerMudancaDeTags({ add: [ID_TYPEBOT], remove: ['Bancário'] });
+    expect(r).toEqual({
+      ok: true,
+      mudanca: { add: [ID_TYPEBOT], remove: ['Bancário'], criarFaltantes: true },
+    });
+  });
+
+  it('o mesmo id nos dois lados (mesmo com caixa diferente) é recusado já no parse', () => {
+    const r = lerMudancaDeTags({
+      add: [ID_TYPEBOT],
+      remove: [ID_TYPEBOT.toUpperCase()],
+    });
+    expect(r.ok).toBe(false);
   });
 });

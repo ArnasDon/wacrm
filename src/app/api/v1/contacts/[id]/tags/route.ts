@@ -2,7 +2,11 @@
 // POST /api/v1/contacts/{id}/tags — tags ADITIVAS (scope: contacts:write)
 //
 // Corpo: { add?: string[], remove?: string[], create_missing?: boolean }
-// Acrescenta e retira POR NOME, sem tocar nas demais tags do contato.
+// Acrescenta e retira por NOME ou por ID de etiqueta (misturados, se
+// quiser), sem tocar nas demais tags do contato. Id que não é desta conta
+// = 400 `unknown_tag_ids`, antes de qualquer escrita; id nunca cria
+// etiqueta. Os baldes da resposta levam o nome GRAVADO da etiqueta, nunca
+// o UUID cru. A régua mora em `src/lib/api/v1/tags-do-contato.ts`.
 //
 // Por que não é `PATCH .../contacts/{id}` com `tags: []`: aquele
 // SUBSTITUI o conjunto inteiro e continua assim (contrato publicado).
@@ -29,14 +33,14 @@ import {
   toApiErrorResponse,
 } from '@/lib/api/v1/respond';
 import {
-  CONTACT_SELECT,
+  getContactById,
   resolveAuditUserId,
-  serializeContact,
   ContactError,
 } from '@/lib/api/v1/contacts';
 import {
   aplicarMudancaDeTags,
   lerMudancaDeTags,
+  TagReferenceError,
 } from '@/lib/api/v1/tags-do-contato';
 import { ContactTagWriteError } from '@/lib/contacts/tag-write';
 import { ehUuid } from '@/lib/tasks/validar';
@@ -47,9 +51,10 @@ import type { SupabaseClient } from '@supabase/supabase-js';
  * não existe aqui; erro de banco estoura como 500 antes de qualquer
  * conclusão de ausência.
  *
- * ⚠️ Não usa `getContactById` para isto: aquele helper colapsa erro e
- * vazio no mesmo `null` (`api/v1/contacts.ts`), e a rota transformaria um
- * timeout em 404.
+ * Não usa `getContactById` só por PESO: aqui basta o id, e aquele helper
+ * embute as etiquetas do contato. (Uma versão anterior deste comentário
+ * dizia que ele colapsava erro e ausência no mesmo `null` — era verdade até
+ * a revisão de 09/09/2026; hoje ele estoura em erro de banco.)
  */
 async function contatoEhDaConta(
   db: SupabaseClient,
@@ -67,35 +72,6 @@ async function contatoEhDaConta(
     throw new ApiError('internal', 'Failed to load contact', 500);
   }
   return Boolean(data);
-}
-
-/**
- * Relê o contato para devolver o estado pós-escrita.
- *
- * ⚠️⚠️ Também não usa `getContactById`, e aqui o motivo é PIOR do que na
- * conferência acima: esta leitura acontece DEPOIS de a etiqueta já ter sido
- * gravada e de o gatilho `tag_added` já ter disparado. Com o `null`
- * ambíguo daquele helper, um timeout viraria **404 "Contact not found"**
- * sobre um contato que existe e que acabou de ser alterado — e o
- * integrador, lendo 404, recria a ficha. Resultado: contato duplicado, com
- * a etiqueta e a automação já aplicadas no primeiro.
- */
-async function relerContato(
-  db: SupabaseClient,
-  accountId: string,
-  contactId: string
-) {
-  const { data, error } = await db
-    .from('contacts')
-    .select(CONTACT_SELECT)
-    .eq('id', contactId)
-    .eq('account_id', accountId)
-    .maybeSingle();
-  if (error) {
-    console.error('[api/v1/contacts/tags] contact re-read error:', error);
-    throw new ApiError('internal', 'Failed to load the updated contact', 500);
-  }
-  return data ? serializeContact(data as Record<string, unknown>) : null;
 }
 
 export async function POST(
@@ -126,14 +102,24 @@ export async function POST(
     // Estado pós-escrita: quem integra confere o que ficou sem uma 2ª
     // chamada — e o resumo diz o que MUDOU, que é o que permite depurar
     // "apliquei a tag e não aconteceu nada" do lado de fora.
-    const contato = await relerContato(ctx.supabase, ctx.accountId, id);
-    // Sumiu ENTRE a escrita e a releitura (apagado por outra requisição).
-    // Só chega aqui com o `error` já descartado como 500 acima, então este
-    // 404 é ausência de verdade.
+    //
+    // ⚠️⚠️ Esta releitura acontece DEPOIS de a etiqueta ter sido gravada e de
+    // o gatilho `tag_added` ter disparado: um timeout lido como "não existe"
+    // viraria 404 sobre um contato que acabou de ser alterado, e o
+    // integrador recriaria a ficha. `getContactById` ESTOURA em erro de
+    // banco (`ContactError` 500, tratado no catch) e só devolve `null` para
+    // ausência de verdade — o contato apagado por outra requisição ENTRE a
+    // escrita e a releitura.
+    const contato = await getContactById(ctx.supabase, ctx.accountId, id);
     if (!contato) return fail('not_found', 'Contact not found', 404);
 
     return ok({ contact: contato, ...resultado });
   } catch (err) {
+    // Id que não é desta conta, ou a mesma etiqueta nos dois lados por
+    // nome e por id — os dois antes de qualquer escrita.
+    if (err instanceof TagReferenceError) {
+      return fail(err.code, err.message, err.status);
+    }
     // ⚠️ `ContactTagWriteError` NÃO é `ApiError`: sem este ramo, um
     // "Tag not found" (404) sairia como 500 genérico pelo catch-all.
     if (err instanceof ContactTagWriteError) {

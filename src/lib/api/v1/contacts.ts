@@ -11,9 +11,15 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { fichaQueVenceu, findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe';
 import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
-import { resolveImportTagIds } from '@/lib/contacts/resolve-import-tags';
+import {
+  type CatalogoDeTags,
+  lerCatalogoDeTags,
+  resolveImportTagIds,
+} from '@/lib/contacts/resolve-import-tags';
 import { addContactTagAndDispatch } from '@/lib/contacts/tag-events';
 import { sanitizePhoneForMeta, isValidE164 } from '@/lib/whatsapp/phone-utils';
+
+import { casarReferencias, erroDeIdsDesconhecidos } from './tags-do-contato';
 
 /** Row select that embeds the contact's tags for serialization. */
 export const CONTACT_SELECT = '*, contact_tags(tags(*))';
@@ -165,44 +171,69 @@ export async function findOrCreateContact(
 }
 
 /**
- * Replace a contact's tags to exactly match `tagNames` (case-
- * insensitive; missing tags are created). A no-op when `tagNames` is
- * undefined — pass `[]` to clear all tags. Reuses `resolveImportTagIds`
- * so API and CSV-import tag handling stay consistent.
+ * O que o `tags: [...]` do corpo pediu, já lido contra o catálogo da conta.
+ * Sai de `lerTagsPedidas`, sem escrita; `setContactTags` é quem escreve.
+ */
+export interface TagsPedidas {
+  /** Ids das etiquetas que JÁ existem — pedidas por nome ou por id —, sem repetição. */
+  ids: string[];
+  /** Nomes que ainda não existem na conta; `setContactTags` os cria. */
+  nomesNovos: string[];
+}
+
+/**
+ * Fase 1 do verbo substitutivo — SÓ LEITURA. Aceita nome OU id de etiqueta
+ * (`casarReferencias`, a mesma régua do aditivo) e estoura 400
+ * `unknown_tag_ids` (`TagReferenceError`) com o id que não é desta conta.
+ *
+ * ⚠️⚠️ Existe separada de `setContactTags` para as rotas chamarem ANTES de
+ * qualquer escrita. `POST /contacts` cria a ficha e `PATCH /contacts/{id}`
+ * grava nome/e-mail/empresa antes das etiquetas: com a conferência só lá no
+ * fim, o id errado devolvia 400 sobre um contato JÁ criado ou JÁ alterado, e
+ * o integrador leria "nada aconteceu".
+ */
+export async function lerTagsPedidas(
+  db: SupabaseClient,
+  accountId: string,
+  textos: string[]
+): Promise<TagsPedidas> {
+  let catalogo: CatalogoDeTags;
+  try {
+    catalogo = await lerCatalogoDeTags(db, accountId);
+  } catch (error) {
+    console.error('[api/v1/contacts] tag catalog read error:', error);
+    throw new ContactError("Failed to read the account's tags", 500);
+  }
+  const { itens, idsDesconhecidos } = casarReferencias(textos, catalogo);
+  if (idsDesconhecidos.length > 0) {
+    throw erroDeIdsDesconhecidos(idsDesconhecidos);
+  }
+  return {
+    ids: itens.flatMap((i) => (i.id ? [i.id] : [])),
+    nomesNovos: itens.flatMap((i) => (i.id ? [] : [i.pedido])),
+  };
+}
+
+/**
+ * Fase 2 — replace a contact's tags to exactly match `pedidas` (missing
+ * NAMES are created; ids were already checked by `lerTagsPedidas`). Pass an
+ * empty `TagsPedidas` to clear all tags. Reuses `resolveImportTagIds` for
+ * the creation so API and CSV-import tag handling stay consistent.
+ *
+ * ⚠️⚠️ O id da etiqueta pedida chega aqui JÁ RESOLVIDO. Até 22/09/2026 esta
+ * função só conhecia nome: um `PATCH` com `tags: ["<id do Typebot>"]` criava
+ * uma etiqueta NOVA chamada com o UUID, aplicava-a, e — o pior — o id não
+ * casava com a etiqueta real, então o "Typebot" que o contato já tinha ia
+ * para `toRemove`. O integrador pedia para MANTER e a API tirava.
  */
 export async function setContactTags(
   db: SupabaseClient,
   accountId: string,
   auditUserId: string,
   contactId: string,
-  tagNames: string[]
+  pedidas: TagsPedidas
 ): Promise<void> {
-  const { tagIdByKey, skippedNames } = await resolveImportTagIds(db, {
-    accountId,
-    userId: auditUserId,
-    tagNames,
-    canCreateTags: true,
-  });
-
-  // ⚠️⚠️ Nome pedido que NÃO resolveu tem de ESTOURAR, nunca ser ignorado.
-  //
-  // Este verbo SUBSTITUI o conjunto: o que não entra em `desired` entra em
-  // `toRemove` logo abaixo. Descartar um nome irresolvido em silêncio,
-  // portanto, não é "aplicar menos" — é APAGAR do contato justamente a
-  // etiqueta que o chamador acabou de pedir para manter. Um `PATCH` com
-  // `tags: ["Bancário"]` tiraria "Bancário" do contato.
-  //
-  // Com `canCreateTags: true`, um nome só cai em `skippedNames` quando a
-  // criação não materializou (o helper explica os casos). É problema de
-  // servidor, e 500 é a resposta honesta: a substituição pedida não pôde ser
-  // feita. (Achado da revisão adversarial.)
-  if (skippedNames.length > 0) {
-    throw new ContactError(
-      `Could not resolve tags: ${skippedNames.join(', ')}`,
-      500
-    );
-  }
-  // ⚠️⚠️ SÓ os nomes PEDIDOS, nunca `tagIdByKey.values()`.
+  // ⚠️⚠️ SÓ as etiquetas PEDIDAS, nunca `tagIdByKey.values()`.
   //
   // `resolveImportTagIds` devolve o CATÁLOGO INTEIRO da conta chaveado por
   // nome (é assim desde sempre — o import de CSV consulta esse mapa por
@@ -215,11 +246,41 @@ export async function setContactTags(
   // `contact_tags` estava zerada em produção e não havia chave de API ativa,
   // então o caminho nunca tinha rodado com etiqueta de verdade. `tags: []`
   // continua limpando tudo (a lista de pedidos é vazia).
-  const desired = new Set(
-    tagNames
-      .map((nome) => tagIdByKey.get(chaveDeTag(nome)))
-      .filter((id): id is string => Boolean(id))
-  );
+  const desired = new Set(pedidas.ids);
+
+  if (pedidas.nomesNovos.length > 0) {
+    const { tagIdByKey, skippedNames } = await resolveImportTagIds(db, {
+      accountId,
+      userId: auditUserId,
+      tagNames: pedidas.nomesNovos,
+      canCreateTags: true,
+    });
+
+    // ⚠️⚠️ Nome pedido que NÃO resolveu tem de ESTOURAR, nunca ser ignorado.
+    //
+    // Este verbo SUBSTITUI o conjunto: o que não entra em `desired` entra em
+    // `toRemove` logo abaixo. Descartar um nome irresolvido em silêncio,
+    // portanto, não é "aplicar menos" — é APAGAR do contato justamente a
+    // etiqueta que o chamador acabou de pedir para manter. Um `PATCH` com
+    // `tags: ["Bancário"]` tiraria "Bancário" do contato.
+    //
+    // Com `canCreateTags: true`, um nome só cai em `skippedNames` quando a
+    // criação não materializou (o helper explica os casos). É problema de
+    // servidor, e 500 é a resposta honesta: a substituição pedida não pôde
+    // ser feita. (Achado da revisão adversarial.) O nome com cara de UUID —
+    // que o helper recusa criar — nunca chega aqui: `lerTagsPedidas` o lê
+    // como id.
+    if (skippedNames.length > 0) {
+      throw new ContactError(
+        `Could not resolve tags: ${skippedNames.join(', ')}`,
+        500
+      );
+    }
+    for (const nome of pedidas.nomesNovos) {
+      const id = tagIdByKey.get(chaveDeTag(nome));
+      if (id) desired.add(id);
+    }
+  }
 
   // Diff against the current joins rather than delete-all-then-insert:
   // a diff only touches tags that actually change, so a mid-operation

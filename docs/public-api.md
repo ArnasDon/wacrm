@@ -50,7 +50,7 @@ it. Grant the minimum.
 | `conversations:read` | List and read conversations              |
 | `channels:read`      | List the account's WhatsApp numbers      |
 | `broadcasts:send`    | Launch broadcast campaigns               |
-| `webhooks:manage`    | Register and manage outbound webhooks    |
+| `webhooks:manage`    | Register and manage outbound webhooks. ⚠️ The subscribed events carry message text and full contact and deal data (tags and custom fields included) — with no `contacts:read`, `deals:read` or `messages:read` needed |
 | `tasks:read`         | List and read tasks                      |
 | `tasks:write`        | Create tasks for team members            |
 | `scheduled:read`     | List scheduled messages                  |
@@ -88,6 +88,7 @@ may be reworded.
 | 403    | `forbidden`    | Valid key, but missing the required scope        |
 | 429    | `rate_limited` | Per-key rate limit exceeded                      |
 | 400    | `bad_request`  | Malformed input                                  |
+| 400    | `unknown_tag_ids` | A tag id (UUID) that is not a tag of this account — see [tags](#post-apiv1contactsidtags) |
 | 404    | `not_found`    | No such resource                                 |
 | 500    | `internal`     | Server error                                     |
 
@@ -136,12 +137,14 @@ finds-or-creates the contact + conversation, then sends.
 
 > **Side effect — deals.** A successful send counts as the firm reaching
 > out, so if the contact has **no deal yet** in any pipeline, one is
-> created automatically in the channel's default pipeline/stage
-> (`source: 'channel'`) — the same rule as sends from the CRM composer.
-> At most one deal per contact is ever created this way; contacts that
-> already have a deal are left untouched. This is intentional (PR #79);
-> if your integration must not open deals, don't send through this
-> endpoint for those contacts.
+> created automatically in the default pipeline/stage of the number the
+> message **went out on** (`source: 'channel'`) — the same rule as sends
+> from the CRM composer. Only if that number has a default pipeline set
+> (*Settings → Connections*); without one, no deal is created. At most one
+> deal per contact is ever created this way; contacts that already have a
+> deal are left untouched. This is intentional (PR #79); if your
+> integration must not open deals, don't send through this endpoint for
+> those contacts.
 
 ```bash
 curl -X POST https://your-crm.example.com/api/v1/messages \
@@ -191,7 +194,9 @@ send), `template_malformed` (500).
 
 List contacts, newest first. Scope: `contacts:read`. Paginated (see
 [Pagination](#pagination)). Optional filters: `?search=` (matches name
-or phone) and `?tag=<tagId>`.
+or phone) and `?tag=<tagId>`. The `tag` filter takes only a tag **id**
+(from `GET /api/v1/tags`) — unlike the write endpoints below, a tag name
+there is a `400 bad_request`.
 
 ```json
 {
@@ -217,18 +222,39 @@ or phone) and `?tag=<tagId>`.
 ### `POST /api/v1/contacts`
 
 Create a contact. Scope: `contacts:write`. `phone` (E.164) is required;
-`name`, `email`, `company`, and `tags` (an array of tag names, created
-if missing) are optional. **Find-or-create by phone:** an existing
-match returns `200` with the existing contact; a new contact returns
-`201`. The response body is the serialized contact (same shape as the
-list rows above).
+`name`, `email`, `company`, and `tags` (an array of tag names or tag ids
+from `GET /api/v1/tags`; new names are created) are optional. **Find-or-create
+by phone:** an existing match returns `200` with the existing contact; a
+new contact returns `201`. The response body is the serialized contact
+(same shape as the list rows above).
+
+> ⚠️ **When the contact already exists, `tags` REPLACES its whole tag set**
+> (while `name`, `email` and `company` are ignored for it). Sending
+> `tags: ["Typebot"]` for a known phone removes every other tag that
+> contact had, and `tags: []` removes them all. To add a tag without touching the others, use
+> [`POST /api/v1/contacts/{id}/tags`](#post-apiv1contactsidtags).
+
+Tags follow the same rules as in the additive endpoint below: text in the
+canonical UUID form is read as a tag id, an id that is not a tag of this
+account is a `400 unknown_tag_ids` (checked **before** the contact is
+created), and an id never creates a tag. `tags` must be an array of
+non-empty strings: a non-string or empty item, or a `tags` that is not an
+array, is a `400 bad_request` — never silently dropped. `tags: null` means
+"leave the tags alone", the same as leaving the field out.
 
 ### `GET` / `PATCH /api/v1/contacts/{id}`
 
 Read or update one contact. Scopes: `contacts:read` / `contacts:write`.
 `PATCH` updates only the fields you send (`name`, `email`, `company`);
-pass `tags` (an array of tag names) to **replace** the contact's tags. A
-contact in another account returns `404`.
+pass `tags` (an array of tag names or tag ids from `GET /api/v1/tags`) to
+**replace** the contact's tags — with the same rules as `POST /contacts`
+above: an unknown tag id is a `400 unknown_tag_ids` and nothing is
+written, a non-string or empty item — or a `tags` that is neither an
+array nor `null` — is a `400 bad_request`, and `tags: null` leaves the tags
+alone. To clear every tag, send `tags: []`. A
+contact in another account returns `404`; a contact id in the path that is
+not a UUID returns `400 bad_request` (here and on `/custom-fields` and
+`/tags` below).
 
 > ⚠️ `tags` here replaces the whole set — sending `["Lead"]` removes
 > every other tag the contact had. To add or drop individual tags, use
@@ -236,46 +262,62 @@ contact in another account returns `404`.
 
 ### `POST /api/v1/contacts/{id}/tags`
 
-Add and remove tags **by name, without touching the others**. Scope:
-`contacts:write`. This is what an external flow (Typebot, n8n) should
+Add and remove tags **by name or by id, without touching the others**.
+Scope: `contacts:write`. This is what an external flow (Typebot, n8n) should
 call to label a lead — the `tags` array on `PATCH` would wipe the rest
 of the contact's labels and still answer `200`.
 
 ```jsonc
 {
-  "add": ["Typebot", "Lead novo"],   // optional
-  "remove": ["Desqualificado"],      // optional
+  "add": ["Typebot", "Lead novo"],   // optional — names or ids
+  "remove": ["Desqualificado"],      // optional — names or ids
   "create_missing": true             // optional, default true
 }
 ```
 
+- **Name or id.** Text in the canonical UUID form (with hyphens — the `id`
+  that `GET /api/v1/tags` returns) is **always** read as a tag id; any other
+  text is a name. There is no "try as a name, then as an id": the same body
+  must not change meaning when someone creates or deletes a tag.
+- An id that is not a tag of this account — in `add` **or** in `remove` —
+  returns `400` with `{"error":{"code":"unknown_tag_ids", ...}}` (the
+  message lists the ids), checked **before any write**: the contact is left
+  untouched.
+- An id **never creates a tag**, not even with `create_missing`.
 - Names are matched **case- and accent-insensitively**, and trimmed: `"vip"`
   finds an existing `"VIP"`, and `"bancario"` finds an existing `"Bancário"`.
   Two names that differ only by accent or case are the **same tag** — the
   database enforces this with a unique index, so a second one cannot be
-  created. The response echoes the spelling **you sent**, while the
-  `contact.tags` array carries the stored spelling; when they differ, the
-  stored one is the tag you got.
+  created.
+- The same tag asked for twice in one list — by name and by id, or in two
+  spellings — counts once.
 - `create_missing` (default `true`) creates tags in `add` that don't
   exist yet. It never applies to `remove` — an unknown name there is
   reported, not created.
-- The **same name in both `add` and `remove` is rejected** (`400`):
-  either order would be a convention invisible to the caller.
-- At least one of `add` / `remove` must be non-empty; at most 50 names
-  per request.
+- The **same tag in both `add` and `remove` is rejected** (`400`), whether
+  it is spelled the same, differs by accent or case, or is sent by name on
+  one side and by id on the other: either order would be a convention
+  invisible to the caller.
+- Every item must be a non-empty string (anything else is a `400`). At
+  least one of `add` / `remove` must be non-empty; at most 50 items per
+  request.
 
 Response is the contact plus a summary of what actually changed —
 enough to debug "I tagged the lead and nothing happened" without a
-second call:
+second call. `adicionadas`, `removidas` and `inalteradas` carry the
+**stored** tag name (the same `name` as in `GET /api/v1/tags`) — whether
+you sent a name in another spelling or an id; only `desconhecidas` echoes
+what you sent, since there is no stored name for what does not exist.
+⚠️ Until 23/09/2026 all four echoed the spelling you sent.
 
 ```jsonc
 {
   "data": {
     "contact": { "id": "…", "tags": [ /* … */ ] },
-    "adicionadas":  ["Typebot"],       // now applied
-    "removidas":    ["Desqualificado"],// now gone
-    "inalteradas":  ["Lead novo"],     // already in the requested state
-    "desconhecidas": []                // no such tag in this account
+    "adicionadas":  ["Typebot"],       // now applied (stored name)
+    "removidas":    ["Desqualificado"],// now gone (stored name)
+    "inalteradas":  ["Lead novo"],     // already in the requested state (stored name)
+    "desconhecidas": []                // no such tag name in this account (as sent)
   }
 }
 ```
@@ -287,8 +329,10 @@ and removing are recorded in the contact's activity trail.
 ### `GET /api/v1/tags`
 
 List the account's tags (`id`, `name`, `color`), ordered by name. Scope:
-`contacts:read`. Not paginated. Use it to discover the names accepted by
-`POST /api/v1/contacts/{id}/tags`.
+`contacts:read`. Not paginated. Use it to discover the names and ids
+accepted by `POST /api/v1/contacts`, `PATCH /api/v1/contacts/{id}` and
+`POST /api/v1/contacts/{id}/tags` (and the id the `?tag=` filter of
+`GET /api/v1/contacts` takes).
 
 ### `GET` / `PATCH /api/v1/contacts/{id}/custom-fields`
 
@@ -299,7 +343,10 @@ e.g. `utm_source`, `ctwa_clid`, `data_da_proposta`). Scopes:
 external orchestrator (n8n etc.) uses to store ad-tracking data on the
 lead and read it back later.
 
-`GET` returns the whole account catalogue with this contact's values:
+`GET` returns the whole account catalogue with this contact's values —
+so a `GET` for **any** contact is also how to list the account's custom
+fields and their keys (there is no catalogue endpoint without a contact
+id yet):
 
 ```json
 {
@@ -710,17 +757,41 @@ things happen in your account. **Migration required:** apply
 
 ### Events
 
-| Event                    | Fires when                                        |
-| ------------------------ | ------------------------------------------------- |
-| `message.received`       | An inbound message arrives from a contact         |
-| `message.status_updated` | A message you sent changed delivery status        |
-| `conversation.created`   | A new conversation is opened for a contact        |
+| Event                    | Fires when                                                     |
+| ------------------------ | -------------------------------------------------------------- |
+| `message.received`       | An inbound message arrives from a contact                      |
+| `message.status_updated` | A message you sent changed delivery status                     |
+| `conversation.created`   | A new conversation is opened for a contact                     |
+| `deal.created`           | A deal (pipeline card) is created, in any stage                |
+| `deal.stage_changed`     | A deal moves to another stage — or to another pipeline         |
+| `deal.status_changed`    | A deal is marked won or lost, or reopened                      |
 
-All three carry `channel_id` in `data` — which of your numbers the event
-happened on, or `null` for events recorded before multi-channel. Without
-it, several numbers look like one indistinguishable stream, and a rule
-like "only open a ticket for what comes in on Comercial" is unbuildable.
-List the numbers with `GET /api/v1/channels`.
+Every event carries `channel_id` in `data` — which of your numbers the
+event happened on. Without it, several numbers look like one
+indistinguishable stream, and a rule like "only open a ticket for what
+comes in on Comercial" is unbuildable. List the numbers with
+`GET /api/v1/channels`. On the three `deal.*` events it is the number of
+the contact's conversation **when the card moved** — not `deal.channel_id`,
+which is the number the lead **arrived** through.
+
+⚠️ `channel_id` can be `null`, and not only on events recorded before
+multi-channel. On `deal.*` it is `null` whenever, at the moment of the
+move, the contact had no conversation tied to a number: a lead created by
+an incoming webhook (a form, Typebot) or by a Calendly booking before
+writing to you, a contact created through this API, a card with no contact
+(a group card, or a deleted contact). A flow that filters by number must
+decide what to do with those — dropping them silently drops exactly the
+new leads.
+
+The `deal.*` events fire for **every** way a card moves: dragging on the
+board, the deal form, the list view, the conversation side panel,
+automations and this API. They do **not** fire for bulk data migrations
+(which load history with the database triggers switched off), and deleting
+a deal emits nothing. One drag can emit **two** events: moving an existing
+card into a stage marked "won"/"lost" changes the stage *and* the status.
+⚠️ A card **created** directly in such a stage is born with that status and
+emits **only** `deal.created` — there is no `deal.status_changed` for it.
+If you listen for "won", also check `deal.status` on `deal.created`.
 
 ### Managing endpoints
 
@@ -742,8 +813,9 @@ curl -X POST https://your-crm.example.com/api/v1/webhooks \
 
 ### Delivery payload
 
-Every delivery is a POST with this envelope; `id` is a unique per-
-delivery uuid you can dedupe on, and `data` varies by `event`:
+Every delivery is a POST with this envelope, and `data` varies by `event`
+(the exact shapes live in `src/lib/webhooks/dados-dos-eventos.ts`, which
+the dispatch code is typed against):
 
 ```json
 {
@@ -755,16 +827,75 @@ delivery uuid you can dedupe on, and `data` varies by `event`:
 }
 ```
 
+- `id` — on the three `deal.*` events it is the id of the underlying fact
+  (the same value as `data.event_id`), so it is stable and safe to dedupe
+  on. On the message/conversation events it is a fresh uuid per dispatch.
+- `occurred_at` — on `deal.*` it is when the card changed (the database
+  clock), even if the delivery goes out later; on the other events it is
+  the dispatch time.
+- `test: true` — present only on deliveries sent by the **"Send test"**
+  button of *Settings → Webhooks → Outgoing*. Their `data` is fictitious sample
+  data; filter them out in production flows. The test goes to the
+  endpoint's registered URL, like a real delivery (see **Testing** below).
+
 `data` by event:
 
 ```jsonc
-// message.received
-{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋" }
+// message.received — WhatsApp (Meta or Evolution)
+{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋", "channel_id": "…" }
+// message.received — Instagram Direct: `instagram_message_id` instead of `whatsapp_message_id`
+{ "conversation_id": "…", "contact_id": "…", "instagram_message_id": "…", "content_type": "text", "text": "Hi 👋", "channel_id": "…" }
 // conversation.created
-{ "conversation_id": "…", "contact_id": "…" }
+{ "conversation_id": "…", "contact_id": "…", "channel_id": "…" }
 // message.status_updated
-{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered" }
+{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered", "channel_id": "…" }
 ```
+
+The three `deal.*` events share one shape:
+
+```jsonc
+{
+  "event_id": "…",                 // same as the envelope `id`
+  "occurred_at": "2026-09-23T14:05:00.000Z",
+  "source": "user",                // user | channel | automation | system (see below)
+  "deal_id": "…",
+  "deal": { /* GET /api/v1/deals/{id} shape — the deal AS OF DELIVERY, null if deleted */ },
+  "assignee": { "user_id": "…", "name": "Ana" },   // or null
+  "pipeline": { "id": "…", "name": "Comercial" },  // where the card went IN THIS EVENT
+  "stage": { "id": "…", "name": "Reunião Agendada", "position": 3 },
+  "contact": {                     // GET /api/v1/contacts/{id} shape, or null (group card / deleted contact)
+    "id": "…", "name": "…", "phone": "…", "email": "…", "tags": [{ "id": "…", "name": "Typebot", "color": "#3b82f6" }],
+    "custom_fields": { "tamanho_da_divida": "150000", "utm_source": null },
+    "…": "…"
+  },
+  "channel_id": "…",
+  // deal.stage_changed only — where it came from (a different pipeline = it changed pipelines):
+  "from_pipeline": { "id": "…", "name": "…" }, "from_stage": { "id": "…", "name": "Lead", "position": 2 },
+  // deal.status_changed only:
+  "from_status": "open", "status": "won"
+}
+```
+
+Read `stage`, not `deal.stage_id`, to know where the card went: `deal` is
+read at delivery time, so a card moved twice in a few seconds produces two
+events whose `deal` already shows the final stage. `source` tells who caused
+the change:
+
+- `user` — someone in the CRM screens (board, deal form, list view,
+  conversation side panel);
+- `channel` — the connection's pipeline routing opened the card. That
+  happens on the contact's **first message** *or* on the team's **first
+  send** to them — from the CRM screens, from the paired phone, or through
+  `POST /api/v1/messages` — so `channel` does not mean "inbound lead";
+- `automation` — an automation's "Create Deal" step;
+- `system` — direct deal writes through this API (`POST`/`PATCH
+  /api/v1/deals`) **and** an automation's "Move deal to stage" / "Mark won
+  or lost" steps. The database does not tell those two apart.
+
+⚠️ If your flow reacts to `deal.stage_changed` by moving the card through
+this API, that move emits another event (`source: "system"`): make sure the
+flow cannot loop. Filtering out `system` also drops the moves made by
+automations' "Move deal to stage" step.
 
 Headers: `X-Wacrm-Event`, `X-Wacrm-Webhook-Id`, and `X-Wacrm-Signature`.
 
@@ -775,26 +906,55 @@ HMAC-SHA256(secret, "${t}.${rawBody}")`. Recompute it over the **raw
 request body** and compare in constant time; reject if `t` is more than
 a few minutes old (replay protection).
 
+The secret is the **whole** value you received, `whsec_` prefix included.
+
 ```js
 const [, t, v1] = header.match(/t=(\d+),v1=([0-9a-f]+)/);
 const expected = crypto.createHmac('sha256', secret)
   .update(`${t}.${rawBody}`).digest('hex');
-const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
+// timingSafeEqual throws on different lengths — compare lengths first.
+const ok = expected.length === v1.length &&
+  crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
 ```
 
 ### Delivery semantics
 
-Delivery is **best-effort**: a single attempt per event with a short
-timeout, and **redirects are not followed**. `message.status_updated`
-covers messages wacrm stores (inbox + API sends), not broadcast-only
-sends, and — because providers re-send and re-order status callbacks —
-the same status may arrive more than once or out of order; **dedupe on
-`id` and don't assume ordering**. Each consecutive failure increments
-`failure_count`; after enough consecutive failures the endpoint is
-auto-disabled (`is_active: false`) — re-enable it with `PATCH` (which
-resets the counter). Durable retry-with-backoff (a delivery queue) is a
-future enhancement; today, treat missed deliveries as possible and
-reconcile with the read endpoints when it matters.
+Delivery is **best-effort**: a **single attempt** per event with a
+5-second timeout, and **redirects are not followed** (a 3xx counts as a
+failure). Nothing is retried, so a delivery is never duplicated by the CRM
+itself — but the *source* can repeat a fact: providers re-send and
+re-order status callbacks, so the same `message.status_updated` may arrive
+more than once (with a new `id`) or out of order. Deliveries run in
+parallel, so **don't assume ordering** — on `deal.*`, order by
+`occurred_at` and dedupe on `id`. `message.status_updated` covers messages
+the CRM stores (inbox + API sends), not broadcast-only sends. Each
+consecutive failure increments `failure_count`; after 15 consecutive
+failures the endpoint is auto-disabled (`is_active: false`) — re-enable it
+with `PATCH` (which resets the counter) or on the settings screen. ⚠️ The
+counter belongs to the **endpoint**, not to the event: when the `deal.*`
+queue has been held back (the scheduler down, for instance) its backlog is
+delivered at once, and if your receiver is down at that moment the backlog
+alone can reach the 15 failures and switch the endpoint off — for every
+event it subscribes to, `message.*` included. Durable
+retry-with-backoff (a delivery queue) is a future enhancement; today, treat
+missed deliveries as possible and reconcile with the read endpoints when it
+matters.
+
+**Testing.** *Settings → Webhooks → Outgoing* has a **"Send test"** button per
+endpoint: it signs and POSTs a sample of the event you pick (with
+`"test": true`) to the endpoint's **registered URL** and shows the HTTP
+status your endpoint answered. It works for events the endpoint does not
+subscribe to and on a switched-off endpoint, and it does not touch the
+failure counter.
+
+It does **not** feed n8n's "Listen for test event": that only captures the
+**Test URL** (`/webhook-test/…`), while the URL you register is the
+**Production URL**. With the Production URL and the workflow published,
+the test shows up in the workflow's **Executions**. To see it in Listen,
+register a second, temporary endpoint with the Test URL, click Listen, and
+press "Send test" on that endpoint within the 120 seconds — then delete
+it: outside the listening window the Test URL answers `404` to real
+deliveries, and the endpoint ends up switched off.
 
 **Target restrictions (SSRF).** The `url` must be `https://` and must
 resolve to a public address — requests to `localhost`, private/RFC1918
@@ -807,6 +967,8 @@ The public API now covers messaging, contacts, conversations,
 broadcasts, outbound webhooks — the full scope of
 [#245](https://github.com/ArnasDon/wacrm/issues/245) — plus this
 fork's additions: tasks, scheduled messages, deals/pipelines, calendar
-meetings, and internal notes. Future ideas (templates, flows, a
-delivery queue for webhooks, task/deal webhook events) are not yet
-scheduled.
+meetings, internal notes, and deal webhook events. Future ideas
+(templates, flows, a delivery queue for webhooks, task webhook events, a
+members endpoint and a custom-field catalog endpoint that doesn't need a
+contact id) are not yet scheduled. Meanwhile, *Settings → API → IDs* lists
+every id and key the API asks for.

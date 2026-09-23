@@ -47,7 +47,15 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   'conversations:read': 'List and read conversations',
   'channels:read': 'List the account WhatsApp numbers (channels)',
   'broadcasts:send': 'Launch broadcast campaigns',
-  'webhooks:manage': 'Register and manage outbound event webhooks',
+  // ⚠️ Diz O QUE SAI, não só o verbo. Esta chave cadastra um endereço
+  // qualquer e passa a receber lá o texto das mensagens dos clientes e, nos
+  // `deal.*`, o contato inteiro (telefone, e-mail, etiquetas, campos
+  // personalizados) e o negócio — é o escopo que mais vaza dado da conta, e
+  // "manage webhooks" soava administrativo e inofensivo na tela de criar
+  // chave, que é onde o admin decide. Texto em inglês: é o que a tela mostra
+  // cru, sem dicionário (o mesmo vale para as demais linhas).
+  'webhooks:manage':
+    'Register and manage outbound event webhooks — the subscribed events send message text and full contact and deal data (custom fields included) to the URLs registered with it',
   'tasks:read': 'List and read tasks',
   'tasks:write': 'Create tasks for team members',
   'scheduled:read': 'List scheduled messages',

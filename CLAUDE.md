@@ -391,7 +391,10 @@ upstream sobrescrevê-los:
 | `src/components/layout/sidebar.tsx`, `header.tsx`, `src/middleware.ts` | a aba `/radar` (item de navegação, título do cabeçalho e rota protegida) |
 | `src/lib/api-keys/scopes.ts`, `docs/public-api.md`, `src/components/settings/api-keys-settings.tsx` | os doze escopos das features do fork (tarefas/agendadas/negócios/reuniões/anotações/campos personalizados) e a rolagem da lista no diálogo — o upstream tem só os 8 originais |
 | `src/lib/deals/create-deal.ts` | devolve `deal` (a linha inserida), não só `ok/created` — a rota v1 serializa a resposta a partir dele —, e aceita `tituloFixadoEm` (1007): a v1 fixa o título, o roteador e o passo `create_deal` derivam |
-| `src/components/settings/settings-sections.ts`, `settings-chip.tsx`, `src/app/(dashboard)/settings/page.tsx` | a seção `integracoes` no rail e a variante `err` (vermelha) do chip |
+| `src/components/settings/settings-sections.ts`, `settings-chip.tsx`, `src/app/(dashboard)/settings/page.tsx` | a seção `integracoes` no rail e a variante `err` (vermelha) do chip. Mais (23/09/2026) `api: <ApiPanel/>` no lugar de `<ApiKeysSettings/>` e o `go()` apagando o parâmetro `aba` ao trocar de seção |
+| `src/lib/webhooks/events.ts`, `deliver.ts` (23/09/2026) | os três eventos `deal.*` e `DEAL_WEBHOOK_EVENTS`; `dispatchWebhookEvent` GENÉRICO sobre `WebhookEventData` com o 5º parâmetro `opcoes` (`id`/`occurredAt`), os `CABECALHO_*` e `pedidoDeEntrega` (o botão de teste assina pelo mesmo). Um merge que traga o `deliver.ts` cru devolve o `data: unknown` e desliga a cobrança do contrato nos pontos de disparo |
+| `src/components/settings/api-keys-settings.tsx` (23/09/2026) | virou o CORPO da aba Chaves: sem `SettingsPanelHead` (o cabeçalho é do `ApiPanel`), com o "Nova chave" no topo da aba e o estado de carga que falhou |
+| `src/app/api/v1/contacts/route.ts`, `[id]/route.ts`, `[id]/tags/route.ts`, `src/lib/api/v1/contacts.ts` (23/09/2026) | a etiqueta por NOME OU ID (`lerTagsPedidas` antes de qualquer escrita, `TagReferenceError`), o 400 para item de `tags` que não é string e para id de contato malformado. Ver "Tag ADITIVA na API v1" |
 | `src/lib/ai/types.ts`, `config.ts`, `structured.ts`, `defaults.ts`, `src/lib/cb-radar/worker.ts`, `src/app/api/ai/config/route.ts` | o modelo do Radar separado do modelo de chat (946): `radarModel` no tipo e em `CONFIG_COLUMNS`, o parâmetro `model` do `generateStructured`, `AI_PROVIDER_MODELS`, e a validação do modelo do Radar no save |
 | `src/components/settings/ai-config.tsx` | `<datalist>` de sugestão no campo Modelo e a frase de escopo com link para Integrações |
 | `src/app/(dashboard)/dashboard-shell.tsx` (Meu dia, 12/09/2026) | envolve o layout INTEIRO (menu, cabeçalho, página, heartbeat) na `<PortaDeEntrada key={user.id}>`, abaixo do `if (!user) return null` — nunca renderizar pedaço do app fora dela; e o "Loading..." traduzido (`DashboardShell.loading`) |
@@ -3341,6 +3344,13 @@ e as três já morderam de verdade.
   tela. O `min-w-0` no wrapper direto devolve o clamp e o `truncate` volta a
   funcionar. (Primo do caso `<ScrollArea>`/flex acima — mesma família:
   `min-width: auto` anulando o limite do pai.)
+- ⚠️ **A classe `font-mono` sai na INTER.** `globals.css` define
+  `--font-mono: var(--font-geist-mono)`, e `--font-geist-mono` não existe
+  (o layout carrega só a Inter) — medido no navegador em 23/09/2026:
+  `getComputedStyle` devolve `Inter, "Inter Fallback"`. Onde a monoespaçada
+  importa (JSON indentado, blocos de código), use `FONTE_MONO` de
+  `src/components/settings/copiar.tsx`. Consertar a variável muda ~50 telas
+  de uma vez: decisão própria, com revisão de tela, nunca carona.
 
 ⚠️ **O teclado do celular (14/09/2026): a conversa fica ACIMA dele, e o
 ajuste só liga dentro do fio.** `src/lib/celular/teclado.ts` (puro, com
@@ -5791,6 +5801,103 @@ genérico está em `docs/webhooks.md`. O que morde:
   trabalha na Kommo — mas quem rodar o delta sabe que agora há cards do
   Typebot nascendo aqui.
 
+⚠️⚠️ **Webhooks de saída de NEGÓCIO (`deal.created`, `deal.stage_changed`,
+`deal.status_changed`, 23/09/2026) — o aviso sai da FILA DO FUNIL, nunca de
+quem escreve.** `src/lib/webhooks/dados-dos-eventos.ts` (o contrato),
+`eventos-de-funil.ts` (puro), `entregar-eventos-de-funil.ts` (E/S),
+`exemplos.ts`, `enviar-teste.ts`, a coleta em `drain-events.ts` e a rota
+`/api/cb/webhooks-de-saida/[id]/teste`. Pedido do operador: o dev do escritório
+não conseguia receber no n8n "o lead mudou de etapa". O que morde código novo:
+
+- ⚠️⚠️ **O dreno de `cb_automation_events` é o único ponto de disparo, e é de
+  propósito.** São seis escritores de etapa, metade no navegador sob RLS; a
+  fila (0933/0934) é enchida por gatilho para todos. A linha é coletada LOGO
+  DEPOIS da reivindicação (a trava que impede o aviso imediato e o cron de
+  entregarem duas vezes) e do cancelamento de esperas, ANTES das guardas de
+  ciclo, de atraso e de "sem contato": decisão do operador — evento atrasado
+  mais de 1 h SAI, com a hora real. Há pino (`entregar-eventos-de-funil.chamadores.test.ts`).
+  ⚠️ A carga da Kommo desliga os gatilhos de `deals` (1014): o delta do corte
+  NÃO avisa o n8n. Apagar negócio não gera evento (não há gatilho de DELETE).
+- ⚠️⚠️ **A entrega vai por `after()`, fora do caminho crítico** (com queda
+  para `await` quando chamada fora de requisição — `after` lança ali). Com
+  `await`, o cron de automações esperava ~ceil(N/4) × 5 s de entregas antes
+  dos lembretes, do batimento e das retomadas de "Aguardar". No SIGTERM
+  gracioso o Next espera os `after()` pendentes, mas só até o
+  `stop_grace_period` do Swarm (10 s, o padrão — o `docker-stack.yml` não o
+  muda); depois vem o SIGKILL. Processo que morre antes perde os avisos das
+  linhas já reivindicadas, sem rastro (a linha fica processada) — é a régua
+  de "uma tentativa" dos webhooks. ⚠️ No cron essa janela CRESCEU: a
+  entrega só começa quando a resposta sai, depois do ciclo inteiro. Fechá-la
+  pede registrar a entrega pendente em lugar durável, que é outra obra.
+- ⚠️⚠️ **O INSERT do card entra na fila como `deal_stage_changed` sem "de
+  onde"** (a regra do Kommo que as automações usam); para quem integra, isso é
+  `deal.created` (`eventoDaLinha`). Medido: 11 dos 12 últimos eventos da
+  produção eram cards NOVOS — assinar só `stage_changed` perde quase tudo.
+  ⚠️ Card CRIADO já numa etapa de ganho/perdido nasce com o status e gera SÓ
+  `deal.created`: o gatilho da 950 é BEFORE e a fila grava uma linha só.
+- ⚠️ **`stage` é a etapa DESTE evento; `deal` é lido NA HORA DA ENTREGA** e
+  pode já ter andado. Leitura do catálogo que FALHA não entrega nada (log):
+  nulo, para quem recebe, quer dizer "apagado".
+- ⚠️ **O `id` do envelope é o id da linha da fila** (`opcoes.id` de
+  `dispatchWebhookEvent`), igual a `data.event_id`, e `occurred_at` é o
+  `criado_em` do fato. Nos eventos de mensagem continua um uuid por envio.
+- ⚠️ **`channel_id` é a conexão da conversa NO MOMENTO do movimento** (o
+  gatilho resolve) — e vem NULO para lead de formulário/Calendly que ainda não
+  escreveu. `source`: `user` (tela), `channel` (o roteador abriu o card — na
+  primeira mensagem do cliente OU no primeiro envio da equipe, inclusive por
+  `POST /api/v1/messages`), `automation` ("Criar negócio"), `system` (a API
+  de negócios e os passos "Mover card"/"Marcar status" — o banco não separa).
+- ⚠️⚠️ **`dados-dos-eventos.ts` é o contrato, e o compilador o cobra nas três
+  pontas**: `dispatchWebhookEvent` virou genérico sobre ele (os 8 pontos de
+  disparo antigos compilam sem mudança), `exemplos.ts` é tipado por ele, e a
+  aba Documentação mostra esses exemplos. Evento novo sem entrada no mapa não
+  compila (`CoberturaDosEventos`).
+- ⚠️ **O botão "Enviar teste" NÃO mexe no contador de falhas** e manda dados
+  fictícios com `"test": true`, assinado pelo MESMO `pedidoDeEntrega` da
+  entrega real. Ele posta na URL CADASTRADA: não alimenta o "Listen for test
+  event" do n8n, que só escuta a Test URL.
+- ⚠️ **`webhooks:manage` passou a entregar contato completo** (telefone,
+  e-mail, etiquetas, TODOS os campos personalizados) e negócio, sem
+  `contacts:read`/`deals:read` — a descrição do escopo diz isso. O desenho
+  sempre foi "assinar = receber o fluxo da conta" (`message.received` já
+  levava texto sem `messages:read`).
+- ⚠️⚠️ **A 1037 fechou `record_webhook_failure`**: era SECURITY DEFINER com
+  EXECUTE para PUBLIC, `anon` e `authenticated` (medido em produção, 23/09),
+  e o id do endpoint viaja no cabeçalho `X-Wacrm-Webhook-Id` de TODA entrega —
+  quinze chamadas anônimas desligavam o n8n do escritório. As duas metades do
+  REVOKE; testada num Postgres 16 descartável nos dois cenários.
+- ⚠️ **O botão "Enviar teste" torna a sondagem de endereço interno cômoda**
+  (cada clique conta o que o servidor respondeu). Quem barra é a guarda de
+  `ssrf.ts`, a do original (#588, por octetos — o IPv6 mapeado em hexa
+  `[::ffff:7f00:1]` incluso), que `enviar-teste.ts` chama antes de postar,
+  como a entrega real. Não divergir dela: ver a nota do anexo do Instagram.
+
+⚠️ **Configurações → API tem TRÊS abas (`?aba=chaves|ids|docs`) e a
+Documentação é gerada do código.** `api-panel.tsx`, `sub-abas.tsx`,
+`ids-da-conta.tsx` + `src/lib/integracoes/ids-da-conta.ts`,
+`documentacao-de-integracao.tsx` + `documentacao/*` +
+`src/lib/integracoes/exemplos-de-requisicao.ts`, e `copiar.tsx`. O que morde:
+
+- ⚠️ **A seção `api` NÃO é só de admin** (lê em modo leitura), e a aba IDs
+  mostra TODA a conta — funis, conexões, membros com e-mail —, sem o recorte
+  de perfil: a API também enxerga a conta inteira, e o perfil é recorte de
+  VISUALIZAÇÃO (956). Os links da Documentação para Webhooks viram texto para
+  quem não vê aquela seção.
+- ⚠️ **`go()` da página apaga `aba` ao TROCAR de seção**; a seção Webhooks lê
+  o MESMO parâmetro (`enviados|recebidos`), derivado da URL no render.
+- ⚠️⚠️ **Os números e nomes que a Documentação afirma (prefixo da chave,
+  limite por minuto, prazo, 15 falhas, cabeçalhos, janela da assinatura) são
+  CONSTANTES espelhadas em `exemplos-de-requisicao.ts` (o módulo é lido no
+  navegador e não pode importar `deliver.ts`/`keys.ts`/`rate-limit.ts`), e o
+  teste as amarra à fonte de servidor** — e EXECUTA o trecho do nó Code do n8n
+  contra uma assinatura de `buildSignatureHeader`. Número digitado no
+  dicionário mente na primeira mudança.
+- ⚠️ **Prosa no dicionário, código fora dele**: o dicionário inteiro vai ao
+  navegador em toda página, e JSON de exemplo no ICU exige aspas em toda
+  chave. A Documentação foi escrita CONCISA (~12 KB por idioma).
+- ⚠️ **`Settings.sections.api` virou "API"** (era "Chaves de API");
+  `SECTION_META.api.label` ainda diz "API keys" e o menu não o usa.
+
 ⚠️ **Tag ADITIVA na API v1: `POST /api/v1/contacts/{id}/tags`.**
 `src/lib/api/v1/tags-do-contato.ts` (parse puro, testado). O `PATCH` com
 `tags: []` continua SUBSTITUTIVO — é contrato publicado. O que morde código
@@ -5860,8 +5967,27 @@ novo:
   usando. Sem o ORDER BY o PostgREST devolve em ordem não determinística e
   duas chamadas iguais escolheriam etiquetas diferentes. A mesma régua está
   no desempate da migration.
-- ⚠️ **Trabalha por NOME, não por UUID**, porque não havia como o integrador
-  descobrir um id de tag. `GET /api/v1/tags` entrou junto, para descoberta.
+- ⚠️⚠️ **Aceita NOME OU ID desde 23/09/2026, e a régua é a FORMA do texto**
+  (`pareceIdDeEtiqueta`, `src/lib/contacts/id-de-etiqueta.ts`): texto na
+  forma canônica de UUID (com hífens, a que `GET /api/v1/tags` devolve) é
+  SEMPRE id; qualquer outro texto é nome. Nasceu de um caso MEDIDO em
+  produção: em 22/09 o integrador copiou o `id` da etiqueta "Typebot" e o
+  mandou onde a API esperava o nome — ela criou uma etiqueta NOVA chamada
+  "32f2da4f-…" e a aplicou, disparando `tag_added`. O que morde: id NUNCA
+  cria etiqueta (nem com `create_missing`); id que não é da conta, em `add`
+  OU `remove`, é 400 `unknown_tag_ids` ANTES de qualquer escrita (inclusive
+  antes de criar o contato no POST); `resolveImportTagIds` recusa CRIAR nome
+  com forma de UUID em qualquer porta (CSV incluso); e os baldes do aditivo
+  trazem o nome GRAVADO — mudou o contrato, que antes ecoava a grafia
+  enviada. O filtro `?tag=` de `GET /contacts` continua só por id.
+  `setContactTags` virou duas fases (`lerTagsPedidas` só lê; escrever vem
+  depois), para o 400 sair antes de qualquer mudança no contato.
+- ⚠️ **Item de `tags` que não é string é 400, nunca descartado** (POST e PATCH
+  de contato, `lerTagsDoCorpo` em `tags-do-contato.ts`): o filtro antigo
+  (`typeof t === 'string'`) transformava os objetos `{id,name,color}` que o
+  próprio GET devolve em lista VAZIA, e o substitutivo APAGAVA todas as
+  etiquetas com 200. `tags: null` continua sendo "não mexer", como sempre
+  foi — recusá-lo quebraria quem já manda o campo nulo.
 - ⚠️ **`ContactTagWriteError` NÃO é `ApiError`**: sem o ramo explícito no
   catch, um "Tag not found" (404) sai como 500 genérico.
 - ⚠️ **`removeContactTag` passou a devolver `boolean`** (o `count` do delete).
@@ -7383,6 +7509,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     replay do CI e antes do merge; gravadas 1.196 linhas no lote `reunioes-1`
     (546 pelo card, 28 pelo telefone, 622 sem ficha), com notificações,
     eventos de automação e execuções iguais antes e depois.
+  - **1037_cb_falha_de_webhook_so_pelo_servidor** — fecha o EXECUTE de
+    `record_webhook_failure` (028, SECURITY DEFINER) para PUBLIC, `anon` e
+    `authenticated`, com o GRANT de volta ao `service_role`: com a chave
+    anônima e o id de um endpoint (que viaja em `X-Wacrm-Webhook-Id` em toda
+    entrega), quinze chamadas desligavam o webhook de saída. Não recria a
+    função. Aplicada em 23/09/2026 pela Management API (histórico
+    `20260923173150`), depois do replay do CI e antes do merge do PR #266;
+    conferida no catálogo (`proacl` = `{postgres=X, service_role=X}`, `anon`
+    e `authenticated` sem EXECUTE).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

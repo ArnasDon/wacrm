@@ -209,6 +209,143 @@ describe('resolveImportTagIds', () => {
     await expect(resolveImportTagIds(db, args(['Typebot']))).rejects.toBeTruthy();
   });
 
+  it('⚠️⚠️ NUNCA cria etiqueta cujo nome tem formato de UUID — nem com permissão', async () => {
+    // Caso de produção (22/09/2026): o id de uma etiqueta chegou onde se
+    // esperava o nome, e a criação fez uma etiqueta NOVA chamada com o UUID.
+    // As portas da API separam id de nome antes de chegar aqui; esta é a
+    // segunda linha — vale também para o import de CSV.
+    const uuid = '32f2da4f-765d-4be1-9496-eec52528c356';
+    const db = bancoCom([CATALOGO, [...CATALOGO, { id: 'id-nova', name: 'Nova' }]]);
+    const r = await resolveImportTagIds(db, args([uuid, 'Nova']));
+
+    expect(r.skippedNames).toEqual([uuid]);
+    const { registro } = db as unknown as {
+      registro: { upserts: { linhas: Record<string, unknown>[] }[] };
+    };
+    // Só o nome de verdade chega à criação.
+    expect(registro.upserts).toHaveLength(1);
+    expect(registro.upserts[0].linhas.map((l) => l.name)).toEqual(['Nova']);
+  });
+
+  it('só UUID na lista: nem chega a tentar criar', async () => {
+    const uuid = '32F2DA4F-765D-4BE1-9496-EEC52528C356';
+    const db = bancoCom([CATALOGO]);
+    const r = await resolveImportTagIds(db, args([uuid]));
+
+    expect(r.skippedNames).toEqual([uuid]);
+    expect((db as unknown as { registro: { upserts: unknown[] } }).registro.upserts).toEqual([]);
+  });
+
+  it('nome com cara de UUID que JÁ existe no catálogo continua casando', async () => {
+    // Só a CRIAÇÃO é barrada: a etiqueta que alguém já criou com esse nome
+    // (a de 22/09 ficou no catálogo) é uma etiqueta como outra qualquer.
+    const uuid = '32f2da4f-765d-4be1-9496-eec52528c356';
+    const db = bancoCom([[...CATALOGO, { id: 'id-da-etiqueta-uuid', name: uuid }]]);
+    const r = await resolveImportTagIds(db, args([uuid]));
+
+    expect(r.tagIdByKey.get(uuid)).toBe('id-da-etiqueta-uuid');
+    expect(r.skippedNames).toEqual([]);
+  });
+
+  // ── O texto com forma de UUID que é ID de etiqueta desta conta ──────────
+  // A régua da API (`casarReferencias`): forma de UUID é id. Sem isto o import
+  // de CSV pulava, em silêncio, a planilha exportada com ids.
+  const ID_TYPEBOT = '5f0c1e2a-1111-4222-8333-944455556666';
+  const COM_IDS: Linha[] = [
+    { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Bancário' },
+    { id: ID_TYPEBOT, name: 'Typebot' },
+  ];
+
+  it('⚠️ UUID que é id de etiqueta resolve para ELA — e o import aplica a real', async () => {
+    const db = bancoCom([COM_IDS]);
+    const r = await resolveImportTagIds(db, args([ID_TYPEBOT]));
+
+    expect(r.skippedNames).toEqual([]);
+    expect(r.tagIdByKey.get(ID_TYPEBOT)).toBe(ID_TYPEBOT);
+    // Nada a criar: a etiqueta existe.
+    expect((db as unknown as { registro: { upserts: unknown[] } }).registro.upserts).toEqual([]);
+
+    // A ponta que importa: `assignImportedContactTags` consulta o mapa pelo
+    // texto da planilha e grava o vínculo com a etiqueta DE VERDADE.
+    const vinculos = bancoDeVinculos();
+    await assignImportedContactTags(
+      vinculos,
+      [{ contactId: 'c1', tagNames: [` ${ID_TYPEBOT.toUpperCase()} `] }],
+      r.tagIdByKey
+    );
+    const { registro } = vinculos as unknown as {
+      registro: { lotes: Record<string, unknown>[][] };
+    };
+    expect(registro.lotes[0]).toEqual([{ contact_id: 'c1', tag_id: ID_TYPEBOT }]);
+  });
+
+  it('⚠️⚠️ o id VENCE o nome: a etiqueta-lixo chamada com o UUID não é a escolhida', async () => {
+    // O caso de 22/09 deixou no catálogo uma etiqueta CHAMADA com o id da
+    // "Typebot". Pelo nome, o texto casaria com ela; quem escreveu o id queria
+    // a "Typebot" — e é o que a API faz com o mesmo texto.
+    const db = bancoCom([[...COM_IDS, { id: 'id-da-etiqueta-lixo', name: ID_TYPEBOT }]]);
+    const r = await resolveImportTagIds(db, args([ID_TYPEBOT, 'Typebot']));
+
+    expect(r.tagIdByKey.get(ID_TYPEBOT)).toBe(ID_TYPEBOT);
+    expect(r.skippedNames).toEqual([]);
+  });
+
+  it('o mapa do id pedido é uma CÓPIA: o catálogo por nome continua dizendo nome → id', async () => {
+    const db = bancoCom([[...COM_IDS, { id: 'id-da-etiqueta-lixo', name: ID_TYPEBOT }]]);
+    const r = await resolveImportTagIds(db, args([ID_TYPEBOT]));
+    // O `nomePorId` segue o catálogo: o id pedido tem o nome gravado dele.
+    expect(r.nomePorId.get(ID_TYPEBOT)).toBe('Typebot');
+    expect(r.nomePorId.get('id-da-etiqueta-lixo')).toBe(ID_TYPEBOT);
+  });
+
+  it('UUID que NÃO é id de etiqueta nenhuma (nem nome) é pulado, nunca criado', async () => {
+    const outro = '0b1c2d3e-4f50-4a6b-8c7d-8e9fa0b1c2d3';
+    const db = bancoCom([COM_IDS]);
+    const r = await resolveImportTagIds(db, args([outro]));
+
+    expect(r.skippedNames).toEqual([outro]);
+    expect(r.tagIdByKey.has(outro)).toBe(false);
+    expect((db as unknown as { registro: { upserts: unknown[] } }).registro.upserts).toEqual([]);
+  });
+
+  it('id pedido junto com nome a criar: o id é conferido no catálogo RELIDO', async () => {
+    // A criação relê o catálogo; a etiqueta do id pode ter sumido entre as
+    // duas leituras. Aí o texto é pulado, nunca aplicado a um id morto.
+    const depois: Linha[] = [
+      { id: 'aaaaaaaa-0000-4000-8000-000000000001', name: 'Bancário' },
+      { id: 'id-nova', name: 'Nova' },
+    ];
+    const db = bancoCom([COM_IDS, depois]);
+    const r = await resolveImportTagIds(db, args([ID_TYPEBOT, 'Nova']));
+
+    expect(r.tagIdByKey.get('nova')).toBe('id-nova');
+    expect(r.tagIdByKey.has(ID_TYPEBOT)).toBe(false);
+    expect(r.skippedNames).toEqual([ID_TYPEBOT]);
+  });
+
+  it('id pedido junto com nome a criar, etiqueta ainda de pé: resolve normalmente', async () => {
+    const db = bancoCom([COM_IDS, [...COM_IDS, { id: 'id-nova', name: 'Nova' }]]);
+    const r = await resolveImportTagIds(db, args(['Nova', ID_TYPEBOT]));
+
+    expect(r.tagIdByKey.get(ID_TYPEBOT)).toBe(ID_TYPEBOT);
+    expect(r.tagIdByKey.get('nova')).toBe('id-nova');
+    expect(r.skippedNames).toEqual([]);
+    const { registro } = db as unknown as {
+      registro: { upserts: { linhas: Record<string, unknown>[] }[] };
+    };
+    // O id nunca vai para a criação — só o nome.
+    expect(registro.upserts[0].linhas.map((l) => l.name)).toEqual(['Nova']);
+  });
+
+  it('devolve também id → nome gravado, lido do catálogo depois da criação', async () => {
+    const db = bancoCom([CATALOGO, [...CATALOGO, { id: 'ID-NOVA', name: 'Nova' }]]);
+    const r = await resolveImportTagIds(db, args(['nova']));
+
+    expect(r.nomePorId.get('id-bancario')).toBe('Bancário');
+    // A chave do mapa é o id em minúsculas (o pedido é rebaixado antes).
+    expect(r.nomePorId.get('id-nova')).toBe('Nova');
+  });
+
   it('⚠️ na colisão de chave vence a MAIS ANTIGA (a leitura vem ordenada)', async () => {
     // Base anterior à 983 pode ter as duas: a migration RENOMEIA em vez de
     // apagar, para não quebrar referência em JSON de automação.

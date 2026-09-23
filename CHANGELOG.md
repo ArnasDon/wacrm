@@ -22,6 +22,38 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   números oficiais (WABAs) que estão em apps diferentes. Ver
   [`docs/multi-waba.md`](./docs/multi-waba.md) — inclusive o aviso de que
   todos os apps da lista precisam ser de confiança.
+- **Avisos de negócio para o n8n, o Make ou qualquer sistema:
+  `deal.created`, `deal.stage_changed` e `deal.status_changed`.** Os
+  endereços de *Configurações → Webhooks → Enviados* (e os da API, escopo
+  `webhooks:manage`) podem assinar os três. Valem para todo jeito de mexer
+  no card — quadro, formulário, lista, painel da conversa, automações e a
+  API — e levam o negócio, o funil e a etapa com nome e id, a etapa de onde
+  o card saiu, o responsável, o contato com etiquetas e campos
+  personalizados e quem causou a mudança (`source`). A carga em massa de
+  uma migração de dados não gera aviso, e apagar negócio também não. O
+  formato e as regras (o `channel_id` que pode vir vazio, o card criado já
+  ganho que gera um aviso só) estão em `docs/public-api.md`.
+  ⚠️ Um endereço que assina estes eventos recebe o contato inteiro e os
+  campos personalizados — trate a chave com `webhooks:manage` como uma
+  chave de leitura da base.
+- **Botão "Enviar teste"** em cada endereço da aba Enviados: manda um
+  exemplo assinado do evento escolhido, com `"test": true`, para a URL
+  cadastrada, e mostra o que o seu sistema respondeu. Não conta como falha.
+  Ele não aparece no "Listen for test event" do n8n, que só escuta a Test
+  URL — o jeito de vê-lo lá está em `docs/webhooks.md`.
+- **Configurações → API ganhou três abas.** **Chaves** (a tela de antes),
+  **IDs** (os ids de funis, etapas, etiquetas, conexões, membros e campos
+  da conta, com botão de copiar) e **Documentação** (como ligar o CRM ao n8n
+  e ao Make, com os exemplos já no endereço desta instalação). A aba
+  Enviados de Webhooks passou a mostrar o nome de cada evento e a deixar
+  trocar os eventos de um endereço já criado.
+- **Etiqueta pelo id na API.** `POST /api/v1/contacts`,
+  `PATCH /api/v1/contacts/{id}` e `POST /api/v1/contacts/{id}/tags` aceitam
+  o nome OU o id da etiqueta (o `id` que `GET /api/v1/tags` devolve). Até
+  aqui o id era lido como nome: a API criava uma etiqueta chamada com o
+  próprio id e a aplicava ao contato — e, no `PATCH`, tirava do contato a
+  etiqueta verdadeira. Um id nunca cria etiqueta. O filtro `?tag=` de
+  `GET /api/v1/contacts` continua aceitando só o id.
 
 ### Corrigido
 
@@ -89,6 +121,16 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   não é baixada. O servidor MCP passou a ser instalado a partir deste
   repositório: o pacote `wacrm-mcp` do npm é o do projeto original, sem
   a escolha do número de envio.
+- **Qualquer pessoa conseguia desligar um endereço de webhook.** A função
+  do banco que conta as falhas de entrega (e desliga o endereço na décima
+  quinta) podia ser chamada sem login, com a chave pública que viaja no
+  navegador — e o id do endereço vai no cabeçalho de toda entrega. Quinze
+  chamadas bastavam para o n8n do escritório parar de receber, sem erro em
+  lugar nenhum. Agora só o servidor a chama.
+  **Migration necessária:**
+  `supabase/migrations/1037_cb_falha_de_webhook_so_pelo_servidor.sql` (o
+  `supabase db push` a aplica). Pode entrar antes ou depois da imagem nova:
+  a aplicação só chama a função pelo servidor.
 - **O idioma coreano foi removido.** O dicionário tinha menos da metade
   das chaves, e escolhê-lo entregava metade da tela como caminho de chave
   cru. Restam português do Brasil e inglês, os dois completos.
@@ -122,6 +164,25 @@ Formato: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   curtas do "Aguardar"), e o laço de 15 minutos ganhou as rotas do Meta
   Ads, do tl;dv e do Asaas. O CI só troca a imagem do serviço e não relê
   o `docker-stack.yml`.
+- ⚠️ **Contrato da API: os baldes de `POST /api/v1/contacts/{id}/tags`
+  trazem o nome GRAVADO.** `adicionadas`, `removidas` e `inalteradas`
+  passam a trazer o nome da etiqueta como está no CRM (o mesmo `name` de
+  `GET /api/v1/tags`) — antes, a grafia enviada. Quem manda "bancario" e
+  compara a resposta com o que mandou passa a receber "Bancário"; quem
+  manda o id recebe o nome. Só `desconhecidas` continua ecoando o que veio.
+- ⚠️ **Pedidos que a API aceitava passam a ser `400`**, sempre antes de
+  gravar qualquer coisa:
+  - um id de etiqueta que não é desta conta (`unknown_tag_ids`), nas três
+    rotas que aceitam etiqueta;
+  - `tags` com item que não é texto ou que é vazio, ou `tags` que não é
+    lista (`tags: null` continua sendo "não mexer"), em `POST /api/v1/contacts` e
+    `PATCH /api/v1/contacts/{id}`. Antes esses itens eram descartados em
+    silêncio, e o `PATCH` podia APAGAR todas as etiquetas do contato com
+    200 — por exemplo, devolvendo as etiquetas no formato em que o `GET` as
+    entrega. Para limpar, `tags: []`;
+  - um id de contato que não é UUID em `GET`/`PATCH /api/v1/contacts/{id}`
+    (antes, erro 500; `/custom-fields` e `/tags` já respondiam 400).
+  Ajuste o fluxo que dependia de algum desses.
 
 ## [0.8.1] — 2026-07-10
 

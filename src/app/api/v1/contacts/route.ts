@@ -6,6 +6,15 @@
 // supports `?search=` (name/phone) and `?tag=<tagId>` filters. Create
 // is find-or-create by phone: an existing match returns 200 with
 // `created: false`; a new row returns 201 with `created: true`.
+//
+// `tags` no POST aceita NOME ou ID de etiqueta (a régua de
+// `casarReferencias`, em `src/lib/api/v1/tags-do-contato.ts`) e é lido
+// ANTES de criar a ficha: um id que não é desta conta volta 400
+// `unknown_tag_ids` sem contato nenhum criado.
+//
+// ⚠️ E a FORMA de `tags` é conferida antes de tudo: item que não é texto
+// (ou é vazio) volta 400 — nunca é descartado em silêncio. Ver
+// `lerTagsDoCorpo`, em `tags-do-contato.ts`.
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
@@ -21,9 +30,12 @@ import {
   findOrCreateContact,
   setContactTags,
   getContactById,
+  lerTagsPedidas,
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
+import { lerTagsDoCorpo, TagReferenceError } from '@/lib/api/v1/tags-do-contato';
+import { pareceIdDeEtiqueta } from '@/lib/contacts/id-de-etiqueta';
 
 // PostgREST filter values are comma/paren-delimited; strip anything
 // that could break the `.or()` grammar before interpolating a search
@@ -38,7 +50,18 @@ export async function GET(request: Request) {
     const { limit, cursor } = parseListParams(request);
     const url = new URL(request.url);
     const search = sanitizeSearch(url.searchParams.get('search') ?? '');
-    const tag = url.searchParams.get('tag');
+    const tag = url.searchParams.get('tag')?.trim() || null;
+    // ⚠️ O filtro é por ID. Sem esta conferência, um nome (`?tag=Typebot`)
+    // chegava cru ao `.eq('tag_filter.tag_id', …)` e o Postgres recusava o
+    // texto como uuid (22P02) — o integrador lia "500 Failed to list
+    // contacts", sem saber que o problema era a forma do filtro.
+    if (tag && !pareceIdDeEtiqueta(tag)) {
+      return fail(
+        'bad_request',
+        "'tag' must be a tag id (UUID); list the account's tags with GET /api/v1/tags",
+        400
+      );
+    }
 
     // When filtering by tag, add an aliased INNER join on contact_tags
     // used purely for the WHERE — the parent is kept only if it has the
@@ -110,6 +133,16 @@ export async function POST(request: Request) {
       return fail('bad_request', "'phone' is required", 400);
     }
 
+    // Forma de `tags`: puro, antes de qualquer consulta.
+    const tags = lerTagsDoCorpo(body.tags);
+    if (tags && !Array.isArray(tags)) return fail('bad_request', tags.erro, 400);
+
+    // As etiquetas são lidas ANTES de criar a ficha (só leitura): um id que
+    // não é desta conta volta 400 sem deixar contato criado para trás.
+    const tagsPedidas = tags
+      ? await lerTagsPedidas(ctx.supabase, ctx.accountId, tags)
+      : null;
+
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
 
     const { id, created } = await findOrCreateContact(
@@ -124,19 +157,22 @@ export async function POST(request: Request) {
       }
     );
 
-    if (Array.isArray(body.tags)) {
+    if (tagsPedidas) {
       await setContactTags(
         ctx.supabase,
         ctx.accountId,
         auditUserId,
         id,
-        body.tags.filter((t): t is string => typeof t === 'string')
+        tagsPedidas
       );
     }
 
     const contact = await getContactById(ctx.supabase, ctx.accountId, id);
     return ok(contact, created ? 201 : 200);
   } catch (err) {
+    if (err instanceof TagReferenceError) {
+      return fail(err.code, err.message, err.status);
+    }
     if (err instanceof ContactError) {
       return fail(
         err.status === 400 ? 'bad_request' : 'internal',

@@ -20,7 +20,7 @@ import { AssinaturaSettings } from '@/components/settings/assinatura-settings';
 import { MembersTab } from '@/components/settings/members-tab';
 import { IntegracoesPanel } from '@/components/settings/integracoes-panel';
 import { WebhooksPanel } from '@/components/settings/webhooks-panel';
-import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
+import { ApiPanel } from '@/components/settings/api-panel';
 import {
   resolveSection,
   SETTINGS_SECTIONS,
@@ -69,6 +69,11 @@ function SettingsPageInner() {
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
     params.set('tab', next);
+    // `?aba=` é a sub-aba DENTRO de uma seção (hoje, só a API: Chaves | IDs
+    // | Documentação). Trocando de seção ele não vale mais — e, se ficasse,
+    // voltar à API mais tarde reabriria a sub-aba de uma visita antiga em
+    // vez da primeira.
+    if (next !== section) params.delete('aba');
     router.replace(`/settings?${params.toString()}`, { scroll: false });
   };
 
@@ -95,7 +100,7 @@ function SettingsPageInner() {
     assinatura: <AssinaturaSettings />,
     members: <MembersTab />,
     integracoes: <IntegracoesPanel />,
-    api: <ApiKeysSettings />,
+    api: <ApiPanel />,
     webhooks: <WebhooksPanel />,
     perfis: <PerfisPanel />,
   };

@@ -756,7 +756,77 @@ criada; caminho feliz → 202 (a sonda `f2-pos-deploy.mjs` da Fase 2 não envia
 nada e serve de base). ⚠️ Toca `broadcast-core.ts`, que a metade aproveitável
 do #586 (P9) também toca — se os dois entrarem na mesma fase, um PR só.
 
-**Resultado:** — (a preencher)
+**Como a fase foi dividida (23/09/2026).** Com a P9 resolvida na retomada — o
+`+` obrigatório do #586 NÃO entra (o escritório digita sem `+` e a nossa
+`digitosDoTelefone` completa o 55 de propósito); entra a metade ADITIVA dele,
+com a NOSSA régua —, a 3a deixou de ser pequena: ela passa a incluir a
+normalização do telefone DIGITADO nas telas e na API. Para cada PR ter um raio
+pequeno, a fase virou quatro, cada uma com revisão em duas lentes, preview,
+Codex e deploy próprios:
+
+| Sub-fase | O que entra | Estado |
+| --- | --- | --- |
+| **3-I** | 3b, 3c, 3d (só medir) e 3e — nada toca telefone | ✅ PR #262 |
+| **3-II** | 3a (#529) + a metade aditiva do #586 NAS TELAS: formulário e ficha do contato, importação de CSV, CSV do disparo — telefone digitado sai normalizado pela nossa régua, e o inválido é CONTADO com motivo, nunca chamado de duplicata | pendente |
+| **3-III** | a mesma normalização na ENTRADA da API (v1 de contatos, mensagens e disparos) e em `/api/cb/conversas/abrir`, com `docs/public-api.md` | pendente |
+| **3-IV** | 3f — a CONTAGEM do público do disparo (#594) truncando em 1000 (o envio já pagina) | pendente |
+
+**Resultado da 3-I (23/09/2026, PR #262):**
+
+- **3b** (cherry-pick `7f42918`): o campo "Texto enviado ao cliente" do nó
+  *Enviar mensagem* virou `textarea` de 3 linhas.
+- **3c** (cherry-pick `a4eb921`): `META_APP_SECRET` aceita vários segredos
+  separados por vírgula, cada um conferido em tempo constante; vazio ou só
+  vírgulas continua recusando tudo. Só o webhook da Meta lê a variável (o do
+  Instagram tem segredo próprio por conexão). `docs/multi-waba.md` foi
+  REESCRITO em português para a nossa realidade (a conexão nasce em
+  *Configurações → Conexões*; a tela legada que o original descreve não é
+  montada aqui) e indexado no `docs/README.md`.
+- **3d**: os 3 testes de regressão de tags do original passam contra o NOSSO
+  `contacts.ts` (o 4º, de `serializeContact`, falha pela divergência esperada
+  dos campos `instagram_*`) — fechado sem mudança; `set-contact-tags.test.ts`
+  já cobre o caso.
+- **3e**: o resolvedor LANÇA `ErroAoLerCanalMeta` quando a leitura falha — na
+  busca por id, na lista (que antes caía em silêncio no espelho legado) e no
+  próprio espelho — e os 7 chamadores já tinham `catch` que responde 500 (na
+  v1, `internal`, sem o texto do banco). Id malformado (toda a classe `22` do
+  Postgres) continua `null` → 400. **O `status` do canal pedido continua NÃO
+  conferido, e a decisão foi escrita:** a sonda de saúde grava `disconnected` a
+  qualquer erro da Meta — e só com um administrador com a tela aberta —, então
+  recusar por ele barraria disparo sobre um canal que funciona.
+
+**Verificação:** `typecheck` limpo; lint sem aviso novo nos arquivos da fase;
+suíte em Node 22 verde; portões de i18n OK. **Mutação:** os pinos do 3e
+reprovam os mutantes (erro engolido na busca por id, na lista e no espelho;
+classe 22 virando 500; texto do banco na mensagem).
+
+**Teste prático (preview `localhost:3130`, `next dev` com um `META_APP_SECRET`
+de TESTE — dois segredos fictícios):**
+
+| Caso | Resultado |
+| --- | --- |
+| Webhook da Meta LOCAL, corpo vazio assinado com o 1º segredo / com o 2º | 200 / 200 |
+| Assinado com segredo errado / com a lista inteira como segredo / sem assinatura | 401 / 401 / 401 |
+| 3b: fluxo rascunho "TESTE Fase 3b — apagar" (201), nó *Enviar mensagem* adicionado sem salvar | o campo é `textarea` de 3 linhas; fluxo apagado (200 → 404); banco: 0 fluxos de teste, 0 nós órfãos |
+| 3e: sincronizar modelos com `channel_id` malformado / inexistente | 400 / 400, nada chamado na Meta |
+
+O 500 por erro de banco se prova no unitário — não se derruba o banco da
+produção para vê-lo.
+
+**Revisão em duas lentes:** nenhum P0/P1.
+
+| Achado | Destino |
+| --- | --- |
+| P2 (Lente 2, MEDIDO em bash) — `META_APP_SECRET=a, b` no `crm.env`, que o shell carrega com `set -a; .`, faz a variável SUMIR: o espaço termina a atribuição e todo webhook da Meta vira 401 | ✅ a doc manda escrever a lista SEM espaço e conferir com `printenv` dentro do contêiner (`.env.local.example`, `docs/multi-waba.md`, `CLAUDE.md`) |
+| P2 (Lente 1) — o segredo não é amarrado ao número: um app da lista pode assinar entrega que diz ser de qualquer número | ✅ aviso escrito: só apps de confiança; a produção tem um app só |
+| P3 — o motivo escrito para não conferir o `status` era FALSO | ✅ motivo corrigido (a sonda grava `disconnected` a qualquer erro); a decisão ficou |
+| P3 — o texto do PostgREST chegava ao aviso na tela das rotas de modelo | ✅ mensagem genérica; o detalhe vai para o log |
+| P3 — só `22P02` virava 400 | ✅ toda a classe `22` |
+| P3 — "setup C" sem referência; CHANGELOG; lista de docs entregues no `CLAUDE.md`; item 10 do `multicanal-plano.md`; `META_APP_ID` descrito como se fosse medido | ✅ |
+| Aceitos por escrito | as rotas de disparo e de retomada mostram "Internal server error" no lugar de "conecte um número" (mais honesto); na v1 o 500 é o contrato de erro interno |
+| **Codex no HEAD `e583b291`** | nenhum achado |
+
+**Pós-deploy:** — (a preencher)
 
 ### Fase 4 — Fluxos: `{{vars}}` em botões e listas
 

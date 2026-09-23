@@ -1,4 +1,7 @@
+import type { SupabaseClient } from '@supabase/supabase-js'
+
 import type { CbAutomationEvent } from '@/types'
+import { entregarEventosDeFunil } from '@/lib/webhooks/entregar-eventos-de-funil'
 import { supabaseAdmin } from './admin-client'
 import { runAutomationsForTrigger, type AutomationContext } from './engine'
 import { cancelarEsperasAoSairDaEtapa } from './so-na-etapa'
@@ -13,12 +16,25 @@ import { cancelarEsperasAoSairDaEtapa } from './so-na-etapa'
 // ⚠️ DUAS PONTAS CHAMAM AQUI, e é de propósito:
 //   1. o aviso imediato de quem escreveu (`POST /api/automations/events/drain`),
 //      que dá latência de segundos — sem ele, "moveu o card → manda a
-//      mensagem" levaria até 15 minutos, que é o ciclo do agendador da VPS;
-//   2. o cron de 15 min, como rede de segurança para o que o navegador não
-//      conseguiu avisar (aba fechada, rede caindo, SQL rodado na mão).
+//      mensagem" esperaria o próximo batimento do agendador da VPS;
+//   2. o cron de automações, como rede de segurança para o que o navegador
+//      não conseguiu avisar (aba fechada, rede caindo, SQL rodado na mão).
+//      Ele está no laço RÁPIDO do agendador (`sleep 15` no
+//      `docker-stack.yml`, conferido em 23/09/2026 — uma versão deste
+//      cabeçalho dizia "15 minutos", que é o laço LENTO).
 //
 // A reivindicação em dois passos é o que impede as duas de dispararem o mesmo
 // evento — mesmo molde do cron de automações e do disparador de agendadas.
+//
+// ⚠️ O dreno TAMBÉM alimenta os webhooks de saída `deal.*` (n8n, Make):
+// toda linha reivindicada é entregue a `entregarEventosDeFunil`, UMA vez por
+// ciclo, depois do laço. A coleta vem logo depois da reivindicação e ANTES
+// das guardas de ciclo, atraso e contato (decisão do operador, 23/09/2026):
+// essas guardas existem para não mandar MENSAGEM ao cliente, e o aviso ao
+// integrador descreve o que aconteceu com o card — atrasado sai com a hora
+// real (`occurred_at`), card de grupo ou de contato apagado sai com
+// `contact: null`. A reivindicação vale para os dois consumidores: o mesmo
+// movimento nunca vira dois avisos.
 // ------------------------------------------------------------
 
 /** Teto por ciclo. Igual ao do cron de automações. */
@@ -145,8 +161,13 @@ export interface ResultadoDaDrenagem {
  */
 export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
   const saida: ResultadoDaDrenagem = { entregues: 0, ignorados: 0, falhas: 0 }
+  // Fora do `try` de propósito: o que já foi reivindicado não volta para a
+  // fila, então um estouro no meio do laço não pode levar junto o aviso das
+  // linhas que ficaram para trás — a entrega roda depois do `catch`.
+  let db: SupabaseClient | null = null
+  const paraOsWebhooks: CbAutomationEvent[] = []
   try {
-    const db = supabaseAdmin()
+    db = supabaseAdmin()
 
     const { data: pendentes, error } = await db
       .from('cb_automation_events')
@@ -205,6 +226,10 @@ export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
         })
       }
 
+      // Webhooks `deal.*`: coletada AQUI — reivindicada, e antes das guardas
+      // abaixo, que decidem só se AUTOMAÇÃO dispara (ver o cabeçalho).
+      paraOsWebhooks.push(linha)
+
       // Ciclo antes de idade: um encadeamento girando produz eventos frescos,
       // então a guarda de atraso nunca o pegaria.
       const motivo = fechaCiclo(linha)
@@ -243,6 +268,13 @@ export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
     }
   } catch (err) {
     console.error('[automations] drenagem falhou', err)
+  }
+
+  // UMA entrega por ciclo, com `await`: a rota do aviso imediato aguarda o
+  // dreno, e o custo é o de um lote de entregas em paralelo (4 por vez, prazo
+  // de 5 s cada), não um prazo por evento. Nunca lança.
+  if (db && paraOsWebhooks.length > 0) {
+    await entregarEventosDeFunil(db, paraOsWebhooks)
   }
   return saida
 }

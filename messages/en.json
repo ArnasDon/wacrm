@@ -434,6 +434,16 @@
       "expandVideo": "Expand video",
       "imageAlt": "Shared image"
     },
+    "audioPlayer": {
+      "tocar": "Play audio",
+      "pausar": "Pause audio",
+      "posicao": "Audio position",
+      "posicaoValor": "{atual} of {total}",
+      "velocidade": "{valor, number}×",
+      "velocidadeDica": "Speed {valor, number}× — click to change",
+      "falhou": "This audio can't be played here.",
+      "abrirArquivo": "Open the file"
+    },
     "actions": {
       "reply": "Reply",
       "copyText": "Copy text",
@@ -450,7 +460,9 @@
       "editTitle": "Edit message",
       "save": "Save",
       "cancel": "Cancel",
-      "deleteRequested": "Deletion requested"
+      "deleteRequested": "Deletion requested",
+      "download": "Download",
+      "downloadFailed": "Couldn't download the file"
     },
     "replyQuote": {
       "photo": "[Photo]",

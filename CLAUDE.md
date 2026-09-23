@@ -185,9 +185,10 @@ as que voltam a conflitar):
 - **`src/components/inbox/message-bubble.tsx` e `message-thread.tsx` ficam
   NOSSOS, inteiros.** O visualizador de mídia do upstream (#467) foi descartado:
   o nosso `media-viewer.tsx` tem giro e zoom, que a versão deles não tem. Os
-  arquivos `media-lightbox.tsx`, `message-media.tsx` e `lib/media/*` vieram no
-  merge mas **não estão ligados** — se um merge futuro os religar, o inbox passa
-  a ter dois visualizadores.
+  arquivos `media-lightbox.tsx` e `message-media.tsx` vieram no merge mas **não
+  estão ligados** — se um merge futuro os religar, o inbox passa a ter dois
+  visualizadores. (De `lib/media/*`, o `download.ts` passou a ser usado em
+  23/09/2026 pelo **Baixar** da nota de voz — ver "Player de áudio".)
 - ⚠️ **Uma major de Node só, e ela mora no `.nvmrc` (hoje `22`, o LTS).**
   Chegaram a existir TRÊS ao mesmo tempo — dev 24, CI 20, produção 22 — e isso
   já custou um vermelho real: o PR #66 passou na máquina do dev e reprovou no
@@ -279,6 +280,7 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (3ª linha nossa) | o `.is('nome_fixado_em', null)` no UPDATE que troca o nome do contato pelo do perfil (999). O bloco é do upstream e volta cru num merge — sem a guarda, o nome fixado pelo agendamento do Calendly vira o do WhatsApp na mensagem seguinte. Pino: `src/lib/contacts/nome-fixado.chamadores.test.ts` |
 | `src/components/inbox/message-bubble.tsx` (além de ser nosso inteiro) | o case `document` usa `mediaFilename(message)` e mostra a legenda embaixo só quando ela DIFERE do nome; `nomeDeArquivo` delega para a cascata em vez de derivar o basename cru |
 | `src/components/inbox/message-bubble.tsx` (canal, 2026-09-02) | a prop `canal` (nome + cor) no lugar do antigo `channelLabel`: o rótulo embaixo da mensagem ganhou a bolinha da cor, 10px (era 9) e teto de 9rem (era 7). ⚠️ Uma versão desta nota dizia que em 7rem os nomes truncavam "no ponto em que ainda são iguais" — MEDIDO em 02/09: os seis nomes da conta cabem em 7rem até a 10px (o mais longo, "Trabalhista - Comercial", dá 110px); o 9rem é folga, não conserto. A cor vive na BOLINHA, não no texto: a bolha da equipe é `bg-primary`, violeta nesta conta. Uma trilha de 3px na borda foi feita e DESCARTADA pelo operador na hora ("não gostei dessa borda colorida") |
+| `src/components/inbox/message-actions.tsx` (áudio, 23/09/2026) | o botão **Baixar** da nota de voz (`podeBaixar` + `downloadMediaMessage`). O download morava no menu de três pontos do `<audio controls>` nativo, que a bolha trocou pelo `player-de-audio.tsx` — um merge que traga a barra crua do upstream tira o download do áudio sem conflito nenhum |
 | `src/components/inbox/message-thread.tsx` | além do fio intercalado, renderiza a faixa `ScheduledBar` logo acima do compositor e guarda o contador que a liga ao compositor |
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
@@ -1599,6 +1601,38 @@ código novo:
   um rótulo genérico quando não.
 - **`gallery.ts` NÃO foi alargado para documento**, de propósito: ele
   alimenta as setas ‹ › do visualizador, que só sabe desenhar imagem e vídeo.
+
+⚠️ **Player de áudio (23/09/2026): a nota de voz não usa mais o `<audio
+controls>` nativo.** `src/components/inbox/player-de-audio.tsx` e
+`src/lib/audio/onda.ts` (puro, com teste) — play, a onda do próprio áudio com
+a bolinha que se arrasta, o tempo e o botão 1× → 1,5× → 2×, no desenho do
+WhatsApp (pedido do operador: a velocidade custava três cliques no menu do
+navegador). O que morde código novo:
+
+- ⚠️⚠️ **O "Baixar" do áudio mora na BARRA DE AÇÕES** (`podeBaixar` em
+  `message-actions.tsx`, via `downloadMediaMessage`). Ele vivia no menu de
+  três pontos do player nativo — trocar o player sem isto tirava o download
+  da nota de voz sem erro nenhum (o operador pegou na hora). Um merge que
+  traga a barra crua do upstream tira o botão SEM conflito.
+- ⚠️ **A onda é LIDA do arquivo, nunca sorteada**: `fetch` + `decodeAudioData`
+  num `OfflineAudioContext` a 8 kHz (a taxa baixa é o que segura a memória —
+  medido: 10 min de áudio = ~19 MB temporários; a 44,1 kHz a conta dá ~104
+  MB).
+  Só roda quando o player aparece (`IntersectionObserver`) e fica em memória
+  por endereço. Falha vira fileira de pontos, nunca desenho inventado.
+  ⚠️ Com a aba OCULTA o observador não dispara: no Browser pane escondido a
+  onda fica em pontos, e o Chrome ainda pausa sozinho o 1º play de um áudio
+  não bufferizado — é política de aba em segundo plano, medida fora do
+  React em 23/09, não defeito do player.
+- **Cor por `currentColor` (`bg-current`)**, nunca `bg-primary-foreground`
+  fixo: a bolha NÃO entregue reescreve o texto de todo descendente para
+  `!text-foreground` sobre fundo claro, e barras de cor fixa sumiriam.
+- **No toque, encostar NÃO pula**: o dedo pode estar rolando o fio. Pula no
+  arraste horizontal de mais de 8 px ou no toque curto; o toque longo é o
+  menu da mensagem. Com o mouse, pula no clique.
+- **A velocidade é UMA para todos os áudios**, lembrada no aparelho
+  (`localStorage` `cb-audio-velocidade`, lida por `lerVelocidade`), e só um
+  áudio toca por vez. O rascunho de voz do compositor continua no nativo.
 
 ⚠️ **Agenda de reuniões (945, Fase 1): o calendário é a parte fácil.**
 `src/lib/agenda/` — `fuso.ts`, `vagas.ts`, `grade.ts` e `validar.ts`, todos

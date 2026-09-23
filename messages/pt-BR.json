@@ -427,6 +427,16 @@
       "expandVideo": "Ampliar vídeo",
       "imageAlt": "Imagem enviada"
     },
+    "audioPlayer": {
+      "tocar": "Reproduzir áudio",
+      "pausar": "Pausar áudio",
+      "posicao": "Posição no áudio",
+      "posicaoValor": "{atual} de {total}",
+      "velocidade": "{valor, number}×",
+      "velocidadeDica": "Velocidade {valor, number}× — clique para trocar",
+      "falhou": "Não foi possível reproduzir este áudio aqui.",
+      "abrirArquivo": "Abrir o arquivo"
+    },
     "actions": {
       "reply": "Responder",
       "copyText": "Copiar texto",
@@ -443,7 +453,9 @@
       "editTitle": "Editar mensagem",
       "save": "Salvar",
       "cancel": "Cancelar",
-      "deleteRequested": "Exclusão solicitada"
+      "deleteRequested": "Exclusão solicitada",
+      "download": "Baixar",
+      "downloadFailed": "Não foi possível baixar o arquivo"
     },
     "replyQuote": {
       "photo": "[Foto]",

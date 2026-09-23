@@ -1,6 +1,6 @@
-import type { Message } from "@/types";
-import { loadMediaBlob, MediaResponseError } from "./blob-cache";
-import { mediaFilename } from "./filename";
+import type { Message } from '@/types';
+import { loadMediaBlob, MediaResponseError } from './blob-cache';
+import { mediaFilename } from './filename';
 
 /**
  * Save a chat attachment to the agent's machine.
@@ -18,7 +18,7 @@ import { mediaFilename } from "./filename";
  */
 export async function downloadMediaMessage(message: Message): Promise<void> {
   const url = message.media_url;
-  if (!url) throw new Error("This message has no attachment.");
+  if (!url) throw new Error('This message has no attachment.');
 
   let blob: Blob;
   try {
@@ -50,8 +50,8 @@ export async function downloadMediaMessage(message: Message): Promise<void> {
 }
 
 function openInNewTab(url: string): boolean {
-  if (typeof document === "undefined") return false;
-  clickAnchor({ href: url, target: "_blank" });
+  if (typeof document === 'undefined') return false;
+  clickAnchor({ href: url, target: '_blank' });
   return true;
 }
 
@@ -65,14 +65,14 @@ function clickAnchor(attrs: {
   download?: string;
   target?: string;
 }): void {
-  const a = document.createElement("a");
+  const a = document.createElement('a');
   a.href = attrs.href;
   if (attrs.download) a.download = attrs.download;
   if (attrs.target) {
     a.target = attrs.target;
-    a.rel = "noopener noreferrer";
+    a.rel = 'noopener noreferrer';
   }
-  a.style.display = "none";
+  a.style.display = 'none';
   document.body.appendChild(a);
   a.click();
   a.remove();

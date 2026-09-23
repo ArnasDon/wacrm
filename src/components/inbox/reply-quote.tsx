@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import { X } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { Message } from "@/types";
-import { useTranslations } from "next-intl";
+import { X } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { Message } from '@/types';
+import { useTranslations } from 'next-intl';
 
 interface ReplyQuoteProps {
   /** Sender label of the quoted message: "You" for our own messages,
@@ -27,25 +27,25 @@ export function ReplyQuote({
   onDismiss,
   onPrimary = false,
 }: ReplyQuoteProps) {
-  const t = useTranslations("Inbox.replyQuote");
+  const t = useTranslations('Inbox.replyQuote');
   const isChip = !!onDismiss;
   return (
     <div
       className={cn(
-        "flex items-start gap-2 border-l-2 px-2 py-1",
-        onPrimary ? "border-primary-foreground/50" : "border-primary",
+        'flex items-start gap-2 border-l-2 px-2 py-1',
+        onPrimary ? 'border-primary-foreground/50' : 'border-primary',
         isChip
-          ? "rounded-md bg-muted/80"
+          ? 'bg-muted/80 rounded-md'
           : onPrimary
-            ? "mb-1.5 rounded-md bg-primary-foreground/15"
-            : "mb-1.5 rounded-md bg-background/20",
+            ? 'bg-primary-foreground/15 mb-1.5 rounded-md'
+            : 'bg-background/20 mb-1.5 rounded-md'
       )}
     >
       <div className="min-w-0 flex-1 overflow-hidden">
         <div
           className={cn(
-            "truncate text-[11px] font-medium",
-            onPrimary ? "text-primary-foreground" : "text-primary",
+            'truncate text-[11px] font-medium',
+            onPrimary ? 'text-primary-foreground' : 'text-primary'
           )}
         >
           {authorLabel}
@@ -57,7 +57,7 @@ export function ReplyQuote({
          *  layout wider, shoving the contact sidebar off-screen.
          *  `break-words` also wraps long URLs that have no whitespace
          *  to break on. Issue #165. */}
-        <div className="whitespace-pre-wrap break-words text-xs text-foreground/80">
+        <div className="text-foreground/80 text-xs break-words whitespace-pre-wrap">
           {preview}
         </div>
       </div>
@@ -65,8 +65,8 @@ export function ReplyQuote({
         <button
           type="button"
           onClick={onDismiss}
-          aria-label={t("cancelReply")}
-          className="flex h-6 w-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+          aria-label={t('cancelReply')}
+          className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-6 w-6 shrink-0 items-center justify-center rounded"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -76,22 +76,25 @@ export function ReplyQuote({
 }
 
 /** Build the one-line preview text shown inside a reply quote. */
-export function buildReplyPreview(message: Message, t: ReturnType<typeof useTranslations>): string {
+export function buildReplyPreview(
+  message: Message,
+  t: ReturnType<typeof useTranslations>
+): string {
   if (message.content_text) return message.content_text;
   switch (message.content_type) {
-    case "image":
-      return t("photo");
-    case "video":
-      return t("video");
-    case "audio":
-      return t("audio");
-    case "document":
-      return t("document");
-    case "location":
-      return t("location");
-    case "template":
-      return t("template");
+    case 'image':
+      return t('photo');
+    case 'video':
+      return t('video');
+    case 'audio':
+      return t('audio');
+    case 'document':
+      return t('document');
+    case 'location':
+      return t('location');
+    case 'template':
+      return t('template');
     default:
-      return t("message");
+      return t('message');
   }
 }

@@ -16,9 +16,7 @@ describe('buildMetaTemplatePayload', () => {
       name: 'order_confirmation',
       category: 'UTILITY',
       language: 'en_US',
-      components: [
-        { type: 'BODY', text: 'Your order is on its way.' },
-      ],
+      components: [{ type: 'BODY', text: 'Your order is on its way.' }],
     });
   });
 
@@ -81,12 +79,17 @@ describe('buildMetaTemplatePayload', () => {
     });
     expect(
       withFooter.components.some(
-        (c) => c.type === 'FOOTER' && c.text === 'Reply STOP to opt out',
-      ),
+        (c) => c.type === 'FOOTER' && c.text === 'Reply STOP to opt out'
+      )
     ).toBe(true);
 
-    const withoutFooter = buildMetaTemplatePayload({ ...base, footer_text: '' });
-    expect(withoutFooter.components.some((c) => c.type === 'FOOTER')).toBe(false);
+    const withoutFooter = buildMetaTemplatePayload({
+      ...base,
+      footer_text: '',
+    });
+    expect(withoutFooter.components.some((c) => c.type === 'FOOTER')).toBe(
+      false
+    );
   });
 
   it('emits the buttons component with correct per-type fields', () => {

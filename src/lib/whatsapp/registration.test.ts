@@ -57,7 +57,7 @@ describe('registerPhoneNumber', () => {
           message: 'Phone number is already registered to this app.',
           code: 133005,
         },
-      }),
+      })
     );
     const result = await registerPhoneNumber({
       phoneNumberId: 'PNID_123',
@@ -72,17 +72,17 @@ describe('registerPhoneNumber', () => {
       errorResponse(400, {
         error: {
           message:
-            "Two-step verification PIN required. Set one in Meta WhatsApp Manager → Two-step verification.",
+            'Two-step verification PIN required. Set one in Meta WhatsApp Manager → Two-step verification.',
           code: 133007,
         },
-      }),
+      })
     );
     await expect(
       registerPhoneNumber({
         phoneNumberId: 'P',
         accessToken: 't',
         pin: '000000',
-      }),
+      })
     ).rejects.toThrow(/Two-step verification PIN required/);
   });
 
@@ -90,14 +90,14 @@ describe('registerPhoneNumber', () => {
     fetchMock.mockResolvedValueOnce(
       errorResponse(500, {
         error: { message: 'Internal Meta error' },
-      }),
+      })
     );
     await expect(
       registerPhoneNumber({
         phoneNumberId: 'P',
         accessToken: 't',
         pin: '123456',
-      }),
+      })
     ).rejects.toThrow(/Internal Meta error/);
   });
 });
@@ -122,10 +122,10 @@ describe('subscribeWabaToApp', () => {
 
   it('throws on non-OK', async () => {
     fetchMock.mockResolvedValueOnce(
-      errorResponse(403, { error: { message: 'Insufficient permissions' } }),
+      errorResponse(403, { error: { message: 'Insufficient permissions' } })
     );
     await expect(
-      subscribeWabaToApp({ wabaId: 'WABA_1', accessToken: 'tok' }),
+      subscribeWabaToApp({ wabaId: 'WABA_1', accessToken: 'tok' })
     ).rejects.toThrow(/Insufficient permissions/);
   });
 });
@@ -152,7 +152,7 @@ describe('getSubscribedApps', () => {
             },
           },
         ],
-      }),
+      })
     );
     const apps = await getSubscribedApps({
       wabaId: 'WABA_1',
@@ -173,10 +173,10 @@ describe('getSubscribedApps', () => {
 
   it('throws on non-OK', async () => {
     fetchMock.mockResolvedValueOnce(
-      errorResponse(401, { error: { message: 'Invalid OAuth token' } }),
+      errorResponse(401, { error: { message: 'Invalid OAuth token' } })
     );
     await expect(
-      getSubscribedApps({ wabaId: 'WABA_1', accessToken: 'tok' }),
+      getSubscribedApps({ wabaId: 'WABA_1', accessToken: 'tok' })
     ).rejects.toThrow(/Invalid OAuth token/);
   });
 });

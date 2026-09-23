@@ -129,7 +129,9 @@ export async function POST(
     // Planning failed after the claim — release it, or the campaign is
     // locked out of resuming until the staleness window expires.
     if (claimedId) {
-      await releaseBroadcastDelivery(supabaseAdmin(), claimedId).catch(() => {});
+      await releaseBroadcastDelivery(supabaseAdmin(), claimedId).catch(
+        () => {}
+      );
     }
     if (error instanceof BroadcastError) {
       return NextResponse.json(

@@ -1,4 +1,4 @@
-import type { MessageTemplateStatus } from '@/types'
+import type { MessageTemplateStatus } from '@/types';
 
 const ALLOWED: ReadonlyArray<MessageTemplateStatus> = [
   'DRAFT',
@@ -9,7 +9,7 @@ const ALLOWED: ReadonlyArray<MessageTemplateStatus> = [
   'DISABLED',
   'IN_APPEAL',
   'PENDING_DELETION',
-]
+];
 
 /**
  * Normalize an upstream status string (from the sync poll, submit
@@ -20,9 +20,9 @@ const ALLOWED: ReadonlyArray<MessageTemplateStatus> = [
  * so the row is still visible to the user instead of silently dropped.
  */
 export function normalizeStatus(raw: string): MessageTemplateStatus {
-  const upper = (raw ?? '').toUpperCase()
-  if (upper === 'PENDING_REVIEW') return 'PENDING'
+  const upper = (raw ?? '').toUpperCase();
+  if (upper === 'PENDING_REVIEW') return 'PENDING';
   return (ALLOWED as readonly string[]).includes(upper)
     ? (upper as MessageTemplateStatus)
-    : 'PENDING'
+    : 'PENDING';
 }

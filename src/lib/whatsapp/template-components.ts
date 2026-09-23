@@ -35,7 +35,8 @@ interface MetaButtonPayload {
 }
 
 function buildHeaderComponent(payload: TemplatePayload): MetaComponent | null {
-  const { header_type, header_content, header_media_url, header_handle } = payload;
+  const { header_type, header_content, header_media_url, header_handle } =
+    payload;
   if (!header_type) return null;
 
   if (header_type === 'text') {
@@ -100,7 +101,11 @@ function buildButtonPayload(b: TemplateButton): MetaButtonPayload {
       return payload;
     }
     case 'PHONE_NUMBER':
-      return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone_number };
+      return {
+        type: 'PHONE_NUMBER',
+        text: b.text,
+        phone_number: b.phone_number,
+      };
     case 'COPY_CODE':
       return { type: 'COPY_CODE', text: b.text, example: [b.example] };
   }
@@ -135,7 +140,7 @@ const CATEGORY_TO_META: Record<
  * components in canonical order: HEADER → BODY → FOOTER → BUTTONS).
  */
 export function buildMetaTemplatePayload(
-  payload: TemplatePayload,
+  payload: TemplatePayload
 ): MetaTemplateSubmitPayload {
   const components: MetaComponent[] = [];
   const header = buildHeaderComponent(payload);

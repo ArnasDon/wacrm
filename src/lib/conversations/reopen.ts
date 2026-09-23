@@ -1,4 +1,4 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
+import type { SupabaseClient } from '@supabase/supabase-js';
 
 /**
  * Re-open a closed conversation because the customer wrote again
@@ -18,11 +18,11 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  */
 export async function reopenClosedConversation(
   db: SupabaseClient,
-  conversation: { id: string; status?: string | null },
+  conversation: { id: string; status?: string | null }
 ): Promise<boolean> {
   // Nothing to do for open/pending threads, which is the common case —
   // skipping the round trip keeps inbound processing as cheap as it was.
-  if (conversation.status !== 'closed') return false
+  if (conversation.status !== 'closed') return false;
 
   const { error } = await db
     .from('conversations')
@@ -32,14 +32,14 @@ export async function reopenClosedConversation(
     // read earlier in the request, so two concurrent inbound deliveries
     // both holding a stale `status: 'closed'` must not be able to write
     // 'open' back over an agent who re-closed the thread in between.
-    .eq('status', 'closed')
+    .eq('status', 'closed');
 
   if (error) {
     // Best-effort, same as the conversation update this follows: a failed
     // re-open must not abort inbound processing (and make Meta redeliver).
-    console.error('Error re-opening conversation:', error)
-    return false
+    console.error('Error re-opening conversation:', error);
+    return false;
   }
 
-  return true
+  return true;
 }

@@ -22,12 +22,12 @@ name: Deploy
 on:
   push:
     branches:
-      - main      # production deploy
-      - staging   # staging deploy
+      - main # production deploy
+      - staging # staging deploy
 
 concurrency:
   group: deploy-${{ github.ref }}
-  cancel-in-progress: false   # never cancel a running deploy mid-flight
+  cancel-in-progress: false # never cancel a running deploy mid-flight
 
 jobs:
   build-and-push:
@@ -35,7 +35,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      packages: write  # required to push to ghcr.io
+      packages: write # required to push to ghcr.io
 
     outputs:
       image_tag: ${{ steps.meta.outputs.version }}

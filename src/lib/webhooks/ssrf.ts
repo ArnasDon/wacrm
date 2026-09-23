@@ -39,7 +39,12 @@ export function isPrivateOrReservedIp(ip: string): boolean {
 
   const v6 = ip.toLowerCase().replace(/^\[|\]$/g, '');
   if (v6 === '::1' || v6 === '::') return true; // loopback / unspecified
-  if (v6.startsWith('fe8') || v6.startsWith('fe9') || v6.startsWith('fea') || v6.startsWith('feb'))
+  if (
+    v6.startsWith('fe8') ||
+    v6.startsWith('fe9') ||
+    v6.startsWith('fea') ||
+    v6.startsWith('feb')
+  )
     return true; // fe80::/10 link-local
   if (v6.startsWith('fc') || v6.startsWith('fd')) return true; // fc00::/7 ULA
   const mapped = v6.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);

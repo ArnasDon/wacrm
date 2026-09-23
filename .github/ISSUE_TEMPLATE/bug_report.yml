@@ -1,7 +1,7 @@
 name: Bug report
 description: Something in the template isn't working the way the docs say it should.
-title: "[bug] "
-labels: ["bug", "triage"]
+title: '[bug] '
+labels: ['bug', 'triage']
 body:
   - type: markdown
     attributes:
@@ -49,7 +49,7 @@ body:
       description: |
         The commit SHA or release you're on. `git rev-parse --short HEAD`
         in the fork works.
-      placeholder: "e.g. d6a4677 or v0.2.0"
+      placeholder: 'e.g. d6a4677 or v0.2.0'
     validations:
       required: false
 

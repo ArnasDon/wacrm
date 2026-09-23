@@ -1,14 +1,14 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { useEffect, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
+import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
-import { useTranslations } from "next-intl";
+import { useTranslations } from 'next-intl';
 
-import { FlowEditorShell } from "@/components/flows/flow-editor-shell";
-import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
+import { FlowEditorShell } from '@/components/flows/flow-editor-shell';
+import type { FlowRow, FlowNodeRow } from '@/lib/flows/types';
 
 /**
  * Flow editor shell.
@@ -25,7 +25,7 @@ import type { FlowRow, FlowNodeRow } from "@/lib/flows/types";
 export default function FlowEditorPage() {
   const router = useRouter();
   const params = useParams<{ id: string }>();
-  const t = useTranslations("Flows.edit");
+  const t = useTranslations('Flows.edit');
 
   const [flow, setFlow] = useState<FlowRow | null>(null);
   const [nodes, setNodes] = useState<FlowNodeRow[]>([]);
@@ -54,7 +54,7 @@ export default function FlowEditorPage() {
       } catch (err) {
         if (!cancelled) {
           console.error(err);
-          toast.error(t("loadError"));
+          toast.error(t('loadError'));
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -68,20 +68,20 @@ export default function FlowEditorPage() {
   if (loading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        <Loader2 className="text-muted-foreground h-6 w-6 animate-spin" />
       </div>
     );
   }
   if (notFound || !flow) {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3">
-        <p className="text-sm text-muted-foreground">{t("notFound")}</p>
+        <p className="text-muted-foreground text-sm">{t('notFound')}</p>
         <button
           type="button"
-          onClick={() => router.push("/flows")}
-          className="text-sm text-primary hover:opacity-80"
+          onClick={() => router.push('/flows')}
+          className="text-primary text-sm hover:opacity-80"
         >
-          {t("backToFlows")}
+          {t('backToFlows')}
         </button>
       </div>
     );

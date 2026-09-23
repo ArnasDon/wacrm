@@ -27,7 +27,8 @@ function icuHostileKeys(): string[] {
   const leaves: string[] = [];
   const walk = (node: unknown, path: string) => {
     if (node && typeof node === 'object' && !Array.isArray(node)) {
-      for (const [k, v] of Object.entries(node)) walk(v, path ? `${path}.${k}` : k);
+      for (const [k, v] of Object.entries(node))
+        walk(v, path ? `${path}.${k}` : k);
       return;
     }
     if (typeof node === 'string') leaves.push(path);
@@ -84,24 +85,26 @@ describe('ICU-hostile strings are not read with plain t()', () => {
         // consider a file that actually opens this key's namespace. The call
         // may use a trailing sub-path (useTranslations('Settings.templates')
         // + t('config.foo')), so match on any namespace prefix.
-        const opensNamespace = [...text.matchAll(/useTranslations\(\s*['"]([^'"]+)['"]/g)].some(
-          (m) => namespace === m[1] || namespace.startsWith(`${m[1]}.`),
-        );
+        const opensNamespace = [
+          ...text.matchAll(/useTranslations\(\s*['"]([^'"]+)['"]/g),
+        ].some((m) => namespace === m[1] || namespace.startsWith(`${m[1]}.`));
         if (!opensNamespace) continue;
 
         // A plain call: `t('leaf')` or `t("a.leaf")`, but not `.raw(` / `.rich(`.
         const plainCall = new RegExp(
-          String.raw`(?<![.\w])t\(\s*['"](?:[\w.]+\.)?${leaf}['"]`,
+          String.raw`(?<![.\w])t\(\s*['"](?:[\w.]+\.)?${leaf}['"]`
         );
         if (plainCall.test(text)) {
-          offenders.push(`${key} — plain t() in ${path.replace(process.cwd() + '/', '')}`);
+          offenders.push(
+            `${key} — plain t() in ${path.replace(process.cwd() + '/', '')}`
+          );
         }
       }
     }
 
     expect(
       offenders.sort(),
-      'these render as their own keypath at runtime; use t.raw() (or t.rich() with tag handlers)',
+      'these render as their own keypath at runtime; use t.raw() (or t.rich() with tag handlers)'
     ).toEqual([]);
   });
 });

@@ -17,21 +17,21 @@
 // revoke and re-issue.
 // ============================================================
 
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import {
   clampExpiryDays,
   generateInviteToken,
   inviteExpiresAt,
   inviteUrl,
-} from "@/lib/auth/invitations";
-import { isAccountRole } from "@/lib/auth/roles";
+} from '@/lib/auth/invitations';
+import { isAccountRole } from '@/lib/auth/roles';
 import {
   checkRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
-} from "@/lib/rate-limit";
+} from '@/lib/rate-limit';
 
 // Resolve the base URL we publish invite links under.
 //
@@ -77,7 +77,7 @@ function parseAllowedHosts(): readonly string[] | null {
   const raw = process.env.ALLOWED_INVITE_HOSTS?.trim();
   if (!raw) return null;
   const list = raw
-    .split(",")
+    .split(',')
     .map((h) => h.trim().toLowerCase())
     .filter(Boolean);
   return list.length > 0 ? list : null;
@@ -85,7 +85,7 @@ function parseAllowedHosts(): readonly string[] | null {
 
 function isHostAllowed(
   hostname: string,
-  allowList: readonly string[] | null,
+  allowList: readonly string[] | null
 ): boolean {
   if (!allowList) return true; // No allow-list → permissive (legacy behavior).
   return allowList.includes(hostname.toLowerCase());
@@ -93,26 +93,26 @@ function isHostAllowed(
 
 function getBaseUrl(request: Request): string {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  if (explicit) return explicit.replace(/\/+$/, "");
+  if (explicit) return explicit.replace(/\/+$/, '');
 
   const allowList = parseAllowedHosts();
   const forwardedHost = request.headers
-    .get("x-forwarded-host")
-    ?.split(",")[0]
+    .get('x-forwarded-host')
+    ?.split(',')[0]
     ?.trim();
   const forwardedProto = request.headers
-    .get("x-forwarded-proto")
-    ?.split(",")[0]
+    .get('x-forwarded-proto')
+    ?.split(',')[0]
     ?.trim();
   if (forwardedHost && isHostAllowed(forwardedHost, allowList)) {
-    return `${forwardedProto || "https"}://${forwardedHost}`;
+    return `${forwardedProto || 'https'}://${forwardedHost}`;
   }
 
-  const host = request.headers.get("host")?.trim();
+  const host = request.headers.get('host')?.trim();
   if (host && isHostAllowed(host, allowList)) {
     // The protocol on `request.url` is whatever the framework saw —
     // reliable for bare deployments where no proxy is rewriting it.
-    const reqProto = new URL(request.url).protocol.replace(":", "");
+    const reqProto = new URL(request.url).protocol.replace(':', '');
     return `${reqProto}://${host}`;
   }
 
@@ -123,38 +123,38 @@ function getBaseUrl(request: Request): string {
   // probing the API with a spoofed Host header.
   if (allowList && (forwardedHost || host)) {
     console.warn(
-      "[POST /api/account/invitations] rejected non-allow-listed host:",
-      { forwardedHost, host, allowList },
+      '[POST /api/account/invitations] rejected non-allow-listed host:',
+      { forwardedHost, host, allowList }
     );
   } else {
     console.warn(
-      "[POST /api/account/invitations] could not derive base URL from request; falling back to marketing domain",
+      '[POST /api/account/invitations] could not derive base URL from request; falling back to marketing domain'
     );
   }
-  return "https://wacrm.tech";
+  return 'https://wacrm.tech';
 }
 
 const MAX_LABEL_LEN = 80;
 
 export async function GET() {
   try {
-    const ctx = await requireRole("admin");
+    const ctx = await requireRole('admin');
 
     const { data, error } = await ctx.supabase
-      .from("account_invitations")
+      .from('account_invitations')
       .select(
-        "id, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id",
+        'id, role, label, created_by_user_id, created_at, expires_at, accepted_at, accepted_by_user_id'
       )
-      .eq("account_id", ctx.accountId)
-      .is("accepted_at", null)
-      .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false });
+      .eq('account_id', ctx.accountId)
+      .is('accepted_at', null)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false });
 
     if (error) {
-      console.error("[GET /api/account/invitations] fetch error:", error);
+      console.error('[GET /api/account/invitations] fetch error:', error);
       return NextResponse.json(
-        { error: "Failed to load invitations" },
-        { status: 500 },
+        { error: 'Failed to load invitations' },
+        { status: 500 }
       );
     }
 
@@ -166,7 +166,7 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
-    const ctx = await requireRole("admin");
+    const ctx = await requireRole('admin');
 
     // 30/min per user. The Members tab is a clicks-only UI so any
     // legitimate admin is far below this; the cap exists to keep
@@ -174,22 +174,24 @@ export async function POST(request: Request) {
     // flooding `account_invitations` with rows.
     const limit = checkRateLimit(
       `admin:inviteCreate:${ctx.userId}`,
-      RATE_LIMITS.adminAction,
+      RATE_LIMITS.adminAction
     );
     if (!limit.success) return rateLimitResponse(limit);
 
-    const body = (await request.json().catch(() => null)) as
-      | { role?: unknown; expiresInDays?: unknown; label?: unknown }
-      | null;
+    const body = (await request.json().catch(() => null)) as {
+      role?: unknown;
+      expiresInDays?: unknown;
+      label?: unknown;
+    } | null;
 
     const role = body?.role;
-    if (!isAccountRole(role) || role === "owner") {
+    if (!isAccountRole(role) || role === 'owner') {
       // The DB CHECK already rejects 'owner', but failing fast
       // here gives a clearer 400 than the eventual constraint
       // violation surfaced as a 500.
       return NextResponse.json(
         { error: "'role' must be one of admin, agent, viewer" },
-        { status: 400 },
+        { status: 400 }
       );
     }
 
@@ -198,26 +200,26 @@ export async function POST(request: Request) {
     // collapsing to the safe default, so we just pass the raw
     // value through after a type narrow.
     const expiresInDays =
-      typeof expiresInDaysRaw === "number" ? expiresInDaysRaw : undefined;
+      typeof expiresInDaysRaw === 'number' ? expiresInDaysRaw : undefined;
     const expiryDays = clampExpiryDays(expiresInDays);
     const expiresAt = inviteExpiresAt(expiryDays);
 
     let label: string | null = null;
-    if (typeof body?.label === "string") {
+    if (typeof body?.label === 'string') {
       const trimmed = body.label.trim();
       if (trimmed.length > MAX_LABEL_LEN) {
         return NextResponse.json(
           { error: `Label must be ${MAX_LABEL_LEN} characters or fewer` },
-          { status: 400 },
+          { status: 400 }
         );
       }
-      label = trimmed === "" ? null : trimmed;
+      label = trimmed === '' ? null : trimmed;
     }
 
     const { token, hash } = generateInviteToken();
 
     const { data, error } = await ctx.supabase
-      .from("account_invitations")
+      .from('account_invitations')
       .insert({
         account_id: ctx.accountId,
         token_hash: hash,
@@ -226,14 +228,14 @@ export async function POST(request: Request) {
         label,
         expires_at: expiresAt.toISOString(),
       })
-      .select("id, role, label, expires_at, created_at")
+      .select('id, role, label, expires_at, created_at')
       .single();
 
     if (error || !data) {
-      console.error("[POST /api/account/invitations] insert error:", error);
+      console.error('[POST /api/account/invitations] insert error:', error);
       return NextResponse.json(
-        { error: "Failed to create invitation" },
-        { status: 500 },
+        { error: 'Failed to create invitation' },
+        { status: 500 }
       );
     }
 
@@ -245,7 +247,7 @@ export async function POST(request: Request) {
         url: inviteUrl(token, getBaseUrl(request)),
         expiresInDays: expiryDays,
       },
-      { status: 201 },
+      { status: 201 }
     );
   } catch (err) {
     return toErrorResponse(err);

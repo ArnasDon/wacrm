@@ -35,7 +35,9 @@ async function main(): Promise<void> {
   console.error(
     `wacrm MCP server v${VERSION} ready — instance ${config.baseUrl}, ` +
       `tool groups: ${groups.join(', ')}` +
-      (config.enableWrites ? '' : ' (read-only; set WACRM_ENABLE_WRITES to allow changes)'),
+      (config.enableWrites
+        ? ''
+        : ' (read-only; set WACRM_ENABLE_WRITES to allow changes)')
   );
 }
 

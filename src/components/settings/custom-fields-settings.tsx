@@ -21,12 +21,12 @@ import { SettingsChip } from './settings-chip';
  */
 export function CustomFieldsSettings() {
   const t = useTranslations('Settings.tagsAndFields');
-  
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-foreground">
-          <SlidersHorizontal className="size-4 text-primary" />
+        <CardTitle className="text-foreground flex items-center gap-2">
+          <SlidersHorizontal className="text-primary size-4" />
           {t('fieldsTitle')}
           <SettingsChip variant="admin" className="font-medium">
             <Shield />

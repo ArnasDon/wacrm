@@ -36,7 +36,7 @@ export function isMessageTemplate(row: unknown): row is MessageTemplate {
  */
 export function assertMessageTemplate(
   row: unknown,
-  context: string,
+  context: string
 ): MessageTemplate {
   if (!isMessageTemplate(row)) {
     const id =
@@ -44,7 +44,7 @@ export function assertMessageTemplate(
         ? String((row as { id: unknown }).id)
         : '(unknown id)';
     throw new Error(
-      `Malformed message_templates row ${id} in ${context} — missing required fields (id, user_id, name, body_text).`,
+      `Malformed message_templates row ${id} in ${context} — missing required fields (id, user_id, name, body_text).`
     );
   }
   return row;

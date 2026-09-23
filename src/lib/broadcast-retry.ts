@@ -28,7 +28,7 @@ const MAX_RETRY_MS = 120_000;
  */
 export function batchRetryDelayMs(
   status: number,
-  retryAfter: string | null,
+  retryAfter: string | null
 ): number | null {
   if (status !== 429) return null;
 

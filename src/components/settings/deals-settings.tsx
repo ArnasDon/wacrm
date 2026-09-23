@@ -1,23 +1,23 @@
-"use client";
+'use client';
 
-import { useEffect, useState } from "react";
-import { toast } from "sonner";
-import { Coins, Loader2 } from "lucide-react";
+import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
+import { Coins, Loader2 } from 'lucide-react';
 
-import { createClient } from "@/lib/supabase/client";
-import { useAuth } from "@/hooks/use-auth";
-import { CURRENCIES } from "@/lib/currency";
-import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
+import { createClient } from '@/lib/supabase/client';
+import { useAuth } from '@/hooks/use-auth';
+import { CURRENCIES } from '@/lib/currency';
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
   CardDescription,
-} from "@/components/ui/card";
-import { useTranslations } from "next-intl";
-import { SettingsPanelHead } from "./settings-panel-head";
+} from '@/components/ui/card';
+import { useTranslations } from 'next-intl';
+import { SettingsPanelHead } from './settings-panel-head';
 
 /**
  * Deals settings — account-wide default currency.
@@ -40,7 +40,7 @@ export function DealsSettings() {
 
   const [selected, setSelected] = useState(defaultCurrency);
   const [saving, setSaving] = useState(false);
-  const t = useTranslations("Settings.deals");
+  const t = useTranslations('Settings.deals');
 
   // Keep the select in sync once the profile (and its account default)
   // resolves, and after a save round-trips through refreshProfile.
@@ -54,11 +54,11 @@ export function DealsSettings() {
     if (!accountId || !dirty) return;
     setSaving(true);
     const { error } = await supabase
-      .from("accounts")
+      .from('accounts')
       .update({ default_currency: selected })
-      .eq("id", accountId);
+      .eq('id', accountId);
     if (error) {
-      toast.error(t("saveFailed"));
+      toast.error(t('saveFailed'));
       setSaving(false);
       return;
     }
@@ -66,33 +66,32 @@ export function DealsSettings() {
     // and every total pick it up without a full reload.
     await refreshProfile();
     setSaving(false);
-    toast.success(t("saveSuccess"));
+    toast.success(t('saveSuccess'));
   }
 
   return (
-    <section className="max-w-2xl animate-in fade-in-50 duration-200">
-      <SettingsPanelHead
-        title={t("title")}
-        description={t("description")}
-      />
+    <section className="animate-in fade-in-50 max-w-2xl duration-200">
+      <SettingsPanelHead title={t('title')} description={t('description')} />
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-foreground">
-            <Coins className="size-4 text-primary" />
-            {t("defaultCurrency")}
+          <CardTitle className="text-foreground flex items-center gap-2">
+            <Coins className="text-primary size-4" />
+            {t('defaultCurrency')}
           </CardTitle>
           <CardDescription className="text-muted-foreground">
-            {t("defaultCurrencyDesc")}
+            {t('defaultCurrencyDesc')}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-2 sm:max-w-xs">
-            <Label className="text-muted-foreground">{t("currencyLabel")}</Label>
+            <Label className="text-muted-foreground">
+              {t('currencyLabel')}
+            </Label>
             <select
               value={selected}
               onChange={(e) => setSelected(e.target.value)}
               disabled={!canEditSettings || profileLoading}
-              className="h-9 w-full rounded-lg border border-border bg-muted px-2.5 text-sm text-foreground outline-none focus:border-primary focus:ring-1 focus:ring-primary disabled:cursor-not-allowed disabled:opacity-60"
+              className="border-border bg-muted text-foreground focus:border-primary focus:ring-primary h-9 w-full rounded-lg border px-2.5 text-sm outline-none focus:ring-1 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {CURRENCIES.map((c) => (
                 <option key={c.code} value={c.code}>
@@ -101,8 +100,8 @@ export function DealsSettings() {
               ))}
             </select>
             {!canEditSettings && (
-              <p className="text-xs text-muted-foreground">
-                {t("adminOnlyHint")}
+              <p className="text-muted-foreground text-xs">
+                {t('adminOnlyHint')}
               </p>
             )}
           </div>
@@ -116,10 +115,10 @@ export function DealsSettings() {
               {saving ? (
                 <>
                   <Loader2 className="size-4 animate-spin" />
-                  {t("saving")}
+                  {t('saving')}
                 </>
               ) : (
-                t("save")
+                t('save')
               )}
             </Button>
           )}

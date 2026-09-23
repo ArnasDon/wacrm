@@ -4,17 +4,17 @@ Issue #500 asked how one deployment can serve accounts whose numbers
 belong to different WhatsApp Business Accounts (WABAs), given that
 `META_APP_SECRET` and `META_APP_ID` are deployment-wide environment
 variables. Short answer: WABAs are already per account; only the Meta
-*App* is deployment-wide, and since #500 the webhook accepts several
+_App_ is deployment-wide, and since #500 the webhook accepts several
 app secrets. This page walks through the three setups.
 
 ## What is per account and what is per deployment
 
-| Value | Lives in | Scope |
-| --- | --- | --- |
-| Phone Number ID, WABA ID, access token, verify token, two-step PIN | `whatsapp_config` (one row per wacrm account, token encrypted) | per account |
-| Webhook callback URL | your Meta App → WhatsApp → Configuration | per Meta App |
-| `META_APP_SECRET` | server environment | per deployment — **may list several** |
-| `META_APP_ID` | server environment | per deployment — single value |
+| Value                                                              | Lives in                                                       | Scope                                 |
+| ------------------------------------------------------------------ | -------------------------------------------------------------- | ------------------------------------- |
+| Phone Number ID, WABA ID, access token, verify token, two-step PIN | `whatsapp_config` (one row per wacrm account, token encrypted) | per account                           |
+| Webhook callback URL                                               | your Meta App → WhatsApp → Configuration                       | per Meta App                          |
+| `META_APP_SECRET`                                                  | server environment                                             | per deployment — **may list several** |
+| `META_APP_ID`                                                      | server environment                                             | per deployment — single value         |
 
 Meta signs every webhook delivery with the secret of the App the WABA
 is subscribed to. wacrm checks that signature against
@@ -35,7 +35,7 @@ brands. Nothing to configure beyond a single-tenant install.
    Assigned assets, or add the WABA through the app's WhatsApp product).
 3. Each wacrm account opens Settings → WhatsApp connection and enters
    its own Phone Number ID, WABA ID, a System User access token that
-   can manage *that* WABA, a verify token, and (for production numbers)
+   can manage _that_ WABA, a verify token, and (for production numbers)
    the two-step PIN.
 
 On save, wacrm verifies the number with the token, registers it
@@ -46,9 +46,9 @@ and wacrm fans them out by `phone_number_id`.
 
 Constraints:
 
-* One phone number can be connected to one wacrm account only — the
+- One phone number can be connected to one wacrm account only — the
   route refuses a `phone_number_id` already claimed by another account.
-* The **verify token** typed into the Meta App's webhook settings must
+- The **verify token** typed into the Meta App's webhook settings must
   equal the verify token saved by at least one wacrm account; the
   handshake (`GET /api/whatsapp/webhook`) accepts any account's token.
   Using the same string in every account keeps this simple.
@@ -75,9 +75,10 @@ so wacrm needs all of them.
    delivery is accepted when its `X-Hub-Signature-256` matches **any**
    listed secret; each comparison is constant-time. An empty or
    comma-only value still fails closed — every request is rejected.
+
 3. Each wacrm account connects its number exactly as in setup A, using a
    token generated inside the Business portfolio that owns its app.
-   The save subscribes the WABA to *that* app (the one the token
+   The save subscribes the WABA to _that_ app (the one the token
    belongs to).
 
 Rotating a secret: add the new one to the list, redeploy, then rotate
@@ -98,9 +99,9 @@ everything else are unaffected.
 
 Workarounds until a per-account app id exists:
 
-* Put the WABAs that need image-header templates under the app named
+- Put the WABAs that need image-header templates under the app named
   in `META_APP_ID`; or
-* Create image-header templates directly in WhatsApp Manager — once
+- Create image-header templates directly in WhatsApp Manager — once
   approved, wacrm lists and sends them like any other template.
 
 A per-account `app_id` column on `whatsapp_config` would lift this; it
@@ -109,11 +110,11 @@ template header upload.
 
 ## Checking a multi-WABA deployment
 
-* Settings → WhatsApp connection → **Verify with Meta** runs, per
+- Settings → WhatsApp connection → **Verify with Meta** runs, per
   account, the per-check diagnostic (`phone_metadata_ok`,
   `waba_subscribed_to_app`, `locally_marked_registered`).
   `waba_subscribed_to_app` false means the save never managed to
   subscribe the WABA to its app — re-enter the token and save again.
-* A webhook delivery that is rejected with 401 means no configured
+- A webhook delivery that is rejected with 401 means no configured
   secret produced its signature — the WABA is subscribed to an app
   whose secret is missing from `META_APP_SECRET`.

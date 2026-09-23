@@ -142,7 +142,10 @@ async function deliverOne(
   }
 }
 
-async function recordFailure(db: SupabaseClient, row: EndpointRow): Promise<void> {
+async function recordFailure(
+  db: SupabaseClient,
+  row: EndpointRow
+): Promise<void> {
   // Atomic increment (+ auto-disable at the threshold) via a SQL
   // function — a read-modify-write here would lose increments when two
   // deliveries to the same endpoint run concurrently (e.g.
@@ -153,6 +156,10 @@ async function recordFailure(db: SupabaseClient, row: EndpointRow): Promise<void
     max_failures: MAX_CONSECUTIVE_FAILURES,
   });
   if (error) {
-    console.error('[webhooks] record_webhook_failure failed for', row.id, error);
+    console.error(
+      '[webhooks] record_webhook_failure failed for',
+      row.id,
+      error
+    );
   }
 }

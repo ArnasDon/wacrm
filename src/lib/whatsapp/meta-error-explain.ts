@@ -20,7 +20,7 @@ export type MetaConnectStep =
   | 'waba_phone_numbers'
   | 'register'
   | 'subscribe_waba'
-  | 'subscribed_apps'
+  | 'subscribed_apps';
 
 /** The settings-form field (or external place) the user should look at. */
 export type MetaErrorField =
@@ -29,7 +29,7 @@ export type MetaErrorField =
   | 'waba_id'
   | 'pin'
   | 'meta_account'
-  | null
+  | null;
 
 /**
  * Structural shape of `MetaApiError` from ./meta-api — declared here so
@@ -37,51 +37,54 @@ export type MetaErrorField =
  * object carrying Meta's envelope fields.
  */
 export interface MetaErrorLike {
-  message: string
-  code?: number | null
-  subcode?: number | null
-  type?: string | null
-  fbtraceId?: string | null
-  httpStatus?: number | null
-  details?: string | null
+  message: string;
+  code?: number | null;
+  subcode?: number | null;
+  type?: string | null;
+  fbtraceId?: string | null;
+  httpStatus?: number | null;
+  details?: string | null;
 }
 
 export interface MetaErrorExplanation {
   /** Actionable, user-facing text. */
-  summary: string
-  field: MetaErrorField
+  summary: string;
+  field: MetaErrorField;
   /** Who has to change something. Drives the HTTP status. */
-  side: 'user' | 'meta'
-  httpStatus: 400 | 502
-  step: MetaConnectStep
-  code: number | null
-  subcode: number | null
-  fbtraceId: string | null
+  side: 'user' | 'meta';
+  httpStatus: 400 | 502;
+  step: MetaConnectStep;
+  code: number | null;
+  subcode: number | null;
+  fbtraceId: string | null;
   /** Meta's own message (with `error_data.details` appended when present). */
-  metaMessage: string
+  metaMessage: string;
 }
 
 /** Values the caller already knows — quoted back so the text names the id that failed. */
 export interface MetaErrorContext {
-  phoneNumberId?: string | null
-  wabaId?: string | null
+  phoneNumberId?: string | null;
+  wabaId?: string | null;
 }
 
 const STEP_LABEL: Record<MetaConnectStep, string> = {
   verify_number: 'reading the phone number',
-  waba_phone_numbers: 'listing the phone numbers under the WhatsApp Business Account',
+  waba_phone_numbers:
+    'listing the phone numbers under the WhatsApp Business Account',
   register: 'registering the phone number',
   subscribe_waba: 'subscribing the WhatsApp Business Account to the app',
   subscribed_apps: 'reading the WhatsApp Business Account subscriptions',
-}
+};
 
 const TOKEN_HINT =
   'Generate a permanent token in Meta Business Settings → System Users → Generate token, ' +
   'with the whatsapp_business_management and whatsapp_business_messaging permissions, ' +
-  'and paste it into Permanent Access Token.'
+  'and paste it into Permanent Access Token.';
 
-const RATE_LIMIT_CODES = new Set([4, 17, 32, 613, 80007, 130429, 131048, 131056])
-const TEMPORARY_CODES = new Set([1, 2, 131000, 133004, 133016])
+const RATE_LIMIT_CODES = new Set([
+  4, 17, 32, 613, 80007, 130429, 131048, 131056,
+]);
+const TEMPORARY_CODES = new Set([1, 2, 131000, 133004, 133016]);
 
 function isMetaErrorLike(err: unknown): err is MetaErrorLike {
   return (
@@ -89,22 +92,30 @@ function isMetaErrorLike(err: unknown): err is MetaErrorLike {
     err !== null &&
     typeof (err as { message?: unknown }).message === 'string' &&
     ('code' in err || 'fbtraceId' in err || 'httpStatus' in err)
-  )
+  );
 }
 
 /** Which id the failing step was addressing — and the field it lives in. */
 function objectForStep(
   step: MetaConnectStep,
-  ctx: MetaErrorContext,
+  ctx: MetaErrorContext
 ): { field: MetaErrorField; noun: string; id: string | null } {
   if (step === 'verify_number' || step === 'register') {
-    return { field: 'phone_number_id', noun: 'Phone Number ID', id: ctx.phoneNumberId ?? null }
+    return {
+      field: 'phone_number_id',
+      noun: 'Phone Number ID',
+      id: ctx.phoneNumberId ?? null,
+    };
   }
-  return { field: 'waba_id', noun: 'WhatsApp Business Account ID', id: ctx.wabaId ?? null }
+  return {
+    field: 'waba_id',
+    noun: 'WhatsApp Business Account ID',
+    id: ctx.wabaId ?? null,
+  };
 }
 
 function withId(noun: string, id: string | null): string {
-  return id ? `${noun} ${id}` : `the ${noun}`
+  return id ? `${noun} ${id}` : `the ${noun}`;
 }
 
 /**
@@ -115,10 +126,10 @@ function withId(noun: string, id: string | null): string {
 export function explainMetaError(
   err: unknown,
   step: MetaConnectStep,
-  ctx: MetaErrorContext = {},
+  ctx: MetaErrorContext = {}
 ): MetaErrorExplanation {
   if (!isMetaErrorLike(err)) {
-    const message = err instanceof Error ? err.message : String(err)
+    const message = err instanceof Error ? err.message : String(err);
     return {
       summary:
         `Could not reach the Meta Graph API while ${STEP_LABEL[step]}: ${message}. ` +
@@ -131,19 +142,21 @@ export function explainMetaError(
       subcode: null,
       fbtraceId: null,
       metaMessage: message,
-    }
+    };
   }
 
-  const code = err.code ?? null
-  const subcode = err.subcode ?? null
-  const fbtraceId = err.fbtraceId ?? null
-  const metaMessage = err.details ? `${err.message} (${err.details})` : err.message
-  const target = objectForStep(step, ctx)
+  const code = err.code ?? null;
+  const subcode = err.subcode ?? null;
+  const fbtraceId = err.fbtraceId ?? null;
+  const metaMessage = err.details
+    ? `${err.message} (${err.details})`
+    : err.message;
+  const target = objectForStep(step, ctx);
 
   const build = (
     summary: string,
     field: MetaErrorField,
-    side: 'user' | 'meta',
+    side: 'user' | 'meta'
   ): MetaErrorExplanation => ({
     summary,
     field,
@@ -154,7 +167,7 @@ export function explainMetaError(
     subcode,
     fbtraceId,
     metaMessage,
-  })
+  });
 
   // --- Access token -----------------------------------------------------
   if (code === 190 || (code === null && err.type === 'OAuthException')) {
@@ -163,12 +176,12 @@ export function explainMetaError(
         ? 'The access token has expired.'
         : subcode === 460 || subcode === 467
           ? 'The access token has been invalidated (password change, revoked session, or token reset).'
-          : 'Meta rejected the access token as invalid.'
+          : 'Meta rejected the access token as invalid.';
     return build(
       `${why} Temporary tokens from the API Setup page expire after 24 hours. ${TOKEN_HINT}`,
       'access_token',
-      'user',
-    )
+      'user'
+    );
   }
 
   // --- Permissions --------------------------------------------------------
@@ -179,8 +192,8 @@ export function explainMetaError(
         'permissions AND must be assigned to this WhatsApp Business Account ' +
         '(Business Settings → System Users → Add assets → WhatsApp accounts). Then generate a new token.',
       'access_token',
-      'user',
-    )
+      'user'
+    );
   }
 
   if (code === 131005) {
@@ -189,8 +202,8 @@ export function explainMetaError(
         `${withId(target.noun, target.id)}. Assign the System User to this WhatsApp Business Account ` +
         'in Business Settings and make sure the token has whatsapp_business_management.',
       'access_token',
-      'user',
-    )
+      'user'
+    );
   }
 
   // --- Wrong / foreign object ids ----------------------------------------
@@ -199,16 +212,16 @@ export function explainMetaError(
     (code === 100 && subcode === 33) ||
     (code === 100 &&
       /unsupported (get|post) request|does not exist|cannot be loaded due to missing permissions|unknown path components/i.test(
-        err.message,
-      ))
+        err.message
+      ));
   if (looksLikeMissingObject) {
     return build(
       `Meta cannot find ${withId(target.noun, target.id)}, or the business that owns the access token ` +
         `does not own it. Copy the ${target.noun} exactly from Meta → WhatsApp → API Setup and check the ` +
         'token was generated inside the same Business portfolio.',
       target.field,
-      'user',
-    )
+      'user'
+    );
   }
 
   if (code === 100) {
@@ -217,15 +230,15 @@ export function explainMetaError(
         `Meta rejected the two-step verification PIN: ${err.message}. Enter the 6-digit PIN set in ` +
           'WhatsApp Manager → Phone numbers → Two-step verification.',
         'pin',
-        'user',
-      )
+        'user'
+      );
     }
     return build(
       `Meta rejected a parameter while ${STEP_LABEL[step]}: ${err.message}. Check that the ` +
         `${target.noun} is copied exactly (digits only, no spaces).`,
       target.field,
-      'user',
-    )
+      'user'
+    );
   }
 
   // --- Registration / PIN --------------------------------------------------
@@ -234,40 +247,40 @@ export function explainMetaError(
       'This phone number is not registered with the WhatsApp Cloud API yet. Enter the two-step ' +
         'verification PIN below and save again so wacrm can register it (POST /register).',
       'pin',
-      'user',
-    )
+      'user'
+    );
   }
   if (code === 133005 || code === 136025) {
     return build(
       'The two-step verification PIN is wrong. Use the 6-digit PIN set in WhatsApp Manager → ' +
         'Phone numbers → Two-step verification (or reset it there), then save again.',
       'pin',
-      'user',
-    )
+      'user'
+    );
   }
   if (code === 133008 || code === 133009) {
     return build(
       'Meta has temporarily locked PIN attempts for this number after too many wrong guesses. ' +
         'Wait a while before saving again with the correct PIN.',
       'pin',
-      'meta',
-    )
+      'meta'
+    );
   }
   if (code === 133006) {
     return build(
       'Meta requires this phone number to be re-verified. Open WhatsApp Manager → Phone numbers, ' +
         'complete verification (SMS or voice), then save again.',
       'meta_account',
-      'meta',
-    )
+      'meta'
+    );
   }
   if (code === 133015) {
     return build(
       'This phone number was recently deleted from WhatsApp and cannot be registered yet. ' +
         'Meta blocks re-registration for a period after deletion — try again later.',
       'meta_account',
-      'meta',
-    )
+      'meta'
+    );
   }
 
   // --- Account state ------------------------------------------------------
@@ -277,16 +290,16 @@ export function explainMetaError(
         'connect it. Open Meta Business Manager → Account quality (or WhatsApp Manager → Overview) ' +
         'to see the restriction and appeal it.',
       'meta_account',
-      'meta',
-    )
+      'meta'
+    );
   }
   if (code === 368) {
     return build(
       'Meta has temporarily blocked this account for a policy violation. Review the notice in ' +
         'Meta Business Manager → Account quality; the block lifts on its own or after an appeal.',
       'meta_account',
-      'meta',
-    )
+      'meta'
+    );
   }
 
   // --- Throttling / transient ------------------------------------------------
@@ -295,26 +308,29 @@ export function explainMetaError(
       'Meta is rate-limiting this app or WhatsApp Business Account right now. Nothing needs ' +
         'changing — wait a few minutes and try again.',
       null,
-      'meta',
-    )
+      'meta'
+    );
   }
   if (TEMPORARY_CODES.has(code ?? -1)) {
     return build(
       `Meta returned a temporary error while ${STEP_LABEL[step]} (code ${code}). Retry in a minute; ` +
         'if it keeps happening, check metastatus.com and quote the trace id to Meta support.',
       null,
-      'meta',
-    )
+      'meta'
+    );
   }
 
   // --- Fallback: keep Meta's words -------------------------------------------
-  const trace = fbtraceId ? ` Trace id ${fbtraceId}.` : ''
-  const codeText = code !== null ? ` (code ${code}${subcode !== null ? `/${subcode}` : ''})` : ''
+  const trace = fbtraceId ? ` Trace id ${fbtraceId}.` : '';
+  const codeText =
+    code !== null
+      ? ` (code ${code}${subcode !== null ? `/${subcode}` : ''})`
+      : '';
   return build(
     `Meta returned an error while ${STEP_LABEL[step]}${codeText}: ${metaMessage}.${trace}`,
     null,
-    'meta',
-  )
+    'meta'
+  );
 }
 
 /**
@@ -322,12 +338,12 @@ export function explainMetaError(
  * Meta call — everything a user needs to quote to support.
  */
 export function metaErrorPayload(x: MetaErrorExplanation): {
-  code: number | null
-  subcode: number | null
-  fbtrace_id: string | null
-  step: MetaConnectStep
-  field: MetaErrorField
-  message: string
+  code: number | null;
+  subcode: number | null;
+  fbtrace_id: string | null;
+  step: MetaConnectStep;
+  field: MetaErrorField;
+  message: string;
 } {
   return {
     code: x.code,
@@ -336,5 +352,5 @@ export function metaErrorPayload(x: MetaErrorExplanation): {
     step: x.step,
     field: x.field,
     message: x.metaMessage,
-  }
+  };
 }

@@ -26,7 +26,9 @@ describe('serializeConversation', () => {
     const out = serializeConversation(conv);
     expect(out).not.toHaveProperty('user_id');
     expect(out).not.toHaveProperty('account_id');
-    expect(out.contact?.tags).toEqual([{ id: 't1', name: 'vip', color: '#fff' }]);
+    expect(out.contact?.tags).toEqual([
+      { id: 't1', name: 'vip', color: '#fff' },
+    ]);
     expect(out.unread_count).toBe(2);
   });
 });

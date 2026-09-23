@@ -1,4 +1,4 @@
-import crypto from 'node:crypto'
+import crypto from 'node:crypto';
 
 /**
  * Verify the HMAC-SHA256 signature Meta attaches to webhook POSTs.
@@ -32,49 +32,53 @@ import crypto from 'node:crypto'
  * anything else that wants to know how many apps are configured.
  */
 export function parseAppSecrets(raw: string | undefined): string[] {
-  if (!raw) return []
+  if (!raw) return [];
   return raw
     .split(',')
     .map((s) => s.trim())
-    .filter((s) => s.length > 0)
+    .filter((s) => s.length > 0);
 }
 
-function signatureMatches(rawBody: string, signatureHeader: string, secret: string): boolean {
+function signatureMatches(
+  rawBody: string,
+  signatureHeader: string,
+  secret: string
+): boolean {
   const expected =
     'sha256=' +
-    crypto.createHmac('sha256', secret).update(rawBody).digest('hex')
+    crypto.createHmac('sha256', secret).update(rawBody).digest('hex');
 
-  const a = Buffer.from(signatureHeader)
-  const b = Buffer.from(expected)
+  const a = Buffer.from(signatureHeader);
+  const b = Buffer.from(expected);
   // Bail if lengths differ — timingSafeEqual throws otherwise.
-  if (a.length !== b.length) return false
-  return crypto.timingSafeEqual(a, b)
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 export function verifyMetaWebhookSignature(
   rawBody: string,
-  signatureHeader: string | null,
+  signatureHeader: string | null
 ): boolean {
-  const secrets = parseAppSecrets(process.env.META_APP_SECRET)
+  const secrets = parseAppSecrets(process.env.META_APP_SECRET);
   if (secrets.length === 0) {
     console.error(
       '[webhook] META_APP_SECRET is not set — rejecting request. ' +
         'Configure the env var (Meta → App Settings → Basic → App Secret) ' +
-        'to enable signature verification.',
-    )
-    return false
+        'to enable signature verification.'
+    );
+    return false;
   }
 
-  if (!signatureHeader) return false
-  if (!signatureHeader.startsWith('sha256=')) return false
+  if (!signatureHeader) return false;
+  if (!signatureHeader.startsWith('sha256=')) return false;
 
   // Deliberately no early return inside the loop's compare: every
   // candidate is checked with timingSafeEqual, and the loop cost is
   // proportional to the number of configured apps (public knowledge
   // from the operator's point of view), not to the secret contents.
-  let ok = false
+  let ok = false;
   for (const secret of secrets) {
-    if (signatureMatches(rawBody, signatureHeader, secret)) ok = true
+    if (signatureMatches(rawBody, signatureHeader, secret)) ok = true;
   }
-  return ok
+  return ok;
 }

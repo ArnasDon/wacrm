@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useAuth } from "@/hooks/use-auth";
+import { useAuth } from '@/hooks/use-auth';
 import {
   canDeleteAccount,
   canEditSettings,
@@ -8,7 +8,7 @@ import {
   canSendMessages,
   canTransferOwnership,
   canViewOnly,
-} from "@/lib/auth/roles";
+} from '@/lib/auth/roles';
 
 /**
  * Typed action keys for `useCan`. Adding a capability = one new
@@ -17,12 +17,12 @@ import {
  * lets the compiler catch typos at every call site.
  */
 export type CanAction =
-  | "manage-members"
-  | "edit-settings"
-  | "send-messages"
-  | "view-only"
-  | "delete-account"
-  | "transfer-ownership";
+  | 'manage-members'
+  | 'edit-settings'
+  | 'send-messages'
+  | 'view-only'
+  | 'delete-account'
+  | 'transfer-ownership';
 
 /**
  * Inline alternative to `<RequireRole>` for places that need a
@@ -42,17 +42,17 @@ export function useCan(action: CanAction): boolean {
   if (profileLoading || !accountRole) return false;
 
   switch (action) {
-    case "manage-members":
+    case 'manage-members':
       return canManageMembers(accountRole);
-    case "edit-settings":
+    case 'edit-settings':
       return canEditSettings(accountRole);
-    case "send-messages":
+    case 'send-messages':
       return canSendMessages(accountRole);
-    case "view-only":
+    case 'view-only':
       return canViewOnly(accountRole);
-    case "delete-account":
+    case 'delete-account':
       return canDeleteAccount(accountRole);
-    case "transfer-ownership":
+    case 'transfer-ownership':
       return canTransferOwnership(accountRole);
     default: {
       // Exhaustiveness check — adding a new `CanAction` without a

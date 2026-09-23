@@ -2,25 +2,25 @@
 
 Settings → WhatsApp connection talks to the Meta Graph API in a fixed
 order when you click **Save Configuration**. When one of those calls
-fails, wacrm now tells you *which* call failed, *which field* to check,
+fails, wacrm now tells you _which_ call failed, _which field_ to check,
 and gives you the Meta error code and trace id to quote to Meta support
 (issue #505). This page lists the common causes and the exact text
 wacrm shows for each.
 
 ## What Save Configuration does
 
-| Step (shown in the error details) | Meta call | Proves |
-| --- | --- | --- |
-| *(before any Meta call)* | — | Phone Number ID and WABA ID are digit strings |
-| `verify_number` | `GET /{phone_number_id}` | the token can read the number |
-| `waba_phone_numbers` | `GET /{waba_id}/phone_numbers` | the number really lives under that WABA |
-| `register` | `POST /{phone_number_id}/register` (only when a PIN is entered) | the number is registered with the Cloud API for inbound webhooks |
-| `subscribe_waba` | `POST /{waba_id}/subscribed_apps` | the WABA is subscribed to your Meta App, so webhooks are delivered |
+| Step (shown in the error details) | Meta call                                                       | Proves                                                             |
+| --------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------ |
+| _(before any Meta call)_          | —                                                               | Phone Number ID and WABA ID are digit strings                      |
+| `verify_number`                   | `GET /{phone_number_id}`                                        | the token can read the number                                      |
+| `waba_phone_numbers`              | `GET /{waba_id}/phone_numbers`                                  | the number really lives under that WABA                            |
+| `register`                        | `POST /{phone_number_id}/register` (only when a PIN is entered) | the number is registered with the Cloud API for inbound webhooks   |
+| `subscribe_waba`                  | `POST /{waba_id}/subscribed_apps`                               | the WABA is subscribed to your Meta App, so webhooks are delivered |
 
 The first four failures stop the save; nothing is written until the
 cause is fixed. A `register` failure still saves the credentials (so
 you can retry with only the PIN) and shows the reason in the
-*Registration status* banner.
+_Registration status_ banner.
 
 **Test API Connection** re-runs `verify_number` with the stored token
 and, when a WABA ID is on file, reads `GET /{waba_id}/subscribed_apps`
@@ -37,11 +37,11 @@ Step: verify_number · Meta error code: 190/463 · Trace ID: AbCdEf...
 Meta said: Error validating access token: Session has expired ...
 ```
 
-* **Step** — the row in the table above.
-* **Meta error code** — `code/subcode` from Meta's envelope. The
+- **Step** — the row in the table above.
+- **Meta error code** — `code/subcode` from Meta's envelope. The
   [Cloud API error code reference](https://developers.facebook.com/docs/whatsapp/cloud-api/support/error-codes)
   documents every value.
-* **Trace ID** — Meta's `fbtrace_id`. Meta support can look up the
+- **Trace ID** — Meta's `fbtrace_id`. Meta support can look up the
   request with it; quote it together with the code.
 
 The HTTP status also tells you who has to act: **400** means the fix
@@ -52,7 +52,7 @@ change something (rate limit, restriction, outage).
 
 ### Phone Number ID is not an id
 
-*Cause:* the phone number (`+1 555 ...`) or a display name was pasted
+_Cause:_ the phone number (`+1 555 ...`) or a display name was pasted
 instead of the numeric id.
 
 > Phone Number ID must contain only digits — it is the numeric id shown
@@ -65,7 +65,7 @@ The same check runs for the WABA ID:
 
 ### Access token expired or invalid (code 190)
 
-*Cause:* the 24-hour temporary token from the API Setup page was used,
+_Cause:_ the 24-hour temporary token from the API Setup page was used,
 or a System User token was revoked / reset.
 
 > The access token has expired. Temporary tokens from the API Setup
@@ -79,7 +79,7 @@ or a System User token was revoked / reset.
 
 ### Token lacks permissions (code 10, 200–299)
 
-*Cause:* the System User token was generated without
+_Cause:_ the System User token was generated without
 `whatsapp_business_management` / `whatsapp_business_messaging`, or the
 System User was never assigned to the WABA.
 
@@ -95,7 +95,7 @@ was refused.
 
 ### Wrong Phone Number ID or WABA ID (code 100 "Unsupported get request", code 33)
 
-*Cause:* the id is mistyped, or it belongs to a different Business
+_Cause:_ the id is mistyped, or it belongs to a different Business
 portfolio than the one the token was generated in.
 
 > Meta cannot find Phone Number ID 1234567890, or the business that
@@ -104,11 +104,11 @@ portfolio than the one the token was generated in.
 > generated inside the same Business portfolio.
 
 When the failing step is WABA-scoped the message names the
-*WhatsApp Business Account ID* instead.
+_WhatsApp Business Account ID_ instead.
 
 ### Phone number is under a different WABA
 
-*Cause:* both ids are valid, but the WABA you typed does not own the
+_Cause:_ both ids are valid, but the WABA you typed does not own the
 number. Before #505 this saved fine and subscribed the wrong WABA — the
 webhook simply never fired.
 
@@ -171,10 +171,10 @@ If the server cannot reach `graph.facebook.com` at all:
 
 ## Credentials valid, but no messages arrive
 
-1. Click **Test API Connection**. If it says *"The WhatsApp Business
-   Account is not subscribed to this app"*, re-enter the token and save
+1. Click **Test API Connection**. If it says _"The WhatsApp Business
+   Account is not subscribed to this app"_, re-enter the token and save
    again — the save subscribes the WABA.
-2. Check the *Registration status* banner. *Not registered* means
+2. Check the _Registration status_ banner. _Not registered_ means
    `/register` never succeeded for this number; enter the two-step PIN
    and save.
 3. Click **Verify with Meta** for a per-check breakdown
@@ -184,15 +184,15 @@ If the server cannot reach `graph.facebook.com` at all:
    Configuration, the callback URL must be `https://<your host>/api/whatsapp/webhook`,
    the verify token must match the one saved here, and the `messages`
    field must be subscribed. `META_APP_SECRET` in the server
-   environment must be *that* app's secret, or every delivery is
+   environment must be _that_ app's secret, or every delivery is
    rejected with a 401 before wacrm looks at it.
 
 ## Where the mapping lives
 
-* `src/lib/whatsapp/meta-error-explain.ts` — code → explanation, field,
+- `src/lib/whatsapp/meta-error-explain.ts` — code → explanation, field,
   and 400/502 side. Pure and unit-tested; add new codes there.
-* `src/lib/whatsapp/waba-pairing.ts` — id format check and the
+- `src/lib/whatsapp/waba-pairing.ts` — id format check and the
   phone-under-WABA check.
-* `src/app/api/whatsapp/config/route.ts` — the connect flow. Every
+- `src/app/api/whatsapp/config/route.ts` — the connect flow. Every
   Meta failure returns `{ error, meta: { code, subcode, fbtrace_id,
-  step, field, message } }`.
+step, field, message } }`.

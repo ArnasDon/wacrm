@@ -39,7 +39,10 @@ export class WacrmClient {
   private async request<T>(
     method: string,
     path: string,
-    options: { query?: Record<string, string | number | undefined>; body?: unknown } = {},
+    options: {
+      query?: Record<string, string | number | undefined>;
+      body?: unknown;
+    } = {}
   ): Promise<{ data: T; meta?: { next_cursor: string | null } }> {
     const url = new URL(`${this.baseUrl}/api/v1${path}`);
     if (options.query) {
@@ -63,13 +66,14 @@ export class WacrmClient {
       res = await fetch(url, {
         method,
         headers,
-        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        body:
+          options.body !== undefined ? JSON.stringify(options.body) : undefined,
       });
     } catch (err) {
       throw new WacrmApiError(
         0,
         'network_error',
-        `Could not reach wacrm at ${this.baseUrl}: ${(err as Error).message}`,
+        `Could not reach wacrm at ${this.baseUrl}: ${(err as Error).message}`
       );
     }
 
@@ -88,9 +92,11 @@ export class WacrmClient {
     }
 
     if (!res.ok) {
-      const envelope = payload as { error?: { code?: string; message?: string } } | undefined;
+      const envelope = payload as
+        { error?: { code?: string; message?: string } } | undefined;
       const code = envelope?.error?.code ?? 'internal';
-      let message = envelope?.error?.message ?? `Request failed with status ${res.status}`;
+      let message =
+        envelope?.error?.message ?? `Request failed with status ${res.status}`;
       if (res.status === 429) {
         const retryAfter = res.headers.get('Retry-After');
         if (retryAfter) message += ` (retry after ${retryAfter}s)`;
@@ -98,13 +104,16 @@ export class WacrmClient {
       throw new WacrmApiError(res.status, code, message);
     }
 
-    const envelope = payload as { data: T; meta?: { next_cursor: string | null } };
+    const envelope = payload as {
+      data: T;
+      meta?: { next_cursor: string | null };
+    };
     return { data: envelope.data, meta: envelope.meta };
   }
 
   private async list<T>(
     path: string,
-    query: Record<string, string | number | undefined>,
+    query: Record<string, string | number | undefined>
   ): Promise<Paginated<T>> {
     const res = await this.request<T[]>('GET', path, { query });
     return { data: res.data, next_cursor: res.meta?.next_cursor ?? null };
@@ -142,7 +151,9 @@ export class WacrmClient {
   }
 
   updateContact(id: string, body: unknown): Promise<{ data: unknown }> {
-    return this.request('PATCH', `/contacts/${encodeURIComponent(id)}`, { body });
+    return this.request('PATCH', `/contacts/${encodeURIComponent(id)}`, {
+      body,
+    });
   }
 
   // --- Conversations ------------------------------------------------
@@ -162,9 +173,12 @@ export class WacrmClient {
 
   listConversationMessages(
     id: string,
-    query: { limit?: number; cursor?: string },
+    query: { limit?: number; cursor?: string }
   ): Promise<Paginated<unknown>> {
-    return this.list(`/conversations/${encodeURIComponent(id)}/messages`, query);
+    return this.list(
+      `/conversations/${encodeURIComponent(id)}/messages`,
+      query
+    );
   }
 
   // --- Broadcasts ---------------------------------------------------

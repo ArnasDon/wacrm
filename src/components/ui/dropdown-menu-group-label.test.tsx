@@ -1,8 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import React from 'react'
-import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, it, expect } from 'vitest';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
 
-import { DropdownMenuGroup, DropdownMenuLabel } from './dropdown-menu'
+import { DropdownMenuGroup, DropdownMenuLabel } from './dropdown-menu';
 
 /**
  * Regression for issue #336 — "clicking Add node reloads the page".
@@ -17,10 +17,10 @@ describe('DropdownMenuLabel requires a DropdownMenuGroup ancestor', () => {
   it('throws when rendered without a group (the #336 crash)', () => {
     expect(() =>
       renderToStaticMarkup(
-        React.createElement(DropdownMenuLabel, null, 'Messaging'),
-      ),
-    ).toThrow()
-  })
+        React.createElement(DropdownMenuLabel, null, 'Messaging')
+      )
+    ).toThrow();
+  });
 
   it('renders when wrapped in a DropdownMenuGroup (the fix)', () => {
     expect(() =>
@@ -28,9 +28,9 @@ describe('DropdownMenuLabel requires a DropdownMenuGroup ancestor', () => {
         React.createElement(
           DropdownMenuGroup,
           null,
-          React.createElement(DropdownMenuLabel, null, 'Messaging'),
-        ),
-      ),
-    ).not.toThrow()
-  })
-})
+          React.createElement(DropdownMenuLabel, null, 'Messaging')
+        )
+      )
+    ).not.toThrow();
+  });
+});

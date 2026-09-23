@@ -5,7 +5,7 @@
  * because the WABA that got subscribed wasn't the one owning the number.
  */
 
-import type { SubscribedApp, WabaPhoneNumber } from './meta-api'
+import type { SubscribedApp, WabaPhoneNumber } from './meta-api';
 
 /**
  * Meta object ids (Phone Number ID, WABA ID, App ID) are decimal digit
@@ -14,14 +14,14 @@ import type { SubscribedApp, WabaPhoneNumber } from './meta-api'
  * Meta answer with "(#100) Unsupported get request".
  */
 export function isNumericMetaId(value: unknown): value is string {
-  return typeof value === 'string' && /^\d+$/.test(value)
+  return typeof value === 'string' && /^\d+$/.test(value);
 }
 
 export function phoneNumberBelongsToWaba(
   numbers: readonly WabaPhoneNumber[],
-  phoneNumberId: string,
+  phoneNumberId: string
 ): boolean {
-  return numbers.some((n) => n.id === phoneNumberId)
+  return numbers.some((n) => n.id === phoneNumberId);
 }
 
 /**
@@ -32,45 +32,46 @@ export function phoneNumberBelongsToWaba(
 export function describeWabaPhoneMismatch(
   numbers: readonly WabaPhoneNumber[],
   phoneNumberId: string,
-  wabaId: string,
+  wabaId: string
 ): string {
-  const head =
-    `Phone Number ID ${phoneNumberId} does not belong to WhatsApp Business Account ${wabaId}.`
+  const head = `Phone Number ID ${phoneNumberId} does not belong to WhatsApp Business Account ${wabaId}.`;
   const tail =
     ' Check both values in Meta → WhatsApp → API Setup: the WABA ID shown there must be the one ' +
-    'that lists this phone number.'
+    'that lists this phone number.';
   if (numbers.length === 0) {
-    return `${head} Meta lists no phone numbers under that WABA.${tail}`
+    return `${head} Meta lists no phone numbers under that WABA.${tail}`;
   }
   const listed = numbers
     .slice(0, 5)
-    .map((n) => (n.display_phone_number ? `${n.display_phone_number} (${n.id})` : n.id))
-    .join(', ')
-  const more = numbers.length > 5 ? ` and ${numbers.length - 5} more` : ''
-  return `${head} Meta lists these numbers under it: ${listed}${more}.${tail}`
+    .map((n) =>
+      n.display_phone_number ? `${n.display_phone_number} (${n.id})` : n.id
+    )
+    .join(', ');
+  const more = numbers.length > 5 ? ` and ${numbers.length - 5} more` : '';
+  return `${head} Meta lists these numbers under it: ${listed}${more}.${tail}`;
 }
 
 export interface AppSubscriptionState {
   /** At least one app is subscribed to the WABA. */
-  subscribed: boolean
+  subscribed: boolean;
   /**
    * Whether META_APP_ID is among them. `null` when META_APP_ID is not
    * configured — then `subscribed` is the best we can say (the token
    * belongs to one app, and Meta only returns apps that token can see).
    */
-  appIdMatch: boolean | null
+  appIdMatch: boolean | null;
 }
 
 export function appSubscriptionState(
   subs: readonly SubscribedApp[],
-  appId: string | null | undefined,
+  appId: string | null | undefined
 ): AppSubscriptionState {
   const ids = subs
     .map((s) => s.whatsapp_business_api_data?.id)
-    .filter((id): id is string => typeof id === 'string' && id.length > 0)
-  const wanted = appId?.trim()
+    .filter((id): id is string => typeof id === 'string' && id.length > 0);
+  const wanted = appId?.trim();
   return {
     subscribed: subs.length > 0,
     appIdMatch: wanted ? ids.includes(wanted) : null,
-  }
+  };
 }

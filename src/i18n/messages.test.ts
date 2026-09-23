@@ -72,7 +72,9 @@ function icuSignature(message: string): Signature {
   const len = message.length;
 
   const fail = (why: string): never => {
-    throw new IcuParseError(`${why} at offset ${i} in ${JSON.stringify(message)}`);
+    throw new IcuParseError(
+      `${why} at offset ${i} in ${JSON.stringify(message)}`
+    );
   };
   const peek = () => message[i];
   const skipWs = () => {
@@ -98,7 +100,13 @@ function icuSignature(message: string): Signature {
         }
         // An apostrophe only starts a quoted literal when it precedes a
         // syntax character; otherwise it's just an apostrophe (can't, it's).
-        if (next === '{' || next === '}' || next === '<' || next === '>' || (inPlural && next === '#')) {
+        if (
+          next === '{' ||
+          next === '}' ||
+          next === '<' ||
+          next === '>' ||
+          (inPlural && next === '#')
+        ) {
           i++;
           while (i < len) {
             if (peek() === "'") {
@@ -235,7 +243,9 @@ function tryIcuSignature(message: string): Signature | null {
 
 /** Signature for strings next-intl cannot parse (WhatsApp `{{1}}`, raw HTML). */
 function rawSignature(message: string): Signature {
-  const curly = [...message.matchAll(/\{\{\s*[^{}]*?\s*\}\}/g)].map((m) => m[0].replace(/\s+/g, ''));
+  const curly = [...message.matchAll(/\{\{\s*[^{}]*?\s*\}\}/g)].map((m) =>
+    m[0].replace(/\s+/g, '')
+  );
   const html = [...message.matchAll(/<([A-Za-z][\w-]*)/g)].map((m) => m[1]);
   return { args: [...new Set(curly)].sort(), tags: [...new Set(html)].sort() };
 }
@@ -278,12 +288,17 @@ describe('message placeholder parity', () => {
     // rejects (or vice versa) the parity check below would be comparing
     // the wrong thing. Both must classify every en string identically.
     const disagreements = [...sourceLeaves]
-      .filter(([, value]) => (tryIcuSignature(value) !== null) !== nextIntlParses(value))
+      .filter(
+        ([, value]) =>
+          (tryIcuSignature(value) !== null) !== nextIntlParses(value)
+      )
       .map(([key, value]) => `${key}: ${value}`);
     expect(disagreements).toEqual([]);
     // …and there must be ICU strings with arguments at all, or the
     // check is vacuous.
-    const withArgs = [...sourceLeaves.values()].filter((v) => (tryIcuSignature(v)?.args.length ?? 0) > 0);
+    const withArgs = [...sourceLeaves.values()].filter(
+      (v) => (tryIcuSignature(v)?.args.length ?? 0) > 0
+    );
     expect(withArgs.length).toBeGreaterThan(100);
   });
 
@@ -301,10 +316,12 @@ describe('message placeholder parity', () => {
         if (enSig) {
           const trSig = tryIcuSignature(tr);
           if (!trSig) {
-            mismatches.push(`${key}: translation is not valid ICU\n    en: ${en}\n    ${locale}: ${tr}`);
+            mismatches.push(
+              `${key}: translation is not valid ICU\n    en: ${en}\n    ${locale}: ${tr}`
+            );
           } else if (JSON.stringify(trSig) !== JSON.stringify(enSig)) {
             mismatches.push(
-              `${key}: placeholders differ\n    en: ${JSON.stringify(enSig)}\n    ${locale}: ${JSON.stringify(trSig)}`,
+              `${key}: placeholders differ\n    en: ${JSON.stringify(enSig)}\n    ${locale}: ${JSON.stringify(trSig)}`
             );
           }
         } else {
@@ -315,15 +332,19 @@ describe('message placeholder parity', () => {
           const a = rawSignature(en);
           const b = rawSignature(tr);
           if (JSON.stringify(a) !== JSON.stringify(b)) {
-            mismatches.push(`${key}: raw placeholders differ\n    en: ${en}\n    ${locale}: ${tr}`);
+            mismatches.push(
+              `${key}: raw placeholders differ\n    en: ${en}\n    ${locale}: ${tr}`
+            );
           }
           if (nextIntlParses(tr)) {
-            mismatches.push(`${key}: en is ICU-hostile but the ${locale} string parses as ICU\n    ${tr}`);
+            mismatches.push(
+              `${key}: en is ICU-hostile but the ${locale} string parses as ICU\n    ${tr}`
+            );
           }
         }
       }
 
       expect(mismatches, `${locale}.json placeholder mismatches`).toEqual([]);
-    },
+    }
   );
 });

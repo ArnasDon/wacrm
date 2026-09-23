@@ -22,15 +22,15 @@ export function SettingsPanelHead({
     <div
       className={cn(
         'mb-5 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between',
-        className,
+        className
       )}
     >
       <div className="min-w-0">
-        <h2 className="text-lg font-semibold tracking-tight text-foreground">
+        <h2 className="text-foreground text-lg font-semibold tracking-tight">
           {title}
         </h2>
         {description ? (
-          <p className="mt-1 max-w-[62ch] text-sm text-muted-foreground">
+          <p className="text-muted-foreground mt-1 max-w-[62ch] text-sm">
             {description}
           </p>
         ) : null}

@@ -34,12 +34,14 @@ Include, if you can:
 ## Scope
 
 In scope:
+
 - Anything in this repository (`ArnasDon/wacrm`), including webhook and auth
   flows, token encryption, RLS policies, and the built-in cron endpoints.
 - Default configurations shipped in `docs/` — e.g. if the setup guide leaves
   an unsafe default.
 
 Out of scope:
+
 - Vulnerabilities in Supabase, Next.js, Node.js, or other upstream
   dependencies — please report those to their maintainers. We'll happily
   bump versions on request.

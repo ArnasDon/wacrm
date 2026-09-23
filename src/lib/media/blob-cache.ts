@@ -24,7 +24,7 @@
  */
 
 /** Prefix of the auth-gated proxy — these need a credentialed fetch. */
-const PROXY_PREFIX = "/api/whatsapp/media/";
+const PROXY_PREFIX = '/api/whatsapp/media/';
 
 /**
  * How many blobs to hold. Worst case is a thread that's nothing but
@@ -56,7 +56,7 @@ export class MediaResponseError extends Error {
 
   constructor(status: number) {
     super(`Media request failed (${status})`);
-    this.name = "MediaResponseError";
+    this.name = 'MediaResponseError';
     this.status = status;
   }
 }
@@ -88,7 +88,7 @@ function remember(url: string, blob: Blob): void {
  */
 export async function loadMediaBlob(
   url: string,
-  fetchImpl: MediaFetch = defaultFetch,
+  fetchImpl: MediaFetch = defaultFetch
 ): Promise<Blob> {
   if (!isProxiedMediaUrl(url)) {
     const res = await fetchImpl(url);

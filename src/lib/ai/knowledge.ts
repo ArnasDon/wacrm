@@ -1,7 +1,7 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AiConfig } from './types'
-import { chunkText } from './chunk'
-import { embedTexts, toVectorLiteral } from './embeddings'
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AiConfig } from './types';
+import { chunkText } from './chunk';
+import { embedTexts, toVectorLiteral } from './embeddings';
 
 // ============================================================
 // Knowledge base: ingest (chunk + optionally embed) and hybrid
@@ -10,8 +10,8 @@ import { embedTexts, toVectorLiteral } from './embeddings'
 // ============================================================
 
 interface MatchRow {
-  id: string
-  content: string
+  id: string;
+  content: string;
 }
 
 /**
@@ -29,18 +29,18 @@ export async function ingestDocument(
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   documentId: string,
-  content: string,
+  content: string
 ): Promise<void> {
-  const chunks = chunkText(content)
+  const chunks = chunkText(content);
 
   // Replace, don't append — re-ingest must be idempotent.
   const { error: delErr } = await db
     .from('ai_knowledge_chunks')
     .delete()
-    .eq('document_id', documentId)
-  if (delErr) throw delErr
+    .eq('document_id', documentId);
+  if (delErr) throw delErr;
 
-  if (chunks.length === 0) return
+  if (chunks.length === 0) return;
 
   // Embed if a key is set, but DON'T let an embedding failure stop the
   // chunks from being stored: a failed embed must still leave the
@@ -48,13 +48,13 @@ export async function ingestDocument(
   // AFTER inserting (embedding-less) rows, so the route can warn
   // "semantic indexing failed" — which is now truthful, because lexical
   // search really does still work.
-  let embeddings: number[][] | null = null
-  let embedError: unknown = null
+  let embeddings: number[][] | null = null;
+  let embedError: unknown = null;
   if (config.embeddingsApiKey) {
     try {
-      embeddings = await embedTexts(config.embeddingsApiKey, chunks)
+      embeddings = await embedTexts(config.embeddingsApiKey, chunks);
     } catch (err) {
-      embedError = err
+      embedError = err;
     }
   }
 
@@ -64,12 +64,12 @@ export async function ingestDocument(
     chunk_index: i,
     content,
     embedding: embeddings ? toVectorLiteral(embeddings[i]) : null,
-  }))
+  }));
 
-  const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows)
-  if (insErr) throw insErr
+  const { error: insErr } = await db.from('ai_knowledge_chunks').insert(rows);
+  if (insErr) throw insErr;
 
-  if (embedError) throw embedError
+  if (embedError) throw embedError;
 }
 
 /**
@@ -86,10 +86,10 @@ export async function retrieveKnowledge(
   accountId: string,
   config: Pick<AiConfig, 'embeddingsApiKey'>,
   queryText: string,
-  k = 5,
+  k = 5
 ): Promise<string[]> {
-  const query = queryText.trim()
-  if (!query || k <= 0) return []
+  const query = queryText.trim();
+  if (!query || k <= 0) return [];
 
   // Skip everything when the account has no knowledge base — otherwise
   // every draft / auto-reply would pay for a query embedding + two RPCs
@@ -99,30 +99,35 @@ export async function retrieveKnowledge(
     const { count, error } = await db
       .from('ai_knowledge_chunks')
       .select('id', { count: 'exact', head: true })
-      .eq('account_id', accountId)
-    if (error || !count) return []
+      .eq('account_id', accountId);
+    if (error || !count) return [];
   } catch {
-    return []
+    return [];
   }
 
-  const picked = new Map<string, string>() // id → content, preserves order
+  const picked = new Map<string, string>(); // id → content, preserves order
 
   // Semantic path.
   if (config.embeddingsApiKey) {
     try {
-      const [queryEmbedding] = await embedTexts(config.embeddingsApiKey, [query])
+      const [queryEmbedding] = await embedTexts(config.embeddingsApiKey, [
+        query,
+      ]);
       if (queryEmbedding) {
         const { data, error } = await db.rpc('match_ai_knowledge_semantic', {
           p_account_id: accountId,
           p_query_embedding: toVectorLiteral(queryEmbedding),
           p_match_count: k,
-        })
+        });
         if (!error && Array.isArray(data)) {
-          for (const row of data as MatchRow[]) picked.set(row.id, row.content)
+          for (const row of data as MatchRow[]) picked.set(row.id, row.content);
         }
       }
     } catch (err) {
-      console.error('[ai knowledge] semantic retrieval failed, falling back to FTS:', err)
+      console.error(
+        '[ai knowledge] semantic retrieval failed, falling back to FTS:',
+        err
+      );
     }
   }
 
@@ -133,17 +138,17 @@ export async function retrieveKnowledge(
         p_account_id: accountId,
         p_query: query,
         p_match_count: k,
-      })
+      });
       if (!error && Array.isArray(data)) {
         for (const row of data as MatchRow[]) {
-          if (picked.size >= k) break
-          if (!picked.has(row.id)) picked.set(row.id, row.content)
+          if (picked.size >= k) break;
+          if (!picked.has(row.id)) picked.set(row.id, row.content);
         }
       }
     } catch (err) {
-      console.error('[ai knowledge] lexical retrieval failed:', err)
+      console.error('[ai knowledge] lexical retrieval failed:', err);
     }
   }
 
-  return Array.from(picked.values()).slice(0, k)
+  return Array.from(picked.values()).slice(0, k);
 }

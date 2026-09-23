@@ -28,7 +28,7 @@ write guards:
 | ------------------------- | -------- | -------------------------------------------------------------- |
 | `WACRM_BASE_URL`          | yes      | Your instance URL, e.g. `https://crm.example.com`              |
 | `WACRM_API_KEY`           | yes      | An API key from the dashboard                                  |
-| `WACRM_ENABLE_WRITES`     | no       | `true` to expose contact writes + message sending             |
+| `WACRM_ENABLE_WRITES`     | no       | `true` to expose contact writes + message sending              |
 | `WACRM_ENABLE_BROADCASTS` | no       | `true` to expose mass broadcasts (needs `WACRM_ENABLE_WRITES`) |
 
 ### Claude Desktop / Claude Code / Cursor
@@ -44,10 +44,10 @@ Add to your MCP client config (e.g. `claude_desktop_config.json`, or
       "args": ["-y", "wacrm-mcp"],
       "env": {
         "WACRM_BASE_URL": "https://crm.example.com",
-        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx"
-      }
-    }
-  }
+        "WACRM_API_KEY": "wacrm_live_xxxxxxxxxxxxxxxxxxxxxxxx",
+      },
+    },
+  },
 }
 ```
 
@@ -68,19 +68,19 @@ assistant change data or send messages, add the write guards:
 Read tools are always available. Write and broadcast tools appear only
 when their guard is set.
 
-| Tool                 | Group     | Scope needed         | What it does                                    |
-| -------------------- | --------- | -------------------- | ----------------------------------------------- |
-| `whoami`             | read      | _(any valid key)_    | Show the account + scopes the key carries       |
-| `list_contacts`      | read      | `contacts:read`      | List/search contacts (paginated)                |
-| `get_contact`        | read      | `contacts:read`      | Read one contact                                |
-| `list_conversations` | read      | `conversations:read` | List conversations, filter by status/contact    |
-| `get_conversation`   | read      | `conversations:read` | Read one conversation                           |
-| `list_messages`      | read      | `messages:read`      | List a conversation's messages                  |
-| `get_broadcast`      | read      | `broadcasts:send`    | Poll a broadcast's delivery status              |
-| `send_message`       | write     | `messages:send`      | Send a WhatsApp message (text/template/media)   |
-| `create_contact`     | write     | `contacts:write`     | Create (find-or-create) a contact               |
-| `update_contact`     | write     | `contacts:write`     | Update a contact / replace its tags             |
-| `send_broadcast`     | broadcast | `broadcasts:send`    | Launch a template broadcast (requires `confirm`)|
+| Tool                 | Group     | Scope needed         | What it does                                     |
+| -------------------- | --------- | -------------------- | ------------------------------------------------ |
+| `whoami`             | read      | _(any valid key)_    | Show the account + scopes the key carries        |
+| `list_contacts`      | read      | `contacts:read`      | List/search contacts (paginated)                 |
+| `get_contact`        | read      | `contacts:read`      | Read one contact                                 |
+| `list_conversations` | read      | `conversations:read` | List conversations, filter by status/contact     |
+| `get_conversation`   | read      | `conversations:read` | Read one conversation                            |
+| `list_messages`      | read      | `messages:read`      | List a conversation's messages                   |
+| `get_broadcast`      | read      | `broadcasts:send`    | Poll a broadcast's delivery status               |
+| `send_message`       | write     | `messages:send`      | Send a WhatsApp message (text/template/media)    |
+| `create_contact`     | write     | `contacts:write`     | Create (find-or-create) a contact                |
+| `update_contact`     | write     | `contacts:write`     | Update a contact / replace its tags              |
+| `send_broadcast`     | broadcast | `broadcasts:send`    | Launch a template broadcast (requires `confirm`) |
 
 ## Safety model
 

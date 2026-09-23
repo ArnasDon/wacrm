@@ -24,7 +24,7 @@ function makeSupabaseStub(
     configRows?: { account_id: string; user_id: string }[];
     insertError?: { message: string; code?: string } | null;
     retrySelectResult?: SelectResult;
-  } = {},
+  } = {}
 ) {
   const calls: {
     table: string;
@@ -75,13 +75,13 @@ function makeSupabaseStub(
                   return Promise.resolve(result);
                 },
                 then(
-                  onFulfilled: (
-                    v: { error: { message: string } | null },
-                  ) => unknown,
+                  onFulfilled: (v: {
+                    error: { message: string } | null;
+                  }) => unknown
                 ) {
                   // Allow `await supabase.update().eq()` (no .select()).
                   return Promise.resolve({ error: result.error }).then(
-                    onFulfilled,
+                    onFulfilled
                   );
                 },
               };
@@ -98,9 +98,11 @@ function makeSupabaseStub(
 describe('isTemplateWebhookField', () => {
   it('recognises the three template fields', () => {
     expect(isTemplateWebhookField('message_template_status_update')).toBe(true);
-    expect(isTemplateWebhookField('message_template_quality_update')).toBe(true);
+    expect(isTemplateWebhookField('message_template_quality_update')).toBe(
+      true
+    );
     expect(isTemplateWebhookField('message_template_components_update')).toBe(
-      true,
+      true
     );
   });
   it('rejects messaging fields', () => {
@@ -131,7 +133,7 @@ describe('handleTemplateWebhookChange — status update', () => {
           message_template_language: 'en_US',
         },
       },
-      stub,
+      stub
     );
     expect(supabaseCalls).toHaveLength(1);
     expect(supabaseCalls[0].table).toBe('message_templates');
@@ -157,11 +159,11 @@ describe('handleTemplateWebhookChange — status update', () => {
           reason: 'Template uses non-compliant language.',
         },
       },
-      stub,
+      stub
     );
     expect(calls[0].update?.status).toBe('REJECTED');
     expect(calls[0].update?.rejection_reason).toBe(
-      'Template uses non-compliant language.',
+      'Template uses non-compliant language.'
     );
   });
 
@@ -172,7 +174,7 @@ describe('handleTemplateWebhookChange — status update', () => {
         field: 'message_template_status_update',
         value: { event: 'REJECTED', message_template_id: '7' },
       },
-      stub,
+      stub
     );
     expect(calls[0].update?.rejection_reason).toBe('Rejected by Meta');
   });
@@ -184,7 +186,7 @@ describe('handleTemplateWebhookChange — status update', () => {
         field: 'message_template_status_update',
         value: { event: 'PENDING_REVIEW', message_template_id: '1' },
       },
-      stub,
+      stub
     );
     expect(calls[0].update?.status).toBe('PENDING');
   });
@@ -196,7 +198,7 @@ describe('handleTemplateWebhookChange — status update', () => {
         field: 'message_template_status_update',
         value: { event: 'APPROVED' },
       },
-      stub,
+      stub
     );
     expect(calls).toHaveLength(0);
   });
@@ -213,7 +215,7 @@ describe('handleTemplateWebhookChange — status update', () => {
           message_template_name: 'mystery',
         },
       },
-      stub,
+      stub
     );
     expect(warn).toHaveBeenCalled();
     expect(String(warn.mock.calls[0][0])).toContain('no WABA id');
@@ -236,7 +238,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
   it('inserts a stub row for a 0-row status update when exactly one config matches the WABA', async () => {
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [CONFIG] },
+      { configRows: [CONFIG] }
     );
     await handleTemplateWebhookChange(
       {
@@ -249,7 +251,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
 
     expect(calls.map((c) => c.table)).toEqual([
@@ -275,7 +277,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
   it('carries the rejection reason into the stub on REJECTED and defaults language to en_US', async () => {
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [CONFIG] },
+      { configRows: [CONFIG] }
     );
     await handleTemplateWebhookChange(
       {
@@ -288,7 +290,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
     expect(calls[2].insert).toMatchObject({
       status: 'REJECTED',
@@ -301,7 +303,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     const warn = vi.spyOn(console, 'warn');
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [] },
+      { configRows: [] }
     );
     await handleTemplateWebhookChange(
       {
@@ -313,7 +315,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-NOBODY',
       },
-      stub,
+      stub
     );
     expect(calls).toHaveLength(2); // update + config lookup, no insert
     expect(calls.some((c) => c.insert)).toBe(false);
@@ -330,7 +332,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
       { data: [], error: null },
       {
         configRows: [CONFIG, { account_id: 'acc-2', user_id: 'admin-2' }],
-      },
+      }
     );
     await handleTemplateWebhookChange(
       {
@@ -342,7 +344,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
     expect(calls.some((c) => c.insert)).toBe(false);
     expect(String(warn.mock.calls[0][0])).toContain('2 whatsapp_config rows');
@@ -352,7 +354,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     const warn = vi.spyOn(console, 'warn');
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [CONFIG] },
+      { configRows: [CONFIG] }
     );
     await handleTemplateWebhookChange(
       {
@@ -366,7 +368,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
     expect(calls[0].update).toEqual({ quality_score: 'RED' });
     expect(calls[2].insert).toEqual({
@@ -387,7 +389,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     const warn = vi.spyOn(console, 'warn');
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [] },
+      { configRows: [] }
     );
     await handleTemplateWebhookChange(
       {
@@ -399,7 +401,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-NOBODY',
       },
-      stub,
+      stub
     );
     expect(calls.some((c) => c.insert)).toBe(false);
     expect(String(warn.mock.calls[0][0])).toContain('quality update');
@@ -414,7 +416,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         configRows: [CONFIG],
         insertError: { message: 'duplicate key', code: '23505' },
         retrySelectResult: { data: [{ id: 'row-raced' }], error: null },
-      },
+      }
     );
     await handleTemplateWebhookChange(
       {
@@ -426,7 +428,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
     const updates = calls.filter((c) => c.update);
     expect(updates).toHaveLength(2);
@@ -442,7 +444,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
     const warn = vi.spyOn(console, 'warn');
     const { stub, calls } = makeSupabaseStub(
       { data: [], error: null },
-      { configRows: [CONFIG] },
+      { configRows: [CONFIG] }
     );
     await handleTemplateWebhookChange(
       {
@@ -450,7 +452,7 @@ describe('handleTemplateWebhookChange — unknown template stub (#534)', () => {
         value: { event: 'APPROVED', message_template_id: '562' },
         wabaId: 'WABA-1',
       },
-      stub,
+      stub
     );
     expect(calls).toHaveLength(1);
     expect(String(warn.mock.calls[0][0])).toContain('no message_template_name');
@@ -469,7 +471,7 @@ describe('handleTemplateWebhookChange — quality update', () => {
           new_quality_score: 'YELLOW',
         },
       },
-      stub,
+      stub
     );
     expect(calls[0].update).toEqual({ quality_score: 'YELLOW' });
     expect(calls[0].filter).toEqual({
@@ -488,7 +490,7 @@ describe('handleTemplateWebhookChange — quality update', () => {
           new_quality_score: 'PURPLE', // not a real Meta value
         },
       },
-      stub,
+      stub
     );
     expect(calls[0].update).toEqual({ quality_score: null });
   });
@@ -506,7 +508,7 @@ describe('handleTemplateWebhookChange — components update', () => {
           message_template_name: 'x',
         },
       },
-      stub,
+      stub
     );
     expect(calls).toHaveLength(0);
     expect(info).toHaveBeenCalled();
@@ -522,7 +524,7 @@ describe('handleTemplateWebhookChange — unknown field', () => {
       // the dispatch should still be safe if the filter is bypassed.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       { field: 'message_template_future_field' as any, value: {} },
-      stub,
+      stub
     );
     expect(calls).toHaveLength(0);
   });

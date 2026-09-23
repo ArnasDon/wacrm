@@ -30,7 +30,7 @@ export function errorResult(message: string): CallToolResult {
  * readable error result and unexpected throws don't crash the server.
  */
 export function handle<A>(
-  fn: (args: A) => Promise<CallToolResult>,
+  fn: (args: A) => Promise<CallToolResult>
 ): (args: A) => Promise<CallToolResult> {
   return async (args: A) => {
     try {

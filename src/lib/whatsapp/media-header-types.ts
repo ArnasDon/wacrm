@@ -8,23 +8,25 @@
  * share one source of truth for "what does Meta accept here".
  */
 
-export type MediaHeaderKind = 'image' | 'video' | 'document'
+export type MediaHeaderKind = 'image' | 'video' | 'document';
 
 export interface MediaHeaderSpec {
   /** Meta's accepted MIME types. The first entry is the fallback when a
    *  fetched sample carries no Content-Type. */
-  mimeTypes: readonly string[]
+  mimeTypes: readonly string[];
   /** File extension per MIME type — names the Resumable Upload. */
-  extensions: Readonly<Record<string, string>>
+  extensions: Readonly<Record<string, string>>;
   /** Meta's per-sample ceiling for this header type, in bytes. */
-  maxBytes: number
+  maxBytes: number;
   /** Human label of the accepted formats, for error messages. */
-  formats: string
+  formats: string;
 }
 
-const MB = 1024 * 1024
+const MB = 1024 * 1024;
 
-export const MEDIA_HEADER_SPECS: Readonly<Record<MediaHeaderKind, MediaHeaderSpec>> = {
+export const MEDIA_HEADER_SPECS: Readonly<
+  Record<MediaHeaderKind, MediaHeaderSpec>
+> = {
   image: {
     mimeTypes: ['image/jpeg', 'image/png'],
     extensions: { 'image/jpeg': 'jpg', 'image/png': 'png' },
@@ -51,18 +53,21 @@ export const MEDIA_HEADER_SPECS: Readonly<Record<MediaHeaderKind, MediaHeaderSpe
     extensions: {
       'application/pdf': 'pdf',
       'application/msword': 'doc',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'docx',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document':
+        'docx',
       'application/vnd.ms-powerpoint': 'ppt',
-      'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'pptx',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation':
+        'pptx',
       'application/vnd.ms-excel': 'xls',
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'xlsx',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+        'xlsx',
       'text/plain': 'txt',
     },
     maxBytes: 100 * MB,
     formats: 'PDF, Word, PowerPoint, Excel or plain text',
   },
-}
+};
 
 export function isMediaHeaderKind(value: unknown): value is MediaHeaderKind {
-  return value === 'image' || value === 'video' || value === 'document'
+  return value === 'image' || value === 'video' || value === 'document';
 }

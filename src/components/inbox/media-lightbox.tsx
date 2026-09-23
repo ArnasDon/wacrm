@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useState } from "react";
-import { format } from "date-fns";
+import { useCallback, useEffect, useState } from 'react';
+import { format } from 'date-fns';
 import {
   ChevronLeft,
   ChevronRight,
@@ -12,20 +12,20 @@ import {
   ZoomIn,
   ZoomOut,
   type LucideIcon,
-} from "lucide-react";
-import { toast } from "sonner";
-import { useTranslations } from "next-intl";
-import { cn } from "@/lib/utils";
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { useTranslations } from 'next-intl';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
-import { downloadMediaMessage } from "@/lib/media/download";
-import { galleryIndexOf, type MediaGalleryItem } from "@/lib/media/gallery";
+} from '@/components/ui/dialog';
+import { useMediaBlobUrl } from '@/hooks/use-media-blob-url';
+import { downloadMediaMessage } from '@/lib/media/download';
+import { galleryIndexOf, type MediaGalleryItem } from '@/lib/media/gallery';
 
 /**
  * Full-size viewer for the images and videos in the open conversation
@@ -41,7 +41,7 @@ import { galleryIndexOf, type MediaGalleryItem } from "@/lib/media/gallery";
 type Translator = ReturnType<typeof useTranslations>;
 
 /** Leaves room for the caption and the header inside a 100vh dialog. */
-const MEDIA_MAX_HEIGHT = "max-h-[75vh]";
+const MEDIA_MAX_HEIGHT = 'max-h-[75vh]';
 
 interface MediaLightboxProps {
   items: MediaGalleryItem[];
@@ -58,7 +58,7 @@ export function MediaLightbox({
   onActiveIdChange,
   contactLabel,
 }: MediaLightboxProps) {
-  const t = useTranslations("Inbox.mediaViewer");
+  const t = useTranslations('Inbox.mediaViewer');
 
   const index = galleryIndexOf(items, activeId);
   const item = index >= 0 ? items[index] : null;
@@ -78,7 +78,7 @@ export function MediaLightbox({
       const target = items[next];
       if (target) onActiveIdChange(target.messageId);
     },
-    [items, onActiveIdChange],
+    [items, onActiveIdChange]
   );
 
   // Arrow keys page through the gallery. Bound on window so it works
@@ -89,16 +89,16 @@ export function MediaLightbox({
   useEffect(() => {
     if (index < 0) return;
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "ArrowLeft") {
+      if (event.key === 'ArrowLeft') {
         event.preventDefault();
         goTo(index - 1);
-      } else if (event.key === "ArrowRight") {
+      } else if (event.key === 'ArrowRight') {
         event.preventDefault();
         goTo(index + 1);
       }
     };
-    window.addEventListener("keydown", onKeyDown, true);
-    return () => window.removeEventListener("keydown", onKeyDown, true);
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
   }, [index, goTo]);
 
   const handleDownload = useCallback(async () => {
@@ -107,7 +107,7 @@ export function MediaLightbox({
     try {
       await downloadMediaMessage(item.message);
     } catch {
-      toast.error(t("downloadFailed"));
+      toast.error(t('downloadFailed'));
     } finally {
       setDownloading(false);
     }
@@ -115,8 +115,8 @@ export function MediaLightbox({
 
   if (!item) return null;
 
-  const authorLabel = item.fromCustomer ? contactLabel : t("you");
-  const timestamp = format(new Date(item.createdAt), "MMM d, yyyy HH:mm");
+  const authorLabel = item.fromCustomer ? contactLabel : t('you');
+  const timestamp = format(new Date(item.createdAt), 'MMM d, yyyy HH:mm');
 
   return (
     <Dialog
@@ -136,14 +136,14 @@ export function MediaLightbox({
           </div>
           <div className="flex shrink-0 items-center gap-1">
             {items.length > 1 && (
-              <span className="mr-1 text-xs tabular-nums text-muted-foreground">
-                {t("counter", { index: index + 1, total: items.length })}
+              <span className="text-muted-foreground mr-1 text-xs tabular-nums">
+                {t('counter', { index: index + 1, total: items.length })}
               </span>
             )}
-            {item.kind === "image" && (
+            {item.kind === 'image' && (
               <ToolbarButton
                 icon={zoomed ? ZoomOut : ZoomIn}
-                label={zoomed ? t("zoomOut") : t("zoomIn")}
+                label={zoomed ? t('zoomOut') : t('zoomIn')}
                 onClick={toggleZoom}
               />
             )}
@@ -151,15 +151,15 @@ export function MediaLightbox({
               href={item.url}
               target="_blank"
               rel="noopener noreferrer"
-              aria-label={t("openOriginal")}
-              title={t("openOriginal")}
-              className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              aria-label={t('openOriginal')}
+              title={t('openOriginal')}
+              className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md transition-colors"
             >
               <ExternalLink className="h-4 w-4" />
             </a>
             <ToolbarButton
               icon={Download}
-              label={t("download")}
+              label={t('download')}
               onClick={handleDownload}
               busy={downloading}
             />
@@ -167,7 +167,7 @@ export function MediaLightbox({
         </DialogHeader>
 
         <div className="relative flex items-center justify-center">
-          {item.kind === "image" ? (
+          {item.kind === 'image' ? (
             <LightboxImage
               item={item}
               zoomed={zoomed}
@@ -180,7 +180,7 @@ export function MediaLightbox({
               src={item.url}
               controls
               preload="metadata"
-              className={cn(MEDIA_MAX_HEIGHT, "max-w-full rounded-lg")}
+              className={cn(MEDIA_MAX_HEIGHT, 'max-w-full rounded-lg')}
             />
           )}
 
@@ -189,14 +189,14 @@ export function MediaLightbox({
               <NavButton
                 side="left"
                 icon={ChevronLeft}
-                label={t("previous")}
+                label={t('previous')}
                 disabled={index <= 0}
                 onClick={() => goTo(index - 1)}
               />
               <NavButton
                 side="right"
                 icon={ChevronRight}
-                label={t("next")}
+                label={t('next')}
                 disabled={index >= items.length - 1}
                 onClick={() => goTo(index + 1)}
               />
@@ -205,7 +205,7 @@ export function MediaLightbox({
         </div>
 
         {item.caption && (
-          <p className="max-h-24 overflow-y-auto whitespace-pre-wrap break-words text-sm">
+          <p className="max-h-24 overflow-y-auto text-sm break-words whitespace-pre-wrap">
             {item.caption}
           </p>
         )}
@@ -230,19 +230,19 @@ function LightboxImage({
   const { src, status } = useMediaBlobUrl(item.url);
   const [broken, setBroken] = useState(false);
 
-  if (status === "error" || broken) {
+  if (status === 'error' || broken) {
     return (
-      <div className="flex h-64 w-full min-w-64 flex-col items-center justify-center gap-2 rounded-lg bg-muted text-sm text-muted-foreground">
+      <div className="bg-muted text-muted-foreground flex h-64 w-full min-w-64 flex-col items-center justify-center gap-2 rounded-lg text-sm">
         <ImageOff className="h-8 w-8" />
-        <span>{t("failed")}</span>
+        <span>{t('failed')}</span>
       </div>
     );
   }
 
-  if (status !== "ready" || !src) {
+  if (status !== 'ready' || !src) {
     return (
-      <div className="flex h-64 w-full min-w-64 items-center justify-center rounded-lg bg-muted">
-        <div className="h-6 w-6 animate-spin rounded-full border-2 border-primary border-t-transparent" />
+      <div className="bg-muted flex h-64 w-full min-w-64 items-center justify-center rounded-lg">
+        <div className="border-primary h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" />
       </div>
     );
   }
@@ -255,18 +255,18 @@ function LightboxImage({
     // the left half becomes unreachable (scrollWidth stops at the right
     // overflow). Auto margins on a block child collapse to 0 once it's
     // wider, so the whole image stays scrollable.
-    <div className={cn("w-full", MEDIA_MAX_HEIGHT, zoomed && "overflow-auto")}>
+    <div className={cn('w-full', MEDIA_MAX_HEIGHT, zoomed && 'overflow-auto')}>
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
         src={src}
-        alt={item.caption || t("imageAlt")}
+        alt={item.caption || t('imageAlt')}
         onClick={onToggleZoom}
         onError={() => setBroken(true)}
         className={cn(
-          "mx-auto block rounded-lg",
+          'mx-auto block rounded-lg',
           zoomed
-            ? "max-w-none cursor-zoom-out"
-            : cn(MEDIA_MAX_HEIGHT, "max-w-full cursor-zoom-in object-contain"),
+            ? 'max-w-none cursor-zoom-out'
+            : cn(MEDIA_MAX_HEIGHT, 'max-w-full cursor-zoom-in object-contain')
         )}
       />
     </div>
@@ -291,7 +291,7 @@ function ToolbarButton({
       disabled={busy}
       aria-label={label}
       title={label}
-      className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+      className="text-muted-foreground hover:bg-muted hover:text-foreground flex h-8 w-8 items-center justify-center rounded-md transition-colors disabled:opacity-60"
     >
       {busy ? (
         <Loader2 className="h-4 w-4 animate-spin" />
@@ -309,7 +309,7 @@ function NavButton({
   disabled,
   onClick,
 }: {
-  side: "left" | "right";
+  side: 'left' | 'right';
   icon: LucideIcon;
   label: string;
   disabled: boolean;
@@ -323,8 +323,8 @@ function NavButton({
       aria-label={label}
       title={label}
       className={cn(
-        "absolute top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border border-border/60 bg-background/85 text-foreground shadow-md backdrop-blur-sm transition-colors hover:bg-background disabled:pointer-events-none disabled:opacity-0",
-        side === "left" ? "left-1" : "right-1",
+        'border-border/60 bg-background/85 text-foreground hover:bg-background absolute top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full border shadow-md backdrop-blur-sm transition-colors disabled:pointer-events-none disabled:opacity-0',
+        side === 'left' ? 'left-1' : 'right-1'
       )}
     >
       <Icon className="h-5 w-5" />

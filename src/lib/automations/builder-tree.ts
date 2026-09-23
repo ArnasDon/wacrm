@@ -25,14 +25,14 @@
  * `BuilderStep` in the builder satisfies `TreeStep<BuilderStep>`.
  */
 export interface TreeStep<T> {
-  cid: string
-  branches?: { yes: T[]; no: T[] }
+  cid: string;
+  branches?: { yes: T[]; no: T[] };
 }
 
 /** Which bucket new children go into, for insertion. */
 export type ParentScope =
-  | { kind: "root" }
-  | { kind: "branch"; parentCid: string; branch: "yes" | "no" }
+  | { kind: 'root' }
+  | { kind: 'branch'; parentCid: string; branch: 'yes' | 'no' };
 
 /**
  * One level of addressing: which bucket, and the index within it. The
@@ -40,10 +40,10 @@ export type ParentScope =
  * branch of the step the previous marker resolved to.
  */
 export type StepMarker =
-  | { kind: "root"; index: number }
-  | { kind: "branch"; branch: "yes" | "no"; index: number }
+  | { kind: 'root'; index: number }
+  | { kind: 'branch'; branch: 'yes' | 'no'; index: number };
 
-export type StepPath = StepMarker[]
+export type StepPath = StepMarker[];
 
 /**
  * Path of the step at `index` within `scope`, where `basePath` is the
@@ -61,14 +61,14 @@ export type StepPath = StepMarker[]
 export function childPath(
   basePath: StepPath,
   scope: ParentScope,
-  index: number,
+  index: number
 ): StepPath {
   return [
     ...basePath,
-    scope.kind === "root"
-      ? { kind: "root", index }
-      : { kind: "branch", branch: scope.branch, index },
-  ]
+    scope.kind === 'root'
+      ? { kind: 'root', index }
+      : { kind: 'branch', branch: scope.branch, index },
+  ];
 }
 
 /**
@@ -82,22 +82,22 @@ export function insertAt<T extends TreeStep<T>>(
   steps: T[],
   scope: ParentScope,
   index: number,
-  node: T,
+  node: T
 ): T[] {
-  if (scope.kind === "root") {
-    const copy = [...steps]
-    copy.splice(index, 0, node)
-    return copy
+  if (scope.kind === 'root') {
+    const copy = [...steps];
+    copy.splice(index, 0, node);
+    return copy;
   }
   return steps.map((step) => {
-    if (!step.branches) return step
+    if (!step.branches) return step;
     if (step.cid === scope.parentCid) {
-      const bucket = [...step.branches[scope.branch]]
-      bucket.splice(index, 0, node)
+      const bucket = [...step.branches[scope.branch]];
+      bucket.splice(index, 0, node);
       return {
         ...step,
         branches: { ...step.branches, [scope.branch]: bucket },
-      }
+      };
     }
     // Not this condition — keep looking inside both of its branches.
     return {
@@ -106,44 +106,44 @@ export function insertAt<T extends TreeStep<T>>(
         yes: insertAt(step.branches.yes, scope, index, node),
         no: insertAt(step.branches.no, scope, index, node),
       },
-    }
-  })
+    };
+  });
 }
 
 /** Replace the step at `path` with `updater`'s result. */
 export function mapAtPath<T extends TreeStep<T>>(
   steps: T[],
   path: StepPath,
-  updater: (step: T) => T,
+  updater: (step: T) => T
 ): T[] {
   return atPath(steps, path, (bucket, index) =>
-    bucket.map((step, i) => (i === index ? updater(step) : step)),
-  )
+    bucket.map((step, i) => (i === index ? updater(step) : step))
+  );
 }
 
 /** Drop the step at `path`. */
 export function removeAt<T extends TreeStep<T>>(
   steps: T[],
-  path: StepPath,
+  path: StepPath
 ): T[] {
   return atPath(steps, path, (bucket, index) =>
-    bucket.filter((_, i) => i !== index),
-  )
+    bucket.filter((_, i) => i !== index)
+  );
 }
 
 /** Swap the step at `path` with its neighbour in `direction`. */
 export function moveAt<T extends TreeStep<T>>(
   steps: T[],
   path: StepPath,
-  direction: -1 | 1,
+  direction: -1 | 1
 ): T[] {
   return atPath(steps, path, (bucket, index) => {
-    const target = index + direction
-    if (target < 0 || target >= bucket.length) return bucket
-    const copy = [...bucket]
-    ;[copy[index], copy[target]] = [copy[target], copy[index]]
-    return copy
-  })
+    const target = index + direction;
+    if (target < 0 || target >= bucket.length) return bucket;
+    const copy = [...bucket];
+    [copy[index], copy[target]] = [copy[target], copy[index]];
+    return copy;
+  });
 }
 
 /**
@@ -157,26 +157,26 @@ export function moveAt<T extends TreeStep<T>>(
 function atPath<T extends TreeStep<T>>(
   steps: T[],
   path: StepPath,
-  edit: (bucket: T[], index: number) => T[],
+  edit: (bucket: T[], index: number) => T[]
 ): T[] {
-  if (path.length === 0) return steps
-  const [head, ...rest] = path
+  if (path.length === 0) return steps;
+  const [head, ...rest] = path;
 
   // Last marker: `steps` is the bucket that holds the target.
-  if (rest.length === 0) return edit(steps, head.index)
+  if (rest.length === 0) return edit(steps, head.index);
 
   // Otherwise descend through the step this marker names, into the
   // branch the NEXT marker names.
-  const next = rest[0]
-  if (next.kind !== "branch") return steps
+  const next = rest[0];
+  if (next.kind !== 'branch') return steps;
   return steps.map((step, i) => {
-    if (i !== head.index || !step.branches) return step
+    if (i !== head.index || !step.branches) return step;
     return {
       ...step,
       branches: {
         ...step.branches,
         [next.branch]: atPath(step.branches[next.branch], rest, edit),
       },
-    }
-  })
+    };
+  });
 }

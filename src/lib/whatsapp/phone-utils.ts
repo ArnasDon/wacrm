@@ -4,8 +4,8 @@
  * e.g. "+370 63949836" → "37063949836"
  */
 export function sanitizePhoneForMeta(phone: string): string {
-  if (!phone) return ''
-  return phone.replace(/\D/g, '')
+  if (!phone) return '';
+  return phone.replace(/\D/g, '');
 }
 
 /**
@@ -13,8 +13,8 @@ export function sanitizePhoneForMeta(phone: string): string {
  * Used for comparing phone numbers in different formats.
  */
 export function normalizePhone(phone: string): string {
-  if (!phone) return ''
-  return phone.replace(/\D/g, '')
+  if (!phone) return '';
+  return phone.replace(/\D/g, '');
 }
 
 /**
@@ -23,13 +23,13 @@ export function normalizePhone(phone: string): string {
  * by comparing the last 8 digits.
  */
 export function phonesMatch(phone1: string, phone2: string): boolean {
-  const n1 = normalizePhone(phone1)
-  const n2 = normalizePhone(phone2)
-  if (n1 === n2) return true
+  const n1 = normalizePhone(phone1);
+  const n2 = normalizePhone(phone2);
+  if (n1 === n2) return true;
   if (n1.length >= 8 && n2.length >= 8) {
-    return n1.slice(-8) === n2.slice(-8)
+    return n1.slice(-8) === n2.slice(-8);
   }
-  return false
+  return false;
 }
 
 /**
@@ -49,7 +49,7 @@ export function phonesMatch(phone1: string, phone2: string): boolean {
  * Saint Helena — have 7-digit international numbers.)
  */
 export function isValidE164(phone: string): boolean {
-  return /^\+?[1-9]\d{7,14}$/.test(phone)
+  return /^\+?[1-9]\d{7,14}$/.test(phone);
 }
 
 /**
@@ -67,13 +67,15 @@ export function isValidE164(phone: string): boolean {
  * `+` load-bearing at every boundary where raw input enters is what the
  * error messages ("E.164 format, e.g. +14155550123") already promised.
  */
-export function parseInternationalPhone(raw: string | null | undefined): string | null {
-  if (!raw) return null
-  const compact = raw.trim().replace(/[\s().-]/g, '')
-  if (!compact.startsWith('+')) return null
-  const digits = compact.slice(1)
-  if (!/^\d+$/.test(digits)) return null
-  return isValidE164(digits) ? digits : null
+export function parseInternationalPhone(
+  raw: string | null | undefined
+): string | null {
+  if (!raw) return null;
+  const compact = raw.trim().replace(/[\s().-]/g, '');
+  if (!compact.startsWith('+')) return null;
+  const digits = compact.slice(1);
+  if (!/^\d+$/.test(digits)) return null;
+  return isValidE164(digits) ? digits : null;
 }
 
 /**
@@ -98,36 +100,36 @@ export function parseInternationalPhone(raw: string | null | undefined): string 
  * @returns deduplicated list of variants, original first
  */
 export function phoneVariants(sanitized: string): string[] {
-  if (!sanitized) return []
-  const seen = new Set<string>()
+  if (!sanitized) return [];
+  const seen = new Set<string>();
   const push = (v: string) => {
-    if (v && !seen.has(v)) seen.add(v)
-  }
+    if (v && !seen.has(v)) seen.add(v);
+  };
 
   // 1. Original
-  push(sanitized)
+  push(sanitized);
 
   // 2. Insert a 0 after each plausible country-code length
   for (const ccLen of [1, 2, 3]) {
-    if (sanitized.length <= ccLen) continue
-    const cc = sanitized.slice(0, ccLen)
-    const rest = sanitized.slice(ccLen)
+    if (sanitized.length <= ccLen) continue;
+    const cc = sanitized.slice(0, ccLen);
+    const rest = sanitized.slice(ccLen);
     if (!rest.startsWith('0')) {
-      push(cc + '0' + rest)
+      push(cc + '0' + rest);
     }
   }
 
   // 3. Remove a leading 0 after each plausible country-code length
   for (const ccLen of [1, 2, 3]) {
-    if (sanitized.length <= ccLen + 1) continue
-    const cc = sanitized.slice(0, ccLen)
-    const rest = sanitized.slice(ccLen)
+    if (sanitized.length <= ccLen + 1) continue;
+    const cc = sanitized.slice(0, ccLen);
+    const rest = sanitized.slice(ccLen);
     if (rest.startsWith('0')) {
-      push(cc + rest.slice(1))
+      push(cc + rest.slice(1));
     }
   }
 
-  return [...seen]
+  return [...seen];
 }
 
 /**
@@ -136,5 +138,5 @@ export function phoneVariants(sanitized: string): string[] {
  * Detected via error code 131030 or the standard error text.
  */
 export function isRecipientNotAllowedError(message: string): boolean {
-  return /131030|not in allowed list|not in the allowed list/i.test(message)
+  return /131030|not in allowed list|not in the allowed list/i.test(message);
 }

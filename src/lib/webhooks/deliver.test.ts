@@ -65,7 +65,9 @@ afterEach(() => vi.unstubAllGlobals());
 
 describe('dispatchWebhookEvent', () => {
   it('signs + POSTs (no redirect follow) and resets failure_count on success', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 200 } as Response);
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200 } as Response);
     vi.stubGlobal('fetch', fetchMock);
     const calls = emptyCalls();
 
@@ -81,15 +83,23 @@ describe('dispatchWebhookEvent', () => {
     expect(url).toBe('https://a.test/hook');
     expect(opts.redirect).toBe('manual');
     expect(opts.headers['X-Wacrm-Event']).toBe('message.received');
-    expect(opts.headers['X-Wacrm-Signature']).toMatch(/^t=\d+,v1=[0-9a-f]{64}$/);
+    expect(opts.headers['X-Wacrm-Signature']).toMatch(
+      /^t=\d+,v1=[0-9a-f]{64}$/
+    );
     // Payload carries a dedupe id.
     expect(JSON.parse(opts.body).id).toMatch(/[0-9a-f-]{36}/);
-    expect(calls.updates[0]).toMatchObject({ id: 'a', payload: { failure_count: 0 } });
+    expect(calls.updates[0]).toMatchObject({
+      id: 'a',
+      payload: { failure_count: 0 },
+    });
     expect(calls.rpcs).toHaveLength(0);
   });
 
   it('records an atomic failure (RPC) when the endpoint errors', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({ ok: false, status: 500 } as Response)
+    );
     const calls = emptyCalls();
 
     await dispatchWebhookEvent(
@@ -127,7 +137,12 @@ describe('dispatchWebhookEvent', () => {
     const fetchMock = vi.fn();
     vi.stubGlobal('fetch', fetchMock);
     const calls = emptyCalls();
-    await dispatchWebhookEvent(makeDb([], calls), 'acct-1', 'message.received', {});
+    await dispatchWebhookEvent(
+      makeDb([], calls),
+      'acct-1',
+      'message.received',
+      {}
+    );
     expect(fetchMock).not.toHaveBeenCalled();
     expect(calls.rpcs).toHaveLength(0);
     expect(calls.updates).toHaveLength(0);

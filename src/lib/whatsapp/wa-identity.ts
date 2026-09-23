@@ -31,38 +31,38 @@ import {
   isValidE164,
   normalizePhone,
   sanitizePhoneForMeta,
-} from './phone-utils'
+} from './phone-utils';
 
 /** The `contacts[]` entry Meta pairs with an inbound message. */
 export interface WaContactPayload {
-  profile?: { name?: string; username?: string }
+  profile?: { name?: string; username?: string };
   /** Phone number. Absent for a username-only sender. */
-  wa_id?: string
+  wa_id?: string;
   /** BSUID, e.g. "US.13491208655302741918". */
-  user_id?: string
+  user_id?: string;
   /** Portfolio-level BSUID, e.g. "US.ENT.11815799212886844830". */
-  parent_user_id?: string
+  parent_user_id?: string;
 }
 
 /** The identity fields on a `messages[]` entry. */
 export interface WaMessageIdentityPayload {
   /** Phone number. Absent for a username-only sender. */
-  from?: string
-  from_user_id?: string
-  from_parent_user_id?: string
+  from?: string;
+  from_user_id?: string;
+  from_parent_user_id?: string;
 }
 
 export interface WaIdentity {
   /** Digits-only phone, or `''` when Meta withheld it. */
-  phone: string
+  phone: string;
   /** Business-scoped user id, or null. */
-  waUserId: string | null
+  waUserId: string | null;
   /** Portfolio-level BSUID, or null. */
-  waParentUserId: string | null
+  waParentUserId: string | null;
   /** WhatsApp username (no `@`), or null. */
-  waUsername: string | null
+  waUsername: string | null;
   /** Profile display name, or `''`. */
-  name: string
+  name: string;
 }
 
 /**
@@ -70,7 +70,7 @@ export interface WaIdentity {
  * property we rely on elsewhere is that they contain a `.` and a phone
  * number never does — see `isBusinessScopedUserId`.
  */
-const BSUID_PATTERN = /^[A-Za-z]{2}\.(?:ENT\.)?[A-Za-z0-9]{4,}$/
+const BSUID_PATTERN = /^[A-Za-z]{2}\.(?:ENT\.)?[A-Za-z0-9]{4,}$/;
 
 /**
  * True for a BSUID / parent BSUID, false for anything phone-shaped.
@@ -80,23 +80,25 @@ const BSUID_PATTERN = /^[A-Za-z]{2}\.(?:ENT\.)?[A-Za-z0-9]{4,}$/
  * sanitized phone number is digits only, and every BSUID carries a
  * two-letter prefix and a dot.
  */
-export function isBusinessScopedUserId(value: string | null | undefined): boolean {
-  return !!value && BSUID_PATTERN.test(value.trim())
+export function isBusinessScopedUserId(
+  value: string | null | undefined
+): boolean {
+  return !!value && BSUID_PATTERN.test(value.trim());
 }
 
 /** Drop a leading `@` if Meta ever starts sending one. */
 function cleanUsername(value: string | undefined): string | null {
-  const trimmed = value?.trim().replace(/^@/, '')
-  return trimmed ? trimmed : null
+  const trimmed = value?.trim().replace(/^@/, '');
+  return trimmed ? trimmed : null;
 }
 
 function cleanBsuid(value: string | undefined): string | null {
-  const trimmed = value?.trim()
-  if (!trimmed) return null
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
   // Refuse anything that doesn't look like a BSUID rather than storing
   // it — a bad value in `wa_user_id` becomes a permanent wrong contact
   // key, and the phone fallback is still available.
-  return isBusinessScopedUserId(trimmed) ? trimmed : null
+  return isBusinessScopedUserId(trimmed) ? trimmed : null;
 }
 
 /**
@@ -118,7 +120,7 @@ export function resolveInboundIdentity(
       cleanBsuid(contact?.parent_user_id),
     waUsername: cleanUsername(contact?.profile?.username),
     name: contact?.profile?.name?.trim() ?? '',
-  }
+  };
 }
 
 /**
@@ -127,7 +129,7 @@ export function resolveInboundIdentity(
  * rather than turned into an anonymous row.
  */
 export function hasUsableIdentity(identity: WaIdentity): boolean {
-  return !!identity.phone || !!identity.waUserId
+  return !!identity.phone || !!identity.waUserId;
 }
 
 /**
@@ -137,10 +139,10 @@ export function hasUsableIdentity(identity: WaIdentity): boolean {
  * opaque string, but better than a blank row.
  */
 export function identityDisplayName(identity: WaIdentity): string {
-  if (identity.name) return identity.name
-  if (identity.waUsername) return identity.waUsername
-  if (identity.phone) return identity.phone
-  return identity.waUserId ?? ''
+  if (identity.name) return identity.name;
+  if (identity.waUsername) return identity.waUsername;
+  if (identity.phone) return identity.phone;
+  return identity.waUserId ?? '';
 }
 
 /**
@@ -153,24 +155,24 @@ export function identityDisplayName(identity: WaIdentity): string {
  * recognise this person.
  */
 export function contactHandle(contact: {
-  phone?: string | null
-  wa_username?: string | null
-  wa_user_id?: string | null
+  phone?: string | null;
+  wa_username?: string | null;
+  wa_user_id?: string | null;
 }): string {
-  if (contact.phone?.trim()) return contact.phone
-  if (contact.wa_username?.trim()) return `@${contact.wa_username.trim()}`
-  return contact.wa_user_id?.trim() ?? ''
+  if (contact.phone?.trim()) return contact.phone;
+  if (contact.wa_username?.trim()) return `@${contact.wa_username.trim()}`;
+  return contact.wa_user_id?.trim() ?? '';
 }
 
 export interface WaSendTarget {
   /** The value to hand a `meta-api` sender as `to`. */
-  target: string
+  target: string;
   /**
    * True when `target` is a phone number. Callers use it to decide
    * whether the trunk-prefix variant retry (`phoneVariants`) applies —
    * a BSUID is opaque and has exactly one correct form.
    */
-  isPhone: boolean
+  isPhone: boolean;
 }
 
 /**
@@ -183,17 +185,22 @@ export interface WaSendTarget {
  * (issue #519). Phone stays preferred — it's the only branch the
  * variant retry can help — with the BSUID as the fallback.
  */
-export function resolveContactSendTarget(contact: {
-  phone?: string | null
-  wa_user_id?: string | null
-} | null | undefined): WaSendTarget | null {
-  const sanitized = sanitizePhoneForMeta(contact?.phone ?? '')
-  if (isValidE164(sanitized)) return { target: sanitized, isPhone: true }
+export function resolveContactSendTarget(
+  contact:
+    | {
+        phone?: string | null;
+        wa_user_id?: string | null;
+      }
+    | null
+    | undefined
+): WaSendTarget | null {
+  const sanitized = sanitizePhoneForMeta(contact?.phone ?? '');
+  if (isValidE164(sanitized)) return { target: sanitized, isPhone: true };
 
-  const waUserId = contact?.wa_user_id?.trim()
+  const waUserId = contact?.wa_user_id?.trim();
   if (isBusinessScopedUserId(waUserId)) {
-    return { target: waUserId as string, isPhone: false }
+    return { target: waUserId as string, isPhone: false };
   }
 
-  return null
+  return null;
 }

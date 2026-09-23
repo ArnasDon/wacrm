@@ -26,9 +26,11 @@ function errorResponse(status: number, body: unknown): Response {
 describe('submitMessageTemplate', () => {
   let fetchMock: ReturnType<typeof vi.fn>;
   beforeEach(() => {
-    fetchMock = vi.fn().mockResolvedValue(
-      okResponse({ id: '123', status: 'PENDING', category: 'UTILITY' }),
-    );
+    fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        okResponse({ id: '123', status: 'PENDING', category: 'UTILITY' })
+      );
     vi.stubGlobal('fetch', fetchMock);
   });
   afterEach(() => {
@@ -46,7 +48,11 @@ describe('submitMessageTemplate', () => {
         components: [{ type: 'BODY', text: 'hi' }],
       },
     });
-    expect(result).toEqual({ id: '123', status: 'PENDING', category: 'UTILITY' });
+    expect(result).toEqual({
+      id: '123',
+      status: 'PENDING',
+      category: 'UTILITY',
+    });
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toContain('/WABA1/message_templates');
     expect(init.method).toBe('POST');
@@ -59,11 +65,11 @@ describe('submitMessageTemplate', () => {
     });
   });
 
-  it('throws Meta\'s error message on non-OK responses', async () => {
+  it("throws Meta's error message on non-OK responses", async () => {
     fetchMock.mockResolvedValueOnce(
       errorResponse(429, {
         error: { message: 'Rate limit (#80007).' },
-      }),
+      })
     );
     await expect(
       submitMessageTemplate({
@@ -75,7 +81,7 @@ describe('submitMessageTemplate', () => {
           language: 'en_US',
           components: [],
         },
-      }),
+      })
     ).rejects.toThrow(/Rate limit/);
   });
 
@@ -91,7 +97,7 @@ describe('submitMessageTemplate', () => {
           language: 'en_US',
           components: [],
         },
-      }),
+      })
     ).rejects.toThrow(/no id/);
   });
 });
@@ -141,7 +147,7 @@ describe('editMessageTemplate', () => {
         metaTemplateId: 'T',
         accessToken: 't',
         components: [],
-      }),
+      })
     ).toEqual({ success: true });
   });
 
@@ -152,7 +158,7 @@ describe('editMessageTemplate', () => {
         metaTemplateId: 'T',
         accessToken: 't',
         components: [],
-      }),
+      })
     ).toEqual({ success: false });
   });
 });
@@ -196,7 +202,7 @@ describe('deleteMessageTemplate', () => {
 
   it('treats 404 as a no-op (template already gone on Meta)', async () => {
     fetchMock.mockResolvedValueOnce(
-      errorResponse(404, { error: { message: 'not found' } }),
+      errorResponse(404, { error: { message: 'not found' } })
     );
     await expect(
       deleteMessageTemplate({
@@ -204,13 +210,13 @@ describe('deleteMessageTemplate', () => {
         accessToken: 't',
         name: 'x',
         metaTemplateId: 'y',
-      }),
+      })
     ).resolves.toBeUndefined();
   });
 
   it('throws on non-404 errors', async () => {
     fetchMock.mockResolvedValueOnce(
-      errorResponse(500, { error: { message: 'boom' } }),
+      errorResponse(500, { error: { message: 'boom' } })
     );
     await expect(
       deleteMessageTemplate({
@@ -218,7 +224,7 @@ describe('deleteMessageTemplate', () => {
         accessToken: 't',
         name: 'x',
         metaTemplateId: 'y',
-      }),
+      })
     ).rejects.toThrow(/boom/);
   });
 });

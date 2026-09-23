@@ -1,16 +1,16 @@
-import type { SupabaseClient } from '@supabase/supabase-js'
-import type { AiProvider, AiUsage } from './types'
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { AiProvider, AiUsage } from './types';
 
 export interface LogAiUsageArgs {
-  accountId: string
+  accountId: string;
   /** Null for a draft not tied to one thread, or when the row was
    *  deleted between generation and logging. */
-  conversationId: string | null
-  mode: 'auto_reply' | 'draft'
-  provider: AiProvider
-  model: string
+  conversationId: string | null;
+  mode: 'auto_reply' | 'draft';
+  provider: AiProvider;
+  model: string;
   /** Provider usage; a no-op when null (nothing worth recording). */
-  usage: AiUsage | null
+  usage: AiUsage | null;
 }
 
 /**
@@ -28,9 +28,9 @@ export interface LogAiUsageArgs {
  */
 export async function logAiUsage(
   db: SupabaseClient,
-  args: LogAiUsageArgs,
+  args: LogAiUsageArgs
 ): Promise<void> {
-  if (!args.usage) return
+  if (!args.usage) return;
   try {
     const { error } = await db.from('ai_usage_log').insert({
       account_id: args.accountId,
@@ -41,11 +41,11 @@ export async function logAiUsage(
       prompt_tokens: args.usage.promptTokens,
       completion_tokens: args.usage.completionTokens,
       total_tokens: args.usage.totalTokens,
-    })
+    });
     if (error) {
-      console.error('[ai usage] log insert failed:', error)
+      console.error('[ai usage] log insert failed:', error);
     }
   } catch (err) {
-    console.error('[ai usage] log insert threw:', err)
+    console.error('[ai usage] log insert threw:', err);
   }
 }

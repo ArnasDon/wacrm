@@ -1,13 +1,13 @@
-import { cn } from "@/lib/utils";
-import type { PresenceStatus } from "@/lib/presence";
+import { cn } from '@/lib/utils';
+import type { PresenceStatus } from '@/lib/presence';
 
 // Single source of truth for presence colours. Semantic accents
 // (emerald / amber / muted), mirroring the role-chip palette already
 // used across settings, so they're intentionally not tokenized.
 export const PRESENCE_DOT_CLASS: Record<PresenceStatus, string> = {
-  online: "bg-emerald-500",
-  away: "bg-amber-500",
-  offline: "bg-muted-foreground/50",
+  online: 'bg-emerald-500',
+  away: 'bg-amber-500',
+  offline: 'bg-muted-foreground/50',
 };
 
 /**
@@ -27,13 +27,13 @@ export function PresenceDot({
 }) {
   return (
     <span
-      role={label ? "img" : undefined}
+      role={label ? 'img' : undefined}
       aria-label={label}
       title={label}
       className={cn(
-        "inline-block size-2 shrink-0 rounded-full",
+        'inline-block size-2 shrink-0 rounded-full',
         PRESENCE_DOT_CLASS[status],
-        className,
+        className
       )}
     />
   );

@@ -29,7 +29,7 @@ describe('uploadResumableMedia', () => {
           return jsonResponse({ id: 'upload:SESSION123' });
         }
         return jsonResponse({ h: '2:HANDLE' });
-      }),
+      })
     );
 
     const { handle } = await uploadResumableMedia({
@@ -57,7 +57,10 @@ describe('uploadResumableMedia', () => {
   });
 
   it('throws if the session response has no id', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => jsonResponse({})));
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => jsonResponse({}))
+    );
     await expect(
       uploadResumableMedia({
         appId: 'a',
@@ -65,7 +68,7 @@ describe('uploadResumableMedia', () => {
         fileName: 'h.png',
         mimeType: 'image/png',
         bytes: new Uint8Array([0]),
-      }),
+      })
     ).rejects.toThrow(/session id/);
   });
 
@@ -75,8 +78,8 @@ describe('uploadResumableMedia', () => {
       vi.fn(async (url: string) =>
         url.includes('/uploads?')
           ? jsonResponse({ id: 'upload:S' })
-          : jsonResponse({}),
-      ),
+          : jsonResponse({})
+      )
     );
     await expect(
       uploadResumableMedia({
@@ -85,7 +88,7 @@ describe('uploadResumableMedia', () => {
         fileName: 'h.png',
         mimeType: 'image/png',
         bytes: new Uint8Array([0]),
-      }),
+      })
     ).rejects.toThrow(/file handle/);
   });
 });

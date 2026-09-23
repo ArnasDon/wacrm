@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import { List, Reply } from "lucide-react";
-import { cn } from "@/lib/utils";
-import type { InteractiveMessagePayload } from "@/lib/whatsapp/interactive";
+import { List, Reply } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
 /**
  * WhatsApp-style read-only render of an interactive message. Used both
@@ -34,42 +34,42 @@ export function InteractivePreview({
   className?: string;
   labels?: InteractivePreviewLabels;
 }) {
-  const bodyLabel = labels?.body ?? "Message body…";
-  const buttonLabel = labels?.button ?? "Button";
-  const menuLabel = labels?.menu ?? "Menu";
+  const bodyLabel = labels?.body ?? 'Message body…';
+  const buttonLabel = labels?.button ?? 'Button';
+  const menuLabel = labels?.menu ?? 'Menu';
   return (
     <div
       className={cn(
-        "w-full max-w-[260px] overflow-hidden rounded-lg bg-card text-foreground shadow-sm ring-1 ring-border",
-        className,
+        'bg-card text-foreground ring-border w-full max-w-[260px] overflow-hidden rounded-lg shadow-sm ring-1',
+        className
       )}
     >
       <div className="px-3 py-2">
         {payload.header ? (
-          <p className="mb-1 break-words text-sm font-semibold">
+          <p className="mb-1 text-sm font-semibold break-words">
             {payload.header}
           </p>
         ) : null}
-        <p className="whitespace-pre-wrap break-words text-sm">
+        <p className="text-sm break-words whitespace-pre-wrap">
           {payload.body || (
             <span className="text-muted-foreground">{bodyLabel}</span>
           )}
         </p>
         {payload.footer ? (
-          <p className="mt-1 break-words text-[11px] text-muted-foreground">
+          <p className="text-muted-foreground mt-1 text-[11px] break-words">
             {payload.footer}
           </p>
         ) : null}
       </div>
 
-      {payload.kind === "buttons" ? (
-        <div className="flex flex-col border-t border-border">
+      {payload.kind === 'buttons' ? (
+        <div className="border-border flex flex-col border-t">
           {payload.buttons.map((b, i) => (
             <button
               key={b.id || i}
               type="button"
               disabled
-              className="flex items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary first:border-t-0"
+              className="border-border text-primary flex items-center justify-center gap-1.5 border-t py-2 text-sm font-medium first:border-t-0"
             >
               <Reply className="h-3.5 w-3.5" />
               <span className="truncate">{b.title || buttonLabel}</span>
@@ -80,7 +80,7 @@ export function InteractivePreview({
         <button
           type="button"
           disabled
-          className="flex w-full items-center justify-center gap-1.5 border-t border-border py-2 text-sm font-medium text-primary"
+          className="border-border text-primary flex w-full items-center justify-center gap-1.5 border-t py-2 text-sm font-medium"
         >
           <List className="h-3.5 w-3.5" />
           <span className="truncate">{payload.button_label || menuLabel}</span>

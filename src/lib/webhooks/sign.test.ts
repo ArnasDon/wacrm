@@ -30,7 +30,9 @@ describe('verifySignatureHeader', () => {
   });
 
   it('rejects a stale timestamp (replay protection)', () => {
-    expect(verifySignatureHeader(header, body, secret, now + 10_000)).toBe(false);
+    expect(verifySignatureHeader(header, body, secret, now + 10_000)).toBe(
+      false
+    );
   });
 
   it('rejects a malformed header', () => {

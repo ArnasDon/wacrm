@@ -180,7 +180,10 @@ export function Step3Personalize({
   }, [placeholders, variables]);
 
   function updateVariable(key: string, patch: Partial<VariableMapping>) {
-    const current = variables[key] ?? { type: 'static' as VariableType, value: '' };
+    const current = variables[key] ?? {
+      type: 'static' as VariableType,
+      value: '',
+    };
     onUpdate({
       ...variables,
       [key]: { ...current, ...patch },
@@ -236,22 +239,26 @@ export function Step3Personalize({
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-foreground">{t('personalize.title')}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">
+        <h2 className="text-foreground text-lg font-semibold">
+          {t('personalize.title')}
+        </h2>
+        <p className="text-muted-foreground mt-1 text-sm">
           {t('personalize.subtitle')}
         </p>
       </div>
 
       {mediaHeaderType && (
-        <div className="rounded-xl border border-border bg-card/50 p-4">
+        <div className="border-border bg-card/50 rounded-xl border p-4">
           <div className="mb-3 flex items-center gap-2">
-            <ImageIcon className="h-4 w-4 text-primary" />
-            <p className="text-sm font-medium text-foreground">{t('personalize.headerImage')}</p>
-            <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-medium uppercase text-primary">
+            <ImageIcon className="text-primary h-4 w-4" />
+            <p className="text-foreground text-sm font-medium">
+              {t('personalize.headerImage')}
+            </p>
+            <span className="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium uppercase">
               {mediaHeaderType}
             </span>
           </div>
-          <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+          <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
             {t('personalize.imageUrl')}
           </label>
           <Input
@@ -261,7 +268,7 @@ export function Step3Personalize({
             placeholder={t('personalize.imageUrlPlaceholder')}
             className="border-border bg-muted text-foreground placeholder:text-muted-foreground"
           />
-          <p className="mt-1.5 text-xs text-muted-foreground">
+          <p className="text-muted-foreground mt-1.5 text-xs">
             {t('personalize.headerImageDesc')}
           </p>
           {mediaHeaderType === 'image' &&
@@ -271,7 +278,7 @@ export function Step3Personalize({
               <img
                 src={headerMediaUrl.trim()}
                 alt={t('personalize.headerPreviewAlt')}
-                className="mt-3 max-h-40 rounded-lg border border-border object-contain"
+                className="border-border mt-3 max-h-40 rounded-lg border object-contain"
               />
             )}
           {headerMediaError && (
@@ -285,8 +292,8 @@ export function Step3Personalize({
       )}
 
       {placeholders.length === 0 && !mediaHeaderType ? (
-        <div className="rounded-xl border border-border bg-card/50 p-6 text-center">
-          <p className="text-sm text-muted-foreground">
+        <div className="border-border bg-card/50 rounded-xl border p-6 text-center">
+          <p className="text-muted-foreground text-sm">
             {t('personalize.noPreview')}
           </p>
         </div>
@@ -299,17 +306,17 @@ export function Step3Personalize({
             return (
               <div
                 key={placeholder}
-                className="rounded-xl border border-border bg-card/50 p-4"
+                className="border-border bg-card/50 rounded-xl border p-4"
               >
                 <div className="mb-3 flex items-center gap-2">
-                  <span className="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 text-xs font-mono font-medium text-primary">
+                  <span className="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-medium">
                     {placeholder}
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
+                    <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
                       {t('personalize.type')}
                     </label>
                     <Select
@@ -321,12 +328,16 @@ export function Step3Personalize({
                         })
                       }
                     >
-                      <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                      <SelectTrigger className="border-border bg-muted text-foreground w-full">
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent className="border-border bg-popover">
-                        <SelectItem value="static">{t('personalize.typeStatic')}</SelectItem>
-                        <SelectItem value="field">{t('personalize.typeContact')}</SelectItem>
+                        <SelectItem value="static">
+                          {t('personalize.typeStatic')}
+                        </SelectItem>
+                        <SelectItem value="field">
+                          {t('personalize.typeContact')}
+                        </SelectItem>
                         <SelectItem value="custom_field">
                           {t('personalize.typeCustom')}
                         </SelectItem>
@@ -335,8 +346,10 @@ export function Step3Personalize({
                   </div>
 
                   <div>
-                    <label className="mb-1.5 block text-xs font-medium text-muted-foreground">
-                      {mapping.type === 'static' ? t('personalize.staticValue') : t('personalize.contactField')}
+                    <label className="text-muted-foreground mb-1.5 block text-xs font-medium">
+                      {mapping.type === 'static'
+                        ? t('personalize.staticValue')
+                        : t('personalize.contactField')}
                     </label>
                     {mapping.type === 'static' ? (
                       <Input
@@ -354,8 +367,10 @@ export function Step3Personalize({
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
-                          <SelectValue placeholder={t('personalize.selectContactField')} />
+                        <SelectTrigger className="border-border bg-muted text-foreground w-full">
+                          <SelectValue
+                            placeholder={t('personalize.selectContactField')}
+                          />
                         </SelectTrigger>
                         <SelectContent className="border-border bg-popover">
                           {contactFields.map((field) => (
@@ -372,7 +387,7 @@ export function Step3Personalize({
                           updateVariable(key, { value: val || '' })
                         }
                       >
-                        <SelectTrigger className="w-full border-border bg-muted text-foreground">
+                        <SelectTrigger className="border-border bg-muted text-foreground w-full">
                           <SelectValue
                             placeholder={
                               loadingFields
@@ -402,18 +417,22 @@ export function Step3Personalize({
 
       {/* Live Preview — rendered as a WhatsApp-style bubble so the user
           sees approximately what the recipient will see. */}
-      <div className="rounded-xl border border-border bg-card/50 p-4">
+      <div className="border-border bg-card/50 rounded-xl border p-4">
         <div className="mb-3 flex items-center gap-2">
-          <Eye className="h-4 w-4 text-primary" />
-          <p className="text-sm font-medium text-foreground">{t('personalize.preview')}</p>
-          <span className="text-xs text-muted-foreground">({previewLabel})</span>
+          <Eye className="text-primary h-4 w-4" />
+          <p className="text-foreground text-sm font-medium">
+            {t('personalize.preview')}
+          </p>
+          <span className="text-muted-foreground text-xs">
+            ({previewLabel})
+          </span>
           {loadingPreview && (
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-primary" />
+            <Loader2 className="text-primary h-3.5 w-3.5 animate-spin" />
           )}
         </div>
         <div className="rounded-lg bg-[#0e1a12] p-3">
-          <div className="ml-auto max-w-[85%] rounded-lg bg-primary/30 px-3 py-2 shadow-sm">
-            <p className="whitespace-pre-wrap text-sm text-primary">
+          <div className="bg-primary/30 ml-auto max-w-[85%] rounded-lg px-3 py-2 shadow-sm">
+            <p className="text-primary text-sm whitespace-pre-wrap">
               {previewText}
             </p>
           </div>
@@ -424,12 +443,14 @@ export function Step3Personalize({
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300">
           {t.rich('personalize.unmappedWarning', {
             keys: unmappedKeys.join(', '),
-            mono: (chunks) => <span className="font-mono font-semibold">{chunks}</span>,
+            mono: (chunks) => (
+              <span className="font-mono font-semibold">{chunks}</span>
+            ),
           })}
         </div>
       )}
 
-      <div className="flex items-center justify-between border-t border-border pt-4">
+      <div className="border-border flex items-center justify-between border-t pt-4">
         <Button
           variant="outline"
           onClick={onBack}

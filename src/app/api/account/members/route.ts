@@ -12,11 +12,11 @@
 //   phase: "agent/viewer sees names only".
 // ============================================================
 
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
-import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
-import type { AccountMember } from "@/types";
+import { getCurrentAccount, toErrorResponse } from '@/lib/auth/account';
+import { canManageMembers, isAccountRole } from '@/lib/auth/roles';
+import type { AccountMember } from '@/types';
 
 interface ProfileRow {
   user_id: string;
@@ -34,16 +34,16 @@ export async function GET() {
     // RLS on profiles allows reading any row whose account matches
     // the caller's, so this query is naturally account-scoped.
     const { data, error } = await ctx.supabase
-      .from("profiles")
-      .select("user_id, full_name, email, avatar_url, account_role, created_at")
-      .eq("account_id", ctx.accountId)
-      .order("created_at", { ascending: true });
+      .from('profiles')
+      .select('user_id, full_name, email, avatar_url, account_role, created_at')
+      .eq('account_id', ctx.accountId)
+      .order('created_at', { ascending: true });
 
     if (error) {
-      console.error("[GET /api/account/members] fetch error:", error);
+      console.error('[GET /api/account/members] fetch error:', error);
       return NextResponse.json(
-        { error: "Failed to load members" },
-        { status: 500 },
+        { error: 'Failed to load members' },
+        { status: 500 }
       );
     }
 
@@ -57,7 +57,7 @@ export async function GET() {
       return [
         {
           user_id: row.user_id,
-          full_name: row.full_name ?? "",
+          full_name: row.full_name ?? '',
           email: canSeeEmails ? row.email : null,
           avatar_url: row.avatar_url,
           role: row.account_role,

@@ -73,7 +73,7 @@ Not the primary flow, but welcome in specific cases:
 Less likely to land:
 
 - **New features.** The template's scope is intentionally narrow. A
-  "great idea for a CRM" is often a great idea for *your* CRM — i.e.
+  "great idea for a CRM" is often a great idea for _your_ CRM — i.e.
   your fork — but would dilute the template for the next forker.
 - **Stack changes** (different ORM, different UI kit, different auth
   provider). These belong in a fork, not upstream.
@@ -88,7 +88,7 @@ If you do send a PR, the usual rules apply:
 - Fill in the PR template, especially the **Test plan**.
 - One logical change per PR.
 - Commit-message first line is imperative + terse; the body explains
-  the *why*, the diff shows the *what*.
+  the _why_, the diff shows the _what_.
 
 Expect a review within a few days. PRs opened without an issue may be
 closed — open the issue first to align.
@@ -108,14 +108,14 @@ closed — open the issue first to align.
 Even if you never send a PR upstream, these are the scripts you'll use
 in your fork:
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Turbopack dev server on port 3000. |
-| `npm run build` | Production build. Next also runs its own typecheck here. |
-| `npm run typecheck` | `tsc --noEmit`. Fast TS-only pass. |
-| `npm run lint` | ESLint. |
-| `npm run format` | Prettier write. |
-| `npm run format:check` | Prettier in check-only mode. Useful in CI. |
+| Command                | What it does                                             |
+| ---------------------- | -------------------------------------------------------- |
+| `npm run dev`          | Turbopack dev server on port 3000.                       |
+| `npm run build`        | Production build. Next also runs its own typecheck here. |
+| `npm run typecheck`    | `tsc --noEmit`. Fast TS-only pass.                       |
+| `npm run lint`         | ESLint.                                                  |
+| `npm run format`       | Prettier write.                                          |
+| `npm run format:check` | Prettier in check-only mode. Useful in CI.               |
 
 ## Licensing
 

@@ -40,57 +40,57 @@
  * the stub on (account_id, name, language).
  */
 
-import type { SupabaseClient } from '@supabase/supabase-js'
-import { normalizeStatus } from './template-status-normalize'
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { normalizeStatus } from './template-status-normalize';
 
 const TEMPLATE_WEBHOOK_FIELDS = new Set([
   'message_template_status_update',
   'message_template_quality_update',
   'message_template_components_update',
-])
+]);
 
 export function isTemplateWebhookField(field: string): boolean {
-  return TEMPLATE_WEBHOOK_FIELDS.has(field)
+  return TEMPLATE_WEBHOOK_FIELDS.has(field);
 }
 
 interface TemplateStatusUpdateValue {
-  event?: string
-  message_template_id?: string | number
-  message_template_name?: string
-  message_template_language?: string
-  reason?: string
+  event?: string;
+  message_template_id?: string | number;
+  message_template_name?: string;
+  message_template_language?: string;
+  reason?: string;
 }
 
 interface TemplateQualityUpdateValue {
-  message_template_id?: string | number
-  message_template_name?: string
-  message_template_language?: string
-  previous_quality_score?: string
-  new_quality_score?: string
+  message_template_id?: string | number;
+  message_template_name?: string;
+  message_template_language?: string;
+  previous_quality_score?: string;
+  new_quality_score?: string;
 }
 
 interface TemplateComponentsUpdateValue {
-  message_template_id?: string | number
-  message_template_name?: string
-  message_template_language?: string
+  message_template_id?: string | number;
+  message_template_name?: string;
+  message_template_language?: string;
 }
 
 export interface TemplateWebhookChange {
-  field: string
-  value: unknown
+  field: string;
+  value: unknown;
   /**
    * `entry.id` from the webhook envelope — for template events this is
    * the WABA id. Optional so existing callers / tests keep working;
    * without it an unknown template can only be logged, not stubbed.
    */
-  wabaId?: string
+  wabaId?: string;
 }
 
 /** `body_text` is NOT NULL; the sync route uses '' for a body-less template too. */
-const STUB_BODY_TEXT = ''
-const DEFAULT_TEMPLATE_LANGUAGE = 'en_US'
+const STUB_BODY_TEXT = '';
+const DEFAULT_TEMPLATE_LANGUAGE = 'en_US';
 /** Postgres unique_violation — the row appeared between our UPDATE and INSERT. */
-const PG_UNIQUE_VIOLATION = '23505'
+const PG_UNIQUE_VIOLATION = '23505';
 
 /**
  * Dispatch a single change record to the matching handler. Returns
@@ -103,49 +103,47 @@ export async function handleTemplateWebhookChange(
   // SupabaseClient typed loosely — the webhook route lazy-initialises
   // the admin client and exposes it as `any`. Type as the generic
   // SupabaseClient here so this module is testable in isolation.
-  supabase: SupabaseClient,
+  supabase: SupabaseClient
 ): Promise<void> {
   switch (change.field) {
     case 'message_template_status_update':
       await handleStatusUpdate(
         change.value as TemplateStatusUpdateValue,
         supabase,
-        change.wabaId,
-      )
-      return
+        change.wabaId
+      );
+      return;
     case 'message_template_quality_update':
       await handleQualityUpdate(
         change.value as TemplateQualityUpdateValue,
         supabase,
-        change.wabaId,
-      )
-      return
+        change.wabaId
+      );
+      return;
     case 'message_template_components_update':
-      handleComponentsUpdate(
-        change.value as TemplateComponentsUpdateValue,
-      )
-      return
+      handleComponentsUpdate(change.value as TemplateComponentsUpdateValue);
+      return;
   }
 }
 
 async function handleStatusUpdate(
   value: TemplateStatusUpdateValue,
   supabase: SupabaseClient,
-  wabaId: string | undefined,
+  wabaId: string | undefined
 ): Promise<void> {
   const metaTemplateId =
     value.message_template_id !== undefined
       ? String(value.message_template_id)
-      : null
+      : null;
   if (!metaTemplateId || !value.event) {
     console.warn(
       '[template-webhook] status update missing message_template_id or event:',
-      value,
-    )
-    return
+      value
+    );
+    return;
   }
 
-  const status = normalizeStatus(value.event)
+  const status = normalizeStatus(value.event);
 
   // Persist the rejection reason on REJECTED — that's the only event
   // where Meta sends a human-readable explanation. Clear it on any
@@ -154,23 +152,23 @@ async function handleStatusUpdate(
   const update: Record<string, unknown> = {
     status,
     rejection_reason:
-      status === 'REJECTED' ? value.reason ?? 'Rejected by Meta' : null,
+      status === 'REJECTED' ? (value.reason ?? 'Rejected by Meta') : null,
     submission_error: null,
-  }
+  };
 
   const { data, error } = await supabase
     .from('message_templates')
     .update(update)
     .eq('meta_template_id', metaTemplateId)
-    .select('id')
+    .select('id');
 
   if (error) {
     console.error(
       '[template-webhook] status update failed for meta_template_id',
       metaTemplateId,
-      error.message,
-    )
-    return
+      error.message
+    );
+    return;
   }
   if (!data || data.length === 0) {
     await createStubForUnknownTemplate({
@@ -187,56 +185,56 @@ async function handleStatusUpdate(
           .eq('meta_template_id', metaTemplateId)
           .select('id'),
       supabase,
-    })
-    return
+    });
+    return;
   }
   if (data.length > 1) {
     console.warn(
-      `[template-webhook] status update matched ${data.length} rows for meta_template_id ${metaTemplateId} — investigate.`,
-    )
+      `[template-webhook] status update matched ${data.length} rows for meta_template_id ${metaTemplateId} — investigate.`
+    );
   }
 }
 
 async function handleQualityUpdate(
   value: TemplateQualityUpdateValue,
   supabase: SupabaseClient,
-  wabaId: string | undefined,
+  wabaId: string | undefined
 ): Promise<void> {
   const metaTemplateId =
     value.message_template_id !== undefined
       ? String(value.message_template_id)
-      : null
+      : null;
   if (!metaTemplateId) {
     console.warn(
       '[template-webhook] quality update missing message_template_id:',
-      value,
-    )
-    return
+      value
+    );
+    return;
   }
 
-  const raw = value.new_quality_score
+  const raw = value.new_quality_score;
   const score =
     raw && ['GREEN', 'YELLOW', 'RED'].includes(raw.toUpperCase())
       ? (raw.toUpperCase() as 'GREEN' | 'YELLOW' | 'RED')
-      : null
+      : null;
 
-  const update = { quality_score: score }
+  const update = { quality_score: score };
   const runUpdate = () =>
     supabase
       .from('message_templates')
       .update(update)
       .eq('meta_template_id', metaTemplateId)
-      .select('id')
+      .select('id');
 
-  const { data, error } = await runUpdate()
+  const { data, error } = await runUpdate();
 
   if (error) {
     console.error(
       '[template-webhook] quality update failed for meta_template_id',
       metaTemplateId,
-      error.message,
-    )
-    return
+      error.message
+    );
+    return;
   }
   if (!data || data.length === 0) {
     // A quality event carries no status. Leave `status` to the column
@@ -251,25 +249,25 @@ async function handleQualityUpdate(
       fields: update,
       retryUpdate: runUpdate,
       supabase,
-    })
+    });
   }
 }
 
 interface StubParams {
   /** For log lines — 'status update' | 'quality update'. */
-  kind: string
-  metaTemplateId: string
-  name: string | undefined
-  language: string | undefined
-  wabaId: string | undefined
+  kind: string;
+  metaTemplateId: string;
+  name: string | undefined;
+  language: string | undefined;
+  wabaId: string | undefined;
   /** Event-derived columns (status / rejection_reason / quality_score). */
-  fields: Record<string, unknown>
+  fields: Record<string, unknown>;
   /** Re-runs the original UPDATE if the INSERT loses a race. */
   retryUpdate: () => PromiseLike<{
-    data: { id: string }[] | null
-    error: { message: string } | null
-  }>
-  supabase: SupabaseClient
+    data: { id: string }[] | null;
+    error: { message: string } | null;
+  }>;
+  supabase: SupabaseClient;
 }
 
 /**
@@ -286,43 +284,43 @@ interface StubParams {
  * components arrive on the next manual sync.
  */
 async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
-  const { kind, metaTemplateId, name, wabaId, supabase } = p
-  const where = `meta_template_id ${metaTemplateId} (${name ?? 'unnamed'}), WABA ${wabaId ?? 'unknown'}`
+  const { kind, metaTemplateId, name, wabaId, supabase } = p;
+  const where = `meta_template_id ${metaTemplateId} (${name ?? 'unnamed'}), WABA ${wabaId ?? 'unknown'}`;
 
   if (!wabaId) {
     console.warn(
-      `[template-webhook] ${kind} for unknown template ${where} — no WABA id on the webhook entry, cannot resolve the account; run "Sync from Meta".`,
-    )
-    return
+      `[template-webhook] ${kind} for unknown template ${where} — no WABA id on the webhook entry, cannot resolve the account; run "Sync from Meta".`
+    );
+    return;
   }
   if (!name) {
     console.warn(
-      `[template-webhook] ${kind} for unknown template ${where} — event has no message_template_name, cannot create a stub row; run "Sync from Meta".`,
-    )
-    return
+      `[template-webhook] ${kind} for unknown template ${where} — event has no message_template_name, cannot create a stub row; run "Sync from Meta".`
+    );
+    return;
   }
 
   const { data: configs, error: configError } = await supabase
     .from('whatsapp_config')
     .select('account_id, user_id')
-    .eq('waba_id', wabaId)
+    .eq('waba_id', wabaId);
 
   if (configError) {
     console.error(
       `[template-webhook] ${kind} for unknown template ${where} — whatsapp_config lookup failed:`,
-      configError.message,
-    )
-    return
+      configError.message
+    );
+    return;
   }
-  const rows = (configs ?? []) as { account_id: string; user_id: string }[]
+  const rows = (configs ?? []) as { account_id: string; user_id: string }[];
   if (rows.length !== 1) {
     console.warn(
-      `[template-webhook] ${kind} for unknown template ${where} — ${rows.length === 0 ? 'no' : rows.length} whatsapp_config rows match that WABA id; not creating a stub. Run "Sync from Meta" for the owning account.`,
-    )
-    return
+      `[template-webhook] ${kind} for unknown template ${where} — ${rows.length === 0 ? 'no' : rows.length} whatsapp_config rows match that WABA id; not creating a stub. Run "Sync from Meta" for the owning account.`
+    );
+    return;
   }
 
-  const config = rows[0]
+  const config = rows[0];
   // account_id is tenancy; user_id is the NOT NULL audit FK — the
   // config owner, same convention the webhook uses for inbound writes.
   // `category` and `status` fall back to their column defaults unless
@@ -335,25 +333,25 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
     language: p.language || DEFAULT_TEMPLATE_LANGUAGE,
     body_text: STUB_BODY_TEXT,
     ...p.fields,
-  }
+  };
 
   const { error: insertError } = await supabase
     .from('message_templates')
-    .insert(stub)
+    .insert(stub);
 
   if (!insertError) {
     console.info(
-      `[template-webhook] ${kind} for unknown template ${where} — created stub row for account ${config.account_id}; run "Sync from Meta" to backfill components.`,
-    )
-    return
+      `[template-webhook] ${kind} for unknown template ${where} — created stub row for account ${config.account_id}; run "Sync from Meta" to backfill components.`
+    );
+    return;
   }
 
   if ((insertError as { code?: string }).code !== PG_UNIQUE_VIOLATION) {
     console.error(
       `[template-webhook] ${kind} for unknown template ${where} — stub insert failed:`,
-      insertError.message,
-    )
-    return
+      insertError.message
+    );
+    return;
   }
 
   // Unique violation: either a concurrent sync/webhook just created the
@@ -361,18 +359,18 @@ async function createStubForUnknownTemplate(p: StubParams): Promise<void> {
   // row that isn't linked to this meta_template_id. Retry the original
   // UPDATE once — it covers the first case; the second still needs a
   // sync and is logged as such.
-  const { data, error } = await p.retryUpdate()
+  const { data, error } = await p.retryUpdate();
   if (error) {
     console.error(
       `[template-webhook] ${kind} for unknown template ${where} — retry after unique violation failed:`,
-      error.message,
-    )
-    return
+      error.message
+    );
+    return;
   }
   if (!data || data.length === 0) {
     console.warn(
-      `[template-webhook] ${kind} for unknown template ${where} — a local row with the same name/language exists but is not linked to this meta_template_id; run "Sync from Meta" to link it.`,
-    )
+      `[template-webhook] ${kind} for unknown template ${where} — a local row with the same name/language exists but is not linked to this meta_template_id; run "Sync from Meta" to link it.`
+    );
   }
 }
 
@@ -391,6 +389,6 @@ function handleComponentsUpdate(value: TemplateComponentsUpdateValue): void {
     '[template-webhook] components updated by Meta for template',
     value.message_template_id,
     value.message_template_name,
-    '— run "Sync from Meta" in Settings to pull the new components.',
-  )
+    '— run "Sync from Meta" in Settings to pull the new components.'
+  );
 }

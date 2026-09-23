@@ -34,7 +34,7 @@ export function loadConfig(): Config {
     throw new Error(
       `Missing required environment variable(s): ${missing.join(', ')}. ` +
         `Set WACRM_BASE_URL to your instance URL (e.g. https://crm.example.com) ` +
-        `and WACRM_API_KEY to a key from Settings → API keys.`,
+        `and WACRM_API_KEY to a key from Settings → API keys.`
     );
   }
 
@@ -42,7 +42,7 @@ export function loadConfig(): Config {
   const baseUrl = baseUrlRaw!.replace(/\/+$/, '');
   if (!/^https?:\/\//.test(baseUrl)) {
     throw new Error(
-      `WACRM_BASE_URL must start with http:// or https:// (got "${baseUrl}").`,
+      `WACRM_BASE_URL must start with http:// or https:// (got "${baseUrl}").`
     );
   }
 
@@ -51,7 +51,7 @@ export function loadConfig(): Config {
 
   if (enableBroadcasts && !enableWrites) {
     throw new Error(
-      'WACRM_ENABLE_BROADCASTS requires WACRM_ENABLE_WRITES to also be set.',
+      'WACRM_ENABLE_BROADCASTS requires WACRM_ENABLE_WRITES to also be set.'
     );
   }
 

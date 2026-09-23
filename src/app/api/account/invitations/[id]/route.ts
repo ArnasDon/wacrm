@@ -13,25 +13,25 @@
 // the table small.
 // ============================================================
 
-import { NextResponse } from "next/server";
+import { NextResponse } from 'next/server';
 
-import { requireRole, toErrorResponse } from "@/lib/auth/account";
+import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import {
   checkRateLimit,
   rateLimitResponse,
   RATE_LIMITS,
-} from "@/lib/rate-limit";
+} from '@/lib/rate-limit';
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: Promise<{ id: string }> },
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const ctx = await requireRole("admin");
+    const ctx = await requireRole('admin');
 
     const limit = checkRateLimit(
       `admin:inviteRevoke:${ctx.userId}`,
-      RATE_LIMITS.adminAction,
+      RATE_LIMITS.adminAction
     );
     if (!limit.success) return rateLimitResponse(limit);
 
@@ -44,15 +44,15 @@ export async function DELETE(
     // cross-account attempt as a silent 0-row delete (which is
     // exactly what we want for a revocation endpoint).
     const { error, count } = await ctx.supabase
-      .from("account_invitations")
-      .delete({ count: "exact" })
-      .eq("id", id);
+      .from('account_invitations')
+      .delete({ count: 'exact' })
+      .eq('id', id);
 
     if (error) {
-      console.error("[DELETE /api/account/invitations/[id]] error:", error);
+      console.error('[DELETE /api/account/invitations/[id]] error:', error);
       return NextResponse.json(
-        { error: "Failed to revoke invitation" },
-        { status: 500 },
+        { error: 'Failed to revoke invitation' },
+        { status: 500 }
       );
     }
 
@@ -61,8 +61,8 @@ export async function DELETE(
       // account). 404 either way — surfacing "exists but not
       // yours" would leak existence.
       return NextResponse.json(
-        { error: "Invitation not found" },
-        { status: 404 },
+        { error: 'Invitation not found' },
+        { status: 404 }
       );
     }
 

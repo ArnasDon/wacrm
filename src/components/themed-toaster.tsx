@@ -1,10 +1,10 @@
-"use client";
+'use client';
 
-import { useSyncExternalStore } from "react";
-import { Toaster } from "sonner";
+import { useSyncExternalStore } from 'react';
+import { Toaster } from 'sonner';
 
-import { useTheme } from "@/hooks/use-theme";
-import { DEFAULT_MODE } from "@/lib/themes";
+import { useTheme } from '@/hooks/use-theme';
+import { DEFAULT_MODE } from '@/lib/themes';
 
 // Returns false during SSR and the first hydration render, true after —
 // the sanctioned (warning-free, no setState-in-effect) way to diverge
@@ -15,7 +15,7 @@ function useIsClient() {
   return useSyncExternalStore(
     noopSubscribe,
     () => true,
-    () => false,
+    () => false
   );
 }
 
@@ -41,9 +41,9 @@ export function ThemedToaster() {
       position="top-right"
       toastOptions={{
         style: {
-          background: "var(--popover)",
-          border: "1px solid var(--border)",
-          color: "var(--popover-foreground)",
+          background: 'var(--popover)',
+          border: '1px solid var(--border)',
+          color: 'var(--popover-foreground)',
         },
       }}
     />

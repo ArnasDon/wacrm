@@ -1,9 +1,9 @@
-"use client";
+'use client';
 
-import type { ReactNode } from "react";
+import type { ReactNode } from 'react';
 
-import { useAuth } from "@/hooks/use-auth";
-import { hasMinRole, type AccountRole } from "@/lib/auth/roles";
+import { useAuth } from '@/hooks/use-auth';
+import { hasMinRole, type AccountRole } from '@/lib/auth/roles';
 
 interface RequireRoleProps {
   /** Minimum role to render `children`. Uses the standard hierarchy

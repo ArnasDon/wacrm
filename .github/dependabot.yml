@@ -3,7 +3,7 @@ updates:
   # Runtime + dev dependencies. Weekly on Mondays — keeps the noise
   # predictable and aligns with a normal review cycle.
   - package-ecosystem: npm
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday
@@ -17,10 +17,10 @@ updates:
       # independent Supabase-bumps per week.
       supabase:
         patterns:
-          - "@supabase/*"
+          - '@supabase/*'
       types:
         patterns:
-          - "@types/*"
+          - '@types/*'
         update-types:
           - minor
           - patch
@@ -41,7 +41,7 @@ updates:
   # GitHub Actions in .github/workflows/. Catches setup-node /
   # checkout version bumps that keep the CI matrix healthy.
   - package-ecosystem: github-actions
-    directory: "/"
+    directory: '/'
     schedule:
       interval: weekly
       day: monday

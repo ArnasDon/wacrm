@@ -82,7 +82,7 @@ export interface SendListNodeConfig {
  * meaningful behavioural difference.
  */
 export interface SendMediaNodeConfig {
-  media_type: "image" | "video" | "document";
+  media_type: 'image' | 'video' | 'document';
   /** Public URL Meta will fetch. Uploaded via the builder's file picker. */
   media_url: string;
   /** Optional caption shown under the media (Meta caps at 1024 chars). */
@@ -129,20 +129,16 @@ export interface CollectInputNodeConfig {
    * Reserved for v2. Accepted on the config but ignored by the v1.5
    * runner — captures any non-empty text.
    */
-  validation?: "any" | "email" | "phone" | "regex";
+  validation?: 'any' | 'email' | 'phone' | 'regex';
   /** Used only when `validation === 'regex'`. */
   regex?: string;
   /** Node to advance to after capture. */
   next_node_key: string;
 }
 
-export type ConditionOperator =
-  | "equals"
-  | "contains"
-  | "present"
-  | "absent";
+export type ConditionOperator = 'equals' | 'contains' | 'present' | 'absent';
 
-export type ConditionSubject = "var" | "tag" | "contact_field";
+export type ConditionSubject = 'var' | 'tag' | 'contact_field';
 
 /**
  * Routes the run based on a predicate over the contact's tags,
@@ -167,7 +163,7 @@ export interface ConditionNodeConfig {
 }
 
 export interface SetTagNodeConfig {
-  mode: "add" | "remove";
+  mode: 'add' | 'remove';
   /** Tag UUID. The builder picks from the user's existing tags. */
   tag_id: string;
   next_node_key: string;
@@ -185,18 +181,18 @@ export type EndNodeConfig = Record<string, never>;
  * extend this union — out-of-scope for the v1 engine PR.
  */
 export type FlowNodeConfig =
-  | { node_type: "start"; config: StartNodeConfig }
-  | { node_type: "send_message"; config: SendMessageNodeConfig }
-  | { node_type: "send_buttons"; config: SendButtonsNodeConfig }
-  | { node_type: "send_list"; config: SendListNodeConfig }
-  | { node_type: "send_media"; config: SendMediaNodeConfig }
-  | { node_type: "collect_input"; config: CollectInputNodeConfig }
-  | { node_type: "condition"; config: ConditionNodeConfig }
-  | { node_type: "set_tag"; config: SetTagNodeConfig }
-  | { node_type: "handoff"; config: HandoffNodeConfig }
-  | { node_type: "end"; config: EndNodeConfig };
+  | { node_type: 'start'; config: StartNodeConfig }
+  | { node_type: 'send_message'; config: SendMessageNodeConfig }
+  | { node_type: 'send_buttons'; config: SendButtonsNodeConfig }
+  | { node_type: 'send_list'; config: SendListNodeConfig }
+  | { node_type: 'send_media'; config: SendMediaNodeConfig }
+  | { node_type: 'collect_input'; config: CollectInputNodeConfig }
+  | { node_type: 'condition'; config: ConditionNodeConfig }
+  | { node_type: 'set_tag'; config: SetTagNodeConfig }
+  | { node_type: 'handoff'; config: HandoffNodeConfig }
+  | { node_type: 'end'; config: EndNodeConfig };
 
-export type FlowNodeType = FlowNodeConfig["node_type"];
+export type FlowNodeType = FlowNodeConfig['node_type'];
 
 // ============================================================
 // Triggers (matches `flows.trigger_type` + `trigger_config`)
@@ -205,7 +201,7 @@ export type FlowNodeType = FlowNodeConfig["node_type"];
 export interface KeywordTriggerConfig {
   /** One or more keywords. Match is case-insensitive by default. */
   keywords: string[];
-  match_type?: "exact" | "contains";
+  match_type?: 'exact' | 'contains';
   case_sensitive?: boolean;
 }
 
@@ -215,9 +211,9 @@ export interface KeywordTriggerConfig {
 export type FirstInboundTriggerConfig = Record<string, never>;
 
 export type FlowTriggerConfig =
-  | { trigger_type: "keyword"; config: KeywordTriggerConfig }
-  | { trigger_type: "first_inbound_message"; config: FirstInboundTriggerConfig }
-  | { trigger_type: "manual"; config: Record<string, never> };
+  | { trigger_type: 'keyword'; config: KeywordTriggerConfig }
+  | { trigger_type: 'first_inbound_message'; config: FirstInboundTriggerConfig }
+  | { trigger_type: 'manual'; config: Record<string, never> };
 
 // ============================================================
 // DB-row shapes (read by the engine via supabaseAdmin)
@@ -233,9 +229,10 @@ export interface FlowRow {
   user_id: string;
   name: string;
   description: string | null;
-  status: "draft" | "active" | "archived";
-  trigger_type: "keyword" | "first_inbound_message" | "manual";
-  trigger_config: KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
+  status: 'draft' | 'active' | 'archived';
+  trigger_type: 'keyword' | 'first_inbound_message' | 'manual';
+  trigger_config:
+    KeywordTriggerConfig | FirstInboundTriggerConfig | Record<string, unknown>;
   entry_node_id: string | null;
   fallback_policy: FlowFallbackPolicy;
   execution_count: number;
@@ -265,12 +262,12 @@ export interface FlowRunRow {
   contact_id: string | null;
   conversation_id: string | null;
   status:
-    | "active"
-    | "completed"
-    | "handed_off"
-    | "timed_out"
-    | "paused_by_agent"
-    | "failed";
+    | 'active'
+    | 'completed'
+    | 'handed_off'
+    | 'timed_out'
+    | 'paused_by_agent'
+    | 'failed';
   current_node_key: string | null;
   last_prompt_message_id: string | null;
   vars: Record<string, unknown>;
@@ -287,20 +284,20 @@ export interface FlowRunRow {
 
 export interface FlowFallbackPolicy {
   /** What to do when the customer reply doesn't match any option. */
-  on_unknown_reply: "reprompt" | "handoff" | "ignore";
+  on_unknown_reply: 'reprompt' | 'handoff' | 'ignore';
   /** Max reprompts before applying `on_exhaust`. */
   max_reprompts: number;
   /** Stale-run sweep cutoff. */
   on_timeout_hours: number;
   /** What to do once max_reprompts has been hit. */
-  on_exhaust: "handoff" | "end";
+  on_exhaust: 'handoff' | 'end';
 }
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
-  on_unknown_reply: "reprompt",
+  on_unknown_reply: 'reprompt',
   max_reprompts: 2,
   on_timeout_hours: 24,
-  on_exhaust: "handoff",
+  on_exhaust: 'handoff',
 };
 
 // ============================================================
@@ -314,14 +311,14 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
  */
 export type ParsedInbound =
   | {
-      kind: "text";
+      kind: 'text';
       /** The user's typed message body. */
       text: string;
       /** Meta's `messages[0].id` — used for idempotency. */
       meta_message_id: string;
     }
   | {
-      kind: "interactive_reply";
+      kind: 'interactive_reply';
       /** The reply_id of the tapped button or list row. */
       reply_id: string;
       /** The visible title of the tapped option (for logging). */
@@ -352,13 +349,13 @@ export interface DispatchInboundResult {
   flow_run_id?: string;
   /** For diagnostics. */
   outcome?:
-    | "advanced"
-    | "started"
-    | "completed"
-    | "handed_off"
-    | "fallback_fired"
-    | "duplicate_inbound_ignored"
-    | "no_match";
+    | 'advanced'
+    | 'started'
+    | 'completed'
+    | 'handed_off'
+    | 'fallback_fired'
+    | 'duplicate_inbound_ignored'
+    | 'no_match';
 }
 
 // ============================================================

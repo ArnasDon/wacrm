@@ -188,7 +188,23 @@ leva o negócio, o funil e a etapa (com nome e id), a etapa de onde o card
 saiu, o contato com etiquetas e campos personalizados, e quem causou a
 mudança (`source`). O formato completo, com exemplo, está em
 [`public-api.md`](./public-api.md#delivery-payload) e na tela
-**Configurações → API → Documentação**.
+**Configurações → API → Documentação**. Três detalhes que confundem:
+
+- **`source`**: `user` é alguém nas telas do CRM; `channel` é a conexão
+  abrindo o card — na primeira mensagem do cliente **ou** no primeiro envio
+  da equipe (pela tela, pelo celular pareado ou por `POST /api/v1/messages`),
+  então não quer dizer "lead que chegou"; `automation` é o passo "Criar
+  negócio"; `system` são as escritas diretas em negócio pela API e os passos
+  "Mover card de etapa" e "Marcar ganho ou perdido" das automações.
+- **`channel_id` pode vir vazio**: é o número da conversa do contato no
+  momento do movimento, e o lead que ainda não conversou por nenhuma conexão
+  não tem um — o que chegou por webhook recebido (Typebot) ou pelo Calendly
+  e ainda não escreveu, a ficha criada pela API, o card sem contato. Quem
+  filtra por número decide o que fazer com esses.
+- **Levar um card a uma etapa de ganho ou perdido gera dois avisos** (mudou
+  de etapa e mudou de status), mas o card **criado** já numa etapa assim
+  nasce com o status e gera só `deal.created`: quem espera o "ganho" confere
+  também o `deal.status` desse aviso.
 
 **Configurações → Webhooks → Enviados → Novo endereço.** A URL precisa ser
 `https://` e alcançável da internet. Marque só os eventos que o seu fluxo
@@ -196,8 +212,18 @@ usa — o endereço novo nasce sem nenhum marcado. O segredo é mostrado uma
 única vez — guarde-o no sistema que vai **receber**, para conferir a
 assinatura. Os eventos de um endereço já criado podem ser trocados na mesma
 tela, e o botão **Enviar teste** manda um exemplo do evento escolhido (com
-`"test": true`) e mostra o que o seu sistema respondeu — é o jeito de usar o
-"Listen for test event" do n8n, que só escuta por 120 segundos.
+`"test": true`) para a URL cadastrada e mostra o que o seu sistema
+respondeu. Ele funciona com o endereço desligado e para evento que o
+endereço não assina, e não conta como falha.
+
+⚠️ **O Enviar teste não aparece no "Listen for test event" do n8n.** O
+Listen só escuta a **Test URL** (`/webhook-test/…`), e o endereço que se
+cadastra aqui é a **Production URL**. Com a Production URL e o fluxo
+publicado, o teste aparece na aba **Executions** do n8n. Para vê-lo no
+Listen, cadastre um segundo endereço, provisório, com a Test URL; clique em
+Listen e, dentro dos 120 segundos, em Enviar teste nesse endereço — e
+apague-o em seguida: fora da janela a Test URL responde 404 aos avisos
+reais, e o endereço acaba desligado.
 
 ### Conferindo a assinatura
 
@@ -207,13 +233,17 @@ prefixo `whsec_`. Confira sobre o **corpo cru**, compare em tempo
 constante, e recuse se `t` tiver mais que alguns minutos. O passo a passo
 no n8n e no Make está em **Configurações → API → Documentação**.
 
-### Duas limitações que você precisa conhecer
+### Limitações que você precisa conhecer
 
 - **Uma tentativa por evento**, com 5 segundos de limite e **sem nova
   tentativa**. Trate entrega perdida como possível e reconcilie pelos
   endpoints de leitura da [API pública](./public-api.md) quando importar.
 - **Quinze falhas seguidas desligam o endereço sozinho.** Religar pela tela
-  zera o contador. (O **Enviar teste** não conta como falha.)
+  zera o contador. (O **Enviar teste** não conta como falha.) O contador é
+  do ENDEREÇO, não do evento: uma fila de avisos de negócio represada (com o
+  agendador parado, por exemplo) sai de uma vez e, se o seu sistema estiver
+  fora do ar nessa hora, ela sozinha pode somar as quinze e desligar o
+  endereço — levando junto os avisos de mensagem que ele assina.
 - **Sem ordem garantida.** As entregas saem em paralelo: nos `deal.*`, use
   `occurred_at` para ordenar e o `id` do envelope para descartar repetição.
 

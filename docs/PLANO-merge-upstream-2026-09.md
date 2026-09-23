@@ -181,8 +181,8 @@ quebrar, sabe-se qual.
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (P1 decidida em 21/09: #229 fechado) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
 | **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
-| **1b** | Segurança depois do alvo: #588 (SSRF), #587 (automação por conta), #589 (conversa por conta) — PRs ABERTOS do mantenedor — e a mídia do Instagram (achado nosso) | Real: brechas presentes; o #587 também dava 404 ao admin não-autor | Média | Médio-baixo | — | em andamento (23/09) |
-| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream) | Moderado | Baixa | Baixo | — | pendente |
+| **1b** | Segurança depois do alvo: #588 (SSRF), #587 (automação por conta), #589 (conversa por conta) — PRs ABERTOS do mantenedor — e a mídia do Instagram (achado nosso) | Real: brechas presentes; o #587 também dava 404 ao admin não-autor | Média | Médio-baixo | — | ✅ em produção (PR #261, 23/09) |
+| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream); com a P9, a normalização do telefone digitado — dividida em 3-I a 3-IV | Moderado | Baixa | Baixo | — | 3-I no PR #262; 3-II a 3-IV pendentes |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
 | **6** | Modelos: cabeçalho de mídia (#562) e stub (#534) | Moderado | Média | Médio-baixo | — | pendente |
@@ -673,8 +673,18 @@ hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
 | **Codex no HEAD `70e77961`** (cota voltou): P2 — PATCH só com os PASSOS pulava o UPDATE e, com ele, a conferência de linhas; apagada no meio, `replaceSteps` respondia 200 com lista vazia (ou 500 pela chave estrangeira) | ✅ o PATCH só de passos também toca a linha (`updated_at`, que o gatilho `set_updated_at` regrava) — 2 casos no teste, mutante reprova |
 | **Codex, 2ª rodada (HEAD `c2b43689`)**: P2 — ainda sobrava o DELETE concorrente ENTRE o UPDATE e a troca dos passos (lista vazia → 200; cheia → 500 pela chave estrangeira) | ✅ releitura por conta DEPOIS de `replaceSteps`: sumiu = 404 (3 casos, mutante reprova). Fechar de vez pediria transação (RPC + migration) para dois admins editando e apagando a mesma automação no mesmo segundo — não compensa, aceito por escrito |
 | **Codex, 3ª rodada (HEAD `c51aeb36`)**: P2 — a conferência da conversa olhava só a CONTA: "contato A + conversa de B" da mesma conta passava, e o cliente A recebia o que aparece no fio de B | ✅ com contato, a conversa tem de ser DELE também — no disparo, em `resolveConversationId` e nos 4 envios (`conversation-scope.ts` passa a divergir do original; linha no CLAUDE.md). Conferido antes que todo caminho legítimo (webhook, Evolution, Calendly, régua, webhooks de entrada, execução manual, `send_to_number`) já passa a conversa do próprio contato. 3 mutantes reprovam |
+| **Codex, 4ª rodada (HEAD `caf9808e`)** | nenhum achado |
 
-**Resultado:** — (a preencher)
+**Resultado (23/09/2026):** PR #261 mesclado às 13:45Z (merge `09efcfa6`),
+rollout na primeira tentativa (as três etapas do `pipeline.yml` verdes).
+**Pós-deploy, só leituras anônimas da produção:** login 200; `/inbox` 307 →
+login; os crons, a API v1 sem chave e os webhooks da Evolution e da Meta sem
+credencial, 401; `GET`/`PATCH` de automação e `POST /api/automations/engine`
+sem sessão, 401; o webhook do Instagram responde 200 a um corpo sem `object`
+(é o desenho: só assinatura que não casa vale 401); `/auth/callback` sem
+código → `forgot-password?erro=link`. Ingestão conferida no banco depois do
+rollout: as quatro conexões da Evolution gravando mensagem nos minutos
+seguintes (74 nos últimos 30 min). **FASE 1b FECHADA.**
 
 ### Fase 3 — Correções pequenas e independentes
 
@@ -756,7 +766,77 @@ criada; caminho feliz → 202 (a sonda `f2-pos-deploy.mjs` da Fase 2 não envia
 nada e serve de base). ⚠️ Toca `broadcast-core.ts`, que a metade aproveitável
 do #586 (P9) também toca — se os dois entrarem na mesma fase, um PR só.
 
-**Resultado:** — (a preencher)
+**Como a fase foi dividida (23/09/2026).** Com a P9 resolvida na retomada — o
+`+` obrigatório do #586 NÃO entra (o escritório digita sem `+` e a nossa
+`digitosDoTelefone` completa o 55 de propósito); entra a metade ADITIVA dele,
+com a NOSSA régua —, a 3a deixou de ser pequena: ela passa a incluir a
+normalização do telefone DIGITADO nas telas e na API. Para cada PR ter um raio
+pequeno, a fase virou quatro, cada uma com revisão em duas lentes, preview,
+Codex e deploy próprios:
+
+| Sub-fase | O que entra | Estado |
+| --- | --- | --- |
+| **3-I** | 3b, 3c, 3d (só medir) e 3e — nada toca telefone | ✅ PR #262 |
+| **3-II** | 3a (#529) + a metade aditiva do #586 NAS TELAS: formulário e ficha do contato, importação de CSV, CSV do disparo — telefone digitado sai normalizado pela nossa régua, e o inválido é CONTADO com motivo, nunca chamado de duplicata | pendente |
+| **3-III** | a mesma normalização na ENTRADA da API (v1 de contatos, mensagens e disparos) e em `/api/cb/conversas/abrir`, com `docs/public-api.md` | pendente |
+| **3-IV** | 3f — a CONTAGEM do público do disparo (#594) truncando em 1000 (o envio já pagina) | pendente |
+
+**Resultado da 3-I (23/09/2026, PR #262):**
+
+- **3b** (cherry-pick `7f42918`): o campo "Texto enviado ao cliente" do nó
+  *Enviar mensagem* virou `textarea` de 3 linhas.
+- **3c** (cherry-pick `a4eb921`): `META_APP_SECRET` aceita vários segredos
+  separados por vírgula, cada um conferido em tempo constante; vazio ou só
+  vírgulas continua recusando tudo. Só o webhook da Meta lê a variável (o do
+  Instagram tem segredo próprio por conexão). `docs/multi-waba.md` foi
+  REESCRITO em português para a nossa realidade (a conexão nasce em
+  *Configurações → Conexões*; a tela legada que o original descreve não é
+  montada aqui) e indexado no `docs/README.md`.
+- **3d**: os 3 testes de regressão de tags do original passam contra o NOSSO
+  `contacts.ts` (o 4º, de `serializeContact`, falha pela divergência esperada
+  dos campos `instagram_*`) — fechado sem mudança; `set-contact-tags.test.ts`
+  já cobre o caso.
+- **3e**: o resolvedor LANÇA `ErroAoLerCanalMeta` quando a leitura falha — na
+  busca por id, na lista (que antes caía em silêncio no espelho legado) e no
+  próprio espelho — e os 7 chamadores já tinham `catch` que responde 500 (na
+  v1, `internal`, sem o texto do banco). Id malformado (toda a classe `22` do
+  Postgres) continua `null` → 400. **O `status` do canal pedido continua NÃO
+  conferido, e a decisão foi escrita:** a sonda de saúde grava `disconnected` a
+  qualquer erro da Meta — e só com um administrador com a tela aberta —, então
+  recusar por ele barraria disparo sobre um canal que funciona.
+
+**Verificação:** `typecheck` limpo; lint sem aviso novo nos arquivos da fase;
+suíte em Node 22 verde; portões de i18n OK. **Mutação:** os pinos do 3e
+reprovam os mutantes (erro engolido na busca por id, na lista e no espelho;
+classe 22 virando 500; texto do banco na mensagem).
+
+**Teste prático (preview `localhost:3130`, `next dev` com um `META_APP_SECRET`
+de TESTE — dois segredos fictícios):**
+
+| Caso | Resultado |
+| --- | --- |
+| Webhook da Meta LOCAL, corpo vazio assinado com o 1º segredo / com o 2º | 200 / 200 |
+| Assinado com segredo errado / com a lista inteira como segredo / sem assinatura | 401 / 401 / 401 |
+| 3b: fluxo rascunho "TESTE Fase 3b — apagar" (201), nó *Enviar mensagem* adicionado sem salvar | o campo é `textarea` de 3 linhas; fluxo apagado (200 → 404); banco: 0 fluxos de teste, 0 nós órfãos |
+| 3e: sincronizar modelos com `channel_id` malformado / inexistente | 400 / 400, nada chamado na Meta |
+
+O 500 por erro de banco se prova no unitário — não se derruba o banco da
+produção para vê-lo.
+
+**Revisão em duas lentes:** nenhum P0/P1.
+
+| Achado | Destino |
+| --- | --- |
+| P2 (Lente 2, MEDIDO em bash) — `META_APP_SECRET=a, b` no `crm.env`, que o shell carrega com `set -a; .`, faz a variável SUMIR: o espaço termina a atribuição e todo webhook da Meta vira 401 | ✅ a doc manda escrever a lista SEM espaço e conferir com `printenv` dentro do contêiner (`.env.local.example`, `docs/multi-waba.md`, `CLAUDE.md`) |
+| P2 (Lente 1) — o segredo não é amarrado ao número: um app da lista pode assinar entrega que diz ser de qualquer número | ✅ aviso escrito: só apps de confiança; a produção tem um app só |
+| P3 — o motivo escrito para não conferir o `status` era FALSO | ✅ motivo corrigido (a sonda grava `disconnected` a qualquer erro); a decisão ficou |
+| P3 — o texto do PostgREST chegava ao aviso na tela das rotas de modelo | ✅ mensagem genérica; o detalhe vai para o log |
+| P3 — só `22P02` virava 400 | ✅ toda a classe `22` |
+| P3 — "setup C" sem referência; CHANGELOG; lista de docs entregues no `CLAUDE.md`; item 10 do `multicanal-plano.md`; `META_APP_ID` descrito como se fosse medido | ✅ |
+| Aceitos por escrito | as rotas de disparo e de retomada mostram "Internal server error" no lugar de "conecte um número" (mais honesto); na v1 o 500 é o contrato de erro interno |
+| **Codex no HEAD `e583b291`** | nenhum achado |
+
+**Pós-deploy:** — (a preencher)
 
 ### Fase 4 — Fluxos: `{{vars}}` em botões e listas
 
@@ -965,3 +1045,5 @@ de ser `80c3f9a` e passa a ser o commit que os contém — e as medições da se
 | 21/09/2026 | 2 (fecho) | Codex SEM COTA no HEAD → terceira revisão independente no lugar dele: nenhum P0/P1; os 2 P2 e 3 P3 corrigidos (pino do salto núcleo → resolvedor, `null` = ausente, ordem da validação, mensagem do `verify-schema`, doc), 1 P3 corrigido em parte (o pino do filtro por conta entrou; o `error` descartado e o `status` não conferido de `resolveMetaChannel` viraram cartão) e 2 P3 aceitos por escrito. Merge 17:27Z, rollout 17:33Z na primeira tentativa. Pós-deploy: a sonda inverteu (rota antiga → rota nova; `GET` sem → com `channel_id`), saúde e ingestão conferidas, zero chaves ativas. **Operador pediu pausa antes da Fase 3.** |
 | 21/09/2026 | 0 (P1) | **#229 FECHADO** por ordem do operador, com comentário explicando por que não podia ser mesclado (origem = o `main` do próprio original; conteúdo que muda sozinho; 19 PRs num deploy só) e apontando para este plano. A worktree fica de pé para as correções seguirem por aqui. Na conferência, o original tinha ANDADO: `upstream/main` = `aee1b01f`, 2 commits depois do alvo — o #586 (exige `+` e código do país; 21 arquivos, vários da Fase 3a) virou a decisão P9. |
 | 22/09/2026 | 3 (plano) | A pedido do operador, o cartão do `resolveMetaChannel` (P3 da revisão final do #242) entrou no plano como **item 3e**, depois de confirmado no `origin/main` (`ba5612ef`): o `error` descartado na busca por id, na lista e no espelho, e o `status` não conferido. Levantados os 7 chamadores (6 arquivos), todos traduzindo `null` em 400. Nada implementado — a pausa antes da Fase 3 continua. |
+| 23/09/2026 | 1b | Acrescentada a pedido do operador ("siga agora com todo o plano"): os 3 PRs de segurança ABERTOS do mantenedor valiam aqui, e o download da mídia do Instagram tinha SSRF com leitura. O #587 foi resolvido no meio da fase por OUTRA sessão (#260); ficou a versão dela, e esta fase acrescentou o que faltava. Quatro rodadas do Codex (3 com P2, todos corrigidos; a 4ª limpa). Mesclada e publicada; pós-deploy conferido. |
+| 23/09/2026 | 3-I | A P9 resolvida (a metade aditiva do #586, com a nossa régua) partiu a Fase 3 em quatro. 3b/3c/3e entraram, a 3d fechou sem mudança. A Lente 2 MEDIU em bash que `a, b` no `crm.env` apaga o `META_APP_SECRET` inteiro (401 em todo webhook) → a doc manda escrever sem espaço. Codex limpo na 1ª rodada. |

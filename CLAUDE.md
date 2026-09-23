@@ -85,7 +85,8 @@ Supabase (Postgres + Auth + Storage + RLS) · Meta Cloud API.
   CRM via MCP. Rodar `npm` dentro dele, não na raiz.
 - `docs/` — a documentação ENTREGUE a quem instala o sistema: `README.md`
   (índice), `INSTALACAO.md` (do zero até o WhatsApp conectado), `ATUALIZAR.md`,
-  `docker.md`, `public-api.md` e `mcp.md`. ⚠️ Até 2026-09-08 esta linha dizia
+  `docker.md`, `public-api.md`, `mcp.md`, `webhooks.md` e `multi-waba.md`
+  (vários números oficiais; entrou na Fase 3c do plano do upstream). ⚠️ Até 2026-09-08 esta linha dizia
   que a doc de self-host vivia no site do projeto ORIGINAL — verdade enquanto
   éramos só um fork de uso interno, e mentira a partir do momento em que o
   código passou a ser instalado por outra pessoa. O `SETUP-PRODUCAO.md` foi
@@ -7606,6 +7607,14 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
 
 - **Meta Cloud API (WhatsApp Business):** webhook em `src/app/api` valida
   assinatura HMAC-SHA256 com `META_APP_SECRET` (sem ele, rejeita todo request).
+  Desde a Fase 3c do plano do upstream (23/09/2026) ele aceita VÁRIOS segredos,
+  separados por vírgula, para WABAs em apps diferentes da Meta
+  (`docs/multi-waba.md`). ⚠️ **Sem espaço depois da vírgula no `crm.env`**:
+  carregado pelo shell (`set -a; . /root/crm.env`), `a, b` faz a variável
+  SUMIR — todo webhook da Meta vira 401 com o site respondendo 200 (medido na
+  revisão da fase). Conferir com `printenv META_APP_SECRET | wc -c` no
+  contêiner. ⚠️ O segredo não é amarrado ao número: qualquer um da lista
+  assina entrega para qualquer número da instalação — só apps de confiança.
   Tokens do WhatsApp são gravados criptografados (AES-256-GCM) com
   `ENCRYPTION_KEY` — **rotacionar essa chave invalida todos os tokens salvos**.
 - **Supabase:** Postgres + Auth + Storage + RLS. `SUPABASE_SERVICE_ROLE_KEY`

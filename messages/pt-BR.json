@@ -1178,6 +1178,7 @@
       "deletePipelineBtn": "Excluir funil",
       "pipelineName": "Nome do funil",
       "stages": "Etapas",
+      "falhouAoCarregar": "Não foi possível carregar as etapas. Feche e abra de novo.",
       "newStageNamePlaceholder": "Nome da nova etapa",
       "add": "Adicionar",
       "createNewPipeline": "Criar um novo funil",

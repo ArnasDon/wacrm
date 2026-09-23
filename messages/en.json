@@ -1185,6 +1185,7 @@
       "deletePipelineBtn": "Delete Pipeline",
       "pipelineName": "Pipeline Name",
       "stages": "Stages",
+      "falhouAoCarregar": "Couldn't load the stages. Close and open it again.",
       "newStageNamePlaceholder": "New stage name",
       "add": "Add",
       "createNewPipeline": "Create a new pipeline",

@@ -380,12 +380,12 @@ export function PainelDoContato({
   }, [deals, ultimoNegocioMexido]);
 
   /**
-   * ⚠️ Etapas do DealForm MEMOIZADAS, e a identidade é o ponto: o efeito de
-   * reset do formulário tem `stages` nas dependências, e um filtro inline
-   * criava array NOVO a cada render do painel — uma nota chegando por
-   * realtime, com o Sheet aberto, re-rodava o reset e apagava o que o
-   * operador tinha digitado (título, valor, anotação). O quadro de Funis
-   * nunca sofreu disso porque passa o próprio estado, estável.
+   * Etapas do DealForm MEMOIZADAS. Até 23/09/2026 a identidade era o ponto:
+   * o reset do formulário rodava a cada array novo de `stages`, e uma nota
+   * chegando por realtime, com o Sheet aberto, apagava o que o operador tinha
+   * digitado. Hoje o reset é por SESSÃO (`sessaoRef` no DealForm) e ignora a
+   * identidade — o quadro de Funis sofria do mesmo mal a cada volta ao app.
+   * O memo fica: poupa o filtro a cada render do painel.
    */
   const stagesDoForm = useMemo(() => {
     if (dealFormAberto === null) return [];

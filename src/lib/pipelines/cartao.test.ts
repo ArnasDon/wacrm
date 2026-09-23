@@ -4,6 +4,8 @@ import type { Tag } from "@/types";
 import {
   conversaDoCard,
   juntarConteudo,
+  manterMovimentosLocais,
+  movidosParaALeitura,
   normalizarDealDoQuadro,
   temConteudo,
   type CardDoQuadro,
@@ -226,5 +228,65 @@ describe("juntarConteudo — o conteúdo por id sobre a lista enxuta", () => {
       ["d1", completo("d1")],
     ]);
     expect(juntarConteudo(lista, ["d1", "d3"], conteudo).map((c) => c.id)).toEqual(["d1", "d2", "d3"]);
+  });
+});
+
+describe("manterMovimentosLocais — a recarga que chega depois de um arrasto", () => {
+  function card(id: string, extras: Partial<CardSemConteudo> = {}): CardSemConteudo {
+    return {
+      id,
+      stage_id: "s1",
+      title: `Card ${id}`,
+      value: 100,
+      status: "open",
+      created_at: "2026-09-01T00:00:00+00:00",
+      updated_at: "2026-09-01T00:00:00+00:00",
+      ...extras,
+    };
+  }
+
+  it("o card movido fica com a etapa e o status da tela; o resto vem da resposta", () => {
+    const resposta = [card("d1", { title: "Novo título" }), card("d2", { value: 5 })];
+    const atual = [card("d1", { stage_id: "s2", status: "won" }), card("d2")];
+    const junto = manterMovimentosLocais(resposta, atual, new Set(["d1"]));
+    expect(junto[0]).toMatchObject({ stage_id: "s2", status: "won", title: "Novo título" });
+    expect(junto[1]).toBe(resposta[1]);
+  });
+
+  it("sem card movido, devolve a resposta como veio", () => {
+    const resposta = [card("d1")];
+    expect(manterMovimentosLocais(resposta, [card("d1", { stage_id: "s2" })], new Set())).toBe(resposta);
+  });
+
+  it("o card movido que a resposta não traz fica de fora — ela diz o que existe no funil", () => {
+    const junto = manterMovimentosLocais([card("d2")], [card("d1", { stage_id: "s2" }), card("d2")], new Set(["d1"]));
+    expect(junto.map((c) => c.id)).toEqual(["d2"]);
+  });
+
+  it("mantém o conteúdo que a resposta trouxe", () => {
+    const completo = normalizarDealDoQuadro(dealCru({ id: "d1", contact: contato() }));
+    const [junto] = manterMovimentosLocais([completo], [card("d1", { stage_id: "s2" })], new Set(["d1"]));
+    expect(temConteudo(junto!)).toBe(true);
+    expect(junto!.stage_id).toBe("s2");
+  });
+});
+
+describe("movidosParaALeitura — quais arrastos a leitura ainda precisa manter", () => {
+  it("arrasto não confirmado é mantido por qualquer leitura, mesmo a que partiu depois do gesto", () => {
+    const marcas = new Map([["x", { passo: 1, confirmado: false }]]);
+    expect(movidosParaALeitura(marcas, 5)).toEqual({ manter: new Set(["x"]), aposentar: [] });
+  });
+
+  it("confirmado depois de a leitura partir: mantido", () => {
+    const marcas = new Map([["x", { passo: 3, confirmado: true }]]);
+    expect(movidosParaALeitura(marcas, 2)).toEqual({ manter: new Set(["x"]), aposentar: [] });
+  });
+
+  it("confirmado antes de a leitura partir (ou no mesmo passo): a leitura já traz a etapa nova, e a marca sai", () => {
+    const marcas = new Map([
+      ["x", { passo: 2, confirmado: true }],
+      ["y", { passo: 1, confirmado: true }],
+    ]);
+    expect(movidosParaALeitura(marcas, 2)).toEqual({ manter: new Set(), aposentar: ["x", "y"] });
   });
 });

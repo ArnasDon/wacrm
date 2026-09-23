@@ -26,18 +26,27 @@ import type { SupabaseClient } from '@supabase/supabase-js'
  * "not yours" — the engines surface it into automation logs the
  * triggering user can read, and distinguishing the two would confirm
  * whether a given UUID exists.
+ *
+ * ⚠️ NOSSO (Codex, 3ª rodada do PR #261): com `contactId`, a conversa tem
+ * de ser DAQUELE contato também. Só a conta deixava passar o par "contato A
+ * + conversa de B" da mesma conta — o envio usa o telefone de A e grava a
+ * mensagem e a prévia no fio de B: um cliente recebe o que aparece na
+ * conversa de outro. Todo chamador legítimo já passa a conversa do próprio
+ * contato. Este arquivo DIVERGE do original por isto: num merge, fica o nosso.
  */
 export async function assertConversationInAccount(
   db: SupabaseClient,
   conversationId: string,
   accountId: string,
+  contactId?: string | null,
 ): Promise<void> {
-  const { data, error } = await db
+  let consulta = db
     .from('conversations')
     .select('id')
     .eq('id', conversationId)
     .eq('account_id', accountId)
-    .maybeSingle()
+  if (contactId) consulta = consulta.eq('contact_id', contactId)
+  const { data, error } = await consulta.maybeSingle()
   if (error) {
     throw new Error(`conversation lookup failed: ${error.message}`)
   }

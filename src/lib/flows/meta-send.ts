@@ -121,7 +121,7 @@ export async function engineSendText(
   // `POST /api/automations/engine` copia o contexto do corpo: um admin de
   // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
   // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
+  await assertConversationInAccount(db, args.conversationId, args.accountId, args.contactId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
@@ -286,7 +286,7 @@ export async function engineSendMedia(
   // `POST /api/automations/engine` copia o contexto do corpo: um admin de
   // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
   // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
-  await assertConversationInAccount(db, args.conversationId, args.accountId)
+  await assertConversationInAccount(db, args.conversationId, args.accountId, args.contactId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
@@ -500,7 +500,7 @@ async function sendInteractiveViaMeta(
   // `POST /api/automations/engine` copia o contexto do corpo: um admin de
   // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
   // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
-  await assertConversationInAccount(db, input.conversationId, input.accountId)
+  await assertConversationInAccount(db, input.conversationId, input.accountId, input.contactId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".

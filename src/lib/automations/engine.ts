@@ -316,12 +316,17 @@ export async function dispararAutomacoes(
     // (Os envios conferem de novo, e `resolveConversationId` também — a
     // retomada reusa um contexto gravado.)
     if (input.context?.conversation_id) {
-      const { data: conv, error: convErr } = await db
+      // E do CONTATO, quando há um (Codex, 3ª rodada do #261): só a conta
+      // deixava passar "contato A + conversa de B" da mesma conta — o envio
+      // sairia para o telefone de A e seria gravado no fio de B.
+      let consultaDaConversa = db
         .from('conversations')
         .select('id')
         .eq('id', input.context.conversation_id)
-        .eq('account_id', input.accountId)
-        .maybeSingle();
+        .eq('account_id', input.accountId);
+      if (input.contactId)
+        consultaDaConversa = consultaDaConversa.eq('contact_id', input.contactId);
+      const { data: conv, error: convErr } = await consultaDaConversa.maybeSingle();
       if (convErr) {
         console.error('[automations] conversation ownership check failed:', convErr);
         return { ...r, erro: 'conversation ownership check failed' };
@@ -2294,12 +2299,14 @@ async function resolveConversationId(args: ExecuteArgs): Promise<string> {
     // atrás, e este é o último ponto antes de uma escrita em service-role
     // presa a ele. A mensagem é a mesma para "não existe" e "é de outra
     // conta" — ela vai para o registro da automação.
-    const { data, error } = await supabaseAdmin()
+    // E do CONTATO da execução, quando há um (Codex, 3ª rodada do #261).
+    let consulta = supabaseAdmin()
       .from('conversations')
       .select('id')
       .eq('id', fromCtx)
-      .eq('account_id', args.automation.account_id)
-      .maybeSingle();
+      .eq('account_id', args.automation.account_id);
+    if (args.contactId) consulta = consulta.eq('contact_id', args.contactId);
+    const { data, error } = await consulta.maybeSingle();
     if (error) throw new Error(`conversation lookup failed: ${error.message}`);
     if (!data?.id)
       throw new Error('conversation does not belong to this account');

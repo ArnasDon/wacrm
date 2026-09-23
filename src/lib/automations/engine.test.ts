@@ -50,6 +50,8 @@ const h = vi.hoisted(() => ({
      * (upstream #589). Ausente = da conta dos testes (`acct-1`).
      */
     contaDaConversa: {} as Record<string, string>,
+    /** De QUAL contato é cada conversa (Codex, 3ª rodada do #261). Ausente = de qualquer um. */
+    contatoDaConversa: {} as Record<string, string>,
     /** Mensagens do CLIENTE gravadas depois de a espera ser estacionada. */
     respostasDesde: [] as { id: string }[],
     erroNasRespostas: null as string | null,
@@ -136,7 +138,11 @@ vi.mock('./admin-client', () => {
       if (porId) {
         const dona = state.contaDaConversa[String(porId[2])] ?? 'acct-1';
         const conta = ops.filters.find(([op, k]) => op === 'eq' && k === 'account_id');
-        return { data: !conta || conta[2] === dona ? { id: porId[2] } : null, error: null };
+        const donoContato = state.contatoDaConversa[String(porId[2])];
+        const contato = ops.filters.find(([op, k]) => op === 'eq' && k === 'contact_id');
+        const casaConta = !conta || conta[2] === dona;
+        const casaContato = !contato || donoContato === undefined || contato[2] === donoContato;
+        return { data: casaConta && casaContato ? { id: porId[2] } : null, error: null };
       }
       return { data: state.conversasDoContato.length > 0 ? state.conversasDoContato : null, error: null };
     }
@@ -486,6 +492,7 @@ beforeEach(() => {
   h.state.erroNosMovimentos = null;
   h.state.conversasDoContato = [];
   h.state.contaDaConversa = {};
+  h.state.contatoDaConversa = {};
   h.state.respostasDesde = [];
   h.state.erroNasRespostas = null;
   h.state.ultimoMovimento = null;
@@ -1313,6 +1320,43 @@ describe('conversa de outra conta no contexto (upstream #589)', () => {
 
     expect(engineSendText).not.toHaveBeenCalled();
     // E é ESTA guarda que barra — não outra coisa que tenha parado a execução.
+    expect(JSON.stringify(h.state.logUpdates)).toContain(
+      'conversation does not belong to this account'
+    );
+  });
+
+  it('⚠️ contato A + conversa de B, da MESMA conta: o disparo recusa (Codex, 3ª rodada)', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.contatoDaConversa = { 'conv-de-b': 'c2' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [sendStep({ text: 'oi' })];
+
+    const r = await dispararAutomacoes({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { conversation_id: 'conv-de-b' },
+    });
+
+    expect(r.erro).toBe('conversation not in account');
+    expect(engineSendText).not.toHaveBeenCalled();
+  });
+
+  it('⚠️ contato A + conversa de B pela execução direta: barrado em resolveConversationId', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.contatoDaConversa = { 'conv-de-b': 'c2' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [sendStep({ text: 'oi' })];
+
+    await runAutomationById({
+      automationId: 'a1',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-de-b' },
+      triggerType: 'new_message_received',
+    });
+
+    expect(engineSendText).not.toHaveBeenCalled();
     expect(JSON.stringify(h.state.logUpdates)).toContain(
       'conversation does not belong to this account'
     );

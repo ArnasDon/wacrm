@@ -11,6 +11,8 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 
 const h = vi.hoisted(() => ({
   donaDaConversa: 'acc-1',
+  /** O contato dono da conversa (Codex, 3ª rodada do #261). */
+  contatoDaConversa: 'contact-1',
   mensagens: [] as Record<string, unknown>[],
   previas: [] as [string, unknown][][],
 }))
@@ -26,8 +28,12 @@ vi.mock('./admin-client', () => ({
           if (tabela === 'contacts') return { data: { id: 'contact-1', phone: '+5583988887777' }, error: null }
           if (tabela === 'conversations') {
             const conta = filtros.find(([k]) => k === 'account_id')
+            const contato = filtros.find(([k]) => k === 'contact_id')
             const id = filtros.find(([k]) => k === 'id')?.[1]
-            return { data: !conta || conta[1] === h.donaDaConversa ? { id } : null, error: null }
+            const casa =
+              (!conta || conta[1] === h.donaDaConversa) &&
+              (!contato || contato[1] === h.contatoDaConversa)
+            return { data: casa ? { id } : null, error: null }
           }
           return { data: null, error: null }
         },
@@ -90,6 +96,7 @@ const ENVIOS = [
 
 beforeEach(() => {
   h.donaDaConversa = 'acc-1'
+  h.contatoDaConversa = 'contact-1'
   h.mensagens = []
   h.previas = []
 })
@@ -102,6 +109,13 @@ describe('envio do robô — a conversa tem de ser desta conta (upstream #589)',
       expect(e.provedor).not.toHaveBeenCalled()
       expect(h.mensagens).toEqual([])
       expect(h.previas).toEqual([])
+    })
+
+    it(`${e.nome}: conversa de OUTRO contato da mesma conta é recusada antes do provedor`, async () => {
+      h.contatoDaConversa = 'outro-contato'
+      await expect(e.enviar()).rejects.toThrow(/conversation not found for this account/)
+      expect(e.provedor).not.toHaveBeenCalled()
+      expect(h.mensagens).toEqual([])
     })
 
     it(`${e.nome}: conversa desta conta sai, e a prévia leva o recorte de conta`, async () => {

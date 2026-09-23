@@ -41,6 +41,9 @@
  *     repete linha ou perde a NOVA. Quem precisar de velocidade aqui troca
  *     OFFSET por chave (keyset), não paraleliza.
  *
+ * ⚠️ Recorte que MUDA enquanto se lê pede `buscarPorChave`, não este laço —
+ * ver lá.
+ *
  * ⚠️ `src/lib/funil/carregar.ts` tem uma cópia deste laço e NÃO foi migrada
  * de propósito: ela faz o parse de cada linha (`lerLinha`) dentro do laço e
  * descarta a carga no primeiro desvio de forma, o que é uma garantia a mais
@@ -117,6 +120,41 @@ export async function buscarPaginado<T>(
         ? { linhas: acumulado, erro: null, motivo: null }
         : { linhas: null, erro: null, motivo: "incompleto" };
     }
+  }
+
+  return { linhas: null, erro: null, motivo: "teto" };
+}
+
+/**
+ * A variante POR CHAVE (keyset): cada página pede as linhas de `id` maior que
+ * o último visto, em ordem de `id`.
+ *
+ * ⚠️⚠️ É a que serve quando o RECORTE muda enquanto se lê — o
+ * `unread_count > 0` do contador do menu muda a cada conversa lida. Por
+ * OFFSET, a linha que SAI do recorte na 1ª página empurra uma linha para fora
+ * da 2ª, e ela não vem em página nenhuma; a contagem nova ainda fecha, e a
+ * leitura parece completa (Codex, PR #247). Por chave, entrar ou sair do
+ * recorte não desloca as outras linhas. Não precisa de `count`: a página
+ * seguinte começa depois do último visto, então página curta é o fim.
+ *
+ * `pagina(depoisDe)` tem de ordenar por `id` ASCENDENTE, limitar a `PAGINA`
+ * e, com `depoisDe` preenchido, filtrar `.gt('id', depoisDe)`.
+ */
+export async function buscarPorChave<T extends { id: string }>(
+  pagina: (
+    depoisDe: string | null,
+  ) => PromiseLike<{ data: T[] | null; error: ErroDoPostgrest | null }>,
+): Promise<ResultadoPaginado<T>> {
+  const acumulado: T[] = [];
+  let depoisDe: string | null = null;
+
+  for (let n = 0; n < MAX_PAGINAS; n++) {
+    const { data, error } = await pagina(depoisDe);
+    if (error || !data) return { linhas: null, erro: error ?? null, motivo: "erro" };
+
+    acumulado.push(...data);
+    if (data.length < PAGINA) return { linhas: acumulado, erro: null, motivo: null };
+    depoisDe = data[data.length - 1].id;
   }
 
   return { linhas: null, erro: null, motivo: "teto" };

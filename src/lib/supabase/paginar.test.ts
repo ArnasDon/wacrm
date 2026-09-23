@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buscarPaginado,
+  buscarPorChave,
   MAX_PAGINAS,
   PAGINA,
   type RespostaDaPagina,
@@ -159,5 +160,82 @@ describe("buscarPaginado", () => {
     expect(r.linhas).toBeNull();
     expect(r.motivo).toBe("teto");
     expect(chamadas).toHaveLength(MAX_PAGINAS);
+  });
+});
+
+describe("buscarPorChave", () => {
+  /** Um "banco" com recorte (`nao_lida > 0`) e a página POR CHAVE de verdade. */
+  function banco(n: number) {
+    const tabela = linhas(0, n).map((l) => ({ ...l, nao_lida: 1 }));
+    const pedidos: (string | null)[] = [];
+    const pagina = async (depoisDe: string | null) => {
+      pedidos.push(depoisDe);
+      const data = tabela
+        .filter((l) => l.nao_lida > 0 && (depoisDe === null || l.id > depoisDe))
+        .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+        .slice(0, PAGINA)
+        .map(({ id }) => ({ id }));
+      return { data, error: null };
+    };
+    return { tabela, pedidos, pagina };
+  }
+
+  it("pede cada página depois do último id visto, e para na página curta", async () => {
+    const { pagina, pedidos } = banco(2 * PAGINA + 5);
+    const r = await buscarPorChave(pagina);
+
+    expect(r.motivo).toBeNull();
+    expect(r.linhas).toHaveLength(2 * PAGINA + 5);
+    expect(pedidos).toEqual([
+      null,
+      `r${String(PAGINA - 1).padStart(6, "0")}`,
+      `r${String(2 * PAGINA - 1).padStart(6, "0")}`,
+    ]);
+  });
+
+  // ⚠️⚠️ O caso do Codex no #247: uma conversa da 1ª página é LIDA entre dois
+  // pedidos. Por OFFSET, a 2ª página começaria uma linha adiante e pularia
+  // uma não lida que nunca saiu do recorte.
+  it("CRÍTICO: linha que sai do recorte no meio da leitura não empurra outra para fora", async () => {
+    const { tabela, pagina } = banco(2 * PAGINA + 5);
+    let pedidos = 0;
+    const r = await buscarPorChave(async (depoisDe) => {
+      const resposta = await pagina(depoisDe);
+      pedidos += 1;
+      if (pedidos === 1) tabela[10].nao_lida = 0; // lida depois da 1ª página
+      return resposta;
+    });
+
+    const vieram = new Set(r.linhas?.map((l) => l.id));
+    const aindaNaoLidas = tabela.filter((l) => l.nao_lida > 0);
+    expect(aindaNaoLidas).toHaveLength(2 * PAGINA + 4);
+    for (const l of aindaNaoLidas) expect(vieram.has(l.id)).toBe(true);
+  });
+
+  it("devolve o erro do PostgREST, nunca a lista parcial", async () => {
+    let n = 0;
+    const r = await buscarPorChave<Linha>(async () => {
+      n += 1;
+      return n === 1
+        ? { data: linhas(0, PAGINA), error: null }
+        : { data: null, error: { message: "timeout" } };
+    });
+
+    expect(r.linhas).toBeNull();
+    expect(r.motivo).toBe("erro");
+    expect(r.erro?.message).toBe("timeout");
+  });
+
+  it("admite o teto em vez de recortar em silêncio", async () => {
+    let n = 0;
+    const r = await buscarPorChave<Linha>(async () => {
+      const data = linhas(n * PAGINA, PAGINA);
+      n += 1;
+      return { data, error: null };
+    });
+
+    expect(r.linhas).toBeNull();
+    expect(r.motivo).toBe("teto");
+    expect(n).toBe(MAX_PAGINAS);
   });
 });

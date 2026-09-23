@@ -1,7 +1,7 @@
 "use client";
 
 import { funisVisiveis } from "@/lib/perfis/escopo";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
@@ -107,12 +107,33 @@ export function DealForm({
   const [deleting, setDeleting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  // Reset the form fields every time the sheet opens or its input
-  // props change. This is a legitimate prop-driven sync; the rule is
-  // over-cautious here, hence the block-level disable.
+  // Reset the form fields every time the sheet opens on a new deal. This is
+  // a legitimate prop-driven sync; the rule is over-cautious here, hence the
+  // block-level disable.
+  // ⚠️ Só uma sessão NOVA zera o rascunho: abrir, ou trocar de negócio com o
+  // formulário aberto. `stages` muda de identidade a cada recarga do quadro —
+  // a da volta ao app inclusive —, e com ele nas dependências voltar do
+  // WhatsApp apagava o que tinha sido digitado. O negócio novo leva a etapa
+  // de partida na chave, para a lista de etapas que chega depois ainda a
+  // semear.
+  const sessaoRef = useRef<string | null>(null);
+  // O negócio como estava quando a sessão começou: é contra ELE que o
+  // salvamento mede o que o operador mudou. A prop pode trocar por uma cópia
+  // mais nova do mesmo negócio no meio da sessão (a Lista busca o negócio a
+  // cada toque no lápis), e o rascunho continua sendo o da cópia antiga.
+  const dealDaSessaoRef = useRef<Deal | null>(null);
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      sessaoRef.current = null;
+      return;
+    }
+    const sessao = deal
+      ? `negocio:${deal.id}`
+      : `novo:${pipelineId}:${defaultStageId || stages[0]?.id || ""}:${defaultContactId ?? ""}`;
+    if (sessaoRef.current === sessao) return;
+    sessaoRef.current = sessao;
+    dealDaSessaoRef.current = deal ?? null;
     setConfirmDelete(false);
     if (deal) {
       setTitle(deal.title);
@@ -225,9 +246,22 @@ export function DealForm({
     };
 
     if (deal) {
+      // ⚠️ Funil e etapa só vão quando o operador os MUDOU aqui, e vão juntos
+      // (uma transferência é um UPDATE só). O quadro não tem realtime: o
+      // `deal` de onde o formulário partiu pode ser de antes de um arrasto,
+      // de outro operador ou de uma automação ter movido o card, e regravar
+      // a etapa velha ao salvar só a anotação levava o card de volta — e
+      // disparava as automações da etapa de onde ele já tinha saído.
+      const origem = dealDaSessaoRef.current ?? deal;
+      const { pipeline_id, stage_id, ...resto } = payload;
+      const moveu = pipeline_id !== origem.pipeline_id || stage_id !== origem.stage_id;
       const { error } = await supabase
         .from("deals")
-        .update({ ...payload, ...escritaDoTituloManual(deal.title, title, agora) })
+        .update({
+          ...resto,
+          ...(moveu ? { pipeline_id, stage_id } : {}),
+          ...escritaDoTituloManual(origem.title, title, agora),
+        })
         .eq("id", deal.id);
       if (error) {
         toast.error(t("toastFailedSave"));

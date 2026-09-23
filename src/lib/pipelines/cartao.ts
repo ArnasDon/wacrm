@@ -120,6 +120,61 @@ export function juntarConteudo(
 }
 
 /**
+ * A marca que um arrasto deixa no card: o passo em que foi feita (um contador
+ * que só sobe) e se o banco já CONFIRMOU a gravação.
+ */
+export interface MarcaDeArrasto {
+  passo: number;
+  confirmado: boolean;
+}
+
+/**
+ * Quais cards a leitura que partiu no passo `inicio` precisa manter como
+ * estão na tela, e quais marcas ela aposenta.
+ *
+ * - Arrasto ainda NÃO confirmado: sempre mantido. A leitura pode ter partido
+ *   depois do gesto e lido o card antes de a gravação chegar ao banco.
+ * - Confirmado DEPOIS de a leitura partir: mantido, pelo mesmo motivo.
+ * - Confirmado ANTES: a leitura já traz a etapa nova, e a marca sai.
+ */
+export function movidosParaALeitura(
+  marcas: ReadonlyMap<string, MarcaDeArrasto>,
+  inicio: number,
+): { manter: Set<string>; aposentar: string[] } {
+  const manter = new Set<string>();
+  const aposentar: string[] = [];
+  for (const [id, marca] of marcas) {
+    if (marca.confirmado && marca.passo <= inicio) aposentar.push(id);
+    else manter.add(id);
+  }
+  return { manter, aposentar };
+}
+
+/**
+ * A recarga que chega depois de um arrasto feito com ela no ar. A etapa e o
+ * status dos cards `movidos` saem de `atual` (o que o arrasto pôs na tela, com
+ * o status que o banco devolveu), e todo o resto sai da `resposta`. A resposta
+ * pode ter lido o card antes de o arrasto gravar, e sem isto o card voltava à
+ * coluna antiga — e o lápis, aberto sobre ele, regravava a etapa velha.
+ *
+ * Card movido que a resposta não traz fica de fora: ela é a verdade sobre o
+ * que existe no funil (apagado, ou levado para outro).
+ */
+export function manterMovimentosLocais(
+  resposta: CardDoQuadro[],
+  atual: readonly CardDoQuadro[],
+  movidos: ReadonlySet<string>,
+): CardDoQuadro[] {
+  if (movidos.size === 0) return resposta;
+  const local = new Map<string, CardDoQuadro>();
+  for (const card of atual) if (movidos.has(card.id)) local.set(card.id, card);
+  return resposta.map((card) => {
+    const aqui = local.get(card.id);
+    return aqui ? { ...card, stage_id: aqui.stage_id, status: aqui.status } : card;
+  });
+}
+
+/**
  * Entre as conversas embutidas, qual representa o card. Mais de uma linha só
  * acontece em sobra que a 036 não pegou — aí vale a que casa com o vínculo
  * gravado no negócio; sem casar, a de conversa mais recente.

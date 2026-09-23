@@ -168,6 +168,58 @@ deploy** (`Dockerfile`, `docker-stack.yml`, `.github/workflows/pipeline.yml`,
 string literal onde nós temos `t('chave')` — ao resolver, manter a nossa forma e
 levar o texto novo dele para os **dois** dicionários).
 
+**Decisões fixadas no merge de 2026-09-22** (upstream #533–#596, 43 commits):
+
+- ⚠️ **A regra deste merge foi "o `main` vence", e por ARQUIVO INTEIRO.** Os 43
+  conflitos foram resolvidos com `git checkout --ours <arquivo>`, nunca
+  costurando os dois lados. Tentou-se antes `git merge -X ours`, que resolve
+  TRECHO a trecho: onde os dois lados reestruturaram regiões diferentes do
+  mesmo arquivo, o resultado não era de ninguém — imports de um lado e código
+  do outro, `try` sem `catch`, variável declarada duas vezes. Deu 37 erros de
+  typecheck que só pioravam a cada conserto. Por arquivo inteiro deu 5. **Não
+  usar `-X ours` neste repositório.**
+- ⚠️ **Resolver por arquivo não basta: o upstream renomeia coisas em arquivos
+  que NÃO conflitam.** Eles entram em silêncio e o nosso código fica chamando
+  o nome antigo. Os três casos desta rodada, e o critério:
+  - `ensureImageHeaderHandle` → `ensureMediaHeaderHandle`
+    (`template-header-handle.ts`): **ADOTADO**. Mesma assinatura, e `media` é
+    superconjunto de `image`; três arquivos já usavam o nome novo, só o nosso
+    `templates/[id]/route.ts` ficou para trás.
+  - `formatRelative(iso, nunca: string)` → `(iso, t: Translator)`: **NOSSO**.
+    Mudança de comportamento, não renomeação — `automations/[id]/logs/page.tsx`
+    voltou para a versão do `main`.
+  - `dedupeByPhone` ganhando `invalid` (o conserto #586 deles, que recusa
+    número sem código de país): **NOSSO**, e isto é uma PERDA consciente —
+    ver abaixo.
+- ⚠️ **O conserto #586 do upstream ficou de fora.** Ele recusa telefone sem
+  `+` e código de país, que a Meta entregaria no país errado. Pela regra do
+  merge, `dedupe.ts` ficou sendo o nosso, e caíram junto `broadcast-csv.ts`,
+  `step2-select-audience.tsx` e os testes deles. **É conserto de correção
+  real e vale reavaliar numa branch própria** — as chaves de i18n dele já
+  estão nos dois dicionários, então só falta o código.
+- ⚠️ **Migrations do upstream renumeradas de novo** (a 037 já avisava que isto
+  volta): `040_contact_business_scoped_user_id` → **0043**,
+  `042_message_failure_reason` → **0045**, com o cabeçalho de dentro corrigido
+  junto (ele cita o próprio número). A `0044` NÃO existe: era a
+  `041_fix_broadcast_contact_id_ambiguity` deles, e o teste
+  `funcao-de-disparo-1030.test.ts` manda **APAGAR**, não renumerar — ela
+  redefine `create_broadcast_with_recipients` com 8 parâmetros, desfazendo a
+  forma final de 9 que a 1030 fixou. A lacuna no número é de propósito.
+- ⚠️ **0043 e 0045 NÃO estão aplicadas em produção** (o conector do Supabase
+  não estava autenticado na sessão do merge). Nenhum código lê o que elas
+  criam — `failure_reason` não aparece em `src/` —, então mesclar não quebra
+  nada; mas elas precisam ser aplicadas para o banco não divergir do
+  repositório.
+- **`ci.yml` e `migrations.yml` apagados de novo**, como a nota do
+  `pipeline.yml` manda. Vão voltar no próximo merge.
+- **Dicionários: UNIÃO, não substituição.** Nosso lado venceu o `en.json`
+  inteiro, o que apagaria as chaves novas deles — e os componentes deles que
+  entraram sem conflito as pedem, virando `MISSING_MESSAGE` na tela. Foram
+  195 chaves reunidas no `en.json` e 242 traduzidas no `pt-BR.json`. ⚠️ Duas
+  seções que vieram na união (`Settings.sections.whatsapp` e `.deals`) não
+  existem no nosso `settings-sections.ts` e foram removidas — o
+  `rotulo-da-secao.test.ts` reprova seção órfã.
+
 **Decisões fixadas no merge de 2026-08-26** (releia antes do próximo merge, são
 as que voltam a conflitar):
 
@@ -185,9 +237,10 @@ as que voltam a conflitar):
 - **`src/components/inbox/message-bubble.tsx` e `message-thread.tsx` ficam
   NOSSOS, inteiros.** O visualizador de mídia do upstream (#467) foi descartado:
   o nosso `media-viewer.tsx` tem giro e zoom, que a versão deles não tem. Os
-  arquivos `media-lightbox.tsx`, `message-media.tsx` e `lib/media/*` vieram no
-  merge mas **não estão ligados** — se um merge futuro os religar, o inbox passa
-  a ter dois visualizadores.
+  arquivos `media-lightbox.tsx` e `message-media.tsx` vieram no merge mas **não
+  estão ligados** — se um merge futuro os religar, o inbox passa a ter dois
+  visualizadores. (De `lib/media/*`, o `download.ts` passou a ser usado em
+  23/09/2026 pelo **Baixar** da nota de voz — ver "Player de áudio".)
 - ⚠️ **Uma major de Node só, e ela mora no `.nvmrc` (hoje `22`, o LTS).**
   Chegaram a existir TRÊS ao mesmo tempo — dev 24, CI 20, produção 22 — e isso
   já custou um vermelho real: o PR #66 passou na máquina do dev e reprovou no
@@ -279,6 +332,7 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (3ª linha nossa) | o `.is('nome_fixado_em', null)` no UPDATE que troca o nome do contato pelo do perfil (999). O bloco é do upstream e volta cru num merge — sem a guarda, o nome fixado pelo agendamento do Calendly vira o do WhatsApp na mensagem seguinte. Pino: `src/lib/contacts/nome-fixado.chamadores.test.ts` |
 | `src/components/inbox/message-bubble.tsx` (além de ser nosso inteiro) | o case `document` usa `mediaFilename(message)` e mostra a legenda embaixo só quando ela DIFERE do nome; `nomeDeArquivo` delega para a cascata em vez de derivar o basename cru |
 | `src/components/inbox/message-bubble.tsx` (canal, 2026-09-02) | a prop `canal` (nome + cor) no lugar do antigo `channelLabel`: o rótulo embaixo da mensagem ganhou a bolinha da cor, 10px (era 9) e teto de 9rem (era 7). ⚠️ Uma versão desta nota dizia que em 7rem os nomes truncavam "no ponto em que ainda são iguais" — MEDIDO em 02/09: os seis nomes da conta cabem em 7rem até a 10px (o mais longo, "Trabalhista - Comercial", dá 110px); o 9rem é folga, não conserto. A cor vive na BOLINHA, não no texto: a bolha da equipe é `bg-primary`, violeta nesta conta. Uma trilha de 3px na borda foi feita e DESCARTADA pelo operador na hora ("não gostei dessa borda colorida") |
+| `src/components/inbox/message-actions.tsx` (áudio, 23/09/2026) | o botão **Baixar** da nota de voz (`podeBaixar` + `downloadMediaMessage`). O download morava no menu de três pontos do `<audio controls>` nativo, que a bolha trocou pelo `player-de-audio.tsx` — um merge que traga a barra crua do upstream tira o download do áudio sem conflito nenhum |
 | `src/components/inbox/message-thread.tsx` | além do fio intercalado, renderiza a faixa `ScheduledBar` logo acima do compositor e guarda o contador que a liga ao compositor |
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
@@ -315,7 +369,8 @@ upstream sobrescrevê-los:
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
 | `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
-| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Ao EDITAR, funil e etapa só vão quando o operador os mudou (23/09/2026): o quadro não tem realtime, e regravar a etapa de um card que outro operador ou uma automação já moveu o levava de volta — disparando as automações da etapa antiga. E o reset do rascunho é por sessão (`sessaoRef`), não por identidade de `stages`. Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/pipeline-settings.tsx` | o rascunho de "Gerenciar funil" vem do BANCO a cada abertura (23/09/2026: `aberturaRef`, `gravacaoRef`, carregando com Salvar/Adicionar desabilitados), não das props `pipeline`/`stages` — a versão do upstream semeia das props, e um merge que a traga crua devolve o rascunho apagado a cada volta ao app e as etapas do funil anterior logo depois de uma troca. Mais o que já era nosso: degrau (975) e resultado (950) por etapa, e os avisos de conexão que usa o funil ou a etapa (908) |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
 | `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
@@ -329,7 +384,7 @@ upstream sobrescrevê-los:
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
-| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, `refreshStages`/`refreshDeals` (nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
+| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, uma recarga PRÓPRIA (`buscarFunis`/`buscarEtapas`/`buscarNegocios`/`buscarAutomacoes`, com as cercas de versão e de funil — ela NÃO passa pelo `refreshDeals` nem mantém arrasto no ar, e é por isso que a gravação confirmada de um arrasto avança a versão; nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
 | `src/lib/ai/types.ts`, `generate.ts`, `defaults.ts`, `config.ts`, `usage.ts`, `providers/` | o TERCEIRO provedor (`gemini`, 941) e o modo `'radar'` no log de uso — o upstream conhece só openai/anthropic. `structured.ts` e `providers/gemini.ts` são arquivos NOSSOS |
 | `src/components/settings/ai-config.tsx`, `src/app/api/ai/config/route.ts` | a opção Gemini no seletor e na validação do provider |
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
@@ -1601,6 +1656,38 @@ código novo:
   um rótulo genérico quando não.
 - **`gallery.ts` NÃO foi alargado para documento**, de propósito: ele
   alimenta as setas ‹ › do visualizador, que só sabe desenhar imagem e vídeo.
+
+⚠️ **Player de áudio (23/09/2026): a nota de voz não usa mais o `<audio
+controls>` nativo.** `src/components/inbox/player-de-audio.tsx` e
+`src/lib/audio/onda.ts` (puro, com teste) — play, a onda do próprio áudio com
+a bolinha que se arrasta, o tempo e o botão 1× → 1,5× → 2×, no desenho do
+WhatsApp (pedido do operador: a velocidade custava três cliques no menu do
+navegador). O que morde código novo:
+
+- ⚠️⚠️ **O "Baixar" do áudio mora na BARRA DE AÇÕES** (`podeBaixar` em
+  `message-actions.tsx`, via `downloadMediaMessage`). Ele vivia no menu de
+  três pontos do player nativo — trocar o player sem isto tirava o download
+  da nota de voz sem erro nenhum (o operador pegou na hora). Um merge que
+  traga a barra crua do upstream tira o botão SEM conflito.
+- ⚠️ **A onda é LIDA do arquivo, nunca sorteada**: `fetch` + `decodeAudioData`
+  num `OfflineAudioContext` a 8 kHz (a taxa baixa é o que segura a memória —
+  medido: 10 min de áudio = ~19 MB temporários; a 44,1 kHz a conta dá ~104
+  MB).
+  Só roda quando o player aparece (`IntersectionObserver`) e fica em memória
+  por endereço. Falha vira fileira de pontos, nunca desenho inventado.
+  ⚠️ Com a aba OCULTA o observador não dispara: no Browser pane escondido a
+  onda fica em pontos, e o Chrome ainda pausa sozinho o 1º play de um áudio
+  não bufferizado — é política de aba em segundo plano, medida fora do
+  React em 23/09, não defeito do player.
+- **Cor por `currentColor` (`bg-current`)**, nunca `bg-primary-foreground`
+  fixo: a bolha NÃO entregue reescreve o texto de todo descendente para
+  `!text-foreground` sobre fundo claro, e barras de cor fixa sumiriam.
+- **No toque, encostar NÃO pula**: o dedo pode estar rolando o fio. Pula no
+  arraste horizontal de mais de 8 px ou no toque curto; o toque longo é o
+  menu da mensagem. Com o mouse, pula no clique.
+- **A velocidade é UMA para todos os áudios**, lembrada no aparelho
+  (`localStorage` `cb-audio-velocidade`, lida por `lerVelocidade`), e só um
+  áudio toca por vez. O rascunho de voz do compositor continua no nativo.
 
 ⚠️ **Agenda de reuniões (945, Fase 1): o calendário é a parte fácil.**
 `src/lib/agenda/` — `fuso.ts`, `vagas.ts`, `grade.ts` e `validar.ts`, todos
@@ -3771,9 +3858,11 @@ por fora deles. O que morde código novo:
   `routeContactToPipeline` captura tudo e o lead simplesmente não viraria card,
   em silêncio.
 - **`AFTER UPDATE OF pipeline_id, stage_id, status`** dispara quando a coluna é
-  *mencionada*, mesmo sem mudar — e o formulário manda as três em todo save. O
-  `IS NOT DISTINCT FROM` no topo do trigger é o que evita linha falsa a cada
-  edição de anotação; não remova.
+  *mencionada*, mesmo sem mudar. O `IS NOT DISTINCT FROM` no topo do trigger é
+  o que evita linha falsa quando um escritor manda a coluna sem mudá-la; não
+  remova. (Até 23/09/2026 o formulário do negócio mandava funil e etapa em todo
+  save; hoje só quando mudaram, mas a automação, a Lista e a API continuam
+  mencionando colunas que não mudaram.)
 - **Rótulos são gravados junto com os IDs, de propósito.** Etapa que o lead já
   deixou pode ser apagada, e renomear reescreveria o passado em silêncio.
   `from/to_stage_position` existe para responder "foi avanço?" — comparar
@@ -6396,10 +6485,40 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   `refreshStages` (Gerenciar funil) descartam a resposta de funil que já não
   está aberto (22/09/2026, há pino): trocar de funil logo depois de salvar
   punha os cards, ou as etapas, do anterior no quadro do novo, colunas vazias
-  até recarregar. A cerca é SÓ de funil, de
-  propósito: o preenchimento do conteúdo (`carregarConteudo`) avança a
-  versão, e uma cerca de versão descartaria o refresh que desfaz o arrasto
-  recusado pelo banco.
+  até recarregar. Ela NÃO é cerca de VERSÃO, de propósito: o preenchimento do
+  conteúdo (`carregarConteudo`) avança a versão, e uma cerca de versão
+  descartaria o refresh que desfaz o arrasto recusado pelo banco.
+  ⚠️ E no MESMO funil (23/09/2026, há pinos): nenhuma leitura de negócios
+  grava por cima de outra pedida DEPOIS dela — o `refreshDeals` e a carga do
+  funil tomam um número (`pedidoDosNegociosRef`), e a régua é a última que
+  GRAVOU (`ultimoGravadoRef`); dois salvamentos seguidos podiam voltar fora de
+  ordem. ⚠️⚠️ Nunca "só o último PEDIDO grava": a leitura que falha não grava,
+  e com essa régua ela calava a mais velha — inclusive a carga do funil novo,
+  calada por um `refreshDeals` que ficou do funil anterior (etapas de B com
+  os cards de A, colunas vazias; achado da 2ª revisão). As duas gravam por `gravarNegocios`,
+  que mantém a etapa e o status da TELA dos cards arrastados que a leitura
+  pode não ter lido (`movidosRef`, regra pura em `movidosParaALeitura`):
+  arrasto ainda não confirmado pelo banco, ou confirmado depois de ela
+  partir. Sem isso, a resposta que lera o card antes de o arrasto gravar o
+  devolvia à coluna antiga. O arrasto marca o card no gesto e na gravação
+  confirmada, e desmarca na recusa, antes do `refreshDeals` que o devolve à
+  etapa do banco. E o `refreshDeals` que FALHA não grava nada (antes gravava
+  a lista vazia e esvaziava todas as colunas).
+  ⚠️ Voltar ao app com o `DealForm` ou o `PipelineSettings` aberto apagava
+  o rascunho: a recarga da volta troca `stages` e `pipeline` por objetos
+  novos, e o reset dos dois dependia deles. O `DealForm` só zera numa sessão
+  NOVA (`sessaoRef`: abrir, ou outro negócio) e compara o salvamento com o
+  negócio do INÍCIO da sessão (`dealDaSessaoRef`), não com a prop. ⚠️⚠️ O
+  `PipelineSettings` deixou de ler etapas e nome da página: a cada abertura
+  ele os busca no BANCO (efeito de `[open, pipeline.id]`), com carregando e
+  "Salvar"/"Adicionar" desabilitados até chegar. Três tentativas de chave de
+  sessão sobre as props falharam em três rodadas de revisão (funil sem etapa,
+  etapas do funil anterior logo depois de uma troca, reabrir logo depois de
+  salvar e desfazer o que foi salvo); ler do banco elimina a classe. Cada
+  abertura tem um número (`aberturaRef`): a leitura e o salvamento de outra
+  abertura não mexem nela, e a leitura espera a gravação ainda no ar
+  (`gravacaoRef`). Quem voltar a semear o diálogo pelas props traz tudo isso
+  de volta.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de

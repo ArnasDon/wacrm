@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   DndContext,
   PointerSensor,
@@ -39,6 +39,7 @@ import {
   Plus,
   GripVertical,
   AlertTriangle,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useTranslations } from "next-intl";
@@ -60,7 +61,6 @@ interface PipelineSettingsProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   pipeline: Pipeline;
-  stages: PipelineStage[];
   onPipelinesChanged: () => void;
   onStagesChanged: () => void;
   onCreateNewPipeline: () => void;
@@ -70,7 +70,6 @@ export function PipelineSettings({
   open,
   onOpenChange,
   pipeline,
-  stages,
   onPipelinesChanged,
   onStagesChanged,
   onCreateNewPipeline,
@@ -96,23 +95,63 @@ export function PipelineSettings({
   const { channels } = useChannels();
 
   const [name, setName] = useState(pipeline.name);
-  const [localStages, setLocalStages] = useState<PipelineStage[]>(stages);
+  const [localStages, setLocalStages] = useState<PipelineStage[]>([]);
   const [newStageName, setNewStageName] = useState("");
   const [newStageColor, setNewStageColor] = useState(STAGE_COLORS[0]);
   const [saving, setSaving] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  // Reset form state when the dialog opens or its prop inputs change
-  // — legitimate prop-driven sync.
+  /**
+   * ⚠️ O rascunho vem do BANCO, lido a cada abertura, e não das props
+   * (23/09/2026). Semeado das etapas e do funil da página, ele se perdia a
+   * cada recarga dela — a da volta ao app troca os dois por objetos novos —,
+   * e logo depois de uma troca de funil, ou de salvar e reabrir, mostrava as
+   * etapas de outro funil ou as de antes do salvamento, e salvar de novo
+   * desfazia o que acabara de ser salvo. Cada abertura tem um número
+   * (`aberturaRef`): a leitura, o salvamento, "Adicionar", a lixeira e
+   * "Excluir funil" de uma abertura anterior não mexem na atual. E a leitura
+   * espera as gravações do diálogo que ainda estiverem no ar
+   * (`registrarGravacao`), senão leria o banco de antes delas.
+   */
+  const [situacao, setSituacao] = useState<"carregando" | "pronto" | "falhou">(
+    "carregando",
+  );
+  const aberturaRef = useRef(0);
+  const gravacaoRef = useRef<Promise<unknown> | null>(null);
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
+    const abertura = ++aberturaRef.current;
     if (!open) return;
-    setName(pipeline.name);
-    setLocalStages([...stages].sort((a, b) => a.position - b.position));
+    setSituacao("carregando");
     setShowDeleteConfirm(false);
-  }, [open, pipeline, stages]);
+    (async () => {
+      await gravacaoRef.current?.catch(() => undefined);
+      const [funil, etapas] = await Promise.all([
+        supabase.from("pipelines").select("name").eq("id", pipeline.id).maybeSingle(),
+        supabase
+          .from("pipeline_stages")
+          .select("*")
+          .eq("pipeline_id", pipeline.id)
+          .order("position"),
+      ]);
+      if (aberturaRef.current !== abertura) return;
+      if (funil.error || !funil.data || etapas.error) {
+        setSituacao("falhou");
+        return;
+      }
+      setName((funil.data as { name: string }).name);
+      setLocalStages((etapas.data ?? []) as PipelineStage[]);
+      setSituacao("pronto");
+    })();
+  }, [open, pipeline.id, supabase]);
   /* eslint-enable react-hooks/set-state-in-effect */
+
+  function registrarGravacao<T>(gravacao: Promise<T>): Promise<T> {
+    const anteriores = gravacaoRef.current;
+    gravacaoRef.current = Promise.allSettled([anteriores, gravacao]);
+    return gravacao;
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
@@ -145,13 +184,16 @@ export function PipelineSettings({
       degrau: s.degrau ?? null,
     }));
 
-    const [renameRes, stagesRes] = await Promise.all([
-      supabase
-        .from("pipelines")
-        .update({ name: name.trim() })
-        .eq("id", pipeline.id),
-      supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
-    ]);
+    const abertura = aberturaRef.current;
+    const [renameRes, stagesRes] = await registrarGravacao(
+      Promise.all([
+        supabase
+          .from("pipelines")
+          .update({ name: name.trim() })
+          .eq("id", pipeline.id),
+        supabase.from("pipeline_stages").upsert(stageRows, { onConflict: "id" }),
+      ]),
+    );
 
     setSaving(false);
 
@@ -160,15 +202,22 @@ export function PipelineSettings({
       return;
     }
 
-    onOpenChange(false);
+    // Fechado e reaberto enquanto gravava: a abertura de agora é outra, e
+    // fechá-la levaria o que foi digitado nela.
+    if (aberturaRef.current === abertura) onOpenChange(false);
     onPipelinesChanged();
     onStagesChanged();
     toast.success(t("toastSaved"));
   }
 
-  async function handleAddStage() {
+  function handleAddStage() {
+    return registrarGravacao(adicionarEtapa());
+  }
+
+  async function adicionarEtapa() {
     const trimmed = newStageName.trim();
     if (!trimmed) return;
+    const abertura = aberturaRef.current;
     const { data, error } = await supabase
       .from("pipeline_stages")
       .insert({
@@ -183,12 +232,20 @@ export function PipelineSettings({
       toast.error(t("toastFailedAddStage"));
       return;
     }
-    setLocalStages([...localStages, data as PipelineStage]);
+    if (aberturaRef.current !== abertura) return;
+    // Pela atualização funcional: outra escrita pode ter mexido na lista
+    // enquanto esta estava no ar (duas lixeiras seguidas, por exemplo).
+    setLocalStages((atual) => [...atual, data as PipelineStage]);
     setNewStageName("");
     setNewStageColor(STAGE_COLORS[(localStages.length + 1) % STAGE_COLORS.length]);
   }
 
-  async function handleRemoveStage(stageId: string) {
+  function handleRemoveStage(stageId: string) {
+    return registrarGravacao(removerEtapa(stageId));
+  }
+
+  async function removerEtapa(stageId: string) {
+    const abertura = aberturaRef.current;
     // Esta etapa é a ENTRADA de alguma conexão? (migration 908)
     //
     // A guarda de baixo — contagem de negócios — não cobre este caso: a etapa
@@ -241,11 +298,13 @@ export function PipelineSettings({
       toast.error(t("toastFailedDeleteStage"));
       return;
     }
-    setLocalStages(localStages.filter((s) => s.id !== stageId));
+    if (aberturaRef.current !== abertura) return;
+    setLocalStages((atual) => atual.filter((s) => s.id !== stageId));
   }
 
   async function handleDeletePipeline() {
     setDeleting(true);
+    const abertura = aberturaRef.current;
     // ON DELETE CASCADE handles deals + stages.
     const { error } = await supabase
       .from("pipelines")
@@ -256,7 +315,7 @@ export function PipelineSettings({
       toast.error(t("toastFailedDeletePipeline"));
       return;
     }
-    onOpenChange(false);
+    if (aberturaRef.current === abertura) onOpenChange(false);
     onPipelinesChanged();
     toast.success(t("toastDeleted"));
   }
@@ -316,8 +375,12 @@ export function PipelineSettings({
             <div className="grid gap-4 py-2">
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">{t("pipelineName")}</Label>
+                {/* Durante a carga, o nome vindo da página diz QUAL funil é este;
+                    somente-leitura, e não desabilitado, para o foco inicial do
+                    diálogo continuar caindo aqui. */}
                 <Input
-                  value={name}
+                  value={situacao === "pronto" ? name : pipeline.name}
+                  readOnly={situacao !== "pronto"}
                   onChange={(e) => setName(e.target.value)}
                   className="border-border bg-muted text-foreground"
                 />
@@ -325,6 +388,13 @@ export function PipelineSettings({
 
               <div className="grid gap-2">
                 <Label className="text-muted-foreground">{t("stages")}</Label>
+                {situacao === "carregando" && (
+                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                )}
+                {situacao === "falhou" && (
+                  <p className="text-xs text-red-700 dark:text-red-300">{t("falhouAoCarregar")}</p>
+                )}
+                {situacao === "pronto" && (
                 <DndContext
                   sensors={sensors}
                   collisionDetection={closestCenter}
@@ -377,10 +447,12 @@ export function PipelineSettings({
                     </div>
                   </SortableContext>
                 </DndContext>
+                )}
 
                 {/* 975: funil com degrau em alguma etapa mas sem Lead —
                     configuração incompleta: o Desempenho não calcula nada. */}
-                {localStages.some((s) => s.degrau) &&
+                {situacao === "pronto" &&
+                  localStages.some((s) => s.degrau) &&
                   !localStages.some((s) => s.degrau === "lead") && (
                     <p className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-400">
                       <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
@@ -414,14 +486,14 @@ export function PipelineSettings({
                     placeholder={t("newStageNamePlaceholder")}
                     className="border-border bg-muted text-sm text-foreground"
                     onKeyDown={(e) => {
-                      if (e.key === "Enter") handleAddStage();
+                      if (e.key === "Enter" && situacao === "pronto") handleAddStage();
                     }}
                   />
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleAddStage}
-                    disabled={!newStageName.trim()}
+                    disabled={situacao !== "pronto" || !newStageName.trim()}
                     className="shrink-0 border-border bg-transparent text-muted-foreground hover:bg-muted"
                   >
                     <Plus className="mr-1 h-3 w-3" />
@@ -456,7 +528,7 @@ export function PipelineSettings({
               </Button>
               <Button
                 onClick={handleSave}
-                disabled={saving || !name.trim()}
+                disabled={saving || situacao !== "pronto" || !name.trim()}
                 className="bg-primary text-primary-foreground hover:bg-primary/90"
               >
                 {saving ? t("saving") : t("saveChanges")}

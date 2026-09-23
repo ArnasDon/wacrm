@@ -1,12 +1,23 @@
 'use client';
 
 // ============================================================
-// ApiKeysSettings — Settings → API keys
+// ApiKeysSettings — Settings → API → aba Chaves
 //
 // Manage the credentials that authenticate the public REST API
 // (`/api/v1/*`). Any member sees the roster (read-only); admin+ can
 // mint and revoke (gated by <RequireRole min="admin"> here and the
 // admin-only API routes + RLS on the server).
+//
+// Desde que a seção API ganhou sub-abas (Chaves | IDs | Documentação), o
+// cabeçalho da SEÇÃO é do `ApiPanel`; aqui fica só o corpo da aba — a frase
+// de como a chave viaja e o botão "Nova chave", que só faz sentido nesta
+// aba. O spinner cobre só a LISTA: a frase e o botão não dependem da carga.
+//
+// ⚠️ Carga que FALHOU não é "nenhuma chave ainda". Até aqui a falha virava
+// toast e a lista vazia embaixo afirmava "Nenhuma chave de API ainda" — e o
+// admin criava outra chave para substituir as que continuavam valendo (a
+// armadilha da lista vazia virando afirmação, no CLAUDE.md). Agora a falha
+// com a lista vazia tem estado próprio, com "tentar de novo".
 //
 // One-time reveal: a freshly-minted key's plaintext is shown ONCE in
 // the creation dialog. After it closes, only the prefix remains —
@@ -17,7 +28,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { Copy, KeyRound, Loader2, Plus, Trash2 } from 'lucide-react';
+import { Copy, KeyRound, Loader2, Plus, RotateCw, Trash2 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -41,7 +52,7 @@ import {
   type ApiScope,
 } from '@/lib/api-keys/scopes';
 import { useTranslations } from 'next-intl';
-import { SettingsPanelHead } from './settings-panel-head';
+import { FONTE_MONO } from './copiar';
 
 interface ApiKey {
   id: string;
@@ -72,9 +83,11 @@ function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
 export function ApiKeysSettings() {
   const { canEditSettings } = useAuth();
   const t = useTranslations('Settings.apiKeys');
+  const tSecao = useTranslations('Settings.secaoApi');
 
   const [keys, setKeys] = useState<ApiKey[]>([]);
   const [loading, setLoading] = useState(true);
+  const [falhou, setFalhou] = useState(false);
   const [createOpen, setCreateOpen] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
 
@@ -84,17 +97,20 @@ export function ApiKeysSettings() {
       if (!res.ok) {
         const payload = await res.json().catch(() => ({}));
         toast.error(payload.error || t('loadFailed'));
+        setFalhou(true);
         return;
       }
       const data = (await res.json()) as { keys: ApiKey[] };
       setKeys(data.keys);
+      setFalhou(false);
     } catch (err) {
       console.error('[ApiKeysSettings] load error:', err);
       toast.error(t('networkError'));
+      setFalhou(true);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [t]);
 
   useEffect(() => {
     void load();
@@ -126,35 +142,47 @@ export function ApiKeysSettings() {
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="text-primary size-6 animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <section className="animate-in fade-in-50 space-y-6 duration-200">
-      <SettingsPanelHead
-        title={t('title')}
-        description={
-          t.rich('description', {
+    <div className="space-y-5">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <p className="text-muted-foreground max-w-[62ch] min-w-0 text-sm">
+          {t.rich('description', {
             apiCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>,
-            headerCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>
-          })
-        }
-        action={
-          <RequireRole min="admin">
-            <Button onClick={() => setCreateOpen(true)}>
-              <Plus className="size-4" />
-              {t('newApiKey')}
-            </Button>
-          </RequireRole>
-        }
-      />
+            headerCode: (chunks: React.ReactNode) => <code className="text-xs">{chunks}</code>,
+          })}
+        </p>
+        <RequireRole min="admin">
+          <Button onClick={() => setCreateOpen(true)} className="shrink-0 self-start">
+            <Plus className="size-4" />
+            {t('newApiKey')}
+          </Button>
+        </RequireRole>
+      </div>
 
-      {keys.length === 0 ? (
+      {loading ? (
+        <div className="flex items-center justify-center py-12">
+          <Loader2 className="text-primary size-6 animate-spin" />
+        </div>
+      ) : falhou && keys.length === 0 ? (
+        // A recarga que falha DEPOIS de criar uma chave cai aqui só se a
+        // lista estava vazia; com chaves na tela, elas ficam (o toast avisa).
+        <Card>
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+            <p className="text-muted-foreground text-sm">{t('loadFailed')}</p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setLoading(true);
+                void load();
+              }}
+            >
+              <RotateCw className="size-3.5" />
+              {tSecao('tentarDeNovo')}
+            </Button>
+          </CardContent>
+        </Card>
+      ) : keys.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-10 text-center">
             <KeyRound className="text-muted-foreground size-6" />
@@ -210,7 +238,12 @@ export function ApiKeysSettings() {
                           </Badge>
                         )}
                       </div>
-                      <p className="text-muted-foreground mt-0.5 font-mono text-xs">
+                      {/* Fonte mono EXPLÍCITA: a classe `font-mono` do projeto
+                          cai na Inter (ver `copiar.tsx`). */}
+                      <p
+                        className="text-muted-foreground mt-0.5 text-xs"
+                        style={{ fontFamily: FONTE_MONO }}
+                      >
                         {k.key_prefix}…
                       </p>
                       <div className="mt-1.5 flex flex-wrap gap-1">
@@ -272,7 +305,7 @@ export function ApiKeysSettings() {
         onOpenChange={setCreateOpen}
         onCreated={load}
       />
-    </section>
+    </div>
   );
 }
 

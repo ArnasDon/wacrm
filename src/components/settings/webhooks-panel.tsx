@@ -1,11 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import {
+  BookOpen,
   ChevronDown,
   Copy,
+  ListChecks,
   Plus,
   RefreshCw,
+  Send,
   Trash2,
   Webhook,
 } from "lucide-react";
@@ -15,10 +20,25 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { FONTE_MONO } from "@/components/settings/copiar";
+import {
+  EVENTOS_POR_GRUPO,
+  useRotulosDosEventos,
+  useRotulosDosGrupos,
+} from "@/components/settings/documentacao/rotulos-dos-eventos";
 import { SettingsChip } from "@/components/settings/settings-chip";
+import {
+  FALHAS_QUE_DESLIGAM,
+  PRAZO_DA_ENTREGA_SEGUNDOS,
+} from "@/lib/integracoes/exemplos-de-requisicao";
 import { cn } from "@/lib/utils";
 import { RESULTADOS_REPROCESSAVEIS } from "@/lib/webhooks-de-entrada/log";
-import { WEBHOOK_EVENTS } from "@/lib/webhooks/events";
+import type { MotivoDaFalhaDoTeste } from "@/lib/webhooks/enviar-teste";
+import {
+  WEBHOOK_EVENTS,
+  isWebhookEvent,
+  type WebhookEvent,
+} from "@/lib/webhooks/events";
 
 /**
  * Configurações → Webhooks (982). DUAS direções, duas abas:
@@ -29,6 +49,10 @@ import { WEBHOOK_EVENTS } from "@/lib/webhooks/events";
  *    resposta.
  *  - **Enviados**: os `webhook_endpoints` da 028, que existem desde o
  *    upstream e nunca tiveram tela (até aqui, só `curl` com chave de API).
+ *    Cada endereço mostra os eventos com rótulo traduzido, deixa EDITAR os
+ *    eventos (um endereço antigo não recebe evento novo sozinho) e tem o
+ *    "Enviar teste", que manda o exemplo de `webhooks/exemplos.ts` com
+ *    `"test": true` e mostra o resultado na linha.
  *
  * ⚠️ O log copia a forma do cartão do Calendly de propósito: `<table>` cru
  * com duas `<tr>` por linha (a linha e o detalhe) e `<dl>` dentro. Nada de
@@ -724,6 +748,443 @@ function AbaRecebidos() {
 // Aba "Enviados"
 // ------------------------------------------------------------
 
+/**
+ * O resultado de `POST /api/cb/webhooks-de-saida/{id}/teste`, como a tela o
+ * LÊ: campo a campo (`lerResultadoDoTeste`), nunca `as`. Um corpo
+ * inesperado vira "não foi possível enviar", e não um "Entregue" inventado;
+ * um motivo que esta tela não conhece (a rota ganhou um novo) vira `null`,
+ * com texto genérico, em vez de chave crua.
+ *
+ * `import type`: `enviar-teste.ts` arrasta `node:crypto`, e só o tipo
+ * atravessa para o navegador (é apagado na compilação).
+ */
+const MOTIVOS_DE_FALHA = [
+  "http",
+  "redirecionamento",
+  "tempo",
+  "rede",
+  "endereco_bloqueado",
+  "segredo_ilegivel",
+] as const satisfies readonly MotivoDaFalhaDoTeste[];
+
+type ResultadoDoTeste =
+  | { ok: true; status: number; ms: number }
+  | {
+      ok: false;
+      status: number | null;
+      motivo: MotivoDaFalhaDoTeste | null;
+      ms: number;
+    };
+
+function lerResultadoDoTeste(corpo: unknown): ResultadoDoTeste | null {
+  if (typeof corpo !== "object" || corpo === null) return null;
+  const c = corpo as Record<string, unknown>;
+  // Arredondado: "312.4471 ms" na tela é ruído, e a rota pode medir com
+  // `performance.now()`.
+  const ms = typeof c.ms === "number" && Number.isFinite(c.ms) ? Math.round(c.ms) : 0;
+  if (c.ok === true && typeof c.status === "number") {
+    return { ok: true, status: c.status, ms };
+  }
+  if (c.ok === false) {
+    const motivo = (MOTIVOS_DE_FALHA as readonly unknown[]).includes(c.motivo)
+      ? (c.motivo as MotivoDaFalhaDoTeste)
+      : null;
+    return {
+      ok: false,
+      status: typeof c.status === "number" ? c.status : null,
+      motivo,
+      ms,
+    };
+  }
+  return null;
+}
+
+type EstadoDoTeste =
+  | { tipo: "enviando" }
+  | { tipo: "resultado"; resultado: ResultadoDoTeste }
+  | { tipo: "erro"; mensagem: string };
+
+/** Os eventos na ordem do vocabulário — a ordem em que a tela os lista. */
+function naOrdem(eventos: Iterable<WebhookEvent>): WebhookEvent[] {
+  const marcados = new Set(eventos);
+  return WEBHOOK_EVENTS.filter((ev) => marcados.has(ev));
+}
+
+/**
+ * Os checkboxes de eventos, agrupados (Mensagens e conversas / Negócios),
+ * com o rótulo traduzido, a descrição e o NOME TÉCNICO em fonte mono — é o
+ * nome que o n8n e o Make mostram no cabeçalho `X-Wacrm-Event`, e quem
+ * monta o fluxo precisa dele. Usado no cadastro e na edição.
+ */
+function SeletorDeEventos({
+  marcados,
+  onChange,
+}: {
+  marcados: WebhookEvent[];
+  onChange: (eventos: WebhookEvent[]) => void;
+}) {
+  const rotulos = useRotulosDosEventos();
+  const grupos = useRotulosDosGrupos();
+  return (
+    <div className="mt-1 space-y-3">
+      {EVENTOS_POR_GRUPO.map(({ grupo, eventos }) => (
+        <fieldset key={grupo} className="min-w-0 space-y-1.5">
+          <legend className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+            {grupos[grupo]}
+          </legend>
+          {eventos.map((ev) => (
+            <label key={ev} className="flex items-start gap-2 text-xs">
+              <input
+                type="checkbox"
+                className="mt-0.5"
+                checked={marcados.includes(ev)}
+                onChange={(e) =>
+                  onChange(
+                    e.target.checked
+                      ? naOrdem([...marcados, ev])
+                      : marcados.filter((x) => x !== ev)
+                  )
+                }
+              />
+              <span className="min-w-0">
+                <span className="font-medium text-foreground">
+                  {rotulos[ev].rotulo}
+                </span>{" "}
+                <code
+                  className="text-[10.5px] text-muted-foreground"
+                  style={{ fontFamily: FONTE_MONO }}
+                >
+                  {ev}
+                </code>
+                <span className="block text-[11px] text-muted-foreground">
+                  {rotulos[ev].descricao}
+                </span>
+              </span>
+            </label>
+          ))}
+        </fieldset>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * Um endereço cadastrado: os eventos que ele assina, a edição desses
+ * eventos e o "Enviar teste".
+ *
+ * A edição existe porque os eventos de um endereço são um `text[]` gravado
+ * no cadastro: um endereço criado antes dos eventos de negócio NÃO passa a
+ * recebê-los sozinho, e a única saída antes desta tela era apagar e criar de
+ * novo — gerando um segredo novo para reconfigurar no n8n.
+ *
+ * O teste existe porque, sem ele, quem monta o fluxo depende de um fato
+ * real acontecer no CRM — e a "Test URL" do n8n só escuta por 120 s. O
+ * resultado aparece NA LINHA, com o status e o tempo: um toast some antes
+ * de a pessoa ler "HTTP 404".
+ */
+function CartaoDoEndereco({
+  endpoint: e,
+  onMudou,
+  onAlternar,
+  onApagar,
+}: {
+  endpoint: EndpointDeSaida;
+  onMudou: () => Promise<void>;
+  onAlternar: () => void;
+  onApagar: () => void;
+}) {
+  const t = useTranslations("Settings.webhooks");
+  const rotulos = useRotulosDosEventos();
+
+  const assinados = naOrdem(e.events.filter(isWebhookEvent));
+  // Evento que o banco guarda e este código não conhece mais (um evento
+  // retirado do vocabulário): aparece cru, nunca some da tela.
+  const desconhecidos = e.events.filter((ev) => !isWebhookEvent(ev));
+
+  const [editando, setEditando] = useState<WebhookEvent[] | null>(null);
+  const [salvando, setSalvando] = useState(false);
+  const [erroDaEdicao, setErroDaEdicao] = useState<string | null>(null);
+
+  const [eventoDoTeste, setEventoDoTeste] = useState<WebhookEvent>(
+    () => assinados[0] ?? WEBHOOK_EVENTS[0]
+  );
+  const [teste, setTeste] = useState<EstadoDoTeste | null>(null);
+
+  const motivo: Record<
+    MotivoDaFalhaDoTeste,
+    (status: number | null) => string
+  > = {
+    http: (s) => t("testeMotivo.http", { status: s ?? "—" }),
+    redirecionamento: (s) =>
+      t("testeMotivo.redirecionamento", { status: s ?? "—" }),
+    tempo: () => t("testeMotivo.tempo", { segundos: PRAZO_DA_ENTREGA_SEGUNDOS }),
+    rede: () => t("testeMotivo.rede"),
+    endereco_bloqueado: () => t("testeMotivo.enderecoBloqueado"),
+    segredo_ilegivel: () => t("testeMotivo.segredoIlegivel"),
+  };
+
+  const salvarEventos = async () => {
+    if (!editando || editando.length === 0) return;
+    setSalvando(true);
+    setErroDaEdicao(null);
+    try {
+      const res = await fetch(`/api/cb/webhooks-de-saida/${e.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ events: editando }),
+      });
+      const corpo = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        if (res.status === 404) {
+          setErroDaEdicao(t("enderecoSumiu"));
+          await onMudou();
+        } else {
+          setErroDaEdicao(
+            corpo.error === "eventos_invalidos"
+              ? t("eventosInvalidos")
+              : t("salvarFalhou")
+          );
+        }
+        return;
+      }
+      setEditando(null);
+      await onMudou();
+      toast.success(t("eventosSalvos"));
+    } catch {
+      setErroDaEdicao(t("salvarFalhou"));
+    } finally {
+      setSalvando(false);
+    }
+  };
+
+  const enviarTeste = async () => {
+    setTeste({ tipo: "enviando" });
+    try {
+      const res = await fetch(`/api/cb/webhooks-de-saida/${e.id}/teste`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ evento: eventoDoTeste }),
+      });
+      const corpo = await res.json().catch(() => null);
+      if (!res.ok) {
+        if (res.status === 404) {
+          setTeste({ tipo: "erro", mensagem: t("enderecoSumiu") });
+          await onMudou();
+        } else {
+          setTeste({ tipo: "erro", mensagem: t("testeErro") });
+        }
+        return;
+      }
+      const resultado = lerResultadoDoTeste(corpo);
+      setTeste(
+        resultado
+          ? { tipo: "resultado", resultado }
+          : { tipo: "erro", mensagem: t("testeErro") }
+      );
+    } catch {
+      setTeste({ tipo: "erro", mensagem: t("testeErro") });
+    }
+  };
+
+  const outros = WEBHOOK_EVENTS.filter((ev) => !assinados.includes(ev));
+  const editadoIgual =
+    editando !== null &&
+    editando.length === assinados.length &&
+    editando.every((ev) => assinados.includes(ev));
+
+  return (
+    <div className="min-w-0 space-y-2 rounded-lg border border-border bg-card p-3">
+      <div className="flex items-center gap-2">
+        <span
+          className="min-w-0 flex-1 truncate text-xs"
+          style={{ fontFamily: FONTE_MONO }}
+          title={e.url}
+        >
+          {e.url}
+        </span>
+        <SettingsChip
+          variant={e.is_active ? "ok" : e.failure_count > 0 ? "err" : "muted"}
+        >
+          {e.is_active ? t("ligado") : t("desligado")}
+        </SettingsChip>
+      </div>
+
+      <ul className="flex flex-wrap gap-1.5">
+        {assinados.map((ev) => (
+          <li
+            key={ev}
+            className="inline-flex max-w-full items-center gap-1 rounded-md bg-muted px-1.5 py-0.5 text-[11px] text-foreground"
+            title={rotulos[ev].descricao}
+          >
+            <span className="truncate">{rotulos[ev].rotulo}</span>
+            <code
+              className="shrink-0 text-[10px] text-muted-foreground"
+              style={{ fontFamily: FONTE_MONO }}
+            >
+              {ev}
+            </code>
+          </li>
+        ))}
+        {desconhecidos.map((ev) => (
+          <li
+            key={ev}
+            className="rounded-md bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground"
+            style={{ fontFamily: FONTE_MONO }}
+          >
+            {ev}
+          </li>
+        ))}
+      </ul>
+
+      <p className="text-[11px] text-muted-foreground">
+        {t("ultimaEntrega", { quando: quando(e.last_delivery_at) })}
+        {e.failure_count > 0
+          ? ` · ${t("falhasSeguidas", { n: e.failure_count })}`
+          : ""}
+      </p>
+      {!e.is_active && e.failure_count > 0 ? (
+        <p className="text-[11px] text-destructive">{t("desativadoPorFalhas")}</p>
+      ) : null}
+
+      {editando !== null ? (
+        <div className="space-y-2 rounded-md border border-border p-3">
+          <Label className="text-xs">{t("eventos")}</Label>
+          <SeletorDeEventos marcados={editando} onChange={setEditando} />
+          {editando.length === 0 ? (
+            <p className="text-[11px] text-destructive">
+              {t("eventosInvalidos")}
+            </p>
+          ) : null}
+          {erroDaEdicao ? (
+            <p role="alert" className="text-[11px] text-destructive">
+              {erroDaEdicao}
+            </p>
+          ) : null}
+          <div className="flex gap-2">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void salvarEventos()}
+              disabled={salvando || editando.length === 0 || editadoIgual}
+            >
+              {salvando ? t("salvando") : t("salvarEventos")}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                setEditando(null);
+                setErroDaEdicao(null);
+              }}
+            >
+              {t("cancelar")}
+            </Button>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="flex flex-wrap items-center gap-2 rounded-md bg-muted/40 p-2">
+        <label className="flex min-w-0 flex-1 items-center gap-2 text-[11px] text-muted-foreground">
+          <span className="shrink-0">{t("testeEvento")}</span>
+          <select
+            value={eventoDoTeste}
+            onChange={(ev) => {
+              if (isWebhookEvent(ev.target.value)) {
+                setEventoDoTeste(ev.target.value);
+              }
+            }}
+            className="h-7 min-w-0 flex-1 rounded-md border border-input bg-background px-2 text-xs text-foreground"
+          >
+            {assinados.length > 0 ? (
+              <optgroup label={t("testeAssinados")}>
+                {assinados.map((ev) => (
+                  <option key={ev} value={ev}>
+                    {rotulos[ev].rotulo} ({ev})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+            {outros.length > 0 ? (
+              <optgroup label={t("testeOutros")}>
+                {outros.map((ev) => (
+                  <option key={ev} value={ev}>
+                    {rotulos[ev].rotulo} ({ev})
+                  </option>
+                ))}
+              </optgroup>
+            ) : null}
+          </select>
+        </label>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          disabled={teste?.tipo === "enviando"}
+          onClick={() => void enviarTeste()}
+        >
+          <Send className="size-3.5" />
+          {teste?.tipo === "enviando" ? t("enviandoTeste") : t("enviarTeste")}
+        </Button>
+        <p className="basis-full text-[11px] text-muted-foreground">
+          {t("testeAjuda")}
+        </p>
+        {teste?.tipo === "resultado" ? (
+          <p
+            role="status"
+            className={cn(
+              "basis-full text-xs font-medium",
+              teste.resultado.ok
+                ? "text-emerald-700 dark:text-emerald-300"
+                : "text-destructive"
+            )}
+          >
+            {teste.resultado.ok
+              ? t("testeEntregue", {
+                  status: teste.resultado.status,
+                  ms: teste.resultado.ms,
+                })
+              : t("testeFalhou", {
+                  motivo: teste.resultado.motivo
+                    ? motivo[teste.resultado.motivo](teste.resultado.status)
+                    : t("testeMotivo.outro"),
+                })}
+          </p>
+        ) : null}
+        {teste?.tipo === "erro" ? (
+          <p role="alert" className="basis-full text-xs text-destructive">
+            {teste.mensagem}
+          </p>
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap gap-2">
+        {editando === null ? (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setEditando(assinados);
+              setErroDaEdicao(null);
+            }}
+          >
+            <ListChecks className="size-3.5" />
+            {t("editarEventos")}
+          </Button>
+        ) : null}
+        <Button type="button" variant="outline" size="sm" onClick={onAlternar}>
+          {e.is_active ? t("desligar") : t("religar")}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={onApagar}>
+          <Trash2 className="size-3.5" />
+          {t("apagar")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 function AbaEnviados() {
   const t = useTranslations("Settings.webhooks");
   const [endpoints, setEndpoints] = useState<EndpointDeSaida[] | null>(null);
@@ -731,7 +1192,10 @@ function AbaEnviados() {
   const [criando, setCriando] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [url, setUrl] = useState("");
-  const [eventos, setEventos] = useState<string[]>([...WEBHOOK_EVENTS]);
+  // ⚠️ Nasce SEM evento marcado. Nascia com todos — com os eventos de
+  // negócio no vocabulário isso despejaria cada mensagem de cliente no n8n
+  // de quem só queria acompanhar o funil. O botão Criar exige um.
+  const [eventos, setEventos] = useState<WebhookEvent[]>([]);
   const [segredoNovo, setSegredoNovo] = useState<string | null>(null);
 
   const carregar = useCallback(async () => {
@@ -775,6 +1239,7 @@ function AbaEnviados() {
       }
       if (corpo.segredo) setSegredoNovo(corpo.segredo);
       setUrl("");
+      setEventos([]);
       setCriando(false);
       await carregar();
       toast.success(t("criado"));
@@ -816,10 +1281,25 @@ function AbaEnviados() {
   return (
     <div className="space-y-4">
       <p className="text-sm text-muted-foreground">{t("enviadosAjuda")}</p>
-      {/* ⚠️ As duas limitações precisam estar na TELA: a entrega é
-          best-effort (uma tentativa, 5s, sem retry) e o vocabulário tem três
-          eventos. Sem isso o operador conta com garantia que não existe. */}
-      <p className="text-[11px] text-muted-foreground">{t("enviadosLimites")}</p>
+      {/* ⚠️ As limitações da entrega precisam estar na TELA: ela é
+          best-effort (uma tentativa, prazo curto, sem retry) e desliga o
+          endereço depois de uma sequência de falhas. Sem isso o operador
+          conta com garantia que não existe. Os números vêm das constantes
+          espelhadas (amarradas ao `deliver.ts` por teste), nunca digitados
+          no dicionário. */}
+      <p className="text-[11px] text-muted-foreground">
+        {t("enviadosLimites", {
+          segundos: PRAZO_DA_ENTREGA_SEGUNDOS,
+          falhas: FALHAS_QUE_DESLIGAM,
+        })}
+      </p>
+      <Link
+        href="/settings?tab=api&aba=docs"
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+      >
+        <BookOpen className="size-3.5" />
+        {t("comoConfigurar")}
+      </Link>
 
       {segredoNovo ? (
         <div className="rounded-md border border-amber-500/40 bg-amber-500/10 p-3">
@@ -858,24 +1338,10 @@ function AbaEnviados() {
           </div>
           <div>
             <Label className="text-xs">{t("eventos")}</Label>
-            <div className="mt-1 space-y-1">
-              {WEBHOOK_EVENTS.map((ev) => (
-                <label key={ev} className="flex items-center gap-2 text-xs">
-                  <input
-                    type="checkbox"
-                    checked={eventos.includes(ev)}
-                    onChange={(e) =>
-                      setEventos((atual) =>
-                        e.target.checked
-                          ? [...atual, ev]
-                          : atual.filter((x) => x !== ev)
-                      )
-                    }
-                  />
-                  <span className="font-mono">{ev}</span>
-                </label>
-              ))}
-            </div>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              {t("eventosAjuda")}
+            </p>
+            <SeletorDeEventos marcados={eventos} onChange={setEventos} />
           </div>
           <div className="flex gap-2">
             <Button
@@ -914,54 +1380,13 @@ function AbaEnviados() {
       ) : (
         <div className="space-y-2">
           {endpoints.map((e) => (
-            <div
+            <CartaoDoEndereco
               key={e.id}
-              className="space-y-2 rounded-lg border border-border bg-card p-3"
-            >
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate font-mono text-xs">
-                  {e.url}
-                </span>
-                <SettingsChip
-                  variant={e.is_active ? "ok" : e.failure_count > 0 ? "err" : "muted"}
-                >
-                  {e.is_active ? t("ligado") : t("desligado")}
-                </SettingsChip>
-              </div>
-              <p className="text-[11px] text-muted-foreground">
-                {e.events.join(" · ")}
-              </p>
-              <p className="text-[11px] text-muted-foreground">
-                {t("ultimaEntrega", { quando: quando(e.last_delivery_at) })}
-                {e.failure_count > 0
-                  ? ` · ${t("falhasSeguidas", { n: e.failure_count })}`
-                  : ""}
-              </p>
-              {!e.is_active && e.failure_count > 0 ? (
-                <p className="text-[11px] text-destructive">
-                  {t("desativadoPorFalhas")}
-                </p>
-              ) : null}
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void alternar(e)}
-                >
-                  {e.is_active ? t("desligar") : t("religar")}
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void apagar(e)}
-                >
-                  <Trash2 className="size-3.5" />
-                  {t("apagar")}
-                </Button>
-              </div>
-            </div>
+              endpoint={e}
+              onMudou={carregar}
+              onAlternar={() => void alternar(e)}
+              onApagar={() => void apagar(e)}
+            />
           ))}
         </div>
       )}
@@ -975,7 +1400,13 @@ function AbaEnviados() {
 
 export function WebhooksPanel() {
   const t = useTranslations("Settings.webhooks");
-  const [aba, setAba] = useState<"recebidos" | "enviados">("recebidos");
+  // `?aba=enviados` abre direto na aba Enviados — é para onde a
+  // Documentação (Configurações → API) manda quem vai cadastrar um aviso.
+  // Lido só na montagem: a sub-aba continua sendo estado local.
+  const searchParams = useSearchParams();
+  const [aba, setAba] = useState<"recebidos" | "enviados">(() =>
+    searchParams.get("aba") === "enviados" ? "enviados" : "recebidos"
+  );
 
   return (
     <div className="space-y-4">

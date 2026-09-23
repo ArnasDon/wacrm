@@ -227,12 +227,13 @@ export async function saveLeadDetailsHandler(
   const email = optionalString(input, 'email')
   const escalationReason = optionalString(input, 'escalation_reason')
   const company = optionalString(input, 'company')
+  const role = optionalString(input, 'role')
 
-  if (!name && !email && !escalationReason && !company) {
+  if (!name && !email && !escalationReason && !company && !role) {
     return {
       isError: true,
       content:
-        'Não enviaste nenhum dado para guardar. Envia pelo menos um de: name, email, escalation_reason, company.',
+        'Não enviaste nenhum dado para guardar. Envia pelo menos um de: name, email, escalation_reason, company, role.',
     }
   }
 
@@ -244,11 +245,16 @@ export async function saveLeadDetailsHandler(
   }
 
   try {
-    if ((name || email || company) && ctx.contactId) {
+    if ((name || email || company || role) && ctx.contactId) {
       const contactUpdate: Record<string, unknown> = {}
       if (name) contactUpdate.name = name
       if (email) contactUpdate.email = email
       if (company) contactUpdate.company = company
+      // `contacts.lead_role` (migração 058) — cargo confirmado (ou
+      // corrigido) pelo lead na abertura por persona, ver
+      // buildCommercialAdOpeningMessage (commercial.ts). Nunca bloqueia
+      // o gate de handoff (checkHandoffReadiness não olha para isto).
+      if (role) contactUpdate.lead_role = role
       const { error } = await ctx.db.from('contacts').update(contactUpdate).eq('id', ctx.contactId)
       if (error) throw error
     }
@@ -271,6 +277,7 @@ export async function saveLeadDetailsHandler(
   if (email) saved.push('email')
   if (escalationReason) saved.push('escalation_reason')
   if (company) saved.push('company')
+  if (role) saved.push('role')
 
   // Bloco 4 — se este save completou tudo o que checkHandoffReadiness
   // exige (nome, email, motivo, empresa), a conversa acabou de se

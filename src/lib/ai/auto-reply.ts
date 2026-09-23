@@ -105,7 +105,7 @@ export async function dispatchInboundToAiReply(
     const { data: conv, error: convErr } = await db
       .from('conversations')
       .select(
-        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, commercial_welcome_sent_at, escalation_reason, handoff_blocked_attempts, team_requested_at',
+        'assigned_agent_id, ai_autoreply_disabled, ai_reply_count, source, ad_id, commercial_welcome_sent_at, escalation_reason, handoff_blocked_attempts, team_requested_at',
       )
       .eq('id', conversationId)
       .maybeSingle()
@@ -172,6 +172,8 @@ export async function dispatchInboundToAiReply(
         contactId,
         configOwnerUserId,
         welcomeMessage: config.commercialWelcomeMessage,
+        source: conv.source as string | null,
+        adId: conv.ad_id as string | null,
       })
     }
 

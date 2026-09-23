@@ -41,14 +41,83 @@ export function isCommercialConversation(
 /**
  * Default welcome sent immediately on the first inbound message of a
  * commercial conversation, used whenever the account hasn't set its
- * own `commercial_welcome_message`. Portuguese (Portugal) — this is
- * also the "boas-vindas adequada a quem acabou de clicar no anúncio"
- * required by Bloco 3-A.
+ * own `commercial_welcome_message` AND the conversation didn't come
+ * from a mapped Meta ad (see `buildCommercialAdOpeningMessage` below,
+ * which takes priority for `source = 'meta_ad'`). Portuguese
+ * (Portugal) — this is also the "boas-vindas adequada a quem acabou
+ * de clicar no anúncio" required by Bloco 3-A.
  */
 export const DEFAULT_COMMERCIAL_WELCOME_MESSAGE =
   'Olá! Obrigado por nos contactar. 😊 ' +
   'Somos a equipa comercial e estamos aqui para perceber melhor o seu negócio e ver como podemos ajudar. ' +
   'Em que empresa ou projecto está, e que problema gostava de resolver?'
+
+// ============================================================
+// Abertura por persona — a primeira mensagem de uma conversa vinda de
+// anúncio (`conversations.source = 'meta_ad'`) confirma o cargo da
+// pessoa antes de qualificar, em vez de ir logo às perguntas de
+// negócio. O `ad_id` guardado na conversa (migração 045) identifica
+// qual dos anúncios abriu a conversa; cada anúncio testa uma persona
+// diferente (CEO / director comercial / empresário) — ver
+// `COMMERCIAL_AD_PERSONA_BY_AD_ID`. Texto aprovado pelo Ricardo,
+// 24/09/2026. Sem ad_id conhecido, usa-se a variante genérica.
+//
+// O cargo que a pessoa confirmar (ou corrigir) é registado por
+// save_lead_details no campo `role` → `contacts.lead_role` (migração
+// 058) — ver commercial-schema.ts / handlers/commercial.ts. Isto não
+// altera o gate de handoff (nome, email, motivo, empresa continuam
+// obrigatórios).
+// ============================================================
+
+export type CommercialAdPersona = 'ceo' | 'director_comercial' | 'empresario'
+
+/** ad_id (`conversations.ad_id`) → persona testada nesse anúncio.
+ *  Inclui os anúncios actuais e os antigos ainda em posts activos. */
+export const COMMERCIAL_AD_PERSONA_BY_AD_ID: Record<string, CommercialAdPersona> = {
+  '120249664433370585': 'ceo',
+  '120249685585350585': 'ceo',
+  '120249645217990585': 'ceo',
+  '120249664433640585': 'director_comercial',
+  '120249645233150585': 'director_comercial',
+  '120249664434280585': 'empresario',
+  '120249645233480585': 'empresario',
+}
+
+/** Pergunta de confirmação de cargo por persona, usada na abertura da
+ *  conversa (ver `buildCommercialAdOpeningMessage`). Sem persona
+ *  conhecida (ad_id em falta ou não mapeado), usa-se a genérica. */
+const COMMERCIAL_AD_PERSONA_QUESTION: Record<CommercialAdPersona, string> = {
+  ceo: 'é o responsável máximo da empresa, ou trata disto outra pessoa?',
+  director_comercial: 'é quem lidera a equipa comercial, ou trata disto outra pessoa?',
+  empresario: 'a empresa é sua, ou trata disto outra pessoa?',
+}
+const COMMERCIAL_AD_PERSONA_QUESTION_GENERIC =
+  'é o responsável comercial da empresa, ou trata disto por outra via?'
+
+/** Persona testada pelo anúncio que abriu a conversa, ou `null` sem
+ *  `ad_id` ou com um `ad_id` não mapeado. */
+export function personaFromAdId(adId: string | null | undefined): CommercialAdPersona | null {
+  if (!adId) return null
+  return COMMERCIAL_AD_PERSONA_BY_AD_ID[adId] ?? null
+}
+
+/**
+ * Abertura da primeira mensagem de uma conversa comercial vinda de
+ * anúncio (`conversations.source === 'meta_ad'`) — substitui, só para
+ * este caso, `DEFAULT_COMMERCIAL_WELCOME_MESSAGE` e qualquer
+ * `commercial_welcome_message` configurado na conta (a confirmação de
+ * cargo é sempre a prioridade quando se sabe que a pessoa veio de um
+ * anúncio). Chamar apenas quando `source === 'meta_ad'` — ver
+ * `sendCommercialWelcomeIfNeeded`.
+ */
+export function buildCommercialAdOpeningMessage(adId: string | null | undefined): string {
+  const persona = personaFromAdId(adId)
+  const question = persona ? COMMERCIAL_AD_PERSONA_QUESTION[persona] : COMMERCIAL_AD_PERSONA_QUESTION_GENERIC
+  return (
+    'Olá! Sou o agente da Eter Growth. Respondo em segundos, a qualquer hora, é isto que fazemos pelas empresas.\n' +
+    `Para lhe dar a resposta certa: ${question}`
+  )
+}
 
 /**
  * Fixed fallback sent when the AI call fails, times out, or returns no
@@ -68,6 +137,14 @@ interface WelcomeArgs {
   contactId: string
   configOwnerUserId: string
   welcomeMessage: string | null | undefined
+  /** `conversations.source` (migração 045) — quando `'meta_ad'`, a
+   *  abertura por persona (`buildCommercialAdOpeningMessage`) tem
+   *  sempre prioridade sobre `welcomeMessage`. */
+  source?: string | null
+  /** `conversations.ad_id` (migração 045) — qual anúncio abriu a
+   *  conversa, usado para escolher a persona da abertura. Só relevante
+   *  quando `source === 'meta_ad'`. */
+  adId?: string | null
 }
 
 /**
@@ -90,7 +167,8 @@ interface WelcomeArgs {
  * here must not block the rest of the auto-reply flow.
  */
 export async function sendCommercialWelcomeIfNeeded(args: WelcomeArgs): Promise<void> {
-  const { db, accountId, conversationId, contactId, configOwnerUserId, welcomeMessage } = args
+  const { db, accountId, conversationId, contactId, configOwnerUserId, welcomeMessage, source, adId } =
+    args
   try {
     const { data: claimedRows, error } = await db
       .from('conversations')
@@ -108,10 +186,16 @@ export async function sendCommercialWelcomeIfNeeded(args: WelcomeArgs): Promise<
     }
     if (!claimedRows || claimedRows.length === 0) return // already sent, or lost the race
 
+    // Abertura por persona (Ricardo, 24/09/2026): uma conversa vinda de
+    // um anúncio confirma o cargo antes de qualificar, independentemente
+    // de a conta ter um `commercial_welcome_message` próprio — esse
+    // continua a valer para conversas directas (source !== 'meta_ad').
     const text =
-      welcomeMessage && welcomeMessage.trim()
-        ? welcomeMessage.trim()
-        : DEFAULT_COMMERCIAL_WELCOME_MESSAGE
+      source === 'meta_ad'
+        ? buildCommercialAdOpeningMessage(adId)
+        : welcomeMessage && welcomeMessage.trim()
+          ? welcomeMessage.trim()
+          : DEFAULT_COMMERCIAL_WELCOME_MESSAGE
 
     await engineSendText({
       accountId,

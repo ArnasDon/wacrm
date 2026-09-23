@@ -385,6 +385,16 @@ describe('saveLeadDetailsHandler', () => {
     })
   })
 
+  it('saves the confirmed role onto contacts.lead_role', async () => {
+    const { db, updates } = makeDb()
+    const result = await saveLeadDetailsHandler(ctxWith(db), { role: 'Director comercial' })
+    expect(result.isError).toBe(false)
+    expect(JSON.parse(result.content)).toEqual({ saved: ['role'] })
+    expect(updates).toEqual([
+      { table: 'contacts', payload: { lead_role: 'Director comercial' }, id: 'contact-1' },
+    ])
+  })
+
   it('rejects an invalid email without writing anything', async () => {
     const { db, updates } = makeDb()
     const result = await saveLeadDetailsHandler(ctxWith(db), { email: 'not-an-email' })

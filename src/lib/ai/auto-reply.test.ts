@@ -546,7 +546,10 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
   })
 
   it('sends the immediate welcome message before generating the AI reply, then still sends the AI reply', async () => {
-    h.state.conv = commercialConv()
+    // source 'direct' — a abertura por persona (ad_id) só se aplica a
+    // conversas vindas de anúncio; ver bloco "abertura por persona"
+    // abaixo para o caso source 'meta_ad'.
+    h.state.conv = commercialConv({ source: 'direct' })
     h.loadAiConfig.mockResolvedValue(commercialConfig())
     await dispatchInboundToAiReply(ARGS)
 
@@ -566,8 +569,8 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
     )
   })
 
-  it('uses the configured commercial_welcome_message instead of the default when set', async () => {
-    h.state.conv = commercialConv()
+  it('uses the configured commercial_welcome_message instead of the default when set (conversa directa)', async () => {
+    h.state.conv = commercialConv({ source: 'direct' })
     h.loadAiConfig.mockResolvedValue(
       commercialConfig({ commercialWelcomeMessage: 'Olá! Mensagem à medida.' }),
     )
@@ -575,6 +578,50 @@ describe('dispatchInboundToAiReply — Bloco 3-A modo comercial por omissão', (
     expect(h.engineSendText).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({ text: 'Olá! Mensagem à medida.' }),
+    )
+  })
+
+  // ============================================================
+  // Abertura por persona (Ricardo, 24/09/2026) — uma conversa vinda de
+  // anúncio (source 'meta_ad') confirma o cargo com base no ad_id
+  // guardado na conversa, em vez de ir logo às perguntas de
+  // qualificação. Ver src/lib/ai/commercial.ts.
+  // ============================================================
+  it('conversa de anúncio com ad_id mapeado para "director comercial" usa essa variante da abertura', async () => {
+    h.state.conv = commercialConv({ source: 'meta_ad', ad_id: '120249664433640585' })
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: expect.stringContaining('é quem lidera a equipa comercial, ou trata disto outra pessoa?'),
+      }),
+    )
+  })
+
+  it('conversa de anúncio sem ad_id conhecido usa a pergunta genérica de confirmação de cargo', async () => {
+    h.state.conv = commercialConv({ source: 'meta_ad', ad_id: null })
+    h.loadAiConfig.mockResolvedValue(commercialConfig())
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: expect.stringContaining('é o responsável comercial da empresa, ou trata disto por outra via?'),
+      }),
+    )
+  })
+
+  it('conversa de anúncio ignora o commercial_welcome_message configurado — a abertura por persona tem prioridade', async () => {
+    h.state.conv = commercialConv({ source: 'meta_ad', ad_id: null })
+    h.loadAiConfig.mockResolvedValue(
+      commercialConfig({ commercialWelcomeMessage: 'Olá! Mensagem à medida.' }),
+    )
+    await dispatchInboundToAiReply(ARGS)
+    expect(h.engineSendText).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({
+        text: expect.stringContaining('Sou o agente da Eter Growth'),
+      }),
     )
   })
 

@@ -67,13 +67,18 @@ export const bookCommercialMeetingTool: ToolDefinition = {
 export const saveLeadDetailsTool: ToolDefinition = {
   name: 'save_lead_details',
   description:
-    'Guarda o nome, o email, o motivo de contacto e/ou a empresa do lead assim que os souberes na conversa — chama sempre que aprenderes um destes dados, nunca esperes até ao fim para os registares todos de uma vez. Podes enviar só um campo de cada vez. Estes quatro dados têm de estar guardados antes de a conversa poder ser passada para a equipa (ou uma reunião marcada), por isso regista-os assim que os tiveres, mesmo antes de a pessoa pedir para falar com alguém.',
+    'Guarda o nome, o email, o cargo, o motivo de contacto e/ou a empresa do lead assim que os souberes na conversa — chama sempre que aprenderes um destes dados, nunca esperes até ao fim para os registares todos de uma vez. Podes enviar só um campo de cada vez. Nome, email, motivo e empresa têm de estar guardados antes de a conversa poder ser passada para a equipa (ou uma reunião marcada), por isso regista-os assim que os tiveres, mesmo antes de a pessoa pedir para falar com alguém. O cargo (role) não bloqueia nada disto — regista-o apenas quando a conversa o revelar.',
   parameters: {
     type: 'object',
     properties: {
       name: {
         type: 'string',
         description: 'Nome da pessoa com quem estás a falar.',
+      },
+      role: {
+        type: 'string',
+        description:
+          'Cargo da pessoa na empresa, nas próprias palavras dela — por exemplo "CEO", "director comercial", "dono do negócio", ou uma frase curta se ela negar o cargo sugerido na abertura da conversa (ex.: "trata disto outra pessoa"). Regista assim que a pessoa confirmar ou corrigir o cargo perguntado na primeira mensagem.',
       },
       email: {
         type: 'string',

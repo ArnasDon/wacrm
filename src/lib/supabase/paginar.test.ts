@@ -236,6 +236,30 @@ describe("buscarPorChave", () => {
 
     expect(r.linhas).toBeNull();
     expect(r.motivo).toBe("teto");
-    expect(n).toBe(MAX_PAGINAS);
+    // As MAX_PAGINAS páginas e a sondagem.
+    expect(n).toBe(MAX_PAGINAS + 1);
+  });
+
+  // Codex, PR #260: todas as páginas cheias não provam que há mais.
+  it("coleção de EXATAMENTE MAX_PAGINAS páginas cheias é completa, não teto", async () => {
+    const { pagina, pedidos } = banco(MAX_PAGINAS * PAGINA);
+    const r = await buscarPorChave(pagina);
+
+    expect(r.motivo).toBeNull();
+    expect(r.linhas).toHaveLength(MAX_PAGINAS * PAGINA);
+    expect(pedidos).toHaveLength(MAX_PAGINAS + 1);
+  });
+
+  it("erro na sondagem é erro, nunca a lista como completa", async () => {
+    let n = 0;
+    const r = await buscarPorChave<Linha>(async () => {
+      n += 1;
+      return n <= MAX_PAGINAS
+        ? { data: linhas((n - 1) * PAGINA, PAGINA), error: null }
+        : { data: null, error: { message: "timeout" } };
+    });
+
+    expect(r.linhas).toBeNull();
+    expect(r.motivo).toBe("erro");
   });
 });

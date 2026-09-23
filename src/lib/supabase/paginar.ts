@@ -135,7 +135,8 @@ export async function buscarPaginado<T>(
  * da 2ª, e ela não vem em página nenhuma; a contagem nova ainda fecha, e a
  * leitura parece completa (Codex, PR #247). Por chave, entrar ou sair do
  * recorte não desloca as outras linhas. Não precisa de `count`: a página
- * seguinte começa depois do último visto, então página curta é o fim.
+ * seguinte começa depois do último visto, então página curta é o fim — e,
+ * com as `MAX_PAGINAS` cheias, uma sondagem vazia também.
  *
  * `pagina(depoisDe)` tem de ordenar por `id` ASCENDENTE, limitar a `PAGINA`
  * e, com `depoisDe` preenchido, filtrar `.gt('id', depoisDe)`.
@@ -157,5 +158,13 @@ export async function buscarPorChave<T extends { id: string }>(
     depoisDe = data[data.length - 1].id;
   }
 
-  return { linhas: null, erro: null, motivo: "teto" };
+  // As MAX_PAGINAS páginas vieram CHEIAS. Sem `count`, só uma sondagem separa
+  // "a coleção terminou exatamente no teto" de "passou dele" — sem ela, uma
+  // coleção de exatamente 25.000 linhas era dada como "teto", e o contador
+  // ficava no valor antigo (Codex, PR #260).
+  const { data, error } = await pagina(depoisDe);
+  if (error || !data) return { linhas: null, erro: error ?? null, motivo: "erro" };
+  return data.length === 0
+    ? { linhas: acumulado, erro: null, motivo: null }
+    : { linhas: null, erro: null, motivo: "teto" };
 }

@@ -7509,6 +7509,15 @@ já valendo ANTES do upgrade (os ajustes são retrocompatíveis):
     replay do CI e antes do merge; gravadas 1.196 linhas no lote `reunioes-1`
     (546 pelo card, 28 pelo telefone, 622 sem ficha), com notificações,
     eventos de automação e execuções iguais antes e depois.
+  - **1037_cb_falha_de_webhook_so_pelo_servidor** — fecha o EXECUTE de
+    `record_webhook_failure` (028, SECURITY DEFINER) para PUBLIC, `anon` e
+    `authenticated`, com o GRANT de volta ao `service_role`: com a chave
+    anônima e o id de um endpoint (que viaja em `X-Wacrm-Webhook-Id` em toda
+    entrega), quinze chamadas desligavam o webhook de saída. Não recria a
+    função. Aplicada em 23/09/2026 pela Management API (histórico
+    `20260923173150`), depois do replay do CI e antes do merge do PR #266;
+    conferida no catálogo (`proacl` = `{postgres=X, service_role=X}`, `anon`
+    e `authenticated` sem EXECUTE).
 
   ⚠️ **Não existe 938/939**, nem local nem no histórico — não "preencher" a
   lacuna: a numeração é cronológica, não densa.

@@ -1,7 +1,6 @@
 import { NextResponse } from 'next/server'
 import { loadAccountChannelsForValidation } from '@/lib/cb-channels/repo'
-import { createClient } from '@/lib/supabase/server'
-import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { getCurrentAccount, requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 import {
   loadStepsTree,
@@ -17,28 +16,34 @@ import {
 import { ehGatilhoDaRegua } from '@/lib/asaas/regua'
 import { normalizarAssinatura } from '@/lib/assinatura/assinatura'
 
-async function requireUser() {
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  return user
-}
+// ⚠️⚠️ A automação é da CONTA, não de quem a criou (23/09/2026, decisão do
+// operador). As rotas do upstream filtravam por `user_id = user.id`, herança
+// do tempo em que cada login era uma conta: com um segundo admin, ele via a
+// automação na lista (a leitura é da conta, pela RLS) e recebia 404 ao abrir,
+// ativar, duplicar ou mudar o escopo — e o DELETE respondia `ok` SEM apagar
+// nada. Ler é de qualquer membro da conta (a policy de SELECT); escrever é de
+// admin da conta (as policies da 964). `user_id` continua sendo só "quem
+// criou". Há pino em `route.test.ts`: um merge do upstream traz o filtro
+// pelo autor de volta sem conflito nenhum.
 
 export async function GET(
   _request: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
   const { id } = await params
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  let accountId: string
+  try {
+    accountId = (await getCurrentAccount()).accountId
+  } catch (err) {
+    return toErrorResponse(err)
+  }
 
   const admin = supabaseAdmin()
   const { data: automation, error } = await admin
     .from('automations')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
     .maybeSingle()
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
@@ -57,32 +62,32 @@ export async function PATCH(
   // Editing an automation is a write — the RLS automations_update policy
   // requires `agent`, but this route mutates via the service-role client
   // which bypasses RLS, so enforce the role here.
+  let accountId: string
   try {
     // Fase 2 dos perfis (2026-08-30): mutação de automação/fluxo/disparo subiu de
     // 'agent' para 'admin' — decisão do operador; ver canManageAutomations em roles.ts.
-    await requireRole('admin')
+    accountId = (await requireRole('admin')).accountId
   } catch (err) {
     return toErrorResponse(err)
   }
-
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const body = await request.json().catch(() => null)
   if (!body) return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
 
   const admin = supabaseAdmin()
 
-  // Ownership check before we touch anything. Load the fields we need
-  // to compute the post-patch "effective" state for validation.
-  const { data: existing } = await admin
+  // Conferência de CONTA antes de tocar em qualquer coisa (ver o topo do
+  // arquivo). Carrega o que o estado "efetivo" pós-PATCH precisa para validar.
+  // Erro de leitura é 500: como "não encontrado", o operador leria que a
+  // automação sumiu.
+  const { data: existing, error: erroDeLeitura } = await admin
     .from('automations')
-    .select('id, user_id, account_id, is_active, trigger_type, trigger_config, channel_ids')
+    .select('id, account_id, is_active, trigger_type, trigger_config, channel_ids')
     .eq('id', id)
+    .eq('account_id', accountId)
     .maybeSingle()
-  if (!existing || existing.user_id !== user.id) {
-    return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  }
+  if (erroDeLeitura) return NextResponse.json({ error: erroDeLeitura.message }, { status: 500 })
+  if (!existing) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
   const update: Record<string, unknown> = {}
   for (const k of [
@@ -169,22 +174,27 @@ export async function DELETE(
 ) {
   const { id } = await params
 
-  // Deleting an automation is a write — enforce `agent` (the service-role
-  // client below bypasses the agent-gated automations_delete RLS).
+  // Deleting an automation is a write — enforce the role here (the
+  // service-role client below bypasses the admin-gated automations_delete RLS).
+  let accountId: string
   try {
-    await requireRole('admin')
+    accountId = (await requireRole('admin')).accountId
   } catch (err) {
     return toErrorResponse(err)
   }
 
-  const user = await requireUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { error } = await supabaseAdmin()
+  // ⚠️ Confere QUANTAS linhas saíram. Um DELETE que não casa nada volta sem
+  // erro, e a tela dizia "excluída" sobre a automação intacta — que voltava
+  // no recarregamento.
+  const { data: apagadas, error } = await supabaseAdmin()
     .from('automations')
     .delete()
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', accountId)
+    .select('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!apagadas || apagadas.length === 0) {
+    return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  }
   return NextResponse.json({ ok: true })
 }

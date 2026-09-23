@@ -28,6 +28,12 @@ export interface UseFavoritasResult {
    * "não deu, tente de novo" sem que nada tenha sido tentado.
    */
   pronto: boolean;
+  /**
+   * A leitura das favoritas DESTE membro já voltou (com ou sem erro). Antes
+   * disso `favoritas` é o conjunto vazio da montagem, e o recorte "Favoritas"
+   * aplicado sobre ele diria "nenhuma conversa" (Codex, PR #247).
+   */
+  carregadas: boolean;
   /** A leitura inicial falhou — as estrelas na tela não são confiáveis. */
   falhouAoCarregar: boolean;
   /** Marca ou desmarca. Devolve `false` quando a gravação falhou. */
@@ -42,6 +48,9 @@ export function useFavoritas(resyncToken = 0): UseFavoritasResult {
   const userId = user?.id ?? null;
   const [favoritas, setFavoritas] = useState<Set<string>>(new Set());
   const [falhouAoCarregar, setFalhouAoCarregar] = useState(false);
+  // De QUEM é a última leitura que voltou. Carimbado com o dono, e não um
+  // booleano: trocar de login não pode herdar o "já carregou" do anterior.
+  const [carregadasDe, setCarregadasDe] = useState<string | null>(null);
 
   /**
    * O que está em voo, por conversa: `'marcar'` ou `'desmarcar'`.
@@ -69,6 +78,7 @@ export function useFavoritas(resyncToken = 0): UseFavoritasResult {
         .from('cb_conversation_favorites')
         .select('conversation_id');
       if (cancelado) return;
+      setCarregadasDe(userId);
       if (error || !data) {
         // ⚠️ Não dá para tratar como "não tenho nenhuma favorita": a tela
         // ficaria com todas as estrelas apagadas e o filtro "Favoritas"
@@ -149,6 +159,7 @@ export function useFavoritas(resyncToken = 0): UseFavoritasResult {
   return {
     favoritas,
     pronto: !!userId && !!accountId,
+    carregadas: userId !== null && carregadasDe === userId,
     falhouAoCarregar,
     alternar,
   };

@@ -5,17 +5,23 @@
 // Both are account-scoped: a contact belonging to another account
 // returns 404 (never 403 — don't reveal it exists elsewhere).
 // PATCH updates only the fields present in the body; pass `tags` (an
-// array of tag names) to replace the contact's tags.
+// array of tag names or tag ids) to replace the contact's tags.
+//
+// ⚠️ `tags` é lido ANTES de gravar nome/e-mail/empresa (`lerTagsPedidas`,
+// só leitura): um id que não é desta conta volta 400 `unknown_tag_ids` com
+// o contato intocado, em vez de um 400 sobre um contato já alterado.
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
 import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import {
   getContactById,
+  lerTagsPedidas,
   setContactTags,
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
+import { TagReferenceError } from '@/lib/api/v1/tags-do-contato';
 
 export async function GET(
   request: Request,
@@ -67,6 +73,15 @@ export async function PATCH(
       }
     }
 
+    // Só leitura — a última conferência antes da primeira escrita.
+    const tagsPedidas = Array.isArray(body.tags)
+      ? await lerTagsPedidas(
+          ctx.supabase,
+          ctx.accountId,
+          body.tags.filter((t): t is string => typeof t === 'string')
+        )
+      : null;
+
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString();
       const { error } = await ctx.supabase
@@ -80,20 +95,23 @@ export async function PATCH(
       }
     }
 
-    if (Array.isArray(body.tags)) {
+    if (tagsPedidas) {
       const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
       await setContactTags(
         ctx.supabase,
         ctx.accountId,
         auditUserId,
         id,
-        body.tags.filter((t): t is string => typeof t === 'string')
+        tagsPedidas
       );
     }
 
     const contact = await getContactById(ctx.supabase, ctx.accountId, id);
     return ok(contact);
   } catch (err) {
+    if (err instanceof TagReferenceError) {
+      return fail(err.code, err.message, err.status);
+    }
     if (err instanceof ContactError) {
       return fail(err.status === 400 ? 'bad_request' : 'internal', err.message, err.status);
     }

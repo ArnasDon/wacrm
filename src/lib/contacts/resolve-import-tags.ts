@@ -1,12 +1,28 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { chaveDeTag } from './chave-de-tag';
+import { pareceIdDeEtiqueta } from './id-de-etiqueta';
 
 const DEFAULT_TAG_COLOR = '#3b82f6';
+
+/** O catálogo de etiquetas da conta, pelas duas perguntas que se fazem a ele. */
+export interface CatalogoDeTags {
+  /** `chaveDeTag(nome)` → id. Na colisão de chave, a etiqueta MAIS ANTIGA. */
+  porChave: Map<string, string>;
+  /**
+   * id (em minúsculas) → nome GRAVADO, para TODA etiqueta da conta — inclusive
+   * a que perdeu a colisão de chave. É por aqui que se confere que um id
+   * pedido pela API é DESTA conta, e é o nome que a API devolve no lugar do
+   * id cru.
+   */
+  nomePorId: Map<string, string>;
+}
 
 export interface ResolveImportTagsResult {
   /** `chaveDeTag(nome)` → id da etiqueta. */
   tagIdByKey: Map<string, string>;
+  /** id → nome gravado, lido do mesmo catálogo (depois da criação). */
+  nomePorId: Map<string, string>;
   /** Names that could not be matched and were not created. */
   skippedNames: string[];
 }
@@ -15,14 +31,16 @@ export interface ResolveImportTagsResult {
 const TAGS_POR_PAGINA = 500;
 
 /**
- * O catálogo de etiquetas da conta, chaveado por `chaveDeTag`.
+ * O catálogo de etiquetas da conta, por chave de nome e por id.
  *
  * ⚠️ PAGINADO, e não é zelo prematuro: o PostgREST corta em 1000 linhas SEM
  * avisar, e este mapa é quem responde "esta etiqueta já existe?". Truncado,
  * ele diz "não existe" sobre etiqueta que existe — e daí sai criação
  * recusada pelo índice (23505 na cara do integrador) ou, no `remove`, um
  * "desconhecida" sobre etiqueta que está lá. É a mesma armadilha que a busca
- * de conversas (929) e o funil comercial já documentam.
+ * de conversas (929) e o funil comercial já documentam. Vale igual para o
+ * `nomePorId`: truncado, um id legítimo seria recusado como "não é desta
+ * conta".
  *
  * ⚠️ Ordenado por `created_at, id`: na colisão de chave vence a MAIS ANTIGA,
  * a que o escritório vem usando. A ordem também é o que torna a paginação
@@ -31,8 +49,9 @@ const TAGS_POR_PAGINA = 500;
 export async function lerCatalogoDeTags(
   supabase: SupabaseClient,
   accountId: string
-): Promise<Map<string, string>> {
-  const mapa = new Map<string, string>();
+): Promise<CatalogoDeTags> {
+  const porChave = new Map<string, string>();
+  const nomePorId = new Map<string, string>();
   for (let pagina = 0; ; pagina++) {
     const de = pagina * TAGS_POR_PAGINA;
     const { data, error } = await supabase
@@ -45,10 +64,16 @@ export async function lerCatalogoDeTags(
     if (error) throw error;
 
     for (const tag of data ?? []) {
-      const chave = chaveDeTag(tag.name as string);
-      if (!mapa.has(chave)) mapa.set(chave, tag.id as string);
+      const id = tag.id as string;
+      const nome = tag.name as string;
+      // O Postgres devolve o uuid em minúsculas; quem compara um id PEDIDO
+      // contra este mapa rebaixa a caixa do pedido antes (o integrador pode
+      // mandar em maiúsculas, e o formato aceita).
+      nomePorId.set(id.toLowerCase(), nome);
+      const chave = chaveDeTag(nome);
+      if (!porChave.has(chave)) porChave.set(chave, id);
     }
-    if (!data || data.length < TAGS_POR_PAGINA) return mapa;
+    if (!data || data.length < TAGS_POR_PAGINA) return { porChave, nomePorId };
   }
 }
 
@@ -74,6 +99,18 @@ export async function lerCatalogoDeTags(
  * etiqueta específica é a mensagem saindo em dobro para o cliente. Com o
  * índice, a segunda inserção não acontece; com a releitura, as duas
  * requisições convergem no MESMO id. (Achado do Codex no PR #150.)
+ *
+ * ⚠️⚠️ NUNCA cria etiqueta cujo nome tem o formato de UUID — ele volta em
+ * `skippedNames`, mesmo com `canCreateTags`. Caso de produção (22/09/2026): um
+ * integrador mandou o ID da etiqueta "Typebot" onde a API esperava o nome, e
+ * esta função criou uma etiqueta NOVA chamada "32f2da4f-…", que foi aplicada
+ * ao contato e disparou `tag_added`. As portas da API hoje separam id de nome
+ * ANTES de chegar aqui (`casarReferencias`, em `api/v1/tags-do-contato.ts`), e
+ * nunca mandam um id; esta recusa é a segunda linha, para qualquer chamador
+ * — o import de CSV inclusive, cuja coluna de etiquetas pode vir de uma
+ * planilha exportada com ids. Um nome com cara de UUID que JÁ existe no
+ * catálogo continua casando (é a etiqueta que alguém criou à mão, e o import
+ * não tem por que recusá-la); só a CRIAÇÃO é barrada.
  */
 export async function resolveImportTagIds(
   supabase: SupabaseClient,
@@ -103,7 +140,7 @@ export async function resolveImportTagIds(
   }
 
   if (uniqueNames.length === 0) {
-    return { tagIdByKey: new Map(), skippedNames: [] };
+    return { tagIdByKey: new Map(), nomePorId: new Map(), skippedNames: [] };
   }
 
   // ⚠️ ORDENADO: quando duas etiquetas colapsam na mesma chave — possível em
@@ -111,14 +148,16 @@ export async function resolveImportTagIds(
   // ANTIGA. É a mesma régua do desempate da migration e da leitura de
   // catálogo da API aditiva. Sem o ORDER BY o PostgREST devolve em ordem não
   // determinística e duas chamadas iguais escolheriam etiquetas diferentes.
-  let tagIdByKey = await lerCatalogoDeTags(supabase, accountId);
+  let catalogo = await lerCatalogoDeTags(supabase, accountId);
 
   const skippedNames: string[] = [];
   const toCreate: string[] = [];
 
   for (const name of uniqueNames) {
-    if (tagIdByKey.has(chaveDeTag(name))) continue;
-    if (canCreateTags) toCreate.push(name);
+    if (catalogo.porChave.has(chaveDeTag(name))) continue;
+    // A recusa do nome-UUID vem ANTES de `canCreateTags`: sem permissão ele
+    // já cairia aqui, e com permissão é justamente o caso de 22/09.
+    if (canCreateTags && !pareceIdDeEtiqueta(name)) toCreate.push(name);
     else skippedNames.push(name);
   }
 
@@ -153,7 +192,7 @@ export async function resolveImportTagIds(
 
     if (createError) throw createError;
 
-    tagIdByKey = await lerCatalogoDeTags(supabase, accountId);
+    catalogo = await lerCatalogoDeTags(supabase, accountId);
 
     // Sobrou nome que nem existia nem foi criado? Reportar como pulado é
     // melhor que devolver um mapa incompleto em silêncio, que faria o
@@ -172,11 +211,15 @@ export async function resolveImportTagIds(
     // duas chamadas. Raro, e é justamente por ser raro que precisa aparecer
     // em vez de sumir.
     for (const name of toCreate) {
-      if (!tagIdByKey.has(chaveDeTag(name))) skippedNames.push(name);
+      if (!catalogo.porChave.has(chaveDeTag(name))) skippedNames.push(name);
     }
   }
 
-  return { tagIdByKey, skippedNames };
+  return {
+    tagIdByKey: catalogo.porChave,
+    nomePorId: catalogo.nomePorId,
+    skippedNames,
+  };
 }
 
 export interface ContactTagAssignment {

@@ -181,8 +181,8 @@ quebrar, sabe-se qual.
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (P1 decidida em 21/09: #229 fechado) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
 | **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
-| **1b** | Segurança depois do alvo: #588 (SSRF), #587 (automação por conta), #589 (conversa por conta) — PRs ABERTOS do mantenedor — e a mídia do Instagram (achado nosso) | Real: brechas presentes; o #587 também dava 404 ao admin não-autor | Média | Médio-baixo | — | em andamento (23/09) |
-| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream) | Moderado | Baixa | Baixo | — | pendente |
+| **1b** | Segurança depois do alvo: #588 (SSRF), #587 (automação por conta), #589 (conversa por conta) — PRs ABERTOS do mantenedor — e a mídia do Instagram (achado nosso) | Real: brechas presentes; o #587 também dava 404 ao admin não-autor | Média | Médio-baixo | — | ✅ em produção (PR #261, 23/09) |
+| **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream); com a P9, a normalização do telefone digitado — dividida em 3-I a 3-IV | Moderado | Baixa | Baixo | — | 3-I no PR #262; 3-II a 3-IV pendentes |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
 | **6** | Modelos: cabeçalho de mídia (#562) e stub (#534) | Moderado | Média | Médio-baixo | — | pendente |
@@ -673,8 +673,18 @@ hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
 | **Codex no HEAD `70e77961`** (cota voltou): P2 — PATCH só com os PASSOS pulava o UPDATE e, com ele, a conferência de linhas; apagada no meio, `replaceSteps` respondia 200 com lista vazia (ou 500 pela chave estrangeira) | ✅ o PATCH só de passos também toca a linha (`updated_at`, que o gatilho `set_updated_at` regrava) — 2 casos no teste, mutante reprova |
 | **Codex, 2ª rodada (HEAD `c2b43689`)**: P2 — ainda sobrava o DELETE concorrente ENTRE o UPDATE e a troca dos passos (lista vazia → 200; cheia → 500 pela chave estrangeira) | ✅ releitura por conta DEPOIS de `replaceSteps`: sumiu = 404 (3 casos, mutante reprova). Fechar de vez pediria transação (RPC + migration) para dois admins editando e apagando a mesma automação no mesmo segundo — não compensa, aceito por escrito |
 | **Codex, 3ª rodada (HEAD `c51aeb36`)**: P2 — a conferência da conversa olhava só a CONTA: "contato A + conversa de B" da mesma conta passava, e o cliente A recebia o que aparece no fio de B | ✅ com contato, a conversa tem de ser DELE também — no disparo, em `resolveConversationId` e nos 4 envios (`conversation-scope.ts` passa a divergir do original; linha no CLAUDE.md). Conferido antes que todo caminho legítimo (webhook, Evolution, Calendly, régua, webhooks de entrada, execução manual, `send_to_number`) já passa a conversa do próprio contato. 3 mutantes reprovam |
+| **Codex, 4ª rodada (HEAD `caf9808e`)** | nenhum achado |
 
-**Resultado:** — (a preencher)
+**Resultado (23/09/2026):** PR #261 mesclado às 13:45Z (merge `09efcfa6`),
+rollout na primeira tentativa (as três etapas do `pipeline.yml` verdes).
+**Pós-deploy, só leituras anônimas da produção:** login 200; `/inbox` 307 →
+login; os crons, a API v1 sem chave e os webhooks da Evolution e da Meta sem
+credencial, 401; `GET`/`PATCH` de automação e `POST /api/automations/engine`
+sem sessão, 401; o webhook do Instagram responde 200 a um corpo sem `object`
+(é o desenho: só assinatura que não casa vale 401); `/auth/callback` sem
+código → `forgot-password?erro=link`. Ingestão conferida no banco depois do
+rollout: as quatro conexões da Evolution gravando mensagem nos minutos
+seguintes (74 nos últimos 30 min). **FASE 1b FECHADA.**
 
 ### Fase 3 — Correções pequenas e independentes
 
@@ -1035,3 +1045,5 @@ de ser `80c3f9a` e passa a ser o commit que os contém — e as medições da se
 | 21/09/2026 | 2 (fecho) | Codex SEM COTA no HEAD → terceira revisão independente no lugar dele: nenhum P0/P1; os 2 P2 e 3 P3 corrigidos (pino do salto núcleo → resolvedor, `null` = ausente, ordem da validação, mensagem do `verify-schema`, doc), 1 P3 corrigido em parte (o pino do filtro por conta entrou; o `error` descartado e o `status` não conferido de `resolveMetaChannel` viraram cartão) e 2 P3 aceitos por escrito. Merge 17:27Z, rollout 17:33Z na primeira tentativa. Pós-deploy: a sonda inverteu (rota antiga → rota nova; `GET` sem → com `channel_id`), saúde e ingestão conferidas, zero chaves ativas. **Operador pediu pausa antes da Fase 3.** |
 | 21/09/2026 | 0 (P1) | **#229 FECHADO** por ordem do operador, com comentário explicando por que não podia ser mesclado (origem = o `main` do próprio original; conteúdo que muda sozinho; 19 PRs num deploy só) e apontando para este plano. A worktree fica de pé para as correções seguirem por aqui. Na conferência, o original tinha ANDADO: `upstream/main` = `aee1b01f`, 2 commits depois do alvo — o #586 (exige `+` e código do país; 21 arquivos, vários da Fase 3a) virou a decisão P9. |
 | 22/09/2026 | 3 (plano) | A pedido do operador, o cartão do `resolveMetaChannel` (P3 da revisão final do #242) entrou no plano como **item 3e**, depois de confirmado no `origin/main` (`ba5612ef`): o `error` descartado na busca por id, na lista e no espelho, e o `status` não conferido. Levantados os 7 chamadores (6 arquivos), todos traduzindo `null` em 400. Nada implementado — a pausa antes da Fase 3 continua. |
+| 23/09/2026 | 1b | Acrescentada a pedido do operador ("siga agora com todo o plano"): os 3 PRs de segurança ABERTOS do mantenedor valiam aqui, e o download da mídia do Instagram tinha SSRF com leitura. O #587 foi resolvido no meio da fase por OUTRA sessão (#260); ficou a versão dela, e esta fase acrescentou o que faltava. Quatro rodadas do Codex (3 com P2, todos corrigidos; a 4ª limpa). Mesclada e publicada; pós-deploy conferido. |
+| 23/09/2026 | 3-I | A P9 resolvida (a metade aditiva do #586, com a nossa régua) partiu a Fase 3 em quatro. 3b/3c/3e entraram, a 3d fechou sem mudança. A Lente 2 MEDIU em bash que `a, b` no `crm.env` apaga o `META_APP_SECRET` inteiro (401 em todo webhook) → a doc manda escrever sem espaço. Codex limpo na 1ª rodada. |

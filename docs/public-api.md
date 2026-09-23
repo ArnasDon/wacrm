@@ -704,17 +704,29 @@ things happen in your account. **Migration required:** apply
 
 ### Events
 
-| Event                    | Fires when                                        |
-| ------------------------ | ------------------------------------------------- |
-| `message.received`       | An inbound message arrives from a contact         |
-| `message.status_updated` | A message you sent changed delivery status        |
-| `conversation.created`   | A new conversation is opened for a contact        |
+| Event                    | Fires when                                                     |
+| ------------------------ | -------------------------------------------------------------- |
+| `message.received`       | An inbound message arrives from a contact                      |
+| `message.status_updated` | A message you sent changed delivery status                     |
+| `conversation.created`   | A new conversation is opened for a contact                     |
+| `deal.created`           | A deal (pipeline card) is created, in any stage                |
+| `deal.stage_changed`     | A deal moves to another stage — or to another pipeline         |
+| `deal.status_changed`    | A deal is marked won or lost, or reopened                      |
 
-All three carry `channel_id` in `data` — which of your numbers the event
-happened on, or `null` for events recorded before multi-channel. Without
-it, several numbers look like one indistinguishable stream, and a rule
-like "only open a ticket for what comes in on Comercial" is unbuildable.
-List the numbers with `GET /api/v1/channels`.
+Every event carries `channel_id` in `data` — which of your numbers the
+event happened on, or `null` for events recorded before multi-channel.
+Without it, several numbers look like one indistinguishable stream, and a
+rule like "only open a ticket for what comes in on Comercial" is
+unbuildable. List the numbers with `GET /api/v1/channels`. (On the three
+`deal.*` events it is the number the contact talks through **today** — not
+`deal.channel_id`, which is the number the lead **arrived** through.)
+
+The `deal.*` events fire for **every** way a card moves: dragging on the
+board, the deal form, the list view, the conversation side panel,
+automations and this API. They do **not** fire for bulk data migrations
+(which load history with the database triggers switched off), and deleting
+a deal emits nothing. One drag can emit **two** events: moving a card into
+a stage marked "won"/"lost" changes the stage *and* the status.
 
 ### Managing endpoints
 
@@ -736,8 +748,9 @@ curl -X POST https://your-crm.example.com/api/v1/webhooks \
 
 ### Delivery payload
 
-Every delivery is a POST with this envelope; `id` is a unique per-
-delivery uuid you can dedupe on, and `data` varies by `event`:
+Every delivery is a POST with this envelope, and `data` varies by `event`
+(the exact shapes live in `src/lib/webhooks/dados-dos-eventos.ts`, which
+the dispatch code is typed against):
 
 ```json
 {
@@ -749,16 +762,64 @@ delivery uuid you can dedupe on, and `data` varies by `event`:
 }
 ```
 
+- `id` — on the three `deal.*` events it is the id of the underlying fact
+  (the same value as `data.event_id`), so it is stable and safe to dedupe
+  on. On the message/conversation events it is a fresh uuid per dispatch.
+- `occurred_at` — on `deal.*` it is when the card changed (the database
+  clock), even if the delivery goes out later; on the other events it is
+  the dispatch time.
+- `test: true` — present only on deliveries sent by the **"Send test"**
+  button of *Settings → Webhooks → Outgoing*. Their `data` is fictitious sample
+  data; filter them out in production flows.
+
 `data` by event:
 
 ```jsonc
-// message.received
-{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋" }
+// message.received — WhatsApp (Meta or Evolution)
+{ "conversation_id": "…", "contact_id": "…", "whatsapp_message_id": "wamid.…", "content_type": "text", "text": "Hi 👋", "channel_id": "…" }
+// message.received — Instagram Direct: `instagram_message_id` instead of `whatsapp_message_id`
+{ "conversation_id": "…", "contact_id": "…", "instagram_message_id": "…", "content_type": "text", "text": "Hi 👋", "channel_id": "…" }
 // conversation.created
-{ "conversation_id": "…", "contact_id": "…" }
+{ "conversation_id": "…", "contact_id": "…", "channel_id": "…" }
 // message.status_updated
-{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered" }
+{ "whatsapp_message_id": "wamid.…", "conversation_id": "…", "status": "delivered", "channel_id": "…" }
 ```
+
+The three `deal.*` events share one shape:
+
+```jsonc
+{
+  "event_id": "…",                 // same as the envelope `id`
+  "occurred_at": "2026-09-23T14:05:00.000Z",
+  "source": "user",                // user | channel | automation | system (see below)
+  "deal_id": "…",
+  "deal": { /* GET /api/v1/deals/{id} shape — the deal AS OF DELIVERY, null if deleted */ },
+  "assignee": { "user_id": "…", "name": "Ana" },   // or null
+  "pipeline": { "id": "…", "name": "Comercial" },  // where the card went IN THIS EVENT
+  "stage": { "id": "…", "name": "Reunião Agendada", "position": 3 },
+  "contact": {                     // GET /api/v1/contacts/{id} shape, or null (group card / deleted contact)
+    "id": "…", "name": "…", "phone": "…", "email": "…", "tags": [{ "id": "…", "name": "Typebot", "color": "#3b82f6" }],
+    "custom_fields": { "tamanho_da_divida": "150000", "utm_source": null },
+    "…": "…"
+  },
+  "channel_id": "…",
+  // deal.stage_changed only — where it came from (a different pipeline = it changed pipelines):
+  "from_pipeline": { "id": "…", "name": "…" }, "from_stage": { "id": "…", "name": "Lead", "position": 2 },
+  // deal.status_changed only:
+  "from_status": "open", "status": "won"
+}
+```
+
+Read `stage`, not `deal.stage_id`, to know where the card went: `deal` is
+read at delivery time, so a card moved twice in a few seconds produces two
+events whose `deal` already shows the final stage. `source` tells who caused
+the change: `user` (someone in the CRM screens), `channel` (a connection
+opened the card for an incoming lead), `automation` (an automation's
+"create deal" step) or `system` (this API **or** an automation's "move
+card"/"set status" steps — the database does not tell those two apart).
+⚠️ If your flow reacts to `deal.stage_changed` by moving the card through
+this API, that move emits another event (`source: "system"`): make sure the
+flow cannot loop.
 
 Headers: `X-Wacrm-Event`, `X-Wacrm-Webhook-Id`, and `X-Wacrm-Signature`.
 
@@ -769,26 +830,40 @@ HMAC-SHA256(secret, "${t}.${rawBody}")`. Recompute it over the **raw
 request body** and compare in constant time; reject if `t` is more than
 a few minutes old (replay protection).
 
+The secret is the **whole** value you received, `whsec_` prefix included.
+
 ```js
 const [, t, v1] = header.match(/t=(\d+),v1=([0-9a-f]+)/);
 const expected = crypto.createHmac('sha256', secret)
   .update(`${t}.${rawBody}`).digest('hex');
-const ok = crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
+// timingSafeEqual throws on different lengths — compare lengths first.
+const ok = expected.length === v1.length &&
+  crypto.timingSafeEqual(Buffer.from(expected), Buffer.from(v1));
 ```
 
 ### Delivery semantics
 
-Delivery is **best-effort**: a single attempt per event with a short
-timeout, and **redirects are not followed**. `message.status_updated`
-covers messages wacrm stores (inbox + API sends), not broadcast-only
-sends, and — because providers re-send and re-order status callbacks —
-the same status may arrive more than once or out of order; **dedupe on
-`id` and don't assume ordering**. Each consecutive failure increments
-`failure_count`; after enough consecutive failures the endpoint is
-auto-disabled (`is_active: false`) — re-enable it with `PATCH` (which
-resets the counter). Durable retry-with-backoff (a delivery queue) is a
-future enhancement; today, treat missed deliveries as possible and
-reconcile with the read endpoints when it matters.
+Delivery is **best-effort**: a **single attempt** per event with a
+5-second timeout, and **redirects are not followed** (a 3xx counts as a
+failure). Nothing is retried, so a delivery is never duplicated by the CRM
+itself — but the *source* can repeat a fact: providers re-send and
+re-order status callbacks, so the same `message.status_updated` may arrive
+more than once (with a new `id`) or out of order. Deliveries run in
+parallel, so **don't assume ordering** — on `deal.*`, order by
+`occurred_at` and dedupe on `id`. `message.status_updated` covers messages
+the CRM stores (inbox + API sends), not broadcast-only sends. Each
+consecutive failure increments `failure_count`; after 15 consecutive
+failures the endpoint is auto-disabled (`is_active: false`) — re-enable it
+with `PATCH` (which resets the counter) or on the settings screen. Durable
+retry-with-backoff (a delivery queue) is a future enhancement; today, treat
+missed deliveries as possible and reconcile with the read endpoints when it
+matters.
+
+**Testing.** *Settings → Webhooks → Outgoing* has a **"Send test"** button per
+endpoint: it signs and POSTs a sample of the event you pick (with
+`"test": true`) and shows the HTTP status your endpoint answered. It does
+not touch the failure counter — handy for n8n's "Listen for test event",
+which only listens for 120 seconds.
 
 **Target restrictions (SSRF).** The `url` must be `https://` and must
 resolve to a public address — requests to `localhost`, private/RFC1918
@@ -801,6 +876,8 @@ The public API now covers messaging, contacts, conversations,
 broadcasts, outbound webhooks — the full scope of
 [#245](https://github.com/ArnasDon/wacrm/issues/245) — plus this
 fork's additions: tasks, scheduled messages, deals/pipelines, calendar
-meetings, and internal notes. Future ideas (templates, flows, a
-delivery queue for webhooks, task/deal webhook events) are not yet
-scheduled.
+meetings, internal notes, and deal webhook events. Future ideas
+(templates, flows, a delivery queue for webhooks, task webhook events, a
+members endpoint and an account-wide custom-field catalog) are not yet
+scheduled. Meanwhile, *Settings → API → IDs* lists every id and key the
+API asks for.

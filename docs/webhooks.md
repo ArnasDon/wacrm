@@ -171,23 +171,41 @@ mais uma vez.
 
 ## Webhooks enviados
 
-O CRM faz `POST` num endereço seu quando algo acontece aqui. Três eventos:
+O CRM faz `POST` num endereço seu quando algo acontece aqui. Seis eventos:
 
 | Evento | Dispara quando |
 |---|---|
 | `message.received` | Chega mensagem de um contato |
 | `message.status_updated` | Muda o status de entrega de uma mensagem enviada |
 | `conversation.created` | Uma conversa nova é aberta |
+| `deal.created` | Um card (negócio) nasce no funil, em qualquer etapa |
+| `deal.stage_changed` | Um card muda de etapa — ou de funil |
+| `deal.status_changed` | Um card é marcado ganho ou perdido, ou é reaberto |
+
+Os três `deal.*` valem para **todo** jeito de mexer no card: arrastar no
+quadro, formulário, lista, painel da conversa, automações e a API. O aviso
+leva o negócio, o funil e a etapa (com nome e id), a etapa de onde o card
+saiu, o contato com etiquetas e campos personalizados, e quem causou a
+mudança (`source`). O formato completo, com exemplo, está em
+[`public-api.md`](./public-api.md#delivery-payload) e na tela
+**Configurações → API → Documentação**.
 
 **Configurações → Webhooks → Enviados → Novo endereço.** A URL precisa ser
-`https://` e alcançável da internet. O segredo é mostrado uma única vez —
-guarde-o no sistema que vai **receber**, para conferir a assinatura.
+`https://` e alcançável da internet. Marque só os eventos que o seu fluxo
+usa — o endereço novo nasce sem nenhum marcado. O segredo é mostrado uma
+única vez — guarde-o no sistema que vai **receber**, para conferir a
+assinatura. Os eventos de um endereço já criado podem ser trocados na mesma
+tela, e o botão **Enviar teste** manda um exemplo do evento escolhido (com
+`"test": true`) e mostra o que o seu sistema respondeu — é o jeito de usar o
+"Listen for test event" do n8n, que só escuta por 120 segundos.
 
 ### Conferindo a assinatura
 
 Cada entrega leva `X-Wacrm-Signature: t=<unix>,v1=<hex>`, onde `v1` é
-`HMAC-SHA256(segredo, "<t>.<corpo cru>")`. Confira sobre o **corpo cru**,
-compare em tempo constante, e recuse se `t` tiver mais que alguns minutos.
+`HMAC-SHA256(segredo, "<t>.<corpo cru>")` — o segredo **inteiro**, com o
+prefixo `whsec_`. Confira sobre o **corpo cru**, compare em tempo
+constante, e recuse se `t` tiver mais que alguns minutos. O passo a passo
+no n8n e no Make está em **Configurações → API → Documentação**.
 
 ### Duas limitações que você precisa conhecer
 
@@ -195,7 +213,9 @@ compare em tempo constante, e recuse se `t` tiver mais que alguns minutos.
   tentativa**. Trate entrega perdida como possível e reconcilie pelos
   endpoints de leitura da [API pública](./public-api.md) quando importar.
 - **Quinze falhas seguidas desligam o endereço sozinho.** Religar pela tela
-  zera o contador.
+  zera o contador. (O **Enviar teste** não conta como falha.)
+- **Sem ordem garantida.** As entregas saem em paralelo: nos `deal.*`, use
+  `occurred_at` para ordenar e o `id` do envelope para descartar repetição.
 
 Os mesmos endereços também podem ser geridos pela API pública, com uma chave
 de escopo `webhooks:manage` — veja [`public-api.md`](./public-api.md).

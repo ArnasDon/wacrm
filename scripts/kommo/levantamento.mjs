@@ -135,10 +135,15 @@ async function main() {
   const semDDI55 = [...porTelefone.keys()].filter((t) => !t.startsWith('55'));
 
   // --- leads ---
+  // ⚠️ A etapa da Kommo é o PAR (funil, etapa), como em `cruzamento.mjs` e
+  // `src/lib/migracao/de-para.ts`: os ids 142 (ganho) e 143 (perdido)
+  // existem em TODO funil. Chaveando só pelo status, todo lead ganho ou
+  // perdido era contado no funil que o laço visitou por último (Codex,
+  // PR #232).
   const etapaPorId = new Map();
   for (const f of funis) {
     for (const s of f._embedded?.statuses ?? []) {
-      etapaPorId.set(s.id, { funil: f.name, etapa: s.name });
+      etapaPorId.set(`${f.id}:${s.id}`, { funil: f.name, etapa: s.name });
     }
   }
 
@@ -149,7 +154,7 @@ async function main() {
   let leadsComVariosContatos = 0;
 
   for (const l of leads) {
-    const e = etapaPorId.get(l.status_id);
+    const e = etapaPorId.get(`${l.pipeline_id}:${l.status_id}`);
     const rotulo = e ? `${e.funil} › ${e.etapa}` : `(etapa ${l.status_id})`;
     leadsPorEtapa.set(rotulo, (leadsPorEtapa.get(rotulo) ?? 0) + 1);
 

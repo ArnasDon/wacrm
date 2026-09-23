@@ -28,6 +28,10 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 const h = vi.hoisted(() => ({
   mensagens: [] as Record<string, unknown>[],
   conversas: [] as Record<string, unknown>[],
+  /** Filtros de cada UPDATE da prévia da conversa. */
+  filtrosDaPrevia: [] as [string, unknown][][],
+  /** De qual conta é a conversa do envio (upstream #589). */
+  donaDaConversa: 'acc-1',
 }))
 
 vi.mock('./admin-client', () => ({
@@ -58,9 +62,32 @@ vi.mock('./admin-client', () => ({
       }
       if (tabela === 'conversations') {
         return {
+          // A conferência de posse (upstream #589): a linha só vem quando o
+          // filtro de conta casa com a dona da conversa.
+          select: () => {
+            const filtros: [string, unknown][] = []
+            const chain: Record<string, unknown> = {
+              eq: (k: string, v: unknown) => (filtros.push([k, v]), chain),
+              maybeSingle: async () => {
+                const conta = filtros.find(([k]) => k === 'account_id')
+                const id = filtros.find(([k]) => k === 'id')?.[1]
+                return {
+                  data: !conta || conta[1] === h.donaDaConversa ? { id } : null,
+                  error: null,
+                }
+              },
+            }
+            return chain
+          },
           update: (row: Record<string, unknown>) => {
             h.conversas.push(row)
-            return { eq: async () => ({ error: null }) }
+            const filtros: [string, unknown][] = []
+            h.filtrosDaPrevia.push(filtros)
+            const chain: Record<string, unknown> = {
+              eq: (k: string, v: unknown) => (filtros.push([k, v]), chain),
+              then: (ok: (v: unknown) => unknown) => Promise.resolve({ error: null }).then(ok),
+            }
+            return chain
           },
         }
       }
@@ -122,7 +149,24 @@ const ARGS = {
 beforeEach(() => {
   h.mensagens = []
   h.conversas = []
+  h.filtrosDaPrevia = []
+  h.donaDaConversa = 'acc-1'
   vi.clearAllMocks()
+})
+
+describe('conversa de OUTRA conta (upstream #589)', () => {
+  it('recusa ANTES de chamar a Meta, e não grava mensagem nem prévia', async () => {
+    h.donaDaConversa = 'outra-conta'
+    await expect(engineSendText(ARGS)).rejects.toThrow(/conversation not found for this account/)
+    expect(sendTextMessage).not.toHaveBeenCalled()
+    expect(h.mensagens).toEqual([])
+    expect(h.conversas).toEqual([])
+  })
+
+  it('a prévia da conversa é atualizada com o recorte de conta', async () => {
+    await engineSendText(ARGS)
+    expect(h.filtrosDaPrevia[0]).toContainEqual(['account_id', 'acc-1'])
+  })
 })
 
 describe('regressão de merge: a automação grava o texto ASSINADO', () => {

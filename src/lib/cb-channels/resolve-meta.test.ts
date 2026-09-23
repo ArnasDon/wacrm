@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-import { resolveMetaChannel } from './resolve-meta';
+import { ErroAoLerCanalMeta, resolveMetaChannel } from './resolve-meta';
 
 // ------------------------------------------------------------
 // Broadcast e modelos NÃO passam por uma conversa, então liam o espelho
@@ -39,6 +39,8 @@ function makeDb(opts: {
   porId?: Record<string, unknown> | null;
   espelho?: Record<string, unknown> | null;
   erroCanais?: { message: string } | null;
+  erroPorId?: { message: string; code?: string } | null;
+  erroEspelho?: { message: string } | null;
 }): SupabaseClient {
   let table = '';
   let filtrouId = false;
@@ -54,6 +56,7 @@ function makeDb(opts: {
     order: () => builder,
     maybeSingle: () => {
       if (table === 'cb_channels') {
+        if (opts.erroPorId) return Promise.resolve({ data: null, error: opts.erroPorId });
         // ⚠️ A fake CONFERE os filtros da busca por id, como o banco faria.
         // Devolvendo `porId` às cegas, o caso "canal de outra conta" passava
         // mesmo com o `.eq('account_id', …)` REMOVIDO do código (medido por
@@ -64,6 +67,7 @@ function makeDb(opts: {
           !!linha && Object.entries(filtros).every(([k, v]) => linha[k] === v);
         return Promise.resolve({ data: casa ? linha : null, error: null });
       }
+      if (opts.erroEspelho) return Promise.resolve({ data: null, error: opts.erroEspelho });
       return Promise.resolve({ data: opts.espelho ?? null, error: null });
     },
     then: (resolve: (v: unknown) => void) =>
@@ -170,6 +174,75 @@ describe('resolveMetaChannel', () => {
     );
     expect(r?.channelId).toBeNull();
     expect(r?.phoneNumberId).toBe('pni-legado');
+  });
+
+  // --- Erro de banco NÃO é "sem canal" (Fase 3e do plano do upstream) -----
+  // Os três pontos descartavam o `error`: um tempo esgotado virava o 400
+  // "conecte um número", e quem integra pela API não reenvia um 400. Agora a
+  // função LANÇA, e o `catch` externo de cada chamador responde 500.
+
+  const ESPELHO_META = {
+    provider: 'meta',
+    phone_number_id: 'pni-legado',
+    waba_id: 'waba-legado',
+    access_token: 'enc',
+  };
+
+  it('erro na busca do canal PEDIDO lança, não devolve null', async () => {
+    await expect(
+      resolveMetaChannel(makeDb({ erroPorId: { message: 'timeout' } }), 'acct', 'ch-meta'),
+    ).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
+  });
+
+  it('a mensagem do erro NÃO carrega o texto do banco (as rotas de modelo a mostram ao admin)', async () => {
+    const tentativa = resolveMetaChannel(
+      makeDb({ erroPorId: { message: 'canceling statement due to statement timeout' } }),
+      'acct',
+      'ch-meta',
+    );
+    await expect(tentativa).rejects.toThrow(/try again/);
+    await expect(tentativa).rejects.not.toThrow(/statement/);
+  });
+
+  it('outra entrada inválida da classe 22 (byte que o texto não aceita) também é null', async () => {
+    const r = await resolveMetaChannel(
+      makeDb({ erroPorId: { message: 'invalid byte sequence', code: '22021' } }),
+      'acct',
+      'x\u0000',
+    );
+    expect(r).toBeNull();
+  });
+
+  it('id MALFORMADO (22P02) continua sendo "canal inválido" — null, não 500', async () => {
+    const r = await resolveMetaChannel(
+      makeDb({ erroPorId: { message: 'invalid input syntax for type uuid', code: '22P02' } }),
+      'acct',
+      'nao-e-uuid',
+    );
+    expect(r).toBeNull();
+  });
+
+  it('⚠️ erro na LISTA lança — e NÃO cai no espelho legado', async () => {
+    // O espelho aqui é um número oficial utilizável: cair nele seria a
+    // campanha saindo por um número que ninguém escolheu.
+    await expect(
+      resolveMetaChannel(
+        makeDb({ erroCanais: { message: 'timeout' }, espelho: ESPELHO_META }),
+        'acct',
+      ),
+    ).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
+  });
+
+  it('erro no ESPELHO lança', async () => {
+    await expect(
+      resolveMetaChannel(makeDb({ canais: [], erroEspelho: { message: 'timeout' } }), 'acct'),
+    ).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
+  });
+
+  it('canal pedido DESCONECTADO continua aceito (o status é ruidoso: a sonda grava a qualquer erro)', async () => {
+    const off = { ...META, status: 'disconnected' };
+    const r = await resolveMetaChannel(makeDb({ porId: off }), 'acct', 'ch-meta');
+    expect(r?.channelId).toBe('ch-meta');
   });
 
   it('espelho Evolution não vale como canal Meta', async () => {

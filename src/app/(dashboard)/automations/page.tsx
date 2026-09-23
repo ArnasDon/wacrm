@@ -136,6 +136,12 @@ export default function AutomationsPage() {
     if (!res.ok) {
       const body = await res.json().catch(() => ({}))
       toast.error(body?.error ?? t("toasts.deleteError"))
+      // 404 = já não existe nesta conta (outra pessoa apagou com a lista
+      // aberta): fecha o diálogo e recarrega, senão o cartão fantasma fica.
+      if (res.status === 404) {
+        setPendingDelete(null)
+        load()
+      }
       return
     }
     toast.success(t("toasts.deleted"))

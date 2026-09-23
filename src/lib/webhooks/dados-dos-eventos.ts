@@ -52,14 +52,25 @@ export interface ConversationCreatedData {
 // ------------------------------------------------------------
 
 /**
- * Quem causou o movimento. Traduz `cb_automation_events.origem` (0933).
+ * Quem causou o movimento. Traduz `cb_automation_events.origem`, que o
+ * gatilho da 0934 decide assim: há `auth.uid()` → `user`; senão, num INSERT
+ * com `deals.source = 'channel'` → `channel`, com `'automation'` →
+ * `automation`; todo o resto → `system`.
  *
- * - `user`: uma pessoa, na tela do CRM;
- * - `channel`: a conexão abriu o card sozinha (lead que chegou pelo número);
+ * - `user`: uma pessoa, nas telas do CRM (arrastar, formulário, lista,
+ *   painel da conversa) — escrita sob RLS, com sessão;
+ * - `channel`: o roteador da conexão (`routeContactToPipeline`) abriu o
+ *   card. ⚠️ NÃO é "lead que chegou": ele roda nos DOIS sentidos — na
+ *   primeira mensagem do cliente E no primeiro envio da equipe (a tela, o
+ *   celular pareado, a agendada ou `POST /api/v1/messages`). Mesmo o envio
+ *   feito por uma pessoa na tela sai `channel`, porque o roteador escreve em
+ *   service role (sem `auth.uid()`);
  * - `automation`: o passo "Criar negócio" de uma automação;
- * - `system`: sem pessoa logada — a API pública (`/api/v1`) OU os passos
- *   "Mover card"/"Marcar status" de uma automação. O banco não separa os
- *   dois (os dois gravam em service role), e dizer mais seria inventar.
+ * - `system`: sem pessoa logada e fora dos dois casos acima — as escritas
+ *   diretas em negócio pela API pública (`/api/v1/deals`, criar e mover) E
+ *   os passos "Mover card de etapa"/"Marcar ganho ou perdido" das
+ *   automações (`cb_atualizar_negocio`). O banco não separa os dois (os
+ *   dois gravam em service role), e dizer mais seria inventar.
  */
 export type DealEventSource = 'user' | 'channel' | 'automation' | 'system';
 
@@ -110,8 +121,16 @@ interface DealEventBase {
   contact: DealEventContact | null;
   /**
    * Conexão da CONVERSA do contato NO MOMENTO DO MOVIMENTO — o gatilho da
-   * 0934 a resolve e grava na linha da fila. Não é `deal.channel_id`, que é
-   * por onde ele CHEGOU.
+   * 0934 a resolve (a conversa com canal mais recente do contato) e grava na
+   * linha da fila. Não é `deal.channel_id`, que é por onde ele CHEGOU.
+   *
+   * ⚠️ `null` não é só "evento de antes do multi-canal". Vem nulo sempre que,
+   * no movimento, o contato não tinha conversa ligada a uma conexão: lead
+   * criado por webhook de entrada (Typebot) ou pelo Calendly antes de
+   * escrever (a conversa deles nasce com `channel_id` nulo), ficha criada
+   * pela API (`POST /api/v1/contacts` não abre conversa), card sem contato
+   * (grupo, contato apagado). Quem filtra por número no n8n precisa decidir
+   * o que fazer com esses — descartar calado perde justamente o lead novo.
    */
   channel_id: string | null;
 }

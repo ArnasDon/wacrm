@@ -22,8 +22,14 @@
 // movido duas vezes em segundos pode chegar "Proposta" antes de "Reunião".
 // Quem recebe ordena pelo `occurred_at` (a hora do fato) — está na doc.
 //
-// ⚠️ Nunca lança: o dreno aguarda esta função, e uma exceção aqui derrubaria
-// o arrastar do card (o aviso imediato) e o ciclo do cron.
+// ⚠️ Roda DEPOIS da resposta: o dreno a agenda com `after()` e só a aguarda
+// quando não há requisição onde agendar (script, teste). Ver o cabeçalho de
+// `drain-events.ts` — inclusive a janela em que um processo morto perde os
+// avisos já reivindicados, que o `after()` não fechou.
+//
+// ⚠️ Nunca lança, e continua importando: na queda para o `await` uma exceção
+// aqui atravessaria o dreno, que promete nunca lançar — e derrubaria o ciclo
+// do cron. Agendada, ela só sujaria o log com o erro genérico do `after()`.
 // ============================================================
 
 import type { SupabaseClient } from '@supabase/supabase-js';
@@ -38,11 +44,14 @@ import { DEAL_WEBHOOK_EVENTS, type DealWebhookEvent } from '@/lib/webhooks/event
 import type { CbAutomationEvent, CustomField } from '@/types';
 
 /**
- * Entregas simultâneas. Quatro, e não "todas": cada uma pode segurar até
- * `DELIVERY_TIMEOUT_MS` (5 s), e o dreno inteiro espera por esta função —
- * inclusive a rota do aviso imediato, que o navegador aguarda depois de
- * arrastar o card. Com um endpoint lento, um lote de 50 avisos custa ~13
- * rodadas de 5 s no pior caso; um por vez custaria 50.
+ * Entregas simultâneas. Quatro, e não "todas" nem uma por vez: cada uma pode
+ * segurar até `DELIVERY_TIMEOUT_MS` (5 s), então com um endpoint lento um
+ * lote de 50 avisos custa ~ceil(50/4) = 13 rodadas de 5 s (65 s) no pior
+ * caso — por conta, e as contas vão em série —; um por vez custaria 50. Isso
+ * já não segura ninguém (a entrega roda depois da resposta, `drain-events.ts`),
+ * mas ainda é o tempo em que um SIGKILL do rollout perde avisos: mais
+ * paralelismo encurta a janela, e "todas de uma vez" dispararia 50 conexões
+ * contra o mesmo n8n.
  */
 const ENTREGAS_SIMULTANEAS = 4;
 

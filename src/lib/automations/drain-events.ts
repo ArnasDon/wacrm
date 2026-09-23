@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { after } from 'next/server'
 
 import type { CbAutomationEvent } from '@/types'
 import { entregarEventosDeFunil } from '@/lib/webhooks/entregar-eventos-de-funil'
@@ -35,6 +36,35 @@ import { cancelarEsperasAoSairDaEtapa } from './so-na-etapa'
 // real (`occurred_at`), card de grupo ou de contato apagado sai com
 // `contact: null`. A reivindicação vale para os dois consumidores: o mesmo
 // movimento nunca vira dois avisos.
+//
+// ⚠️⚠️ A entrega dos webhooks roda DEPOIS da resposta (`after()`), não
+// dentro do dreno. Aguardada aqui, um endpoint lento custava até
+// ~ceil(N/4) × `DELIVERY_TIMEOUT_MS` (65 s num lote de 50; por conta, e as
+// contas vão em série) NO CAMINHO CRÍTICO de quem chama: o navegador
+// esperando a rota do aviso imediato depois de arrastar o card, e o cron
+// esperando para varrer lembretes, carimbar o batimento e retomar as
+// execuções paradas num "Aguardar" — um integrador com o servidor lento
+// atrasava a mensagem ao cliente. Os três chamadores são rotas: o aviso
+// imediato, o cron e as rotas v1 de negócio (estas em fire-and-forget; o
+// `after()` chamado depois de a resposta já ter saído roda na hora, ainda
+// dentro do servidor).
+//   - No desligamento gracioso (SIGTERM, que é o que o Swarm manda no
+//     rollout) o servidor do Next espera os `after()` pendentes antes de
+//     sair (docs de self-hosting; `start-server.js` fecha o servidor e só
+//     então aguarda `nextServer.close()`). O limite é o `stop_grace_period`
+//     do Swarm — 10 s por padrão, e o `docker-stack.yml` não o muda —:
+//     depois dele vem o SIGKILL, e uma entrega lenta no meio morre.
+//   - Fora de requisição (script, teste, worker) `after()` LANÇA; a entrega
+//     cai no `await`, como era antes.
+//   - ⚠️ A JANELA DE PERDA CONTINUA: processo que morre (SIGKILL, queda)
+//     entre reivindicar e entregar perde os avisos daquelas linhas, SEM
+//     RASTRO — a linha fica `processado_em` preenchido, nada a reentrega e
+//     `webhook_endpoints` não registra a tentativa. E ela NÃO encolheu com
+//     o `after()`: no caminho do cron ela CRESCEU pelo resto do ciclo
+//     (lembretes, batimento, retomadas), porque a entrega só começa quando
+//     a resposta sai. O ganho foi tirar a entrega do caminho de quem
+//     espera; fechar a janela pede registrar a entrega pendente num lugar
+//     durável (uma coluna na fila, ou uma fila própria), que é outra obra.
 // ------------------------------------------------------------
 
 /** Teto por ciclo. Igual ao do cron de automações. */
@@ -270,11 +300,25 @@ export async function drenarEventosDeFunil(): Promise<ResultadoDaDrenagem> {
     console.error('[automations] drenagem falhou', err)
   }
 
-  // UMA entrega por ciclo, com `await`: a rota do aviso imediato aguarda o
-  // dreno, e o custo é o de um lote de entregas em paralelo (4 por vez, prazo
-  // de 5 s cada), não um prazo por evento. Nunca lança.
+  // UMA entrega por ciclo, AGENDADA para depois da resposta (ver "A entrega
+  // dos webhooks roda DEPOIS da resposta", no cabeçalho). O custo dela não é
+  // "um prazo": com endpoint lento é ~ceil(N/4) × `DELIVERY_TIMEOUT_MS` —
+  // quatro entregas por vez, 5 s cada, até 13 rodadas (65 s) num lote de 50.
+  // Aguardada aqui, isso segurava o navegador depois do arrastar do card E o
+  // cron antes dos lembretes, do batimento e das retomadas do "Aguardar".
+  //
+  // `after()` LANÇA fora do escopo de uma requisição ("called outside a
+  // request scope") — script, teste, worker. Aí a entrega volta a ser
+  // aguardada, que era o comportamento de antes: nunca se perde o aviso por
+  // falta de onde agendar. `entregarEventosDeFunil` nunca lança, então a
+  // queda para o `await` não quebra a promessa de "nunca lança" do dreno.
   if (db && paraOsWebhooks.length > 0) {
-    await entregarEventosDeFunil(db, paraOsWebhooks)
+    const entregar = () => entregarEventosDeFunil(db, paraOsWebhooks)
+    try {
+      after(entregar)
+    } catch {
+      await entregar()
+    }
   }
   return saida
 }

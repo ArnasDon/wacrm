@@ -14,8 +14,12 @@
 // são de ninguém. Ids com cara de UUID, mas que nenhum banco gera.
 // ============================================================
 
-import type { WebhookEnvelope, WebhookEventData } from '@/lib/webhooks/dados-dos-eventos';
-import type { WebhookEvent } from '@/lib/webhooks/events';
+import type {
+  DealCreatedData,
+  WebhookEnvelope,
+  WebhookEventData,
+} from '@/lib/webhooks/dados-dos-eventos';
+import { DEAL_WEBHOOK_EVENTS, type DealWebhookEvent, type WebhookEvent } from '@/lib/webhooks/events';
 
 const ID = {
   conta: '00000000-0000-4000-8000-00000000c0a7',
@@ -122,20 +126,64 @@ export function exemploDoEvento<E extends WebhookEvent>(evento: E): WebhookEvent
   return EXEMPLOS[evento];
 }
 
+function ehEventoDeNegocio(evento: WebhookEvent): evento is DealWebhookEvent {
+  return (DEAL_WEBHOOK_EVENTS as readonly string[]).includes(evento);
+}
+
+/** O `data` de um `deal.*` carimbado com o fato DESTE envelope. */
+function dadoDoNegocio<D extends DealWebhookEvent>(
+  evento: D,
+  id: string,
+  quando: string
+): WebhookEventData[D] {
+  // ⚠️ Anotado de propósito, fora do espalhamento: espalhado sobre um tipo
+  // GENÉRICO, o TypeScript não confere nem a chave nem o tipo do que se
+  // acrescenta (medido: `{ ...ex(k), chaveQueNaoExiste: id }` compila). O
+  // `Pick` é o que faz um `event_id` renomeado no contrato quebrar aqui.
+  const fato: Pick<DealCreatedData, 'event_id' | 'occurred_at'> = {
+    event_id: id,
+    occurred_at: quando,
+  };
+  return { ...exemploDoEvento(evento), ...fato };
+}
+
 /**
  * O corpo inteiro de exemplo. `teste` marca o envelope do botão "Enviar
  * teste" — é o que deixa quem recebe descartar o teste num filtro.
+ *
+ * ⚠️⚠️ Nos `deal.*`, `id`/`occurred_at` do envelope e `event_id`/
+ * `occurred_at` do `data` são o MESMO valor — é contrato (ver
+ * `DealEventBase.event_id`: "o mesmo `id` do envelope"), e a entrega real o
+ * cumpre porque `entregar-eventos-de-funil.ts` passa o id e o `criado_em` da
+ * linha da fila aos dois lados. O botão "Enviar teste" passa `id` NOVO a
+ * cada clique e `quando` = agora; com o `data` fixo do exemplo, o envelope
+ * dizia um id e o `data` outro. Um n8n que deduplica por `data.event_id`
+ * (a doc pública diz que ele é o `id` do envelope, "safe to dedupe")
+ * engolia do segundo teste em diante — o `event_id` do exemplo nunca
+ * mudava —, e quem monta a lógica sobre o teste a montava sobre uma
+ * invariante que o próprio teste desmentia. Por isso os dois lados saem de
+ * `id`/`quando`, e os eventos de mensagem (que não têm `event_id` no
+ * `data`) ficam com o exemplo como está.
  */
 export function exemploDeEnvelope<E extends WebhookEvent>(
   evento: E,
   opcoes: { accountId?: string; id?: string; quando?: string; teste?: boolean } = {}
 ): WebhookEnvelope<E> {
+  const id = opcoes.id ?? ID.evento;
+  const quando = opcoes.quando ?? QUANDO;
+  // O cast é só de genérico: `ehEventoDeNegocio` estreita `evento` para
+  // `E & DealWebhookEvent`, e o TypeScript não reconhece
+  // `WebhookEventData[E & DealWebhookEvent]` como `WebhookEventData[E]`. O
+  // que o `data` carrega é conferido dentro de `dadoDoNegocio`.
+  const data = ehEventoDeNegocio(evento)
+    ? (dadoDoNegocio(evento, id, quando) as WebhookEventData[E])
+    : exemploDoEvento(evento);
   return {
-    id: opcoes.id ?? ID.evento,
+    id,
     event: evento,
-    occurred_at: opcoes.quando ?? QUANDO,
+    occurred_at: quando,
     account_id: opcoes.accountId ?? ID.conta,
     ...(opcoes.teste ? { test: true as const } : {}),
-    data: exemploDoEvento(evento),
+    data,
   };
 }

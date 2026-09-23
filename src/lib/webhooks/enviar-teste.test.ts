@@ -19,7 +19,7 @@ import {
   CABECALHO_EVENTO,
 } from './deliver';
 import { enviarTeste } from './enviar-teste';
-import { WEBHOOK_EVENTS } from './events';
+import { DEAL_WEBHOOK_EVENTS, WEBHOOK_EVENTS } from './events';
 import { exemploDoEvento } from './exemplos';
 import { verifySignatureHeader } from './sign';
 import { isDeliverableUrl } from './ssrf';
@@ -61,10 +61,43 @@ describe('enviarTeste', () => {
       event: 'deal.stage_changed',
       account_id: CONTA,
       test: true,
-      data: exemploDoEvento('deal.stage_changed'),
+      // O exemplo inteiro, MENOS o fato (id e hora), que é deste envelope —
+      // ver o teste da invariante abaixo.
+      data: { ...exemploDoEvento('deal.stage_changed'), event_id: corpo.id, occurred_at: corpo.occurred_at },
     });
     expect(corpo.id).toMatch(/^[0-9a-f-]{36}$/);
     expect(Number.isNaN(Date.parse(corpo.occurred_at))).toBe(false);
+  });
+
+  // ⚠️ A invariante que a entrega real cumpre (o id e o `criado_em` da linha
+  // da fila vão aos dois lados) e que o teste quebrava: `id` novo no envelope
+  // e o `event_id` FIXO do exemplo no `data`. Quem deduplica por
+  // `data.event_id` engolia todo teste depois do primeiro.
+  it.each(DEAL_WEBHOOK_EVENTS)(
+    '%s: id e hora do envelope são os MESMOS do `data` (event_id / occurred_at)',
+    async (evento) => {
+      const fetchMock = vi.fn().mockResolvedValue(respostaFalsa(200));
+      vi.stubGlobal('fetch', fetchMock);
+      await enviarTeste(ENDPOINT, evento, CONTA);
+      await enviarTeste(ENDPOINT, evento, CONTA);
+
+      const [a, b] = fetchMock.mock.calls.map((c) => JSON.parse(c[1].body));
+      for (const corpo of [a, b]) {
+        expect(corpo.data.event_id).toBe(corpo.id);
+        expect(corpo.data.occurred_at).toBe(corpo.occurred_at);
+      }
+      // …e o `event_id` muda a cada clique, junto com o `id`.
+      expect(a.data.event_id).not.toBe(b.data.event_id);
+    }
+  );
+
+  it('evento de mensagem (sem event_id no data) sai com o exemplo intacto', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(respostaFalsa(200));
+    vi.stubGlobal('fetch', fetchMock);
+    await enviarTeste(ENDPOINT, 'message.received', CONTA);
+    const corpo = JSON.parse(fetchMock.mock.calls[0][1].body);
+    expect(corpo.data).toEqual(exemploDoEvento('message.received'));
+    expect(corpo.data).not.toHaveProperty('event_id');
   });
 
   it('id NOVO a cada clique — quem deduplica não engole o segundo teste', async () => {

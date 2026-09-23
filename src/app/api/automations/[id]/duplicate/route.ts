@@ -1,5 +1,4 @@
 import { NextResponse } from 'next/server'
-import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/automations/admin-client'
 
@@ -9,29 +8,26 @@ export async function POST(
 ) {
   const { id } = await params
 
-  // Duplicating creates a new automation row — a write. Enforce `agent`
-  // (the service-role client below bypasses the agent-gated
-  // automations_insert RLS).
+  // Duplicating creates a new automation row — a write. Enforce the role
+  // here (the service-role client below bypasses the automations_insert RLS).
+  let ctx: { accountId: string; userId: string }
   try {
     // Fase 2 dos perfis (2026-08-30): mutação de automação/fluxo/disparo subiu de
     // 'agent' para 'admin' — decisão do operador; ver canManageAutomations em roles.ts.
-    await requireRole('admin')
+    ctx = await requireRole('admin')
   } catch (err) {
     return toErrorResponse(err)
   }
 
-  const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
+  // A automação é da CONTA, não de quem a criou — ver o topo de
+  // `../route.ts`. Qualquer admin da conta duplica; a cópia fica no nome de
+  // quem duplicou.
   const admin = supabaseAdmin()
   const { data: original, error: origErr } = await admin
     .from('automations')
     .select('*')
     .eq('id', id)
-    .eq('user_id', user.id)
+    .eq('account_id', ctx.accountId)
     .maybeSingle()
   if (origErr) return NextResponse.json({ error: origErr.message }, { status: 500 })
   if (!original) return NextResponse.json({ error: 'Not found' }, { status: 404 })
@@ -42,7 +38,7 @@ export async function POST(
       // Clone into the same account as the original. account_id is NOT
       // NULL post-017, so the INSERT fails the constraint without it.
       account_id: original.account_id,
-      user_id: user.id,
+      user_id: ctx.userId,
       name: `${original.name} (Copy)`,
       description: original.description,
       trigger_type: original.trigger_type,
@@ -55,6 +51,9 @@ export async function POST(
       // Mesma armadilha, mesma correção, para o recorte por etapa (933):
       // escopo ausente é lido como "todas as etapas".
       stage_ids: original.stage_ids ?? null,
+      // "Assinar como" (998): sem isto a cópia nasce assinando com o nome da
+      // conta, e a diferença só aparece na mensagem que chega ao cliente.
+      assinatura_personalizada: original.assinatura_personalizada ?? null,
       is_active: false,
     })
     .select()

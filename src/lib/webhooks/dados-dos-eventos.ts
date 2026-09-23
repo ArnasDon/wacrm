@@ -109,8 +109,9 @@ interface DealEventBase {
   /** `null` em card sem contato (grupo, ou contato apagado). */
   contact: DealEventContact | null;
   /**
-   * Conexão da CONVERSA do contato hoje — por onde ele fala. Não é
-   * `deal.channel_id`, que é por onde ele CHEGOU.
+   * Conexão da CONVERSA do contato NO MOMENTO DO MOVIMENTO — o gatilho da
+   * 0934 a resolve e grava na linha da fila. Não é `deal.channel_id`, que é
+   * por onde ele CHEGOU.
    */
   channel_id: string | null;
 }

@@ -718,8 +718,9 @@ event happened on, or `null` for events recorded before multi-channel.
 Without it, several numbers look like one indistinguishable stream, and a
 rule like "only open a ticket for what comes in on Comercial" is
 unbuildable. List the numbers with `GET /api/v1/channels`. (On the three
-`deal.*` events it is the number the contact talks through **today** — not
-`deal.channel_id`, which is the number the lead **arrived** through.)
+`deal.*` events it is the number the contact was talking through **when the
+card moved** — not `deal.channel_id`, which is the number the lead
+**arrived** through.)
 
 The `deal.*` events fire for **every** way a card moves: dragging on the
 board, the deal form, the list view, the conversation side panel,

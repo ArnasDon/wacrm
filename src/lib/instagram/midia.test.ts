@@ -10,9 +10,49 @@ import { isDeliverableUrl } from '@/lib/webhooks/ssrf';
 import {
   baixarUrlPublica,
   chaveCurta,
+  lerComTeto,
   MAX_SALTOS,
   nomeDoContentDisposition,
 } from './midia';
+
+/** Corpo em pedaços, sem `content-length` — a forma de quem mente o tamanho. */
+function corpoEmPedacos(pedacos: number[]): Response {
+  const stream = new ReadableStream<Uint8Array>({
+    start(c) {
+      for (const n of pedacos) c.enqueue(new Uint8Array(n));
+      c.close();
+    },
+  });
+  return new Response(stream, { status: 200 });
+}
+
+describe('lerComTeto — o anexo de fora não enche a memória', () => {
+  it('abaixo do teto, devolve o corpo inteiro', async () => {
+    const b = await lerComTeto(corpoEmPedacos([10, 20, 5]), 100);
+    expect(b.byteLength).toBe(35);
+  });
+
+  it('content-length acima do teto recusa SEM ler', async () => {
+    const r = new Response('x', { status: 200, headers: { 'content-length': '1000' } });
+    await expect(lerComTeto(r, 100)).rejects.toThrow(/1000 bytes over the 100-byte limit/);
+  });
+
+  it('sem content-length, a leitura para no primeiro pedaço que passa do teto', async () => {
+    // Dez pedaços de 60 (600 bytes) — finito, para o mutante sem a contagem
+    // reprovar em vez de travar: ele leria tudo e devolveria o corpo.
+    let lidos = 0;
+    const stream = new ReadableStream<Uint8Array>({
+      pull(c) {
+        lidos++;
+        if (lidos > 10) c.close();
+        else c.enqueue(new Uint8Array(60));
+      },
+    });
+    await expect(lerComTeto(new Response(stream), 100)).rejects.toThrow(/over the 100-byte limit/);
+    // Para no 2º pedaço (120 > 100), sem ler o resto.
+    expect(lidos).toBeLessThanOrEqual(3);
+  });
+});
 
 function resposta(status: number, location?: string): Response {
   return new Response(status >= 300 && status < 400 ? null : 'arquivo', {
@@ -99,6 +139,24 @@ describe('baixarUrlPublica — a URL do corpo do webhook não alcança a rede in
       baixarUrlPublica('https://cdn.publico/x', fetchFn as unknown as typeof fetch),
     ).rejects.toThrow(/redirect 302/);
     expect(fetchFn).toHaveBeenCalledTimes(MAX_SALTOS + 1);
+  });
+
+  it('descarta o corpo de cada redirecionamento e usa UM prazo para a cadeia', async () => {
+    const cancelados: number[] = [];
+    const redir = (n: number) => {
+      const r = resposta(302, 'https://cdn.publico/proximo');
+      Object.defineProperty(r, 'body', { value: { cancel: async () => void cancelados.push(n) } });
+      return r;
+    };
+    const fetchFn = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(redir(1))
+      .mockResolvedValueOnce(redir(2))
+      .mockResolvedValueOnce(resposta(200));
+    await baixarUrlPublica('https://cdn.publico/x', fetchFn);
+    expect(cancelados).toEqual([1, 2]);
+    const sinais = fetchFn.mock.calls.map((c) => c[1]?.signal);
+    expect(new Set(sinais).size).toBe(1);
   });
 
   it('redirecionamento sem Location é falha, não sucesso', async () => {

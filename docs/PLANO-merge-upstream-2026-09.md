@@ -181,6 +181,7 @@ quebrar, sabe-se qual.
 | **0** | Preparação: worktree, alvo pinado, linha de base | — | Baixa | — | — | ✅ concluída (P1 decidida em 21/09: #229 fechado) |
 | **1** | Segurança e dependências (#563, #510, #506) | Real: estamos no Next 16.2.12 | Baixa | Médio-baixo | — | ✅ em produção (PR #239, 21/09) |
 | **2** | Função de disparo (#536) + 2 achados nossos (params em 2-D; `channel_id` descartado) | Real: quebrada na produção | Baixa → Média | Baixo | `1030` (aplicada 21/09) | ✅ em produção (PR #242, 21/09) |
+| **1b** | Segurança depois do alvo: #588 (SSRF), #587 (automação por conta), #589 (conversa por conta) — PRs ABERTOS do mantenedor — e a mídia do Instagram (achado nosso) | Real: brechas presentes; o #587 também dava 404 ao admin não-autor | Média | Médio-baixo | — | em andamento (23/09) |
 | **3** | Pequenas e independentes: CSV (#529), textarea (#559), vários App Secrets (#500), tags da v1 (#560, só medir), e o resolvedor do canal Meta (3e — achado NOSSO da Fase 2, sem PR do upstream) | Moderado | Baixa | Baixo | — | pendente |
 | **4** | Fluxos: `{{vars}}` em botões e listas (#553) | Inerte hoje (0 fluxos ativos) | Média | Médio-baixo | — | pendente |
 | **5** | Motivo da falha da Meta (#535) | 2 `failed` desde 10/09 | Média | Baixo | `0045` | pendente |
@@ -576,6 +577,94 @@ entrega e o alvo da sonda. Apagar é decisão do operador.
 quem não escreveu nas últimas 24 h pode simplesmente não ser entregue — e hoje a
 tela só diz "falhou". → Vira o teste prático da Fase 5: repetir ESTE disparo com
 o motivo sendo gravado (um `failed` real, sem precisar simular).
+
+### Fase 1b — Segurança depois do alvo (acrescentada em 23/09/2026)
+
+**Por que existe.** Na remedição de 22/09 o original não tinha andado além de
+`aee1b01f`, mas o mantenedor tinha **3 PRs de segurança ABERTOS** (não
+mesclados lá, e posteriores ao alvo `80c3f9a`) — e os três valem aqui. Pedido
+do operador em 23/09: seguir o plano inteiro, conferindo o que já tinha sido
+corrigido desde a última medição.
+
+**Conferido antes de mexer (23/09, `origin/main` = `f2a61293`):**
+
+| Item | Situação | O que se fez |
+| --- | --- | --- |
+| #597 — link de "esqueci a senha" | ✅ JÁ CORRIGIDO pelo nosso #254 (22/09): `curl -sI https://crm.cbadvogados.com/auth/callback` → `location: https://crm.cbadvogados.com/forgot-password?erro=link` (em 22/09 era `https://0.0.0.0:3000/…`) | nada; o resto do #597 (`token_hash`/`otp_expired`, cadastro pelo callback) não se aplica — o cadastro público foi FECHADO pelo #258 |
+| Cadastro público aberto (amplificava os três) | ✅ FECHADO pelo #258 (22/09, `disable_signup`) | nada; os 4 logins avulsos que já existiam seguem podendo explorar — por isso a fase continua |
+| #588 — SSRF por IPv6 mapeado/6to4/NAT64 | ❌ presente (`ssrf.ts` byte-idêntico ao do original) | cherry-pick `-x` |
+| Download da mídia do Instagram sem guarda (achado NOSSO de 22/09) | ❌ presente | `baixarUrlPublica` |
+| #587 — rotas de automação pelo AUTOR (= achado #234 da auditoria de 22/09) | ❌ presente | port à mão |
+| #589 (1) — conversa do contexto sem conferência de conta | ❌ presente | port à mão |
+| #589 (2)/(3) — ciclo de vida dos modelos só para admin | ✅ já nosso desde 26/08 (`barrarPorPapel`) | nada |
+
+**O que entrou (PR da Fase 1b):**
+
+- **#588** (cherry-pick `2f5b8156`): a guarda classifica por OCTETOS e falha
+  fechada. Medido antes: o único destino real que passa por ela na produção é
+  um `send_webhook` de automação DESLIGADA, sem URL; nenhum webhook de saída,
+  nenhum fluxo com URL — a guarda mais rígida não bloqueia nada que funciona.
+- **Instagram** (`src/lib/instagram/midia.ts`): a URL do anexo vem do corpo do
+  webhook, que a própria conexão assina; baixada crua, era SSRF com LEITURA
+  (a resposta ia para o bucket público). Agora: só `https`, cada salto por
+  `isDeliverableUrl`, redirecionamento seguido à mão (até 3). O redirecionamento
+  NÃO foi desligado: não foi medido se o CDN da Meta redireciona.
+- **#587** (`api/automations/[id]` e `duplicate`): conta, não autor; leitura
+  por `getCurrentAccount`, escrita por `requireRole('admin')` (o nosso piso);
+  PATCH e DELETE conferem linhas afetadas — o DELETE dizia `ok` sem apagar.
+  Conserta também o defeito funcional: o admin que não é o autor (as 17
+  automações da conta são de UM autor) recebia 404 ao abrir, ligar, duplicar.
+- **#589 (1)**: `dispararAutomacoes` e `resolveConversationId` conferem a
+  conversa por conta, e os QUATRO envios do robô chamam
+  `assertConversationInAccount` antes do provedor (arquivo do original,
+  idêntico); as prévias ganharam `.eq('account_id')`.
+
+**Verificação local:** `typecheck` limpo; suíte **377 arquivos / 4.924
+testes**; lint `✖ 59 problems (0 errors, 59 warnings)` — nenhum aviso novo nos
+arquivos da fase (o único ali, `_init` em `engine.test.ts`, já existe no
+`main`); portões de i18n OK. **Mutação:** 22 mutantes, todos reprovam (5 no
+Instagram, 7 nas rotas, 10 no #589). Um deles (o teto de saltos) só reprovava
+travando o processo — o teste foi refeito para reprovar limpo.
+
+**Teste prático (23/09, preview `localhost:3130`, sessão do operador):**
+
+| Caso | Resultado |
+| --- | --- |
+| `GET` de automação existente / de id inexistente | 200 / 404 |
+| `DELETE` e `PATCH` de id inexistente | **404** (antes: `ok`) |
+| Duplicar automação inativa → renomear a cópia → apagar → ler → apagar de novo | 201 (cópia inativa) → 200 → 200 → 404 → 404; banco conferido depois: 17 automações, 0 cópias, 0 passos órfãos |
+| `POST /api/automations/engine` com conversa de OUTRA conta (gatilho sem automação ativa na conta — nada rodaria mesmo se a guarda falhasse) | log: `conversation not in account, refusing dispatch` |
+| O mesmo com a conversa do lead de teste | segue, sem recusa |
+| Guarda de SSRF contra a rede REAL | recusa `[::ffff:127.0.0.1]`, `[::ffff:169.254.169.254]`, NAT64, 6to4, `127.1`, `2130706433`, `0x7f.0.0.1`; aceita o CRM, `lookaside.fbsbx.com`, `graph.instagram.com`, `api.calendly.com` |
+| `baixarUrlPublica` contra a rede REAL | manifesto 200; `/inbox` (307 → `/login`) seguido à mão até 200 — prova que o `fetch` do Node devolve o `Location` em `redirect: 'manual'`; `http:`, `127.0.0.1` e `localhost` recusados |
+
+Não testável ao vivo: o admin NÃO autor (não há sessão de outro membro no
+preview — coberto pelo teste com banco falso que aplica os filtros) e a DM do
+Instagram (nenhuma conexão Instagram na produção).
+
+**Revisão em duas lentes (23/09):** nenhum P0/P1. A Lente 1 mediu o que
+mais importava: o `fetch` do Node 22/24 devolve o 3xx com `Location` legível
+em `redirect: 'manual'` (resposta `basic`, não opaca) — a mídia que redireciona
+é seguida; e todas as formas estranhas de endereço interno (decimal, octal,
+hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
+
+| Achado | Destino |
+| --- | --- |
+| P2 (as duas lentes) — o piso `admin` das rotas de automação sem pino: o mock de `requireRole` ignorava o argumento, e o #587 do original escreve `agent` nas MESMAS linhas | ✅ o teste cobra `requireRole('admin')` nas três escritas e `getCurrentAccount` no GET (mutante `'agent'` reprova) |
+| P2 — o download do Instagram lia o corpo inteiro para a memória antes do teto (o webhook não traz tamanho): DoS com URL pública gigante, no processo de todas as contas | ✅ `lerComTeto` (`content-length` acima recusa sem ler; sem ele, conta durante a leitura) |
+| P3 — prazo POR salto (até 80 s) e corpo do 3xx não descartado | ✅ um prazo para a cadeia; `body.cancel()` antes do próximo salto |
+| P3 — o teste da retomada sem controle positivo | ✅ par com a conversa da própria conta (envia) e o detalhe da falha conferido |
+| P3 — nenhum pino obriga um envio NOVO do robô a conferir a conversa | ✅ `conversation-scope.chamadores.test.ts` (estrutural, nos dois arquivos de envio) |
+| P3 — comentários ainda diziam `agent` ao lado de `requireRole('admin')` | ✅ reescritos |
+| P3 — DELETE de automação já apagada (lista aberta em duas telas) dava 404 e o cartão fantasma ficava | ✅ a tela fecha o diálogo e recarrega no 404 |
+| P3 — o comentário de `ResultadoDoDisparo.erro` não citava a conversa | ✅ |
+| P3 — o CLAUDE.md não registrava a guarda do Instagram nem o piso nosso das rotas | ✅ seção do Instagram + duas linhas na tabela do que é nosso |
+| P3 — NAT64 (`64:ff9b::/32`) bloqueado inteiro; faixas IPv6 especiais (`fec0::/10`, `3fff::/20`, `::ffff:0:0:0/96`) passam — medido que não alcançam o loopback | aceito e escrito: a guarda fica IDÊNTICA à do original (divergir é conflito no merge); a VPS tem IPv4 |
+| P3 — o GET é de qualquer membro: um atendente abre o construtor e só descobre no "Salvar" que não pode (403) | aceito: não é vazamento (os passos já são legíveis por membro pela RLS); construtor somente-leitura para quem não administra fica como melhoria de TELA, fora desta fase |
+| P3 — "Duplicar" ignora o erro da leitura dos passos (cópia vazia com 201) e não copia o "Assinar como" | PRÉ-EXISTENTE, fora do escopo: anotado no diário como follow-up |
+| P3 — soluço do banco na conferência nova vira `falhou` (não reprocessável) no Calendly/webhook de entrada | pré-existente (a mesma semântica da conferência do contato); o comentário foi corrigido, a regra fica |
+
+**Resultado:** — (a preencher)
 
 ### Fase 3 — Correções pequenas e independentes
 

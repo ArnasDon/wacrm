@@ -1312,6 +1312,26 @@ describe('conversa de outra conta no contexto (upstream #589)', () => {
     });
 
     expect(engineSendText).not.toHaveBeenCalled();
+    // E é ESTA guarda que barra — não outra coisa que tenha parado a execução.
+    expect(JSON.stringify(h.state.logUpdates)).toContain(
+      'conversation does not belong to this account'
+    );
+  });
+
+  it('controle: a mesma execução com a conversa da PRÓPRIA conta envia', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [sendStep({ text: 'oi' })];
+
+    await runAutomationById({
+      automationId: 'a1',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-da-casa' },
+      triggerType: 'new_message_received',
+    });
+
+    expect(engineSendText).toHaveBeenCalledTimes(1);
   });
 });
 

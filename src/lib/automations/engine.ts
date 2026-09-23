@@ -239,7 +239,10 @@ export interface ResultadoDoDisparo {
    * (Codex, PR #128, 2ª rodada).
    */
   emEspera: number;
-  /** O disparo em si não aconteceu (contato de outra conta, banco fora). */
+  /**
+   * O disparo em si não aconteceu: contato ou conversa de outra conta
+   * (upstream #589), ou banco fora na conferência. Nenhuma automação rodou.
+   */
   erro?: string;
 }
 

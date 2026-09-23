@@ -168,6 +168,58 @@ deploy** (`Dockerfile`, `docker-stack.yml`, `.github/workflows/pipeline.yml`,
 string literal onde nós temos `t('chave')` — ao resolver, manter a nossa forma e
 levar o texto novo dele para os **dois** dicionários).
 
+**Decisões fixadas no merge de 2026-09-22** (upstream #533–#596, 43 commits):
+
+- ⚠️ **A regra deste merge foi "o `main` vence", e por ARQUIVO INTEIRO.** Os 43
+  conflitos foram resolvidos com `git checkout --ours <arquivo>`, nunca
+  costurando os dois lados. Tentou-se antes `git merge -X ours`, que resolve
+  TRECHO a trecho: onde os dois lados reestruturaram regiões diferentes do
+  mesmo arquivo, o resultado não era de ninguém — imports de um lado e código
+  do outro, `try` sem `catch`, variável declarada duas vezes. Deu 37 erros de
+  typecheck que só pioravam a cada conserto. Por arquivo inteiro deu 5. **Não
+  usar `-X ours` neste repositório.**
+- ⚠️ **Resolver por arquivo não basta: o upstream renomeia coisas em arquivos
+  que NÃO conflitam.** Eles entram em silêncio e o nosso código fica chamando
+  o nome antigo. Os três casos desta rodada, e o critério:
+  - `ensureImageHeaderHandle` → `ensureMediaHeaderHandle`
+    (`template-header-handle.ts`): **ADOTADO**. Mesma assinatura, e `media` é
+    superconjunto de `image`; três arquivos já usavam o nome novo, só o nosso
+    `templates/[id]/route.ts` ficou para trás.
+  - `formatRelative(iso, nunca: string)` → `(iso, t: Translator)`: **NOSSO**.
+    Mudança de comportamento, não renomeação — `automations/[id]/logs/page.tsx`
+    voltou para a versão do `main`.
+  - `dedupeByPhone` ganhando `invalid` (o conserto #586 deles, que recusa
+    número sem código de país): **NOSSO**, e isto é uma PERDA consciente —
+    ver abaixo.
+- ⚠️ **O conserto #586 do upstream ficou de fora.** Ele recusa telefone sem
+  `+` e código de país, que a Meta entregaria no país errado. Pela regra do
+  merge, `dedupe.ts` ficou sendo o nosso, e caíram junto `broadcast-csv.ts`,
+  `step2-select-audience.tsx` e os testes deles. **É conserto de correção
+  real e vale reavaliar numa branch própria** — as chaves de i18n dele já
+  estão nos dois dicionários, então só falta o código.
+- ⚠️ **Migrations do upstream renumeradas de novo** (a 037 já avisava que isto
+  volta): `040_contact_business_scoped_user_id` → **0043**,
+  `042_message_failure_reason` → **0045**, com o cabeçalho de dentro corrigido
+  junto (ele cita o próprio número). A `0044` NÃO existe: era a
+  `041_fix_broadcast_contact_id_ambiguity` deles, e o teste
+  `funcao-de-disparo-1030.test.ts` manda **APAGAR**, não renumerar — ela
+  redefine `create_broadcast_with_recipients` com 8 parâmetros, desfazendo a
+  forma final de 9 que a 1030 fixou. A lacuna no número é de propósito.
+- ⚠️ **0043 e 0045 NÃO estão aplicadas em produção** (o conector do Supabase
+  não estava autenticado na sessão do merge). Nenhum código lê o que elas
+  criam — `failure_reason` não aparece em `src/` —, então mesclar não quebra
+  nada; mas elas precisam ser aplicadas para o banco não divergir do
+  repositório.
+- **`ci.yml` e `migrations.yml` apagados de novo**, como a nota do
+  `pipeline.yml` manda. Vão voltar no próximo merge.
+- **Dicionários: UNIÃO, não substituição.** Nosso lado venceu o `en.json`
+  inteiro, o que apagaria as chaves novas deles — e os componentes deles que
+  entraram sem conflito as pedem, virando `MISSING_MESSAGE` na tela. Foram
+  195 chaves reunidas no `en.json` e 242 traduzidas no `pt-BR.json`. ⚠️ Duas
+  seções que vieram na união (`Settings.sections.whatsapp` e `.deals`) não
+  existem no nosso `settings-sections.ts` e foram removidas — o
+  `rotulo-da-secao.test.ts` reprova seção órfã.
+
 **Decisões fixadas no merge de 2026-08-26** (releia antes do próximo merge, são
 as que voltam a conflitar):
 

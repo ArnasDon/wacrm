@@ -39,7 +39,7 @@ export function AppearancePanel() {
 
         <div
           role="radiogroup"
-          aria-label="Color mode"
+          aria-label={t("colorMode")}
           className="grid max-w-md grid-cols-2 gap-3"
         >
           {MODES.map((m) => (

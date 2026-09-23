@@ -2842,7 +2842,8 @@ O que morde código novo:
   escritório APAGAVA um atraso verdadeiro. Os dois foram REPRODUZIDOS num
   Postgres 16 com o gatilho real. Por isso toda histórica chama
   `cb_assentar_mensagem_historica`, que desfaz só o que ESTA mensagem estragou,
-  soma a não lida só para fala de CLIENTE sem resposta de GENTE depois, e toca
+  soma a não lida quando o chamador pede (`p_conta_nao_lida`, decidido em
+  `historica.ts`: fala de CLIENTE sem resposta de GENTE depois), e toca
   `updated_at` (é o que faz o realtime corrigir a lista de quem está com a
   caixa aberta). ⚠️⚠️ **A função NÃO é o recálculo canônico** ("a fala de
   cliente mais antiga depois da última resposta de gente" — o que o gatilho de
@@ -2866,6 +2867,8 @@ O que morde código novo:
   cabeçalho da 1011 (fala de cliente chegando entre a leitura da espera e o
   insert de um eco; ou entre o insert de uma fala já respondida e a função):
   fechá-las pede o insert DENTRO da função, com a linha da conversa travada.
+  Há uma terceira, a da NÃO LIDA, registrada nos limites aceitos abaixo
+  (plano 6.10).
 - ⚠️⚠️ **A religação roda DEPOIS de TODOS os itens do lote gravados — nunca
   dentro do laço dos itens da rota** (`paraReligar`, um por LID; Codex, PR
   #226). Religar são ~6 idas ao banco por retida: no meio do laço, o lote que
@@ -2985,7 +2988,17 @@ O que morde código novo:
   motores, dentro do caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
-  mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3
+  mais escreve e a quem ninguém responde pelo celular fica retido; a NÃO LIDA
+  da recuperada gravada por `historica.ts` (modos `historica` e `tardia`) é
+  decidida ANTES da função (`genteRespondeuDepois`, uma ida ao banco), e
+  `cb_assentar_mensagem_historica` soma o `p_conta_nao_lida` como veio —
+  resposta de gente gravada nesse vão deixa +1 de não lida sobre fala já
+  respondida (Codex, rodada no commit do MERGE `545af27`; aceito em
+  22/09/2026: é o MESMO estado que o caminho normal deixa depois de toda
+  resposta pelo celular — responder não zera a não lida em lugar nenhum; no
+  app, só abrir a conversa zera —; nenhum dos dois modos tinha rodado em
+  produção; e
+  fechar pede a pergunta DENTRO da função, migration nova; plano 6.10). Só a Fase 3
   (patch na imagem da Evolution: `lidMapping.getPNForLID` antes da troca da
   linha 1668 — consulta local, sem rede) resolveria na hora; decisão do
   operador: fora do escopo.
@@ -4701,7 +4714,9 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     grava a data. Desistir aqui é DEFINITIVO — a linha do cancelamento já
     existe, e a reentrega do Calendly não tenta de novo. O cancelamento tem
     teto PRÓPRIO (`TETO_DO_CANCELAMENTO_MS`), maior que a espera e menor que
-    `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens.
+    `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens. Esperar até o
+    teto não fecha tudo: o agendamento que PASSA do teto é o "CONHECIDO, NÃO
+    TRATADO" abaixo.
   - ⚠️ **Código de erro novo entra na lista FECHADA da tela**
     (`CODIGOS_CONHECIDOS`, em `calendly-card.tsx`), senão cai no texto
     genérico "erro do Calendly" — com a tradução existindo e no lugar certo.
@@ -4718,7 +4733,23 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ANTES de resolver o contato não deixa contato na linha do evento, e a
     varredura não tem por onde casar. Rarísimo (erro de banco no instante) e
     o `detalhe` do evento diz o que houve. Depois de o contato ser
-    resolvido, mesmo um `falhou` já serve de prova.
+    resolvido, mesmo um `falhou` já serve de prova. ⚠️ O MESMO fim tem o
+    AGENDAMENTO que passa do teto de 4 min (Codex, PR #235, 5ª rodada —
+    publicada às 23:04 BRT de 20/09, cinco minutos ANTES do merge, e sem
+    resposta até 22/09): a rota — o webhook e o "Processar de novo" — grava
+    `falhou` com o contato NULO (`gravarResultado` é o único escritor de
+    `contact_id`), e `comTetoDeProcessamento` não aborta a promessa, cujo
+    resultado tardio é descartado; o cancelamento lê "finalizado, sem
+    contato" e desiste na hora, e a automação que continua rodando pode
+    gravar a data cancelada depois. Aceito: o processamento medido leva 1,4
+    a 3,5 s. Fechar pede duas peças. (1) Gravar o contato na linha do
+    agendamento assim que ele é resolvido, antes das automações, com guarda
+    `contact_id is null` — e não a cerca do cadeado: depois do teto,
+    `processando_desde` já é nulo —, e o fechamento por teto ou erro deixar
+    de zerar o que já foi gravado; isso basta no caso realista (contato
+    resolvido cedo, automação lenta). (2) Para o contato que só se resolve
+    depois do teto, e para o cancelamento que falhou antes de achá-lo,
+    ligar o cancelamento ao contato pelo `invitee_uri` na varredura.
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras
@@ -4864,7 +4895,10 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     tomar a linha de um processamento VIVO, disparando a automação em
     paralelo. Quem passa do teto grava `falhou` e sai. ⚠️ Desistir não
     cancela o trabalho em voo (promessa não se aborta); quem impede o
-    estrago é a cerca. ⚠️ Ele usa as VARIÁVEIS gravadas (979,
+    estrago NA LINHA DO EVENTO é a cerca — os efeitos da automação em voo
+    (mensagem, a data gravada na ficha) seguem, e um cancelamento dessa
+    reunião fica sem contato (o "CONHECIDO, NÃO TRATADO" do cancelamento).
+    ⚠️ Ele usa as VARIÁVEIS gravadas (979,
   `cb_calendly_eventos.variaveis`), nunca só o remonte: a tabela não guarda
   local/cancelar/remarcar/situação em coluna, e o remonte entregaria à
   automação menos variáveis que a primeira entrega, em silêncio.

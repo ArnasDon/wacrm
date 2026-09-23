@@ -630,6 +630,49 @@ o gatilho da 972 (há pino de texto + os 20 cenários no Postgres local; se algu
 mudar o gatilho, a comparação `c.aguardando_desde = p_carimbo` quebra em
 silêncio) e o download do anexo de uma retida contra a Evolution real.
 
+### 6.10 Codex, rodada no commit do MERGE (`545af27`) — 1 P2 aceito por escrito
+
+(Não confundir com a "5ª rodada no preview" da 6.8: esta é do Codex.) O "@codex
+review" pedido às 21:57 BRT de 19/09 foi respondido às 22:02, já sobre o commit
+do merge (`545af27`, o merge das 21:56). O achado ficou sem resposta e fora deste
+plano até a auditoria de 22/09/2026 — a linha "Codex no HEAD final" do checklist
+fala do HEAD do PR, e esta rodada veio depois dele.
+
+**P2 — "reconferir a resposta de gente antes de somar a não lida".** Em
+`historica.ts`, `contaNaoLida` sai de `genteRespondeuDepois()` (uma ida ao banco)
+ANTES de `cb_assentar_mensagem_historica`. Dentro da função, só
+`aguardando_desde` reconfere a resposta de gente; `unread_count` soma o
+`p_conta_nao_lida` como veio. Resposta de gente (CRM ou celular pareado) gravada
+no vão entre as duas chamadas deixa +1 de não lida sobre fala já respondida.
+
+**O que é verdade:** tudo acima, e vale para os DOIS modos que passam por
+`gravarHistorica` — `historica` e `tardia` (`entregar.ts`). `historica` é também
+o desfecho normal de toda retida RELIGADA: quando ela entra, a mensagem que
+trouxe o telefone já está gravada.
+
+**Por que fica aceito, sem mudar código:**
+
+- o estado que sobra é o MESMO que o caminho normal deixa depois de TODA
+  resposta pelo celular pareado, por onde sai quase toda resposta do escritório:
+  responder não zera a não lida em lugar nenhum; no app, só abrir a conversa
+  zera (`message-thread.tsx`; fora dele, o encerramento em lote da 1018,
+  rodado à mão). A corrida não cria um estado novo;
+- a janela é de UMA ida ao banco;
+- medido em 22/09/2026: desde o deploy, `cb_mensagens_sem_telefone` tem UMA
+  linha — um documento de cliente resolvido pelo acervo no instante da chegada,
+  como `nova` (a última da conversa, menos de 5 s depois do carimbo). Nem
+  `historica` nem `tardia` rodaram em produção, e nenhuma retida foi religada;
+- nenhuma mensagem se perde e nenhum motor roda;
+- fechar de vez pede a pergunta "gente respondeu depois?" DENTRO da função, no
+  mesmo UPDATE, ou seja, migration nova para trocar o corpo da 1011.
+
+Se os dois modos começarem a aparecer, a migration entra. A medida é o log da
+rota (`"modo":"historica"` ou `"modo":"tardia"`, em JSON), ou, pelo banco, a
+recuperada (`message_id` da tabela) que NÃO entrou como `nova`: a que tem na
+mesma conversa outra mensagem de carimbo IGUAL OU mais novo gravada antes dela
+(empate é história; `messages.gravada_em`, 1003), ou a gravada mais de 4 min
+depois do próprio carimbo.
+
 ## 7. Ordem de entrada e volta atrás
 
 1. PR aberto, CI verde (inclui o replay das migrations em banco vazio), revisão
@@ -673,5 +716,7 @@ Evolution) — escrita em produção, só com autorização.
 - [x] Conferência pós-deploy por dado: caminho normal são (9 mensagens reais, atraso ≤ 7 s); nenhuma ocorrência real ainda (6.8)
 - [x] 5ª rodada no preview: eco retido, os dois lotes mistos e a reentrega, com limpeza conferida (6.8)
 - [x] Revisão final por duas lentes — nenhum P0/P1; 2 P2 de borda e notas, com decisão do operador (6.9)
-- [ ] Conferência no log da VPS: `DESCARTADA` deixa de aparecer; a primeira ocorrência real vira linha em `cb_mensagens_sem_telefone`
+- [x] Codex, rodada no commit do MERGE (`545af27`, depois do merge): 1 P2 — a não lida das recuperadas `historica`/`tardia` decidida antes da função —, aceito por escrito em 22/09/2026 (6.10)
+- [x] A primeira ocorrência real virou linha em `cb_mensagens_sem_telefone`: um documento de cliente em 21/09/2026 12:39 BRT, resolvido pelo acervo como `nova` (medido em 22/09)
+- [ ] Conferência no log da VPS: `DESCARTADA` deixa de aparecer
 - [ ] Decisões do operador: refino B-A2 (máquina não conta como "alguém escreveu depois"), B-A1 (payload da mídia até o download), os três endurecimentos P3, prazo de expiração do payload de retida, recuperação da fala de 18/09

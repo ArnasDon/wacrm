@@ -11,16 +11,39 @@ export const WEBHOOK_EVENTS = [
   'message.received', // an inbound WhatsApp message landed
   'message.status_updated', // a sent message advanced (sent/delivered/read)
   'conversation.created', // a new conversation was opened for a contact
+  // Eventos de NEGÓCIO (card do funil). Saem da fila `cb_automation_events`
+  // (0933), que um gatilho de banco enche para TODO escritor de etapa —
+  // arrastar, formulário, lista, painel da conversa, automações e API. Ver
+  // `entregar-eventos-de-funil.ts`.
+  'deal.created', // um card nasceu (em qualquer etapa)
+  'deal.stage_changed', // o card mudou de etapa ou de funil
+  'deal.status_changed', // o card foi ganho, perdido ou reaberto
 ] as const;
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
-/** Human-readable descriptions (surfaced in docs / a future UI). */
+/** Os três eventos que saem da fila do funil. */
+export const DEAL_WEBHOOK_EVENTS = [
+  'deal.created',
+  'deal.stage_changed',
+  'deal.status_changed',
+] as const satisfies readonly WebhookEvent[];
+
+export type DealWebhookEvent = (typeof DEAL_WEBHOOK_EVENTS)[number];
+
+/**
+ * Human-readable descriptions (English, the public API's language). The
+ * settings screen shows its OWN translated text per event — see
+ * `webhooks-panel.tsx`.
+ */
 export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   'message.received': 'An inbound message was received from a contact',
   'message.status_updated':
     'A message you sent changed delivery status (sent/delivered/read/failed)',
   'conversation.created': 'A new conversation was opened',
+  'deal.created': 'A deal (pipeline card) was created',
+  'deal.stage_changed': 'A deal moved to another stage or pipeline',
+  'deal.status_changed': 'A deal was marked won or lost, or reopened',
 };
 
 /** Type-narrow an unknown value into a valid `WebhookEvent`. */

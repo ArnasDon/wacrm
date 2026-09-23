@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import { CornerUpLeft, Copy, SmilePlus, Pencil, Trash2 } from "lucide-react";
+import {
+  CornerUpLeft,
+  Copy,
+  Download,
+  SmilePlus,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useCan } from "@/hooks/use-can";
+import { downloadMediaMessage } from "@/lib/media/download";
 import { cn } from "@/lib/utils";
 import {
   Popover,
@@ -165,6 +173,23 @@ export function MessageActions({
     setTouchOpen(false);
   };
 
+  // ⚠️ Áudio: o "Baixar" morava no menu de três pontos do player NATIVO do
+  // navegador, e o player próprio (`player-de-audio.tsx`) não tem esse menu
+  // — sem este botão, a nota de voz perderia o download. Foto (visualizador),
+  // vídeo (controle nativo) e documento (o próprio link) têm o seu.
+  const podeBaixar = message.content_type === "audio" && !!message.media_url;
+
+  const handleDownload = async () => {
+    setTouchOpen(false);
+    try {
+      // Por blob, com o nome do arquivo: `<a download>` é ignorado em URL
+      // de outra origem (o bucket), e o navegador só abriria o áudio.
+      await downloadMediaMessage(message);
+    } catch {
+      toast.error(t("downloadFailed"));
+    }
+  };
+
   // Row alignment lives here (not in MessageBubble) so the `group/actions`
   // hover region matches the bubble's content width — hovering empty space
   // in the row no longer reveals the toolbar.
@@ -233,6 +258,16 @@ export function MessageActions({
         >
           <Copy className="h-3.5 w-3.5" />
         </button>
+        {podeBaixar && (
+          <button
+            type="button"
+            onClick={() => void handleDownload()}
+            className="flex h-5 w-5 items-center justify-center rounded-full text-popover-foreground hover:bg-muted hover:text-foreground"
+            aria-label={t("download")}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </button>
+        )}
         {podeEditar && (
           <button
             type="button"

@@ -28,6 +28,7 @@ import { ReplyQuote } from "./reply-quote";
 import { FormattedText } from "./formatted-text";
 import { MediaViewer } from "./media-viewer";
 import { MessageReactions } from "./message-reactions";
+import { PlayerDeAudio } from "./player-de-audio";
 import { InteractivePreview } from "@/components/interactive/interactive-preview";
 import { useTranslations } from "next-intl";
 import type { CorDeCanal } from "@/lib/cb-channels/cores";
@@ -384,7 +385,7 @@ function TranscricaoDeAudio({
 
   if (transcricao) {
     return (
-      <details className="mt-1 max-w-60 rounded-md bg-card px-2 py-1 text-xs ring-1 ring-border">
+      <details className="mt-1 max-w-64 rounded-md bg-card px-2 py-1 text-xs ring-1 ring-border">
         <summary className="cursor-pointer select-none text-muted-foreground">
           {t("transcricao")}
         </summary>
@@ -438,10 +439,13 @@ function TranscricaoDeAudio({
 
 function MessageContent({
   message,
+  isAgent,
   t,
   onAbrirGaleria,
 }: {
   message: Message;
+  /** A bolha é da equipe (fundo primary) — o player de áudio lê contra ele. */
+  isAgent: boolean;
   t: ReturnType<typeof useTranslations>;
   onAbrirGaleria?: (messageId: string) => void;
 }) {
@@ -495,7 +499,13 @@ function MessageContent({
         <div>
           {message.media_url ? (
             <>
-              <audio src={message.media_url} controls className="max-w-60" />
+              {/* ⚠️ Não o `<audio controls>` nativo: ele escondia a
+                  velocidade no menu de três pontos do navegador. Ver
+                  `player-de-audio.tsx`. */}
+              <PlayerDeAudio
+                src={message.media_url}
+                naBolhaDaEquipe={isAgent}
+              />
               <TranscricaoDeAudio message={message} t={t} />
             </>
           ) : (
@@ -766,6 +776,7 @@ export function MessageBubble({
         >
           <MessageContent
             message={message}
+            isAgent={isAgent}
             t={t}
             onAbrirGaleria={onAbrirGaleria}
           />

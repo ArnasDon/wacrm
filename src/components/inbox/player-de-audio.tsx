@@ -468,14 +468,19 @@ function Player({ src, naBolhaDaEquipe }: PlayerDeAudioProps) {
           onPointerUp={aoSoltar}
           onPointerCancel={aoDesistir}
           onKeyDown={aoTeclar}
-          className="relative flex h-8 cursor-pointer touch-pan-y items-center justify-between rounded select-none focus-visible:ring-2 focus-visible:ring-current/50 focus-visible:outline-none"
+          // ⚠️ `gap-px` + barras `flex-1` com teto de 3 px: a onda encolhe
+          // com a bolha (a 375 px ela tem ~115–150 px) e as barras afinam
+          // até 1 px, sem nunca encostar uma na outra. Com largura FIXA de
+          // 3 px, 40 barras pediam 120 px e, abaixo disso, viravam um bloco
+          // sólido — medido na tela de celular.
+          className="relative flex h-8 cursor-pointer touch-pan-y items-center justify-between gap-px rounded select-none focus-visible:ring-2 focus-visible:ring-current/50 focus-visible:outline-none"
         >
           {picos.map((altura, i) => (
             <span
               key={i}
               aria-hidden="true"
               className={cn(
-                "w-[3px] rounded-full bg-current transition-[height] duration-300",
+                "max-w-[3px] min-w-px flex-1 rounded-full bg-current transition-[height] duration-300",
                 (i + 0.5) / picos.length <= progresso
                   ? "opacity-90"
                   : "opacity-35",
@@ -505,7 +510,9 @@ function Player({ src, naBolhaDaEquipe }: PlayerDeAudioProps) {
         aria-label={t("velocidadeDica", { valor: velocidade })}
         title={t("velocidadeDica", { valor: velocidade })}
         className={cn(
-          "shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold tabular-nums focus-visible:ring-2 focus-visible:ring-current/50 focus-visible:outline-none",
+          // Largura mínima que cabe "1,5×": sem ela a onda encolhe e estica
+          // a cada troca de velocidade. `py-1` dá os 24 px de alvo do dedo.
+          "min-w-11 shrink-0 rounded-full px-2 py-1 text-xs font-semibold tabular-nums focus-visible:ring-2 focus-visible:ring-current/50 focus-visible:outline-none",
           naBolhaDaEquipe
             ? "bg-primary-foreground/20 hover:bg-primary-foreground/30"
             : "bg-foreground/10 hover:bg-foreground/15",

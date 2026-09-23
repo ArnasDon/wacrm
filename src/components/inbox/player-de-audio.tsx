@@ -225,6 +225,12 @@ function Player({ src, naBolhaDaEquipe }: PlayerDeAudioProps) {
   useEffect(() => {
     const audio = audioRef.current;
     return () => {
+      // Trocar de conversa desmonta o player. A especificação manda pausar
+      // o elemento que sai do documento, e o Chromium pausa (medido em
+      // 23/09/2026) — mas pausar aqui não depende disso: sem a pausa, num
+      // navegador que siga tocando, a nota continuaria sem player na tela
+      // e sem ninguém que a pause (Codex, PR #263).
+      audio?.pause();
       if (tocandoAgora === audio) tocandoAgora = null;
     };
   }, []);

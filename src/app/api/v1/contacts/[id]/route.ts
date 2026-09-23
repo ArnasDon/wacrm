@@ -9,11 +9,19 @@
 //
 // ⚠️ `tags` é lido ANTES de gravar nome/e-mail/empresa (`lerTagsPedidas`,
 // só leitura): um id que não é desta conta volta 400 `unknown_tag_ids` com
-// o contato intocado, em vez de um 400 sobre um contato já alterado.
+// o contato intocado, em vez de um 400 sobre um contato já alterado. E a
+// FORMA dele é conferida antes de qualquer consulta: item que não é texto,
+// ou é vazio, volta 400 — descartado em silêncio, ele virava "tirar todas
+// as etiquetas" (ver `lerTagsDoCorpo`).
+//
+// ⚠️ O `{id}` é conferido como UUID logo depois da chave: cru, um id
+// malformado chegava ao `.eq('id', …)`, o Postgres o recusava (22P02) e o
+// integrador lia 500 "Failed to load contact" — erro NOSSO sobre entrada
+// DELE, e 5xx é o que cliente HTTP retenta. Mesma régua de `[id]/tags`.
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { badRequest, ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
 import {
   getContactById,
   lerTagsPedidas,
@@ -21,7 +29,8 @@ import {
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
-import { TagReferenceError } from '@/lib/api/v1/tags-do-contato';
+import { lerTagsDoCorpo, TagReferenceError } from '@/lib/api/v1/tags-do-contato';
+import { ehUuid } from '@/lib/tasks/validar';
 
 export async function GET(
   request: Request,
@@ -30,6 +39,7 @@ export async function GET(
   try {
     const ctx = await requireApiKey(request, 'contacts:read');
     const { id } = await params;
+    if (!ehUuid(id)) throw badRequest("'id' must be a UUID");
     const contact = await getContactById(ctx.supabase, ctx.accountId, id);
     if (!contact) return fail('not_found', 'Contact not found', 404);
     return ok(contact);
@@ -45,6 +55,7 @@ export async function PATCH(
   try {
     const ctx = await requireApiKey(request, 'contacts:write');
     const { id } = await params;
+    if (!ehUuid(id)) throw badRequest("'id' must be a UUID");
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -53,6 +64,10 @@ export async function PATCH(
     if (!body || typeof body !== 'object') {
       return fail('bad_request', 'Request body must be a JSON object', 400);
     }
+
+    // Forma de `tags`: puro, antes de qualquer consulta ou escrita.
+    const tags = lerTagsDoCorpo(body.tags);
+    if (tags && !Array.isArray(tags)) return fail('bad_request', tags.erro, 400);
 
     // Verify the contact is in this account before mutating anything.
     const existing = await getContactById(ctx.supabase, ctx.accountId, id);
@@ -74,12 +89,8 @@ export async function PATCH(
     }
 
     // Só leitura — a última conferência antes da primeira escrita.
-    const tagsPedidas = Array.isArray(body.tags)
-      ? await lerTagsPedidas(
-          ctx.supabase,
-          ctx.accountId,
-          body.tags.filter((t): t is string => typeof t === 'string')
-        )
+    const tagsPedidas = tags
+      ? await lerTagsPedidas(ctx.supabase, ctx.accountId, tags)
       : null;
 
     if (Object.keys(updates).length > 0) {

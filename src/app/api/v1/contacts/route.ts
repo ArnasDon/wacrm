@@ -11,6 +11,10 @@
 // `casarReferencias`, em `src/lib/api/v1/tags-do-contato.ts`) e é lido
 // ANTES de criar a ficha: um id que não é desta conta volta 400
 // `unknown_tag_ids` sem contato nenhum criado.
+//
+// ⚠️ E a FORMA de `tags` é conferida antes de tudo: item que não é texto
+// (ou é vazio) volta 400 — nunca é descartado em silêncio. Ver
+// `lerTagsDoCorpo`, em `tags-do-contato.ts`.
 // ============================================================
 
 import { requireApiKey } from '@/lib/auth/api-context';
@@ -30,7 +34,7 @@ import {
   resolveAuditUserId,
   ContactError,
 } from '@/lib/api/v1/contacts';
-import { TagReferenceError } from '@/lib/api/v1/tags-do-contato';
+import { lerTagsDoCorpo, TagReferenceError } from '@/lib/api/v1/tags-do-contato';
 import { pareceIdDeEtiqueta } from '@/lib/contacts/id-de-etiqueta';
 
 // PostgREST filter values are comma/paren-delimited; strip anything
@@ -129,14 +133,14 @@ export async function POST(request: Request) {
       return fail('bad_request', "'phone' is required", 400);
     }
 
+    // Forma de `tags`: puro, antes de qualquer consulta.
+    const tags = lerTagsDoCorpo(body.tags);
+    if (tags && !Array.isArray(tags)) return fail('bad_request', tags.erro, 400);
+
     // As etiquetas são lidas ANTES de criar a ficha (só leitura): um id que
     // não é desta conta volta 400 sem deixar contato criado para trás.
-    const tagsPedidas = Array.isArray(body.tags)
-      ? await lerTagsPedidas(
-          ctx.supabase,
-          ctx.accountId,
-          body.tags.filter((t): t is string => typeof t === 'string')
-        )
+    const tagsPedidas = tags
+      ? await lerTagsPedidas(ctx.supabase, ctx.accountId, tags)
       : null;
 
     const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);

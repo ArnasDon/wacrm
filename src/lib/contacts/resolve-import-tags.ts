@@ -19,7 +19,13 @@ export interface CatalogoDeTags {
 }
 
 export interface ResolveImportTagsResult {
-  /** `chaveDeTag(nome)` → id da etiqueta. */
+  /**
+   * `chaveDeTag(nome)` → id da etiqueta: o catálogo inteiro da conta, mais
+   * uma entrada por texto PEDIDO com forma de UUID que é id de etiqueta desta
+   * conta (a chave é o próprio texto, `chaveDeTag(uuid)`, e o valor é o id
+   * dele). Quem consulta o mapa pelo que pediu — `assignImportedContactTags`
+   * — acha a etiqueta certa nos dois casos.
+   */
   tagIdByKey: Map<string, string>;
   /** id → nome gravado, lido do mesmo catálogo (depois da criação). */
   nomePorId: Map<string, string>;
@@ -111,6 +117,19 @@ export async function lerCatalogoDeTags(
  * planilha exportada com ids. Um nome com cara de UUID que JÁ existe no
  * catálogo continua casando (é a etiqueta que alguém criou à mão, e o import
  * não tem por que recusá-la); só a CRIAÇÃO é barrada.
+ *
+ * ⚠️⚠️ E o texto com forma de UUID que é o ID de uma etiqueta DESTA conta
+ * resolve para ESSA etiqueta — a régua da API (`pareceIdDeEtiqueta`, lida
+ * antes de qualquer nome). Sem isto, a planilha exportada com ids pulava a
+ * etiqueta em silêncio no import de CSV, enquanto a mesma coluna mandada à
+ * API a aplicava. ⚠️ O id VENCE o nome: o caso de 22/09 deixou no catálogo
+ * uma etiqueta CHAMADA "32f2da4f-…", que é o id da "Typebot". Pelo nome, o
+ * texto casaria com a etiqueta-lixo; pelo id, com a "Typebot", que é o que
+ * quem escreveu o id queria (e o que a API faz com o mesmo texto). A queda
+ * para o nome só vale quando o texto não é id de etiqueta nenhuma — e aí a
+ * API, que não tem a queda, recusaria com `unknown_tag_ids`: é a única
+ * divergência entre as portas, de propósito (o import não recusa o que já
+ * existe no catálogo; ver o parágrafo acima).
  */
 export async function resolveImportTagIds(
   supabase: SupabaseClient,
@@ -152,8 +171,15 @@ export async function resolveImportTagIds(
 
   const skippedNames: string[] = [];
   const toCreate: string[] = [];
+  // Textos com forma de UUID que são id de etiqueta da conta. Resolvidos pelo
+  // id, nunca pelo nome — e fora da criação, que só conhece nome.
+  const pedidosPorId: string[] = [];
 
   for (const name of uniqueNames) {
+    if (pareceIdDeEtiqueta(name) && catalogo.nomePorId.has(name.toLowerCase())) {
+      pedidosPorId.push(name);
+      continue;
+    }
     if (catalogo.porChave.has(chaveDeTag(name))) continue;
     // A recusa do nome-UUID vem ANTES de `canCreateTags`: sem permissão ele
     // já cairia aqui, e com permissão é justamente o caso de 22/09.
@@ -215,8 +241,26 @@ export async function resolveImportTagIds(
     }
   }
 
+  // O mapa devolvido é uma CÓPIA do catálogo, e é nela que o id pedido entra
+  // — sobrescrevendo, na mesma chave, a etiqueta cujo NOME é aquele UUID (o
+  // id vence o nome, ver acima). Mexer no `porChave` em si trocaria o que a
+  // estrutura promete ("chave do NOME → id"). Sem id pedido, o catálogo sai
+  // como veio: as portas da API nunca mandam um.
+  let tagIdByKey = catalogo.porChave;
+  if (pedidosPorId.length > 0) {
+    tagIdByKey = new Map(catalogo.porChave);
+    for (const name of pedidosPorId) {
+      const id = name.toLowerCase();
+      // Conferido de novo contra o catálogo FINAL: se houve criação, ele foi
+      // relido, e a etiqueta pode ter sido apagada entre as duas leituras.
+      // Aí o texto é pulado — nunca aplicado a um id que não existe mais.
+      if (catalogo.nomePorId.has(id)) tagIdByKey.set(chaveDeTag(name), id);
+      else skippedNames.push(name);
+    }
+  }
+
   return {
-    tagIdByKey: catalogo.porChave,
+    tagIdByKey,
     nomePorId: catalogo.nomePorId,
     skippedNames,
   };

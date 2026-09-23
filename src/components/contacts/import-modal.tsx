@@ -3,6 +3,7 @@
 import { useMemo, useRef, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { chaveDeTag } from '@/lib/contacts/chave-de-tag';
+import { pareceIdDeEtiqueta } from '@/lib/contacts/id-de-etiqueta';
 import { useAuth } from '@/hooks/use-auth';
 import {
   chaveDePessoa,
@@ -74,12 +75,59 @@ function PreviewCell({
   );
 }
 
+/** Uma etiqueta da conta, como a prévia a conhece. */
+interface EtiquetaDaConta {
+  id: string;
+  name: string;
+  color: string;
+}
+
+/**
+ * O catálogo da conta pelas duas perguntas que a importação faz a ele — as
+ * MESMAS de `resolveImportTagIds`: pela chave do nome (na colisão, a mais
+ * antiga) e pelo id (em minúsculas).
+ */
+interface CatalogoDaPrevia {
+  porChave: Map<string, EtiquetaDaConta>;
+  porId: Map<string, EtiquetaDaConta>;
+}
+
+const CATALOGO_VAZIO: CatalogoDaPrevia = { porChave: new Map(), porId: new Map() };
+
+/** O que a importação vai fazer com um texto da coluna de etiquetas. */
+type DestinoDaEtiqueta =
+  | { tipo: 'existente'; etiqueta: EtiquetaDaConta; pedidaPorId: boolean }
+  | { tipo: 'nova' }
+  | { tipo: 'idDesconhecido' };
+
+/**
+ * ⚠️ ESPELHO de `resolveImportTagIds`, na MESMA ordem: forma de UUID que é
+ * id de etiqueta da conta → essa etiqueta (o id vence o nome); senão o nome
+ * pela `chaveDeTag`; senão, UUID é ignorado (a importação nunca cria
+ * etiqueta com nome de UUID) e nome é criado. Divergir daqui é a prévia
+ * prometer uma coisa e o import fazer outra — o defeito que a régua única
+ * existe para impedir.
+ */
+function destinoDaEtiqueta(
+  nome: string,
+  catalogo: CatalogoDaPrevia
+): DestinoDaEtiqueta {
+  const ehId = pareceIdDeEtiqueta(nome);
+  if (ehId) {
+    const porId = catalogo.porId.get(nome.trim().toLowerCase());
+    if (porId) return { tipo: 'existente', etiqueta: porId, pedidaPorId: true };
+  }
+  const porNome = catalogo.porChave.get(chaveDeTag(nome));
+  if (porNome) return { tipo: 'existente', etiqueta: porNome, pedidaPorId: false };
+  return ehId ? { tipo: 'idDesconhecido' } : { tipo: 'nova' };
+}
+
 function ImportPreviewTags({
   tagNames,
-  tagColorByKey,
+  catalogo,
 }: {
   tagNames: string[];
-  tagColorByKey: Map<string, string>;
+  catalogo: CatalogoDaPrevia;
 }) {
   const t = useTranslations('Contacts.importModal');
 
@@ -96,9 +144,36 @@ function ImportPreviewTags({
         // acento de uma etiqueta existente — e a importação, que casa sem
         // acento, reusava a que já havia. A tela prometia uma coisa e o
         // import fazia outra. (Achado da revisão adversarial.)
-        const chave = chaveDeTag(name);
-        const color = tagColorByKey.get(chave) ?? DEFAULT_TAG_COLOR;
-        const isKnown = tagColorByKey.has(chave);
+        const destino = destinoDaEtiqueta(name, catalogo);
+
+        // ⚠️ UUID que não é id de etiqueta desta conta NÃO "será criado": a
+        // importação o pula. Dizer "será criada" era a prévia prometendo uma
+        // etiqueta chamada "32f2da4f-…" — a mesma que a API criou por engano
+        // em 22/09 e que a importação hoje recusa.
+        if (destino.tipo === 'idDesconhecido') {
+          return (
+            <span
+              key={name}
+              className="inline-flex max-w-full items-center gap-1 rounded-full border border-dashed border-border px-2 py-0.5 text-[10px] leading-none font-medium text-muted-foreground line-through"
+              title={t('pareceId', { name })}
+            >
+              <span className="truncate">{name}</span>
+            </span>
+          );
+        }
+
+        const conhecida = destino.tipo === 'existente';
+        const color = conhecida ? destino.etiqueta.color : DEFAULT_TAG_COLOR;
+        // Pedida pelo id, a pastilha mostra o NOME da etiqueta — é o que vai
+        // aparecer no contato — e deixa o id no `title`, para quem confere a
+        // planilha achar a linha.
+        const rotulo =
+          conhecida && destino.pedidaPorId ? destino.etiqueta.name : name;
+        const titulo = !conhecida
+          ? t('willBeCreated', { name })
+          : destino.pedidaPorId
+            ? `${destino.etiqueta.name} · ${name.trim()}`
+            : name;
         return (
           <span
             key={name}
@@ -106,15 +181,15 @@ function ImportPreviewTags({
             style={{
               backgroundColor: `${color}18`,
               color,
-              border: `1px solid ${color}${isKnown ? '55' : '30'}`,
+              border: `1px solid ${color}${conhecida ? '55' : '30'}`,
             }}
-            title={isKnown ? name : t('willBeCreated', { name })}
+            title={titulo}
           >
             <span
               className="size-1.5 shrink-0 rounded-full"
               style={{ backgroundColor: color }}
             />
-            <span className="truncate">{name}</span>
+            <span className="truncate">{rotulo}</span>
           </span>
         );
       })}
@@ -142,9 +217,7 @@ export function ImportModal({
   const [parsedRows, setParsedRows] = useState<ParsedContactRow[]>([]);
   const [hasTagsColumn, setHasTagsColumn] = useState(false);
   const [hasCompanyColumn, setHasCompanyColumn] = useState(false);
-  const [tagColorByKey, setTagColorByKey] = useState<Map<string, string>>(
-    new Map()
-  );
+  const [catalogo, setCatalogo] = useState<CatalogoDaPrevia>(CATALOGO_VAZIO);
   const [importing, setImporting] = useState(false);
   const [result, setResult] = useState<{
     imported: number;
@@ -158,7 +231,7 @@ export function ImportModal({
     setParsedRows([]);
     setHasTagsColumn(false);
     setHasCompanyColumn(false);
-    setTagColorByKey(new Map());
+    setCatalogo(CATALOGO_VAZIO);
     setResult(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
   }
@@ -187,7 +260,7 @@ export function ImportModal({
       setParsedRows([]);
       setHasTagsColumn(false);
       setHasCompanyColumn(false);
-      setTagColorByKey(new Map());
+      setCatalogo(CATALOGO_VAZIO);
       return;
     }
 
@@ -196,20 +269,37 @@ export function ImportModal({
     setHasCompanyColumn(csvHasCompany);
 
     if (csvHasTags && accountId) {
-      const { data: tags } = await supabase
-        .from('tags')
-        .select('name, color')
-        .eq('account_id', accountId);
-
-      const colors = new Map<string, string>();
-      for (const tag of tags ?? []) {
-        // Mesma chave da consulta na prévia e do casamento do import.
-        const key = chaveDeTag(tag.name);
-        if (!colors.has(key)) colors.set(key, tag.color);
+      // O catálogo pelas MESMAS regras de `lerCatalogoDeTags`, que é quem a
+      // importação consulta: PAGINADO (o PostgREST corta em 1000 linhas sem
+      // avisar, e a etiqueta que ficasse de fora apareceria como "será
+      // criada" — ou, pedida pelo id, como "não existe nesta conta") e
+      // ORDENADO por `created_at, id` (na colisão de chave vence a mais
+      // antiga, a mesma que a importação vai aplicar). Falha de leitura para
+      // no que já veio — a prévia é aviso, e a importação relê por conta
+      // própria.
+      const porChave = new Map<string, EtiquetaDaConta>();
+      const porId = new Map<string, EtiquetaDaConta>();
+      const POR_PAGINA = 500;
+      for (let de = 0; ; de += POR_PAGINA) {
+        const { data: tags, error } = await supabase
+          .from('tags')
+          .select('id, name, color')
+          .eq('account_id', accountId)
+          .order('created_at', { ascending: true })
+          .order('id', { ascending: true })
+          .range(de, de + POR_PAGINA - 1);
+        if (error) break;
+        for (const tag of (tags ?? []) as EtiquetaDaConta[]) {
+          porId.set(tag.id.toLowerCase(), tag);
+          // Mesma chave da consulta na prévia e do casamento do import.
+          const key = chaveDeTag(tag.name);
+          if (!porChave.has(key)) porChave.set(key, tag);
+        }
+        if (!tags || tags.length < POR_PAGINA) break;
       }
-      setTagColorByKey(colors);
+      setCatalogo({ porChave, porId });
     } else {
-      setTagColorByKey(new Map());
+      setCatalogo(CATALOGO_VAZIO);
     }
   }
 
@@ -373,11 +463,26 @@ export function ImportModal({
       if (tagsAssigned > 0) {
         toast.success(t('toastTagsAssigned', { count: tagsAssigned }));
       }
-      if (skippedNames.length > 0) {
-        const sample = skippedNames.slice(0, 3).join(', ');
+      // Os pulados são de DOIS tipos, com conserto oposto, e cada um tem a
+      // sua frase. Nome desconhecido se resolve criando a etiqueta antes (é o
+      // conselho de `toastTagsSkipped`). Texto com forma de UUID é ID — e o
+      // id que não é desta conta não se conserta criando nada: a importação
+      // nunca cria etiqueta com nome de UUID, então mandar "crie-a antes"
+      // ensinava a repetir o caso de 22/09 à mão. O conserto ali é corrigir
+      // a planilha.
+      const idsPulados = skippedNames.filter((n) => pareceIdDeEtiqueta(n));
+      const nomesPulados = skippedNames.filter((n) => !pareceIdDeEtiqueta(n));
+      if (nomesPulados.length > 0) {
+        const sample = nomesPulados.slice(0, 3).join(', ');
         const more =
-          skippedNames.length > 3 ? ` (+${skippedNames.length - 3} more)` : '';
+          nomesPulados.length > 3 ? ` (+${nomesPulados.length - 3} more)` : '';
         toast.info(t('toastTagsSkipped', { sample, more }));
+      }
+      if (idsPulados.length > 0) {
+        const sample = idsPulados.slice(0, 3).join(', ');
+        // Sufixo sem palavra ("+2"): serve aos dois idiomas sem chave própria.
+        const more = idsPulados.length > 3 ? ` (+${idsPulados.length - 3})` : '';
+        toast.info(t('toastTagIdsSkipped', { sample, more }));
       }
       if (skipped > 0) {
         toast.info(t('toastSkipped', { count: skipped }));
@@ -407,15 +512,26 @@ export function ImportModal({
     const names = new Set<string>();
     let rowsWithTags = 0;
     for (const row of parsedRows) {
-      if (row.tagNames.length === 0) continue;
-      rowsWithTags++;
-      // Mesma régua do casamento: "Bancário" e "bancario" no mesmo arquivo
-      // são UMA etiqueta para a importação, e contá-las como duas faria o
-      // resumo prometer mais do que vai acontecer.
-      for (const name of row.tagNames) names.add(chaveDeTag(name));
+      let aplicaAlguma = false;
+      for (const name of row.tagNames) {
+        // Mesma régua do casamento: "Bancário" e "bancario" no mesmo arquivo
+        // são UMA etiqueta para a importação — e o id da "Typebot" e o nome
+        // "Typebot" também. Contá-las como duas faria o resumo prometer mais
+        // do que vai acontecer; pela mesma razão o id que a importação vai
+        // IGNORAR não entra na conta.
+        const destino = destinoDaEtiqueta(name, catalogo);
+        if (destino.tipo === 'idDesconhecido') continue;
+        aplicaAlguma = true;
+        names.add(
+          destino.tipo === 'existente'
+            ? `id:${destino.etiqueta.id.toLowerCase()}`
+            : `nome:${chaveDeTag(name)}`
+        );
+      }
+      if (aplicaAlguma) rowsWithTags++;
     }
     return { unique: names.size, rowsWithTags };
-  }, [parsedRows]);
+  }, [parsedRows, catalogo]);
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -572,7 +688,7 @@ export function ImportModal({
                             <td className="px-3 py-2 align-top">
                               <ImportPreviewTags
                                 tagNames={row.tagNames}
-                                tagColorByKey={tagColorByKey}
+                                catalogo={catalogo}
                               />
                             </td>
                           )}

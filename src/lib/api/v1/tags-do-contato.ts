@@ -168,6 +168,31 @@ export function casarReferencias(
   return { itens, idsDesconhecidos };
 }
 
+/**
+ * Lê o `tags` do corpo de `POST /contacts` e `PATCH /contacts/{id}`, os dois
+ * verbos que SUBSTITUEM o conjunto: `undefined` = não mexer; lista de textos
+ * não vazios = as etiquetas pedidas (nome ou id); `{ erro }` = o 400.
+ *
+ * ⚠️⚠️ Item que não é texto, ou vazio, é 400 — nunca descartado. As duas
+ * rotas faziam `body.tags.filter((t) => typeof t === 'string')`, e o GET
+ * devolve `tags` como objetos `{ id, name, color }`: o integrador que
+ * devolvia a ficha como a leu (o "ler, mexer, gravar" do n8n) mandava uma
+ * lista só de objetos, ela virava lista VAZIA, e lista vazia apaga todas as
+ * etiquetas — com 200. `[""]` dava no mesmo (`casarReferencias` pula o
+ * vazio). Limpar é `tags: []`, por escrito.
+ *
+ * `null` continua sendo "não mexer", como sempre foi: recusá-lo quebraria
+ * quem já manda o campo nulo quando não tem etiqueta. Texto solto ou objeto
+ * no lugar da lista viram 400 (antes eram ignorados em silêncio).
+ */
+export function lerTagsDoCorpo(valor: unknown): string[] | undefined | { erro: string } {
+  if (valor === undefined || valor === null) return undefined;
+  const erro = "'tags' must be an array of non-empty strings (tag names or ids)";
+  if (!Array.isArray(valor)) return { erro };
+  if (!valor.every((t) => typeof t === 'string' && t.trim() !== '')) return { erro };
+  return valor as string[];
+}
+
 export interface MudancaDeTags {
   /** Nomes ou ids a acrescentar, aparados e sem repetição (pela chave). */
   add: string[];

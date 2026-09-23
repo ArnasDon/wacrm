@@ -241,7 +241,7 @@ Todas as fases são deploy-safe: nenhuma altera o comportamento existente da Evo
 7. **Duas conversas por contato continuam sendo UMA.** `UNIQUE(account_id, contact_id)` (`036:125-126`) é decisão explícita da 902 (`:18-19`). Este plano assume que ela **permanece** e resolve as consequências pontualmente. Mudar para `(account_id, contact_id, channel_id)` é troca de modelo, exige migração de merge/split e refaz inbox, atribuição e IA — só decidir isso se o escritório de fato operar números por área.
 8. **Push no `main` = produção.** Cada fase deve ir com o operador ciente. Evolution single-channel do colega já roda: nenhuma fase pode alterar o comportamento quando a conta tem **um** canal — usar `channels.length >= 2` como gate de UI e `NULL = todos` como gate de engine.
 9. **i18n.** Toda fase com UI toca os dois dicionários. `scripts/i18n-parity.mjs` sai com código 1 se faltar chave.
-10. **`META_APP_SECRET` global.** Números Meta de **outro App do Facebook** terão 100% do inbound rejeitado (`webhook-signature.ts:25-46`). Números do mesmo App/WABA funcionam. Documentar essa restrição no painel de canais em vez de codificar `app_secret` agora.
+10. **`META_APP_SECRET` global.** ~~Números Meta de **outro App do Facebook** terão 100% do inbound rejeitado.~~ ✅ Resolvido em 23/09/2026 pela Fase 3c do plano do upstream: `META_APP_SECRET` aceita vários segredos separados por vírgula (`docs/multi-waba.md`). O segredo continua da instalação, não por canal — qualquer um da lista assina para qualquer número.
 
 ---
 

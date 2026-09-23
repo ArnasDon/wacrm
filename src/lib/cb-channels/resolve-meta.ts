@@ -62,13 +62,23 @@ function mapear(c: LinhaCanal): MetaChannelForSend {
  */
 export class ErroAoLerCanalMeta extends Error {
   constructor(onde: string, mensagem: string) {
-    super(`meta channel lookup failed (${onde}): ${mensagem}`);
+    // O detalhe do PostgREST vai para o LOG, não para a mensagem: as rotas de
+    // modelo devolvem `error.message` à tela, e o admin leria "canceling
+    // statement due to statement timeout" num toast (revisão da Fase 3-I).
+    console.error(`[resolveMetaChannel] leitura falhou (${onde}):`, mensagem);
+    super('Could not read the WhatsApp connections right now — try again.');
     this.name = 'ErroAoLerCanalMeta';
   }
 }
 
-/** `invalid_text_representation` — o id pedido não é um UUID. */
-const UUID_MALFORMADO = '22P02';
+/**
+ * Classe 22 do Postgres (`data_exception`) = a ENTRADA é inválida — o id
+ * pedido não é UUID (22P02), traz um byte que o texto não aceita (22021)…
+ * É canal inválido (400 no chamador), não banco fora.
+ */
+function entradaInvalida(code: string | undefined): boolean {
+  return typeof code === 'string' && code.startsWith('22');
+}
 
 /**
  * Canal Meta por onde um broadcast / uma operação de modelo deve sair.
@@ -79,15 +89,20 @@ const UUID_MALFORMADO = '22P02';
  * um número"; na lista, pior — a falha caía em silêncio no espelho legado.
  *
  * `requestedChannelId` inexistente, de outra conta, NÃO-Meta ou MALFORMADO
- * (22P02 — é entrada inválida, não banco fora) devolve `null` em vez de cair
- * no padrão: quem pediu um número específico prefere um erro a ver a campanha
- * sair pelo número errado.
+ * (classe 22 — é entrada inválida, não banco fora) devolve `null` em vez de
+ * cair no padrão: quem pediu um número específico prefere um erro a ver a
+ * campanha sair pelo número errado.
  *
- * O `status` do canal pedido NÃO é conferido, de propósito: nada marca um
- * canal Meta como desconectado quando o token falha (ele nasce `connected` e
- * só a Evolution e o espelho gravam `disconnected`), então recusar por essa
- * coluna seria decidir com um dado que não diz a verdade. A falha real (token
- * inválido) aparece no envio. Sem canal pedido, a busca já PREFERE o conectado.
+ * O `status` do canal pedido NÃO é conferido, de propósito: ele é um sinal
+ * RUIDOSO e pode estar VELHO. Quem grava `disconnected` num canal Meta é a
+ * sonda de saúde (`cb-channels/health.ts`), a QUALQUER erro da Meta — um tempo
+ * esgotado incluído — e só quando há um admin com o app aberto (a RLS barra o
+ * UPDATE dos outros papéis); o canal também pode NASCER `disconnected` quando
+ * o registro falha. Recusar por essa coluna barraria disparo legítimo por um
+ * soluço de minutos atrás. A falha real (token revogado) aparece no envio, e
+ * sem canal pedido a busca já PREFERE o conectado. (Uma versão anterior deste
+ * comentário afirmava que nada marcava o Meta como desconectado — era falso;
+ * a revisão da Fase 3-I achou a sonda.)
  */
 export async function resolveMetaChannel(
   db: SupabaseClient,
@@ -102,7 +117,7 @@ export async function resolveMetaChannel(
       .eq('account_id', accountId)
       .maybeSingle();
     if (error) {
-      if (error.code === UUID_MALFORMADO) return null;
+      if (entradaInvalida(error.code)) return null;
       throw new ErroAoLerCanalMeta('pedido', error.message);
     }
     const linha = data as LinhaCanal | null;

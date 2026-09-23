@@ -194,6 +194,25 @@ describe('resolveMetaChannel', () => {
     ).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
   });
 
+  it('a mensagem do erro NÃO carrega o texto do banco (as rotas de modelo a mostram ao admin)', async () => {
+    const tentativa = resolveMetaChannel(
+      makeDb({ erroPorId: { message: 'canceling statement due to statement timeout' } }),
+      'acct',
+      'ch-meta',
+    );
+    await expect(tentativa).rejects.toThrow(/try again/);
+    await expect(tentativa).rejects.not.toThrow(/statement/);
+  });
+
+  it('outra entrada inválida da classe 22 (byte que o texto não aceita) também é null', async () => {
+    const r = await resolveMetaChannel(
+      makeDb({ erroPorId: { message: 'invalid byte sequence', code: '22021' } }),
+      'acct',
+      'x\u0000',
+    );
+    expect(r).toBeNull();
+  });
+
   it('id MALFORMADO (22P02) continua sendo "canal inválido" — null, não 500', async () => {
     const r = await resolveMetaChannel(
       makeDb({ erroPorId: { message: 'invalid input syntax for type uuid', code: '22P02' } }),
@@ -220,7 +239,7 @@ describe('resolveMetaChannel', () => {
     ).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
   });
 
-  it('canal pedido DESCONECTADO continua aceito (o status do Meta não é mantido)', async () => {
+  it('canal pedido DESCONECTADO continua aceito (o status é ruidoso: a sonda grava a qualquer erro)', async () => {
     const off = { ...META, status: 'disconnected' };
     const r = await resolveMetaChannel(makeDb({ porId: off }), 'acct', 'ch-meta');
     expect(r?.channelId).toBe('ch-meta');

@@ -29,16 +29,31 @@ cada entrega pela conexão dona do `phone_number_id` que ela traz.
 ## Caso B — WABAs em apps DIFERENTES
 
 Cada app assina com o seu segredo. Liste todos em `META_APP_SECRET`,
-separados por vírgula (espaços em volta são ignorados):
+separados por vírgula e **sem espaço**:
 
 ```
 META_APP_SECRET=segredo-do-app-um,segredo-do-app-dois
 ```
 
+⚠️ Sem espaço é obrigatório na VPS: o arquivo de ambiente é carregado pelo
+shell (`set -a; . crm.env`), e com `segredo-um, segredo-dois` a variável
+**some inteira** — todo webhook da Meta, inclusive o do número que já
+funcionava, passa a ser recusado com 401, e o site continua respondendo
+normalmente. Se precisar de espaço, ponha o valor entre aspas. Depois de
+mexer, confira dentro do contêiner que a variável chegou
+(`printenv META_APP_SECRET | wc -c` diferente de 0).
+
 A entrega é aceita quando a assinatura confere com QUALQUER um deles; cada
 comparação é feita em tempo constante. Variável vazia, ou só com vírgulas,
 continua recusando tudo. Em cada app, registre a mesma Callback URL e o
 Verify Token da conexão correspondente.
+
+⚠️ **Todos os apps da lista precisam ser de quem você confia.** O CRM não
+amarra o segredo ao número: qualquer segredo da lista assina uma entrega para
+QUALQUER número desta instalação. Quem tem o segredo de um dos apps consegue
+forjar mensagem de cliente para o número de outra conta. Numa instalação de
+um escritório só, com os apps todos dele, isso não muda nada; não liste o
+segredo de um app de terceiro.
 
 ⚠️ Mudar variável de ambiente exige reiniciar o serviço com ela carregada
 (na VPS: `docker stack deploy` com o arquivo de ambiente — ver
@@ -47,9 +62,11 @@ Verify Token da conexão correspondente.
 ## O que NÃO funciona com apps diferentes
 
 `META_APP_ID` é **um só**: ele é usado no envio da imagem de cabeçalho de
-modelo (o upload da Meta é por app). Com WABAs em apps diferentes, criar
-modelo com cabeçalho de imagem funciona só nas WABAs do app cujo ID está na
-variável. Texto, botões e modelos sem cabeçalho de mídia não dependem dele.
+modelo (o upload da Meta é por app), e esse upload passa SEMPRE pelo app cujo
+ID está na variável, com o token da conexão. Com WABAs em outro app, confira
+se a Meta aceita o token delas ali antes de contar com modelo de cabeçalho de
+imagem nelas — isso não foi medido. Texto, botões e modelos sem cabeçalho de
+mídia não dependem dele.
 
 ## Como conferir
 

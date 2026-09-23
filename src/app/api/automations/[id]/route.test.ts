@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 // ============================================================
-// A automação é da CONTA, não de quem a criou (22/09/2026, decisão do
+// A automação é da CONTA, não de quem a criou (23/09/2026, decisão do
 // operador). As rotas do upstream filtravam pelo autor: com um segundo admin,
 // abrir, ativar, duplicar e mudar o escopo davam 404, e excluir dizia "ok"
 // sem apagar nada. O "banco" aqui APLICA os filtros `eq` de verdade — um

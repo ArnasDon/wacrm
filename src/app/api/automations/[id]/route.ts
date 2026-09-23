@@ -16,7 +16,7 @@ import {
 import { ehGatilhoDaRegua } from '@/lib/asaas/regua'
 import { normalizarAssinatura } from '@/lib/assinatura/assinatura'
 
-// ⚠️⚠️ A automação é da CONTA, não de quem a criou (22/09/2026, decisão do
+// ⚠️⚠️ A automação é da CONTA, não de quem a criou (23/09/2026, decisão do
 // operador). As rotas do upstream filtravam por `user_id = user.id`, herança
 // do tempo em que cada login era uma conta: com um segundo admin, ele via a
 // automação na lista (a leitura é da conta, pela RLS) e recebia 404 ao abrir,

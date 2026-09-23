@@ -156,6 +156,10 @@ jobs:
   migrations:
     name: Apply to a clean database
     runs-on: ubuntu-latest
+    # Só para o login no GHCR do passo abaixo — este job não publica nada.
+    permissions:
+      contents: read
+      packages: read
     steps:
       - uses: actions/checkout@v7
 
@@ -166,6 +170,26 @@ jobs:
           # nova mudando comportamento deve ser um bump deliberado num PR,
           # não uma terça-feira em que o main fica vermelho.
           version: 2.113.0
+
+      # ⚠️ O `db start` abaixo baixa `ghcr.io/supabase/postgres` e mais meia
+      # dúzia de imagens. Sem login, o pull é ANÔNIMO, e o GHCR limita isso por
+      # IP — num runner compartilhado do GitHub o teto já vem consumido por
+      # outros. O sintoma é `toomanyrequests` no meio do download, seguido de
+      # `failed to pull docker image from all registries`, e o job morre.
+      #
+      # Não é defeito do nosso SQL: a falha acontece ANTES de qualquer
+      # migration rodar. E como `deploy` tem `needs: [verificar, migrations]`,
+      # ela SEGURA A PUBLICAÇÃO — foi o que aconteceu em 2026-09-23.
+      #
+      # Autenticado, o teto é por conta e muito maior. O `GITHUB_TOKEN` já
+      # serve: as imagens do Supabase são públicas, só precisamos deixar de
+      # ser anônimos.
+      - name: Log in to GHCR (evita o limite de pull anônimo)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Start Postgres
         run: supabase db start

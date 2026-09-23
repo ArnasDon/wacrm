@@ -1,0 +1,104 @@
+name: Deploy
+
+# Runs on push to `main` (production) and `staging` (staging environment).
+# Always gates on the CI workflow completing successfully — never deploys
+# a red build.
+#
+# NEXT_PUBLIC_* env vars are build-time args baked into the Next.js
+# bundle (see docs/docker.md). Changing any of them requires a new
+# image build — a container restart alone is not sufficient.
+#
+# Required GitHub repository secrets (Settings → Secrets → Actions):
+#   NEXT_PUBLIC_SUPABASE_URL         — Supabase project URL
+#   NEXT_PUBLIC_SUPABASE_ANON_KEY    — Supabase anon key (branch-specific)
+#   NEXT_PUBLIC_SITE_URL             — Canonical public URL of this deployment
+#   NEXT_PUBLIC_APP_LOCALE           — UI locale (en|ko|pt|es), rebuild to change
+#   DEPLOY_SSH_HOST                  — IP/hostname of your VPS
+#   DEPLOY_SSH_USER                  — SSH username on the VPS
+#   DEPLOY_SSH_KEY                   — Private SSH key (PEM, no passphrase)
+#
+# GITHUB_TOKEN is provided automatically and sufficient to push to GHCR.
+
+on:
+  push:
+    branches:
+      - main      # production deploy
+      - staging   # staging deploy
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false   # never cancel a running deploy mid-flight
+
+jobs:
+  build-and-push:
+    name: Build image & push to GHCR
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write  # required to push to ghcr.io
+
+    outputs:
+      image_tag: ${{ steps.meta.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=sha,prefix=${{ github.ref_name }}-
+            type=raw,value=${{ github.ref_name }}-latest
+
+      - name: Build and push image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # NEXT_PUBLIC_* must be passed as build args — Next.js inlines
+          # them into the client bundle at build time (see docs/docker.md).
+          build-args: |
+            NEXT_PUBLIC_SUPABASE_URL=${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+            NEXT_PUBLIC_SUPABASE_ANON_KEY=${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+            NEXT_PUBLIC_SITE_URL=${{ secrets.NEXT_PUBLIC_SITE_URL }}
+            NEXT_PUBLIC_APP_LOCALE=${{ secrets.NEXT_PUBLIC_APP_LOCALE }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    name: Deploy to ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: ${{ github.ref_name == 'main' && 'production' || 'staging' }}
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_SSH_HOST }}
+          username: ${{ secrets.DEPLOY_SSH_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            # Pull the new image and restart the app container.
+            # Assumes docker-compose.yml at ~/wacrm/ on the server;
+            # adjust the path and service name to match your layout.
+            cd ~/wacrm
+            docker compose pull app
+            docker compose up -d --no-deps app
+            # Prune images older than 24h to prevent disk bloat
+            docker image prune -f --filter "until=24h"

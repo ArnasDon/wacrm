@@ -61,10 +61,13 @@ import {
   DEAL_SELECT_DO_QUADRO,
   DEAL_SELECT_ENXUTO,
   juntarConteudo,
+  manterMovimentosLocais,
+  movidosParaALeitura,
   normalizarDealDoQuadro,
   type CardDoQuadro,
   type CardSemConteudo,
   type DealDoQuadro,
+  type MarcaDeArrasto,
   type RawDealDoQuadro,
 } from "@/lib/pipelines/cartao";
 import {
@@ -581,11 +584,48 @@ function PipelinesPageInner() {
     };
   }, [loadPipelines, seedDefaultPipeline, acesso, pedidoDaUrl]);
 
+  /**
+   * Toda leitura de `deals` que grava o quadro — a carga do funil e o
+   * `refreshDeals` — toma um número, e nenhuma grava por cima de outra pedida
+   * DEPOIS dela (`ultimoGravadoRef`). Duas recargas seguidas (dois
+   * salvamentos, duas trocas de etapa na Lista) podem voltar fora de ordem, e
+   * a mais velha punha por cima da mais nova o card na etapa de antes.
+   * ⚠️ A régua é a última que GRAVOU, não a última pedida: uma leitura que
+   * falha não grava, e com a régua do pedido ela ainda calava a mais velha —
+   * inclusive a carga do funil novo, calada por um `refreshDeals` que ficou
+   * do funil anterior (as etapas de B com os cards de A).
+   */
+  const pedidoDosNegociosRef = useRef(0);
+  const ultimoGravadoRef = useRef(0);
+  /**
+   * Os arrastos que uma leitura no ar pode não ter lido: card → a marca do
+   * último arrasto (o gesto e a gravação confirmada contam, cada um, um
+   * passo em `movimentosRef`). Toda leitura que grava o quadro mantém a etapa
+   * e o status da tela desses cards (`movidosParaALeitura`).
+   */
+  const movimentosRef = useRef(0);
+  const movidosRef = useRef(new Map<string, MarcaDeArrasto>());
+  const gravarNegocios = useCallback(
+    (negocios: CardDoQuadro[], pedido: number, movimentosNoInicio: number) => {
+      if (pedido <= ultimoGravadoRef.current) return;
+      ultimoGravadoRef.current = pedido;
+      const { manter, aposentar } = movidosParaALeitura(
+        movidosRef.current,
+        movimentosNoInicio,
+      );
+      for (const id of aposentar) movidosRef.current.delete(id);
+      setDeals((prev) => manterMovimentosLocais(negocios, prev, manter));
+    },
+    [],
+  );
+
   // Load stages + deals whenever selected pipeline changes.
   // Clearing on no-selection is a legitimate sync with URL/prop
   // state; the load completion uses async setters inside promise
   // callbacks (not synchronous in the effect body).
   useEffect(() => {
+    const pedido = ++pedidoDosNegociosRef.current;
+    const movimentosNoInicio = movimentosRef.current;
     if (!selectedPipelineId) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setStages([]);
@@ -604,12 +644,14 @@ function PipelinesPageInner() {
       if (cancelled) return;
       setStages(s);
       setEtapasDe(selectedPipelineId);
-      setDeals(d);
+      // Um `refreshDeals` que partiu depois (a Lista, um salvamento) e já
+      // gravou é mais novo: as etapas valem, os negócios ficam os dele.
+      gravarNegocios(d, pedido, movimentosNoInicio);
     })();
     return () => {
       cancelled = true;
     };
-  }, [selectedPipelineId, loadStages, loadDeals]);
+  }, [selectedPipelineId, loadStages, loadDeals, gravarNegocios]);
 
   /**
    * Versão das mudanças LOCAIS da página. Toda ação que mexe por aqui nos
@@ -685,12 +727,17 @@ function PipelinesPageInner() {
     if (!selectedPipelineId) return;
     versaoDoQuadroRef.current += 1;
     const funil = selectedPipelineId;
-    const negocios = await loadDeals(funil);
+    const pedido = ++pedidoDosNegociosRef.current;
+    const movimentosNoInicio = movimentosRef.current;
+    const negocios = await buscarNegocios(funil);
     // Trocar de funil logo depois de salvar punha os cards do funil anterior
     // no quadro do novo — as colunas vazias até recarregar a página.
     if (funilAbertoRef.current !== funil) return;
-    setDeals(negocios);
-  }, [loadDeals, selectedPipelineId]);
+    // Falhou: o toast já saiu, e o quadro fica como está — gravar a lista
+    // vazia esvaziava todas as colunas até recarregar.
+    if (!negocios) return;
+    gravarNegocios(negocios, pedido, movimentosNoInicio);
+  }, [buscarNegocios, gravarNegocios, selectedPipelineId]);
 
   /**
    * O conteúdo dos cards que uma coluna desenha e ainda não tem ("mostrar
@@ -793,6 +840,8 @@ function PipelinesPageInner() {
       // Mudança local: a recarga da volta ao app que estiver no ar já não
       // pode gravar por cima (ver `versaoDoQuadroRef`).
       versaoDoQuadroRef.current += 1;
+      // E a leitura no ar mantém a etapa deste card (ver `movidosRef`).
+      movidosRef.current.set(dealId, { passo: ++movimentosRef.current, confirmado: false });
       // Optimistic update — board already animated; just persist.
       // ⚠️ Espelho do gatilho da 950: entrar numa etapa marcada carimba
       // ganho/perdido NO BANCO (BEFORE trigger, mesma escrita). Sem refletir
@@ -818,6 +867,8 @@ function PipelinesPageInner() {
         .select("id, status");
       if (error || !linhas || linhas.length === 0) {
         toast.error(t("toastFailedMoveDeal"));
+        // Recusado: a recarga abaixo tem de devolver o card à etapa do banco.
+        movidosRef.current.delete(dealId);
         refreshDeals();
         return;
       }
@@ -826,6 +877,11 @@ function PipelinesPageInner() {
       // operador fechar ou reabrir o card — o gatilho decide pelo que está
       // gravado, não pelo que a tela lembra (Codex, PR #245).
       const gravado = linhas[0].status as Deal["status"];
+      // Gravado: uma leitura que partiu entre o gesto e esta resposta pode
+      // não ter lido a etapa nova — ela também mantém a da tela, e a da volta
+      // ao app, que não sabe fazer isso, é descartada.
+      versaoDoQuadroRef.current += 1;
+      movidosRef.current.set(dealId, { passo: ++movimentosRef.current, confirmado: true });
       setDeals((prev) =>
         prev.map((d) =>
           d.id === dealId && d.stage_id === newStageId ? { ...d, status: gravado } : d,
@@ -1195,7 +1251,6 @@ function PipelinesPageInner() {
           open={settingsOpen}
           onOpenChange={setSettingsOpen}
           pipeline={selectedPipeline}
-          stages={stages}
           onPipelinesChanged={refreshPipelines}
           onStagesChanged={refreshStages}
           onCreateNewPipeline={() => {

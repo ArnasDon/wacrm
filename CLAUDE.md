@@ -85,7 +85,8 @@ Supabase (Postgres + Auth + Storage + RLS) · Meta Cloud API.
   CRM via MCP. Rodar `npm` dentro dele, não na raiz.
 - `docs/` — a documentação ENTREGUE a quem instala o sistema: `README.md`
   (índice), `INSTALACAO.md` (do zero até o WhatsApp conectado), `ATUALIZAR.md`,
-  `docker.md`, `public-api.md` e `mcp.md`. ⚠️ Até 2026-09-08 esta linha dizia
+  `docker.md`, `public-api.md`, `mcp.md`, `webhooks.md` e `multi-waba.md`
+  (vários números oficiais; entrou na Fase 3c do plano do upstream). ⚠️ Até 2026-09-08 esta linha dizia
   que a doc de self-host vivia no site do projeto ORIGINAL — verdade enquanto
   éramos só um fork de uso interno, e mentira a partir do momento em que o
   código passou a ser instalado por outra pessoa. O `SETUP-PRODUCAO.md` foi
@@ -236,9 +237,10 @@ as que voltam a conflitar):
 - **`src/components/inbox/message-bubble.tsx` e `message-thread.tsx` ficam
   NOSSOS, inteiros.** O visualizador de mídia do upstream (#467) foi descartado:
   o nosso `media-viewer.tsx` tem giro e zoom, que a versão deles não tem. Os
-  arquivos `media-lightbox.tsx`, `message-media.tsx` e `lib/media/*` vieram no
-  merge mas **não estão ligados** — se um merge futuro os religar, o inbox passa
-  a ter dois visualizadores.
+  arquivos `media-lightbox.tsx` e `message-media.tsx` vieram no merge mas **não
+  estão ligados** — se um merge futuro os religar, o inbox passa a ter dois
+  visualizadores. (De `lib/media/*`, o `download.ts` passou a ser usado em
+  23/09/2026 pelo **Baixar** da nota de voz — ver "Player de áudio".)
 - ⚠️ **Uma major de Node só, e ela mora no `.nvmrc` (hoje `22`, o LTS).**
   Chegaram a existir TRÊS ao mesmo tempo — dev 24, CI 20, produção 22 — e isso
   já custou um vermelho real: o PR #66 passou na máquina do dev e reprovou no
@@ -330,6 +332,7 @@ upstream sobrescrevê-los:
 | `src/app/api/whatsapp/webhook/route.ts` (3ª linha nossa) | o `.is('nome_fixado_em', null)` no UPDATE que troca o nome do contato pelo do perfil (999). O bloco é do upstream e volta cru num merge — sem a guarda, o nome fixado pelo agendamento do Calendly vira o do WhatsApp na mensagem seguinte. Pino: `src/lib/contacts/nome-fixado.chamadores.test.ts` |
 | `src/components/inbox/message-bubble.tsx` (além de ser nosso inteiro) | o case `document` usa `mediaFilename(message)` e mostra a legenda embaixo só quando ela DIFERE do nome; `nomeDeArquivo` delega para a cascata em vez de derivar o basename cru |
 | `src/components/inbox/message-bubble.tsx` (canal, 2026-09-02) | a prop `canal` (nome + cor) no lugar do antigo `channelLabel`: o rótulo embaixo da mensagem ganhou a bolinha da cor, 10px (era 9) e teto de 9rem (era 7). ⚠️ Uma versão desta nota dizia que em 7rem os nomes truncavam "no ponto em que ainda são iguais" — MEDIDO em 02/09: os seis nomes da conta cabem em 7rem até a 10px (o mais longo, "Trabalhista - Comercial", dá 110px); o 9rem é folga, não conserto. A cor vive na BOLINHA, não no texto: a bolha da equipe é `bg-primary`, violeta nesta conta. Uma trilha de 3px na borda foi feita e DESCARTADA pelo operador na hora ("não gostei dessa borda colorida") |
+| `src/components/inbox/message-actions.tsx` (áudio, 23/09/2026) | o botão **Baixar** da nota de voz (`podeBaixar` + `downloadMediaMessage`). O download morava no menu de três pontos do `<audio controls>` nativo, que a bolha trocou pelo `player-de-audio.tsx` — um merge que traga a barra crua do upstream tira o download do áudio sem conflito nenhum |
 | `src/components/inbox/message-thread.tsx` | além do fio intercalado, renderiza a faixa `ScheduledBar` logo acima do compositor e guarda o contador que a liga ao compositor |
 | `src/components/inbox/message-thread.tsx` (rolagem, 2026-09-01) | ⚠️ `coladoNoFimRef` + `onScroll` guardam o auto-scroll, e o spinner só entra quando a CONVERSA muda (`conversaCarregadaRef`). Sem os dois, voltar de uma aba nova — o `visibilitychange` incrementa o `resyncToken` — perdia a posição de quem lia o histórico E o empurrava para o fim, três vezes por retorno (mensagens, eventos e notas chegam em buscas próprias). O `saltoAtivoRef` NÃO cobre isso: é armado só pelo salto da busca, e `liberarSalto` está no `onWheel`, então rolar à mão o DESLIGA. A guarda é re-armada em `publicarMensagemOtimista` e ao acrescentar nota — senão o autor manda e não vê |
 | `src/app/api/whatsapp/webhook/route.ts` | carimba `channel_id` na entrada — **no próprio upsert** desde 10/09/2026 (o UPDATE separado `stampMessageChannel` engolia falha e deixava mensagem de cliente sem número, e a janela de 24h por número a leria como vinda de outro número; o mesmo no `persistInboundMessage` da Evolution). Os dois gravam por `gravarComCanal` (`stamp.ts`), que repete SEM canal quando a conexão foi apagada no meio (23503 da FK `messages_channel_id_fkey`) — senão a mensagem do cliente se perderia, porque o provedor já recebeu 200; há pino estrutural em `stamp.chamadores.test.ts`; varre `cb_channels` na verificação (GET); escopa o ACK por canal; passa `channelId` a flows/automações/IA |
@@ -359,11 +362,15 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (955/963) | monta o `<ExecutarAutomacaoDialog>` (é o fio que tem o contato; o canal passado é `conversation.channel_id ?? null` — o PR #74 trocou o `activeChannel` resolvido pelo cru DE PROPÓSITO, para a checagem de escopo da rota falhar aberta igual ao motor em conversa sem canal; grupo fica de fora) e os avatares `<AvataresNaConversa>` no cabeçalho, alimentados por `useQuemVeAConversa` |
 | `src/components/inbox/message-thread.tsx` (#84) | a **janela de 24h**: a regra saiu para `src/lib/inbox/janela-24h.ts` (puro, com teste) e os TRÊS caminhos de envio (texto, mídia, interativa) passam por `janelaFechadaAgora()` antes do `fetch` — o portão lê o RELÓGIO no disparo, nunca `sessionInfo.expired` (um `useMemo`: recomputa no tique de 1 min da badge, nunca no instante exato do disparo). Um merge que traga o `sessionInfo` inline do upstream devolve os três buracos de uma vez. Desde 10/09/2026 a janela é **POR NÚMERO**: os dois relógios passam `canalDaJanela` (= `activeChannel`, id + transporte, o mesmo do `expected_channel_id`) — parâmetro OBRIGATÓRIO em `janelaFechada`/`minutosRestantes`, com pino estrutural cobrando o MESMO canal nos dois —, grupo fica fora (`!ehGrupo` em `janelaDe24h`), e a etiqueta fala minutos na última hora (`restanteParaExibir`; antes o ramo de minutos era código morto e a última hora aparecia inteira como "1h restantes") |
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
-| `src/app/api/automations/[id]/duplicate/route.ts` | copia `channel_ids` (sem isso a cópia vira irrestrita) |
+| `src/app/api/automations/[id]/duplicate/route.ts` | copia `channel_ids` (sem isso a cópia vira irrestrita) e, desde 23/09/2026, `assinatura_personalizada` (sem ela a cópia assina com o nome da conta) |
+| `src/app/api/automations/[id]/route.ts` e `duplicate/route.ts` (23/09/2026) | ⚠️⚠️ a automação é da CONTA, não de quem a criou: GET por qualquer membro, PATCH/DELETE/duplicar por qualquer ADMIN da conta (`ctx.accountId` de `requireRole`), nunca `user_id = user.id` (decisão do operador). O upstream filtra pelo autor — herança de quando cada login era uma conta —, e com um segundo admin ele recebia 404 ao abrir, ativar, duplicar ou mudar o escopo pela aba do funil. O DELETE confere quantas linhas saíram: antes, zero linhas voltavam `ok` e a tela dizia "excluída" sobre a automação intacta. Um merge que traga as rotas cruas devolve os dois sem conflito nenhum — há pino em `route.test.ts`. ⚠️ O #587 do original (GHSA-xvrq-88hg-44q6, ABERTO lá desde 17/09) faz o mesmo conserto com piso **`agent`** nas três escritas: num merge, fica o nosso `admin` — o pino cobra o papel PEDIDO (`requireRole('admin')`), não só que o `agent` é recusado. O UPDATE do PATCH também leva a conta e confere as linhas (Fase 1b do plano do upstream) |
+| `src/lib/automations/meta-send.ts`, `src/lib/flows/meta-send.ts` e `engine.ts` (23/09/2026, upstream #589) | a conversa do contexto é conferida por conta no disparo, em `resolveConversationId` e em cada envio do robô (`assertConversationInAccount`, ANTES do canal e do provedor); as prévias levam `.eq('account_id')`. Remetente NOVO do robô nestes arquivos repete a conferência — pino estrutural em `src/lib/whatsapp/conversation-scope.chamadores.test.ts` |
+| `src/lib/whatsapp/conversation-scope.ts` (23/09/2026) | ⚠️ DIVERGE do original do #589: com `contactId`, a conversa tem de ser DAQUELE contato também (Codex, 3ª rodada do PR #261) — só a conta deixava passar "contato A + conversa de B" da mesma conta, e o cliente A recebia o que aparece no fio de B. O disparo e `resolveConversationId` fazem o mesmo. Num merge, fica o nosso |
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
 | `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
-| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Ao EDITAR, funil e etapa só vão quando o operador os mudou (23/09/2026): o quadro não tem realtime, e regravar a etapa de um card que outro operador ou uma automação já moveu o levava de volta — disparando as automações da etapa antiga. E o reset do rascunho é por sessão (`sessaoRef`), não por identidade de `stages`. Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/pipeline-settings.tsx` | o rascunho de "Gerenciar funil" vem do BANCO a cada abertura (23/09/2026: `aberturaRef`, `gravacaoRef`, carregando com Salvar/Adicionar desabilitados), não das props `pipeline`/`stages` — a versão do upstream semeia das props, e um merge que a traga crua devolve o rascunho apagado a cada volta ao app e as etapas do funil anterior logo depois de uma troca. Mais o que já era nosso: degrau (975) e resultado (950) por etapa, e os avisos de conexão que usa o funil ou a etapa (908) |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
 | `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
@@ -377,7 +384,7 @@ upstream sobrescrevê-los:
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
-| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, `refreshStages`/`refreshDeals` (nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
+| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, uma recarga PRÓPRIA (`buscarFunis`/`buscarEtapas`/`buscarNegocios`/`buscarAutomacoes`, com as cercas de versão e de funil — ela NÃO passa pelo `refreshDeals` nem mantém arrasto no ar, e é por isso que a gravação confirmada de um arrasto avança a versão; nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
 | `src/lib/ai/types.ts`, `generate.ts`, `defaults.ts`, `config.ts`, `usage.ts`, `providers/` | o TERCEIRO provedor (`gemini`, 941) e o modo `'radar'` no log de uso — o upstream conhece só openai/anthropic. `structured.ts` e `providers/gemini.ts` são arquivos NOSSOS |
 | `src/components/settings/ai-config.tsx`, `src/app/api/ai/config/route.ts` | a opção Gemini no seletor e na validação do provider |
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
@@ -1647,6 +1654,38 @@ código novo:
 - **`gallery.ts` NÃO foi alargado para documento**, de propósito: ele
   alimenta as setas ‹ › do visualizador, que só sabe desenhar imagem e vídeo.
 
+⚠️ **Player de áudio (23/09/2026): a nota de voz não usa mais o `<audio
+controls>` nativo.** `src/components/inbox/player-de-audio.tsx` e
+`src/lib/audio/onda.ts` (puro, com teste) — play, a onda do próprio áudio com
+a bolinha que se arrasta, o tempo e o botão 1× → 1,5× → 2×, no desenho do
+WhatsApp (pedido do operador: a velocidade custava três cliques no menu do
+navegador). O que morde código novo:
+
+- ⚠️⚠️ **O "Baixar" do áudio mora na BARRA DE AÇÕES** (`podeBaixar` em
+  `message-actions.tsx`, via `downloadMediaMessage`). Ele vivia no menu de
+  três pontos do player nativo — trocar o player sem isto tirava o download
+  da nota de voz sem erro nenhum (o operador pegou na hora). Um merge que
+  traga a barra crua do upstream tira o botão SEM conflito.
+- ⚠️ **A onda é LIDA do arquivo, nunca sorteada**: `fetch` + `decodeAudioData`
+  num `OfflineAudioContext` a 8 kHz (a taxa baixa é o que segura a memória —
+  medido: 10 min de áudio = ~19 MB temporários; a 44,1 kHz a conta dá ~104
+  MB).
+  Só roda quando o player aparece (`IntersectionObserver`) e fica em memória
+  por endereço. Falha vira fileira de pontos, nunca desenho inventado.
+  ⚠️ Com a aba OCULTA o observador não dispara: no Browser pane escondido a
+  onda fica em pontos, e o Chrome ainda pausa sozinho o 1º play de um áudio
+  não bufferizado — é política de aba em segundo plano, medida fora do
+  React em 23/09, não defeito do player.
+- **Cor por `currentColor` (`bg-current`)**, nunca `bg-primary-foreground`
+  fixo: a bolha NÃO entregue reescreve o texto de todo descendente para
+  `!text-foreground` sobre fundo claro, e barras de cor fixa sumiriam.
+- **No toque, encostar NÃO pula**: o dedo pode estar rolando o fio. Pula no
+  arraste horizontal de mais de 8 px ou no toque curto; o toque longo é o
+  menu da mensagem. Com o mouse, pula no clique.
+- **A velocidade é UMA para todos os áudios**, lembrada no aparelho
+  (`localStorage` `cb-audio-velocidade`, lida por `lerVelocidade`), e só um
+  áudio toca por vez. O rascunho de voz do compositor continua no nativo.
+
 ⚠️ **Agenda de reuniões (945, Fase 1): o calendário é a parte fácil.**
 `src/lib/agenda/` — `fuso.ts`, `vagas.ts`, `grade.ts` e `validar.ts`, todos
 puros e com teste (85 casos); a tela é `/agenda`, e a escrita passa por
@@ -2894,7 +2933,8 @@ O que morde código novo:
   escritório APAGAVA um atraso verdadeiro. Os dois foram REPRODUZIDOS num
   Postgres 16 com o gatilho real. Por isso toda histórica chama
   `cb_assentar_mensagem_historica`, que desfaz só o que ESTA mensagem estragou,
-  soma a não lida só para fala de CLIENTE sem resposta de GENTE depois, e toca
+  soma a não lida quando o chamador pede (`p_conta_nao_lida`, decidido em
+  `historica.ts`: fala de CLIENTE sem resposta de GENTE depois), e toca
   `updated_at` (é o que faz o realtime corrigir a lista de quem está com a
   caixa aberta). ⚠️⚠️ **A função NÃO é o recálculo canônico** ("a fala de
   cliente mais antiga depois da última resposta de gente" — o que o gatilho de
@@ -2918,6 +2958,8 @@ O que morde código novo:
   cabeçalho da 1011 (fala de cliente chegando entre a leitura da espera e o
   insert de um eco; ou entre o insert de uma fala já respondida e a função):
   fechá-las pede o insert DENTRO da função, com a linha da conversa travada.
+  Há uma terceira, a da NÃO LIDA, registrada nos limites aceitos abaixo
+  (plano 6.10).
 - ⚠️⚠️ **A religação roda DEPOIS de TODOS os itens do lote gravados — nunca
   dentro do laço dos itens da rota** (`paraReligar`, um por LID; Codex, PR
   #226). Religar são ~6 idas ao banco por retida: no meio do laço, o lote que
@@ -3037,7 +3079,17 @@ O que morde código novo:
   motores, dentro do caminho quente); áudio histórico pode ser recusado pela
   transcrição se alguém a pedir nos segundos antes de o anexo chegar (a janela
   de 2 min de `transcrever.ts` conta do `created_at`); lead retido que nunca
-  mais escreve e a quem ninguém responde pelo celular fica retido. Só a Fase 3
+  mais escreve e a quem ninguém responde pelo celular fica retido; a NÃO LIDA
+  da recuperada gravada por `historica.ts` (modos `historica` e `tardia`) é
+  decidida ANTES da função (`genteRespondeuDepois`, uma ida ao banco), e
+  `cb_assentar_mensagem_historica` soma o `p_conta_nao_lida` como veio —
+  resposta de gente gravada nesse vão deixa +1 de não lida sobre fala já
+  respondida (Codex, rodada no commit do MERGE `545af27`; aceito em
+  22/09/2026: é o MESMO estado que o caminho normal deixa depois de toda
+  resposta pelo celular — responder não zera a não lida em lugar nenhum; no
+  app, só abrir a conversa zera —; nenhum dos dois modos tinha rodado em
+  produção; e
+  fechar pede a pergunta DENTRO da função, migration nova; plano 6.10). Só a Fase 3
   (patch na imagem da Evolution: `lidMapping.getPNForLID` antes da troca da
   linha 1668 — consulta local, sem rede) resolveria na hora; decisão do
   operador: fora do escopo.
@@ -3796,9 +3848,11 @@ por fora deles. O que morde código novo:
   `routeContactToPipeline` captura tudo e o lead simplesmente não viraria card,
   em silêncio.
 - **`AFTER UPDATE OF pipeline_id, stage_id, status`** dispara quando a coluna é
-  *mencionada*, mesmo sem mudar — e o formulário manda as três em todo save. O
-  `IS NOT DISTINCT FROM` no topo do trigger é o que evita linha falsa a cada
-  edição de anotação; não remova.
+  *mencionada*, mesmo sem mudar. O `IS NOT DISTINCT FROM` no topo do trigger é
+  o que evita linha falsa quando um escritor manda a coluna sem mudá-la; não
+  remova. (Até 23/09/2026 o formulário do negócio mandava funil e etapa em todo
+  save; hoje só quando mudaram, mas a automação, a Lista e a API continuam
+  mencionando colunas que não mudaram.)
 - **Rótulos são gravados junto com os IDs, de propósito.** Etapa que o lead já
   deixou pode ser apagada, e renomear reescreveria o passado em silêncio.
   `from/to_stage_position` existe para responder "foi avanço?" — comparar
@@ -4753,7 +4807,9 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     grava a data. Desistir aqui é DEFINITIVO — a linha do cancelamento já
     existe, e a reentrega do Calendly não tenta de novo. O cancelamento tem
     teto PRÓPRIO (`TETO_DO_CANCELAMENTO_MS`), maior que a espera e menor que
-    `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens.
+    `RECOLHER_CLAIM_MS`, com teste cobrando as duas margens. Esperar até o
+    teto não fecha tudo: o agendamento que PASSA do teto é o "CONHECIDO, NÃO
+    TRATADO" abaixo.
   - ⚠️ **Código de erro novo entra na lista FECHADA da tela**
     (`CODIGOS_CONHECIDOS`, em `calendly-card.tsx`), senão cai no texto
     genérico "erro do Calendly" — com a tradução existindo e no lugar certo.
@@ -4770,7 +4826,23 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     ANTES de resolver o contato não deixa contato na linha do evento, e a
     varredura não tem por onde casar. Rarísimo (erro de banco no instante) e
     o `detalhe` do evento diz o que houve. Depois de o contato ser
-    resolvido, mesmo um `falhou` já serve de prova.
+    resolvido, mesmo um `falhou` já serve de prova. ⚠️ O MESMO fim tem o
+    AGENDAMENTO que passa do teto de 4 min (Codex, PR #235, 5ª rodada —
+    publicada às 23:04 BRT de 20/09, cinco minutos ANTES do merge, e sem
+    resposta até 22/09): a rota — o webhook e o "Processar de novo" — grava
+    `falhou` com o contato NULO (`gravarResultado` é o único escritor de
+    `contact_id`), e `comTetoDeProcessamento` não aborta a promessa, cujo
+    resultado tardio é descartado; o cancelamento lê "finalizado, sem
+    contato" e desiste na hora, e a automação que continua rodando pode
+    gravar a data cancelada depois. Aceito: o processamento medido leva 1,4
+    a 3,5 s. Fechar pede duas peças. (1) Gravar o contato na linha do
+    agendamento assim que ele é resolvido, antes das automações, com guarda
+    `contact_id is null` — e não a cerca do cadeado: depois do teto,
+    `processando_desde` já é nulo —, e o fechamento por teto ou erro deixar
+    de zerar o que já foi gravado; isso basta no caso realista (contato
+    resolvido cedo, automação lenta). (2) Para o contato que só se resolve
+    depois do teto, e para o cancelamento que falhou antes de achá-lo,
+    ligar o cancelamento ao contato pelo `invitee_uri` na varredura.
   - ⚠️⚠️ **O desarme PRÉ-ARMA a trava da 935** (`cb_automation_reminders`),
     em vez de apagar o campo de data. Apagar destruiria a informação da
     ficha, exigiria adivinhar QUAL campo guarda a data e mexeria em regras
@@ -4916,7 +4988,10 @@ resto.** `src/lib/calendly/` (`payload`, `assinatura`, `variaveis`, `cartao`,
     tomar a linha de um processamento VIVO, disparando a automação em
     paralelo. Quem passa do teto grava `falhou` e sai. ⚠️ Desistir não
     cancela o trabalho em voo (promessa não se aborta); quem impede o
-    estrago é a cerca. ⚠️ Ele usa as VARIÁVEIS gravadas (979,
+    estrago NA LINHA DO EVENTO é a cerca — os efeitos da automação em voo
+    (mensagem, a data gravada na ficha) seguem, e um cancelamento dessa
+    reunião fica sem contato (o "CONHECIDO, NÃO TRATADO" do cancelamento).
+    ⚠️ Ele usa as VARIÁVEIS gravadas (979,
   `cb_calendly_eventos.variaveis`), nunca só o remonte: a tabela não guarda
   local/cancelar/remarcar/situação em coluna, e o remonte entregaria à
   automação menos variáveis que a primeira entrega, em silêncio.
@@ -5889,6 +5964,28 @@ estrutural `transporte.chamadores.test.ts` (no `main` desde 10/09/2026, PR
   `attachments[type=audio]` numa URL assinada que EXPIRA (baixar na hora),
   com `content-type: video/mp4` — a classe sai do `type` do webhook
   (`midiaDoAnexo`), nunca do CDN, senão a voz vira vídeo no fio.
+- ⚠️⚠️ **A URL do anexo NÃO é confiável — ela vem do CORPO que a própria
+  conexão assina** (23/09/2026, Fase 1b do plano do upstream). Quem cadastra
+  uma conexão Instagram com o próprio App Secret forja a entrega: baixada crua,
+  a URL era SSRF com LEITURA (loopback, metadado da nuvem, nomes internos do
+  Swarm — e a resposta ia para o bucket PÚBLICO). Todo download passa por
+  `baixarUrlPublica` (`src/lib/instagram/midia.ts`): só `https`,
+  `isDeliverableUrl` em CADA salto, redirecionamento seguido À MÃO (até
+  `MAX_SALTOS` = 3), UM prazo para a cadeia inteira, e `lerComTeto`
+  (`MEDIA_MAX_BYTES_ENTRADA`, conferido DURANTE a leitura — o webhook não
+  traz tamanho, e um corpo de gigabytes derrubaria o processo de todas as
+  contas). ⚠️ NÃO desligar o redirecionamento (não foi medido se o CDN da Meta
+  redireciona) e NÃO trocar por lista de hosts da Meta (quebraria a mídia no
+  dia em que o domínio do CDN mudar): o que se barra é o endereço não
+  público. Recusa vira "anexo indisponível" (`mirrorInboundMedia` engole o
+  erro). ⚠️ Vale para todo `fetch` de URL vinda de fora: `isDeliverableUrl`
+  + `redirect: 'manual'` (`webhooks/deliver.ts`, `send_webhook` do motor,
+  `template-header-handle.ts`, e aqui). A guarda (`src/lib/webhooks/ssrf.ts`,
+  upstream #588) classifica por OCTETOS e FALHA FECHADA no que não consegue
+  interpretar; ela é idêntica à do original de propósito — inclusive bloquear
+  o NAT64 (`64:ff9b::/32`) inteiro, que numa VPS só-IPv6 com DNS64 recusaria
+  todo destino só-IPv4 (a nossa tem IPv4) — e divergir dela é conflito no
+  próximo merge.
 - ⚠️ **Token do Instagram só no cabeçalho `Authorization: Bearer`, nunca em
   `?access_token=`; a mensagem de erro da Meta ECOA o token e passa por
   `semSegredo`; o host é preso a `graph.instagram.com`**
@@ -6262,10 +6359,40 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   `refreshStages` (Gerenciar funil) descartam a resposta de funil que já não
   está aberto (22/09/2026, há pino): trocar de funil logo depois de salvar
   punha os cards, ou as etapas, do anterior no quadro do novo, colunas vazias
-  até recarregar. A cerca é SÓ de funil, de
-  propósito: o preenchimento do conteúdo (`carregarConteudo`) avança a
-  versão, e uma cerca de versão descartaria o refresh que desfaz o arrasto
-  recusado pelo banco.
+  até recarregar. Ela NÃO é cerca de VERSÃO, de propósito: o preenchimento do
+  conteúdo (`carregarConteudo`) avança a versão, e uma cerca de versão
+  descartaria o refresh que desfaz o arrasto recusado pelo banco.
+  ⚠️ E no MESMO funil (23/09/2026, há pinos): nenhuma leitura de negócios
+  grava por cima de outra pedida DEPOIS dela — o `refreshDeals` e a carga do
+  funil tomam um número (`pedidoDosNegociosRef`), e a régua é a última que
+  GRAVOU (`ultimoGravadoRef`); dois salvamentos seguidos podiam voltar fora de
+  ordem. ⚠️⚠️ Nunca "só o último PEDIDO grava": a leitura que falha não grava,
+  e com essa régua ela calava a mais velha — inclusive a carga do funil novo,
+  calada por um `refreshDeals` que ficou do funil anterior (etapas de B com
+  os cards de A, colunas vazias; achado da 2ª revisão). As duas gravam por `gravarNegocios`,
+  que mantém a etapa e o status da TELA dos cards arrastados que a leitura
+  pode não ter lido (`movidosRef`, regra pura em `movidosParaALeitura`):
+  arrasto ainda não confirmado pelo banco, ou confirmado depois de ela
+  partir. Sem isso, a resposta que lera o card antes de o arrasto gravar o
+  devolvia à coluna antiga. O arrasto marca o card no gesto e na gravação
+  confirmada, e desmarca na recusa, antes do `refreshDeals` que o devolve à
+  etapa do banco. E o `refreshDeals` que FALHA não grava nada (antes gravava
+  a lista vazia e esvaziava todas as colunas).
+  ⚠️ Voltar ao app com o `DealForm` ou o `PipelineSettings` aberto apagava
+  o rascunho: a recarga da volta troca `stages` e `pipeline` por objetos
+  novos, e o reset dos dois dependia deles. O `DealForm` só zera numa sessão
+  NOVA (`sessaoRef`: abrir, ou outro negócio) e compara o salvamento com o
+  negócio do INÍCIO da sessão (`dealDaSessaoRef`), não com a prop. ⚠️⚠️ O
+  `PipelineSettings` deixou de ler etapas e nome da página: a cada abertura
+  ele os busca no BANCO (efeito de `[open, pipeline.id]`), com carregando e
+  "Salvar"/"Adicionar" desabilitados até chegar. Três tentativas de chave de
+  sessão sobre as props falharam em três rodadas de revisão (funil sem etapa,
+  etapas do funil anterior logo depois de uma troca, reabrir logo depois de
+  salvar e desfazer o que foi salvo); ler do banco elimina a classe. Cada
+  abertura tem um número (`aberturaRef`): a leitura e o salvamento de outra
+  abertura não mexem nela, e a leitura espera a gravação ainda no ar
+  (`gravacaoRef`). Quem voltar a semear o diálogo pelas props traz tudo isso
+  de volta.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de
@@ -7599,6 +7726,14 @@ mesma passada** (help/config no app, `docs/`, ou README do módulo). Doc obsolet
 
 - **Meta Cloud API (WhatsApp Business):** webhook em `src/app/api` valida
   assinatura HMAC-SHA256 com `META_APP_SECRET` (sem ele, rejeita todo request).
+  Desde a Fase 3c do plano do upstream (23/09/2026) ele aceita VÁRIOS segredos,
+  separados por vírgula, para WABAs em apps diferentes da Meta
+  (`docs/multi-waba.md`). ⚠️ **Sem espaço depois da vírgula no `crm.env`**:
+  carregado pelo shell (`set -a; . /root/crm.env`), `a, b` faz a variável
+  SUMIR — todo webhook da Meta vira 401 com o site respondendo 200 (medido na
+  revisão da fase). Conferir com `printenv META_APP_SECRET | wc -c` no
+  contêiner. ⚠️ O segredo não é amarrado ao número: qualquer um da lista
+  assina entrega para qualquer número da instalação — só apps de confiança.
   Tokens do WhatsApp são gravados criptografados (AES-256-GCM) com
   `ENCRYPTION_KEY` — **rotacionar essa chave invalida todos os tokens salvos**.
 - **Supabase:** Postgres + Auth + Storage + RLS. `SUPABASE_SERVICE_ROLE_KEY`

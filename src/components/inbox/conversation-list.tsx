@@ -260,6 +260,7 @@ export function ConversationList({
   const {
     favoritas,
     pronto: favoritasProntas,
+    carregadas: favoritasCarregadas,
     falhouAoCarregar: falhouFavoritas,
     alternar: alternarFavorita,
   } = useFavoritas(resyncToken);
@@ -653,6 +654,12 @@ export function ConversationList({
   const aguardandoEtapas =
     (filtros.etapaId !== null || filtros.funilId !== null) &&
     etapasStatus === "carregando";
+  // ⚠️ O recorte "Favoritas" sobre o conjunto VAZIO da montagem diria "nenhuma
+  // conversa" até a consulta das favoritas voltar. O padrão salvo com
+  // Favoritas era semeado assim quando ela chegava por último — antes do #247
+  // a espera pelos negócios escondia a corrida (Codex, PR #247). Leitura que
+  // falhou também conta como voltada: o aviso das favoritas já explica.
+  const aguardandoFavoritas = filtros.favoritas && !favoritasCarregadas;
 
   /**
    * Ciclo de vida do filtro SEMEADO por `?etapa=` (e só dele — etapa
@@ -1025,7 +1032,7 @@ export function ConversationList({
           space — the list then overflows and gets clipped by the
           parent's overflow-hidden with no scrollbar (issue #229). */}
       <ScrollArea className="min-h-0 flex-1">
-        {loading || aguardandoEtapas || esperandoPadrao ? (
+        {loading || aguardandoEtapas || aguardandoFavoritas || esperandoPadrao ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>

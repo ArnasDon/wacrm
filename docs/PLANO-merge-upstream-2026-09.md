@@ -670,6 +670,7 @@ hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
 | P3 — o GET é de qualquer membro: um atendente abre o construtor e só descobre no "Salvar" que não pode (403) | aceito: não é vazamento (os passos já são legíveis por membro pela RLS); construtor somente-leitura para quem não administra fica como melhoria de TELA, fora desta fase |
 | P3 — "Duplicar" ignora o erro da leitura dos passos (cópia vazia com 201) e não copia o "Assinar como" | o "Assinar como" foi corrigido pelo #260; o erro dos passos ignorado é PRÉ-EXISTENTE e fica anotado no diário como follow-up |
 | P3 — soluço do banco na conferência nova vira `falhou` (não reprocessável) no Calendly/webhook de entrada | pré-existente (a mesma semântica da conferência do contato); o comentário foi corrigido, a regra fica |
+| **Codex no HEAD `70e77961`** (cota voltou): P2 — PATCH só com os PASSOS pulava o UPDATE e, com ele, a conferência de linhas; apagada no meio, `replaceSteps` respondia 200 com lista vazia (ou 500 pela chave estrangeira) | ✅ o PATCH só de passos também toca a linha (`updated_at`, que o gatilho `set_updated_at` regrava) — 2 casos no teste, mutante reprova |
 
 **Resultado:** — (a preencher)
 

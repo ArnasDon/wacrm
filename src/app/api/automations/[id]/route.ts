@@ -153,6 +153,15 @@ export async function PATCH(
     }
   }
 
+  // PATCH só com os passos também TOCA a linha (Codex, PR #261): mudar os
+  // passos é mudar a automação, e sem isto o UPDATE — e a conferência de
+  // linhas abaixo — era pulado. Apagada no meio, `replaceSteps` respondia 200
+  // com lista vazia, ou 500 pela chave estrangeira, em vez de 404. O valor é
+  // simbólico: o gatilho `set_updated_at` (0006) grava o `now()` do banco.
+  if (Object.keys(update).length === 0 && Array.isArray(body.steps)) {
+    update.updated_at = new Date().toISOString()
+  }
+
   if (Object.keys(update).length > 0) {
     // A conta também na ESCRITA (upstream #587), e as linhas conferidas:
     // apagada entre a leitura e o UPDATE, dizer `ok` afirmaria uma edição que

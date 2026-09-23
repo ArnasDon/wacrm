@@ -284,6 +284,20 @@ describe('upstream #587 — o piso nosso e a escrita pela conta', () => {
     expect(res.status).toBe(404)
     expect(replaceSteps).not.toHaveBeenCalled()
   })
+
+  it('PATCH SÓ com os passos também toca a linha: apagada no meio, 404 (Codex, PR #261)', async () => {
+    h.apagarDepoisDaLeitura = true
+    const res = await PATCH(corpo({ steps: [] }), params('auto-1'))
+    expect(res.status).toBe(404)
+    expect(replaceSteps).not.toHaveBeenCalled()
+  })
+
+  it('PATCH só com os passos, automação de pé: toca a linha pela conta e troca os passos', async () => {
+    const res = await PATCH(corpo({ steps: [] }), params('auto-1'))
+    expect(res.status).toBe(200)
+    expect(h.filtrosDasEscritas).toEqual([[['id', 'auto-1'], ['account_id', 'acc-1']]])
+    expect(replaceSteps).toHaveBeenCalledTimes(1)
+  })
 })
 
 // Um merge do upstream traz o filtro pelo autor de volta sem conflito nenhum.

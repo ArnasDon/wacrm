@@ -315,7 +315,8 @@ upstream sobrescrevê-los:
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
 | `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
-| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/deal-form.tsx` | o título digitado FIXA o card (1007, `escritaDoTituloManual` nos dois ramos; o `payload` comum NÃO carrega `title`). Ao EDITAR, funil e etapa só vão quando o operador os mudou (23/09/2026): o quadro não tem realtime, e regravar a etapa de um card que outro operador ou uma automação já moveu o levava de volta — disparando as automações da etapa antiga. E o reset do rascunho é por sessão (`sessaoRef`), não por identidade de `stages`. Mais o que a linha antiga já dizia: o link "ver conversa" prefere a conversa do CONTATO (fallback no vínculo da 910), usa `urlDoInbox` e as props `origemFunil`/`aoIrParaConversa` da jornada do funil |
+| `src/components/pipelines/pipeline-settings.tsx` | o rascunho de "Gerenciar funil" vem do BANCO a cada abertura (23/09/2026: `aberturaRef`, `gravacaoRef`, carregando com Salvar/Adicionar desabilitados), não das props `pipeline`/`stages` — a versão do upstream semeia das props, e um merge que a traga crua devolve o rascunho apagado a cada volta ao app e as etapas do funil anterior logo depois de uma troca. Mais o que já era nosso: degrau (975) e resultado (950) por etapa, e os avisos de conexão que usa o funil ou a etapa (908) |
 | `src/app/(dashboard)/inbox/page.tsx`, `src/components/inbox/conversation-list.tsx`, `inbox-filters.tsx` | os params `?etapa=` (semeia o filtro de etapa UMA vez) e `?de=funil` (faixa "Voltar ao funil") — os `router.replace` usam `urlDoInbox`, que preserva `de` e derruba `etapa` DE PROPÓSITO; na lista, `etapaInicial` + `etapasResolvidas` e o recorte de etapa gateado por `etapasUsaveis`; nos filtros, o fallback da pastilha virou `labelStage` (era "Qualquer etapa" sobre filtro ativo) |
 | `src/app/(dashboard)/automations/new/page.tsx` | o `?stage=` que faz a automação nascer com o gatilho de funil já apontando para a etapa clicada |
 | `src/lib/automations/engine.ts` (espera, 18/09/2026) | o "Aguardar" estaciona com `contextoDaEspera(...)` e CONFERE o erro do INSERT (fila que recusa vira falha visível); `resumePendingExecution` limpa a marca com `semMarcaDeResposta`. Um merge que traga o bloco do `wait` cru devolve o insert não conferido e a marca para de ser gravada — a caixa do construtor vira enfeite, sem erro nenhum. Ver a seção "Aguardar — parar se o cliente responder" |
@@ -329,7 +330,7 @@ upstream sobrescrevê-los:
 | `src/lib/automations/trigger-meta.ts` | `formatRelative` passou a usar `Intl.RelativeTimeFormat` e a receber o texto de "nunca" — devolvia `5m ago`/`never` em inglês nas três telas |
 | `src/components/contacts/contact-detail-view.tsx` (987) e `src/components/inbox/painel/painel-do-contato.tsx` | a seção `<ReunioesTranscritasDoContato>` dentro da aba Reuniões, abaixo de `<ReunioesDoContato>` — na ficha E na 7ª aba só-ícone (`reunioes`) do painel da conversa, montada em 09/09/2026 a pedido do operador para a transcrição estar à mão durante o atendimento. Um merge que traga a aba crua do upstream apaga o histórico de transcrições da ficha |
 | `src/components/contacts/contact-detail-view.tsx`, `src/components/inbox/contact-sidebar.tsx`, `src/app/(dashboard)/notifications/page.tsx`, `src/components/layout/{sidebar,header}.tsx`, `src/app/(dashboard)/contacts/page.tsx`, `src/lib/rate-limit.ts` | as tarefas (944): 7ª aba na ficha (com `[&>button]:flex-none` na TabsList), seção na barra da conversa, ícones/navegação dos tipos `task_*` no sino (o `TYPE_ICON` é exaustivo — merge que trouxer tipo novo sem ícone quebra o typecheck), item "Tarefas" com etiqueta realtime no menu, deep link `?contact=`, bucket `tarefa` |
-| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, `refreshStages`/`refreshDeals` (nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
+| `src/app/(dashboard)/pipelines/page.tsx` e `src/app/(dashboard)/contacts/page.tsx` (voltar ao app, 14/09/2026) | a chamada a `useAoVoltarParaOApp` com recarregar SILENCIOSO: no Funil, uma recarga PRÓPRIA (`buscarFunis`/`buscarEtapas`/`buscarNegocios`/`buscarAutomacoes`, com as cercas de versão e de funil — ela NÃO passa pelo `refreshDeals` nem mantém arrasto no ar, e é por isso que a gravação confirmada de um arrasto avança a versão; nunca a carga inicial, que liga o `loading` e desmonta o quadro); em Contatos, a opção `silencioso` do `fetchContacts`, que não liga o `loading`. Ver a seção "Telas que se atualizam ao VOLTAR para o app" |
 | `src/lib/ai/types.ts`, `generate.ts`, `defaults.ts`, `config.ts`, `usage.ts`, `providers/` | o TERCEIRO provedor (`gemini`, 941) e o modo `'radar'` no log de uso — o upstream conhece só openai/anthropic. `structured.ts` e `providers/gemini.ts` são arquivos NOSSOS |
 | `src/components/settings/ai-config.tsx`, `src/app/api/ai/config/route.ts` | a opção Gemini no seletor e na validação do provider |
 | `src/components/settings/cb-channels-panel.tsx`, `src/app/api/cb/channels/[id]/route.ts`, `src/lib/cb-channels/repo.ts` | o toggle `radar_enabled` por canal (dialog, PATCH allowlist e SAFE_COLUMNS) |
@@ -3761,9 +3762,11 @@ por fora deles. O que morde código novo:
   `routeContactToPipeline` captura tudo e o lead simplesmente não viraria card,
   em silêncio.
 - **`AFTER UPDATE OF pipeline_id, stage_id, status`** dispara quando a coluna é
-  *mencionada*, mesmo sem mudar — e o formulário manda as três em todo save. O
-  `IS NOT DISTINCT FROM` no topo do trigger é o que evita linha falsa a cada
-  edição de anotação; não remova.
+  *mencionada*, mesmo sem mudar. O `IS NOT DISTINCT FROM` no topo do trigger é
+  o que evita linha falsa quando um escritor manda a coluna sem mudá-la; não
+  remova. (Até 23/09/2026 o formulário do negócio mandava funil e etapa em todo
+  save; hoje só quando mudaram, mas a automação, a Lista e a API continuam
+  mencionando colunas que não mudaram.)
 - **Rótulos são gravados junto com os IDs, de propósito.** Etapa que o lead já
   deixou pode ser apagada, e renomear reescreveria o passado em silêncio.
   `from/to_stage_position` existe para responder "foi avanço?" — comparar
@@ -6270,10 +6273,40 @@ de uma hora atrás, sem aviso nenhum. O que morde código novo:
   `refreshStages` (Gerenciar funil) descartam a resposta de funil que já não
   está aberto (22/09/2026, há pino): trocar de funil logo depois de salvar
   punha os cards, ou as etapas, do anterior no quadro do novo, colunas vazias
-  até recarregar. A cerca é SÓ de funil, de
-  propósito: o preenchimento do conteúdo (`carregarConteudo`) avança a
-  versão, e uma cerca de versão descartaria o refresh que desfaz o arrasto
-  recusado pelo banco.
+  até recarregar. Ela NÃO é cerca de VERSÃO, de propósito: o preenchimento do
+  conteúdo (`carregarConteudo`) avança a versão, e uma cerca de versão
+  descartaria o refresh que desfaz o arrasto recusado pelo banco.
+  ⚠️ E no MESMO funil (23/09/2026, há pinos): nenhuma leitura de negócios
+  grava por cima de outra pedida DEPOIS dela — o `refreshDeals` e a carga do
+  funil tomam um número (`pedidoDosNegociosRef`), e a régua é a última que
+  GRAVOU (`ultimoGravadoRef`); dois salvamentos seguidos podiam voltar fora de
+  ordem. ⚠️⚠️ Nunca "só o último PEDIDO grava": a leitura que falha não grava,
+  e com essa régua ela calava a mais velha — inclusive a carga do funil novo,
+  calada por um `refreshDeals` que ficou do funil anterior (etapas de B com
+  os cards de A, colunas vazias; achado da 2ª revisão). As duas gravam por `gravarNegocios`,
+  que mantém a etapa e o status da TELA dos cards arrastados que a leitura
+  pode não ter lido (`movidosRef`, regra pura em `movidosParaALeitura`):
+  arrasto ainda não confirmado pelo banco, ou confirmado depois de ela
+  partir. Sem isso, a resposta que lera o card antes de o arrasto gravar o
+  devolvia à coluna antiga. O arrasto marca o card no gesto e na gravação
+  confirmada, e desmarca na recusa, antes do `refreshDeals` que o devolve à
+  etapa do banco. E o `refreshDeals` que FALHA não grava nada (antes gravava
+  a lista vazia e esvaziava todas as colunas).
+  ⚠️ Voltar ao app com o `DealForm` ou o `PipelineSettings` aberto apagava
+  o rascunho: a recarga da volta troca `stages` e `pipeline` por objetos
+  novos, e o reset dos dois dependia deles. O `DealForm` só zera numa sessão
+  NOVA (`sessaoRef`: abrir, ou outro negócio) e compara o salvamento com o
+  negócio do INÍCIO da sessão (`dealDaSessaoRef`), não com a prop. ⚠️⚠️ O
+  `PipelineSettings` deixou de ler etapas e nome da página: a cada abertura
+  ele os busca no BANCO (efeito de `[open, pipeline.id]`), com carregando e
+  "Salvar"/"Adicionar" desabilitados até chegar. Três tentativas de chave de
+  sessão sobre as props falharam em três rodadas de revisão (funil sem etapa,
+  etapas do funil anterior logo depois de uma troca, reabrir logo depois de
+  salvar e desfazer o que foi salvo); ler do banco elimina a classe. Cada
+  abertura tem um número (`aberturaRef`): a leitura e o salvamento de outra
+  abertura não mexem nela, e a leitura espera a gravação ainda no ar
+  (`gravacaoRef`). Quem voltar a semear o diálogo pelas props traz tudo isso
+  de volta.
 - ⚠️ **As visões Lista, Desempenho e Saúde têm dados PRÓPRIOS**
   (`useTrajetorias`), que a recarga do quadro não alcança: cada uma chama o
   hook com o `recarregar` do `useTrajetorias`, que PISCA o carregando — de

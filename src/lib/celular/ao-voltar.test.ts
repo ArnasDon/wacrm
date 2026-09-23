@@ -110,10 +110,52 @@ describe("as cercas da recarga silenciosa (Codex, PR #216)", () => {
     // Salvar e trocar de funil logo em seguida punha os cards (ou as etapas)
     // do funil anterior no quadro do novo: as colunas vazias até recarregar.
     expect(funil).toMatch(
-      /const refreshDeals = useCallback\([\s\S]{0,300}const funil = selectedPipelineId;\s*const negocios = await loadDeals\(funil\);[\s\S]{0,300}if \(funilAbertoRef\.current !== funil\) return;\s*setDeals\(negocios\);/,
+      /const refreshDeals = useCallback\([\s\S]{0,400}const negocios = await buscarNegocios\(funil\);[\s\S]{0,300}if \(funilAbertoRef\.current !== funil\) return;/,
     );
     expect(funil).toMatch(
       /const refreshStages = useCallback\([\s\S]{0,300}const funil = selectedPipelineId;\s*const etapas = await loadStages\(funil\);[\s\S]{0,300}if \(funilAbertoRef\.current !== funil\) return;\s*setStages\(etapas\);/,
+    );
+  });
+
+  it("nenhuma leitura de negócios grava por cima de outra pedida depois dela, e toda leitura mantém o arrasto feito com ela no ar", () => {
+    // Duas recargas do mesmo funil voltando fora de ordem punham a mais velha
+    // por cima; e a leitura que lera o card antes de um arrasto gravar o
+    // devolvia à coluna antiga — de onde o lápis regravava a etapa velha.
+    expect(funil).toMatch(
+      /const refreshDeals = useCallback\([\s\S]{0,300}const pedido = \+\+pedidoDosNegociosRef\.current;\s*const movimentosNoInicio = movimentosRef\.current;[\s\S]{0,500}if \(!negocios\) return;\s*gravarNegocios\(negocios, pedido, movimentosNoInicio\);/,
+    );
+    // A carga do funil também é um pedido, e também mantém os arrastos: com
+    // ela no ar (ir a outro funil e voltar), o quadro anterior continua na
+    // tela e arrastável.
+    expect(funil).toMatch(
+      /useEffect\(\(\) => \{\s*const pedido = \+\+pedidoDosNegociosRef\.current;\s*const movimentosNoInicio = movimentosRef\.current;\s*if \(!selectedPipelineId\) \{/,
+    );
+    expect(funil).toContain("gravarNegocios(d, pedido, movimentosNoInicio);");
+    // Toda gravação passa por gravarNegocios: a régua é a última leitura que
+    // GRAVOU (uma que falha não cala a mais velha — nem a carga do funil
+    // novo), e as marcas são julgadas pelo instante em que ESTA leitura partiu.
+    expect(funil).toMatch(
+      /const gravarNegocios = useCallback\(\s*\(negocios: CardDoQuadro\[\], pedido: number, movimentosNoInicio: number\) => \{\s*if \(pedido <= ultimoGravadoRef\.current\) return;\s*ultimoGravadoRef\.current = pedido;\s*const \{ manter, aposentar \} = movidosParaALeitura\(\s*movidosRef\.current,\s*movimentosNoInicio,?\s*\);\s*for \(const id of aposentar\) movidosRef\.current\.delete\(id\);\s*setDeals\(\(prev\) => manterMovimentosLocais\(negocios, prev, manter\)\);/,
+    );
+    // O refreshDeals não tem mais a régua do pedido (ela calava a carga do
+    // funil novo quando uma recarga do anterior tomava o número depois).
+    expect(funil).not.toContain("if (pedidoDosNegociosRef.current !== pedido) return;");
+    // O arrasto marca o card no gesto (não confirmado) e na gravação
+    // (confirmado), e desmarca quando o banco recusa — aí a recarga tem de
+    // devolvê-lo.
+    const mover = funil.slice(funil.indexOf("const handleDealMoved = useCallback"));
+    const gesto = mover.indexOf(
+      "movidosRef.current.set(dealId, { passo: ++movimentosRef.current, confirmado: false });",
+    );
+    // A marca do gesto vem ANTES da gravação: é enquanto ela está no ar que a
+    // leitura precisa saber do arrasto.
+    expect(gesto).toBeGreaterThan(-1);
+    expect(gesto).toBeLessThan(mover.indexOf("await supabase"));
+    expect(mover).toMatch(/movidosRef\.current\.delete\(dealId\);\s*refreshDeals\(\);/);
+    // A gravação confirmada também é mudança local: a recarga da volta ao
+    // app que partiu entre o gesto e a resposta não sabe manter o arrasto.
+    expect(mover).toMatch(
+      /versaoDoQuadroRef\.current \+= 1;\s*movidosRef\.current\.set\(dealId, \{ passo: \+\+movimentosRef\.current, confirmado: true \}\);\s*setDeals\(\(prev\) =>/,
     );
   });
 });

@@ -158,6 +158,9 @@ describe("escritores de deals.title × título fixado (1007)", () => {
     // insert, e um `title:` ali voltaria a regravar o título a cada salvamento.
     const payload = form.slice(form.indexOf("const payload = {"));
     expect(payload.slice(0, payload.indexOf("};"))).not.toMatch(/(^|[\s,{])title\s*:/);
-    expect(form).toMatch(/escritaDoTituloManual\(deal\.title, title, agora\)/);
+    // O título de antes é o do negócio do INÍCIO da sessão (`origem`), não o
+    // da prop: uma cópia mais nova no meio da sessão faria o título velho do
+    // rascunho parecer uma edição e o fixaria (PR das corridas do quadro).
+    expect(form).toMatch(/escritaDoTituloManual\(origem\.title, title, agora\)/);
   });
 });

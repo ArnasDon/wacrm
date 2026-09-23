@@ -594,7 +594,7 @@ corrigido desde a última medição.
 | Cadastro público aberto (amplificava os três) | ✅ FECHADO pelo #258 (22/09, `disable_signup`) | nada; os 4 logins avulsos que já existiam seguem podendo explorar — por isso a fase continua |
 | #588 — SSRF por IPv6 mapeado/6to4/NAT64 | ❌ presente (`ssrf.ts` byte-idêntico ao do original) | cherry-pick `-x` |
 | Download da mídia do Instagram sem guarda (achado NOSSO de 22/09) | ❌ presente | `baixarUrlPublica` |
-| #587 — rotas de automação pelo AUTOR (= achado #234 da auditoria de 22/09) | ❌ presente | port à mão |
+| #587 — rotas de automação pelo AUTOR (= achado #234 da auditoria de 22/09) | ❌ presente na medição; ✅ corrigido pelo #260 (outra sessão) no meio da fase | só o que o #260 não tinha (ver abaixo) |
 | #589 (1) — conversa do contexto sem conferência de conta | ❌ presente | port à mão |
 | #589 (2)/(3) — ciclo de vida dos modelos só para admin | ✅ já nosso desde 26/08 (`barrarPorPapel`) | nada |
 
@@ -609,11 +609,18 @@ corrigido desde a última medição.
   (a resposta ia para o bucket público). Agora: só `https`, cada salto por
   `isDeliverableUrl`, redirecionamento seguido à mão (até 3). O redirecionamento
   NÃO foi desligado: não foi medido se o CDN da Meta redireciona.
-- **#587** (`api/automations/[id]` e `duplicate`): conta, não autor; leitura
-  por `getCurrentAccount`, escrita por `requireRole('admin')` (o nosso piso);
-  PATCH e DELETE conferem linhas afetadas — o DELETE dizia `ok` sem apagar.
-  Conserta também o defeito funcional: o admin que não é o autor (as 17
-  automações da conta são de UM autor) recebia 404 ao abrir, ligar, duplicar.
+- **#587** (`api/automations/[id]` e `duplicate`): ⚠️ **o conserto em si
+  entrou por OUTRA sessão enquanto esta fase era feita** — o PR #260
+  ("correções da auditoria", mesclado em 23/09 de manhã) resolveu o achado
+  #234 com a mesma forma do #587 (conta, não autor; GET por qualquer membro,
+  escrita por `requireRole('admin')`; DELETE conferindo linhas; e, de quebra,
+  a duplicata copiando o "Assinar como"). O port desta fase tinha sido escrito
+  em paralelo; no rebase ficou a versão do #260 (já em produção) e esta fase
+  acrescentou por cima só o que faltava: o UPDATE do PATCH com a conta e as
+  linhas conferidas (apagada entre a leitura e a escrita: 404, sem regravar
+  passos), o comentário que ainda dizia `agent`, e pinos no teste do #260 —
+  o mock dele recusava o `agent` SEM olhar o piso pedido, então um merge que
+  trouxesse o `requireRole('agent')` do original passava verde.
 - **#589 (1)**: `dispararAutomacoes` e `resolveConversationId` conferem a
   conversa por conta, e os QUATRO envios do robô chamam
   `assertConversationInAccount` antes do provedor (arquivo do original,
@@ -661,7 +668,7 @@ hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
 | P3 — o CLAUDE.md não registrava a guarda do Instagram nem o piso nosso das rotas | ✅ seção do Instagram + duas linhas na tabela do que é nosso |
 | P3 — NAT64 (`64:ff9b::/32`) bloqueado inteiro; faixas IPv6 especiais (`fec0::/10`, `3fff::/20`, `::ffff:0:0:0/96`) passam — medido que não alcançam o loopback | aceito e escrito: a guarda fica IDÊNTICA à do original (divergir é conflito no merge); a VPS tem IPv4 |
 | P3 — o GET é de qualquer membro: um atendente abre o construtor e só descobre no "Salvar" que não pode (403) | aceito: não é vazamento (os passos já são legíveis por membro pela RLS); construtor somente-leitura para quem não administra fica como melhoria de TELA, fora desta fase |
-| P3 — "Duplicar" ignora o erro da leitura dos passos (cópia vazia com 201) e não copia o "Assinar como" | PRÉ-EXISTENTE, fora do escopo: anotado no diário como follow-up |
+| P3 — "Duplicar" ignora o erro da leitura dos passos (cópia vazia com 201) e não copia o "Assinar como" | o "Assinar como" foi corrigido pelo #260; o erro dos passos ignorado é PRÉ-EXISTENTE e fica anotado no diário como follow-up |
 | P3 — soluço do banco na conferência nova vira `falhou` (não reprocessável) no Calendly/webhook de entrada | pré-existente (a mesma semântica da conferência do contato); o comentário foi corrigido, a regra fica |
 
 **Resultado:** — (a preencher)

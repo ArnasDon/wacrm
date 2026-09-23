@@ -20,6 +20,14 @@ const h = vi.hoisted(() => ({
   conta: 'acc-1',
   quem: 'u-ricardo',
   erroDeLeitura: null as { message: string } | null,
+  /** Encena a automação apagada ENTRE a leitura e o UPDATE do PATCH. */
+  apagarDepoisDaLeitura: false,
+  /** Encena o DELETE concorrente entre o UPDATE e a troca dos passos. */
+  apagarNaTrocaDosPassos: false,
+  /** O que `replaceSteps` devolve (a chave estrangeira recusando, por exemplo). */
+  erroNaTrocaDosPassos: null as string | null,
+  /** Os filtros de cada UPDATE — a conta tem de estar na escrita também. */
+  filtrosDasEscritas: [] as [string, unknown][][],
   db: {
     automations: [] as Record<string, unknown>[],
     automation_steps: [] as Record<string, unknown>[],
@@ -47,8 +55,12 @@ vi.mock('@/lib/automations/admin-client', () => ({
         update: (p: unknown) => ((op = 'update'), (payload = p), b),
         delete: () => ((op = 'delete'), b),
         insert: (p: unknown) => ((op = 'insert'), (payload = p), b),
-        maybeSingle: async () =>
-          h.erroDeLeitura ? { data: null, error: h.erroDeLeitura } : { data: casam()[0] ?? null, error: null },
+        maybeSingle: async () => {
+          if (h.erroDeLeitura) return { data: null, error: h.erroDeLeitura }
+          const linha = casam()[0] ?? null
+          if (linha && h.apagarDepoisDaLeitura) h.db[tabela] = h.db[tabela].filter((x) => x !== linha)
+          return { data: linha, error: null }
+        },
         single: async () => {
           const linha = { id: 'copia-1', ...(payload as Linha) }
           h.db[tabela].push(linha)
@@ -61,7 +73,11 @@ vi.mock('@/lib/automations/admin-client', () => ({
             h.db[tabela] = h.db[tabela].filter((x) => !alvo.includes(x))
             r = { data: devolve ? alvo.map((x) => ({ id: x.id })) : null, error: null }
           } else if (op === 'update') {
-            for (const x of casam()) Object.assign(x, payload as Linha)
+            h.filtrosDasEscritas.push([...filtros])
+            const alvo = casam()
+            for (const x of alvo) Object.assign(x, payload as Linha)
+            // Com `.select()`, as linhas afetadas — a forma do PostgREST.
+            r = { data: devolve ? alvo.map((x) => ({ id: x.id })) : null, error: null }
           } else if (op === 'insert') {
             h.db[tabela].push(...((Array.isArray(payload) ? payload : [payload]) as Linha[]))
           } else {
@@ -75,18 +91,25 @@ vi.mock('@/lib/automations/admin-client', () => ({
   }),
 }))
 
+// `vi.fn` para o teste cobrar o PISO PEDIDO: o #587 do original (o mesmo
+// conserto, aberto lá) escreve `requireRole('agent')` nas três escritas. Este
+// mock recusa o `agent` sem olhar o argumento — então só o registro da chamada
+// pega um merge que troque o `'admin'` pelo `'agent'`.
 vi.mock('@/lib/auth/account', () => ({
-  getCurrentAccount: async () => ({ accountId: h.conta, userId: h.quem, role: h.papel }),
-  requireRole: async () => {
+  getCurrentAccount: vi.fn(async () => ({ accountId: h.conta, userId: h.quem, role: h.papel })),
+  requireRole: vi.fn<(min: string) => Promise<Record<string, unknown>>>(async () => {
     if (h.papel !== 'admin' && h.papel !== 'owner') throw new Error('forbidden')
     return { accountId: h.conta, userId: h.quem, role: h.papel }
-  },
+  }),
   toErrorResponse: () => new Response(JSON.stringify({ error: 'forbidden' }), { status: 403 }),
 }))
 
 vi.mock('@/lib/automations/steps-tree', () => ({
   loadStepsTree: async () => [],
-  replaceSteps: async () => null,
+  replaceSteps: vi.fn(async () => {
+    if (h.apagarNaTrocaDosPassos) h.db.automations = h.db.automations.filter((a) => a.id !== 'auto-1')
+    return h.erroNaTrocaDosPassos
+  }),
 }))
 
 vi.mock('@/lib/cb-channels/repo', () => ({
@@ -95,6 +118,8 @@ vi.mock('@/lib/cb-channels/repo', () => ({
 
 import { DELETE, GET, PATCH } from './route'
 import { POST as DUPLICAR } from './duplicate/route'
+import { getCurrentAccount, requireRole } from '@/lib/auth/account'
+import { replaceSteps } from '@/lib/automations/steps-tree'
 
 const params = (id: string) => ({ params: Promise.resolve({ id }) })
 const corpo = (body: unknown) =>
@@ -106,6 +131,10 @@ beforeEach(() => {
   h.conta = 'acc-1'
   h.quem = 'u-ricardo'
   h.erroDeLeitura = null
+  h.apagarDepoisDaLeitura = false
+  h.apagarNaTrocaDosPassos = false
+  h.erroNaTrocaDosPassos = null
+  h.filtrosDasEscritas = []
   h.db.automations = [
     {
       id: 'auto-1',
@@ -228,6 +257,71 @@ describe('POST /api/automations/[id]/duplicate', () => {
     const res = await DUPLICAR(new Request('http://x', { method: 'POST' }), params('auto-2'))
     expect(res.status).toBe(404)
     expect(automacao('copia-1')).toBeUndefined()
+  })
+})
+
+// ------------------------------------------------------------
+// O que a Fase 1b do plano do upstream (#587) acrescentou por cima.
+// ------------------------------------------------------------
+describe('upstream #587 — o piso nosso e a escrita pela conta', () => {
+  it('escrever pede `admin` (o original pede `agent`); ler é por getCurrentAccount', async () => {
+    await GET(new Request('http://x/'), params('auto-1'))
+    expect(getCurrentAccount).toHaveBeenCalledTimes(1)
+    expect(requireRole).not.toHaveBeenCalled()
+
+    await PATCH(corpo({ name: 'x' }), params('auto-1'))
+    await DUPLICAR(new Request('http://x/', { method: 'POST' }), params('auto-1'))
+    await DELETE(new Request('http://x/'), params('auto-1'))
+    expect(vi.mocked(requireRole).mock.calls).toEqual([['admin'], ['admin'], ['admin']])
+  })
+
+  it('PATCH só com os passos, em automação de OUTRA conta: 404 sem trocar passo nenhum', async () => {
+    // Aqui o UPDATE da linha nem roda — quem barra é a leitura por conta.
+    const res = await PATCH(corpo({ steps: [] }), params('auto-2'))
+    expect(res.status).toBe(404)
+    expect(replaceSteps).not.toHaveBeenCalled()
+  })
+
+  it('o UPDATE do PATCH leva a conta', async () => {
+    await PATCH(corpo({ name: 'renomeada' }), params('auto-1'))
+    expect(h.filtrosDasEscritas).toEqual([[['id', 'auto-1'], ['account_id', 'acc-1']]])
+  })
+
+  it('apagada entre a leitura e o UPDATE: 404, e os passos não são regravados', async () => {
+    h.apagarDepoisDaLeitura = true
+    const res = await PATCH(corpo({ name: 'x', steps: [] }), params('auto-1'))
+    expect(res.status).toBe(404)
+    expect(replaceSteps).not.toHaveBeenCalled()
+  })
+
+  it('PATCH SÓ com os passos também toca a linha: apagada no meio, 404 (Codex, PR #261)', async () => {
+    h.apagarDepoisDaLeitura = true
+    const res = await PATCH(corpo({ steps: [] }), params('auto-1'))
+    expect(res.status).toBe(404)
+    expect(replaceSteps).not.toHaveBeenCalled()
+  })
+
+  it('apagada DURANTE a troca dos passos (lista vazia): 404, não 200 (Codex, 2ª rodada)', async () => {
+    h.apagarNaTrocaDosPassos = true
+    expect((await PATCH(corpo({ steps: [] }), params('auto-1'))).status).toBe(404)
+  })
+
+  it('apagada durante a troca, com a chave estrangeira recusando os passos: 404, não 500', async () => {
+    h.apagarNaTrocaDosPassos = true
+    h.erroNaTrocaDosPassos = 'insert or update on table "automation_steps" violates foreign key constraint'
+    expect((await PATCH(corpo({ steps: [{ step_type: 'send_message' }] }), params('auto-1'))).status).toBe(404)
+  })
+
+  it('erro na troca com a automação DE PÉ continua 500', async () => {
+    h.erroNaTrocaDosPassos = 'falha qualquer'
+    expect((await PATCH(corpo({ steps: [] }), params('auto-1'))).status).toBe(500)
+  })
+
+  it('PATCH só com os passos, automação de pé: toca a linha pela conta e troca os passos', async () => {
+    const res = await PATCH(corpo({ steps: [] }), params('auto-1'))
+    expect(res.status).toBe(200)
+    expect(h.filtrosDasEscritas).toEqual([[['id', 'auto-1'], ['account_id', 'acc-1']]])
+    expect(replaceSteps).toHaveBeenCalledTimes(1)
   })
 })
 

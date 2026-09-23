@@ -308,7 +308,9 @@ upstream sobrescrevê-los:
 | `src/components/inbox/message-thread.tsx` (#84) | a **janela de 24h**: a regra saiu para `src/lib/inbox/janela-24h.ts` (puro, com teste) e os TRÊS caminhos de envio (texto, mídia, interativa) passam por `janelaFechadaAgora()` antes do `fetch` — o portão lê o RELÓGIO no disparo, nunca `sessionInfo.expired` (um `useMemo`: recomputa no tique de 1 min da badge, nunca no instante exato do disparo). Um merge que traga o `sessionInfo` inline do upstream devolve os três buracos de uma vez. Desde 10/09/2026 a janela é **POR NÚMERO**: os dois relógios passam `canalDaJanela` (= `activeChannel`, id + transporte, o mesmo do `expected_channel_id`) — parâmetro OBRIGATÓRIO em `janelaFechada`/`minutosRestantes`, com pino estrutural cobrando o MESMO canal nos dois —, grupo fica fora (`!ehGrupo` em `janelaDe24h`), e a etiqueta fala minutos na última hora (`restanteParaExibir`; antes o ramo de minutos era código morto e a última hora aparecia inteira como "1h restantes") |
 | `src/lib/dashboard/queries.ts`, `src/components/dashboard/metric-card.tsx` | filtro por canal (parcial) e marca "conta inteira" |
 | `src/app/api/automations/[id]/duplicate/route.ts` | copia `channel_ids` (sem isso a cópia vira irrestrita) e, desde 23/09/2026, `assinatura_personalizada` (sem ela a cópia assina com o nome da conta) |
-| `src/app/api/automations/[id]/route.ts` e `duplicate/route.ts` (23/09/2026) | ⚠️⚠️ a automação é da CONTA, não de quem a criou: GET por qualquer membro, PATCH/DELETE/duplicar por qualquer ADMIN da conta (`ctx.accountId` de `requireRole`), nunca `user_id = user.id` (decisão do operador). O upstream filtra pelo autor — herança de quando cada login era uma conta —, e com um segundo admin ele recebia 404 ao abrir, ativar, duplicar ou mudar o escopo pela aba do funil. O DELETE confere quantas linhas saíram: antes, zero linhas voltavam `ok` e a tela dizia "excluída" sobre a automação intacta. Um merge que traga as rotas cruas devolve os dois sem conflito nenhum — há pino em `route.test.ts` |
+| `src/app/api/automations/[id]/route.ts` e `duplicate/route.ts` (23/09/2026) | ⚠️⚠️ a automação é da CONTA, não de quem a criou: GET por qualquer membro, PATCH/DELETE/duplicar por qualquer ADMIN da conta (`ctx.accountId` de `requireRole`), nunca `user_id = user.id` (decisão do operador). O upstream filtra pelo autor — herança de quando cada login era uma conta —, e com um segundo admin ele recebia 404 ao abrir, ativar, duplicar ou mudar o escopo pela aba do funil. O DELETE confere quantas linhas saíram: antes, zero linhas voltavam `ok` e a tela dizia "excluída" sobre a automação intacta. Um merge que traga as rotas cruas devolve os dois sem conflito nenhum — há pino em `route.test.ts`. ⚠️ O #587 do original (GHSA-xvrq-88hg-44q6, ABERTO lá desde 17/09) faz o mesmo conserto com piso **`agent`** nas três escritas: num merge, fica o nosso `admin` — o pino cobra o papel PEDIDO (`requireRole('admin')`), não só que o `agent` é recusado. O UPDATE do PATCH também leva a conta e confere as linhas (Fase 1b do plano do upstream) |
+| `src/lib/automations/meta-send.ts`, `src/lib/flows/meta-send.ts` e `engine.ts` (23/09/2026, upstream #589) | a conversa do contexto é conferida por conta no disparo, em `resolveConversationId` e em cada envio do robô (`assertConversationInAccount`, ANTES do canal e do provedor); as prévias levam `.eq('account_id')`. Remetente NOVO do robô nestes arquivos repete a conferência — pino estrutural em `src/lib/whatsapp/conversation-scope.chamadores.test.ts` |
+| `src/lib/whatsapp/conversation-scope.ts` (23/09/2026) | ⚠️ DIVERGE do original do #589: com `contactId`, a conversa tem de ser DAQUELE contato também (Codex, 3ª rodada do PR #261) — só a conta deixava passar "contato A + conversa de B" da mesma conta, e o cliente A recebia o que aparece no fio de B. O disparo e `resolveConversationId` fazem o mesmo. Num merge, fica o nosso |
 | `src/app/api/cb/channels/[id]/route.ts` (DELETE) | barra a exclusão quando há agendada na FILA e limpa o acervo — a FK da 925 é RESTRICT |
 | `src/components/pipelines/pipeline-board.tsx`, `src/app/(dashboard)/pipelines/page.tsx` | o painel por etapa (Fase 5): o raio com contador no cabeçalho da coluna e a carga das automações de funil. Mais o funil-com-conversas (PR #71): botão de conversas por coluna, `navegarParaInbox`/restauração de rolagem no board (quadroRef vem da página), `useChannels` içado, select `DEAL_SELECT_DO_QUADRO` com plano B, popover de campos. Mais a carga em DUAS etapas (22/09/2026): lista enxuta de todos + conteúdo só dos desenhados, `CardDoQuadro` e o card "carregando" — um merge que traga a busca única do upstream devolve os ~3 s do Trabalhista |
 | `src/components/pipelines/deal-card.tsx` | ⚠️ **reestruturado inteiro no PR #71 — manter a NOSSA versão** (como `conversation-list.tsx`): wrapper + botão do corpo (abre a CONVERSA) + lápis IRMÃO (edita; button aninhado é inválido), campos por `CamposDoCard`, etiquetas/última mensagem/não lidas, `memo` + canais por prop, barra de cor com `pointer-events-none` |
@@ -5872,6 +5874,28 @@ estrutural `transporte.chamadores.test.ts` (no `main` desde 10/09/2026, PR
   `attachments[type=audio]` numa URL assinada que EXPIRA (baixar na hora),
   com `content-type: video/mp4` — a classe sai do `type` do webhook
   (`midiaDoAnexo`), nunca do CDN, senão a voz vira vídeo no fio.
+- ⚠️⚠️ **A URL do anexo NÃO é confiável — ela vem do CORPO que a própria
+  conexão assina** (23/09/2026, Fase 1b do plano do upstream). Quem cadastra
+  uma conexão Instagram com o próprio App Secret forja a entrega: baixada crua,
+  a URL era SSRF com LEITURA (loopback, metadado da nuvem, nomes internos do
+  Swarm — e a resposta ia para o bucket PÚBLICO). Todo download passa por
+  `baixarUrlPublica` (`src/lib/instagram/midia.ts`): só `https`,
+  `isDeliverableUrl` em CADA salto, redirecionamento seguido À MÃO (até
+  `MAX_SALTOS` = 3), UM prazo para a cadeia inteira, e `lerComTeto`
+  (`MEDIA_MAX_BYTES_ENTRADA`, conferido DURANTE a leitura — o webhook não
+  traz tamanho, e um corpo de gigabytes derrubaria o processo de todas as
+  contas). ⚠️ NÃO desligar o redirecionamento (não foi medido se o CDN da Meta
+  redireciona) e NÃO trocar por lista de hosts da Meta (quebraria a mídia no
+  dia em que o domínio do CDN mudar): o que se barra é o endereço não
+  público. Recusa vira "anexo indisponível" (`mirrorInboundMedia` engole o
+  erro). ⚠️ Vale para todo `fetch` de URL vinda de fora: `isDeliverableUrl`
+  + `redirect: 'manual'` (`webhooks/deliver.ts`, `send_webhook` do motor,
+  `template-header-handle.ts`, e aqui). A guarda (`src/lib/webhooks/ssrf.ts`,
+  upstream #588) classifica por OCTETOS e FALHA FECHADA no que não consegue
+  interpretar; ela é idêntica à do original de propósito — inclusive bloquear
+  o NAT64 (`64:ff9b::/32`) inteiro, que numa VPS só-IPv6 com DNS64 recusaria
+  todo destino só-IPv4 (a nossa tem IPv4) — e divergir dela é conflito no
+  próximo merge.
 - ⚠️ **Token do Instagram só no cabeçalho `Authorization: Bearer`, nunca em
   `?access_token=`; a mensagem de erro da Meta ECOA o token e passa por
   `semSegredo`; o host é preso a `graph.instagram.com`**

@@ -59,9 +59,10 @@ export async function PATCH(
 ) {
   const { id } = await params
 
-  // Editing an automation is a write — the RLS automations_update policy
-  // requires `agent`, but this route mutates via the service-role client
-  // which bypasses RLS, so enforce the role here.
+  // Editar é escrita, e esta rota escreve pelo service-role, que ignora as
+  // policies — por isso o piso é conferido AQUI: `admin` (Fase 2 dos perfis;
+  // a 964 levou as policies de escrita ao mesmo piso). O #587 do original
+  // escreve `agent` nesta linha: num merge, fica o nosso (há pino no teste).
   let accountId: string
   try {
     // Fase 2 dos perfis (2026-08-30): mutação de automação/fluxo/disparo subiu de
@@ -152,16 +153,49 @@ export async function PATCH(
     }
   }
 
+  // PATCH só com os passos também TOCA a linha (Codex, PR #261): mudar os
+  // passos é mudar a automação, e sem isto o UPDATE — e a conferência de
+  // linhas abaixo — era pulado. Apagada no meio, `replaceSteps` respondia 200
+  // com lista vazia, ou 500 pela chave estrangeira, em vez de 404. O valor é
+  // simbólico: o gatilho `set_updated_at` (0006) grava o `now()` do banco.
+  if (Object.keys(update).length === 0 && Array.isArray(body.steps)) {
+    update.updated_at = new Date().toISOString()
+  }
+
   if (Object.keys(update).length > 0) {
-    const { error: updErr } = await admin
+    // A conta também na ESCRITA (upstream #587), e as linhas conferidas:
+    // apagada entre a leitura e o UPDATE, dizer `ok` afirmaria uma edição que
+    // não aconteceu — e os passos abaixo seriam gravados num órfão.
+    const { data: atualizadas, error: updErr } = await admin
       .from('automations')
       .update(update)
       .eq('id', id)
+      .eq('account_id', accountId)
+      .select('id')
     if (updErr) return NextResponse.json({ error: updErr.message }, { status: 500 })
+    if (!atualizadas || atualizadas.length === 0) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
   }
 
   if (Array.isArray(body.steps)) {
     const err = await replaceSteps(id, body.steps as BuilderStepInput[])
+    // A conferência de linhas acima prova que a automação existia NO UPDATE;
+    // um DELETE concorrente entre ele e `replaceSteps` ainda escapava (Codex,
+    // 2ª rodada do PR #261): lista vazia virava 200 — apagar os passos de uma
+    // automação apagada é no-op —, e lista cheia virava 500 pela chave
+    // estrangeira. Confere de novo DEPOIS: sumiu = 404. (Fechar de vez pediria
+    // uma transação — RPC e migration — para uma corrida entre dois admins
+    // editando e apagando a mesma automação no mesmo segundo; não compensa.)
+    const { data: aindaExiste, error: erroDaReleitura } = await admin
+      .from('automations')
+      .select('id')
+      .eq('id', id)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (!erroDaReleitura && !aindaExiste) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
     if (err) return NextResponse.json({ error: err }, { status: 500 })
   }
 

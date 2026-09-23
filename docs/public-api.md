@@ -543,6 +543,12 @@ If your integration tool fills the field from a variable, note that an
 empty variable usually arrives as `""` (refused) but may arrive as
 `null` (treated as omitted) — check the `channel_id` in the `202`.
 
+`meta_channel_required` (400) means the number really is missing or not
+usable — fix the request or the connection before retrying. If the CRM
+**could not read** the connections (a database hiccup), the call returns
+`500 internal` instead, nothing is created or sent, and it is safe to
+retry the same request.
+
 ### `GET /api/v1/tasks`
 
 List tasks, newest first. Scope: `tasks:read`. Paginated. Optional

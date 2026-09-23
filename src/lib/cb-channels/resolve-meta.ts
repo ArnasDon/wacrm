@@ -55,13 +55,54 @@ function mapear(c: LinhaCanal): MetaChannelForSend {
 }
 
 /**
+ * A leitura falhou — erro de BANCO, não "sem canal". Os 7 chamadores têm um
+ * `catch` externo que transforma a exceção em 500; devolver `null` aqui
+ * virava o 400 "conecte um número em Configurações", e quem integra pela API
+ * não reenvia um 400.
+ */
+export class ErroAoLerCanalMeta extends Error {
+  constructor(onde: string, mensagem: string) {
+    // O detalhe do PostgREST vai para o LOG, não para a mensagem: as rotas de
+    // modelo devolvem `error.message` à tela, e o admin leria "canceling
+    // statement due to statement timeout" num toast (revisão da Fase 3-I).
+    console.error(`[resolveMetaChannel] leitura falhou (${onde}):`, mensagem);
+    super('Could not read the WhatsApp connections right now — try again.');
+    this.name = 'ErroAoLerCanalMeta';
+  }
+}
+
+/**
+ * Classe 22 do Postgres (`data_exception`) = a ENTRADA é inválida — o id
+ * pedido não é UUID (22P02), traz um byte que o texto não aceita (22021)…
+ * É canal inválido (400 no chamador), não banco fora.
+ */
+function entradaInvalida(code: string | undefined): boolean {
+  return typeof code === 'string' && code.startsWith('22');
+}
+
+/**
  * Canal Meta por onde um broadcast / uma operação de modelo deve sair.
  * Devolve `null` quando a conta não tem NENHUM número oficial utilizável —
- * o chamador traduz isso no seu próprio erro.
+ * o chamador traduz isso no seu próprio erro. Erro de LEITURA lança
+ * {@link ErroAoLerCanalMeta} (Fase 3e do plano do upstream): antes ele era
+ * descartado nos três pontos, e um tempo esgotado do PostgREST virava "conecte
+ * um número"; na lista, pior — a falha caía em silêncio no espelho legado.
  *
- * `requestedChannelId` inexistente, de outra conta ou NÃO-Meta devolve `null`
- * em vez de cair no padrão: quem pediu um número específico prefere um erro a
- * ver a campanha sair pelo número errado.
+ * `requestedChannelId` inexistente, de outra conta, NÃO-Meta ou MALFORMADO
+ * (classe 22 — é entrada inválida, não banco fora) devolve `null` em vez de
+ * cair no padrão: quem pediu um número específico prefere um erro a ver a
+ * campanha sair pelo número errado.
+ *
+ * O `status` do canal pedido NÃO é conferido, de propósito: ele é um sinal
+ * RUIDOSO e pode estar VELHO. Quem grava `disconnected` num canal Meta é a
+ * sonda de saúde (`cb-channels/health.ts`), a QUALQUER erro da Meta — um tempo
+ * esgotado incluído — e só quando há um admin com o app aberto (a RLS barra o
+ * UPDATE dos outros papéis); o canal também pode NASCER `disconnected` quando
+ * o registro falha. Recusar por essa coluna barraria disparo legítimo por um
+ * soluço de minutos atrás. A falha real (token revogado) aparece no envio, e
+ * sem canal pedido a busca já PREFERE o conectado. (Uma versão anterior deste
+ * comentário afirmava que nada marcava o Meta como desconectado — era falso;
+ * a revisão da Fase 3-I achou a sonda.)
  */
 export async function resolveMetaChannel(
   db: SupabaseClient,
@@ -69,12 +110,16 @@ export async function resolveMetaChannel(
   requestedChannelId?: string | null,
 ): Promise<MetaChannelForSend | null> {
   if (requestedChannelId) {
-    const { data } = await db
+    const { data, error } = await db
       .from('cb_channels')
       .select('id, label, kind, is_default, status, phone_number_id, waba_id, access_token')
       .eq('id', requestedChannelId)
       .eq('account_id', accountId)
       .maybeSingle();
+    if (error) {
+      if (entradaInvalida(error.code)) return null;
+      throw new ErroAoLerCanalMeta('pedido', error.message);
+    }
     const linha = data as LinhaCanal | null;
     return linha && utilizavel(linha) ? mapear(linha) : null;
   }
@@ -89,7 +134,11 @@ export async function resolveMetaChannel(
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: true });
 
-  if (!error && data) {
+  // Lista que falhou NÃO cai no espelho: o espelho é para a conta que nunca
+  // criou canais, e numa conta com dois números a campanha sairia pelo número
+  // antigo sem ninguém ter escolhido.
+  if (error) throw new ErroAoLerCanalMeta('lista', error.message);
+  if (data) {
     const linhas = (data as LinhaCanal[]).filter(utilizavel);
     const conectado = linhas.find((c) => c.status === 'connected');
     const escolhido = conectado ?? linhas[0];
@@ -97,11 +146,12 @@ export async function resolveMetaChannel(
   }
 
   // Espelho legado: conta que nunca passou pelo cadastro de canais.
-  const { data: cfg } = await db
+  const { data: cfg, error: erroDoEspelho } = await db
     .from('whatsapp_config')
     .select('phone_number_id, waba_id, access_token, provider')
     .eq('account_id', accountId)
     .maybeSingle();
+  if (erroDoEspelho) throw new ErroAoLerCanalMeta('espelho', erroDoEspelho.message);
   const c = cfg as {
     phone_number_id: string | null;
     waba_id: string | null;

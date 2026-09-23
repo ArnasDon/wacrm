@@ -21,109 +21,173 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-/** True for loopback / private / link-local / reserved IPv4 or IPv6. */
-export function isPrivateOrReservedIp(ip: string): boolean {
-  const v4 = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (v4) {
-    const a = Number(v4[1]);
-    const b = Number(v4[2]);
-    if (a === 0) return true; // "this" network
-    if (a === 10) return true; // private
-    if (a === 127) return true; // loopback
-    if (a === 169 && b === 254) return true; // link-local + cloud metadata
-    if (a === 172 && b >= 16 && b <= 31) return true; // private
-    if (a === 192 && b === 168) return true; // private
-    if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
-    return false;
-  }
+// ------------------------------------------------------------
+// IP classification
+//
+// Both halves parse the address into its raw octets before deciding
+// anything. That matters more than it looks: the previous string-prefix
+// implementation was bypassed twice over, because the same address has
+// many spellings and only some of them look private.
+//
+//   - GHSA-m4cp-pqxq-x9f7: `https://[::ffff:127.0.0.1]/` is normalized
+//     by the WHATWG URL parser to `[::ffff:7f00:1]`, so a regex looking
+//     for a dotted-decimal suffix never fired.
+//   - GHSA-q4p6-pj4g-26xx: 6to4 (`2002::/16`), NAT64 (`64:ff9b::/32`)
+//     and Teredo (`2001::/32`) all carry an IPv4 address inside an
+//     otherwise ordinary-looking global-unicast prefix, so
+//     `2002:a9fe:a9fe::` routed to `169.254.169.254`.
+//
+// Working from octets, an IPv4-mapped address is the same 4 bytes
+// however it was written, and the transition prefixes are a byte
+// comparison. Anything that fails to parse is treated as reserved:
+// this guard is an allowlist of publicly-routable space, so "I don't
+// recognise this" has to mean "don't deliver".
+// ------------------------------------------------------------
 
-  if (!ip.includes(':')) return false; // not an IP literal at all
-
-  // ⚠️⚠️ IPv6 é julgado pelos BITS, nunca pelo TEXTO. A versão anterior
-  // comparava prefixos de string e só reconhecia o IPv4 mapeado na forma com
-  // pontos (`::ffff:127.0.0.1`). Mas o parser de URL NORMALIZA o endereço:
-  // `new URL('https://[::ffff:127.0.0.1]/').hostname` é `[::ffff:7f00:1]`, e
-  // é essa forma hexadecimal que chega aqui vinda de `isDeliverableUrl`. O
-  // guarda deixava passar `https://[::ffff:127.0.0.1]/`,
-  // `[::ffff:169.254.169.254]` (o metadado da nuvem) e toda a rede privada —
-  // e o Node conecta de verdade: socket IPv6 com endereço mapeado vira uma
-  // conexão IPv4 com o endereço embutido (medido em 23/09/2026:
-  // `net.connect` a `::ffff:7f00:1` abre conexão num servidor que só ouve em
-  // 127.0.0.1). Pelo mesmo motivo,
-  // `0:0:0:0:0:ffff:7f00:1` e `::FFFF:7F00:1` são o mesmo endereço, e só a
-  // leitura por hextetos vê isso.
-  const h = hextetos(ip);
-  // Tem `:` e não é IPv6 válido: não sei o que é, então não entrego. Os
-  // chamadores só mandam o que `isIP` aceitou, mas a função é exportada.
-  if (!h) return true;
-
-  // ::/64 — o não especificado (`::`), o loopback (`::1`), o IPv4-compatível
-  // (`::a.b.c.d`, obsoleto) e o IPv4-mapeado (`::ffff:a.b.c.d`) moram aqui, e
-  // nenhum endereço público. Só o MAPEADO chega a um host (o kernel o troca
-  // pela conexão IPv4), então ele é julgado pelo IPv4 embutido —
-  // `::ffff:8.8.8.8` continua entregável; o resto do bloco é recusado.
-  if (h[0] === 0 && h[1] === 0 && h[2] === 0 && h[3] === 0) {
-    if (h[4] === 0 && h[5] === 0xffff) return isPrivateOrReservedIp(ipv4DosHextetos(h[6], h[7]));
-    return true;
-  }
-
-  // NAT64 (64:ff9b::/96, RFC 6052) e 6to4 (2002::/16, RFC 3056) também
-  // EMBUTEM um IPv4, e o tradutor/relay entrega a ele. Decisão: julgar o IPv4
-  // embutido, e NÃO recusar o prefixo inteiro. Motivo: numa rede só-IPv6 com
-  // DNS64 (há nuvens que entregam assim) o `lookup` de QUALQUER site só-IPv4
-  // devolve `64:ff9b::<ipv4 público>` — recusar o prefixo desligaria todo
-  // webhook daquela instalação, em silêncio, e o produto é instalado por
-  // terceiros. Com o IPv4 embutido público, entregar pelo tradutor é
-  // entregar ao mesmo host que o guarda já aceitaria direto; com ele
-  // privado, é o SSRF que este arquivo existe para barrar.
-  if (h[0] === 0x64 && h[1] === 0xff9b) {
-    if (h[2] === 0 && h[3] === 0 && h[4] === 0 && h[5] === 0) {
-      return isPrivateOrReservedIp(ipv4DosHextetos(h[6], h[7]));
-    }
-    // 64:ff9b:1::/48 é o prefixo NAT64 de USO LOCAL (RFC 8215) — rede
-    // interna por definição, e o IPv4 embutido nem fica numa posição fixa. O
-    // resto de 64:ff9b::/32 não é atribuído. Recusado inteiro.
-    return true;
-  }
-  if (h[0] === 0x2002) return isPrivateOrReservedIp(ipv4DosHextetos(h[1], h[2])); // 6to4
-
-  if ((h[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
-  if ((h[0] & 0xffc0) === 0xfec0) return true; // fec0::/10 site-local (obsoleto, mas ainda "interno")
-  if ((h[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 ULA
-  return false;
-}
-
-/** Os dois últimos hextetos (32 bits) de um IPv6, como IPv4 com pontos. */
-function ipv4DosHextetos(alto: number, baixo: number): string {
-  return `${alto >> 8}.${alto & 0xff}.${baixo >> 8}.${baixo & 0xff}`;
+/** The four octets of a strict dotted-quad IPv4 literal, else null. */
+function parseIPv4(ip: string): number[] | null {
+  const m = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (!m) return null;
+  const octets = m.slice(1, 5).map(Number);
+  return octets.every((o) => o <= 255) ? octets : null;
 }
 
 /**
- * Os oito hextetos (16 bits cada) de um IPv6, ou `null` se não for um.
- * Aceita colchetes, zona (`%eth0`, descartada) e a cauda IPv4 com pontos
- * (`::ffff:127.0.0.1`, a forma que o `lookup` do Node devolve).
+ * True for any IPv4 address outside global unicast — RFC 6890
+ * special-purpose space, not just the three RFC 1918 ranges.
  */
-function hextetos(ip: string): number[] | null {
-  let s = ip.toLowerCase().replace(/^\[|\]$/g, '').replace(/%.*$/, '');
+function isReservedIPv4([a, b, c]: number[]): boolean {
+  if (a === 0) return true; // 0.0.0.0/8 "this host"
+  if (a === 10) return true; // private
+  if (a === 127) return true; // loopback
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata
+  if (a === 172 && b >= 16 && b <= 31) return true; // private
+  if (a === 192 && b === 168) return true; // private
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT
+  if (a === 192 && b === 0 && c === 0) return true; // IETF protocol assignments
+  if (a === 192 && b === 0 && c === 2) return true; // TEST-NET-1
+  if (a === 192 && b === 88 && c === 99) return true; // 6to4 relay anycast
+  if (a === 198 && (b === 18 || b === 19)) return true; // benchmarking
+  if (a === 198 && b === 51 && c === 100) return true; // TEST-NET-2
+  if (a === 203 && b === 0 && c === 113) return true; // TEST-NET-3
+  if (a >= 224) return true; // multicast 224/4 + reserved 240/4 + broadcast
+  return false;
+}
 
-  const cauda = s.match(/^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-  if (cauda) {
-    const o = cauda.slice(2).map(Number);
-    if (o.some((n) => n > 255)) return null;
-    s = `${cauda[1]}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
+/**
+ * Expand an IPv6 literal to its 16 octets, else null.
+ *
+ * Handles `::` compression, a trailing dotted-quad (`::ffff:1.2.3.4`)
+ * and a scope/zone id (`fe80::1%eth0`) — the zone is dropped, the
+ * address bytes are what get classified.
+ */
+function parseIPv6(ip: string): number[] | null {
+  const addr = ip.split('%')[0];
+  if (addr.length === 0) return null;
+
+  const halves = addr.split('::');
+  if (halves.length > 2) return null; // "::" may appear at most once
+
+  const groupsOf = (part: string): number[][] | null => {
+    if (part === '') return [];
+    const out: number[][] = [];
+    const chunks = part.split(':');
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      // A dotted-quad tail occupies the last two groups.
+      if (i === chunks.length - 1 && chunk.includes('.')) {
+        const v4 = parseIPv4(chunk);
+        if (!v4) return null;
+        out.push([v4[0], v4[1]], [v4[2], v4[3]]);
+        continue;
+      }
+      if (!/^[0-9a-f]{1,4}$/i.test(chunk)) return null;
+      const n = parseInt(chunk, 16);
+      out.push([n >> 8, n & 0xff]);
+    }
+    return out;
+  };
+
+  const head = groupsOf(halves[0]);
+  const tail = halves.length === 2 ? groupsOf(halves[1]) : [];
+  if (!head || !tail) return null;
+
+  if (halves.length === 1) {
+    if (head.length !== 8) return null;
+    return head.flat();
+  }
+  const fill = 8 - head.length - tail.length;
+  if (fill < 1) return null; // "::" must stand for at least one group
+  return [...head.flat(), ...new Array(fill * 2).fill(0), ...tail.flat()];
+}
+
+/** True for any IPv6 address outside global unicast. */
+function isReservedIPv6(b: number[]): boolean {
+  const zerosThrough = (n: number) => b.slice(0, n).every((x) => x === 0);
+
+  // ::/128 unspecified and ::1/128 loopback.
+  if (zerosThrough(15) && b[15] <= 1) return true;
+
+  // IPv4-mapped ::ffff:0:0/96 — classify the address it actually names.
+  if (zerosThrough(10) && b[10] === 0xff && b[11] === 0xff) {
+    return isReservedIPv4(b.slice(12));
   }
 
-  const lados = s.split('::');
-  if (lados.length > 2) return null;
-  const esquerda = lados[0] ? lados[0].split(':') : [];
-  const direita = lados.length === 2 && lados[1] ? lados[1].split(':') : [];
-  const faltam = 8 - esquerda.length - direita.length;
-  // Sem `::`, tem de haver exatamente 8; com `::`, ele vale pelo menos um.
-  if (lados.length === 1 ? faltam !== 0 : faltam < 1) return null;
+  // The rest of ::/96 is IPv4-compatible (deprecated) plus reserved
+  // space; nothing in it is a routable webhook target.
+  if (zerosThrough(12)) return true;
 
-  const todos = [...esquerda, ...new Array<string>(lados.length === 2 ? faltam : 0).fill('0'), ...direita];
-  if (!todos.every((g) => /^[0-9a-f]{1,4}$/.test(g))) return null;
-  return todos.map((g) => parseInt(g, 16));
+  // NAT64 64:ff9b::/32 — covers the well-known /96 prefix and the
+  // local-use 64:ff9b:1::/48. RFC 6052 allows the embedded IPv4 at
+  // several offsets, so block the whole prefix rather than guessing
+  // which one is in play.
+  if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b) {
+    return true;
+  }
+
+  // 6to4 2002::/16 — the embedded IPv4 is bits 16..47, and that is the
+  // address the packet ends up at.
+  if (b[0] === 0x20 && b[1] === 0x02) {
+    return isReservedIPv4(b.slice(2, 6));
+  }
+
+  if (b[0] === 0x20 && b[1] === 0x01) {
+    // Teredo 2001::/32 always embeds a client IPv4 (bit-inverted) and
+    // is deprecated; block the prefix outright.
+    if (b[2] === 0x00 && b[3] === 0x00) return true;
+    // ORCHID 2001:10::/28 and 2001:20::/28 — non-routed identifiers.
+    if (b[2] === 0x00 && ((b[3] & 0xf0) === 0x10 || (b[3] & 0xf0) === 0x20)) {
+      return true;
+    }
+    // 2001:db8::/32 documentation.
+    if (b[2] === 0x0d && b[3] === 0xb8) return true;
+  }
+
+  if (b[0] === 0xfe && (b[1] & 0xc0) === 0x80) return true; // fe80::/10 link-local
+  if ((b[0] & 0xfe) === 0xfc) return true; // fc00::/7 ULA
+  if (b[0] === 0xff) return true; // ff00::/8 multicast
+  // 100::/64 discard-only.
+  if (b[0] === 0x01 && b.slice(1, 8).every((x) => x === 0)) return true;
+
+  return false;
+}
+
+/**
+ * True for loopback / private / link-local / reserved IPv4 or IPv6,
+ * including the IPv6 transition encodings that embed such an IPv4.
+ *
+ * Fails closed: an address this can't parse is reported as reserved.
+ */
+export function isPrivateOrReservedIp(ip: string): boolean {
+  const bare = ip.trim().toLowerCase().replace(/^\[|\]$/g, '');
+
+  const v4 = parseIPv4(bare);
+  if (v4) return isReservedIPv4(v4);
+
+  const v6 = parseIPv6(bare);
+  if (v6) return isReservedIPv6(v6);
+
+  return true; // unparseable → not demonstrably public
 }
 
 /**

@@ -23,67 +23,80 @@ describe('isPrivateOrReservedIp', () => {
     }
   });
 
+  it('flags other IPv4 special-purpose ranges', () => {
+    for (const ip of [
+      '192.0.0.1', // IETF protocol assignments
+      '192.0.2.5', // TEST-NET-1
+      '192.88.99.1', // 6to4 relay anycast
+      '198.18.0.1', // benchmarking
+      '198.51.100.7', // TEST-NET-2
+      '203.0.113.7', // TEST-NET-3
+      '224.0.0.1', // multicast
+      '255.255.255.255', // broadcast
+    ]) {
+      expect(isPrivateOrReservedIp(ip)).toBe(true);
+    }
+  });
+
   it('flags loopback / ULA / link-local IPv6 and IPv4-mapped privates', () => {
-    for (const ip of ['::1', 'fe80::1', 'fc00::1', 'fd12::34', '::ffff:127.0.0.1']) {
+    for (const ip of [
+      '::',
+      '::1',
+      'fe80::1',
+      'fe80::1%eth0',
+      'febf::1',
+      'fc00::1',
+      'fd12::34',
+      'ff02::1', // multicast
+      '100::1', // discard-only
+      '2001:db8::1', // documentation
+      '::ffff:127.0.0.1',
+    ]) {
       expect(isPrivateOrReservedIp(ip)).toBe(true);
     }
     expect(isPrivateOrReservedIp('2606:4700:4700::1111')).toBe(false);
-  });
-
-  // ⚠️ A forma HEXADECIMAL é a que chega de `isDeliverableUrl`: o parser de
-  // URL reescreve `[::ffff:127.0.0.1]` como `[::ffff:7f00:1]`, e o guarda
-  // antigo só casava a forma com pontos.
-  it('IPv4-mapeado em forma hexadecimal (e escrita por extenso) é julgado pelo IPv4 embutido', () => {
-    for (const ip of [
-      '::ffff:7f00:1', // 127.0.0.1
-      '::ffff:a00:5', // 10.0.0.5
-      '::ffff:a9fe:a9fe', // 169.254.169.254
-      '::FFFF:7F00:1',
-      '0:0:0:0:0:ffff:7f00:1',
-      '[::ffff:7f00:1]',
-    ]) {
-      expect(isPrivateOrReservedIp(ip), ip).toBe(true);
-    }
-    expect(isPrivateOrReservedIp('::ffff:808:808')).toBe(false); // 8.8.8.8
     expect(isPrivateOrReservedIp('::ffff:8.8.8.8')).toBe(false);
   });
 
-  it('o resto de ::/64 é recusado (IPv4-compatível, SIIT, não especificado por extenso)', () => {
-    for (const ip of ['::7f00:1', '::127.0.0.1', '::ffff:0:7f00:1', '0:0:0:0:0:0:0:0', '::1:0:0']) {
-      expect(isPrivateOrReservedIp(ip), ip).toBe(true);
+  // GHSA-m4cp-pqxq-x9f7 — the WHATWG URL parser rewrites the dotted
+  // tail of an IPv4-mapped literal to hex, which the previous
+  // dotted-decimal regex could not see.
+  it('flags IPv4-mapped addresses written in hexadecimal', () => {
+    for (const ip of [
+      '::ffff:7f00:1', // 127.0.0.1
+      '::ffff:a00:1', // 10.0.0.1
+      '::ffff:a9fe:a9fe', // 169.254.169.254
+      '::FFFF:7F00:1', // case-insensitive
+      '[::ffff:7f00:1]', // bracketed, as URL.hostname yields it
+    ]) {
+      expect(isPrivateOrReservedIp(ip)).toBe(true);
     }
+    expect(isPrivateOrReservedIp('::ffff:808:808')).toBe(false); // 8.8.8.8
   });
 
-  it('NAT64 (64:ff9b::/96) e 6to4 (2002::/16): julgados pelo IPv4 embutido', () => {
-    expect(isPrivateOrReservedIp('64:ff9b::7f00:1')).toBe(true); // 127.0.0.1
-    expect(isPrivateOrReservedIp('64:ff9b::10.0.0.5')).toBe(true);
-    expect(isPrivateOrReservedIp('2002:a9fe:a9fe::1')).toBe(true); // 169.254.169.254
-    expect(isPrivateOrReservedIp('2002:c0a8:101::')).toBe(true); // 192.168.1.1
-    // Público embutido continua entregável — DNS64 devolve esta forma para
-    // todo site só-IPv4 numa rede só-IPv6.
-    expect(isPrivateOrReservedIp('64:ff9b::808:808')).toBe(false);
-    expect(isPrivateOrReservedIp('2002:808:808::1')).toBe(false);
-  });
-
-  it('NAT64 de uso local (64:ff9b:1::/48) e o resto de 64:ff9b::/32 são recusados inteiros', () => {
-    expect(isPrivateOrReservedIp('64:ff9b:1::808:808')).toBe(true);
-    expect(isPrivateOrReservedIp('64:ff9b:0:1::808:808')).toBe(true);
-  });
-
-  it('site-local (fec0::/10) e link-local com zona são recusados', () => {
-    expect(isPrivateOrReservedIp('fec0::1')).toBe(true);
-    expect(isPrivateOrReservedIp('fe80::1%eth0')).toBe(true);
-  });
-
-  it('IPv6 público continua liberado, em qualquer grafia', () => {
-    for (const ip of ['2606:4700:4700::1111', '2001:4860:4860::8888', '2606:4700:4700:0:0:0:0:1111']) {
-      expect(isPrivateOrReservedIp(ip), ip).toBe(false);
+  // GHSA-q4p6-pj4g-26xx — IPv6 transition encodings carry an IPv4
+  // address inside a prefix that looks like ordinary global unicast.
+  it('flags IPv4 embedded in 6to4 / NAT64 / Teredo encodings', () => {
+    for (const ip of [
+      '2002:7f00:0001::', // 6to4 → 127.0.0.1
+      '2002:a9fe:a9fe::', // 6to4 → 169.254.169.254
+      '2002:a00:1::', // 6to4 → 10.0.0.1
+      '64:ff9b::7f00:1', // NAT64 → 127.0.0.1
+      '64:ff9b::a9fe:a9fe', // NAT64 → 169.254.169.254
+      '64:ff9b::169.254.169.254', // NAT64, dotted tail
+      '64:ff9b:1::a9fe:a9fe', // NAT64 local-use prefix
+      '2001:0:53aa:64c:0:7f9a:a9fe:a9fe', // Teredo
+      '2001::1', // Teredo prefix
+    ]) {
+      expect(isPrivateOrReservedIp(ip)).toBe(true);
     }
+    // A 6to4 address wrapping public IPv4 space is still routable.
+    expect(isPrivateOrReservedIp('2002:808:808::')).toBe(false);
   });
 
-  it('texto com `:` que não é IPv6 falha FECHADO', () => {
-    for (const ip of [':::', '1::2::3', '12345::1', '::ffff:999.0.0.1', '1:2:3:4:5:6:7:8:9', 'g::1']) {
-      expect(isPrivateOrReservedIp(ip), ip).toBe(true);
+  it('fails closed on anything it cannot parse', () => {
+    for (const ip of ['', 'not-an-ip', '1.2.3', '1.2.3.4.5', '256.1.1.1', 'gg::1', '::1::2']) {
+      expect(isPrivateOrReservedIp(ip)).toBe(true);
     }
   });
 });
@@ -101,21 +114,25 @@ describe('isDeliverableUrl', () => {
     expect(await isDeliverableUrl('not a url')).toBe(false);
   });
 
+  it('rejects the IPv6 spellings of an internal IPv4 target', async () => {
+    // Each of these was accepted before GHSA-m4cp-pqxq-x9f7 /
+    // GHSA-q4p6-pj4g-26xx; go through isDeliverableUrl so the URL
+    // parser's own normalization is part of the assertion.
+    for (const url of [
+      'https://[::ffff:127.0.0.1]/hook',
+      'https://[::ffff:169.254.169.254]/latest/meta-data',
+      'https://[::ffff:10.0.0.1]/hook',
+      'http://[2002:a9fe:a9fe::]:80/latest/meta-data/',
+      'http://[2002:7f00:0001::]:8080/admin',
+      'http://[64:ff9b::a9fe:a9fe]/latest/meta-data/',
+      'http://[64:ff9b::ac10:fe01]/',
+    ]) {
+      expect(await isDeliverableUrl(url)).toBe(false);
+    }
+  });
+
   it('allows a literal public IP', async () => {
     expect(await isDeliverableUrl('https://8.8.8.8/hook')).toBe(true);
-  });
-
-  it('⚠️ recusa IPv4 privado escondido num IPv6 mapeado (o parser de URL o normaliza para hex)', async () => {
-    expect(new URL('https://[::ffff:127.0.0.1]/').hostname).toBe('[::ffff:7f00:1]');
-    expect(await isDeliverableUrl('https://[::ffff:127.0.0.1]/')).toBe(false);
-    expect(await isDeliverableUrl('https://[::ffff:10.0.0.5]/hook')).toBe(false);
-    expect(await isDeliverableUrl('https://[::ffff:169.254.169.254]/latest/meta-data')).toBe(false);
-    expect(await isDeliverableUrl('https://[64:ff9b::127.0.0.1]/hook')).toBe(false);
-    expect(await isDeliverableUrl('https://[2002:7f00:1::]/hook')).toBe(false);
-  });
-
-  it('allows a literal public IPv6', async () => {
     expect(await isDeliverableUrl('https://[2606:4700:4700::1111]/hook')).toBe(true);
-    expect(await isDeliverableUrl('https://[::ffff:8.8.8.8]/hook')).toBe(true);
   });
 });

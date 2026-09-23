@@ -671,6 +671,7 @@ hex, `127.1`, `0`) chegam à guarda já canonizadas pelo `URL` e são recusadas.
 | P3 — "Duplicar" ignora o erro da leitura dos passos (cópia vazia com 201) e não copia o "Assinar como" | o "Assinar como" foi corrigido pelo #260; o erro dos passos ignorado é PRÉ-EXISTENTE e fica anotado no diário como follow-up |
 | P3 — soluço do banco na conferência nova vira `falhou` (não reprocessável) no Calendly/webhook de entrada | pré-existente (a mesma semântica da conferência do contato); o comentário foi corrigido, a regra fica |
 | **Codex no HEAD `70e77961`** (cota voltou): P2 — PATCH só com os PASSOS pulava o UPDATE e, com ele, a conferência de linhas; apagada no meio, `replaceSteps` respondia 200 com lista vazia (ou 500 pela chave estrangeira) | ✅ o PATCH só de passos também toca a linha (`updated_at`, que o gatilho `set_updated_at` regrava) — 2 casos no teste, mutante reprova |
+| **Codex, 2ª rodada (HEAD `c2b43689`)**: P2 — ainda sobrava o DELETE concorrente ENTRE o UPDATE e a troca dos passos (lista vazia → 200; cheia → 500 pela chave estrangeira) | ✅ releitura por conta DEPOIS de `replaceSteps`: sumiu = 404 (3 casos, mutante reprova). Fechar de vez pediria transação (RPC + migration) para dois admins editando e apagando a mesma automação no mesmo segundo — não compensa, aceito por escrito |
 
 **Resultado:** — (a preencher)
 

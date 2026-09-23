@@ -180,6 +180,22 @@ export async function PATCH(
 
   if (Array.isArray(body.steps)) {
     const err = await replaceSteps(id, body.steps as BuilderStepInput[])
+    // A conferência de linhas acima prova que a automação existia NO UPDATE;
+    // um DELETE concorrente entre ele e `replaceSteps` ainda escapava (Codex,
+    // 2ª rodada do PR #261): lista vazia virava 200 — apagar os passos de uma
+    // automação apagada é no-op —, e lista cheia virava 500 pela chave
+    // estrangeira. Confere de novo DEPOIS: sumiu = 404. (Fechar de vez pediria
+    // uma transação — RPC e migration — para uma corrida entre dois admins
+    // editando e apagando a mesma automação no mesmo segundo; não compensa.)
+    const { data: aindaExiste, error: erroDaReleitura } = await admin
+      .from('automations')
+      .select('id')
+      .eq('id', id)
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (!erroDaReleitura && !aindaExiste) {
+      return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    }
     if (err) return NextResponse.json({ error: err }, { status: 500 })
   }
 

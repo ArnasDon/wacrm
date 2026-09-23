@@ -22,6 +22,10 @@ const h = vi.hoisted(() => ({
   erroDeLeitura: null as { message: string } | null,
   /** Encena a automação apagada ENTRE a leitura e o UPDATE do PATCH. */
   apagarDepoisDaLeitura: false,
+  /** Encena o DELETE concorrente entre o UPDATE e a troca dos passos. */
+  apagarNaTrocaDosPassos: false,
+  /** O que `replaceSteps` devolve (a chave estrangeira recusando, por exemplo). */
+  erroNaTrocaDosPassos: null as string | null,
   /** Os filtros de cada UPDATE — a conta tem de estar na escrita também. */
   filtrosDasEscritas: [] as [string, unknown][][],
   db: {
@@ -102,7 +106,10 @@ vi.mock('@/lib/auth/account', () => ({
 
 vi.mock('@/lib/automations/steps-tree', () => ({
   loadStepsTree: async () => [],
-  replaceSteps: vi.fn(async () => null),
+  replaceSteps: vi.fn(async () => {
+    if (h.apagarNaTrocaDosPassos) h.db.automations = h.db.automations.filter((a) => a.id !== 'auto-1')
+    return h.erroNaTrocaDosPassos
+  }),
 }))
 
 vi.mock('@/lib/cb-channels/repo', () => ({
@@ -125,6 +132,8 @@ beforeEach(() => {
   h.quem = 'u-ricardo'
   h.erroDeLeitura = null
   h.apagarDepoisDaLeitura = false
+  h.apagarNaTrocaDosPassos = false
+  h.erroNaTrocaDosPassos = null
   h.filtrosDasEscritas = []
   h.db.automations = [
     {
@@ -290,6 +299,22 @@ describe('upstream #587 — o piso nosso e a escrita pela conta', () => {
     const res = await PATCH(corpo({ steps: [] }), params('auto-1'))
     expect(res.status).toBe(404)
     expect(replaceSteps).not.toHaveBeenCalled()
+  })
+
+  it('apagada DURANTE a troca dos passos (lista vazia): 404, não 200 (Codex, 2ª rodada)', async () => {
+    h.apagarNaTrocaDosPassos = true
+    expect((await PATCH(corpo({ steps: [] }), params('auto-1'))).status).toBe(404)
+  })
+
+  it('apagada durante a troca, com a chave estrangeira recusando os passos: 404, não 500', async () => {
+    h.apagarNaTrocaDosPassos = true
+    h.erroNaTrocaDosPassos = 'insert or update on table "automation_steps" violates foreign key constraint'
+    expect((await PATCH(corpo({ steps: [{ step_type: 'send_message' }] }), params('auto-1'))).status).toBe(404)
+  })
+
+  it('erro na troca com a automação DE PÉ continua 500', async () => {
+    h.erroNaTrocaDosPassos = 'falha qualquer'
+    expect((await PATCH(corpo({ steps: [] }), params('auto-1'))).status).toBe(500)
   })
 
   it('PATCH só com os passos, automação de pé: toca a linha pela conta e troca os passos', async () => {

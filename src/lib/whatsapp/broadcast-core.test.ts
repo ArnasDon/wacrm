@@ -6,6 +6,7 @@ import {
   BroadcastError,
 } from './broadcast-core';
 import { findOrCreateContact } from '@/lib/api/v1/contacts';
+import { ErroAoLerCanalMeta } from '@/lib/cb-channels/resolve-meta';
 
 // Contact resolution and token decryption are exercised elsewhere — stub
 // them so these tests focus on the persistence boundary.
@@ -308,7 +309,10 @@ describe('o canal pedido chega ao resolvedor', () => {
   const PEDIDO = { ...CANAL_META, id: 'canal-pedido', account_id: 'acc', is_default: false };
   const ALHEIO = { ...CANAL_META, id: 'canal-alheio', account_id: 'outra-conta', is_default: true };
 
-  function makeDbComCanais(canais: Record<string, unknown>[]) {
+  function makeDbComCanais(
+    canais: Record<string, unknown>[],
+    erro: { message: string } | null = null
+  ) {
     const base = makeDb({
       data: [{ broadcast_id: 'b-1', recipient_id: 'r-1', contact_id: 'c1' }],
       error: null,
@@ -329,9 +333,11 @@ describe('o canal pedido chega ao resolvedor', () => {
         order: () => chain,
         limit: () => chain,
         maybeSingle: () =>
-          Promise.resolve({ data: canais.find(casa) ?? null, error: null }),
-        then: (resolve: (r: { data: unknown[]; error: null }) => unknown) =>
-          resolve({ data: canais.filter(casa), error: null }),
+          Promise.resolve(
+            erro ? { data: null, error: erro } : { data: canais.find(casa) ?? null, error: null }
+          ),
+        then: (resolve: (r: { data: unknown[] | null; error: unknown }) => unknown) =>
+          resolve(erro ? { data: null, error: erro } : { data: canais.filter(casa), error: null }),
       };
       return chain;
     };
@@ -381,5 +387,22 @@ describe('o canal pedido chega ao resolvedor', () => {
     expect(findOrCreateContact).not.toHaveBeenCalled();
     expect(calls.rpc).toHaveLength(0);
     expect(calls.usedDirectInsert).toBe(0);
+  });
+
+  it('⚠️ banco fora na leitura do canal NÃO vira "conecte um número" (400) — lança, e a rota responde 500', async () => {
+    // Com o id pedido (caminho do integrador) e sem ele (o padrão).
+    for (const channelId of ['canal-pedido', undefined]) {
+      const { db, calls } = makeDbComCanais([PADRAO, PEDIDO], { message: 'timeout' });
+      vi.mocked(findOrCreateContact).mockClear();
+      const tentativa = createBroadcast(db, 'acc', 'user', {
+        templateName: 'promo',
+        channelId,
+        recipients: [{ to: '+14155550123' }],
+      });
+      await expect(tentativa).rejects.toBeInstanceOf(ErroAoLerCanalMeta);
+      await expect(tentativa).rejects.not.toBeInstanceOf(BroadcastError);
+      expect(findOrCreateContact).not.toHaveBeenCalled();
+      expect(calls.rpc).toHaveLength(0);
+    }
   });
 });

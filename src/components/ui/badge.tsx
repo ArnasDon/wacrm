@@ -19,6 +19,14 @@ const badgeVariants = cva(
         ghost:
           'hover:bg-muted hover:text-muted-foreground dark:hover:bg-muted/50',
         link: 'text-primary underline-offset-4 hover:underline',
+        'status-new': 'bg-status-new/10 text-status-new border-status-new/20',
+        'status-contacted': 'bg-status-contacted/10 text-status-contacted border-status-contacted/20',
+        'status-site-visit': 'bg-status-site-visit/10 text-status-site-visit border-status-site-visit/20',
+        'status-negotiation': 'bg-status-negotiation/10 text-status-negotiation border-status-negotiation/20',
+        'status-closed': 'bg-status-closed/10 text-status-closed border-status-closed/20',
+        'sla-good': 'bg-sla-good/10 text-sla-good border-sla-good/20',
+        'sla-warning': 'bg-sla-warning/10 text-sla-warning border-sla-warning/20',
+        'sla-critical': 'bg-sla-critical/10 text-sla-critical border-sla-critical/20',
       },
     },
     defaultVariants: {

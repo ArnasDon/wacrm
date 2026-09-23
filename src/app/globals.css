@@ -48,6 +48,14 @@
   --color-primary-hover: var(--primary-hover);
   --color-primary-soft: var(--primary-soft);
   --color-primary-soft-2: var(--primary-soft-2);
+  --color-status-new: var(--status-new);
+  --color-status-contacted: var(--status-contacted);
+  --color-status-site-visit: var(--status-site-visit);
+  --color-status-negotiation: var(--status-negotiation);
+  --color-status-closed: var(--status-closed);
+  --color-sla-good: var(--sla-good);
+  --color-sla-warning: var(--sla-warning);
+  --color-sla-critical: var(--sla-critical);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -114,6 +122,14 @@ html[data-mode='dark'] {
   --sidebar-accent: oklch(0.22 0.01 260);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.28 0.01 260);
+  --status-new: oklch(0.6 0.12 260);
+  --status-contacted: oklch(0.6 0.18 293);
+  --status-site-visit: oklch(0.6 0.16 65);
+  --status-negotiation: oklch(0.7 0.16 85);
+  --status-closed: oklch(0.5 0.14 162);
+  --sla-good: oklch(0.5 0.14 162);
+  --sla-warning: oklch(0.6 0.16 65);
+  --sla-critical: oklch(0.577 0.245 27.325);
 }
 
 html[data-mode='light'] {
@@ -143,6 +159,14 @@ html[data-mode='light'] {
   --sidebar-accent: oklch(0.96 0.004 260);
   --sidebar-accent-foreground: oklch(0.25 0.01 260);
   --sidebar-border: oklch(0.922 0.004 260);
+  --status-new: oklch(0.7 0.1 260);
+  --status-contacted: oklch(0.7 0.15 293);
+  --status-site-visit: oklch(0.75 0.15 65);
+  --status-negotiation: oklch(0.85 0.15 85);
+  --status-closed: oklch(0.65 0.15 162);
+  --sla-good: oklch(0.65 0.15 162);
+  --sla-warning: oklch(0.75 0.15 65);
+  --sla-critical: oklch(0.577 0.245 27.325);
 }
 
 /* ---- ACCENT: primary color ---- */

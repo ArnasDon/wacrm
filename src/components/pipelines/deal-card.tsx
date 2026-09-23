@@ -1,7 +1,7 @@
 'use client';
 
 import type { Deal, PipelineStage } from '@/types';
-import { Calendar, Check, X } from 'lucide-react';
+import { Calendar, Check, X, ArrowRightLeft } from 'lucide-react';
 import { formatCurrency } from '@/lib/currency';
 import { useTranslations } from 'next-intl';
 
@@ -9,6 +9,7 @@ interface DealCardProps {
   deal: Deal;
   stage: PipelineStage | null;
   onEdit: (deal: Deal) => void;
+  onMove?: (deal: Deal) => void;
   isOverlay?: boolean;
 }
 
@@ -26,7 +27,7 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
+export function DealCard({ deal, stage, onEdit, onMove, isOverlay }: DealCardProps) {
   const t = useTranslations('Pipelines.card');
   const contactLabel =
     deal.contact?.name || deal.contact?.phone || t('noContact');
@@ -36,8 +37,6 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
     <button
       type="button"
       onClick={(e) => {
-        // `onClick` still fires after a non-drag tap because the PointerSensor
-        // requires 5px movement before it counts as a drag.
         if (isOverlay) return;
         e.stopPropagation();
         onEdit(deal);
@@ -48,7 +47,6 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
           : 'hover:border-border hover:bg-muted hover:-translate-y-0.5 hover:shadow-lg'
       }`}
     >
-      {/* 4px left accent bar using stage color */}
       <span
         aria-hidden
         className="absolute top-0 left-0 h-full w-1 rounded-l-xl"
@@ -59,18 +57,31 @@ export function DealCard({ deal, stage, onEdit, isOverlay }: DealCardProps) {
         <h4 className="text-foreground flex-1 text-sm leading-snug font-semibold break-words">
           {deal.title}
         </h4>
-        {deal.status === 'won' && (
-          <span className="bg-primary/15 text-primary inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold">
-            <Check className="h-3 w-3" />
-            {t('won')}
-          </span>
-        )}
-        {deal.status === 'lost' && (
-          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-            <X className="h-3 w-3" />
-            {t('lost')}
-          </span>
-        )}
+        <div className="flex items-center gap-1.5">
+          {onMove && (
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                onMove(deal);
+              }}
+              className="text-muted-foreground bg-background/80 hover:bg-background border border-border/50 rounded-md p-1 cursor-pointer"
+            >
+              <ArrowRightLeft className="h-3 w-3" />
+            </div>
+          )}
+          {deal.status === 'won' && (
+            <span className="bg-primary/15 text-primary inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold">
+              <Check className="h-3 w-3" />
+              {t('won')}
+            </span>
+          )}
+          {deal.status === 'lost' && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+              <X className="h-3 w-3" />
+              {t('lost')}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Contact row */}

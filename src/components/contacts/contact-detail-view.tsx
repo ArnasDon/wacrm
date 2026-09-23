@@ -410,6 +410,286 @@ export function ContactDetailView({
       .slice(0, 2);
   }
 
+
+  const detailsContent = (
+    <>
+      <div className="space-y-3">
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('name')}
+                      </Label>
+                      <Input
+                        value={editName}
+                        onChange={(e) => setEditName(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('phone')} <span className="text-red-400">*</span>
+                      </Label>
+                      <Input
+                        value={editPhone}
+                        onChange={(e) => setEditPhone(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('email')}
+                      </Label>
+                      <Input
+                        value={editEmail}
+                        onChange={(e) => setEditEmail(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-muted-foreground text-xs">
+                        {t('company')}
+                      </Label>
+                      <Input
+                        value={editCompany}
+                        onChange={(e) => setEditCompany(e.target.value)}
+                        className="bg-muted border-border text-foreground h-8 text-sm"
+                      />
+                    </div>
+                    <Button
+                      onClick={saveDetails}
+                      disabled={savingDetails}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
+                      size="sm"
+                    >
+                      {savingDetails ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Save className="size-3.5" />
+                      )}
+                      {t('saveChangesBtn')}
+                    </Button>
+                  </div>
+    </>
+  );
+
+  const tagsContent = (
+    <>
+      <div className="space-y-3">
+                    <p className="text-muted-foreground text-xs">
+                      {t('tagsTab.clickTagDesc')}
+                    </p>
+                    {allTags.length === 0 ? (
+                      <p className="text-muted-foreground text-sm">
+                        {t('tagsTab.noTagsAvailable')}
+                      </p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {allTags.map((tag) => {
+                          const selected = contactTagIds.includes(tag.id);
+                          return (
+                            <button
+                              key={tag.id}
+                              onClick={() => toggleTag(tag.id)}
+                              disabled={savingTags}
+                              className={`inline-flex cursor-pointer items-center rounded-full px-3 py-1 text-xs font-medium transition-all ${
+                                selected
+                                  ? 'ring-primary ring-offset-border ring-2 ring-offset-1'
+                                  : 'opacity-50 hover:opacity-80'
+                              }`}
+                              style={{
+                                backgroundColor: tag.color + '20',
+                                color: tag.color,
+                              }}
+                            >
+                              {selected && <Check className="mr-1 size-3" />}
+                              {tag.name}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+    </>
+  );
+
+  const notesContent = (
+    <>
+      <div className="mb-3 space-y-2">
+                    <Textarea
+                      value={newNote}
+                      onChange={(e) => setNewNote(e.target.value)}
+                      placeholder={t('notesTab.placeholder')}
+                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground min-h-[60px] resize-none text-sm"
+                    />
+                    <Button
+                      onClick={addNote}
+                      disabled={!newNote.trim() || savingNote}
+                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
+                      size="sm"
+                    >
+                      {savingNote ? (
+                        <Loader2 className="size-3.5 animate-spin" />
+                      ) : (
+                        <Plus className="size-3.5" />
+                      )}
+                      {t('notesTab.save')}
+                    </Button>
+                  </div>
+
+                  <div className="flex-1 space-y-2 overflow-y-auto">
+                    {loadingNotes ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                      </div>
+                    ) : notes.length === 0 ? (
+                      <p className="text-muted-foreground py-8 text-center text-sm">
+                        {t('notesTab.noNotes')}
+                      </p>
+                    ) : (
+                      notes.map((note) => (
+                        <div
+                          key={note.id}
+                          className="bg-muted/50 border-border/50 group rounded-lg border p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-muted-foreground flex-1 text-sm whitespace-pre-wrap">
+                              {note.note_text}
+                            </p>
+                            <button
+                              onClick={() => deleteNote(note.id)}
+                              className="text-muted-foreground shrink-0 cursor-pointer opacity-0 transition-all group-hover:opacity-100 hover:text-red-400"
+                            >
+                              <Trash2 className="size-3.5" />
+                            </button>
+                          </div>
+                          <p className="text-muted-foreground mt-1.5 text-xs">
+                            {new Date(note.created_at).toLocaleDateString(
+                              'en-US',
+                              {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              }
+                            )}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+    </>
+  );
+
+  const customContent = (
+    <>
+      {loadingCustom ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="text-muted-foreground size-5 animate-spin" />
+                    </div>
+                  ) : customFields.length === 0 ? (
+                    <p className="text-muted-foreground py-8 text-center text-sm">
+                      {t('noCustomFields')}
+                    </p>
+                  ) : (
+                    <div className="space-y-3">
+                      {customFields.map((field) => (
+                        <div key={field.id} className="space-y-1.5">
+                          <Label className="text-muted-foreground text-xs capitalize">
+                            {field.field_name}
+                          </Label>
+                          <Input
+                            value={customValues[field.id] ?? ''}
+                            onChange={(e) =>
+                              setCustomValues((prev) => ({
+                                ...prev,
+                                [field.id]: e.target.value,
+                              }))
+                            }
+                            placeholder={t('enterCustomField', {
+                              name: field.field_name,
+                            })}
+                            className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-sm"
+                          />
+                        </div>
+                      ))}
+                      <Button
+                        onClick={saveCustomFields}
+                        disabled={savingCustom}
+                        className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
+                        size="sm"
+                      >
+                        {savingCustom ? (
+                          <Loader2 className="size-3.5 animate-spin" />
+                        ) : (
+                          <Save className="size-3.5" />
+                        )}
+                        {t('saveCustomFieldsBtn')}
+                      </Button>
+                    </div>
+                  )}
+    </>
+  );
+
+  const dealsContent = (
+    <>
+      {loadingDeals ? (
+                    <div className="flex items-center justify-center py-8">
+                      <Loader2 className="text-primary size-5 animate-spin" />
+                    </div>
+                  ) : deals.length === 0 ? (
+                    <p className="text-muted-foreground text-xs">
+                      {t('dealsTab.noDeals')}
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      {deals.map((deal) => (
+                        <div
+                          key={deal.id}
+                          className="border-border bg-muted/50 rounded-lg border p-3"
+                        >
+                          <div className="flex items-start justify-between gap-2">
+                            <p className="text-foreground text-sm font-medium">
+                              {deal.title}
+                            </p>
+                            {deal.stage && (
+                              <span
+                                className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
+                                style={{
+                                  backgroundColor: `${deal.stage.color}20`,
+                                  color: deal.stage.color,
+                                }}
+                              >
+                                {deal.stage.name}
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-muted-foreground mt-1.5 flex items-center justify-between text-xs">
+                            <span className="flex items-center gap-1">
+                              <DollarSign className="size-3" />
+                              {formatCurrency(
+                                deal.value ?? 0,
+                                deal.currency || defaultCurrency
+                              )}
+                            </span>
+                            {deal.status && deal.status !== 'open' && (
+                              <span
+                                className={
+                                  deal.status === 'won'
+                                    ? 'text-primary'
+                                    : 'text-red-400'
+                                }
+                              >
+                                {deal.status}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+    </>
+  );
+
   return (
     <>
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -484,36 +764,218 @@ export function ContactDetailView({
               </SheetHeader>
 
               {/* Tabs */}
+
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
               <Tabs
                 defaultValue="details"
                 className="flex min-h-0 flex-1 flex-col"
               >
-                <TabsList className="bg-muted/50 border-border mx-4 mt-3 border-b">
-                  <TabsTrigger
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsList className="bg-muted/50 border-border mx-4 mt-3 border-b">
+    
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsTrigger
                     value="details"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.details')}
                   </TabsTrigger>
-                  <TabsTrigger
+    
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsTrigger
                     value="tags"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.tags')}
                   </TabsTrigger>
-                  <TabsTrigger
+    
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsTrigger
                     value="notes"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.notes')}
                   </TabsTrigger>
-                  <TabsTrigger
+    
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsTrigger
                     value="custom"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.custom')}
                   </TabsTrigger>
-                  <TabsTrigger
+    
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsTrigger
                     value="deals"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
@@ -522,292 +984,173 @@ export function ContactDetailView({
                 </TabsList>
 
                 {/* Details Tab */}
-                <TabsContent
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsContent
                   value="details"
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
-                  <div className="space-y-3">
-                    <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">
-                        {t('name')}
-                      </Label>
-                      <Input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        className="bg-muted border-border text-foreground h-8 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">
-                        {t('phone')} <span className="text-red-400">*</span>
-                      </Label>
-                      <Input
-                        value={editPhone}
-                        onChange={(e) => setEditPhone(e.target.value)}
-                        className="bg-muted border-border text-foreground h-8 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">
-                        {t('email')}
-                      </Label>
-                      <Input
-                        value={editEmail}
-                        onChange={(e) => setEditEmail(e.target.value)}
-                        className="bg-muted border-border text-foreground h-8 text-sm"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-muted-foreground text-xs">
-                        {t('company')}
-                      </Label>
-                      <Input
-                        value={editCompany}
-                        onChange={(e) => setEditCompany(e.target.value)}
-                        className="bg-muted border-border text-foreground h-8 text-sm"
-                      />
-                    </div>
-                    <Button
-                      onClick={saveDetails}
-                      disabled={savingDetails}
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
-                      size="sm"
-                    >
-                      {savingDetails ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Save className="size-3.5" />
-                      )}
-                      {t('saveChangesBtn')}
-                    </Button>
-                  </div>
+                  {detailsContent}
                 </TabsContent>
 
                 {/* Tags Tab */}
-                <TabsContent
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsContent
                   value="tags"
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
-                  <div className="space-y-3">
-                    <p className="text-muted-foreground text-xs">
-                      {t('tagsTab.clickTagDesc')}
-                    </p>
-                    {allTags.length === 0 ? (
-                      <p className="text-muted-foreground text-sm">
-                        {t('tagsTab.noTagsAvailable')}
-                      </p>
-                    ) : (
-                      <div className="flex flex-wrap gap-2">
-                        {allTags.map((tag) => {
-                          const selected = contactTagIds.includes(tag.id);
-                          return (
-                            <button
-                              key={tag.id}
-                              onClick={() => toggleTag(tag.id)}
-                              disabled={savingTags}
-                              className={`inline-flex cursor-pointer items-center rounded-full px-3 py-1 text-xs font-medium transition-all ${
-                                selected
-                                  ? 'ring-primary ring-offset-border ring-2 ring-offset-1'
-                                  : 'opacity-50 hover:opacity-80'
-                              }`}
-                              style={{
-                                backgroundColor: tag.color + '20',
-                                color: tag.color,
-                              }}
-                            >
-                              {selected && <Check className="mr-1 size-3" />}
-                              {tag.name}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
+                  {tagsContent}
                 </TabsContent>
 
                 {/* Notes Tab */}
-                <TabsContent
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsContent
                   value="notes"
                   className="flex min-h-0 flex-1 flex-col px-4 py-3"
                 >
-                  <div className="mb-3 space-y-2">
-                    <Textarea
-                      value={newNote}
-                      onChange={(e) => setNewNote(e.target.value)}
-                      placeholder={t('notesTab.placeholder')}
-                      className="bg-muted border-border text-foreground placeholder:text-muted-foreground min-h-[60px] resize-none text-sm"
-                    />
-                    <Button
-                      onClick={addNote}
-                      disabled={!newNote.trim() || savingNote}
-                      className="bg-primary hover:bg-primary/90 text-primary-foreground"
-                      size="sm"
-                    >
-                      {savingNote ? (
-                        <Loader2 className="size-3.5 animate-spin" />
-                      ) : (
-                        <Plus className="size-3.5" />
-                      )}
-                      {t('notesTab.save')}
-                    </Button>
-                  </div>
-
-                  <div className="flex-1 space-y-2 overflow-y-auto">
-                    {loadingNotes ? (
-                      <div className="flex items-center justify-center py-8">
-                        <Loader2 className="text-muted-foreground size-5 animate-spin" />
-                      </div>
-                    ) : notes.length === 0 ? (
-                      <p className="text-muted-foreground py-8 text-center text-sm">
-                        {t('notesTab.noNotes')}
-                      </p>
-                    ) : (
-                      notes.map((note) => (
-                        <div
-                          key={note.id}
-                          className="bg-muted/50 border-border/50 group rounded-lg border p-3"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-muted-foreground flex-1 text-sm whitespace-pre-wrap">
-                              {note.note_text}
-                            </p>
-                            <button
-                              onClick={() => deleteNote(note.id)}
-                              className="text-muted-foreground shrink-0 cursor-pointer opacity-0 transition-all group-hover:opacity-100 hover:text-red-400"
-                            >
-                              <Trash2 className="size-3.5" />
-                            </button>
-                          </div>
-                          <p className="text-muted-foreground mt-1.5 text-xs">
-                            {new Date(note.created_at).toLocaleDateString(
-                              'en-US',
-                              {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                                hour: '2-digit',
-                                minute: '2-digit',
-                              }
-                            )}
-                          </p>
-                        </div>
-                      ))
-                    )}
-                  </div>
+                  {notesContent}
                 </TabsContent>
 
                 {/* Custom Fields Tab */}
-                <TabsContent
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsContent
                   value="custom"
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
-                  {loadingCustom ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="text-muted-foreground size-5 animate-spin" />
-                    </div>
-                  ) : customFields.length === 0 ? (
-                    <p className="text-muted-foreground py-8 text-center text-sm">
-                      {t('noCustomFields')}
-                    </p>
-                  ) : (
-                    <div className="space-y-3">
-                      {customFields.map((field) => (
-                        <div key={field.id} className="space-y-1.5">
-                          <Label className="text-muted-foreground text-xs capitalize">
-                            {field.field_name}
-                          </Label>
-                          <Input
-                            value={customValues[field.id] ?? ''}
-                            onChange={(e) =>
-                              setCustomValues((prev) => ({
-                                ...prev,
-                                [field.id]: e.target.value,
-                              }))
-                            }
-                            placeholder={t('enterCustomField', {
-                              name: field.field_name,
-                            })}
-                            className="bg-muted border-border text-foreground placeholder:text-muted-foreground h-8 text-sm"
-                          />
-                        </div>
-                      ))}
-                      <Button
-                        onClick={saveCustomFields}
-                        disabled={savingCustom}
-                        className="bg-primary hover:bg-primary/90 text-primary-foreground w-full"
-                        size="sm"
-                      >
-                        {savingCustom ? (
-                          <Loader2 className="size-3.5 animate-spin" />
-                        ) : (
-                          <Save className="size-3.5" />
-                        )}
-                        {t('saveCustomFieldsBtn')}
-                      </Button>
-                    </div>
-                  )}
+                  {customContent}
                 </TabsContent>
 
                 {/* Deals Tab */}
-                <TabsContent
+  
+              {/* Mobile Inline View */}
+              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
+                  {detailsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
+                  {tagsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
+                  {notesContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
+                  {dealsContent}
+                </section>
+                <section>
+                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
+                  {customContent}
+                </section>
+              </div>
+
+              {/* Desktop Tabs */}
+              <TabsContent
                   value="deals"
                   className="flex-1 overflow-y-auto px-4 py-3"
                 >
-                  {loadingDeals ? (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="text-primary size-5 animate-spin" />
-                    </div>
-                  ) : deals.length === 0 ? (
-                    <p className="text-muted-foreground text-xs">
-                      {t('dealsTab.noDeals')}
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      {deals.map((deal) => (
-                        <div
-                          key={deal.id}
-                          className="border-border bg-muted/50 rounded-lg border p-3"
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <p className="text-foreground text-sm font-medium">
-                              {deal.title}
-                            </p>
-                            {deal.stage && (
-                              <span
-                                className="shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium"
-                                style={{
-                                  backgroundColor: `${deal.stage.color}20`,
-                                  color: deal.stage.color,
-                                }}
-                              >
-                                {deal.stage.name}
-                              </span>
-                            )}
-                          </div>
-                          <div className="text-muted-foreground mt-1.5 flex items-center justify-between text-xs">
-                            <span className="flex items-center gap-1">
-                              <DollarSign className="size-3" />
-                              {formatCurrency(
-                                deal.value ?? 0,
-                                deal.currency || defaultCurrency
-                              )}
-                            </span>
-                            {deal.status && deal.status !== 'open' && (
-                              <span
-                                className={
-                                  deal.status === 'won'
-                                    ? 'text-primary'
-                                    : 'text-red-400'
-                                }
-                              >
-                                {deal.status}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {dealsContent}
                 </TabsContent>
               </Tabs>
             </div>

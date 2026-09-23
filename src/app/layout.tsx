@@ -43,6 +43,7 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   themeColor: '#020617',
   colorScheme: 'dark light',
+  viewportFit: 'cover',
 };
 
 // Inline boot script — runs before React hydrates so the user's

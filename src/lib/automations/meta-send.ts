@@ -5,6 +5,7 @@ import {
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import {
   resolveEngineChannelPreferring,
   evolutionTransportFor,
@@ -158,6 +159,13 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   if (contactErr || !contact?.phone) {
     throw new Error('contact not found for this account')
   }
+
+  // A CONVERSA em que a mensagem vai ser gravada também tem de ser desta
+  // conta (upstream #589, GHSA-m4fx-g6pr-hrw8). O id vinha de confiança, e o
+  // `POST /api/automations/engine` copia o contexto do corpo: um admin de
+  // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
+  // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
+  await assertConversationInAccount(db, input.conversationId, input.accountId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
@@ -354,6 +362,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+    .eq('account_id', input.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }

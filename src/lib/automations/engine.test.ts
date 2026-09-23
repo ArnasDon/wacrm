@@ -45,6 +45,11 @@ const h = vi.hoisted(() => ({
     ultimoMovimento: null as { criado_em: string } | null,
     /** As conversas do contato (a segunda linha de defesa do "parar se responder" lê por aqui). Vazio = `null`, como antes. */
     conversasDoContato: [] as { id: string }[],
+    /**
+     * De QUAL conta é cada conversa, para a conferência de posse por id
+     * (upstream #589). Ausente = da conta dos testes (`acct-1`).
+     */
+    contaDaConversa: {} as Record<string, string>,
     /** Mensagens do CLIENTE gravadas depois de a espera ser estacionada. */
     respostasDesde: [] as { id: string }[],
     erroNasRespostas: null as string | null,
@@ -123,6 +128,15 @@ vi.mock('./admin-client', () => {
       if (type === 'update') {
         state.updateCalls.push({ table, filters: ops.filters });
         return { data: null, error: null };
+      }
+      // Leitura POR ID = a conferência de posse (upstream #589): a linha só
+      // vem quando o filtro de conta casa com a dona — a leitura que esquecer
+      // o `account_id` enxerga a conversa alheia, e o teste vê isso.
+      const porId = ops.filters.find(([op, k]) => op === 'eq' && k === 'id');
+      if (porId) {
+        const dona = state.contaDaConversa[String(porId[2])] ?? 'acct-1';
+        const conta = ops.filters.find(([op, k]) => op === 'eq' && k === 'account_id');
+        return { data: !conta || conta[2] === dona ? { id: porId[2] } : null, error: null };
       }
       return { data: state.conversasDoContato.length > 0 ? state.conversasDoContato : null, error: null };
     }
@@ -471,6 +485,7 @@ beforeEach(() => {
   h.state.movimentosPorChamada = null;
   h.state.erroNosMovimentos = null;
   h.state.conversasDoContato = [];
+  h.state.contaDaConversa = {};
   h.state.respostasDesde = [];
   h.state.erroNasRespostas = null;
   h.state.ultimoMovimento = null;
@@ -1243,6 +1258,60 @@ describe('send_message — canal de saída por passo', () => {
       { channel_id: 'ch-pessoal' }
     );
     expect(args?.preferredChannelId).toBe('ch-pessoal');
+  });
+});
+
+// ------------------------------------------------------------
+// Conversa de OUTRA conta no contexto (upstream #589, GHSA-m4fx-g6pr-hrw8).
+//
+// O `POST /api/automations/engine` copia o contexto do corpo, e todo envio
+// grava a mensagem e a prévia pelo id da conversa em service-role. A fake
+// entrega a conversa por id só quando o filtro de conta casa com a dona.
+// ------------------------------------------------------------
+
+describe('conversa de outra conta no contexto (upstream #589)', () => {
+  beforeEach(() => vi.mocked(engineSendText).mockClear());
+
+  it('o disparo recusa a conversa alheia antes de buscar automações, sem enviar', async () => {
+    h.state.owned = { id: 'c1' };
+    h.state.contaDaConversa = { 'conv-da-vitima': 'outra-conta' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [sendStep({ text: 'oi' })];
+
+    const r = await dispararAutomacoes({
+      accountId: ACCOUNT,
+      triggerType: 'new_message_received',
+      contactId: 'c1',
+      context: { conversation_id: 'conv-da-vitima' },
+    });
+
+    expect(r.erro).toBe('conversation not in account');
+    expect(h.state.fromCalls).not.toContain('automations');
+    expect(engineSendText).not.toHaveBeenCalled();
+  });
+
+  it('a conversa da própria conta segue normalmente', async () => {
+    const args = await dispararEnvio({ text: 'oi' }, {});
+    expect(args?.conversationId).toBe('conv1');
+  });
+
+  it('quem não passa pelo disparo (runAutomationById — o mesmo trecho da retomada) é barrado antes do envio', async () => {
+    // `resolveConversationId` é o último ponto antes da escrita: a retomada
+    // reusa o contexto gravado, e `runAutomationById` não confere a conversa.
+    h.state.owned = { id: 'c1' };
+    h.state.contaDaConversa = { 'conv-da-vitima': 'outra-conta' };
+    h.state.automations = [automationWithUpdateStep()];
+    h.state.steps = [sendStep({ text: 'oi' })];
+
+    await runAutomationById({
+      automationId: 'a1',
+      accountId: ACCOUNT,
+      contactId: 'c1',
+      context: { conversation_id: 'conv-da-vitima' },
+      triggerType: 'new_message_received',
+    });
+
+    expect(engineSendText).not.toHaveBeenCalled();
   });
 });
 

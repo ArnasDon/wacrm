@@ -305,6 +305,33 @@ export async function dispararAutomacoes(
       }
     }
 
+    // O mesmo argumento para `context.conversation_id` (upstream #589,
+    // GHSA-m4fx-g6pr-hrw8): ele chega no MESMO corpo do chamador, e todo
+    // passo de envio grava `messages` e a prévia de `conversations` por esse
+    // id em service-role — um id não conferido deixava gravar mensagem no fio
+    // de OUTRA conta. Recusa igual à do contato: sem dizer se o id existe.
+    // (Os envios conferem de novo, e `resolveConversationId` também — a
+    // retomada reusa um contexto gravado.)
+    if (input.context?.conversation_id) {
+      const { data: conv, error: convErr } = await db
+        .from('conversations')
+        .select('id')
+        .eq('id', input.context.conversation_id)
+        .eq('account_id', input.accountId)
+        .maybeSingle();
+      if (convErr) {
+        console.error('[automations] conversation ownership check failed:', convErr);
+        return { ...r, erro: 'conversation ownership check failed' };
+      }
+      if (!conv) {
+        console.warn(
+          '[automations] conversation not in account, refusing dispatch',
+          input.context.conversation_id
+        );
+        return { ...r, erro: 'conversation not in account' };
+      }
+    }
+
     const { data: automations, error } = await db
       .from('automations')
       .select('*')
@@ -2258,7 +2285,23 @@ async function runStep(
  */
 async function resolveConversationId(args: ExecuteArgs): Promise<string> {
   const fromCtx = args.context.conversation_id;
-  if (fromCtx) return fromCtx;
+  if (fromCtx) {
+    // Confere em vez de confiar (upstream #589): o disparo confere o id que
+    // o chamador mandou, mas a RETOMADA reusa um contexto gravado passos
+    // atrás, e este é o último ponto antes de uma escrita em service-role
+    // presa a ele. A mensagem é a mesma para "não existe" e "é de outra
+    // conta" — ela vai para o registro da automação.
+    const { data, error } = await supabaseAdmin()
+      .from('conversations')
+      .select('id')
+      .eq('id', fromCtx)
+      .eq('account_id', args.automation.account_id)
+      .maybeSingle();
+    if (error) throw new Error(`conversation lookup failed: ${error.message}`);
+    if (!data?.id)
+      throw new Error('conversation does not belong to this account');
+    return data.id as string;
+  }
   if (!args.contactId)
     throw new Error('cannot resolve conversation: no contact');
   const { data, error } = await supabaseAdmin()

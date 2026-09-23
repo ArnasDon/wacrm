@@ -9,6 +9,7 @@ import {
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
 import { decrypt } from '@/lib/whatsapp/encryption'
+import { assertConversationInAccount } from '@/lib/whatsapp/conversation-scope'
 import {
   resolveEngineChannelPreferring,
   evolutionTransportFor,
@@ -115,6 +116,13 @@ export async function engineSendText(
     throw new Error('contact not found for this account')
   }
 
+  // A CONVERSA em que a mensagem vai ser gravada também tem de ser desta
+  // conta (upstream #589, GHSA-m4fx-g6pr-hrw8). O id vinha de confiança, e o
+  // `POST /api/automations/engine` copia o contexto do corpo: um admin de
+  // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
+  // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
+  await assertConversationInAccount(db, args.conversationId, args.accountId)
+
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
   if (!contact.phone) {
@@ -219,6 +227,7 @@ export async function engineSendText(
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+    .eq('account_id', args.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -271,6 +280,13 @@ export async function engineSendMedia(
   if (contactErr || !contact?.phone) {
     throw new Error('contact not found for this account')
   }
+
+  // A CONVERSA em que a mensagem vai ser gravada também tem de ser desta
+  // conta (upstream #589, GHSA-m4fx-g6pr-hrw8). O id vinha de confiança, e o
+  // `POST /api/automations/engine` copia o contexto do corpo: um admin de
+  // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
+  // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
+  await assertConversationInAccount(db, args.conversationId, args.accountId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
@@ -396,6 +412,7 @@ const preview = legendaFinal?.trim() || `[${args.kind}]`
       updated_at: new Date().toISOString(),
     })
     .eq('id', args.conversationId)
+    .eq('account_id', args.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }
@@ -477,6 +494,13 @@ async function sendInteractiveViaMeta(
   if (contactErr || !contact?.phone) {
     throw new Error('contact not found for this account')
   }
+
+  // A CONVERSA em que a mensagem vai ser gravada também tem de ser desta
+  // conta (upstream #589, GHSA-m4fx-g6pr-hrw8). O id vinha de confiança, e o
+  // `POST /api/automations/engine` copia o contexto do corpo: um admin de
+  // outra conta gravava mensagem no fio desta. Conferido ANTES do provedor —
+  // depois de a mensagem sair não há o que desfazer. Ver conversation-scope.ts.
+  await assertConversationInAccount(db, input.conversationId, input.accountId)
 
   // Ficha só do Instagram (989) não tem telefone — e o robô não responde no
   // Direct na v1 (D1). Dizer isso é melhor que "contact phone invalid: null".
@@ -622,6 +646,7 @@ async function sendInteractiveViaMeta(
       updated_at: new Date().toISOString(),
     })
     .eq('id', input.conversationId)
+    .eq('account_id', input.accountId)
 
   return { whatsapp_message_id: waMessageId }
 }

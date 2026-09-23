@@ -25,7 +25,7 @@ function resposta(status: number, location?: string): Response {
 // chamadas a cada teste.)
 describe('baixarUrlPublica — a URL do corpo do webhook não alcança a rede interna', () => {
   it('baixa a URL pública, com o redirecionamento em modo manual', async () => {
-    const fetchFn = vi.fn(async () => resposta(200));
+    const fetchFn = vi.fn<typeof fetch>(async () => resposta(200));
     const r = await baixarUrlPublica('https://cdn.publico/x', fetchFn as unknown as typeof fetch);
     expect(r.status).toBe(200);
     expect(fetchFn).toHaveBeenCalledTimes(1);

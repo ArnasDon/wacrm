@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Bot, FileText, ImageUp, Loader2, RotateCcw, SendHorizonal, Sparkles } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { useAuth } from "@/hooks/use-auth";
+import { KnowledgeSettings } from "@/components/settings-v2/knowledge-settings";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Field, Money, NativeSelect, PageHeader, Panel, StatusPill, inputCls, orderDisplayStatus, textareaCls } from "@/components/sales/kit";
@@ -331,6 +332,8 @@ export default function SalesRepPage() {
               </div>
             </div>
           </Panel>
+
+          <KnowledgeSettings />
 
           <Panel title="Checkout">
             <div className="grid gap-3 sm:grid-cols-2">

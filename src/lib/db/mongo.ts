@@ -115,5 +115,6 @@ async function ensureIndexes(db: Db): Promise<void> {
     db.collection('ai_providers').createIndex({ accountId: 1 }),
     db.collection('oauth_states').createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 }),
     db.collection('ai_runs').createIndex({ accountId: 1, createdAt: -1 }),
+    db.collection('knowledge_entries').createIndex({ accountId: 1, createdAt: 1 }),
   ])
 }

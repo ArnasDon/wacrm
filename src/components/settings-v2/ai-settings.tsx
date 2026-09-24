@@ -109,7 +109,7 @@ function AddDialog({ open, onOpenChange, onAdded }: { open: boolean; onOpenChang
               <PasswordInput autoComplete="off" className={inputCls} value={apiKey} onChange={(e) => setApiKey(e.target.value.trim())} />
             </Field>
           )}
-          <Field label="Model" hint={liveModels ? `${liveModels.length} models available for this key — type to search.` : "Type any model id, or load the provider's current list."}>
+          <Field label="Model" hint={liveModels ? `${liveModels.length} models listed — type to search, then Test: a catalogue can list models your key cannot call.` : "Type any model id, or load the provider's current list."}>
             <div className="flex gap-2">
               <input className={inputCls} list={`models-${preset.id}`} value={model} onChange={(e) => setModel(e.target.value.trim())} />
               <Button type="button" variant="outline" className="h-9 shrink-0 border-slate-700 bg-slate-900 text-slate-200" disabled={loadingModels || (preset.requiresKey && !apiKey)} onClick={loadLiveModels}>
@@ -151,7 +151,7 @@ export function AISettings() {
     try {
       const r = await api<{ models: string[] }>("/api/settings/ai-providers/models", { body: { providerId: p.id } });
       setLiveModels((cur) => ({ ...cur, [p.id]: r.models }));
-      toast.success(`${r.models.length} models available for this key`);
+      toast.success(`${r.models.length} models listed — press Test to confirm the one you pick works`);
       if (!r.models.includes(p.model)) toast.warning(`"${p.model}" is not in the list — pick a current model`);
     } catch (e) {
       setResults((cur) => ({ ...cur, [p.id]: (e as Error).message }));

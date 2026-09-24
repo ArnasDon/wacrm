@@ -119,6 +119,21 @@ export interface WhatsAppConfigDoc extends ScopedDoc {
   lastWebhookErrorAt: Date | null
 }
 
+// ---------- knowledge base ----------
+
+/**
+ * Things the sales rep should know that aren't products: turnaround,
+ * revisions, opening hours, delivery areas, refund policy. Injected
+ * into the AI prompt so the rep answers instead of handing off.
+ */
+export interface KnowledgeDoc extends ScopedDoc {
+  /** What a customer asks, in their words. */
+  question: string
+  /** The answer the rep may give, verbatim facts only. */
+  answer: string
+  isActive: boolean
+}
+
 export interface ContactDoc extends ScopedDoc {
   phone: string
   name: string | null

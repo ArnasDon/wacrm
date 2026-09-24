@@ -68,9 +68,22 @@ function httpError(status: number, bodyText: string, model: string): AIProviderE
   const detail = providerErrorDetail(bodyText)
   const withDetail = (base: string) => (detail ? `${base} — ${detail}` : base)
   if (status === 401 || status === 403) return new AIProviderError(withDetail(`Invalid or unauthorised API key (${status})`))
-  if (status === 404 || status === 410) {
+  if (status === 410) {
     return new AIProviderError(
-      withDetail(`Model "${model}" is not available (${status}${status === 410 ? ' Gone — the provider retired it' : ''}). Click "Load models" and pick a current one`),
+      withDetail(`Model "${model}" is not available (410 Gone — the provider retired it). Click "Load models" and pick a current one`),
+    )
+  }
+  if (status === 404) {
+    // NVIDIA answers "Not found for account 'x'" for models that exist
+    // in its catalogue but aren't enabled for this key — telling people
+    // to reload the list would send them round in circles.
+    const notEntitled = /for account/i.test(detail)
+    return new AIProviderError(
+      withDetail(
+        notEntitled
+          ? `Model "${model}" exists but is not enabled for your API key (404). Pick a different model and press Test — a provider's catalogue can list models your account cannot call`
+          : `Model "${model}" was not found (404). Check the spelling, or click "Load models" and pick one from the list`,
+      ),
     )
   }
   if (status === 429) return new AIProviderError(withDetail('Rate limit or quota reached (429)'))
@@ -233,28 +246,42 @@ async function openAICompatibleGenerate(
     }
   }
 
+  const readChoice = (text: string) => {
+    let json: { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }> }
+    try {
+      json = JSON.parse(text)
+    } catch {
+      throw new AIProviderError(`Provider returned something that isn't JSON: ${text.slice(0, 200)}`)
+    }
+    const choice = json.choices?.[0]
+    return { content: choice?.message?.content ?? '', finish: choice?.finish_reason }
+  }
+
   let res = await call(true)
-  // Some servers reject response_format — retry once without it.
+  // Some servers reject response_format outright — retry once without it.
   if (res.status === 400) res = await call(false)
   if (!res.ok) throw httpError(res.status, res.text, provider.model)
 
-  let json: { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }> }
-  try {
-    json = JSON.parse(res.text)
-  } catch {
-    throw new AIProviderError(`Provider returned something that isn't JSON: ${res.text.slice(0, 200)}`)
+  let choice = readChoice(res.text)
+  // … and some answer 200 with an empty message instead. NVIDIA's
+  // gpt-oss does this as soon as the conversation has an assistant turn
+  // in it, which made the rep able to answer only the first message of
+  // a chat. Tokens were generated and thrown away, so a plain retry
+  // without JSON mode gets the answer.
+  if (!choice.content && choice.finish !== 'length') {
+    const retry = await call(false)
+    if (retry.ok) choice = readChoice(retry.text)
   }
-  const choice = json.choices?.[0]
-  const content = choice?.message?.content
-  if (!content) {
-    if (choice?.finish_reason === 'length') {
+
+  if (!choice.content) {
+    if (choice.finish === 'length') {
       throw new AIProviderError(
         `Model "${provider.model}" used its whole token budget thinking and returned no answer — choose a faster / non-reasoning model`,
       )
     }
     throw new AIProviderError(`Empty response from "${provider.model}"`)
   }
-  return content
+  return choice.content
 }
 
 // ------------------------------------------------------------

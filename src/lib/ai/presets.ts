@@ -127,16 +127,13 @@ export const AI_PRESETS: AIPreset[] = [
     baseUrl: 'https://integrate.api.nvidia.com/v1',
     customBaseUrl: false,
     requiresKey: true,
-    // Checked against the live catalogue; availability varies per
-    // account — "Load models" in Settings shows what YOUR key can use.
+    // NVIDIA's catalogue lists far more models than any one key may
+    // call, and the big reasoning models queue for minutes on the free
+    // tier — too slow for a live WhatsApp reply. Only models verified
+    // to answer a structured request quickly are suggested here; the
+    // Test button is the real check.
     defaultModel: 'openai/gpt-oss-20b',
-    suggestedModels: [
-      'openai/gpt-oss-20b',
-      'nvidia/llama-3.1-nemotron-70b-instruct',
-      'nvidia/nemotron-3-super-120b-a12b',
-      'deepseek-ai/deepseek-v4-flash-0731',
-      'moonshotai/kimi-k3',
-    ],
+    suggestedModels: ['openai/gpt-oss-20b', 'nvidia/nemotron-3-super-120b-a12b'],
     keyHelpUrl: 'https://build.nvidia.com',
   },
   {

@@ -1,13 +1,15 @@
 /**
- * Quick lookup against `api.biodata_purchases` by mobile number, UTR,
- * or payment (transaction) id — backs the inbox's order-search dialog
- * so an agent can pull up a purchase without leaving the CRM.
+ * Quick lookup against the production biodata orders API (AWS Lambda +
+ * DynamoDB — see `aws-biodata-migration`'s GET /order-search) by mobile
+ * number, UTR, or payment (transaction) id — backs the inbox's
+ * order-search dialog so an agent can pull up a purchase without leaving
+ * the CRM. Replaced the legacy PHP-era Postgres `api.biodata_purchases`
+ * database this used to query directly.
  */
 
-import { withOrdersClient } from "@/lib/orders/pg";
+import { fetchOrderSearch } from "@/lib/orders/api";
 
 export interface OrderSearchResult {
-  id: number;
   transactionId: string | null;
   utr: string | null;
   mobile: string | null;
@@ -21,68 +23,21 @@ export interface OrderSearchResult {
   createdOn: string;
 }
 
-const MAX_RESULTS = 20;
-
 /**
- * Universal partial search across `transaction_id`, `utr_rrn_id`, and
- * `mobile` (case-insensitive substring on the text columns;
- * digits-only substring on mobile so formatting/country-code
- * differences don't matter) — so an agent can search with any
- * fragment of a payment id, UTR, or phone number.
+ * Universal partial search across transaction id, UTR, and mobile number
+ * — so an agent can search with any fragment of a payment id, UTR, or
+ * phone number. Any API/network error returns no results rather than
+ * throwing, matching the old direct-DB behavior.
  */
 export async function searchOrders(query: string): Promise<OrderSearchResult[]> {
   const trimmed = query.trim();
   if (!trimmed) return [];
 
-  const digits = trimmed.replace(/\D/g, "");
-
-  interface Row {
-    id: number;
-    transaction_id: string | null;
-    utr_rrn_id: string | null;
-    mobile: string | null;
-    person_name: string | null;
-    email: string | null;
-    amount: string | null;
-    site: string | null;
-    type: string | null;
-    template: string | null;
-    downloaded: number | null;
-    created_on: string;
-  }
-
   try {
-    const { rows } = await withOrdersClient((client) =>
-      client.query<Row>(
-        `SELECT id, transaction_id, utr_rrn_id, mobile, person_name, email,
-                amount, site, type, template, downloaded, created_on
-         FROM api.biodata_purchases
-         WHERE (length($2) >= 4 AND regexp_replace(mobile, '\\D', '', 'g') ILIKE '%' || $2 || '%')
-            OR transaction_id ILIKE $1
-            OR utr_rrn_id ILIKE $1
-         ORDER BY created_on DESC
-         LIMIT ${MAX_RESULTS}`,
-        [`%${trimmed}%`, digits],
-      ),
-    );
-
-    return rows.map((r) => ({
-      id: r.id,
-      transactionId: r.transaction_id,
-      utr: r.utr_rrn_id,
-      mobile: r.mobile,
-      personName: r.person_name,
-      email: r.email,
-      amount: r.amount,
-      site: r.site,
-      type: r.type,
-      template: r.template,
-      downloaded: r.downloaded ?? 0,
-      createdOn: r.created_on,
-    }));
+    return await fetchOrderSearch(trimmed);
   } catch (err) {
     console.error(
-      "[order-search] query failed:",
+      "[order-search] request failed:",
       err instanceof Error ? err.message : err,
     );
     return [];

@@ -19,5 +19,11 @@
 	},
 	"cache": {
 		"enabled": true
-	}
+	},
+	"hyperdrive": [
+		{
+			"binding": "ORDERS_HYPERDRIVE",
+			"id": "ef5ded6798064da9bd88c866680fb83e"
+		}
+	]
 }

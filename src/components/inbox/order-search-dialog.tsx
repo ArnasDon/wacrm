@@ -44,6 +44,7 @@ const ORDER_FOUND_TEMPLATE_IMAGE_URL =
   "https://iywfneckeyuluzucnaut.supabase.co/storage/v1/object/public/flow-media/account-4167268b-0207-4912-87ac-23c9cf476371/1785951591780-support-page-guide.jpg";
 
 interface OrderSearchResult {
+  id: number;
   transactionId: string | null;
   utr: string | null;
   mobile: string | null;
@@ -350,7 +351,7 @@ export function OrderSearchDialog({
               {!searching &&
                 results.map((r) => (
                   <button
-                    key={r.transactionId ?? r.createdOn}
+                    key={r.id}
                     type="button"
                     onClick={() => setSelected(r)}
                     className="w-full rounded-lg border border-border bg-muted/40 p-3 text-left transition-colors hover:bg-muted"

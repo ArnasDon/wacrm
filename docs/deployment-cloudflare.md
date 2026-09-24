@@ -14,7 +14,11 @@ Keep these encrypted as secrets:
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `ENCRYPTION_KEY`
 - `META_APP_SECRET`
-- `ORDERS_API_KEY`
+- `ORDERS_PG_PASSWORD`
+- `ORDERS_PG_HOST`
+- `ORDERS_PG_PORT`
+- `ORDERS_PG_DBNAME`
+- `ORDERS_PG_USER`
 
 Add the public/runtime values as variables:
 
@@ -22,7 +26,6 @@ Add the public/runtime values as variables:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `NEXT_PUBLIC_SITE_URL`
 - `NEXT_PUBLIC_APP_LOCALE`
-- `ORDERS_API_URL` (optional — defaults to `https://api.marriagebiodata.site`)
 
 Add optional variables only when the related feature is enabled. Never commit
 `.env.local` or secret values.

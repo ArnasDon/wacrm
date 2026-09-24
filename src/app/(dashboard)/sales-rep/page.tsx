@@ -236,8 +236,11 @@ export default function SalesRepPage() {
         approvalThreshold: money.approvalThreshold || 0,
       };
       const d = await api<{ salesAgent: SalesAgent }>("/api/settings/sales-agent", { method: "PATCH", body });
-      setS(d.salesAgent);
-      setDirty(false);
+      // A partial save (the On/Off switch) must not overwrite edits the
+      // user has made but not saved yet — reverting them silently is how
+      // you end up with a rep that is "on" but still in the old mode.
+      setS((cur) => (patch && cur ? { ...cur, ...patch } : d.salesAgent));
+      if (!patch) setDirty(false);
       toast.success("Sales rep updated");
     } catch (e) {
       toast.error((e as Error).message);
@@ -288,13 +291,20 @@ export default function SalesRepPage() {
                     No AI provider yet. <Link href="/settings?tab=ai" className="underline">Add an API key</Link> (Claude, OpenAI, Gemini, Kimi, NVIDIA, Groq, or free local models via Ollama).
                   </p>
                 ) : (
-                  <Field label="AI provider">
-                    <NativeSelect
-                      value={s.aiProviderId ?? ""}
-                      onChange={(v) => upd("aiProviderId", v || null)}
-                      options={[{ value: "", label: "Choose…" }, ...providers.map((p) => ({ value: p.id, label: `${p.label} · ${p.model}${p.lastTestOk === false ? " (last test failed)" : ""}` }))]}
-                    />
-                  </Field>
+                  <>
+                    <Field label="AI provider">
+                      <NativeSelect
+                        value={s.aiProviderId ?? ""}
+                        onChange={(v) => upd("aiProviderId", v || null)}
+                        options={[{ value: "", label: "Choose…" }, ...providers.map((p) => ({ value: p.id, label: `${p.label} · ${p.model}${p.lastTestOk === false ? " (last test failed)" : ""}` }))]}
+                      />
+                    </Field>
+                    {!s.aiProviderId && (
+                      <p className="mt-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
+                        Pick a provider — until you do, the rep falls back to rules and only answers price requests and clear orders.
+                      </p>
+                    )}
+                  </>
                 )}
               </div>
             )}

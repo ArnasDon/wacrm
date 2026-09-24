@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, Bot, Boxes, FileCheck2, MessageSquare, Receipt } from "lucide-react";
+import { AlertTriangle, ArrowRight, Bot, BotOff, Boxes, FileCheck2, MessageSquare, Receipt } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { formatMoney } from "@/lib/money";
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ interface Summary {
   currency: string;
   salesAgentEnabled: boolean;
   salesAgentMode: "ai" | "rules";
+  aiAlert: { kind: "quota" | "auth" | "model" | "timeout" | "other"; message: string; at: string; failures: number } | null;
   kpis: {
     revenueToday: number;
     revenue7d: number;
@@ -35,6 +36,33 @@ interface Summary {
     payment: { status: string };
   }>;
 }
+
+type AIAlertKind = NonNullable<Summary["aiAlert"]>["kind"];
+
+// What a merchant needs to know when the rep stops answering: whether
+// customers are going unanswered, and what they can do about it now.
+const AI_ALERT: Record<AIAlertKind, { title: string; fix: string }> = {
+  quota: {
+    title: "The AI sales rep has used up its tokens",
+    fix: "Customers are not getting replies. Answer them from the Inbox until the quota resets, or add credit / switch provider in Settings.",
+  },
+  auth: {
+    title: "The AI sales rep's API key was rejected",
+    fix: "Customers are not getting replies. Answer them from the Inbox, and fix the key in Settings → AI providers.",
+  },
+  model: {
+    title: "The AI sales rep's model is unavailable",
+    fix: "Customers are not getting replies. Pick another model in Settings → AI providers, and cover the Inbox meanwhile.",
+  },
+  timeout: {
+    title: "The AI sales rep is too slow to answer",
+    fix: "Replies are timing out. Switch to a faster model in Settings → AI providers, and answer waiting customers from the Inbox.",
+  },
+  other: {
+    title: "The AI sales rep could not answer the last message",
+    fix: "Check the Inbox in case a customer is waiting.",
+  },
+};
 
 function RevenueChart({ series, currency }: { series: Summary["series"]; currency: string }) {
   const max = Math.max(...series.map((d) => d.revenue), 1);
@@ -118,6 +146,25 @@ export default function DashboardPage() {
           </Link>
         }
       />
+
+      {data.aiAlert && (
+        <div className="mb-4 rounded-lg border border-red-500/30 bg-red-500/5 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <BotOff className="mt-0.5 size-4 shrink-0 text-red-300" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-medium text-red-200">{AI_ALERT[data.aiAlert.kind].title}</p>
+              <p className="mt-0.5 text-xs text-red-200/80">{AI_ALERT[data.aiAlert.kind].fix}</p>
+              <p className="mt-1 text-[11px] break-words text-slate-400">
+                {data.aiAlert.message} · {timeAgo(data.aiAlert.at)}
+                {data.aiAlert.failures > 1 ? ` · ${data.aiAlert.failures} failed replies in 24h` : ""}
+              </p>
+            </div>
+            <Link href="/inbox" className="shrink-0 text-xs text-red-200 underline hover:text-white">
+              Open Inbox
+            </Link>
+          </div>
+        </div>
+      )}
 
       {attention.length > 0 && (
         <div className="mb-4 flex flex-col gap-2">

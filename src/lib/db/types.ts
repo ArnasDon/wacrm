@@ -16,6 +16,14 @@ export interface AccountDoc {
   currency: string
   business: BusinessProfile
   salesAgent: SalesAgentSettings
+  /**
+   * Free-text description of the business for the sales rep to talk
+   * from — what it does, how it works, what makes it different. Written
+   * on the AI Sales Rep page; only the knowledge route writes it, so no
+   * other bulk save can clobber it. Absent on accounts made before it
+   * existed, hence the optional marker.
+   */
+  knowledgeAbout?: string
   createdAt: Date
   updatedAt: Date
 }
@@ -388,6 +396,8 @@ export interface AIRunDoc extends ScopedDoc {
   latencyMs: number
   actions: string[]
   error: string | null
+  /** Why it failed, so the dashboard can tell "out of tokens" from "wrong key". */
+  errorKind?: 'quota' | 'auth' | 'model' | 'timeout' | 'other'
 }
 
 // ---------- notifications ----------

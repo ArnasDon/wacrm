@@ -16,6 +16,12 @@ interface Entry {
   isActive: boolean;
 }
 
+const ABOUT_PLACEHOLDER = `Who you are and what you do — write it the way you would explain the business to a new staff member, because that is what the rep reads.
+
+Trinity Concept is a graphic design studio in Abuja. We design logos, full brand identities, flyers, social media posts and packaging, mostly for small businesses and event planners.
+
+We work brief-first: you tell us what the business does and who it is for, we send concepts, you pick one.`;
+
 // Starters worth having on day one — one tap fills the form, the
 // merchant still writes the answer in their own words.
 const SUGGESTIONS = [
@@ -30,13 +36,32 @@ const SUGGESTIONS = [
 export function KnowledgeSettings() {
   const { canEditSettings } = useAuth();
   const [entries, setEntries] = useState<Entry[] | null>(null);
+  const [about, setAbout] = useState("");
+  const [savedAbout, setSavedAbout] = useState("");
   const [draft, setDraft] = useState({ question: "", answer: "" });
   const [busy, setBusy] = useState<string | null>(null);
 
   const load = () =>
-    api<{ entries: Entry[] }>("/api/settings/knowledge")
-      .then((d) => setEntries(d.entries))
+    api<{ about: string; entries: Entry[] }>("/api/settings/knowledge")
+      .then((d) => {
+        setEntries(d.entries);
+        setAbout(d.about);
+        setSavedAbout(d.about);
+      })
       .catch((e) => toast.error(e.message));
+
+  const saveAbout = async () => {
+    setBusy("about");
+    try {
+      const d = await api<{ about: string }>("/api/settings/knowledge", { method: "PUT", body: { about } });
+      setSavedAbout(d.about);
+      toast.success("Saved — the rep can talk about your business now");
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(null);
+    }
+  };
 
   useEffect(() => {
     void load();
@@ -85,13 +110,35 @@ export function KnowledgeSettings() {
   return (
     <Panel
       title="Knowledge base"
-      description="Questions customers ask that aren't about price: delivery, how long things take, opening hours, returns. The rep answers from these word for word, and hands the chat to a person when the answer isn't here."
+      description="Everything the rep should know that isn't a product. Describe the business in your own words, then add short answers to the questions customers keep asking. The rep only knows what is here — anything missing becomes a handoff to a person."
     >
+      <div className="mb-5">
+        <Field label="About the business" hint={`${about.length} / 4000 characters. The rep talks from this — what you do, how you work, anything a customer might ask.`}>
+          <textarea
+            className={`${textareaCls} min-h-[180px]`}
+            maxLength={4000}
+            placeholder={ABOUT_PLACEHOLDER}
+            value={about}
+            disabled={!canEditSettings}
+            onChange={(e) => setAbout(e.target.value)}
+          />
+        </Field>
+        {canEditSettings && (
+          <div className="mt-2 flex items-center justify-end gap-3">
+            {about !== savedAbout && <span className="text-[11px] text-amber-300">Unsaved</span>}
+            <Button variant="outline" className="border-slate-700" disabled={busy === "about" || about === savedAbout} onClick={() => void saveAbout()}>
+              {busy === "about" ? <Loader2 className="size-4 animate-spin" /> : null} Save description
+            </Button>
+          </div>
+        )}
+      </div>
+
+      <p className="mb-2 text-xs font-medium tracking-wide text-slate-400 uppercase">Quick answers</p>
       {entries === null ? (
         <div className="h-20 animate-pulse rounded-lg bg-slate-800/50" />
       ) : entries.length === 0 ? (
         <p className="text-sm text-slate-400">
-          Nothing saved yet — the rep will hand over every question it can&apos;t answer from your inventory.
+          No quick answers yet — add the ones customers ask over and over, like delivery or opening hours.
         </p>
       ) : (
         <ul className="space-y-2">

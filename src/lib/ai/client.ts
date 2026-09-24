@@ -31,10 +31,19 @@ export interface GenerateJSONInput {
   maxTokens?: number
 }
 
+/**
+ * Why a call failed, in terms the dashboard can act on: 'quota' means
+ * the merchant has run out of tokens/credits for now and a human has to
+ * answer customers until it resets.
+ */
+export type AIErrorKind = 'quota' | 'auth' | 'model' | 'timeout' | 'other'
+
 export class AIProviderError extends Error {
-  constructor(message: string) {
+  readonly kind: AIErrorKind
+  constructor(message: string, kind: AIErrorKind = 'other') {
     super(message)
     this.name = 'AIProviderError'
+    this.kind = kind
   }
 }
 
@@ -67,10 +76,14 @@ export function providerErrorDetail(bodyText: string): string {
 function httpError(status: number, bodyText: string, model: string): AIProviderError {
   const detail = providerErrorDetail(bodyText)
   const withDetail = (base: string) => (detail ? `${base} — ${detail}` : base)
-  if (status === 401 || status === 403) return new AIProviderError(withDetail(`Invalid or unauthorised API key (${status})`))
+  if (status === 401 || status === 403) return new AIProviderError(withDetail(`Invalid or unauthorised API key (${status})`), 'auth')
+  if (status === 402) {
+    return new AIProviderError(withDetail('Out of credits with this provider (402) — top up or switch provider'), 'quota')
+  }
   if (status === 410) {
     return new AIProviderError(
       withDetail(`Model "${model}" is not available (410 Gone — the provider retired it). Click "Load models" and pick a current one`),
+      'model',
     )
   }
   if (status === 404) {
@@ -84,9 +97,15 @@ function httpError(status: number, bodyText: string, model: string): AIProviderE
           ? `Model "${model}" exists but is not enabled for your API key (404). Pick a different model and press Test — a provider's catalogue can list models your account cannot call`
           : `Model "${model}" was not found (404). Check the spelling, or click "Load models" and pick one from the list`,
       ),
+      'model',
     )
   }
-  if (status === 429) return new AIProviderError(withDetail('Rate limit or quota reached (429)'))
+  if (status === 429) {
+    return new AIProviderError(
+      withDetail("Rate limit or daily quota reached (429) — the provider won't answer again until it resets"),
+      'quota',
+    )
+  }
   return new AIProviderError(withDetail(`Provider error ${status}`))
 }
 
@@ -101,6 +120,7 @@ function transportError(err: unknown, model: string): AIProviderError {
     if (/timed out/i.test(err.message)) {
       return new AIProviderError(
         `"${model}" didn't answer within ${CHAT_TIMEOUT_MS / 1000}s — the provider is overloaded or the model is too slow for live chat. Try a smaller / faster model`,
+        'timeout',
       )
     }
     return new AIProviderError(`Blocked: ${err.message}`)

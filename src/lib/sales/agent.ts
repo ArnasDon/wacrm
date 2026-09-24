@@ -357,7 +357,10 @@ async function respondWithAI(
   let intent: Intent | null = null
   try {
     const entries = await scopedCollection<KnowledgeDoc>(ctx, 'knowledge_entries')
-    const knowledge = knowledgeBaseText(await entries.find({ isActive: true }).sort({ createdAt: 1 }).limit(MAX_ENTRIES).toArray())
+    const knowledge = knowledgeBaseText(
+      account.knowledgeAbout,
+      await entries.find({ isActive: true }).sort({ createdAt: 1 }).limit(MAX_ENTRIES).toArray(),
+    )
     const raw = await generateJSON(provider, {
       system: buildSystemPrompt(account, catalog, openOrder, knowledge),
       messages: turns,
@@ -373,6 +376,7 @@ async function respondWithAI(
       latencyMs: Date.now() - started,
       actions: [],
       error: err instanceof AIProviderError ? err.message : 'AI call failed',
+      errorKind: err instanceof AIProviderError ? err.kind : 'other',
     })
     return false
   }

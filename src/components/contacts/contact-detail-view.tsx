@@ -9,10 +9,8 @@ import { toast } from 'sonner';
 import type {
   Contact,
   Tag,
-  ContactTag,
   ContactNote,
   CustomField,
-  ContactCustomValue,
   Deal,
   MessageTemplate,
 } from '@/types';
@@ -33,8 +31,6 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Phone,
   Mail,
@@ -45,7 +41,6 @@ import {
   Plus,
   Trash2,
   Save,
-  X,
   DollarSign,
   LayoutTemplate,
 } from 'lucide-react';
@@ -789,192 +784,38 @@ export function ContactDetailView({
                 </section>
               </div>
 
-              {/* Desktop Tabs */}
+              {/* Desktop Tabs — hidden on mobile to avoid double-rendering
+                  all content sections. The mobile stacked view above handles
+                  the <md breakpoint instead. */}
               <Tabs
                 defaultValue="details"
-                className="flex min-h-0 flex-1 flex-col"
+                className="hidden md:flex min-h-0 flex-1 flex-col"
               >
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsList className="bg-muted/50 border-border mx-4 mt-3 border-b">
-    
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsTrigger
                     value="details"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.details')}
                   </TabsTrigger>
-    
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsTrigger
                     value="tags"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.tags')}
                   </TabsTrigger>
-    
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsTrigger
                     value="notes"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.notes')}
                   </TabsTrigger>
-    
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsTrigger
                     value="custom"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
                   >
                     {t('tabs.custom')}
                   </TabsTrigger>
-    
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsTrigger
                     value="deals"
                     className="data-active:bg-muted data-active:text-primary text-muted-foreground"
@@ -984,32 +825,6 @@ export function ContactDetailView({
                 </TabsList>
 
                 {/* Details Tab */}
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsContent
                   value="details"
                   className="flex-1 overflow-y-auto px-4 py-3"
@@ -1018,32 +833,6 @@ export function ContactDetailView({
                 </TabsContent>
 
                 {/* Tags Tab */}
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsContent
                   value="tags"
                   className="flex-1 overflow-y-auto px-4 py-3"
@@ -1052,32 +841,6 @@ export function ContactDetailView({
                 </TabsContent>
 
                 {/* Notes Tab */}
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsContent
                   value="notes"
                   className="flex min-h-0 flex-1 flex-col px-4 py-3"
@@ -1086,32 +849,6 @@ export function ContactDetailView({
                 </TabsContent>
 
                 {/* Custom Fields Tab */}
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsContent
                   value="custom"
                   className="flex-1 overflow-y-auto px-4 py-3"
@@ -1120,32 +857,6 @@ export function ContactDetailView({
                 </TabsContent>
 
                 {/* Deals Tab */}
-  
-              {/* Mobile Inline View */}
-              <div className="md:hidden flex flex-col gap-6 p-4 overflow-y-auto">
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.details')}</h3>
-                  {detailsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.tags')}</h3>
-                  {tagsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.notes')}</h3>
-                  {notesContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.deals')}</h3>
-                  {dealsContent}
-                </section>
-                <section>
-                  <h3 className="font-semibold text-foreground mb-3">{t('tabs.custom')}</h3>
-                  {customContent}
-                </section>
-              </div>
-
-              {/* Desktop Tabs */}
               <TabsContent
                   value="deals"
                   className="flex-1 overflow-y-auto px-4 py-3"

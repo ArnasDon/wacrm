@@ -27,7 +27,13 @@ function initials(name?: string, fallback?: string) {
   return source.charAt(0).toUpperCase();
 }
 
-export function DealCard({ deal, stage, onEdit, onMove, isOverlay }: DealCardProps) {
+export function DealCard({
+  deal,
+  stage,
+  onEdit,
+  onMove,
+  isOverlay,
+}: DealCardProps) {
   const t = useTranslations('Pipelines.card');
   const contactLabel =
     deal.contact?.name || deal.contact?.phone || t('noContact');
@@ -64,7 +70,7 @@ export function DealCard({ deal, stage, onEdit, onMove, isOverlay }: DealCardPro
                 e.stopPropagation();
                 onMove(deal);
               }}
-              className="text-muted-foreground bg-background/80 hover:bg-background border border-border/50 rounded-md p-1 cursor-pointer"
+              className="text-muted-foreground bg-background/80 hover:bg-background border-border/50 cursor-pointer rounded-md border p-1"
             >
               <ArrowRightLeft className="h-3 w-3" />
             </div>

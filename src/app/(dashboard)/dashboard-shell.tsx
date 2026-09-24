@@ -38,7 +38,9 @@ function MobileHeader() {
   const t = useTranslations('Header');
   const pathname = usePathname();
   const titleKey = getPageTitleKey(pathname);
-  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+  {
+    /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
+  }
   return <TopAppBar title={t(titleKey as any)} className="md:hidden" />;
 }
 
@@ -83,18 +85,18 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
       {/* Desktop alerts for new customer messages (opt-in via Settings →
           Your profile). Headless — renders nothing. */}
       <BrowserNotificationsListener />
-      
+
       <Sidebar open={sidebarOpen} onClose={closeSidebar} />
-      
-      <div className="flex flex-1 flex-col overflow-hidden relative">
+
+      <div className="relative flex flex-1 flex-col overflow-hidden">
         <MobileHeader />
         <div className="hidden md:block">
           <Header onOpenSidebar={() => setSidebarOpen(true)} />
         </div>
-        
+
         {/* Thinner horizontal padding on mobile so cards have room to breathe.
             Add bottom padding on mobile to account for the bottom nav. */}
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 pb-20 md:pb-6">
+        <main className="flex-1 overflow-y-auto p-4 pb-20 sm:p-6 md:pb-6">
           {/* Above every page: writes are being rejected and here's why.
               Renders nothing unless the account/role failed to resolve. */}
           <AccountAccessAlert />

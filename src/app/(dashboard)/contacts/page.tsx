@@ -388,7 +388,7 @@ export default function ContactsPage() {
       </div>
 
       {/* Search + tag filter */}
-      <div className="sticky top-0 z-10 bg-background/95 backdrop-blur py-2 space-y-2 -mx-4 px-4 sm:mx-0 sm:px-0 sm:py-0 sm:static sm:bg-transparent">
+      <div className="bg-background/95 sticky top-0 z-10 -mx-4 space-y-2 px-4 py-2 backdrop-blur sm:static sm:mx-0 sm:bg-transparent sm:px-0 sm:py-0">
         <div className="flex flex-col gap-2 sm:flex-row">
           <div className="relative w-full max-w-sm">
             <Search className="text-muted-foreground absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
@@ -531,9 +531,9 @@ export default function ContactsPage() {
       )}
 
       {/* Mobile List View */}
-      <div className="md:hidden space-y-3">
+      <div className="space-y-3 md:hidden">
         {loading ? (
-          <div className="flex flex-col items-center justify-center py-12 gap-2">
+          <div className="flex flex-col items-center justify-center gap-2 py-12">
             <Loader2 className="text-primary size-6 animate-spin" />
             <p className="text-muted-foreground text-sm">{t('loading')}</p>
           </div>
@@ -561,15 +561,15 @@ export default function ContactsPage() {
           contacts.map((contact) => (
             <div
               key={contact.id}
-              className="relative overflow-hidden rounded-lg border border-border bg-card"
+              className="border-border bg-card relative overflow-hidden rounded-lg border"
             >
               <div
-                className="flex w-full overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
+                className="flex w-full snap-x snap-mandatory overflow-x-auto [&::-webkit-scrollbar]:hidden"
                 style={{ scrollbarWidth: 'none' }}
               >
                 {/* Main Content */}
                 <div
-                  className="w-full flex-none snap-start p-3 bg-card flex items-center gap-3 cursor-pointer"
+                  className="bg-card flex w-full flex-none cursor-pointer snap-start items-center gap-3 p-3"
                   onClick={() => openDetail(contact.id)}
                 >
                   <Checkbox
@@ -578,20 +578,24 @@ export default function ContactsPage() {
                     onClick={(e) => e.stopPropagation()}
                     aria-label={`Select ${contact.name || contact.phone}`}
                   />
-                  <div className="bg-muted border border-border size-10 rounded-full flex items-center justify-center shrink-0">
+                  <div className="bg-muted border-border flex size-10 shrink-0 items-center justify-center rounded-full border">
                     <span className="text-primary text-xs font-medium">
                       {(contact.name || '?').charAt(0).toUpperCase()}
                     </span>
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-foreground text-sm font-medium truncate">
-                      {contact.name || <span className="text-muted-foreground italic">{t('unnamed')}</span>}
+                  <div className="min-w-0 flex-1">
+                    <p className="text-foreground truncate text-sm font-medium">
+                      {contact.name || (
+                        <span className="text-muted-foreground italic">
+                          {t('unnamed')}
+                        </span>
+                      )}
                     </p>
-                    <p className="text-muted-foreground text-xs truncate">
+                    <p className="text-muted-foreground truncate text-xs">
                       {contact.phone}
                     </p>
                     {contact.tags && contact.tags.length > 0 && (
-                      <div className="flex flex-wrap gap-1 mt-1.5">
+                      <div className="mt-1.5 flex flex-wrap gap-1">
                         {contact.tags.slice(0, 3).map((tag) => (
                           <span
                             key={tag.id}
@@ -609,20 +613,20 @@ export default function ContactsPage() {
                   </div>
                 </div>
                 {/* Swipe Actions */}
-                <div className="flex flex-none snap-end divide-x divide-border">
+                <div className="divide-border flex flex-none snap-end divide-x">
                   <button
                     onClick={() => openEditForm(contact)}
-                    className="bg-muted px-4 hover:bg-muted/80 flex items-center justify-center transition-colors"
+                    className="bg-muted hover:bg-muted/80 flex items-center justify-center px-4 transition-colors"
                     aria-label={t('editAction')}
                   >
-                    <Pencil className="size-4 text-foreground" />
+                    <Pencil className="text-foreground size-4" />
                   </button>
                   <button
                     onClick={() => confirmDelete(contact)}
-                    className="bg-destructive/10 px-4 hover:bg-destructive/20 flex items-center justify-center transition-colors"
+                    className="bg-destructive/10 hover:bg-destructive/20 flex items-center justify-center px-4 transition-colors"
                     aria-label={t('deleteAction')}
                   >
-                    <Trash2 className="size-4 text-destructive" />
+                    <Trash2 className="text-destructive size-4" />
                   </button>
                 </div>
               </div>
@@ -632,7 +636,7 @@ export default function ContactsPage() {
       </div>
 
       {/* Desktop Table View */}
-      <div className="hidden md:block border-border overflow-hidden rounded-lg border">
+      <div className="border-border hidden overflow-hidden rounded-lg border md:block">
         <Table>
           <TableHeader>
             <TableRow className="border-border hover:bg-transparent">

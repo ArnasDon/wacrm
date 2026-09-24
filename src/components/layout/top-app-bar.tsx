@@ -9,21 +9,33 @@ interface TopAppBarProps extends React.HTMLAttributes<HTMLDivElement> {
   rightAction?: React.ReactNode;
 }
 
-export function TopAppBar({ title, leftAction, rightAction, className, ...props }: TopAppBarProps) {
+export function TopAppBar({
+  title,
+  leftAction,
+  rightAction,
+  className,
+  ...props
+}: TopAppBarProps) {
   return (
     <header
       className={cn(
-        "flex items-center justify-between h-[calc(3.5rem+env(safe-area-inset-top))] pt-[env(safe-area-inset-top)] px-4 bg-background border-b border-border shrink-0 z-30",
+        'bg-background border-border z-30 flex h-[calc(3.5rem+env(safe-area-inset-top))] shrink-0 items-center justify-between border-b px-4 pt-[env(safe-area-inset-top)]',
         className
       )}
       {...props}
     >
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        {leftAction && <div className="shrink-0 flex items-center justify-center min-h-[44px] min-w-[44px] -ml-2">{leftAction}</div>}
-        {title && <h1 className="text-base font-semibold truncate flex-1">{title}</h1>}
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        {leftAction && (
+          <div className="-ml-2 flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center">
+            {leftAction}
+          </div>
+        )}
+        {title && (
+          <h1 className="flex-1 truncate text-base font-semibold">{title}</h1>
+        )}
       </div>
       {rightAction && (
-        <div className="flex items-center gap-2 shrink-0 min-h-[44px] justify-end -mr-2">
+        <div className="-mr-2 flex min-h-[44px] shrink-0 items-center justify-end gap-2">
           {rightAction}
         </div>
       )}

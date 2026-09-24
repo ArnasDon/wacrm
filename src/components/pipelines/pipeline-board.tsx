@@ -20,7 +20,12 @@ import { useAuth } from '@/hooks/use-auth';
 import { formatCurrency } from '@/lib/currency';
 import { useTranslations } from 'next-intl';
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 
 interface PipelineBoardProps {
   stages: PipelineStage[];
@@ -65,8 +70,8 @@ export function PipelineBoard({
   const activeDeal = activeDealId
     ? (deals.find((d) => d.id === activeDealId) ?? null)
     : null;
-    
-  const moveDeal = moveDealId ? deals.find(d => d.id === moveDealId) : null;
+
+  const moveDeal = moveDealId ? deals.find((d) => d.id === moveDealId) : null;
 
   function handleDragStart(event: DragStartEvent) {
     setActiveDealId(String(event.active.id));
@@ -100,7 +105,7 @@ export function PipelineBoard({
         onDragCancel={handleDragCancel}
       >
         {/* Desktop View (DndContext needs to wrap the layout) */}
-        <div className="hidden lg:flex pipeline-scroll snap-none gap-3 overflow-x-auto pb-4">
+        <div className="pipeline-scroll hidden snap-none gap-3 overflow-x-auto pb-4 lg:flex">
           {sortedStages.map((stage) => {
             const stageDeals = dealsByStage.get(stage.id) ?? [];
             const totalValue = stageDeals.reduce(
@@ -121,25 +126,28 @@ export function PipelineBoard({
             );
           })}
         </div>
-        
+
         {/* Mobile Tabs View */}
         <div className="lg:hidden">
           <Tabs defaultValue={sortedStages[0]?.id}>
-            <TabsList className="w-full flex h-auto overflow-x-auto [&::-webkit-scrollbar]:hidden snap-x snap-mandatory bg-transparent border-b border-border rounded-none p-0" style={{ scrollbarWidth: 'none' }}>
+            <TabsList
+              className="border-border flex h-auto w-full snap-x snap-mandatory overflow-x-auto rounded-none border-b bg-transparent p-0 [&::-webkit-scrollbar]:hidden"
+              style={{ scrollbarWidth: 'none' }}
+            >
               {sortedStages.map((s) => (
                 <TabsTrigger
                   key={s.id}
                   value={s.id}
-                  className="snap-start shrink-0 rounded-none border-b-2 border-transparent data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none px-4 py-2 text-sm font-medium transition-none"
+                  className="data-[state=active]:border-primary shrink-0 snap-start rounded-none border-b-2 border-transparent px-4 py-2 text-sm font-medium transition-none data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                 >
                   {s.name}
-                  <span className="ml-2 bg-muted text-muted-foreground rounded-full px-1.5 py-0.5 text-[10px]">
+                  <span className="bg-muted text-muted-foreground ml-2 rounded-full px-1.5 py-0.5 text-[10px]">
                     {dealsByStage.get(s.id)?.length || 0}
                   </span>
                 </TabsTrigger>
               ))}
             </TabsList>
-            
+
             {sortedStages.map((stage) => {
               const stageDeals = dealsByStage.get(stage.id) ?? [];
               const totalValue = stageDeals.reduce(
@@ -147,13 +155,18 @@ export function PipelineBoard({
                 0
               );
               return (
-                <TabsContent key={stage.id} value={stage.id} className="pt-4 space-y-3 outline-none">
+                <TabsContent
+                  key={stage.id}
+                  value={stage.id}
+                  className="space-y-3 pt-4 outline-none"
+                >
                   <div className="flex items-center justify-between">
                     <p className="text-muted-foreground text-xs font-medium">
-                      {t('totalValue')}: {formatCurrency(totalValue, defaultCurrency)}
+                      {t('totalValue')}:{' '}
+                      {formatCurrency(totalValue, defaultCurrency)}
                     </p>
                   </div>
-                  
+
                   {stageDeals.length === 0 ? (
                     <div className="border-border text-muted-foreground flex items-center justify-center rounded-lg border-2 border-dashed py-10 text-xs">
                       {t('dropDealHere')}
@@ -171,7 +184,7 @@ export function PipelineBoard({
                       ))}
                     </div>
                   )}
-                  
+
                   <Button
                     variant="ghost"
                     size="sm"
@@ -208,13 +221,19 @@ export function PipelineBoard({
         </DragOverlay>
       </DndContext>
 
-      <Sheet open={!!moveDealId} onOpenChange={(open) => !open && setMoveDealId(null)}>
-        <SheetContent side="bottom" className="bg-popover border-t border-border rounded-t-xl sm:max-w-md sm:mx-auto">
+      <Sheet
+        open={!!moveDealId}
+        onOpenChange={(open) => !open && setMoveDealId(null)}
+      >
+        <SheetContent
+          side="bottom"
+          className="bg-popover border-border rounded-t-xl border-t sm:mx-auto sm:max-w-md"
+        >
           <SheetHeader className="mb-4">
             <SheetTitle className="text-left">{t('moveToStage')}</SheetTitle>
           </SheetHeader>
           <div className="space-y-2">
-            {sortedStages.map(stage => {
+            {sortedStages.map((stage) => {
               const isActive = moveDeal?.stage_id === stage.id;
               return (
                 <button
@@ -225,20 +244,24 @@ export function PipelineBoard({
                     }
                     setMoveDealId(null);
                   }}
-                  className={`w-full flex items-center justify-between p-3 rounded-lg border transition-colors ${
-                    isActive 
-                      ? 'bg-primary/10 border-primary/20 text-primary cursor-default' 
+                  className={`flex w-full items-center justify-between rounded-lg border p-3 transition-colors ${
+                    isActive
+                      ? 'bg-primary/10 border-primary/20 text-primary cursor-default'
                       : 'bg-card border-border hover:bg-muted text-foreground'
                   }`}
                 >
                   <div className="flex items-center gap-3">
                     <span
-                      className="size-3 rounded-full shrink-0"
+                      className="size-3 shrink-0 rounded-full"
                       style={{ backgroundColor: stage.color }}
                     />
-                    <span className="font-medium text-sm">{stage.name}</span>
+                    <span className="text-sm font-medium">{stage.name}</span>
                   </div>
-                  {isActive && <span className="text-xs font-semibold">{t('currentStage')}</span>}
+                  {isActive && (
+                    <span className="text-xs font-semibold">
+                      {t('currentStage')}
+                    </span>
+                  )}
                 </button>
               );
             })}

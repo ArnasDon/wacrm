@@ -110,3 +110,86 @@ export async function syncMetaAdLeadToCrm(args: SyncMetaAdLeadArgs): Promise<voi
     )
   }
 }
+
+// ============================================================
+// Lead Ads: mesma disciplina one-way (EterWA → Twenty) e o mesmo
+// fail-safe de syncMetaAdLeadToCrm acima, mas disparado pela entrada
+// de um lead do formulário nativo da Meta (src/lib/meta/leads.ts),
+// não por uma conversa aberta por clique num anúncio Click to
+// WhatsApp. A pessoa entra no Twenty mesmo que nunca responda ao
+// template — é esse o ponto do formulário: o lead já deu o contacto,
+// não é preciso esperar por uma mensagem.
+//
+// Reaproveita createTwentyPerson tal e qual (nome + telefone, sem
+// Company — mesma razão documentada no cabeçalho deste ficheiro) e
+// marca `meta_leads.crm_person_id` com o mesmo padrão de reserva
+// atómica usado para `conversations.crm_person_id`, para que um
+// webhook redelivery nunca crie duas Pessoas para o mesmo lead.
+// ============================================================
+
+export interface SyncMetaLeadArgs {
+  db: SupabaseClient
+  accountId: string
+  metaLeadId: string
+  contactId: string
+}
+
+export async function syncMetaLeadToCrm(args: SyncMetaLeadArgs): Promise<void> {
+  const { db, accountId, metaLeadId, contactId } = args
+  try {
+    const { data: config, error: configErr } = await db
+      .from('ai_configs')
+      .select('crm_sync_enabled')
+      .eq('account_id', accountId)
+      .maybeSingle()
+    if (configErr) {
+      console.error(`[crm sync] falha a ler ai_configs (account=${accountId}):`, configErr.message)
+      return
+    }
+    if (!config?.crm_sync_enabled) return
+
+    const { data: lead, error: leadErr } = await db
+      .from('meta_leads')
+      .select('crm_person_id')
+      .eq('id', metaLeadId)
+      .maybeSingle()
+    if (leadErr) {
+      console.error(`[crm sync] falha a ler meta_leads (lead=${metaLeadId}):`, leadErr.message)
+      return
+    }
+    if (lead?.crm_person_id) return // já sincronizado (ou retry a perder a corrida)
+
+    const { data: contact, error: contactErr } = await db
+      .from('contacts')
+      .select('name, phone')
+      .eq('id', contactId)
+      .maybeSingle()
+    if (contactErr || !contact) {
+      console.error(`[crm sync] falha a ler contacts (contact=${contactId}):`, contactErr?.message ?? 'não encontrado')
+      return
+    }
+
+    const person = await createTwentyPerson({ name: contact.name, phone: contact.phone })
+
+    const { data: claimed, error: claimErr } = await db
+      .from('meta_leads')
+      .update({ crm_person_id: person.id })
+      .eq('id', metaLeadId)
+      .is('crm_person_id', null)
+      .select('id')
+    if (claimErr) {
+      console.error(`[crm sync] falha a gravar crm_person_id (meta_lead=${metaLeadId}):`, claimErr.message)
+      return
+    }
+    if (!claimed || claimed.length === 0) {
+      console.warn(
+        `[crm sync] perdeu a corrida de criação (meta_lead=${metaLeadId}) — Twenty Person ${person.id} ficou órfã.`,
+      )
+    }
+  } catch (err) {
+    console.error(
+      `[crm sync] falhou lead ads (account=${accountId}, meta_lead=${metaLeadId}):`,
+      err instanceof Error ? err.message : String(err),
+    )
+  }
+}

@@ -8,14 +8,23 @@ import { getDb } from './mongo'
 // accountId in advance.
 // ============================================================
 
-/** Webhook routing: which account owns this WhatsApp number? */
-export async function findAccountIdByPhoneNumberId(phoneNumberId: string): Promise<string | null> {
+/**
+ * Webhook routing: which account owns this WhatsApp number, and which
+ * app secret signs its webhooks? Both are needed before we can verify
+ * the signature, so this runs on an as-yet unauthenticated request —
+ * it therefore returns nothing but the routing facts.
+ */
+export async function findWebhookRouteByPhoneNumberId(
+  phoneNumberId: string,
+): Promise<{ accountId: string; appSecretEnc: string | null } | null> {
   if (typeof phoneNumberId !== 'string' || !phoneNumberId) return null
   const db = await getDb()
   const row = await db
-    .collection<{ _id: string; accountId: string; phoneNumberId: string }>('whatsapp_configs')
-    .findOne({ phoneNumberId }, { projection: { accountId: 1 } })
-  return row?.accountId ?? null
+    .collection<{ _id: string; accountId: string; phoneNumberId: string; appSecretEnc: string | null }>(
+      'whatsapp_configs',
+    )
+    .findOne({ phoneNumberId }, { projection: { accountId: 1, appSecretEnc: 1 } })
+  return row ? { accountId: row.accountId, appSecretEnc: row.appSecretEnc ?? null } : null
 }
 
 /** Config save: is this phone number already claimed by ANOTHER account? */

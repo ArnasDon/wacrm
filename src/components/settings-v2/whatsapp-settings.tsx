@@ -18,6 +18,21 @@ interface Status {
   displayPhone?: string | null;
   verifiedName?: string | null;
   hasVerifyToken?: boolean;
+  hasAppSecret?: boolean;
+  appSecretFromEnv?: boolean;
+  lastWebhookAt?: string | null;
+  lastWebhookError?: string | null;
+  lastWebhookErrorAt?: string | null;
+}
+
+function when(iso: string | null | undefined): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (mins < 1) return "just now";
+  if (mins < 60) return `${mins} min ago`;
+  if (mins < 60 * 24) return `${Math.round(mins / 60)} h ago`;
+  return d.toLocaleString();
 }
 
 function copy(text: string) {
@@ -27,7 +42,7 @@ function copy(text: string) {
 export function WhatsAppSettings() {
   const { canEditSettings } = useAuth();
   const [status, setStatus] = useState<Status | null>(null);
-  const [form, setForm] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", pin: "" });
+  const [form, setForm] = useState({ phoneNumberId: "", wabaId: "", accessToken: "", appSecret: "", verifyToken: "", pin: "" });
   const [saving, setSaving] = useState(false);
   const webhookUrl = typeof window !== "undefined" ? `${window.location.origin}/api/whatsapp/webhook` : "";
 
@@ -42,7 +57,7 @@ export function WhatsAppSettings() {
       const d = await api<{ warnings: string[] }>("/api/whatsapp/config", { body: form });
       toast.success("WhatsApp connected");
       d.warnings.forEach((w) => toast.warning(w));
-      setForm({ phoneNumberId: "", wabaId: "", accessToken: "", verifyToken: "", pin: "" });
+      setForm({ phoneNumberId: "", wabaId: "", accessToken: "", appSecret: "", verifyToken: "", pin: "" });
       void load();
     } catch (e) {
       toast.error((e as Error).message);
@@ -83,7 +98,37 @@ export function WhatsAppSettings() {
           <input readOnly className={inputCls} value={webhookUrl} />
           <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-200" onClick={() => copy(webhookUrl)}><Copy className="size-4" /></Button>
         </div>
-        <p className="mt-2 text-[11px] text-slate-500">Meta must reach this URL over HTTPS, so it only works once the app is deployed (or tunnelled). The server also needs META_APP_SECRET set to verify message signatures.</p>
+        <p className="mt-2 text-[11px] text-slate-500">
+          Meta must reach this URL over HTTPS from the public internet. A <code>localhost</code> address will never receive
+          anything — deploy the app, or run a tunnel (e.g. <code>cloudflared tunnel --url http://localhost:3000</code>) and paste
+          the tunnel’s URL into Meta instead.
+        </p>
+
+        {status?.connected && (
+          <div className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 p-3 text-xs">
+            <p className="font-medium text-slate-300">Deliveries from Meta</p>
+            {status.lastWebhookAt ? (
+              <p className="mt-1 text-emerald-300">Last received {when(status.lastWebhookAt)}.</p>
+            ) : (
+              <p className="mt-1 text-amber-300">
+                Nothing has arrived yet. Meta only sends messages once the callback URL above is public and you have
+                subscribed to the <span className="font-mono">messages</span> field.
+              </p>
+            )}
+            {status.lastWebhookError && (
+              <p className="mt-1 text-red-300">
+                {status.lastWebhookError} <span className="text-slate-500">({when(status.lastWebhookErrorAt)})</span>
+              </p>
+            )}
+            {!status.hasAppSecret && (
+              <p className="mt-1 text-red-300">No app secret saved — every delivery will be rejected until you add one below.</p>
+            )}
+            {status.appSecretFromEnv && <p className="mt-1 text-slate-500">Using the server-wide META_APP_SECRET.</p>}
+            <button type="button" onClick={() => void load()} className="mt-2 text-slate-400 underline hover:text-slate-200">
+              Refresh
+            </button>
+          </div>
+        )}
       </Panel>
 
       {canEditSettings && (
@@ -91,12 +136,13 @@ export function WhatsAppSettings() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Phone number ID"><input className={inputCls} value={form.phoneNumberId} onChange={(e) => setForm((f) => ({ ...f, phoneNumberId: e.target.value.trim() }))} placeholder={status?.phoneNumberId ?? ""} /></Field>
             <Field label="WhatsApp Business Account ID"><input className={inputCls} value={form.wabaId} onChange={(e) => setForm((f) => ({ ...f, wabaId: e.target.value.trim() }))} placeholder={status?.wabaId ?? ""} /></Field>
-            <Field label="Access token" className="sm:col-span-2"><PasswordInput autoComplete="off" className={inputCls} value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value.trim() }))} /></Field>
+            <Field label="Access token" className="sm:col-span-2" hint={status?.connected ? "Saved — leave blank to keep it." : undefined}><PasswordInput autoComplete="off" className={inputCls} value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value.trim() }))} /></Field>
+            <Field label="App secret" hint={status?.hasAppSecret && !status.appSecretFromEnv ? "Saved — leave blank to keep it." : "Meta → App settings → Basic → App secret. Without it we cannot verify incoming messages."}><PasswordInput autoComplete="off" className={inputCls} value={form.appSecret} onChange={(e) => setForm((f) => ({ ...f, appSecret: e.target.value.trim() }))} /></Field>
             <Field label="Webhook verify token" hint="Any secret phrase — paste the same one into Meta."><input className={inputCls} value={form.verifyToken} onChange={(e) => setForm((f) => ({ ...f, verifyToken: e.target.value }))} /></Field>
             <Field label="2-step PIN (optional)" hint="6 digits, registers the number with Cloud API."><input className={inputCls} inputMode="numeric" maxLength={6} value={form.pin} onChange={(e) => setForm((f) => ({ ...f, pin: e.target.value.replace(/\D/g, "") }))} /></Field>
           </div>
           <div className="mt-3 flex justify-end">
-            <Button onClick={save} disabled={saving || !form.phoneNumberId || !form.accessToken}>{saving ? "Verifying with Meta…" : "Save & verify"}</Button>
+            <Button onClick={save} disabled={saving || (!status?.connected && (!form.phoneNumberId || !form.accessToken))}>{saving ? "Verifying with Meta…" : "Save & verify"}</Button>
           </div>
         </Panel>
       )}

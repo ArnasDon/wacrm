@@ -103,8 +103,20 @@ export interface WhatsAppConfigDoc extends ScopedDoc {
   wabaId: string | null
   accessTokenEnc: string
   verifyTokenEnc: string | null
+  /**
+   * The Meta app secret that signs this tenant's webhooks. Each
+   * merchant brings their own Meta app, so the secret belongs to the
+   * account, not the server. `META_APP_SECRET` stays as a fallback for
+   * single-tenant self-hosted installs.
+   */
+  appSecretEnc: string | null
   displayPhone: string | null
   verifiedName: string | null
+  /** Last webhook Meta successfully delivered — the "is it wired up?" signal. */
+  lastWebhookAt: Date | null
+  /** Why the last delivery was refused (fixed strings, never attacker text). */
+  lastWebhookError: string | null
+  lastWebhookErrorAt: Date | null
 }
 
 export interface ContactDoc extends ScopedDoc {

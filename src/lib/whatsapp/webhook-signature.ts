@@ -12,22 +12,25 @@ import crypto from 'node:crypto'
  *   https://developers.facebook.com/docs/graph-api/webhooks/getting-started#verify-payloads
  *
  * Contract:
- *   `META_APP_SECRET` is **required**. If it's missing we fail closed —
- *   every request is rejected until the operator configures the
- *   secret. A previous version fell open with a warning log, which is
- *   unsafe for a public template: anyone who forgets the env var would
- *   be running a fully spoofable webhook.
+ *   A secret is **required**. Each tenant stores their own app secret
+ *   (Settings → WhatsApp), since every merchant connects their own Meta
+ *   app; `META_APP_SECRET` is the fallback for single-tenant installs.
+ *   If neither is configured we fail closed — every request is rejected
+ *   until one is. A previous version fell open with a warning log,
+ *   which is unsafe: anyone who forgot the secret would be running a
+ *   fully spoofable webhook.
  */
 export function verifyMetaWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
+  appSecret?: string | null,
 ): boolean {
-  const secret = process.env.META_APP_SECRET
+  const secret = appSecret || process.env.META_APP_SECRET
   if (!secret) {
     console.error(
-      '[webhook] META_APP_SECRET is not set — rejecting request. ' +
-        'Configure the env var (Meta → App Settings → Basic → App Secret) ' +
-        'to enable signature verification.',
+      '[webhook] No app secret configured — rejecting request. ' +
+        'Paste the Meta app secret in Settings → WhatsApp (Meta → App ' +
+        'Settings → Basic → App Secret), or set META_APP_SECRET.',
     )
     return false
   }

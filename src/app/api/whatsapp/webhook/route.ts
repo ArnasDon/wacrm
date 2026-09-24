@@ -1,7 +1,7 @@
 import { after, NextResponse } from 'next/server'
 import { scopedCollection, systemContext } from '@/lib/db/scoped'
-import { findAccountIdByPhoneNumberId, verifyTokenMatchesAnyAccount } from '@/lib/db/unscoped'
-import type { MessageDoc } from '@/lib/db/types'
+import { findWebhookRouteByPhoneNumberId, verifyTokenMatchesAnyAccount } from '@/lib/db/unscoped'
+import type { MessageDoc, WhatsAppConfigDoc } from '@/lib/db/types'
 import { decrypt } from '@/lib/security/secrets'
 import { kickBackgroundWork } from '@/lib/jobs/background'
 import { handleInboundMessage } from '@/lib/sales/agent'
@@ -11,11 +11,18 @@ import { getOrCreateConversation, recordInbound, upsertContactByPhone } from '@/
 // ============================================================
 // Meta WhatsApp Cloud API webhook (MongoDB).
 //
-// Authentication: HMAC-SHA256 over the raw body with META_APP_SECRET
-// (fails closed). Tenant routing: metadata.phone_number_id → the one
-// account that owns that number (unique index) → systemContext for
-// THAT account only. Processing happens after the 200 is sent so
-// Meta's delivery timeout is never hit by a slow AI call.
+// Tenant routing: metadata.phone_number_id → the one account that owns
+// that number (unique index) → systemContext for THAT account only.
+//
+// Authentication: HMAC-SHA256 over the raw body with the app secret of
+// THAT account (each merchant connects their own Meta app), falling
+// back to META_APP_SECRET on single-tenant installs. Fails closed.
+// Routing has to happen before verification — the body is the only
+// thing that says which secret to check against — so the payload is
+// parsed first and nothing is written until the signature holds.
+//
+// Processing happens after the 200 is sent so Meta's delivery timeout
+// is never hit by a slow AI call.
 // ============================================================
 
 interface WAMessage {
@@ -34,6 +41,10 @@ interface WAMessage {
     list_reply?: { id: string; title: string }
   }
   button?: { text: string }
+}
+
+interface WebhookBody {
+  entry?: Array<{ changes?: Array<{ field?: string; value?: WAChangeValue }> }>
 }
 
 interface WAChangeValue {
@@ -61,17 +72,73 @@ export async function GET(request: Request) {
 /** POST — inbound messages + delivery statuses. */
 export async function POST(request: Request) {
   const raw = await request.text()
-  if (!verifyMetaWebhookSignature(raw, request.headers.get('x-hub-signature-256'))) {
-    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
-  }
-  let body: { entry?: Array<{ changes?: Array<{ field?: string; value?: WAChangeValue }> }> }
+  let body: WebhookBody
   try {
     body = JSON.parse(raw)
   } catch {
     return NextResponse.json({ error: 'Invalid JSON' }, { status: 400 })
   }
-  after(() => processWebhook(body).catch((err) => console.error('[webhook] processing failed:', err)))
+
+  const phoneNumberId = firstPhoneNumberId(body)
+  const route = phoneNumberId ? await findWebhookRouteByPhoneNumberId(phoneNumberId) : null
+  if (!phoneNumberId || !route) {
+    // Not ours — nothing to verify against and nothing to store. 200 so
+    // Meta stops retrying a payload we will never be able to use.
+    console.warn('[webhook] no account for phone_number_id', phoneNumberId)
+    return NextResponse.json({ status: 'ignored' })
+  }
+
+  let appSecret: string | null = null
+  if (route.appSecretEnc) {
+    try {
+      appSecret = decrypt(route.appSecretEnc)
+    } catch {
+      appSecret = null // rotated ENCRYPTION_KEY — treat as unconfigured
+    }
+  }
+  if (!verifyMetaWebhookSignature(raw, request.headers.get('x-hub-signature-256'), appSecret)) {
+    await noteWebhookRejected(route.accountId, appSecret ? 'signature' : 'no-secret')
+    return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
+  }
+
+  after(() =>
+    processWebhook(route.accountId, phoneNumberId, body).catch((err) =>
+      console.error('[webhook] processing failed:', err),
+    ),
+  )
   return NextResponse.json({ status: 'received' })
+}
+
+/** The number a payload is about — Meta batches one WABA per delivery. */
+function firstPhoneNumberId(body: WebhookBody): string | null {
+  for (const entry of body?.entry ?? []) {
+    for (const change of entry?.changes ?? []) {
+      const id = change?.value?.metadata?.phone_number_id
+      if (typeof id === 'string' && id) return id
+    }
+  }
+  return null
+}
+
+const REJECTIONS = {
+  signature: 'A delivery arrived but its signature did not match your app secret — check the App Secret in Settings.',
+  'no-secret': 'A delivery arrived but no app secret is saved, so it could not be verified — add it in Settings.',
+} as const
+
+/**
+ * Leave a breadcrumb the merchant can see, so "I sent a message and
+ * nothing happened" has an answer in the UI. Written before the request
+ * is authenticated, so it stores one of two fixed sentences and never
+ * anything the caller supplied.
+ */
+async function noteWebhookRejected(accountId: string, reason: keyof typeof REJECTIONS) {
+  try {
+    const ctx = systemContext(accountId, 'whatsapp-webhook')
+    const configs = await scopedCollection<WhatsAppConfigDoc>(ctx, 'whatsapp_configs')
+    await configs.updateOne({}, { $set: { lastWebhookError: REJECTIONS[reason], lastWebhookErrorAt: new Date() } })
+  } catch (err) {
+    console.error('[webhook] could not record rejection', err)
+  }
 }
 
 function toMessageFields(m: WAMessage): Pick<MessageDoc, 'type' | 'text' | 'media'> {
@@ -103,19 +170,18 @@ function toMessageFields(m: WAMessage): Pick<MessageDoc, 'type' | 'text' | 'medi
   }
 }
 
-async function processWebhook(body: { entry?: Array<{ changes?: Array<{ field?: string; value?: WAChangeValue }> }> }) {
+async function processWebhook(accountId: string, phoneNumberId: string, body: WebhookBody) {
+  const ctx = systemContext(accountId, 'whatsapp-webhook')
+  const configs = await scopedCollection<WhatsAppConfigDoc>(ctx, 'whatsapp_configs')
+  await configs.updateOne({}, { $set: { lastWebhookAt: new Date(), lastWebhookError: null, lastWebhookErrorAt: null } })
+  kickBackgroundWork(accountId)
+
   for (const entry of body.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value
-      const phoneNumberId = value?.metadata?.phone_number_id
-      if (!value || !phoneNumberId) continue
-      const accountId = await findAccountIdByPhoneNumberId(phoneNumberId)
-      if (!accountId) {
-        console.warn('[webhook] no account for phone_number_id', phoneNumberId)
-        continue
-      }
-      const ctx = systemContext(accountId, 'whatsapp-webhook')
-      kickBackgroundWork(accountId)
+      // The signature only vouches for the number we routed on; a
+      // payload mixing in another number is not ours to act on.
+      if (!value || value.metadata?.phone_number_id !== phoneNumberId) continue
 
       for (const status of value.statuses ?? []) {
         const map: Record<string, MessageDoc['status']> = { sent: 'sent', delivered: 'delivered', read: 'read', failed: 'failed' }

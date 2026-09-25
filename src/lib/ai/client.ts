@@ -19,6 +19,36 @@ import { getPreset } from './presets'
 // multi-tenant deployment.
 // ============================================================
 
+/**
+ * Tokens the last call consumed. Providers report usage in the reply
+ * body; the adapters stash it here and `generateJSON` hands it back,
+ * so callers can bill or chart it without every adapter growing a new
+ * return shape. Single-threaded per request, which is how Node runs.
+ */
+export interface TokenUsage {
+  input: number
+  output: number
+  total: number
+}
+let lastUsage: TokenUsage | null = null
+
+/** Usage from the most recent generateJSON call, if the provider said. */
+export function takeLastUsage(): TokenUsage | null {
+  const usage = lastUsage
+  lastUsage = null
+  return usage
+}
+
+function recordUsage(raw: unknown): void {
+  const u = raw as { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number; input_tokens?: number; output_tokens?: number } | undefined
+  if (!u) return
+  const input = Number(u.prompt_tokens ?? u.input_tokens ?? 0)
+  const output = Number(u.completion_tokens ?? u.output_tokens ?? 0)
+  const total = Number(u.total_tokens ?? input + output)
+  if (!Number.isFinite(total) || total <= 0) return
+  lastUsage = { input: Number.isFinite(input) ? input : 0, output: Number.isFinite(output) ? output : 0, total }
+}
+
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
@@ -137,6 +167,7 @@ export async function generateJSON(
   provider: AIProviderDoc,
   input: GenerateJSONInput,
 ): Promise<unknown> {
+  lastUsage = null
   const text =
     provider.kind === 'anthropic'
       ? await anthropicGenerate(provider, input)
@@ -215,6 +246,7 @@ async function anthropicGenerate(provider: AIProviderDoc, input: GenerateJSONInp
         ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const }
         : {}),
     })
+    recordUsage(response.usage)
     if (response.stop_reason === 'refusal') {
       throw new AIProviderError('The model declined to answer this message')
     }
@@ -288,12 +320,13 @@ async function openAICompatibleGenerate(
   }
 
   const readChoice = (text: string) => {
-    let json: { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }> }
+    let json: { choices?: Array<{ message?: { content?: string | null }; finish_reason?: string }>; usage?: unknown }
     try {
       json = JSON.parse(text)
     } catch {
       throw new AIProviderError(`Provider returned something that isn't JSON: ${text.slice(0, 200)}`)
     }
+    recordUsage(json.usage)
     const choice = json.choices?.[0]
     return { content: choice?.message?.content ?? '', finish: choice?.finish_reason }
   }

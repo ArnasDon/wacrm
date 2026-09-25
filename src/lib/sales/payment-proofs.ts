@@ -4,7 +4,7 @@ import type { ConversationDoc, MessageDoc, OrderDoc, PaymentProofDoc } from '@/l
 import { ConflictError, NotFoundError, ValidationError } from '@/lib/http/errors'
 import { formatMoney } from '@/lib/money'
 import { sendText } from '@/lib/whatsapp/store'
-import { notifyProofSubmitted } from '@/lib/notify/telegram'
+import { sendProofForReview } from '@/lib/notify/proof-review'
 import { deliverReceipt, markOrderPaid } from './orders'
 
 // ============================================================
@@ -52,7 +52,9 @@ export async function attachProofFromMessage(
   await orders.updateById(order._id, {
     $set: { 'payment.status': 'proof_submitted', 'payment.provider': order.payment.provider ?? 'bank_transfer' },
   })
-  void notifyProofSubmitted(ctx, order)
+  // Sends the screenshot itself with Confirm / Reject buttons, so the
+  // merchant can settle it from Telegram without opening the app.
+  void sendProofForReview(ctx, order, proof)
   await sendText(
     ctx,
     conversation._id,

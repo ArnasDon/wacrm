@@ -71,3 +71,19 @@ export async function verifyTokenMatchesAnyAccount(
   }
   return false
 }
+
+/**
+ * Telegram webhook routing: the secret in the URL says which account an
+ * update belongs to. Nothing else about the request is trusted — the
+ * caller still checks Telegram's secret header against this row.
+ */
+export async function findTelegramConfigBySecret(
+  secret: string,
+): Promise<{ accountId: string } | null> {
+  if (typeof secret !== 'string' || secret.length < 20) return null
+  const db = await getDb()
+  const row = await db
+    .collection<{ _id: string; accountId: string; webhookSecret: string }>('telegram_configs')
+    .findOne({ webhookSecret: secret }, { projection: { accountId: 1 } })
+  return row ? { accountId: row.accountId } : null
+}

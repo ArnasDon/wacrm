@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
-import { AlertCircle, ArrowLeft, Bot, Check, CheckCheck, FileText, Hand, ImageIcon, MessageSquare, Search, SendHorizonal } from "lucide-react";
+import { AlertCircle, ArrowLeft, Bot, Check, CheckCheck, FileText, Hand, ImageIcon, MessageSquare, Mic, Search, SendHorizonal } from "lucide-react";
 import { api } from "@/lib/client/api";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
@@ -27,6 +27,7 @@ interface Msg {
   direction: "inbound" | "outbound";
   sender: string;
   type: string;
+  transcribed?: boolean;
   text: string | null;
   media: { id: string | null; mime: string | null; filename: string | null; href?: string | null } | null;
   status: string;
@@ -149,6 +150,16 @@ function ThreadView({ id, onBack, onChanged }: { id: string; onBack: () => void;
                     ) : (
                       <span className="mb-1 flex items-center gap-1 text-xs text-slate-400"><ImageIcon className="size-3.5" /> {m.media.filename ?? "Image"}</span>
                     )
+                  ) : null}
+                  {(m.type === "audio" || m.transcribed) && m.media?.id ? (
+                    <a
+                      href={`/api/whatsapp/media/${m.media.id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mb-1 flex items-center gap-2 rounded bg-black/20 px-2 py-1.5 text-xs"
+                    >
+                      <Mic className="size-3.5 text-primary" /> Voice note{m.transcribed ? " — transcribed" : ""}
+                    </a>
                   ) : null}
                   {m.text}
                   <div className="mt-0.5 flex items-center justify-end gap-1 text-[10px] text-slate-400">

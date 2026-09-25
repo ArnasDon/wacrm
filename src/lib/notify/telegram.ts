@@ -178,3 +178,104 @@ export function notifyProofSubmitted(ctx: AuthContext, order: OrderDoc): Promise
 export function notifyHandoff(ctx: AuthContext, customer: string, reason: string): Promise<void> {
   return notifyMerchant(ctx, 'handoff', `🙋 <b>Customer needs a person</b>\n${esc(customer)}\n<i>${esc(reason)}</i>`)
 }
+
+// ============================================================
+// Two-way control.
+//
+// Alerts alone still left the merchant opening the app to confirm a
+// transfer. The proof photo now goes to Telegram with buttons, and a
+// reply of "confirmed" does the same thing as clicking Confirm in
+// Orders. Everything below is per account: the bot, the chats and the
+// webhook secret all come from this account's config row.
+// ============================================================
+
+export interface TelegramTarget {
+  token: string
+  chats: Array<{ chatId: string; title: string }>
+  controlEnabled: boolean
+}
+
+/** The account's bot + linked chats, or null when unusable. */
+export async function telegramTarget(ctx: AuthContext): Promise<TelegramTarget | null> {
+  const configs = await scopedCollection<TelegramConfigDoc>(ctx, 'telegram_configs')
+  const cfg = await configs.findOne({ enabled: true })
+  if (!cfg || cfg.chats.length === 0) return null
+  return {
+    token: decrypt(cfg.botTokenEnc),
+    chats: cfg.chats.map((c) => ({ chatId: c.chatId, title: c.title })),
+    controlEnabled: cfg.controlEnabled !== false,
+  }
+}
+
+/** Send a message and hand back the id, so replies can be matched to it. */
+export async function sendMessage(
+  token: string,
+  chatId: string,
+  html: string,
+  keyboard?: Array<Array<{ text: string; callback_data: string }>>,
+): Promise<number> {
+  const sent = await tg<{ message_id: number }>(token, 'sendMessage', {
+    chat_id: chatId,
+    text: html.slice(0, 4000),
+    parse_mode: 'HTML',
+    disable_web_page_preview: true,
+    ...(keyboard ? { reply_markup: { inline_keyboard: keyboard } } : {}),
+  })
+  return sent.message_id
+}
+
+/** Upload a photo (the transfer screenshot) with its caption and buttons. */
+export async function sendPhoto(
+  token: string,
+  chatId: string,
+  image: { bytes: Uint8Array; filename: string; mime: string },
+  caption: string,
+  keyboard?: Array<Array<{ text: string; callback_data: string }>>,
+): Promise<number> {
+  const form = new FormData()
+  form.set('chat_id', chatId)
+  form.set('caption', caption.slice(0, 1000))
+  form.set('parse_mode', 'HTML')
+  if (keyboard) form.set('reply_markup', JSON.stringify({ inline_keyboard: keyboard }))
+  form.set('photo', new Blob([image.bytes as unknown as BlobPart], { type: image.mime }), image.filename)
+
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), 30_000)
+  try {
+    const res = await fetch(`${API}/bot${token}/sendPhoto`, { method: 'POST', body: form, signal: controller.signal })
+    const json = (await res.json().catch(() => ({}))) as { ok?: boolean; result?: { message_id: number }; description?: string }
+    if (!json.ok || !json.result) throw new TelegramError(json.description?.slice(0, 200) ?? `Telegram error ${res.status}`)
+    return json.result.message_id
+  } catch (err) {
+    if (err instanceof TelegramError) throw err
+    throw new TelegramError('Telegram is unreachable')
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+/** Clears the spinner on an inline button; Telegram nags if we skip it. */
+export async function answerCallback(token: string, callbackId: string, text: string): Promise<void> {
+  await tg(token, 'answerCallbackQuery', { callback_query_id: callbackId, text: text.slice(0, 200) }).catch(() => {})
+}
+
+/**
+ * Point the merchant's bot at our webhook. `secret` travels both in
+ * the path and in Telegram's own secret header.
+ */
+export async function setWebhook(token: string, url: string, secret: string): Promise<void> {
+  await tg(token, 'setWebhook', {
+    url,
+    secret_token: secret,
+    allowed_updates: ['message', 'callback_query'],
+    drop_pending_updates: true,
+  })
+}
+
+export async function deleteWebhook(token: string): Promise<void> {
+  await tg(token, 'deleteWebhook', { drop_pending_updates: true }).catch(() => {})
+}
+
+export function escapeHtml(s: string): string {
+  return esc(s)
+}

@@ -2,6 +2,7 @@ import 'server-only'
 import { after } from 'next/server'
 import { getDb } from '@/lib/db/mongo'
 import { scopedCollection, systemContext } from '@/lib/db/scoped'
+import { remindStaleProofs } from '@/lib/notify/proof-review'
 import type { OrderDoc } from '@/lib/db/types'
 import { formatMoney } from '@/lib/money'
 import { cancelOrder, settleFromProvider } from '@/lib/sales/orders'
@@ -135,6 +136,16 @@ export async function runBackgroundWork(accountId: string): Promise<{ ran: boole
     await orders.updateById(o._id, { $set: { notes: [o.notes, 'Auto-cancelled: unpaid after 7 days'].filter(Boolean).join('\n') } })
     actions.push(`expired:${o.number}`)
   }
+
+  // 4. Chase transfer proofs the merchant hasn't answered on Telegram.
+  //    Five minutes is the promise; without a cron this fires on the
+  //    first request after that, which in practice is the next customer
+  //    message or page load.
+  const chased = await remindStaleProofs(ctx).catch((err) => {
+    console.warn('[background] proof reminder failed', (err as Error).message)
+    return 0
+  })
+  if (chased) actions.push(`proof-reminders:${chased}`)
 
   if (actions.length) console.info('[background]', accountId, actions.join(', '))
   return { ran: true, actions }

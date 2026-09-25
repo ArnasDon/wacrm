@@ -1,6 +1,13 @@
 import 'server-only'
 import { loadAccount } from '@/lib/auth/accounts'
-import { generateJSON, AIProviderError, NonJsonReplyError, plainReplyFrom, type ChatTurn } from '@/lib/ai/client'
+import {
+  generateJSON,
+  takeLastUsage,
+  AIProviderError,
+  NonJsonReplyError,
+  plainReplyFrom,
+  type ChatTurn,
+} from '@/lib/ai/client'
 import { scopedCollection, type AuthContext } from '@/lib/db/scoped'
 import type {
   AccountDoc,
@@ -20,6 +27,7 @@ import { whatsappImageUrl } from '@/lib/media/urls'
 import { absoluteMediaUrl } from '@/lib/media/storage'
 import { recentMessages, sendImage, sendText } from '@/lib/whatsapp/store'
 import { detectOrder, detectPhotoRequest, fillPlaceholders, matchesKeyword, priceListText, type CatalogItem } from './catalog'
+import { transcribeInbound } from './voice'
 import { knowledgeBaseText, MAX_ENTRIES } from './knowledge'
 import { cancelOrder, createOrder, createPaymentLink, deliverInvoice, orderSummaryText } from './orders'
 import { notifyHandoff } from '@/lib/notify/telegram'
@@ -132,9 +140,14 @@ export async function handleInboundMessage(
 
     const account = await loadAccount(ctx.accountId)
     if (!account?.salesAgent.enabled) return
+
+    // 2. A voice note is a message like any other once it's words.
+    if (!message.text && (message.type === 'audio' || message.type === 'video')) {
+      message = (await transcribeInbound(ctx, conversation, message)) ?? message
+    }
     if (!message.text) return
 
-    // 2. Serialise per conversation: two quick messages → one run that
+    // 3. Serialise per conversation: two quick messages → one run that
     //    sees both (the second sets aiPending; the holder re-runs).
     const conversations = await scopedCollection<ConversationDoc>(ctx, 'conversations')
     const now = new Date()
@@ -355,6 +368,7 @@ async function respondWithAI(
   if (turns.length === 0) return true
 
   let intent: Intent | null = null
+  let usage: ReturnType<typeof takeLastUsage> = null
   try {
     const entries = await scopedCollection<KnowledgeDoc>(ctx, 'knowledge_entries')
     const knowledge = knowledgeBaseText(
@@ -366,6 +380,7 @@ async function respondWithAI(
       messages: turns,
       schema: INTENT_SCHEMA,
     })
+    usage = takeLastUsage()
     intent = parseIntent(raw, new Set(catalog.map((c) => c._id)))
   } catch (err) {
     // Open models sometimes answer the customer perfectly but forget the
@@ -382,6 +397,7 @@ async function respondWithAI(
         latencyMs: Date.now() - started,
         actions: ['chat', 'recovered:no-json'],
         error: null,
+        tokens: takeLastUsage(),
       })
       return true
     }
@@ -394,6 +410,7 @@ async function respondWithAI(
       actions: [],
       error: err instanceof AIProviderError ? err.message : 'AI call failed',
       errorKind: err instanceof AIProviderError ? err.kind : 'other',
+      tokens: takeLastUsage(),
     })
     return false
   }
@@ -472,6 +489,7 @@ async function respondWithAI(
     latencyMs: Date.now() - started,
     actions,
     error: null,
+    tokens: usage,
   })
   return true
 }

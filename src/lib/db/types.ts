@@ -178,6 +178,8 @@ export interface MessageDoc extends ScopedDoc {
   sender: MessageSender
   senderUserId: string | null
   type: 'text' | 'image' | 'document' | 'audio' | 'video' | 'interactive' | 'other'
+  /** Set when the text came from transcribing a voice note. */
+  transcribed?: boolean
   text: string | null
   media: {
     id: string | null
@@ -329,6 +331,13 @@ export interface PaymentProofDoc extends ScopedDoc {
   reviewedAt: Date | null
   reviewNote: string | null
   amountConfirmed: number | null
+  /** Where this proof was sent for review, and whether we chased it. */
+  telegram?: {
+    chatId: string
+    messageId: number
+    sentAt: Date
+    remindedAt: Date | null
+  } | null
 }
 
 export interface PaymentConfigDoc extends ScopedDoc {
@@ -398,6 +407,8 @@ export interface AIRunDoc extends ScopedDoc {
   error: string | null
   /** Why it failed, so the dashboard can tell "out of tokens" from "wrong key". */
   errorKind?: 'quota' | 'auth' | 'model' | 'timeout' | 'other'
+  /** Tokens the provider charged for, when it reports them. */
+  tokens?: { input: number; output: number; total: number } | null
 }
 
 // ---------- notifications ----------
@@ -418,6 +429,17 @@ export interface TelegramConfigDoc extends ScopedDoc {
   events: Record<NotifyEvent, boolean>
   enabled: boolean
   lastUpdateId: number
+  /**
+   * Random per-account string. It is both the webhook URL path and the
+   * value Telegram echoes in X-Telegram-Bot-Api-Secret-Token, so a
+   * forged update can neither reach the right account nor pass the
+   * header check.
+   */
+  webhookSecret?: string
+  /** Set once Telegram has accepted our setWebhook call. */
+  webhookSetAt?: Date | null
+  /** Whether replies in Telegram may confirm payments, not just read alerts. */
+  controlEnabled?: boolean
 }
 
 export interface OAuthStateDoc {

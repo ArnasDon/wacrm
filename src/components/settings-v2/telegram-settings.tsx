@@ -19,6 +19,9 @@ interface State {
   deepLink?: string;
   chats?: Array<{ chatId: string; title: string; linkedAt: string }>;
   events?: Record<EventKey, boolean>;
+  controlEnabled?: boolean;
+  webhookActive?: boolean;
+  warnings?: string[];
 }
 
 const EVENT_LABELS: Record<EventKey, string> = {
@@ -51,9 +54,11 @@ export function TelegramSettings() {
 
   const connect = () =>
     run("connect", async () => {
-      setS(await api<State>("/api/settings/telegram", { method: "PUT", body: { botToken: token } }));
+      const r = await api<State>("/api/settings/telegram", { method: "PUT", body: { botToken: token } });
+      setS(r);
       setToken("");
       toast.success("Bot connected — now link your chat");
+      (r.warnings ?? []).forEach((w) => toast.warning(w));
     });
 
   const link = () =>
@@ -114,6 +119,47 @@ export function TelegramSettings() {
                 </Button>
                 <Button onClick={link} disabled={busy === "link"}>{busy === "link" ? <Loader2 className="size-4 animate-spin" /> : null} Check for new chats</Button>
               </div>
+            </div>
+
+            <div className="rounded-lg border border-slate-800 p-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-white">Confirm payments from Telegram</p>
+                <label className="flex items-center gap-2 text-xs text-slate-400">
+                  <Switch
+                    checked={s.controlEnabled !== false}
+                    onCheckedChange={(v) => run("control", () => post({ action: "control", enabled: v }))}
+                  />
+                  {s.controlEnabled !== false ? "On" : "Off"}
+                </label>
+              </div>
+              <p className="mt-1 text-xs text-slate-400">
+                When a customer sends a transfer screenshot, the picture itself arrives here with the order beside it.
+                Tap <b>Payment received</b> or reply <b>confirmed</b> and the customer gets their receipt immediately.
+                If nobody answers within five minutes, we send a reminder. Send <b>help</b> to your bot for the full list.
+              </p>
+              {s.webhookActive ? (
+                <p className="mt-2 text-[11px] text-emerald-300">Telegram can reach this server — replies work.</p>
+              ) : (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <p className="text-[11px] text-amber-300">
+                    Telegram can&apos;t reach this server yet, so alerts arrive but replies do nothing. It needs APP_URL to
+                    be a public https address.
+                  </p>
+                  <Button
+                    variant="outline"
+                    className="border-slate-700 bg-slate-900 text-slate-200"
+                    onClick={() => run("rehook", async () => {
+                      const r = await api<State>("/api/settings/telegram", { body: { action: "rehook" } });
+                      setS(r);
+                      if (r.webhookActive) toast.success("Telegram can reach the server now");
+                      (r.warnings ?? []).forEach((w) => toast.warning(w));
+                    })}
+                    disabled={busy === "rehook"}
+                  >
+                    {busy === "rehook" ? <Loader2 className="size-4 animate-spin" /> : null} Try again
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div>

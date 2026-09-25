@@ -42,3 +42,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# seed scripts — they are run with real credentials on the command line
+/scripts/seed-admin.mjs
+/scripts/seed-*.mjs
+/seed*.mjs
+/scratchpad/

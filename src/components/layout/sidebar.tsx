@@ -113,7 +113,7 @@ const ACCOUNT_SHARING_FLAG = "account_sharing";
 
 export function Sidebar({ open = false, onClose }: SidebarProps) {
   const pathname = usePathname();
-  const { profile, profileLoading, account, accountRole, signOut } = useAuth();
+  const { profile, profileLoading, account, accountRole, platformAdmin, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   // Match the settings page's check: only treat the flag as enabled
   // once the profile has finished loading. Without this, the strip
@@ -258,6 +258,22 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           <div className="my-4 border-t border-slate-800" />
 
           <ul className="flex flex-col gap-1">
+            {platformAdmin && (
+              <li>
+                <Link
+                  href="/admin"
+                  className={cn(
+                    "flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors lg:py-2",
+                    pathname.startsWith("/admin")
+                      ? "bg-primary/10 text-primary"
+                      : "text-slate-400 hover:bg-slate-800 hover:text-white",
+                  )}
+                >
+                  <Shield className="h-4 w-4" />
+                  Merchants
+                </Link>
+              </li>
+            )}
             {bottomNavItems.map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (

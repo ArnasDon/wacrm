@@ -140,6 +140,8 @@ export async function handleInboundMessage(
 
     const account = await loadAccount(ctx.accountId)
     if (!account?.salesAgent.enabled) return
+    // Suspended by the platform: take no further action on their behalf.
+    if (account.suspendedAt) return
 
     // 2. A voice note is a message like any other once it's words.
     if (!message.text && (message.type === 'audio' || message.type === 'video')) {

@@ -19,6 +19,8 @@ export async function GET() {
         avatarUrl: ctx.user.avatarUrl,
       },
       role: ctx.role,
+      platformAdmin: ctx.platformAdmin,
+      actingAsAccount: ctx.actingAsAccount,
       account: {
         id: ctx.accountId,
         name: ctx.account.name,

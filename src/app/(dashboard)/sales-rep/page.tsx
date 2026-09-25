@@ -205,7 +205,7 @@ function Playground({ enabled, agentName }: { enabled: boolean; agentName: strin
 }
 
 export default function SalesRepPage() {
-  const { canEditSettings } = useAuth();
+  const { canEditSettings, platformAdmin } = useAuth();
   const [s, setS] = useState<SalesAgent | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [saving, setSaving] = useState(false);
@@ -219,8 +219,8 @@ export default function SalesRepPage() {
         setMoney({ deliveryFee: String(d.salesAgent.deliveryFee / 100), approvalThreshold: String(d.salesAgent.approvalThreshold / 100) });
       })
       .catch((e) => toast.error(e.message));
-    if (canEditSettings) api<{ providers: Provider[] }>("/api/settings/ai-providers").then((d) => setProviders(d.providers)).catch(() => {});
-  }, [canEditSettings]);
+    if (platformAdmin) api<{ providers: Provider[] }>("/api/settings/ai-providers").then((d) => setProviders(d.providers)).catch(() => {});
+  }, [canEditSettings, platformAdmin]);
 
   const upd = <K extends keyof SalesAgent>(k: K, v: SalesAgent[K]) => {
     setS((cur) => (cur ? { ...cur, [k]: v } : cur));
@@ -285,7 +285,12 @@ export default function SalesRepPage() {
                 </button>
               ))}
             </div>
-            {s.mode === "ai" && (
+            {s.mode === "ai" && !platformAdmin && (
+              <p className="mt-3 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-400">
+                The AI model is set up for you. If replies stop working, contact support.
+              </p>
+            )}
+            {s.mode === "ai" && platformAdmin && (
               <div className="mt-3">
                 {providers.length === 0 ? (
                   <p className="rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">

@@ -16,6 +16,9 @@ export interface AccountDoc {
   currency: string
   business: BusinessProfile
   salesAgent: SalesAgentSettings
+  /** Set when the platform admin switches a merchant off. */
+  suspendedAt?: Date | null
+  suspendedReason?: string | null
   /**
    * Free-text description of the business for the sales rep to talk
    * from — what it does, how it works, what makes it different. Written
@@ -72,6 +75,12 @@ export interface UserDoc {
   accountId: string
   role: AccountRole
   lastLoginAt: Date | null
+  /**
+   * Runs the platform itself, across every account: sets up each
+   * merchant's integrations, sees their usage, suspends them. Separate
+   * from `role`, which only ever means something inside one account.
+   */
+  platformRole?: 'superadmin'
   createdAt: Date
   updatedAt: Date
 }

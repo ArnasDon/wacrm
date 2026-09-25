@@ -58,6 +58,10 @@ interface AuthContextValue {
   refreshProfile: () => Promise<void>;
   accountId: string | null;
   accountRole: AccountRole | null;
+  /** Runs the whole platform, not just this account. */
+  platformAdmin: boolean;
+  /** Currently working inside a merchant's account from the admin area. */
+  actingAsAccount: boolean;
   account: AccountSummary | null;
   isOwner: boolean;
   isAdmin: boolean;
@@ -72,6 +76,8 @@ interface MeResponse {
   user: { id: string; email: string; fullName: string | null; avatarUrl: string | null };
   role: string;
   account: AccountSummary;
+  platformAdmin?: boolean;
+  actingAsAccount?: boolean;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -80,6 +86,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [account, setAccount] = useState<AccountSummary | null>(null);
+  const [platform, setPlatform] = useState({ admin: false, acting: false });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
@@ -93,6 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
       const me = (await res.json()) as MeResponse;
       const role = isAccountRole(me.role) ? me.role : null;
+      setPlatform({ admin: !!me.platformAdmin, acting: !!me.actingAsAccount });
       setUser({ id: me.user.id, email: me.user.email });
       setProfile({
         id: me.user.id,
@@ -129,6 +137,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const role = profile?.account_role ?? null;
     return {
       accountRole: role,
+      platformAdmin: platform.admin,
+      actingAsAccount: platform.acting,
       accountId: profile?.account_id ?? null,
       isOwner: role === "owner",
       isAdmin: role === "admin",
@@ -138,7 +148,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       canEditSettings: role ? canEditSettingsFor(role) : false,
       canSendMessages: role ? canSendMessagesFor(role) : false,
     };
-  }, [profile?.account_role, profile?.account_id]);
+  }, [profile?.account_role, profile?.account_id, platform.admin, platform.acting]);
 
   return (
     <AuthContext.Provider
@@ -173,6 +183,8 @@ export function useAuth(): AuthContextValue {
       account: null,
       accountId: null,
       accountRole: null,
+      platformAdmin: false,
+      actingAsAccount: false,
       isOwner: false,
       isAdmin: false,
       isAgent: false,

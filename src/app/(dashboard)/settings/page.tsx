@@ -16,29 +16,41 @@ import { WhatsAppSettings } from "@/components/settings-v2/whatsapp-settings";
 import { MembersTab } from "@/components/settings/members-tab";
 import { AppearancePanel } from "@/components/settings/appearance-panel";
 
+// `admin` = needs the account-admin role. `platform` = the connections
+// the platform operator owns (keys, numbers, bots, buckets); merchants
+// never see these, they are set up for them.
 const TABS = [
-  { key: "business", label: "Business", icon: Building2, admin: false },
-  { key: "whatsapp", label: "WhatsApp", icon: MessageSquare, admin: false },
-  { key: "payments", label: "Payments", icon: CreditCard, admin: true },
-  { key: "ai", label: "AI providers", icon: Bot, admin: true },
-  { key: "email", label: "Email", icon: Mail, admin: true },
-  { key: "storage", label: "Storage", icon: HardDrive, admin: true },
-  { key: "telegram", label: "Telegram alerts", icon: Bell, admin: true },
-  { key: "team", label: "Team", icon: Users, admin: false },
-  { key: "profile", label: "Profile", icon: User, admin: false },
-  { key: "appearance", label: "Appearance", icon: Palette, admin: false },
+  { key: "business", label: "Business", icon: Building2, admin: false, platform: false },
+  { key: "payments", label: "Payments", icon: CreditCard, admin: true, platform: false },
+  { key: "team", label: "Team", icon: Users, admin: false, platform: false },
+  { key: "profile", label: "Profile", icon: User, admin: false, platform: false },
+  { key: "appearance", label: "Appearance", icon: Palette, admin: false, platform: false },
+  { key: "whatsapp", label: "WhatsApp", icon: MessageSquare, admin: true, platform: true },
+  { key: "ai", label: "AI providers", icon: Bot, admin: true, platform: true },
+  { key: "telegram", label: "Telegram", icon: Bell, admin: true, platform: true },
+  { key: "storage", label: "Storage", icon: HardDrive, admin: true, platform: true },
+  { key: "email", label: "Email", icon: Mail, admin: true, platform: true },
 ] as const;
 
 function SettingsInner() {
   const router = useRouter();
   const params = useSearchParams();
-  const { canEditSettings } = useAuth();
-  const tabs = TABS.filter((t) => !t.admin || canEditSettings);
+  const { canEditSettings, platformAdmin } = useAuth();
+  const tabs = TABS.filter((t) => (!t.admin || canEditSettings) && (!t.platform || platformAdmin));
   const current = tabs.find((t) => t.key === params.get("tab"))?.key ?? "business";
 
   return (
     <div className="mx-auto max-w-5xl">
-      <PageHeader title="Settings" description={canEditSettings ? undefined : "Some settings are only visible to admins."} />
+      <PageHeader
+        title="Settings"
+        description={
+          platformAdmin
+            ? "Connections (WhatsApp, AI, Telegram, storage, email) are set up here for whichever account you have open."
+            : canEditSettings
+              ? "WhatsApp, AI and alerts are managed for you — contact support to change them."
+              : "Some settings are only visible to admins."
+        }
+      />
       <div className="flex flex-col gap-5 md:flex-row">
         <nav className="flex shrink-0 gap-1 overflow-x-auto md:w-48 md:flex-col" aria-label="Settings sections">
           {tabs.map((t) => (

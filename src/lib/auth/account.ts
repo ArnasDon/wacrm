@@ -4,6 +4,7 @@ import { getDb } from '@/lib/db/mongo'
 import type { AuthContext } from '@/lib/db/scoped'
 import type { AccountDoc, UserDoc } from '@/lib/db/types'
 import { ForbiddenError, UnauthorizedError } from '@/lib/http/errors'
+import { actingAccountId, isPlatformAdmin } from './platform'
 import { hasMinRole, isAccountRole, type AccountRole } from './roles'
 import { getSessionUser } from './session'
 
@@ -39,6 +40,10 @@ export interface AccountContext extends AuthContext {
   sessionId: string
   user: Pick<UserDoc, '_id' | 'email' | 'fullName' | 'avatarUrl' | 'role'>
   account: { id: string; name: string }
+  /** True when the caller runs the platform, not just this account. */
+  platformAdmin: boolean
+  /** True when a platform admin is working inside someone else's account. */
+  actingAsAccount: boolean
 }
 
 /**
@@ -53,18 +58,30 @@ export const getCurrentAccount = cache(async (): Promise<AccountContext> => {
 
   if (!isAccountRole(user.role)) throw new ForbiddenError('Unknown account role')
 
+  const platformAdmin = isPlatformAdmin(user)
+  // A platform admin can open a merchant's account to set it up for
+  // them; everyone else is pinned to their own.
+  const acting = platformAdmin ? await actingAccountId() : null
+  const accountId = acting ?? user.accountId
+
   const db = await getDb()
   const account = await db
     .collection<AccountDoc>('accounts')
-    .findOne({ _id: user.accountId }, { projection: { name: 1 } })
+    .findOne({ _id: accountId }, { projection: { name: 1, suspendedAt: 1 } })
   if (!account) throw new ForbiddenError('User is not linked to an account')
+  // A suspended merchant is locked out of their own workspace; the
+  // platform admin can still open it to fix whatever caused it.
+  if (account.suspendedAt && !platformAdmin) {
+    throw new ForbiddenError('This account is suspended. Please contact support.')
+  }
 
   return {
     kind: 'user',
     sessionId: session._id,
     userId: user._id,
-    accountId: user.accountId,
-    role: user.role,
+    accountId,
+    // Inside someone else's account the admin acts as its owner.
+    role: acting ? 'owner' : user.role,
     user: {
       _id: user._id,
       email: user.email,
@@ -73,6 +90,8 @@ export const getCurrentAccount = cache(async (): Promise<AccountContext> => {
       role: user.role,
     },
     account: { id: account._id, name: account.name },
+    platformAdmin,
+    actingAsAccount: !!acting,
   }
 })
 

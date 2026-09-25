@@ -186,7 +186,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
               <img
                 src={`/api/settings/business/logo?v=${account.logoVersion}`}
                 alt=""
-                className="h-8 w-8 rounded-lg bg-white object-contain p-0.5"
+                className="h-8 w-8 rounded-lg bg-[#fff] object-contain p-0.5"
               />
             ) : (
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">

@@ -10,9 +10,16 @@ import {
 } from "react";
 
 import {
+  ACCENT_STORAGE_KEY,
+  DEFAULT_MODE,
   DEFAULT_THEME,
+  MODE_STORAGE_KEY,
   STORAGE_KEY,
+  accentVars,
+  isModeId,
   isThemeId,
+  normalizeHex,
+  type ModeId,
   type ThemeId,
 } from "@/lib/themes";
 
@@ -34,6 +41,47 @@ import {
 interface ThemeContextValue {
   theme: ThemeId;
   setTheme: (next: ThemeId) => void;
+  /** Light or dark surfaces. Independent of the accent. */
+  mode: ModeId;
+  setMode: (next: ModeId) => void;
+  /** Custom accent hex, or null when one of the presets is in use. */
+  accent: string | null;
+  setAccent: (next: string | null) => void;
+}
+
+/** Writes (or clears) the inline accent properties on <html>. */
+function applyAccent(hex: string | null) {
+  const root = document.documentElement;
+  const vars = accentVars("#000000");
+  if (!hex) {
+    for (const name of Object.keys(vars)) root.style.removeProperty(name);
+    return;
+  }
+  for (const [name, value] of Object.entries(accentVars(hex))) {
+    root.style.setProperty(name, value);
+  }
+}
+
+function readInitialMode(): ModeId {
+  if (typeof window === "undefined") return DEFAULT_MODE;
+  const fromAttr = document.documentElement.dataset.mode;
+  if (isModeId(fromAttr)) return fromAttr;
+  try {
+    const stored = localStorage.getItem(MODE_STORAGE_KEY);
+    if (isModeId(stored)) return stored;
+  } catch {
+    // private browsing
+  }
+  return DEFAULT_MODE;
+}
+
+function readInitialAccent(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return normalizeHex(localStorage.getItem(ACCENT_STORAGE_KEY));
+  } catch {
+    return null;
+  }
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
@@ -56,11 +104,44 @@ function readInitialTheme(): ThemeId {
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<ThemeId>(readInitialTheme);
+  const [mode, setModeState] = useState<ModeId>(readInitialMode);
+  const [accent, setAccentState] = useState<string | null>(readInitialAccent);
+
+  const setMode = useCallback((next: ModeId) => {
+    setModeState(next);
+    document.documentElement.dataset.mode = next;
+    try {
+      localStorage.setItem(MODE_STORAGE_KEY, next);
+    } catch {
+      // private browsing
+    }
+  }, []);
+
+  // Picking a preset clears the custom colour, and vice versa — two
+  // accents fighting over --primary would be nobody's idea of a theme.
+  const setAccent = useCallback((next: string | null) => {
+    const hex = next ? normalizeHex(next) : null;
+    setAccentState(hex);
+    applyAccent(hex);
+    try {
+      if (hex) localStorage.setItem(ACCENT_STORAGE_KEY, hex);
+      else localStorage.removeItem(ACCENT_STORAGE_KEY);
+    } catch {
+      // private browsing
+    }
+  }, []);
 
   const setTheme = useCallback((next: ThemeId) => {
     setThemeState(next);
+    setAccentState(null);
     if (typeof document !== "undefined") {
       document.documentElement.dataset.theme = next;
+      applyAccent(null);
+    }
+    try {
+      localStorage.removeItem(ACCENT_STORAGE_KEY);
+    } catch {
+      // private browsing
     }
     try {
       localStorage.setItem(STORAGE_KEY, next);
@@ -85,7 +166,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [theme]);
 
   return (
-    <ThemeContext.Provider value={{ theme, setTheme }}>
+    <ThemeContext.Provider value={{ theme, setTheme, mode, setMode, accent, setAccent }}>
       {children}
     </ThemeContext.Provider>
   );
@@ -100,6 +181,10 @@ export function useTheme(): ThemeContextValue {
     return {
       theme: DEFAULT_THEME,
       setTheme: () => {},
+      mode: DEFAULT_MODE,
+      setMode: () => {},
+      accent: null,
+      setAccent: () => {},
     };
   }
   return ctx;

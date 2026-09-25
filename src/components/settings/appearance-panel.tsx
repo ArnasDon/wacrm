@@ -1,9 +1,10 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { useState } from "react";
+import { Check, Moon, Sun } from "lucide-react";
 
 import { useTheme } from "@/hooks/use-theme";
-import { THEMES, type ThemeId } from "@/lib/themes";
+import { MODE_IDS, THEMES, normalizeHex, type ModeId, type ThemeId } from "@/lib/themes";
 import { cn } from "@/lib/utils";
 
 /**
@@ -18,16 +19,101 @@ import { cn } from "@/lib/utils";
  * layout.tsx replays the choice before first paint on subsequent
  * loads.
  */
+const MODE_COPY: Record<ModeId, { label: string; hint: string; Icon: typeof Sun }> = {
+  dark: { label: "Dark", hint: "Easier at night and on cheap screens.", Icon: Moon },
+  light: { label: "Light", hint: "Better in daylight and for printing screenshots.", Icon: Sun },
+};
+
 export function AppearancePanel() {
-  const { theme, setTheme } = useTheme();
+  const { theme, setTheme, mode, setMode, accent, setAccent } = useTheme();
+  const [draft, setDraft] = useState(accent ?? "#7c3aed");
+
+  const applyDraft = (value: string) => {
+    setDraft(value);
+    if (normalizeHex(value)) setAccent(value);
+  };
+
   return (
-    <section className="space-y-4">
+    <section className="space-y-8">
       <div>
-        <h2 className="text-lg font-semibold text-white">Color theme</h2>
+        <h2 className="text-lg font-semibold text-white">Light or dark</h2>
         <p className="mt-1 text-sm text-slate-400">
-          Pick the accent color used across the app. All themes stay
-          dark — only the primary color (buttons, active nav, badges)
-          changes. Saved to this device.
+          Applies to every screen. Saved to this device, so your phone and your laptop can differ.
+        </p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+          {MODE_IDS.map((id) => {
+            const { label, hint, Icon } = MODE_COPY[id];
+            const isActive = mode === id;
+            return (
+              <button
+                key={id}
+                type="button"
+                onClick={() => setMode(id)}
+                aria-pressed={isActive}
+                className={cn(
+                  "flex items-start gap-3 rounded-lg border p-4 text-left transition-colors",
+                  isActive
+                    ? "border-primary/60 ring-2 ring-primary/40"
+                    : "border-slate-800 hover:border-slate-700 hover:bg-slate-800/40",
+                )}
+              >
+                <Icon className="mt-0.5 size-5 shrink-0 text-primary" />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-white">{label}</span>
+                  <span className="mt-1 block text-xs text-slate-400">{hint}</span>
+                </span>
+                {isActive && <Check className="ml-auto size-4 shrink-0 text-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold text-white">Your own color</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Match your brand. Buttons, active menu items, badges and charts follow it; text stays readable
+          because the label color is chosen from the color you pick.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <input
+            type="color"
+            aria-label="Pick a brand color"
+            value={normalizeHex(draft) ?? "#7c3aed"}
+            onChange={(e) => applyDraft(e.target.value)}
+            className="size-11 cursor-pointer rounded-lg border border-slate-700 bg-transparent p-1"
+          />
+          <input
+            type="text"
+            aria-label="Brand color hex code"
+            value={draft}
+            spellCheck={false}
+            maxLength={7}
+            onChange={(e) => applyDraft(e.target.value)}
+            className="h-11 w-32 rounded-lg border border-slate-700 bg-slate-900 px-3 font-mono text-sm text-white outline-none focus:border-primary"
+          />
+          <span className="inline-flex h-11 items-center rounded-lg bg-primary px-4 text-sm font-medium text-primary-foreground">
+            Sample button
+          </span>
+          {accent && (
+            <button
+              type="button"
+              onClick={() => setAccent(null)}
+              className="text-xs text-slate-400 underline hover:text-white"
+            >
+              Back to a preset
+            </button>
+          )}
+        </div>
+        {!normalizeHex(draft) && (
+          <p className="mt-2 text-xs text-amber-300">Use a hex code like #7c3aed.</p>
+        )}
+      </div>
+
+      <div>
+        <h2 className="text-lg font-semibold text-white">Presets</h2>
+        <p className="mt-1 text-sm text-slate-400">
+          Ready-made accents. Picking one replaces a custom color.
         </p>
       </div>
 
@@ -39,7 +125,7 @@ export function AppearancePanel() {
             name={t.name}
             tagline={t.tagline}
             swatch={t.swatch}
-            isActive={t.id === theme}
+            isActive={!accent && t.id === theme}
             onPick={() => setTheme(t.id)}
           />
         ))}

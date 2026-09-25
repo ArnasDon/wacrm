@@ -267,3 +267,62 @@ html[data-theme="rose"] {
     @apply font-sans;
   }
 }
+/* ============================================================
+ * LIGHT MODE
+ *
+ * The screens are written in literal Tailwind greys (bg-slate-950
+ * pages, bg-slate-900 panels, text-white headings) rather than
+ * semantic tokens. Tailwind v4 compiles each of those to
+ * `var(--color-slate-N)`, so light mode is a remap of that ramp
+ * rather than a rewrite of every component: dark surfaces become
+ * light, light text becomes dark, and the accent is untouched.
+ *
+ * `--color-white` flips too, because `text-white` is how the app
+ * writes its headings. The handful of places that want real white
+ * (a logo tile, a switch thumb, a chart tooltip) use the literal
+ * `bg-[#fff]` instead, which no variable can move.
+ * ============================================================ */
+
+html[data-mode="light"] {
+  color-scheme: light;
+
+  --color-slate-950: #f8fafc;
+  --color-slate-900: #ffffff;
+  --color-slate-800: #e2e8f0;
+  --color-slate-700: #cbd5e1;
+  --color-slate-600: #94a3b8;
+  --color-slate-500: #64748b;
+  --color-slate-400: #475569;
+  --color-slate-300: #334155;
+  --color-slate-200: #1e293b;
+  --color-slate-100: #0f172a;
+  --color-slate-50: #020617;
+  --color-white: #0f172a;
+  --color-black: #ffffff;
+
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #475569;
+  --accent: #f1f5f9;
+  --accent-foreground: #0f172a;
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+}
+
+/* Shadows read as mud on a dark page and as depth on a light one. */
+html[data-mode="light"] .shadow-lg,
+html[data-mode="light"] .shadow-xl {
+  --tw-shadow-color: rgb(15 23 42 / 0.08);
+}

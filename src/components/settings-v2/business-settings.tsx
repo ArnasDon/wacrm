@@ -95,7 +95,7 @@ export function BusinessSettings() {
     <div className="space-y-4">
       <Panel title="Logo" description="Shown on invoices, receipts and in the app. PNG or JPEG, up to 512 KB. A square logo on a white or transparent background works best.">
         <div className="flex items-center gap-4">
-          <div className="flex size-20 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-white">
+          <div className="flex size-20 items-center justify-center overflow-hidden rounded-xl border border-slate-700 bg-[#fff]">
             {b.hasLogo ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={`/api/settings/business/logo?v=${b.logoVersion}`} alt="Business logo" className="max-h-full max-w-full object-contain" />

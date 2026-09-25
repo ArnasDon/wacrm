@@ -92,11 +92,11 @@ export function ProductPhotos<T extends { _id: string; images?: ProductImage[] }
             )}
             <div className="absolute inset-0 flex items-end justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent p-1 opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100">
               {i !== 0 && (
-                <button type="button" aria-label="Make cover photo" onClick={() => act(img.id, "PATCH")} className="rounded bg-white/15 p-1 text-white hover:bg-white/30">
+                <button type="button" aria-label="Make cover photo" onClick={() => act(img.id, "PATCH")} className="rounded bg-[#fff]/15 p-1 text-[#fff] hover:bg-[#fff]/30">
                   <Star className="size-3.5" />
                 </button>
               )}
-              <button type="button" aria-label="Delete photo" onClick={() => act(img.id, "DELETE")} className="rounded bg-white/15 p-1 text-white hover:bg-red-500/80">
+              <button type="button" aria-label="Delete photo" onClick={() => act(img.id, "DELETE")} className="rounded bg-[#fff]/15 p-1 text-[#fff] hover:bg-red-500/80">
                 <Trash2 className="size-3.5" />
               </button>
             </div>

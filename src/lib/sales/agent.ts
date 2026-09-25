@@ -1,6 +1,6 @@
 import 'server-only'
 import { loadAccount } from '@/lib/auth/accounts'
-import { generateJSON, AIProviderError, type ChatTurn } from '@/lib/ai/client'
+import { generateJSON, AIProviderError, NonJsonReplyError, plainReplyFrom, type ChatTurn } from '@/lib/ai/client'
 import { scopedCollection, type AuthContext } from '@/lib/db/scoped'
 import type {
   AccountDoc,
@@ -368,6 +368,23 @@ async function respondWithAI(
     })
     intent = parseIntent(raw, new Set(catalog.map((c) => c._id)))
   } catch (err) {
+    // Open models sometimes answer the customer perfectly but forget the
+    // JSON wrapper. Sending that beats leaving the chat unanswered —
+    // which reads to the customer as the rep falling asleep.
+    const salvaged = err instanceof NonJsonReplyError ? plainReplyFrom(err.text) : null
+    if (salvaged) {
+      await sendText(ctx, conversation._id, salvaged, 'ai')
+      await runs.insertOne({
+        conversationId: conversation._id,
+        providerId: provider._id,
+        model: provider.model,
+        ok: true,
+        latencyMs: Date.now() - started,
+        actions: ['chat', 'recovered:no-json'],
+        error: null,
+      })
+      return true
+    }
     await runs.insertOne({
       conversationId: conversation._id,
       providerId: provider._id,

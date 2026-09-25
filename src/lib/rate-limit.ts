@@ -141,8 +141,11 @@ export const RATE_LIMITS = {
    *  while still bounding accidental abuse from a script run in a
    *  loop or a compromised admin session spamming role flips. */
   adminAction: { limit: 30, windowMs: 60_000 },
-  /** Login attempts, keyed per IP and per email separately. */
-  login: { limit: 10, windowMs: 60_000 },
+  /** Login attempts, keyed per IP and per email separately. Five is
+   *  enough for someone mistyping a password and far short of what a
+   *  guessing script needs; the window is short so a locked-out owner
+   *  is back in within a minute. */
+  login: { limit: 5, windowMs: 60_000 },
   /** Account creation per IP. */
   signup: { limit: 5, windowMs: 10 * 60_000 },
   /** Password-reset emails per IP and per email. */

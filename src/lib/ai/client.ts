@@ -3,6 +3,7 @@ import Anthropic from '@anthropic-ai/sdk'
 import { decrypt } from '@/lib/security/secrets'
 import { safeFetch, UnsafeUrlError } from '@/lib/security/safe-fetch'
 import type { AIProviderDoc } from '@/lib/db/types'
+export { plainReplyFrom } from './reply-text'
 import { getPreset } from './presets'
 
 // ============================================================
@@ -142,7 +143,11 @@ export async function generateJSON(
       : provider.kind === 'gemini'
         ? await geminiGenerate(provider, input)
         : await openAICompatibleGenerate(provider, input)
-  return parseJsonLoose(text)
+  try {
+    return parseJsonLoose(text)
+  } catch {
+    throw new NonJsonReplyError(text)
+  }
 }
 
 /** Extract the first JSON object from model output. */
@@ -163,6 +168,22 @@ export function parseJsonLoose(text: string): unknown {
     throw new AIProviderError('Model did not return valid JSON')
   }
 }
+
+/**
+ * Thrown when the model answered but not in JSON. Open models drop the
+ * wrapper now and then and just write the sentence they meant to send,
+ * so the text is carried along: a caller that only wanted a reply can
+ * still use it instead of leaving the customer on read.
+ */
+export class NonJsonReplyError extends AIProviderError {
+  readonly text: string
+  constructor(text: string) {
+    super('Model did not return valid JSON', 'other')
+    this.name = 'NonJsonReplyError'
+    this.text = text
+  }
+}
+
 
 // ------------------------------------------------------------
 // Anthropic (official SDK)

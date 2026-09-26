@@ -35,6 +35,10 @@ import {
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
 import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import {
+  getWhatsappConfigByAccountId,
+  invalidateWhatsappConfigCache,
+} from '@/lib/whatsapp/config-cache';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   sanitizePhoneForMeta,
@@ -247,14 +251,10 @@ export async function sendMessageToConversation(
     );
   }
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
+  // WhatsApp config, account-scoped. Cached — see config-cache.ts.
+  const config = await getWhatsappConfigByAccountId(db, accountId);
 
-  if (configError || !config) {
+  if (!config) {
     throw new SendMessageError(
       'whatsapp_not_configured',
       'WhatsApp not configured. Please set up your WhatsApp integration first.',
@@ -276,6 +276,8 @@ export async function sendMessageToConversation(
             '[send-message] access_token GCM upgrade failed:',
             error.message
           );
+        } else {
+          invalidateWhatsappConfigCache(accountId, config.phone_number_id);
         }
       });
   }

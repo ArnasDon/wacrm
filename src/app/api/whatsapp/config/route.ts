@@ -7,6 +7,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
+import { invalidateWhatsappConfigCache } from '@/lib/whatsapp/config-cache'
 
 /**
  * Resolve the caller's account_id from their profile. Inlined here
@@ -379,6 +380,8 @@ export async function POST(request: Request) {
           { status: 500 }
         )
       }
+      invalidateWhatsappConfigCache(accountId, existing.phone_number_id)
+      invalidateWhatsappConfigCache(accountId, phone_number_id)
     } else {
       // Insert with both columns: `account_id` is the tenancy key
       // (NOT NULL post-017, UNIQUE so duplicates trip the constraint
@@ -399,6 +402,7 @@ export async function POST(request: Request) {
           { status: 500 }
         )
       }
+      invalidateWhatsappConfigCache(accountId, phone_number_id)
     }
 
     if (registrationError) {
@@ -459,10 +463,12 @@ export async function DELETE() {
       )
     }
 
-    const { error: deleteError } = await supabase
+    const { data: deleted, error: deleteError } = await supabase
       .from('whatsapp_config')
       .delete()
       .eq('account_id', accountId)
+      .select('phone_number_id')
+      .maybeSingle()
 
     if (deleteError) {
       console.error('Error deleting whatsapp_config:', deleteError)
@@ -471,6 +477,8 @@ export async function DELETE() {
         { status: 500 }
       )
     }
+
+    invalidateWhatsappConfigCache(accountId, deleted?.phone_number_id)
 
     return NextResponse.json({ success: true })
   } catch (error) {

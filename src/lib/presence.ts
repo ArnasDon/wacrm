@@ -12,15 +12,20 @@
 // testable. See presence.test.ts.
 // ============================================================
 
-/** How often the active client heartbeats its own presence row. */
-export const HEARTBEAT_MS = 30_000;
+/**
+ * How often the active client heartbeats its own presence row. Kept
+ * coarse — the periodic beat is skipped entirely while the tab is
+ * hidden (see PresenceHeartbeat), so this mostly governs foreground
+ * tabs, and a wider interval directly cuts touch_presence RPC volume.
+ */
+export const HEARTBEAT_MS = 120_000;
 
 /**
  * A member whose last heartbeat is older than this is treated as
  * offline regardless of its stored status. ~2.5 missed beats, so a
  * single dropped heartbeat doesn't flap a member offline.
  */
-export const OFFLINE_AFTER_MS = 75_000;
+export const OFFLINE_AFTER_MS = 5 * 60_000;
 
 /** No input / hidden tab for this long flips the client to 'away'. */
 export const IDLE_AFTER_MS = 5 * 60_000;

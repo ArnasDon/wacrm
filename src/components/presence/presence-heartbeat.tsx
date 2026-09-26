@@ -77,9 +77,12 @@ export function PresenceHeartbeat() {
       document.addEventListener(e, markActive, { passive: true }),
     );
 
-    // Returning to the tab should beat immediately so a member flips
-    // back to online without a 30s wait. The debounce in beat() absorbs
-    // the visibilitychange + focus double-fire.
+    // Fires on both directions of visibilitychange: hiding the tab
+    // beats once immediately (flips to 'away' without waiting for a
+    // stale periodic beat that's now skipped anyway), and returning to
+    // it beats immediately so a member flips back to online without a
+    // HEARTBEAT_MS wait. The debounce in beat() absorbs the
+    // visibilitychange + focus double-fire on return.
     const onReturn = () => {
       if (!document.hidden) markActive();
       void beat();
@@ -88,7 +91,14 @@ export function PresenceHeartbeat() {
     window.addEventListener("focus", onReturn);
 
     void beat();
-    const interval = setInterval(() => void beat(), HEARTBEAT_MS);
+    const interval = setInterval(() => {
+      // Skip the periodic beat while the tab is hidden — a backgrounded
+      // tab doesn't need to keep pinging every HEARTBEAT_MS. The
+      // visibilitychange listener below still fires one immediately on
+      // hide (flips to 'away' right away) and on return to visible.
+      if (typeof document !== "undefined" && document.hidden) return;
+      void beat();
+    }, HEARTBEAT_MS);
 
     return () => {
       cancelled = true;
